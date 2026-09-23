@@ -73,6 +73,21 @@ public sealed partial class RailRfViewModel
     private LayerKey? _referenceNetMeasuredOn;
     private string? _referenceReturnNet;
 
+    /// <summary>The whole answer <see cref="_referenceReturnNet"/> is the net of — with where it came
+    /// from, which the reference row prints (R-rail31-1).</summary>
+    private PdnReturnNet? _referenceReturn;
+
+    /// <summary>The NAMED return the measurement was made under. Keyed like the layer, because naming
+    /// a net in the reference row — or undoing that — asks a different question of the same board.</summary>
+    private string? _referenceMeasuredNamed;
+
+    /// <summary>The return the document names, or null — what <c>Regions.ResolveReturnNet</c> takes
+    /// before it measures anything. The live document, not the board's snapshot of it: the reference
+    /// row edits it after the board was read.</summary>
+    private string? NamedReturnNet =>
+        _document.ReferenceNet is { Length: > 0 } named ? named
+        : Board?.ReferenceNet is { Length: > 0 } board ? board : null;
+
     /// <summary>How many PREVIEW walks this board has paid for — <b>counted so R-rail19-2c is
     /// testable without timing anything</b>, which is the same reason <c>SolvesStarted</c> exists.
     /// The reference-return measurement is not one of these; it is counted by
@@ -183,7 +198,9 @@ public sealed partial class RailRfViewModel
         get
         {
             if (!IsReferenceConfirmed || SelectedRail?.ReferenceLayer is not { } layer) return null;
-            if (_referenceNetMeasuredOn == layer) return _referenceReturnNet;
+            if (_referenceNetMeasuredOn == layer
+                && string.Equals(_referenceMeasuredNamed, NamedReturnNet, StringComparison.OrdinalIgnoreCase))
+                return _referenceReturnNet;
 
             BeginCopperJob(new CopperJob(layer, null));
             return null;
@@ -258,24 +275,27 @@ public sealed partial class RailRfViewModel
         var shapes = board.Shapes;
         var tech = board.Technology;
         var netPoints = board.NetPoints;
-        string? referenceNet = board.ReferenceNet;
+        string? namedReturn = NamedReturnNet;
         var railReference = SelectedRail?.ReferenceLayer;
         var regions = _layerRegions;
 
-        // The measured return, where there is one for this reference — so the schematic's ground
-        // (`0`) is not reported as a short against the net it IS.
+        // The resolved return, where there is one for this reference — so the schematic's ground
+        // (`0`) is not reported as a short against the net it IS, and so the preview walks the rail
+        // the run will: a rail seed never claims the return net (R-rail31-2).
         string? measuredReturn = railReference is { } r && _referenceNetMeasuredOn == r ? _referenceReturnNet : null;
 
         CopperRead = ReadCopperOffThread(() =>
         {
             regions ??= LayerRegions.Build(shapes, tech);
 
-            string? measured = null;
+            PdnReturnNet? measured = null;
             RailNetPreview? preview = null;
             string note = "";
 
+            // R-rail31-1: THE SAME CALL THE EXTRACTION MAKES. The run and this row used to reach the
+            // return by two routes, and on a Gerber board only this one found it.
             if (job.MeasureReference is { } layer)
-                measured = Regions.ReferenceNetOn(regions, tech, netPoints, layer);
+                measured = Regions.ResolveReturnNet(namedReturn, regions, tech, netPoints, layer);
 
             if (job.PreviewNet is { } net)
             {
@@ -286,7 +306,7 @@ public sealed partial class RailRfViewModel
                 // that is not nullable.
                 var walked = Regions.Walk(
                     regions, tech, netPoints, net,
-                    railReference ?? AbsentLayer(regions), referenceNet, extraRailSeeds: []);
+                    railReference ?? AbsentLayer(regions), measuredReturn ?? namedReturn, extraRailSeeds: []);
 
                 var copper = new List<(LayerKey Layer, Paths64 Paths)>();
                 var bounds = Bbox.Empty;
@@ -314,14 +334,15 @@ public sealed partial class RailRfViewModel
             }
 
             var finished = regions;
-            PostToUi(() => FinishCopperJob(cts, job, finished, measured, preview, note));
+            PostToUi(() => FinishCopperJob(cts, job, finished, namedReturn, measured, preview, note));
         });
     }
 
     /// <summary>Publishes one copper job's answers, unless it has been superseded.</summary>
     private void FinishCopperJob(
         CancellationTokenSource cts, CopperJob job,
-        Dictionary<LayerKey, Paths64> regions, string? measured, RailNetPreview? preview, string note)
+        Dictionary<LayerKey, Paths64> regions, string? namedReturn, PdnReturnNet? measured,
+        RailNetPreview? preview, string note)
     {
         // A job from a board that has since changed is DROPPED — not merely stale: it describes
         // copper nobody can see any more, which is the same rule Finish() applies to a solve.
@@ -343,8 +364,18 @@ public sealed partial class RailRfViewModel
 
         if (job.MeasureReference is { } layer)
         {
+            // A DIFFERENT return changes what every cached preview walked: a rail seed never claims
+            // the return net, so the same pick outlines different copper under a different return.
+            if (!string.Equals(_referenceReturnNet, measured?.Net, StringComparison.OrdinalIgnoreCase))
+            {
+                _netPreviews.Clear();
+                _netPreviewNotes.Clear();
+            }
+
             _referenceNetMeasuredOn = layer;
-            _referenceReturnNet = measured;
+            _referenceMeasuredNamed = namedReturn;
+            _referenceReturn = measured;
+            _referenceReturnNet = measured?.Net;
             ReferenceMeasurements++;
             RefreshNetMarks();
         }
@@ -440,6 +471,8 @@ public sealed partial class RailRfViewModel
         _netPreviews.Clear();
         _netPreviewNotes.Clear();
         _referenceNetMeasuredOn = null;
+        _referenceMeasuredNamed = null;
+        _referenceReturn = null;
         _referenceReturnNet = null;
 
         // The SELECTION goes with the preview, and that is the point rather than tidiness: a row
@@ -478,8 +511,76 @@ public sealed partial class RailRfViewModel
                                  && string.Equals(row.Name, reference, StringComparison.OrdinalIgnoreCase);
 
         OnPropertyChanged(nameof(ReferenceReturnNet));
+        OnPropertyChanged(nameof(ReturnNetNote));
+        OnPropertyChanged(nameof(HasReturnNetNote));
+        OnPropertyChanged(nameof(ReturnNetOptions));
+        OnPropertyChanged(nameof(SelectedReturnNetOption));
         OnPropertyChanged(nameof(PickRailButtonText));
         OnPropertyChanged(nameof(WillShowExistingRail));
         PickSelectedNetCommand.NotifyCanExecuteChanged();
     }
+
+    // ── THE REFERENCE ROW NAMES THE RETURN NET (brief-railrf-31 R-rail31-1, R-rail31-3) ─────────
+    //
+    // The return is a NET, and until this row said which one nothing on the window did: the pick list
+    // marked it, and the run took "every piece on the reference layer" because the document named
+    // none. Both now read Regions.ResolveReturnNet, and this row shows its answer and where it came
+    // from — and is where a user answers the refusal for a return that cannot be resolved.
+
+    /// <summary>The pick list's first row: name no net and let the copper say.</summary>
+    public const string MeasuredReturnOption = "measured from the copper";
+
+    /// <summary>What the return-net combo offers: <see cref="MeasuredReturnOption"/>, then every net
+    /// on the board — and the named net even where the board does not carry it, so the combo can show
+    /// what the document says.</summary>
+    public IReadOnlyList<string> ReturnNetOptions
+    {
+        get
+        {
+            var options = new List<string> { MeasuredReturnOption };
+            if (_document.ReferenceNet is { Length: > 0 } named
+                && !AvailableNets.Any(r => string.Equals(r.Name, named, StringComparison.OrdinalIgnoreCase)))
+                options.Add(named);
+            options.AddRange(AvailableNets.Select(r => r.Name));
+            return options;
+        }
+    }
+
+    /// <summary>
+    /// The document's <c>ReferenceNet</c>, as the combo shows it. Picking a net NAMES the return;
+    /// picking <see cref="MeasuredReturnOption"/> clears the name and the copper decides.
+    /// </summary>
+    public string SelectedReturnNetOption
+    {
+        get => _document.ReferenceNet is { Length: > 0 } named
+            ? ReturnNetOptions.FirstOrDefault(o => string.Equals(o, named, StringComparison.OrdinalIgnoreCase)) ?? named
+            : MeasuredReturnOption;
+        set
+        {
+            string? named = value is { Length: > 0 } && value != MeasuredReturnOption ? value : null;
+            if (string.Equals(_document.ReferenceNet ?? "", named ?? "", StringComparison.OrdinalIgnoreCase)) return;
+
+            _document.ReferenceNet = named;
+            OnPropertyChanged();
+
+            // The measurement is keyed by the named net, so the next ask re-resolves; the marks and
+            // the note follow when it lands.
+            RefreshNetMarks();
+            QueueResolve();
+        }
+    }
+
+    /// <summary>
+    /// Which net the return is and where that came from — "'GND', measured from the copper on 'GND'
+    /// (layer 3/0)" — or empty before the reference is confirmed and while the answer is in flight.
+    /// </summary>
+    public string ReturnNetNote =>
+        IsReferenceConfirmed && SelectedRail?.ReferenceLayer is { } layer && _referenceNetMeasuredOn == layer
+        && string.Equals(_referenceMeasuredNamed, NamedReturnNet, StringComparison.OrdinalIgnoreCase)
+        && _referenceReturn is { } ret
+            ? "Return: " + ret.Describe()
+            : "";
+
+    /// <summary>True while <see cref="ReturnNetNote"/> has something to say.</summary>
+    public bool HasReturnNetNote => ReturnNetNote.Length > 0;
 }

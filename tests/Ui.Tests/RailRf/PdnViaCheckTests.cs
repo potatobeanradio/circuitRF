@@ -119,7 +119,7 @@ public sealed class PdnViaCheckTests
         double[] viaYsMm, double drillMm, bool cornerLoad,
         double widthMm = 4.0, double cellSizeM = 0.05e-3,
         double? wallUm = 20.0, double? settingUm = null, double rise = 10.0,
-        bool declareSpan = true, double loadA = 3.0)
+        bool declareSpan = true, double loadA = 3.0, double cornerLoadXmm = 7.0)
     {
         var doc = new RailDocument { Name = "via check" };
         doc.Settings.ViaPlatingThicknessMicrometres = settingUm;
@@ -149,7 +149,7 @@ public sealed class PdnViaCheckTests
         foreach (double y in viaYsMm) pads.Add(new PlacedPin("BT1", "1", "VDD", Mm(1), Mm(y), PinSource.BoardNetlist));
 
         if (cornerLoad)
-            pads.Add(new PlacedPin("U1", "VDD", "VDD", Mm(7), Mm(viaYsMm[0]), PinSource.BoardNetlist));
+            pads.Add(new PlacedPin("U1", "VDD", "VDD", Mm(cornerLoadXmm), Mm(viaYsMm[0]), PinSource.BoardNetlist));
         else
             foreach (double y in viaYsMm) pads.Add(new PlacedPin("U1", "VDD", "VDD", Mm(11), Mm(y), PinSource.BoardNetlist));
 
@@ -384,7 +384,11 @@ public sealed class PdnViaCheckTests
     [Fact]
     public void AnUnresolvedSpanProducesANoteAndNoFlag()
     {
-        var result = Solve([0.5, 1.5, 2.5, 3.5], 0.3, cornerLoad: true, loadA: 4.0, declareSpan: false);
+        // The load pad stands where TOP and MID overlap, so its pin field ties the two. At the usual
+        // x = 7 mm it lands on MID alone, and with the barrels unstamped MID is joined to nothing:
+        // 4 A drawn from a floating piece, which PdnAssembly now refuses (brief-railrf-31 §4).
+        var result = Solve([0.5, 1.5, 2.5, 3.5], 0.3, cornerLoad: true, loadA: 4.0, declareSpan: false,
+                           cornerLoadXmm: 6.5);
 
         Assert.Empty(result.ViaCheck.Transitions);
         Assert.Empty(result.ViaCheck.Flags);

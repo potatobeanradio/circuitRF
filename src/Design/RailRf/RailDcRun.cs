@@ -415,7 +415,11 @@ public static class RailDcRun
         LengthFormat    = request.LengthFormat,
         Pads            = request.Pads,
         NetPoints       = request.NetPoints,
-        ReferenceNet    = request.ReferenceNet,
+        // R-rail31-1: the request's named return, else the document's. Neither named is the
+        // ordinary Gerber board, and the extraction then MEASURES it (Regions.ResolveReturnNet).
+        ReferenceNet    = request.ReferenceNet is { Length: > 0 } named
+            ? named
+            : request.Document.ReferenceNet is { Length: > 0 } stated ? stated : null,
         BoardOutline    = request.BoardOutline,
         // The caller's own (the import path's bridging parts) PLUS the rail document's one series
         // element (brief 25). Appended rather than replacing: they answer different questions —

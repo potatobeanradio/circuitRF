@@ -432,11 +432,13 @@ public class RailWindowChromeTests
     {
         string xaml = Xaml();
 
-        // ONE grid, four columns, two rows — and both combos inside it.
-        string grid = Block(xaml, "ColumnDefinitions=\"Auto,*,Auto,Auto\" RowDefinitions=\"Auto,Auto\"",
+        // ONE grid, four columns, three rows — the rail, the reference layer and the return net
+        // (brief-railrf-31) — and every combo inside it.
+        string grid = Block(xaml, "ColumnDefinitions=\"Auto,*,Auto,Auto\" RowDefinitions=\"Auto,Auto,Auto\"",
                             "</Grid>");
         Assert.Contains("Name=\"RailSelector\"", grid, StringComparison.Ordinal);
         Assert.Contains("Name=\"ReferenceSelector\"", grid, StringComparison.Ordinal);
+        Assert.Contains("Name=\"ReturnNetSelector\"", grid, StringComparison.Ordinal);
 
         // The square style exists and is square by explicit metrics, not by arithmetic on padding.
         // Whitespace-insensitive: the alignment of these setters is formatting, not the rule.

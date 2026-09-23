@@ -1,5 +1,79 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## The return is a net, not a layer (2026-09-22, brief-railrf-31)
+
+Rows 1-3 of brief 30's list below, fixed together because all three are the one question railRF never
+asked: *which NET is the return?* Measured on the fourth field report's board with brief 30's harness
+(Release, the designer's own document with JP1 declared series and the inner GND layer 3/0 as the
+reference, anchors unedited).
+
+| | Fast | Accurate, default mesh (3 across) | Accurate, 6 across |
+|---|---|---|---|
+| before | **−149,954,700 V** at the load, not refused | 1.316 mV (GND in the rail) | — |
+| after | **5.378 mV** | **14.55 mV** | **3.927376 mV** |
+
+**The 6-across figure is the gate, and it is identical, not close:** the whole Accurate netlist
+(2,418,851 elements, 1,215,348 node cells) and the solved voltage (3.2960726244414356 V) are
+byte-for-byte the netlist of brief 30's hand-seeded run (Bottom GND pour deleted, reference net forced
+to GND). The rail's islands carry 3v3 and VDD net points only, no GND net point; the reference is one
+region, GND's copper on 3/0. 14.55 mV at the default mesh is brief 30's unconverged figure. It is
+brief 32's starting point, and 5.378 mV is brief 33's.
+
+### What changed
+
+1. **One resolver, `Regions.ResolveReturnNet`**: the named net (the request's, else the document's)
+   where there is one, else `ReferenceNetOn`'s galvanic-ambiguity measurement on the confirmed layer,
+   else unresolved. Both extractors reach it through `PdnRailConnectivity.Walk`, which also builds
+   the board's `DrcConnectivity` partition ONCE for the resolver and the walk (it is 3.1 s of the
+   field board's walk, so resolving separately would have doubled it). The window's measurement job
+   calls the public overload. The preview had the right answer all along and the run never received it:
+   `BuildRequest` passed `board.ReferenceNet`, a snapshot of a document that names none on a Gerber
+   board. The answer, with its basis ("'GND', measured from the copper on 'gnd' (layer 3/0)" / "named
+   in the document"), is on `PdnProvenance.ReturnNet`, printed by `circuitrf rail` as `return:`.
+2. **A rail seed never claims the return net.** With a resolved return, `Walk` removes the return's
+   galvanic nets from the rail's before building islands. This changes nothing where the net walked
+   IS the return (the preview of the return itself). `OwnReturnRefusalFor` still runs on the seeds; its
+   "the reference must have nothing left" clause now applies only to the unresolved reading. Under a
+   resolved return, `refNets` is the return net's copper, so a seed landing on it unambiguously IS on
+   the return, even where the anchors did not reach every piece of it.
+3. **The unresolved return is refused where it would mix the rail in**, and only there: the rail has
+   copper on the reference layer AND the layer carries copper that is not the rail's.
+   **As the brief first worded it (any rail copper on the layer), it refused three fixtures that price
+   two plates and a via field**: `PdnMeshExtractorTests.R_rail18_1_…` (a via through a solid
+   plane) and `.TwentyParallelViasAreOneTwentiethOfOne`, and
+   `PdnDistributedTests.PartsOnOneReturnViaAreCoupled…`. R-rail27-2's note already calls that
+   shape legitimate, and where the rail is all there is on the layer, "every piece" mixes nothing in.
+   The narrower predicate keeps them unchanged and still refuses the reported shape. That shape is the
+   rail's own 2.5 mm² land beside the plane, with node 0 put on it.
+4. **A split return is never solved.** `PdnRailConnectivity.ReturnRefusal` is the galvanic check. Every
+   source's and load's return lands on reference islands (the nearest one where the pad sits in an
+   antipad, as the assembly attaches it), an anchor straddling two joins them (the assembly ties a pin
+   field), and all must be one. **No declared part joins two return pieces:** `PdnAssembly` stamps a
+   series part between rail copper only, so a check more generous than the stamping would only defer
+   the split to the backstop. The backstop, `PdnAssembly.FloatingRefusal`, runs on the stamped
+   netlist for both models. It counts what CONDUCTS: copper, vias, series parts and the source branch.
+   A load's current source and a port never count; they carry nothing between their terminals at DC,
+   and counting them lets the floating load vouch for itself (that is exactly how the −150 MV
+   network looked connected). Shunt and cavity capacitors count above DC only. The power side is
+   asked only of a rail something drives (a stamped source path or a drawing load): the impedance
+   fixtures observe a sourceless plane pair at DC, which floats harmlessly.
+
+### Fixtures this reached, and why each is this brief's defect rather than a regression
+
+Dump-compared old DLLs against new with brief 30's `fx` runner (`PdnFastExtractorTests`,
+`PdnRefusalCauseTests`, `PdnMeshExtractorTests`: 39 cases, every element, port, node cell and
+voltage): **byte-identical**. The shipped Power Rail example (`circuitrf rail --json`, Fast and
+Accurate): **byte-identical**; it names GND in its document. Two fixtures elsewhere were solving
+floating networks and now refuse. Both were fixed in the fixture, not in the check:
+
+- `PdnViaCheckTests.AnUnresolvedSpanProducesANoteAndNoFlag`: with the via span undeclared, no barrel is
+  stamped, and the corner load pad at x = 7 mm lands on MID alone. That is 4 A drawn from a piece
+  joined to nothing, and its answer was gmin. The pad now stands where TOP and MID overlap. The test
+  reads notes, not voltages.
+- The window-chrome scan now expects the rail card's grid to have three rows (the return-net row).
+
+Gate: `tests/Ui.Tests/RailRf/PdnReturnNetTests.cs`.
+
 ## Where the minutes went: one measurement taken three times, and a rail that was never the rail (2026-09-22, brief-railrf-30)
 
 Measured on the fourth field report's board with a scratch harness (board and workspace outside the
@@ -150,7 +224,9 @@ per-piece loop got shorter, not longer.
 
 ### What is left, ranked (the next brief's input)
 
-**Briefed the same day:** rows 1-3 as brief 31 (the return is a net), the unconverged Accurate mesh as
+**Rows 1-3 are fixed by brief 31 (entry above)**, and the "GND in the rail" configuration in the
+tables of this entry no longer exists: the designer's document now prices the correctly seeded rail
+without the harness deleting the pour. **Briefed the same day:** rows 1-3 as brief 31 (the return is a net), the unconverged Accurate mesh as
 brief 32, row 4 with row 5's cache as brief 33, and the anchor-over-two-nets remainder of row 1 as
 brief 34.
 
@@ -237,7 +313,9 @@ sentence has to carry the cause itself.
 
 With JP1 declared **and** the inner GND plane attached to its drawing layer and named as the
 reference, the rail **solves** (Release, ~9 min — see the classification note above). **Corrected
-by brief 30 (entry above): it solved the GND net, and the number it solved to is −150 MV.**
+by brief 30 (entry above): it solved the GND net, and the number it solved to is −150 MV.** After brief
+31 it prices the 3v3 and VDD copper against GND's copper on 3/0: Fast 5.378 mV, Accurate 14.55 mV at
+the default mesh and 3.927 mV at 6 cells across.
 
 ### A terminal's own landing piece is exempt from the pour refusal — the decision and why
 

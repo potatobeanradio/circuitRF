@@ -86,6 +86,7 @@ internal sealed class PdnAssembly
 {
     private readonly PdnExtractionRequest _req;
     private readonly IPdnNodeSource _nodes;
+    private readonly PdnModelKind _model;
     private readonly double _celsius;
     private readonly List<string> _notes;
     private readonly List<string> _diagnostics;
@@ -112,10 +113,11 @@ internal sealed class PdnAssembly
     public int UnresolvedViaSpans { get; private set; }
 
     public PdnAssembly(
-        PdnExtractionRequest req, IPdnNodeSource nodes,
+        PdnExtractionRequest req, IPdnNodeSource nodes, PdnModelKind model,
         double celsius, List<string> notes, List<string> diagnostics)
     {
         _req = req;
+        _model = model;
         _nodes = nodes;
         _celsius = celsius;
         _notes = notes;
@@ -135,10 +137,90 @@ internal sealed class PdnAssembly
         if (StampShunts() is { } shuntRefusal) return shuntRefusal;
         if (StampSources() is { } sourceRefusal) return sourceRefusal;
         if (StampLoads() is { } loadRefusal) return loadRefusal;
+        if (FloatingRefusal() is { } floating) return floating;
 
         Emit();
         return null;
     }
+
+    /// <summary>
+    /// R-rail31-4's backstop — <b>never hand the solver a floating network</b>. Every port's power
+    /// and reference node, and every source's terminals, must be in the ground node's connected
+    /// component of what was STAMPED.
+    /// </summary>
+    /// <remarks>
+    /// <b>The galvanic check is not enough, and this is why it is here and not only there.</b> The
+    /// walk sees copper; the netlist is a READING of it — a thinned skeleton, a coarse mesh, and the
+    /// reference layer's copper only, with whatever joins two return pieces on another layer left
+    /// out. On the reported board the reading split a return the copper did not, and a 30 mA load
+    /// driving a network with no path back to the source came out of the DC solve as −150 MV: a
+    /// number, from gmin alone.
+    ///
+    /// <para><b>What conducts is what carries current between its terminals</b>: copper, vias, series
+    /// parts and the source's own branch. A load's current source and an observation port carry none
+    /// at DC (the DC engine leaves a port inert), so they are not a path however they are drawn —
+    /// counting them would let the very load that floats vouch for itself. A capacitor is a path above
+    /// DC only. Islands carrying no port stay what they were: a diagnostic, and dropped by
+    /// <see cref="Emit"/>.</para>
+    /// </remarks>
+    private string? FloatingRefusal()
+    {
+        bool ac = _req.FrequencyHz > 0;
+        var joined = new UnionFind(_tie.Capacity);
+        foreach (var s in _staged)
+        {
+            bool conducts = s.Kind switch
+            {
+                PdnOriginKind.LoadCurrent or PdnOriginKind.Port => false,
+                PdnOriginKind.Shunt or PdnOriginKind.PlaneShunt => ac,
+                _ => true,
+            };
+            if (conducts) joined.Union(_tie.Find(s.Raw[0]), _tie.Find(s.Raw[1]));
+        }
+
+        int ground = joined.Find(_tie.Find(_ground));
+        bool Grounded(int raw) => joined.Find(_tie.Find(raw)) == ground;
+
+        string model = _model == PdnModelKind.Accurate ? "Accurate reading's mesh" : "Fast reading's graph";
+        string what = $"Rail '{_req.Rail.Name}'";
+
+        // A source's RETURN; its power side is asked through the ports it feeds, below, because a
+        // source that stamped nothing leaves that side unjoined and the port is what can say why.
+        foreach (var (name, nr) in _sourceReturns)
+            if (!Grounded(nr))
+                return $"{what}'s source {name} returns on reference copper that the {model} does " +
+                       "not join to the reference point, so the rail has two returns and no answer. " +
+                       FloatingHint;
+
+        // The power side is asked only of a rail something DRIVES — a source that stamped a path, or
+        // a load that draws. A rail with neither is an observation of its copper (the impedance
+        // fixtures, a cell-size check at DC): nothing flows, and it floats harmlessly.
+        bool driven = _staged.Any(s => s.Kind is PdnOriginKind.SourceBranch
+                                              or PdnOriginKind.SourceResistance
+                                              or PdnOriginKind.LoadCurrent);
+
+        foreach (var port in _ports)
+        {
+            if (!Grounded(port.ReferenceNode))
+                return $"{what}'s load {port.Name} returns on reference copper that the {model} does " +
+                       "not join to the source's return — the netlist is two circuits, and solving it " +
+                       "would drive the load's current into a network with no path back. " + FloatingHint;
+            if (driven && !Grounded(port.PowerNode))
+                return $"{what}'s load {port.Name} is on rail copper that nothing in the {model} " +
+                       "joins to a source at DC — a source with neither a voltage nor a series " +
+                       "resistance stamps nothing, and a capacitor is no path at DC. " + FloatingHint;
+        }
+
+        return null;
+    }
+
+    private const string FloatingHint =
+        "This is the reading, not necessarily the copper: the reference layer's copper is read alone, " +
+        "so return pieces joined only through another layer are apart here. Join them on the " +
+        "reference layer, or take the reference as filled to the board outline (optimistic, and " +
+        "said so), or run the other model.";
+
+    private readonly List<(string Name, int Reference)> _sourceReturns = [];
 
     public PdnNetlist Finish(PdnProvenance provenance) => new()
     {
@@ -549,6 +631,7 @@ internal sealed class PdnAssembly
 
             int np = Merge(power), nr = Merge(reference);
             double? r = src.SeriesResistanceOhms;
+            _sourceReturns.Add((name, nr));
 
             if (src.OpenCircuitVoltageV is not { } volts)
             {

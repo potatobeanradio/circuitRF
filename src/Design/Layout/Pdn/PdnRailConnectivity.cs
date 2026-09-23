@@ -34,6 +34,19 @@
 // generous here can only make this refusal LESS likely, and the assembly refuses a terminal that
 // lands on nothing with its own sentence.
 
+// ── AND THE RETURN (brief-railrf-31) ────────────────────────────────────────────────────────────
+//
+// The rail was asked "is it one piece, or pieces a declared part joins?" and the return never was.
+// On the reported board the source's return and the load's landed on two unjoined reference
+// pieces, the netlist was two circuits, and a 30 mA load driving a floating network came back from
+// the DC solve as −150 MV. The walk already knows which reference piece is which, so the question is
+// asked here, at the same cost and at the same moment as the rail's.
+//
+// Nothing a declared part does can join two RETURN pieces: PdnAssembly stamps a series part between
+// rail copper only. So unlike the rail's check, this one takes no part into account — a check more
+// generous than the stamping would only pass the split on to PdnAssembly's backstop, which refuses
+// it later and less precisely.
+
 using Clipper2Lib;
 using CircuitRF.Design.Layout.Drc;
 using CircuitRF.Design.Layout.Extraction;
@@ -50,6 +63,129 @@ internal static class PdnRailConnectivity
 
     /// <summary>One galvanically joined piece of the rail, as the membership test reads it.</summary>
     private sealed record Group(List<(LayerKey Layer, Paths64 Paths, Bbox Bounds)> Copper);
+
+    /// <summary>
+    /// R-rail31-1 — the return net, resolved ONCE, and then the walk. Both extractors call this and
+    /// nothing else, so the net the window's reference row shows is the net the run uses, and the
+    /// board's galvanic partition is made once for both questions.
+    /// </summary>
+    public static PdnRailRegionSet Walk(
+        PdnExtractionRequest request, IReadOnlyDictionary<LayerKey, Paths64> layerRegions,
+        LayerKey referenceLayer, IReadOnlyList<(long X, long Y)> anchorSeeds,
+        IReadOnlyList<(long X, long Y)> bareCoordinateSeeds)
+    {
+        var tech = request.Technology;
+        var pieces = DrcConnectivity.Extract(layerRegions, tech);
+        var returnNet = Regions.ResolveReturnNet(request.ReferenceNet, pieces, tech, request.NetPoints, referenceLayer);
+
+        return Regions.Walk(pieces, tech, request.NetPoints, request.Rail.NetName, referenceLayer,
+                            returnNet.Net, anchorSeeds, bareCoordinateSeeds) with { ReturnNet = returnNet };
+    }
+
+    /// <summary>
+    /// R-rail31-3 and R-rail31-4 — the refusal for a return that is not one: a reference that cannot
+    /// be told apart from the rail, or a source's return and a load's that land on reference copper
+    /// no conductor joins. Null is every ordinary board.
+    /// </summary>
+    public static string? ReturnRefusal(
+        PdnExtractionRequest request, PdnRailRegionSet regions, LayerKey referenceLayer)
+    {
+        if (regions.MixedReturnRefusal is { } mixed) return $"Rail '{request.Rail.Name}': {mixed}";
+
+        // A FILLED or UNBOUNDED reference is one plate by construction and cannot be split.
+        if (request.Rail.ReferenceExtent != RailReferenceExtent.AsImported) return null;
+        if (regions.Reference.Count < 2) return null;
+
+        var fmt = request.LengthFormat;
+        var islands = regions.Reference
+            .Select(i => new Group(i.Copper
+                .Where(c => c.Layer == referenceLayer)
+                .Select(c => (c.Layer, c.Paths, DrcRegions.BoundsOf(c.Paths)))
+                .ToList()))
+            .ToList();
+
+        // Every island one anchor's return touches is ONE node in the netlist — PdnAssembly ties an
+        // anchor's pin field together — so an anchor straddling two islands joins them.
+        var root = new int[islands.Count];
+        for (int i = 0; i < root.Length; i++) root[i] = i;
+        int Find(int x) { while (root[x] != x) { root[x] = root[root[x]]; x = root[x]; } return x; }
+
+        var returns = new List<(string What, RailPortAnchor Anchor, int Island)>();
+        void Add(string what, RailPortAnchor anchor)
+        {
+            var on = new HashSet<int>();
+            var pads = PdnAttachments.Resolve(anchor, request.Pads);
+            foreach (var (x, y) in pads)
+                foreach (int k in GroupsAt(islands, x, y)) on.Add(k);
+
+            // No reference copper under the pads — an antipad, a keepout. The assembly attaches that
+            // return to the NEAREST reference copper and says so, and this asks about the same place.
+            if (on.Count == 0 && pads.Count > 0 && Nearest(islands, pads[0].X, pads[0].Y) is { } near)
+                on.Add(near);
+            if (on.Count == 0) return;   // the assembly's own refusal, later and more specific
+
+            int first = -1;
+            foreach (int k in on)
+            {
+                if (first < 0) { first = k; continue; }
+                int ra = Find(first), rb = Find(k);
+                if (ra != rb) root[Math.Max(ra, rb)] = Math.Min(ra, rb);
+            }
+            returns.Add((what, anchor, first));
+        }
+
+        foreach (var s in request.Rail.Sources) Add("source", s.Anchor);
+        foreach (var l in request.Rail.Loads) Add("load", l.Anchor);
+        if (returns.Count < 2) return null;
+
+        var (firstWhat, firstAnchor, firstIsland) = returns[0];
+        foreach (var (what, anchor, island) in returns.Skip(1))
+        {
+            if (Find(island) == Find(firstIsland)) continue;
+
+            return
+                $"Rail '{request.Rail.Name}' has no single return: its {firstWhat} at " +
+                $"{firstAnchor.Describe(fmt)} returns on one piece of the reference on " +
+                $"{Regions.LayerLabel(request.Technology, referenceLayer)}, and its {what} at " +
+                $"{anchor.Describe(fmt)} returns on another, and no copper joins the two. The " +
+                $"reference there is {regions.Reference.Count} galvanically separate pieces. " +
+                "Solving it would drive the load's current into a network with no path back to the " +
+                "source — a number, and a meaningless one. Join the reference (a stitching via, a " +
+                "link), name a reference layer that is one plane under both, or take the reference " +
+                "as filled to the board outline, which is optimistic and says so.";
+        }
+
+        return null;
+    }
+
+    /// <summary>The group whose copper on its own layers comes nearest the point, or null.</summary>
+    private static int? Nearest(IReadOnlyList<Group> groups, long x, long y)
+    {
+        int? best = null;
+        double bestD = double.PositiveInfinity;
+
+        for (int k = 0; k < groups.Count; k++)
+            foreach (var (_, paths, _) in groups[k].Copper)
+                foreach (var path in paths)
+                    for (int i = 0; i < path.Count; i++)
+                    {
+                        var a = path[i];
+                        var b = path[(i + 1) % path.Count];
+                        double d = SegmentDistanceSquared(x, y, a.X, a.Y, b.X, b.Y);
+                        if (d < bestD) { bestD = d; best = k; }
+                    }
+
+        return best;
+    }
+
+    private static double SegmentDistanceSquared(long px, long py, long ax, long ay, long bx, long by)
+    {
+        double dx = bx - ax, dy = by - ay;
+        double len = dx * dx + dy * dy;
+        double t = len > 0 ? Math.Clamp(((px - ax) * dx + (py - ay) * dy) / len, 0, 1) : 0;
+        double ex = ax + t * dx - px, ey = ay + t * dy - py;
+        return ex * ex + ey * ey;
+    }
 
     /// <summary>
     /// The refusal for a rail whose source cannot reach some load through copper the extraction will

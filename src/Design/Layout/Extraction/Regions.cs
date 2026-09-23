@@ -91,7 +91,56 @@ public sealed record PdnRailRegionSet(
     IReadOnlyList<PdnRegion> Reference,
     string IslandReport,
     IReadOnlyList<string> Diagnostics,
-    string? OwnReturnRefusal = null);
+    string? OwnReturnRefusal = null)
+{
+    /// <summary>
+    /// R-rail31-1 — which NET the return was taken to be, and how that was decided. What
+    /// <see cref="Regions.ResolveReturnNet(string?, IReadOnlyDictionary{LayerKey, Paths64}, Technology, IReadOnlyList{PdnNetPoint}, LayerKey)"/>
+    /// answered before the walk, carried so the result's provenance can say it.
+    /// </summary>
+    public PdnReturnNet ReturnNet { get; init; }
+
+    /// <summary>
+    /// R-rail31-3 — <b>the return could not be resolved to a net, and this rail has copper on the
+    /// reference layer</b>, so "every piece on that layer" would mix the rail into its own return.
+    /// Non-null means the extraction must REFUSE; a board whose reference layer carries only the
+    /// plane never sets it.
+    /// </summary>
+    public string? MixedReturnRefusal { get; init; }
+}
+
+/// <summary>How the reference return's net was decided (R-rail31-1).</summary>
+public enum PdnReturnNetBasis
+{
+    /// <summary>Neither named nor measurable: the reference is every piece on its layer.</summary>
+    Unresolved,
+
+    /// <summary>Named — the <c>.crail</c>'s <c>ReferenceNet</c>, or the request's.</summary>
+    Named,
+
+    /// <summary>Measured from the copper on the confirmed reference layer
+    /// (<see cref="Regions.ReferenceNetOn"/>'s galvanic ambiguity).</summary>
+    Measured,
+}
+
+/// <summary>
+/// The reference return's net and where it came from — the one answer the window's reference row
+/// and the run both read (R-rail31-1).
+/// </summary>
+/// <param name="Net">The net, or null where it could not be resolved.</param>
+/// <param name="Basis">How it was decided.</param>
+/// <param name="Layer">The reference layer, as a sentence names it.</param>
+public readonly record struct PdnReturnNet(string? Net, PdnReturnNetBasis Basis, string Layer)
+{
+    /// <summary>The sentence a provenance and the reference row print.</summary>
+    public string Describe() => Basis switch
+    {
+        PdnReturnNetBasis.Named    => $"'{Net}', named in the document",
+        PdnReturnNetBasis.Measured => $"'{Net}', measured from the copper on {Layer}",
+        _ => $"no net — none is named and the copper on {Layer ?? "the reference layer"} does not " +
+             "measure to one, so every piece on that layer is the return",
+    };
+}
 
 /// <summary>The galvanic region walk — <see cref="DrcConnectivity"/> joined to a net name.</summary>
 public static class Regions
@@ -131,10 +180,25 @@ public static class Regions
         LayerKey referenceLayer,
         string? referenceNet,
         IReadOnlyList<(long X, long Y)> extraRailSeeds,
+        IReadOnlyList<(long X, long Y)>? bareCoordinateSeeds = null) =>
+        Walk(DrcConnectivity.Extract(layerRegions, tech), tech, netPoints, railNet, referenceLayer,
+             referenceNet, extraRailSeeds, bareCoordinateSeeds);
+
+    /// <summary><see cref="Walk(IReadOnlyDictionary{LayerKey, Paths64}, Technology, IReadOnlyList{PdnNetPoint}, string?, LayerKey, string?, IReadOnlyList{ValueTuple{long, long}}, IReadOnlyList{ValueTuple{long, long}}?)"/>
+    /// over a partition already made — the extractors make it once for
+    /// <see cref="ResolveReturnNet(string?, IReadOnlyList{DrcNetPiece}, Technology, IReadOnlyList{PdnNetPoint}, LayerKey)"/>
+    /// and the walk both, and it is the one piece of either that is not free.</summary>
+    internal static PdnRailRegionSet Walk(
+        IReadOnlyList<DrcNetPiece> pieces,
+        Technology tech,
+        IReadOnlyList<PdnNetPoint> netPoints,
+        string? railNet,
+        LayerKey referenceLayer,
+        string? referenceNet,
+        IReadOnlyList<(long X, long Y)> extraRailSeeds,
         IReadOnlyList<(long X, long Y)>? bareCoordinateSeeds = null)
     {
         var diagnostics = new List<string>();
-        var pieces = DrcConnectivity.Extract(layerRegions, tech);
 
         if (pieces.Count == 0)
             return new PdnRailRegionSet([], [], "No copper was found on any layer.", diagnostics);
@@ -165,6 +229,21 @@ public static class Regions
             ? NetsAt(pieces, refSeeds, anyLayer: false, onlyLayer: referenceLayer)
             : pieces.Where(p => p.Layer == referenceLayer).Select(p => p.Net).ToHashSet();
 
+        // ── R-rail31-2: A RAIL SEED NEVER CLAIMS THE RETURN NET ─────────────────────────────────
+        //
+        // Excluding the reference LAYER from the rail's seeding is not enough, because the return is
+        // a NET and reaches other layers. A coordinate on a VDD pad over a bottom-side ground pour
+        // stitched to the reference plane seeded the pour, and the pour is galvanically the plane:
+        // on the reported board the whole ground net (1,055 of its net points) was priced as supply
+        // copper. Once the return's galvanic nets are known they are not rail, whatever lies over
+        // them. Only a RESOLVED return may do this — "every piece on the layer" is not a net, and
+        // is §3's refusal below where it would matter. And not where the net walked IS the return
+        // (the window's preview of the return itself): that walk is asking for exactly this copper.
+        bool returnResolved = refSeeds.Count > 0 && refNets.Count > 0;
+        if (returnResolved
+            && !(railNet is { Length: > 0 } && string.Equals(railNet, referenceNet, StringComparison.OrdinalIgnoreCase)))
+            railNets.ExceptWith(refNets);
+
         var power = Islands(pieces, railNets, onlyLayer: null);
         var reference = Islands(pieces, refNets, onlyLayer: referenceLayer);
 
@@ -172,7 +251,17 @@ public static class Regions
 
         string? ownReturn = railNet is { Length: > 0 }
             ? null   // see OwnReturnRefusalFor's own note: this is the POUR-PICK route's question
-            : OwnReturnRefusalFor(pieces, bareCoordinateSeeds ?? [], refNets, tech, referenceLayer, referenceNet);
+            : OwnReturnRefusalFor(pieces, bareCoordinateSeeds ?? [], refNets, returnResolved, tech,
+                                  referenceLayer, referenceNet);
+
+        // ── R-rail31-3: THE RETURN IS NOT A NET, AND THE RAIL IS ON ITS LAYER ──────────────────
+        //
+        // Exactly the case in which "every piece on the layer" silently mixes the rail into its
+        // own return: on the reported board the rail's own 2.5 mm² land in an antipad was taken as
+        // reference and node 0 was put on it. A reference layer carrying only the plane is untouched.
+        string? mixed = returnResolved
+            ? null
+            : MixedReturnRefusalFor(pieces, railNets, netPoints, railNet, tech, referenceLayer, referenceNet);
 
         if (power.Count > 1)
             diagnostics.Add(
@@ -180,7 +269,120 @@ public static class Regions
                 "artwork the copper stops at every pad, so this is ordinary and not an error — but " +
                 "nothing bridges them at DC until a series part says what does.");
 
-        return new PdnRailRegionSet(power, reference, report, diagnostics, ownReturn);
+        return new PdnRailRegionSet(power, reference, report, diagnostics, ownReturn)
+            { MixedReturnRefusal = mixed };
+    }
+
+    /// <summary>
+    /// R-rail31-3 — the refusal for a rail with copper on a reference layer whose net is not known,
+    /// beside copper that is not the rail's, or null.
+    /// </summary>
+    private static string? MixedReturnRefusalFor(
+        IReadOnlyList<DrcNetPiece> pieces, HashSet<int> railNets, IReadOnlyList<PdnNetPoint> netPoints,
+        string? railNet, Technology tech, LayerKey referenceLayer, string? referenceNet)
+    {
+        var mine = pieces.Where(p => p.Layer == referenceLayer && railNets.Contains(p.Net)).ToList();
+        if (mine.Count == 0) return null;
+
+        // MIXED, and only mixed. Where everything on the layer is the rail's — two plates and a via
+        // field, the shape several mesh fixtures price on purpose (OwnReturnRefusalFor's note) —
+        // "every piece" is not mixing anything in; there is nothing else there to be the return.
+        if (!pieces.Any(p => p.Layer == referenceLayer && !railNets.Contains(p.Net))) return null;
+
+        // WHICH NET, as the copper says — a point counts only where nothing else covers it (the
+        // galvanic ambiguity ReferenceNetOn uses), because every pad on the board sits over a plane.
+        var names = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var under = new HashSet<int>();
+        foreach (var point in netPoints)
+        {
+            if (point.Layer is { } land && land != referenceLayer) continue;
+            if (!mine.Any(p => p.Bounds.Contains(point.X, point.Y) && Contains(p.Paths, point.X, point.Y))) continue;
+
+            under.Clear();
+            foreach (var piece in pieces)
+                if (piece.Bounds.Contains(point.X, point.Y) && Contains(piece.Paths, point.X, point.Y))
+                    under.Add(piece.Net);
+            if (under.Count != 1) continue;
+
+            names[point.Net] = names.GetValueOrDefault(point.Net) + 1;
+        }
+
+        var found = names.OrderByDescending(kv => kv.Value).ThenBy(kv => kv.Key, StringComparer.Ordinal)
+                         .Select(kv => $"'{kv.Key}'").ToList();
+        if (found.Count == 0 && railNet is { Length: > 0 }) found.Add($"'{railNet}'");
+
+        string what = found.Count switch
+        {
+            0 => "this rail's own copper",
+            1 => $"this rail's copper, on net {found[0]},",
+            _ => $"this rail's copper, on nets {string.Join(", ", found.Take(3))}{(found.Count > 3 ? " and more" : "")},",
+        };
+
+        string layer = LayerLabel(tech, referenceLayer);
+        string why = referenceNet is { Length: > 0 } named
+            ? $"The reference net '{named}' stands on no copper on {layer}"
+            : $"No reference net is named, and the copper on {layer} does not measure to one net";
+
+        return
+            $"{why} — and {what} is on that layer too. Taking every piece on it as the return would " +
+            "count the rail as its own return, so this rail is not solved. Name the reference net: " +
+            "pick it in the reference row of the rail's card, or set \"ReferenceNet\" in the .crail.";
+    }
+
+    /// <summary>A layer as a sentence names it — "'GND' (layer 3/0)".</summary>
+    internal static string LayerLabel(Technology tech, LayerKey layer) =>
+        tech.Layers.FirstOrDefault(l => l.Key == layer)?.Name is { Length: > 0 } name
+            ? $"'{name}' (layer {layer.Layer}/{layer.Datatype})"
+            : $"layer {layer.Layer}/{layer.Datatype}";
+
+    /// <summary>
+    /// R-rail31-1 — <b>which net the return is, decided ONCE</b>, for the extraction and the window's
+    /// reference row alike: the named net where there is one, else the net the copper on the
+    /// confirmed reference layer measures to (<see cref="ReferenceNetOn"/>), else unresolved.
+    /// </summary>
+    /// <remarks>
+    /// <b>The preview had this answer and the run never received it.</b> The window measured the
+    /// return to mark its pick list, and the run was handed the document's <c>ReferenceNet</c>, which
+    /// is empty on every Gerber board — so the run took every piece on the reference layer as the
+    /// return, the rail's own lands among them. One function, called by both, is the fix; a second
+    /// rule in either is the defect back.
+    /// </remarks>
+    /// <param name="namedNet">The reference net the request or the document names, or null.</param>
+    /// <param name="layerRegions">Per-layer unioned copper, DBU.</param>
+    /// <param name="tech">Supplies the stackup that says which layers a via joins.</param>
+    /// <param name="netPoints">What the board netlist knows.</param>
+    /// <param name="referenceLayer">The CONFIRMED reference layer.</param>
+    public static PdnReturnNet ResolveReturnNet(
+        string? namedNet,
+        IReadOnlyDictionary<LayerKey, Paths64> layerRegions,
+        Technology tech,
+        IReadOnlyList<PdnNetPoint> netPoints,
+        LayerKey referenceLayer)
+    {
+        ArgumentNullException.ThrowIfNull(layerRegions);
+
+        // A named net needs no copper read at all — the partition is the expensive half.
+        if (namedNet is { Length: > 0 })
+            return new PdnReturnNet(namedNet, PdnReturnNetBasis.Named, LayerLabel(tech, referenceLayer));
+
+        return ResolveReturnNet(null, DrcConnectivity.Extract(layerRegions, tech), tech, netPoints, referenceLayer);
+    }
+
+    /// <summary><see cref="ResolveReturnNet(string?, IReadOnlyDictionary{LayerKey, Paths64}, Technology, IReadOnlyList{PdnNetPoint}, LayerKey)"/>
+    /// over a partition already made.</summary>
+    internal static PdnReturnNet ResolveReturnNet(
+        string? namedNet,
+        IReadOnlyList<DrcNetPiece> pieces,
+        Technology tech,
+        IReadOnlyList<PdnNetPoint> netPoints,
+        LayerKey referenceLayer)
+    {
+        string layer = LayerLabel(tech, referenceLayer);
+        if (namedNet is { Length: > 0 }) return new PdnReturnNet(namedNet, PdnReturnNetBasis.Named, layer);
+
+        return MeasureReturnNet(pieces, netPoints, referenceLayer) is { } measured
+            ? new PdnReturnNet(measured, PdnReturnNetBasis.Measured, layer)
+            : new PdnReturnNet(null, PdnReturnNetBasis.Unresolved, layer);
     }
 
     /// <summary>
@@ -225,7 +427,7 @@ public static class Regions
     private static string? OwnReturnRefusalFor(
         IReadOnlyList<DrcNetPiece> pieces,
         IReadOnlyList<(long X, long Y)> seeds,
-        HashSet<int> refNets,
+        HashSet<int> refNets, bool returnResolved,
         Technology tech, LayerKey referenceLayer, string? referenceNet)
     {
         if (seeds.Count == 0 || refNets.Count == 0) return null;
@@ -262,7 +464,12 @@ public static class Regions
         // that from the reported board is whether the plane's own piece survives: there, it does and
         // a return exists; on the reported board the rail's piece was the only thing on the layer,
         // and the sentence below is then literally true.
-        if (!refNets.IsSubsetOf(anchored)) return null;
+        //
+        // R-rail31-2: this clause answers the "every piece on the layer" reading only. Where the
+        // return is a resolved NET, `refNets` is that net's copper and nothing of the rail's, so a
+        // seed that lands unambiguously on it is on the return — and a return split into pieces the
+        // anchors did not all reach is still the return.
+        if (!returnResolved && !refNets.IsSubsetOf(anchored)) return null;
 
         string what = referenceNet is { Length: > 0 } net
             ? $"'{net}'"
@@ -323,7 +530,13 @@ public static class Regions
         ArgumentNullException.ThrowIfNull(layerRegions);
         ArgumentNullException.ThrowIfNull(netPoints);
 
-        var pieces = DrcConnectivity.Extract(layerRegions, tech);
+        return MeasureReturnNet(DrcConnectivity.Extract(layerRegions, tech), netPoints, referenceLayer);
+    }
+
+    /// <summary><see cref="ReferenceNetOn"/> over a partition already made.</summary>
+    private static string? MeasureReturnNet(
+        IReadOnlyList<DrcNetPiece> pieces, IReadOnlyList<PdnNetPoint> netPoints, LayerKey referenceLayer)
+    {
         if (pieces.Count == 0) return null;
 
         var votes = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);

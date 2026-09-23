@@ -13,6 +13,7 @@
 // tests/Ui.Tests/RailRf/PdnMeshExtractorTests.cs.
 
 using CircuitRF.Core.Elaboration;
+using CircuitRF.Design.Layout.Extraction;
 using CircuitRF.Design.RailRf;
 
 namespace CircuitRF.Design.Layout.Pdn;
@@ -361,6 +362,17 @@ public sealed record PdnProvenance
 
     /// <summary>Which node the whole answer is measured from, and why it is that one.</summary>
     public required string ReferencePoint { get; init; }
+
+    /// <summary>
+    /// R-rail31-1 — which NET the return was taken to be, and where that came from: named in the
+    /// document, measured from the copper on the reference layer, or neither.
+    /// </summary>
+    /// <remarks>
+    /// <b>On the provenance because it decides which copper is the return</b>, and so which copper
+    /// is NOT the rail. A reader comparing two results needs to see whether both were solved against
+    /// the same return, and "measured" and "named" can disagree on a board with two returns.
+    /// </remarks>
+    public PdnReturnNet ReturnNet { get; init; }
 
     /// <summary>
     /// How many holes carry no barrel because their layer span could not be resolved (R-rail3-10).

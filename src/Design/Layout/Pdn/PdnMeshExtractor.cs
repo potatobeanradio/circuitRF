@@ -328,9 +328,7 @@ public static class PdnMeshExtractor
             if (l.Anchor.Refdes is not { Length: > 0 })
                 bareCoordinateSeeds.AddRange(PdnAttachments.Resolve(l.Anchor, request.Pads));
 
-        var regions = Regions.Walk(
-            layerRegions, tech, request.NetPoints, rail.NetName,
-            referenceLayer, request.ReferenceNet, anchorSeeds, bareCoordinateSeeds);
+        var regions = PdnRailConnectivity.Walk(request, layerRegions, referenceLayer, anchorSeeds, bareCoordinateSeeds);
 
         diagnostics.AddRange(regions.Diagnostics);
 
@@ -349,6 +347,10 @@ public static class PdnMeshExtractor
                     : "The rail names no net, and no source or load anchor landed on metal. Give the " +
                       "rail its net name, or anchor a source or a load on the rail's own copper."),
                 regions);
+
+        // R-rail31-3 / R-rail31-4: what the RETURN is, answered as galvanically as the rail was.
+        if (PdnRailConnectivity.ReturnRefusal(request, regions, referenceLayer) is { } noReturn)
+            return PdnExtraction.Refused(noReturn, regions);
 
         // ── the conductors, and what each square of them costs ─────────────────────────────────
         double celsius = request.Settings.CopperTemperatureCelsius;
@@ -463,7 +465,7 @@ public static class PdnMeshExtractor
         // ── the netlist ────────────────────────────────────────────────────────────────────────
         var media = PlaneMedia(request, mesh, referenceLayer, notes);
 
-        var asm = new PdnAssembly(request, mesh, celsius, notes, diagnostics);
+        var asm = new PdnAssembly(request, mesh, PdnModelKind.Accurate, celsius, notes, diagnostics);
         StampMesh(mesh, asm, request.DbuPerMicron, request.FrequencyHz, separation);
 
         // ── R-rail14-3: the readout §9 says must not be buried ─────────────────────────────────
@@ -505,6 +507,7 @@ public static class PdnMeshExtractor
             CellCount = mesh.CellCount,
             MeshedAreaSquareMetres = mesh.MeshedAreaSquareDbu / (dbuPerMetre * dbuPerMetre),
             IslandReport = regions.IslandReport,
+            ReturnNet = regions.ReturnNet,
             ReferencePoint = asm.ReferencePoint,
             UnresolvedViaSpans = asm.UnresolvedViaSpans,
             Notes = notes,

@@ -1,5 +1,29 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## railRF brief 31 — the reference row names the return net (2026-09-22)
+
+The rail card's grid gains a third row, **Return**: a combo whose first entry is "measured from the
+copper" and whose others are the board's nets. It writes the document's `ReferenceNet` through the
+`QueueResolve` funnel, so it is undoable and marks the document dirty like any other edit. A note under the
+grid prints `PdnReturnNet.Describe()`: which net, and whether it was named or measured.
+
+- **The measurement job calls `Regions.ResolveReturnNet`, the function the extraction calls**,
+  instead of `ReferenceNetOn` directly. Until now the pick list's mark and the run reached the
+  return by two routes, and on a Gerber board only the window's found it.
+- **The measurement is keyed by the NAMED net as well as the layer** (`_referenceMeasuredNamed`).
+  Naming a net in the new row, or undoing that, is a different question of the same board. Keying it
+  means `ApplySnapshot` needed no special case: the next `RefreshNetMarks` sees the key change and
+  re-measures.
+- **A changed return clears the preview cache.** A rail seed no longer claims the return net
+  (R-rail31-2), so the same pick outlines different copper under a different return. The preview
+  walk is now handed the resolved return, so the outline is the rail the run will price.
+- **`BuildRequest` reads the LIVE document's `ReferenceNet`**, falling back to the board's.
+  `RailBoardInputs.ReferenceNet` is a snapshot taken when the board was read, and the new row edits
+  the document after that.
+
+Not seen in a running window (this session cannot launch the GUI): verified by the compiler, the
+chrome scan in `RailWindowChromeTests`, and the railRF test folder.
+
 ## railRF brief 28 — the pads follow the layout (2026-09-22)
 
 An edit in the layout window next door now re-reads the board's pads, net points and turned-parts

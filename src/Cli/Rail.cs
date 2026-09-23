@@ -977,6 +977,10 @@ internal static class Rail
             // the number a designer recognises as wrong at a glance and would never go looking for.
             Console.WriteLine($"  plane C: {result.PlaneCapacitanceLine}");
 
+            // R-rail31-1: which net was the return, and where that came from — the reference row's
+            // own sentence, from the same function.
+            Console.WriteLine($"  return:  {result.Netlist.Provenance.ReturnNet.Describe()}");
+
             Console.WriteLine("  Ports");
             foreach (var port in result.Ports) Console.WriteLine($"    {port.Describe()}");
 

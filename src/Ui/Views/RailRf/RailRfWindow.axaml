@@ -886,7 +886,7 @@
 
                                  THE BUTTONS SIT IN THE RAIL ROW'S OWN COLUMNS, and the reference row
                                  simply leaves them empty — which is what reserves the width. -->
-                            <Grid ColumnDefinitions="Auto,*,Auto,Auto" RowDefinitions="Auto,Auto">
+                            <Grid ColumnDefinitions="Auto,*,Auto,Auto" RowDefinitions="Auto,Auto,Auto">
                                 <TextBlock Classes="detailLabel rowlbl" Text="Rail"/>
                                 <!-- ItemsSource BEFORE SelectedItem, always. Declared in that order
                                      here and built in that order in the view model: a combo whose
@@ -960,7 +960,24 @@
                                         </ControlTheme>
                                     </ComboBox.ItemContainerTheme>
                                 </ComboBox>
+
+                                <!-- THE RETURN IS A NET, NOT A LAYER (brief-railrf-31). The first row
+                                     lets the copper say which net the reference layer carries, which
+                                     is right on nearly every board; naming one is what answers the
+                                     refusal for a return the copper cannot resolve. The note under
+                                     it says which net was used and where that came from, because the
+                                     run and this row read the same function. -->
+                                <TextBlock Grid.Row="2" Classes="detailLabel rowlbl" Text="Return"
+                                           Margin="0,3,0,0"/>
+                                <ComboBox Grid.Row="2" Grid.Column="1" Name="ReturnNetSelector"
+                                          FontSize="10" Margin="0,3,0,0"
+                                          MinHeight="0" Padding="6,1" HorizontalAlignment="Stretch"
+                                          ItemsSource="{Binding ReturnNetOptions}"
+                                          SelectedItem="{Binding SelectedReturnNetOption, Mode=TwoWay}"
+                                          ToolTip.Tip="The net this rail's current returns on. Left to the copper, railRF measures it from the reference layer; name it where the copper cannot say (the .crail's ReferenceNet)."/>
                             </Grid>
+                            <TextBlock Classes="note" Text="{Binding ReturnNetNote}"
+                                       IsVisible="{Binding HasReturnNetNote}"/>
 
                             <!-- The PROPOSAL and its REASON, together. A proposal with no reason is
                                  indistinguishable from a default, and a default here is the guess

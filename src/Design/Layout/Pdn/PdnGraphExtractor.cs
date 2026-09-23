@@ -240,9 +240,7 @@ public static class PdnGraphExtractor
         control?.Token.ThrowIfCancellationRequested();
         if (control is not null) control.Stage = $"Rail '{rail.Name}': following the connectivity";
 
-        var regions = Regions.Walk(
-            layerRegions, tech, request.NetPoints, rail.NetName,
-            referenceLayer, request.ReferenceNet, anchorSeeds, bareCoordinateSeeds);
+        var regions = PdnRailConnectivity.Walk(request, layerRegions, referenceLayer, anchorSeeds, bareCoordinateSeeds);
 
         diagnostics.AddRange(regions.Diagnostics);
 
@@ -269,6 +267,10 @@ public static class PdnGraphExtractor
         // sorting, 146 s measuring) that ended in this answer, given wrongly; here it costs nothing.
         if (PdnRailConnectivity.Refusal(request, regions, referenceLayer) is { } apart)
             return PdnExtraction.Refused(apart, regions);
+
+        // R-rail31-3 / R-rail31-4: what the RETURN is, answered as galvanically as the rail was.
+        if (PdnRailConnectivity.ReturnRefusal(request, regions, referenceLayer) is { } noReturn)
+            return PdnExtraction.Refused(noReturn, regions);
 
         double celsius = request.Settings.CopperTemperatureCelsius;
         if (PdnMeshExtractor.ResolveConductors(request, regions, referenceLayer,
@@ -413,7 +415,7 @@ public static class PdnGraphExtractor
             return new PdnExtraction(pourRefusal, null, regions, diagnostics)
                 { Classification = classification };
 
-        var asm = new PdnAssembly(request, nodes, celsius, notes, diagnostics);
+        var asm = new PdnAssembly(request, nodes, PdnModelKind.Fast, celsius, notes, diagnostics);
         build.StageCopper(asm);
         if (asm.Build() is { } refusal)
             return PdnExtraction.Refused(refusal, regions) with { Classification = classification };
@@ -456,6 +458,7 @@ public static class PdnGraphExtractor
             CellCount = nodes.NodeTotal,
             MeshedAreaSquareMetres = build.AccountedAreaSquareDbu / (dbuPerMetre * dbuPerMetre),
             IslandReport = regions.IslandReport,
+            ReturnNet = regions.ReturnNet,
             ReferencePoint = asm.ReferencePoint,
             UnresolvedViaSpans = asm.UnresolvedViaSpans,
             Notes = notes,
