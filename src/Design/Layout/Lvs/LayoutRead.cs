@@ -23,12 +23,25 @@
 //
 // ── NOTHING A SCHEMATIC SAYS REACHES A NET (R-lvs3-5b, overview §1a) ──────────────────────────
 //
-// This function takes no schematic. The pin projection is asked for in PinNaming.ArtworkOnly,
+// No schematic reaches a net here. The pin projection is asked for in PinNaming.ArtworkOnly,
 // which REFUSES a schematic-facing delegate rather than ignoring one, and the only schematic-shaped
-// argument here is a set of component NAMES used for exactly one finding — R-lvs3-3d's dangling
-// SchematicId — which touches no net, no terminal and no device identity. Get this wrong and LVS
+// argument that reaches the READING is a set of component NAMES used for exactly one finding —
+// R-lvs3-3d's dangling SchematicId — which touches no net, no terminal and no device identity (the
+// other, the turned-part reader's evidence, is the section below). Get this wrong and LVS
 // asks the artwork what the artwork says, gets the schematic's answer back, and passes every design
 // with no symptom at all.
+//
+// ── THE ONE THING A SCHEMATIC IS ALLOWED TO REACH: WHICH WAY ROUND A PART IS (brief LVS 16) ────
+//
+// A resistor, a capacitor or an inductor placed end for end is the same circuit with its pin 1 on
+// the other land, and whether a part IS placed that way is a question only railRF's reader answers
+// (`TurnedParts.Read` — one reader for both windows, so they cannot disagree about it). That reader
+// weighs the schematic's NAMES on the copper, so it is handed railRF's own schematic-named pads.
+// What comes back touches no net, no terminal and no device identity: it marks the part on its
+// device (`LvsDevice.CrossedMembers`), and it adds one `lvs.device.turned` line per part — which
+// the run keeps only where the comparison bears the reading out. The schematic's KIND, by `SchematicId`, also marks a placement
+// `Interchangeable` so the reduction groups it as the schematic's own capacitors are grouped. Every
+// net here is still the copper's.
 
 using System.IO;
 using System.Linq;
@@ -64,7 +77,7 @@ public static class LayoutRead
         Func<string?, string, TechResolution>? resolveTechAt = null,
         IReadOnlySet<string>? schematicComponents = null,
         LvsHierarchyContext? hierarchy = null)
-        => Read(view, clayPath, cellDir, tech, out _, resolveTechAt, schematicComponents, hierarchy);
+        => Read(view, clayPath, cellDir, tech, out _, out _, resolveTechAt, schematicComponents, hierarchy);
 
     /// <summary>
     /// The same read, and <b>where everything it found IS</b> — <c>brief-lvs-8-findings.md</c>
@@ -83,6 +96,15 @@ public static class LayoutRead
     /// cells in their own right are read as such, their internals leave this level's partition
     /// (R-lvs9-2d), and what it cost is counted.
     /// </param>
+    /// <param name="turned">
+    /// Every part railRF's reader found placed end for end, <b>in full</b> — brief LVS 16
+    /// R-lvs16-2d. A side channel for <see cref="LvsGeometry"/>'s reason, and never read back out of
+    /// the findings, which are capped per id.
+    /// </param>
+    /// <param name="schematicParts">
+    /// The drawing's parts, as railRF reads them — handed to the turned-part reader and to NOTHING
+    /// else (see the file header). Null skips that reading, which is every caller that is not a run.
+    /// </param>
     /// <remarks>
     /// <b>Internal because two of what it takes are</b> — the hierarchy context a caller outside
     /// this assembly cannot have, and brief 13's already-resolved wBond wires. The public reading is
@@ -91,13 +113,16 @@ public static class LayoutRead
     internal static LvsNetlist Read(
         LayoutView view, string clayPath, string cellDir, Technology? tech,
         out LvsGeometry geometry,
+        out IReadOnlyList<TurnedPart> turned,
         Func<string?, string, TechResolution>? resolveTechAt = null,
         IReadOnlySet<string>? schematicComponents = null,
         LvsHierarchyContext? hierarchy = null,
-        IReadOnlyList<AssemblyWBond>? wbonds = null)
+        IReadOnlyList<AssemblyWBond>? wbonds = null,
+        Pdn.PdnSchematicNets? schematicParts = null)
     {
         ArgumentNullException.ThrowIfNull(view);
         geometry = LvsGeometry.None;
+        turned = [];
         var padGeometry = new List<LvsPadGeometry>();
 
         var notes = new List<Diagnostic>();
@@ -187,6 +212,17 @@ public static class LayoutRead
             notes.Add(LvsDiagnostics.ContestedNetName(refusal));
 
         ReportGround(tech, pieces, notes);
+
+        // ── Parts placed end for end (brief LVS 16 R-lvs16-2c) ─────────────────────────────────
+        //
+        // BEFORE the devices are emitted and so before reduction, which is what keeps the list per
+        // PLACED part: ten decoupling capacitors between one rail and ground merge into one device,
+        // and a turned member would be invisible to anything reading after the merge.
+        var crossed = ReadTurned(view, clayPath, tech, pieces, schematicParts, document, notes, out turned);
+
+        // A placement whose counterpart is a resistor, a capacitor or an inductor has interchangeable
+        // terminals, which its own kind (a land pattern's `Cell`) cannot say — the reduction reads it.
+        var kindOf = schematicParts is { Any: true } ? TurnedParts.KindsFrom(view, schematicParts) : null;
 
         // ── R-lvs9-3: undeclared contact is reported, never absorbed ───────────────────────────
         LayoutReadHierarchy.ReportUndeclaredContact(
@@ -310,6 +346,11 @@ public static class LayoutRead
                     // element of an array states the SAME one, which is exactly why it is a claim
                     // the comparison has to check for uniqueness rather than an identity.
                     AnchorId = inst.SchematicId ?? "",
+
+                    // R-lvs16-1b: the reader's answer, carried. An array is never read as turned.
+                    CrossedMembers = !isArray && crossed.Contains(instIndex) ? [path] : [],
+                    Interchangeable = terminals.Count == 2
+                                      && kindOf is not null && TurnedParts.IsSymmetric(kindOf(instIndex)),
                 });
             }
         }
@@ -362,6 +403,53 @@ public static class LayoutRead
             pieces, padGeometry, netOfPiece, naming.Format, naming.LayerNames);
 
         return new LvsNetlist(devices, nets.Build(), boundary, notes);
+    }
+
+    // ── Parts placed end for end (brief LVS 16) ──────────────────────────────────────────────
+
+    /// <summary>
+    /// railRF's turned-part reading, on railRF's own inputs — <b>the one call to
+    /// <see cref="TurnedParts.Read"/> under this folder</b>, and the only decision about which parts
+    /// are turned that LVS makes, because it does not make one: it asks.
+    /// </summary>
+    /// <remarks>
+    /// The pads are <c>RailArtwork.PadsFor</c>'s exact projection — named by the schematic's binding,
+    /// else by the copper — because the reader's evidence IS the names, and LVS's own pads carry
+    /// none (<see cref="PinNaming.ArtworkOnly"/>). The partition is the one this read already built:
+    /// the same flattened copper and the same stamps railRF partitions, so a second connectivity
+    /// walk would only be a second answer nothing compares.
+    /// </remarks>
+    /// <returns>The root instance indices the reading turned.</returns>
+    private static HashSet<int> ReadTurned(
+        LayoutView view, string clayPath, Technology? tech, CopperPieces pieces,
+        Pdn.PdnSchematicNets? schematic, string document, List<Diagnostic> notes,
+        out IReadOnlyList<TurnedPart> turned)
+    {
+        turned = [];
+        if (schematic is not { Any: true } || tech is null || !pieces.Any) return [];
+
+        var kindOf = TurnedParts.KindsFrom(view, schematic);
+        if (!TurnedParts.AnyCandidate(view, kindOf)) return [];
+
+        var origins = new List<PlacedPinOrigin>();
+        var named = PlacedPins.Of(
+            view, clayPath, tech, PinNaming.SchematicThenArtwork,
+            id => schematic.For(id)?.PortNames ?? [], null,
+            id => schematic.For(id)?.Nets ?? [], pieces, origins: origins);
+
+        var reading = TurnedParts.Read(named, origins, view, kindOf, pieces);
+        turned = reading.Turned;
+
+        var indices = new HashSet<int>();
+        foreach (var part in reading.Turned)
+        {
+            indices.Add(part.InstanceIndex);
+            notes.Add(LvsDiagnostics.DeviceTurned(
+                part.Refdes,
+                LayoutDesignFlatten.PathOf(view.Instances[part.InstanceIndex], part.InstanceIndex),
+                document, part.Land1, part.Land2));
+        }
+        return indices;
     }
 
     // ── Ground (R-lvs3-6) ────────────────────────────────────────────────────────────────────

@@ -105,6 +105,19 @@ public sealed record LvsRunResult(
     /// </remarks>
     public IReadOnlyList<LvsCellComparison> Cells { get; init; } = [];
 
+    /// <summary>
+    /// <b>Every part placed end for end on THIS level's layout</b>, exactly as railRF's reader
+    /// returned them — refdes, root instance index and both lands (brief LVS 16 R-lvs16-2d).
+    /// </summary>
+    /// <remarks>
+    /// <b>The fix is applied to this list, never to the findings.</b> The findings are capped per
+    /// id (<c>LvsReport.MaxPerId</c>), so a bulk Turn built on the <c>lvs.device.turned</c> lines
+    /// would silently miss every part past the twentieth; this list is uncapped by construction.
+    /// Each entry is what <c>TurnedParts.HalfTurn</c> takes. A part inside a placed cell is in that
+    /// cell's own <see cref="LvsCellComparison.Result"/>, because its index is that cell's.
+    /// </remarks>
+    public IReadOnlyList<CircuitRF.Design.Layout.Extraction.TurnedPart> Turned { get; init; } = [];
+
     /// <summary>What the hierarchical reading cost — <b>counters, never clocks</b> (R-lvs9-5).</summary>
     public LvsHierarchyCounters Hierarchy { get; init; } = new();
 

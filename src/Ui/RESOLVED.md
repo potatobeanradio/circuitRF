@@ -35189,3 +35189,21 @@ workspace uses its own copy (the example, copied out of the repository, otherwis
 repository's file). Windows drive paths count as rooted on every platform. **The rename is one-time
 and already handled**: `GeneratedCellsLifecycle.Regenerate` repoints and saves, as after a
 generator edit — so an existing workspace's `.clay` is rewritten once on first open.
+
+## LVS panel — turning parts placed end for end (brief LVS 16, 2026-09-23)
+
+- **The group is built from `LvsRunResult.Turned`, never from the findings**, which are capped at 20
+  per id; the button's count is the number of parts (gate 3 asserts 25 against 20 lines).
+- **The re-run after a Turn compares the document IN HAND** (`LvsRun.Run(cellDir, layout)`), not the
+  file. The panel ordinarily compares what is on disk (`src/Ui/Layout/Lvs/RESOLVED.md` §3), and the
+  Turn is an unsaved edit on this document's undo stack — re-reading the file would list every part
+  the user had just turned. That result describes what is on screen, so it is not marked stale.
+- **Turn is refused against a stale result.** The lands it turns about were measured on a layout that
+  has changed since; a half turn about the wrong midpoint moves the part off its own copper.
+- **Unchecked parts are remembered by designator** across a rebuild of the rows that is not a new
+  comparison — waiving re-marks the result and rebuilds every row.
+- **The edit is railRF's**: `TurnedParts.Edits` through `ReplaceInstances`, one undoable entry, so a
+  Turn in either window clears the other (railRF's debounced pad read sees the edited model).
+- **A reversed part gets its own Turn, and only where a half turn lands it**
+  (`TurnedParts.LandingHalfTurn`); a part inside a placed cell is named with a sentence saying to turn
+  it in that cell, because its instance index is that cell's.

@@ -132,6 +132,8 @@ public static class LvsFindingIds
         "lvs.device.duplicate-designator",
         "lvs.device.dangling-schematic-id",
         "lvs.device.no-terminal-map",
+        "lvs.device.turned",
+        "lvs.device.reversed",
 
         // terminals and pins
         "lvs.terminal.wrong-net",

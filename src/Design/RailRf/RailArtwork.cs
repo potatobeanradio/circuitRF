@@ -450,22 +450,16 @@ public static class RailArtwork
         if (view is not null && technology is not null && schematic.Any
             && artwork.Count > 0 && origins.Count == artwork.Count)
         {
-            CircuitRF.Design.Layout.Lvs.DeviceKind KindOf(int instance) =>
-                instance >= 0 && instance < view.Instances.Count
-                    ? schematic.For(view.Instances[instance].SchematicId)?.Kind ?? CircuitRF.Design.Layout.Lvs.DeviceKind.Unknown
-                    : CircuitRF.Design.Layout.Lvs.DeviceKind.Unknown;
+            // The kind by SchematicId — the same lookup LVS hands the same reader (brief LVS 16).
+            var kindOf = TurnedParts.KindsFrom(view, schematic);
 
-            bool anySymmetric = false;
-            for (int i = 0; i < view.Instances.Count && !anySymmetric; i++)
-                anySymmetric = TurnedParts.IsSymmetric(KindOf(i));
-
-            if (anySymmetric)
+            if (TurnedParts.AnyCandidate(view, kindOf))
             {
                 // The partition the stamps were read through where there is one — it is the same
                 // copper, and a second connectivity walk of one board is a second answer nothing
                 // compares. Built here only where the board states no net on any shape.
                 var partition = stamped.Any ? stamped : CopperPieces.Build(shapes ?? view.Shapes, technology);
-                var reading = TurnedParts.Read(artwork, origins, view, KindOf, partition);
+                var reading = TurnedParts.Read(artwork, origins, view, kindOf, partition);
 
                 if (reading.Turned.Count > 0)
                 {

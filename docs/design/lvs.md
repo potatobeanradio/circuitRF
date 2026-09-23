@@ -637,6 +637,20 @@ comparison rather than a backtracking search.
 3. **Refine.** Recolour each object from the sorted multiset of its neighbours' colours **and the
    terminal position each neighbour is attached through** — a resistor is symmetric but a FET is
    not, and losing the pin index would match a drain to a source. Iterate to a fixed point.
+
+   > **As built (brief 16, 2026-09-23): the terminal position holds for every device EXCEPT a
+   > symmetric two-terminal pair** — one side a resistor, a capacitor or an inductor, the other able
+   > to be it. An ANCHORED such pair gives both its edges one port value, so a part placed end for
+   > end colours like one placed straight; an unanchored one keeps its port numbers, because only a
+   > pair is visible to both sides and a correct design must colour identically on each. The same
+   > pair is accepted either way round by the terminal check where that way fits completely (and
+   > judged port for port otherwise, which keeps a renamed part a contradiction), and votes its nets
+   > straight unless straight agrees with nothing already cast. WHICH parts are turned is railRF's
+   > reader's answer (`TurnedParts.Read`, called once in `LayoutRead`); the comparison only bears it
+   > out or does not, and `lvs.device.turned` is reported for the parts it bears out. A diode or a
+   > two-terminal cell that is exactly reversed is one `lvs.device.reversed` error instead of a
+   > contradicted anchor and two unmatched devices. `src/Design/RESOLVED.md` has why the reading is
+   > borne out rather than obeyed.
 4. **Match.** An ANCHORED pair is matched; the refinement matches what is left and says where an
    anchor is refuted. Unpairing an anchored pair because the fixed point separated it produces the
    four-hundred-finding cascade step 1 exists to prevent — one deleted capacitor changes a net's

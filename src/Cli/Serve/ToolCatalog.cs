@@ -666,7 +666,9 @@ internal static class ToolCatalog
         new("lvs",
             "Compare a cell's layout against its schematic: does the artwork implement the drawing? "
           + "Reports every divergence as a typed lvs. finding with the objects it is about. Runs no "
-          + "analysis and writes nothing unless output is given.",
+          + "analysis and writes nothing unless output is given. A two-pin part placed end for end "
+          + "comes back in each cell's uncapped 'turned' list with both lands: turn it by moving the "
+          + "instance to Land1 + Land2 - (x, y) and adding 180 degrees to its rotation.",
             null, null,
             [
                 new("", [ "lvs" ],

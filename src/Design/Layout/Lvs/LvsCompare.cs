@@ -41,6 +41,36 @@
 // never to a fixed point, because a loop that keeps dropping anchors ends up comparing two
 // anonymous graphs, which is the answer we were trying not to give.
 //
+// ── A PART PLACED END FOR END (brief LVS 16) ─────────────────────────────────────────────────
+//
+// A resistor, a capacitor or an inductor has two interchangeable terminals. For a pair where one
+// side is one of those three and the other could be it:
+//
+//   * the terminal check accepts it EITHER way round where that way fits completely, and otherwise
+//     judges it port for port exactly as before — so a part renamed after its neighbour is still a
+//     contradicted anchor, and a turn cannot swallow one;
+//   * an ANCHORED pair's two edges carry one port value in the refinement, so its colour depends on
+//     its neighbours and not on which end is which (an unanchored pair keeps its port numbers,
+//     because the two sides must colour a correct design identically and a pair is the one thing
+//     both of them can see);
+//   * it votes its nets straight, unless straight agrees with nothing already cast and the other
+//     way round does — after every stated net and every asymmetric part has voted. A part placed
+//     end for end then votes with its neighbours, and a TIE the reader declined to call does not
+//     put two schematic nets on one piece of copper.
+//
+// Which parts ARE turned is not decided here. It is `LvsDevice.CrossedMembers`, the answer railRF's
+// reader gave in `LayoutRead`, and the comparison only says which of those it BEARS OUT
+// (`LvsComparison.Turned`): the part is paired with its own counterpart, and turned it fits where
+// straight it does not. That veto is what a reading needs from here, and the two cases that forced
+// it are real: a part renamed after its neighbour reads as turned against the wrong counterpart, and
+// a short can stand the other net's names on a part's copper. Neither is a turned part, and both
+// are already reported as what they are.
+//
+// A two-terminal part that is NOT symmetric — a diode, a two-terminal cell — anchored, and wrong
+// exactly as far as being reversed explains, is one `lvs.device.reversed` error: the anchor is
+// kept, the pair stays paired, and it casts no net vote, so a backwards diode does not drag the
+// correspondence toward itself.
+//
 // ── DETERMINISM (R-lvs7-6a) ──────────────────────────────────────────────────────────────────
 //
 // No GetHashCode, no dictionary enumeration reaching the answer, no parallelism. Every list is
@@ -49,6 +79,7 @@
 // never hashes of strings, so "same colour" is an identity rather than a probability.
 
 using System.Linq;
+using CircuitRF.Design.Layout.Extraction;
 using CircuitRF.Diagnostics;
 using CircuitRF.Engine;
 
@@ -149,6 +180,12 @@ public sealed record LvsComparison(
 
     /// <summary>Every schematic net the artwork left in pieces, with its islands.</summary>
     public IReadOnlyList<LvsOpen> Opens { get; init; } = [];
+
+    /// <summary>
+    /// The placed parts the reading found end for end that this comparison BEARS OUT, by layout path
+    /// (brief LVS 16) — see this file's header for why it is a subset.
+    /// </summary>
+    public IReadOnlySet<string> Turned { get; init; } = new HashSet<string>(StringComparer.Ordinal);
 }
 
 /// <summary>Two netlists in, a correspondence and the places it fails out.</summary>
@@ -215,6 +252,7 @@ public static class LvsCompare
         {
             Shorts = pass.Shorts,
             Opens = pass.Opens,
+            Turned = pass.Turned,
         };
     }
 
@@ -394,6 +432,9 @@ public static class LvsCompare
 
         /// <summary>The opens, by index.</summary>
         public List<LvsOpen> Opens { get; init; } = [];
+
+        /// <summary>The turned parts this pass bears out, by layout path.</summary>
+        public HashSet<string> Turned { get; init; } = new(StringComparer.Ordinal);
     }
 
     private static Pass Evaluate(
@@ -426,38 +467,62 @@ public static class LvsCompare
                      pairs, pairedS, pairedL, findings);
 
         // ── Which net is which (R-lvs7-5a's "the path from the nearest anchor") ───────────────
+        var anchorSet = anchors.ToHashSet();
+        var reversed = new HashSet<(int S, int L)>();
         var (votes, principal, owner, netPairs) =
-            NetCorrespondence(schematic, layout, netAnchors, pairs);
+            NetCorrespondence(schematic, layout, netAnchors, pairs, reversed);
+
+        // ── R-lvs16-2b: a two-terminal part that is not symmetric, placed end for end ─────────
+        //
+        // Decided against the correspondence it is part of, and then taken OUT of it: the votes are
+        // recounted without it, so a backwards diode does not pull its own nets toward itself.
+        foreach (var pair in pairs.Where(p => p.Kind == LvsObjectKind.Device))
+        {
+            var ds = schematic.Devices[pair.Schematic];
+            var dl = layout.Devices[pair.Layout];
+            if (!anchorSet.Contains((pair.Schematic, pair.Layout))) continue;
+            if (ds.Terminals.Count != 2 || dl.Terminals.Count != 2 || Symmetric(ds, dl)) continue;
+
+            var (straight, joined) = Wrong(schematic, layout, ds, dl, crossed: false, principal, owner);
+            var (turned, _)        = Wrong(schematic, layout, ds, dl, crossed: true,  principal, owner);
+            if (joined == 2 && straight.Count == 2 && turned.Count == 0)
+                reversed.Add((pair.Schematic, pair.Layout));
+        }
+
+        if (reversed.Count > 0)
+        {
+            (votes, principal, owner, netPairs) =
+                NetCorrespondence(schematic, layout, netAnchors, pairs, reversed);
+
+            foreach (var (s, l) in reversed.OrderBy(r => r.S).ThenBy(r => r.L))
+            {
+                var ds = schematic.Devices[s];
+                var ports = ds.Terminals.OrderBy(t => t.Port).ToList();
+                findings.Add(LvsDiagnostics.DeviceReversed(
+                    ds.Path, layout.Devices[l].Path, KindName(ds.Type),
+                    NetName(schematic, ports[0].NetIndex), NetName(schematic, ports[1].NetIndex)));
+            }
+        }
 
         // ── Terminals, shorts, opens ──────────────────────────────────────────────────────────
         var contradicted = new List<(int S, int L)>();
-        var anchorSet = anchors.ToHashSet();
 
         foreach (var pair in pairs.Where(p => p.Kind == LvsObjectKind.Device))
         {
             control?.ThrowIfCancellationRequested();
+            if (reversed.Contains((pair.Schematic, pair.Layout))) continue;
+
             var ds = schematic.Devices[pair.Schematic];
             var dl = layout.Devices[pair.Layout];
-            var byPort = dl.Terminals.ToDictionary(t => t.Port);
 
-            var wrong = new List<Diagnostic>();
-            int common = 0;
-            foreach (var ts in ds.Terminals.OrderBy(t => t.Port))
-            {
-                if (!byPort.TryGetValue(ts.Port, out var tl)) continue;
-                common++;
-
-                int expected = principal.GetValueOrDefault(ts.NetIndex, -1);
-                if (tl.NetIndex == expected) continue;
-
-                // An island of the terminal's OWN net is an open, not a mis-wiring — reporting it
-                // here too would turn one missing via into a finding per pin.
-                if (owner.GetValueOrDefault(tl.NetIndex, -1) == ts.NetIndex) continue;
-
-                wrong.Add(LvsDiagnostics.TerminalWrongNet(
-                    ds.Path, ts.Port, ts.Name,
-                    NetName(schematic, ts.NetIndex), NetName(layout, tl.NetIndex)));
-            }
+            // R-lvs16-1c. A symmetric pair is right EITHER way round where that way fits completely
+            // — so a part the reader left straight on a tie is not a finding either, because the
+            // circuit is right whichever end is pin 1. Where neither way fits it is judged port for
+            // port as it always was, which is what keeps a renamed part a contradiction.
+            var (wrong, common) = Wrong(schematic, layout, ds, dl, crossed: false, principal, owner);
+            if (wrong.Count > 0 && Symmetric(ds, dl)
+                && Wrong(schematic, layout, ds, dl, crossed: true, principal, owner).Wrong.Count == 0)
+                wrong = [];
 
             // R-lvs7-2b. Every terminal refuted is a pairing that was simply wrong; some of them is
             // a mis-wiring. Two terminals at least, because a one-terminal device has no majority.
@@ -465,6 +530,31 @@ public static class LvsCompare
                            && anchorSet.Contains((pair.Schematic, pair.Layout));
             if (refuted) contradicted.Add((pair.Schematic, pair.Layout));
             else findings.AddRange(wrong);
+        }
+
+        // ── Brief LVS 16: which of the reading's turned parts this correspondence bears out ─────
+        var turnedParts = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var pair in pairs.Where(p => p.Kind == LvsObjectKind.Device))
+        {
+            var ds = schematic.Devices[pair.Schematic];
+            var dl = layout.Devices[pair.Layout];
+            if (dl.CrossedMembers.Count == 0 || !Symmetric(ds, dl)) continue;
+
+            bool straightFits = Wrong(schematic, layout, ds, dl, crossed: false, principal, owner).Wrong.Count == 0;
+            bool crossedFits  = Wrong(schematic, layout, ds, dl, crossed: true,  principal, owner).Wrong.Count == 0;
+
+            foreach (string member in dl.CrossedMembers)
+            {
+                // Paired with its OWN counterpart — a turned reading against a claim the comparison
+                // refuted is a reading against the wrong part.
+                if (!ds.Group.Contains(member, StringComparer.Ordinal)) continue;
+
+                // Alone, it must fit turned and not straight. Merged with parallel partners, the
+                // merge has already put it on the group's own two nets; what is left to bear out is
+                // that the group fits.
+                bool bornOut = dl.Group.Count == 1 ? crossedFits && !straightFits : crossedFits || straightFits;
+                if (bornOut) turnedParts.Add(member);
+            }
         }
 
         var shorts = new List<LvsShort>();
@@ -499,6 +589,7 @@ public static class LvsCompare
         {
             Shorts = shorts,
             Opens = opens,
+            Turned = turnedParts,
         };
     }
 
@@ -509,6 +600,74 @@ public static class LvsCompare
         => index >= 0 && index < netlist.Nets.Count && netlist.Nets[index].Label is { Length: > 0 } l
             ? l
             : $"net {index}";
+
+    // ── Parts placed end for end (brief LVS 16) ──────────────────────────────────────────────
+
+    /// <summary>
+    /// Whether a pair's two terminals are interchangeable — R-lvs16-1's symmetric set: one side a
+    /// resistor, a capacitor or an inductor, two terminals each, and the other side able to be it.
+    /// </summary>
+    /// <remarks>
+    /// <b>Either side may say it, and that is not a loosening.</b> On an ordinary board it is the
+    /// schematic that says "resistor" and the layout says only "a land pattern" (<c>Cell</c>), but
+    /// this function must answer the same with its arguments swapped — the comparator may not know
+    /// which document it holds (R-lvs3-1a). The kind set is <c>TurnedParts.IsSymmetric</c>, which is
+    /// also reduction's, so there is one list of symmetric parts in the repository and not three.
+    /// </remarks>
+    private static bool Symmetric(LvsDevice a, LvsDevice b)
+        => a.Terminals.Count == 2 && b.Terminals.Count == 2
+           && (TurnedParts.IsSymmetric(a.Type.Kind) || TurnedParts.IsSymmetric(b.Type.Kind))
+           && a.Type.CouldBe(b.Type);
+
+    /// <summary>
+    /// The pair's terminals, joined port for port — or, <paramref name="crossed"/>, each of a
+    /// two-terminal pair's ports to the OTHER one.
+    /// </summary>
+    private static IEnumerable<(LvsTerminal S, LvsTerminal L)> Joined(LvsDevice ds, LvsDevice dl, bool crossed)
+    {
+        var byPort = dl.Terminals.ToDictionary(t => t.Port);
+        var ports = ds.Terminals.OrderBy(t => t.Port).ToList();
+        bool swap = crossed && ports.Count == 2;
+
+        for (int i = 0; i < ports.Count; i++)
+        {
+            int port = swap ? ports[1 - i].Port : ports[i].Port;
+            if (byPort.TryGetValue(port, out var tl)) yield return (ports[i], tl);
+        }
+    }
+
+    /// <summary>
+    /// The wrong-net lines one orientation of a pair produces, and how many terminals it joined.
+    /// </summary>
+    private static (List<Diagnostic> Wrong, int Common) Wrong(
+        LvsNetlist schematic, LvsNetlist layout, LvsDevice ds, LvsDevice dl, bool crossed,
+        Dictionary<int, int> principal, Dictionary<int, int> owner)
+    {
+        var wrong = new List<Diagnostic>();
+        int common = 0;
+        foreach (var (ts, tl) in Joined(ds, dl, crossed))
+        {
+            common++;
+
+            int expected = principal.GetValueOrDefault(ts.NetIndex, -1);
+            if (tl.NetIndex == expected) continue;
+
+            // An island of the terminal's OWN net is an open, not a mis-wiring — reporting it here
+            // too would turn one missing via into a finding per pin.
+            if (owner.GetValueOrDefault(tl.NetIndex, -1) == ts.NetIndex) continue;
+
+            wrong.Add(LvsDiagnostics.TerminalWrongNet(
+                ds.Path, ts.Port, ts.Name,
+                NetName(schematic, ts.NetIndex), NetName(layout, tl.NetIndex)));
+        }
+        return (wrong, common);
+    }
+
+    /// <summary>What a reversed part IS, in the sentence — lower case, and a cell by what it is.</summary>
+    private static string KindName(DeviceType type)
+        => type.Kind is DeviceKind.Cell or DeviceKind.Unknown
+            ? type.Name is { Length: > 0 } name ? $"two-terminal cell ('{name}')" : "two-terminal part"
+            : type.Kind.ToString().ToLowerInvariant();
 
     // ── Classes to pairs (R-lvs7-4) ──────────────────────────────────────────────────────────
 
@@ -650,28 +809,56 @@ public static class LvsCompare
                     Dictionary<int, int> Owner, List<LvsPair> Pairs)
         NetCorrespondence(
             LvsNetlist schematic, LvsNetlist layout,
-            List<(int S, int L)> netAnchors, List<LvsPair> pairs)
+            List<(int S, int L)> netAnchors, List<LvsPair> pairs,
+            IReadOnlySet<(int S, int L)> reversed)
     {
         var votes = new Dictionary<(int S, int L), int>();
-        int anchorWeight = 1;
-
-        foreach (var pair in pairs.Where(p => p.Kind == LvsObjectKind.Device))
+        void Cast(IEnumerable<(LvsTerminal S, LvsTerminal L)> joined)
         {
-            var byPort = layout.Devices[pair.Layout].Terminals.ToDictionary(t => t.Port);
-            foreach (var ts in schematic.Devices[pair.Schematic].Terminals)
+            foreach (var (ts, tl) in joined)
             {
-                if (!byPort.TryGetValue(ts.Port, out var tl)) continue;
                 var key = (ts.NetIndex, tl.NetIndex);
                 votes[key] = votes.GetValueOrDefault(key) + 1;
-                anchorWeight++;
             }
         }
+
+        // R-lvs16-2b: a reversed part casts no vote at all.
+        var voting = pairs.Where(p => p.Kind == LvsObjectKind.Device
+                                      && !reversed.Contains((p.Schematic, p.Layout))).ToList();
+
+        // Every terminal vote counts once whichever way round it is cast, so the weight a net anchor
+        // needs to outweigh all of them is known before any is cast.
+        int anchorWeight = 1 + voting.Sum(p => Joined(
+            schematic.Devices[p.Schematic], layout.Devices[p.Layout], crossed: false).Count());
 
         var anchored = new HashSet<(int, int)>();
         foreach (var (s, l) in netAnchors)
         {
             votes[(s, l)] = votes.GetValueOrDefault((s, l)) + anchorWeight;
             anchored.Add((s, l));
+        }
+
+        // R-lvs16-1c: a symmetric pair votes LAST, straight unless straight agrees with nothing
+        // already cast and the other way round does. A part placed end for end then votes with its
+        // neighbours; a tie the reader declined to call does not vote against them and put two
+        // schematic nets on one piece of copper; and a part whose copper a short has confused votes
+        // straight, as every part did before — the reading is not what moves a vote, because a
+        // reading fooled by the fault would then move the correspondence the fault is reported
+        // against.
+        var symmetric = new List<(LvsDevice S, LvsDevice L)>();
+        foreach (var pair in voting)
+        {
+            var ds = schematic.Devices[pair.Schematic];
+            var dl = layout.Devices[pair.Layout];
+            if (Symmetric(ds, dl)) { symmetric.Add((ds, dl)); continue; }
+            Cast(Joined(ds, dl, crossed: false));
+        }
+
+        foreach (var (ds, dl) in symmetric)
+        {
+            int Agreement(bool crossed) => Joined(ds, dl, crossed)
+                .Sum(j => votes.GetValueOrDefault((j.S.NetIndex, j.L.NetIndex)));
+            Cast(Joined(ds, dl, crossed: Agreement(false) == 0 && Agreement(true) > 0));
         }
 
         var principal = Best(votes, key => key.S, key => key.L);
@@ -822,13 +1009,21 @@ public static class LvsCompare
         var ports  = new List<int>();
         var ends   = new List<int>();
 
+        // R-lvs16-1a: an ANCHORED symmetric pair's edges carry one port value on both sides, so its
+        // colour depends on its neighbours and not on which end is which. Anchored only, so the
+        // two sides agree: a pair is the one thing both of them can see.
+        var unordered = new bool[devices];
+        foreach (var (s, l) in anchors)
+            if (Symmetric(schematic.Devices[s], layout.Devices[l]))
+                unordered[s] = unordered[nS + l] = true;
+
         void AddSide(IReadOnlyList<LvsDevice> list, int deviceOffset, int netOffset)
         {
             for (int d = 0; d < list.Count; d++)
                 foreach (var t in list[d].Terminals)
                 {
                     owners.Add(deviceOffset + d);
-                    ports.Add(t.Port);
+                    ports.Add(unordered[deviceOffset + d] ? 0 : t.Port);
                     ends.Add(netOffset + t.NetIndex);
                 }
         }

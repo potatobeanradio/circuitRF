@@ -11784,3 +11784,53 @@ answer — exact, not approximate. Nearer than that, the clip decides as before 
 at every vertex, 0–3 DBU off it, every edge midpoint and a grid; the railRF, LVS and extraction test
 namespaces (928) pass unchanged. It is also on the solve's own extraction path, which gets the same
 speed-up.
+
+## LVS brief 16 — parts placed end for end: the reading is borne out, not obeyed (2026-09-23)
+
+**What changed.** LVS calls railRF's own `TurnedParts.Read` once, in `LayoutRead`, on railRF's own
+inputs (schematic-named pads, the kind by `SchematicId` through the now-shared `TurnedParts.KindsFrom`,
+the partition LVS already built). The comparison accepts an R/C/L pair either way round, the refinement
+gives an anchored such pair one port value, and each turned part is one `lvs.device.turned` warning;
+an exactly-reversed diode or two-terminal cell is one `lvs.device.reversed` error. The Attenuator with
+R1–R3 turned went from nine findings to three warnings.
+
+**Where the brief was not followed as written, and why.**
+
+- **A crossed part does NOT vote crossed because the reader said so (R-lvs16-1c).** Tried first; two
+  existing tests failed and both were right. On the six-fault board, F4's short stands ground's names
+  on the input copper, so the reader calls R1 turned; voting it crossed moved the open from `0` to
+  `IN`, which is false. And a part renamed after its neighbour (the contradicted-anchor test) is read
+  as turned *against the wrong counterpart*, and crossed it half-fits — so the contradiction became
+  a wrong-net line, exactly what gate 2 says must not happen. A reading fooled by a fault must not
+  move the correspondence that fault is reported against. So: every symmetric pair votes LAST,
+  straight unless straight agrees with nothing already cast and crossed agrees with something. A truly
+  turned part then votes with its neighbours anyway.
+- **The warning is kept only where the comparison bears the reading out**: the part is paired with
+  its own counterpart, and turned it fits where straight it does not (a merged parallel member: the
+  group fits). `LvsComparison.Turned` is that subset; `LvsRun` filters the findings and
+  `LvsRunResult.Turned` by it. This is a veto, not a second detector — nothing in `src/Design/Layout/Lvs`
+  decides a part IS turned. On those two fault boards railRF and LVS now disagree about R1, by design:
+  LVS is reporting the short and the renamed part for what they are.
+- **The terminal check accepts either way only where that way fits COMPLETELY**, and is port for port
+  otherwise. "Whichever has fewer wrong" was the first cut and it swallowed the renamed part (straight
+  2 wrong, crossed 1). The cost: a turned part with one land also re-routed is a contradiction, as it
+  was before this brief.
+- **The orientation travels as `LvsDevice.CrossedMembers`, a list of paths, not a flag.** Reduction
+  merges ten decoupling capacitors into one device; a flag on the survivor would lose the turned one
+  among them, and gate 4 is exactly that board.
+- **A tie had to be handled or it reported a short.** Two capacitors, nothing stamped, one turned: the
+  reader rightly calls neither, and the tie's straight vote put both schematic nets on one strip. The
+  agree-with-what-is-cast vote above is what fixes it.
+- **Reduction needed the schematic's kind too (`LvsDevice.Interchangeable`).** A placement Update
+  Layout wrote is kind `Cell`, so its parallel key was port for port while the schematic's capacitors
+  were unordered: a turned (or tied) land pattern stood alone and came back unmatched. `LayoutRead`
+  marks a placement whose SCHEMATIC kind is R/C/L; `ParallelKey` reads it. It is the same gap the brief
+  names for the comparison, one step earlier. (Series merging of layout land patterns is still
+  kind-gated — a pre-existing asymmetry this brief did not touch.)
+
+**Shared, not copied.** `TurnedParts.Edits` (the edit list, with railRF's stale-index refusal plus a
+designator check), `ButtonText` and `EditDescription` are both windows' words and edit;
+`PdnSchematicNets.Of(model, path)` is `Resolve`'s extraction over a drawing in hand, so LVS reads the
+drawing it COMPARES rather than whatever the same path holds on disk. `TurnedParts.LandingHalfTurn`
+answers R-lvs16-3c's "does a half turn land it" by projecting every pad before and after through
+`PlacedPins`, within one DBU.

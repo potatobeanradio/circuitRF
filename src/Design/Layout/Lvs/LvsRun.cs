@@ -21,6 +21,7 @@
 
 using System.Linq;
 using CircuitRF.Design.Cells;
+using CircuitRF.Design.Layout.Pdn;
 using CircuitRF.Design.Schematic;
 using CircuitRF.Diagnostics;
 using CircuitRF.Engine;
@@ -142,11 +143,30 @@ public static class LvsRun
         => Run(cellDir, options, control, null);
 
     /// <summary>
+    /// The same comparison of a cell folder, with <b>the layout the caller already holds</b> in place
+    /// of the one on disk — every other input resolved exactly as <see cref="Run(string,
+    /// LvsRunOptions?, RunControl?)"/> resolves it.
+    /// </summary>
+    /// <remarks>
+    /// <b>The panel's re-run after its own Turn</b> (brief LVS 16 R-lvs16-3a). The Turn is an edit
+    /// on the open document's undo stack and is not saved, so re-reading the file would compare the
+    /// board as it was before the gesture and report every part it had just turned. Nothing else
+    /// differs: the same schematic, technology and options, through the same pass.
+    /// </remarks>
+    public static LvsRunResult Run(
+        string cellDir, LayoutView layout, LvsRunOptions? options = null, RunControl? control = null)
+    {
+        ArgumentNullException.ThrowIfNull(layout);
+        return Run(cellDir, options, control, null, layout);
+    }
+
+    /// <summary>
     /// The same comparison, on a hierarchy already in progress — <b>how a sub-cell is compared</b>
     /// (R-lvs9-6a). Internal because a caller outside this file cannot have a context to pass.
     /// </summary>
     internal static LvsRunResult Run(
-        string cellDir, LvsRunOptions? options, RunControl? control, LvsHierarchyContext? carried)
+        string cellDir, LvsRunOptions? options, RunControl? control, LvsHierarchyContext? carried,
+        LayoutView? layoutInHand = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(cellDir);
 
@@ -156,7 +176,7 @@ public static class LvsRun
             return Nothing(cellDir, csch is null ? ViewType.Schematic : ViewType.Layout);
 
         var (model, _, _) = SchematicPersistence.LoadFromFile(csch);
-        var view = LayoutPersistence.LoadFromFile(clay);
+        var view = layoutInHand ?? LayoutPersistence.LoadFromFile(clay);
 
         var (resolution, _) = TechnologyResolver.ResolveForDocument(
             view.TechRef, clay, null, new TechnologyCache());
@@ -251,12 +271,17 @@ public static class LvsRun
         // reconciles what it confidently can and leaves the rest PENDING, which `LayoutRead` already
         // reports as a refusal for that sub-cell (`lvs.layout.pending-layer-mapping`).
         var techCache = new TechnologyCache();
+
+        // Brief LVS 16: the drawing's parts as railRF reads them — of the drawing being COMPARED,
+        // not whatever the same path holds on disk — for the turned-part reader and nothing else.
+        var schematicParts = PdnSchematicNets.Of(schematic, cschPath);
+
         var layoutNetlist = LayoutRead.Read(
-            layout, clayPath, cellDir, tech, out var geometry,
+            layout, clayPath, cellDir, tech, out var geometry, out var turned,
             (techRef, subLayoutDir) => TechnologyResolver.ResolveForDocument(
                 techRef, Path.Combine(subLayoutDir, "x.clay"), null, techCache).Resolution,
             schematicNetlist.Devices.Select(d => d.Path).ToHashSet(StringComparer.Ordinal),
-            level, wbonds);
+            level, wbonds, schematicParts);
         control?.ThrowIfCancellationRequested();
 
         control?.BeginStage("Reducing");
@@ -291,7 +316,16 @@ public static class LvsRun
         var notes = new List<Diagnostic>();
         notes.AddRange(wbondNotes);
         notes.AddRange(schematicNetlist.Notes);
-        notes.AddRange(layoutNetlist.Notes);
+
+        // Brief LVS 16: the reading's turned parts, kept where the comparison bears them out — a
+        // part renamed after its neighbour, or one a short has stood the other net's names beside,
+        // is not a turned part and is already reported as what it is (LvsCompare's header).
+        notes.AddRange(layoutNetlist.Notes.Where(n =>
+            n.Id != "lvs.device.turned"
+            || n.Arguments.TryGetValue("path", out object? path) && path is string p
+               && comparison.Turned.Contains(p)));
+        turned = [.. turned.Where(t => comparison.Turned.Contains(
+            LayoutDesignFlatten.PathOf(layout.Instances[t.InstanceIndex], t.InstanceIndex)))];
         notes.AddRange(schematicLog.Notes(schematicDoc));
         notes.AddRange(layoutLog.Notes(layoutDoc));
 
@@ -334,6 +368,7 @@ public static class LvsRun
         {
             Cells = cells,
             Hierarchy = level.Counters,
+            Turned = turned,
         };
         }
         finally { if (entered) hierarchy.Descending.Remove(identity); }

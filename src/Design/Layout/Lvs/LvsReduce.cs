@@ -477,6 +477,7 @@ public static class LvsReduce
                     Terminals    = [.. representative.Terminals.Select(t =>
                                       t with { NetIndex = Find(t.NetIndex) })],
                     Group        = [.. bucket.SelectMany(d => d.Group)],
+                    CrossedMembers = [.. bucket.SelectMany(d => d.CrossedMembers)],
                     Multiplicity = bucket.Sum(d => d.Multiplicity),
                     Parameters   = values,
                     ParameterFacts = MergedFacts(representative, values),
@@ -499,10 +500,13 @@ public static class LvsReduce
         /// </summary>
         private string ParallelKey(LvsDevice device)
         {
+            // Brief LVS 16: or its counterpart says it is one of those three, which a land pattern's
+            // own kind cannot — see LvsDevice.Interchangeable.
             bool symmetric = device.Terminals.Count == 2
-                             && device.Type.Kind is DeviceKind.Resistor
-                                                 or DeviceKind.Capacitor
-                                                 or DeviceKind.Inductor;
+                             && (device.Type.Kind is DeviceKind.Resistor
+                                                  or DeviceKind.Capacitor
+                                                  or DeviceKind.Inductor
+                                 || device.Interchangeable);
 
             var nets = device.Terminals.OrderBy(t => t.Port).Select(t => Find(t.NetIndex));
             if (symmetric) nets = nets.Order();
@@ -583,6 +587,9 @@ public static class LvsReduce
                     Multiplicity = Math.Max(a.Multiplicity, b.Multiplicity),
                     Parameters   = values,
                     ParameterFacts = MergedFacts(a, values),
+
+                    // Brief LVS 16: each member is still one placed part the reading may have turned.
+                    CrossedMembers = [.. a.CrossedMembers, .. b.CrossedMembers],
                 };
 
                 merged[a.Path] = device;

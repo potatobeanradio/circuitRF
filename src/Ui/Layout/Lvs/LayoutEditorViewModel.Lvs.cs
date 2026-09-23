@@ -157,6 +157,7 @@ public sealed partial class LayoutEditorViewModel
 
         SelectedLvsFinding = null;
         IsLvsStale = false;
+        RebuildLvsTurnRows(value);
         NotifyLvsSurface();
         RebuildOverlay();
     }
@@ -165,6 +166,8 @@ public sealed partial class LayoutEditorViewModel
     {
         OnPropertyChanged(nameof(LvsStaleText));
         OnPropertyChanged(nameof(CanCrossProbeLvs));
+        OnPropertyChanged(nameof(CanTurnLvsParts));
+        TurnLvsPartsCommand.NotifyCanExecuteChanged();
     }
 
     partial void OnShowLvsMarkersChanged(bool value) => RebuildOverlay();

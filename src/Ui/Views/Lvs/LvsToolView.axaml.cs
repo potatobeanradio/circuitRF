@@ -10,8 +10,8 @@ using CircuitRF.Ui.ViewModels.Dock;
 namespace CircuitRF.Ui.Views.Lvs;
 
 /// <summary>
-/// Code-behind for the LVS results panel. Two gestures only — run a comparison, and bring the
-/// selected finding on screen. Both call into the active layout's own view model; nothing about a
+/// Code-behind for the LVS results panel. Three gestures only — run a comparison, turn the parts it
+/// found placed end for end, and bring the selected finding on screen. Both call into the active layout's own view model; nothing about a
 /// finding, a waiver or a marker is decided here (R-lvs12-5a).
 /// </summary>
 public partial class LvsToolView : UserControl
@@ -32,6 +32,20 @@ public partial class LvsToolView : UserControl
         // Reported, not merely run — the DRC panel's own rule. A comparison that filled a list and
         // said nothing in Messages leaves no trace of WHICH technology it read the artwork against,
         // which is the half a clean result cannot be trusted without.
+        LvsRunReport.Post(ResolveWorkspace()?.Messages ?? vm.MessageSink, result);
+    }
+
+    /// <summary>
+    /// Brief LVS 16 R-lvs16-3a: every checked part turned in one undoable step, then compared again
+    /// — and the new result posted, on the Compare button's own terms.
+    /// </summary>
+    private void OnTurnClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not LvsTool { EditorVm: { } vm }) return;
+
+        var result = vm.TurnInLayout(vm.SelectedLvsTurnedParts);
+        if (result is null) return;   // the view model says why, beside the button
+
         LvsRunReport.Post(ResolveWorkspace()?.Messages ?? vm.MessageSink, result);
     }
 

@@ -133,6 +133,7 @@ for the shape and brief 9's gate copies it. No new timing test is added by this 
 | 13 | [assemblies and the wBond](brief-lvs-13-assemblies.md) | multi-die, multi-technology, bondwire feet | 9 |
 | 14 | [geometric device recognition](brief-lvs-14-recognition.md) | tier 3, `DeviceRules` in `.ctech`, default off | 3 |
 | 15 | [docs and the shipped example](brief-lvs-15-docs-and-example.md) | user docs, the example workspace row, the design note's status flip | all |
+| 16 | [parts placed end for end](brief-lvs-16-parts-placed-end-for-end.md) | R/C/L terminals unordered in the comparison, `lvs.device.turned` / `lvs.device.reversed`, one-step bulk Turn in the panel | 7, 8, 11, 12 |
 
 **The whole series ships together** (owner, 2026-09-21). The ordering is a build order and no brief
 is a place to stop; what it buys is that briefs 2, 7 and 9 each have an oracle that already works.

@@ -168,11 +168,23 @@ indices, and never a coordinate where a name exists. These are the ones you will
 | `lvs.device.unmatched-schematic` | A part in the drawing that the artwork does not have |
 | `lvs.device.unmatched-layout` | A part in the artwork that the drawing does not have |
 | `lvs.device.type-mismatch` | Both sides have it, and they disagree about what it is |
+| `lvs.device.turned` | A resistor, capacitor or inductor placed end for end: the circuit is the same, but its pin 1 is on the other land. A **warning**, one per part |
+| `lvs.device.reversed` | A diode or other one-way two-pin part placed end for end, **naming both nets**. An **error**: the board would assemble it backwards |
 | `lvs.net.open` | One schematic net is two or more separate pieces of copper, **with the pins on each** |
 | `lvs.net.short` | Two or more schematic nets are one piece of copper, **with the metal that joins them and its coordinate** |
 | `lvs.terminal.wrong-net` | A terminal is on one net in the drawing and reaches a different one in the artwork, **naming both** |
 | `lvs.property.mismatch` | A value disagrees, **with both values and the tolerance that was applied** |
 | `lvs.pin.no-copper` | A pad that lands on nothing at all |
+
+**Parts placed end for end are listed together, with one button to fix them.** Two identical lands
+look the same whichever way round a resistor or capacitor sits, so a board can easily have dozens of
+them the wrong way round. The circuit is still right, but railRF, the placement table and
+cross-probing all read those parts' pin 1 backwards. The LVS panel lists every one of them &mdash; the
+full count, however many there are &mdash; with a checkbox each and a **Turn these N in the layout**
+button that turns the checked ones in one step you can undo, then compares again. railRF offers the
+same button for the same parts, and turning them in either window clears both. A reversed diode gets a
+button of its own and is never turned with the others, because only you know whether the part or the
+copper is the wrong half.
 
 **A short is never reported without its path.** A short reported as a bare pair of net names is a
 finding nobody can act on, so the sentence carries the neck or via that joins them, its width and where

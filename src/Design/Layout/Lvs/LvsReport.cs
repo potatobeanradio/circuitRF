@@ -285,6 +285,7 @@ internal static class LvsReport
                 // the half a user can go and look at, and the objects are both devices' un-reduced
                 // groups so a merged four-finger group names all four.
                 case "lvs.device.type-mismatch":
+                case "lvs.device.reversed":
                 case "lvs.anchor.contradicted":
                 case "lvs.property.mismatch":
                 case "lvs.property.derived-differs":
@@ -329,6 +330,20 @@ internal static class LvsReport
                         new Bbox(cx - half, cy - half, cx + half, cy + half));
                 }
 
+                // Brief LVS 16. The part's own two lands, from the reading — not a device lookup,
+                // because a turned member of a parallel group has no device of its own after the
+                // merge, and the finding is about the PLACED part.
+                case "lvs.device.turned":
+                {
+                    long half = PadFloor / 2;
+                    Bbox Land(string x, string y) => new(
+                        Number(diagnostic, x) - half, Number(diagnostic, y) - half,
+                        Number(diagnostic, x) + half, Number(diagnostic, y) + half);
+                    return LvsMarker.Of(
+                        diagnostic, [Text(diagnostic, "path")],
+                        (IReadOnlyList<long[]>)[LvsMarker.Ring(Land("x1", "y1")), LvsMarker.Ring(Land("x2", "y2"))]);
+                }
+
                 // Every placement claiming the designator, because which one is meant is the
                 // question the finding is about.
                 case "lvs.device.duplicate-designator":
@@ -355,7 +370,7 @@ internal static class LvsReport
                     {
                         objects.AddRange(Group(layout, l));
                         int port = diagnostic.Arguments.TryGetValue("port", out object? p) && p is int n ? n : 0;
-                        int terminal = IndexOfPort(layout.Devices[l], port);
+                        int terminal = LayoutTerminal(schematic.Devices[s], layout.Devices[l], port);
                         if (terminal >= 0)
                             box = LvsMarker.Union(
                                 geometry.PadsOf(l, terminal).Select(pad => LvsMarker.Pad(pad, PadFloor)));
@@ -423,7 +438,7 @@ internal static class LvsReport
                 foreach (var ts in ds.Terminals.OrderBy(t => t.Port))
                 {
                     if (ts.NetIndex != schematicNet) continue;
-                    int terminal = IndexOfPort(dl, ts.Port);
+                    int terminal = LayoutTerminal(ds, dl, ts.Port);
                     if (terminal < 0) continue;
                     foreach (var pad in geometry.PadsOf(pair.Layout, terminal))
                         if (pad.Piece >= 0) found.Add((pad.Piece, pad.X, pad.Y));
@@ -454,6 +469,23 @@ internal static class LvsReport
         /// about first — the branch that gets forgotten.</summary>
         private static IReadOnlyList<string> Group(LvsNetlist netlist, int device)
             => device < 0 || device >= netlist.Devices.Count ? [] : netlist.Devices[device].Group;
+
+        /// <summary>
+        /// The layout terminal a schematic port corresponds to — its own port, or the OTHER one for
+        /// a two-terminal part the comparison bore out as placed end for end (brief LVS 16), so a
+        /// marker lands on the pad the terminal actually stands on.
+        /// </summary>
+        private int LayoutTerminal(LvsDevice ds, LvsDevice dl, int port)
+        {
+            if (dl.Group.Count == 1 && comparison.Turned.Contains(dl.Path)
+                && ds.Terminals.Count == 2 && dl.Terminals.Count == 2)
+            {
+                var ports = ds.Terminals.Select(t => t.Port).Order().ToList();
+                int at = ports.IndexOf(port);
+                if (at >= 0) port = ports[1 - at];
+            }
+            return IndexOfPort(dl, port);
+        }
 
         private static int IndexOfPort(LvsDevice device, int port)
         {

@@ -45,9 +45,7 @@ public sealed partial class RailRfViewModel
     public bool CanTurnParts => HasPartsReadAsTurned && !IsReadingParts;
 
     /// <summary>The button's words — it names what it will do.</summary>
-    public string TurnPartsButtonText => PartsReadAsTurned.Count == 1
-        ? $"Turn {PartsReadAsTurned[0].Refdes} in the layout"
-        : $"Turn these {PartsReadAsTurned.Count} in the layout";
+    public string TurnPartsButtonText => TurnedParts.ButtonText(PartsReadAsTurned);
 
     /// <summary>Why the last Turn did not happen, or empty.</summary>
     [ObservableProperty]
@@ -77,20 +75,17 @@ public sealed partial class RailRfViewModel
         var parts = PartsReadAsTurned;
         if (parts.Count == 0) return;
 
-        var edits = new List<(int Index, LayoutInstance Before, LayoutInstance After)>(parts.Count);
-        foreach (var part in parts)
+        // The one edit list the LVS panel's Turn applies too (brief LVS 16 R-lvs16-3b), so a Turn
+        // pressed in either window is the same edit.
+        var edits = TurnedParts.Edits(view, parts, out var stale);
+        if (stale is not null)
         {
-            if (part.InstanceIndex < 0 || part.InstanceIndex >= view.Instances.Count)
-            {
-                TurnPartsProblem = $"{part.Refdes} is no longer where railRF read it — the layout has " +
-                                   "changed since. Nothing was turned.";
-                return;
-            }
-            var before = view.Instances[part.InstanceIndex];
-            edits.Add((part.InstanceIndex, before, TurnedParts.HalfTurn(before, part)));
+            TurnPartsProblem = $"{stale.Refdes} is no longer where railRF read it — the layout has " +
+                               "changed since. Nothing was turned.";
+            return;
         }
 
-        string description = parts.Count == 1 ? $"Turn {parts[0].Refdes} 180°" : $"Turn {parts.Count} parts 180°";
+        string description = TurnedParts.EditDescription(parts);
 
         if (EditLiveLayout?.Invoke(clay, edits, description) != true && !WriteTurnsToFile(clay, view, edits))
             return;

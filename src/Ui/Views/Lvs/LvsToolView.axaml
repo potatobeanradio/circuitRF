@@ -11,7 +11,7 @@
          added is the STRIP's content — R-lvs12-1b wants the counts per side before and after the
          collapse, the technology by name and the reduction mode, because a workspace with two
          processes has a default that may not be the one the designer has in mind. -->
-    <Grid RowDefinitions="Auto,Auto,Auto,*,Auto">
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,*,Auto">
 
         <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,Auto,*" Margin="4,2">
             <Button Grid.Column="0"
@@ -88,7 +88,69 @@
                    IsVisible="{Binding EditorVm.LvsProbeText, Converter={x:Static StringConverters.IsNotNullOrEmpty}, FallbackValue=False}"
                    Text="{Binding EditorVm.LvsProbeText, FallbackValue=''}"/>
 
-        <TextBlock Grid.Row="3"
+        <!-- Brief LVS 16 R-lvs16-3a/3c. The parts placed end for end, as ONE group with the FULL
+             count — built from the run's uncapped list, never from the capped findings — and one
+             button that turns every checked part as a single undoable step. A reversed part (a
+             diode, a two-terminal cell) gets a Turn of its own, never the bulk button and never
+             checked: only the designer knows whether the part or the copper is the wrong half. -->
+        <StackPanel Grid.Row="3" Margin="8,0,8,4" Spacing="3">
+            <StackPanel Spacing="3"
+                        IsVisible="{Binding EditorVm.HasLvsTurnedParts, FallbackValue=False}">
+                <TextBlock Text="{Binding EditorVm.LvsTurnedHeaderText, FallbackValue=''}"
+                           FontSize="11" TextWrapping="Wrap"/>
+                <ScrollViewer MaxHeight="96" VerticalScrollBarVisibility="Auto">
+                    <ItemsControl ItemsSource="{Binding EditorVm.LvsTurnedParts}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel Orientation="Horizontal"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="lay:LvsTurnedRow">
+                                <CheckBox Content="{Binding Refdes}"
+                                          IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                          FontSize="11"
+                                          Margin="0,0,10,0"
+                                          ToolTip.Tip="Uncheck to leave this part as it is"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+                <Button x:Name="TurnButton"
+                        Click="OnTurnClick"
+                        Content="{Binding EditorVm.LvsTurnButtonText, FallbackValue='Turn in the layout'}"
+                        IsEnabled="{Binding EditorVm.CanTurnLvsParts, FallbackValue=False}"
+                        HorizontalAlignment="Left"
+                        FontSize="11"
+                        Padding="8,2"
+                        ToolTip.Tip="Turn each checked part 180° about its own two lands, so pin 1 stands where the schematic puts it. One undoable step; the comparison then runs again."/>
+            </StackPanel>
+
+            <ItemsControl ItemsSource="{Binding EditorVm.LvsReversedParts}"
+                          IsVisible="{Binding EditorVm.HasLvsReversedParts, FallbackValue=False}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="lay:LvsReversedRow">
+                        <StackPanel Spacing="2" Margin="0,2">
+                            <TextBlock Text="{Binding Note}" FontSize="11" Opacity="0.8" TextWrapping="Wrap"/>
+                            <Button Command="{Binding TurnCommand}"
+                                    Content="{Binding ButtonText}"
+                                    IsVisible="{Binding CanTurn}"
+                                    HorizontalAlignment="Left"
+                                    FontSize="11"
+                                    Padding="8,2"/>
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <TextBlock FontSize="11"
+                       TextWrapping="Wrap"
+                       Foreground="{DynamicResource CrfWarningBrush}"
+                       IsVisible="{Binding EditorVm.HasLvsTurnProblem, FallbackValue=False}"
+                       Text="{Binding EditorVm.LvsTurnProblem, FallbackValue=''}"/>
+        </StackPanel>
+
+        <TextBlock Grid.Row="4"
                    Text="Open a layout document in a cell folder to compare it against its schematic."
                    FontSize="12"
                    Opacity="0.6"
@@ -96,7 +158,7 @@
                    TextWrapping="Wrap"
                    IsVisible="{Binding !IsLayoutActive}"/>
 
-        <ListBox Grid.Row="3"
+        <ListBox Grid.Row="4"
                  x:Name="FindingsList"
                  IsVisible="{Binding IsLayoutActive}"
                  ItemsSource="{Binding EditorVm.LvsFindings}"
@@ -171,7 +233,7 @@
 
         <!-- R-lvs12-4d: a waiver whose key no longer matches anything is LISTED, with the finding's
              text at the time of waiving, and removable by a human who recognises it. -->
-        <StackPanel Grid.Row="4"
+        <StackPanel Grid.Row="5"
                     Margin="8,4"
                     IsVisible="{Binding EditorVm.LvsOrphanWaivers.Count, FallbackValue=False}">
             <TextBlock Text="Waivers that no longer match any finding"

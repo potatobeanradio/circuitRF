@@ -285,6 +285,54 @@ public static class LvsDiagnostics
             ("schematicType", schematicType), ("layoutType", layoutType));
 
     /// <summary>
+    /// Brief LVS 16 R-lvs16-2a. <b>A warning, one per placed part, and never an error</b>: a
+    /// resistor, a capacitor or an inductor placed end for end is the same circuit, so it must not
+    /// fail <c>--severity error</c>. But the placement states the wrong pin order and everything that
+    /// reads pin 1 literally reads it backwards — which is how a whole board once became one net in
+    /// railRF — and LVS is the one place a designer is guaranteed to look.
+    /// </summary>
+    /// <remarks>
+    /// The lands are ARGUMENTS, not a lookup: the marker is the part's own two pads, and after
+    /// reduction a merged parallel group no longer has a device of this path to look them up on.
+    /// </remarks>
+    /// <param name="refdes">The part.</param>
+    /// <param name="path">Its placement path, for the report's objects.</param>
+    /// <param name="document">The <c>.clay</c> that places it — where the turn has to be made, which
+    /// for a part inside a placed cell is that cell's layout (R-lvs16-3d).</param>
+    public static Diagnostic DeviceTurned(
+        string refdes, string path, string document, (long X, long Y) land1, (long X, long Y) land2)
+        => Diagnostic.Create(
+            "lvs.device.turned", DiagnosticSeverity.Warning,
+            "'{refdes}' is placed end for end: its pin 1 sits on the copper the schematic gives its "
+            + "pin 2. The circuit is the same either way round, but anything that reads the "
+            + "placement's pin order — railRF, the placement table, cross-probing — reads it "
+            + "backwards. Turn it in the layout ('{document}').",
+            ("refdes", refdes), ("path", path), ("document", document),
+            ("x1", land1.X), ("y1", land1.Y), ("x2", land2.X), ("y2", land2.Y));
+
+    /// <summary>
+    /// Brief LVS 16 R-lvs16-2b. A two-terminal part that is NOT symmetric — a diode, an LED, a
+    /// polarised capacitor, a two-terminal cell — whose terminals are all wrong as placed and all
+    /// right the other way round. <b>One error in place of three findings</b> (a contradicted
+    /// anchor and two unmatched devices) that described it only indirectly: the board assembles it
+    /// backwards.
+    /// </summary>
+    /// <remarks>
+    /// It names BOTH nets and does not say which half is wrong: either the part or the copper may
+    /// be, and only the designer knows.
+    /// </remarks>
+    public static Diagnostic DeviceReversed(
+        string schematicPath, string layoutPath, string kind, string net1, string net2)
+        => Diagnostic.Create(
+            "lvs.device.reversed", DiagnosticSeverity.Error,
+            "'{layoutPath}' is placed end for end: the schematic puts its terminal 1 on '{net1}' and "
+            + "its terminal 2 on '{net2}', and the layout has them the other way round. A {kind} is "
+            + "not the same part reversed, so this board assembles it backwards. Turn the part, or "
+            + "correct the copper — whichever is the half that is wrong.",
+            ("schematicPath", schematicPath), ("layoutPath", layoutPath), ("kind", kind),
+            ("net1", net1), ("net2", net2));
+
+    /// <summary>
     /// R-lvs7-5a. A matched device whose terminal reaches copper belonging to a DIFFERENT
     /// schematic net — the mis-wiring finding, and the one that names both nets.
     /// </summary>

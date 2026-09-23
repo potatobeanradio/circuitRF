@@ -188,6 +188,26 @@ public sealed record PdnSchematicNets(
                  $"{ex.Message}. Its pads take whatever net is stated on the copper they land on."]);
         }
 
+        return Of(model, schPath);
+    }
+
+    /// <summary>
+    /// The same extraction over a schematic the caller already holds — <b>the one <see cref="Resolve"/>
+    /// calls</b>, so there is one reading of a drawing's parts and not two.
+    /// </summary>
+    /// <param name="model">The drawing, as read.</param>
+    /// <param name="schPath">Where it was read from — a cell reference inside it resolves against
+    /// this, and the notes name it.</param>
+    /// <remarks>
+    /// <b>Why LVS needs this and cannot use <see cref="Resolve"/>.</b> <c>LvsRun</c> is also handed
+    /// documents in memory — the panel's re-run after a Turn, and every test that mutates a design
+    /// before comparing it — and its turned-part reading has to be about the drawing being COMPARED,
+    /// not whatever the same path holds on disk.
+    /// </remarks>
+    public static PdnSchematicNets Of(SchematicEditModel model, string schPath)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+
         NetExtractor.ExtractionResult extracted;
         // DiskCellResolver, never null — Check.cs' own note says why: a null resolver is how
         // NetExtractor is told the caller is flat, and it then skips every cell instance WITHOUT a

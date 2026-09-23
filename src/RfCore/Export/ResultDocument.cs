@@ -528,6 +528,24 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         IReadOnlyDictionary<string, object?>? Arguments);
 
+    /// <summary>
+    /// One part placed end for end — <c>TurnedPart</c> verbatim (brief LVS 16 R-lvs16-2d/3e).
+    /// </summary>
+    /// <remarks>
+    /// <b>Everything an agent needs to write the fix itself</b>, which is the whole of the CLI's side
+    /// of it: the verb is read-only (<c>cli.md</c> §19), and the turn is <c>T' = Land1 + Land2 − T</c>
+    /// with 180° added to the rotation — each land then sits exactly where the other one was,
+    /// whatever the footprint's own origin. Uncapped, unlike the findings.
+    /// </remarks>
+    /// <param name="Refdes">The part.</param>
+    /// <param name="Instance">Its index in the cell's root <c>.clay</c> instance list.</param>
+    /// <param name="Land1">Where the land the footprint calls pin 1 sits, <c>[x, y]</c> in DBU.</param>
+    /// <param name="Land2">Where the other land sits.</param>
+    /// <param name="Margin">How much more of the copper's evidence agrees with the turn than with
+    /// the schematic's order.</param>
+    public sealed record LvsTurnedPartJson(
+        string Refdes, int Instance, long[] Land1, long[] Land2, int Margin);
+
     /// <summary>One cell compared — or one skipped, which is a different answer and is said rather
     /// than omitted (R-lvs11-2b).</summary>
     /// <param name="Compared">False for a cell holding only one of the two views. The ordinary
@@ -541,6 +559,8 @@ namespace RfCore.Export
     /// <param name="SubCells">Every distinct sub-cell this design placed and compared on its own
     /// account — one entry per CELL, not per placement (R-lvs9-1a). Their findings are already in
     /// <paramref name="Findings"/>, re-reported under the placement that put them there.</param>
+    /// <param name="Turned">Every part on this cell's own layout placed end for end, in full —
+    /// brief LVS 16. The <c>lvs.device.turned</c> findings are capped per id; this is not.</param>
     public sealed record LvsCellJson(
         string                          Path,
         string                          Name,
@@ -557,7 +577,8 @@ namespace RfCore.Export
         int                             Extractions,
         int                             CacheHits,
         IReadOnlyList<string>           SubCells,
-        IReadOnlyList<LvsFindingJson>   Findings);
+        IReadOnlyList<LvsFindingJson>   Findings,
+        IReadOnlyList<LvsTurnedPartJson> Turned);
 
     /// <summary>
     /// What <c>lvs</c> compared, and what it concluded.

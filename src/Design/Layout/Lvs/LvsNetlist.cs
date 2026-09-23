@@ -143,6 +143,36 @@ public sealed record LvsDevice(
     /// 1 for everything that has not been merged in parallel.
     /// </summary>
     public int Multiplicity { get; init; } = 1;
+
+    /// <summary>
+    /// <b>Which of the parts this device stands for are placed end for end</b> — their terminal 1
+    /// on the copper their counterpart calls terminal 2 — as <c>TurnedParts.Read</c> read them
+    /// (brief LVS 16 R-lvs16-1b). Empty for everything else, which includes every schematic device.
+    /// </summary>
+    /// <remarks>
+    /// <b>An input to the comparison, never a decision of it.</b> The reading is railRF's, called
+    /// once in <c>LayoutRead</c>, so the two windows cannot disagree about which parts it turned;
+    /// the comparison only says which of them its own correspondence BEARS OUT (a renamed part is
+    /// read as turned against the wrong counterpart, and a short can put the other net's names on a
+    /// part's copper). <b>A list of paths rather than a flag</b> because reduction merges ten
+    /// decoupling capacitors into one device, and the turned one among them is still one placed part
+    /// the report has to name. It names no side: a netlist that set it on a schematic device would
+    /// be read exactly the same way, which is <see cref="LvsNetlist"/>'s own rule.
+    /// </remarks>
+    public IReadOnlyList<string> CrossedMembers { get; init; } = [];
+
+    /// <summary>
+    /// <b>This part's two terminals are interchangeable</b>, because its counterpart says it is a
+    /// resistor, a capacitor or an inductor (brief LVS 16) — where its own <see cref="Type"/> cannot.
+    /// </summary>
+    /// <remarks>
+    /// A placement Update Layout wrote carries a <c>SchematicId</c> and no <c>PartKind</c>, so its own
+    /// kind is <c>Cell</c> and says nothing about symmetry. Reduction's parallel key reads this, so
+    /// a land pattern standing for a capacitor merges with its neighbours whichever way round it is
+    /// placed — as the schematic's capacitors already do — rather than standing alone as an
+    /// "antiparallel" part and arriving as an unmatched device.
+    /// </remarks>
+    public bool Interchangeable { get; init; }
 }
 
 /// <summary>One net.</summary>

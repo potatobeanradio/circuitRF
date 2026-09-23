@@ -17,10 +17,12 @@
 // ── WHY THE COPPER MAY DECIDE THIS, AND FOR THESE PARTS ONLY ─────────────────────────────────────
 //
 // A resistor, a capacitor and an inductor have two INTERCHANGEABLE terminals. Which land is "pin 1"
-// is a bookkeeping convention with no physical meaning, and LVS already reads them that way
-// (`LvsReduce.ParallelKey`: for those three the net PAIR is unordered). What the schematic states
-// that does mean something is the pair — "C19 joins Xin to ground" — and the copper says which land
-// is on which side of that pair. So for those three kinds, and only those, the pair is bound to the
+// is a bookkeeping convention with no physical meaning, and LVS reads them that way twice over:
+// reduction's `LvsReduce.ParallelKey` treats their net PAIR as unordered, and — since brief LVS 16 —
+// the comparison itself accepts such a part either way round and takes its orientation from THIS
+// reading (`LvsCompare`, `lvs.device.turned`). What the schematic states that does mean something
+// is the pair — "C19 joins Xin to ground" — and the copper says which land is on which side of that
+// pair. So for those three kinds, and only those, the pair is bound to the
 // lands the way the copper agrees with.
 //
 // Not a diode, whose reversal is a different circuit, and not a two-terminal CELL, whose symmetry
@@ -45,6 +47,14 @@
 // The turned parts are RETURNED, never silently absorbed: railRF names them and offers to turn them
 // in the layout, which is the only fix that makes the document itself agree — LVS, the placement
 // table and the bill of materials all read the `.clay`, not this.
+//
+// ── ONE READER, TWO WINDOWS (brief LVS 16 §1A) ──────────────────────────────────────────────────
+//
+// LVS calls `Read` too, on the same inputs — the pads `PlacedPins.Of` names from the schematic, the
+// kind by `SchematicId` (`KindsFrom`), the galvanic partition — and grows no detector of its own.
+// Two detectors with two tie rules would disagree on some board, and a designer told "30 turned" by
+// one window and "28" by the other has no way to know which to believe. The EDIT is shared the same
+// way (`Edits`), so a Turn pressed in either window is the same edit and clears the other.
 
 using System.Linq;
 
@@ -77,6 +87,36 @@ public static class TurnedParts
     /// <summary>The device kinds whose two terminals are interchangeable — <c>ParallelKey</c>'s own.</summary>
     public static bool IsSymmetric(Lvs.DeviceKind kind) =>
         kind is Lvs.DeviceKind.Resistor or Lvs.DeviceKind.Capacitor or Lvs.DeviceKind.Inductor;
+
+    /// <summary>
+    /// A placement's device kind <b>as its SCHEMATIC states it</b>, by instance index — the
+    /// <c>kindOf</c> both readers hand <see cref="Read"/>.
+    /// </summary>
+    /// <remarks>
+    /// <b>The schematic's kind and not the layout's</b>: a placement Update Layout wrote carries a
+    /// <c>SchematicId</c> and no <c>PartKind</c>, so its own kind is <c>Cell</c> — keyed on that,
+    /// nothing on an ordinary board would ever be read. A placement naming nothing is
+    /// <see cref="Lvs.DeviceKind.Unknown"/> and is never turned.
+    /// </remarks>
+    public static Func<int, Lvs.DeviceKind> KindsFrom(LayoutView view, Pdn.PdnSchematicNets schematic)
+    {
+        ArgumentNullException.ThrowIfNull(view);
+        ArgumentNullException.ThrowIfNull(schematic);
+        return instance => instance >= 0 && instance < view.Instances.Count
+            ? schematic.For(view.Instances[instance].SchematicId)?.Kind ?? Lvs.DeviceKind.Unknown
+            : Lvs.DeviceKind.Unknown;
+    }
+
+    /// <summary>Whether any placement on <paramref name="view"/> is a part <see cref="Read"/> could
+    /// turn — the cheap test both readers make before paying for a partition.</summary>
+    public static bool AnyCandidate(LayoutView view, Func<int, Lvs.DeviceKind> kindOf)
+    {
+        ArgumentNullException.ThrowIfNull(view);
+        ArgumentNullException.ThrowIfNull(kindOf);
+        for (int i = 0; i < view.Instances.Count; i++)
+            if (IsSymmetric(kindOf(i))) return true;
+        return false;
+    }
 
     /// <summary>
     /// Reads the turned parts off <paramref name="pieces"/>.
@@ -327,6 +367,96 @@ public static class TurnedParts
         after.Y = part.Land1.Y + part.Land2.Y - before.Y;
         after.RotationDegrees = before.RotationDegrees + 180.0;   // normalized by the setter
         return after;
+    }
+
+    /// <summary>
+    /// The instance edits that turn <paramref name="parts"/> — <b>the one edit list both windows
+    /// apply</b> (brief LVS 16 R-lvs16-3b), each part through <see cref="HalfTurn"/>.
+    /// </summary>
+    /// <param name="view">The layout the parts were read from, as it stands NOW.</param>
+    /// <param name="parts">What to turn.</param>
+    /// <param name="stale">Set to the first part that is no longer where it was read — its index is
+    /// past the end, or the placement there now answers to a different designator. <b>Then the list
+    /// is empty and nothing may be turned</b>: an index that moved would turn some other part.</param>
+    public static IReadOnlyList<(int Index, LayoutInstance Before, LayoutInstance After)> Edits(
+        LayoutView view, IReadOnlyList<TurnedPart> parts, out TurnedPart? stale)
+    {
+        ArgumentNullException.ThrowIfNull(view);
+        ArgumentNullException.ThrowIfNull(parts);
+        stale = null;
+
+        var edits = new List<(int Index, LayoutInstance Before, LayoutInstance After)>(parts.Count);
+        foreach (var part in parts)
+        {
+            if (part.InstanceIndex < 0 || part.InstanceIndex >= view.Instances.Count
+                || view.Instances[part.InstanceIndex].DisplayRefDes is { } now
+                   && !string.Equals(now, part.Refdes, StringComparison.OrdinalIgnoreCase))
+            {
+                stale = part;
+                return [];
+            }
+            var before = view.Instances[part.InstanceIndex];
+            edits.Add((part.InstanceIndex, before, HalfTurn(before, part)));
+        }
+        return edits;
+    }
+
+    /// <summary>
+    /// The half turn of one placed part, <b>where it puts the part's pads back on its own lands</b> —
+    /// or null where it would not (brief LVS 16 R-lvs16-3c).
+    /// </summary>
+    /// <remarks>
+    /// <b>For a part LVS found reversed</b> — a diode, a two-terminal cell — which is not a reading's
+    /// answer and so has no <see cref="TurnedPart"/> of its own. A part with two pins always lands:
+    /// <see cref="HalfTurn"/> swaps them exactly. One with a third pad — a thermal tab, a mounting
+    /// land — lands only where the footprint happens to be symmetric about its first two, so every
+    /// pad is projected before and after, through <see cref="PlacedPins"/> and nothing hand-rolled,
+    /// and each must fall within one DBU of a pad position that was already there.
+    /// </remarks>
+    public static TurnedPart? LandingHalfTurn(
+        LayoutView view, string clayPath, Technology? tech, int instanceIndex)
+    {
+        ArgumentNullException.ThrowIfNull(view);
+        if (instanceIndex < 0 || instanceIndex >= view.Instances.Count) return null;
+        var inst = view.Instances[instanceIndex];
+        if (Math.Max(1, inst.Rows) * Math.Max(1, inst.Cols) != 1) return null;
+
+        IReadOnlyList<PlacedPin> PadsOf(LayoutInstance placed) => PlacedPins.Of(
+            new LayoutView { DbuPerMicron = view.DbuPerMicron, Instances = { placed } },
+            clayPath, tech, PinNaming.ArtworkOnly, scope: PlacementScope.EveryPlacement);
+
+        var before = PadsOf(inst);
+        var pins = before.Where(p => p.Pin is { Length: > 0 })
+                         .GroupBy(p => p.Pin!, StringComparer.OrdinalIgnoreCase)
+                         .OrderBy(g => g.Key, StringComparer.Ordinal)
+                         .ToList();
+        if (pins.Count < 2) return null;
+
+        var (first, second) = FirstPinFirst(pins[0].First(), pins[1].First());
+        var part = new TurnedPart(
+            inst.DisplayRefDes ?? $"#{instanceIndex}", instanceIndex,
+            (first.X, first.Y), (second.X, second.Y), 0);
+
+        var after = PadsOf(HalfTurn(inst, part));
+        bool lands = after.Count == before.Count
+                  && after.All(a => before.Any(b => Math.Abs(a.X - b.X) <= 1 && Math.Abs(a.Y - b.Y) <= 1));
+        return lands ? part : null;
+    }
+
+    /// <summary>What the gesture is called — the button, in either window.</summary>
+    public static string ButtonText(IReadOnlyList<TurnedPart> parts)
+    {
+        ArgumentNullException.ThrowIfNull(parts);
+        return parts.Count == 1
+            ? $"Turn {parts[0].Refdes} in the layout"
+            : $"Turn these {parts.Count} in the layout";
+    }
+
+    /// <summary>What the undo stack calls the edit.</summary>
+    public static string EditDescription(IReadOnlyList<TurnedPart> parts)
+    {
+        ArgumentNullException.ThrowIfNull(parts);
+        return parts.Count == 1 ? $"Turn {parts[0].Refdes} 180°" : $"Turn {parts.Count} parts 180°";
     }
 
     /// <summary>The sentence a report prints, or empty where nothing was turned.</summary>

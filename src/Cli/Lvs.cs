@@ -407,12 +407,14 @@ internal static class Lvs
             result.ErrorCount, result.WarningCount, result.WaivedCount, result.IsClean,
             result.Hierarchy.Extractions, result.Hierarchy.CacheHits,
             [.. result.Cells.Select(c => c.CellName)],
-            [.. result.Findings.Select(Finding)]);
+            [.. result.Findings.Select(Finding)],
+            [.. result.Turned.Select(t => new LvsTurnedPartJson(
+                t.Refdes, t.InstanceIndex, [t.Land1.X, t.Land1.Y], [t.Land2.X, t.Land2.Y], t.Agreeing))]);
 
     private static LvsCellJson Skipped(string cellDir, string name, Diagnostic note) =>
         new(cellDir, name, false, null, "on",
             Side(default), Side(default),
-            0, 0, 0, true, 0, 0, [], [Finding(note)]);
+            0, 0, 0, true, 0, 0, [], [Finding(note)], []);
 
     private static LvsSideCountsJson Side(LvsSideCounts c) =>
         new(c.DevicesBefore, c.DevicesAfter, c.NetsBefore, c.NetsAfter);

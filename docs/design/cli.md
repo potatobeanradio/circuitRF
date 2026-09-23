@@ -2387,6 +2387,15 @@ not. The findings are in the document's own `diagnostics` array as well, which i
 that does not care which cell produced what reads them; `result.lvs` carries the per-cell structure,
 the marker box and the waiver state, which a flat array cannot.
 
+**Each cell also carries a `turned` array** (brief LVS 16): every part on that cell's own layout
+placed end for end, as `{refdes, instance, land1: [x, y], land2: [x, y], margin}` in DBU. It is
+**uncapped**, where the `lvs.device.turned` findings stop at 20 per id, and it is everything a caller
+needs to make the fix itself — the verb stays read-only: move the instance to `land1 + land2 − (x, y)`
+and add 180° to its rotation, and each land then sits exactly where the other one was. A part inside
+a placed cell is reported as a finding under its placement but is not in the parent's array, because
+its index is that cell's; it is in the cell's own entry when the cell is compared on its own account,
+which a workspace run does.
+
 **`-o report.txt` is the only thing this verb ever writes, and with no `-o` it writes nothing at
 all** (R-lvs11-3d). LVS is read-only on §10.1's terms, so it runs on a read-only tree and on a
 workspace another process has open — asserted by mtime over a copy of a whole workspace, which
