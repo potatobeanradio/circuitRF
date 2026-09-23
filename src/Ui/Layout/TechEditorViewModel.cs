@@ -97,6 +97,10 @@ public sealed partial class TechEditorViewModel : ObservableObject
         var conductor = Working.Stackup.Layers.FirstOrDefault(
             l => l.Kind == StackupKind.Conductor && string.Equals(l.Name, fix.ConductorName, StringComparison.Ordinal));
         if (conductor is null || conductor.DrawingLayers.Contains(fix.Layer)) return;
+        // A fix offered before another press claimed the layer is stale: one plane's copper is never
+        // attached to two conductors.
+        if (Working.Stackup.Layers.Any(l => l.Kind is StackupKind.Conductor or StackupKind.Via
+                                            && l.DrawingLayers.Contains(fix.Layer))) return;
 
         var before = SnapshotJson();
         conductor.DrawingLayers.Add(fix.Layer);

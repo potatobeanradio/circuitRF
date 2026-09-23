@@ -284,6 +284,16 @@ public sealed class RailRfFieldReport4Tests : IDisposable
         {
             Kind = StackupKind.Dielectric, Name = "Core", ThicknessDbu = Um(300), Epsr = 4.3, TanD = 0.02,
         });
+        // A second unattached plane, whose name matches nothing: `gnd` is the sole candidate for it
+        // too, and offering it there as well attached one plane's copper to two conductors.
+        tech.Stackup.Layers.Insert(4, new StackupLayer
+        {
+            Kind = StackupKind.Conductor, Name = "PWR", ThicknessDbu = Um(18), SigmaSm = 5.8e7,
+        });
+        tech.Stackup.Layers.Insert(5, new StackupLayer
+        {
+            Kind = StackupKind.Dielectric, Name = "Core2", ThicknessDbu = Um(300), Epsr = 4.3, TanD = 0.02,
+        });
 
         var problem = Assert.Single(TechValidation.Analyze(tech), p => p.Fix is not null);
         Assert.Contains("Drawing layer 'gnd'", problem.Message, StringComparison.Ordinal);

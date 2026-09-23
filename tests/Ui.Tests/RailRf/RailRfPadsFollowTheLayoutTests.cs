@@ -87,6 +87,34 @@ public sealed class RailRfPadsFollowTheLayoutTests : IDisposable
         Assert.False(vm.HasPartsReadAsTurned);
     }
 
+    /// <summary>
+    /// <b>Adopting the layout session's live model re-reads the pads where its placements differ</b>
+    /// from the file they were read from — a part moved and not yet saved. Taking the live model's
+    /// placements as "what the pads were read from" meant no later edit looked different, and the
+    /// window went on describing the saved file.
+    /// </summary>
+    [Fact]
+    public async Task AdoptingALiveModelWithUnsavedMovesReReadsThePads()
+    {
+        var (vm, settle) = Open(turnThird: false);
+        var board = vm.Board!;
+        var before = Assert.Single(board.Pads, p => p.Refdes == "C1" && p.Pin == "1");
+
+        var live = new LayoutView { DbuPerMicron = board.View!.DbuPerMicron, TechRef = board.View.TechRef };
+        live.Shapes.AddRange(board.View.Shapes);
+        foreach (var inst in board.View.Instances) live.Instances.Add(LayoutGeometry.Clone(inst));
+        live.Instances[0].X += Mm(1);
+
+        vm.AdoptLiveView(live, board.Shapes);
+        Assert.True(vm.IsReadingParts);
+
+        settle.SetResult();
+        await vm.PadRead!;
+
+        var after = Assert.Single(vm.Board!.Pads, p => p.Refdes == "C1" && p.Pin == "1");
+        Assert.Equal((before.X + Mm(1), before.Y), (after.X, after.Y));
+    }
+
     /// <summary><b>A burst of ten instance edits costs one pad read.</b></summary>
     [Fact]
     public async Task ABurstOfInstanceEditsCostsOnePadRead()

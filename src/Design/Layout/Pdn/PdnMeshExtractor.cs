@@ -366,7 +366,7 @@ public static class PdnMeshExtractor
             return PdnExtraction.Refused(PdnRailConnectivity.AmbiguityRefusal(request, ambiguous))
                 with { AnchorAmbiguities = ambiguous };
 
-        diagnostics.AddRange(regions.Diagnostics);
+        diagnostics.AddRange(PdnRailConnectivity.DiagnosticsOf(request, regions));
 
         // R-rail27-2, BEFORE the no-copper refusal and before anything is meshed or priced: a rail
         // anchored on its own return resolves to plenty of copper, and that is exactly the trouble —
@@ -383,6 +383,13 @@ public static class PdnMeshExtractor
                     : "The rail names no net, and no source or load anchor landed on metal. Give the " +
                       "rail its net name, or anchor a source or a load on the rail's own copper."),
                 regions);
+
+        // R-rail29-2, asked of this reading too: a rail whose source cannot reach a load galvanically
+        // is refused before anything is meshed, naming the part that bridges it. Without it the mesh
+        // was built and solved only for PdnAssembly's floating backstop to refuse it, a sentence that
+        // blames the reference layer and names no part.
+        if (PdnRailConnectivity.Refusal(request, regions, referenceLayer) is { } apart)
+            return PdnExtraction.Refused(apart, regions);
 
         // R-rail31-3 / R-rail31-4: what the RETURN is, answered as galvanically as the rail was.
         if (PdnRailConnectivity.ReturnRefusal(request, regions, referenceLayer) is { } noReturn)
@@ -1846,16 +1853,12 @@ public static class PdnMeshExtractor
                     refinementDropped = false;
                 }
 
-                foreach (var island in regions.Power)
-                    foreach (var (layer, _) in island.Copper)
-                        if (layer == referenceLayer)
-                        {
-                            diagnostics.Add(
-                                $"The rail has copper on layer {layer.Layer}/{layer.Datatype}, which is also " +
-                                "its reference layer. That copper was not meshed as part of the rail — a " +
-                                "conductor cannot be its own return.");
-                            break;
-                        }
+                // Once per run, not once per island.
+                if (regions.Power.Any(island => island.Copper.Any(c => c.Layer == referenceLayer)))
+                    diagnostics.Add(
+                        $"The rail has copper on layer {referenceLayer.Layer}/{referenceLayer.Datatype}, which is also " +
+                        "its reference layer. That copper was not meshed as part of the rail — a " +
+                        "conductor cannot be its own return.");
 
                 var format = request.LengthFormat;
                 if (delta != baseDeltaDbu)

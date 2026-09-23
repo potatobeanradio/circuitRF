@@ -109,8 +109,13 @@ public sealed class PdnGraphSettings
     /// leaves it (brief-railrf-33). The refinement is not optional — a port's spreading resistance
     /// is set by the cell it lands in — so a region that would need more than this is REFUSED,
     /// naming it, rather than answered at a contact size the mesh does not share.
+    /// <para><b>200,000, not the 20,000 it shipped at.</b> The refined grid is a tensor product —
+    /// every port adds lines across the whole region — so the count grows with the number of loads,
+    /// not the region's size: a 50 mm return plane under 20 loads needs 28,106 cells, and at 20,000
+    /// the fast model refused an ordinary many-load rail it answers in 0.6 s (80 loads on the same
+    /// plane: 2.3 s). The ceiling is what keeps the fast model fast, and seconds is fast.</para>
     /// </summary>
-    public int MaxRefinedPourCells { get; set; } = 20_000;
+    public int MaxRefinedPourCells { get; set; } = 200_000;
 
     /// <summary>
     /// How many coarse cells a spreading region gets between the two port pads on it that lie
@@ -270,7 +275,7 @@ public static class PdnGraphExtractor
             return PdnExtraction.Refused(PdnRailConnectivity.AmbiguityRefusal(request, ambiguous))
                 with { AnchorAmbiguities = ambiguous };
 
-        diagnostics.AddRange(regions.Diagnostics);
+        diagnostics.AddRange(PdnRailConnectivity.DiagnosticsOf(request, regions));
 
         // R-rail27-2, BEFORE the no-copper refusal and before anything is meshed or priced: a rail
         // anchored on its own return resolves to plenty of copper, and that is exactly the trouble —
@@ -368,12 +373,15 @@ public static class PdnGraphExtractor
             .SelectMany(l => l.DrawingLayers)
             .ToHashSet();
 
+        bool onReferenceSaid = false;   // once per run, not once per island
         foreach (var island in regions.Power)
             foreach (var (layer, paths) in island.Copper)
             {
                 if (viaDrawingLayers.Contains(layer)) continue;
                 if (layer == referenceLayer)
                 {
+                    if (onReferenceSaid) continue;
+                    onReferenceSaid = true;
                     diagnostics.Add(
                         $"The rail has copper on layer {layer.Layer}/{layer.Datatype}, which is also " +
                         "its reference layer. That copper was not read as part of the rail — a " +

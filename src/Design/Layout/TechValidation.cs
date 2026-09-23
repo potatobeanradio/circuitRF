@@ -34,7 +34,9 @@ public static class TechValidation
     /// layers no Conductor or Via entry claims, less the drill layers and the artwork kinds a
     /// fabrication set always carries (<c>GerberLayerCascade.IsNonConductorArtwork</c>, suffix
     /// included). One whose name matches the conductor's, ignoring case, is the answer; failing that,
-    /// a sole candidate is; anything else is no answer at all.
+    /// a sole candidate is — but only where this is the one inner conductor waiting for a layer: with
+    /// two (GND and PWR, one unclaimed `gnd`), the sole candidate was offered to both, and pressing
+    /// both buttons attached one plane's copper to two conductors. Anything else is no answer at all.
     /// </remarks>
     public static LayerDef? LikelyDrawingLayerFor(Technology tech, StackupLayer conductor)
     {
@@ -57,9 +59,14 @@ public static class TechValidation
             .Where(l => string.Equals(l.Name?.Trim(), conductor.Name?.Trim(), StringComparison.OrdinalIgnoreCase))
             .ToList();
 
-        return byName.Count == 1 ? byName[0]
-             : byName.Count == 0 && candidates.Count == 1 ? candidates[0]
-             : null;
+        if (byName.Count == 1) return byName[0];
+        if (byName.Count > 0 || candidates.Count != 1) return null;
+
+        var conductors = tech.Stackup.Layers.Where(l => l.Kind == StackupKind.Conductor).ToList();
+        bool anotherWaiting = conductors
+            .Skip(1).Take(Math.Max(0, conductors.Count - 2))
+            .Any(l => !ReferenceEquals(l, conductor) && l.DrawingLayers.Count == 0);
+        return anotherWaiting ? null : candidates[0];
     }
 
     /// <summary>The messages alone, in <see cref="Analyze"/>'s order — the long-standing shape of

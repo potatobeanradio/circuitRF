@@ -301,7 +301,7 @@ public sealed partial class RailRfViewModel
             Technology = board.Technology,
             DbuPerMicron = board.DbuPerMicron,
             Pads = board.Pads,
-            ReferenceNet = board.ReferenceNet,
+            ReferenceNet = _document.ReferenceNet,   // live, not the board's snapshot
         };
 
         var map = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);

@@ -82,11 +82,11 @@ public sealed partial class RailRfViewModel
     private string? _referenceMeasuredNamed;
 
     /// <summary>The return the document names, or null — what <c>Regions.ResolveReturnNet</c> takes
-    /// before it measures anything. The live document, not the board's snapshot of it: the reference
-    /// row edits it after the board was read.</summary>
+    /// before it measures anything. The live document ONLY, never the board's snapshot of it: the
+    /// reference row edits it after the board was read, and choosing "measured" there clears it —
+    /// falling back to the snapshot put the old name back under a row that says "measured".</summary>
     private string? NamedReturnNet =>
-        _document.ReferenceNet is { Length: > 0 } named ? named
-        : Board?.ReferenceNet is { Length: > 0 } board ? board : null;
+        _document.ReferenceNet is { Length: > 0 } named ? named : null;
 
     /// <summary>How many PREVIEW walks this board has paid for — <b>counted so R-rail19-2c is
     /// testable without timing anything</b>, which is the same reason <c>SolvesStarted</c> exists.

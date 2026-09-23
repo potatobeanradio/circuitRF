@@ -873,6 +873,38 @@ public sealed class PdnFastExtractorTests
     }
 
     /// <summary>
+    /// Twenty loads on one return plane are an ordinary rail, and the fast model answers it. The
+    /// refined grid is a tensor product — every port adds lines across the whole plane — and at the
+    /// ceiling it shipped with (20,000 cells) this 50 mm plane needed 28,106 and was refused.
+    /// </summary>
+    [Fact]
+    public void R_rail33_ARailWithTwentyLoadsOnOnePlaneIsAnswered()
+    {
+        var tech = Board(35.0, 35.0, 1.6);
+        var shapes = new List<LayoutShape> { Rect(Top, 0, Mm(24.85), Mm(50), Mm(25.15)), Rect(Bot, -Mm(1), -Mm(1), Mm(51), Mm(51)) };
+        var request = Request(tech, shapes, (Mm(0.2), Mm(25)), (Mm(5), Mm(5)));
+        request.Rail.Loads.Clear();
+
+        var pads = new List<PlacedPin> { request.Pads[0] };
+        for (int i = 0; i < 20; i++)
+        {
+            long x = Mm(5 + 40.0 * (i / 2) / 9), y = Mm(i % 2 == 0 ? 5 : 45);
+            shapes.Add(Rect(Top, x - Mm(0.15), Math.Min(y, Mm(25)), x + Mm(0.15), Math.Max(y, Mm(25))));
+            pads.Add(new PlacedPin($"U{i}", "1", "VDD", x, y, PinSource.BoardNetlist));
+            request.Rail.Loads.Add(new RailLoad { Anchor = new RailPortAnchor { Refdes = $"U{i}", Pin = "1" }, DcCurrentA = 0.1 });
+        }
+
+        var fast = PdnGraphExtractor.Extract(new PdnExtractionRequest
+        {
+            Rail = request.Rail, Shapes = shapes, Technology = tech, DbuPerMicron = DbuPerMicron, Pads = pads,
+            ClassOverrides = request.ClassOverrides, Graph = request.Graph,
+        });
+
+        Assert.Null(fast.Refusal);
+        Assert.Equal(20, fast.Netlist!.Ports.Count);
+    }
+
+    /// <summary>
     /// A piece of copper inside a hole in a coarsely meshed pour is not the pour. The load sits on
     /// a 1.5 mm island in a 3 mm hole, reached only through a via, 8 mm of MID copper and a via back
     /// up; the pour's 5 mm cell spans the hole, and a lookup by cell index tied the load to the pour

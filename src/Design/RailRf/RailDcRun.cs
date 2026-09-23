@@ -302,6 +302,18 @@ public static class RailDcRun
         // The finer of the two is the answer; the coarser is what it is measured against.
         var (finer, finerSolution, fineN) = other > n ? (otherExtraction, otherSolution, other) : (extraction, solution, n);
         var (coarser, coarserSolution, coarseN) = other > n ? (extraction, solution, n) : (otherExtraction, otherSolution, other);
+
+        // Two rungs the cell ceiling held to one pitch are one mesh twice: their agreement measures
+        // nothing, and calling it convergence would be the claim this check exists to stop.
+        if (!(coarser.Netlist!.Provenance.CellSizeMetres > finer.Netlist!.Provenance.CellSizeMetres))
+        {
+            Discretisation(pdn,
+                $"Its discretisation error was not measured: the {request.Mesh.MaxCells:N0}-cell ceiling " +
+                $"held the meshes at {coarseN} and {fineN} cells across to the same pitch, so there was " +
+                "no coarser mesh to compare this one against.");
+            return null;
+        }
+
         var (move, port) = LargestMove(toSolve, chained, finer.Netlist!, finerSolution, coarser.Netlist!, coarserSolution);
 
         // Refine a rung at a time while the last two disagree.
@@ -311,7 +323,8 @@ public static class RailDcRun
             if (next.Refusal is not null ||
                 next.Netlist!.Provenance.CellSizeMetres >= finer.Netlist!.Provenance.CellSizeMetres)
                 return NotConverged(request, coarseN, fineN, move, port,
-                                    finer.Netlist!, finerSolution, coarser.Netlist!, coarserSolution);
+                                    finer.Netlist!, finerSolution, coarser.Netlist!, coarserSolution,
+                                    next.Refusal);
 
             if (Solve(request, railName, next.Netlist!, out var nextSolution,
                       $"refining the mesh to {fineN + 1} cells across") is { } nextRefused)
@@ -343,7 +356,8 @@ public static class RailDcRun
     /// </remarks>
     private static string NotConverged(
         RailDcRequest request, int coarseN, int fineN, double move, string port,
-        PdnNetlist fine, LinearDcSolution fineSolution, PdnNetlist coarse, LinearDcSolution coarseSolution)
+        PdnNetlist fine, LinearDcSolution fineSolution, PdnNetlist coarse, LinearDcSolution coarseSolution,
+        string? finerRefusal = null)
     {
         string where = WhereTheyDisagree(request.DbuPerMicron, fine, fineSolution, coarse, coarseSolution) is { } at
             ? $" The two meshes disagree most at {request.LengthFormat.Point(at.X, at.Y)} on the " +
@@ -353,9 +367,12 @@ public static class RailDcRun
         return
             $"Its Accurate answer did not converge: the drop to {port} moved {move * 100:0.##} % between " +
             $"{coarseN} and {fineN} cells across the narrowest copper, against a " +
-            $"{DiscretisationTolerance * 100:0.#} % tolerance, and a finer mesh would pass the " +
-            $"{request.Mesh.MaxCells:N0}-cell ceiling.{where} Raise the ceiling, or state a cell size " +
-            "to take an unconverged answer knowingly.";
+            $"{DiscretisationTolerance * 100:0.#} % tolerance, and " +
+            (finerRefusal is { } refused
+                ? $"the mesh at {fineN + 1} cells across was refused: {refused}{where} State a cell " +
+                  "size to take an unconverged answer knowingly."
+                : $"a finer mesh would pass the {request.Mesh.MaxCells:N0}-cell ceiling.{where} Raise " +
+                  "the ceiling, or state a cell size to take an unconverged answer knowingly.");
     }
 
     private static (long X, long Y, LayerKey Layer, bool IsReference)? WhereTheyDisagree(
@@ -424,8 +441,15 @@ public static class RailDcRun
         };
     }
 
-    /// <summary>The largest relative change, over every load port, in the drop between two
-    /// solutions of the same rail — and which port it was.</summary>
+    /// <summary>The largest change, over every load port, in the drop between two solutions of the
+    /// same rail, relative to the rail's LARGEST drop — and which port it was.</summary>
+    /// <remarks>
+    /// Relative to the largest drop rather than to each port's own: an observation port beside the
+    /// source has a drop of microvolts, almost all of it the spreading at its own point, and a
+    /// microvolt's move there is several percent of itself. Measured against its own drop it would
+    /// refine the whole rail to the ceiling and refuse it while the load that matters had settled.
+    /// A rail that draws nothing has no drop to converge and reads 0.
+    /// </remarks>
     private static (double Move, string Port) LargestMove(
         RailSpec rail, RailChainStart? chained,
         PdnNetlist a, LinearDcSolution sa, PdnNetlist b, LinearDcSolution sb)
@@ -435,19 +459,18 @@ public static class RailDcRun
             if (s.OpenCircuitVoltageV is { } v && (source is null || v > source)) source = v;
         if (chained is not null && (source is null || chained.VoltageV > source)) source = chained.VoltageV;
 
-        double worst = 0;
+        double worst = 0, scale = 0;
         string which = "the loads";
         foreach (var pa in a.Ports)
         {
             var pb = b.Ports.FirstOrDefault(p => p.Index == pa.Index);
             if (pb is null) continue;
             double va = PortVoltage(pa, sa), vb = PortVoltage(pb, sb);
-            double scale = source is { } sv ? Math.Abs(sv - va) : Math.Abs(va);
-            if (!(scale > 0)) continue;
-            double move = Math.Abs(va - vb) / scale;
+            scale = Math.Max(scale, source is { } sv ? Math.Abs(sv - va) : Math.Abs(va));
+            double move = Math.Abs(va - vb);
             if (move >= worst) { worst = move; which = pa.Name; }
         }
-        return (worst, which);
+        return scale > 0 ? (worst / scale, which) : (0, which);
     }
 
     private static double PortVoltage(PdnPortBinding p, LinearDcSolution s) =>

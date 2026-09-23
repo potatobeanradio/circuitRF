@@ -1,5 +1,32 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## railRF briefs 28-34 — what a review still found in the window (2026-09-22)
+
+- **Adopting the layout session's live model never re-read the pads.** Both open paths read the pads
+  off the `.clay` on disk. `AdoptLiveArtwork` then swapped in the session's model, and
+  `OnBoardChanged` took that model's placements as "what the pads were read from". A part moved and
+  not yet saved therefore never looked moved. The pick list and the turned-parts note described the
+  saved file, and Turn computed a part's new place from lands it no longer stood on.
+  `RailRfViewModel.AdoptLiveView` now schedules the debounced read when the two sets of placements
+  differ. Test: `RailRfPadsFollowTheLayoutTests.AdoptingALiveModelWithUnsavedMovesReReadsThePads`.
+- **A finished pad read put back the flatten it started from.** An edit that moves no pin during the
+  read (deleting a trace, say) re-flattens the board without superseding the job, so publishing the
+  captured list put the deleted copper back. `FinishPadRead` now keeps the board's current shapes.
+- **Turn and the live-model swap looked only in the most recently active workspace.** With two
+  workspaces open and the `.clay` in the other one, the turn was written to the file behind that
+  session, and the session's next save wrote the old placements back. Both now search every open
+  workspace window.
+- **"Measured" in the reference row did nothing until the document was reopened.** Choosing it
+  clears `ReferenceNet`. The preview, the run, the mounting loops and the part discovery then fell
+  back to `Board.ReferenceNet`, which is only the document as it stood at open, so the old name came
+  back. `circuitrf rail` measured instead: the window and the verb disagreed on one saved document.
+  All four now read the live document only.
+- **A placement could record the rail's reference layer as its anchor layer.** The walk seeds nothing
+  there. `ShownCopperLayerAt` now skips the rail's reference.
+- **Not fixed:** a coordinate typed or pasted into the anchor column records no layer; only the
+  right-click and pour-click routes do. The window still has no gesture to make a part a series part,
+  so the only way is a `.crail` row.
+
 ## railRF brief 34 — which copper a coordinate means (2026-09-22)
 
 - **Every coordinate the window places records its layer.** This covers the right-click Place

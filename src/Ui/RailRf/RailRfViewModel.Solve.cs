@@ -933,9 +933,10 @@ public sealed partial class RailRfViewModel
         LengthFormat   = board.LengthFormat,
         Pads           = board.Pads,
         NetPoints      = board.NetPoints,
-        // The LIVE document's return where it names one — the reference row edits it after the
-        // board was read, and `board` is a snapshot of the document at that moment (R-rail31-1).
-        ReferenceNet   = _document.ReferenceNet is { Length: > 0 } named ? named : board.ReferenceNet,
+        // The LIVE document's return — the reference row edits it after the board was read, and
+        // `board` is a snapshot of the document at that moment (R-rail31-1). Never the snapshot as a
+        // fallback: "measured" clears the name, and the run must then measure, as the verb does.
+        ReferenceNet   = _document.ReferenceNet is { Length: > 0 } named ? named : null,
         BoardOutline   = board.BoardOutline,
         SeriesElements = board.SeriesElements,
         ShuntParts     = board.ShuntParts,

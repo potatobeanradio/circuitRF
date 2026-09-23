@@ -265,14 +265,18 @@ public static class Regions
             : MixedReturnRefusalFor(pieces, railNets, netPoints, railNet, tech, referenceLayer, referenceNet);
 
         if (power.Count > 1)
-            diagnostics.Add(
-                $"The rail's copper is {power.Count} galvanically separate regions. On imported " +
-                "artwork the copper stops at every pad, so this is ordinary and not an error — but " +
-                "nothing bridges them at DC until a series part says what does.");
+            diagnostics.Add(SeparateRegionsNote(power.Count));
 
         return new PdnRailRegionSet(power, reference, report, diagnostics, ownReturn)
             { MixedReturnRefusal = mixed };
     }
+
+    /// <summary>The walk's note for a rail of more than one galvanic region — one spelling, so an
+    /// extractor that knows which series parts bridge them can recognise it and restate it.</summary>
+    internal static string SeparateRegionsNote(int count) =>
+        $"The rail's copper is {count} galvanically separate regions. On imported " +
+        "artwork the copper stops at every pad, so this is ordinary and not an error — but " +
+        "nothing bridges them at DC until a series part says what does.";
 
     /// <summary>
     /// The conductor drawing layers that have copper at (<paramref name="x"/>, <paramref name="y"/>)
@@ -333,26 +337,48 @@ public static class Regions
     /// and by "everything on that layer" where it does not — which is the ordinary case, because a
     /// reference plane is usually the only thing on its layer and asking a user to name its net twice
     /// buys nothing.
+    ///
+    /// <para><b>A return point claims only the copper it stands on</b>, by the rule
+    /// <see cref="MeasureReturnNet"/> named the net with: a point with a land (<see cref="PdnNetPoint.Layer"/>)
+    /// is that land's piece, and a layerless one counts only where every piece under it is one
+    /// galvanic net. Since brief 31 the result is also taken OUT of the rail's nets, so reading "the
+    /// reference-layer piece under every GND point" — the rule before — let a ground pad on Top
+    /// standing over a supply trace on a Bottom reference claim that supply as the return and remove
+    /// it from its own rail.</para>
     /// </remarks>
     internal static (HashSet<int> Nets, bool Resolved) ReturnNets(
         IReadOnlyList<DrcNetPiece> pieces, IReadOnlyList<PdnNetPoint> netPoints, string? railNet,
         LayerKey referenceLayer, string? referenceNet)
     {
-        var refSeeds = new List<(long X, long Y, LayerKey? Layer)>();
+        var nets = new HashSet<int>();
+        bool seeded = false;
+        var under = new HashSet<int>();
         foreach (var p in netPoints)
         {
             // A point on the walked net is the rail's before it is the return's — Walk's own order.
             if (railNet is { Length: > 0 } && string.Equals(p.Net, railNet, StringComparison.OrdinalIgnoreCase))
                 continue;
-            if (referenceNet is { Length: > 0 } && string.Equals(p.Net, referenceNet, StringComparison.OrdinalIgnoreCase))
-                refSeeds.Add((p.X, p.Y, null));
+            if (referenceNet is not { Length: > 0 } || !string.Equals(p.Net, referenceNet, StringComparison.OrdinalIgnoreCase))
+                continue;
+            seeded = true;
+
+            under.Clear();
+            foreach (var piece in pieces)
+            {
+                if (p.Layer is { } land && piece.Layer != land) continue;
+                if (!piece.Bounds.Contains(p.X, p.Y) || !Contains(piece.Paths, p.X, p.Y)) continue;
+                under.Add(piece.Net);
+            }
+            if (p.Layer is not null || under.Count == 1) nets.UnionWith(under);
         }
 
-        var nets = refSeeds.Count > 0
-            ? NetsAt(pieces, refSeeds, anyLayer: false, onlyLayer: referenceLayer)
-            : pieces.Where(p => p.Layer == referenceLayer).Select(p => p.Net).ToHashSet();
+        if (!seeded)
+            return (pieces.Where(q => q.Layer == referenceLayer).Select(q => q.Net).ToHashSet(), false);
 
-        return (nets, refSeeds.Count > 0 && nets.Count > 0);
+        // Resolved only where the named net reaches the reference layer; where it does not, the
+        // reference is empty, as it always was for a named net found nowhere on that layer.
+        bool resolved = pieces.Any(q => q.Layer == referenceLayer && nets.Contains(q.Net));
+        return (resolved ? nets : [], resolved);
     }
 
     /// <summary>

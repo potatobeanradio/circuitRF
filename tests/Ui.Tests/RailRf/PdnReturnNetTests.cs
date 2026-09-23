@@ -126,6 +126,32 @@ public sealed class PdnReturnNetTests
         Assert.Equal(Dump(without), Dump(withPour));
     }
 
+    /// <summary>
+    /// A return point claims only the copper it stands on. A GND pad on TOP (its land stated, as an
+    /// artwork pad's is) over the rail's own VDD copper on the reference layer: reading "the
+    /// reference-layer piece under every GND point" took the VDD net as the return and then removed
+    /// it from its own rail, which came back as copper of no net at all.
+    /// </summary>
+    [Fact]
+    public void AGroundPadOverTheRailsCopperOnTheReferenceLayerDoesNotTakeTheRailAsTheReturn()
+    {
+        var result = PdnGraphExtractor.Extract(Request(
+        [
+            Rect(Mid, -1, -5, 21, -1),                  // the GND plane
+            Via(10, -3),                                 // and a GND via onto it
+            Rect(Mid, 5, 0, 15, 3), Via(6, 0.25),        // VDD copper on the reference layer, joined up
+            Rect(Top, 9, 2, 11, 2.8),                    // a GND pad over it, on TOP
+        ],
+        [
+            new("VDD", Mm(0.2), Mm(0.25)), new("VDD", Mm(19.8), Mm(0.25)),
+            new("GND", Mm(10), Mm(-3)), new("GND", Mm(10), Mm(2.4), Top),
+        ]));
+
+        Assert.Null(result.Refusal);
+        Assert.Equal("GND", result.Netlist!.Provenance.ReturnNet.Net);
+        Assert.Contains(result.Regions!.Power.SelectMany(i => i.Copper), c => c.Layer == Top);
+    }
+
     // ── §3: no net to say which copper is the return, and the rail on the reference layer ───────
 
     [Fact]

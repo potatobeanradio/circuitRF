@@ -57,8 +57,11 @@ public sealed partial class RailRfViewModel
     /// "Topmost" is the view's own drawing order — what the user sees on top at that place — and the
     /// stackup's order only breaks a tie. The candidate set is <see cref="Regions.CopperLayersAt"/>,
     /// the walk's own geometry, so a layer recorded here is one the walk then finds copper on.
+    /// <para>The rail's REFERENCE layer is never the answer: the walk seeds nothing there (a conductor
+    /// cannot be its own return), so recording it made an anchor over an inner plane seed nothing at
+    /// all, where the same click with no layer seeded the copper under the plane.</para>
     /// </remarks>
-    internal LayerKey? ShownCopperLayerAt(long xDbu, long yDbu)
+    internal LayerKey? ShownCopperLayerAt(long xDbu, long yDbu, LayerKey? reference = null)
     {
         if (Board is not { } board) return null;
 
@@ -74,6 +77,7 @@ public sealed partial class RailRfViewModel
         }
 
         return Regions.CopperLayersAt(board.Shapes, tech, xDbu, yDbu)
+            .Where(k => k != reference)
             .Where(k => !hidden.Contains(k) && !(defs.TryGetValue(k, out var d) && !d.Visible))
             .OrderByDescending(k => defs.TryGetValue(k, out var d) ? d.ZOrder : int.MinValue)
             .ThenBy(StackRank)
@@ -83,9 +87,9 @@ public sealed partial class RailRfViewModel
 
     /// <summary>A coordinate anchor with the layer <see cref="ShownCopperLayerAt"/> reads under it;
     /// any other anchor, and a point on no shown copper, unchanged.</summary>
-    private RailPortAnchor WithShownLayer(RailPortAnchor anchor) =>
+    private RailPortAnchor WithShownLayer(RailPortAnchor anchor, LayerKey? reference = null) =>
         anchor is { Refdes: not { Length: > 0 }, Point: { } p, Layer: null }
-        && ShownCopperLayerAt(p.X, p.Y) is { } layer
+        && ShownCopperLayerAt(p.X, p.Y, reference) is { } layer
             ? anchor with { Layer = layer }
             : anchor;
 

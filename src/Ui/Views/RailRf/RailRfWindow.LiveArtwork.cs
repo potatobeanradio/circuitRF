@@ -72,9 +72,12 @@ public partial class RailRfWindow
 
         if (board.ArtworkCellRef is { Length: > 0 } clay)
         {
-            var workspace = WorkspaceLocator.Any();
+            // Whichever open workspace holds a session for it — the Turn gesture looks the same way.
+            var live = WorkspaceLocator.AllWindows()
+                .Select(w => (w.DataContext as ViewModels.WorkspaceViewModel)?.LiveLayoutModel(clay))
+                .FirstOrDefault(m => m is not null);
 
-            if (workspace?.LiveLayoutModel(clay) is { } live && !ReferenceEquals(board.View, live))
+            if (live is not null && !ReferenceEquals(board.View, live))
             {
                 // A DIFFERENT object, so the picture has to be rebuilt around it — viewport included,
                 // since this is a one-off swap onto the real document rather than an edit to what is
@@ -91,11 +94,7 @@ public partial class RailRfWindow
                 // No notes are collected: this window already reported the flatten's own sentences
                 // when it opened this very `.clay`, and this runs on every Activated — a note posted
                 // here would be the same sentence again each time the user came back to the window.
-                vm.Board = board with
-                {
-                    View = live,
-                    Shapes = RailArtwork.FlattenedShapes(live, clay, board.Technology),
-                };
+                vm.AdoptLiveView(live, RailArtwork.FlattenedShapes(live, clay, board.Technology));
             }
         }
 

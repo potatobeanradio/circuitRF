@@ -200,13 +200,35 @@ public sealed partial class RailRfViewModel
             try { resolved = RailArtwork.PadsFor(view, clay, tech, netlist, null, shapes); }
             catch (Exception) { /* dropped below: the board keeps the reading it had */ }
 
-            PostToUi(() => FinishPadRead(cts, live, tech, shapes, signature, resolved));
+            PostToUi(() => FinishPadRead(cts, live, tech, signature, resolved));
         });
+    }
+
+    /// <summary>
+    /// Swaps the board onto the layout session's live model for the same <c>.clay</c> — and re-reads
+    /// the pads where its placements are not the ones they were read from.
+    /// </summary>
+    /// <remarks>
+    /// Both open paths read the pads off the file ON DISK. A session with unsaved moves, turns,
+    /// adds or deletes has other placements, and taking its signature as "what the pads were read
+    /// from" (what <see cref="OnBoardChanged"/> does for a board read whole) meant no edit ever
+    /// looked different: the pick list and the turned-parts note went on describing the saved file,
+    /// and Turn computed a part's new place from lands it no longer stood on.
+    /// </remarks>
+    internal void AdoptLiveView(LayoutView live, IReadOnlyList<LayoutShape> shapes)
+    {
+        if (Board is not { } board) return;
+        var readFrom = PinSignature.Of(board.View);
+        Board = board with { View = live, Shapes = shapes };
+        if (PinSignature.Of(live) == readFrom) return;
+
+        _padsReadFrom = readFrom;
+        SchedulePadRead();
     }
 
     /// <summary>Publishes one pad read, unless it has been superseded.</summary>
     private void FinishPadRead(
-        CancellationTokenSource cts, LayoutView readFrom, Technology tech, IReadOnlyList<LayoutShape> shapes,
+        CancellationTokenSource cts, LayoutView readFrom, Technology tech,
         PinSignature signature, RailArtwork.RailPadResolution? resolved)
     {
         // An edit after the job started is a newer model, and its own read is already settling.
@@ -225,6 +247,9 @@ public sealed partial class RailRfViewModel
         // stackup's connectivity. Read again rather than publish them.
         if (!ReferenceEquals(board.Technology, tech)) { SchedulePadRead(); return; }
 
-        RefreshBoardPads(board, shapes, resolved, signature);
+        // The board's copper AS IT IS NOW, not the flatten captured when the job began: a shape-only
+        // edit during the read re-flattened it without superseding the job (it moves no pin), and
+        // publishing the captured list put the deleted trace back under the next run.
+        RefreshBoardPads(board, board.Shapes, resolved, signature);
     }
 }

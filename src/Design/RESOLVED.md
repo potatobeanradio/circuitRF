@@ -1,5 +1,83 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## A review of briefs 28-34: what was still wrong (2026-09-22)
+
+A review of the series' seven commits, and a run of the fourth field report's workspace through
+`circuitrf rail` in every state the designer passes through. Every number below was re-measured, and
+the shipped Power Rail example and the field board (JP1 series, reference 3/0) are **identical in
+every value** before and after, Fast and Accurate. Only their notes changed.
+
+### Fixed
+
+1. **Accurate never asked brief 29's question.** `PdnRailConnectivity.Refusal` was called from the
+   graph extractor only. On the designer's document as sent (source and load on two islands, JP1
+   not declared), Fast refused in ~19 s naming JP1. Accurate meshed the whole board and was refused
+   after ~32 s by `PdnAssembly.FloatingRefusal`, with a sentence that blamed the reference layer and
+   named no part. `PdnMeshExtractor.Plan` now asks it at the same point Fast does, and both models
+   give the same sentence in the same time. Test: `PdnRefusalCauseTests.TwoIslands…` is now a
+   Theory over both models.
+2. **A return point claimed copper it did not stand on.** `Regions.ReturnNets` seeded the reference
+   from every return-net point with its land layer dropped, taking the reference-layer piece under it.
+   Since brief 31 that set is also removed from the rail's nets. So a GND pad on Top over the rail's
+   own copper on the reference layer took the rail's galvanic net as the return, and the rail came
+   back as no copper. It now uses the rule `MeasureReturnNet` already used to name the net: a point
+   with a land claims its land's piece, and a layerless point counts only where the pieces under it
+   are one galvanic net. A named net whose points reach nothing on the reference layer is still an
+   empty reference, as before. Test:
+   `PdnReturnNetTests.AGroundPadOverTheRailsCopperOnTheReferenceLayerDoesNotTakeTheRailAsTheReturn`.
+   It fails with the old rule.
+3. **The mixed-return refusal fired on a filled or unbounded reference.** Neither extent is "every
+   piece on the layer", so the refusal's premise does not hold there. `ReturnRefusal` now returns for
+   those extents before it asks.
+4. **Fast refused ordinary many-load rails.** Brief 33's refined pour grid is a tensor product: every
+   port adds lines across the whole region. A 50 mm plane under 20 loads needed 28,106 cells, over
+   the 20,000 `MaxRefinedPourCells`, so the fast model refused it. With the ceiling lifted it answers
+   20 loads in 0.6 s and 80 in 2.3 s (Release). The ceiling is now 200,000. Test:
+   `PdnFastExtractorTests.R_rail33_ARailWithTwentyLoadsOnOnePlaneIsAnswered`.
+5. **Accurate's convergence check, three gaps** (`RailDcRun.SolveConverged`):
+   - When the cell ceiling held rungs n and n − 1 to one pitch, the two meshes were one mesh twice.
+     Their agreement was reported as convergence. The answer now says the error was not measured.
+   - The move was relative to each port's own drop. An observation port beside the source, with a
+     drop of microvolts, could drive the refinement to the ceiling and refuse the rail. It is now
+     relative to the rail's largest drop. That is identical for a one-load rail such as the field
+     board.
+   - A finer rung that refused for any reason was reported as "a finer mesh would pass the ceiling".
+     The refusal's own text is now carried.
+6. **Stackup warning: the sole-candidate layer was offered to two conductors.** With two unattached
+   inner planes and one unclaimed layer, `LikelyDrawingLayerFor` offered it to both, and two presses
+   attached one plane's copper to both. The sole-candidate fallback now applies only where one inner
+   conductor is waiting. The editor's `ApplyTechFix` refuses a layer another entry already claims.
+   Test: `RailRfFieldReport4Tests.TheUnattachedPlaneIsNamedAndAttachedInOnePress` now carries a
+   second plane.
+7. **Notes.** "The rail has copper on layer …" was written once per island (4× on the field board),
+   and "no reference copper under …" once per terminal using the anchor (2×). Each is now said once.
+   The walk's "nothing bridges them at DC until a series part says what does" was printed under a
+   run that stamped the declared JP1 across the two regions. With series parts declared it now names
+   them as the bridge.
+8. **`circuitrf rail --source/--load @x,y` dropped a stated layer.** Replacing the document's row at
+   the same point dropped its `Layer`, which turned an answered anchor back into an ambiguous one with
+   no command-line spelling to answer it. The layer is now kept.
+
+### Found, not fixed (for the owner)
+
+- **`circuitrf rail` cannot read footprints on a workspace with no `.generated-cells`.** That is every
+  archived or version-controlled workspace, because the folder is git-ignored. Each PCell instance is
+  "skipped, no geometry contributed". On the field board the refusal then said *no placed part* bridges
+  the two islands, where the window (which regenerates the cells) names JP1. The generators live in
+  `src/Ui`, below which the verb cannot reach. The fix is to move the footprint generators below the
+  firewall, or to refuse, naming the missing folder.
+- **A refdes anchor on a BOARD-NETLIST pad still seeds every layer, and nothing refuses it**
+  (brief 34 §1 on boards whose pads come from a netlist). Such a pad states no land, and
+  `Ambiguous` skips refdes anchors. A pad anchor cannot state a layer either, so a refusal would
+  have no answer. What would fix it is the pad's land layer, which a board netlist does not carry.
+- **Mounting loops still read only a NAMED return** (`PdnMountingLoop`: "no reference net is
+  named"). On a Gerber board, where the return is measured, they are refused.
+- **The return net is not in `--json`.** It is only on the text report's `return:` line.
+- **Accurate mesh memory**: rungs n, n − 1 and the next are alive together, and a refined grid is
+  built before its count is checked. That was not measured here.
+- **The designer's anchors are layerless** (their `.crail` predates brief 34). Nothing is ambiguous
+  on the field board, because GND is excluded as the return, so this costs nothing there.
+
 ## An anchor that stands over two nets (2026-09-22, brief-railrf-34)
 
 Brief 31 stopped a rail seed claiming the RETURN net. The same seeding still merged any two OTHER nets:

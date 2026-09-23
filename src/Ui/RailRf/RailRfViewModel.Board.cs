@@ -394,7 +394,7 @@ public sealed partial class RailRfViewModel
     public void PlaceSource(RailPortAnchor anchor)
     {
         if (SelectedRail is not { } rail) return;
-        rail.Sources.Add(NewSeededSource(rail, WithShownLayer(anchor)));
+        rail.Sources.Add(NewSeededSource(rail, WithShownLayer(anchor, rail.ReferenceLayer)));
         RebuildForSelectedRail();
         QueueResolve();
     }
@@ -407,7 +407,7 @@ public sealed partial class RailRfViewModel
     public void PlaceLoad(RailPortAnchor anchor)
     {
         if (SelectedRail is not { } rail) return;
-        rail.Loads.Add(NewSeededLoad(WithShownLayer(anchor)));
+        rail.Loads.Add(NewSeededLoad(WithShownLayer(anchor, rail.ReferenceLayer)));
         RebuildForSelectedRail();
         QueueResolve();
     }

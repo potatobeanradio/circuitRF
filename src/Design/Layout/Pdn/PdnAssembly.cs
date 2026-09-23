@@ -799,10 +799,13 @@ internal sealed class PdnAssembly
         if (nearest >= 0)
         {
             nodes.Add(nearest);
-            _diagnostics.Add(
+            // Asked once per terminal that uses the anchor (the source branch and its port), and
+            // said once.
+            string said =
                 $"There is no reference copper under {anchor.Describe(_req.LengthFormat)}; the return " +
                 $"was attached to the nearest reference cell, {_req.LengthFormat.Length(distanceDbu)} " +
-                "away. The spreading between the two is NOT in this answer.");
+                "away. The spreading between the two is NOT in this answer.";
+            if (!_diagnostics.Contains(said)) _diagnostics.Add(said);
         }
         return nodes;
     }

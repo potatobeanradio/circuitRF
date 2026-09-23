@@ -98,7 +98,13 @@ public partial class RailRfWindow : Window
             // the `.clay` open — undoable there, and dirtying that document like any other edit.
             vm.EditLiveLayout = (clay, edits, description) =>
             {
-                if (WorkspaceLocator.Any()?.LiveLayoutSession(clay) is not { } session) return false;
+                // Every open workspace, not the most recently active one: a session in another
+                // window missed here meant the turn went to the file behind it, and that session's
+                // next save wrote the old placements back.
+                var session = WorkspaceLocator.AllWindows()
+                    .Select(w => (w.DataContext as ViewModels.WorkspaceViewModel)?.LiveLayoutSession(clay))
+                    .FirstOrDefault(s => s is not null);
+                if (session is null) return false;
                 session.ReplaceInstances(edits, description);
                 return true;
             };

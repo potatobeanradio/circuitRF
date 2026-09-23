@@ -660,7 +660,7 @@ internal static class Rail
             TouchstoneRef = file,
         };
 
-        foreach (var rail in rails) Replace(rail.Sources, row, s => s.Anchor);
+        foreach (var rail in rails) Replace(rail.Sources, row, s => s.Anchor, (s, a) => s with { Anchor = a });
         return null;
     }
 
@@ -691,7 +691,7 @@ internal static class Rail
         }
 
         var row = new RailLoad { Anchor = anchor, DcCurrentA = current };
-        foreach (var rail in rails) Replace(rail.Loads, row, l => l.Anchor);
+        foreach (var rail in rails) Replace(rail.Loads, row, l => l.Anchor, (l, a) => l with { Anchor = a });
         return null;
     }
 
@@ -807,11 +807,23 @@ internal static class Rail
         return null;
     }
 
-    private static void Replace<T>(List<T> rows, T row, Func<T, RailPortAnchor> anchorOf)
+    /// <remarks>
+    /// A coordinate replacing the document's row at the same point keeps that row's stated
+    /// <see cref="RailPortAnchor.Layer"/> (R-rail34-2): the flag has no spelling for a layer, and
+    /// dropping the one the window recorded turned an answered anchor back into an ambiguous one
+    /// that nothing on the command line could answer.
+    /// </remarks>
+    private static void Replace<T>(
+        List<T> rows, T row, Func<T, RailPortAnchor> anchorOf, Func<T, RailPortAnchor, T> withAnchor)
     {
         string key = anchorOf(row).Describe();
         int at = rows.FindIndex(r => string.Equals(anchorOf(r).Describe(), key, StringComparison.OrdinalIgnoreCase));
-        if (at >= 0) rows[at] = row; else rows.Add(row);
+        if (at < 0) { rows.Add(row); return; }
+
+        var anchor = anchorOf(row);
+        if (anchor.Layer is null && anchor.Refdes is not { Length: > 0 } && anchorOf(rows[at]).Layer is { } stated)
+            row = withAnchor(row, anchor with { Layer = stated });
+        rows[at] = row;
     }
 
     // ── argument value conventions ───────────────────────────────────────────

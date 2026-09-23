@@ -109,10 +109,18 @@ public sealed class PdnRefusalCauseTests
         ],
         series, control: control);
 
-    [Fact]
-    public void TwoIslandsAreRefusedAsSeparateCopperNamingThePartThatBridgesThem()
+    private static PdnExtraction Extract(PdnModelKind model, PdnExtractionRequest request) =>
+        model == PdnModelKind.Fast ? PdnGraphExtractor.Extract(request) : PdnMeshExtractor.Extract(request);
+
+    /// <summary>Both models: Accurate once skipped this check, meshed the whole board, and was
+    /// refused by the netlist backstop in a sentence that blamed the reference layer and named no
+    /// part.</summary>
+    [Theory]
+    [InlineData(PdnModelKind.Fast)]
+    [InlineData(PdnModelKind.Accurate)]
+    public void TwoIslandsAreRefusedAsSeparateCopperNamingThePartThatBridgesThem(PdnModelKind model)
     {
-        var refused = PdnGraphExtractor.Extract(TwoIslands());
+        var refused = Extract(model, TwoIslands());
 
         Assert.NotNull(refused.Refusal);
         Assert.Contains("separate copper", refused.Refusal, StringComparison.Ordinal);
@@ -121,17 +129,22 @@ public sealed class PdnRefusalCauseTests
         Assert.DoesNotContain("spreading", refused.Refusal, StringComparison.OrdinalIgnoreCase);
     }
 
-    [Fact]
-    public void TheSameRailWithTheBridgeDeclaredAsItsSeriesPartSolves()
+    /// <summary>And its notes say the declared part bridges the regions, not that nothing does.</summary>
+    [Theory]
+    [InlineData(PdnModelKind.Fast)]
+    [InlineData(PdnModelKind.Accurate)]
+    public void TheSameRailWithTheBridgeDeclaredAsItsSeriesPartSolves(PdnModelKind model)
     {
         var jp1 = new PdnSeriesElement(
             "JP1", new RailPortAnchor { Refdes = "JP1", Pin = "1" },
             new RailPortAnchor { Refdes = "JP1", Pin = "2" }, 0.005, "test");
 
-        var result = PdnGraphExtractor.Extract(TwoIslands([jp1]));
+        var result = Extract(model, TwoIslands([jp1]));
 
         Assert.Null(result.Refusal);
         Assert.NotNull(result.Netlist);
+        Assert.Contains(result.Diagnostics, d => d.Contains("— JP1 — is what bridges them", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Diagnostics, d => d.Contains("nothing bridges them", StringComparison.Ordinal));
     }
 
     /// <summary>

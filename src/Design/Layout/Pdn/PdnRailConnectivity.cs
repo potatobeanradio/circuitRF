@@ -169,10 +169,11 @@ internal static class PdnRailConnectivity
     public static string? ReturnRefusal(
         PdnExtractionRequest request, PdnRailRegionSet regions, LayerKey referenceLayer)
     {
-        if (regions.MixedReturnRefusal is { } mixed) return $"Rail '{request.Rail.Name}': {mixed}";
-
-        // A FILLED or UNBOUNDED reference is one plate by construction and cannot be split.
+        // A FILLED or UNBOUNDED reference is one plate by construction: it cannot be split, and it
+        // is not "every piece on the layer", so it cannot take the rail's own lands in either.
         if (request.Rail.ReferenceExtent != RailReferenceExtent.AsImported) return null;
+
+        if (regions.MixedReturnRefusal is { } mixed) return $"Rail '{request.Rail.Name}': {mixed}";
         if (regions.Reference.Count < 2) return null;
 
         var fmt = request.LengthFormat;
@@ -264,6 +265,26 @@ internal static class PdnRailConnectivity
         double t = len > 0 ? Math.Clamp(((px - ax) * dx + (py - ay) * dy) / len, 0, 1) : 0;
         double ex = ax + t * dx - px, ey = ay + t * dy - py;
         return ex * ex + ey * ey;
+    }
+
+    /// <summary>
+    /// The walk's diagnostics for the run, with its "nothing bridges them" note restated where the
+    /// rail declares series parts. The walk cannot see parts, and a run that stamps a declared
+    /// jumper across two regions while its notes say nothing bridges them reads as if the
+    /// declaration had been ignored. <see cref="Refusal"/> is what holds the claim: a declared part
+    /// that bridges nothing the source needs is refused there.
+    /// </summary>
+    public static IEnumerable<string> DiagnosticsOf(PdnExtractionRequest request, PdnRailRegionSet regions)
+    {
+        string separate = Regions.SeparateRegionsNote(regions.Power.Count);
+        var parts = request.SeriesElements.Select(p => p.Refdes).Distinct(StringComparer.Ordinal).ToList();
+        foreach (string d in regions.Diagnostics)
+            yield return parts.Count > 0 && d == separate
+                ? $"The rail's copper is {regions.Power.Count} galvanically separate regions. On imported " +
+                  $"artwork the copper stops at every pad, and the series part{(parts.Count == 1 ? "" : "s")} " +
+                  $"this rail declares — {Join(parts)} — {(parts.Count == 1 ? "is" : "are")} what bridge" +
+                  $"{(parts.Count == 1 ? "s" : "")} them at DC."
+                : d;
     }
 
     /// <summary>
