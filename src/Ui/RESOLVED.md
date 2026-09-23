@@ -35100,3 +35100,35 @@ reads only because the reader retries a one-character token with `F` appended.
 **A TextBox paste can only be redirected by taking it over unconditionally.** Whether the clipboard holds
 a table is known only after an asynchronous read, and `PastingFromClipboardEvent` has to be marked handled
 synchronously — so the view always handles it, and puts a single line back with `SelectedText`.
+
+## railRF — reusing a part library across workspaces (2026-09-23)
+
+**The import dialog's Part library row was read and never recorded.** `ApplyImport` set the session's
+`PartLibrary`/`PartLibraryPath` and wrote the netlist and placement references onto the document, but not
+`PartLibraryRef` — so a design pointed at another workspace's `.crlib` showed its models until it was
+closed and came back with none. It is written now, only where a library was read, so a re-import that
+names none keeps the one the document already has; Save's `RebaseReferences` restates it
+document-relative with the other four.
+
+**Copying rows is `PartLibraryMerge` in `src/Design`, behind the editor's Import table…** (which now
+takes a `.crlib` as well as a `.csv`). Unlike the `.csv` import it never overwrites a value this library
+states — a disagreement between two maintained libraries is reported, not decided — and it matches part
+numbers exactly: the `.csv` import's prefix match exists for supplier tools that trim packaging codes,
+and between two internal part-number lists it would merge different parts. A row's `ModelRef` is relative
+to its own library's folder, so it is restated against the target's rather than copied as text.
+
+**Use existing library… on the parts pane** is `CreatePartLibraryForRailDocument`'s copy overload (seed,
+then `PartLibraryMerge`, then write) for a `.crlib` outside the workspace, and
+`UsePartLibraryForRailDocument` (point the `.crail` at it, no copy) for one inside it — copying a file
+that already travels with the workspace would only make two libraries to keep in step. Create and Use
+share `PartLibraryTargetFor` (the refusals) and `PointRailDocumentAt` (the write), so they cannot come to
+disagree about when a design may take a library. The seeded library's `BaseDirectory` must be set to the
+destination folder BEFORE the merge, or a copied row's model reference is rebased against nothing.
+
+**It was invisible on the ordinary document.** The first cut offered Use existing only where the design
+named NO library; a design that already has one — the usual case — got the old open-directly button and
+never saw it. The book button is now always a two-item menu (open-or-create, Use existing), the same pair
+is on both context menus (the no-selection one too, since the book button hides on an empty table), and
+on a design with a library Use existing merges into that library's open editor
+(`MergeIntoPartLibrary`) — an unsaved, undoable edit, never a write behind an editor that may hold
+changes of its own.

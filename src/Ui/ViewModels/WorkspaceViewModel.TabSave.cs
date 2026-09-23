@@ -319,16 +319,20 @@ public partial class WorkspaceViewModel
     /// framework-free, so the picker is here and the VM takes a resolved path — and its
     /// <c>PartLibrarySavedAs</c> event is what re-keys the open-document map and re-asks the coverage.
     /// </summary>
-    /// <summary>The part-library editor's Import table… picker. <c>.csv</c> only (owner, 2026-09-23);
-    /// a spreadsheet is saved as one first.</summary>
+    /// <summary>The part-library editor's Import table… picker. <c>.csv</c> (owner, 2026-09-23) — a
+    /// spreadsheet is saved as one first — or another design's <c>.crlib</c>, whose rows are merged in.</summary>
     internal async Task ImportPartLibraryTable(PartLibraryDocument doc, Window owner)
     {
         var files = await owner.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
-            Title         = "Import Parts Table",
+            Title         = "Import Parts Table or Library",
             AllowMultiple = false,
             FileTypeFilter =
-                [new FilePickerFileType("Comma-separated values") { Patterns = ["*.csv"] }],
+            [
+                new FilePickerFileType("Parts table or part library") { Patterns = ["*.csv", "*.crlib"] },
+                new FilePickerFileType("Comma-separated values") { Patterns = ["*.csv"] },
+                new FilePickerFileType("circuitRF part library") { Patterns = ["*.crlib"] },
+            ],
         });
 
         if (files is [var file] && file.TryGetLocalPath() is { Length: > 0 } path)

@@ -128,9 +128,11 @@ statements, so railRF never defaults one to the other.</p>
 
 ### The part library {#part-library}
 
-The book button under the parts table opens the document's part library, or creates one seeded with
-every part number the document names when it has none (or names one that has since been deleted). One
-row per part number:
+The book button under the parts table, and the parts table's right-click menu, offer two things.
+**Open part library** opens the document's library; when it has none (or names one that has since been
+deleted) this is **Create part library…**, which creates one seeded with every part number the document
+names. **Use existing library…** reuses a library another design already built
+([below](#reuse-library)). One row per part number:
 
 | Column | What goes in it |
 |---|---|
@@ -172,6 +174,25 @@ where the column header states the unit (`C (pF)`, `resonance (MHz)`, `L (nH)`) 
 find a part only once its trailing packaging code is deleted, so a part number that is a library row's
 with its end trimmed is matched to that row &mdash; when exactly one row fits &mdash; and named in the
 report above the table.
+
+#### Reusing a library from another design {#reuse-library}
+
+Designs that buy the same part numbers can share one library's work, in any of three ways:
+
+- **Start from it, or add it.** **Use existing library…** on the book button (or the parts table's
+  right-click menu) picks a `.crlib`. If this document already has a library, the picked one's rows are
+  merged into it by the rules below, in the library editor, as one undoable edit &mdash; save the library to
+  keep them. If it has none, a library from another workspace is copied: a new one is created in this
+  workspace, seeded with this document's part numbers, the other library's rows are merged in, and it
+  opens with the report above its table. One already inside this workspace is used as it is.
+- **Copy its rows in.** **Import table…** also takes a `.crlib`. Part numbers this library lacks arrive
+  whole, with their bias curves; for one both libraries have, only the fields this one leaves blank are
+  filled. Where both state a value and they differ, **this library's is kept** and the report names both.
+  A row's model file is still read from where it sits, beside the other library, and the report names each
+  one. It is one undoable edit, and the copy is saved with this workspace.
+- **Point this design at it.** The import dialog's **Part library** row names a `.crlib` anywhere,
+  including in another workspace. The design reads it directly, so an edit made there reaches this design
+  too. It is not copied into this workspace, so an archive of this workspace does not carry it.
 
 ### Parts the rail runs through {#series}
 

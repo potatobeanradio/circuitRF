@@ -77,6 +77,11 @@ public partial class RailRfWindow
         {
             if (vm.SelectedRail is null) { e.Cancel = true; return; }
             List<object> empty = seriesOffers.Count == 0 ? [add] : [add, new Separator(), .. seriesOffers];
+            // The library's gestures need no selection — they act on the whole document — so they are
+            // here too; on an empty table this menu is the only way to them, since the pane's book
+            // button is hidden until the table has rows.
+            empty.Add(new Separator());
+            empty.AddRange(LibraryItems(vm));
             menu.ItemsSource = empty;
             return;
         }
@@ -94,12 +99,6 @@ public partial class RailRfWindow
             + "by — the capacitance, the ESR and the self-resonance stay the library's.");
         assign.Click += (_, _) => AssignPartNumberTo(targets, row.PartNumber);
 
-        var library = new MenuItem
-        {
-            Header = Vm?.PartLibraryPath is { Length: > 0 } ? "Open part library" : "Create part library…",
-        };
-        ToolTip.SetTip(library, Vm?.PartLibraryButtonTip);
-        library.Click += (_, _) => CreatePartLibrary();
 
         var remove = new MenuItem
         {
@@ -148,7 +147,7 @@ public partial class RailRfWindow
         List<object> items = [add, remove, new Separator(), .. connection, new Separator(), assign];
         if (seriesOffers.Count > 0) { items.Add(new Separator()); items.AddRange(seriesOffers); }
         items.Add(new Separator());
-        items.Add(library);
+        items.AddRange(LibraryItems(vm));
         menu.ItemsSource = items;
     }
 
@@ -237,8 +236,53 @@ public partial class RailRfWindow
         vm.RemoveParts(TargetsFor(row));
     }
 
-    /// <summary>The pane's own button for R-rail27-3c.</summary>
-    private void OnCreatePartLibraryClick(object? sender, RoutedEventArgs e) => CreatePartLibrary();
+    /// <summary>
+    /// The pane's book button (R-rail27-3c): a menu of the library's two gestures — open or create
+    /// this design's own, and <b>Use existing library…</b> (field report, 2026-09-23).
+    /// </summary>
+    /// <remarks>
+    /// <b>ALWAYS the menu, including when the document already names a library.</b> It opened that
+    /// library directly at first and offered the choice only where there was none, so on the ordinary
+    /// document — one that already HAS a library — Use existing was nowhere to be seen (owner,
+    /// 2026-09-23). Where one exists, Use existing merges the picked library's rows into it.
+    /// </remarks>
+    private void OnCreatePartLibraryClick(object? sender, RoutedEventArgs e)
+    {
+        if (Vm is not { } vm) return;
+        if (sender is not Control button) { CreatePartLibrary(); return; }
+
+        var flyout = new MenuFlyout { Placement = PlacementMode.TopEdgeAlignedLeft };
+        foreach (var item in LibraryItems(vm)) flyout.Items.Add(item);
+        flyout.ShowAt(button);
+    }
+
+    /// <summary>True where the document names a part library that is still on disk.</summary>
+    private static bool NamesLiveLibrary(RailRfViewModel vm) =>
+        vm.PartLibraryPath is { Length: > 0 } p && File.Exists(p);
+
+    /// <summary>The library's two gestures, for the book button and both context menus alike.</summary>
+    private MenuItem[] LibraryItems(RailRfViewModel vm)
+    {
+        bool has = NamesLiveLibrary(vm);
+
+        var first = new MenuItem { Header = has ? "Open part library" : "Create part library…" };
+        ToolTip.SetTip(first, has
+            ? $"Open {Path.GetFileName(vm.PartLibraryPath)} in the part library editor."
+            : "Seed a new .crlib in this workspace from the part numbers this document names, and open it.");
+        first.Click += (_, _) => CreatePartLibrary();
+
+        var use = new MenuItem { Header = "Use existing library…" };
+        ToolTip.SetTip(use, has
+            ? "Reuse a .crlib another design already built: its rows are merged into this design's "
+            + "library as one undoable edit — new part numbers added, blank fields filled, and where the "
+            + "two disagree this library's value is kept and named. Save the library to keep it."
+            : "Start from a .crlib another design already built. Its rows are copied into a new library "
+            + "in this workspace, seeded with this document's part numbers; a library already inside "
+            + "this workspace is used as it is.");
+        use.Click += (_, _) => UseExistingPartLibrary();
+
+        return [first, use];
+    }
 
     /// <summary>The pane's own button — the same gesture for a user who is not right-clicking.</summary>
     private void OnAssignPartNumberClick(object? sender, RoutedEventArgs e)
@@ -292,24 +336,7 @@ public partial class RailRfWindow
     /// </remarks>
     private async void CreatePartLibrary()
     {
-        if (Vm is not { } vm) return;
-
-        if (vm.DocumentPath is not { Length: > 0 } crail)
-        {
-            vm.Refusal = new RailRefusal(
-                "Save this document first — a part library is written beside the .crail and named "
-                + "by it, and this one has no path yet.", RailRefusalControl.None);
-            return;
-        }
-
-        if (WorkspaceLocator.Any() is not { } workspace)
-        {
-            vm.Refusal = new RailRefusal(
-                "A part library is created in a workspace, and this railRF window has none open "
-                + "behind it. Open the workspace this design belongs to and try again.",
-                RailRefusalControl.None);
-            return;
-        }
+        if (LibraryPreconditions() is not var (vm, crail, workspace)) return;
 
         // A document that already HAS a library opens it: the button is where the parts are, and
         // asking for a name only to refuse it afterwards left a designer asking where the part
@@ -335,6 +362,96 @@ public partial class RailRfWindow
         if (crlib is null) return;
 
         workspace.OpenOrActivatePartLibrary(crlib);
+        WorkspaceLocator.WindowFor(workspace)?.Activate();
+    }
+    /// <summary>
+    /// What Create and Use existing both need before they can act — a saved document and a workspace
+    /// behind the window — with each refusal STATED, because railRF is an unowned window that
+    /// outlives the workspace behind it.
+    /// </summary>
+    private (RailRfViewModel Vm, string Crail, CircuitRF.Ui.ViewModels.WorkspaceViewModel Workspace)?
+        LibraryPreconditions()
+    {
+        if (Vm is not { } vm) return null;
+
+        if (vm.DocumentPath is not { Length: > 0 } crail)
+        {
+            vm.Refusal = new RailRefusal(
+                "Save this document first — a part library is written beside the .crail and named "
+                + "by it, and this one has no path yet.", RailRefusalControl.None);
+            return null;
+        }
+
+        if (WorkspaceLocator.Any() is not { } workspace)
+        {
+            vm.Refusal = new RailRefusal(
+                "A part library is created in a workspace, and this railRF window has none open "
+                + "behind it. Open the workspace this design belongs to and try again.",
+                RailRefusalControl.None);
+            return null;
+        }
+
+        return (vm, crail, workspace);
+    }
+
+    /// <summary>
+    /// <b>Use existing library…</b> — start this design's library from one another design already
+    /// built, rather than from nothing (field report, 2026-09-23).
+    /// </summary>
+    /// <remarks>
+    /// <b>A library from another workspace is COPIED</b> into a new one here, seeded with this
+    /// document's part numbers exactly as Create seeds it and then merged on
+    /// <c>PartLibraryMerge</c>'s rules — so the design is saved, archived and revision-controlled with
+    /// its models. <b>One already inside this workspace is USED as it is</b>: it already travels with
+    /// the workspace, and a copy would only be a second library to keep in step with the first.
+    /// </remarks>
+    private async void UseExistingPartLibrary()
+    {
+        if (LibraryPreconditions() is not var (vm, crail, workspace)) return;
+
+        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title          = "Use Existing Part Library",
+            AllowMultiple  = false,
+            FileTypeFilter = [new FilePickerFileType("circuitRF part library") { Patterns = ["*.crlib"] }],
+        });
+        if (files is not [var file] || file.TryGetLocalPath() is not { Length: > 0 } source) return;
+
+        // A design that already has a library takes the rows INTO it — the editor's own Import, as one
+        // undoable edit the user then saves, rather than a second library beside the first.
+        if (NamesLiveLibrary(vm))
+        {
+            if (!workspace.MergeIntoPartLibrary(vm.PartLibraryPath!, source, out string? refusal))
+            {
+                vm.Refusal = new RailRefusal(refusal!, RailRefusalControl.None);
+                return;
+            }
+            WorkspaceLocator.WindowFor(workspace)?.Activate();
+            return;
+        }
+
+        string? crlib;
+        string? error;
+        CircuitRF.Design.RailRf.PartLibraryImportReport? copied = null;
+
+        if (workspace.IsInCurrentWorkspace(source))
+            crlib = workspace.UsePartLibraryForRailDocument(crail, source, out error);
+        else
+        {
+            var name = new InputNameDialog(
+                "New Part Library", "Part library name:", Path.GetFileNameWithoutExtension(source));
+            if (await name.ShowDialog<string?>(this) is not { } chosen) return;
+            crlib = workspace.CreatePartLibraryForRailDocument(crail, chosen, source, out error, out copied);
+        }
+
+        if (error is { Length: > 0 })
+        {
+            vm.Refusal = new RailRefusal(error, RailRefusalControl.None);
+            if (crlib is null) return;
+        }
+        if (crlib is null) return;
+
+        workspace.OpenPartLibraryWithReport(crlib, copied, Path.GetFileName(source));
         WorkspaceLocator.WindowFor(workspace)?.Activate();
     }
 }

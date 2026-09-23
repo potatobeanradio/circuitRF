@@ -105,6 +105,12 @@ public sealed partial class RailRfViewModel
         Bom = bom;
         PartLibrary = library;
         PartLibraryPath = library is null ? null : options.PartLibraryPath;
+
+        // The library too — it was read for the session and never written down, so a design pointed
+        // at another workspace's `.crlib` came back with no library on its next open (field report,
+        // 2026-09-23). Save restates it document-relative with the other references. Only where one
+        // was read: a re-import that names no library leaves the one the document already names.
+        if (PartLibraryPath is { Length: > 0 }) _document.PartLibraryRef = PartLibraryPath;
         BoardNetlist = netlist;
 
         // R-rail7-7: an unanswered origin is a refusal that SURVIVES the dialog closing, because it

@@ -7835,23 +7835,37 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// <param name="name">The library's file name, without the extension.</param>
     /// <param name="error">Why nothing was created, where nothing was.</param>
     /// <returns>The absolute <c>.crlib</c> path, or null.</returns>
-    public string? CreatePartLibraryForRailDocument(string crailPath, string name, out string? error)
-    {
-        error = null;
-        if (CurrentWorkspacePath is not { Length: > 0 } cws)
-        {
-            error = "There is no open workspace to create a part library in.";
-            return null;
-        }
+    public string? CreatePartLibraryForRailDocument(string crailPath, string name, out string? error) =>
+        CreatePartLibraryForRailDocument(crailPath, name, copyFromPath: null, out error, out _);
 
+    /// <summary>
+    /// <see cref="CreatePartLibraryForRailDocument(string, string, out string?)"/>, with another
+    /// design's library merged into the seeded rows before the file is written — the parts pane's
+    /// <b>Use existing library…</b> (field report, 2026-09-23: a team that buys the same part numbers
+    /// board after board was rebuilding the library in every workspace).
+    /// </summary>
+    /// <remarks>
+    /// <b>A copy, never a link.</b> The rows land in a library of THIS workspace, so the design keeps
+    /// its answer when the other workspace moves or changes; the merge rules are
+    /// <see cref="PartLibraryMerge"/>'s, the same ones the editor's Import table… applies to a
+    /// <c>.crlib</c>. The source is read before anything is written, so a library that does not read
+    /// creates nothing.
+    /// </remarks>
+    /// <param name="copyFromPath">The library to copy rows from, or null for a seeded-only library.</param>
+    /// <param name="copied">What the merge did, where one ran — for the editor's report strip.</param>
+    public string? CreatePartLibraryForRailDocument(
+        string crailPath, string name, string? copyFromPath,
+        out string? error, out PartLibraryImportReport? copied)
+    {
+        copied = null;
+        if (PartLibraryTargetFor(crailPath, out error) is not { } target) return null;
         if (NameValidator.Validate(name) is { } reason)
         {
             error = $"Invalid part library name: {reason}";
             return null;
         }
 
-        string crail = Path.GetFullPath(crailPath);
-        string dir   = Path.GetDirectoryName(Path.GetFullPath(cws))!;
+        string dir   = Path.GetDirectoryName(Path.GetFullPath(CurrentWorkspacePath!))!;
         string crlib = Path.Combine(dir, name + ".crlib");
         if (File.Exists(crlib) || Directory.Exists(crlib))
         {
@@ -7859,6 +7873,88 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             return null;
         }
 
+        PartLibrary? source = null;
+        if (copyFromPath is { Length: > 0 })
+        {
+            try   { source = PartLibraryIo.LoadFromFile(copyFromPath, validate: false); }
+            catch (Exception ex)
+            {
+                error = $"'{Path.GetFileName(copyFromPath)}' did not read, so no library was created: {ex.Message}";
+                return null;
+            }
+        }
+
+        // The BOM only ever exists in the session, so it is read from the window or not at all.
+        // BaseDirectory is where the file is ABOUT to be, so a copied row's model reference is
+        // restated against it.
+        var library = new PartLibrary { Name = name, BaseDirectory = dir };
+        foreach (string partNumber in PartLibrarySeed.Distinct(
+                     target.Document.Rails.SelectMany(r => r.Parts).Select(part => part.PartNumber)))
+            library.Rows.Add(PartLibrarySeed.Row(partNumber, target.Live?.Bom));
+
+        if (source is not null)
+            copied = PartLibraryMerge.Apply(library, source, Path.GetFileName(copyFromPath!));
+
+        try
+        {
+            PartLibraryIo.SaveToFile(crlib, library, validate: false);
+        }
+        catch (Exception ex)
+        {
+            error = $"Couldn't write '{crlib}': {ex.Message}";
+            return null;
+        }
+
+        return PointRailDocumentAt(target, crlib, out error);
+    }
+
+    /// <summary>
+    /// Points one <c>.crail</c> at a part library that ALREADY lives in this workspace — the other half
+    /// of <b>Use existing library…</b>. Copying a file that is already saved with the workspace would
+    /// only make two libraries to keep in step.
+    /// </summary>
+    /// <returns>The library's absolute path, or null.</returns>
+    public string? UsePartLibraryForRailDocument(string crailPath, string crlibPath, out string? error)
+    {
+        if (PartLibraryTargetFor(crailPath, out error) is not { } target) return null;
+
+        string crlib = Path.GetFullPath(crlibPath);
+        try   { PartLibraryIo.LoadFromFile(crlib, validate: false); }
+        catch (Exception ex)
+        {
+            error = $"'{Path.GetFileName(crlib)}' did not read, so the design was not pointed at it: {ex.Message}";
+            return null;
+        }
+
+        return PointRailDocumentAt(target, crlib, out error);
+    }
+
+    /// <summary>True where <paramref name="path"/> lies inside the open workspace's folder.</summary>
+    public bool IsInCurrentWorkspace(string path)
+    {
+        if (CurrentWorkspacePath is not { Length: > 0 } cws) return false;
+        string root = Path.GetDirectoryName(Path.GetFullPath(cws))!;
+        string rel  = Path.GetRelativePath(root, Path.GetFullPath(path));
+        return !Path.IsPathRooted(rel) && rel != ".." && !rel.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal);
+    }
+
+    /// <summary>The <c>.crail</c> a new part library reference is about to go into.</summary>
+    private sealed record PartLibraryTarget(string Crail, RailDocument Document, RailRfViewModel? Live);
+
+    /// <summary>
+    /// Every refusal that has to be settled before a part library is written or named — shared by
+    /// Create and Use existing so the two cannot come to disagree about when a design may take one.
+    /// </summary>
+    private PartLibraryTarget? PartLibraryTargetFor(string crailPath, out string? error)
+    {
+        error = null;
+        if (CurrentWorkspacePath is not { Length: > 0 })
+        {
+            error = "There is no open workspace to create a part library in.";
+            return null;
+        }
+
+        string crail = Path.GetFullPath(crailPath);
         var live = Views.RailRf.RailRfWindow.ViewModelFor(crail);
         if (live is { IsDirty: true })
         {
@@ -7879,33 +7975,22 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // A reference to a file that is GONE is not a library — it is the state a user is in after
         // deleting one, and refusing here left no way back but hand-editing the `.crail` (field
         // report, 2026-09-23). The new library replaces the dangling reference, and says so.
-        string? replaced = null;
-        if (document.PartLibraryRef is { Length: > 0 } existing)
+        if (document.PartLibraryRef is { Length: > 0 } existing
+            && File.Exists(CircuitRF.Core.RefPath.Resolve(Path.GetDirectoryName(crail)!, existing)))
         {
-            string resolved = CircuitRF.Core.RefPath.Resolve(Path.GetDirectoryName(crail)!, existing);
-            if (File.Exists(resolved))
-            {
-                error = $"'{Path.GetFileName(crail)}' already names a part library ('{existing}').";
-                return null;
-            }
-            replaced = existing;
-        }
-
-        // The BOM only ever exists in the session, so it is read from the window or not at all.
-        var library = new PartLibrary { Name = name };
-        foreach (string partNumber in PartLibrarySeed.Distinct(
-                     document.Rails.SelectMany(r => r.Parts).Select(part => part.PartNumber)))
-            library.Rows.Add(PartLibrarySeed.Row(partNumber, live?.Bom));
-
-        try
-        {
-            PartLibraryIo.SaveToFile(crlib, library, validate: false);
-        }
-        catch (Exception ex)
-        {
-            error = $"Couldn't write '{crlib}': {ex.Message}";
+            error = $"'{Path.GetFileName(crail)}' already names a part library ('{existing}').";
             return null;
         }
+
+        return new PartLibraryTarget(crail, document, live);
+    }
+
+    /// <summary>Writes the reference into the <c>.crail</c> and brings its window up to date.</summary>
+    private string PointRailDocumentAt(PartLibraryTarget target, string crlib, out string? error)
+    {
+        error = null;
+        var (crail, document, live) = target;
+        string? replaced = document.PartLibraryRef is { Length: > 0 } dangling ? dangling : null;
 
         // The reference, and the document it goes in. Document-relative, like every other reference a
         // `.crail` carries.
@@ -7924,7 +8009,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         }
         catch (Exception ex)
         {
-            document.PartLibraryRef = null;
+            document.PartLibraryRef = replaced;
             error = $"'{Path.GetFileName(crlib)}' was written, but '{Path.GetFileName(crail)}' could "
                   + $"not be updated to name it: {ex.Message}";
             return crlib;
@@ -7941,6 +8026,48 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         _factory.ProjectTreeTool?.Refresh();
         return crlib;
+    }
+
+    /// <summary>
+    /// Merges another <c>.crlib</c>'s rows into a design's EXISTING library — <b>Use existing
+    /// library…</b> on a document that already has one. It opens that library and runs the editor's
+    /// own Import on it, so the merge is one undoable edit, visible, and saved by the user rather than
+    /// written behind an editor that may already hold unsaved changes.
+    /// </summary>
+    /// <returns>False, with the reason, where nothing was merged.</returns>
+    public bool MergeIntoPartLibrary(string crlibPath, string sourcePath, out string? error)
+    {
+        error = null;
+        string target = Path.GetFullPath(crlibPath);
+        if (string.Equals(target, Path.GetFullPath(sourcePath),
+                          OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+        {
+            error = $"'{Path.GetFileName(target)}' is already this design's part library — pick the "
+                  + "library whose rows you want to reuse.";
+            return false;
+        }
+
+        OpenOrActivatePartLibrary(target);
+        if (!_openDocsByPath.TryGetValue(target, out var doc) || doc is not PartLibraryDocument library)
+        {
+            error = $"'{Path.GetFileName(target)}' did not open, so nothing was merged into it.";
+            return false;
+        }
+
+        library.ViewModel.ImportTable(sourcePath);
+        return true;
+    }
+
+    /// <summary>
+    /// Opens a library just created by copying and shows what the copy did in its report strip —
+    /// the same strip the editor's own Import table… fills.
+    /// </summary>
+    public void OpenPartLibraryWithReport(string crlib, PartLibraryImportReport? copied, string? sourceName)
+    {
+        OpenOrActivatePartLibrary(crlib);
+        if (copied is null) return;
+        if (_openDocsByPath.TryGetValue(crlib, out var doc) && doc is PartLibraryDocument library)
+            library.ViewModel.ImportReport = [$"{sourceName}: {copied.Summary}", .. copied.Notes];
     }
 
     /// <inheritdoc/>

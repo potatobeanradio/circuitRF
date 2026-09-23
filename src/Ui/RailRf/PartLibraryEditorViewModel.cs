@@ -648,26 +648,41 @@ public sealed partial class PartLibraryEditorViewModel : ObservableObject
     /// Every rule — which columns, which units, which rows match — is
     /// <see cref="PartLibraryTableImport"/>'s, below the firewall. This only snapshots, applies and
     /// shows the report.
+    ///
+    /// <para><b>A <c>.crlib</c> is read as another LIBRARY</b>, through <see cref="PartLibraryMerge"/>:
+    /// the way a library built for one design is reused by the next rather than rebuilt (field
+    /// report, 2026-09-23). Read unvalidated, as the editor reads its own file — a row the other
+    /// library cannot yet resolve is still a row worth having.</para>
     /// </remarks>
     public void ImportTable(string path)
     {
-        string text;
-        try { text = System.IO.File.ReadAllText(path); }
+        string name = System.IO.Path.GetFileName(path);
+        bool isLibrary = path.EndsWith(".crlib", StringComparison.OrdinalIgnoreCase);
+
+        string text = "";
+        PartLibrary? source = null;
+        try
+        {
+            if (isLibrary) source = PartLibraryIo.LoadFromFile(path, validate: false);
+            else           text   = System.IO.File.ReadAllText(path);
+        }
         catch (Exception ex)
         {
-            ImportReport = [$"{System.IO.Path.GetFileName(path)} could not be read: {ex.Message}"];
+            ImportReport = [$"{name} could not be read: {ex.Message}"];
             return;
         }
 
         string before = SnapshotJson();
-        var report = PartLibraryTableImport.Apply(Working, text, System.IO.Path.GetFileName(path));
+        var report = source is not null
+            ? PartLibraryMerge.Apply(Working, source, name)
+            : PartLibraryTableImport.Apply(Working, text, name);
         if (report.Added.Count + report.Updated.Count > 0)
         {
-            CommitEdit(before, $"Import {System.IO.Path.GetFileName(path)}");
+            CommitEdit(before, $"Import {name}");
             RebuildRows();
             RefreshDerived();
         }
-        ImportReport = [$"{System.IO.Path.GetFileName(path)}: {report.Summary}", .. report.Notes];
+        ImportReport = [$"{name}: {report.Summary}", .. report.Notes];
     }
 
     private bool _suppressCommit;

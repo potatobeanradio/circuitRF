@@ -123,7 +123,7 @@
                     <mi:MaterialIcon Kind="ContentSaveEditOutline" Width="16" Height="16"/>
                 </Button>
                 <Button Command="{Binding ViewModel.ImportTableCommand}"
-                        ToolTip.Tip="Import table… — read a .csv of parts into this library as one undoable edit: part number, C, self-resonance, ESL, ESR, class, rating, footprint and description. C, f₀ and L are read only where the column header or the cell states the unit — C (pF), resonance (MHz), L (nH). A part number that is the library's with its end trimmed is matched and named in the report. Save a spreadsheet as .csv first."
+                        ToolTip.Tip="Import table… — read a .csv of parts into this library as one undoable edit: part number, C, self-resonance, ESL, ESR, class, rating, footprint and description. C, f₀ and L are read only where the column header or the cell states the unit — C (pF), resonance (MHz), L (nH). A part number that is the library's with its end trimmed is matched and named in the report. Save a spreadsheet as .csv first. Pick another design's .crlib to reuse its rows: new part numbers are added whole, empty fields are filled, and where the two libraries disagree this one's value is kept and named in the report."
                         Padding="6,3">
                     <mi:MaterialIcon Kind="TableArrowDown" Width="16" Height="16"/>
                 </Button>
