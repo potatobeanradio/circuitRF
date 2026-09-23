@@ -458,6 +458,13 @@ public sealed record PdnExtraction(
     /// </summary>
     public IReadOnlyList<PdnClassification> Classification { get; init; } = [];
 
+    /// <summary>
+    /// R-rail34-2 — the anchors a refusal was about because each stands on more than one net and
+    /// does not say which it means, with what each could mean. Empty on every other outcome. Carried
+    /// so the window can offer the choice as one click per candidate rather than as a sentence.
+    /// </summary>
+    public IReadOnlyList<PdnAnchorAmbiguity> AnchorAmbiguities { get; init; } = [];
+
     internal static PdnExtraction Refused(string why, PdnRailRegionSet? regions = null) =>
         new(why, null, regions, []);
 }

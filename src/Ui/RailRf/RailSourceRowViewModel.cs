@@ -74,7 +74,7 @@ public sealed partial class RailSourceRowViewModel : ObservableObject
         set
         {
             if (RailAnchorEntry.Parse(value, _lengthFormat()) is { } anchor)
-                Commit(_source with { Anchor = anchor });
+                Commit(_source with { Anchor = RailAnchorEntry.KeepLayer(anchor, _source.Anchor) });
             else
                 NotifyAnchorChanged();   // rejected: snap the field back to what is stored
         }

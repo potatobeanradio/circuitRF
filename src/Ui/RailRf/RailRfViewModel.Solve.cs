@@ -790,10 +790,14 @@ public sealed partial class RailRfViewModel
             // Nothing was solved, so nothing replaces what is on screen — and the refusal names the
             // control that answers it rather than merely being said.
             Refusal = RailRefusals.Classify(why);
+
+            // R-rail34-2: an anchor over two nets is answered by a choice, offered one click each.
+            OfferAnchorLayers(view.Result.AnchorAmbiguities);
             return;
         }
 
         Refusal = null;
+        OfferAnchorLayers([]);
 
         // ATOMIC. The kind and the numbers are one value; see RailResultView's own note.
         ByModel[view.Kind] = view;

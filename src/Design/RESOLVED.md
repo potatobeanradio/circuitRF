@@ -1,5 +1,64 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## An anchor that stands over two nets (2026-09-22, brief-railrf-34)
+
+Brief 31 stopped a rail seed claiming the RETURN net. The same seeding still merged any two OTHER nets:
+`Regions.Walk` seeded every anchor (a coordinate, and a refdes anchor once `PdnAttachments.Resolve`
+had turned it into one) on every copper layer except the reference. So a VDD pad on Top with a 3v3
+pour under it on Bottom made one rail of two supplies, and the answer looked normal. Field report 4
+had already fixed the same fault for NET POINTS (`PdnNetPoint.Layer`).
+
+### What changed
+
+1. **A pad says which layer its land is on.** `PlacedPin.Layer` is an init-only property, filled by
+   `RailArtwork.PadsFor` from `PlacedPinOrigin.Layer` (the source `PdnNetPoint.Layer` already used).
+   It is set AFTER the divergence comparison, because that comparison pairs netlist pads with artwork
+   pads by value and a netlist pad states no layer. `PlacedPins.NetPointsOf` now reads the pad's own
+   layer, and its `landLayers` dictionary parameter is gone. `PdnAttachments.ResolveLands` returns
+   each point with its layer. `Resolve` is that list with the layer dropped, and every consumer other
+   than the walk still calls it. A board-netlist pad has no layer and seeds every layer, as before. A
+   through-hole pad needs nothing extra: its barrel joins the other layers, and the walk follows it.
+2. **A coordinate may state its layer.** `RailPortAnchor.Layer` is written to the `.crail` as
+   `"Layer"`/`"LayerDatatype"` on the anchor object (the datatype defaults to 0, as
+   `ReferenceLayerDatatype` does). Nothing is written when no layer is stated, so an older document
+   reads exactly as before. A pad anchor that also states a layer is refused, because the land
+   already says which layer it is on. None of brief 1's eight registrations changed: they declare
+   the extension, not its fields. The clipboard goes through `RailDocumentIo`, so it carries the
+   layer without any change.
+3. **A coordinate with no layer, over more than one galvanic net, is refused before the walk.**
+   `PdnRailConnectivity.Walk` asks `Regions.CopperUnder` about each such source and load. It counts
+   one candidate per galvanic net off the reference layer, after the resolved return is removed
+   (`Regions.ReturnNets`, taken out of `Walk` so both use the same set). Each candidate gives:
+   - the topmost stackup layer that net has at the point;
+   - the net's name, voted from net points with galvanic ambiguity, as `ReferenceNetOn` does;
+   - the area of the piece under the point, which is how a user tells a pad from a pour.
+
+   Candidates are only named when there is more than one, so the ordinary case costs one pass over
+   the pieces. The refusal names every candidate and the `.crail` spelling. The candidates travel as
+   data on `PdnExtraction.AnchorAmbiguities` and `RailDcRunResult.AnchorAmbiguities`, which is what
+   lets the window offer one click per candidate.
+4. **`Regions.CopperLayersAt`** lists the conductor layers that have copper at a point. It uses the
+   walk's own shape expansion and the same 2 DBU containment probe, so a layer the window records is
+   one the walk will then find copper on.
+
+### Gates
+
+Measured with the fixture-dump and field-board harnesses from brief 30, old DLLs against new
+(Release):
+
+- **`PdnFastExtractorTests`, `PdnRefusalCauseTests`, `PdnMeshExtractorTests`** (46 cases, every
+  element, port, node cell and voltage): **byte-identical**.
+- **The shipped Power Rail example**, `circuitrf rail --json`, Fast and Accurate: **byte-identical**.
+  Its pads come from its board netlist, so they carry no layer.
+- **The fourth field report's board, the designer's own document.** As stated (reference 1/0): the
+  same refusal, word for word. With JP1 declared series and 3/0 as the reference (brief 31's
+  configuration, where the load stands over VDD on Top and the GND pour on Bottom): every element,
+  node cell and voltage is identical (3.296308195 V, 9,269 elements). The only differing line is the
+  port binding's `ToString`, which now prints the new `Layer = ` member. GND is removed as the return
+  by brief 31, so only one net is left under the load and nothing is ambiguous.
+- The whole `CircuitRF.Ui.Tests.RailRf` namespace passes. Tests:
+  `tests/Ui.Tests/RailRf/PdnAnchorLayerTests.cs`.
+
 ## The fast model and the return plane: a staircase on the rail, a ribbon test on the return, and a lookup that joined an island (2026-09-22, brief-railrf-33)
 
 Measured with brief 30's harness on the fourth field report's board (Release; the designer's own

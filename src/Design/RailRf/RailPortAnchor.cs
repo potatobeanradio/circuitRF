@@ -1,3 +1,5 @@
+using CircuitRF.Design.Layout;
+
 namespace CircuitRF.Design.RailRf;
 
 /// <summary>
@@ -35,6 +37,21 @@ public sealed record RailPortAnchor
     /// <summary>The fallback, in DBU on the artwork's own coordinate system. Null on a pad anchor.</summary>
     public (long X, long Y)? Point { get; init; }
 
+    /// <summary>
+    /// Which copper a COORDINATE means, where more than one layer has copper at it — R-rail34-2.
+    /// Null on a pad anchor, whose land says its own layer (<see cref="PlacedPin.Layer"/>).
+    /// </summary>
+    /// <remarks>
+    /// <b>A coordinate is a place on the board, not a place on a layer.</b> Without this, the walk
+    /// seeds every copper layer at the point but the reference, so a load dropped on a VDD pad with
+    /// a 3v3 pour under it on the other side makes ONE rail of two supplies — and the answer is
+    /// plausible and wrong. The window records it on every placement (the topmost copper the board
+    /// view is SHOWING under the click); an older document without it seeds as it always did where
+    /// the point stands on one galvanic net, and is refused, naming the candidates, where it stands
+    /// on more.
+    /// </remarks>
+    public LayerKey? Layer { get; init; }
+
     /// <summary>True when this is the spelling — a refdes, with or without a pin — rather than the
     /// fallback.</summary>
     public bool IsPad => Refdes is not null;
@@ -65,6 +82,13 @@ public sealed record RailPortAnchor
         if (point && Pin is { Length: > 0 })
             return $"{where} is a coordinate anchor but also names pin '{Pin}'. A pin belongs to a " +
                    "refdes; give the refdes too, or remove the pin.";
+
+        // A layer belongs to a coordinate. A pad's land states its own, and a second statement of it
+        // on the anchor is one that could disagree with the board.
+        if (pad && Layer is { } layer)
+            return $"{where} names a component pad and also layer {layer.Layer}/{layer.Datatype}. A " +
+                   "pad's own land says which layer it is on; remove the layer, or give a coordinate " +
+                   "instead of the pad.";
 
         return null;
     }

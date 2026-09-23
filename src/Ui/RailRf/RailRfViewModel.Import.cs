@@ -439,7 +439,11 @@ public sealed partial class RailRfViewModel
         // to prevent: "states no open-circuit voltage, so it contributes its impedance and no DC
         // level", and a column of zeros with nothing saying the document was the reason. The seeded
         // row is counted on the status strip, exactly as a dropped source is.
-        rail.Sources.Add(NewSeededSource(rail, new RailPortAnchor { Point = (xDbu, yDbu) }));
+        //
+        // R-rail34-2: and the copper it means — the topmost the board view is SHOWING under the
+        // click, which is what the user aimed at. A pour with a pad of another net over it on the
+        // far side is otherwise two rails' copper seeded as one.
+        rail.Sources.Add(NewSeededSource(rail, WithShownLayer(new RailPortAnchor { Point = (xDbu, yDbu) })));
 
         _document.Rails.Add(rail);
         RebuildRails();

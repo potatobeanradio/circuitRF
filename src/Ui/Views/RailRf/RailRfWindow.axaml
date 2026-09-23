@@ -1309,6 +1309,28 @@
                                 </StackPanel>
                             </Border>
 
+                            <!-- ── Which copper a coordinate means (R-rail34-2) ─────────── -->
+                            <Border Classes="card" IsVisible="{Binding HasAnchorLayerOffers}">
+                                <StackPanel Spacing="3">
+                                    <TextBlock Classes="cardhdr" Text="Which copper?"/>
+                                    <TextBlock Classes="note"
+                                               Text="These anchors stand on the copper of more than one net. Choose the one each means."/>
+                                    <ItemsControl ItemsSource="{Binding AnchorLayerOffers}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="rvm:RailAnchorLayerOffer">
+                                                <StackPanel Spacing="2" Margin="0,2">
+                                                    <TextBlock Classes="note" Text="{Binding Text}"/>
+                                                    <Button Content="Use this copper" FontSize="10" Padding="8,1"
+                                                            HorizontalAlignment="Stretch"
+                                                            Command="{Binding $parent[Window].((rvm:RailRfViewModel)DataContext).ChooseAnchorLayerCommand}"
+                                                            CommandParameter="{Binding}"/>
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
+
                             <!-- ── The regulator offer (§2.3) ──────────────────────────── -->
                             <Border Classes="card" IsVisible="{Binding HasRegulatorOffers}">
                                 <StackPanel Spacing="3">

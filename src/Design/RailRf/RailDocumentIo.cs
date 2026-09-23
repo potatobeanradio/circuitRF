@@ -219,6 +219,8 @@ public static class RailDocumentIo
         Pin    = NullIfEmpty(a.Pin),
         PointX = a.Point?.X,
         PointY = a.Point?.Y,
+        Layer         = a.Layer?.Layer,
+        LayerDatatype = a.Layer?.Datatype,
     };
 
     private static CrailMarker ToFile(RailMarker m) => new()
@@ -393,6 +395,8 @@ public static class RailDocumentIo
         // Both or neither. One of the two alone is a coordinate with an axis missing, which would
         // otherwise read back as (x, 0) — a point on the board, and a plausible one.
         Point  = a is { PointX: { } x, PointY: { } y } ? (x, y) : null,
+        // The datatype defaults to 0, as ReferenceLayerDatatype's does.
+        Layer  = a?.Layer is { } layer ? new LayerKey(layer, a.LayerDatatype ?? 0) : null,
     };
 
     private static RailMarker FromFile(CrailMarker m) =>
@@ -584,6 +588,10 @@ public static class RailDocumentIo
         public string? Pin    { get; set; }
         public long?   PointX { get; set; }
         public long?   PointY { get; set; }
+
+        // R-rail34-2: which copper a coordinate means. Absent reads as it always did.
+        public int?    Layer         { get; set; }
+        public int?    LayerDatatype { get; set; }
     }
 
     private sealed class CrailSource

@@ -76,6 +76,21 @@ internal static class RailAnchorEntry
         return new RailPortAnchor { Refdes = refdes, Pin = pin.Length > 0 ? pin : null };
     }
 
+    /// <summary>
+    /// <paramref name="parsed"/>, keeping the layer <paramref name="current"/> states where both are
+    /// the SAME coordinate (R-rail34-2).
+    /// </summary>
+    /// <remarks>
+    /// The field shows the point and not its layer, so committing it unchanged — or retyping it in
+    /// another unit — would otherwise drop the copper the anchor was placed on, and a point over two
+    /// nets would then be refused for a choice the user already made. A different point is a
+    /// different place, and the layer the old one stood on says nothing about it.
+    /// </remarks>
+    internal static RailPortAnchor KeepLayer(RailPortAnchor parsed, RailPortAnchor current) =>
+        parsed.Point is { } p && p == current.Point && parsed.Refdes is null
+            ? parsed with { Layer = current.Layer }
+            : parsed;
+
     /// <summary>How many candidates a tooltip names before it stops listing them.</summary>
     private const int MaxOffered = 24;
 

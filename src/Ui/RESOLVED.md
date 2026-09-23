@@ -1,5 +1,27 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## railRF brief 34 — which copper a coordinate means (2026-09-22)
+
+- **Every coordinate the window places records its layer.** This covers the right-click Place
+  Source / Place Load rows and the pour-click route (`PickRailAt`). The layer recorded is the
+  topmost copper under the click among the layers the board view is SHOWING: the window's own
+  hidden set and the technology's `Visible` flags, which are the one set `SyncHiddenLayers` gives
+  the overlay. "Topmost" means the view's drawing order, with the stackup order breaking ties.
+  Hiding a layer is how a user says "not that one". Which layers are present comes from
+  `Regions.CopperLayersAt`, so the window and the walk agree on what is at the point. A refdes
+  anchor is left alone, because its pad states its own land.
+- **The refusal becomes a choice.** A run refused because a coordinate stands on two nets returns
+  the candidates as data (`RailDcRunResult.AnchorAmbiguities`). The new "Which copper?" card offers
+  each one as a button. The click writes the layer onto that row's anchor through the `QueueResolve`
+  funnel, so it can be undone, marks the document dirty and re-solves. An offer checks that the row
+  is still that coordinate with no layer, so an offer left over from an earlier edit does nothing.
+- **Retyping a coordinate keeps its layer** (`RailAnchorEntry.KeepLayer`). The anchor field shows
+  the point and not its layer, so committing it unchanged would otherwise have dropped the choice
+  and brought the refusal back. A different point starts with no layer.
+
+Not seen in a running window (this session cannot launch the GUI). Checked by the compiler and the
+railRF test folder. There is no test for the window half: the brief's three tests cover the model.
+
 ## railRF brief 31 — the reference row names the return net (2026-09-22)
 
 The rail card's grid gains a third row, **Return**: a combo whose first entry is "measured from the

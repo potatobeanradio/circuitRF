@@ -490,6 +490,14 @@ public static class RailArtwork
             fromNetlist, artwork, extents, view is null ? null : RailLengthFormat.For(view));
         foreach (var d in divergences) notes.Add(d.Sentence);
 
+        // Each artwork pad's LAND layer rides on the pad itself (R-rail34-1), so a refdes anchor
+        // seeds its land and the net points below say the same — after the divergence comparison,
+        // which pairs netlist pads with these by value and a netlist pad states no layer. `artwork`
+        // and `origins` are one-to-one by construction: a turned part's pads moved, and their lands'
+        // layers did not.
+        if (origins.Count == artwork.Count)
+            artwork = [.. artwork.Select((p, i) => p with { Layer = origins[i].Layer })];
+
         var fromArtwork = artwork
             .Where(p => p.Refdes is not { Length: > 0 } r || !covered.Contains(r))
             .ToList();
@@ -505,15 +513,10 @@ public static class RailArtwork
         var points = new System.Collections.Generic.List<PdnNetPoint>();
         var seen = new System.Collections.Generic.HashSet<PdnNetPoint>();
         foreach (var pt in PdnBoardPads.NetPointsOf(netlist)) if (seen.Add(pt)) points.Add(pt);
-        // Each artwork pad's LAND layer rides along, so the walk seeds the land and not a plane under
-        // it (PdnNetPoint.Layer). `artwork` and `origins` are one-to-one by construction — a turned
-        // part's pads moved, and their lands' layers did not.
-        var landLayers = new System.Collections.Generic.Dictionary<PlacedPin, LayerKey>();
-        if (origins.Count == artwork.Count)
-            for (int i = 0; i < artwork.Count; i++) landLayers.TryAdd(artwork[i], origins[i].Layer);
-
+        // Each artwork pad's land layer is on the pad (above), so the walk seeds the land and not a
+        // plane under it (PdnNetPoint.Layer).
         if (view is not null)
-            foreach (var pt in PlacedPins.NetPointsOf(view, fromArtwork, stamped, landLayers))
+            foreach (var pt in PlacedPins.NetPointsOf(view, fromArtwork, stamped))
                 if (seen.Add(pt)) points.Add(pt);
 
         // ── R-ab2-4a: the RESOLVED net set, which is what the pick list offers ──────────────────

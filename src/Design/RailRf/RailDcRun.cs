@@ -142,6 +142,12 @@ public sealed record RailDcRunResult(
     /// <summary>Every finding on every rail, in solve order.</summary>
     public IEnumerable<string> Findings => Rails.SelectMany(r => r.Findings);
 
+    /// <summary>
+    /// R-rail34-2 — the anchors a refusal was about because each stands on more than one net and does
+    /// not say which it means (<see cref="PdnExtraction.AnchorAmbiguities"/>). Empty otherwise.
+    /// </summary>
+    public IReadOnlyList<PdnAnchorAmbiguity> AnchorAmbiguities { get; init; } = [];
+
     internal static RailDcRunResult Refused(string why) => new(why, [], [], []);
 }
 
@@ -192,7 +198,8 @@ public static class RailDcRun
             {
                 if (SolveConverged(request, toSolve, railName, chained, diagnostics,
                                    out extraction, out solution) is { } notSolved)
-                    return RailDcRunResult.Refused($"Rail '{railName}' was not solved. {notSolved}");
+                    return RailDcRunResult.Refused($"Rail '{railName}' was not solved. {notSolved}")
+                        with { AnchorAmbiguities = extraction.AnchorAmbiguities };
             }
             else
             {
@@ -200,7 +207,8 @@ public static class RailDcRun
                 diagnostics.AddRange(extraction.Diagnostics.Select(d => $"[{railName}] {d}"));
 
                 if (extraction.Refusal is { } why)
-                    return RailDcRunResult.Refused($"Rail '{railName}' was not solved. {why}");
+                    return RailDcRunResult.Refused($"Rail '{railName}' was not solved. {why}")
+                        with { AnchorAmbiguities = extraction.AnchorAmbiguities };
 
                 if (Solve(request, railName, extraction.Netlist!, out solution) is { } solveRefusal)
                     return RailDcRunResult.Refused($"Rail '{railName}' was not solved. {solveRefusal}");

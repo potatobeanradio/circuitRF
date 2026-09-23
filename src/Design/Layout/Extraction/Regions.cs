@@ -50,6 +50,17 @@ namespace CircuitRF.Design.Layout.Extraction;
 public readonly record struct PdnNetPoint(string Net, long X, long Y, LayerKey? Layer = null);
 
 /// <summary>
+/// One galvanic net a coordinate anchor stands on — a candidate for which copper it means
+/// (R-rail34-2).
+/// </summary>
+/// <param name="Layer">The topmost stackup layer that net has at the point — what the anchor's
+/// <c>Layer</c> would state to choose it.</param>
+/// <param name="LayerName">That layer as a sentence names it.</param>
+/// <param name="Net">The net the board's net points say it is, or null where none do.</param>
+/// <param name="AreaSquareDbu">The area of the piece under the point on that layer.</param>
+public readonly record struct PdnAnchorCopper(LayerKey Layer, string LayerName, string? Net, double AreaSquareDbu);
+
+/// <summary>
 /// One galvanically-joined island of a rail's copper, across every layer it reaches.
 /// </summary>
 /// <param name="Index">0-based, in descending area order — so island 0 is the main body and the
@@ -182,12 +193,15 @@ public static class Regions
         IReadOnlyList<(long X, long Y)> extraRailSeeds,
         IReadOnlyList<(long X, long Y)>? bareCoordinateSeeds = null) =>
         Walk(DrcConnectivity.Extract(layerRegions, tech), tech, netPoints, railNet, referenceLayer,
-             referenceNet, extraRailSeeds, bareCoordinateSeeds);
+             referenceNet, [.. extraRailSeeds.Select(p => (p.X, p.Y, (LayerKey?)null))], bareCoordinateSeeds);
 
     /// <summary><see cref="Walk(IReadOnlyDictionary{LayerKey, Paths64}, Technology, IReadOnlyList{PdnNetPoint}, string?, LayerKey, string?, IReadOnlyList{ValueTuple{long, long}}, IReadOnlyList{ValueTuple{long, long}}?)"/>
     /// over a partition already made — the extractors make it once for
     /// <see cref="ResolveReturnNet(string?, IReadOnlyList{DrcNetPiece}, Technology, IReadOnlyList{PdnNetPoint}, LayerKey)"/>
     /// and the walk both, and it is the one piece of either that is not free.</summary>
+    /// <remarks>Each extra seed may state the layer its copper is on (R-rail34-1, R-rail34-2): a
+    /// pad's land, or the layer a coordinate anchor names. A seed that does meets only that layer's
+    /// piece, exactly as a <see cref="PdnNetPoint.Layer"/> does.</remarks>
     internal static PdnRailRegionSet Walk(
         IReadOnlyList<DrcNetPiece> pieces,
         Technology tech,
@@ -195,7 +209,7 @@ public static class Regions
         string? railNet,
         LayerKey referenceLayer,
         string? referenceNet,
-        IReadOnlyList<(long X, long Y)> extraRailSeeds,
+        IReadOnlyList<(long X, long Y, LayerKey? Layer)> extraRailSeeds,
         IReadOnlyList<(long X, long Y)>? bareCoordinateSeeds = null)
     {
         var diagnostics = new List<string>();
@@ -204,30 +218,19 @@ public static class Regions
             return new PdnRailRegionSet([], [], "No copper was found on any layer.", diagnostics);
 
         var railSeeds = new List<(long X, long Y, LayerKey? Layer)>();
-        var refSeeds = new List<(long X, long Y, LayerKey? Layer)>();
 
         foreach (var p in netPoints)
-        {
             if (railNet is { Length: > 0 } && string.Equals(p.Net, railNet, StringComparison.OrdinalIgnoreCase))
                 railSeeds.Add((p.X, p.Y, p.Layer));
-            else if (referenceNet is { Length: > 0 } && string.Equals(p.Net, referenceNet, StringComparison.OrdinalIgnoreCase))
-                refSeeds.Add((p.X, p.Y, null));
-        }
 
-        foreach (var (x, y) in extraRailSeeds) railSeeds.Add((x, y, null));
+        railSeeds.AddRange(extraRailSeeds);
 
         // A seed point sits over the RETURN as well as over the rail — a pad is a coordinate and the
         // reference plane is usually under all of them. Seeding off it would make the reference an
         // island OF THE RAIL, which is a shorted board reported as an ordinary one.
         var railNets = NetsAt(pieces, railSeeds, anyLayer: true, exceptLayer: referenceLayer);
 
-        // The reference is the copper on ITS OWN layer. Seeding it by net where the netlist names
-        // one, and by "everything on that layer" where it does not — which is the ordinary case,
-        // because a reference plane is usually the only thing on its layer and asking a user to name
-        // its net twice buys nothing.
-        var refNets = refSeeds.Count > 0
-            ? NetsAt(pieces, refSeeds, anyLayer: false, onlyLayer: referenceLayer)
-            : pieces.Where(p => p.Layer == referenceLayer).Select(p => p.Net).ToHashSet();
+        var (refNets, returnResolved) = ReturnNets(pieces, netPoints, railNet, referenceLayer, referenceNet);
 
         // ── R-rail31-2: A RAIL SEED NEVER CLAIMS THE RETURN NET ─────────────────────────────────
         //
@@ -239,9 +242,7 @@ public static class Regions
         // them. Only a RESOLVED return may do this — "every piece on the layer" is not a net, and
         // is §3's refusal below where it would matter. And not where the net walked IS the return
         // (the window's preview of the return itself): that walk is asking for exactly this copper.
-        bool returnResolved = refSeeds.Count > 0 && refNets.Count > 0;
-        if (returnResolved
-            && !(railNet is { Length: > 0 } && string.Equals(railNet, referenceNet, StringComparison.OrdinalIgnoreCase)))
+        if (returnResolved && !IsTheReturn(railNet, referenceNet))
             railNets.ExceptWith(refNets);
 
         var power = Islands(pieces, railNets, onlyLayer: null);
@@ -271,6 +272,157 @@ public static class Regions
 
         return new PdnRailRegionSet(power, reference, report, diagnostics, ownReturn)
             { MixedReturnRefusal = mixed };
+    }
+
+    /// <summary>
+    /// The conductor drawing layers that have copper at (<paramref name="x"/>, <paramref name="y"/>)
+    /// — R-rail34-2, the layer a window records on a coordinate anchor it places.
+    /// </summary>
+    /// <remarks>
+    /// <b>The walk's own geometry and its own containment test</b> (<see cref="Contains"/> over each
+    /// shape expanded as <see cref="LayerRegions.Build"/> expands it), so a layer this names is a
+    /// layer the walk then finds copper on at that point. A layer only a via's drill touches, or one
+    /// no Conductor entry of the stackup claims, is not copper anyone places a port on and is left
+    /// out. Unordered: which of them is "topmost" is a question about the VIEW, and the window
+    /// answers it.
+    /// </remarks>
+    /// <param name="shapes">The flattened artwork.</param>
+    /// <param name="tech">Supplies the stackup.</param>
+    /// <param name="x">DBU.</param>
+    /// <param name="y">DBU.</param>
+    public static IReadOnlySet<LayerKey> CopperLayersAt(
+        IReadOnlyList<LayoutShape> shapes, Technology tech, long x, long y)
+    {
+        ArgumentNullException.ThrowIfNull(shapes);
+        ArgumentNullException.ThrowIfNull(tech);
+
+        var conductors = tech.Stackup.Layers
+            .Where(l => l.Kind == StackupKind.Conductor)
+            .SelectMany(l => l.DrawingLayers)
+            .ToHashSet();
+
+        var found = new HashSet<LayerKey>();
+        foreach (var shape in shapes)
+        {
+            if (shape is not ViaShape && !conductors.Contains(shape.Layer)) continue;
+            if (shape is not ViaShape && found.Contains(shape.Layer)) continue;
+            if (!Grown(LayoutGeometry.BboxOf(shape)).Contains(x, y)) continue;
+
+            DrcRegions.Expand(shape, tech, _ => long.MaxValue, (layer, _, paths) =>
+            {
+                if (conductors.Contains(layer) && !found.Contains(layer) && Contains(paths, x, y))
+                    found.Add(layer);
+            });
+        }
+        return found;
+
+        // Contains probes a 2 DBU square; a point on a shape's bounding edge still meets it.
+        static Bbox Grown(Bbox b) => b.IsEmpty ? b : new Bbox(b.MinX - 1, b.MinY - 1, b.MaxX + 1, b.MaxY + 1);
+    }
+
+    private static bool IsTheReturn(string? railNet, string? referenceNet) =>
+        railNet is { Length: > 0 } && string.Equals(railNet, referenceNet, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The reference return's galvanic nets, and whether they are a resolved NET rather than "every
+    /// piece on the layer" — what <see cref="Walk"/> reads, and what <see cref="CopperUnder"/> takes
+    /// out of an anchor's candidates.
+    /// </summary>
+    /// <remarks>
+    /// The reference is the copper on ITS OWN layer. Seeding it by net where the netlist names one,
+    /// and by "everything on that layer" where it does not — which is the ordinary case, because a
+    /// reference plane is usually the only thing on its layer and asking a user to name its net twice
+    /// buys nothing.
+    /// </remarks>
+    internal static (HashSet<int> Nets, bool Resolved) ReturnNets(
+        IReadOnlyList<DrcNetPiece> pieces, IReadOnlyList<PdnNetPoint> netPoints, string? railNet,
+        LayerKey referenceLayer, string? referenceNet)
+    {
+        var refSeeds = new List<(long X, long Y, LayerKey? Layer)>();
+        foreach (var p in netPoints)
+        {
+            // A point on the walked net is the rail's before it is the return's — Walk's own order.
+            if (railNet is { Length: > 0 } && string.Equals(p.Net, railNet, StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (referenceNet is { Length: > 0 } && string.Equals(p.Net, referenceNet, StringComparison.OrdinalIgnoreCase))
+                refSeeds.Add((p.X, p.Y, null));
+        }
+
+        var nets = refSeeds.Count > 0
+            ? NetsAt(pieces, refSeeds, anyLayer: false, onlyLayer: referenceLayer)
+            : pieces.Where(p => p.Layer == referenceLayer).Select(p => p.Net).ToHashSet();
+
+        return (nets, refSeeds.Count > 0 && nets.Count > 0);
+    }
+
+    /// <summary>
+    /// R-rail34-2 — the copper a bare coordinate stands on off the reference layer, ONE ENTRY PER
+    /// GALVANIC NET, after the resolved return is taken out (R-rail31-2). More than one is a
+    /// coordinate that does not say which copper it means.
+    /// </summary>
+    /// <remarks>
+    /// <b>One per net, not one per layer</b>: a pad and the vias under it and the pour they land on
+    /// are one piece, so a click on any of them is one candidate, and naming any of its layers seeds
+    /// all of it. Each candidate names the TOPMOST stackup layer that net has at the point, the net
+    /// the board's own net points say that copper is (a point with a land on it, or a layerless one
+    /// no other copper covers — <see cref="ReferenceNetOn"/>'s galvanic ambiguity), and the area of
+    /// the piece under the point on that layer, which is how a user tells a pad from a pour.
+    /// </remarks>
+    internal static IReadOnlyList<PdnAnchorCopper> CopperUnder(
+        IReadOnlyList<DrcNetPiece> pieces, Technology tech, IReadOnlyList<PdnNetPoint> netPoints,
+        long x, long y, LayerKey referenceLayer, HashSet<int> returnNets, bool returnResolved)
+    {
+        // The topmost piece of each net at the point, in stackup order.
+        var rank = new Dictionary<LayerKey, int>();
+        for (int i = 0; i < tech.Stackup.Layers.Count; i++)
+            foreach (var dl in tech.Stackup.Layers[i].DrawingLayers)
+                rank.TryAdd(dl, i);
+        int Rank(LayerKey k) => rank.TryGetValue(k, out int r) ? r : int.MaxValue;
+
+        var top = new Dictionary<int, DrcNetPiece>();
+        foreach (var piece in pieces)
+        {
+            if (piece.Layer == referenceLayer) continue;
+            if (returnResolved && returnNets.Contains(piece.Net)) continue;
+            if (!piece.Bounds.Contains(x, y) || !Contains(piece.Paths, x, y)) continue;
+            if (!top.TryGetValue(piece.Net, out var held) || Rank(piece.Layer) < Rank(held.Layer))
+                top[piece.Net] = piece;
+        }
+
+        if (top.Count < 2)
+            return [.. top.Values.Select(p => new PdnAnchorCopper(p.Layer, LayerLabel(tech, p.Layer), null,
+                                                                  Math.Abs(Clipper.Area(p.Paths))))];
+
+        var result = new List<PdnAnchorCopper>(top.Count);
+        foreach (var (net, piece) in top.OrderBy(kv => Rank(kv.Value.Layer)).ThenBy(kv => kv.Key))
+            result.Add(new PdnAnchorCopper(
+                piece.Layer, LayerLabel(tech, piece.Layer), NameOf(pieces, netPoints, net),
+                Math.Abs(Clipper.Area(piece.Paths))));
+        return result;
+    }
+
+    /// <summary>The net the board's points say galvanic net <paramref name="net"/> is, or null.</summary>
+    private static string? NameOf(IReadOnlyList<DrcNetPiece> pieces, IReadOnlyList<PdnNetPoint> netPoints, int net)
+    {
+        var mine = pieces.Where(p => p.Net == net).ToList();
+        var votes = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var point in netPoints)
+        {
+            bool on = mine.Any(p => (point.Layer is not { } land || p.Layer == land)
+                                    && p.Bounds.Contains(point.X, point.Y) && Contains(p.Paths, point.X, point.Y));
+            if (!on) continue;
+
+            // A layerless point counts only where nothing else covers it.
+            if (point.Layer is null
+                && pieces.Any(p => p.Net != net && p.Bounds.Contains(point.X, point.Y) && Contains(p.Paths, point.X, point.Y)))
+                continue;
+
+            votes[point.Net] = votes.GetValueOrDefault(point.Net) + 1;
+        }
+
+        return votes.OrderByDescending(kv => kv.Value).ThenBy(kv => kv.Key, StringComparer.Ordinal)
+                    .Select(kv => kv.Key).FirstOrDefault();
     }
 
     /// <summary>

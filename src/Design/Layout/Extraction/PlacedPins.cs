@@ -288,15 +288,15 @@ public static class PlacedPins
     /// thirty of them; now naming the trace they land on names them all, which is what lets
     /// <c>Regions</c> recognise an inner-layer pour it reached. The via's OWN stamp still
     /// wins where it has one — it is the more specific statement.</para>
+    ///
+    /// <para>Each pad's <see cref="PlacedPin.Layer"/>, where it states one, is carried onto its
+    /// point, so the walk seeds that land and not a plane under it (<see cref="PdnNetPoint.Layer"/>).
+    /// A pad with none gives a layerless point, as before.</para>
     /// </remarks>
     /// <param name="stamped">The partition, where one was built. Null leaves the pre-brief-2
     /// behaviour exactly as it was.</param>
-    /// <param name="landLayers">The drawing layer each pad's land is on, where the caller knows it —
-    /// carried onto the point so the walk seeds that land and not a plane under it
-    /// (<see cref="PdnNetPoint.Layer"/>). Null leaves every point layerless, as before.</param>
     public static IReadOnlyList<PdnNetPoint> NetPointsOf(
-        LayoutView view, IReadOnlyList<PlacedPin> pads, CopperPieces? stamped = null,
-        IReadOnlyDictionary<PlacedPin, LayerKey>? landLayers = null)
+        LayoutView view, IReadOnlyList<PlacedPin> pads, CopperPieces? stamped = null)
     {
         ArgumentNullException.ThrowIfNull(view);
         ArgumentNullException.ThrowIfNull(pads);
@@ -305,9 +305,7 @@ public static class PlacedPins
 
         foreach (var pad in pads)
             if (pad.Net is { Length: > 0 } net)
-                points.Add(new PdnNetPoint(
-                    net, pad.X, pad.Y,
-                    landLayers is not null && landLayers.TryGetValue(pad, out var layer) ? layer : null));
+                points.Add(new PdnNetPoint(net, pad.X, pad.Y, pad.Layer));
 
         foreach (var shape in view.Shapes)
         {

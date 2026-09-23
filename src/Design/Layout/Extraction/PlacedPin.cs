@@ -53,7 +53,23 @@ public enum PinSource
 /// construction site, which is the point — each one has to state which claim it is making, and a
 /// default would let a new site drift in unmarked.</param>
 public readonly record struct PlacedPin(
-    string? Refdes, string? Pin, string? Net, long X, long Y, PinSource Source);
+    string? Refdes, string? Pin, string? Net, long X, long Y, PinSource Source)
+{
+    /// <summary>
+    /// The drawing layer the pad's LAND is on, where that is known — R-rail34-1.
+    /// </summary>
+    /// <remarks>
+    /// <b>A refdes anchor seeds this layer and no other.</b> A pad is a coordinate, and anything else
+    /// under it on another layer — a 3v3 pour under a VDD pad — is a different net that seeding
+    /// every layer would make one rail with it. Filled by <c>RailArtwork.PadsFor</c> from the
+    /// placement's own <see cref="PlacedPinOrigin.Layer"/>, the place <c>PdnNetPoint.Layer</c> has
+    /// it from; a board NETLIST pad has no layer to state and stays null, which seeds every layer as
+    /// every pad always did. A through-hole pad needs nothing more: its barrel joins the other
+    /// layers, and the connectivity walk follows it.
+    /// <para>Init-only, so every existing construction compiles and means what it meant.</para>
+    /// </remarks>
+    public LayerKey? Layer { get; init; }
+}
 
 /// <summary>
 /// Which placements <see cref="PlacedPins.Of"/> walks — <c>brief-lvs-3-layout-netlist.md</c> R-lvs3-5b.

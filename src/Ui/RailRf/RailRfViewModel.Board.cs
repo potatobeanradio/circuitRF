@@ -380,16 +380,21 @@ public sealed partial class RailRfViewModel
 
     /// <summary>Adds a source row on this rail, anchored where the user right-clicked.</summary>
     /// <remarks>
+    /// A coordinate anchor records the topmost copper the board view is showing under the click
+    /// (R-rail34-2, <see cref="ShownCopperLayerAt"/>), so a point over two nets is the one the user
+    /// could see.
+    ///
+    /// <para>
     /// The same three lines <c>AddSource</c> runs, with the anchor filled in instead of left empty —
     /// so the row is complete the moment it appears and the Fast loop has something to solve. It is
     /// not a second way of making a source: both go through <c>RailSpec.Sources</c> and
     /// <c>RebuildForSelectedRail</c>, which is what keeps the row, the document and the solve one
-    /// thing.
+    /// thing.</para>
     /// </remarks>
     public void PlaceSource(RailPortAnchor anchor)
     {
         if (SelectedRail is not { } rail) return;
-        rail.Sources.Add(NewSeededSource(rail, anchor));
+        rail.Sources.Add(NewSeededSource(rail, WithShownLayer(anchor)));
         RebuildForSelectedRail();
         QueueResolve();
     }
@@ -398,11 +403,11 @@ public sealed partial class RailRfViewModel
     /// <remarks><b>Carrying a starting current</b>, exactly as <c>AddLoad</c> does — so a part
     /// dropped on the board makes the rail draw something and the picture is not a field of zeros.
     /// The observation port is one cleared cell away, and <c>RailRfViewModel.Seeds.cs</c> carries the
-    /// argument.</remarks>
+    /// argument. A coordinate records its copper as <see cref="PlaceSource"/>'s does.</remarks>
     public void PlaceLoad(RailPortAnchor anchor)
     {
         if (SelectedRail is not { } rail) return;
-        rail.Loads.Add(NewSeededLoad(anchor));
+        rail.Loads.Add(NewSeededLoad(WithShownLayer(anchor)));
         RebuildForSelectedRail();
         QueueResolve();
     }

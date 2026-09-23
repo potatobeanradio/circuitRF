@@ -240,9 +240,12 @@ public static class PdnGraphExtractor
                 "This artwork flattens to no copper at all. Check that the layout view carries the " +
                 "board's shapes and that its technology names the layers they are on.");
 
-        var anchorSeeds = new List<(long X, long Y)>();
-        foreach (var s in rail.Sources) anchorSeeds.AddRange(PdnAttachments.Resolve(s.Anchor, request.Pads));
-        foreach (var l in rail.Loads) anchorSeeds.AddRange(PdnAttachments.Resolve(l.Anchor, request.Pads));
+        // R-rail34-1/2: each seed carries the layer its copper is on where that is known — a pad's
+        // land, or the layer a coordinate anchor states — so it seeds that copper and nothing under it.
+        var anchorLands = new List<(long X, long Y, LayerKey? Layer)>();
+        foreach (var s in rail.Sources) anchorLands.AddRange(PdnAttachments.ResolveLands(s.Anchor, request.Pads));
+        foreach (var l in rail.Loads) anchorLands.AddRange(PdnAttachments.ResolveLands(l.Anchor, request.Pads));
+        var anchorSeeds = anchorLands.Select(a => (a.X, a.Y)).ToList();
 
         // R-rail27-2: the anchors that are NOTHING BUT A COORDINATE — the pour-click route, and the
         // only one on which a rail anchored on its own return cannot be detected any other way. See
@@ -258,7 +261,14 @@ public static class PdnGraphExtractor
         control?.Token.ThrowIfCancellationRequested();
         if (control is not null) control.Stage = $"Rail '{rail.Name}': following the connectivity";
 
-        var regions = PdnRailConnectivity.Walk(request, layerRegions, referenceLayer, anchorSeeds, bareCoordinateSeeds);
+        var walked = PdnRailConnectivity.Walk(request, layerRegions, referenceLayer, anchorLands,
+                                              bareCoordinateSeeds, out var ambiguous);
+
+        // R-rail34-2, before anything is walked or priced: a coordinate standing on two nets would
+        // make one rail of both.
+        if (walked is not { } regions)
+            return PdnExtraction.Refused(PdnRailConnectivity.AmbiguityRefusal(request, ambiguous))
+                with { AnchorAmbiguities = ambiguous };
 
         diagnostics.AddRange(regions.Diagnostics);
 

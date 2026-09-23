@@ -80,24 +80,37 @@ public static class PdnAttachments
     /// document already refused an anchor carrying both.</para>
     /// </summary>
     public static IReadOnlyList<(long X, long Y)> Resolve(
+        RailPortAnchor anchor, IReadOnlyList<PlacedPin> pads) =>
+        [.. ResolveLands(anchor, pads).Select(l => (l.X, l.Y))];
+
+    /// <summary>
+    /// <see cref="Resolve"/>, with the layer each point's copper is on where that is known — what the
+    /// region walk SEEDS from (R-rail34-1, R-rail34-2).
+    /// </summary>
+    /// <remarks>
+    /// A pad gives its land's layer (<see cref="PlacedPin.Layer"/>), a coordinate the layer its anchor
+    /// states (<see cref="RailPortAnchor.Layer"/>); either may be null, and a null seeds every copper
+    /// layer at the point but the reference, which is what every anchor did before.
+    /// </remarks>
+    public static IReadOnlyList<(long X, long Y, LayerKey? Layer)> ResolveLands(
         RailPortAnchor anchor, IReadOnlyList<PlacedPin> pads)
     {
-        if (anchor.Point is { } xy) return [xy];
+        if (anchor.Point is { } xy) return [(xy.X, xy.Y, anchor.Layer)];
         if (anchor.Refdes is not { Length: > 0 } refdes) return [];
 
-        var byPin = new List<(long X, long Y)>();
-        var byNet = new List<(long X, long Y)>();
+        var byPin = new List<(long X, long Y, LayerKey? Layer)>();
+        var byNet = new List<(long X, long Y, LayerKey? Layer)>();
 
         foreach (var pad in pads)
         {
             if (!string.Equals(pad.Refdes, refdes, StringComparison.OrdinalIgnoreCase)) continue;
 
-            if (anchor.Pin is not { Length: > 0 } pin) { byPin.Add((pad.X, pad.Y)); continue; }
+            if (anchor.Pin is not { Length: > 0 } pin) { byPin.Add((pad.X, pad.Y, pad.Layer)); continue; }
 
             if (string.Equals(pad.Pin, pin, StringComparison.OrdinalIgnoreCase))
-                byPin.Add((pad.X, pad.Y));
+                byPin.Add((pad.X, pad.Y, pad.Layer));
             else if (string.Equals(pad.Net, pin, StringComparison.OrdinalIgnoreCase))
-                byNet.Add((pad.X, pad.Y));
+                byNet.Add((pad.X, pad.Y, pad.Layer));
         }
 
         return byPin.Count > 0 ? byPin : byNet;

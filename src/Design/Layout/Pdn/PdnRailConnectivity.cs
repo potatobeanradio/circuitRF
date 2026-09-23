@@ -54,6 +54,20 @@ using CircuitRF.Design.RailRf;
 
 namespace CircuitRF.Design.Layout.Pdn;
 
+/// <summary>
+/// A source or load anchored by a coordinate that stands on more than one galvanic net and does not
+/// say which it means (R-rail34-2) — what a refusal names, and what the window offers one click per
+/// candidate for.
+/// </summary>
+/// <param name="RailName">The rail.</param>
+/// <param name="IsSource">A source row; false is a load row.</param>
+/// <param name="Index">0-based, in that list.</param>
+/// <param name="X">The coordinate, DBU.</param>
+/// <param name="Y">DBU.</param>
+/// <param name="Candidates">What it stands on, topmost first.</param>
+public sealed record PdnAnchorAmbiguity(
+    string RailName, bool IsSource, int Index, long X, long Y, IReadOnlyList<PdnAnchorCopper> Candidates);
+
 /// <summary>The galvanic reachability of a rail's loads from its sources.</summary>
 internal static class PdnRailConnectivity
 {
@@ -69,17 +83,82 @@ internal static class PdnRailConnectivity
     /// nothing else, so the net the window's reference row shows is the net the run uses, and the
     /// board's galvanic partition is made once for both questions.
     /// </summary>
-    public static PdnRailRegionSet Walk(
+    /// <remarks>
+    /// <b>R-rail34-2: an anchor that does not say which copper it means is refused before the
+    /// walk</b>, and <paramref name="ambiguous"/> says which and what it could mean. A bare
+    /// coordinate standing on two galvanic nets off the reference layer seeds both, which makes one
+    /// rail of two supplies — a plausible answer and a wrong one. Null region set then; the walk is
+    /// not made, because nothing it would find can be priced.
+    /// </remarks>
+    public static PdnRailRegionSet? Walk(
         PdnExtractionRequest request, IReadOnlyDictionary<LayerKey, Paths64> layerRegions,
-        LayerKey referenceLayer, IReadOnlyList<(long X, long Y)> anchorSeeds,
-        IReadOnlyList<(long X, long Y)> bareCoordinateSeeds)
+        LayerKey referenceLayer, IReadOnlyList<(long X, long Y, LayerKey? Layer)> anchorSeeds,
+        IReadOnlyList<(long X, long Y)> bareCoordinateSeeds, out IReadOnlyList<PdnAnchorAmbiguity> ambiguous)
     {
         var tech = request.Technology;
         var pieces = DrcConnectivity.Extract(layerRegions, tech);
         var returnNet = Regions.ResolveReturnNet(request.ReferenceNet, pieces, tech, request.NetPoints, referenceLayer);
 
+        ambiguous = Ambiguous(request, pieces, referenceLayer, returnNet.Net);
+        if (ambiguous.Count > 0) return null;
+
         return Regions.Walk(pieces, tech, request.NetPoints, request.Rail.NetName, referenceLayer,
                             returnNet.Net, anchorSeeds, bareCoordinateSeeds) with { ReturnNet = returnNet };
+    }
+
+    /// <summary>
+    /// R-rail34-2 — every source and load anchored by a coordinate that states no layer and stands on
+    /// more than one galvanic net off the reference layer, after the return is taken out.
+    /// </summary>
+    private static IReadOnlyList<PdnAnchorAmbiguity> Ambiguous(
+        PdnExtractionRequest request, IReadOnlyList<DrcNetPiece> pieces, LayerKey referenceLayer,
+        string? returnNet)
+    {
+        var rail = request.Rail;
+        List<PdnAnchorAmbiguity>? found = null;
+        (HashSet<int> Nets, bool Resolved)? ret = null;
+
+        void Ask(RailPortAnchor anchor, bool isSource, int index)
+        {
+            if (anchor.Refdes is { Length: > 0 } || anchor.Layer is not null || anchor.Point is not { } xy) return;
+
+            ret ??= Regions.ReturnNets(pieces, request.NetPoints, rail.NetName, referenceLayer, returnNet);
+            var under = Regions.CopperUnder(pieces, request.Technology, request.NetPoints, xy.X, xy.Y,
+                                            referenceLayer, ret.Value.Nets, ret.Value.Resolved);
+            if (under.Count > 1)
+                (found ??= []).Add(new PdnAnchorAmbiguity(rail.Name, isSource, index, xy.X, xy.Y, under));
+        }
+
+        for (int i = 0; i < rail.Sources.Count; i++) Ask(rail.Sources[i].Anchor, true, i);
+        for (int i = 0; i < rail.Loads.Count; i++) Ask(rail.Loads[i].Anchor, false, i);
+        return found ?? [];
+    }
+
+    /// <summary>R-rail34-2 — the refusal for <see cref="Ambiguous"/>'s anchors: each one, every
+    /// candidate it stands on, and the <c>.crail</c> spelling that answers it.</summary>
+    public static string AmbiguityRefusal(PdnExtractionRequest request, IReadOnlyList<PdnAnchorAmbiguity> ambiguous)
+    {
+        var fmt = request.LengthFormat;
+        double dbuPerMm = request.DbuPerMicron * 1000.0;
+        var sentences = new List<string>();
+
+        foreach (var a in ambiguous)
+        {
+            string candidates = string.Join("; ", a.Candidates.Select(c =>
+                $"{c.LayerName}, {(c.Net is { Length: > 0 } net ? $"net '{net}'" : "no net named")}, " +
+                $"{c.AreaSquareDbu / (dbuPerMm * dbuPerMm):0.###} mm²"));
+            var first = a.Candidates[0].Layer;
+
+            sentences.Add(
+                $"Rail '{a.RailName}''s {(a.IsSource ? "source" : "load")} {a.Index + 1} at " +
+                $"{fmt.Point(a.X, a.Y)} stands on the copper of {a.Candidates.Count} separate nets — " +
+                $"{candidates} — and a coordinate alone does not say which it means. Seeding them all " +
+                "would price them as one rail, so this rail is not solved. Choose one: in the window, " +
+                $"or in the .crail by giving that anchor its layer (\"Layer\": {first.Layer}, " +
+                $"\"LayerDatatype\": {first.Datatype} for the first).");
+        }
+
+        return string.Join(" ", sentences);
     }
 
     /// <summary>
