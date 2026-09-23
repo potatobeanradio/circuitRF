@@ -1408,13 +1408,7 @@ internal sealed class GraphBuild(
         var rail = request.Rail;
         if (rail.Sources.Count == 0 || rail.Loads.Count == 0) return null;
 
-        List<int> AnchorNodes(RailPortAnchor anchor)
-        {
-            var found = new List<int>();
-            foreach (var (x, y) in PdnAttachments.Resolve(anchor, request.Pads))
-                found.AddRange(nodes.NodesAt(x, y, isReference: false));
-            return found;
-        }
+        List<int> AnchorNodes(RailPortAnchor anchor) => PdnAttachments.RailNodes(nodes, anchor, request.Pads, request.Rail.ReferenceLayer);
 
         var sourceNodes = rail.Sources.SelectMany(s => AnchorNodes(s.Anchor)).ToList();
         var loadNodes = rail.Loads.Select(l => AnchorNodes(l.Anchor)).ToList();
@@ -1432,8 +1426,18 @@ internal sealed class GraphBuild(
         // pour gate's own fixture is one pour with the source and the load both on it, and it is
         // still refused. Before this, a source on a compact connector land was refused on every
         // board, whatever the rest of the rail was, and the land was the region named.
+        //
+        // A SERIES ELEMENT'S two ends are terminals in exactly this sense — current leaves the rail's
+        // copper into the part at one and comes back at the other — so each lands its piece the way
+        // a source does. This was masked while a pad attached to every layer at its XY: a series
+        // pad over the rail's own trace on the far layer was joined straight to it, and the pad's
+        // land was never on the path. Attached to its own land, a 1206 jumper's pad was named as
+        // the spreading copper the rail "only" reaches its load through.
         var terminalNodes = rail.Sources.Select(s => AnchorNodes(s.Anchor).ToHashSet())
             .Concat(loadNodes.Select(n => n.ToHashSet()))
+            .Concat(request.SeriesElements
+                .SelectMany(p => new[] { p.A, p.B })
+                .Select(a => AnchorNodes(a).ToHashSet()))
             .ToList();
 
         var landing = new HashSet<int>();
@@ -1551,8 +1555,7 @@ internal sealed class GraphBuild(
         {
             var ends = new List<int>();
             foreach (var anchor in new[] { part.A, part.B })
-                foreach (var (x, y) in PdnAttachments.Resolve(anchor, request.Pads))
-                    ends.AddRange(nodes.NodesAt(x, y, isReference: false));
+                ends.AddRange(PdnAttachments.RailNodes(nodes, anchor, request.Pads, request.Rail.ReferenceLayer));
 
             for (int i = 1; i < ends.Count; i++)
                 if (Counted(ends[0]) && Counted(ends[i])) Union(ends[0], ends[i]);

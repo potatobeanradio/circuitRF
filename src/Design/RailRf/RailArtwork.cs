@@ -496,6 +496,16 @@ public static class RailArtwork
         if (origins.Count == artwork.Count)
             artwork = [.. artwork.Select((p, i) => p with { Layer = origins[i].Layer })];
 
+        // And a netlist pad takes its land from the ARTWORK's pad for the same part: the file is the
+        // evidence for what a pad is and what it is called, the artwork for which copper it is on,
+        // and a pad with no land attaches to every rail layer under its XY — which on a rail routed
+        // on two layers ties a top pad to the far layer's copper beneath it. By refdes and pin, and
+        // by refdes alone where the two spell pins differently but every land of the part is on one
+        // layer (every surface-mount part). A pad that states its own land keeps it.
+        fromNetlist = [.. fromNetlist.Select(p => p.Layer is null && LandFromArtwork(p, artwork) is { } land
+            ? p with { Layer = land }
+            : p)];
+
         var fromArtwork = artwork
             .Where(p => p.Refdes is not { Length: > 0 } r || !covered.Contains(r))
             .ToList();
@@ -545,6 +555,25 @@ public static class RailArtwork
         return new RailPadResolution(
             pads, points, fromNetlist.Count, fromArtwork.Count, notes, [.. nets], origin, divergences,
             stamped, schematic, turned);
+    }
+
+    /// <summary>The land layer the artwork gives <paramref name="pad"/>'s part at that pin, or at
+    /// every pin where the pin names do not match and the part's lands are all on one layer.</summary>
+    private static LayerKey? LandFromArtwork(PlacedPin pad, IReadOnlyList<PlacedPin> artwork)
+    {
+        if (pad.Refdes is not { Length: > 0 } refdes) return null;
+
+        var mine = artwork
+            .Where(a => a.Layer is not null && string.Equals(a.Refdes, refdes, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (mine.Count == 0) return null;
+
+        if (mine.FirstOrDefault(a => string.Equals(a.Pin, pad.Pin, StringComparison.OrdinalIgnoreCase))
+            is { Layer: { } byPin })
+            return byPin;
+
+        var layers = mine.Select(a => a.Layer!.Value).Distinct().ToList();
+        return layers.Count == 1 ? layers[0] : null;
     }
 
     // ── THE WRITING HALF OF THE SAME WALK (owner, 2026-09-21) ────────────────────────────────────

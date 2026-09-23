@@ -770,14 +770,8 @@ internal sealed class PdnAssembly
         return (sx / pads.Count, sy / pads.Count);
     }
 
-    private List<int> PowerNodesFor(RailPortAnchor anchor)
-    {
-        var nodes = new List<int>();
-        foreach (var (x, y) in PdnAttachments.Resolve(anchor, _req.Pads))
-            foreach (int n in _nodes.NodesAt(x, y, isReference: false))
-                if (!nodes.Contains(n)) nodes.Add(n);
-        return nodes;
-    }
+    private List<int> PowerNodesFor(RailPortAnchor anchor) =>
+        PdnAttachments.RailNodes(_nodes, anchor, _req.Pads, _req.Rail.ReferenceLayer);
 
     private List<int> ReferenceNodesFor(RailPortAnchor anchor, out long distanceDbu)
     {

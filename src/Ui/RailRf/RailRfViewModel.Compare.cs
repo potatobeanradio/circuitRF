@@ -61,7 +61,7 @@ public sealed partial class RailRfViewModel
             if (SelectedRail is not { } selected) return null;
 
             var run = SolveFunc(BuildRequest(board, kind), System.Threading.CancellationToken.None);
-            if (run.Refusal is not null) return null;
+            if (run.Refusal is not null || run.RefusalFor(rail.Name) is not null) return null;
 
             var dc = run.Rail(rail.Name);
             var sweepRequest = BuildSweepRequest(kind);

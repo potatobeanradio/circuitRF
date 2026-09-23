@@ -388,8 +388,9 @@ public static class RailPartDiscovery
             int onRail = 0, onReference = 0;
             foreach (var pad in pads)
             {
-                if (In(regions.Power, pad) && NetAllows(pad, rail.NetName)) onRail++;
-                else if (In(regions.Reference, pad) && NetAllows(pad, referenceNet)) onReference++;
+                if (In(regions.Power, pad, PdnAttachments.RailLand(pad.Layer, rail.ReferenceLayer))
+                    && NetAllows(pad, rail.NetName)) onRail++;
+                else if (In(regions.Reference, pad, land: null) && NetAllows(pad, referenceNet)) onReference++;
             }
 
             // Not this rail's business. SILENT — a board's other rails and its unrelated parts are
@@ -611,15 +612,20 @@ public static class RailPartDiscovery
     /// <remarks>
     /// <b>The same containment test <c>RailSeriesPartition.IslandOf</c> uses</b> — holes honoured,
     /// and clipped against a 2 DBU square rather than a winding count, because a pad coordinate
-    /// lands ON a boundary as often as inside one.
+    /// lands ON a boundary as often as inside one. On the RAIL's islands, <paramref name="land"/> is
+    /// the pad's own land layer as there: rail copper on the far layer under a part is not the
+    /// part's copper. Never on the REFERENCE's, whose copper is a plane under the pad on another
+    /// layer by definition — a decoupling capacitor's ground pad is on the reference because the
+    /// plane is under it.
     /// </remarks>
-    private static bool In(IReadOnlyList<PdnRegion> islands, PlacedPin pad)
+    private static bool In(IReadOnlyList<PdnRegion> islands, PlacedPin pad, LayerKey? land)
     {
         foreach (var region in islands)
         {
             if (!region.Bounds.Contains(pad.X, pad.Y)) continue;
-            foreach (var (_, paths) in region.Copper)
-                if (Regions.Contains(paths, pad.X, pad.Y)) return true;
+            foreach (var (layer, paths) in region.Copper)
+                if ((land is null || layer == land) && Regions.Contains(paths, pad.X, pad.Y))
+                    return true;
         }
         return false;
     }

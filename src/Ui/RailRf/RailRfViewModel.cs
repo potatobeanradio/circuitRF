@@ -252,6 +252,7 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
         // onto the rail being moved to. See RailRfViewModel.Markers.cs.
         ForgetRestoredMarkers();
         RebuildForSelectedRail();
+        ShowSelectedRailRefusal();
         RemoveRailCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(CanRemoveRail));
     }

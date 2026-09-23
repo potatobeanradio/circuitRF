@@ -789,8 +789,9 @@ public sealed partial class RailRfViewModel
         if (view.Result.Refusal is { } why)
         {
             // Nothing was solved, so nothing replaces what is on screen — and the refusal names the
-            // control that answers it rather than merely being said.
-            Refusal = RailRefusals.Classify(why);
+            // control that answers it rather than merely being said. The SELECTED rail's own reason
+            // where it has one: the first rail's is not about the rail being looked at.
+            Refusal = RailRefusals.Classify(view.Result.RefusalFor(SelectedRailName) ?? why);
 
             // R-rail34-2: an anchor over two nets is answered by a choice, offered one click each.
             OfferAnchorLayers(view.Result.AnchorAmbiguities);
@@ -803,6 +804,9 @@ public sealed partial class RailRfViewModel
         // ATOMIC. The kind and the numbers are one value; see RailResultView's own note.
         ByModel[view.Kind] = view;
         Current = view;
+
+        // Other rails solved and THIS one did not: its own sentence, not the first rail's.
+        ShowSelectedRailRefusal();
         AcceptSweep(view.Kind, view.Sweep);
 
         // R-rail23-3a. AFTER the assignment above, because the baseline is built from what is on
@@ -818,6 +822,20 @@ public sealed partial class RailRfViewModel
         // replacing every row object on every solve would drop the selection the board's mark
         // follows.
         RebuildPartOffer();
+    }
+
+    /// <summary>
+    /// Puts the selected rail's own refusal from the last run on the strip, where that run solved
+    /// other rails and not this one (<see cref="RailDcRunResult.RailRefusals"/>). A gate refusal
+    /// already on the strip wins — it is about the document as it stands now.
+    /// </summary>
+    private void ShowSelectedRailRefusal()
+    {
+        if (Refusal is not null) return;
+        if (Current?.Result.RefusalFor(SelectedRailName) is not { } why) return;
+
+        Refusal = RailRefusals.Classify(why);
+        OfferAnchorLayers(Current.Result.AnchorAmbiguities);
     }
 
     private void CancelInFlight()

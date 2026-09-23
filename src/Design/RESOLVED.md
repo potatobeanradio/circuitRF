@@ -11834,3 +11834,51 @@ designator check), `ButtonText` and `EditDescription` are both windows' words an
 drawing it COMPARES rather than whatever the same path holds on disk. `TurnedParts.LandingHalfTurn`
 answers R-lvs16-3c's "does a half turn land it" by projecting every pad before and after through
 `PlacedPins`, within one DBU.
+
+## A pad is on its own land, and one rail's refusal is its own (2026-09-23)
+
+Found reviewing a designer's two-rail workspace before a release: a 2-layer board with an inner plane,
+a 0 Ω link and an RF choke in series on the second rail, and that rail's own trace on bottom copper
+running directly under the link. Gate: `tests/Ui.Tests/RailRf/PadLandLayerTests.cs`. Both fixture
+claims fail on the previous code and pass on this one.
+
+- **Every pad-to-rail-copper lookup ignored which layer the pad is on.** `RailSeriesPartition.IslandOf`,
+  `PdnAssembly.PowerNodesFor` (and so every source, load, shunt and series terminal the DC netlist
+  stamps), the fast model's pour-dominated connectivity, `PdnRailConnectivity`'s "has pads on both"
+  hint and `RailPartDiscovery`'s rail side all called `PdnAttachments.Resolve`, which drops the land
+  layer that R-rail34-1 put on every artwork pad for the walk's seeding. So a top pad matched the rail's
+  bottom trace under it. On the field board: the link that really is in series read **BRIDGED** (the
+  window's |Z| sweep refuses on that), a 0 Ω part beside it that is not on the path at all was named as
+  the likely bridge and, declared series, "solved" at 1.2 mV on a path the copper does not have, and
+  the DC stamp tied each top pad to the far-layer trace under it — a short around the series element.
+  All of them now go through `PdnAttachments.RailNodes` / a land filter; an unstated land keeps the old
+  every-layer behaviour. The "has pads on both" hint now names the right part.
+- **A land stated on the rail's REFERENCE layer is treated as unstated** (`PdnAttachments.RailLand`).
+  A pour pick states the topmost copper SHOWN under the click, and on a Gerber import that is often the
+  plane the user names as the reference a moment later; strictly, the source then attached to nothing.
+  The walk already skips such a seed, and before this change the assembly quietly attached it on every
+  layer — which is what the fallback keeps.
+- **Discovery's REFERENCE side is deliberately NOT land-filtered.** A decoupling cap's ground pad is on
+  top and the plane is under it on another layer by definition; filtering there would find no
+  decoupling on any board. Only the rail side is.
+- **A series terminal lands its piece, as a source and a load do (R-rail29-1).** Masked until now: the
+  layer-blind attachment joined a series pad to the far-layer copper under it, so the pad's own land
+  was never on the path. Attached to its land, a 1206 jumper's pad island (reached through a via in
+  the pad) was named as the spreading copper the rail "only" reaches its load through, and Fast
+  refused. A land holding one series terminal is now an end, like any other terminal.
+- **A board-netlist pad takes its land from the artwork's pad for the same part** (`RailArtwork.
+  LandFromArtwork`: refdes and pin, else refdes alone where every land of the part is on one layer).
+  `BoardNetlistWriter` writes no access code for component pads, so the two ways into one board
+  answered differently once lands mattered. `LayoutPadsTests`' shipped-example gate now compares
+  everything but the land.
+- **`RailDcRun` refuses per rail** (`RailDcRunResult.RailRefusals`, `RefusalFor`). The first refused
+  rail used to refuse the document, so working on a second, unrelated rail showed only the first
+  one's sentence — in the window and for `circuitrf rail --rail X`. A rail fed from a refused one is
+  refused by name. Nothing solved keeps the old contract (`Refusal` is the first rail's sentence), with
+  every per-rail sentence still carried so the window and the verb can say the SELECTED/named rail's
+  own reason. The window shows it on the strip after a solve and on changing rails; a gate refusal
+  already on the strip wins.
+
+On the field board, after its own fixes (gnd attached, reference 3/0, the series rows): rail 1 Fast
+3.43 / Accurate 3.56 mV, the second rail Fast 1.30 / Accurate 1.34 mV, both at 30 mA and both before
+the series parts' DCR, which the board's library does not state.

@@ -395,8 +395,9 @@ internal static class PdnRailConnectivity
         HashSet<int> GroupsOf(RailPortAnchor anchor)
         {
             var on = new HashSet<int>();
-            foreach (var (x, y) in PdnAttachments.Resolve(anchor, request.Pads))
-                foreach (int k in GroupsAt(groups, x, y)) on.Add(k);
+            foreach (var (x, y, land) in PdnAttachments.ResolveLands(anchor, request.Pads))
+                foreach (int k in GroupsAt(groups, x, y, PdnAttachments.RailLand(land, request.Rail.ReferenceLayer)))
+                    on.Add(k);
             return on;
         }
 
@@ -427,11 +428,16 @@ internal static class PdnRailConnectivity
     }
 
     /// <summary>Every group with copper at (<paramref name="x"/>, <paramref name="y"/>).</summary>
-    private static IEnumerable<int> GroupsAt(IReadOnlyList<Group> groups, long x, long y)
+    /// <summary>The groups whose copper covers the point — on <paramref name="land"/> only where
+    /// that is known, so a top-side pad is not read as touching the rail's trace on the far layer
+    /// under it (see <see cref="PdnAttachments.RailNodes"/>).</summary>
+    private static IEnumerable<int> GroupsAt(
+        IReadOnlyList<Group> groups, long x, long y, LayerKey? land = null)
     {
         for (int k = 0; k < groups.Count; k++)
-            foreach (var (_, paths, bounds) in groups[k].Copper)
-                if (bounds.Contains(x, y) && Regions.Contains(paths, x, y)) { yield return k; break; }
+            foreach (var (layer, paths, bounds) in groups[k].Copper)
+                if ((land is null || layer == land) && bounds.Contains(x, y) && Regions.Contains(paths, x, y))
+                { yield return k; break; }
     }
 
     /// <summary>The designators with a pad on the source's side AND a pad on the load's, in
@@ -449,7 +455,8 @@ internal static class PdnRailConnectivity
         {
             bool source = false, load = false;
             foreach (var pad in part)
-                foreach (int k in GroupsAt(groups, pad.X, pad.Y))
+                foreach (int k in GroupsAt(groups, pad.X, pad.Y,
+                             PdnAttachments.RailLand(pad.Layer, request.Rail.ReferenceLayer)))
                 {
                     source |= onSourceSide(k);
                     load |= onLoadSide(k);

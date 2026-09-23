@@ -313,6 +313,18 @@ internal static class Rail
             JsonRun.Note(CliDiagnostics.RailRunNote(d));
         }
 
+        // Only a rail the caller ASKED FOR can fail the verb, and with its own sentence. `--rail
+        // B` on a document whose other rail refuses used to print that other rail's sentence and
+        // exit 1, with nothing about the rail that was named; a refused rail the chain needs refuses
+        // the named one by itself.
+        var wanted = chosen.Select(r => r.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var refusedWanted = run.RailRefusals.Where(r => wanted.Contains(r.Rail)).ToList();
+        if (refusedWanted.Count > 0)
+        {
+            foreach (var (_, sentence) in refusedWanted) Console.Error.WriteLine("error: " + sentence);
+            return JsonRun.Fail(CliDiagnostics.RailRefused(refusedWanted[0].Refusal));
+        }
+
         if (run.Refusal is { } why)
         {
             // R-rail10-6: a refusal stays a refusal, with the run service's own sentence — `em`'s
@@ -326,7 +338,6 @@ internal static class Rail
 
         // Only the rails the caller asked for are reported and exported; the rest were solved because
         // the chain needed them, which the order line says.
-        var wanted = chosen.Select(r => r.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var results = run.Rails.Where(r => wanted.Contains(r.RailName)).ToList();
 
         var provenance = Provenance(

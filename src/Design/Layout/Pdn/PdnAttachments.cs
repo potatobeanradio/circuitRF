@@ -116,6 +116,52 @@ public static class PdnAttachments
         return byPin.Count > 0 ? byPin : byNet;
     }
 
+    /// <summary>
+    /// The rail nodes <paramref name="anchor"/> attaches to — <b>on its land's own layer</b> where
+    /// that is known, and on every rail layer at the point only where it is not.
+    /// </summary>
+    /// <remarks>
+    /// <b>The walk already seeds this way (R-rail34-1); the attachment has to agree with it.</b> A
+    /// top-side pad over the rail's own trace on the far layer is two pieces of copper that meet
+    /// only through a via somewhere else. Attaching the pad at "every node under this XY" tied them
+    /// together at the pad: on the field board a 0 Ω link's far pad sat over the rail's bottom-layer
+    /// trace, so declaring the link series "solved" a path the copper does not have, and the part
+    /// that really was in series was bypassed by the same short.
+    ///
+    /// <para>A land stated on the REFERENCE layer is not a rail land — see <see cref="RailLand"/>.</para>
+    /// </remarks>
+    internal static List<int> RailNodes(
+        IPdnNodeSource nodes, RailPortAnchor anchor, IReadOnlyList<PlacedPin> pads, LayerKey? referenceLayer)
+    {
+        var found = new List<int>();
+        foreach (var (x, y, layer) in ResolveLands(anchor, pads))
+        {
+            if (RailLand(layer, referenceLayer) is { } land)
+            {
+                int n = nodes.NodeOnLayer(land, x, y);
+                if (n >= 0 && nodes.CellOfNode(n) is not { IsReference: true } && !found.Contains(n))
+                    found.Add(n);
+                continue;
+            }
+            foreach (int n in nodes.NodesAt(x, y, isReference: false))
+                if (!found.Contains(n)) found.Add(n);
+        }
+        return found;
+    }
+
+    /// <summary>
+    /// The layer a point is ON as far as the RAIL's copper goes: its stated land, or null — every
+    /// rail layer at the point — where none is stated or the one stated is the rail's reference.
+    /// </summary>
+    /// <remarks>
+    /// A conductor cannot be its own return, so rail copper on the reference layer is never the
+    /// rail's; a land stated there says nothing about which rail copper is meant. It happens in the
+    /// ordinary course: a pour pick states the topmost copper SHOWN under the click, and a plane
+    /// drawn over the pour is that copper until the user names it as the reference.
+    /// </remarks>
+    public static LayerKey? RailLand(LayerKey? land, LayerKey? referenceLayer) =>
+        land is { } l && l != referenceLayer ? l : null;
+
     /// <summary>The refusal for an anchor that names no copper, or null. <b>It names what would
     /// answer it</b> — the house spelling `convert` and `em` already set.</summary>
     public static string? RefusalForUnresolved(

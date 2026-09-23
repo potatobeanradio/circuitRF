@@ -42,6 +42,7 @@
 // map are already built from. So the section a part is shaded in on the board IS the section its
 // branch is stamped on in the sweep, and the two cannot come to disagree.
 
+using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.Pdn;
 
 namespace CircuitRF.Design.RailRf;
@@ -268,8 +269,8 @@ public sealed record RailSeriesPartition(
                     "enough: it resolves to EVERY pad of the part, which would tie the element's two " +
                     "ends into one node and model a short.");
 
-            int? a = IslandOf(termA, regions, pads);
-            int? b = IslandOf(termB, regions, pads);
+            int? a = IslandOf(termA, regions, pads, rail.ReferenceLayer);
+            int? b = IslandOf(termB, regions, pads, rail.ReferenceLayer);
 
             if (a is null)
                 return Refused(
@@ -336,7 +337,7 @@ public sealed record RailSeriesPartition(
 
         for (int k = 0; k < rail.Sources.Count && !located; k++)
         {
-            int? island = IslandOf(rail.Sources[k].Anchor, regions, pads);
+            int? island = IslandOf(rail.Sources[k].Anchor, regions, pads, rail.ReferenceLayer);
             if (island is { } i && adjacency.ContainsKey(i)) { root = i; located = true; }
         }
 
@@ -395,7 +396,7 @@ public sealed record RailSeriesPartition(
 
         int SectionOf(RailPortAnchor anchor, string what, RailSection side, string? behind)
         {
-            if (IslandOf(anchor, regions, pads) is { } island && sectionOfIsland.TryGetValue(island, out int s))
+            if (IslandOf(anchor, regions, pads, rail.ReferenceLayer) is { } island && sectionOfIsland.TryGetValue(island, out int s))
                 return s;
 
             elsewhere.Add(what);
@@ -485,15 +486,22 @@ public sealed record RailSeriesPartition(
     /// HOLE it drilled.
     /// </remarks>
     private static int? IslandOf(
-        RailPortAnchor anchor, PdnRailRegionSet regions, IReadOnlyList<PlacedPin> pads)
+        RailPortAnchor anchor, PdnRailRegionSet regions, IReadOnlyList<PlacedPin> pads,
+        LayerKey? referenceLayer)
     {
-        var points = PdnAttachments.Resolve(anchor, pads);
+        // On the land's own layer where it is known — the walk seeds that way (R-rail34-1). A pad
+        // tested against every layer at its XY lands on whatever rail copper runs under the part on
+        // the far layer: on the field board both pads of a 0 Ω link sat over the rail's own bottom
+        // trace, so the link read as BRIDGED and a part beside it that is not on the path at all
+        // read as the bridge.
+        var points = PdnAttachments.ResolveLands(anchor, pads);
         if (points.Count == 0) return null;
 
         foreach (var region in regions.Power)
-            foreach (var (_, paths) in region.Copper)
-                foreach (var (x, y) in points)
-                    if (Regions.Contains(paths, x, y)) return region.Index;
+            foreach (var (layer, paths) in region.Copper)
+                foreach (var (x, y, stated) in points)
+                    if (PdnAttachments.RailLand(stated, referenceLayer) is not { } land || layer == land)
+                        if (Regions.Contains(paths, x, y)) return region.Index;
 
         return null;
     }

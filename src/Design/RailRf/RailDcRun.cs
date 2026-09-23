@@ -120,7 +120,8 @@ public sealed class RailDcRequest
 
 /// <summary>
 /// Everything one run produced. <see cref="Refusal"/> non-null means NOTHING was solved — the
-/// contract <see cref="PdnExtraction"/> already states.
+/// contract <see cref="PdnExtraction"/> already states. A rail that was not solved while others were
+/// is in <see cref="RailRefusals"/> instead.
 /// </summary>
 /// <param name="Refusal">Why nothing was solved, or null.</param>
 /// <param name="Rails">One result per rail, in SOLVE order.</param>
@@ -156,6 +157,27 @@ public sealed record RailDcRunResult(
     /// </summary>
     public IReadOnlyList<PdnAnchorAmbiguity> AnchorAmbiguities { get; init; } = [];
 
+    /// <summary>
+    /// The rails that were NOT solved, each with its own sentence, in solve order. Empty on a run that
+    /// solved everything. On a run that solved NOTHING, <see cref="Refusal"/> is the first of them and
+    /// they are all still here, so a caller asking about one rail can say that rail's own reason.
+    /// </summary>
+    /// <remarks>
+    /// <b>One rail's fault is not another's.</b> A document with two independent rails used to be
+    /// refused whole by whichever came first in the order: working on the second, a designer saw only
+    /// the first one's sentence and no number for the rail in front of them. A rail FED from one that
+    /// was not solved is not solved either, and says which — its source level would otherwise be a
+    /// nominal presented as the chain's answer.
+    /// </remarks>
+    public IReadOnlyList<(string Rail, string Refusal)> RailRefusals { get; init; } = [];
+
+    /// <summary>Why <paramref name="name"/> was not solved, or null where it was (or was not in the
+    /// run at all).</summary>
+    public string? RefusalFor(string? name) =>
+        name is { Length: > 0 }
+            ? RailRefusals.FirstOrDefault(r => string.Equals(r.Rail, name, StringComparison.OrdinalIgnoreCase)).Refusal
+            : null;
+
     internal static RailDcRunResult Refused(string why) => new(why, [], [], []);
 }
 
@@ -184,6 +206,11 @@ public static class RailDcRun
 
         var results = new List<RailDcResult>(order.Order.Count);
         var diagnostics = new List<string>();
+        var refusals = new List<(string Rail, string Refusal)>();
+        var ambiguities = new List<PdnAnchorAmbiguity>();
+
+        void Refuse(string railName, string why) =>
+            refusals.Add((railName, $"Rail '{railName}' was not solved. {why}"));
 
         foreach (string railName in order.Order)
         {
@@ -194,8 +221,19 @@ public static class RailDcRun
             var spec = doc.Rail(railName);
             if (spec is null) continue;
 
-            if (SeriesRefusal(spec) is { } seriesRefusal)
-                return RailDcRunResult.Refused($"Rail '{railName}' was not solved. {seriesRefusal}");
+            // Upstream first by construction, so a feeding rail's refusal is already known here.
+            if (edges.FirstOrDefault(e =>
+                    string.Equals(e.Downstream, railName, StringComparison.OrdinalIgnoreCase) &&
+                    refusals.Any(r => string.Equals(r.Rail, e.Upstream, StringComparison.OrdinalIgnoreCase)))
+                is { Upstream: { } unsolved })
+            {
+                Refuse(railName,
+                    $"It is fed from rail '{unsolved}', which was not solved, so its source has no " +
+                    "upstream answer to start from. Solve that rail first.");
+                continue;
+            }
+
+            if (SeriesRefusal(spec) is { } seriesRefusal) { Refuse(railName, seriesRefusal); continue; }
 
             var chained = ChainStart(spec, edges, results, out var solved);
             var toSolve = chained is null ? spec : WithSourceLevel(spec, chained);
@@ -206,8 +244,11 @@ public static class RailDcRun
             {
                 if (SolveConverged(request, toSolve, railName, chained, diagnostics,
                                    out extraction, out solution) is { } notSolved)
-                    return RailDcRunResult.Refused($"Rail '{railName}' was not solved. {notSolved}")
-                        with { AnchorAmbiguities = extraction.AnchorAmbiguities };
+                {
+                    Refuse(railName, notSolved);
+                    ambiguities.AddRange(extraction.AnchorAmbiguities);
+                    continue;
+                }
             }
             else
             {
@@ -215,17 +256,35 @@ public static class RailDcRun
                 diagnostics.AddRange(extraction.Diagnostics.Select(d => $"[{railName}] {d}"));
 
                 if (extraction.Refusal is { } why)
-                    return RailDcRunResult.Refused($"Rail '{railName}' was not solved. {why}")
-                        with { AnchorAmbiguities = extraction.AnchorAmbiguities };
+                {
+                    Refuse(railName, why);
+                    ambiguities.AddRange(extraction.AnchorAmbiguities);
+                    continue;
+                }
 
                 if (Solve(request, railName, extraction.Netlist!, out solution) is { } solveRefusal)
-                    return RailDcRunResult.Refused($"Rail '{railName}' was not solved. {solveRefusal}");
+                {
+                    Refuse(railName, solveRefusal);
+                    continue;
+                }
             }
 
             results.Add(Assemble(request, spec, extraction.Netlist!, solution, chained, edges, solved, extraction));
         }
 
-        return new RailDcRunResult(null, results, order.Order, diagnostics);
+        // Nothing solved is the old contract exactly — the first rail's own sentence, and no rows.
+        if (results.Count == 0 && refusals.Count > 0)
+            return RailDcRunResult.Refused(refusals[0].Refusal) with
+            {
+                AnchorAmbiguities = ambiguities,
+                RailRefusals      = refusals,
+            };
+
+        return new RailDcRunResult(null, results, order.Order, diagnostics)
+        {
+            RailRefusals      = refusals,
+            AnchorAmbiguities = ambiguities,
+        };
     }
 
     private static string? Solve(

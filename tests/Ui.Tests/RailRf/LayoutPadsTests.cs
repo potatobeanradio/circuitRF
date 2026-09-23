@@ -483,7 +483,11 @@ public sealed class LayoutPadsTests(ITestOutputHelper output) : IDisposable
         var before = PdnBoardPads.PadsOf(netlist);
         var after = RailArtwork.PadsFor(view, clay, tech, netlist);
 
-        Assert.Equal(before, after.Pads);
+        // Everything but the LAND: a netlist pad now takes its land layer from the artwork's pad for
+        // the same part (the file states none), which moves nothing — the coordinates, pins and nets
+        // are the netlist's, byte for byte.
+        Assert.Equal(before, after.Pads.Select(p => p with { Layer = null }));
+        Assert.All(after.Pads, p => Assert.NotNull(p.Layer));
         Assert.Equal(0, after.FromArtwork);
         // DISTINCT, and the difference is PadsFor's own documented one rather than a change here:
         // it de-duplicates, because both sources legitimately describe the same stitching via and
