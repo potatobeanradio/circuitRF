@@ -35078,3 +35078,25 @@ Fifth outside report (beta.29). Gate: `tests/Ui.Tests/RailRf/RailRfFieldReport5T
   R-L/Touchstone writes nothing; committing a value in one clears the other. Round 5's bare-number rule
   moved to `RailValueFormat.IsBareWhereAUnitIsRequired` so the library editor and this share one copy.
 - Not seen on screen: the editor, menu and offer line were verified by build and view-model tests only.
+
+## Bias-curve import and paste; the bias cell that moved under the caret (2026-09-23)
+
+**The cell moved on every digit because a bias commit RE-SORTS the curve and the commit was per
+keystroke.** Typing "12" into a 0 V point committed "1" first, `ReplaceBiasPoint` sorted it past its
+neighbour, and `RebuildBiasPoints` cleared the list and reset the selection to point 0 — so the user
+scrolled back to find their cell after each digit. Two halves, both needed: the curve cells bind with
+`UpdateSourceTrigger=LostFocus` (Enter moves focus to the list, which commits), and `ReplaceBiasPoint`
+refreshes the index-based point view models IN PLACE and selects the edited point where the sort put it.
+Rebuilding on a commit would also destroy the cell the user just clicked into, since the LostFocus commit
+lands after focus has moved.
+
+**The C-V table reader is shared, and below the firewall** — `src/Design/Interchange/CapacitanceVoltageTable.cs`
+serves railRF's bias curve (`PartBiasCurveImport`, which adds the row checks and the thinning) and the
+schematic's NonlinearC editor. A bare capacitance is refused on `PartLibraryTableImport`'s terms. Two
+text traps: `DelimitedTables.NormalizeHeader` strips a trailing `(unit)` but NOT a `[unit]`, and a
+supplier export writes `DC Bias[V]`; and the capacitance ladder has no bare-prefix spelling, so `470n`
+reads only because the reader retries a one-character token with `F` appended.
+
+**A TextBox paste can only be redirected by taking it over unconditionally.** Whether the clipboard holds
+a table is known only after an asynchronous read, and `PastingFromClipboardEvent` has to be marked handled
+synchronously — so the view always handles it, and puts a single line back with `SelectedText`.

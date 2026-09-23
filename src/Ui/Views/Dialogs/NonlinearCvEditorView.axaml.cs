@@ -1,3 +1,6 @@
+using System;
+using System.IO;
+using Avalonia.Platform.Storage;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -66,6 +69,34 @@ public partial class NonlinearCvEditorView : UserControl
 
     private void OnTextBoxLostFocus(object? sender, RoutedEventArgs e)
         => Vm?.Validate();
+
+    // ── Import ────────────────────────────────────────────────────────────────
+
+    /// <summary>Picks a C-V table and hands its text to the view model, which owns every rule.</summary>
+    private async void OnImportClick(object? sender, RoutedEventArgs e)
+    {
+        if (Vm is not { } vm || TopLevel.GetTopLevel(this) is not { } top) return;
+        var files = await top.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title         = "Import C-V Data",
+            AllowMultiple = false,
+            FileTypeFilter =
+            [
+                new FilePickerFileType("Comma-separated values") { Patterns = ["*.csv"] },
+                new FilePickerFileType("Text") { Patterns = ["*.txt", "*.tsv"] },
+            ],
+        });
+        if (files is not [var file] || file.TryGetLocalPath() is not { Length: > 0 } path) return;
+
+        string text;
+        try { text = await File.ReadAllTextAsync(path); }
+        catch (Exception ex)
+        {
+            vm.ImportNote = $"{Path.GetFileName(path)} could not be read: {ex.Message}";
+            return;
+        }
+        vm.ImportCvTable(text, Path.GetFileName(path));
+    }
 
     // ── Footer ────────────────────────────────────────────────────────────────
 

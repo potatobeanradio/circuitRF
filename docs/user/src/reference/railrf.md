@@ -143,6 +143,23 @@ row per part number:
 
 A bias curve can be added only to a capacitor row that states its capacitance.
 
+A curve does not have to be typed. Under it, **Import curve…** reads a supplier's
+capacitance-versus-DC-bias `.csv` (or any two columns of bias and capacitance), and **Paste curve**
+&mdash; or pasting a multi-line table into a curve cell, or Ctrl/Cmd+V over the curve &mdash; reads
+columns copied from a spreadsheet or a datasheet, separated by tabs, commas or spaces. Either one
+**replaces** the curve as one undoable edit. The capacitance unit has to be stated, in the header
+(`Capacitance[F]`, `C (µF)`) or on each value (`4.7uF`, `470n`): a bare `0.47` could be farads,
+microfarads or nanofarads. Bias is read in volts unless it says otherwise. A curve whose first point is
+more than ten times the row's marked value, or under a tenth of it, is refused as a unit error. A
+supplier export sampled every few tens of millivolts is thinned to the points linear interpolation
+needs &mdash; a 201-row export typically keeps about 14 &mdash; and no bias between two kept points reads
+more than 0.2 % of the curve's largest value away from the supplier's own number. The report above the
+table says how many points were read and kept, and names anything to check: a file that does not name
+the part, a first point far from the marked value, a curve that stops below the part's rating.
+
+A curve cell takes its value when you leave it or press Enter, and the point then moves to its place in
+bias order and stays selected.
+
 A row classed **Other** has no impedance-at-one-frequency column, on purpose: a datasheet's "220 Ω at
 100 MHz" does not say how much of that is resistance and how much is inductance, and any split would be a
 guess printed as a model. Give the row the part's own Touchstone curve &mdash; a two-port file measured

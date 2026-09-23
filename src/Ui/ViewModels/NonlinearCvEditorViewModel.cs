@@ -7,6 +7,8 @@ using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using CircuitRF.Core.Expressions;
+using CircuitRF.Design.Interchange;
+using CircuitRF.Design.Matching;
 using CircuitRF.Ui.Commands;
 using CircuitRF.Ui.Commands.Schematic;
 using CircuitRF.Ui.Schematic;
@@ -323,6 +325,53 @@ public sealed partial class NonlinearCvEditorViewModel : ObservableObject, IDisp
         }
 
         return (pts, errors);
+    }
+
+    // ── Import a C-V table (owner request, 2026-09-23) ────────────────────────
+
+    /// <summary>What the last import did, or empty.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasImportNote))]
+    private string _importNote = "";
+
+    public bool HasImportNote => ImportNote.Length > 0;
+
+    /// <summary>
+    /// Replaces the staged table with a capacitance-versus-voltage table — a supplier's export, or
+    /// any two columns with the capacitance unit in the header or on the values. Nothing touches the
+    /// component until Apply, as with every other edit here.
+    /// </summary>
+    /// <remarks>Every rule — columns, units, refusals — is <see cref="CapacitanceVoltageTable"/>'s,
+    /// shared with railRF's bias-curve import. The unit combo follows the table, so the values stay
+    /// readable ("0.481" µF rather than "4.81E-07" F).</remarks>
+    /// <returns>False where nothing was imported; <see cref="ImportNote"/> says why.</returns>
+    public bool ImportCvTable(string text, string? sourceName)
+    {
+        var result = CapacitanceVoltageTable.Read(text, sourceName);
+        string source = sourceName ?? "Pasted table";
+        if (result.Samples.Count == 0)
+        {
+            ImportNote = $"{source}: nothing imported. {string.Join(" ", result.Notes)}";
+            return false;
+        }
+
+        string unit = MatchValueFormat.AutoUnitFor(result.Samples.Max(p => p.Farads), MatchQuantity.Capacitance);
+        if (!CapacitanceUnitOptions.Contains(unit)) unit = "F";
+        double scale = UnitScale(unit);
+
+        Rows.Clear();
+        foreach (var p in result.Samples)
+            Rows.Add(new CvRowViewModel(
+                p.Volts.ToString("G10", CultureInfo.InvariantCulture),
+                (p.Farads / scale).ToString("G10", CultureInfo.InvariantCulture),
+                this));
+        CapacitanceUnit = unit;
+        if (IsTextMode) TextContent = SerializeRowsToText(Rows);
+
+        ImportNote = $"{source}: {result.Samples.Count} point(s), C in {unit}. Apply fits them." +
+                     (result.Notes.Count > 0 ? " " + string.Join(" ", result.Notes) : "");
+        Validate();
+        return true;
     }
 
     // ── Row management (called by view code-behind and CvRowViewModel) ─────────

@@ -335,6 +335,23 @@ public partial class WorkspaceViewModel
             doc.ViewModel.ImportTable(path);
     }
 
+    internal async Task ImportPartLibraryBiasCurve(PartLibraryDocument doc, Window owner)
+    {
+        var files = await owner.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title         = "Import Bias Curve",
+            AllowMultiple = false,
+            FileTypeFilter =
+            [
+                new FilePickerFileType("Comma-separated values") { Patterns = ["*.csv"] },
+                new FilePickerFileType("Text") { Patterns = ["*.txt", "*.tsv"] },
+            ],
+        });
+
+        if (files is [var file] && file.TryGetLocalPath() is { Length: > 0 } path)
+            doc.ViewModel.ImportBiasCurve(path);
+    }
+
     internal async Task SavePartLibraryAs(PartLibraryDocument doc, Window owner)
     {
         var file = await owner.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions

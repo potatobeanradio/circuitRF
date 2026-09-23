@@ -61,6 +61,12 @@ parameter editor — *Edit C–V…*) and give it the curve you want to model:
       can see the quality of the fit.</li>
   </ol>
 
+The table can also be read from a file: the import button beside **Rows**/**Text** takes a `.csv` of
+voltage and capacitance &mdash; a supplier's capacitance-versus-DC-bias export, or any two columns
+&mdash; and replaces the table with it. The capacitance unit has to be stated, in the header
+(`Capacitance[F]`, `C (pF)`) or on each value, and the **Unit** selector follows the file so the values
+stay readable. Negative voltages are kept as they are. Nothing changes on the part until **Apply**.
+
 {{ui: cv-editor}}
 
 ## The Apply step (important) {#apply}

@@ -3,6 +3,7 @@
              xmlns:vm="using:CircuitRF.Ui.ViewModels"
              xmlns:ctl="using:CircuitRF.Ui.Controls"
              xmlns:cvt="using:CircuitRF.Ui.Converters"
+             xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              x:Class="CircuitRF.Ui.Views.Dialogs.NonlinearCvEditorView"
              x:DataType="vm:NonlinearCvEditorViewModel"
              Background="{DynamicResource SystemChromeLowColor}">
@@ -57,6 +58,14 @@
             <!-- Rows / Text mode toggle -->
             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="0"
                         VerticalAlignment="Center">
+                <Button Padding="6,3"
+                        MinHeight="0"
+                        Height="24"
+                        Margin="0,0,6,0"
+                        Click="OnImportClick"
+                        ToolTip.Tip="Import C-V data… — replace the table with a .csv of voltage and capacitance: a supplier's capacitance-versus-DC-bias export, or any two columns. The capacitance unit must be stated, in the header — Capacitance[F], C (pF) — or on each value; the Unit selector follows the file. Nothing changes on the part until Apply.">
+                    <mi:MaterialIcon Kind="FileDelimitedOutline" Width="16" Height="16"/>
+                </Button>
                 <Button Classes="mode-btn"
                         Classes.active="{Binding IsRowsMode}"
                         Content="Rows"
@@ -109,8 +118,15 @@
             </StackPanel>
         </Grid>
 
-        <!-- ── Row 2: Validation summary ─────────────────────────────────────── -->
-        <Border Grid.Row="2"
+        <!-- ── Row 2: Validation summary, and what the last import did ─────────── -->
+        <StackPanel Grid.Row="2">
+        <TextBlock IsVisible="{Binding HasImportNote}"
+                   Text="{Binding ImportNote}"
+                   FontSize="10"
+                   Opacity="0.75"
+                   TextWrapping="Wrap"
+                   Margin="0,0,0,4"/>
+        <Border
                 IsVisible="{Binding HasValidationErrors}"
                 Background="{DynamicResource SystemChromeMediumColor}"
                 BorderBrush="{DynamicResource CrfWarningBrush}"
@@ -122,6 +138,7 @@
                        Foreground="{DynamicResource CrfWarningBrush}"
                        TextWrapping="Wrap"/>
         </Border>
+        </StackPanel>
 
         <!-- ── Row 3: Editor body — Rows panel or Text panel ─────────────────── -->
         <Grid Grid.Row="3">

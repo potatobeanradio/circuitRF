@@ -1044,13 +1044,97 @@ public sealed partial class PartLibraryEditorViewModel : ObservableObject
         row.Model.BiasCurve[index] = point;
         SortCurve(row.Model);
         CommitEdit(before, description);
-        RebuildBiasPoints();
+
+        // Refreshed IN PLACE, and the edited point stays selected wherever the sort put it (field
+        // report, 2026-09-23: every digit typed into a bias moved the cell, and the list rebuilt with
+        // the FIRST point selected, so the user scrolled back to their cell after each keystroke). The
+        // point view models are index-based, so a re-sort needs no new ones — and not replacing them
+        // leaves whatever cell the user clicked into alive.
+        foreach (var p in BiasPoints) p.Refresh();
+        SelectedBiasPointIndex = row.Model.BiasCurve.FindIndex(p => ReferenceEquals(p, point));
+        OnPropertyChanged(nameof(SelectedBiasCurve));
         row.Refresh();
         RefreshDerived();
     }
 
     private static void SortCurve(PartLibraryRow row) =>
         row.BiasCurve.Sort((a, b) => a.BiasVolts.CompareTo(b.BiasVolts));
+
+    /// <summary>The sub-editor's Import curve…. The picker is the host's, on
+    /// <see cref="ImportTableRequested"/>'s terms; the import itself is <see cref="ImportBiasCurve"/>.</summary>
+    [RelayCommand(CanExecute = nameof(CanAddBiasPoint))]
+    private void RequestBiasCurveImport() => ImportBiasCurveRequested?.Invoke();
+
+    /// <summary>Asks the host for a <c>.csv</c> and then calls <see cref="ImportBiasCurve"/>.</summary>
+    public Action? ImportBiasCurveRequested { get; set; }
+
+    /// <summary>The sub-editor's Paste curve. The clipboard is the view's — it needs a top level —
+    /// and it hands the text to <see cref="PasteBiasCurve"/>.</summary>
+    [RelayCommand(CanExecute = nameof(CanAddBiasPoint))]
+    private void RequestBiasCurvePaste() => BiasCurvePasteRequested?.Invoke();
+
+    /// <summary>Reads the clipboard and calls <see cref="PasteBiasCurve"/>. Set by the view.</summary>
+    public Action? BiasCurvePasteRequested { get; set; }
+
+    /// <summary>
+    /// Replaces the selected row's bias curve with a supplier's capacitance-versus-DC-bias export
+    /// (owner request, 2026-09-23). One undoable edit.
+    /// </summary>
+    public void ImportBiasCurve(string path)
+    {
+        string name = System.IO.Path.GetFileName(path);
+        string text;
+        try { text = System.IO.File.ReadAllText(path); }
+        catch (Exception ex)
+        {
+            ImportReport = [$"{name} could not be read: {ex.Message}"];
+            return;
+        }
+        ReplaceBiasCurve(text, name);
+    }
+
+    /// <summary>
+    /// Replaces the selected row's bias curve with pasted text — tab-, comma- or space-separated
+    /// columns of bias and capacitance, with the header row or a unit on each capacitance.
+    /// </summary>
+    /// <returns>False where the text held no curve, so a caller can let an ordinary paste through.</returns>
+    public bool PasteBiasCurve(string text) => ReplaceBiasCurve(text, null);
+
+    /// <summary>Every rule — columns, units, the checks against the row, the thinning — is
+    /// <see cref="PartBiasCurveImport"/>'s, below the firewall. This snapshots, applies and reports.</summary>
+    private bool ReplaceBiasCurve(string text, string? sourceName)
+    {
+        if (SelectedRow is not { } row || !CanAddBiasPoint) return false;
+
+        var result = PartBiasCurveImport.Read(text, row.Model, sourceName);
+        string source = sourceName ?? "Pasted curve";
+        if (!result.HasCurve)
+        {
+            ImportReport = [$"{source}: nothing imported.", .. result.Notes];
+            return false;
+        }
+
+        string before = SnapshotJson();
+        int replaced = row.Model.BiasCurve.Count;
+        row.Model.BiasCurve.Clear();
+        row.Model.BiasCurve.AddRange(result.Points);
+        CommitEdit(before, sourceName is null ? "Paste a bias curve" : $"Import {sourceName}");
+        RebuildBiasPoints();
+        row.Refresh();
+        RefreshDerived();
+
+        string kept = result.Points.Count == result.PointsRead
+            ? $"{result.Points.Count} point(s)"
+            : $"{result.PointsRead} points read, {result.Points.Count} kept — each dropped point is within " +
+              $"{PartBiasCurveImport.ThinningTolerance:P1} of the line through its neighbours";
+        ImportReport =
+        [
+            $"{source}: {row.PartNumber}'s bias curve is now {kept}" +
+            (replaced > 0 ? $" (it had {replaced})." : "."),
+            .. result.Notes,
+        ];
+        return true;
+    }
 
     // ── save ──────────────────────────────────────────────────────────────────────────────────
 
@@ -1190,6 +1274,8 @@ public sealed partial class PartLibraryEditorViewModel : ObservableObject
         SelectedBiasPointIndex = BiasPoints.Count > 0 ? 0 : null;
         RemoveRowCommand.NotifyCanExecuteChanged();
         AddBiasPointCommand.NotifyCanExecuteChanged();
+        RequestBiasCurveImportCommand.NotifyCanExecuteChanged();
+        RequestBiasCurvePasteCommand.NotifyCanExecuteChanged();
         RemoveBiasPointCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(SelectedBiasCurve));
         OnPropertyChanged(nameof(SelectedMarkedCapacitanceFarads));
@@ -1215,6 +1301,8 @@ public sealed partial class PartLibraryEditorViewModel : ObservableObject
         OnPropertyChanged(nameof(SelectedBiasCurve));
         OnPropertyChanged(nameof(SelectedMarkedCapacitanceFarads));
         AddBiasPointCommand.NotifyCanExecuteChanged();
+        RequestBiasCurveImportCommand.NotifyCanExecuteChanged();
+        RequestBiasCurvePasteCommand.NotifyCanExecuteChanged();
         RefreshSeeding();
     }
 }

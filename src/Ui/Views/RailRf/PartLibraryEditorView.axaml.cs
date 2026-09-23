@@ -1,8 +1,12 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.VisualTree;
+using System;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace CircuitRF.Ui.Views.RailRf;
 
@@ -58,6 +62,62 @@ public partial class PartLibraryEditorView : UserControl
         // opened over a cell) still gets it afterwards.
         AddHandler(InputElement.KeyDownEvent, OnKeyDown,
                    RoutingStrategies.Tunnel, handledEventsToo: true);
+
+        // A table pasted into a bias-curve cell is a CURVE, not a cell value (owner request,
+        // 2026-09-23): pasting 200 rows of "bias<TAB>capacitance" into one text box would otherwise
+        // put all of it in that box. Only multi-line text is taken — a single value still pastes into
+        // the cell as it always has.
+        BiasPointList.AddHandler(TextBox.PastingFromClipboardEvent, OnBiasCellPasting,
+                                 RoutingStrategies.Bubble);
+
+        // The curve cells commit on LostFocus (a bias commit re-sorts the curve), so Enter has to
+        // end the edit too: it moves focus to the list, which commits the cell.
+        BiasPointList.AddHandler(InputElement.KeyDownEvent, OnBiasCellKeyDown, RoutingStrategies.Tunnel);
+
+        DataContextChanged += (_, _) =>
+        {
+            if (DataContext is Ui.RailRf.PartLibraryDocument doc)
+                doc.ViewModel.BiasCurvePasteRequested = () => _ = PasteBiasCurveAsync(doc.ViewModel);
+        };
+    }
+
+    private void OnBiasCellKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter || e.Source is not TextBox) return;
+        e.Handled = true;
+        BiasPointList.Focus();
+    }
+
+    /// <summary>The clipboard's text, or null. The clipboard needs a top level, which is why this
+    /// is the view's and not the view model's.</summary>
+    private async Task<string?> ClipboardTextAsync()
+    {
+        if (TopLevel.GetTopLevel(this)?.Clipboard is not { } clipboard) return null;
+        try { return await clipboard.TryGetTextAsync(); }
+        catch (Exception) { return null; }
+    }
+
+    private async Task PasteBiasCurveAsync(Ui.RailRf.PartLibraryEditorViewModel vm)
+    {
+        if (await ClipboardTextAsync() is { Length: > 0 } text) vm.PasteBiasCurve(text);
+    }
+
+    /// <summary>
+    /// A paste into a curve cell. The paste is always taken over — whether the clipboard holds a
+    /// table is only known after an asynchronous read — and a single line is put back into the cell
+    /// as the text box would have.
+    /// </summary>
+    private async void OnBiasCellPasting(object? sender, RoutedEventArgs e)
+    {
+        if (e.Source is not TextBox box) return;
+        if (DataContext is not Ui.RailRf.PartLibraryDocument doc) return;
+        e.Handled = true;
+
+        if (await ClipboardTextAsync() is not { Length: > 0 } text) return;
+        if (text.Trim().Contains('\n'))
+            doc.ViewModel.PasteBiasCurve(text);
+        else
+            box.SelectedText = text;
     }
 
     /// <summary>
@@ -112,6 +172,21 @@ public partial class PartLibraryEditorView : UserControl
     /// </remarks>
     private void OnKeyDown(object? sender, KeyEventArgs e)
     {
+        // Ctrl/Cmd+V over the bias-curve panel with no cell focused — the empty curve, which has no
+        // cell to paste into, is the commonest case. A focused text box has its own paste, which
+        // OnBiasCellPasting takes over.
+        if (e.Key == Key.V && (e.KeyModifiers == KeyModifiers.Control || e.KeyModifiers == KeyModifiers.Meta)
+            && e.Source is Visual pasteSource && e.Source is not TextBox
+            && (ReferenceEquals(pasteSource, BiasCurvePanel)
+                || pasteSource.GetVisualAncestors().Contains(BiasCurvePanel))
+            && DataContext is Ui.RailRf.PartLibraryDocument pasteDoc
+            && pasteDoc.ViewModel.RequestBiasCurvePasteCommand.CanExecute(null))
+        {
+            e.Handled = true;
+            pasteDoc.ViewModel.RequestBiasCurvePasteCommand.Execute(null);
+            return;
+        }
+
         if (e.Key != Key.Escape) return;
         if (DataContext is not Ui.RailRf.PartLibraryDocument doc) return;
         if (doc.ViewModel.SelectedRow is null) return;

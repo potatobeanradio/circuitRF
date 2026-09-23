@@ -7748,6 +7748,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             {
                 if (HostWindowOf(doc) is { } window) _ = ImportPartLibraryTable(doc, window);
             };
+            vm.ImportBiasCurveRequested = () =>
+            {
+                if (HostWindowOf(doc) is { } window) _ = ImportPartLibraryBiasCurve(doc, window);
+            };
 
             // Save As follows the new file, so the open-document map has to follow with it —
             // otherwise reopening the .crlib from the tree would mint a SECOND live view of one file.

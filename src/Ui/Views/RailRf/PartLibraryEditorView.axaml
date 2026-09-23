@@ -379,6 +379,7 @@
 
             <!-- ── the bias-curve sub-editor (R-rail24-1c) ───────────────────────────────────── -->
             <Border Grid.Row="3"
+                    x:Name="BiasCurvePanel"
                     Margin="0,12,0,0"
                     BorderBrush="{DynamicResource SystemBaseLowColor}"
                     BorderThickness="1"
@@ -412,12 +413,16 @@
                                 </Style>
                             </ListBox.Styles>
                             <ListBox.ItemTemplate>
+                                <!-- LostFocus, not per keystroke: a bias commit RE-SORTS the curve, so
+                                     committing "1" on the way to "12" moved the point under the caret
+                                     (field report, 2026-09-23). Enter commits too — see the view's
+                                     OnBiasCellKeyDown. -->
                                 <DataTemplate x:DataType="rail:PartBiasPointViewModel">
                                     <Grid ColumnDefinitions="*,*,0.8*">
                                         <TextBox Classes="cell"
-                                                 Text="{Binding BiasEntry, Mode=TwoWay}"/>
+                                                 Text="{Binding BiasEntry, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
                                         <TextBox Grid.Column="1" Classes="cell"
-                                                 Text="{Binding CapacitanceEntry, Mode=TwoWay}"/>
+                                                 Text="{Binding CapacitanceEntry, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
                                         <TextBlock Grid.Column="2" Classes="cell"
                                                    Text="{Binding RetainedText}"/>
                                     </Grid>
@@ -436,6 +441,24 @@
                                     <mi:MaterialIcon Kind="Minus" Width="13" Height="13"/>
                                     <TextBlock Text="Remove point" FontSize="11" VerticalAlignment="Center"/>
                                 </StackPanel>
+                            </Button>
+
+                            <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
+                                    Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                            <!-- Owner request, 2026-09-23: a supplier's capacitance-versus-DC-bias
+                                 export, or columns pasted from a spreadsheet, REPLACES the curve as one
+                                 undoable edit. Pasting a multi-line table into a cell (or Ctrl/Cmd+V
+                                 with the list focused) does the same as the Paste button. -->
+                            <Button Padding="6,3"
+                                    Command="{Binding ViewModel.RequestBiasCurveImportCommand}"
+                                    ToolTip.Tip="Import curve… — replace this curve with a supplier's capacitance-versus-DC-bias .csv (or any two columns of bias and capacitance). The capacitance unit must be stated, in the header — Capacitance[F], C (µF) — or on each value. A long export is thinned to the points linear interpolation needs, and the report above the grid says how many were kept.">
+                                <mi:MaterialIcon Kind="FileDelimitedOutline" Width="16" Height="16"/>
+                            </Button>
+                            <Button Padding="6,3"
+                                    Command="{Binding ViewModel.RequestBiasCurvePasteCommand}"
+                                    ToolTip.Tip="Paste curve — replace this curve with bias and capacitance columns copied from a spreadsheet or a datasheet: tab, comma or space separated. Copy the header row with them (Bias (V), C (µF)) or write a unit on each capacitance (4.7uF); a bare number's scale would be a guess.">
+                                <mi:MaterialIcon Kind="ContentPaste" Width="16" Height="16"/>
                             </Button>
                         </StackPanel>
                     </Grid>
