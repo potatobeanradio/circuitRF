@@ -72,28 +72,38 @@ public enum RailPartConnection
     /// IN the rail: two rail-side terminals, everything upstream on one and everything downstream
     /// on the other. A ferrite bead, a protection FET, a sense resistor, a zero-ohm link.
     ///
-    /// <para><b>One per rail in v1</b> (R-rail25-2c) — <see cref="RailSpec.Refusal"/> refuses a
-    /// second by name, because two of them make three or more sections and a topology that may not
-    /// be a chain.</para>
+    /// <para><b>Any number per rail</b> (brief 35, R-rail35-3) — each one cuts the rail, the pieces
+    /// are SECTIONS, and the sections must form a tree rooted at the source's.
+    /// <see cref="RailSeriesPartition"/> refuses a cycle, a bridged element and a section with no
+    /// path to a source, each by name. Brief 25 allowed one.</para>
     /// </summary>
     Series,
 }
 
 /// <summary>
-/// Which side of a rail's series element something sits on (R-rail25-2a, R-rail25-2d).
+/// Which side of a rail's series elements something sits on (R-rail25-2a, R-rail25-2d), where
+/// nothing measured it.
 /// </summary>
 /// <remarks>
 /// <b>MEASURED off the artwork where there is artwork</b> — <see cref="RailSeriesPartition"/> cuts
-/// the rail at the element's two pads and walks, so no user types thirteen capacitors' sides and a
+/// the rail at every element's pads and walks, so no user types thirteen capacitors' sides and a
 /// re-layout moves them by itself. <see cref="RailPart.Side"/> and <see cref="RailLoad.Side"/> are
 /// what the artwork-less case (§6 makes P1 artwork-OPTIONAL) states instead.
+///
+/// <para><b>Two values for a rail that may have K+1 sections</b> (brief 35), and that is deliberate
+/// rather than an omission: it is the file's own spelling from brief 25 and every <c>.crail</c>
+/// written since reads through it. A row that needs to name a middle section of a chain names the
+/// element it sits behind instead — <see cref="RailPart.Behind"/>, <see cref="RailLoad.Behind"/> —
+/// and these two then mean the two ENDS: <see cref="Upstream"/> is the source's section and
+/// <see cref="Downstream"/> is the last one in the chain.</para>
 /// </remarks>
 public enum RailSection
 {
-    /// <summary>Between the source and the series element.</summary>
+    /// <summary>Between the source and the first series element — the source's own section.</summary>
     Upstream,
 
-    /// <summary>Beyond the series element, which is where decoupling goes — <b>the default</b>.</summary>
+    /// <summary>Beyond the series element — beyond the LAST one, on a typed chain — which is where
+    /// decoupling goes. <b>The default.</b></summary>
     Downstream,
 }
 
@@ -225,6 +235,26 @@ public sealed record RailPart
     /// </summary>
     public RailSection Side { get; init; } = RailSection.Downstream;
 
+    /// <summary>
+    /// The refdes of the series element this row sits directly BEHIND, where nothing measured it
+    /// (brief 35, R-rail35-3c) — or null, where <see cref="Side"/> says which end of the chain.
+    /// </summary>
+    /// <remarks>
+    /// <b>Read only on a rail with no artwork</b>, exactly as <see cref="Side"/> is: with artwork the
+    /// section is measured off the board. It exists because a rail with two elements in a chain has a
+    /// MIDDLE section — between the bead and the switch — that the two-valued <see cref="Side"/>
+    /// cannot name. Naming the element is the spelling a designer already has in their head ("C4 is
+    /// after FB1"), and a section index would be a number that silently moved the day somebody
+    /// inserted a third element.
+    ///
+    /// <para><b>The typed route is a CHAIN</b> — the series rows in row order, the first nearest the
+    /// source — so this is not read on a series row: its position in the chain IS its row order,
+    /// and a series row naming another element is refused rather than ignored. Naming an element
+    /// and stating <see cref="RailSection.Upstream"/> at once is a contradiction, and is refused
+    /// too.</para>
+    /// </remarks>
+    public string? Behind { get; init; }
+
     /// <summary>True where this row carries the R-L form rather than a Touchstone file.</summary>
     public bool IsRl => SeriesResistanceOhms is not null || SeriesInductanceHenries is not null;
 
@@ -258,6 +288,18 @@ public sealed record RailPart
         if (DcResistanceOhms is { } dcr && (dcr < 0 || double.IsNaN(dcr) || double.IsInfinity(dcr)))
             return $"{where}'s part '{Refdes}' states a DC resistance of {dcr} Ω. State it in ohms, " +
                    "at or above zero — or leave it out, which says it is UNSTATED rather than zero.";
+
+        if (Behind is { Length: > 0 } behind)
+        {
+            if (Connection == RailPartConnection.Series)
+                return $"{where}'s series part '{Refdes}' says it sits behind '{behind}'. A series " +
+                       "element's place in a typed chain is its ROW ORDER — the first series row is " +
+                       "nearest the source — so remove the name, or move the row.";
+            if (Side == RailSection.Upstream)
+                return $"{where}'s part '{Refdes}' is stated both UPSTREAM and behind '{behind}'. " +
+                       "Upstream is the source's own section, in front of every element; name the " +
+                       "element, or state upstream, not both.";
+        }
 
         if (TerminalA?.Refusal($"{where}'s series part '{Refdes}', first terminal,") is { } ta) return ta;
         if (TerminalB?.Refusal($"{where}'s series part '{Refdes}', second terminal,") is { } tb) return tb;

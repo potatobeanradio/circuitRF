@@ -148,6 +148,10 @@ public sealed partial class RailRfViewModel
             // And the board says which rows those are — see PublishNotFitted for why this is the
             // only call site.
             PublishNotFitted();
+
+            // Brief 35: the series editor follows the selected row, and re-reads after every
+            // rebuild — which is what an undo of one of its own edits arrives as.
+            SyncSeriesEditor();
         }
 
         if (SelectedRail is not { } rail)
@@ -166,11 +170,18 @@ public sealed partial class RailRfViewModel
         // The solve's own resolution, by refdes. Built once for the whole table rather than per row:
         // a part with an attached Touchstone file is READ here, and resolving each row separately
         // would read the same file once per instance of the part.
-        var resolved = new RailPartResolver(PartLibrary ?? new PartLibrary())
+        var resolver = new RailPartResolver(PartLibrary ?? new PartLibrary());
+        var resolved = resolver
             .ResolveAll(rail.Parts, rail.NominalVoltageV, ComputedMounting(rail))
             .Models
             .Where(m => m.Refdes is { Length: > 0 })
             .GroupBy(m => m.Refdes!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+        // Brief 35 (R-rail35-1c): a series row prints THE SWEEP'S model — the same call, so the
+        // model-source column names the source that actually won.
+        var seriesModels = SeriesModels(rail, resolver)
+            .GroupBy(m => m.Row.Refdes, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
 
         foreach (var part in rail.Parts)
@@ -229,7 +240,8 @@ public sealed partial class RailRfViewModel
             var built = new RailPartRowViewModel(
                 part, row, model,
                 element?.MountingInductanceHenries ?? part.MountingInductanceHenries,
-                position, element, boardFootprint, positionFrom);
+                position, element, boardFootprint, positionFrom,
+                seriesModels.TryGetValue(part.Refdes, out var series) ? series : null);
             Parts.Add(built);
 
             if (built.IsUnresolved) PartsUnresolved++;
@@ -541,6 +553,11 @@ public sealed partial class RailRfViewModel
         OnPropertyChanged(nameof(CanAddPart));
 
         AcceptDiscoveredPartsCommand.NotifyCanExecuteChanged();
+
+        // Brief 35 (R-rail35-1a): the parts that span the rail, offered as what they are.
+        OnPropertyChanged(nameof(HasSeriesOffer));
+        OnPropertyChanged(nameof(SeriesOfferText));
+        AcceptSeriesOfferCommand.NotifyCanExecuteChanged();
     }
 
     /// <summary>
@@ -815,6 +832,176 @@ public sealed partial class RailRfViewModel
         RebuildParts();
         QueueResolve();
         return removed;
+    }
+
+    // ══ SERIES PARTS FROM THE WINDOW (brief 35) ═══════════════════════════════════════════════
+    //
+    // Brief 25 built the model — RailPart.Connection, a partition, a second node, a DCR breakdown row
+    // — and nothing in src/Ui ever set Series. A part added with + was a shunt row, the series fields
+    // were editable only by writing the .crail, and discovery told the user to "add it as a series
+    // element", a gesture that did not exist. In the field report the designer added a bead and a
+    // resistor with +, got two shunt rows, and typed their numbers into the part library instead.
+
+    /// <summary>
+    /// Marks the named rows series or shunt, and re-solves ONCE (R-rail35-1a).
+    /// </summary>
+    /// <remarks>
+    /// <b><see cref="SetPartsMounted"/>'s shape exactly</b> — one batch, one rebuild, one
+    /// <see cref="QueueResolve"/>, and that call is the one undo entry.
+    ///
+    /// <para><b>Made series, a row gets the board's reading of its two ends</b> where it has none
+    /// and the board places exactly two pads for it (<see cref="RailPartDiscovery.SeriesTerminals"/>)
+    /// — the one thing a series row cannot do without, since a refdes alone resolves to every pad and
+    /// models a short. A part with more pads is left without, and the partition says so by name. A
+    /// row it sits <see cref="RailPart.Behind"/> is cleared, because a series row's place in a typed
+    /// chain is its row order.</para>
+    ///
+    /// <para><b>Made shunt, the terminals go</b> — a shunt row naming them is refused — and its
+    /// DCR, R-L and file STAY, as an unmounted part keeps its mounting loop: making it series again
+    /// gives the answer it gave before.</para>
+    /// </remarks>
+    /// <returns>How many rows actually changed.</returns>
+    public int SetPartsConnection(IEnumerable<string> refdeses, RailPartConnection connection)
+    {
+        ArgumentNullException.ThrowIfNull(refdeses);
+        if (SelectedRail is not { } rail) return 0;
+
+        var wanted = new HashSet<string>(refdeses, StringComparer.OrdinalIgnoreCase);
+        if (wanted.Count == 0) return 0;
+
+        int changed = 0;
+        for (int i = 0; i < rail.Parts.Count; i++)
+        {
+            var part = rail.Parts[i];
+            if (part.Refdes is not { Length: > 0 } refdes || !wanted.Contains(refdes)) continue;
+            if (part.Connection == connection) continue;
+
+            if (connection == RailPartConnection.Series)
+            {
+                var ends = part.TerminalA is null && part.TerminalB is null && Board?.Pads is { } pads
+                    ? RailPartDiscovery.SeriesTerminals(refdes, pads)
+                    : null;
+
+                rail.Parts[i] = part with
+                {
+                    Connection = RailPartConnection.Series,
+                    TerminalA  = ends?.A ?? part.TerminalA,
+                    TerminalB  = ends?.B ?? part.TerminalB,
+                    Behind     = null,
+                };
+            }
+            else
+            {
+                rail.Parts[i] = part with
+                {
+                    Connection = RailPartConnection.Shunt,
+                    TerminalA  = null,
+                    TerminalB  = null,
+                };
+            }
+            changed++;
+        }
+
+        if (changed == 0) return 0;
+
+        RebuildParts();
+        QueueResolve();
+        return changed;
+    }
+
+    /// <summary>True while the board shows a part spanning this rail that is not a row yet.</summary>
+    public bool HasSeriesOffer => PartOffer.HasSeriesOffer;
+
+    /// <summary>The series offer's own sentence.</summary>
+    public string SeriesOfferText => PartOffer.SeriesOfferSentence;
+
+    /// <summary>
+    /// Adds the named spanning parts — every one, where none are named — as SERIES rows, and
+    /// re-solves ONCE (R-rail35-1a).
+    /// </summary>
+    /// <remarks>
+    /// <b><see cref="AddDiscoveredParts"/>' rules</b>: one edit, idempotent by refdes, and a row
+    /// that arrives is an ordinary row. It arrives with its two pads as its terminals and no model —
+    /// the DCR and the impedance come from the row's editor or the part library once it is one.
+    /// </remarks>
+    /// <returns>How many rows were added.</returns>
+    public int AddSeriesParts(IEnumerable<string>? refdeses = null)
+    {
+        if (SelectedRail is not { } rail) return 0;
+
+        var wanted = refdeses is null ? null : new HashSet<string>(refdeses, StringComparer.OrdinalIgnoreCase);
+        var already = new HashSet<string>(
+            rail.Parts.Select(p => p.Refdes).Where(r => r.Length > 0), StringComparer.OrdinalIgnoreCase);
+
+        int added = 0;
+        foreach (var part in PartOffer.SeriesOffered)
+            if (wanted?.Contains(part.Refdes) != false && already.Add(part.Refdes))
+            {
+                rail.Parts.Add(part);
+                added++;
+            }
+
+        if (added == 0) return 0;
+
+        RebuildParts();
+        QueueResolve();
+        return added;
+    }
+
+    /// <summary>The series offer's button.</summary>
+    [CommunityToolkit.Mvvm.Input.RelayCommand(CanExecute = nameof(HasSeriesOffer))]
+    public void AcceptSeriesOffer() => AddSeriesParts();
+
+    /// <summary>
+    /// The in-pane editor for the selected row, where it is series — null otherwise
+    /// (R-rail35-1b).
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasSeriesEditor))]
+    private RailSeriesEditorViewModel? _seriesEditor;
+
+    /// <summary>True while the selected row is series and its editor is shown.</summary>
+    public bool HasSeriesEditor => SeriesEditor is not null;
+
+    /// <summary>
+    /// Keeps <see cref="SeriesEditor"/> on the selected row — the SAME instance while the refdes is
+    /// the same, so a rebuild does not replace a field under the cursor.
+    /// </summary>
+    private void SyncSeriesEditor()
+    {
+        if (SelectedPart is { IsSeries: true } row)
+        {
+            if (SeriesEditor is { } open && string.Equals(open.Refdes, row.Refdes, StringComparison.OrdinalIgnoreCase))
+                open.Refresh();
+            else
+                SeriesEditor = new RailSeriesEditorViewModel(this, row.Refdes);
+        }
+        else SeriesEditor = null;
+    }
+
+    /// <summary>
+    /// Rewrites one part row, and re-solves — the series editor's single write path.
+    /// </summary>
+    /// <remarks>
+    /// <b>Through <see cref="QueueResolve"/></b>, like every committed edit in this window: that is
+    /// where the undo entry, the dirty mark and the re-solve all hang, so one committed field is one
+    /// undo step. A row that comes back unchanged is not an edit.
+    /// </remarks>
+    /// <returns>True where the row changed.</returns>
+    internal bool EditPart(string refdes, Func<RailPart, RailPart> edit)
+    {
+        if (SelectedRail is not { } rail) return false;
+
+        int i = rail.Parts.FindIndex(p => string.Equals(p.Refdes, refdes, StringComparison.OrdinalIgnoreCase));
+        if (i < 0) return false;
+
+        var next = edit(rail.Parts[i]);
+        if (next == rail.Parts[i]) return false;
+
+        rail.Parts[i] = next;
+        RebuildParts();
+        QueueResolve();
+        return true;
     }
 
     /// <summary>

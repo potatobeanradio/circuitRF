@@ -35062,3 +35062,19 @@ Fifth outside report (beta.29). Gate: `tests/Ui.Tests/RailRf/RailRfFieldReport5T
   "Model file", with a tooltip and a path watermark.
 - **Series parts** — no window gesture, and one per rail where his rail has two in a chain — are
   briefed as `docs/sonnet-briefs/brief-railrf-35-series-parts-from-the-window.md`.
+
+## Series parts from the window (brief 35, 2026-09-23)
+
+- **Make series element / Make decoupling (shunt)** on the parts table's context menu
+  (`RailRfViewModel.SetPartsConnection`), `SetPartsMounted`'s shape: one batch, one `QueueResolve`, one
+  undo entry. Made series, a row with no terminals takes them from the board where it places exactly two
+  pads (`RailPartDiscovery.SeriesTerminals`, the same reading the offer makes). Made shunt, the terminals
+  go and the DCR/R-L/file stay, so toggling back restores the answer.
+- **Discovery's spanning parts are offered** (`RailDiscoveryResult.SeriesOffered`, a line under the table
+  and a menu row each). Its sentence used to name a gesture that did not exist.
+- **The series editor** (`RailSeriesEditorViewModel`) shares the parts grid's row 3 with the empty-table
+  sentence (mutually exclusive — it needs a selected row); the grid's MaxHeight went 210 → 290 for it. It
+  survives a rebuild while the refdes is the same so a field is not replaced under the cursor. Flipping
+  R-L/Touchstone writes nothing; committing a value in one clears the other. Round 5's bare-number rule
+  moved to `RailValueFormat.IsBareWhereAUnitIsRequired` so the library editor and this share one copy.
+- Not seen on screen: the editor, menu and offer line were verified by build and view-model tests only.

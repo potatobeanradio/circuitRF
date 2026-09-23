@@ -92,9 +92,10 @@ public readonly record struct RailMapTile(
 /// <b>It is what fixes the painting order</b> (R-rail18-3): every region is opaque paint, so on a
 /// board whose reference is a PLANE — every board this feature is for — a reference drawn last
 /// covers the whole map.</param>
-/// <param name="Section">Which side of the rail's series element this island is on, or null on a
-/// rail with no series element — <b>what the copper tab shades from</b> (brief 25, R-rail25-4c), so
-/// <i>which side of the ferrite am I on</i> is answerable by looking.</param>
+/// <param name="Section">Which section of the rail this island is in — 0 is the source's — or null
+/// on a rail with no series element — <b>what the copper tab shades from</b> (brief 25, R-rail25-4c;
+/// brief 35, R-rail35-3d), so <i>which side of the ferrite am I on</i> is answerable by looking, and
+/// on a chain, <i>which of its sections</i>.</param>
 public sealed record RailMapRegion(
     LayerKey Layer,
     Paths64 Copper,
@@ -104,7 +105,7 @@ public sealed record RailMapRegion(
     PdnRegionRef Region,
     string Readout,
     bool IsReference = false,
-    RailSection? Section = null);
+    int? Section = null);
 
 /// <summary>What one marker on the map is.</summary>
 public enum RailMarkerKind
@@ -364,17 +365,14 @@ public sealed class RailMapScene
                 // brief 25, R-rail25-4c. Null on every rail with no series element, which is every
                 // rail before this brief — so the tab draws exactly what it drew. The section is
                 // the SOLVE's own partition, carried on the result, never a second walk here.
-                RailSection? section =
-                    result.Sections.TryGetValue(island.Index, out var s) ? s : null;
+                int? section = result.Sections.TryGetValue(island.Index, out int s) ? s : null;
 
                 regions.Add(new RailMapRegion(
                     layer, paths, bb, PdnCopperClass.Trace, Forced: false,
                     PdnCopperClassifier.RefOf(layer, paths),
                     $"Island {island.Index} of rail '{result.RailName}' on layer " +
                     $"{layer.Layer}/{layer.Datatype}." +
-                    (section is { } which
-                        ? $" {which.ToString().ToUpperInvariant()} of the rail's series element."
-                        : "") +
+                    (section is { } which ? " " + SectionReadout(result, which) : "") +
                     $" {set.IslandReport}",
                     IsReference: false, Section: section));
             }
@@ -986,5 +984,18 @@ public sealed class RailMapScene
         var bb = Bbox.Empty;
         foreach (var (x, y, _) in cells) bb = bb.Union(new Bbox(x, y, x, y));
         return bb;
+    }
+
+    /// <summary>
+    /// What an island's readout says about its section — brief 25's "UPSTREAM of the rail's series
+    /// element" on a one-element rail, and the section's own name on a chain (R-rail35-3d).
+    /// </summary>
+    private static string SectionReadout(RailDcResult result, int section)
+    {
+        string name = section < result.SectionNames.Count ? result.SectionNames[section] : $"section {section}";
+        return result.SectionNames.Count <= 2
+            ? $"{name.ToUpperInvariant()} of the rail's series element."
+            : $"In {name} — section {section + 1} of {result.SectionNames.Count} the rail's series " +
+              "elements cut it into.";
     }
 }

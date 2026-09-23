@@ -21,7 +21,7 @@
 // the SAME curve. That is honest at P1 — the lumped model contains nothing that could make them
 // differ — and it is stated on the result rather than left to look like a bug.
 //
-// ── …UNLESS THERE IS A SERIES ELEMENT, AND THEN THE RAIL HAS TWO NODES ─────────────────────────
+// ── …UNLESS THERE IS A SERIES ELEMENT, AND THEN THE RAIL HAS ONE NODE PER SECTION ──────────────
 //
 // brief 25. A ferrite, a protection FET or a sense resistor IN the rail partitions it: everything
 // upstream of it sees one impedance and everything downstream sees another, so "the rail is ONE
@@ -32,6 +32,10 @@
 //
 // Which rows are on which side is NOT typed here and is not typed anywhere there is artwork: it is
 // RailSeriesPartition's measurement off the board, in the same currency as the mounting loops.
+//
+// Brief 35 made it K elements and K+1 nodes. The partition's sections are a TREE rooted at the
+// source's, each element stamped between the two sections it joins — which is nothing more than
+// brief 25's two-node netlist with more nodes, and a one-element rail assembles exactly what it did.
 //
 // ── THE NETLIST IS REBUILT AT EVERY FREQUENCY, ON PURPOSE ──────────────────────────────────────
 //
@@ -81,28 +85,29 @@ public sealed class PdnSweepRequest
     public IReadOnlyList<RailSourceModel> Sources { get; init; } = [];
 
     /// <summary>
-    /// The one element the rail runs THROUGH, or null on a rail that has none (brief 25).
+    /// Every element the rail runs THROUGH, or empty on a rail that has none (brief 25, brief 35).
     /// </summary>
     /// <remarks>
-    /// <b>Non-null is what gives the rail a SECOND NODE</b>, and therefore what makes two
-    /// observation ports read different curves. Its impedance over frequency is its own —
-    /// <see cref="RailSeriesModel"/>, which is <see cref="RailSourceModel"/>'s shape reused rather
-    /// than a second impedance type — and it is stamped BETWEEN the two nodes rather than from one
-    /// of them to the reference, which is the whole difference between a series 1 Ω and a shunt one.
+    /// <b>Non-empty is what gives the rail MORE THAN ONE NODE</b>, and therefore what makes two
+    /// observation ports read different curves. Each element's impedance over frequency is its
+    /// own — <see cref="RailSeriesModel"/>, which is <see cref="RailSourceModel"/>'s shape reused
+    /// rather than a second impedance type — and it is stamped BETWEEN the two sections it joins
+    /// rather than from one of them to the reference, which is the whole difference between a series
+    /// 1 Ω and a shunt one. Matched to <see cref="Partition"/>'s edges by refdes.
     /// </remarks>
-    public RailSeriesModel? Series { get; init; }
+    public IReadOnlyList<RailSeriesModel> Series { get; init; } = [];
 
     /// <summary>
-    /// Which side of <see cref="Series"/> each part, load and source is on, or null where the rail
-    /// has no series element.
+    /// Which section each part, load and source is in, and which element joins which two sections —
+    /// or null where the rail has no series element.
     /// </summary>
     /// <remarks>
     /// <b>Handed in rather than computed here</b>, for the reason every other input to this file is:
     /// the partition is a measurement off the ARTWORK (R-rail25-2a) and this file sees no artwork.
-    /// A null one on a rail that HAS a series element puts everything downstream, which is where
-    /// decoupling goes — but a caller that has a board should never hand one in, because then the
-    /// section a part is shaded in on the copper map and the node its branch is stamped on would be
-    /// two answers to one question.
+    /// A null one on a rail that HAS series elements is taken as the TYPED partition
+    /// (<see cref="RailSeriesPartition.Typed"/>) — but a caller that has a board should never hand
+    /// one in, because then the section a part is shaded in on the copper map and the node its branch
+    /// is stamped on would be two answers to one question.
     /// </remarks>
     public RailSeriesPartition? Partition { get; init; }
 
@@ -350,7 +355,7 @@ public static class PdnSweep
         // not remove a branch — it disconnects the rail from its own source, and the honest answer
         // to "what is |Z| of half a rail fed by nothing" is not a curve. Refused with the reason
         // rather than solved as an open circuit; R-rail23-1e names this case and defers to here.
-        if (rail.SeriesElement is { Mounted: false } off)
+        if (rail.SeriesElements.FirstOrDefault(e => !e.Mounted) is { } off)
             return PdnSweepResult.Refused(
                 $"Series element {off.Refdes} on rail '{rail.Name}' is UNMOUNTED, which OPENS the " +
                 "rail: everything downstream of it is fed by nothing, and an open rail has no " +
@@ -363,10 +368,37 @@ public static class PdnSweep
         if (request.Partition is { Refusal: { } partitionRefusal })
             return PdnSweepResult.Refused(partitionRefusal);
 
+        var partition = request.Partition
+            ?? (rail.HasSeriesElements ? RailSeriesPartition.Typed(rail) : RailSeriesPartition.None(rail));
+
+        if (SeriesRefusal(request, partition) is { } seriesRefusal)
+            return PdnSweepResult.Refused(seriesRefusal);
+
+        // ── R-rail35-2d: a part that is not a capacitor and is not marked series ──────────────
+        //
+        // The field report's exact state: a bead and a resistor added with the parts pane's +, so
+        // two SHUNT rows, whose library rows say "not a capacitor". A shunt branch is a decoupling
+        // capacitor between the rail and its reference, and a bead there has no capacitance, so it
+        // was either left out in silence or — before round 5 — solved as the 1 µF its stray bias
+        // point said. Neither is an answer to the question the designer was asking.
+        var notCapacitors = request.Parts.Mounted
+            .Where(m => m.Row is { IsCapacitor: false })
+            .Select(m => m.Refdes is { Length: > 0 } r ? $"{r} ({m.PartNumber})" : m.PartNumber)
+            .ToList();
+        if (notCapacitors.Count > 0)
+            return PdnSweepResult.Refused(
+                $"{string.Join(", ", notCapacitors)} on rail '{rail.Name}' " +
+                (notCapacitors.Count == 1 ? "is" : "are") + $" classed {PartLibraryRow.OtherClass} in " +
+                "the part library — NOT A CAPACITOR — and not marked series. A shunt row is a " +
+                "decoupling capacitor between the rail and its reference. If the rail runs through " +
+                (notCapacitors.Count == 1 ? "it" : "them") + ", right-click in the parts table and " +
+                "choose Make series element; otherwise remove " +
+                (notCapacitors.Count == 1 ? "it" : "them") + " from the rail.");
+
         var notes = new List<string>();
         var warnings = new List<string>();
 
-        var branches = Branches(request, notes, warnings, out string? branchRefusal);
+        var branches = Branches(request, partition, notes, warnings, out string? branchRefusal);
         if (branchRefusal is { } why) return PdnSweepResult.Refused(why);
 
         if (branches.Count == 0)
@@ -395,7 +427,7 @@ public static class PdnSweep
         int ports = rail.Loads.Count;
         var sampled = PdnAdaptiveSweep.Run(
             freqs, new Complex(request.PortReferenceOhms, 0), request.Sampling,
-            f => SolveOne(request, branches, f, ports));
+            f => SolveOne(request, partition, branches, f, ports));
 
         freqs = sampled.FrequenciesHz;
         notes.AddRange(sampled.Notes);
@@ -458,44 +490,59 @@ public static class PdnSweep
         // element at all does — so the sentence is conditional on the PARTITION and not merely on
         // there being an element, because "they read different curves" printed over two ports that
         // read the same one is the same lie in a different place.
-        bool portsSpanSections = request.Series is not null && request.Partition is { } p2 &&
-            Enumerable.Range(0, rail.Loads.Count).Select(p2.LoadSection).Distinct().Count() > 1;
+        bool split = partition.HasSeriesElement;
+        bool portsSpanSections = split &&
+            Enumerable.Range(0, rail.Loads.Count).Select(partition.LoadSection).Distinct().Count() > 1;
 
-        if (rail.Loads.Count > 1 && (request.Series is null || !portsSpanSections))
+        if (rail.Loads.Count > 1 && !portsSpanSections)
             notes.Add(
                 "Every observation port on this rail reads the same curve. " +
-                (request.Series is null
+                (!split
                     ? "That is P1's lumped model rather than a defect: there is no copper between " +
                       "the ports yet, so nothing in the model can make them differ. The distributed " +
                       "low band is P2a."
-                    : "This rail has a series element, but every port is on the SAME side of it, so " +
+                    : partition.Elements.Count == 1
+                    ? "This rail has a series element, but every port is on the SAME side of it, so " +
                       "nothing in the model separates them. Put a port on the other side and the two " +
-                      "differ by that element's own impedance at every frequency."));
+                      "differ by that element's own impedance at every frequency."
+                    : "This rail has series elements, but every port is in the SAME section, so " +
+                      "nothing in the model separates them. Put a port in another section and the " +
+                      "two differ by the elements between them at every frequency."));
 
-        if (request.Series is { } seriesModel)
+        if (split)
         {
-            notes.Add(
-                $"This rail has a SERIES element, {seriesModel.Refdes}, so it is two nodes rather " +
-                "than one" +
-                (portsSpanSections
-                    ? " and its observation ports read DIFFERENT curves — they differ by that " +
-                      "element's own impedance at every frequency."
-                    : ", though every observation port on it is on one side of the element and they " +
-                      "therefore read one curve.") +
-                $" {seriesModel.Describe()}");
+            var models = ModelsByRefdes(request);
 
-            if (request.Partition?.Describe() is { } how) notes.Add(how);
-            notes.AddRange(request.Partition?.Notes ?? []);
+            notes.Add(
+                (partition.Elements.Count == 1
+                    ? $"This rail has a SERIES element, {partition.Elements[0].Refdes}, so it is two " +
+                      "nodes rather than one"
+                    : $"This rail has {partition.Elements.Count} SERIES elements, " +
+                      $"{string.Join(", ", partition.Elements.Select(e => e.Refdes))}, so it is " +
+                      $"{partition.SectionCount} nodes rather than one") +
+                (portsSpanSections
+                    ? " and its observation ports read DIFFERENT curves — they differ by the " +
+                      "element impedance between them at every frequency."
+                    : ", though every observation port on it is in one section and they therefore " +
+                      "read one curve.") +
+                " " + string.Join(" ", partition.Elements.Select(e => models[e.Refdes].Describe())));
+
+            if (partition.Describe() is { } how) notes.Add(how);
+            notes.AddRange(partition.Notes);
 
             // R-rail25-1c: a sentence on the RESULT, never a log line, and it goes away where a
             // measured curve replaced the R-L. A warning rather than a note, because a reader has
             // to act on it — the number is optimistic by a large factor and looks ordinary.
-            if (seriesModel.BiasDependentLine is { } bias) warnings.Add(bias);
+            foreach (var edge in partition.Elements)
+            {
+                if (models[edge.Refdes].BiasDependentLine is { } bias) warnings.Add(bias);
+                if (models[edge.Refdes].UnstatedImpedanceLine is { } link) warnings.Add(link);
+            }
         }
 
         // ── §2.4's capacitor ranking ───────────────────────────────────────────────────────────
 
-        var removal = Rank(request, branches, freqs, portRows, notes);
+        var removal = Rank(request, partition, branches, freqs, portRows, notes);
 
         return new PdnSweepResult(null, data, freqs, portRows, removal, notes, warnings)
         {
@@ -521,16 +568,54 @@ public static class PdnSweep
     /// take off the board.</param>
     /// <param name="Member">Its own name within that bank.</param>
     /// <param name="PartName">The part this is, for the removal ranking, or null.</param>
-    /// <param name="Section">Which side of the rail's series element it hangs off (brief 25).
-    /// <see cref="RailSection.Downstream"/> on a rail with no series element, where there is one
-    /// node and both spellings name it.</param>
+    /// <param name="Section">Which section of the rail it hangs off (brief 25, brief 35).
+    /// <see cref="RailSeriesPartition.Root"/> on a rail with no series element, where there is one
+    /// node.</param>
     private sealed record Branch(
         string Path,
         Func<double, Complex> Impedance,
         string? Group,
         string? Member,
         string? PartName,
-        RailSection Section = RailSection.Downstream);
+        int Section = RailSeriesPartition.Root);
+
+    /// <summary>The caller's element models, by refdes — what each partition edge is stamped
+    /// with.</summary>
+    private static Dictionary<string, RailSeriesModel> ModelsByRefdes(PdnSweepRequest request)
+    {
+        var models = new Dictionary<string, RailSeriesModel>(StringComparer.OrdinalIgnoreCase);
+        foreach (var m in request.Series) models[m.Row.Refdes] = m;
+        return models;
+    }
+
+    /// <summary>
+    /// Why the series elements cannot be stamped, or null — an element the partition names and the
+    /// caller gave no model for, or a named file that could not be read.
+    /// </summary>
+    /// <remarks>
+    /// <b>An unreadable file is REFUSED, not stamped.</b> Its impedance is NaN at every frequency and
+    /// the stamping below reads a non-finite value as zero — so an unreadable bead file would have
+    /// become a 0 Ω LINK with nothing said, which is exactly the "a file that cannot be read and a
+    /// file never attached must not produce the same answer" rule the part resolver already keeps.
+    /// </remarks>
+    private static string? SeriesRefusal(PdnSweepRequest request, RailSeriesPartition partition)
+    {
+        var models = ModelsByRefdes(request);
+        foreach (var edge in partition.Elements)
+        {
+            if (!models.TryGetValue(edge.Refdes, out var model))
+                return $"Series element {edge.Refdes} on rail '{request.Rail.Name}' has no model in " +
+                       "this run, so the rail would be open between its two sections.";
+
+            if (model.IsUnreadable)
+                return $"Series element {edge.Refdes} on rail '{request.Rail.Name}' names the " +
+                       $"Touchstone file '{System.IO.Path.GetFileName(model.TouchstonePath ?? "")}'" +
+                       (model.ImpedanceFrom == RailSeriesValueSource.Library ? " (on its part-library row)" : "") +
+                       ", which could not be read. It was not replaced by an R-L or by a link: fix " +
+                       "the path, or remove it and state the element's R-L.";
+        }
+        return null;
+    }
 
     private static Complex Admittance(Branch b, double f)
     {
@@ -543,7 +628,8 @@ public static class PdnSweep
     /// loop; a source is its R-L or its own measured curve.
     /// </summary>
     private static List<Branch> Branches(
-        PdnSweepRequest request, List<string> notes, List<string> warnings, out string? refusal)
+        PdnSweepRequest request, RailSeriesPartition partition,
+        List<string> notes, List<string> warnings, out string? refusal)
     {
         refusal = null;
         var branches = new List<Branch>();
@@ -582,7 +668,7 @@ public static class PdnSweep
                 // A source is UPSTREAM of the series element by definition — that is what upstream
                 // MEANS — but it is read off the partition rather than assumed, because the
                 // partition is what measured it and a board can put a second source anywhere.
-                Section: request.Partition?.SourceSection(k) ?? RailSection.Downstream));
+                Section: partition.SourceSection(k)));
 
             if (band is { } sb && (sb.LowHz > request.Rail.Band.StartHz ||
                                    sb.HighHz < request.Rail.Band.StopHz))
@@ -635,7 +721,7 @@ public static class PdnSweep
 
             branches.Add(new Branch(
                 $"part{branches.Count + 1}", z, group, part.Refdes ?? part.Name, part.Name,
-                request.Partition?.PartSection(part.Refdes) ?? RailSection.Downstream));
+                partition.PartSection(part.Refdes)));
 
             if (measuredBand is { } pb && (pb.LowHz > request.Rail.Band.StartHz ||
                                            pb.HighHz < request.Rail.Band.StopHz))
@@ -670,7 +756,7 @@ public static class PdnSweep
     /// One assembly and one solve per frequency; |Z| per port out.
     /// </summary>
     private static double[][] Solve(
-        PdnSweepRequest request, List<Branch> branches, double[] freqs,
+        PdnSweepRequest request, RailSeriesPartition partition, List<Branch> branches, double[] freqs,
         Mat<Complex>[] zOut, Mat<Complex>[] sOut)
     {
         int ports = request.Rail.Loads.Count;
@@ -682,7 +768,7 @@ public static class PdnSweep
 
         for (int fi = 0; fi < freqs.Length; fi++)
         {
-            sOut[fi] = SolveOne(request, branches, freqs[fi], ports);
+            sOut[fi] = SolveOne(request, partition, branches, freqs[fi], ports);
             zOut[fi] = RFNetwork.SToZ(sOut[fi], z0);
 
             for (int k = 0; k < ports; k++) magnitudes[k][fi] = zOut[fi][k, k].Magnitude;
@@ -698,9 +784,10 @@ public static class PdnSweep
     /// without knowing anything about one.
     /// </summary>
     private static Mat<Complex> SolveOne(
-        PdnSweepRequest request, List<Branch> branches, double frequencyHz, int ports)
+        PdnSweepRequest request, RailSeriesPartition partition, List<Branch> branches,
+        double frequencyHz, int ports)
     {
-        using var netlist = Assemble(request, branches, frequencyHz, ports);
+        using var netlist = Assemble(request, partition, branches, frequencyHz, ports);
         var raw = SParameterEngine.Run(netlist, [frequencyHz])["S"].ComplexValues;
 
         var s = new Mat<Complex>(ports, ports);
@@ -723,23 +810,25 @@ public static class PdnSweep
     /// per-point assembly exists to avoid.
     /// </remarks>
     private static ElaboratedNetlist Assemble(
-        PdnSweepRequest request, List<Branch> branches, double frequencyHz, int ports)
+        PdnSweepRequest request, RailSeriesPartition partition, List<Branch> branches,
+        double frequencyHz, int ports)
     {
         var netlist = new ElaboratedNetlist();
 
-        // ── ONE NODE, OR TWO (brief 25) ───────────────────────────────────────────────────────
+        // ── ONE NODE, OR ONE PER SECTION (brief 25, brief 35) ─────────────────────────────────
         //
         // With no series element the rail is ONE node called "rail" and every path below is exactly
         // what it was, so a document with no series element assembles the identical netlist and
-        // returns the identical DataSet (gate 10). With one, the rail has a BEFORE and an AFTER and
-        // the second node is the whole of what makes two ports read different curves.
-        bool split = request.Series is not null;
-        int upstream = netlist.Nodes.GetOrAssign(split ? "rail.up" : "rail");
-        int downstream = split ? netlist.Nodes.GetOrAssign("rail.down") : upstream;
+        // returns the identical DataSet (gate 10). With K elements it has K+1 sections, assigned in
+        // section order BEFORE anything else — so a one-element rail numbers its two nodes exactly
+        // as brief 25's upstream and downstream did, and its DataSet is bit for bit what it was.
+        bool split = partition.HasSeriesElement;
+        var nodes = new int[split ? partition.SectionCount : 1];
+        if (!split) nodes[0] = netlist.Nodes.GetOrAssign("rail");
+        else for (int k = 0; k < nodes.Length; k++) nodes[k] = netlist.Nodes.GetOrAssign($"rail.s{k}");
         double w = 2.0 * Math.PI * frequencyHz;
 
-        int NodeOf(RailSection section) =>
-            section == RailSection.Upstream ? upstream : downstream;
+        int NodeOf(int section) => nodes[Math.Clamp(section, 0, nodes.Length - 1)];
 
         foreach (var b in branches)
         {
@@ -771,15 +860,18 @@ public static class PdnSweep
                 Add(netlist, "R", $"{b.Path}.r", [rail, 0], new ResistorModel(), ("R", 0.0));
         }
 
-        // ── the series element: BETWEEN the two nodes, never from one to the reference ────────
+        // ── the series elements: BETWEEN two sections, never from one to the reference ────────
         //
         // Same decomposition as a branch, one node different, and that one node is the entire
         // difference between a series 1 Ω and a shunt 1 Ω. An element whose measured file does not
         // reach this frequency is HELD at the nearest end it states, exactly as a source's is: the
         // alternatives are dropping it — which OPENS the rail between one sweep point and the next
-        // — or stamping a NaN, and neither is an answer.
-        if (request.Series is { } series)
+        // — or stamping a NaN, and neither is an answer. In ROW order, which is the partition's.
+        var models = split ? ModelsByRefdes(request) : [];
+        foreach (var edge in partition.Elements)
         {
+            var series = models[edge.Refdes];
+            int upstream = NodeOf(edge.Upstream), downstream = NodeOf(edge.Downstream);
             var band = series.Impedance.Measured?.Band;
             var z = series.ImpedanceAt(
                 band is { } sb ? Math.Clamp(frequencyHz, sb.LowHz, sb.HighHz) : frequencyHz);
@@ -812,7 +904,7 @@ public static class PdnSweep
 
         for (int k = 0; k < ports; k++)
             Add(netlist, "Port", $"port{k + 1}",
-                [NodeOf(request.Partition?.LoadSection(k) ?? RailSection.Downstream), 0],
+                [NodeOf(partition.LoadSection(k)), 0],
                 new PortModel(), ("Num", k + 1), ("Z", request.PortReferenceOhms));
 
         return netlist;
@@ -924,7 +1016,7 @@ public static class PdnSweep
     /// answer.
     /// </remarks>
     private static IReadOnlyList<PdnRemovalRow> Rank(
-        PdnSweepRequest request, List<Branch> branches, double[] freqs,
+        PdnSweepRequest request, RailSeriesPartition partition, List<Branch> branches, double[] freqs,
         IReadOnlyList<PdnPortImpedance> ports, List<string> notes)
     {
         if (!request.RankRemovals) return [];
@@ -956,7 +1048,7 @@ public static class PdnSweep
                 var without = branches.Where(b => !ReferenceEquals(b, parts[i])).ToList();
                 var z = new Mat<Complex>[freqs.Length];
                 var s = new Mat<Complex>[freqs.Length];
-                var magnitudes = Solve(request, without, freqs, z, s);
+                var magnitudes = Solve(request, partition, without, freqs, z, s);
 
                 double? found = null;
                 for (int k = 0; k < ports.Count; k++)

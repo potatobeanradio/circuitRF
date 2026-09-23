@@ -54,6 +54,9 @@ public sealed class RailPartRowViewModel
     /// was built with no library at all.</param>
     /// <param name="boardFootprint">The land-pattern cell this part is PLACED on, where the artwork
     /// states one — R-rail27-3b. Read only where the BOM and the library are both silent.</param>
+    /// <param name="series">A series row's model, each field resolved row-first and then from its
+    /// <c>Other</c> library row — <b>the one the sweep stamps</b> (brief 35, R-rail35-1c). Null on a
+    /// shunt row, and on a series row built without one, which then reads its own fields only.</param>
     public RailPartRowViewModel(
         RailPart part,
         BomRow? bom,
@@ -62,11 +65,13 @@ public sealed class RailPartRowViewModel
         string? position,
         RailPartModel? resolved = null,
         string? boardFootprint = null,
-        RailPartPositionSource positionFrom = RailPartPositionSource.Nothing)
+        RailPartPositionSource positionFrom = RailPartPositionSource.Nothing,
+        RailSeriesModel? series = null)
     {
         ArgumentNullException.ThrowIfNull(part);
 
         _part = part;
+        _series = part.IsSeries ? series ?? RailSeriesModel.Of(part) : null;
         _bom = bom;
         _model = model;
         _resolved = resolved;
@@ -82,6 +87,13 @@ public sealed class RailPartRowViewModel
     private readonly PartModelResolution? _model;
     private readonly RailPartModel? _resolved;
     private readonly string? _boardFootprint;
+    private readonly RailSeriesModel? _series;
+
+    /// <summary>The document's own row — what the series editor writes from.</summary>
+    public RailPart Part => _part;
+
+    /// <summary>The series model this row prints, or null on a shunt row.</summary>
+    public RailSeriesModel? SeriesModel => _series;
 
     /// <summary>The resolved model, or null where it did not resolve — so every numeric column below
     /// is <see cref="UnresolvedText"/> in one place rather than thirteen.</summary>
@@ -265,7 +277,7 @@ public sealed class RailPartRowViewModel
     /// <summary>
     /// Library row / attached file, and which won.
     /// </summary>
-    public string ModelSourceText => _model switch
+    public string ModelSourceText => _series is { } sm ? sm.SourceText : _model switch
     {
         null                                                 => UnresolvedText,
         { Row: null }                                        => UnresolvedText,
@@ -292,8 +304,8 @@ public sealed class RailPartRowViewModel
         // A series element's number in this place is its DCR — the resistance the LOAD CURRENT
         // runs through, which is what it costs the rail, and the analogue of the loss term a
         // capacitor's ESR is. Unstated is unstated, never zero (R-rail25-3b).
-        _part.IsSeries
-            ? (_part.DcResistanceOhms is { } dcr
+        _series is { } sm
+            ? (sm.DcResistanceOhms is { } dcr
                   ? RailValueFormat.FormatWithUnit(dcr, RailQuantity.Resistance, 3)
                   : UnstatedText)
         : Model?.EsrOhms is { } r && double.IsFinite(r)
@@ -608,7 +620,9 @@ public sealed class RailPartRowViewModel
     {
         get
         {
-            if (_part.TouchstoneRef is { Length: > 0 } file)
+            // The MODEL's file, which is the row's own or — where the row states nothing — its Other
+            // library row's (R-rail35-2b). The model-source column says which.
+            if (_series is { IsMeasured: true, TouchstonePath: { } file })
                 return $"file — {System.IO.Path.GetFileName(file)}";
 
             if (!_part.IsRl) return UnstatedText;
@@ -624,16 +638,19 @@ public sealed class RailPartRowViewModel
     /// <summary>The sentence behind a series row — what it is, what it costs, and the one caveat a
     /// lumped R-L standing in for a ferrite cannot leave out (R-rail25-1c).</summary>
     public string SeriesTooltip =>
-        RailSeriesModel.Of(_part) is { } m
+        _series is { } m
             ? m.Describe() + " " +
-              (m.BiasDependentLine ?? "Its impedance is its own measured curve, so nothing here is " +
-                                      "a lumped stand-in.") +
-              " Everything upstream of it sees one impedance and everything downstream sees another."
+              (m.UnstatedImpedanceLine ?? m.BiasDependentLine ??
+               "Its impedance is a measured curve, so nothing here is a lumped stand-in.") +
+              " Everything upstream of it sees one impedance and everything downstream sees another." +
+              " Model source: " + m.SourceText + " — the row's own value wins wherever it states one."
             : RowTooltip;
 
-    /// <summary>Which side of the rail's series element this row is on, where the ROW states it —
-    /// read only on a rail with no artwork (R-rail25-2d).</summary>
-    public string SideText => _part.Side == RailSection.Upstream ? "upstream" : "downstream";
+    /// <summary>Which section of the rail this row is in, where the ROW states it — read only on a
+    /// rail with no artwork (R-rail25-2d, R-rail35-3c).</summary>
+    public string SideText =>
+        _part.Behind is { Length: > 0 } behind ? $"behind {behind}"
+        : _part.Side == RailSection.Upstream ? "upstream" : "downstream";
 
     // ══ MOUNTED, AND IT IS NOT "UNRESOLVED" (brief 23) ════════════════════════════════════════
 

@@ -513,9 +513,7 @@ public sealed partial class PartLibraryRowViewModel(PartLibraryEditorViewModel o
         // The designer asked which unit f0 was in. A self-resonance copied from a table in MHz as 28.89
         // was stored as 28.89 Hz; a capacitance in pF as farads. Nothing about either looks wrong
         // in the cell. Volts and ohms keep the bare form, where the base unit is what anybody means.
-        if (quantity is RailQuantity.Frequency or RailQuantity.Capacitance or RailQuantity.Inductance
-            && !text.Trim().Any(c => char.IsLetter(c) && c is not ('e' or 'E')))   // 1e6 is bare too
-            return current;
+        if (RailValueFormat.IsBareWhereAUnitIsRequired(text, quantity)) return current;
 
         return RailValueFormat.TryParse(text, quantity, out double v) ? v : current;
     }

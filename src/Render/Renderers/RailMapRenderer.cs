@@ -470,9 +470,21 @@ public static class RailMapRenderer
 
     // ── the class tab, and the copper tab's islands ────────────────────────────────────────────
 
-    /// <summary>How opaque the copper tab's two series sections are washed — light enough that the
+    /// <summary>How opaque the copper tab's series sections are washed — light enough that the
     /// artwork under them is still what the tab shows.</summary>
     private const byte SectionWashAlpha = 56;
+
+    /// <summary>
+    /// The wash for one section — brief 25's two colours for sections 0 and 1, so a one-element rail
+    /// draws exactly what it drew, and then the map's own ramp stops for a chain's further sections
+    /// (R-rail35-3d). Cycled past the end: adjacent sections are what must differ, and a rail with
+    /// more elements than colours is a rail whose readout names the section anyway.
+    /// </summary>
+    private static SKColor SectionColor(int section, RailMapTheme theme)
+    {
+        SKColor[] washes = [theme.ClassTrace, theme.ClassSpreading, theme.MapHot, theme.MapCold, theme.MapMid, theme.Load];
+        return washes[((section % washes.Length) + washes.Length) % washes.Length];
+    }
 
     private static void DrawRegions(SKCanvas canvas, RailMapScene scene, LayoutViewport vp, RailMapTheme theme,
                                     IReadOnlySet<LayerKey>? hiddenLayers)
@@ -495,7 +507,7 @@ public static class RailMapRenderer
 
             if (outlineOnly)
             {
-                // ── brief 25, R-rail25-4c: the two sections shade differently ────────────────
+                // ── brief 25, R-rail25-4c: the sections shade differently (K of them, brief 35) ──
                 //
                 // Only where the rail HAS a series element — Section is null otherwise and the tab
                 // draws the bare outline it always drew. A translucent wash rather than the class
@@ -504,9 +516,7 @@ public static class RailMapRenderer
                 // question that only exists on a rail with a series element in it.
                 if (region.Section is { } section)
                 {
-                    fill.Color = (section == RailSection.Upstream
-                                      ? theme.ClassTrace
-                                      : theme.ClassSpreading).WithAlpha(SectionWashAlpha);
+                    fill.Color = SectionColor(section, theme).WithAlpha(SectionWashAlpha);
                     canvas.DrawPath(path, fill);
                 }
 

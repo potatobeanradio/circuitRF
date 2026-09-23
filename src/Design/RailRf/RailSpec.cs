@@ -137,17 +137,25 @@ public sealed class RailSpec
     public List<RailPart> Parts { get; } = [];
 
     /// <summary>
-    /// The one part the rail runs THROUGH, or null — brief 25's ferrite bead, protection FET or
-    /// sense resistor (R-rail25-1a).
+    /// Every part the rail runs THROUGH, in row order — a ferrite bead, a protection FET, a sense
+    /// resistor standing in for a load switch (R-rail25-1a, R-rail35-3).
     /// </summary>
     /// <remarks>
-    /// <b>Singular, and <see cref="Refusal"/> is what keeps it so</b> (R-rail25-2c). Two series
-    /// elements make three or more sections and a topology that may not be a chain, so v1 refuses a
-    /// second by name and says what to do instead — put it on a rail of its own. A refusal is a
-    /// scope boundary a user can see; a wrong answer is not.
+    /// <b>Plural since brief 35.</b> Brief 25 allowed one and refused a second by name, because two
+    /// make three or more sections and a topology that may not be a chain. A field report's rail runs
+    /// through a bead and then a switch, and its load is behind BOTH — a chain, which "put the second
+    /// on a rail of its own" cannot express. So the sections are now a TREE rooted at the source's
+    /// (<see cref="RailSeriesPartition"/>), and what is refused is what a lumped model genuinely cannot
+    /// answer: a cycle, a bridged element, a section fed by nothing.
+    ///
+    /// <para><b>Row order is the typed chain's order</b> (R-rail35-3c): with no artwork there is
+    /// nothing to measure the topology from, so the first series row is nearest the source.</para>
     /// </remarks>
-    public RailPart? SeriesElement =>
-        Parts.FirstOrDefault(p => p.Connection == RailPartConnection.Series);
+    public IReadOnlyList<RailPart> SeriesElements =>
+        [.. Parts.Where(p => p.Connection == RailPartConnection.Series)];
+
+    /// <summary>True where anything on this rail is in series with it.</summary>
+    public bool HasSeriesElements => Parts.Any(p => p.Connection == RailPartConnection.Series);
 
     /// <summary>The decoupling — every part that is NOT the series element. What the frequency
     /// model's shunt branches are built from, and what every part count is about.</summary>
@@ -221,19 +229,27 @@ public sealed class RailSpec
                        "and two rows for it would be two mounting loops for one pad.";
         }
 
-        // R-rail25-2c. ONE series element per rail in v1, and a second is refused BY NAME with what
-        // to do about it. Two of them make three or more sections and a topology that may not be a
-        // chain at all — the partition off the artwork has no way to say which section is between
-        // which pair, and every answer it produced would look entirely ordinary.
-        var series = Parts.Where(p => p.Connection == RailPartConnection.Series).ToList();
-        if (series.Count > 1)
-            return $"{rail} has {series.Count} series elements — " +
-                   string.Join(", ", series.Select(p => $"'{p.Refdes}'")) + ". railRF models ONE " +
-                   "series element per rail: it cuts the rail at that element's two pads and the " +
-                   "board falls into two sections. Two elements make three or more sections and a " +
-                   "topology that may not be a chain. Put the second one on a rail of its own — " +
-                   "which is also how two branches through different parts are asked about, one " +
-                   "rail each.";
+        // R-rail35-3c. A row that names the element it sits behind has to name one that IS a series
+        // element on this rail. Anything else would put the row in a section that does not exist,
+        // and the only honest fallback — the row's own Side — is not what it said.
+        var elements = new HashSet<string>(
+            Parts.Where(p => p.Connection == RailPartConnection.Series).Select(p => p.Refdes),
+            StringComparer.OrdinalIgnoreCase);
+
+        string? UnknownBehind(string? behind, string what) =>
+            behind is { Length: > 0 } b && !elements.Contains(b)
+                ? $"{rail}'s {what} says it sits behind '{b}', which is not a series element on " +
+                  "this rail" + (elements.Count == 0
+                      ? " — the rail has none. Mark the part series, or remove the name."
+                      : $". Its series elements are {string.Join(", ", elements.Select(e => $"'{e}'"))}.")
+                : null;
+
+        foreach (var p in Parts)
+            if (UnknownBehind(p.Behind, $"part '{p.Refdes}'") is { } pb) return pb;
+
+        for (int i = 0; i < Loads.Count; i++)
+            if (UnknownBehind(Loads[i].Behind, $"load {i + 1} ({Loads[i].Anchor.Describe(format)})") is { } lb)
+                return lb;
 
         return null;
     }

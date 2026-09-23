@@ -302,6 +302,9 @@ internal static class Rail
             Pads           = resolvedPads.Pads,
             NetPoints      = resolvedPads.NetPoints,
             ReferenceNet   = doc.ReferenceNet,
+            // Brief 35: a series element's DCR falls back to its Other library row's ESR, as the
+            // window's does. An unreadable library is reported by the provenance banner below.
+            PartLibrary    = RailArtwork.ResolvePartLibrary(doc, input.DocumentPath, out _, out _),
         });
 
         foreach (string d in run.Diagnostics)

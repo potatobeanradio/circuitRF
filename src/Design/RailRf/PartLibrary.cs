@@ -89,8 +89,31 @@ public sealed class PartLibraryRow
     /// bead, a resistor. Stated rather than inferred from an empty capacitance, because a row with
     /// no capacitance is far more often a capacitor nobody has filled in yet (a seeded row).
     /// </summary>
-    /// <remarks>Field report, 2026-09-23: a bead and a sense resistor were counted as parts missing
-    /// a bias curve, and the designer asked for "Other" on the class drop-down.</remarks>
+    /// <remarks>
+    /// Field report, 2026-09-23: a bead and a sense resistor were counted as parts missing a bias
+    /// curve, and the designer asked for "Other" on the class drop-down.
+    ///
+    /// <para><b>An <c>Other</c> row is a SERIES ELEMENT's model</b> (brief 35, R-rail35-2a) — what a
+    /// rail part marked series inherits wherever its own row states nothing
+    /// (<see cref="RailSeriesModel.Resolve"/>). It reads exactly two fields:</para>
+    /// <list type="bullet">
+    /// <item><see cref="EsrOhms"/> is its <b>DC resistance</b> — the resistance the load current runs
+    ///   through, a bead's DCR or a switch's on-resistance.</item>
+    /// <item><see cref="ModelRef"/>, where it is a Touchstone file, is its <b>measured impedance</b>
+    ///   over frequency — a TWO-PORT read SERIES-thru, as supplier tools publish a bead's curve. A
+    ///   SPICE model is not read for a series element.</item>
+    /// </list>
+    /// <para><b>Everything else is ignored</b> on an <c>Other</c> row: the capacitance, the
+    /// self-resonance, the stated inductance, the bias curve and the dielectric class are a
+    /// capacitor's. There is deliberately <b>no impedance-at-one-frequency field</b> (R-rail35-2c):
+    /// "220 Ω at 100 MHz" does not determine an R-L — the split between R and ωL is unknown, and any
+    /// split chosen would be a guess that prints as a model. A bead's impedance is its Touchstone
+    /// curve, or an R-L the rail row states.</para>
+    ///
+    /// <para><b>A SHUNT rail part whose row is <c>Other</c> is refused at Run</b> (R-rail35-2d): it
+    /// is not a capacitor and it is not marked series, which is exactly the state a bead added with
+    /// the parts pane's + is in.</para>
+    /// </remarks>
     public const string OtherClass = "Other";
 
     /// <summary>False where the row's class is <see cref="OtherClass"/>. A bias curve, and the

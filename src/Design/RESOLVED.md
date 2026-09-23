@@ -11717,3 +11717,38 @@ is git diff, so a moved vertex must stay a one-line diff — which rules out an 
   change — not done.
 - The repo's committed `.clay` files keep the old spelling until next saved; each one's first save is a
   whole-file diff, once. Gate: `tests/Ui.Tests/Layout/ClayVertexPerLineTests.cs`.
+
+## Series parts: a library model, and more than one per rail (brief 35, 2026-09-23)
+
+A field report's rail runs through a ferrite bead and then a resistor standing in for a load switch's
+on-resistance. Brief 25 allowed one series element and nothing in the window could make one.
+
+- **Sections are a tree** (`RailSeriesPartition`). Islands are nodes, series elements edges; sections are
+  numbered breadth-first from the source's island visiting elements in ROW order, so a one-element rail's
+  two sections are 0 and 1 exactly as brief 25's up/down were, and `PdnSweep` assigns its nodes in section
+  order before anything else. **Gate 2 was run for real**: the shipped Power Rail example (sweep and DC),
+  brief 25's typed fixtures and its artwork DC fixture were dumped as raw doubles before and after, and are
+  byte-identical. Refused by name: a cycle (the path already joining the two islands is named with the
+  element that closes it), a bridged element (per element), and an element no chain reaches from the
+  source. DC treats a partition refusal as a finding, as brief 25 did — the mesh solves a loop correctly;
+  it is the lumped frequency model that cannot.
+- **`RailSection` stays two-valued** — it is the file's spelling. A middle section of a typed chain is
+  named by `Behind` (the element the row sits behind); `Side` then means the two ends. The typed chain is
+  row order. **`RailLoad.Side` had never been written to the `.crail`** — a port typed upstream came back
+  downstream on reopen, silently, since downstream is the default. Written now, with `Behind`.
+- **A series element's two-port file was read SHUNT-thru** — `RailPartResolver.ReadMeasured` uses the
+  resolver's `Extraction`, which is shunt-thru for decoupling caps. A bead's file is measured series-thru;
+  read shunt-thru, a 30+j6.3 Ω point reads as about 7 Ω and looks ordinary. `ReadMeasured(path,
+  extraction, …)` now takes the fixture; every series file is read `SeriesThrough`.
+- **An `Other` library row is a series element's model** (`RailSeriesModel.Resolve`, the one call the
+  sweep, the parts table and the DC run make): ESR → DCR, a Touchstone `ModelRef` → impedance, row value
+  first per field, and the model says which won (`SourceText`). A capacitor row is never read for a
+  series part. The resolver no longer sends an `Other` row down the capacitor FILE path: that read failed
+  on a bead file and returned the part UNRESOLVED with no row, which hid the "not a capacitor" fact the
+  sweep now refuses a shunt row on (R-rail35-2d).
+- **Two silent zeros removed.** An unreadable series file had NaN impedance, which the stamping read as
+  0 — a 0 Ω link with nothing said; it is refused now. An element with no impedance stated at all is
+  still stamped as a link (brief 25's reading) but carries a warning saying so, and no longer the
+  lumped-R-L bias caveat, which was about a model it did not have.
+- `RailDcRequest.PartLibrary` exists for the DCR fallback only; the CLI resolves it through
+  `RailArtwork.ResolvePartLibrary` as the window does. Gate: `tests/Ui.Tests/RailRf/SeriesChainTests.cs`.

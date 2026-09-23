@@ -134,7 +134,7 @@ row per part number:
 
 | Column | What goes in it |
 |---|---|
-| **Class** | The capacitor's dielectric class, from the drop-down; it sets the ESR default when no ESR is stated. **Other** marks a part that is not a capacitor &mdash; a ferrite bead, a resistor &mdash; which takes no bias curve and is modelled by the ESR on its row. |
+| **Class** | The capacitor's dielectric class, from the drop-down; it sets the ESR default when no ESR is stated. **Other** marks a part that is not a capacitor &mdash; a ferrite bead, a resistor &mdash; which takes no bias curve. It is the model of a [series part](#series): its **ESR** is read as the part's DC resistance and its **Model file** as its measured impedance, and the other columns are ignored. |
 | **C**, **f₀** | The marked capacitance and the self-resonant frequency, each **with its unit** (`100 nF`, `28.9 MHz`). A bare number is not taken: its scale would be a guess. |
 | **ESL (datasheet)** | Optional &mdash; an inductance your table states. It is not used; it is checked against the next column and the row is flagged where they differ by more than 5 %. |
 | **ESL from f₀** | Read-only: 1/((2πf₀)²C), the inductance railRF uses. |
@@ -143,6 +143,11 @@ row per part number:
 
 A bias curve can be added only to a capacitor row that states its capacitance.
 
+A row classed **Other** has no impedance-at-one-frequency column, on purpose: a datasheet's "220 Ω at
+100 MHz" does not say how much of that is resistance and how much is inductance, and any split would be a
+guess printed as a model. Give the row the part's own Touchstone curve &mdash; a two-port file measured
+series-thru, as supplier tools publish a bead's &mdash; or state an R-L on the rail's row.
+
 **Import table…** on the library's toolbar reads a `.csv` of parts into it as one undoable edit &mdash; save a
 spreadsheet as `.csv` first. A part-number column is required; C, the self-resonance and L are read only
 where the column header states the unit (`C (pF)`, `resonance (MHz)`, `L (nH)`) or each cell does
@@ -150,6 +155,31 @@ where the column header states the unit (`C (pF)`, `resonance (MHz)`, `L (nH)`) 
 find a part only once its trailing packaging code is deleted, so a part number that is a library row's
 with its end trimmed is matched to that row &mdash; when exactly one row fits &mdash; and named in the
 report above the table.
+
+### Parts the rail runs through {#series}
+
+A ferrite bead, a sense resistor or a switch standing in for its on-resistance is not decoupling: the
+rail runs **through** it. Right-click its row in the parts table and choose **Make series element**
+(**Make decoupling (shunt)** takes it back; each is one undo step). On a board, its two pads become its
+terminals, and a part that the board shows with both pads on the rail's copper is offered directly &mdash;
+**Add *refdes* as series element** on the same menu, or **Add as series** under the table.
+
+Selecting a series row opens its editor under the table: its **DCR**, and **either** an R-L **or** a
+Touchstone file. Every value is the row's own; a blank one takes the part library's row where that row is
+classed **Other**, and the watermark says what that is. The table's *model source* column names which won
+for each number, so the same bead on four rails is one library row. A part classed Other that is left as
+a decoupling row is refused at Run, by name.
+
+A rail may run through **several** series parts. Each one cuts it, and the pieces are sections: the board's
+**Copper** view shades each section differently, every observation port reads the impedance of its own
+section, and each part's DC resistance is its own row of the drop breakdown, carrying the current of every
+load beyond it. The sections have to form a tree from the source &mdash; a chain, or one part feeding two
+branches. railRF refuses, naming the parts, a **loop** (two series paths between the same copper, whose
+current split a lumped model cannot answer), a part with copper **around** it (it is shorted out), and
+copper that no chain of series parts connects to the source.
+
+With no artwork, the series rows are a chain in **row order**, nearest the source first, and each other
+part and load sits at the far end unless its row names the element it sits behind.
 
 ## Q0 &mdash; is this rail connected, and what does it cost to get there? {#q0}
 
@@ -395,7 +425,7 @@ Stated plainly:
 
 ## What is not wired up yet {#notyet}
 
-Three things are representable in a `.crail` and do not yet reach a solve. They are here rather than
+Two things are representable in a `.crail` and do not yet reach a solve. They are here rather than
 left to be discovered:
 
 - **A port anchored by refdes does not resolve.** The placement table is read on import and is not
@@ -404,9 +434,7 @@ left to be discovered:
 - **A rail chain is therefore unsolvable.** Two rails are linked only by a refdes that is a load on one
   and a source on the other, and that is the one anchor shape that cannot resolve. A chain that would
   form a cycle is still refused, correctly, before any pad is looked up.
-- **A series part and a shunt part do not enter the DC solve.** A protection FET, a ferrite or a
-  decoupling bank reaches the DC answer only as a source's own series R and L. Over frequency the parts
-  are fully modelled from the rail's own part rows.
 
 A fourth used to be here and no longer is: a `.crail`'s artwork, its stackup and its part library now
-resolve when the **window** opens it, by the same walks `circuitrf rail` takes.
+resolve when the **window** opens it, by the same walks `circuitrf rail` takes. Nor is a fifth: a
+[series part](#series) is in the DC solve, its DC resistance a row of the breakdown.

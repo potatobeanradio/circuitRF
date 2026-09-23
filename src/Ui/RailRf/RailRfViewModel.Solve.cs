@@ -940,6 +940,9 @@ public sealed partial class RailRfViewModel
         BoardOutline   = board.BoardOutline,
         SeriesElements = board.SeriesElements,
         ShuntParts     = board.ShuntParts,
+        // Brief 35: a series element that states no DCR inherits its Other library row's ESR, and
+        // the DC breakdown has to price it from the same row the parts table shows.
+        PartLibrary    = PartLibrary,
         Model          = kind,
         // Stated only where the user stated one. A cell size of "whatever the window last showed"
         // would silently change what Accuracy means between two runs of the same document.

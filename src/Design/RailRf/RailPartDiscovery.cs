@@ -178,6 +178,32 @@ public sealed record RailDiscoveryResult(
     /// <summary>Nothing to read, and why.</summary>
     public static RailDiscoveryResult None(RailDiscoveryState state) => new(state, [], [], []);
 
+    /// <summary>
+    /// Every part skipped as <see cref="RailDiscoverySkip.SpansTheRail"/>, as the SERIES row it
+    /// would be — offered directly (brief 35, R-rail35-1a), with its two pads as its terminals.
+    /// </summary>
+    /// <remarks>
+    /// <b>Offered, never added</b>, on R-rail26-4's terms: both pads on the rail's copper says the
+    /// part is IN the rail, and whether the rail runs THROUGH it is still the designer's statement.
+    /// What the board does settle is which two pads its ends are, and those are the one thing a
+    /// series row cannot do without — a refdes alone resolves to every pad and models a short. The
+    /// row carries no DCR and no model; those come from the row or the part library once it is one.
+    /// </remarks>
+    public IReadOnlyList<RailPart> SeriesOffered { get; init; } = [];
+
+    /// <summary>True while there is a spanning part to offer as a series element.</summary>
+    public bool HasSeriesOffer => SeriesOffered.Count > 0;
+
+    /// <summary>The sentence the series offer carries, or empty.</summary>
+    public string SeriesOfferSentence =>
+        SeriesOffered.Count == 0 ? ""
+        : SeriesOffered.Count == 1
+            ? $"{SeriesOffered[0].Refdes} has both pads on this rail — the rail may run through it. " +
+              "Add it as a series element to cut the rail there."
+            : $"{string.Join(", ", SeriesOffered.Select(p => p.Refdes))} each have both pads on this " +
+              "rail — the rail may run through them. Add them as series elements to cut the rail " +
+              "there.";
+
     /// <summary>True while there is something to offer — the button appears only when there is.</summary>
     public bool HasOffer => Offered.Count > 0;
 
@@ -346,6 +372,7 @@ public static class RailPartDiscovery
             StringComparer.OrdinalIgnoreCase);
 
         var offeredRows = new List<RailPart>();
+        var seriesRows = new List<RailPart>();
         var skipped = new List<RailDiscoverySkipped>();
         var notes = new List<string>();
         var ambiguous = new List<string>();
@@ -389,12 +416,27 @@ public static class RailPartDiscovery
 
             if (onRail == 2)
             {
+                // Brief 35 (R-rail35-1a): the sentence used to say "add it as a series element" —
+                // a gesture that did not exist, so a designer added the part with + and got a shunt
+                // row. It names the gesture now, and the row is offered with its terminals.
                 skipped.Add(new RailDiscoverySkipped(
                     refdes, RailDiscoverySkip.SpansTheRail,
                     $"{refdes} has both pads on this rail's own copper, so it is IN the rail rather " +
-                    "than across it — a ferrite, a sense resistor, a link. Its terminals are a " +
-                    "statement about the topology, so add it as a series element if that is what " +
-                    "it is."));
+                    "than across it — a ferrite, a sense resistor, a link. If the rail runs through " +
+                    $"it, choose Add {refdes} as series element on the parts table's right-click " +
+                    "menu: its two pads become the element's terminals."));
+
+                var bomRows = request.Bom is { Refusal: null } b ? b.RowsFor(refdes) : [];
+                seriesRows.Add(new RailPart
+                {
+                    Refdes = refdes,
+                    PartNumber = bomRows.Count == 1 ? bomRows[0].PartNumber ?? "" : "",
+                    Origin = bomRows.Count == 1 && bomRows[0].PartNumber is { Length: > 0 }
+                        ? RailPartOrigin.Bom : RailPartOrigin.Artwork,
+                    Connection = RailPartConnection.Series,
+                    TerminalA = TerminalOf(pads[0], pads[1]),
+                    TerminalB = TerminalOf(pads[1], pads[0]),
+                });
                 continue;
             }
 
@@ -437,6 +479,7 @@ public static class RailPartDiscovery
         }
 
         offeredRows.Sort((a, b) => string.Compare(a.Refdes, b.Refdes, StringComparison.OrdinalIgnoreCase));
+        seriesRows.Sort((a, b) => string.Compare(a.Refdes, b.Refdes, StringComparison.OrdinalIgnoreCase));
         skipped.Sort((a, b) => string.Compare(a.Refdes, b.Refdes, StringComparison.OrdinalIgnoreCase));
 
         if (ambiguous.Count > 0)
@@ -452,8 +495,41 @@ public static class RailPartDiscovery
             [.. offeredRows.Select(p => new RailDiscoveryCandidate(p, null))
                            .Zip(Mounting(request, offeredRows), (c, m) => c with { Mounting = m })],
             skipped,
-            notes);
+            notes)
+        {
+            SeriesOffered = seriesRows,
+        };
     }
+
+    /// <summary>
+    /// A part's two ends as series terminals, where the board places EXACTLY two pads for it — or
+    /// null where it places fewer or more (brief 35, R-rail35-1a).
+    /// </summary>
+    /// <remarks>
+    /// <b>What Make series element writes, and the same reading the offer above makes</b>, so a row
+    /// marked series from the window and one accepted from the offer name their ends identically. A
+    /// part with three pads is not guessed at: its row is left with no terminals, and the partition
+    /// refuses that by name with what to give it.
+    /// </remarks>
+    public static (RailPortAnchor A, RailPortAnchor B)? SeriesTerminals(
+        string refdes, IReadOnlyList<PlacedPin> pads)
+    {
+        ArgumentNullException.ThrowIfNull(pads);
+        foreach (var (r, own) in PadsByRefdes(pads))
+            if (string.Equals(r, refdes, StringComparison.OrdinalIgnoreCase))
+                return own.Count == 2 ? (TerminalOf(own[0], own[1]), TerminalOf(own[1], own[0])) : null;
+        return null;
+    }
+
+    /// <summary>
+    /// One end of a spanning part, as a series terminal: its refdes and PIN where the board names
+    /// distinct pins, and its pad's own coordinate where it does not — a Gerber set with no netlist
+    /// names no pins, and a refdes alone would resolve to BOTH pads and model a short.
+    /// </summary>
+    private static RailPortAnchor TerminalOf(PlacedPin pad, PlacedPin other) =>
+        pad.Pin is { Length: > 0 } pin && !string.Equals(pin, other.Pin, StringComparison.OrdinalIgnoreCase)
+            ? new RailPortAnchor { Refdes = pad.Refdes, Pin = pin }
+            : new RailPortAnchor { Point = (pad.X, pad.Y) };
 
     /// <summary>
     /// The mounting loops, in the same order as <paramref name="rows"/> — or a null for each where

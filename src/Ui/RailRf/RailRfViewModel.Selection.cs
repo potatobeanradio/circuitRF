@@ -104,7 +104,11 @@ public sealed partial class RailRfViewModel
     [ObservableProperty]
     private RailBreakdownRowViewModel? _selectedBreakdownRow;
 
-    partial void OnSelectedPartChanged(RailPartRowViewModel? value)             => TakeSelection(value);
+    partial void OnSelectedPartChanged(RailPartRowViewModel? value)
+    {
+        TakeSelection(value);
+        SyncSeriesEditor();   // brief 35: the editor follows the selected row
+    }
     partial void OnSelectedSourceChanged(RailSourceRowViewModel? value)         => TakeSelection(value);
     partial void OnSelectedLoadChanged(RailLoadRowViewModel? value)             => TakeSelection(value);
     partial void OnSelectedAggressorChanged(RailAggressorRowViewModel? value)   => TakeSelection(value);

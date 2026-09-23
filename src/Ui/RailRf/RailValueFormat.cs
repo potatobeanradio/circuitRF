@@ -1,5 +1,6 @@
 using System;
 using System.Globalization;
+using System.Linq;
 
 namespace CircuitRF.Ui.RailRf;
 
@@ -139,6 +140,22 @@ public static class RailValueFormat
         string text = Math.Round(value, decimals).ToString("0.###############", CultureInfo.InvariantCulture);
         return text;
     }
+
+    /// <summary>
+    /// True where <paramref name="text"/> is a BARE number for a quantity whose scale a bare number
+    /// leaves a guess — frequency, capacitance, inductance (field report, 2026-09-23).
+    /// </summary>
+    /// <remarks>
+    /// A self-resonance copied from a table in MHz as 28.89 was stored as 28.89 Hz; a capacitance in
+    /// pF as farads. Nothing about either looks wrong in the cell. Volts and ohms keep the bare form,
+    /// where the base unit is what anybody means. <b>One rule for every editor in this window</b> —
+    /// the part library's cells and a series row's own model (brief 35, R-rail35-1b) — so a field
+    /// in one place does not accept what the same field in another refuses.
+    /// </remarks>
+    public static bool IsBareWhereAUnitIsRequired(string? text, RailQuantity quantity) =>
+        quantity is RailQuantity.Frequency or RailQuantity.Capacitance or RailQuantity.Inductance
+        && text is { Length: > 0 }
+        && !text.Trim().Any(c => char.IsLetter(c) && c is not ('e' or 'E'));   // 1e6 is bare too
 
     /// <summary>
     /// Parses a typed <c>"value unit"</c> string. <b>Returns false rather than throwing</b> — a

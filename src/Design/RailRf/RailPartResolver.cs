@@ -328,6 +328,13 @@ public sealed class RailPartResolver
                 $"'{partNumber}' is not in the part library, so railRF has no C, no f₀ and no " +
                 "dielectric class for it. Nothing about it is defaulted.", connection);
 
+        // Brief 35: an Other row's file is a SERIES element's curve (R-rail35-2a), and reading it
+        // through the capacitor arithmetic below — shunt-thru, capacitance off the reactance — gives
+        // nonsense or, where it cannot be read that way, an UNRESOLVED part with no row, which hides
+        // exactly the "not a capacitor" fact the sweep refuses a shunt row on (R-rail35-2d).
+        if (!row.IsCapacitor)
+            return FromRow(row, railVoltageV, mountingInductanceHenries, refdes, mountingBasis, mounted, connection);
+
         return resolution.Source == PartModelSource.AttachedFile
             ? FromFile(row, resolution, railVoltageV, mountingInductanceHenries, refdes, mountingBasis, mounted, connection)
             : FromRow(row, railVoltageV, mountingInductanceHenries, refdes, mountingBasis, mounted, connection);
@@ -520,7 +527,23 @@ public sealed class RailPartResolver
     /// <see cref="FileReader"/> and <see cref="MeasureFileHealth"/> all apply exactly as they do to
     /// a part.
     /// </remarks>
-    public RailMeasuredPart? ReadMeasured(string path, out string? failure)
+    public RailMeasuredPart? ReadMeasured(string path, out string? failure) =>
+        ReadMeasured(path, Extraction, out failure);
+
+    /// <summary>
+    /// The same read, in a fixture this resolver was not configured for — <b>a series element's
+    /// file</b> (brief 35, R-rail35-2a).
+    /// </summary>
+    /// <remarks>
+    /// <b>A bead's two-port file is measured SERIES-thru</b>, as supplier tools publish them: the part
+    /// is in the through line, and <c>Z = 2·Z0·(1 − S21)/S21</c>. Read through
+    /// <see cref="Extraction"/>'s shunt-thru default instead — <c>Z = (Z0/2)·S21/(1 − S21)</c> — a
+    /// 220 Ω bead reads as about 5 Ω and the curve looks entirely ordinary. Until brief 35 a series
+    /// element's own <c>TouchstoneRef</c> went through that default; a fixture is a statement about
+    /// how the part was MEASURED, and a series element is not measured the way a decoupling
+    /// capacitor is.
+    /// </remarks>
+    public RailMeasuredPart? ReadMeasured(string path, PassiveExtraction extraction, out string? failure)
     {
         failure = null;
 
@@ -531,7 +554,7 @@ public sealed class RailPartResolver
         if (snp is null || snp.IsEmpty) return null;
 
         int portA = 1, portB = snp.Ports >= 2 ? 2 : 1;
-        var mode = snp.Ports >= 2 ? Extraction : PassiveExtraction.OnePort;
+        var mode = snp.Ports >= 2 ? extraction : PassiveExtraction.OnePort;
 
         Mat<Complex>[] matrices = snp.Matrices;
         Complex[] z0 = snp.Z0PerPort ?? [.. Enumerable.Repeat(snp.Z0, snp.Ports)];

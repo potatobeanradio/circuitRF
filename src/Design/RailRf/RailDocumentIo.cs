@@ -211,6 +211,13 @@ public static class RailDocumentIo
         Mask                   = ToFile(l.Mask),
         RegulatorInputCurrentA = l.RegulatorInputCurrentA,
         MinimumInputVoltageV   = l.MinimumInputVoltageV,
+
+        // brief 35. A LOAD'S SIDE WAS NEVER WRITTEN: brief 25 gave RailLoad a Side and this file no
+        // line for it, so a port typed upstream of a ferrite came back downstream on the next open —
+        // silently, since downstream is the default. Absent still means DOWNSTREAM, as it does on a
+        // part row, so nothing written before changes meaning.
+        Side                   = l.Side == RailSection.Downstream ? null : l.Side,
+        Behind                 = NullIfEmpty(l.Behind),
     };
 
     private static CrailAnchor ToFile(RailPortAnchor a) => new()
@@ -270,6 +277,7 @@ public static class RailDocumentIo
         SeriesInductanceHenries   = p.SeriesInductanceHenries,
         TouchstoneRef             = NullIfEmpty(p.TouchstoneRef),
         Side                      = p.Side == RailSection.Downstream ? null : p.Side,
+        Behind                    = NullIfEmpty(p.Behind),
     };
 
     private static CrailTarget? ToFile(RailTarget? t) => t is null ? null : new CrailTarget
@@ -386,6 +394,8 @@ public static class RailDocumentIo
         Mask                   = FromFile(l.Mask),
         RegulatorInputCurrentA = l.RegulatorInputCurrentA,
         MinimumInputVoltageV   = l.MinimumInputVoltageV,
+        Side                   = l.Side ?? RailSection.Downstream,
+        Behind                 = l.Behind,
     };
 
     private static RailPortAnchor FromFile(CrailAnchor? a) => new()
@@ -432,6 +442,7 @@ public static class RailDocumentIo
         SeriesInductanceHenries   = p.SeriesInductanceHenries,
         TouchstoneRef             = p.TouchstoneRef,
         Side                      = p.Side ?? RailSection.Downstream,
+        Behind                    = p.Behind,
     };
 
     private static RailTarget? FromFile(CrailTarget? t) => t is null ? null : new RailTarget
@@ -611,6 +622,12 @@ public static class RailDocumentIo
         public CrailTarget? Mask                   { get; set; }
         public double?      RegulatorInputCurrentA { get; set; }
         public double?      MinimumInputVoltageV   { get; set; }
+
+        /// <summary>Null — the ordinary case — means DOWNSTREAM. See <see cref="RailLoad.Side"/>.</summary>
+        public RailSection? Side                   { get; set; }
+
+        /// <summary>The series element this port sits behind. See <see cref="RailLoad.Behind"/>.</summary>
+        public string?      Behind                 { get; set; }
     }
 
     private sealed class CrailAggressor
@@ -656,6 +673,9 @@ public static class RailDocumentIo
 
         /// <summary>Null — the ordinary case — means DOWNSTREAM. See <see cref="RailPart.Side"/>.</summary>
         public RailSection?    Side                      { get; set; }
+
+        /// <summary>The series element this row sits behind. See <see cref="RailPart.Behind"/>.</summary>
+        public string?         Behind                    { get; set; }
     }
 
     /// <summary>One target of any of the four kinds. <see cref="Kind"/> says which, and exactly the

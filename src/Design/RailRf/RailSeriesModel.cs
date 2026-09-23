@@ -20,11 +20,36 @@
 // crossover, so it gets precisely the same treatment: A SENTENCE ON THE RESULT, NOT A LOG LINE.
 // Where a measured curve is supplied the sentence goes away, because then it is a measurement.
 //
+// ── AND SINCE BRIEF 35, THE PART LIBRARY CAN DESCRIBE ONE ──────────────────────────────────────
+//
+// R-rail35-2. The same bead on four rails was four hand-typed rows: the library held a capacitor's
+// model and nothing read a row classed Other as anything. Now each FIELD resolves on its own — the
+// rail row's stated value, then an Other library row's — and the model says which won, because the
+// parts table's model-source column has to (R-rail2-11's rule). The fields are exactly two: the DC
+// resistance (the library row's ESR) and the impedance over frequency (the row's R-L or file, else
+// the library row's Touchstone, read SERIES-thru). There is no third route and no guessed split of
+// an impedance-at-one-frequency into R and L (R-rail35-2c).
+//
 // NUMBERS ARE BASE SI. Ohms, henries, hertz.
 
 using System.Numerics;
+using RfCore.Data;
 
 namespace CircuitRF.Design.RailRf;
+
+/// <summary>Where one of a series element's numbers came from (brief 35, R-rail35-2b).</summary>
+public enum RailSeriesValueSource
+{
+    /// <summary>Nothing states it. <b>Not zero</b> — see the model's own sentences.</summary>
+    Unstated,
+
+    /// <summary>The rail's own part row — it wins wherever it states the field.</summary>
+    Row,
+
+    /// <summary>The part library's row for this part number, classed
+    /// <see cref="PartLibraryRow.OtherClass"/> — inherited where the rail row states nothing.</summary>
+    Library,
+}
 
 /// <summary>
 /// One series element, resolved: what it is over frequency, what it costs at DC, and what has to be
@@ -41,12 +66,59 @@ public sealed record RailSeriesModel(RailPart Row, RailSourceModel Impedance)
 
     /// <summary>
     /// The DC resistance the load current runs through, in OHMS — <b>null is UNSTATED, never
-    /// zero</b> (R-rail25-3b).
+    /// zero</b> (R-rail25-3b). The row's own where it states one, else an <c>Other</c> library row's
+    /// ESR (R-rail35-2a); <see cref="DcResistanceFrom"/> says which.
     /// </summary>
-    public double? DcResistanceOhms => Row.DcResistanceOhms;
+    public double? DcResistanceOhms { get; init; } = Row.DcResistanceOhms;
 
-    /// <summary>True where this element's impedance came out of its own measured file.</summary>
+    /// <summary>Which of the row and the library stated <see cref="DcResistanceOhms"/>.</summary>
+    public RailSeriesValueSource DcResistanceFrom { get; init; } =
+        Row.DcResistanceOhms is null ? RailSeriesValueSource.Unstated : RailSeriesValueSource.Row;
+
+    /// <summary>Which of the row and the library stated the impedance over frequency.</summary>
+    public RailSeriesValueSource ImpedanceFrom { get; init; } =
+        Row.TouchstoneRef is { Length: > 0 } || Row.IsRl
+            ? RailSeriesValueSource.Row : RailSeriesValueSource.Unstated;
+
+    /// <summary>The file the impedance was read from — the row's own reference, or the library
+    /// row's resolved one — or null where it is an R-L.</summary>
+    public string? TouchstonePath { get; init; } =
+        Row.TouchstoneRef is { Length: > 0 } t ? t : null;
+
+    /// <summary>The <c>Other</c> library row this element inherited from, or null.</summary>
+    public PartLibraryRow? LibraryRow { get; init; }
+
+    /// <summary>True where this element's impedance came out of a measured file.</summary>
     public bool IsMeasured => Impedance.Basis == RailSourceBasis.Measured;
+
+    /// <summary>True where a file was named and could not be read — which is NOT a 0 Ω link, and
+    /// the sweep refuses it rather than stamping one.</summary>
+    public bool IsUnreadable => IsMeasured && Impedance.Measured is null;
+
+    /// <summary>
+    /// The parts table's model-source column for this row (R-rail35-1c): where the impedance came
+    /// from and where the DCR came from, each named — the row, the library, or nothing.
+    /// </summary>
+    public string SourceText =>
+        $"Z {Word(ImpedanceFrom, IsMeasured)} · DCR {Word(DcResistanceFrom, false)}";
+
+    private static string Word(RailSeriesValueSource source, bool file) => source switch
+    {
+        RailSeriesValueSource.Row     => file ? "row file" : "row",
+        RailSeriesValueSource.Library => file ? "library file" : "library",
+        _                             => "unstated",
+    };
+
+    /// <summary>
+    /// What the sweep says where nothing states an impedance at all, or null. The element is
+    /// stamped as a 0 Ω LINK — brief 25's reading of an R-L with nothing in it — and the answer
+    /// SAYS so, because a link and a bead nobody described look identical on a curve.
+    /// </summary>
+    public string? UnstatedImpedanceLine => ImpedanceFrom != RailSeriesValueSource.Unstated
+        ? null
+        : $"Series element {Refdes} states no impedance — no R-L and no Touchstone file on its row, " +
+          "and no part-library row classed Other with a file — so it is modelled as a 0 Ω LINK. " +
+          "State its R-L on the row, or give its library row the part's own measured curve.";
 
     /// <summary>This element's impedance at one frequency, in OHMS.</summary>
     public Complex ImpedanceAt(double frequencyHz) => Impedance.ImpedanceAt(frequencyHz);
@@ -57,13 +129,15 @@ public sealed record RailSeriesModel(RailPart Row, RailSourceModel Impedance)
     /// </summary>
     /// <remarks>
     /// <b>Only for an R-L.</b> A supplied curve is a measurement of the part and needs no caveat —
-    /// the sentence goes away, exactly as <see cref="RailSourceModel.OptimisticLine"/>'s does. It is
+    /// the sentence goes away, exactly as <see cref="RailSourceModel.OptimisticLine"/>'s does. An
+    /// element with no impedance stated at all is not an R-L either: it is stamped as a link, and
+    /// <see cref="UnstatedImpedanceLine"/> is the sentence it carries instead (brief 35). It is
     /// not conditional on the part being a FERRITE, because nothing in the document says which of a
     /// ferrite, a sense resistor and a FET this row is, and a flag for it would be a second place
     /// the same fact lives: the caveat is about a lumped R-L standing in for a part whose impedance
     /// depends on its bias, and the reader is the one who knows whether theirs does.
     /// </remarks>
-    public string? BiasDependentLine => IsMeasured
+    public string? BiasDependentLine => IsMeasured || ImpedanceFrom == RailSeriesValueSource.Unstated
         ? null
         : $"Series element {Refdes} is modelled as a lumped R-L. A FERRITE BEAD'S IMPEDANCE IS " +
           "STRONGLY BIAS-DEPENDENT and its datasheet curve is measured at ZERO DC bias: at a few " +
@@ -87,12 +161,14 @@ public sealed record RailSeriesModel(RailPart Row, RailSourceModel Impedance)
     public string Describe()
     {
         string z = IsMeasured
-            ? $"its own measured impedance, {System.IO.Path.GetFileName(Row.TouchstoneRef ?? "")}"
+            ? $"its own measured impedance, {System.IO.Path.GetFileName(TouchstonePath ?? "")}" +
+              (ImpedanceFrom == RailSeriesValueSource.Library ? " (from the part library)" : "")
             : $"R-L, {Row.SeriesResistanceOhms ?? 0:0.###} Ω + " +
               $"{(Row.SeriesInductanceHenries ?? 0) * 1e9:0.###} nH";
 
         string dcr = DcResistanceOhms is { } r
-            ? $"DCR {r * 1e3:0.###} mΩ"
+            ? $"DCR {r * 1e3:0.###} mΩ" +
+              (DcResistanceFrom == RailSeriesValueSource.Library ? " (the part library's ESR)" : "")
             : "DCR unstated — the DC total is a lower bound";
 
         return $"{Refdes}: IN SERIES with the rail; {z}; {dcr}.";
@@ -120,5 +196,82 @@ public sealed record RailSeriesModel(RailPart Row, RailSourceModel Impedance)
                 part.SeriesInductanceHenries,
                 OpenCircuitVoltageV: null,
                 measured));
+    }
+
+    /// <summary>
+    /// <b>Brief 35.</b> The model one row describes, each field resolved on its own — the rail row's
+    /// stated value, then the part library's row where that row is classed
+    /// <see cref="PartLibraryRow.OtherClass"/> (R-rail35-2a, R-rail35-2b). Null where the row is not
+    /// a series element.
+    /// </summary>
+    /// <remarks>
+    /// <b>The one function the window's sweep, its parts table and the DC run all call</b>, so the
+    /// number a row prints, the impedance stamped between two sections and the DCR in the breakdown
+    /// cannot come to disagree about which source won. A library row that is a CAPACITOR is not read
+    /// here at all: its ESR is a loss term at resonance, not a resistance the load current runs
+    /// through, and a part marked series with a capacitor's part number keeps what its own row states.
+    /// </remarks>
+    /// <param name="part">The document's own row.</param>
+    /// <param name="library">The part library, or null where there is none.</param>
+    /// <param name="read">Reads one Touchstone file SERIES-thru, or returns null where it cannot —
+    /// <see cref="RailPartResolver.ReadMeasured(string, PassiveExtraction, out string?)"/>. Null
+    /// reads nothing, for a caller (the DC run) that only needs the DCR.</param>
+    /// <param name="rowReference">Resolves the row's own <see cref="RailPart.TouchstoneRef"/>, which
+    /// is relative to the <c>.crail</c>. Null takes it as written.</param>
+    public static RailSeriesModel? Resolve(
+        RailPart part, PartLibrary? library,
+        Func<string, RailMeasuredPart?>? read = null,
+        Func<string, string>? rowReference = null)
+    {
+        ArgumentNullException.ThrowIfNull(part);
+        if (part.Connection != RailPartConnection.Series) return null;
+
+        var libraryRow = part.PartNumber is { Length: > 0 } pn && library?.Part(pn) is { IsCapacitor: false } row
+            ? row : null;
+
+        // ── the DC resistance: the row's, then the library row's ESR ──────────────────────────
+        var (dcr, dcrFrom) =
+            part.DcResistanceOhms is { } own ? (own, RailSeriesValueSource.Row)
+            : libraryRow?.EsrOhms is { } esr ? (esr, RailSeriesValueSource.Library)
+            : ((double?)null, RailSeriesValueSource.Unstated);
+
+        // ── the impedance over frequency: the row's R-L or file, then the library row's file ──
+        string name = part.Refdes is { Length: > 0 } r ? r : "(unnamed series element)";
+        RailSourceModel impedance;
+        RailSeriesValueSource zFrom;
+        string? path = null;
+
+        if (part.TouchstoneRef is { Length: > 0 } own2)
+        {
+            path = rowReference?.Invoke(own2) ?? own2;
+            impedance = new RailSourceModel(0, name, RailSourceBasis.Measured, null, null, null, read?.Invoke(path));
+            zFrom = RailSeriesValueSource.Row;
+        }
+        else if (part.IsRl)
+        {
+            impedance = new RailSourceModel(0, name, RailSourceBasis.Rl,
+                part.SeriesResistanceOhms, part.SeriesInductanceHenries, null);
+            zFrom = RailSeriesValueSource.Row;
+        }
+        else if (libraryRow?.ModelRef is { Length: > 0 } model && PartLibrary.IsTouchstone(model))
+        {
+            path = library!.ResolveModel(libraryRow.PartNumber).FilePath ?? model;
+            impedance = new RailSourceModel(0, name, RailSourceBasis.Measured, null, null, null, read?.Invoke(path));
+            zFrom = RailSeriesValueSource.Library;
+        }
+        else
+        {
+            impedance = new RailSourceModel(0, name, RailSourceBasis.Rl, null, null, null);
+            zFrom = RailSeriesValueSource.Unstated;
+        }
+
+        return new RailSeriesModel(part, impedance)
+        {
+            DcResistanceOhms = dcr,
+            DcResistanceFrom = dcrFrom,
+            ImpedanceFrom    = zFrom,
+            TouchstonePath   = path,
+            LibraryRow       = libraryRow,
+        };
     }
 }

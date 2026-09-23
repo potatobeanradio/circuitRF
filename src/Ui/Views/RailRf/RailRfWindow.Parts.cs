@@ -28,6 +28,7 @@ using System.IO;
 using System.Linq;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Platform.Storage;
 using CircuitRF.Ui.RailRf;
 using CircuitRF.Ui.Views.Dialogs;
 
@@ -58,12 +59,25 @@ public partial class RailRfWindow
             + "arrives carrying its designator and nothing else.");
         add.Click += (_, _) => OnAddPartClick(null, new RoutedEventArgs());
 
+        // Brief 35 (R-rail35-1a): a part the board shows spanning the rail is offered AS a series
+        // element, on the menu discovery's own sentence names — with or without a selection.
+        var seriesOffers = vm.PartOffer.SeriesOffered.Select(part =>
+        {
+            var item = new MenuItem { Header = $"Add {part.Refdes} as series element" };
+            ToolTip.SetTip(item,
+                $"{part.Refdes} has both pads on this rail's copper. Add it as the element the rail "
+                + "runs THROUGH — its two pads become its terminals, and the rail is cut there.");
+            item.Click += (_, _) => vm.AddSeriesParts([part.Refdes]);
+            return (object)item;
+        }).ToList();
+
         var row = PartsList.SelectedItem as RailPartRowViewModel
                ?? PartsList.SelectedItems?.OfType<RailPartRowViewModel>().FirstOrDefault();
         if (row is null)
         {
             if (vm.SelectedRail is null) { e.Cancel = true; return; }
-            menu.ItemsSource = new List<object> { add };
+            List<object> empty = seriesOffers.Count == 0 ? [add] : [add, new Separator(), .. seriesOffers];
+            menu.ItemsSource = empty;
             return;
         }
 
@@ -99,10 +113,69 @@ public partial class RailRfWindow
             + "and is reversible.");
         remove.Click += (_, _) => Vm?.RemoveParts(targets);
 
-        menu.ItemsSource = new List<object>
+        // ── R-rail35-1a: SERIES OR SHUNT, on the selection, one undo step each ──────────────
+        var selected = PartsList.SelectedItems?.OfType<RailPartRowViewModel>().ToList() ?? [row];
+        var connection = new List<object>();
+
+        if (selected.Any(r => !r.IsSeries))
         {
-            add, remove, new Separator(), assign, new Separator(), library,
-        };
+            var series = new MenuItem
+            {
+                Header = targets.Count == 1 ? $"Make {targets[0]} a series element" : "Make series element",
+            };
+            ToolTip.SetTip(series,
+                "The rail runs THROUGH this part — a ferrite bead, a sense resistor, a switch. It "
+                + "cuts the rail into sections, and its DC resistance carries the current of every "
+                + "load beyond it. Its two pads on the board become its terminals.");
+            series.Click += (_, _) => vm.SetPartsConnection(targets, CircuitRF.Design.RailRf.RailPartConnection.Series);
+            connection.Add(series);
+        }
+
+        if (selected.Any(r => r.IsSeries))
+        {
+            var shunt = new MenuItem
+            {
+                Header = targets.Count == 1 ? $"Make {targets[0]} decoupling (shunt)" : "Make decoupling (shunt)",
+            };
+            ToolTip.SetTip(shunt,
+                "This part sits between the rail and its reference — a decoupling capacitor. Its "
+                + "series DCR and model are kept, so making it series again gives the answer it gave "
+                + "before.");
+            shunt.Click += (_, _) => vm.SetPartsConnection(targets, CircuitRF.Design.RailRf.RailPartConnection.Shunt);
+            connection.Add(shunt);
+        }
+
+        List<object> items = [add, remove, new Separator(), .. connection, new Separator(), assign];
+        if (seriesOffers.Count > 0) { items.Add(new Separator()); items.AddRange(seriesOffers); }
+        items.Add(new Separator());
+        items.Add(library);
+        menu.ItemsSource = items;
+    }
+
+    /// <summary>
+    /// The series editor's Browse — a Touchstone file for the selected series row, written
+    /// relative to the <c>.crail</c> like every other reference it carries (R-rail35-1b).
+    /// </summary>
+    private async void OnSeriesBrowseClick(object? sender, RoutedEventArgs e)
+    {
+        if (Vm is not { SeriesEditor: { } editor } vm) return;
+
+        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = $"railRF — {editor.Refdes}'s measured impedance",
+            AllowMultiple = false,
+            FileTypeFilter =
+            [
+                new FilePickerFileType("Touchstone") { Patterns = ["*.s2p", "*.s1p", "*.S2P", "*.S1P"] },
+                new FilePickerFileType("All Files") { Patterns = ["*.*"] },
+            ],
+        });
+        if (files.Count == 0 || files[0].TryGetLocalPath() is not { } picked) return;
+
+        editor.TouchstoneEntry = vm.DocumentPath is { Length: > 0 } crail
+            ? CircuitRF.Core.RefPath.ToStored(
+                  Path.GetRelativePath(Path.GetDirectoryName(Path.GetFullPath(crail))!, picked))
+            : picked;
     }
 
     // ══ ADDING AND REMOVING A ROW (field report, 2026-09-22) ═══════════════════════════════════

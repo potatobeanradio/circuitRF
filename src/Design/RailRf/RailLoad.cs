@@ -62,6 +62,13 @@ public sealed record RailLoad
     /// </summary>
     public RailSection Side { get; init; } = RailSection.Downstream;
 
+    /// <summary>
+    /// The refdes of the series element this port sits directly behind, where nothing measured it —
+    /// or null, where <see cref="Side"/> says which end of the chain (brief 35, R-rail35-3c).
+    /// <see cref="RailPart.Behind"/> states the rule and why a section is named by its element.
+    /// </summary>
+    public string? Behind { get; init; }
+
     /// <summary>True when this row states no current: an observation port, and nothing else.</summary>
     public bool IsObservationOnly => DcCurrentA is null;
 
@@ -76,6 +83,11 @@ public sealed record RailLoad
 
         if (PeakCurrentA is { } p && double.IsNaN(p))
             return $"{where} states a peak current that is not a number.";
+
+        if (Behind is { Length: > 0 } behind && Side == RailSection.Upstream)
+            return $"{where} is stated both UPSTREAM and behind '{behind}'. Upstream is the " +
+                   "source's own section, in front of every element; name the element, or state " +
+                   "upstream, not both.";
 
         return Mask?.Refusal($"{where}'s mask", RailTargetKind.Mask);
     }

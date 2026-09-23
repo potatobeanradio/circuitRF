@@ -227,23 +227,21 @@ public sealed partial class RailRfViewModel
             sources.Add(RailSourceLife.Of(row, i, measured));
         }
 
-        // ── brief 25: the element the rail runs THROUGH, and which side everything is on ──────
+        // ── brief 25: the elements the rail runs THROUGH, and which section everything is in ───
         //
-        // Its own file goes through the SAME reader a part's and a source's do (R-rail25-1b), and
-        // the partition comes off the ARTWORK wherever there is artwork (R-rail25-2a) — the very
-        // walk the DC extraction already did, so the section a part is shaded in on the copper map
-        // is the section its branch is stamped on. With no board the sides are the ROWS' own
-        // (R-rail25-2d), which is what §6's artwork-optional P1 case leaves.
-        RailSeriesModel? series = null;
+        // Their files go through the SAME reader a part's and a source's do (R-rail25-1b) — read
+        // SERIES-thru, since that is how a bead's curve is measured (brief 35) — and each field
+        // falls back to an Other library row (R-rail35-2) through the one function the parts table
+        // calls too. The partition comes off the ARTWORK wherever there is artwork (R-rail25-2a) —
+        // the very walk the DC extraction already did, so the section a part is shaded in on the
+        // copper map is the section its branch is stamped on. With no board the sections are the
+        // ROWS' own (R-rail25-2d, R-rail35-3c), which is what §6's artwork-optional P1 case leaves.
+        IReadOnlyList<RailSeriesModel> series = [];
         RailSeriesPartition? partition = null;
 
-        if (rail.SeriesElement is { } element)
+        if (rail.HasSeriesElements)
         {
-            var measured = element.TouchstoneRef is { Length: > 0 } seriesRef
-                ? resolver.ReadMeasured(ResolveRelative(seriesRef), out _)
-                : null;
-
-            series = RailSeriesModel.Of(element, measured);
+            series = SeriesModels(rail, resolver);
             partition = SeriesRegions(rail) is { } walked
                 ? RailSeriesPartition.FromArtworkRegions(rail, walked, Board?.Pads ?? [])
                 : RailSeriesPartition.Typed(rail);
@@ -330,6 +328,17 @@ public sealed partial class RailRfViewModel
             : ByModel.Values
                      .Select(v => v.Result.Rail(rail.Name)?.Regions)
                      .FirstOrDefault(r => r is { Power.Count: > 0 });
+
+    /// <summary>
+    /// Every series element on <paramref name="rail"/>, each field resolved row-first and then from
+    /// its <c>Other</c> library row (brief 35, R-rail35-2) — <b>what the sweep stamps and what the
+    /// parts table prints</b>, from one call so the two cannot disagree about which source won.
+    /// </summary>
+    internal IReadOnlyList<RailSeriesModel> SeriesModels(RailSpec rail, RailPartResolver resolver) =>
+        [.. rail.SeriesElements.Select(e => RailSeriesModel.Resolve(
+            e, PartLibrary,
+            path => resolver.ReadMeasured(path, RfCore.Data.PassiveExtraction.SeriesThrough, out _),
+            ResolveRelative)!)];
 
     /// <summary>A document-relative reference, against the <c>.crail</c>'s own folder.</summary>
     private string ResolveRelative(string reference) =>

@@ -102,8 +102,8 @@ public sealed class SeriesElementWindowTests(ITestOutputHelper output)
 
         _output.WriteLine(string.Join("\n", scene.Regions.Select(r => r.Readout)));
 
-        Assert.Contains(RailSection.Upstream, sections);
-        Assert.Contains(RailSection.Downstream, sections);
+        Assert.Contains(RailSeriesPartition.Root, sections);
+        Assert.Contains(1, sections);
 
         // And the readout says which, in words, for the reader who hovers rather than compares.
         Assert.Contains(scene.Regions, r => r.Readout.Contains("UPSTREAM", StringComparison.Ordinal));

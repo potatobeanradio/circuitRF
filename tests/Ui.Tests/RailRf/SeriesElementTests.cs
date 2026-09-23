@@ -38,15 +38,19 @@ public sealed class SeriesElementTests(ITestOutputHelper output)
 
     // ── the board, shared with the DC gates ──────────────────────────────────
 
+    /// <summary>Brief 25's two sides, as brief 35's section numbers: the source's section is 0, and
+    /// on a one-element rail the one beyond it is 1.</summary>
+    private const int Up = RailSeriesPartition.Root, Down = 1;
+
     private const int DbuPerMicron = LayoutUnits.DefaultDbuPerMicron;
-    private static readonly LayerKey Top = new(1, 0);
-    private static readonly LayerKey Bot = new(2, 0);
+    internal static readonly LayerKey Top = new(1, 0);
+    internal static readonly LayerKey Bot = new(2, 0);
     private const double CopperSigma = 5.8e7;
 
-    private static long Mm(double v) => (long)Math.Round(v * 1e3 * DbuPerMicron);
+    internal static long Mm(double v) => (long)Math.Round(v * 1e3 * DbuPerMicron);
     private static long Um(double v) => (long)Math.Round(v * DbuPerMicron);
 
-    private static Technology Board()
+    internal static Technology Board()
     {
         var tech = new Technology { Name = "test board" };
         tech.Stackup.Layers =
@@ -71,15 +75,15 @@ public sealed class SeriesElementTests(ITestOutputHelper output)
         return tech;
     }
 
-    private static RectShape Rect(LayerKey layer, long x1, long y1, long x2, long y2) =>
+    internal static RectShape Rect(LayerKey layer, long x1, long y1, long x2, long y2) =>
         new() { Layer = layer, X1 = x1, Y1 = y1, X2 = x2, Y2 = y2 };
 
-    private static Path64 Box(long x1, long y1, long x2, long y2) =>
+    internal static Path64 Box(long x1, long y1, long x2, long y2) =>
         [new Point64(x1, y1), new Point64(x2, y1), new Point64(x2, y2), new Point64(x1, y2)];
 
     // ── the parts ────────────────────────────────────────────────────────────
 
-    private const double MountingH = 1e-9;
+    internal const double MountingH = 1e-9;
 
     private static PartLibraryRow Cap1uRow() => new()
     {
@@ -246,7 +250,7 @@ public sealed class SeriesElementTests(ITestOutputHelper output)
             "FB1.s2p", [1e3, 1e9], [new Complex(1, 0), new Complex(1, 0)], null);
 
         var rail = TypedRail();
-        int at = rail.Parts.IndexOf(rail.SeriesElement!);
+        int at = rail.Parts.IndexOf(rail.SeriesElements[0]);
 
         // The ROW is what says which model this element has — a supplied sweep with the R-L still
         // on the row is the two-models-stated case RailPart.Refusal already refuses.
@@ -276,14 +280,14 @@ public sealed class SeriesElementTests(ITestOutputHelper output)
 
         Assert.Null(partition.Refusal);
         Assert.False(partition.FromArtwork);
-        Assert.Equal(RailSection.Upstream, partition.PartSection("C1"));
-        Assert.Equal(RailSection.Downstream, partition.PartSection("C2"));
-        Assert.Equal(RailSection.Downstream, partition.PartSection("C3"));
-        Assert.Equal(RailSection.Upstream, partition.LoadSection(0));
-        Assert.Equal(RailSection.Downstream, partition.LoadSection(1));
+        Assert.Equal(Up, partition.PartSection("C1"));
+        Assert.Equal(Down, partition.PartSection("C2"));
+        Assert.Equal(Down, partition.PartSection("C3"));
+        Assert.Equal(Up, partition.LoadSection(0));
+        Assert.Equal(Down, partition.LoadSection(1));
 
         // A source is upstream of the element by definition and there is no field for it.
-        Assert.Equal(RailSection.Upstream, partition.SourceSection(0));
+        Assert.Equal(Up, partition.SourceSection(0));
 
         // A part row that states nothing is DOWNSTREAM, which is where decoupling goes.
         Assert.Equal(RailSection.Downstream, new RailPart { Refdes = "C9" }.Side);
@@ -321,11 +325,11 @@ public sealed class SeriesElementTests(ITestOutputHelper output)
         Assert.True(partition.FromArtwork);
 
         // Exactly as placed: C1 is on the battery's copper and C2/C3 are beyond the ferrite.
-        Assert.Equal(RailSection.Upstream, partition.PartSection("C1"));
-        Assert.Equal(RailSection.Downstream, partition.PartSection("C2"));
-        Assert.Equal(RailSection.Downstream, partition.PartSection("C3"));
-        Assert.Equal(RailSection.Upstream, partition.SourceSection(0));
-        Assert.Equal(RailSection.Downstream, partition.LoadSection(0));
+        Assert.Equal(Up, partition.PartSection("C1"));
+        Assert.Equal(Down, partition.PartSection("C2"));
+        Assert.Equal(Down, partition.PartSection("C3"));
+        Assert.Equal(Up, partition.SourceSection(0));
+        Assert.Equal(Down, partition.LoadSection(0));
 
         // Nothing typed any of that — every row above states the DEFAULT side, and C1's answer is
         // the opposite of what it states. That is the whole claim of R-rail25-2a.
@@ -340,34 +344,14 @@ public sealed class SeriesElementTests(ITestOutputHelper output)
         _output.WriteLine(bridged.Refusal);
 
         // And the RUN refuses on it rather than sweeping a circuit the board is not.
-        var refused = PdnSweep.Run(SweepRequest(rail, RailSeriesModel.Of(rail.SeriesElement!), bridged));
+        var refused = PdnSweep.Run(SweepRequest(rail, RailSeriesModel.Of(rail.SeriesElements[0]), bridged));
         Assert.Equal(bridged.Refusal, refused.Refusal);
         Assert.Null(refused.Data);
     }
 
-    // ══ GATE 4 — A SECOND SERIES ELEMENT ═════════════════════════════════════════════════════
-
-    /// <summary>
-    /// <b>Gate 4 (R-rail25-2c).</b> Refused BY NAME, on the document, so every path gets it — the
-    /// window, the CLI's own <c>check</c>, the DC run and the sweep.
-    /// </summary>
-    [Fact]
-    public void Gate4_ASecondSeriesElement_IsRefusedByNameWithWhatToDo()
-    {
-        var rail = TypedRail();
-        rail.Parts.Add(Ferrite() with { Refdes = "FB2" });
-
-        string? refusal = rail.Refusal();
-
-        Assert.NotNull(refusal);
-        Assert.Contains("'FB1'", refusal);
-        Assert.Contains("'FB2'", refusal);
-        Assert.Contains("rail of its own", refusal);
-        _output.WriteLine(refusal);
-
-        // The sweep is one of the paths that gets it, rather than a second copy of the rule.
-        Assert.Equal(refusal, PdnSweep.Run(SweepRequest(rail, null)).Refusal);
-    }
+    // Gate 4 (R-rail25-2c, a second series element refused by name) was retired by brief 35, which
+    // made the sections a tree: SeriesChainTests holds what replaced it — a chain solved against a
+    // closed form, and a cycle and a bridged second element refused by name.
 
     // ══ GATES 6, 7, 8 — THE DC ANSWER ════════════════════════════════════════════════════════
 
@@ -419,7 +403,7 @@ public sealed class SeriesElementTests(ITestOutputHelper output)
         _output.WriteLine(dc.Refusal);
 
         var rail = TypedRail();
-        var element = rail.SeriesElement!;
+        var element = rail.SeriesElements[0];
         rail.Parts[rail.Parts.IndexOf(element)] = element with { Mounted = false };
 
         var sweep = PdnSweep.Run(SweepRequest(rail, RailSeriesModel.Of(rail.Parts.Last())));
@@ -498,7 +482,7 @@ public sealed class SeriesElementTests(ITestOutputHelper output)
         doc.Rails.Add(rail);
 
         var back = RailDocumentIo.Deserialize(RailDocumentIo.Serialize(doc)).Rails[0];
-        var ferrite = back.SeriesElement!;
+        var ferrite = back.SeriesElements[0];
 
         Assert.Equal("FB1", ferrite.Refdes);
         Assert.Equal(600, ferrite.SeriesResistanceOhms!.Value, 1e-9);
@@ -515,7 +499,7 @@ public sealed class SeriesElementTests(ITestOutputHelper output)
     /// The P1 rail of gate 1: no artwork, sides stated. C1 upstream, C2 and C3 downstream, one
     /// observation port on each side.
     /// </summary>
-    private static RailSpec TypedRail(bool withSeriesElement = true)
+    internal static RailSpec TypedRail(bool withSeriesElement = true)
     {
         var rail = new RailSpec
         {
@@ -556,8 +540,8 @@ public sealed class SeriesElementTests(ITestOutputHelper output)
             Rail = rail,
             Parts = new RailPartResolver(Library()).ResolveAll(rail.Parts, railVoltageV: 3.6),
             Sources = [SourceModel()],
-            Series = series,
-            Partition = partition ?? (rail.SeriesElement is null
+            Series = series is null ? [] : [series],
+            Partition = partition ?? (!rail.HasSeriesElements
                                           ? RailSeriesPartition.None(rail)
                                           : RailSeriesPartition.Typed(rail)),
             RankRemovals = false,
@@ -565,7 +549,7 @@ public sealed class SeriesElementTests(ITestOutputHelper output)
 
     private static PdnSweepResult Sweep(RailSpec rail) =>
         PdnSweep.Run(SweepRequest(
-            rail, rail.SeriesElement is { } e ? RailSeriesModel.Of(e) : null));
+            rail, rail.HasSeriesElements ? RailSeriesModel.Of(rail.SeriesElements[0]) : null));
 
     // ── the artwork gates' board ─────────────────────────────────────────────
 

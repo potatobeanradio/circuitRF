@@ -78,6 +78,14 @@ public sealed class RailDcRequest
     /// <summary>The decoupling. In the netlist, carrying no DC path.</summary>
     public IReadOnlyList<PdnShuntPart> ShuntParts { get; init; } = [];
 
+    /// <summary>
+    /// The part library, or null — <b>read for one thing only</b>: a series element that states no
+    /// DC resistance of its own inherits its <c>Other</c> library row's ESR (brief 35, R-rail35-2a),
+    /// through <see cref="RailSeriesModel.Resolve"/>, the same call the window's sweep and parts table
+    /// make. Nothing about a capacitor is read here; DC sees no capacitor.
+    /// </summary>
+    public PartLibrary? PartLibrary { get; init; }
+
     /// <summary>Which of §2.9's two readings to take. <see cref="PdnModelKind.Fast"/> is the
     /// default, and every result says which produced it.</summary>
     public PdnModelKind Model { get; init; } = PdnModelKind.Fast;
@@ -609,49 +617,62 @@ public static class RailDcRun
     /// </remarks>
     private static string? SeriesRefusal(RailSpec rail)
     {
-        if (rail.SeriesElement is not { } element) return null;
+        foreach (var element in rail.SeriesElements)
+        {
+            if (!element.Mounted)
+                return $"Series element {element.Refdes} is UNMOUNTED, which OPENS the rail: it " +
+                       "carries the whole load current beyond it, so taking it off the board does " +
+                       "not remove a branch — it disconnects everything downstream from the source, " +
+                       "and those ports have no voltage rather than a low one. Mount it, or delete " +
+                       "the row to ask about a board that never had it.";
 
-        if (!element.Mounted)
-            return $"Series element {element.Refdes} is UNMOUNTED, which OPENS the rail: it carries " +
-                   "the whole load current, so taking it off the board does not remove a branch — " +
-                   "it disconnects everything downstream from the source, and those ports have no " +
-                   "voltage rather than a low one. Mount it, or delete the row to ask about a board " +
-                   "that never had it.";
-
-        if (element.TerminalA is null || element.TerminalB is null)
-            return $"Series element {element.Refdes} names no terminals, so railRF cannot tell " +
-                   "which two pieces of copper it bridges. Give both of its rail-side terminals — " +
-                   "the refdes and pin of each pad. A refdes on its own is not enough: it resolves " +
-                   "to EVERY pad of the part, which would tie the element's two ends into one node " +
-                   "and model a short.";
+            if (element.TerminalA is null || element.TerminalB is null)
+                return $"Series element {element.Refdes} names no terminals, so railRF cannot tell " +
+                       "which two pieces of copper it bridges. Give both of its rail-side terminals — " +
+                       "the refdes and pin of each pad. A refdes on its own is not enough: it " +
+                       "resolves to EVERY pad of the part, which would tie the element's two ends " +
+                       "into one node and model a short.";
+        }
 
         return null;
     }
 
     /// <summary>
-    /// The rail's own series element as the extraction's input, or empty where it has none.
+    /// The rail's own series elements as the extraction's input, or empty where it has none.
     /// </summary>
     /// <remarks>
     /// <b>It maps onto <see cref="PdnSeriesElement"/> rather than introducing a second
     /// spelling</b> — which is exactly what <c>src/Design/RESOLVED.md</c> §6 said the document
     /// field should do when it arrived. §4.3 makes a series part an ELEMENT and not an annotation:
     /// at DC it is the largest term after the source, and an annotation does not appear in a ranked
-    /// breakdown (R-rail25-3a).
+    /// breakdown (R-rail25-3a). <b>Every one of them</b> since brief 35, so each DCR in a chain is
+    /// its own row of the breakdown, carrying the current of the loads beyond it — which the solve
+    /// produces rather than anything here assuming it.
     ///
     /// <para><b>An unstated DCR is stamped as zero and SAID to be a lower bound</b>
     /// (R-rail25-3b) — the note is <see cref="Assemble"/>'s. Stamping nothing would leave the rail
     /// open, and stamping a defaulted milliohm figure would put a number in a ranked breakdown that
     /// nobody chose.</para>
     /// </remarks>
-    private static IReadOnlyList<PdnSeriesElement> SeriesElementsOf(RailSpec rail)
+    private static IReadOnlyList<PdnSeriesElement> SeriesElementsOf(RailSpec rail, PartLibrary? library)
     {
-        if (rail.SeriesElement is not { TerminalA: { } a, TerminalB: { } b } element) return [];
+        var found = new List<PdnSeriesElement>();
+        foreach (var element in rail.SeriesElements)
+        {
+            if (element is not { TerminalA: { } a, TerminalB: { } b }) continue;
+            var model = RailSeriesModel.Resolve(element, library)!;
 
-        return [new PdnSeriesElement(
-            element.Refdes, a, b, element.DcResistanceOhms ?? 0.0,
-            element.DcResistanceOhms is not null
-                ? "the DC resistance stated on this rail's part row"
-                : "UNSTATED on the part row — stamped as zero, so the total is a lower bound")];
+            found.Add(new PdnSeriesElement(
+                element.Refdes, a, b, model.DcResistanceOhms ?? 0.0,
+                model.DcResistanceFrom switch
+                {
+                    RailSeriesValueSource.Row     => "the DC resistance stated on this rail's part row",
+                    RailSeriesValueSource.Library => "the ESR on this part's part-library row, classed Other",
+                    _ => "UNSTATED on the part row and in the part library — stamped as zero, so the " +
+                         "total is a lower bound",
+                }));
+        }
+        return found;
     }
 
     // ── the extraction request, which differs per rail in exactly one field ────────────────────
@@ -691,7 +712,7 @@ public static class RailDcRun
         // element (brief 25). Appended rather than replacing: they answer different questions —
         // what bridges the gaps imported copper leaves at every pad, and what the designer put in
         // the rail on purpose.
-        SeriesElements  = [.. request.SeriesElements, .. SeriesElementsOf(rail)],
+        SeriesElements  = [.. request.SeriesElements, .. SeriesElementsOf(rail, request.PartLibrary)],
         ShuntParts      = request.ShuntParts,
         Settings        = request.Document.Settings,
         Mesh            = mesh ?? request.Mesh,
@@ -774,7 +795,7 @@ public static class RailDcRun
         // PdnAssembly would have refused a terminal on no copper — so a bridged one is reported as
         // a finding rather than thrown away.
         RailSeriesPartition? seriesPartition = null;
-        if (rail.SeriesElement is not null && extraction.Regions is { } walked)
+        if (rail.HasSeriesElements && extraction.Regions is { } walked)
         {
             seriesPartition = RailSeriesPartition.FromArtworkRegions(rail, walked, request.Pads);
             if (seriesPartition.Refusal is { } partitionProblem) findings.Add(partitionProblem);
@@ -785,15 +806,20 @@ public static class RailDcRun
             }
         }
 
-        if (rail.SeriesElement is { } seriesRow)
+        foreach (var seriesRow in rail.SeriesElements)
         {
-            var seriesModel = RailSeriesModel.Of(seriesRow);
-            if (seriesModel?.UnstatedDcResistanceLine is { } lowerBound) findings.Add(lowerBound);
+            var seriesModel = RailSeriesModel.Resolve(seriesRow, request.PartLibrary)!;
+            if (seriesModel.UnstatedDcResistanceLine is { } lowerBound) findings.Add(lowerBound);
             else notes.Add(
                 $"Series element {seriesRow.Refdes} is on the path at " +
-                $"{(seriesRow.DcResistanceOhms ?? 0) * 1e3:0.###} mΩ, and it carries the whole load " +
-                "current — so it is a row of the breakdown below, ranked with the copper and the " +
-                "source rather than reported beside them.");
+                $"{(seriesModel.DcResistanceOhms ?? 0) * 1e3:0.###} mΩ" +
+                (seriesModel.DcResistanceFrom == RailSeriesValueSource.Library
+                    ? " (its part-library row's ESR)" : "") +
+                (rail.SeriesElements.Count == 1
+                    ? ", and it carries the whole load current"
+                    : ", and it carries the current of every load beyond it") +
+                " — so it is a row of the breakdown below, ranked with the copper and the source " +
+                "rather than reported beside them.");
         }
 
         if (chained is not null) notes.Add(chained.Describe());
@@ -843,7 +869,10 @@ public static class RailDcRun
             // Carried through from the extraction rather than re-derived: the window draws the
             // classification the numbers were priced against, and the copper the solve walked.
             Regions        = extraction.Regions,
-            Sections       = seriesPartition?.Islands ?? new Dictionary<int, RailSection>(),
+            Sections       = seriesPartition?.Islands ?? new Dictionary<int, int>(),
+            SectionNames   = seriesPartition is { Refusal: null } named
+                ? [.. Enumerable.Range(0, named.SectionCount).Select(named.SectionName)]
+                : [],
             Classification = extraction.Classification,
             ViaCheck       = viaCheck,
             Ports          = ports,

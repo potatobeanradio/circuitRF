@@ -183,8 +183,9 @@ public sealed class RailDcResult
     public PdnRailRegionSet? Regions { get; init; }
 
     /// <summary>
-    /// Which side of this rail's series element each of <see cref="Regions"/>' power islands is on,
-    /// by island index — <b>what the copper map shades from</b> (brief 25, R-rail25-4c).
+    /// Which SECTION of this rail each of <see cref="Regions"/>' power islands is in, by island
+    /// index — <b>what the copper map shades from</b> (brief 25, R-rail25-4c; brief 35, R-rail35-3d).
+    /// Section 0 is the source's; <see cref="SectionNames"/> names each one.
     /// </summary>
     /// <remarks>
     /// <b>Empty on every rail with no series element</b>, which is every rail written before brief
@@ -196,8 +197,12 @@ public sealed class RailDcResult
     /// the picture does for itself — the section a part is shaded in has to be the section its
     /// branch was stamped on.</para>
     /// </remarks>
-    public IReadOnlyDictionary<int, RailSection> Sections { get; init; } =
-        new Dictionary<int, RailSection>();
+    public IReadOnlyDictionary<int, int> Sections { get; init; } = new Dictionary<int, int>();
+
+    /// <summary>What a reader calls each section, by section index — "upstream"/"downstream" on a
+    /// one-element rail, "beyond FB1" on a chain (<see cref="RailSeriesPartition.SectionName"/>).
+    /// Empty wherever <see cref="Sections"/> is.</summary>
+    public IReadOnlyList<string> SectionNames { get; init; } = [];
 
     /// <summary>
     /// Which copper the fast model treated as a trace and which it meshed, with the reason for each
