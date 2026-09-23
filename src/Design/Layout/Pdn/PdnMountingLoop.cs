@@ -124,8 +124,9 @@ public sealed class PdnMountingLoopRequest
     /// <summary>The board's pads. A part's power pad and its return pad are found here by net.</summary>
     public required IReadOnlyList<PlacedPin> Pads { get; init; }
 
-    /// <summary>The reference return's net, where one is named. Without it a part's return pad
-    /// cannot be told from its power pad and every part is unresolved, which is what happens.</summary>
+    /// <summary>The reference return's net — named in the document, or measured off the copper by
+    /// <c>Regions.ResolveReturnNet</c> where none is. Without one a part's return pad cannot be told
+    /// from its power pad and every part is unresolved, which is what happens.</summary>
     public string? ReferenceNet { get; init; }
 
     /// <summary>

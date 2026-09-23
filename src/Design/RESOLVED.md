@@ -11752,3 +11752,22 @@ on-resistance. Brief 25 allowed one series element and nothing in the window cou
   lumped-R-L bias caveat, which was about a model it did not have.
 - `RailDcRequest.PartLibrary` exists for the DCR fallback only; the CLI resolves it through
   `RailArtwork.ResolvePartLibrary` as the window does. Gate: `tests/Ui.Tests/RailRf/SeriesChainTests.cs`.
+
+## The mounting loop reads the RESOLVED return, not only a named one (2026-09-23)
+
+Brief 31 made `Regions.ResolveReturnNet` the one answer for the solve, but two consumers kept reading
+the document's `ReferenceNet` directly: `RailPartDiscovery` (and through it the mounting loops the
+`rail` verb prints) and the window's `ComputedMounting` map, which the parts table and the sweep read.
+So with the Return row on "measured from the copper" — the row's first option — the solve returned on
+GND and every part's computed loop said "no reference net is named", falling back to a typed or
+library value with nothing wrong on the face. The shipped example names `GND`, which is why no gate saw
+it.
+
+- **Discovery takes `request.ReferenceNet ?? regions.ReturnNet.Net`.** The regions are the extraction's
+  own, so this is the solve's answer rather than a second rule; the CLI got it with no change of its own.
+- **The window's `ReturnNetFor(rail)`**: named, else its own measurement for that rail's reference layer,
+  else the last extraction's — and from an extraction only a MEASURED basis, since a run made while a net
+  was named carries that name after the user has switched to "measured".
+- **The parts table rebuilds when a measurement lands under no name**, including when the net is the
+  same as before: `GND` by name and `GND` measured are the same string, and keying the rebuild on the net
+  alone left the rows read against the name.

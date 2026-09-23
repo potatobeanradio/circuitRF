@@ -298,6 +298,34 @@ public sealed class RailPartDiscoveryTests(ITestOutputHelper output) : IDisposab
         Assert.Equal(RailDiscoveryState.NotExtracted, empty.State);
     }
 
+    /// <summary>
+    /// <b>With no net named, a mounting loop is read against the return the extraction MEASURED.</b>
+    /// Only the named net used to reach the loop, so a board whose Return row was left on "measured"
+    /// solved against GND and reported every part's loop as having no reference net.
+    /// </summary>
+    [Fact]
+    public void WithNoNamedReturn_TheMountingLoopUsesTheReturnTheExtractionMeasured()
+    {
+        // A via on every pad, so the loop has both of its sides wherever it has a return net.
+        var vias = Pads().Select(p => (LayoutShape)new ViaShape
+            { Layer = Top, X = p.X, Y = p.Y, DrillSize = Um(300), PadSize = Um(600) }).ToList();
+
+        RailDiscoveryResult Discover(PdnReturnNet ret) => RailPartDiscovery.Discover(new RailDiscoveryRequest
+        {
+            Rail = Rail(), Pads = Pads(), Technology = Tech(), Shapes = vias, DbuPerMicron = Dbu,
+            Regions = Walked() with { ReturnNet = ret },
+            ReferenceNet = null,
+        });
+
+        var measured = Discover(new PdnReturnNet("GND", PdnReturnNetBasis.Measured, "BOT"));
+        Assert.Equal(2, measured.Offered.Count);
+        Assert.All(measured.Offered, c => Assert.True(c.Mounting?.Henries > 0, c.Mounting?.Describe()));
+
+        // The vacuity guard: the same board with a return nobody could resolve still says so.
+        var unresolved = Discover(new PdnReturnNet(null, PdnReturnNetBasis.Unresolved, "BOT"));
+        Assert.All(unresolved.Offered, c => Assert.Contains("no reference net is named", c.Mounting!.Unresolved));
+    }
+
     // ══ 4 — THE WINDOW: IDEMPOTENT, AND ONE UNDO ══════════════════════════════════════════════
 
     /// <summary>

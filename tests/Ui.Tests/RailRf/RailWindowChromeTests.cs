@@ -440,6 +440,17 @@ public class RailWindowChromeTests
         Assert.Contains("Name=\"ReferenceSelector\"", grid, StringComparison.Ordinal);
         Assert.Contains("Name=\"ReturnNetSelector\"", grid, StringComparison.Ordinal);
 
+        // …all sized by the grid's one scoped style, and no label carrying a Margin of its own: a
+        // local Margin replaces rowlbl's right-hand gap, and a local size lets one combo drift
+        // (the flagged border made the Ref combo a pixel taller than the other two).
+        Assert.Contains("RowSpacing=\"3\"", grid, StringComparison.Ordinal);
+        string comboStyle = Regex.Replace(Block(grid, "Selector=\"ComboBox\"", "</Style>"), @"\s+", " ");
+        Assert.Contains("Property=\"Height\" Value=\"24\"", comboStyle, StringComparison.Ordinal);
+        foreach (System.Text.RegularExpressions.Match combo in Regex.Matches(grid, @"<ComboBox\b[^>]*>"))
+            Assert.DoesNotMatch(@"\b(Height|MinHeight|Margin|FontSize|Padding)=", combo.Value);
+        foreach (System.Text.RegularExpressions.Match label in Regex.Matches(grid, @"<TextBlock\b[^>]*rowlbl[^>]*>"))
+            Assert.DoesNotContain("Margin=", label.Value, StringComparison.Ordinal);
+
         // The square style exists and is square by explicit metrics, not by arithmetic on padding.
         // Whitespace-insensitive: the alignment of these setters is formatting, not the rule.
         string style = Regex.Replace(Block(xaml, "Selector=\"Button.sqbtn\"", "</Style>"), @"\s+", " ");

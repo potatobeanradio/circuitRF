@@ -527,7 +527,7 @@ public sealed partial class RailRfViewModel
                 Pads         = board.Pads,
                 Regions      = SeriesRegions(rail),
                 Bom          = Bom,
-                ReferenceNet = Document.ReferenceNet,   // live, not the board's snapshot
+                ReferenceNet = ReturnNetFor(rail),
 
                 // NO TECHNOLOGY AND NO SHAPES, deliberately. Those are what discovery computes a
                 // candidate's MOUNTING LOOP from, and nothing on this window reads one: a row gets

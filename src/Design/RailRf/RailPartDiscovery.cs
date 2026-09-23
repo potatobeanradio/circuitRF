@@ -343,7 +343,8 @@ public sealed class RailDiscoveryRequest
     public int DbuPerMicron { get; init; } = LayoutUnits.DefaultDbuPerMicron;
 
     /// <summary>The reference return's net, where one is named — the mounting loop's own input.
-    /// <b>Not the predicate</b>: which copper is the reference is the region walk's answer and this
+    /// Null takes the net <see cref="Regions"/>' extraction resolved (<c>ReturnNet</c>), which is
+    /// the one the solve returned on. <b>Not the predicate</b>: which copper is the reference is the region walk's answer and this
     /// is only how a loop tells a part's return pad from its power pad.</summary>
     public string? ReferenceNet { get; init; }
 }
@@ -365,7 +366,12 @@ public static class RailPartDiscovery
             return RailDiscoveryResult.None(RailDiscoveryState.NotExtracted);
 
         var rail = request.Rail;
-        string? referenceNet = request.ReferenceNet;
+        // The return the EXTRACTION resolved where the document names none — the net it measured
+        // off the copper on the reference layer. Only the named net used to reach here, so on a
+        // board whose return row was left on "measured" the solve had a return and every mounting
+        // loop said none was named. The regions are that solve's own answer, so this is not a
+        // second rule.
+        string? referenceNet = request.ReferenceNet is { Length: > 0 } named ? named : regions.ReturnNet.Net;
 
         var already = new HashSet<string>(
             rail.Parts.Select(p => p.Refdes).Where(r => r.Length > 0),
@@ -493,7 +499,7 @@ public static class RailPartDiscovery
         return new RailDiscoveryResult(
             RailDiscoveryState.Discovered,
             [.. offeredRows.Select(p => new RailDiscoveryCandidate(p, null))
-                           .Zip(Mounting(request, offeredRows), (c, m) => c with { Mounting = m })],
+                           .Zip(Mounting(request, referenceNet, offeredRows), (c, m) => c with { Mounting = m })],
             skipped,
             notes)
         {
@@ -536,7 +542,7 @@ public static class RailPartDiscovery
     /// the caller supplied no geometry to read one from.
     /// </summary>
     private static IReadOnlyList<PdnMountingLoop?> Mounting(
-        RailDiscoveryRequest request, IReadOnlyList<RailPart> rows)
+        RailDiscoveryRequest request, string? referenceNet, IReadOnlyList<RailPart> rows)
     {
         if (rows.Count == 0) return [];
         if (request.Technology is not { } tech || request.Shapes.Count == 0)
@@ -550,7 +556,7 @@ public static class RailPartDiscovery
                 Technology   = tech,
                 DbuPerMicron = request.DbuPerMicron,
                 Pads         = request.Pads,
-                ReferenceNet = request.ReferenceNet,
+                ReferenceNet = referenceNet,
             },
             rows.Select(r => r.Refdes));
 

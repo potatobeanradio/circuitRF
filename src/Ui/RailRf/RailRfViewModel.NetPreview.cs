@@ -366,7 +366,14 @@ public sealed partial class RailRfViewModel
         {
             // A DIFFERENT return changes what every cached preview walked: a rail seed never claims
             // the return net, so the same pick outlines different copper under a different return.
-            if (!string.Equals(_referenceReturnNet, measured?.Net, StringComparison.OrdinalIgnoreCase))
+            bool returnChanged = !string.Equals(_referenceReturnNet, measured?.Net, StringComparison.OrdinalIgnoreCase);
+
+            // What the parts table's mounting loops read (ReturnNetFor) moves when the measured net
+            // does — and also when the SAME net stops being a name and becomes a measurement, or is
+            // measured on another layer, since until now the rows were read against something else.
+            bool partsReturnChanged = namedReturn is null
+                && (returnChanged || _referenceMeasuredNamed is not null || _referenceNetMeasuredOn != layer);
+            if (returnChanged)
             {
                 _netPreviews.Clear();
                 _netPreviewNotes.Clear();
@@ -378,6 +385,8 @@ public sealed partial class RailRfViewModel
             _referenceReturnNet = measured?.Net;
             ReferenceMeasurements++;
             RefreshNetMarks();
+
+            if (partsReturnChanged) RebuildParts();
         }
 
         if (job.PreviewNet is { } net && preview is not null)

@@ -214,6 +214,30 @@ public sealed class RailRfReportedDefectsTests
         Assert.True(vm.AvailableNets.Single(r => r.Name == "GND").IsReferenceReturn);
     }
 
+    /// <summary>
+    /// <b>With the Return row left to the copper, the parts table still gets its mounting loops.</b>
+    /// The loop told a part's return pad from its power pad by the NAMED net only, so choosing
+    /// "measured" — the default the row offers — solved against GND and left every row without a
+    /// computed loop. The example names no loop on any row, so each one it carries is computed.
+    /// </summary>
+    [Fact]
+    public void LeftToTheCopper_TheReturnStillGivesThePartsTheirComputedMountingLoops()
+    {
+        var vm = Example();
+        vm.PickRail("+3V3");
+
+        vm.SelectedReturnNetOption = RailRfViewModel.MeasuredReturnOption;
+        Assert.Null(vm.Document.ReferenceNet);
+
+        vm.ConfirmReferenceCommand.Execute(null);
+        vm.RefreshNetMarks();
+        Assert.Equal("GND", vm.ReferenceReturnNet);
+        Assert.Equal("GND", vm.ReturnNetFor(vm.SelectedRail!));
+
+        Assert.True(vm.Parts.Single(p => p.Refdes == "C1").MountingInductanceHenries > 0,
+                    "C1 has no computed mounting loop under a measured return.");
+    }
+
     // ── fixture ─────────────────────────────────────────────────────────────────────────────────
 
     private static RailRfViewModel Example(bool inlineCopperRead = true)

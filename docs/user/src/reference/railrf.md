@@ -92,7 +92,8 @@ yours, so nothing is rounded by the choice.</p>
 |---|---|
 | **The artwork** | Gerbers plus the drill, a `.clay` layout, or a `.kicad_pcb`. Mandatory &mdash; it is the thing being measured. |
 | **The stackup** | A technology whose conductors state a **thickness** and a **conductivity**. Mandatory: copper with neither has no sheet resistance, and a mesh built on it would report a perfect plane. |
-| **The rail and its reference** | Which net, and which conductor is its return. **railRF never infers the reference** &mdash; you say which layer it is. |
+| **The rail and its reference layer** | Which net the rail is, and which layer its current comes back on (**Ref.**). **railRF never infers the reference layer** &mdash; it proposes one, and nothing runs until you confirm it. |
+| **The return net** | Which net on that layer is the return (**Return**). Usually left to the copper, which measures it; named only where the copper cannot say. See [Ref. and Return](#return). |
 | **The sources** | Where the rail is fed, and by what: an open-circuit voltage with a series R and L, or a Touchstone file. |
 | **The loads and their currents** | Where the rail is drawn from, and how much. Nothing in a BOM or a placement file carries a current, so this is typed. |
 | **The parts** | The decoupling, by part number, against a part library (`.crlib`) holding C, the self-resonant frequency, ESR and a bias curve. |
@@ -124,6 +125,38 @@ the two in one press.</p>
 solve and is still reported &mdash; listed as <i>observed</i> rather than quietly dropped &mdash; and over
 frequency it is a place the impedance is judged. An empty current and a stated zero are different
 statements, so railRF never defaults one to the other.</p>
+</div>
+
+### Ref. and Return: a layer and a net {#return}
+
+The rail card has two rows under the rail, and they answer different questions. **Ref.** is a
+**layer**: the copper the rail's current comes back through, usually the ground plane under it.
+**Return** is a **net**: which of the copper on that layer actually *is* the return.
+
+A layer alone is not enough, because a real plane layer carries more than one net. A 3.3 V island
+sitting in an anti-pad on the GND plane is on the reference layer and is not ground; a GND pour on the
+bottom layer, under a supply pad, is not on the reference layer and is ground. Knowing the return net is
+what lets railRF leave the island out of the return, and keep the pour out of the rail.
+
+| Return row | What railRF does |
+|---|---|
+| **measured from the copper** (the default) | Reads which net the copper on the Ref. layer is connected to. This is right on nearly every board, and the note under the row says what it found: *Return: 'GND', measured from the copper on 'GND' (layer 3/0)*. |
+| **a named net** | Uses that net, and the note says *named in the document*. Name one when railRF refuses because the copper on the Ref. layer does not measure to a single net, or when a board carries more than one ground (`GND` and `PGND`) and you want to say which this rail returns on. |
+
+Where the return cannot be settled **and** the rail has copper of its own on the Ref. layer, the rail is
+**refused rather than solved**: taking every piece of that layer as the return would count the rail as its
+own return, and the drop it reported would look like an ordinary number. The refusal names the Return row.
+
+<div class="callout note">
+<span class="label">One return per board</span>
+<p><b>Ref.</b> is set per rail. <b>Return</b> is set once for the board (the <code>.crail</code>'s
+<code>ReferenceNet</code>) and every rail's card shows the same choice, so changing it on one rail changes
+it for all of them.</p>
+<p>The return net is also what the mounting loops railRF computes from the via geometry are measured
+against: a capacitor's power pad and its return pad are told apart by net and nothing else. A measured
+return serves for that exactly as a named one does. railRF never picks a net because its name looks like
+a ground &mdash; on a board with both <code>GND</code> and <code>PGND</code>, a guess would measure half
+the parts against the wrong plane.</p>
 </div>
 
 ### The part library {#part-library}

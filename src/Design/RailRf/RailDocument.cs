@@ -196,11 +196,13 @@ public sealed class RailDocument
     /// <summary>
     /// The net the reference return is on — <c>GND</c>, <c>AGND</c>.
     ///
-    /// <para><b>Named rather than inferred, and the mounting loop has no second side without it.</b>
-    /// <c>PdnMountingLoopExtractor</c> tells a part's power pad from its return pad by NET and
-    /// nothing else; with no reference net every part is unresolved and says so. railRF will not
-    /// guess it from a name that looks like a ground — a board carrying both <c>GND</c> and
-    /// <c>PGND</c> would have half its parts measured against the wrong plane, silently.</para></summary>
+    /// <para><b>Null is "measured from the copper"</b>, and the ordinary state: the extraction resolves
+    /// the net the confirmed reference layer carries (<c>Regions.ResolveReturnNet</c>), and the solve,
+    /// part discovery and <c>PdnMountingLoopExtractor</c> all take that answer — the loop tells a
+    /// part's power pad from its return pad by NET and nothing else. Named where the copper cannot
+    /// say. railRF never guesses it from a name that looks like a ground — a board carrying both
+    /// <c>GND</c> and <c>PGND</c> would have half its parts measured against the wrong plane,
+    /// silently.</para></summary>
     public string? ReferenceNet { get; set; }
 
     /// <summary>Every rail on this board, in declaration order. <see cref="RailOrder"/> computes the

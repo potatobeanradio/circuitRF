@@ -504,7 +504,7 @@ public static class Regions
         return
             $"{why} — and {what} is on that layer too. Taking every piece on it as the return would " +
             "count the rail as its own return, so this rail is not solved. Name the reference net: " +
-            "pick it in the reference row of the rail's card, or set \"ReferenceNet\" in the .crail.";
+            "pick it in the Return row of the rail's card, or set \"ReferenceNet\" in the .crail.";
     }
 
     /// <summary>A layer as a sentence names it — "'GND' (layer 3/0)".</summary>

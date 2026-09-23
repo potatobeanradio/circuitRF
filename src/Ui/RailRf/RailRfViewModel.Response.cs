@@ -299,7 +299,7 @@ public sealed partial class RailRfViewModel
             Technology = board.Technology,
             DbuPerMicron = board.DbuPerMicron,
             Pads = board.Pads,
-            ReferenceNet = _document.ReferenceNet,   // live, not the board's snapshot
+            ReferenceNet = ReturnNetFor(rail),
         };
 
         var map = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
@@ -322,6 +322,32 @@ public sealed partial class RailRfViewModel
     /// copper map are built from. Null before the first solve, and the sweep then takes the rows'
     /// own stated sides, which is exactly what a rail with no artwork gets.
     /// </remarks>
+    /// <summary>
+    /// The net <paramref name="rail"/>'s return is on, for its mounting loops: the one the document
+    /// names, else the one measured off the copper on this rail's reference layer — the window's own
+    /// measurement where it was made for that layer, else the one this rail's last extraction
+    /// measured. Null where neither exists yet.
+    /// </summary>
+    /// <remarks>
+    /// <b>The live document, never the board's snapshot</b> — the Return row edits it after the board
+    /// was read. <b>And never a NAMED answer off an old extraction</b>: a run made while a net was
+    /// named carries that name, and choosing "measured" afterwards is exactly the case where it no
+    /// longer applies. Both measurements come out of <c>Regions.ResolveReturnNet</c>, so they are one
+    /// answer reached twice rather than two rules.
+    /// </remarks>
+    internal string? ReturnNetFor(RailSpec rail)
+    {
+        if (NamedReturnNet is { } named) return named;
+
+        if (rail.ReferenceLayer is { } layer && _referenceNetMeasuredOn == layer
+            && _referenceMeasuredNamed is null && _referenceReturnNet is { Length: > 0 } measured)
+            return measured;
+
+        return SeriesRegions(rail)?.ReturnNet is { Basis: PdnReturnNetBasis.Measured, Net: { Length: > 0 } solved }
+            ? solved
+            : null;
+    }
+
     private PdnRailRegionSet? SeriesRegions(RailSpec rail) =>
         Board is null
             ? null

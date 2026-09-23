@@ -886,14 +886,32 @@
 
                                  THE BUTTONS SIT IN THE RAIL ROW'S OWN COLUMNS, and the reference row
                                  simply leaves them empty — which is what reserves the width. -->
-                            <Grid ColumnDefinitions="Auto,*,Auto,Auto" RowDefinitions="Auto,Auto,Auto">
+                            <Grid ColumnDefinitions="Auto,*,Auto,Auto" RowDefinitions="Auto,Auto,Auto" RowSpacing="3">
+                                <!-- ONE SIZE FOR ALL THREE COMBOS, stated once (owner, 2026-09-23).
+                                     The height is EXPLICIT because the flagged style thickens a
+                                     combo's border to 1.5, which made the Ref combo a pixel taller
+                                     than its neighbours whenever it was flagged; 24 is the square
+                                     buttons' height, so the Rail combo is flush with them too. The
+                                     row gap is RowSpacing rather than a Margin on each label: a
+                                     local Margin replaces rowlbl's whole margin, right-hand gap
+                                     included, which is how Ref and Return lost theirs. -->
+                                <Grid.Styles>
+                                    <Style Selector="ComboBox">
+                                        <Setter Property="FontSize"                 Value="10"/>
+                                        <Setter Property="Height"                   Value="24"/>
+                                        <Setter Property="MinHeight"                Value="0"/>
+                                        <Setter Property="Padding"                  Value="6,1"/>
+                                        <Setter Property="HorizontalAlignment"      Value="Stretch"/>
+                                        <Setter Property="VerticalAlignment"        Value="Center"/>
+                                        <Setter Property="VerticalContentAlignment" Value="Center"/>
+                                    </Style>
+                                </Grid.Styles>
                                 <TextBlock Classes="detailLabel rowlbl" Text="Rail"/>
                                 <!-- ItemsSource BEFORE SelectedItem, always. Declared in that order
                                      here and built in that order in the view model: a combo whose
                                      ItemsSource binding attaches after the selection was set drops it
                                      silently, which is the wBond round-6 blank-Group-combo bug. -->
-                                <ComboBox Grid.Column="1" Name="RailSelector" FontSize="10"
-                                          MinHeight="0" Padding="6,1" HorizontalAlignment="Stretch"
+                                <ComboBox Grid.Column="1" Name="RailSelector"
                                           ItemsSource="{Binding Rails}"
                                           SelectedItem="{Binding SelectedRailName, Mode=TwoWay}"
                                           ToolTip.Tip="Which rail this window is showing. One rail is analysed at a time; the set is solved in dependency order."/>
@@ -937,8 +955,7 @@
                                     <mi:MaterialIcon Kind="Delete" Width="14" Height="14"/>
                                 </Button>
 
-                                <TextBlock Grid.Row="1" Classes="detailLabel rowlbl" Text="Ref."
-                                           Margin="0,3,0,0"/>
+                                <TextBlock Grid.Row="1" Classes="detailLabel rowlbl" Text="Ref."/>
                                 <!-- EVERY CONDUCTOR OF THE STACKUP IS IN THIS LIST, and the ones that
                                      claim no drawing layer are in it DISABLED (owner, 2026-09-21). A
                                      reference is named by a drawing layer, so such a conductor cannot
@@ -948,8 +965,6 @@
                                      The row says what is missing and the note under the combo says
                                      where to fix it. -->
                                 <ComboBox Grid.Row="1" Grid.Column="1" Name="ReferenceSelector"
-                                          FontSize="10" Margin="0,3,0,0"
-                                          MinHeight="0" Padding="6,1" HorizontalAlignment="Stretch"
                                           Classes.flagged="{Binding IsReferenceLayerFlagged}"
                                           ItemsSource="{Binding ReferenceLayerOptions}"
                                           SelectedItem="{Binding SelectedReferenceLayer, Mode=TwoWay}"
@@ -967,11 +982,8 @@
                                      refusal for a return the copper cannot resolve. The note under
                                      it says which net was used and where that came from, because the
                                      run and this row read the same function. -->
-                                <TextBlock Grid.Row="2" Classes="detailLabel rowlbl" Text="Return"
-                                           Margin="0,3,0,0"/>
+                                <TextBlock Grid.Row="2" Classes="detailLabel rowlbl" Text="Return"/>
                                 <ComboBox Grid.Row="2" Grid.Column="1" Name="ReturnNetSelector"
-                                          FontSize="10" Margin="0,3,0,0"
-                                          MinHeight="0" Padding="6,1" HorizontalAlignment="Stretch"
                                           ItemsSource="{Binding ReturnNetOptions}"
                                           SelectedItem="{Binding SelectedReturnNetOption, Mode=TwoWay}"
                                           ToolTip.Tip="The net this rail's current returns on. Left to the copper, railRF measures it from the reference layer; name it where the copper cannot say (the .crail's ReferenceNet)."/>
