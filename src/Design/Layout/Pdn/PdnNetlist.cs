@@ -421,7 +421,10 @@ public sealed class PdnNetlist
     public required IReadOnlyList<PdnPortBinding> Ports { get; init; }
 
     /// <summary>Which model produced this, which reference extent was used, what was defaulted.</summary>
-    public required PdnProvenance Provenance { get; init; }
+    /// <remarks>Set after construction in one place: <c>RailDcRun</c> writes the MEASURED
+    /// discretisation error onto an Accurate result once it has solved the second mesh (R-rail32-2)
+    /// — a fact about the answer that the extraction, which never solves, cannot know.</remarks>
+    public PdnProvenance Provenance { get; internal set; } = null!;
 }
 
 /// <summary>

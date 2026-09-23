@@ -409,10 +409,16 @@ public sealed class RailZMapTests(ITestOutputHelper output)
             "collision this closes");
         Assert.Contains(result.Answer.Notes, n => n.Contains("meshed itself", StringComparison.Ordinal));
 
-        // This rail is three galvanically separate pieces, so the drive reaches one of them and
-        // the other two solve to exactly zero — which is NOT a low impedance. They are counted and
-        // named rather than dropped into an uncoloured patch nobody can account for.
-        Assert.Equal(3, result.Answer.Pieces);
+        // This rail is more than one piece, so the drive reaches one of them and the others solve
+        // to exactly zero — which is NOT a low impedance. They are counted and named rather than
+        // dropped into an uncoloured patch nobody can account for.
+        //
+        // HOW MANY is not asserted (R-rail32). The rail walks to two galvanic regions at every
+        // pitch; the cavity counts its pieces over cells where the rail FACES its reference, and
+        // copper that leaves the reference splits one region into two there at some pitches and
+        // not others — 3 at 0.5, 0.6 and 0.75 mm, 2 at 0.65, 0.703 and 0.8 mm. This test once
+        // pinned 3, which was the count at the pitch the cavity happened to choose.
+        Assert.True(result.Answer.Pieces > 1, $"{result.Answer.Pieces} piece(s)");
         Assert.True(result.Answer.UnreachableCells > 0);
         Assert.Contains(result.Answer.Notes,
             n => n.Contains("cannot reach", StringComparison.Ordinal)

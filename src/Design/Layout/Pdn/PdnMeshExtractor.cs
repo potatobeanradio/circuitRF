@@ -37,20 +37,32 @@
 // meshing, and ANY CODE THAT SPECIAL-CASES A RECTANGLE HAS MADE IT A STRETCH GOAL AGAIN. There is no
 // such case below.
 //
-// ── WHY THE CONDUCTANCES ARE BUILT FROM AREAS AND NOT FROM CELL COUNTS ─────────────────────────
+// ── WHY THE CONDUCTANCES ARE BUILT FROM THE COPPER AND NOT FROM CELL COUNTS ────────────────────
 //
 // A binary present/absent cell makes a conductor's width a multiple of Δ, so a 0.3 mm trace meshed
 // at 0.1 mm is right and the same trace meshed at 0.13 mm is 33 % wrong — silently, and in whichever
-// direction the rounding fell. Instead each cell carries the AREA of copper actually inside it, and
-// an edge is the series pair of the two half-cells it joins:
+// direction the rounding fell. Instead each edge between two cells conducts through the copper the
+// two cells actually SHARE across it (R-rail32-2):
 //
-//     half-cell resistance along x   =  dx² / (2 · σ · T · A)        A = copper area in the cell
-//     R(edge)                        =  half(i) + half(i+1)
+//     R(edge)  =  ((dx(i) + dx(i+1)) / 2)  /  (σ · T · shared copper along the edge)
 //
-// which is the ordinary finite-volume harmonic average. On a straight trace of ANY width and ANY
-// alignment this sums, exactly, to ρ·L/(W·T) — the closed form §7 gates against — because the areas
-// in a column always add up to the real width whether or not the grid lines fall on the edges.
-// That is what lets the DC mesh be coarse (R-rail3-14) without being optimistic.
+// On a straight trace of ANY width, at ANY angle and ANY pitch, a uniform field satisfies these
+// equations exactly — the flux through each edge is the true flux through the copper on it, and a
+// cut cell's walls carry none — so the sum is ρ·L/(W·T), the closed form §7 gates against, whether
+// or not the grid lines fall on the edges. That is what lets the DC mesh be coarse (R-rail3-14)
+// without being optimistic.
+//
+// Each cell still carries the AREA of copper inside it: that is what R-rail3-7's area gate and the
+// shunt branch read. The conductances used to be built from it — the half-cell harmonic average
+// dx²/(2·σ·T·A) — which is the same number on an axis-aligned trace and was 19 % high on a 45° one
+// three cells wide, because every partial cell along both edges became a series bottleneck.
+//
+// ── A POINT NEVER ATTACHES TO A SLIVER (R-rail32-1) ────────────────────────────────────────────
+//
+// A cell clipping a plane's corner holds a few square microns and shares a few microns of edge; a
+// source, a load or a via attached THERE pays a resistance set by where the grid lines fell. On a
+// field board that was the whole of a 3.6× error, all of it in ONE edge beside the reference point.
+// MeshBuilder.Settle moves such an attachment to the fuller neighbour it shares the most copper with.
 
 using Clipper2Lib;
 using CircuitRF.Core;
@@ -95,8 +107,10 @@ public sealed class PdnMeshSettings
     /// <summary>How far beyond a port's own pads the refined band reaches, in base cells.</summary>
     public int PortRefinementMarginCells { get; set; } = 2;
 
-    /// <summary>The ceiling on cells, power and reference together. A mesh above it is COARSENED and
-    /// the coarsening is reported — never silently truncated, and never run to exhaustion.</summary>
+    /// <summary>The ceiling on cells, power and reference together — cells that EXIST, which is to
+    /// say cells with copper in them, not the bounding grid they are cut from (R-rail32-1). A mesh
+    /// above it is COARSENED and the coarsening is reported, on the cell size's own basis as well as
+    /// in a note — never silently truncated, and never run to exhaustion.</summary>
     public int MaxCells { get; set; } = 400_000;
 
     /// <summary>
@@ -292,6 +306,18 @@ public static class PdnMeshExtractor
     /// <summary>Extracts <paramref name="request"/>'s rail into a netlist, or refuses and says why.</summary>
     public static PdnExtraction Extract(PdnExtractionRequest request)
     {
+        var plan = Plan(request);
+        return plan.Refusal ?? plan.At(request.Mesh.CellsAcrossMinimumFeature);
+    }
+
+    /// <summary>
+    /// Everything an extraction decides BEFORE it picks a pitch — the rail's copper, its return,
+    /// the conductors, the narrowest copper — so the same rail can be meshed at a second pitch for
+    /// the price of the mesh alone (R-rail32-2). On the field board the part before the pitch is
+    /// most of the extraction's time.
+    /// </summary>
+    internal static PdnMeshPlan Plan(PdnExtractionRequest request)
+    {
         var rail = request.Rail;
         var tech = request.Technology;
         var diagnostics = new List<string>();
@@ -353,167 +379,12 @@ public static class PdnMeshExtractor
             return PdnExtraction.Refused(noReturn, regions);
 
         // ── the conductors, and what each square of them costs ─────────────────────────────────
-        double celsius = request.Settings.CopperTemperatureCelsius;
-        if (ResolveConductors(request, regions, referenceLayer, out var conductors, out var byLayer)
+        if (ResolveConductors(request, regions, referenceLayer, out _, out var byLayer)
             is { } conductorRefusal)
             return PdnExtraction.Refused(conductorRefusal, regions);
 
-        // ── the cell size (R-rail3-14) ─────────────────────────────────────────────────────────
-        long minFeature = MinimumFeatureWidthDbu(regions.Power);
-        double dbuPerMetre = request.DbuPerMicron * 1e6;
-        long baseDeltaDbu;
-        string cellBasis;
-
-        // ── R-rail14-2: BOTH rules bind now, and the cell is the smaller of the two ────────────
-        //
-        // WavelengthCellSizeMetres carries the whole argument; what is here is only the choice. The
-        // basis names which one bound, because the two fail in opposite directions and neither
-        // failure reports anything: too coarse for the feature loses a thin trace's resistance, too
-        // coarse for the wavelength loses the resonance the cavity band exists to find.
-        double epsilonR = LargestEpsilonR(tech);
-        double lambdaMetres = WavelengthCellSizeMetres(request.FrequencyHz, epsilonR);
-        long lambdaDbu = double.IsFinite(lambdaMetres) && lambdaMetres > 0
-            ? Math.Max(1, (long)Math.Floor(lambdaMetres * dbuPerMetre))
-            : long.MaxValue;
-
-        if (request.Mesh.CellSizeMetres is { } stated && stated > 0)
-        {
-            baseDeltaDbu = Math.Max(1, (long)Math.Round(stated * dbuPerMetre));
-            cellBasis = $"stated: {stated * 1e3:0.###} mm";
-
-            // A STATED size is honoured and never silently narrowed — it is the knob the convergence
-            // sweeps turn — but a stated size coarser than the wavelength rule produces a curve with
-            // no resonance in it and looks entirely normal, so it is said.
-            if (baseDeltaDbu > lambdaDbu)
-                notes.Add(
-                    $"The stated cell size, {stated * 1e3:0.###} mm, is coarser than the " +
-                    $"{lambdaMetres * 1e3:0.###} mm the shortest wavelength asks for at " +
-                    $"{PdnMask.Hertz(request.FrequencyHz)} in εr {epsilonR:0.###} (λ/20). A cell longer " +
-                    "than that cannot carry the phase across itself, so a plane resonance in this " +
-                    "band is not in the model at all — the curve will look smooth and be missing it.");
-        }
-        else
-        {
-            int across = Math.Max(1, request.Mesh.CellsAcrossMinimumFeature);
-            long featureDbu = Math.Max(1, minFeature / across);
-            string featureBasis =
-                $"the rail's narrowest copper, {minFeature / dbuPerMetre * 1e3:0.###} mm, " +
-                $"at {across} cells across it";
-
-            if (lambdaDbu < featureDbu)
-            {
-                baseDeltaDbu = Math.Max(1, lambdaDbu);
-                cellBasis =
-                    $"the shortest wavelength at {PdnMask.Hertz(request.FrequencyHz)} in εr " +
-                    $"{epsilonR:0.###}, λ/20 = {lambdaMetres * 1e3:0.###} mm — smaller here than " +
-                    featureBasis;
-            }
-            else
-            {
-                baseDeltaDbu = featureDbu;
-                cellBasis = featureBasis +
-                    (lambdaDbu == long.MaxValue
-                        ? ""
-                        : $" — smaller here than λ/20, {lambdaMetres * 1e3:0.###} mm");
-            }
-        }
-
-        // ── the reference extent, applied HERE and stamped (R-rail3-5) ─────────────────────────
-        var extent = ExtentOf(regions, anchorSeeds, baseDeltaDbu);
-
-        if (ResolveReferenceCopper(request, regions, referenceLayer, extent, notes,
-                                   out var referenceCopper) is { } extentRefusal)
-            return PdnExtraction.Refused(extentRefusal, regions);
-
-        // ── the grid ───────────────────────────────────────────────────────────────────────────
-        var refineBands = RefinementBands(rail, request, baseDeltaDbu);
-        var grid = PdnGrid.Build(extent, baseDeltaDbu, refineBands,
-                                 Math.Max(1, request.Mesh.PortRefinementRatio),
-                                 request.Mesh.MaxCells, conductorCount: 2, notes,
-                                 request.LengthFormat);
-
-        // ── the cells ──────────────────────────────────────────────────────────────────────────
-        var mesh = new MeshBuilder(grid, byLayer, referenceLayer);
-
-        foreach (var island in regions.Power)
-            foreach (var (layer, paths) in island.Copper)
-            {
-                if (layer == referenceLayer)
-                {
-                    diagnostics.Add(
-                        $"The rail has copper on layer {layer.Layer}/{layer.Datatype}, which is also " +
-                        "its reference layer. That copper was not meshed as part of the rail — a " +
-                        "conductor cannot be its own return.");
-                    continue;
-                }
-                mesh.AddCopper(layer, paths, isReference: false);
-            }
-
-        foreach (var (layer, paths) in referenceCopper)
-            mesh.AddCopper(layer, paths, isReference: true);
-
-        if (mesh.CellCount == 0)
-            return PdnExtraction.Refused(
-                $"Rail '{rail.Name}' meshed to no cells at all, which means the grid and the copper do " +
-                "not overlap. This is a coordinate-system disagreement rather than a design problem.",
-                regions);
-
-        // ── §4.1's h, and R-rail13-2's stated condition ────────────────────────────────────────
-        var separation = PlaneSeparation(request, mesh, referenceLayer, notes, out double h);
-        double crossover = SkinCrossover(mesh, request.FrequencyHz, notes);
-
-        // ── the netlist ────────────────────────────────────────────────────────────────────────
-        var media = PlaneMedia(request, mesh, referenceLayer, notes);
-
-        var asm = new PdnAssembly(request, mesh, PdnModelKind.Accurate, celsius, notes, diagnostics);
-        StampMesh(mesh, asm, request.DbuPerMicron, request.FrequencyHz, separation);
-
-        // ── R-rail14-3: the readout §9 says must not be buried ─────────────────────────────────
-        double planeCapacitance = StampCavity(
-            mesh, asm, request.DbuPerMicron, request.FrequencyHz, media, out double overlapArea);
-
-        if (asm.Build() is { } refusal) return PdnExtraction.Refused(refusal, regions);
-
-        var dominantMedium = media.Values
-            .OrderByDescending(m => m.ThicknessMetres > 0 ? 1 : 0)
-            .FirstOrDefault();
-
-        var provenance = new PdnProvenance
-        {
-            ModelKind = PdnModelKind.Accurate,
-            Model = "Accurate (mesh)",
-            RailName = rail.Name,
-            ReferenceExtent = rail.ReferenceExtent,
-            FrequencyHz = request.FrequencyHz,
-            PlaneSeparationMetres = h,
-            SkinCrossoverHz = crossover,
-            CellSizeMetres = baseDeltaDbu / dbuPerMetre,
-            CellSizeBasis = cellBasis,
-            PlaneCapacitanceFarads = planeCapacitance,
-
-            // R-rail18-2b. The mesh always computes it; the only zero it can produce that is ABOUT
-            // the stackup is the one where no rail conductor had a medium to be of.
-            PlaneCapacitanceBasis = media.Count > 0
-                ? PdnPlaneCapacitanceBasis.Computed
-                : PdnPlaneCapacitanceBasis.NoDielectricStated,
-            PlaneOverlapSquareMetres = overlapArea,
-            RelativePermittivity = dominantMedium?.EpsilonR ?? 0,
-            LossTangent = dominantMedium?.TanDelta ?? 0,
-            LossTangentIsClassDefault = dominantMedium?.TanDeltaIsClassDefault ?? false,
-            DielectricBasis = dominantMedium?.Basis ?? "",
-            ShuntBranchPresent = request.FrequencyHz > 0 && planeCapacitance > 0,
-            PortRefinementRatio = refineBands.Count > 0 ? Math.Max(1, request.Mesh.PortRefinementRatio) : 1,
-            CopperTemperatureCelsius = celsius,
-            CellCount = mesh.CellCount,
-            MeshedAreaSquareMetres = mesh.MeshedAreaSquareDbu / (dbuPerMetre * dbuPerMetre),
-            IslandReport = regions.IslandReport,
-            ReturnNet = regions.ReturnNet,
-            ReferencePoint = asm.ReferencePoint,
-            UnresolvedViaSpans = asm.UnresolvedViaSpans,
-            Notes = notes,
-        };
-
-        return new PdnExtraction(null, asm.Finish(provenance), regions, diagnostics);
+        return new PdnMeshPlan(request, referenceLayer, regions, byLayer, anchorSeeds,
+                               MinimumFeatureWidthDbu(regions.Power), diagnostics, notes);
     }
 
     // ── geometry helpers ───────────────────────────────────────────────────────────────────────
@@ -662,6 +533,15 @@ public static class PdnMeshExtractor
         if (b.IsEmpty) return b;
         return new Bbox(b.MinX - pad, b.MinY - pad, b.MaxX + pad, b.MaxY + pad);
     }
+
+    /// <summary>
+    /// How many cells of the BOUNDING grid a mesh may be cut from — a guard on memory, not on the
+    /// solve. Every conductor holds a few numbers per cell of the bounding grid whether or not it
+    /// has copper there, so a sparse rail on a large board could otherwise ask for gigabytes before
+    /// the copper count could say no. Four times the copper ceiling: a board whose reference fills
+    /// its extent reaches the copper ceiling first.
+    /// </summary>
+    internal static double BoundingGridCeiling(int maxCells) => 4.0 * maxCells;
 
     internal static Paths64 RectPaths(Bbox b) =>
         [[new Point64(b.MinX, b.MinY), new Point64(b.MaxX, b.MinY),
@@ -963,56 +843,19 @@ public static class PdnMeshExtractor
         public long Dx(int i) => Xs[i + 1] - Xs[i];
         public long Dy(int j) => Ys[j + 1] - Ys[j];
 
-        public static PdnGrid Build(
-            Bbox extent, long delta, List<Bbox> bands, int ratio, int maxCells,
-            int conductorCount, List<string> notes, RailLengthFormat format)
+        /// <summary>The grid at <paramref name="delta"/>, refined <paramref name="ratio"/>× across
+        /// every band. Builds exactly what it is asked for — the ceiling is
+        /// <see cref="Extract"/>'s, and is applied to the cells this grid turns out to hold.</summary>
+        public static PdnGrid Build(Bbox extent, long delta, List<Bbox> bands, int ratio)
         {
-            long spanX = Math.Max(1, extent.MaxX - extent.MinX);
-            long spanY = Math.Max(1, extent.MaxY - extent.MinY);
-
-            // Coarsen BEFORE building rather than truncating after: a mesh cut off part way is a
-            // board with a hole in it, and it would look like a design problem.
             long d = Math.Max(1, delta);
-            while (true)
-            {
-                long nx = Math.Max(1, spanX / d), ny = Math.Max(1, spanY / d);
-                if (nx * ny * conductorCount <= maxCells || d >= Math.Max(spanX, spanY)) break;
-                d = (long)Math.Ceiling(d * 1.25);
-            }
-
-            if (d != Math.Max(1, delta))
-                notes.Add(
-                    $"The mesh was coarsened from {format.Length(delta)} to {format.Length(d)} "
-                  + "to stay under the " +
-                    $"{maxCells:N0}-cell ceiling. Each cell still carries the copper AREA actually " +
-                    "inside it, so a run's resistance is still right; what a coarse cell loses is the " +
-                    "separation between two conductors that share it.");
-
             var xs = Lines(extent.MinX, extent.MaxX, d);
             var ys = Lines(extent.MinY, extent.MaxY, d);
 
             if (ratio > 1 && bands.Count > 0)
             {
-                var rx = Refine(xs, bands.Select(b => (b.MinX, b.MaxX)), ratio, d);
-                var ry = Refine(ys, bands.Select(b => (b.MinY, b.MaxY)), ratio, d);
-
-                if ((long)(rx.Length - 1) * (ry.Length - 1) * conductorCount <= maxCells)
-                {
-                    xs = rx;
-                    ys = ry;
-                    notes.Add(
-                        $"The mesh is refined {ratio}× under {bands.Count} port region(s). That is a " +
-                        "correctness requirement, not a tidiness one: a coarse mesh under a pin field " +
-                        "under-estimates the spreading resistance, and it does so optimistically.");
-                }
-                else
-                {
-                    notes.Add(
-                        $"Local refinement under {bands.Count} port region(s) was NOT applied — it " +
-                        $"would have taken the mesh past the {maxCells:N0}-cell ceiling. The port " +
-                        "resistances here are therefore optimistic; raise the ceiling or state a " +
-                        "coarser base cell size to get it back.");
-                }
+                xs = Refine(xs, bands.Select(b => (b.MinX, b.MaxX)), ratio, d);
+                ys = Refine(ys, bands.Select(b => (b.MinY, b.MaxY)), ratio, d);
             }
 
             return new PdnGrid { Xs = xs, Ys = ys };
@@ -1063,6 +906,14 @@ public static class PdnMeshExtractor
         /// the two readings to differ.</summary>
         public Paths64 Union { get; set; } = [];
         public double[] Area { get; set; } = [];
+
+        /// <summary>The copper cell <c>k</c> shares with cell <c>k + 1</c> across the edge between
+        /// them, in DBU — the width that edge conducts through (R-rail32-2).</summary>
+        public double[] ChordX { get; set; } = [];
+
+        /// <summary>The same across the edge to the cell ABOVE, <c>k + Nx</c>.</summary>
+        public double[] ChordY { get; set; } = [];
+
         public int[] Node { get; set; } = [];
     }
 
@@ -1088,6 +939,11 @@ public static class PdnMeshExtractor
 
         public int CellCount { get { Prepare(); return _cellCount; } }
         private int _cellCount;
+
+        /// <summary>The cells on the rail's own copper — <see cref="CellCount"/> less the
+        /// reference's.</summary>
+        public int RailCellCount { get { Prepare(); return _railCellCount; } }
+        private int _railCellCount;
 
         /// <summary>The copper the cells account for, in square DBU. A mesh that filled a cutout in
         /// would exceed the real copper and a mesh that dropped one would fall short of it, so this
@@ -1135,13 +991,16 @@ public static class PdnMeshExtractor
 
             int next = 0;
             _cellCount = 0;
+            _railCellCount = 0;
             _meshedArea = 0;
 
             foreach (var ml in _layers)
             {
                 var copper = DrcRegions.Union(ml.Copper);
                 ml.Union = copper;
-                ml.Area = Rasterise(copper);
+                ml.ChordX = new double[_grid.Nx * _grid.Ny];
+                ml.ChordY = new double[_grid.Nx * _grid.Ny];
+                ml.Area = Rasterise(copper, ml.ChordX, ml.ChordY);
                 ml.Node = new int[ml.Area.Length];
 
                 for (int j = 0; j < _grid.Ny; j++)
@@ -1149,7 +1008,12 @@ public static class PdnMeshExtractor
                     {
                         int k = j * _grid.Nx + i;
                         ml.Node[k] = ml.Area[k] > 0 ? next++ : -1;
-                        if (ml.Area[k] > 0) { _cellCount++; _meshedArea += ml.Area[k]; }
+                        if (ml.Area[k] > 0)
+                        {
+                            _cellCount++;
+                            if (!ml.IsReference) _railCellCount++;
+                            _meshedArea += ml.Area[k];
+                        }
                     }
             }
 
@@ -1186,10 +1050,60 @@ public static class PdnMeshExtractor
             foreach (var ml in _layers)
             {
                 if (ml.Layer != layer) continue;
-                int n = ml.Node[j * _grid.Nx + i];
+                int n = Settle(ml, i, j);
                 if (n >= 0) return n;
             }
             return -1;
+        }
+
+        /// <summary>
+        /// The copper fraction below which a cell is not a place to attach anything —
+        /// <see cref="Settle"/>.
+        /// </summary>
+        internal const double AttachFillFraction = 0.5;
+
+        /// <summary>
+        /// The node a POINT on cell (i, j) attaches to: the cell's own, unless the cell holds less
+        /// than <see cref="AttachFillFraction"/> of copper — then the node of the fuller neighbour
+        /// it shares the most copper edge with, repeated while that keeps getting fuller.
+        /// </summary>
+        /// <remarks>
+        /// <b>R-rail32-1's whole 3.6×, on the field board.</b> A cell's node stands for the copper
+        /// in it; current forced INTO a node has to leave through that copper's edges. A cell
+        /// clipping a plane's corner holds a few square microns and shares a few microns of edge, so
+        /// a source, a load or a via attached there pays a resistance set by where the grid lines
+        /// happened to fall — 0.35 Ω on the field board's return, ten times the rest of the rail
+        /// together, gone at the next pitch. Copper flowing THROUGH such a cell is priced correctly
+        /// by its shared edges (<see cref="AddEdge"/>); it is only a point attachment that has to
+        /// move. It moves one cell at most in practice, onto copper the point's own copper touches,
+        /// so what it attaches to is still galvanically the same place.
+        /// </remarks>
+        private int Settle(MeshLayer ml, int i, int j)
+        {
+            int k = j * _grid.Nx + i;
+            if (ml.Node[k] < 0) return -1;
+
+            for (int hop = 0; hop < 4; hop++)
+            {
+                double fill = ml.Area[k] / ((double)_grid.Dx(k % _grid.Nx) * _grid.Dy(k / _grid.Nx));
+                if (fill >= AttachFillFraction) break;
+
+                int ci = k % _grid.Nx, cj = k / _grid.Nx;
+                int best = -1;
+                double bestShared = 0;
+                void Try(int nk, double shared)
+                {
+                    if (ml.Node[nk] >= 0 && shared > bestShared && ml.Area[nk] > ml.Area[k])
+                    { best = nk; bestShared = shared; }
+                }
+                if (ci + 1 < _grid.Nx) Try(k + 1, ml.ChordX[k]);
+                if (ci > 0) Try(k - 1, ml.ChordX[k - 1]);
+                if (cj + 1 < _grid.Ny) Try(k + _grid.Nx, ml.ChordY[k]);
+                if (cj > 0) Try(k - _grid.Nx, ml.ChordY[k - _grid.Nx]);
+                if (best < 0) break;
+                k = best;
+            }
+            return ml.Node[k];
         }
 
         public int NodeTotal { get { Prepare(); return _nodeTotal; } }
@@ -1220,17 +1134,34 @@ public static class PdnMeshExtractor
                   $"{cell.Ix}.{cell.Iy}"
                 : null;
 
-        /// <summary>Copper area per cell, by clipping a row band once and then each cell of it.</summary>
-        private double[] Rasterise(Paths64 copper)
+        /// <summary>
+        /// Copper area per cell, by clipping a row band once and then each cell of it — and, where
+        /// asked, how much copper each cell SHARES with its neighbour across the edge between them.
+        /// </summary>
+        /// <remarks>
+        /// <b>The shared copper is the edge's conductance, not the two cells' areas</b> (R-rail32-2).
+        /// <see cref="AddEdge"/> reads it. Both sides' own copper on the edge line is collected and
+        /// only what both hold is counted, so copper that merely ENDS on a grid line, and two pieces
+        /// that sit in adjacent cells without touching, share nothing and are not joined.
+        /// </remarks>
+        private double[] Rasterise(Paths64 copper, double[]? chordX = null, double[]? chordY = null)
         {
             var area = new double[_grid.Nx * _grid.Ny];
             if (copper.Count == 0) return area;
 
             var bounds = DrcRegions.BoundsOf(copper);
+            bool chords = chordX is not null && chordY is not null;
+
+            // The copper each cell of the PREVIOUS row holds on its top edge, and the copper the
+            // previous cell of THIS row holds on its right edge — the other halves of the two edges
+            // a cell shares with neighbours already visited.
+            var belowTop = chords ? new List<(long, long)>?[_grid.Nx] : [];
+            var rowTop = chords ? new List<(long, long)>?[_grid.Nx] : [];
 
             for (int j = 0; j < _grid.Ny; j++)
             {
                 long y0 = _grid.Ys[j], y1 = _grid.Ys[j + 1];
+                if (chords) { (belowTop, rowTop) = (rowTop, belowTop); Array.Clear(rowTop); }
                 if (y1 <= bounds.MinY || y0 >= bounds.MaxY) continue;
 
                 Paths64 band = [[new Point64(bounds.MinX, y0), new Point64(bounds.MaxX, y0),
@@ -1239,6 +1170,8 @@ public static class PdnMeshExtractor
                 if (strip.Count == 0) continue;
 
                 var sb = DrcRegions.BoundsOf(strip);
+                List<(long, long)>? leftRight = null;
+                int leftI = -2;
 
                 for (int i = 0; i < _grid.Nx; i++)
                 {
@@ -1251,11 +1184,77 @@ public static class PdnMeshExtractor
                     if (meet.Count == 0) continue;
 
                     double a = Math.Abs(Clipper.Area(meet));
-                    if (a > 0) area[j * _grid.Nx + i] = a;
+                    if (!(a > 0)) continue;
+                    int k = j * _grid.Nx + i;
+                    area[k] = a;
+                    if (!chords) continue;
+
+                    if (leftI == i - 1 && leftRight is not null)
+                        chordX![k - 1] = SharedLength(leftRight, OnEdge(meet, x0, vertical: true));
+                    if (belowTop[i] is { } below)
+                        chordY![k - _grid.Nx] = SharedLength(below, OnEdge(meet, y0, vertical: false));
+
+                    leftRight = OnEdge(meet, x1, vertical: true);
+                    leftI = i;
+                    rowTop[i] = OnEdge(meet, y1, vertical: false);
                 }
             }
 
             return area;
+        }
+
+        /// <summary>
+        /// The stretches of a cell's clipped copper boundary that lie ON one of its edge lines — the
+        /// copper that edge carries, seen from this side. One DBU of slack, because a clip's cut
+        /// point is rounded to the integer grid.
+        /// </summary>
+        private static List<(long, long)> OnEdge(Paths64 meet, long at, bool vertical)
+        {
+            var spans = new List<(long, long)>();
+            foreach (var path in meet)
+                for (int n = 0; n < path.Count; n++)
+                {
+                    var p = path[n];
+                    var q = path[(n + 1) % path.Count];
+                    long pa = vertical ? p.X : p.Y, qa = vertical ? q.X : q.Y;
+                    if (Math.Abs(pa - at) > 1 || Math.Abs(qa - at) > 1) continue;
+                    long pb = vertical ? p.Y : p.X, qb = vertical ? q.Y : q.X;
+                    if (pb != qb) spans.Add((Math.Min(pb, qb), Math.Max(pb, qb)));
+                }
+            return spans;
+        }
+
+        /// <summary>The length both sides of an edge hold copper along — the measure of the
+        /// intersection of two sets of spans.</summary>
+        private static double SharedLength(List<(long, long)> a, List<(long, long)> b)
+        {
+            if (a.Count == 0 || b.Count == 0) return 0;
+            var ua = Merged(a);
+            var ub = Merged(b);
+            double shared = 0;
+            int ia = 0, ib = 0;
+            while (ia < ua.Count && ib < ub.Count)
+            {
+                long lo = Math.Max(ua[ia].Item1, ub[ib].Item1);
+                long hi = Math.Min(ua[ia].Item2, ub[ib].Item2);
+                if (hi > lo) shared += hi - lo;
+                if (ua[ia].Item2 < ub[ib].Item2) ia++; else ib++;
+            }
+            return shared;
+        }
+
+        private static List<(long, long)> Merged(List<(long, long)> spans)
+        {
+            spans.Sort();
+            var merged = new List<(long, long)>();
+            foreach (var (lo, hi) in spans)
+            {
+                if (merged.Count > 0 && lo <= merged[^1].Item2)
+                    merged[^1] = (merged[^1].Item1, Math.Max(merged[^1].Item2, hi));
+                else
+                    merged.Add((lo, hi));
+            }
+            return merged;
         }
 
         /// <summary>
@@ -1299,8 +1298,8 @@ public static class PdnMeshExtractor
             foreach (var ml in _layers)
             {
                 if (ml.IsReference != isReference) continue;
-                int n = ml.Node[j * _grid.Nx + i];
-                if (n >= 0) hits.Add(n);
+                int n = Settle(ml, i, j);
+                if (n >= 0 && !hits.Contains(n)) hits.Add(n);
             }
             return hits;
         }
@@ -1319,12 +1318,11 @@ public static class PdnMeshExtractor
                 for (int j = 0; j < _grid.Ny; j++)
                     for (int i = 0; i < _grid.Nx; i++)
                     {
-                        int n = ml.Node[j * _grid.Nx + i];
-                        if (n < 0) continue;
+                        if (ml.Node[j * _grid.Nx + i] < 0) continue;
                         double cx = (_grid.Xs[i] + _grid.Xs[i + 1]) / 2.0;
                         double cy = (_grid.Ys[j] + _grid.Ys[j + 1]) / 2.0;
                         double d = (cx - x) * (cx - x) + (cy - y) * (cy - y);
-                        if (d < bestD) { bestD = d; best = n; }
+                        if (d < bestD) { bestD = d; best = Settle(ml, i, j); }
                     }
             }
 
@@ -1607,12 +1605,12 @@ public static class PdnMeshExtractor
 
                     if (i + 1 < grid.Nx && ml.Node[k + 1] >= 0)
                         AddEdge(mesh, asm, ml, i, j, i + 1, j, a, ml.Node[k + 1],
-                                grid.Dx(i), grid.Dx(i + 1), ml.Area[k], ml.Area[k + 1],
+                                grid.Dx(i), grid.Dx(i + 1), ml.ChordX[k],
                                 sigmaT, half, dbuPerMetre, side, "x");
 
                     if (j + 1 < grid.Ny && ml.Node[k + grid.Nx] >= 0)
                         AddEdge(mesh, asm, ml, i, j, i, j + 1, a, ml.Node[k + grid.Nx],
-                                grid.Dy(j), grid.Dy(j + 1), ml.Area[k], ml.Area[k + grid.Nx],
+                                grid.Dy(j), grid.Dy(j + 1), ml.ChordY[k],
                                 sigmaT, half, dbuPerMetre, side, "y");
                 }
         }
@@ -1621,32 +1619,39 @@ public static class PdnMeshExtractor
     private static void AddEdge(
         MeshBuilder mesh, PdnAssembly asm,
         MeshLayer ml, int i0, int j0, int i1, int j1, int a, int b,
-        long d0Dbu, long d1Dbu, double area0Dbu, double area1Dbu,
+        long d0Dbu, long d1Dbu, double sharedDbu,
         double sigmaT, double halfLoopPerSquareH, double dbuPerMetre, string side, string axis)
     {
-        // Half a cell of copper each, in series. dx²/(2·σ·T·A) is the half-cell resistance for a
-        // cell of length dx carrying an average width A/dx — the ordinary finite-volume form, and
-        // the reason a trace's resistance is right whether or not the grid lines fall on its edges.
-        double d0 = d0Dbu / dbuPerMetre, d1 = d1Dbu / dbuPerMetre;
-        double a0 = area0Dbu / (dbuPerMetre * dbuPerMetre), a1 = area1Dbu / (dbuPerMetre * dbuPerMetre);
-        if (!(a0 > 0) || !(a1 > 0)) return;
+        // ── R-rail32-2: THE EDGE CONDUCTS THROUGH THE COPPER IT CARRIES ────────────────────────
+        //
+        // A centre-to-centre run of (d0 + d1)/2 through the copper the two cells actually share
+        // across the edge between them: R = run / (σ·T·shared). On an axis-aligned trace the shared
+        // copper IS the trace's width in that row, so wherever the copper is uniform along the cell
+        // this is exactly the number the half-cell form dx²/(2·σ·T·A) gave. It is the DIAGONAL
+        // that differs, and there the half-cell form was wrong: it read each cell as copper spread
+        // evenly across the whole cell, so every partial cell along both edges of a 45° trace
+        // became a series bottleneck and a trace three cells wide read 19 % high. With the edge
+        // priced by its own copper a uniform field across ANY straight trace, at any angle and any
+        // pitch, satisfies the discrete equations exactly — the flux through each edge is the true
+        // flux through the copper on it, and a cut cell's walls carry none.
+        //
+        // And two cells that both hold copper but share none across their edge — copper ending on
+        // the grid line, two pieces side by side in adjacent cells — are not joined at all. The
+        // area form joined them.
+        if (!(sharedDbu > 0)) return;
 
-        double r = d0 * d0 / (2 * sigmaT * a0) + d1 * d1 / (2 * sigmaT * a1);
+        double d0 = d0Dbu / dbuPerMetre, d1 = d1Dbu / dbuPerMetre;
         double length = (d0 + d1) / 2.0;
-        double width = (a0 / d0 + a1 / d1) / 2.0;
+        double width = sharedDbu / dbuPerMetre;
+        double r = length / (sigmaT * width);
 
         // ── §4.1's aspect rule, arrived at rather than applied ────────────────────────────────
         //
-        // "For non-square cells L and R scale by the aspect ratio (along/across)." The bracket
-        // below IS that ratio — it is the edge's SQUARE COUNT, the same number the resistance is
-        // Rs times, so L and R scale together by construction and cannot come to disagree about
-        // what a non-square cell is. A uniform grid of side Δ gives exactly 1 and a 2:1 cell gives
-        // exactly 2.
-        //
-        // And it comes from the cell AREAS for the reason this file's header gives for the
-        // resistance: a conductor's width is not a multiple of Δ, so rounding it to one is wrong by
-        // whichever way the grid lines happened to fall.
-        double squares = d0 * d0 / (2 * a0) + d1 * d1 / (2 * a1);
+        // "For non-square cells L and R scale by the aspect ratio (along/across)." The ratio below
+        // IS that — the edge's SQUARE COUNT, the same number the resistance is Rs times, so L and R
+        // scale together by construction and cannot come to disagree about what a non-square cell
+        // is. A uniform grid of side Δ fully in copper gives exactly 1 and a 2:1 cell exactly 2.
+        double squares = length / width;
         double l = halfLoopPerSquareH > 0 ? halfLoopPerSquareH * squares : 0.0;
 
         asm.StageCopper(
@@ -1654,5 +1659,290 @@ public static class PdnMeshExtractor
             $"{length * 1e3:0.###} mm of {width * 1e3:0.###} mm {ml.Conductor.StackupName} copper",
             mesh.CellRef(ml, i0, j0), mesh.CellRef(ml, i1, j1),
             PdnOriginKind.MeshEdge, length, width, l > 0 ? l : null);
+    }
+
+    /// <summary>
+    /// One rail, resolved up to the choice of pitch — <see cref="PdnMeshExtractor.Plan"/>. Meshing it
+    /// is <see cref="At"/>, which can be asked for more than one pitch; nothing it holds is changed by
+    /// meshing, so two pitches are two independent readings of the same copper.
+    /// </summary>
+    internal sealed class PdnMeshPlan
+    {
+        private readonly PdnExtractionRequest request;
+        private readonly LayerKey referenceLayer;
+        private readonly PdnRailRegionSet regions;
+        private readonly Dictionary<LayerKey, PdnConductor> byLayer;
+        private readonly List<(long X, long Y)> anchorSeeds;
+        private readonly List<string> planDiagnostics;
+        private readonly List<string> planNotes;
+
+        /// <summary>The narrowest copper on the rail, in DBU — what every pitch is a fraction of.</summary>
+        public long MinFeatureDbu { get; }
+
+        /// <summary>Non-null where the rail cannot be meshed at any pitch.</summary>
+        public PdnExtraction? Refusal { get; }
+
+        /// <summary>A refusal is a plan that meshes nothing — so the plan's own early returns read
+        /// exactly as the extraction's always did.</summary>
+        public static implicit operator PdnMeshPlan(PdnExtraction refusal) => new(refusal);
+
+        internal PdnMeshPlan(PdnExtraction refusal)
+        {
+            Refusal = refusal;
+            request = null!; regions = null!; byLayer = null!; anchorSeeds = null!;
+            planDiagnostics = null!; planNotes = null!;
+        }
+
+        internal PdnMeshPlan(
+            PdnExtractionRequest request, LayerKey referenceLayer, PdnRailRegionSet regions,
+            Dictionary<LayerKey, PdnConductor> byLayer, List<(long X, long Y)> anchorSeeds,
+            long minFeatureDbu, List<string> diagnostics, List<string> notes)
+        {
+            this.request = request;
+            this.referenceLayer = referenceLayer;
+            this.regions = regions;
+            this.byLayer = byLayer;
+            this.anchorSeeds = anchorSeeds;
+            MinFeatureDbu = minFeatureDbu;
+            planDiagnostics = diagnostics;
+            planNotes = notes;
+        }
+
+        /// <summary>The rail meshed with <paramref name="cellsAcross"/> cells across its narrowest
+        /// copper — or at the stated cell size, which <paramref name="cellsAcross"/> does not
+        /// override.</summary>
+        public PdnExtraction At(int cellsAcross)
+        {
+            if (Refusal is not null) return Refusal;
+
+            var rail = request.Rail;
+            var tech = request.Technology;
+            var diagnostics = new List<string>(planDiagnostics);
+            var notes = new List<string>(planNotes);
+            double celsius = request.Settings.CopperTemperatureCelsius;
+            long minFeature = MinFeatureDbu;
+
+                // ── the cell size (R-rail3-14) ─────────────────────────────────────────────────────────
+                double dbuPerMetre = request.DbuPerMicron * 1e6;
+                long baseDeltaDbu;
+                string cellBasis;
+
+                // ── R-rail14-2: BOTH rules bind now, and the cell is the smaller of the two ────────────
+                //
+                // WavelengthCellSizeMetres carries the whole argument; what is here is only the choice. The
+                // basis names which one bound, because the two fail in opposite directions and neither
+                // failure reports anything: too coarse for the feature loses a thin trace's resistance, too
+                // coarse for the wavelength loses the resonance the cavity band exists to find.
+                double epsilonR = LargestEpsilonR(tech);
+                double lambdaMetres = WavelengthCellSizeMetres(request.FrequencyHz, epsilonR);
+                long lambdaDbu = double.IsFinite(lambdaMetres) && lambdaMetres > 0
+                    ? Math.Max(1, (long)Math.Floor(lambdaMetres * dbuPerMetre))
+                    : long.MaxValue;
+
+                if (request.Mesh.CellSizeMetres is { } stated && stated > 0)
+                {
+                    baseDeltaDbu = Math.Max(1, (long)Math.Round(stated * dbuPerMetre));
+                    cellBasis = $"stated: {stated * 1e3:0.###} mm";
+
+                    // A STATED size is honoured and never silently narrowed — it is the knob the convergence
+                    // sweeps turn — but a stated size coarser than the wavelength rule produces a curve with
+                    // no resonance in it and looks entirely normal, so it is said.
+                    if (baseDeltaDbu > lambdaDbu)
+                        notes.Add(
+                            $"The stated cell size, {stated * 1e3:0.###} mm, is coarser than the " +
+                            $"{lambdaMetres * 1e3:0.###} mm the shortest wavelength asks for at " +
+                            $"{PdnMask.Hertz(request.FrequencyHz)} in εr {epsilonR:0.###} (λ/20). A cell longer " +
+                            "than that cannot carry the phase across itself, so a plane resonance in this " +
+                            "band is not in the model at all — the curve will look smooth and be missing it.");
+                }
+                else
+                {
+                    int across = Math.Max(1, cellsAcross);
+                    long featureDbu = Math.Max(1, minFeature / across);
+                    string featureBasis =
+                        $"the rail's narrowest copper, {minFeature / dbuPerMetre * 1e3:0.###} mm, " +
+                        $"at {across} cells across it";
+
+                    if (lambdaDbu < featureDbu)
+                    {
+                        baseDeltaDbu = Math.Max(1, lambdaDbu);
+                        cellBasis =
+                            $"the shortest wavelength at {PdnMask.Hertz(request.FrequencyHz)} in εr " +
+                            $"{epsilonR:0.###}, λ/20 = {lambdaMetres * 1e3:0.###} mm — smaller here than " +
+                            featureBasis;
+                    }
+                    else
+                    {
+                        baseDeltaDbu = featureDbu;
+                        cellBasis = featureBasis +
+                            (lambdaDbu == long.MaxValue
+                                ? ""
+                                : $" — smaller here than λ/20, {lambdaMetres * 1e3:0.###} mm");
+                    }
+                }
+
+                // ── the reference extent, applied HERE and stamped (R-rail3-5) ─────────────────────────
+                var extent = ExtentOf(regions, anchorSeeds, baseDeltaDbu);
+
+                if (ResolveReferenceCopper(request, regions, referenceLayer, extent, notes,
+                                           out var referenceCopper) is { } extentRefusal)
+                    return PdnExtraction.Refused(extentRefusal, regions);
+
+                // ── the grid and the cells, under the ceiling (R-rail32-1) ─────────────────────────────
+                //
+                // THE CEILING COUNTS CELLS THAT EXIST. It used to count the bounding grid — every cell of
+                // the extent, times two conductors — and a cell exists only where there is copper: on the
+                // field board that read 975,000 for a mesh of 340,576, so the ceiling bound when it had no
+                // business to, coarsened 84 µm to 131 µm, and the provenance went on saying 84. So the mesh
+                // is BUILT and then counted; a build over the ceiling is thrown away and the pitch widened
+                // by what the count says it needs. The ordinary case builds once.
+                //
+                // Refinement goes before the base pitch, exactly as it did: at each pitch the refined grid
+                // is tried first and the plain one second, and only when neither fits does the pitch widen.
+                var refineBands = RefinementBands(rail, request, baseDeltaDbu);
+                int ratio = Math.Max(1, request.Mesh.PortRefinementRatio);
+                int maxCells = Math.Max(1, request.Mesh.MaxCells);
+                long spanX = Math.Max(1, extent.MaxX - extent.MinX), spanY = Math.Max(1, extent.MaxY - extent.MinY);
+
+                // Only a guard on MEMORY: every conductor holds a few numbers per cell of the bounding grid,
+                // copper or not. Far above anything the copper count lets through on a real board.
+                long delta = baseDeltaDbu;
+                while ((double)(spanX / delta + 1) * (spanY / delta + 1) > BoundingGridCeiling(maxCells)
+                       && delta < Math.Max(spanX, spanY))
+                    delta = (long)Math.Ceiling(delta * 1.25);
+
+                PdnGrid grid;
+                MeshBuilder mesh;
+                bool refined = ratio > 1 && refineBands.Count > 0;
+                bool refinementDropped = false;
+                while (true)
+                {
+                    grid = PdnGrid.Build(extent, delta, refined ? refineBands : [], ratio);
+                    mesh = new MeshBuilder(grid, byLayer, referenceLayer);
+
+                    foreach (var island in regions.Power)
+                        foreach (var (layer, paths) in island.Copper)
+                            if (layer != referenceLayer) mesh.AddCopper(layer, paths, isReference: false);
+                    foreach (var (layer, paths) in referenceCopper)
+                        mesh.AddCopper(layer, paths, isReference: true);
+
+                    int cells = mesh.CellCount;
+                    if (cells <= maxCells || delta >= Math.Max(spanX, spanY)) break;
+                    if (refined) { refined = false; refinementDropped = true; continue; }
+
+                    delta = Math.Max(delta + 1, (long)Math.Ceiling(delta * Math.Max(1.1, Math.Sqrt((double)cells / maxCells) * 1.05)));
+                    refined = ratio > 1 && refineBands.Count > 0;
+                    refinementDropped = false;
+                }
+
+                foreach (var island in regions.Power)
+                    foreach (var (layer, _) in island.Copper)
+                        if (layer == referenceLayer)
+                        {
+                            diagnostics.Add(
+                                $"The rail has copper on layer {layer.Layer}/{layer.Datatype}, which is also " +
+                                "its reference layer. That copper was not meshed as part of the rail — a " +
+                                "conductor cannot be its own return.");
+                            break;
+                        }
+
+                var format = request.LengthFormat;
+                if (delta != baseDeltaDbu)
+                {
+                    double acrossNow = (double)minFeature / delta;
+                    cellBasis += $"; coarsened to {format.Length(delta)} by the {maxCells:N0}-cell ceiling, " +
+                                 $"which leaves the narrowest copper {acrossNow:0.#} cells across";
+                    notes.Add(
+                        $"The mesh was coarsened from {format.Length(baseDeltaDbu)} to {format.Length(delta)} to " +
+                        $"stay under the {maxCells:N0}-cell ceiling, so the rail's narrowest copper is " +
+                        $"{acrossNow:0.#} cells across rather than {Math.Max(1, cellsAcross)}. " +
+                        "A straight run is still priced exactly at any pitch; what a coarser cell loses is the " +
+                        "shape — a neck, a bend, the spreading under a pin. Raise the ceiling to get it back.");
+                }
+
+                if (refined)
+                    notes.Add(
+                        $"The mesh is refined {ratio}× under {refineBands.Count} port region(s). That is a " +
+                        "correctness requirement, not a tidiness one: a coarse mesh under a pin field " +
+                        "under-estimates the spreading resistance, and it does so optimistically.");
+                else if (refinementDropped)
+                    notes.Add(
+                        $"Local refinement under {refineBands.Count} port region(s) was NOT applied — it " +
+                        $"would have taken the mesh past the {maxCells:N0}-cell ceiling. The port " +
+                        "resistances here are therefore optimistic; raise the ceiling or state a " +
+                        "coarser base cell size to get it back.");
+
+                // What the provenance's cell count IS — the one number a reader cannot otherwise check.
+                notes.Add(
+                    $"The mesh is {mesh.CellCount:N0} cells — {mesh.RailCellCount:N0} on the rail's copper and " +
+                    $"{mesh.CellCount - mesh.RailCellCount:N0} on its reference — cut from a {grid.Nx:N0} × " +
+                    $"{grid.Ny:N0} grid at {format.Length(delta)}" +
+                    (refined ? $", refined {ratio}× under the ports" : "") +
+                    ". A cell exists only where there is copper.");
+
+                if (mesh.CellCount == 0)
+                    return PdnExtraction.Refused(
+                        $"Rail '{rail.Name}' meshed to no cells at all, which means the grid and the copper do " +
+                        "not overlap. This is a coordinate-system disagreement rather than a design problem.",
+                        regions);
+
+                // ── §4.1's h, and R-rail13-2's stated condition ────────────────────────────────────────
+                var separation = PlaneSeparation(request, mesh, referenceLayer, notes, out double h);
+                double crossover = SkinCrossover(mesh, request.FrequencyHz, notes);
+
+                // ── the netlist ────────────────────────────────────────────────────────────────────────
+                var media = PlaneMedia(request, mesh, referenceLayer, notes);
+
+                var asm = new PdnAssembly(request, mesh, PdnModelKind.Accurate, celsius, notes, diagnostics);
+                StampMesh(mesh, asm, request.DbuPerMicron, request.FrequencyHz, separation);
+
+                // ── R-rail14-3: the readout §9 says must not be buried ─────────────────────────────────
+                double planeCapacitance = StampCavity(
+                    mesh, asm, request.DbuPerMicron, request.FrequencyHz, media, out double overlapArea);
+
+                if (asm.Build() is { } refusal) return PdnExtraction.Refused(refusal, regions);
+
+                var dominantMedium = media.Values
+                    .OrderByDescending(m => m.ThicknessMetres > 0 ? 1 : 0)
+                    .FirstOrDefault();
+
+                var provenance = new PdnProvenance
+                {
+                    ModelKind = PdnModelKind.Accurate,
+                    Model = "Accurate (mesh)",
+                    RailName = rail.Name,
+                    ReferenceExtent = rail.ReferenceExtent,
+                    FrequencyHz = request.FrequencyHz,
+                    PlaneSeparationMetres = h,
+                    SkinCrossoverHz = crossover,
+                    CellSizeMetres = delta / dbuPerMetre,
+                    CellSizeBasis = cellBasis,
+                    PlaneCapacitanceFarads = planeCapacitance,
+
+                    // R-rail18-2b. The mesh always computes it; the only zero it can produce that is ABOUT
+                    // the stackup is the one where no rail conductor had a medium to be of.
+                    PlaneCapacitanceBasis = media.Count > 0
+                        ? PdnPlaneCapacitanceBasis.Computed
+                        : PdnPlaneCapacitanceBasis.NoDielectricStated,
+                    PlaneOverlapSquareMetres = overlapArea,
+                    RelativePermittivity = dominantMedium?.EpsilonR ?? 0,
+                    LossTangent = dominantMedium?.TanDelta ?? 0,
+                    LossTangentIsClassDefault = dominantMedium?.TanDeltaIsClassDefault ?? false,
+                    DielectricBasis = dominantMedium?.Basis ?? "",
+                    ShuntBranchPresent = request.FrequencyHz > 0 && planeCapacitance > 0,
+                    PortRefinementRatio = refined ? ratio : 1,
+                    CopperTemperatureCelsius = celsius,
+                    CellCount = mesh.CellCount,
+                    MeshedAreaSquareMetres = mesh.MeshedAreaSquareDbu / (dbuPerMetre * dbuPerMetre),
+                    IslandReport = regions.IslandReport,
+                    ReturnNet = regions.ReturnNet,
+                    ReferencePoint = asm.ReferencePoint,
+                    UnresolvedViaSpans = asm.UnresolvedViaSpans,
+                    Notes = notes,
+                };
+
+                return new PdnExtraction(null, asm.Finish(provenance), regions, diagnostics);
+            }
+
     }
 }

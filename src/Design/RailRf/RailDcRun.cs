@@ -186,30 +186,265 @@ public static class RailDcRun
             var chained = ChainStart(spec, edges, results, out var solved);
             var toSolve = chained is null ? spec : WithSourceLevel(spec, chained);
 
-            var extraction = request.Model == PdnModelKind.Accurate
-                ? PdnMeshExtractor.Extract(RequestFor(request, toSolve))
-                : PdnGraphExtractor.Extract(RequestFor(request, toSolve));
+            PdnExtraction extraction;
+            LinearDcSolution solution;
+            if (request.Model == PdnModelKind.Accurate)
+            {
+                if (SolveConverged(request, toSolve, railName, chained, diagnostics,
+                                   out extraction, out solution) is { } notSolved)
+                    return RailDcRunResult.Refused($"Rail '{railName}' was not solved. {notSolved}");
+            }
+            else
+            {
+                extraction = PdnGraphExtractor.Extract(RequestFor(request, toSolve));
+                diagnostics.AddRange(extraction.Diagnostics.Select(d => $"[{railName}] {d}"));
 
-            diagnostics.AddRange(extraction.Diagnostics.Select(d => $"[{railName}] {d}"));
+                if (extraction.Refusal is { } why)
+                    return RailDcRunResult.Refused($"Rail '{railName}' was not solved. {why}");
 
-            if (extraction.Refusal is { } why)
-                return RailDcRunResult.Refused($"Rail '{railName}' was not solved. {why}");
+                if (Solve(request, railName, extraction.Netlist!, out solution) is { } solveRefusal)
+                    return RailDcRunResult.Refused($"Rail '{railName}' was not solved. {solveRefusal}");
+            }
 
-            var pdn = extraction.Netlist!;
-
-            request.Control?.Token.ThrowIfCancellationRequested();
-            if (request.Control is { } solving)
-                solving.Stage = $"Rail '{railName}': solving";
-
-            var solve = LinearDcEngine.Run(pdn.Netlist);
-            if (solve.Refusal is { } solveRefusal)
-                return RailDcRunResult.Refused($"Rail '{railName}' was not solved. {solveRefusal}");
-
-            results.Add(Assemble(request, spec, pdn, solve.Solution!, chained, edges, solved, extraction));
+            results.Add(Assemble(request, spec, extraction.Netlist!, solution, chained, edges, solved, extraction));
         }
 
         return new RailDcRunResult(null, results, order.Order, diagnostics);
     }
+
+    private static string? Solve(
+        RailDcRequest request, string railName, PdnNetlist pdn, out LinearDcSolution solution,
+        string what = "solving")
+    {
+        request.Control?.Token.ThrowIfCancellationRequested();
+        if (request.Control is { } solving)
+            solving.Stage = $"Rail '{railName}': {what}";
+
+        var solve = LinearDcEngine.Run(pdn.Netlist);
+        solution = solve.Solution!;
+        return solve.Refusal;
+    }
+
+    // ── R-rail32-2: an Accurate answer that has SHOWN it is converged ──────────────────────────
+
+    /// <summary>
+    /// How far the drop to any load may move between two rungs of the mesh for the finer one to be
+    /// called converged — the same 2 % brief 32's own field-board gate states.
+    /// </summary>
+    internal const double DiscretisationTolerance = 0.02;
+
+    /// <summary>
+    /// The Accurate reading, solved at its own pitch AND one rung coarser, with the difference
+    /// between the two stated as the answer's discretisation error.
+    /// </summary>
+    /// <remarks>
+    /// <b>Measured on the user's own board, never assumed.</b> The mesh is exact on a straight run
+    /// at any angle and any pitch (PdnMeshExtractor's header), but a board is necks, bends, antipads
+    /// and a spreading under every pin, and no fixture can say how much of THIS board is that. So
+    /// every Accurate DC answer is solved twice — at <c>n</c> cells across the narrowest copper and
+    /// at <c>n − 1</c> — and the move between them is written on the result. The coarser mesh costs
+    /// less than half the finer one, and <see cref="PdnMeshExtractor.Plan"/> means the walk, the
+    /// return and the feature width are not repeated for it.
+    ///
+    /// <para>Where the two differ by more than <see cref="DiscretisationTolerance"/> the mesh is
+    /// refined a rung at a time until they agree, and when the next rung would pass the cell ceiling
+    /// the run REFUSES and names the place the last two meshes disagree most — a number that has
+    /// not settled is not returned. The field board that motivated this moved 0.27 % between 2 and
+    /// 3 across once R-rail32-1 was fixed, and 3.6× before it.</para>
+    ///
+    /// <para>A STATED cell size is the user's own knob and is solved once: the check would have to
+    /// choose a second size the user did not ask for, and the note says it was not measured.</para>
+    /// </remarks>
+    private static string? SolveConverged(
+        RailDcRequest request, RailSpec toSolve, string railName, RailChainStart? chained,
+        List<string> diagnostics, out PdnExtraction extraction, out LinearDcSolution solution)
+    {
+        var extractionRequest = RequestFor(request, toSolve);
+        var plan = PdnMeshExtractor.Plan(extractionRequest);
+        int n = Math.Max(1, extractionRequest.Mesh.CellsAcrossMinimumFeature);
+
+        extraction = plan.At(n);
+        solution = null!;
+        diagnostics.AddRange(extraction.Diagnostics.Select(d => $"[{railName}] {d}"));
+        if (extraction.Refusal is { } why) return why;
+        if (Solve(request, railName, extraction.Netlist!, out solution) is { } refused) return refused;
+
+        var pdn = extraction.Netlist!;
+        if (extractionRequest.Mesh.CellSizeMetres is > 0)
+        {
+            Discretisation(pdn,
+                "Its discretisation error was not measured: the cell size is stated, and a second " +
+                "size would be one nobody asked for.");
+            return null;
+        }
+
+        // The rung to compare against: one coarser, or one finer where there is none coarser.
+        int other = n > 1 ? n - 1 : n + 1;
+        var otherExtraction = plan.At(other);
+        if (otherExtraction.Refusal is not null ||
+            Solve(request, railName, otherExtraction.Netlist!, out var otherSolution,
+                  $"measuring the mesh at {other} cells across") is not null)
+        {
+            Discretisation(pdn,
+                $"Its discretisation error was not measured: the mesh at {other} cells across did not " +
+                "solve, so there was nothing to compare this one against.");
+            return null;
+        }
+
+        // The finer of the two is the answer; the coarser is what it is measured against.
+        var (finer, finerSolution, fineN) = other > n ? (otherExtraction, otherSolution, other) : (extraction, solution, n);
+        var (coarser, coarserSolution, coarseN) = other > n ? (extraction, solution, n) : (otherExtraction, otherSolution, other);
+        var (move, port) = LargestMove(toSolve, chained, finer.Netlist!, finerSolution, coarser.Netlist!, coarserSolution);
+
+        // Refine a rung at a time while the last two disagree.
+        while (move > DiscretisationTolerance)
+        {
+            var next = plan.At(fineN + 1);
+            if (next.Refusal is not null ||
+                next.Netlist!.Provenance.CellSizeMetres >= finer.Netlist!.Provenance.CellSizeMetres)
+                return NotConverged(request, coarseN, fineN, move, port,
+                                    finer.Netlist!, finerSolution, coarser.Netlist!, coarserSolution);
+
+            if (Solve(request, railName, next.Netlist!, out var nextSolution,
+                      $"refining the mesh to {fineN + 1} cells across") is { } nextRefused)
+                return nextRefused;
+
+            (coarser, coarserSolution, coarseN) = (finer, finerSolution, fineN);
+            (finer, finerSolution, fineN) = (next, nextSolution, fineN + 1);
+            (move, port) = LargestMove(toSolve, chained, finer.Netlist!, finerSolution, coarser.Netlist!, coarserSolution);
+        }
+
+        extraction = finer;
+        solution = finerSolution;
+        Discretisation(extraction.Netlist!,
+            $"The drop to {port} moved {move * 100:0.##} % between {coarseN} and {fineN} cells across " +
+            "the narrowest copper: the discretisation error this answer is believed to carry, " +
+            $"measured on this board against a {DiscretisationTolerance * 100:0.#} % tolerance.");
+        return null;
+    }
+
+    /// <summary>
+    /// The refusal for a mesh that would not settle under the ceiling — naming WHERE, because "not
+    /// converged" with no place attached leaves nothing to look at.
+    /// </summary>
+    /// <remarks>
+    /// The place is where the two meshes' answers pull apart fastest: the difference between the
+    /// two voltage fields, compared across every edge of the finer mesh, is largest across the edge
+    /// the extra drop is taken in. On the field board that located the whole 10 mV in one cell
+    /// edge (R-rail32-1) — the method the brief asked for, kept.
+    /// </remarks>
+    private static string NotConverged(
+        RailDcRequest request, int coarseN, int fineN, double move, string port,
+        PdnNetlist fine, LinearDcSolution fineSolution, PdnNetlist coarse, LinearDcSolution coarseSolution)
+    {
+        string where = WhereTheyDisagree(request.DbuPerMicron, fine, fineSolution, coarse, coarseSolution) is { } at
+            ? $" The two meshes disagree most at {request.LengthFormat.Point(at.X, at.Y)} on the " +
+              $"{(at.IsReference ? "reference" : "rail")} copper of layer {at.Layer.Layer}/{at.Layer.Datatype}" +
+              " — a neck, a sliver or a via land there is what the mesh cannot resolve."
+            : "";
+        return
+            $"Its Accurate answer did not converge: the drop to {port} moved {move * 100:0.##} % between " +
+            $"{coarseN} and {fineN} cells across the narrowest copper, against a " +
+            $"{DiscretisationTolerance * 100:0.#} % tolerance, and a finer mesh would pass the " +
+            $"{request.Mesh.MaxCells:N0}-cell ceiling.{where} Raise the ceiling, or state a cell size " +
+            "to take an unconverged answer knowingly.";
+    }
+
+    private static (long X, long Y, LayerKey Layer, bool IsReference)? WhereTheyDisagree(
+        int dbuPerMicron, PdnNetlist fine, LinearDcSolution fineSolution, PdnNetlist coarse, LinearDcSolution coarseSolution)
+    {
+        // The coarse field, bucketed by its own pitch so each fine cell finds its nearest coarse
+        // cell on the same conductor in a 3 × 3 neighbourhood.
+        long pitch = Math.Max(1, (long)(coarse.Provenance.CellSizeMetres * 1e6 * dbuPerMicron));
+        var buckets = new Dictionary<(LayerKey, bool, long, long), List<(long X, long Y, double V)>>();
+        foreach (var (node, cell) in coarse.NodeCells)
+        {
+            if (node <= 0) continue;
+            var key = (cell.Layer, cell.IsReference, cell.CentreX / pitch, cell.CentreY / pitch);
+            if (!buckets.TryGetValue(key, out var list)) buckets[key] = list = [];
+            list.Add((cell.CentreX, cell.CentreY, coarseSolution.VoltageAt(node)));
+        }
+
+        double? Coarse(PdnCellRef c)
+        {
+            long bx = c.CentreX / pitch, by = c.CentreY / pitch;
+            double best = double.MaxValue;
+            double? v = null;
+            for (long dx = -1; dx <= 1; dx++)
+                for (long dy = -1; dy <= 1; dy++)
+                    if (buckets.TryGetValue((c.Layer, c.IsReference, bx + dx, by + dy), out var list))
+                        foreach (var (x, y, cv) in list)
+                        {
+                            double d = (double)(x - c.CentreX) * (x - c.CentreX) + (double)(y - c.CentreY) * (y - c.CentreY);
+                            if (d < best) { best = d; v = cv; }
+                        }
+            return v;
+        }
+
+        var difference = new Dictionary<int, double>();
+        double Difference(int node)
+        {
+            if (difference.TryGetValue(node, out double d)) return d;
+            d = double.NaN;
+            if (node > 0 && fine.NodeCells.TryGetValue(node, out var cell) && Coarse(cell) is { } cv)
+                d = fineSolution.VoltageAt(node) - cv;
+            return difference[node] = d;
+        }
+
+        double worst = 0;
+        (long, long, LayerKey, bool)? at = null;
+        foreach (var o in fine.Origins)
+        {
+            if (o.Kind != PdnOriginKind.MeshEdge || o.From is not { } a || o.To is not { } b) continue;
+            var c = fine.Netlist.Components[o.ComponentIndex];
+            double jump = Math.Abs(Difference(c.Nodes[0]) - Difference(c.Nodes[1]));
+            if (!(jump > worst)) continue;
+            worst = jump;
+            at = ((a.CentreX + b.CentreX) / 2, (a.CentreY + b.CentreY) / 2, a.Layer, a.IsReference);
+        }
+        return at;
+    }
+
+    /// <summary>Writes the measured line onto the cell size's own basis AND the notes, which are
+    /// what a report carries.</summary>
+    private static void Discretisation(PdnNetlist pdn, string line)
+    {
+        pdn.Provenance = pdn.Provenance with
+        {
+            CellSizeBasis = pdn.Provenance.CellSizeBasis + ". " + line,
+            Notes = [.. pdn.Provenance.Notes, line],
+        };
+    }
+
+    /// <summary>The largest relative change, over every load port, in the drop between two
+    /// solutions of the same rail — and which port it was.</summary>
+    private static (double Move, string Port) LargestMove(
+        RailSpec rail, RailChainStart? chained,
+        PdnNetlist a, LinearDcSolution sa, PdnNetlist b, LinearDcSolution sb)
+    {
+        double? source = null;
+        foreach (var s in rail.Sources)
+            if (s.OpenCircuitVoltageV is { } v && (source is null || v > source)) source = v;
+        if (chained is not null && (source is null || chained.VoltageV > source)) source = chained.VoltageV;
+
+        double worst = 0;
+        string which = "the loads";
+        foreach (var pa in a.Ports)
+        {
+            var pb = b.Ports.FirstOrDefault(p => p.Index == pa.Index);
+            if (pb is null) continue;
+            double va = PortVoltage(pa, sa), vb = PortVoltage(pb, sb);
+            double scale = source is { } sv ? Math.Abs(sv - va) : Math.Abs(va);
+            if (!(scale > 0)) continue;
+            double move = Math.Abs(va - vb) / scale;
+            if (move >= worst) { worst = move; which = pa.Name; }
+        }
+        return (worst, which);
+    }
+
+    private static double PortVoltage(PdnPortBinding p, LinearDcSolution s) =>
+        (p.PowerNode >= 0 ? s.VoltageAt(p.PowerNode) : 0.0) -
+        (p.ReferenceNode >= 0 ? s.VoltageAt(p.ReferenceNode) : 0.0);
 
     // ── R-rail5-7: the rail chain ──────────────────────────────────────────────────────────────
 

@@ -1,5 +1,99 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## "Accurate" that was not converged: one sliver cell, a ceiling that counted empty grid, and a diagonal priced as a staircase (2026-09-22, brief-railrf-32)
+
+Measured on the fourth field report's board with brief 30's harness (Release; the designer's document,
+brief 31 landed, JP1 declared series, reference 3/0; 30 mA at the load). `CELLS=n` sets
+`CellsAcrossMinimumFeature` with `MaxCells` raised to 3,000,000; "default" is the shipped settings.
+
+**Before** (the brief's own table, plus the two rungs re-measured here):
+
+| Cells across | Pitch meshed | Cells | Drop at the load | Time |
+|---|---|---|---|---|
+| 2 | 126 µm | 161,235 | 12.31 mV | 10.5 s (brief) |
+| 3, default | **131 µm** (provenance said 84) | 142,973 | **14.55 mV** | 16.8 s |
+| 3, ceiling raised | 84 µm | 340,576 | 4.057 mV | 29.4 s |
+| 4 | 63 µm | 588,930 | 4.13 mV | 44 s (brief) |
+| 6 | 42 µm | 1,215,351 | 3.93 mV | 136 s (brief) |
+| 8 | coarsened | 929,950 | 4.03 mV | 80 s (brief) |
+
+**After:**
+
+| Cells across | Pitch meshed | Cells | Drop at the load | Time (extract + solve) |
+|---|---|---|---|---|
+| 2 | 126 µm | — | 3.8075 mV | 18.6 s |
+| **3, default** | **84 µm** | **340,576** | **3.8177 mV** | 28.6 s; **36.9 s with the convergence check** |
+| 4 | 63 µm | — | 3.8233 mV | 52 s |
+| 6 | 42 µm | — | 3.8353 mV | 161 s |
+| 8 | 31 µm | 2,248,183 | **3.8461 mV** | 409 s |
+
+**The converged drop on the designer's board is 3.82-3.85 mV** (default 3.8177 mV, within 0.74 % of
+8 across; gate 2 %). That is the number brief 33 gates Fast against. The residual creep of ~0.3 % per
+rung is consistent with the point-contact spreading term (a port is a point, whose 2-D spreading
+resistance grows logarithmically as the cell shrinks); it is ~10 µV here and not a meshing fault.
+
+### R-rail32-1 — what it was
+
+1. **The extra 10 mV was ONE cell edge, on the RETURN.** Diffing the 131 µm and 84 µm solutions cell by
+   cell: the rail copper agreed to 0.1 mV (3.29600 V vs 3.29613 V at the load); the reference plane
+   under the load read 10.55 mV against 0.18 mV. The largest adjacent-cell step on the reference was
+   10.44 mV across a single edge, into cell (138, 14) at (32788, 38835) µm — the ground node. The source
+   has no reference copper under it, so `NearestReferenceNode` took the nearest cell CENTRE, and at
+   131 µm that cell held a ~6 µm² corner of the plane. Its half-cell resistance dx²/(2σT·A) was ~0.7 Ω
+   per edge; 30 mA through it is the whole 3.6×. At 84 µm the grid lines fell elsewhere. **So the jump
+   was not convergence at all** — it was which cell the grid lines put a corner sliver in. The ladder
+   with a solid plate was not needed: the diff answered "rail or return" directly.
+2. **The default was never 3 across.** `PdnGrid.Build`'s ceiling counted the BOUNDING grid × two
+   conductors (~975,000 at 84 µm) against 400,000, while the mesh at 84 µm is 340,576 cells — a cell
+   exists only where there is copper. So it coarsened 84 → 131 µm (1.9 cells across the 0.251 mm
+   narrowest copper), said so only in a note, and `CellSizeMetres`/`CellSizeBasis` went on reporting
+   84 µm. That is also the non-monotonic cell count: 2 across (126 µm, uncoarsened under the raised
+   ceiling) had more cells than the coarsened "3"; 8 across (31 µm) was coarsened past 6's 42 µm.
+3. **A diagonal trace was priced as a staircase.** Not what drove the field board, but real: a 45°
+   trace of the minimum width at 3 across read **19.4 % high** (`R_rail32_ADiagonalTraceAt…`). The
+   area form treats each cell's copper as spread across the whole cell, so every partial cell along
+   both edges becomes a series bottleneck. The table's "corner-touching cells" hypothesis was the right
+   family and the wrong mechanism — no path was cut, the edges were just overpriced.
+
+### R-rail32-2 — the fix (the brief's preference 1, plus the measured line it requires either way)
+
+- **An edge conducts through the copper the two cells SHARE across it**: R = ((dx₀+dx₁)/2)/(σT·ℓ),
+  ℓ read off each cell's clipped polygon (its boundary on the edge line, intersected with the
+  neighbour's). A uniform field across a straight trace at any angle satisfies the discrete equations
+  exactly, and cells whose copper does not meet across their edge are no longer joined. Existing
+  closed-form gates, old → new (measured / closed form): 50 mm × 0.3 mm 1.00282 → 1.00255,
+  30 mm × 0.5 mm 1.00730 → 1.00651, stepped 1.00519 → 1.00471, 45° 1.19462 → **1.00234**. All moved
+  toward the closed form; what remains is the spreading at the two point ports.
+- **A point never attaches to a sliver** (`MeshBuilder.Settle`): a source, load, via or part landing
+  on a cell under half full moves to the fuller neighbour it shares the most copper edge with. The
+  reduced fixture (`R_rail32_ASliverOfPlane…`: a plane edge 1 µm vs 99 µm into a 0.1 mm column) read
+  5.79× at HEAD and 0.995 now. The shared-edge conductance alone does NOT fix this: a corner sliver's
+  edges are as short as its copper.
+- **The ceiling counts cells that exist.** The mesh is built, counted, and rebuilt coarser only if it
+  is over; refinement is still given up before the base pitch. A bounding-grid guard at 4 × the ceiling
+  remains, for memory only. `CellSizeMetres` is now the pitch meshed; a coarsening is on
+  `CellSizeBasis` with the cells-across it leaves; a note states the count (rail cells, reference
+  cells, grid, refinement).
+- **The discretisation error is measured on the user's board** (`RailDcRun.SolveConverged`). Extraction
+  is split into `PdnMeshExtractor.Plan` (walk, return, conductors, feature width — most of the time)
+  and `PdnMeshPlan.At(n)`, so every Accurate DC run meshes and solves n and n − 1 across and writes the
+  move onto the basis and the notes. Over 2 % it refines a rung at a time; when the next rung would
+  pass the ceiling it REFUSES and names the place the last two meshes disagree most (the edge-jump
+  locator used in §1). A stated cell size is solved once and says it was not measured. **Cost on the
+  field board: 28.6 s → 36.9 s** (the 2-across mesh and its solve), against 16.8 s for the wrong answer
+  at HEAD and 161 s for a blanket 6 across. The AC/plane runs still call `Extract` once per frequency.
+
+### Also found
+
+- **The shipped Power Rail example is two galvanic regions, not three.** `RailZMapTests` pinned the
+  impedance map's `Pieces == 3`; the walk reports 2 regions at every pitch, and the cavity's count is
+  over cells where the rail FACES its reference, so copper leaving the reference splits a region at some
+  pitches: 3 at 0.5/0.6/0.75 mm, 2 at 0.65/0.703/0.8 mm. The cavity re-meshed itself at 0.703 mm now
+  (2,902 cells) because the natural mesh it scales from is no longer coarsened by the old ceiling. The
+  assertion is now "more than one piece".
+- `PdnNetlist.Provenance` has an internal setter: the measured line is a fact about the SOLVE, which the
+  extractor never runs.
+
 ## The return is a net, not a layer (2026-09-22, brief-railrf-31)
 
 Rows 1-3 of brief 30's list below, fixed together because all three are the one question railRF never

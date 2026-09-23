@@ -697,6 +697,88 @@ public sealed class PdnMeshExtractorTests
     /// reader can see the number rather than infer it.</summary>
     private const double RefinementTolerance = 0.10;
 
+    // ── R-rail32: a cell holding a sliver of copper is not a place to attach anything ─────────
+
+    /// <summary>
+    /// A minimum-width trace at 45°, meshed at the DEFAULT pitch, is the closed form to under 1 % —
+    /// the same gate <see cref="MeshReproducesTheClosedForm"/> holds on an axis-aligned one. On the
+    /// diagonal every cell along both edges is a partial one, so this is the case the area-weighted
+    /// conductances have to carry without help from the grid lines.
+    /// </summary>
+    [Fact]
+    public void R_rail32_ADiagonalTraceAtTheDefaultPitchIsTheClosedForm()
+    {
+        var tech = Board(35.0, 35.0, 1.6);
+
+        double widthMm = 0.25, lengthMm = 30.0;
+        double c = Math.Sqrt(0.5);
+        (long X, long Y) At(double alongMm, double acrossMm) =>
+            (Mm((alongMm - acrossMm) * c), Mm((alongMm + acrossMm) * c));
+
+        var (x0, y0) = At(0, -widthMm / 2);
+        var (x1, y1) = At(lengthMm, -widthMm / 2);
+        var (x2, y2) = At(lengthMm, widthMm / 2);
+        var (x3, y3) = At(0, widthMm / 2);
+        var shapes = new List<LayoutShape>
+        {
+            new PolygonShape { Layer = Top, Xy = [x0, y0, x1, y1, x2, y2, x3, y3] },
+            Rect(Bot, -Mm(1), -Mm(1), Mm(lengthMm * c + 1), Mm(lengthMm * c + 1)),
+        };
+
+        var result = PdnMeshExtractor.Extract(
+            Request(tech, shapes, source: At(0.1, 0), load: At(lengthMm - 0.1, 0)));
+
+        Assert.Null(result.Refusal);
+        var pdn = result.Netlist!;
+
+        int a = SourceNode(pdn), b = NodeAt(pdn, "U1.VDD");
+        double measured = ResistanceBetween(pdn.Netlist, a, b);
+
+        // The span is the separation of the two port cells ALONG the trace — a port sits at a cell
+        // centre, which on a diagonal is off the axis by up to half a cell either way.
+        double dbuPerMetre = DbuPerMicron * 1e6;
+        double spanM = Math.Abs((pdn.NodeCells[b].CentreX - pdn.NodeCells[a].CentreX) * c
+                              + (pdn.NodeCells[b].CentreY - pdn.NodeCells[a].CentreY) * c) / dbuPerMetre;
+        double expected = CopperRho * spanM / (widthMm * 1e-3 * 35e-6);
+
+        Assert.Contains("at 3 cells across it", pdn.Provenance.CellSizeBasis);
+        Assert.InRange(measured, expected * 0.99, expected * 1.01);
+    }
+
+    /// <summary>
+    /// <b>The field board's 3.6×, reduced to one plane edge.</b> A source with no reference copper
+    /// under it returns through the NEAREST reference cell — and when the plane's edge falls just
+    /// inside a grid column, that cell holds a sliver of copper whose half-cell resistance,
+    /// dx²/(2σT·A), is set by how the grid lines fell rather than by the board. Moving the plane
+    /// edge across one cell must not move the return by more than the copper it moved.
+    /// </summary>
+    [Fact]
+    public void R_rail32_ASliverOfPlaneUnderTheReferencePointCostsNothing()
+    {
+        var tech = Board(35.0, 35.0, 1.6);
+
+        double Return(double edgeUm)
+        {
+            // A stated 0.1 mm cell puts a grid line on every 0.1 mm here, so the plane's edge sits
+            // edgeUm into the column [1.0, 1.1] mm: 1 µm leaves that column's cell 99 % copper and
+            // 99 µm leaves it 1 %.
+            var shapes = new List<LayoutShape>
+            {
+                Rect(Top, 0, 0, Mm(20), Mm(0.5)),
+                Rect(Bot, Mm(1) + Um(edgeUm), -Mm(2), Mm(20), Mm(2.5)),
+            };
+            var r = PdnMeshExtractor.Extract(Request(
+                tech, shapes, source: (Mm(0.05), Mm(0.25)), load: (Mm(19.95), Mm(0.25)),
+                cellSize: 0.1e-3));
+            Assert.Null(r.Refusal);
+            var pdn = r.Netlist!;
+            return ResistanceBetween(pdn.Netlist, pdn.Ports[0].ReferenceNode, 0);
+        }
+
+        double full = Return(1), sliver = Return(99);
+        Assert.InRange(sliver, full * 0.97, full * 1.03);
+    }
+
     // ── R-rail3-11: a series part is an ELEMENT ────────────────────────────────────────────────
 
     /// <summary>

@@ -255,6 +255,12 @@ passing report. Four rules make the two safe to have together:
 4. **The two are compared on your own board.** Running Accuracy keeps the fast curve beside the accurate
    one, so the error is measured on this design rather than promised in a document.
 
+**Accuracy measures its own mesh.** Every DC answer is solved a second time on a mesh one step
+coarser, and how far the drop to each load moved between the two is written on the result &mdash; that
+move is the discretisation error the answer is believed to carry, measured on your board rather than
+assumed. Where it is more than 2 % the mesh is refined until it settles; a mesh that cannot settle under
+the cell ceiling gives no number, and the refusal names the place on the board it could not resolve.
+
 Accuracy is **never entered automatically and never left silently**: the button is the only way in.
 
 ## The Settings flyout, control by control {#settings}
