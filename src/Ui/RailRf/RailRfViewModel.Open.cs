@@ -48,7 +48,18 @@ public sealed partial class RailRfViewModel
 
         var notes = new List<string>();
 
+        // ── THE CRASH TRAIL SAYS WHERE AN OPEN IS (field report, 2026-09-23) ─────────────────
+        //
+        // A `.crail` on a six-layer board held the window "not responding" for 15-20 minutes, and
+        // the crash report's trail held one Data Display line — nothing here wrote to it, so nobody
+        // could say which phase it was in. File NAMES only, and each phase's size and time.
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        Ui.Diagnostics.CrashReporter.Note($"rail: open {System.IO.Path.GetFileName(path)}");
+
         var found = RailArtwork.Resolve(_document, path, null, new TechnologyCache());
+        Ui.Diagnostics.CrashReporter.Note(
+            $"rail: artwork {found.Outcome} — {System.IO.Path.GetFileName(found.ClayPath ?? "")}, "
+          + $"{found.View?.Shapes.Count ?? 0} top-level shape(s), {clock.ElapsedMilliseconds} ms");
         switch (found.Outcome)
         {
             case RailArtworkOutcome.NoArtworkRef:
@@ -116,6 +127,9 @@ public sealed partial class RailRfViewModel
                 var flattenNotes = new List<string>();
                 var shapes = RailArtwork.FlattenedShapes(view, found.ClayPath, tech, flattenNotes);
                 foreach (string d in flattenNotes) notes.Add(d);
+                Ui.Diagnostics.CrashReporter.Note(
+                    $"rail: flattened {shapes.Count} shape(s) on {shapes.Select(sh => sh.Layer).Distinct().Count()} "
+                  + $"layer(s); reading pads and copper connectivity — {clock.ElapsedMilliseconds} ms");
 
                 // R-ab1-5b. Through the ONE funnel, which is what makes a board the user DREW
                 // resolve its own pads here and in the verb and in the bare-`.clay` open, all three
@@ -129,6 +143,8 @@ public sealed partial class RailRfViewModel
                 // An instance that does not resolve contributes neither geometry nor pads, and both
                 // walks report it with the SAME sentence (R-ab1-1c) — so it is said once.
                 foreach (string d in resolvedPads.Notes) if (!notes.Contains(d)) notes.Add(d);
+                Ui.Diagnostics.CrashReporter.Note(
+                    $"rail: pads read — {resolvedPads.Pads.Count} pad(s), {clock.ElapsedMilliseconds} ms");
 
                 Board = new RailBoardInputs
                 {
@@ -155,6 +171,8 @@ public sealed partial class RailRfViewModel
                 };
                 break;
         }
+
+        Ui.Diagnostics.CrashReporter.Note($"rail: board adopted — {clock.ElapsedMilliseconds} ms");
 
         var library = RailArtwork.ResolvePartLibrary(
             _document, path, out string? libraryPath, out string? libraryError);

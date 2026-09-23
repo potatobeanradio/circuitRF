@@ -627,6 +627,47 @@ public partial class RailRfWindow : Window
         WorkspaceLocator.WindowFor(workspace)?.Activate();
     }
 
+    /// <summary>
+    /// Applies the reference combo's offered repair — "Attach 'gnd' to GND" — through the technology
+    /// file's own editor (field report, 2026-09-23). Refuses on <see cref="OnBoardEditTechnology"/>'s
+    /// terms, because it needs the same open workspace.
+    /// </summary>
+    /// <remarks>
+    /// The adopted technology reaches this window through the workspace's live seam, which rebuilds the
+    /// combo; nothing here touches the rail. Picking the plane stays the user's confirmation.
+    /// </remarks>
+    private void OnApplyReferenceFix(object? sender, RoutedEventArgs e)
+    {
+        if (Vm is not { ReferenceFix: { } fix } vm) return;
+
+        string? why =
+            vm.TechnologyPath is not { Length: > 0 } tech
+                ? RailTechnologyEdit.NoTechnologyRefusal
+            : RailTechnologyEdit.IsTemporary(tech)
+                ? RailTechnologyEdit.TemporaryRefusal(tech)
+            : WorkspaceLocator.Any() is null
+                ? RailTechnologyEdit.NoWorkspaceRefusal(tech)
+                : null;
+
+        if (why is not null)
+        {
+            vm.Refusal = new RailRefusal(why, RailRefusalControl.None);
+            return;
+        }
+
+        var workspace = WorkspaceLocator.Any()!;
+        bool? saved = workspace.ApplyTechnologyFix(vm.TechnologyPath!, fix);
+        string file = System.IO.Path.GetFileName(vm.TechnologyPath!);
+        vm.Refusal = new RailRefusal(saved switch
+        {
+            true  => $"{fix.Label}: done, and saved to {file}. Pick the plane as the reference.",
+            false => $"{fix.Label}: done in {file}, which had other unsaved edits — save it from the " +
+                     "technology editor to keep it.",
+            null  => $"{file} could not be opened to apply '{fix.Label}' — see the Messages panel.",
+        }, RailRefusalControl.None);
+        AdoptLiveTechnology();
+    }
+
     /// <summary>The view model, or null before one is bound.</summary>
     private RailRfViewModel? Vm => DataContext as RailRfViewModel;
 

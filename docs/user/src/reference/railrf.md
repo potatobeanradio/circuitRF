@@ -126,6 +126,31 @@ frequency it is a place the impedance is judged. An empty current and a stated z
 statements, so railRF never defaults one to the other.</p>
 </div>
 
+### The part library {#part-library}
+
+The book button under the parts table opens the document's part library, or creates one seeded with
+every part number the document names when it has none (or names one that has since been deleted). One
+row per part number:
+
+| Column | What goes in it |
+|---|---|
+| **Class** | The capacitor's dielectric class, from the drop-down; it sets the ESR default when no ESR is stated. **Other** marks a part that is not a capacitor &mdash; a ferrite bead, a resistor &mdash; which takes no bias curve and is modelled by the ESR on its row. |
+| **C**, **f₀** | The marked capacitance and the self-resonant frequency, each **with its unit** (`100 nF`, `28.9 MHz`). A bare number is not taken: its scale would be a guess. |
+| **ESL (datasheet)** | Optional &mdash; an inductance your table states. It is not used; it is checked against the next column and the row is flagged where they differ by more than 5 %. |
+| **ESL from f₀** | Read-only: 1/((2πf₀)²C), the inductance railRF uses. |
+| **ESR** | Where you know it. Blank takes the class's default, and every number computed from one is marked indicative. |
+| **Model file** | Optional &mdash; the path, relative to the library, of the part's own Touchstone or SPICE model. Not a part number. It overrides the row, and a Touchstone file is the only route to a measured ESR. |
+
+A bias curve can be added only to a capacitor row that states its capacitance.
+
+**Import table…** on the library's toolbar reads a `.csv` of parts into it as one undoable edit &mdash; save a
+spreadsheet as `.csv` first. A part-number column is required; C, the self-resonance and L are read only
+where the column header states the unit (`C (pF)`, `resonance (MHz)`, `L (nH)`) or each cell does
+(`100nF`). A row whose Value and C columns disagree imports neither, and says so. Supplier tools often
+find a part only once its trailing packaging code is deleted, so a part number that is a library row's
+with its end trimmed is matched to that row &mdash; when exactly one row fits &mdash; and named in the
+report above the table.
+
 ## Q0 &mdash; is this rail connected, and what does it cost to get there? {#q0}
 
 Press **Run**. You get, for each port, the voltage there and how far below the source it is; and, under

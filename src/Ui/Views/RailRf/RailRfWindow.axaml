@@ -984,6 +984,13 @@
                                  Q-8 closed. -->
                             <TextBlock Classes="note" Text="{Binding ReferenceProposalReason}"
                                        IsVisible="{Binding !IsReferenceConfirmed}"/>
+                            <!-- The technology editor's own repair, offered where the disabled row
+                                 is SEEN (field report, 2026-09-23). -->
+                            <Button Content="{Binding ReferenceFixLabel}" FontSize="10" Padding="8,2"
+                                    HorizontalAlignment="Stretch" Margin="0,0,0,3"
+                                    IsVisible="{Binding HasReferenceFix}"
+                                    Click="OnApplyReferenceFix"
+                                    ToolTip.Tip="Attaches this drawing layer to the conductor in the technology file, through the technology editor, and saves it — the same repair the editor's Stackup tab offers. The conductor can then be picked as the reference."/>
                             <!-- R-rail27-1d. The copper that belongs to no conductor, said HERE and
                                  at open: the extraction says the same thing, but only after a run,
                                  and a run needs a reference this very fact is what there is none of.
@@ -2041,7 +2048,7 @@
                                         IsVisible="{Binding HasParts}"
                                         Click="OnCreatePartLibraryClick"
                                         ToolTip.Placement="Top" ToolTip.VerticalOffset="-4"
-                                        ToolTip.Tip="Create part library… — seed a .crlib from the part numbers this document names, and open it. Until a part number resolves to a capacitance and a self-resonance the row contributes nothing to the curve.">
+                                        ToolTip.Tip="{Binding PartLibraryButtonTip}">
                                     <mi:MaterialIcon Kind="BookPlus" Width="14" Height="14"/>
                                 </Button>
                             </StackPanel>

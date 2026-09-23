@@ -453,6 +453,27 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
     private string _referenceProposalReason = "";
 
     /// <summary>
+    /// The one-press repair for a conductor listed as <see cref="NoDrawingLayer"/>, where the
+    /// technology names the drawing layer that is very likely its copper — or null.
+    /// </summary>
+    /// <remarks>
+    /// <b>The technology editor's own <see cref="TechFix"/>, offered where the problem is SEEN</b>
+    /// (field report, 2026-09-23: the designer could not pick the GND plane as a reference, and the
+    /// sentence under the combo sent him to another window to find a button there). The fix is
+    /// <c>TechValidation</c>'s, so the two windows offer the same repair or neither does.
+    /// </remarks>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasReferenceFix))]
+    [NotifyPropertyChangedFor(nameof(ReferenceFixLabel))]
+    private TechFix? _referenceFix;
+
+    /// <summary>True while <see cref="ReferenceFix"/> has a repair to offer.</summary>
+    public bool HasReferenceFix => ReferenceFix is not null;
+
+    /// <summary>The repair's button text — "Attach 'gnd' to GND".</summary>
+    public string ReferenceFixLabel => ReferenceFix?.Label ?? "";
+
+    /// <summary>
     /// What the combo currently shows. Setting it does NOT confirm it — see
     /// <see cref="ConfirmReference"/>.
     /// </summary>
@@ -512,6 +533,9 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
         var (proposal, reason) = ProposeReference(tech, SelectedRail);
         ReferenceProposal = proposal;
         ReferenceProposalReason = reason;
+        ReferenceFix = tech is null
+            ? null
+            : TechValidation.Analyze(tech).Select(p => p.Fix).FirstOrDefault(f => f is not null);
 
         // ItemsSource first, then the selection — always (§7's second trap).
         _settingProposal = true;

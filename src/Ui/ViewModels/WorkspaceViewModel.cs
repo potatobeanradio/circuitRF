@@ -7356,6 +7356,30 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     public void OpenTechnologyDocument(string absolutePath) => OpenOrActivateTech(absolutePath);
 
     /// <summary>
+    /// Applies a <see cref="TechFix"/> to the <c>.ctech</c> at <paramref name="absolutePath"/> through
+    /// that file's OWN editor — opened if it is not — and saves it when the edit is the only unsaved
+    /// change. Returns true when it saved, false when it left the edit unsaved beside others, and
+    /// null when the file could not be opened.
+    /// </summary>
+    /// <remarks>
+    /// railRF's reference combo offers the technology editor's repair in place (field report,
+    /// 2026-09-23). It goes through the editor rather than writing the file, so there is one writer,
+    /// one undo stack and one dirty mark for the file — and it SAVES only a clean document, because
+    /// saving would otherwise commit edits the user never asked this button to commit.
+    /// </remarks>
+    public bool? ApplyTechnologyFix(string absolutePath, TechFix fix)
+    {
+        OpenOrActivateTech(absolutePath);
+        if (!_openDocsByPath.TryGetValue(absolutePath, out var open) || open is not TechDocument doc)
+            return null;
+
+        bool wasClean = !doc.ViewModel.IsDirty;
+        doc.ViewModel.ApplyTechFixCommand.Execute(fix);
+        if (wasClean) doc.ViewModel.SaveCommand.Execute(null);
+        return wasClean;
+    }
+
+    /// <summary>
     /// How wide the Technology ▾ ▸ Edit… pane opens, in logical units. Owner request, 2026-09-02: wide
     /// enough for the layer table's <b>Name, Vis, Sel and Color</b> columns and no wider, so layers can
     /// be toggled with the artwork still on screen beside them.
@@ -7720,6 +7744,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             {
                 if (HostWindowOf(doc) is { } window) _ = SavePartLibraryAs(doc, window);
             };
+            vm.ImportTableRequested = () =>
+            {
+                if (HostWindowOf(doc) is { } window) _ = ImportPartLibraryTable(doc, window);
+            };
 
             // Save As follows the new file, so the open-document map has to follow with it —
             // otherwise reopening the .crlib from the tree would mint a SECOND live view of one file.
@@ -7844,10 +7872,19 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             catch (Exception ex) { error = $"'{Path.GetFileName(crail)}' did not read: {ex.Message}"; return null; }
         }
 
+        // A reference to a file that is GONE is not a library — it is the state a user is in after
+        // deleting one, and refusing here left no way back but hand-editing the `.crail` (field
+        // report, 2026-09-23). The new library replaces the dangling reference, and says so.
+        string? replaced = null;
         if (document.PartLibraryRef is { Length: > 0 } existing)
         {
-            error = $"'{Path.GetFileName(crail)}' already names a part library ('{existing}').";
-            return null;
+            string resolved = CircuitRF.Core.RefPath.Resolve(Path.GetDirectoryName(crail)!, existing);
+            if (File.Exists(resolved))
+            {
+                error = $"'{Path.GetFileName(crail)}' already names a part library ('{existing}').";
+                return null;
+            }
+            replaced = existing;
         }
 
         // The BOM only ever exists in the session, so it is read from the window or not at all.
@@ -7893,6 +7930,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // resolves every electrical column against.
         live?.AdoptPartLibrary(crlib);
         live?.NoteSaved(crail);
+
+        if (replaced is not null)
+            error = $"'{Path.GetFileName(crail)}' named the part library '{replaced}', which no longer "
+                  + $"exists; it now names '{Path.GetFileName(crlib)}' instead.";
 
         _factory.ProjectTreeTool?.Refresh();
         return crlib;

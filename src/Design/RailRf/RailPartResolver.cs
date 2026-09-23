@@ -104,7 +104,8 @@ public sealed class RailPartModelSet
     /// <summary>Parts with no capacitance-versus-bias curve, by name — the count §9 asks the result
     /// to carry, beside brief 2's own <see cref="PartLibrary.Coverage"/>.</summary>
     public IReadOnlyList<string> WithoutBiasCurve =>
-        [.. Mounted.Where(m => m.IsResolved && m.Capacitance.Basis == RailCapacitanceBasis.Marked)
+        [.. Mounted.Where(m => m.IsResolved && m.Capacitance.Basis == RailCapacitanceBasis.Marked
+                            && m.Row?.IsCapacitor != false)   // a row classed Other needs none
                    .Select(m => m.Name)];
 
     /// <summary>Parts whose ESR resolves to NOTHING — no file, no stated value, no recognised
@@ -399,7 +400,11 @@ public sealed class RailPartResolver
         else
         {
             warnings.Add(
-                row.DielectricClass is { Length: > 0 } stated
+                !row.IsCapacitor
+                    ? $"Part '{row.PartNumber}' is classed {PartLibraryRow.OtherClass} (not a " +
+                      "capacitor) and states no ESR, so railRF has no resistance for it. State its " +
+                      "ESR on the library row."
+                : row.DielectricClass is { Length: > 0 } stated
                     ? $"Part '{row.PartNumber}' states a dielectric class of '{stated}', which is " +
                       "not one railRF has a dissipation factor for, so it has NO ESR. Its resonance " +
                       "can be placed and not sized. Known classes: " +

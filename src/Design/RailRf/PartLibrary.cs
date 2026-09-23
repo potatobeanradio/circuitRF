@@ -84,6 +84,20 @@ public sealed class PartLibraryRow
     /// having no class rather than a part quietly given X7R's dissipation factor.</summary>
     public string? DielectricClass { get; set; }
 
+    /// <summary>
+    /// The <see cref="DielectricClass"/> that says this part is <b>not a capacitor</b> — a ferrite
+    /// bead, a resistor. Stated rather than inferred from an empty capacitance, because a row with
+    /// no capacitance is far more often a capacitor nobody has filled in yet (a seeded row).
+    /// </summary>
+    /// <remarks>Field report, 2026-09-23: a bead and a sense resistor were counted as parts missing
+    /// a bias curve, and the designer asked for "Other" on the class drop-down.</remarks>
+    public const string OtherClass = "Other";
+
+    /// <summary>False where the row's class is <see cref="OtherClass"/>. A bias curve, and the
+    /// counts of parts lacking one, are about capacitors only.</summary>
+    public bool IsCapacitor =>
+        !string.Equals(DielectricClass?.Trim(), OtherClass, StringComparison.OrdinalIgnoreCase);
+
     /// <summary>The voltage rating, in VOLTS. What derating (Q-12) is judged against.</summary>
     public double? VoltageRatingV { get; set; }
 
@@ -195,15 +209,19 @@ public sealed class PartLibraryRow
 /// margin in dB computed from an indicative peak looks exactly as authoritative as a real one.</param>
 /// <param name="Indicative">Known part numbers whose ESR resolves to a class default — the NORMAL
 /// case (Q-15), and the set every peak height is marked indicative from.</param>
+/// <param name="NotCapacitors">Known part numbers whose row is classed
+/// <see cref="PartLibraryRow.OtherClass"/>. In neither bias-curve count, since a curve is a
+/// capacitor's.</param>
 public sealed record PartLibraryCoverage(
     int Referenced,
     int Known,
     IReadOnlyList<string> Unknown,
     IReadOnlyList<string> WithoutBiasCurve,
     IReadOnlyList<string> WithoutEsrBasis,
-    IReadOnlyList<string> Indicative)
+    IReadOnlyList<string> Indicative,
+    IReadOnlyList<string> NotCapacitors)
 {
-    public int WithBiasCurve => Known - WithoutBiasCurve.Count;
+    public int WithBiasCurve => Known - NotCapacitors.Count - WithoutBiasCurve.Count;
 
     /// <summary>The sentence brief 7's status strip prints.</summary>
     public string Summary =>
@@ -293,19 +311,22 @@ public sealed class PartLibrary
         var noCurve = new List<string>();
         var noEsr = new List<string>();
         var indicative = new List<string>();
+        var notCapacitors = new List<string>();
 
         foreach (string part in referenced)
         {
             var row = Part(part);
             if (row is null) { unknown.Add(part); continue; }
 
-            if (row.BiasCurve.Count == 0) noCurve.Add(part);
+            if (!row.IsCapacitor) notCapacitors.Add(part);
+            else if (row.BiasCurve.Count == 0) noCurve.Add(part);
             if (row.EsrBasis is null) noEsr.Add(part);
             else if (row.EsrBasis == EsrProvenance.ClassDefault) indicative.Add(part);
         }
 
         return new PartLibraryCoverage(
-            referenced.Count, referenced.Count - unknown.Count, unknown, noCurve, noEsr, indicative);
+            referenced.Count, referenced.Count - unknown.Count, unknown, noCurve, noEsr, indicative,
+            notCapacitors);
     }
 
     /// <summary>Every row whose stated inductance disagrees with the derived one by more than

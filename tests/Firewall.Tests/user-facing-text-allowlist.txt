@@ -295,6 +295,8 @@ src/Design/Layout/Interchange/GerberWriter.cs|{shape.GetType().Name} must be res
 src/Design/Layout/LayoutCoordinateWalk.cs|{shape.GetType().Name} is axis-aligned by type and cannot be walked through a rotating 
 src/Design/Layout/LayoutPersistence.cs|.clay format_version {file.FormatVersion} is newer than 
 src/Design/Layout/LayoutPersistence.cs|Failed to deserialize .clay file.
+src/Design/Layout/CoordinatePairsJsonConverter.cs|A coordinate list ended before its closing bracket.
+src/Design/Layout/CoordinatePairsJsonConverter.cs|A coordinate list is a JSON array of integers.
 src/Design/Layout/PCells/PCellValueJsonConverter.cs|Unhandled PCell value kind '{value.Kind}'.
 src/Design/Layout/PCells/PCellValueJsonConverter.cs|Unrecognised PCell parameter value token '{reader.TokenType}'.
 src/Design/Layout/PCells/PCellValueJsonConverter.cs|Unrecognised PCell parameter value — expected a number, string, boolean, or {{\"{IntTag}\": n}}.

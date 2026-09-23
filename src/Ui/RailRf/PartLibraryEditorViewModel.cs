@@ -330,6 +330,16 @@ public sealed partial class PartLibraryRowViewModel(PartLibraryEditorViewModel o
         set => Commit(() => Model.DielectricClass = Blank(value), "Change a dielectric class", nameof(DielectricClass));
     }
 
+    /// <summary>
+    /// What the Class drop-down offers: every class railRF has a dissipation factor for, then
+    /// <see cref="PartLibraryRow.OtherClass"/> for a part that is not a capacitor. The box stays
+    /// editable, so a class a maintained table already spells its own way is kept as written.
+    /// </summary>
+    /// <remarks>Field report, 2026-09-23 — the designer's suggestion, and the answer to a ferrite
+    /// bead and a sense resistor being counted as capacitors missing a bias curve.</remarks>
+    public static IReadOnlyList<string> ClassOptions { get; } =
+        [.. RailEsrDefaults.KnownClasses, PartLibraryRow.OtherClass];
+
     public string VoltageRatingEntry
     {
         get => Text(Model.VoltageRatingV, RailQuantity.Voltage);
@@ -461,9 +471,10 @@ public sealed partial class PartLibraryRowViewModel(PartLibraryEditorViewModel o
     /// </remarks>
     public bool IsIncomplete =>
         Model.PartNumber.Length > 0
-        && Model.CapacitanceFarads is null
-        && Model.SelfResonantFrequencyHz is null
-        && Model.ModelRef is not { Length: > 0 };
+        && Model.ModelRef is not { Length: > 0 }
+        && (Model.IsCapacitor
+            ? Model.CapacitanceFarads is null && Model.SelfResonantFrequencyHz is null
+            : Model.EsrOhms is null);   // an Other part is modelled by its stated resistance
 
     /// <summary>Where this row came from, or empty — <b>the parts table's own sentence</b>
     /// (<c>RailPartRowViewModel.OriginText</c>), because a pre-filled number nobody checked is the
@@ -496,6 +507,16 @@ public sealed partial class PartLibraryRowViewModel(PartLibraryEditorViewModel o
     private static double? Parse(string? text, RailQuantity quantity, double? current)
     {
         if (string.IsNullOrWhiteSpace(text)) return null;
+
+        // ── A BARE NUMBER IS REFUSED WHERE ITS SCALE IS A GUESS (field report, 2026-09-23) ─────
+        //
+        // The designer asked which unit f0 was in. A self-resonance copied from a table in MHz as 28.89
+        // was stored as 28.89 Hz; a capacitance in pF as farads. Nothing about either looks wrong
+        // in the cell. Volts and ohms keep the bare form, where the base unit is what anybody means.
+        if (quantity is RailQuantity.Frequency or RailQuantity.Capacitance or RailQuantity.Inductance
+            && !text.Trim().Any(c => char.IsLetter(c) && c is not ('e' or 'E')))   // 1e6 is bare too
+            return current;
+
         return RailValueFormat.TryParse(text, quantity, out double v) ? v : current;
     }
 
@@ -607,6 +628,50 @@ public sealed partial class PartLibraryEditorViewModel : ObservableObject
     /// </summary>
     public Action? SaveAsRequested { get; set; }
 
+    /// <summary>The toolbar's Import table…. The picker is the host's, on <see cref="SaveAsRequested"/>'s
+    /// terms; the import itself is <see cref="ImportTable"/>.</summary>
+    public IRelayCommand ImportTableCommand { get; }
+
+    /// <summary>Asks the host for a <c>.csv</c> and then calls <see cref="ImportTable"/>.</summary>
+    public Action? ImportTableRequested { get; set; }
+
+    /// <summary>What the last import did, or empty — shown above the grid until the next one.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasImportReport))]
+    private IReadOnlyList<string> _importReport = [];
+
+    public bool HasImportReport => ImportReport.Count > 0;
+
+    /// <summary>
+    /// Reads a table of parts into this library as ONE undoable edit (field report, 2026-09-23: a
+    /// designer had every part's C, self-resonance and ESL in a spreadsheet and no way in).
+    /// </summary>
+    /// <remarks>
+    /// Every rule — which columns, which units, which rows match — is
+    /// <see cref="PartLibraryTableImport"/>'s, below the firewall. This only snapshots, applies and
+    /// shows the report.
+    /// </remarks>
+    public void ImportTable(string path)
+    {
+        string text;
+        try { text = System.IO.File.ReadAllText(path); }
+        catch (Exception ex)
+        {
+            ImportReport = [$"{System.IO.Path.GetFileName(path)} could not be read: {ex.Message}"];
+            return;
+        }
+
+        string before = SnapshotJson();
+        var report = PartLibraryTableImport.Apply(Working, text, System.IO.Path.GetFileName(path));
+        if (report.Added.Count + report.Updated.Count > 0)
+        {
+            CommitEdit(before, $"Import {System.IO.Path.GetFileName(path)}");
+            RebuildRows();
+            RefreshDerived();
+        }
+        ImportReport = [$"{System.IO.Path.GetFileName(path)}: {report.Summary}", .. report.Notes];
+    }
+
     private bool _suppressCommit;
 
     public PartLibraryEditorViewModel(string filePath, PartLibrary library)
@@ -618,6 +683,7 @@ public sealed partial class PartLibraryEditorViewModel : ObservableObject
         RedoCommand = new RelayCommand(() => UndoRedo.Redo(), () => UndoRedo.CanRedo);
         SaveCommand   = new RelayCommand(Save);
         SaveAsCommand = new RelayCommand(() => SaveAsRequested?.Invoke());
+        ImportTableCommand = new RelayCommand(() => ImportTableRequested?.Invoke());
 
         UndoRedo.PropertyChanged += (_, e) =>
         {
@@ -648,6 +714,18 @@ public sealed partial class PartLibraryEditorViewModel : ObservableObject
     }
 
     public bool HasSelectedRow => _selectedRow is not null;
+
+    /// <summary>
+    /// A bias curve is a CAPACITOR's, so a point can be added only to a row that states a marked
+    /// capacitance.
+    /// </summary>
+    /// <remarks>
+    /// Field report, 2026-09-23: this seeded a row with no capacitance at 1 µF, so pressing it on a
+    /// ferrite bead's row gave the bead a one-point curve — and the bead was then solved as a 1 µF
+    /// decoupling capacitor, reading "unresolved → 1 µF" in the parts table.
+    /// </remarks>
+    public bool CanAddBiasPoint =>
+        _selectedRow?.Model is { CapacitanceFarads: > 0, IsCapacitor: true };
 
     public string SelectedRowTitle =>
         _selectedRow is { } r && r.PartNumber.Length > 0
@@ -900,16 +978,16 @@ public sealed partial class PartLibraryEditorViewModel : ObservableObject
     /// Adds a curve point at the row's own rating and marked capacitance, which is the point somebody
     /// is most likely to be entering next — never a zero, which the row would refuse.
     /// </summary>
-    [RelayCommand(CanExecute = nameof(HasSelectedRow))]
+    [RelayCommand(CanExecute = nameof(CanAddBiasPoint))]
     private void AddBiasPoint()
     {
-        if (SelectedRow is not { } row) return;
+        if (SelectedRow is not { } row || !CanAddBiasPoint) return;
 
         double bias = row.Model.BiasCurve.Count == 0
             ? 0.0
             : row.Model.BiasCurve[^1].BiasVolts + Math.Max(1.0, row.Model.VoltageRatingV ?? 1.0) / 4.0;
         double capacitance = row.Model.BiasCurve.Count == 0
-            ? row.Model.CapacitanceFarads ?? 1e-6
+            ? row.Model.CapacitanceFarads!.Value
             : row.Model.BiasCurve[^1].CapacitanceFarads;
 
         string before = SnapshotJson();
@@ -1138,6 +1216,7 @@ public sealed partial class PartLibraryEditorViewModel : ObservableObject
         OnPropertyChanged(nameof(CoverageText));
         OnPropertyChanged(nameof(SelectedBiasCurve));
         OnPropertyChanged(nameof(SelectedMarkedCapacitanceFarads));
+        AddBiasPointCommand.NotifyCanExecuteChanged();
         RefreshSeeding();
     }
 }

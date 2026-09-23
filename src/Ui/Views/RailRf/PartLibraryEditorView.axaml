@@ -122,6 +122,11 @@
                         Padding="6,3">
                     <mi:MaterialIcon Kind="ContentSaveEditOutline" Width="16" Height="16"/>
                 </Button>
+                <Button Command="{Binding ViewModel.ImportTableCommand}"
+                        ToolTip.Tip="Import table… — read a .csv of parts into this library as one undoable edit: part number, C, self-resonance, ESL, ESR, class, rating, footprint and description. C, f₀ and L are read only where the column header or the cell states the unit — C (pF), resonance (MHz), L (nH). A part number that is the library's with its end trimmed is matched and named in the report. Save a spreadsheet as .csv first."
+                        Padding="6,3">
+                    <mi:MaterialIcon Kind="TableArrowDown" Width="16" Height="16"/>
+                </Button>
 
                 <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
                         Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
@@ -167,6 +172,16 @@
                                              Foreground="{DynamicResource CrfWarningBrush}"/>
                     </StackPanel>
                 </Border>
+                <!-- What the last Import table… did, and every note on it. -->
+                <ItemsControl ItemsSource="{Binding ViewModel.ImportReport}"
+                              IsVisible="{Binding ViewModel.HasImportReport}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="x:String">
+                            <SelectableTextBlock Text="{Binding}" FontSize="11" TextWrapping="Wrap"
+                                                 Margin="0,1"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
                 <!-- R-rail24-2a — the disagreement, on the FILE as well as on the row, because a table
                      of twenty parts is where one row's warning is easiest to miss. -->
                 <ItemsControl ItemsSource="{Binding ViewModel.Disagreements}"
@@ -210,14 +225,22 @@
                                 <TextBlock Grid.Column="3"  Classes="colhdr" Text="Footprint"/>
                                 <TextBlock Grid.Column="4"  Classes="colhdr" Text="Class"/>
                                 <TextBlock Grid.Column="5"  Classes="colhdr" Text="V rating"/>
-                                <TextBlock Grid.Column="6"  Classes="colhdr" Text="C"/>
-                                <TextBlock Grid.Column="7"  Classes="colhdr" Text="f₀"/>
-                                <TextBlock Grid.Column="8"  Classes="colhdr" Text="L stated"/>
-                                <TextBlock Grid.Column="9"  Classes="colhdr" Text="L derived"
-                                           ToolTip.Tip="1/((2·π·f₀)²·C) — this is the value used."/>
-                                <TextBlock Grid.Column="10"  Classes="colhdr" Text="ESR"/>
+                                <!-- Named in the datasheet's own terms, each with what it is
+                                     for (field report, 2026-09-23: the designer could not tell what
+                                     the two L columns were). -->
+                                <TextBlock Grid.Column="6"  Classes="colhdr" Text="C"
+                                           ToolTip.Tip="The marked capacitance, with its unit (100 nF)."/>
+                                <TextBlock Grid.Column="7"  Classes="colhdr" Text="f₀"
+                                           ToolTip.Tip="The self-resonant frequency, with its unit (28.9 MHz) — where the part's impedance is lowest. With C it gives the part's ESL."/>
+                                <TextBlock Grid.Column="8"  Classes="colhdr" Text="ESL (datasheet)"
+                                           ToolTip.Tip="Optional: the equivalent series inductance your table or datasheet states. railRF does not use it — it checks it against the ESL from C and f₀ and flags the row where the two differ by more than 5 %."/>
+                                <TextBlock Grid.Column="9"  Classes="colhdr" Text="ESL from f₀"
+                                           ToolTip.Tip="The ESL railRF uses, 1/((2·π·f₀)²·C), from this row's C and f₀. Read-only."/>
+                                <TextBlock Grid.Column="10"  Classes="colhdr" Text="ESR"
+                                           ToolTip.Tip="The equivalent series resistance, if you know it. Blank takes the dielectric class's default, marked indicative."/>
                                 <TextBlock Grid.Column="11" Classes="colhdr" Text="ESR basis"/>
-                                <TextBlock Grid.Column="12" Classes="colhdr" Text="Model reference"/>
+                                <TextBlock Grid.Column="12" Classes="colhdr" Text="Model file"
+                                           ToolTip.Tip="Optional: the path, relative to this library file, of the part's own Touchstone (.s2p) or SPICE model — not a part number. Where one is given it overrides the row's C, f₀ and ESR, and a Touchstone file is the only route to a measured ESR."/>
                                 <TextBlock Grid.Column="13" Classes="colhdr" Text="Source"
                                            ToolTip.Tip="Where this row's fields came from. The parts table's own column — a pre-filled number nobody checked is the one that will be wrong."/>
                             </Grid>
@@ -267,16 +290,29 @@
                                                     </DataTemplate>
                                                 </ComboBox.ItemTemplate>
                                             </ComboBox>
-                                            <TextBox Grid.Column="4" Classes="cell"
-                                                     Text="{Binding DielectricClass, Mode=TwoWay}"
-                                                     ToolTip.Tip="X7R, X5R, C0G/NP0, … Blank means the ESR resolves from no class at all, rather than quietly taking X7R's."/>
+                                            <!-- The class railRF knows, or Other for a part that
+                                                 is not a capacitor (field report, 2026-09-23).
+                                                 Editable, the footprint cell's idiom, so a table's
+                                                 own spelling survives. -->
+                                            <ComboBox Grid.Column="4" Classes="cell"
+                                                      ItemsSource="{x:Static rail:PartLibraryRowViewModel.ClassOptions}"
+                                                      IsEditable="True"
+                                                      Text="{Binding DielectricClass, Mode=TwoWay}"
+                                                      ToolTip.Tip="The capacitor's dielectric class — its ESR default when no ESR is stated. Other: not a capacitor (a ferrite bead, a resistor), which takes no bias curve and is modelled by the ESR stated on the row. Blank means no class at all, rather than quietly taking X7R's."/>
                                             <TextBox Grid.Column="5" Classes="cell"
                                                      Text="{Binding VoltageRatingEntry, Mode=TwoWay}"/>
+                                            <!-- C, f0 and L take a UNIT; a bare number is refused
+                                                 (field report, 2026-09-23: the unit of f0 was unclear). -->
                                             <TextBox Grid.Column="6" Classes="cell"
-                                                     Text="{Binding CapacitanceEntry, Mode=TwoWay}"/>
+                                                     Watermark="100 nF"
+                                                     Text="{Binding CapacitanceEntry, Mode=TwoWay}"
+                                                     ToolTip.Tip="Marked capacitance, with its unit: 100 nF, 4.7 uF, 12 pF. A bare number is not taken."/>
                                             <TextBox Grid.Column="7" Classes="cell"
-                                                     Text="{Binding SelfResonantFrequencyEntry, Mode=TwoWay}"/>
+                                                     Watermark="28.9 MHz"
+                                                     Text="{Binding SelfResonantFrequencyEntry, Mode=TwoWay}"
+                                                     ToolTip.Tip="Self-resonant frequency, with its unit: 28.9 MHz, 1.2 GHz, 850 kHz. A bare number is not taken."/>
                                             <TextBox Grid.Column="8" Classes="cell"
+                                                     Watermark="0.3 nH"
                                                      Text="{Binding StatedInductanceEntry, Mode=TwoWay}"
                                                      ToolTip.Tip="{Binding DisagreementSentence}"/>
                                             <!-- R-rail24-2a: derived, and therefore read-only. A stored
@@ -292,7 +328,8 @@
                                                        ToolTip.Tip="{Binding ModelSourceText}"/>
                                             <TextBox Grid.Column="12" Classes="cell"
                                                      Text="{Binding ModelRef, Mode=TwoWay}"
-                                                     ToolTip.Tip="A Touchstone or SPICE model beside the library file. It OVERRIDES the row, and it is the only route to a measured ESR."/>
+                                                     Watermark="parts/cap-100n.s2p"
+                                                     ToolTip.Tip="The path of the part's own Touchstone or SPICE model file, relative to this library — not a part number. It OVERRIDES the row, and it is the only route to a measured ESR."/>
                                             <!-- R-ab4-3b: a field filled from a bill of materials
                                                  reads as filled from one, so a wrong parse is
                                                  correctable rather than mysterious. Empty on a row

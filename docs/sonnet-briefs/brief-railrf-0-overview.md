@@ -199,6 +199,7 @@ unusable.
 | [32 — Accurate that is not converged](brief-railrf-32-accurate-that-is-not-converged.md) | the default mesh reads 3.6× high on real routing; find why, and never return an unconverged number | default within 2 % of 8 cells across; a 45° trace to 1 % |
 | [33 — the fast model and the return plane](brief-railrf-33-the-fast-model-and-the-return-plane.md) | a return plane is never a ribbon; the coarse mesh resolves the return or Fast refuses | Fast within 5 % of converged Accurate on the field board, or a refusal |
 | [34 — an anchor over two nets](brief-railrf-34-an-anchor-over-two-nets.md) | a pad anchor seeds its land; a coordinate over two nets states its layer or is refused | two supplies never become one rail |
+| [35 — series parts from the window](brief-railrf-35-series-parts-from-the-window.md) | a gesture to make a part series, a library `Other` row as its model, and a TREE of series elements rather than one | a hand-built chain oracle, and every existing answer unchanged bit for bit |
 
 **19-24 are window-level and independent of each other.** 25 is a model change and is the largest
 of the seven; it blocks

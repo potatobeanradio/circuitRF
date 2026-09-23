@@ -171,18 +171,20 @@ public sealed class PartLibraryEditorTests : IDisposable
         string path = CopyShippedLibrary();
         var vm  = Open(path);
         var doc = new PartLibraryDocument("decoupling.crlib", vm, path);
-        string original = vm.Rows[0].CapacitanceEntry;
+        // The ESR cell, where a bare number means ohms. C, f0 and L refuse one (field report,
+        // 2026-09-23), so on those the first keystroke that changes anything is the unit's.
+        string original = vm.Rows[0].EsrEntry;
 
-        vm.Rows[0].CapacitanceEntry = "2";
+        vm.Rows[0].EsrEntry = "2";
         Assert.True(doc.IsDirty);
         Assert.StartsWith("•", doc.Title, StringComparison.Ordinal);
 
-        vm.Rows[0].CapacitanceEntry = "22";
-        vm.Rows[0].CapacitanceEntry = "220 nF";
-        Assert.Equal(2.2e-7, vm.Rows[0].Model.CapacitanceFarads!.Value, 12);
+        vm.Rows[0].EsrEntry = "22";
+        vm.Rows[0].EsrEntry = "220 mΩ";
+        Assert.Equal(0.22, vm.Rows[0].Model.EsrOhms!.Value, 12);
 
         vm.UndoCommand.Execute(null);
-        Assert.Equal(original, vm.Rows[0].CapacitanceEntry);
+        Assert.Equal(original, vm.Rows[0].EsrEntry);
         Assert.False(doc.IsDirty);
         Assert.False(vm.UndoRedo.CanUndo);
 

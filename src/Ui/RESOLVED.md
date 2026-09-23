@@ -35018,3 +35018,47 @@ clipboard read is a cross-process call; one per frame, or one per property read,
 
 Gate: `SmithClipboardTests.PasteIsGreyedForTheClipboardAndNothingElse` — the four clipboard states and
 the copy refresh, all through the real command's `CanExecute`.
+
+## railRF field report round 5 — the reference combo, a bead solved as a capacitor, the library (2026-09-23)
+
+Fifth outside report (beta.29). Gate: `tests/Ui.Tests/RailRf/RailRfFieldReport5Tests.cs`.
+
+- **The GND plane could not be picked as the reference, even after it was attached.** The Ref. combo and
+  the note under it were rebuilt only on a new board or rail, so attaching `gnd` to GND in the
+  technology editor — the repair the note asks for — left the row reading "no drawing layer" until
+  railRF was reopened. `AdoptTechnology` now rebuilds both when the stackup moved, and the combo offers
+  the editor's own `TechFix` beside it (`WorkspaceViewModel.ApplyTechnologyFix`: through the editor, so
+  one writer and one undo stack; it saves only a document that had no other unsaved edits).
+- **A ferrite bead was solved as a 1 µF shunt capacitor.** `AddBiasPoint` seeded `CapacitanceFarads ??
+  1e-6`, so pressing it on a bead's row wrote a one-point curve, and `RailDerating.Apply` returned that
+  point as the derated value — "unresolved → 1 µF", model source "library row". The command now needs a
+  capacitor row stating C, and derating ignores a curve on a row with no C or classed Other.
+- **"No capacitance" is not "not a capacitor."** Excluding C-less rows from the bias-curve counts was
+  tried first and broke two gates: a SEEDED row and a row stating only a class are capacitors nobody has
+  filled in. The signal has to be stated, so the Class cell is an editable drop-down of
+  `RailEsrDefaults.KnownClasses` plus `PartLibraryRow.OtherClass`, and only Other leaves the counts
+  (`PartLibraryCoverage.NotCapacitors`).
+- **C, f₀ and L refuse a bare number** in the library editor — 28.89 typed from a table in MHz was
+  stored as 28.89 Hz. Cost: on those three cells the first keystroke no longer marks the document dirty
+  (the owner's 2026-09-20 rule); the unit's keystroke does. `PartLibraryEditorTests`' keystroke gate
+  moved to the ESR cell. The L columns are now "ESL (datasheet)" / "ESL from f₀", with header tooltips.
+- **A deleted library could not be replaced.** `CreatePartLibraryForRailDocument` refused whenever the
+  `.crail` named ANY library, existing or not. A dangling reference is now replaced and said to be; the
+  parts pane's book button OPENS a library that exists instead of asking for a name and then refusing.
+- **The hang on open left nothing in the crash trail** — nothing in railRF wrote to it. `LoadDocumentReferences`
+  now notes each phase (`rail:` prefix, file names only, sizes and elapsed ms). Measured on the round-4
+  board (2 layers, 6,868 shapes): open is 7–9 s on the UI thread, nearly all `RailArtwork.PadsFor`, from
+  two lookups costing queries × pour vertices — `DrcConnectivity.FirstTouching` (every via against a
+  board-wide pour's whole path) and `PieceIndex.IndexAt`'s `Regions.Contains` fallback for spanning
+  pieces. Not fixed yet; the 6-layer board that took 15–20 min is needed to confirm.
+- **`.clay` size** — see `src/Design/RESOLVED.md` (same date).
+- **Import table… (.csv, the owner's choice — no .xlsx)** in the part-library editor, one undo step;
+  every rule is `PartLibraryTableImport` in `src/Design`. His own table showed why two rules exist: it
+  carried an "L" column in henries with no unit beside "L (nH)" (the unitless one is reported, not
+  read), and one row reads 150 nF in Value and 1,500,000 pF in "C (pF)" (neither is imported; the row
+  is named). A part number that is a library row's with its end trimmed matches when exactly one row
+  fits — supplier selection tools often find a part only once the packaging suffix is deleted.
+- **"Model reference" read as a supplier part number.** It is a model FILE path; the column is now
+  "Model file", with a tooltip and a path watermark.
+- **Series parts** — no window gesture, and one per rail where his rail has two in a chain — are
+  briefed as `docs/sonnet-briefs/brief-railrf-35-series-parts-from-the-window.md`.

@@ -40,6 +40,13 @@ namespace CircuitRF.Design.Layout;
 //  set out to design is unnecessary. A full reorder of 3,284 shapes costs 41 KB, because git's delta
 //  compression is content-based rather than line-based — preserve shape order for the HUMAN reading a
 //  diff, and never let git be the reason a serializer is constrained.
+//
+//  WHAT DID CHANGE, 2026-09-23, AND WHY IT IS NOT A CONTRADICTION OF THE ABOVE: the WORKING COPY. A
+//  Gerber-imported board reached 57 MB on disk from a 359 kB zip, most of it the indented writer's
+//  number-per-line and two-space indent. Coordinates are now a vertex per line
+//  (CoordinatePairsJsonConverter), indented with one tab per level, with LF on every platform — 7.33
+//  → 4.66 MB on a 6,868-shape board. Still plain text, still one line per vertex, so a moved vertex is
+//  still a one-line diff. The reader is unchanged; every older file still opens.
 // ──────────────────────────────────────────────────────────────────────────────
 
 public sealed class ClayFile
@@ -139,9 +146,22 @@ public static class LayoutPersistence
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
         WriteIndented               = true,
+
+        // ── THE .clay IS WRITTEN FOR git DIFF (field report, 2026-09-23) ────────────────────────
+        //
+        // A tab per level rather than two spaces: leading whitespace was a third of an imported
+        // board's file. And LF on every platform: the workspace's .gitattributes marks .clay `-text`
+        // so the bytes on disk are the bytes written — which the platform default NewLine defeated,
+        // since a board saved on Windows and then on macOS differed on every line.
+        IndentCharacter             = '\t',
+        IndentSize                  = 1,
+        NewLine                     = "\n",
         DefaultIgnoreCondition      = JsonIgnoreCondition.WhenWritingNull,
         PropertyNameCaseInsensitive = true,
-        Converters                  = { new JsonStringEnumConverter(), new PCells.PCellValueJsonConverter() },
+        // CoordinatePairsJsonConverter: a vertex per line, not a number per line — half the file,
+        // and still a one-line diff for one moved vertex.
+        Converters                  = { new JsonStringEnumConverter(), new PCells.PCellValueJsonConverter(),
+                                        new CoordinatePairsJsonConverter() },
     };
 
     // ── Write ─────────────────────────────────────────────────────────────────

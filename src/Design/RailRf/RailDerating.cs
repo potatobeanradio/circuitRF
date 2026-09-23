@@ -114,6 +114,19 @@ public static class RailDerating
     {
         double marked = row.CapacitanceFarads ?? double.NaN;
 
+        // ── A CURVE WITH NO MARKED VALUE IS NOT A CAPACITOR ─────────────────────────────────
+        //
+        // (field report, 2026-09-23.) A ferrite bead's row had picked up a one-point curve — the
+        // editor used to seed one at 1 µF — and this returned that point as the DERATED value, so
+        // the bead was solved as a 1 µF shunt capacitor. A row that states no capacitance is not
+        // one; its curve is ignored and said to be.
+        if (row.BiasCurve.Count > 0 && (!(marked > 0) || !row.IsCapacitor))
+            return new RailDeratedCapacitance(
+                marked, null, marked, RailCapacitanceBasis.Marked, railVoltageV,
+                $"Part '{row.PartNumber}' has a bias curve and " +
+                (row.IsCapacitor ? "states no capacitance" : $"is classed {PartLibraryRow.OtherClass}") +
+                ", so its curve was ignored and it was NOT modelled as a derated capacitor.");
+
         if (row.BiasCurve.Count == 0)
             return new RailDeratedCapacitance(
                 marked, null, marked, RailCapacitanceBasis.Marked, railVoltageV,

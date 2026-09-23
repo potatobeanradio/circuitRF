@@ -80,11 +80,11 @@ public partial class RailRfWindow
             + "by — the capacitance, the ESR and the self-resonance stay the library's.");
         assign.Click += (_, _) => AssignPartNumberTo(targets, row.PartNumber);
 
-        var library = new MenuItem { Header = "Create part library…" };
-        ToolTip.SetTip(library,
-            "Seed a .crlib from the part numbers this document names, and open it. Until a part "
-            + "number resolves to a capacitance and a self-resonance the row contributes nothing to "
-            + "the curve.");
+        var library = new MenuItem
+        {
+            Header = Vm?.PartLibraryPath is { Length: > 0 } ? "Open part library" : "Create part library…",
+        };
+        ToolTip.SetTip(library, Vm?.PartLibraryButtonTip);
         library.Click += (_, _) => CreatePartLibrary();
 
         var remove = new MenuItem
@@ -235,6 +235,16 @@ public partial class RailRfWindow
                 "A part library is created in a workspace, and this railRF window has none open "
                 + "behind it. Open the workspace this design belongs to and try again.",
                 RailRefusalControl.None);
+            return;
+        }
+
+        // A document that already HAS a library opens it: the button is where the parts are, and
+        // asking for a name only to refuse it afterwards left a designer asking where the part
+        // library that holds the self-resonance could be made at all (field report, 2026-09-23).
+        if (vm.PartLibraryPath is { Length: > 0 } existing && File.Exists(existing))
+        {
+            workspace.OpenOrActivatePartLibrary(existing);
+            WorkspaceLocator.WindowFor(workspace)?.Activate();
             return;
         }
 

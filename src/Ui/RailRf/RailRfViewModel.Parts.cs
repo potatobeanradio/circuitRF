@@ -41,7 +41,19 @@ public sealed partial class RailRfViewModel
     /// from here.
     /// </remarks>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(PartLibraryButtonTip))]
     private string? _partLibraryPath;
+
+    /// <summary>
+    /// What the parts pane's library button does — OPEN the library this document names, or create
+    /// one where it names none or names a file that is gone (field report, 2026-09-23).
+    /// </summary>
+    public string PartLibraryButtonTip => PartLibraryPath is { Length: > 0 } p
+        ? $"Open part library — {System.IO.Path.GetFileName(p)}. Each part number's row holds its "
+        + "capacitance, self-resonant frequency and ESR; the parts table reads them from there."
+        : "Create part library… — seed a .crlib from the part numbers this document names, and open "
+        + "it. Each row then takes a capacitance, a self-resonant frequency and an ESR; until a part "
+        + "number resolves to them the row contributes nothing to the curve.";
 
     /// <summary>
     /// §9's headline number: how many parts are modelled from a FILE rather than from a library row.

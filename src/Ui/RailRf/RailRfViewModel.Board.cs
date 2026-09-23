@@ -626,6 +626,16 @@ public sealed partial class RailRfViewModel
 
         if (!physicsMoved) return;
 
+        // ── THE REFERENCE LIST IS OF THE STACKUP, SO IT FOLLOWS ONE ───────────────────────────
+        //
+        // (field report, 2026-09-23.) This window's Ref. combo and the note under it were rebuilt
+        // only on a new board or a new rail, so attaching `gnd` to the GND conductor in the
+        // technology editor — the exact repair the note asks for — left the row reading "no drawing
+        // layer" and disabled until railRF was closed and reopened. A repair that appears not to
+        // have worked is indistinguishable from one that did not.
+        RebuildUnclaimedCopperNote();
+        RebuildReferenceOptions();
+
         ClearResults();
         SyncBoardOverlayResult();
         RefreshRunGate();

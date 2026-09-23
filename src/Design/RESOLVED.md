@@ -11697,3 +11697,23 @@ did not.
 `CircuitRF.Design.Layout` is already a global using in both `src/Ui` and `tests/Ui.Tests`, so every
 reference to `WBondCell.FileExtension`, `.FindFor` and `.RenamePairedWires` compiles unchanged; only
 the four `TryAttach` call sites were renamed.
+
+## `.clay` written a vertex per line, tab-indented, LF everywhere (2026-09-23)
+
+A field report's Gerber-imported board had a 57 MB `.clay` from a 359 kB zip. Measured on a 6,868-shape
+board of the same kind (7.33 MB): the geometry is ordinary (1.7× the raw Gerbers as compact JSON); 52 % was
+the indented writer's one-number-per-line with two-space indent. The owner's constraint: workspace history
+is git diff, so a moved vertex must stay a one-line diff — which rules out an array per line.
+
+- `CoordinatePairsJsonConverter` writes every `long[]` (all of them are interleaved x, y) as one `x, y`
+  per line; an odd count or a compact writer takes the ordinary spelling. Reading is unchanged, so every
+  older file opens.
+- `JsonOpts`: `IndentCharacter = '\t'`, `IndentSize = 1`, `NewLine = "\n"`. **LF is a fix in its own
+  right**: the workspace `.gitattributes` marks `.clay` `-text` so the bytes on disk are the bytes written,
+  and the platform-default NewLine meant a board saved on Windows then on macOS differed on EVERY line.
+  (`.csch`/`.csym`/`.ctech`/`.cws` writers have the same platform-newline exposure — not changed here.)
+- 7.33 MB → 4.66 MB (−36 %) on that board, identical re-serialisation after a round trip. What remains is
+  mostly the vertices themselves: 8-digit absolute nm-DBU. Delta-encoding would save more and is a format
+  change — not done.
+- The repo's committed `.clay` files keep the old spelling until next saved; each one's first save is a
+  whole-file diff, once. Gate: `tests/Ui.Tests/Layout/ClayVertexPerLineTests.cs`.

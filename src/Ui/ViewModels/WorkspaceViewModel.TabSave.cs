@@ -319,6 +319,22 @@ public partial class WorkspaceViewModel
     /// framework-free, so the picker is here and the VM takes a resolved path — and its
     /// <c>PartLibrarySavedAs</c> event is what re-keys the open-document map and re-asks the coverage.
     /// </summary>
+    /// <summary>The part-library editor's Import table… picker. <c>.csv</c> only (owner, 2026-09-23);
+    /// a spreadsheet is saved as one first.</summary>
+    internal async Task ImportPartLibraryTable(PartLibraryDocument doc, Window owner)
+    {
+        var files = await owner.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title         = "Import Parts Table",
+            AllowMultiple = false,
+            FileTypeFilter =
+                [new FilePickerFileType("Comma-separated values") { Patterns = ["*.csv"] }],
+        });
+
+        if (files is [var file] && file.TryGetLocalPath() is { Length: > 0 } path)
+            doc.ViewModel.ImportTable(path);
+    }
+
     internal async Task SavePartLibraryAs(PartLibraryDocument doc, Window owner)
     {
         var file = await owner.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
