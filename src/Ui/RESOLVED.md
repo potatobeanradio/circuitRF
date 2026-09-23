@@ -1,5 +1,22 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Update Layout from Schematic: a rename added a second copy of the part (2026-09-22)
+
+- **The link between a placement and its component is the instance NAME.** `LayoutInstance.SchematicId`
+  holds it and nothing in a `.csch` survives a rename (`EditableComponent.Id` is regenerated on every
+  load). A component renamed in the schematic therefore looked like one deletion plus one new part:
+  the old placement was kept with a warning that it is no longer in the schematic, and an identical
+  placement was added. The result was one part in the schematic and two on the board.
+- **Fix:** `SchematicToLayoutGenerator.PairRenames` treats a placement whose name has gone and a
+  component with no placement as one renamed part when both resolve to the same cell, and only when
+  that cell has exactly one of each. Such a component adopts the placement through the ordinary
+  `ReplaceInstanceCommand`, so a rename undoes like any other change. Its position, rotation link and
+  PCell snapshot are kept, and the report says "R1 — renamed to R9". Two renamed parts sharing one land-pattern cell are still
+  added plus orphaned, because pairing them either way could swap designators.
+- **Not fixed: the reverse direction has the mirror defect.** A rename followed by Update Schematic
+  from Layout meets a placement whose `SchematicId` is gone and creates a new component for it, so
+  the duplicate appears in the schematic instead.
+
 ## railRF briefs 28-34 — what a review still found in the window (2026-09-22)
 
 - **Adopting the layout session's live model never re-read the pads.** Both open paths read the pads

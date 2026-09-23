@@ -192,4 +192,25 @@ public class SchematicToLayoutGeneratorTests : IDisposable
         var abs2 = Path.GetFullPath(Path.Combine(layoutDir, ml2.CellRef));
         Assert.NotEqual(abs1, abs2, StringComparer.OrdinalIgnoreCase);
     }
+
+    [Fact]
+    public void TwoRenamesOntoOneSharedCell_AreNotPairedByGuess()
+    {
+        // Identical parameters share one generated cell, so nothing says which placement was which
+        // component: pairing either way could swap two designators. The old answer stands.
+        var (schematicDir, layoutDir, tech) = MakeCell("Amp6");
+        var model = new SchematicEditModel { SchematicDirectory = schematicDir };
+        model.Components.Add(MakeMlin("ML1"));
+        model.Components.Add(MakeMlin("ML2"));
+
+        var target = new LayoutView();
+        SchematicToLayoutGenerator.Run(model, target, schematicDir, _root, layoutDir, tech, "tech/t.ctech", null)
+            .Command!.Execute();
+
+        model.Components[0].InstanceName = "ML8";
+        model.Components[1].InstanceName = "ML9";
+        var r2 = SchematicToLayoutGenerator.Run(model, target, schematicDir, _root, layoutDir, tech, "tech/t.ctech", null);
+
+        Assert.Equal((2, 2), (r2.AddedCount, r2.RemovedCount));
+    }
 }

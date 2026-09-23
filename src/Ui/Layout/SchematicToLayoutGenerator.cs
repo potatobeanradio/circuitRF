@@ -162,6 +162,20 @@ public static class SchematicToLayoutGenerator
             if (target.Instances[i].SchematicId is { Length: > 0 } sid && !existingBySchematicId.ContainsKey(sid))
                 existingBySchematicId[sid] = (i, target.Instances[i]);
 
+        // Every component resolves once, here or in the loop — the rename pairing below needs a
+        // newcomer's cell before the loop reaches it, and resolving generates PCell artwork.
+        var resolved = new Dictionary<EditableComponent, Resolution>(ReferenceEqualityComparer.Instance);
+        Resolution ResolveOnce(EditableComponent comp)
+        {
+            if (resolved.TryGetValue(comp, out var r)) return r;
+            string? cellRef = ResolveComponentLayout(
+                comp, model, schematicDir, workspaceRootDir, targetLayoutBaseDir, target, technology, techIdentity,
+                scope, evaluator, out var pp, out var gid, out var warn, out var diags, out var refusal);
+            return resolved[comp] = new Resolution(cellRef, pp, gid, warn, diags, refusal);
+        }
+
+        var renamedFrom = PairRenames(physical, existingBySchematicId, ResolveOnce);
+
         var seenSchematicIds = new HashSet<string>(StringComparer.Ordinal);
         var newInstances = new List<(int Slot, LayoutInstance Instance)>();
         var deleteIndices = new List<int>();
@@ -179,10 +193,8 @@ public static class SchematicToLayoutGenerator
             if (string.IsNullOrEmpty(schematicId)) continue; // can't track an unnamed instance idempotently
             seenSchematicIds.Add(schematicId);
 
-            string? resolvedCellRef = ResolveComponentLayout(
-                comp, model, schematicDir, workspaceRootDir, targetLayoutBaseDir, target, technology, techIdentity,
-                scope, evaluator, out var pcellParams, out var generatorId, out var resolveWarning, out var pcellDiagnostics,
-                out var footprintRefusal);
+            var (resolvedCellRef, pcellParams, generatorId, resolveWarning, pcellDiagnostics, footprintRefusal) =
+                ResolveOnce(comp);
 
             if (resolvedCellRef is null)
             {
@@ -223,6 +235,18 @@ public static class SchematicToLayoutGenerator
                         LandPatternLayers.IsInformational(d) ? ReportSeverity.Info : ReportSeverity.Warning));
 
             bool hasExisting = existingBySchematicId.TryGetValue(schematicId, out var existing);
+
+            // A component renamed in the schematic: its placement is still linked under the OLD name.
+            // Adopting it is what keeps a rename from leaving the old part behind and adding a copy.
+            string? oldName = null;
+            if (!hasExisting && renamedFrom.TryGetValue(schematicId, out oldName))
+            {
+                existing = existingBySchematicId[oldName];
+                hasExisting = true;
+                seenSchematicIds.Add(oldName);
+                if (target.SchematicPCellSnapshots.Remove(oldName, out var carried))
+                    target.SchematicPCellSnapshots[schematicId] = carried;
+            }
 
             if (!hasExisting)
             {
@@ -307,7 +331,7 @@ public static class SchematicToLayoutGenerator
                     () => PinAlignment(comp, schematicDir, before.CellRef, targetLayoutBaseDir, technology));
                 if (rot.Unlinked) unlinkedDiffering++;
 
-                if (!cellRefChanged && !rot.Changes)
+                if (!cellRefChanged && !rot.Changes && oldName is null)
                 {
                     // Nothing to replace, but the baseline may be new (first sync of this pair) or have
                     // advanced (both sides were already turned alike). Bookkeeping, like the snapshots.
@@ -327,6 +351,13 @@ public static class SchematicToLayoutGenerator
                 if (rot.Changes) TurnInPlace(before, after, rot.Target, targetLayoutBaseDir);
                 chain = Chain(chain, new ReplaceInstanceCommand(target, existing.Index, before, after));
                 updated++;
+
+                if (oldName is not null)
+                {
+                    lines.Add(new ReportLine(schematicId, $"{oldName} — renamed to {schematicId} (from schematic)",
+                        ReportSeverity.Info));
+                    reportedThisInstance = true;
+                }
 
                 if (rot.Line is { } rotLine)
                 {
@@ -367,6 +398,51 @@ public static class SchematicToLayoutGenerator
         return new GenerationResult(chain, lines, added, updated, unchanged, removed, overwritten,
                                     noLayoutWarnings, addedRegion, deleteIndices.Count,
                                     linksRecorded);
+    }
+
+    private readonly record struct Resolution(
+        string? CellRef, IReadOnlyDictionary<string, PCellValue>? PCellParams, string? GeneratorId,
+        string? Warning, IReadOnlyList<string>? Diagnostics, string? FootprintRefusal);
+
+    /// <summary>
+    /// Which schematic components are placements renamed since the last run, as new name → old name.
+    ///
+    /// <para>The link between a placement and its component is the instance name (<see
+    /// cref="LayoutInstance.SchematicId"/>), and nothing in a <c>.csch</c> survives a rename to say
+    /// otherwise. So a rename looked like a deletion plus a new part: the old placement was left
+    /// behind as "no longer in the schematic" and an identical one was added beside it — one part in
+    /// the schematic, two on the board.</para>
+    ///
+    /// <para>A rename is recognised as a placement whose name has gone and a component with no
+    /// placement that resolve to the <b>same cell</b> — and only when that cell has exactly one of
+    /// each. Two renamed 0402s share one land-pattern cell, and pairing them in either order could
+    /// swap which placement carries which designator; that case keeps the old answer (added, and the
+    /// orphan reported) rather than guess.</para>
+    /// </summary>
+    private static Dictionary<string, string> PairRenames(
+        List<EditableComponent> physical,
+        Dictionary<string, (int Index, LayoutInstance Instance)> existingBySchematicId,
+        Func<EditableComponent, Resolution> resolve)
+    {
+        var pairs = new Dictionary<string, string>(StringComparer.Ordinal);
+        var names = new HashSet<string>(physical.Select(c => c.InstanceName), StringComparer.Ordinal);
+        var orphans = existingBySchematicId.Where(e => !names.Contains(e.Key)).ToList();
+        if (orphans.Count == 0) return pairs;
+
+        var newcomers = physical
+            .Where(c => c.InstanceName is { Length: > 0 } n && !existingBySchematicId.ContainsKey(n))
+            .Select(c => (Name: c.InstanceName, resolve(c).CellRef))
+            .Where(c => c.CellRef is not null)
+            .ToList();
+
+        foreach (var group in newcomers.GroupBy(c => c.CellRef!, StringComparer.OrdinalIgnoreCase))
+        {
+            if (group.Count() != 1) continue;
+            var sameCell = orphans.Where(o => string.Equals(o.Value.Instance.CellRef, group.Key,
+                                                            StringComparison.OrdinalIgnoreCase)).ToList();
+            if (sameCell.Count == 1) pairs[group.Single().Name] = sameCell[0].Key;
+        }
+        return pairs;
     }
 
     // ── Rotation (Update Layout from Schematic carries a symbol's turn to its placement) ──────────

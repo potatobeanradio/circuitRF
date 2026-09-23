@@ -436,6 +436,35 @@ public sealed class LayoutFirstPartTests : IDisposable
         Assert.False(cell.Vm.CanDropPaletteComponent(SymbolKind.Srlc, 2));
     }
 
+    // ══ 12. A rename in the schematic moves the name, not the part ══════════════════════════════
+
+    [Fact]
+    public void RenamingTheComponentRenamesItsPlacementInsteadOfAddingASecond()
+    {
+        // Field report, 2026-09-22: a part dropped on the board, back-annotated, renamed in the
+        // schematic and pushed back came back as TWO placements — the old one left behind as "no
+        // longer in the schematic" and a copy added beside it.
+        var cell = Cell("Board12");
+        Assert.True(cell.Vm.CommitPaletteDrop(SymbolKind.Resistor, 2, 3_000_000, 1_000_000));
+        Run(cell).Command!.Execute();
+
+        var comp = Assert.Single(cell.Schematic.Components);
+        comp.InstanceName = "R9";
+
+        var result = SchematicToLayoutGenerator.Run(cell.Schematic, cell.Vm.Model, cell.SchematicDir, _root,
+            cell.LayoutDir, cell.Vm.Technology, cell.TechPath, null);
+        result.Command!.Execute();
+
+        var inst = Assert.Single(cell.Vm.Model.Instances);
+        Assert.Equal("R9", inst.SchematicId);
+        Assert.Equal((3_000_000L, 1_000_000L), (inst.X, inst.Y));
+        Assert.Equal((0, 0, 1), (result.AddedCount, result.RemovedCount, result.UpdatedCount));
+        Assert.Contains(result.Lines, l => l.Text == "R1 — renamed to R9 (from schematic)");
+
+        result.Command.Undo();
+        Assert.Equal("R1", Assert.Single(cell.Vm.Model.Instances).SchematicId);
+    }
+
     // ── Fixture ─────────────────────────────────────────────────────────────────────────────────
 
     private sealed record CellFixture(
