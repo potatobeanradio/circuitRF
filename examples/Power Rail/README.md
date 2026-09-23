@@ -134,21 +134,21 @@ editor's properties panel.
 
 ## Q0 — is it connected, and what does it cost
 
-**48.6 mV** at `U1` against a **52 mV** budget. Met, and only just.
+**47.6 mV** at `U1` against a **52 mV** budget. Met, and only just.
 
 ```
-22.722 mV  46%   26.462 mm of 0.209 mm BOT copper       64.919 mOhm
-14.000 mV  28%   the source's own series resistance     40.000 mOhm
- 7.000 mV  14%   FB1's own DC resistance                20.000 mOhm
- 2.367 mV   5%   2.578 mm of 0.468 mm TOP copper         6.764 mOhm
- 0.637 mV   1%   9.334 mm of 0.227 mm BOT copper        22.264 mOhm
- 0.536 mV   1%   1.183 mm of 0.841 mm TOP copper         1.533 mOhm
- 0.536 mV   1%   1 mm of 0.324 mm TOP copper             1.668 mOhm
- 0.512 mV   1%   the reference return                    1.464 mOhm
+22.050 mV  46%   26.204 mm of 0.211 mm BOT copper       63.001 mOhm
+14.000 mV  29%   the source's own series resistance     40.000 mOhm
+ 7.000 mV  15%   FB1's own DC resistance                20.000 mOhm
+ 1.860 mV   4%   2.575 mm of 0.473 mm TOP copper         5.313 mOhm
+ 1.434 mV   3%   the reference return                    4.097 mOhm
+ 0.479 mV   1%   9.3 mm of 0.229 mm BOT copper          21.611 mOhm
+ 0.381 mV   1%   0.9 mm of 0.382 mm TOP copper           1.162 mOhm
+ 0.250 mV   1%   0.735 mm of 0.508 mm TOP copper         0.713 mOhm
 ```
 
-Those are the top eight of sixteen rows, and the window states the rest and their total. **Do not
-add the millivolts up and expect 48.6** — the full sixteen come to 49.3 mV, and that is not a
+Those are the top eight of seventeen rows, and the window states the rest and their total. **Do not
+add the millivolts up and expect 47.6** — the full seventeen come to 48.2 mV, and that is not a
 disagreement. The table counts every group carrying current anywhere on the rail, and the port drops
 only what is on the path from the source to it: where the rail divides into two legs that rejoin,
 each leg drops its own millivolts between the same pair of nodes, and the port drops one of them
@@ -158,7 +158,7 @@ the two differ.
 Half the budget is one trace. That is the finding this example exists for: on a compact board
 with thin copper the artwork is not a rounding error on the parts, it is the largest single term
 after the parts you already knew about. Widen the BOT run from 0.20 mm to 0.40 mm in the layout
-editor, re-run, and the drop falls to **40.594 mV** — the copper term halves and the FET becomes the
+editor, re-run, and the drop falls to **36.542 mV** — the copper term halves and the FET becomes the
 thing worth arguing about.
 
 Three via transitions, none over its current limit.
@@ -290,13 +290,17 @@ Run both. On this board they agree closely:
 
 | | Drop at U1 |
 |---|---|
-| Fast (the default) | 48.568 mV |
-| Accuracy | 49.336 mV |
+| Fast (the default) | 47.616 mV |
+| Accuracy | 49.096 mV |
 
-**1.6 % apart, and the Fast answer is the optimistic one** — which is the direction it is always
-wrong in, and the reason the two are worth running once on any board you intend to trust. Most of
-the difference is the reference return: Fast prices the plane at 1.464 mΩ from 38 coarse cells,
-Accuracy at 3.636 mΩ from 364,829.
+**3.0 % apart, and the Fast answer is the optimistic one** — which is the direction it is always
+wrong in, and the reason the two are worth running once on any board you intend to trust. The
+difference is in the rail's copper rather than its return: Fast prices each trace section from its
+own length and width and leaves out the constriction where current enters it, about a square at
+each end, which is 1.8 mV here. Both mesh the return plane — Fast refined under the ports, 4.097 mΩ
+from 9,973 cells; Accuracy 3.263 mΩ from 481,268. On this board Accuracy gives up its own refinement
+under the ports to stay under its cell ceiling, so it lands them in cells four times the size Fast
+does, and the spreading out of a port grows with the cell it lands in.
 
 Both models report the same plane capacitance, **9.826 pF over 2.19 cm² at εr 4.3**. That is the
 cheapest check on this page: one glance at it tests the permittivity, the overlap area and the

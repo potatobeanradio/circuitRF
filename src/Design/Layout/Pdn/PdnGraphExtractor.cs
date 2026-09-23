@@ -104,6 +104,24 @@ public sealed class PdnGraphSettings
     /// would no longer be the fast model.</summary>
     public int MaxPourCells { get; set; } = 2_000;
 
+    /// <summary>
+    /// The ceiling on cells per spreading region ONCE it is refined where current enters and
+    /// leaves it (brief-railrf-33). The refinement is not optional — a port's spreading resistance
+    /// is set by the cell it lands in — so a region that would need more than this is REFUSED,
+    /// naming it, rather than answered at a contact size the mesh does not share.
+    /// </summary>
+    public int MaxRefinedPourCells { get; set; } = 20_000;
+
+    /// <summary>
+    /// How many coarse cells a spreading region gets between the two port pads on it that lie
+    /// farthest apart (brief-railrf-33). Current runs from one port to the other across the whole
+    /// of that distance, and four cells across the region left the field board's return plane with
+    /// a few cells between its ports: a 30 × 20 mm plane with two ports 20 mm apart read 1.21× the
+    /// mesh at four across, 1.07× at eight, and 1.01× once the ports themselves were refined too.
+    /// Eight, and it only ever makes a region FINER than <see cref="PourCellsAcross"/> would.
+    /// </summary>
+    public int PourCellsBetweenPorts { get; set; } = 8;
+
     /// <summary>See <see cref="PdnCopperClassifier.TraceSquaresThreshold"/>.</summary>
     public double TraceSquaresThreshold { get; set; } = PdnCopperClassifier.TraceSquaresThreshold;
 
@@ -644,6 +662,7 @@ internal sealed class PdnGraphNodes(int dbuPerMicron) : IPdnNodeSource
 {
     private readonly List<PdnCellRef> _cells = [];
     private readonly List<string> _names = [];
+    private readonly List<bool> _attachable = [];
     private readonly Dictionary<(bool IsRef, long X, long Y), List<int>> _bySide = [];
     private readonly Dictionary<(LayerKey Layer, long X, long Y), int> _byLayer = [];
     private readonly List<(LayerKey Layer, bool IsReference, Bbox Bounds, Func<long, long, int> NodeAt)>
@@ -656,10 +675,14 @@ internal sealed class PdnGraphNodes(int dbuPerMicron) : IPdnNodeSource
     /// <summary>Hands out one node. The order they are handed out in IS
     /// <see cref="NodesInNaturalOrder"/>, and it is the order the pieces are walked in — never a
     /// dictionary's, because a node numbering that moved between runs would move the drop map.</summary>
-    public int New(LayerKey layer, bool isReference, int ix, int iy, long cx, long cy, string name)
+    /// <param name="attachable">False on a cell holding too little copper to be a place a point
+    /// is attached to — see <see cref="NearestReferenceNode"/>.</param>
+    public int New(LayerKey layer, bool isReference, int ix, int iy, long cx, long cy, string name,
+                   bool attachable = true)
     {
         _cells.Add(new PdnCellRef(layer, ix, iy, cx, cy, isReference));
         _names.Add(name);
+        _attachable.Add(attachable);
         return _cells.Count - 1;
     }
 
@@ -709,14 +732,23 @@ internal sealed class PdnGraphNodes(int dbuPerMicron) : IPdnNodeSource
         return hits;
     }
 
+    /// <summary>
+    /// The nearest reference node that is a place to attach a point — never a pour cell under
+    /// half full (brief-railrf-33). The mesh learned this in brief 32: a cell clipping a corner of
+    /// the plane holds a few square microns, and a return forced into it pays a resistance set by
+    /// where the grid lines fell. The fast reading's refined cells under a port are exactly that
+    /// small, and the field board's source sits over an antipad: attached to the nearest CENTRE,
+    /// its return read 0.78 mV against the mesh's 0.11.
+    /// </summary>
     public int NearestReferenceNode(long x, long y, out long distanceDbu)
     {
         int best = -1;
         double bestD = double.MaxValue;
+        bool any = Enumerable.Range(0, _cells.Count).Any(n => _cells[n].IsReference && _attachable[n]);
 
         for (int n = 0; n < _cells.Count; n++)
         {
-            if (!_cells[n].IsReference) continue;
+            if (!_cells[n].IsReference || (any && !_attachable[n])) continue;
             double dx = _cells[n].CentreX - x, dy = _cells[n].CentreY - y;
             double d = dx * dx + dy * dy;
             if (d < bestD) { bestD = d; best = n; }
@@ -1152,6 +1184,25 @@ internal sealed class GraphBuild(
     private int _merged;
     private int _coarsened;
 
+    // ── brief-railrf-33: where current enters and leaves the copper, and at what size ──────────
+    //
+    // The points current is injected at — every pad of every source and load; of every series
+    // part, on the rail's own copper only (it bridges the rail to itself); and of every shunt part
+    // only above DC, where a capacitor carries current at all. A spreading piece is refined around
+    // each one that lands on it, and around nothing else: at DC a decoupling capacitor's pads on
+    // the example board's return plane were half of 19,489 cells refining where no current flows.
+    private readonly List<(long X, long Y, bool RailOnly)> _entries = [];
+
+    // The size of the cell a port lands in on the MESH (its base pitch over its port refinement
+    // ratio), and the mesh's base pitch. A point contact's spreading resistance grows as the log of
+    // the cell it is smeared over, so the two readings describe the same contact only when they
+    // land it in the same size of cell; and a point is on a piece of copper only when copper lies
+    // within one mesh cell of it, which is where the mesh would attach it too. Zero where nothing
+    // measured the rail's narrowest copper, and then the coarse mesh is left as it was.
+    private long _contactDbu;
+    private long _attachToleranceDbu;
+    private string? _refusal;
+
     private readonly record struct Element(
         string Path, int A, int B, double Ohms, string Description,
         PdnCellRef From, PdnCellRef To, PdnOriginKind Kind, double LengthM, double WidthM,
@@ -1211,6 +1262,34 @@ internal sealed class GraphBuild(
         return PdnInductance.SquareInductanceHenries(h) / 2.0;
     }
 
+    /// <summary>The ports' pads, and the sizes <see cref="Pour"/> refines to — see the fields.</summary>
+    private void ResolveEntries()
+    {
+        var rail = request.Rail;
+        var seen = new HashSet<(long, long, bool)>();
+        void Add(RailPortAnchor anchor, bool railOnly = false)
+        {
+            foreach (var (x, y) in PdnAttachments.Resolve(anchor, request.Pads))
+                if (seen.Add((x, y, railOnly))) _entries.Add((x, y, railOnly));
+        }
+
+        foreach (var s in rail.Sources) Add(s.Anchor);
+        foreach (var l in rail.Loads) Add(l.Anchor);
+        foreach (var p in request.SeriesElements) { Add(p.A, railOnly: true); Add(p.B, railOnly: true); }
+        if (frequencyHz > 0)
+            foreach (var p in request.ShuntParts) Add(p.Anchor);
+
+        long narrowest = classification
+            .Where(c => !c.IsReference && c.MinimumFeatureDbu > 0)
+            .Select(c => c.MinimumFeatureDbu)
+            .DefaultIfEmpty(0)
+            .Min();
+        if (narrowest <= 0) return;
+
+        _attachToleranceDbu = Math.Max(1, narrowest / Math.Max(1, request.Mesh.CellsAcrossMinimumFeature));
+        _contactDbu = Math.Max(1, _attachToleranceDbu / Math.Max(1, request.Mesh.PortRefinementRatio));
+    }
+
     public long FinestRasterPitchDbu { get; private set; } = long.MaxValue;
     public long CoarsestPourPitchDbu { get; private set; }
     public double AccountedAreaSquareDbu { get; private set; }
@@ -1221,6 +1300,7 @@ internal sealed class GraphBuild(
         int piece = 0;
 
         ResolveSeparations();
+        ResolveEntries();
 
         foreach (var c in classification.ToList())
         {
@@ -1249,8 +1329,10 @@ internal sealed class GraphBuild(
                 classification[index] = Pour(c, piece, index, conductor, sigmaT, dbuPerMetre);
 
             piece++;
+            if (_refusal is not null) break;
         }
 
+        if (_refusal is not null) return _refusal;
         if (FinestRasterPitchDbu == long.MaxValue) FinestRasterPitchDbu = 0;
 
         if (_merged > 0)
@@ -1693,13 +1775,23 @@ internal sealed class GraphBuild(
     /// <para>A taper read at its wide end is optimistic; at its narrow end, pessimistic; and at its
     /// mean width it is neither of those and still wrong, because resistance integrates
     /// <c>1/W</c> and not <c>W</c>. So the sum below is over the section:
-    /// <c>R = Σ Δs·d / (σ·T·A)</c>, where <c>A</c> is the copper that belongs to that step and
-    /// <c>d</c> is the step's own footprint — which is <c>Σ Δs / (σ·T·W(s))</c> written in the
+    /// <c>R = Σ ℓ² / (σ·T·A)</c> over consecutive pieces of it, where <c>ℓ</c> is a piece's length
+    /// and <c>A</c> the copper that belongs to it — which is <c>Σ ℓ / (σ·T·W)</c> written in the
     /// quantities the raster actually measures, and is the same finite-volume form the mesh uses in
     /// two dimensions.</para>
     ///
-    /// <para>The two ends carry HALF a step of arc and a WHOLE step of copper, which is what makes a
-    /// uniform section come out at exactly <c>ρ·L/(W·T)</c> rather than half a pixel short.</para>
+    /// <para><b>A piece is a CHORD about two widths long, never one pixel step</b> (brief-railrf-33).
+    /// Thinning leaves an off-axis centreline as a four-connected STAIRCASE, so its pixel steps
+    /// over-state the length (up to ~8 % at 22.5°), and the copper each pixel owns jitters from step
+    /// to step, which a per-step <c>Σ 1/A</c> turns into a further bias — a straight 0.25 mm trace
+    /// at 22.5° read 1.50× its closed form and at 30° 1.52×, while 0° and 45° were exact. The field
+    /// board's rail was 21 % high for that alone. The chord between pixels two widths apart is
+    /// within half a pixel of the true centreline at each end, and two widths of copper average the
+    /// jitter away; a taper's width moves by a small fraction over two widths, so 1/W is still
+    /// integrated along the run rather than sampled.</para>
+    ///
+    /// <para>An end that carries a pad runs to the PAD, not to the pixel the skeleton stops at — see
+    /// the comment at <c>attachAt</c> in <see cref="Trace"/> for why that is not a detail.</para>
     /// </summary>
     private static (double Ohms, double LengthM, double WidthM, double Squares) SectionResistance(
         PdnTraceRaster raster, List<int> chain,
@@ -1708,45 +1800,66 @@ internal sealed class GraphBuild(
         int n = chain.Count;
         if (n < 2) return (0, 0, 0, 0);
 
-        var step = new double[n - 1];
-        for (int i = 0; i < n - 1; i++) step[i] = raster.StepDbu(chain[i], chain[i + 1]) / dbuPerMetre;
-
-        // The run from the pad to the pixel the skeleton actually reaches — see the comment at
-        // attachAt above for why this is not a detail.
-        double Overhang(int i)
+        (double X, double Y) Centre(int i)
         {
-            if (!attachAt.TryGetValue(chain[i], out var at)) return 0;
             var (cx, cy) = raster.CentreOf(chain[i]);
-            double dx = at.X - cx, dy = at.Y - cy;
-            return Math.Sqrt(dx * dx + dy * dy) / dbuPerMetre;
+            return (cx, cy);
         }
 
-        double headM = Overhang(0), tailM = Overhang(n - 1);
-        double ohms = 0, length = 0, area = 0, footprint = 0;
+        (double X, double Y) Position(int i) =>
+            (i == 0 || i == n - 1) && attachAt.TryGetValue(chain[i], out var at) ? (at.X, at.Y) : Centre(i);
 
-        for (int i = 0; i < n; i++)
+        static double Apart((double X, double Y) a, (double X, double Y) b) =>
+            Math.Sqrt((a.X - b.X) * (a.X - b.X) + (a.Y - b.Y) * (a.Y - b.Y));
+
+        // The section's width, only to size the chords: its copper over its pixel-step length. The
+        // staircase over-states that length by a few percent, which moves a chord by a pixel or two.
+        double areaDbu = 0, stepsDbu = 0;
+        for (int i = 0; i < n; i++) areaDbu += raster.AssignedAreaSquareDbu(chain[i]);
+        for (int i = 0; i + 1 < n; i++) stepsDbu += raster.StepDbu(chain[i], chain[i + 1]);
+        stepsDbu += Apart(Position(0), Centre(0)) + Apart(Position(n - 1), Centre(n - 1));
+        double widthDbu = stepsDbu > 0 ? areaDbu / stepsDbu : 0;
+
+        int pixelsPerChord = Math.Max(1, (int)Math.Round(ChordWidths * widthDbu / raster.PitchDbu));
+        int chords = Math.Max(1, (int)Math.Round((n - 1) / (double)pixelsPerChord));
+
+        double ohms = 0, length = 0, area = 0;
+        int from = 0;
+        for (int s = 1; s <= chords; s++)
         {
-            double before = i > 0 ? step[i - 1] : 0;
-            double after = i < n - 1 ? step[i] : 0;
+            int to = s == chords ? n - 1 : (int)Math.Round(s * (n - 1) / (double)chords);
+            if (to <= from) continue;
 
-            double arc = (before + after) / 2.0;                       // the chain's own length
-            double own = i == 0 ? after : i == n - 1 ? before : arc;   // the pixel's footprint
+            // The pixels strictly between the two ends are this chord's; a pixel on a boundary
+            // between two chords is shared half and half, and the section's own two ends are whole
+            // — they own the copper beyond the skeleton's end, which is copper this section runs to.
+            double a = 0;
+            for (int i = from; i <= to; i++)
+            {
+                double own = raster.AssignedAreaSquareDbu(chain[i]);
+                bool shared = (i == from && i != 0) || (i == to && i != n - 1);
+                a += shared ? own / 2 : own;
+            }
 
-            if (i == 0) { arc += headM; own += headM; }
-            if (i == n - 1) { arc += tailM; own += tailM; }
-
-            double a = raster.AssignedAreaSquareDbu(chain[i]) / (dbuPerMetre * dbuPerMetre);
-            if (!(a > 0) || !(own > 0)) continue;
-
-            ohms += arc * own / (sigmaT * a);
-            length += arc;
-            area += a;
-            footprint += own;
+            double l = Apart(Position(from), Position(to)) / dbuPerMetre;
+            double am = a / (dbuPerMetre * dbuPerMetre);
+            if (am > 0 && l > 0)
+            {
+                ohms += l * l / (sigmaT * am);
+                length += l;
+                area += am;
+            }
+            from = to;
         }
 
-        double width = footprint > 0 ? area / footprint : 0;
+        double width = length > 0 ? area / length : 0;
         return (ohms, length, width, width > 0 ? length / width : 0);
     }
+
+    /// <summary>How long one chord of <see cref="SectionResistance"/> is, in the section's own
+    /// widths — two, which is where the staircase's half-pixel wander at each end stops mattering
+    /// against the 1 % the closed-form gate asks for at six pixels across.</summary>
+    private const double ChordWidths = 2.0;
 
     /// <summary>
     /// Removes the short leaves thinning leaves behind at a rectangle's corners — and <b>never one
@@ -1827,10 +1940,90 @@ internal sealed class GraphBuild(
             _coarsened++;
         }
 
-        CoarsestPourPitchDbu = Math.Max(CoarsestPourPitchDbu, pitch);
+        // ── brief-railrf-33: refined where current enters and leaves ───────────────────────────
+        //
+        // A port is a POINT, and the resistance of current spreading out of a point grows as the
+        // log of the cell it lands in. At four cells across, the field board's 49 mm return plane
+        // put its ports in 12 mm cells and read 0.034 mV against the mesh's 0.114; refining the
+        // whole plane uniformly converges only logarithmically (0.072 mV at 32 across). So, around
+        // every port pad on the piece, cells start at the size the MESH lands a port in, stay that
+        // size over the band the mesh refines, and double outward until they reach the coarse pitch
+        // — and the coarse pitch itself is no more than an eighth of the distance between the ports,
+        // which is the distance the current crosses. A few dozen lines, not a finer grid.
+        //
+        // A port over a HOLE in this piece — the field board's source sits over an antipad in its
+        // return plane — attaches to the nearest copper instead (PdnAssembly.ReferenceNodesFor),
+        // so that is where it is refined; refined at the pad, its fine cells were all empty and
+        // the return attached a millimetre away into a cell sixty times the mesh's. And it is
+        // refined to the size the MESH has there: the mesh refines a band around the pad, and a
+        // point attached outside that band lands in one of its base cells, not a port cell.
+        var entries = new List<(long X, long Y, long Contact)>();
+        if (_contactDbu > 0 && _contactDbu < pitch)
+        {
+            long band = Math.Max(1, request.Mesh.PortRefinementMarginCells) * _attachToleranceDbu;
+            foreach (var p in _entries)
+            {
+                if ((p.RailOnly && c.IsReference) || !b.Contains(p.X, p.Y) || !Near(c.Copper, p.X, p.Y, pitch))
+                    continue;
+                if (Near(c.Copper, p.X, p.Y, _attachToleranceDbu)) { entries.Add((p.X, p.Y, _contactDbu)); continue; }
 
-        int nx = (int)(w / pitch) + 1, ny = (int)(h / pitch) + 1;
-        var area = CellAreas(c.Copper, b.MinX, b.MinY, pitch, nx, ny);
+                var (x, y) = Closest(c.Copper, p.X, p.Y);
+                bool inBand = Math.Abs(x - p.X) <= band && Math.Abs(y - p.Y) <= band;
+                entries.Add((x, y, inBand ? _contactDbu : _attachToleranceDbu));
+            }
+        }
+
+        // Around the ports — within half their span of the box they sit in, and only there — no
+        // cell is wider than an eighth of the distance the current crosses. Outside it the cells go
+        // on doubling to the coarse pitch, so two pads a millimetre apart on a 50 mm plane refine a
+        // few millimetres and not the plane. (Capping only the gaps BETWEEN the pads was not enough:
+        // two ports on one row have no gap between them across the row, and the fixture read 1.14.)
+        long between = long.MaxValue, span = 0;
+        if (entries.Count > 1)
+        {
+            span = Math.Max(entries.Max(p => p.X) - entries.Min(p => p.X),
+                            entries.Max(p => p.Y) - entries.Min(p => p.Y));
+            between = Math.Max(span / Math.Max(1, request.Graph.PourCellsBetweenPorts), 2 * _contactDbu);
+        }
+        (long Lo, long Hi) Region(IEnumerable<long> at) => (at.Min() - span / 2, at.Max() + span / 2);
+
+        // With ports on it, the coarse pitch is taken per axis — a quarter of the piece's extent
+        // along that axis — because the cells that matter are the ones around the ports, which the
+        // grading and the cap above size. Square cells a quarter of a 1 mm return strip's WIDTH
+        // along its 40 mm length were 160 columns of copper carrying a uniform current.
+        long px = entries.Count > 0 ? Math.Max(pitch, w / across) : pitch;
+        long py = entries.Count > 0 ? Math.Max(pitch, h / across) : pitch;
+        CoarsestPourPitchDbu = Math.Max(CoarsestPourPitchDbu, Math.Max(px, py));
+
+        long xEnd = b.MinX + ((w / px) + 1) * px, yEnd = b.MinY + ((h / py) + 1) * py;
+        int core = Math.Max(1, request.Mesh.PortRefinementRatio) *
+                   Math.Max(1, request.Mesh.PortRefinementMarginCells);
+
+        var xs = entries.Count > 0
+            ? GradedLines(b.MinX, xEnd, entries.Select(p => (p.X, p.Contact)), core, px,
+                          Math.Min(between, px), Region(entries.Select(p => p.X)))
+            : UniformLines(b.MinX, xEnd, pitch);
+        var ys = entries.Count > 0
+            ? GradedLines(b.MinY, yEnd, entries.Select(p => (p.Y, p.Contact)), core, py,
+                          Math.Min(between, py), Region(entries.Select(p => p.Y)))
+            : UniformLines(b.MinY, yEnd, pitch);
+
+        int nx = xs.Length - 1, ny = ys.Length - 1;
+        if (entries.Count > 0 && (double)nx * ny > request.Graph.MaxRefinedPourCells)
+        {
+            var fmt = request.LengthFormat;
+            _refusal =
+                $"The {(c.IsReference ? "return" : "rail's")} copper on {c.Region.Describe(fmt)}, " +
+                $"{fmt.Length(w)} × {fmt.Length(h)}, has {entries.Count} port pad(s) on it, and " +
+                $"meshing each one finely enough to price the current spreading out of it would take " +
+                $"{(double)nx * ny:N0} cells, over the fast model's ceiling of " +
+                $"{request.Graph.MaxRefinedPourCells:N0}. A coarser cell under a port would read its " +
+                "spreading resistance low, so the fast model produces no number here rather than a " +
+                "smaller one. Run Accuracy, which meshes it.";
+            return c;
+        }
+
+        var area = CellAreas(c.Copper, xs, ys, out var meet);
 
         var node = new int[nx * ny];
         Array.Fill(node, -1);
@@ -1842,10 +2035,11 @@ internal sealed class GraphBuild(
                 int k = j * nx + i;
                 if (!(area[k] > 0)) continue;
 
-                long cx = b.MinX + i * pitch + pitch / 2, cy = b.MinY + j * pitch + pitch / 2;
+                long cx = (xs[i] + xs[i + 1]) / 2, cy = (ys[j] + ys[j + 1]) / 2;
                 node[k] = nodes.New(
                     c.Region.Layer, c.IsReference, i, j, cx, cy,
-                    $"{side}.{c.Region.Layer.Layer}_{c.Region.Layer.Datatype}.p{piece}.{i}.{j}");
+                    $"{side}.{c.Region.Layer.Layer}_{c.Region.Layer.Datatype}.p{piece}.{i}.{j}",
+                    attachable: Fill(k) >= PdnMeshExtractor.AttachFillFraction);
                 AccountedAreaSquareDbu += area[k];
 
                 if (!c.IsReference)
@@ -1857,45 +2051,89 @@ internal sealed class GraphBuild(
                 }
             }
 
-        double d = pitch / dbuPerMetre;
+        double m2 = dbuPerMetre * dbuPerMetre;
 
-        void Edge(int ka, int kb, int i, int j, string axis)
+        // The same half-cell harmonic form PdnMeshExtractor stamps — a cell's copper over its own
+        // length along the edge's axis is its width, and each half of the edge runs half a cell.
+        void Edge(int ka, int kb, double da, double db, int i, int j, string axis)
         {
             int a = node[ka], bb = node[kb];
             if (a < 0 || bb < 0) return;
 
-            double a0 = area[ka] / (dbuPerMetre * dbuPerMetre), a1 = area[kb] / (dbuPerMetre * dbuPerMetre);
+            double a0 = area[ka] / m2, a1 = area[kb] / m2;
             if (!(a0 > 0) || !(a1 > 0)) return;
 
-            // The same half-cell harmonic form PdnMeshExtractor stamps — coarser, and identical
-            // arithmetic, so a pour meshed here and the same pour meshed there differ only in pitch.
-            double r = d * d / (2 * sigmaT * a0) + d * d / (2 * sigmaT * a1);
-            double width = (a0 / d + a1 / d) / 2.0;
-
-            double squares = d * d / (2 * a0) + d * d / (2 * a1);
+            double r = da * da / (2 * sigmaT * a0) + db * db / (2 * sigmaT * a1);
+            double width = (a0 / da + a1 / db) / 2.0;
+            double squares = da * da / (2 * a0) + db * db / (2 * a1);
 
             _copper.Add(new Element(
                 $"pour.{side}.{c.Region.Layer.Layer}_{c.Region.Layer.Datatype}.p{piece}.{i}.{j}.{axis}",
                 a, bb, r,
-                $"{d * 1e3:0.###} mm of {width * 1e3:0.###} mm {conductor.StackupName} copper, " +
+                $"{(da + db) / 2 * 1e3:0.###} mm of {width * 1e3:0.###} mm {conductor.StackupName} copper, " +
                 "one cell of a coarse mesh over spreading copper",
                 nodes.CellOfNode(a)!.Value, nodes.CellOfNode(bb)!.Value,
-                PdnOriginKind.MeshEdge, d, width, _halfLoop * squares));
+                PdnOriginKind.MeshEdge, (da + db) / 2, width, _halfLoop * squares));
         }
 
         for (int j = 0; j < ny; j++)
             for (int i = 0; i < nx; i++)
             {
                 int k = j * nx + i;
-                if (i + 1 < nx) Edge(k, k + 1, i, j, "x");
-                if (j + 1 < ny) Edge(k, k + nx, i, j, "y");
+                double dx = (xs[i + 1] - xs[i]) / dbuPerMetre, dy = (ys[j + 1] - ys[j]) / dbuPerMetre;
+                if (i + 1 < nx) Edge(k, k + 1, dx, (xs[i + 2] - xs[i + 1]) / dbuPerMetre, i, j, "x");
+                if (j + 1 < ny) Edge(k, k + nx, dy, (ys[j + 2] - ys[j + 1]) / dbuPerMetre, i, j, "y");
             }
 
+        // ── §1 of brief-railrf-33: a point is on THIS piece only where its copper is ───────────
+        //
+        // The lookup used to answer by cell index alone, so a point anywhere in a cell holding some
+        // of this piece's copper was this piece — including a point on an island inside one of its
+        // holes, which is a different piece. A pad on the island was tied to the pour around it and
+        // the copper between them priced out of the answer. The copper is now asked, to within one
+        // cell of the mesh, which is exactly as close as the mesh itself would attach it.
         int At(long x, long y)
         {
-            int i = (int)((x - b.MinX) / pitch), j = (int)((y - b.MinY) / pitch);
-            if (i < 0 || j < 0 || i >= nx || j >= ny) return -1;
-            return node[j * nx + i];
+            int i = Index(xs, x), j = Index(ys, y);
+            if (i < 0 || j < 0) return -1;
+
+            int k = j * nx + i;
+            if (_attachToleranceDbu <= 0) return Settle(k);
+            if (node[k] >= 0 && Near(meet[k]!, x, y, _attachToleranceDbu)) return Settle(k);
+
+            for (int dj = -1; dj <= 1; dj++)
+                for (int di = -1; di <= 1; di++)
+                {
+                    int ii = i + di, jj = j + dj;
+                    if ((di == 0 && dj == 0) || ii < 0 || jj < 0 || ii >= nx || jj >= ny) continue;
+                    int kk = jj * nx + ii;
+                    if (node[kk] >= 0 && Near(meet[kk]!, x, y, _attachToleranceDbu)) return Settle(kk);
+                }
+            return -1;
+        }
+
+        // The copper fraction of a cell, and the mesh's own rule for a point landing on one under
+        // half full (PdnMeshExtractor.Settle, brief 32): it moves to the fuller neighbour, repeated
+        // while that keeps getting fuller. The refined cells under a port are the mesh's size, so
+        // they can clip an antipad's edge exactly as the mesh's can.
+        double Fill(int k) =>
+            area[k] / ((double)(xs[k % nx + 1] - xs[k % nx]) * (ys[k / nx + 1] - ys[k / nx]));
+
+        int Settle(int k)
+        {
+            if (node[k] < 0) return -1;
+            for (int hop = 0; hop < 4 && Fill(k) < PdnMeshExtractor.AttachFillFraction; hop++)
+            {
+                int ci = k % nx, cj = k / nx, best = -1;
+                foreach (int nk in new[] { ci + 1 < nx ? k + 1 : -1, ci > 0 ? k - 1 : -1,
+                                           cj + 1 < ny ? k + nx : -1, cj > 0 ? k - nx : -1 })
+                    if (nk >= 0 && node[nk] >= 0 && area[nk] > area[k] &&
+                        (best < 0 || area[nk] > area[best]))
+                        best = nk;
+                if (best < 0) break;
+                k = best;
+            }
+            return node[k];
         }
 
         foreach (var (x, y) in attachments)
@@ -1910,25 +2148,162 @@ internal sealed class GraphBuild(
         nodes.AddLookup(c.Region.Layer, c.IsReference, b, At);
 
         int cells = node.Count(n => n >= 0);
+        string refined = entries.Count > 0
+            ? $", refined to {_contactDbu / dbuPerMetre * 1e3:0.####} mm under its {entries.Count} " +
+              "port pad(s) — the cell the mesh lands a port in"
+            : "";
         return c with
         {
             Reason = c.Reason +
-                $" Meshed coarsely at {pitch / dbuPerMetre * 1e3:0.###} mm — {cells} cell(s).",
+                $" Meshed coarsely at {Math.Max(px, py) / dbuPerMetre * 1e3:0.###} mm{refined} — {cells} cell(s).",
         };
     }
 
-    /// <summary>Exact copper area per coarse cell, by clipping a row band once and then each cell of
-    /// it — the same construction <c>PdnMeshExtractor</c>'s rasteriser uses, and exact rather than
-    /// sampled, because a cell's area IS its conductance.</summary>
-    private static double[] CellAreas(Paths64 copper, long x0, long y0, long pitch, int nx, int ny)
+    /// <summary>Lines at <paramref name="pitch"/> from <paramref name="lo"/> to <paramref name="hi"/>,
+    /// both included.</summary>
+    private static long[] UniformLines(long lo, long hi, long pitch)
     {
+        var lines = new List<long>();
+        for (long v = lo; v < hi; v += pitch) lines.Add(v);
+        lines.Add(hi);
+        return [.. lines];
+    }
+
+    /// <summary>
+    /// Lines over [<paramref name="lo"/>, <paramref name="hi"/>] with a cell of each entry's own
+    /// contact size centred on it, <paramref name="core"/> more of that size each side of it — the
+    /// band the mesh refines under a port — then cells doubling away from them, none wider than
+    /// <paramref name="pitch"/>, and none wider than <paramref name="between"/> inside
+    /// <paramref name="region"/>.
+    ///
+    /// <para><b>Per axis, from the entries' coordinates, not per entry.</b> A connector's twenty
+    /// pads share four columns and six rows; a window per pad would lay twenty sets of lines over
+    /// one another, and the grid would grow as the square of that. Entries closer than one contact
+    /// cell share it.</para>
+    /// </summary>
+    internal static long[] GradedLines(
+        long lo, long hi, IEnumerable<(long At, long Contact)> entries, int core, long pitch,
+        long between, (long Lo, long Hi) region)
+    {
+        var cells = new List<(long A, long B, long Size)>();
+        foreach (var (e, size) in entries.Distinct().OrderBy(p => p.At))
+        {
+            long a = e - size / 2, z = a + size;
+            if (cells.Count > 0 && a <= cells[^1].B)
+                cells[^1] = (cells[^1].A, Math.Max(cells[^1].B, z), Math.Min(cells[^1].Size, size));
+            else cells.Add((a, z, size));
+        }
+
+        var lines = new List<long> { lo, hi };
+        long prev = lo, prevSize = 0;
+        foreach (var (a, z, size) in cells)
+        {
+            Fill(prev, a, prevSize, size);
+            lines.Add(a);
+            lines.Add(z);
+            prev = z;
+            prevSize = size;
+        }
+        Fill(prev, hi, prevSize, 0);
+
+        return [.. lines.Where(v => v >= lo && v <= hi).Distinct().Order()];
+
+        // Lines strictly between a and z: `core` contact-sized cells beside whichever side is a
+        // contact, then cells growing ×2, capped at the pitch; the finer side steps first, and a
+        // last cell under half the one beside it is folded into it rather than left as a sliver.
+        // (A ×2 step straight off the contact cell read 1.21× on the return fixture where the
+        // mesh's own band of fine cells reads 1.01×: a node whose neighbours are twice its size is
+        // a larger contact than one among its equals.)
+        // A size of zero is the grid's own boundary rather than a contact.
+        void Fill(long a, long z, long sizeA, long sizeB)
+        {
+            long left = a, right = z, sa = sizeA, sb = sizeB;
+            long lastStep = 0;
+            int added = 0, na = 0, nb = 0;
+            while (true)
+            {
+                long nextA = sizeA > 0 ? Math.Min(na < core ? sa : sa * 2, pitch) : pitch;
+                long nextB = sizeB > 0 ? Math.Min(nb < core ? sb : sb * 2, pitch) : pitch;
+                if (left < region.Hi && left + nextA > region.Lo) nextA = Math.Min(nextA, between);
+                if (right > region.Lo && right - nextB < region.Hi) nextB = Math.Min(nextB, between);
+                if (right - left <= Math.Max(nextA, nextB)) break;
+
+                if (nextA <= nextB) { left += nextA; lines.Add(left); sa = nextA; lastStep = nextA; na++; }
+                else { right -= nextB; lines.Add(right); sb = nextB; lastStep = nextB; nb++; }
+                added++;
+            }
+
+            if (added > 0 && right - left < lastStep / 2)
+                lines.RemoveAt(lines.Count - 1);
+        }
+    }
+
+    /// <summary>The cell of <paramref name="lines"/> holding <paramref name="v"/>, or -1.</summary>
+    private static int Index(long[] lines, long v)
+    {
+        if (v < lines[0] || v > lines[^1]) return -1;
+        int i = Array.BinarySearch(lines, v);
+        if (i < 0) i = ~i - 1;
+        return Math.Min(i, lines.Length - 2);
+    }
+
+    /// <summary>True where <paramref name="x"/>, <paramref name="y"/> is on <paramref name="copper"/>
+    /// or within <paramref name="tolerance"/> of its edge.</summary>
+    private static bool Near(Paths64 copper, long x, long y, long tolerance)
+    {
+        if (Regions.Contains(copper, x, y)) return true;
+
+        double limit = (double)tolerance * tolerance;
+        foreach (var ring in copper)
+            for (int i = 0; i < ring.Count; i++)
+            {
+                var p = ring[i];
+                var q = ring[(i + 1) % ring.Count];
+                double ex = q.X - p.X, ey = q.Y - p.Y;
+                double len = ex * ex + ey * ey;
+                double t = len > 0 ? Math.Clamp(((x - p.X) * ex + (y - p.Y) * ey) / len, 0, 1) : 0;
+                double dx = p.X + t * ex - x, dy = p.Y + t * ey - y;
+                if (dx * dx + dy * dy <= limit) return true;
+            }
+        return false;
+    }
+
+    /// <summary>The point of <paramref name="copper"/>'s boundary nearest to <paramref name="x"/>,
+    /// <paramref name="y"/>.</summary>
+    private static (long X, long Y) Closest(Paths64 copper, long x, long y)
+    {
+        double best = double.MaxValue;
+        (long X, long Y) at = (x, y);
+        foreach (var ring in copper)
+            for (int i = 0; i < ring.Count; i++)
+            {
+                var p = ring[i];
+                var q = ring[(i + 1) % ring.Count];
+                double ex = q.X - p.X, ey = q.Y - p.Y;
+                double len = ex * ex + ey * ey;
+                double t = len > 0 ? Math.Clamp(((x - p.X) * ex + (y - p.Y) * ey) / len, 0, 1) : 0;
+                double px = p.X + t * ex, py = p.Y + t * ey;
+                double d = (px - x) * (px - x) + (py - y) * (py - y);
+                if (d < best) { best = d; at = ((long)Math.Round(px), (long)Math.Round(py)); }
+            }
+        return at;
+    }
+
+    /// <summary>Exact copper area per cell, by clipping a row band once and then each cell of it
+    /// — the same construction <c>PdnMeshExtractor</c>'s rasteriser uses, and exact rather than
+    /// sampled, because a cell's area IS its conductance. The clipped copper comes back too, so a
+    /// point can be asked whether it is ON a cell's copper rather than merely in the cell.</summary>
+    private static double[] CellAreas(Paths64 copper, long[] xs, long[] ys, out Paths64?[] meets)
+    {
+        int nx = xs.Length - 1, ny = ys.Length - 1;
         var area = new double[nx * ny];
+        meets = new Paths64?[nx * ny];
 
         for (int j = 0; j < ny; j++)
         {
-            long ya = y0 + j * pitch, yb = ya + pitch;
-            Paths64 band = [[new Point64(x0, ya), new Point64(x0 + (long)nx * pitch, ya),
-                             new Point64(x0 + (long)nx * pitch, yb), new Point64(x0, yb)]];
+            long ya = ys[j], yb = ys[j + 1];
+            Paths64 band = [[new Point64(xs[0], ya), new Point64(xs[^1], ya),
+                             new Point64(xs[^1], yb), new Point64(xs[0], yb)]];
 
             var strip = Clipper.BooleanOp(ClipType.Intersection, copper, band, LayoutClipper.Rule);
             if (strip.Count == 0) continue;
@@ -1937,7 +2312,7 @@ internal sealed class GraphBuild(
 
             for (int i = 0; i < nx; i++)
             {
-                long xa = x0 + i * pitch, xb = xa + pitch;
+                long xa = xs[i], xb = xs[i + 1];
                 if (xb <= sb.MinX || xa >= sb.MaxX) continue;
 
                 Paths64 cell = [[new Point64(xa, ya), new Point64(xb, ya),
@@ -1946,7 +2321,7 @@ internal sealed class GraphBuild(
                 if (meet.Count == 0) continue;
 
                 double a = Math.Abs(Clipper.Area(meet));
-                if (a > 0) area[j * nx + i] = a;
+                if (a > 0) { area[j * nx + i] = a; meets[j * nx + i] = meet; }
             }
         }
 

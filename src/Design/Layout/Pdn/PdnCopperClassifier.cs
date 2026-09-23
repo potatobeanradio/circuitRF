@@ -232,10 +232,23 @@ public static class PdnCopperClassifier
             squares = widthDbu > 0 ? lengthDbu / widthDbu : 0;
         }
 
-        long minFeature = PdnMeshExtractor.MinimumFeatureWidthDbu(piece);
+        // The narrowest copper feeds the reason and a trace piece's raster pitch. A RETURN piece is
+        // never inferred a trace (below), so on the return it would only feed the reason — and on
+        // a 49 × 53 mm plane with 62 rings of antipads it was ~8 s of an 11.5 s fast run
+        // (brief-railrf-30). A return piece FORCED to trace measures it where it is needed, in
+        // GraphBuild.Trace, from the zero left here.
+        long minFeature = isReference ? 0 : PdnMeshExtractor.MinimumFeatureWidthDbu(piece);
         double variation = minFeature > 0 && widthDbu > 0 ? widthDbu / minFeature : 0;
 
-        var inferred = ribbon && squares >= squaresThreshold
+        // ── THE RIBBON TEST IS A STATEMENT ABOUT RAIL COPPER (brief-railrf-33) ─────────────────
+        //
+        // It asks whether current runs ALONG a piece. On the return it runs the other way: it
+        // spreads under the rail, entering and leaving at the ports. A plane riddled with antipads
+        // has a perimeter long enough to read as a ribbon — the field board's inner GND plane read
+        // 28.4 squares, a Bottom Copper return 205.7 — and priced as trace sections it put 0.89 mV
+        // on a return the mesh measures at 0.11 mV. So a return piece is meshed, whatever its
+        // shape; a user who knows otherwise can still force it.
+        var inferred = !isReference && ribbon && squares >= squaresThreshold
             ? PdnCopperClass.Trace
             : PdnCopperClass.Spreading;
 
@@ -243,7 +256,11 @@ public static class PdnCopperClassifier
         bool forced = overrides is not null && overrides.TryGetValue(id, out chosen);
         var final = forced ? chosen : inferred;
 
-        string measured = ribbon
+        string measured = ribbon && isReference
+            ? $"{lengthDbu / dbuPerMetre * 1e3:0.###} mm long by " +
+              $"{widthDbu / dbuPerMetre * 1e3:0.###} mm wide from its own area and perimeter — " +
+              $"{squares:0.#} squares. {ports} attachment(s) land on it."
+            : ribbon
             ? $"{lengthDbu / dbuPerMetre * 1e3:0.###} mm long by " +
               $"{widthDbu / dbuPerMetre * 1e3:0.###} mm wide from its own area and perimeter — " +
               $"{squares:0.#} squares. Its narrowest copper is " +
@@ -254,7 +271,10 @@ public static class PdnCopperClassifier
               $"length and a width at all — a ribbon of that area and that perimeter does not exist. " +
               $"{ports} attachment(s) land on it.";
 
-        string verdict = inferred == PdnCopperClass.Trace
+        string verdict = isReference
+            ? "The return plane: current spreads under the rail rather than running along it, so it " +
+              "is meshed, whatever its shape."
+            : inferred == PdnCopperClass.Trace
             ? $"Trace-shaped: {squares:0.#} squares is at or above the {squaresThreshold:0.#} the " +
               "closed form needs before the constriction it omits is a small term."
             : ribbon

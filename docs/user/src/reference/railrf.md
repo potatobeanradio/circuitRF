@@ -247,7 +247,9 @@ passing report. Four rules make the two safe to have together:
    copper was read as a trace and which was meshed, and a region can be forced either way. A wide supply
    polygon mistaken for a trace is optimistic and invisible &mdash; drawing it is what makes it neither.
    The reference plane is drawn first and the rail's own sections over it, so a board with a plane shows
-   both; click a region to force it either way.
+   both; click a region to force it either way. The return is always read as spreading, whatever its
+   shape &mdash; current spreads under the rail rather than running along it &mdash; and it is meshed
+   finely where the ports' current enters and leaves it, at the size Accuracy meshes a port.
 3. **Fast refuses where it cannot be honest.** Where a source reaches a load *only* through copper
    classified as spreading, the fast model produces no number rather than a smaller one, and the refusal
    names both answers: run Accuracy, or force the region to `trace` if you know the current follows a
@@ -301,13 +303,13 @@ it, set up for all four questions. Open it and follow along; its own README carr
 1. Open `Sensor board.crail`. The board, the stackup and the part library are already resolved, and the
    window opens on Fast. Every part on it is an instance of a footprint cell with its reference
    designator on silkscreen, so the parts table and the board are reading the same thing.
-2. **Run.** DC: **48.6 mV** at `U1` against a **52 mV** budget &mdash; met, and only just. The breakdown
-   names it: **26.5 mm of 0.209 mm copper on the bottom layer is 65 mΩ**, and 46 % of the budget on its
+2. **Run.** DC: **47.6 mV** at `U1` against a **52 mV** budget &mdash; met, and only just. The breakdown
+   names it: **26.2 mm of 0.211 mm copper on the bottom layer is 63 mΩ**, and 46 % of the budget on its
    own, because the supply took the long way round the connector cut-out at the width a low-current net
    gets by default. The ferrite `FB1` is the third row at **20 mΩ and 7 mV**, ranked with the copper
    rather than reported beside it. Three via transitions, none over its limit. The second load, `U3`, is
    listed as *observed*: it states no current and draws none.
-3. **Widen that run to 0.4 mm** in the layout editor and re-run. **40.6 mV.** The copper term halves and
+3. **Widen that run to 0.4 mm** in the layout editor and re-run. **36.5 mV.** The copper term halves and
    the protection FET becomes the thing worth arguing about &mdash; which is a part choice rather than a
    layout one.
 4. **The sweep**, over 100 kHz to 100 MHz against a flat 55 mΩ: **passes by 0.8 dB at its worst, at

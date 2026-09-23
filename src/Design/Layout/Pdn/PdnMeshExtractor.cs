@@ -918,6 +918,13 @@ public static class PdnMeshExtractor
     }
 
     /// <summary>
+    /// The copper fraction below which a cell is not a place to attach anything — the mesh's
+    /// <c>MeshBuilder.Settle</c>, and the fast reading's refined pour cells, which are the mesh's size
+    /// under a port (brief-railrf-33).
+    /// </summary>
+    internal const double AttachFillFraction = 0.5;
+
+    /// <summary>
     /// Rasterises copper onto the grid as AREAS, and nothing else. It builds no matrix and owns no
     /// result — see this file's header and R-rail3-2.
     /// </summary>
@@ -1055,12 +1062,6 @@ public static class PdnMeshExtractor
             }
             return -1;
         }
-
-        /// <summary>
-        /// The copper fraction below which a cell is not a place to attach anything —
-        /// <see cref="Settle"/>.
-        /// </summary>
-        internal const double AttachFillFraction = 0.5;
 
         /// <summary>
         /// The node a POINT on cell (i, j) attaches to: the cell's own, unless the cell holds less

@@ -210,7 +210,7 @@ public sealed class PdnFastExtractorTests
     /// classifier, whose number the trace raster is then sized from. It was measured three times on a
     /// trace piece — pooled per layer for an extent the default reference never reads, by the
     /// classifier, and again by the raster — and on a field report's 60,000-vertex pour each was
-    /// ~155 s of the same answer.
+    /// ~155 s of the same answer. A RETURN piece is not measured at all (brief-railrf-33).
     /// </summary>
     [Fact]
     public void R_rail30_EveryPieceIsMeasuredOnce()
@@ -225,7 +225,10 @@ public sealed class PdnFastExtractorTests
 
         Assert.Null(result.Refusal);
         Assert.Contains(result.Classification, c => c.Class == PdnCopperClass.Trace);
-        Assert.Equal(result.Classification.Count, PdnMeshExtractor.Measurements);
+
+        // The return is never inferred a trace, so nothing asks for its narrowest copper
+        // (brief-railrf-33) — on the field board that measurement was most of the fast run.
+        Assert.Equal(result.Classification.Count(c => !c.IsReference), PdnMeshExtractor.Measurements);
     }
 
     // ── R-rail4-2: every result says which model produced it ───────────────────────────────────
@@ -629,10 +632,12 @@ public sealed class PdnFastExtractorTests
                      fast.Provenance.CopperTemperatureCelsius);
         Assert.NotEqual(accurate.Provenance.ModelKind, fast.Provenance.ModelKind);
 
-        Assert.True(fast.Netlist.Components.Count < 500,
-                    $"the fast reading is a few hundred elements; it built {fast.Netlist.Components.Count}");
-        Assert.True(accurate.Netlist.Components.Count > 20 * fast.Netlist.Components.Count,
-                    $"the mesh is thousands: {accurate.Netlist.Components.Count} against " +
+        // The RAIL is a few sections. The return is meshed, refined under the ports (brief-railrf-33),
+        // and the whole is still an order of magnitude under the mesh: 1,788 against 32,568 here.
+        int rail = fast.Origins.Count(o => o.From is { IsReference: false });
+        Assert.True(rail < 500, $"the fast reading's rail is a few hundred elements; it built {rail}");
+        Assert.True(accurate.Netlist.Components.Count > 10 * fast.Netlist.Components.Count,
+                    $"the mesh is tens of thousands: {accurate.Netlist.Components.Count} against " +
                     $"{fast.Netlist.Components.Count}");
     }
 
@@ -768,6 +773,145 @@ public sealed class PdnFastExtractorTests
         while (dir is { Length: > 0 } && !File.Exists(Path.Combine(dir, "circuitRF.slnx")))
             dir = Path.GetDirectoryName(dir) ?? "";
         return dir;
+    }
+
+    // ── brief-railrf-33: the fast model and the return plane ──────────────────────────────────
+
+    /// <summary>
+    /// A straight trace reads its closed form at ANY angle. Thinning leaves an off-axis centreline
+    /// as a staircase, and a section priced one pixel step at a time read 1.50× at 22.5° and 1.44×
+    /// at 60° while 0° and 45° were exact — the field board's rail was 21 % high for it alone.
+    /// </summary>
+    [Theory]
+    [InlineData(22.5)]
+    [InlineData(60.0)]
+    public void R_rail33_AStraightTraceReadsItsClosedFormAtAnyAngle(double degrees)
+    {
+        var tech = Board(35.0, 35.0, 1.6);
+        double w = 0.25, l = 40, th = degrees * Math.PI / 180;
+        (long X, long Y) At(double u, double v) =>
+            (Mm(u * Math.Cos(th) - v * Math.Sin(th)), Mm(u * Math.Sin(th) + v * Math.Cos(th)));
+
+        var corners = new[] { At(0, -w / 2), At(l, -w / 2), At(l, w / 2), At(0, w / 2) };
+        var shapes = new List<LayoutShape>
+        {
+            new PolygonShape { Layer = Top, Xy = corners.SelectMany(c => new[] { c.X, c.Y }).ToArray() },
+            Rect(Bot, -Mm(25), -Mm(5), Mm(45), Mm(45)),
+        };
+
+        var result = PdnGraphExtractor.Extract(Request(tech, shapes, At(0.1, 0), At(l - 0.1, 0)));
+        Assert.Null(result.Refusal);
+
+        var pdn = result.Netlist!;
+        double measured = ResistanceBetween(pdn.Netlist, SourceNode(pdn), NodeAt(pdn, "U1.VDD"));
+        double closed = CopperRho * (l - 0.2) * 1e-3 / (w * 1e-3 * 35e-6);
+        Assert.InRange(measured / closed, 0.99, 1.01);
+    }
+
+    /// <summary>
+    /// A return plane riddled with antipads reads as a RIBBON by its own area and perimeter — the
+    /// field board's inner plane read 28.4 squares — and the ribbon test is a statement about rail
+    /// copper. A return piece is meshed whatever its shape, and says so; forcing it to trace is still
+    /// honoured, and still drawn as forced.
+    /// </summary>
+    [Fact]
+    public void R_rail33_AHoledReturnPlaneIsMeshedWhateverItsShape_AndForcingItIsHonoured()
+    {
+        var tech = Board(35.0, 35.0, 1.6);
+
+        // A 31 mm plane of 1 mm bars on a 2 mm pitch: 225 one-millimetre antipads.
+        var shapes = new List<LayoutShape> { Rect(Top, 0, Mm(15), Mm(30), Mm(15.5)) };
+        for (int i = 0; i <= 15; i++)
+        {
+            shapes.Add(Rect(Bot, 0, Mm(2 * i), Mm(31), Mm(2 * i + 1)));
+            shapes.Add(Rect(Bot, Mm(2 * i), 0, Mm(2 * i + 1), Mm(31)));
+        }
+
+        var request = Request(tech, shapes, (Mm(0.2), Mm(15.25)), (Mm(29.8), Mm(15.25)));
+        var inferred = PdnGraphExtractor.Extract(request);
+        Assert.Null(inferred.Refusal);
+
+        var plane = Assert.Single(inferred.Classification, c => c.IsReference);
+        Assert.True(plane.Squares > PdnCopperClassifier.TraceSquaresThreshold,
+            $"the fixture must read as a ribbon to test anything — it read {plane.Squares:0.#} squares");
+        Assert.Equal(PdnCopperClass.Spreading, plane.Class);
+        Assert.False(plane.Forced);
+        Assert.Contains("return plane", plane.Reason, StringComparison.Ordinal);
+
+        var forced = PdnGraphExtractor.Extract(Request(tech, shapes, (Mm(0.2), Mm(15.25)), (Mm(29.8), Mm(15.25)),
+            new Dictionary<PdnRegionRef, PdnCopperClass> { [plane.Region] = PdnCopperClass.Trace }));
+        var forcedPlane = Assert.Single(forced.Classification, c => c.IsReference);
+        Assert.Equal(PdnCopperClass.Trace, forcedPlane.Class);
+        Assert.Equal(PdnCopperClass.Spreading, forcedPlane.Inferred);
+        Assert.True(forcedPlane.Forced);
+    }
+
+    /// <summary>
+    /// The return's own drop, where it enters the plane under the load and leaves it under the
+    /// source 20 mm away: Fast within 5 % of Accurate. At four cells across the plane read a
+    /// third of the mesh's figure on the field board — a point contact's spreading resistance is
+    /// set by the cell it lands in, so the coarse mesh is refined where current enters and leaves.
+    /// </summary>
+    [Fact]
+    public void R_rail33_TheReturnDropOnAPlaneAgreesWithAccurate()
+    {
+        var tech = Board(35.0, 35.0, 1.6);
+        var shapes = new List<LayoutShape>
+        {
+            Rect(Top, Mm(4), Mm(9.75), Mm(24), Mm(10.25)),
+            Rect(Bot, 0, 0, Mm(30), Mm(20)),
+        };
+        var request = Request(tech, shapes, (Mm(4.1), Mm(10)), (Mm(23.9), Mm(10)));
+
+        var fast = PdnGraphExtractor.Extract(request);
+        var accurate = PdnMeshExtractor.Extract(request);
+        Assert.Null(fast.Refusal);
+        Assert.Null(accurate.Refusal);
+
+        double Return(PdnNetlist pdn) => ResistanceBetween(pdn.Netlist, pdn.Ports[0].ReferenceNode, 0);
+        Assert.InRange(Return(fast.Netlist!) / Return(accurate.Netlist!), 0.95, 1.05);
+    }
+
+    /// <summary>
+    /// A piece of copper inside a hole in a coarsely meshed pour is not the pour. The load sits on
+    /// a 1.5 mm island in a 3 mm hole, reached only through a via, 8 mm of MID copper and a via back
+    /// up; the pour's 5 mm cell spans the hole, and a lookup by cell index tied the load to the pour
+    /// and priced the MID trace out of the answer.
+    /// </summary>
+    [Fact]
+    public void R_rail33_AnIslandInsideAHoleIsNotJoinedToThePourAroundIt()
+    {
+        var tech = ThreeConductors();
+        ViaShape Via(double x, double y) => new()
+        {
+            Layer = ViaLayer, LandingLayer = Top, X = Mm(x), Y = Mm(y), PadSize = Mm(0.5), DrillSize = Mm(0.3),
+        };
+
+        var shapes = new List<LayoutShape>
+        {
+            // the pour, and the hole in it
+            Rect(Top, 0, 0, Mm(20), Mm(8.5)),
+            Rect(Top, 0, Mm(11.5), Mm(20), Mm(20)),
+            Rect(Top, 0, Mm(8.5), Mm(8.5), Mm(11.5)),
+            Rect(Top, Mm(11.5), Mm(8.5), Mm(20), Mm(11.5)),
+            // the island in it
+            Rect(Top, Mm(9.25), Mm(9.25), Mm(10.75), Mm(10.75)),
+            // the only way between them
+            Rect(Mid, Mm(1.8), Mm(9.85), Mm(10.2), Mm(10.15)),
+            Via(2, 10),
+            Via(10, 10),
+            Rect(Bot, -Mm(1), -Mm(1), Mm(21), Mm(21)),
+        };
+
+        var result = PdnGraphExtractor.Extract(Request(tech, shapes, (Mm(1), Mm(1)), (Mm(10.4), Mm(10))));
+        Assert.Null(result.Refusal);
+
+        var pdn = result.Netlist!;
+        double rail = ResistanceBetween(pdn.Netlist, SourceNode(pdn), NodeAt(pdn, "U1.VDD"));
+        double mid = CopperRho * 8e-3 / (0.3e-3 * 35e-6);
+        Assert.True(rail > mid,
+            $"the load reads {rail * 1e3:0.###} mΩ from the source — less than the " +
+            $"{mid * 1e3:0.###} mΩ of MID copper it can only be reached through");
     }
 
     // ── shared fixtures ────────────────────────────────────────────────────────────────────────

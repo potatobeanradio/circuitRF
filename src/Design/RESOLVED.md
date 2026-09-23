@@ -1,5 +1,114 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## The fast model and the return plane: a staircase on the rail, a ribbon test on the return, and a lookup that joined an island (2026-09-22, brief-railrf-33)
+
+Measured with brief 30's harness on the fourth field report's board (Release; the designer's own
+document, briefs 31 and 32 landed, JP1 declared series, reference 3/0; 30 mA at the load). The load's
+drop is split into the rail's half (source to load on the rail) and the return's half (the load's
+reference node against ground). Brief 32's converged Accurate answer is the gate.
+
+| Reading | Rail | Return | Drop at the load | vs Accurate | Time |
+|---|---|---|---|---|---|
+| Accurate, default (3 across, ports refined 4×), converged | 3.7037 mV | 0.1140 mV | **3.8177 mV** | — | 36.9 s |
+| Fast before — plane inferred Trace (28.4 squares) | 4.4916 | 0.8866 | 5.3782 | +40.9 % | 19.1 s |
+| Fast before — plane forced Spreading (12.35 mm cells) | 4.4916 | 0.0335 | 4.5251 | +18.5 % | 19.0 s |
+| **Fast after** | **3.5588** | **0.1335** | **3.6923 mV** | **−3.3 %** | **12.2 s** |
+
+**The designer's rail: Fast 3.69 mV, Accurate 3.82 mV, 3.3 % apart, Fast optimistic** — inside §7's 5 %,
+no refusal, and the fast run is 12.2 s (9.7 s of it the connectivity walk, which this brief did not
+touch). The brief's own table measured against ~4.0 mV; brief 32 moved the converged figure to 3.82.
+
+### R-rail33-1 — where the fast model's error was
+
+1. **Half of it was on the RAIL, and it was not the pours.** Sweeping `PourCellsAcross` 4/8/16/32 moved
+   the rail's 4.4916 mV not at all: its three spreading pieces are off the path. A node-by-node diff
+   against the mesh put +0.75 of the rail's +0.79 mV on ONE trace section, 42.7 mm × 0.243 mm priced at
+   175.5 squares, where the mesh dropped 2.17 mV across the same span (~130 squares). **An off-axis
+   straight trace read high at every angle but 0° and 45°**: a 0.25 mm × 40 mm trace read 1.305× its
+   closed form at 10°, 1.495× at 22.5°, 1.518× at 30° and 1.437× at 60° (mesh: 1.001-1.003 at all of
+   them). Zhang-Suen leaves an off-axis centreline as a four-connected staircase, and `BuildAdjacency`
+   suppresses the diagonal where both legs exist, so the chain walks every stair: the length reads
+   ~7 % long, the width correspondingly short, and the copper each pixel owns jitters from step to step,
+   which the per-step `Σ arc·own/(σT·a)` turns into a further ~30 % because `Σ 1/a` over a jittering
+   `a` is larger than `n / mean(a)`.
+2. **The return, read as a trace, was 7.8×; read as a coarse pour it was 0.29×.** Forced Spreading, it
+   converged only logarithmically with uniform refinement: 0.0335 / 0.0412 / 0.0548 / 0.0722 mV at
+   4 / 8 / 16 / 32 across, against the mesh's 0.1140. A port is a point, and the resistance of current
+   spreading out of a point is set by the cell it lands in.
+3. **`Pour()` DID join copper that is not joined** (`R_rail33_AnIslandInsideAHoleIsNotJoinedToThePourAroundIt`):
+   a load on a 1.5 mm island inside a 3 mm hole in a 20 mm rail pour, reached only through two vias and
+   8 mm of MID copper. At 5 mm cells, `At()` answered by grid index alone, so the load's `NodesAt` came
+   back with the island's node AND the pour cell's; `PdnAssembly` tied them, the pour then held both
+   terminals, and the fast model REFUSED naming the 20 mm pour as the path. The same lookup registered a
+   via on the island as a point of the pour (`RegisterPoint`, first registrant wins in `_byLayer`).
+
+### R-rail33-2 — what changed
+
+- **A return piece is Spreading unless forced** (`PdnCopperClassifier`), with the reason "the return
+  plane: current spreads under the rail rather than running along it, so it is meshed". Its narrowest
+  copper is no longer measured (a forced one measures it in `Trace()` from the zero); that was
+  19.1 → 12.2 s here.
+- **A trace section is priced as CHORDS about two widths long** (`SectionResistance`): `Σ ℓ²/(σT·A)`,
+  ℓ the straight distance between pixels two widths apart (the pad where a section ends on one), A the
+  copper those pixels own. Every angle now reads 0.995-0.998 of the closed form; the taper, the
+  stepped trace and the T are unchanged within their gates. The section on the field board reads
+  2.180 mV against the mesh's 2.173.
+- **A spreading piece with ports on it is refined under them** (`Pour`, `GradedLines`): per axis, a
+  cell of the mesh's PORT size (narrowest rail copper / cells across / port refinement ratio) centred
+  on each port pad, eight more of it each side (the mesh's own band, ratio × margin), then doubling to
+  the coarse pitch — and inside the ports' region (their bounding box widened by half their span), no
+  cell wider than an eighth of that span. With ports on it, the coarse pitch is a quarter of the
+  piece's extent per axis rather than of its narrower one. Over `MaxRefinedPourCells` (20,000) it
+  REFUSES naming the region. The field board's plane is 7,665 cells.
+  The return fixture (`R_rail33_TheReturnDropOnAPlaneAgreesWithAccurate`, a 30 × 20 mm plane, ports
+  20 mm apart) read, as each piece went in: 0.50× the mesh at HEAD → 1.21× with ×2 growth straight
+  off the port cell → 1.14× with the mesh's band of port cells but still 4 across → 1.07× at 8 across
+  with no band → **1.01×** with both. Capping only the gaps BETWEEN port pads read 1.14× again: two
+  ports on one row have no gap between them across the row.
+  Shunt parts' pads are refined only above DC, and a series part's only on the rail: the example
+  board's return went 19,489 → 9,973 cells for the same 4.097 mΩ.
+- **A point attaches to a pour only on its copper**, to within one base cell of the mesh — as close as
+  the mesh attaches one — through `meet`, the per-cell clipped copper `CellAreas` now keeps. A point on
+  a cell under half full moves to the fuller neighbour (the mesh's `Settle` rule; `AttachFillFraction`
+  moved up to `PdnMeshExtractor` so both read one number), and `PdnGraphNodes.NearestReferenceNode`
+  skips cells under half full. **The field board's source sits over an antipad**: with the stricter
+  lookup its return fell to the nearest cell CENTRE, a sliver of fine cell, and read 0.784 mV; skipping
+  slivers, 0.094; refining where it actually attaches (the nearest copper, not the empty pad), 0.140;
+  at the mesh's BASE cell there because the attachment lies outside the mesh's port band, 0.1335.
+
+### What is left, and why it was left
+
+- **The field board's return reads 17 % high (0.1335 vs 0.1140 mV — 0.5 % of the drop).** Finer
+  between-ports cells converge it to ~0.127 (0.1275 at 16, 0.1268 at 32), so the rest is local to the
+  source's attachment at an antipad edge ~0.85 mm from its pad (Fast 890 µm, the mesh 840 µm — both
+  say so in a diagnostic). Fast prices a cell by its AREA and the mesh by the copper two cells SHARE
+  across an edge (brief 32), and the difference is largest exactly where copper is cut.
+- **The rail reads 3.9 % low**, mostly the constriction where current enters a section: the source-end
+  section, 0.77 mm wide, is 0.085 mV under the mesh. That is the term `TraceSquaresThreshold` already
+  budgets at about a square per end, and the closed form leaves it out by construction.
+- **On the Power Rail example the mesh gives up its OWN port refinement** to stay under its cell ceiling
+  (`PortRefinementRatio` 1, 49.5 µm cells), so the two readings land the ports in cells 4× apart and
+  Fast's return reads 4.097 mΩ against 3.263 (+26 %); with `PortRefinementRatio = 1` handed to Fast too
+  it reads +6.8 %. Fast refines to the size the mesh is DESIGNED to use (R-rail3-8 calls it a
+  correctness requirement) rather than predicting when the mesh will run out of cells.
+
+### Gates
+
+- Field board: Fast **3.6923 mV**, Accurate **3.8177 mV**, −3.3 %.
+- Fixtures whose reference used to classify as a trace, Fast/Accurate loop (return half):
+  stepped trace 0.9849 (0.969) → **0.9922 (1.003)**; 40 mm straight 0.9880 (0.971) → **0.9931 (1.002)**;
+  taper 0.9590 (0.882) → **0.9813 (1.016)**. All moved TOWARD the mesh and stayed on its optimistic side.
+  `R_rail30_EveryPieceIsMeasuredOnce` now counts the rail's pieces only; `BothReadingsAreTheSameCurrency…`
+  counts the rail's elements (3) and holds the whole under a tenth of the mesh (1,788 against 32,568 —
+  it was "a few hundred" when the return was a trace).
+- **The shipped Power Rail example: Fast 48.568 → 47.616 mV; Accurate 49.096 mV** (the README's 49.336 was
+  stale since brief 32). −1.87 mV of it is the rail: its 2.6 mm TOP section read 1.23 mΩ per square where
+  every other TOP section reads ~0.98 (the staircase), 6.764 → 5.313 mΩ, and the 26 mm BOT run's bends are
+  now chorded, 64.919 → 63.001 mΩ. +0.92 mV is the return, 1.464 mΩ from 38 cells → 4.097 from 9,973.
+  **The README's widened-run figure did not reproduce at HEAD**: the BOT run widened to 0.40 mm about its
+  centreline (`Board.gen.py`, all three rectangles) read 37.41 mV, not 40.594; it now reads 36.542. Its
+  "sixteen rows" were seventeen at HEAD too. The README and the worked example are updated.
+
 ## "Accurate" that was not converged: one sliver cell, a ceiling that counted empty grid, and a diagonal priced as a staircase (2026-09-22, brief-railrf-32)
 
 Measured on the fourth field report's board with brief 30's harness (Release; the designer's document,
