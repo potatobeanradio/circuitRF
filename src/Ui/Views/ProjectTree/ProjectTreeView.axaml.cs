@@ -86,6 +86,9 @@ public partial class ProjectTreeView : UserControl
         // all. SchematicView, SymbolEditorView and LayoutEditorView all carry the identical argument
         // on their own Escape handlers; this panel is the fourth to need it.
         AddHandler(KeyDownEvent, OnSearchKeyDown, RoutingStrategies.Tunnel, handledEventsToo: true);
+
+        // Right-click on empty space: the workspace's own commands, arranged (ProjectTreeView.BlankMenu.cs).
+        WireBlankSpaceMenu();
     }
 
     // ── Activation focus (owner, 2026-08-25) ──────────────────────────────────

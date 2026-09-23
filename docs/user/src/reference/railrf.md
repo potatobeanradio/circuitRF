@@ -167,6 +167,24 @@ a ground &mdash; on a board with both <code>GND</code> and <code>PGND</code>, a 
 the parts against the wrong plane.</p>
 </div>
 
+### The parts table {#parts-table}
+
+Each row is one part on the selected rail. Selecting a row outlines that part on the board.
+
+- **Sort by any column.** Click a column header to sort the rows by it, click it again to reverse
+  the order, and click it a third time to go back to the order in the `.crail`. A ▲ or ▼ after a
+  header shows which column is sorted and in which direction. Number columns (*C*, *ESR*, *f₀*,
+  *L*) sort by value, not by the text, and a row with no value in the sorted column is always listed
+  last. Sorting only changes what you see: it does not edit the document or make it unsaved.
+- **Find a part on the board.** Double-click a row's *location* to zoom the board to that part. If
+  the board panel is hidden, it is shown first. A part that reads *not placed* has no position, so
+  there is nothing to zoom to.
+- **Resize a column.** Drag the thin line at the right edge of a column header. Double-click that
+  line to fit the column to its widest entry, counting every row, including rows scrolled out of
+  view. The widths last until the window is closed and are not saved in the `.crail`.
+- **A wide table scrolls sideways.** The columns keep their widths and the header scrolls with the
+  rows, so each column stays under its header in a narrow panel.
+
 ### The part library {#part-library}
 
 The book button under the parts table, and the parts table's right-click menu, offer two things.

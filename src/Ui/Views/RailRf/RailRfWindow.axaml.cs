@@ -67,6 +67,9 @@ public partial class RailRfWindow : Window
         _partsListMaxHeight  = PartsList.MaxHeight;
         SyncPanes();
 
+        // The parts table's header scrolls with its rows and sorts them (RailRfWindow.PartsTable.cs).
+        WirePartsTable();
+
         // The results plot derives its height from its width, so it needs a ceiling the moment the
         // results column can be wide — see CapResultsPlot.
         ResultsPane.SizeChanged += (_, _) => CapResultsPlot();
@@ -747,6 +750,9 @@ public partial class RailRfWindow : Window
     /// column is ~432 — and the residue is a clip rather than a bleed: below about 560 the parts
     /// HEADER is cut at its card's edge, in the same place the rows have always been cut. See the
     /// card's own note in the AXAML.</para>
+    ///
+    /// <para>Since 2026-09-23 the table SCROLLS sideways rather than being cut (every column is
+    /// pixels, ~890 px in all), so below that width nothing is lost — it is one scroll away.</para>
     /// </remarks>
     private const double BoardMinWidth = 360;
     private double _partsGridMaxHeight = double.PositiveInfinity;

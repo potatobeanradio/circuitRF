@@ -125,11 +125,16 @@ public sealed partial class RailRfViewModel
         string? wasSelected = SelectedPart?.Refdes;
 
         Parts.Clear();
+        _partsInDocumentOrder.Clear();
         PartsModelledFromFile = 0;
         PartsUnresolved = 0;
 
         void Done()
         {
+            // In the order the table's header asks for — the document's own order until a column
+            // is clicked (RailRfViewModel.PartsSort.cs).
+            foreach (var row in OrderedParts()) Parts.Add(row);
+
             // Re-seated where the refdes still exists; CLEARED where it does not, because a part that
             // was deleted is not a part that is still selected. Assigned through the property so the
             // highlight is recomputed either way.
@@ -217,18 +222,21 @@ public sealed partial class RailRfViewModel
             // follows, because a coordinate from one source that reads identically to a coordinate
             // from another is exactly the defaulted-number failure this tool exists to prevent.
             string? position = null;
+            (long X, long Y)? positionDbu = null;
             var positionFrom = RailPartPositionSource.Nothing;
 
             if (placedBy.TryGetValue(part.Refdes, out var placement))
             {
                 position = BoardLengthFormat().Point(placement.X, placement.Y)
                          + (placement.Mirror ? " · bottom" : "");
+                positionDbu = (placement.X, placement.Y);
                 positionFrom = RailPartPositionSource.PlacementFile;
             }
             else if (_boardOrigins.TryGetValue(part.Refdes, out var origin))
             {
                 position = BoardLengthFormat().Point(origin.X, origin.Y)
                          + (origin.Mirrored ? " · bottom" : "");
+                positionDbu = (origin.X, origin.Y);
                 positionFrom = RailPartPositionSource.Artwork;
             }
 
@@ -243,8 +251,9 @@ public sealed partial class RailRfViewModel
                 part, row, model,
                 element?.MountingInductanceHenries ?? part.MountingInductanceHenries,
                 position, element, boardFootprint, positionFrom,
-                seriesModels.TryGetValue(part.Refdes, out var series) ? series : null);
-            Parts.Add(built);
+                seriesModels.TryGetValue(part.Refdes, out var series) ? series : null,
+                positionDbu);
+            _partsInDocumentOrder.Add(built);
 
             if (built.IsUnresolved) PartsUnresolved++;
         }

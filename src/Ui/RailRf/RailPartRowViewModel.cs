@@ -66,7 +66,8 @@ public sealed class RailPartRowViewModel
         RailPartModel? resolved = null,
         string? boardFootprint = null,
         RailPartPositionSource positionFrom = RailPartPositionSource.Nothing,
-        RailSeriesModel? series = null)
+        RailSeriesModel? series = null,
+        (long X, long Y)? positionDbu = null)
     {
         ArgumentNullException.ThrowIfNull(part);
 
@@ -80,6 +81,7 @@ public sealed class RailPartRowViewModel
         MountingInductanceHenries = mountingInductanceHenries;
         Position = position;
         PositionFrom = positionFrom;
+        PositionDbu = positionDbu;
     }
 
     private readonly RailPart _part;
@@ -537,6 +539,44 @@ public sealed class RailPartRowViewModel
         _ => "Nothing states a mounting loop for this part and there is no artwork to compute one "
            + "from, so the branch carries the package inductance alone.",
     };
+
+    /// <summary>The same place as <see cref="Position"/>, in board DBU — what the location column
+    /// SORTS by, since the text is formatted and a string sort would put 10 mm before 9 mm.</summary>
+    public (long X, long Y)? PositionDbu { get; }
+
+    // ── What each column sorts BY (owner, 2026-09-23) ─────────────────────────────────────────
+    //
+    // The NUMBER behind each cell, never its text: "100 nF" sorts after "1 µF" as a string. Null
+    // where the cell states no number — unresolved, not applicable, unstated — and the table puts
+    // those rows LAST in both directions, because an unresolved row is not the smallest value.
+
+    /// <summary>The capacitance column's key: the MARKED value, which is what a designer sorts a
+    /// bill of materials by. Null on a series row, whose cell is an impedance.</summary>
+    public double? CapacitanceSortKey =>
+        _part.IsSeries ? null
+        : Model?.Capacitance is { } c
+            ? (double.IsFinite(c.MarkedFarads) ? c.MarkedFarads : double.IsFinite(c.UsedFarads) ? c.UsedFarads : null)
+            : null;
+
+    /// <summary>The ESR column's key — the DCR on a series row, as the cell prints it.</summary>
+    public double? EsrSortKey =>
+        _series is { } sm ? sm.DcResistanceOhms
+        : Model?.EsrOhms is { } r && double.IsFinite(r) ? r : null;
+
+    /// <summary>The f₀ column's key — the mounted resonance the cell prints.</summary>
+    public double? SelfResonanceSortKey => _part.IsSeries ? null : Model?.SelfResonanceHz;
+
+    /// <summary>The L column's key — the TOTAL the cell's two terms add up to.</summary>
+    public double? InductanceSortKey =>
+        _part.IsSeries
+            ? (_series is { IsMeasured: false } ? _part.SeriesInductanceHenries : null)
+            : Model is { } m ? m.TotalInductanceHenries : MountingInductanceHenries;
+
+    /// <summary>The part-number column's key, or null where the cell reads unresolved.</summary>
+    public string? PartNumberSortKey => PartNumber == UnresolvedText ? null : PartNumber;
+
+    /// <summary>The footprint column's key, or null where nothing states one.</summary>
+    public string? FootprintSortKey => FootprintToken is null ? null : FootprintText;
 
     /// <summary>Where the placement put it, or null where it did not land.</summary>
     public string? Position { get; }

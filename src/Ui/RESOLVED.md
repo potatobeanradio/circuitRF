@@ -35207,3 +35207,36 @@ generator edit — so an existing workspace's `.clay` is rewritten once on first
 - **A reversed part gets its own Turn, and only where a half turn lands it**
   (`TurnedParts.LandingHalfTurn`); a part inside a placed cell is named with a sentence saying to turn
   it in that cell, because its instance index is that cell's.
+
+## railRF parts table — headers off their columns; sort and locate; Workspace panel blank-space menu (2026-09-23)
+
+- **Two causes put the rows out of line with the headers, and either was enough.** (1) The part-number
+  column was a star. The app-wide `ScrollViewer[AllowAutoHide=True]` rule in `CircuitRfStyles.axaml`
+  makes a visible vertical bar RESERVE its column, so once the list scrolled, the rows' star was ~12 px
+  narrower than the header's and every column right of it, footprint first, sat left of its heading.
+  (2) The fixed columns totalled more than the board pane at the shipped window size. That gave the
+  star 0 px, and the part number was drawn over the footprint column. Nothing trimmed either, so model
+  source ran into the location column.
+- **Fix: pixels on both grids and a sideways-scrolling table.** The list owns the horizontal bar, and
+  `RailRfWindow.PartsTable.cs` copies its offset onto a barless `PartsHeaderScroll`. The header carries
+  a 20 px right margin so, scrolled fully right, it can travel as far as the rows (the list's viewport
+  is narrower by its vertical bar). **Same trap as the part-library editor's fix earlier the same day**:
+  a header outside a ListBox cannot share a star pool with the rows inside it.
+- **Sorting is a view, not an edit.** `RailRfViewModel.PartsSort.cs` keeps the document order and
+  applies the chosen order inside `RebuildParts`, which runs on every solve, so a sort survives a
+  re-solve. Rows with no value in the sorted column stay last in both directions. The view model
+  re-seats only the primary row after a sort; the window puts back the rest of a multiple selection.
+- **Location double-click frames `PartHighlight.Outline`**, the box the selection mark is drawn from.
+  When the board panel is hidden it is shown first, and the zoom is posted at `Loaded` priority,
+  because `ZoomToRegion` does nothing until the canvas has a size.
+- **Workspace panel blank-space menu** (`ProjectTreeView.BlankMenu.cs`): every item is an existing
+  command, and the Import submenu is held to File ▸ Import by `ProjectTreeBlankMenuTests`. A
+  TreeViewItem's indent and chevron are outside the row Grid that owns the node menu, so a tunnel
+  `ContextRequested` probe cancels the blank menu over any TreeViewItem.
+- **Column grippers** (`RailRfWindow.PartsTable.cs`). The header and each row are separate Grids,
+  so a resize writes the header's `ColumnDefinitions` and every loaded row Grid. A row Grid that
+  loads later copies the header's widths in `OnPartRowGridLoaded`, because the list is virtualized.
+  The double-click fit measures `vm.Parts`, not the cells on screen, with `TextLayout` in the cells'
+  own font, and an indicative ESR in italic. `PartsColumns` (column → binding) is held to the row
+  template by `PartsTableColumnGripperTests`. Widths are session-only by design: they describe how
+  the table is being read, not the rail, and saving them would make a resize dirty the document.

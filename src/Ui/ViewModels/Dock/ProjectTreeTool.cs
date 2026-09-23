@@ -242,6 +242,10 @@ public partial class ProjectTreeTool : Tool, IActivatableTool
         RefreshRecent();
     }
 
+    /// <summary>The injected actions — read by the view's blank-space menu, which offers the
+    /// workspace's own File-menu commands rather than a second copy of them.</summary>
+    public ITreeActions? Actions => _actions;
+
     /// <summary>New Cell in the workspace root — bound to the tree-header button.</summary>
     [RelayCommand]
     private Task NewCellInWorkspace() => _actions?.NewCellInWorkspaceAsync() ?? Task.CompletedTask;

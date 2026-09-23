@@ -271,6 +271,35 @@
              leaves the border exactly where it was, which is the edge the label was touching (owner,
              2026-09-18). Not on `detailLabel` itself — that class also fills the parts table's seven
              columns, and 8 px of margin in each would come out of the column widths. -->
+        <!-- A parts-table cell. TRIMMED, because a Grid does not clip and an over-long model source
+             or location otherwise ran on into the next column (owner, 2026-09-23). The widths were
+             set so the ordinary values fit; an ellipsis marks one that does not, and the model source
+             carries its whole text on its tooltip. The right margin is the gap that keeps a cell that exactly fills its
+             column from touching the next one's first letter. The 6 px LEFT margin matches the
+             headings' left padding (Grid#PartsHeader > Button.gridhdr), so each cell starts exactly
+             under its heading, clear of the gripper on the column edge. -->
+        <Style Selector="TextBlock.cell">
+            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+            <Setter Property="Margin"       Value="6,0,6,0"/>
+        </Style>
+        <!-- A parts-table column gripper: a 7 px hit strip straddling the column's right edge, with
+             a 1 px line drawn down its middle. It is quiet at rest, so nine of them do not read as
+             table rules, and it takes the accent under the pointer and while dragging. -->
+        <Style Selector="Border.partsgrip">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Cursor"     Value="SizeWestEast"/>
+        </Style>
+        <Style Selector="Border.partsgrip > Border">
+            <Setter Property="Width"               Value="1"/>
+            <Setter Property="Height"              Value="12"/>
+            <Setter Property="HorizontalAlignment" Value="Center"/>
+            <Setter Property="VerticalAlignment"   Value="Center"/>
+            <Setter Property="Background"          Value="{DynamicResource SystemBaseMediumLowColor}"/>
+        </Style>
+        <Style Selector="Border.partsgrip:pointerover > Border">
+            <Setter Property="Width"      Value="2"/>
+            <Setter Property="Background" Value="{DynamicResource SystemAccentColor}"/>
+        </Style>
         <Style Selector="TextBlock.rowlbl">
             <Setter Property="Margin" Value="0,0,8,0"/>
         </Style>
@@ -462,6 +491,13 @@
             <Setter Property="HorizontalAlignment"        Value="Stretch"/>
             <Setter Property="HorizontalContentAlignment" Value="Left"/>
             <Setter Property="Cursor"                     Value="Hand"/>
+        </Style>
+        <!-- The parts table's headings sit 6 px in from their column's left edge, and so do its cells
+             (TextBlock.cell). The column gripper is drawn ON that edge, and a heading starting flush
+             against it read as touching the line (owner, 2026-09-23). The inset is the same on both
+             grids, so headings and cells stay aligned with each other. -->
+        <Style Selector="Grid#PartsHeader > Button.gridhdr">
+            <Setter Property="Padding" Value="6,2,0,2"/>
         </Style>
         <Style Selector="Button.gridhdr:pointerover /template/ ContentPresenter">
             <Setter Property="Background" Value="{DynamicResource SystemChromeLowColor}"/>
@@ -1788,7 +1824,8 @@
                          takes any, a pane spends 30 px of its column on margin, border and padding,
                          and at the window's own 1080 px minimum the board column is ~432 — so the
                          table already overflowed by ~130 px. The grippers only made it easy to
-                         reach, which is why SyncPanes now keeps a floor under the column too. -->
+                         reach, which is why SyncPanes now keeps a floor under the column too.
+                         (2026-09-23: the table now scrolls sideways instead — see PartsHeaderScroll.) -->
                     <Border Grid.Row="2" Name="PartsCard" Classes="card" Margin="0,5,0,0"
                             ClipToBounds="True"
                             IsVisible="{Binding ShowParts}">
@@ -1836,10 +1873,43 @@
                                  the 13 px box of the .rowcheck style plus the 7 px margin it
                                  keeps on its right, so it does not sit flush against the refdes
                                  beside it — the column is those two numbers and no slack. -->
-                            <Grid Grid.Row="1" Name="PartsHeader"
-                                  ColumnDefinitions="20,52,*,72,96,62,64,92,78,86">
-                                <Button Grid.Column="1" Classes="gridhdr" Content="refdes"/>
-                                <Button Grid.Column="2" Classes="gridhdr" Content="part number"/>
+                            <!-- ── THE HEADER FOLLOWS THE ROWS (owner, 2026-09-23) ─────────────────
+                                 It could not line up before, for two reasons, and each was enough:
+
+                                 1. The part-number column was a STAR, dividing whatever width was
+                                    left — and the rows' share was smaller than the header's whenever
+                                    the list showed its vertical bar, because that bar RESERVES its
+                                    column (CircuitRfStyles.axaml, the AllowAutoHide rule). Every
+                                    column right of part number then sat ~12 px left of its heading,
+                                    footprint first. At the shipped window size the fixed columns
+                                    already over-ran the pane, the star got 0 px, and the part number
+                                    was drawn straight over the footprint column.
+                                 2. Nothing trimmed, so a long model source or location ran into the
+                                    next cell.
+
+                                 So every column is PIXELS now, the same string on both grids, and the
+                                 table scrolls sideways instead of squeezing: the list owns the
+                                 horizontal bar and RailRfWindow.PartsTable.cs copies its offset onto
+                                 this header, which scrolls with no bar of its own. The trailing star
+                                 only soaks up spare width on a wide pane. The header's right margin
+                                 is at least the list's vertical-bar width, so scrolled fully right
+                                 the header can still travel as far as the rows do.
+
+                                 THE WIDTHS BELOW ARE ONLY THE STARTING WIDTHS. Every heading has a
+                                 gripper on its right edge (owner, 2026-09-23), added by
+                                 RailRfWindow.PartsTable.cs, not declared here, because each one is
+                                 identical but for its column. Dragging one resizes that column on
+                                 this header and on every row; double-clicking fits it to the widest
+                                 entry in ANY row, realized or not. -->
+                            <ScrollViewer Grid.Row="1" Name="PartsHeaderScroll"
+                                          HorizontalScrollBarVisibility="Hidden"
+                                          VerticalScrollBarVisibility="Disabled">
+                            <Grid Name="PartsHeader" Margin="0,0,20,0"
+                                  ColumnDefinitions="20,52,130,84,100,62,64,96,110,170,*">
+                                <Button Grid.Column="1" Classes="gridhdr" Content="refdes"
+                                        Tag="Refdes" Click="OnPartsHeaderClick"/>
+                                <Button Grid.Column="2" Classes="gridhdr" Content="part number"
+                                        Tag="PartNumber" Click="OnPartsHeaderClick"/>
                                 <!-- WHAT THE BILL OF MATERIALS CALLS THE LAND PATTERN, and what
                                      that resolved to (brief-footprint-4 R-fp4-3). It REPORTS: a
                                      token matching nothing is shown as written rather than snapped
@@ -1848,19 +1918,29 @@
                                      ambiguous rather than read one way — 0201 differs by 2.4x
                                      between the two, and nothing downstream would notice. Nothing
                                      here assigns artwork (R-fp4-3d). -->
-                                <Button Grid.Column="3" Classes="gridhdr" Content="footprint"/>
-                                <Button Grid.Column="4" Classes="gridhdr" Content="C"/>
-                                <Button Grid.Column="5" Classes="gridhdr" Content="ESR"/>
-                                <Button Grid.Column="6" Classes="gridhdr" Content="f₀"/>
-                                <Button Grid.Column="7" Classes="gridhdr" Content="L pkg + mount"/>
-                                <Button Grid.Column="8" Classes="gridhdr" Content="model source"/>
+                                <Button Grid.Column="3" Classes="gridhdr" Content="footprint"
+                                        Tag="Footprint" Click="OnPartsHeaderClick"/>
+                                <Button Grid.Column="4" Classes="gridhdr" Content="C"
+                                        Tag="Capacitance" Click="OnPartsHeaderClick"/>
+                                <Button Grid.Column="5" Classes="gridhdr" Content="ESR"
+                                        Tag="Esr" Click="OnPartsHeaderClick"/>
+                                <Button Grid.Column="6" Classes="gridhdr" Content="f₀"
+                                        Tag="SelfResonance" Click="OnPartsHeaderClick"/>
+                                <Button Grid.Column="7" Classes="gridhdr" Content="L pkg + mount"
+                                        Tag="Inductance" Click="OnPartsHeaderClick"/>
+                                <Button Grid.Column="8" Classes="gridhdr" Content="model source"
+                                        Tag="ModelSource" Click="OnPartsHeaderClick"/>
                                 <!-- WHERE IT IS, or that nothing says. Without this column the table
                                      was a list of parts with no visible relationship to the artwork
                                      beside it, and a reader looking for C1 on the board had nothing
                                      to tell them that railRF does not know where C1 is either
-                                     (owner, 2026-09-19). -->
-                                <Button Grid.Column="9" Classes="gridhdr" Content="where"/>
+                                     (owner, 2026-09-19). Headed "location" rather than "where"
+                                     (owner, 2026-09-23), and double-clicking a row's cell frames
+                                     that part on the board. -->
+                                <Button Grid.Column="9" Classes="gridhdr" Content="location"
+                                        Tag="Location" Click="OnPartsHeaderClick"/>
                             </Grid>
+                            </ScrollViewer>
                             <!-- MaxHeight on the LIST, as every other card does it. The Grid's own
                                  MaxHeight constrains the MEASURE and does not clip, so a list taller
                                  than it simply draws past the card and over the status strip — which
@@ -1874,6 +1954,7 @@
                                  board — a board can only mark one thing, so the mark follows the
                                  row the user touched last and the batch follows the selection. -->
                             <ListBox Grid.Row="2" Name="PartsList" Classes="rows" MaxHeight="128"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Auto"
                                      SelectionMode="Multiple"
                                      ItemsSource="{Binding Parts}"
                                      SelectedItem="{Binding SelectedPart, Mode=TwoWay}">
@@ -1888,7 +1969,8 @@
                                              no numeric column — a half-filled row is the shape a
                                              defaulted one takes, and the whole point of listing it is
                                              that it is not one. -->
-                                        <Grid ColumnDefinitions="20,52,*,72,96,62,64,92,78,86" Margin="0,1"
+                                        <Grid ColumnDefinitions="20,52,130,84,100,62,64,96,110,170,*" Margin="0,1"
+                                              Loaded="OnPartRowGridLoaded" Unloaded="OnPartRowGridUnloaded"
                                               Classes.unresolved="{Binding IsUnresolved}"
                                               Classes.unmounted="{Binding IsUnmounted}"
                                               Classes.series="{Binding IsSeries}"
@@ -1909,16 +1991,16 @@
                                                  (R-rail18-5a) — typed on the rail, or pre-filled
                                                  from the bill of materials. A pre-filled number
                                                  nobody checked is the one that will be wrong. -->
-                                            <TextBlock Grid.Column="1" Classes="detailLabel" Text="{Binding Refdes}"
+                                            <TextBlock Grid.Column="1" Classes="detailLabel cell" Text="{Binding Refdes}"
                                                        HorizontalAlignment="Left"
                                                        ToolTip.Tip="{Binding OriginText}"/>
-                                            <TextBlock Grid.Column="2" Classes="detailLabel" 
+                                            <TextBlock Grid.Column="2" Classes="detailLabel cell"
                                                        HorizontalAlignment="Left" Text="{Binding PartNumber}"
                                                        ToolTip.Tip="{Binding PartNumberTooltip}"/>
-                                            <TextBlock Grid.Column="3" Classes="detailLabel"
+                                            <TextBlock Grid.Column="3" Classes="detailLabel cell"
                                                        HorizontalAlignment="Left" Text="{Binding FootprintText}"
                                                        ToolTip.Tip="{Binding FootprintTooltip}"/>
-                                            <TextBlock Grid.Column="4" Classes="detailLabel" 
+                                            <TextBlock Grid.Column="4" Classes="detailLabel cell"
                                                        HorizontalAlignment="Left" Text="{Binding CapacitanceText}"
                                                        ToolTip.Tip="{Binding CapacitanceTooltip}"/>
                                             <!-- ITALIC where the ESR is a dissipation-factor default
@@ -1929,21 +2011,27 @@
                                                  and the number in this cell is what sizes that peak.
                                                  The tooltip says it in words; the slant is what a
                                                  reader sees without hovering. -->
-                                            <TextBlock Grid.Column="5" Classes="detailLabel" 
+                                            <TextBlock Grid.Column="5" Classes="detailLabel cell"
                                                        HorizontalAlignment="Left" Text="{Binding EsrText}"
                                                        Classes.indicative="{Binding IsEsrIndicative}"
                                                        ToolTip.Tip="{Binding EsrTooltip}"/>
-                                            <TextBlock Grid.Column="6" Classes="detailLabel" 
+                                            <TextBlock Grid.Column="6" Classes="detailLabel cell"
                                                        HorizontalAlignment="Left" Text="{Binding SelfResonanceText}"
                                                        ToolTip.Tip="{Binding SelfResonanceTooltip}"/>
-                                            <TextBlock Grid.Column="7" Classes="detailLabel" 
+                                            <TextBlock Grid.Column="7" Classes="detailLabel cell"
                                                        HorizontalAlignment="Left" Text="{Binding InductanceText}"
                                                        ToolTip.Tip="{Binding InductanceTooltip}"/>
-                                            <TextBlock Grid.Column="8" Classes="detailLabel" 
-                                                       HorizontalAlignment="Left" Text="{Binding ModelSourceText}"/>
-                                            <TextBlock Grid.Column="9" Classes="detailLabel"
-                                                       HorizontalAlignment="Left" Text="{Binding PositionText}"
-                                                       ToolTip.Tip="{Binding PositionTooltip}"/>
+                                            <TextBlock Grid.Column="8" Classes="detailLabel cell"
+                                                       HorizontalAlignment="Left" Text="{Binding ModelSourceText}"
+                                                       ToolTip.Tip="{Binding ModelSourceText}"/>
+                                            <!-- The whole CELL takes the double-click, not just the glyphs:
+                                                 stretched, with a transparent background so it
+                                                 hit-tests across its width. -->
+                                            <TextBlock Grid.Column="9" Classes="detailLabel cell"
+                                                       HorizontalAlignment="Stretch" Background="Transparent"
+                                                       Text="{Binding PositionText}"
+                                                       ToolTip.Tip="{Binding PositionTooltip}"
+                                                       DoubleTapped="OnPartLocationDoubleTapped"/>
                                         </Grid>
                                     </DataTemplate>
                                 </ListBox.ItemTemplate>
