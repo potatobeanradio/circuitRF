@@ -78,7 +78,7 @@ public sealed partial class RailRfViewModel
 
         return Regions.CopperLayersAt(board.Shapes, tech, xDbu, yDbu)
             .Where(k => k != reference)
-            .Where(k => !hidden.Contains(k) && !(defs.TryGetValue(k, out var d) && !d.Visible))
+            .Where(k => !hidden.Contains(k))
             .OrderByDescending(k => defs.TryGetValue(k, out var d) ? d.ZOrder : int.MinValue)
             .ThenBy(StackRank)
             .Select(k => (LayerKey?)k)

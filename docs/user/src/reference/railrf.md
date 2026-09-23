@@ -78,12 +78,25 @@ copper moves, because the numbers were measured on the board you have just chang
 </div>
 
 <div class="callout note">
-<span class="label">Coordinates read in the board's own units</span>
+<span class="label">Coordinates read in the document's own units</span>
 <p>Every position, length and mesh size on this window &mdash; source and load anchors, the placement
-column, the drop table, the labels over the artwork, the <b>Mesh cell</b> setting &mdash; is shown in the
-unit the <b>layout</b> is set to, which is the same unit the layout editor shows that board in. Change
-it there and railRF follows. Positions are stored as exact database units and only <i>displayed</i> in
-yours, so nothing is rounded by the choice.</p>
+column, the drop table, the labels over the artwork, the <b>Mesh cell</b> setting, and every message and
+refusal &mdash; is shown in the unit picked in the board panel's toolbar, to the right of the
+<b>Layers</b> button. A new document starts in the unit the layout is set to; after that the unit is the
+<code>.crail</code>'s own, saved with it, and changing it never changes the <code>.clay</code> or the
+<code>.ctech</code>. The <code>circuitrf rail</code> command reports in the same unit. Positions are
+stored as exact database units and only <i>displayed</i> in yours, so nothing is rounded by the
+choice.</p>
+</div>
+
+<div class="callout note">
+<span class="label">Layer visibility is the window's own</span>
+<p>The <b>Layers</b> button in the board panel's toolbar opens a list of the board's drawing layers. Tick
+or untick any of them to show or hide it on this board &mdash; including a layer the technology's
+<b>Vis</b> box hides. The choice is saved in the <code>.crail</code> and nothing is written to the
+<code>.ctech</code>. A layer you have not changed follows the technology. The button at the right of the
+list's header, <b>Follow the technology</b>, clears your choices so every layer shows or hides as the
+<code>.ctech</code> says.</p>
 </div>
 
 ## What you provide {#provide}

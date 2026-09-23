@@ -650,37 +650,9 @@
                         <Setter Property="VerticalAlignment" Value="Center"/>
                     </Style>
 
-<!-- Unit and Snap: same font, same HEIGHT, left-aligned; Snap wider.
-
-                         Two Avalonia facts drive every setter here, and ignoring them is what made
-                         an earlier attempt look worse than the original:
-
-                         1. An EDITABLE ComboBox (Snap) is templated around an inner TextBox with its
-                            OWN padding, min-height and font; a NON-EDITABLE one (Unit) is templated
-                            around a plain ContentPresenter. So identical Padding/FontSize on the two
-                            ComboBoxes still yields DIFFERENT heights, and the inner TextBox does not
-                            necessarily take the outer FontSize. Height is therefore pinned explicitly
-                            on both, and the font is pushed into the inner TextBox by name.
-                         2. The template reserves space for the drop-down chevron. Squeezing Width
-                            clips the content presenter on BOTH sides — so width is expressed as
-                            MinWidth (a floor, never a cap) and the padding is left at the value the
-                            template expects, rather than shrunk. -->
-                    <Style Selector="ComboBox.metaCombo">
-                        <Setter Property="FontSize" Value="11"/>
-                        <Setter Property="Height" Value="22"/>
-                        <Setter Property="MinHeight" Value="0"/>
-                        <Setter Property="Padding" Value="6,2"/>
-                        <Setter Property="HorizontalContentAlignment" Value="Left"/>
-                        <Setter Property="VerticalContentAlignment" Value="Center"/>
-                    </Style>
-
-                    <!-- Reaches the editable variant's inner TextBox, which would otherwise keep the
-                         theme's own font size and make "same font size" quietly untrue. -->
-                    <Style Selector="ComboBox.metaCombo /template/ TextBox">
-                        <Setter Property="FontSize" Value="11"/>
-                        <Setter Property="MinHeight" Value="0"/>
-                        <Setter Property="VerticalContentAlignment" Value="Center"/>
-                    </Style>
+<!-- Unit and Snap take ComboBox.metaCombo, which lives in Styles/CircuitRfStyles.axaml
+                         because railRF's board toolbar reuses the Unit picker (2026-09-23). Read the
+                         note there before changing any of its setters. -->
                 </StackPanel.Styles>
 
                 <!-- The "1 DBU = 1 nm" readout was removed from this bar (owner, 2026-07-30):

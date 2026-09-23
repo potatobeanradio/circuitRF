@@ -165,7 +165,12 @@ public sealed partial class RailRfViewModel
         _applyingSnapshot = true;
         try
         {
+            // The display unit is carried across, never taken back: like the layout editor's own it
+            // is how numbers are spelled, not an edit (RailRfViewModel.Units.cs) — and a snapshot
+            // taken before the document was seeded would otherwise un-seed it.
+            var unit = _document.DisplayUnit;
             _document = RailDocumentIo.DeserializeUnvalidated(json);
+            _document.DisplayUnit = unit ?? _document.DisplayUnit;
             _undoBaseline = json;
 
             ClearResults();

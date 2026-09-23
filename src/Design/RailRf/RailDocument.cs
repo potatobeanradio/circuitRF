@@ -226,10 +226,14 @@ public sealed class RailDocument
     /// workspace, so using its <c>Vis</c> boxes as a per-window display switch makes one reader's
     /// navigation another reader's diff. Nothing here is ever written back to a technology.
     ///
-    /// <para><b>It is a set of HIDDEN layers, unioned with the technology's own</b> — never a second
-    /// answer to the same question. A layer the <c>.ctech</c> does not draw stays undrawn whatever
-    /// this says, and exactly one hidden-layer set reaches the renderer and the map overlay
-    /// (R-rail20-1c).</para>
+    /// <para><b>An OVERRIDE of the technology, in either direction</b> — this set hides layers the
+    /// <c>.ctech</c> draws, and <see cref="ShownLayers"/> shows layers it does not. Until 2026-09-23
+    /// this set was unioned with the technology's own hidden layers, so a layer the <c>.ctech</c> did
+    /// not draw could not be shown here at all and the only way to see it was to edit the
+    /// technology — the navigation-becomes-a-diff this list exists to prevent. A layer named in
+    /// neither set reads what the technology says, so an edit to the <c>.ctech</c> still reaches
+    /// every layer this window has not decided about. Exactly one visible set reaches the renderer
+    /// and the map overlay (R-rail20-1c).</para>
     ///
     /// <para><b>Document state, beside <see cref="Panels"/> and for its reason.</b> Which layers a
     /// reader wants to see is a question about a BOARD — this board, read this way — rather than
@@ -237,6 +241,34 @@ public sealed class RailDocument
     /// before this existed opens exactly as it always did.</para>
     /// </remarks>
     public HashSet<LayerKey> HiddenLayers { get; } = [];
+
+    /// <summary>
+    /// The drawing layers the WINDOW draws although the technology's <c>Vis</c> box is off — the
+    /// other half of <see cref="HiddenLayers"/>' override. Absent from the file means none.
+    /// </summary>
+    public HashSet<LayerKey> ShownLayers { get; } = [];
+
+    /// <summary>
+    /// Whether this document draws <paramref name="layer"/>: its own override where it has one, and
+    /// the technology's <c>Vis</c> box where it does not. The one answer every consumer of the
+    /// window's layer visibility asks.
+    /// </summary>
+    public bool Shows(LayerDef layer) =>
+        layer.Visible ? !HiddenLayers.Contains(layer.Key) : ShownLayers.Contains(layer.Key);
+
+    /// <summary>
+    /// The unit every length and coordinate this document's reports print in — the window's rows,
+    /// its messages and refusals, and the <c>rail</c> verb's output. Null only until a board is
+    /// first read, which seeds it from the artwork's own display unit (the <c>.clay</c>'s, or the
+    /// technology's default where there is no document).
+    /// </summary>
+    /// <remarks>
+    /// <b>The document's own, not the layout's</b> (2026-09-23). It was the <c>.clay</c>'s display
+    /// unit until then, which made the way one board designer READS a rail report a setting in a
+    /// layout document other people draw in. It is how numbers are SPELLED and nothing else: storage
+    /// is DBU either way, and changing it never touches a result.
+    /// </remarks>
+    public LayoutUnit? DisplayUnit { get; set; }
 
     /// <summary>
     /// Which regions of copper the user has forced the fast model to read either way

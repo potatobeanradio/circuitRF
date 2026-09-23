@@ -234,7 +234,7 @@ internal static class Rail
             JsonRun.Note(note);
         }
 
-        if (doc.Refusal() is { } docRefusal)
+        if (doc.Refusal(board!.FormatFor(doc)) is { } docRefusal)
             return JsonRun.Fail(CliDiagnostics.RailDocumentRefused(input.DocumentPath, docRefusal));
 
         // R-rail10-3, row 1. The ENGINE refuses a rail with no reference layer too, and its sentence
@@ -283,7 +283,7 @@ internal static class Rail
         // a side effect — `circuitrf rail board.clay --load U1.VDD=120mA` was refused before this
         // call existed. RailArtwork owns the precedence; this prints what it had to say.
         var resolvedPads = RailArtwork.PadsFor(
-            board.View, board.ClayPath, board.Technology, netlist, null, board.Shapes);
+            board.View, board.ClayPath, board.Technology, netlist, null, board.Shapes, doc.DisplayUnit);
         foreach (string d in resolvedPads.Notes)
         {
             if (board.FlattenNotes.Contains(d)) continue;
@@ -297,7 +297,7 @@ internal static class Rail
             Shapes         = board.Shapes,
             Technology     = board.Technology,
             DbuPerMicron   = board.View.DbuPerMicron,
-            LengthFormat   = board.LengthFormat,
+            LengthFormat   = board.FormatFor(doc),
             Model          = o.Model,
             Pads           = resolvedPads.Pads,
             NetPoints      = resolvedPads.NetPoints,
@@ -442,10 +442,10 @@ internal static class Rail
         LayoutView View, Technology Technology, string ClayPath, string BaseDir,
         IReadOnlyList<LayoutShape> Shapes, IReadOnlyList<string> FlattenNotes)
     {
-        /// <summary>The artwork's own units — what every coordinate on this run's report reads in
-        /// (owner, 2026-09-18). The `.clay`'s own display unit, which is what the layout editor shows
-        /// the same board in.</summary>
-        public RailLengthFormat LengthFormat => RailLengthFormat.For(View);
+        /// <summary>What every coordinate on this run's report reads in: the `.crail`'s own display
+        /// unit — the one its window prints in — and the `.clay`'s where the document has never
+        /// stated one.</summary>
+        public RailLengthFormat FormatFor(RailDocument doc) => RailLengthFormat.For(View, doc.DisplayUnit);
     }
 
     /// <summary>
@@ -588,7 +588,7 @@ internal static class Rail
             if (ApplyLoad(spec, targets) is { } r) return r;
 
         foreach (string spec in o.Masks)
-            if (ApplyMask(spec, targets, board.LengthFormat) is { } r) return r;
+            if (ApplyMask(spec, targets, board.FormatFor(doc)) is { } r) return r;
 
         foreach (string spec in o.Aggressors)
             if (ApplyAggressor(spec, targets) is { } r) return r;

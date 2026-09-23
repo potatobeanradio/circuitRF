@@ -71,6 +71,7 @@ public sealed partial class RailRfViewModel
         CancelPadRead();
         _netAcrossPadRead = null;
         _padsReadFrom = PinSignature.Of(value?.View);
+        SeedDisplayUnit(value);
         OnPropertyChanged(nameof(HasBoard));
         AnnounceImpedanceMap();
 
@@ -930,7 +931,7 @@ public sealed partial class RailRfViewModel
         Shapes         = board.Shapes,
         Technology     = board.Technology,
         DbuPerMicron   = board.DbuPerMicron,
-        LengthFormat   = board.LengthFormat,
+        LengthFormat   = BoardLengthFormat(),
         Pads           = board.Pads,
         NetPoints      = board.NetPoints,
         // The LIVE document's return — the reference row edits it after the board was read, and

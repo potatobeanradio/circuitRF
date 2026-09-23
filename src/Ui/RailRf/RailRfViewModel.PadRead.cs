@@ -193,11 +193,12 @@ public sealed partial class RailRfViewModel
         var tech = board.Technology;
         string? clay = board.ArtworkCellRef;
         var netlist = BoardNetlist;
+        var unit = _document.DisplayUnit;   // captured here: the document is the UI thread's
 
         return ReadCopperOffThread(() =>
         {
             RailArtwork.RailPadResolution? resolved = null;
-            try { resolved = RailArtwork.PadsFor(view, clay, tech, netlist, null, shapes); }
+            try { resolved = RailArtwork.PadsFor(view, clay, tech, netlist, null, shapes, unit); }
             catch (Exception) { /* dropped below: the board keeps the reading it had */ }
 
             PostToUi(() => FinishPadRead(cts, live, tech, signature, resolved));

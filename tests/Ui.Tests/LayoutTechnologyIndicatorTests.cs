@@ -20,6 +20,10 @@ public sealed class LayoutTechnologyIndicatorTests
     private static LayoutView NewView() =>
         new() { DbuPerMicron = 1000, DisplayUnit = LayoutUnit.Um, SnapDbu = 1000 };
 
+    /// <summary>The application-scope styles, where <c>ComboBox.metaCombo</c> is defined.</summary>
+    private static string SharedStyles() =>
+        RepoFile(Path.Combine("src", "Ui", "Styles", "CircuitRfStyles.axaml"));
+
     private static string RepoFile(string rel)
     {
         var dir = AppContext.BaseDirectory;
@@ -88,8 +92,10 @@ public sealed class LayoutTechnologyIndicatorTests
         var axaml = RepoFile(Path.Combine("src", "Ui", "Views", "Layout", "LayoutEditorView.axaml"));
 
         // One style, applied to both — rather than two hand-maintained sets of numbers, which is how
-        // they came to differ in the first place (Snap had MinWidth=90, Unit had none).
-        Assert.Contains("Selector=\"ComboBox.metaCombo\"", axaml);
+        // they came to differ in the first place (Snap had MinWidth=90, Unit had none). It lives in
+        // the application styles since railRF's unit picker reuses it (2026-09-23).
+        Assert.Contains("Selector=\"ComboBox.metaCombo\"", SharedStyles());
+        Assert.DoesNotContain("Selector=\"ComboBox.metaCombo\"", axaml);
         Assert.Equal(2, System.Text.RegularExpressions.Regex.Matches(axaml, "Classes=\"metaCombo\"").Count);
     }
 
@@ -112,7 +118,7 @@ public sealed class LayoutTechnologyIndicatorTests
     [Fact]
     public void TheSharedStyle_SetsOneSmallFontSize_ForBothCombos()
     {
-        var axaml = RepoFile(Path.Combine("src", "Ui", "Views", "Layout", "LayoutEditorView.axaml"));
+        var axaml = SharedStyles();
 
         var i = axaml.IndexOf("Selector=\"ComboBox.metaCombo\"", StringComparison.Ordinal);
         var style = axaml[i..axaml.IndexOf("</Style>", i, StringComparison.Ordinal)];
@@ -126,7 +132,7 @@ public sealed class LayoutTechnologyIndicatorTests
     [Fact]
     public void TheSharedStyle_LeftAlignsContent_TheUnitCombosOriginalComplaint()
     {
-        var axaml = RepoFile(Path.Combine("src", "Ui", "Views", "Layout", "LayoutEditorView.axaml"));
+        var axaml = SharedStyles();
 
         var i = axaml.IndexOf("Selector=\"ComboBox.metaCombo\"", StringComparison.Ordinal);
         var style = axaml[i..axaml.IndexOf("</Style>", i, StringComparison.Ordinal)];
@@ -140,7 +146,7 @@ public sealed class LayoutTechnologyIndicatorTests
     [Fact]
     public void TheSharedStyle_PinsOneHeight_ForBothCombos_TheReportedMismatch()
     {
-        var axaml = RepoFile(Path.Combine("src", "Ui", "Views", "Layout", "LayoutEditorView.axaml"));
+        var axaml = SharedStyles();
 
         var i = axaml.IndexOf("Selector=\"ComboBox.metaCombo\"", StringComparison.Ordinal);
         var style = axaml[i..axaml.IndexOf("</Style>", i, StringComparison.Ordinal)];

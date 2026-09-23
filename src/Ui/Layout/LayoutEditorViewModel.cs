@@ -343,11 +343,27 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     // change "needs no undo entry beyond a view-preference change", and a snap change never
     // touches existing geometry.
 
+    /// <summary>
+    /// True where this view model spells lengths in a unit of its OWN, which is never written to
+    /// <see cref="Model"/> and never dirties it.
+    /// </summary>
+    /// <remarks>
+    /// railRF's board panel is a second view model over the layout session's own <see cref="LayoutView"/>
+    /// (R-rail19-1), and its unit is the <c>.crail</c>'s rather than the <c>.clay</c>'s (2026-09-23).
+    /// Without this, setting that unit on the canvas would reach the shared model through the line
+    /// below — changing the layout editor's unit beside it and dirtying a document the railRF window
+    /// never edits.
+    /// </remarks>
+    public bool DisplayUnitIsViewLocal { get; init; }
+
     partial void OnDisplayUnitChanged(LayoutUnit value)
     {
-        Model.DisplayUnit = value;
-        _prefsDirty = true;
-        RefreshDirty();
+        if (!DisplayUnitIsViewLocal)
+        {
+            Model.DisplayUnit = value;
+            _prefsDirty = true;
+            RefreshDirty();
+        }
         OnPropertyChanged(nameof(SnapText));
         OnPropertyChanged(nameof(ExtentText));
         RefreshTypedFieldDisplays();

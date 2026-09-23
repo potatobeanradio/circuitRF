@@ -43,21 +43,23 @@ public sealed partial class RailRfViewModel
     public RailLayoutOverlay BoardOverlayLayer { get; } = new();
 
     /// <summary>
-    /// How every coordinate and every length on this window is SPELLED — the board's own display
-    /// unit, never DBU (owner, 2026-09-18).
+    /// How every coordinate and every length on this window is SPELLED — the <c>.crail</c>'s own
+    /// display unit (<see cref="DisplayUnit"/>), at the board's resolution, never DBU (owner,
+    /// 2026-09-18).
     /// </summary>
     /// <remarks>
-    /// <b>A function, and asked afresh at every use.</b> The unit belongs to the layout, the layout is
-    /// the live one the layout editor is also showing, and its unit picker can change it while this
-    /// window is open — so a value captured when a row was built would go on printing the unit the
-    /// board used to be in. The same argument the canvas's own <c>NavigationKeysSuppressed</c>
-    /// predicate makes: a cached answer is a latch.
+    /// <b>A function, and asked afresh at every use.</b> The unit picker in the board toolbar can
+    /// change it while this window is open — so a value captured when a row was built would go on
+    /// printing the unit the board used to be in. The same argument the canvas's own
+    /// <c>NavigationKeysSuppressed</c> predicate makes: a cached answer is a latch.
     ///
     /// <para>A window with no board answers <see cref="RailLengthFormat.Dbu"/>, which prints the
     /// integer and says "DBU" rather than picking a unit nobody stated.</para>
     /// </remarks>
     public Func<RailLengthFormat> BoardLengthFormat =>
-        () => Board?.LengthFormat ?? RailLengthFormat.Dbu;
+        () => Board is not { } board ? RailLengthFormat.Dbu
+            : _document.DisplayUnit is { } unit ? new RailLengthFormat(unit, board.DbuPerMicron)
+            : board.LengthFormat;
 
     /// <summary>
     /// The board netlist's pads, for the anchor field's tooltip on every source and load row.
@@ -75,16 +77,13 @@ public sealed partial class RailRfViewModel
     private RailLengthFormat _lastLengthFormat = RailLengthFormat.Dbu;
 
     /// <summary>
-    /// Re-states every unit-formatted string when the board's display unit has changed under us.
+    /// Re-states every unit-formatted string when the unit this window prints in has changed.
     /// </summary>
     /// <remarks>
-    /// <b>Changing a layout's display unit stays off <c>Changed</c>, on purpose</b> — it is a document
-    /// PREFERENCE, not geometry, and it belongs on neither the undo stack nor the notification the
-    /// spatial index listens to. It raises <c>LayoutView.DisplayUnitChanged</c> instead, which is what
-    /// this window subscribes to, so the change lands while the user is looking at it rather than at
-    /// the next activation (owner, 2026-09-19 — two windows side by side is the ordinary case, and
-    /// "activate railRF to see the unit you just picked" is not a thing anyone would guess).
-    /// Activation still asks, for the window that was not watching this model yet.
+    /// <b>What changes it is this window's own unit picker</b> (<see cref="DisplayUnit"/>). The
+    /// layout's <c>LayoutView.DisplayUnitChanged</c> still arrives here too, and matters only to a
+    /// document whose unit has not been seeded yet — once it has, the <c>.crail</c>'s unit is the
+    /// answer and a unit picked in the layout editor beside it changes nothing in this window.
     ///
     /// <para><b>Nothing is recomputed.</b> A unit is how a number is spelled, not what it is — so every
     /// result stands, and what happens here is that each string is asked for again.</para>
@@ -98,8 +97,10 @@ public sealed partial class RailRfViewModel
         // The board canvas holds its OWN LayoutEditorViewModel over the shared model (see
         // RailRfWindow.LiveArtwork), and that view model captured the unit when it was built. Without
         // this, the panel's own rulers and cursor readout go on reading in the old unit while every
-        // row beside them reads in the new one.
+        // row beside them reads in the new one. It is built DisplayUnitIsViewLocal, so this never
+        // reaches the `.clay`.
         if (BoardLayout is { } canvas && !now.IsRawDbu) canvas.DisplayUnit = now.Unit;
+        OnPropertyChanged(nameof(DisplayUnit));
 
         foreach (var row in Sources) row.NotifyAnchorChanged();
         foreach (var row in Loads)   row.NotifyAnchorChanged();
@@ -473,7 +474,12 @@ public sealed partial class RailRfViewModel
             // It is the ADDRESS and not an invitation to write: the canvas is ReadOnly (R-rail19-1's
             // other half), so no save path on this view model is reachable from this window.
             CurrentLayoutPath = board.ArtworkCellRef,
+
+            // The canvas spells lengths in the `.crail`'s unit, and that must never be written into
+            // the layout session's own model — see DisplayUnitIsViewLocal.
+            DisplayUnitIsViewLocal = true,
         };
+        if (BoardLengthFormat() is { IsRawDbu: false } format) BoardLayout.DisplayUnit = format.Unit;
         BoardOverlayLayer.DbuPerMicron = board.DbuPerMicron;
 
         // The rows FIRST, because they are built from the technology, and the narrowing second,
@@ -651,17 +657,24 @@ public sealed partial class RailRfViewModel
     /// map of it floating on the board (owner, 2026-09-19).
     /// </remarks>
     /// <remarks>
-    /// <b>And the WINDOW's own hidden layers are unioned in here</b> (R-rail20-1c), which is the
-    /// whole of "there is exactly one hidden-layer set reaching the overlay, not two". railRF's own
-    /// layer list and the technology's <c>Vis</c> boxes answer the same question, so they arrive at
-    /// the overlay as one answer — see <c>RailRfViewModel.Layers.cs</c>.
+    /// <b>And the WINDOW's own overrides are applied here</b> (R-rail20-1c), through
+    /// <see cref="RailDocument.Shows"/> — the whole of "there is exactly one hidden-layer set
+    /// reaching the overlay, not two". railRF's own layer list and the technology's <c>Vis</c> boxes
+    /// answer the same question, so they arrive at the overlay as one answer — see
+    /// <c>RailRfViewModel.Layers.cs</c>.
     /// </remarks>
     private void SyncHiddenLayers()
     {
-        var hidden = new HashSet<LayerKey>(WindowHiddenLayers);
+        var hidden = new HashSet<LayerKey>();
         if (Board?.Technology is { } tech)
+        {
             foreach (var layer in tech.Layers)
-                if (!layer.Visible) hidden.Add(layer.Key);
+                if (!_document.Shows(layer)) hidden.Add(layer.Key);
+        }
+        else
+        {
+            hidden.UnionWith(_document.HiddenLayers);
+        }
 
         BoardOverlayLayer.HiddenLayers = hidden;
     }

@@ -179,29 +179,45 @@ public class RailLayerVisibilityTests
     }
 
     /// <summary>
-    /// A layer the TECHNOLOGY does not draw is shown, unticked and not pressable — and the two
-    /// hidden sets arrive at the overlay as ONE.
+    /// A layer the TECHNOLOGY does not draw can be ticked ON here — the window overrides the
+    /// <c>.ctech</c> in both directions — and "Follow the technology" hides it again.
     /// </summary>
+    /// <remarks>
+    /// It was a disabled row until 2026-09-23 (a field report): the window's set was unioned with the
+    /// technology's, so the only way to see such a layer was to edit the <c>.ctech</c>.
+    /// </remarks>
     [Fact]
-    public void ALayerTheTechnologyHidesIsShownAndCannotBeTicked()
+    public void ALayerTheTechnologyHidesCanBeShownAndFollowHidesItAgain()
     {
         var tech = TwoLayerTech();
         tech.Layers[0].Visible = false;
+        var hiddenByTech = new LayerKey(1, 0);
 
         var vm = Window(OneRail());
         vm.Board = new RailBoardInputs { Shapes = [], Technology = tech };
 
-        var row = vm.BoardLayers.Single(r => r.Key == new LayerKey(1, 0));
+        var row = vm.BoardLayers.Single(r => r.Key == hiddenByTech);
         Assert.True(row.HiddenByTechnology);
         Assert.False(row.Visible);
-        Assert.False(row.CanToggle);
+        Assert.Contains(hiddenByTech, vm.BoardOverlayLayer.HiddenLayers);
 
-        vm.BoardLayers.Single(r => r.Key == new LayerKey(2, 0)).Visible = false;
+        row.Visible = true;
 
-        // One set, holding both answers.
-        Assert.Equal(2, vm.BoardOverlayLayer.HiddenLayers.Count);
-        Assert.Contains(new LayerKey(1, 0), vm.BoardOverlayLayer.HiddenLayers);
-        Assert.Contains(new LayerKey(2, 0), vm.BoardOverlayLayer.HiddenLayers);
+        // Drawn — copper and shading together — on a clone; the shared technology still hides it.
+        Assert.True(vm.BoardLayout!.Technology!.Layers.Single(l => l.Key == hiddenByTech).Visible);
+        Assert.False(tech.Layers[0].Visible);
+        Assert.Empty(vm.BoardOverlayLayer.HiddenLayers);
+
+        // Persisted as its own set.
+        var reread = RailDocumentIo.Deserialize(RailDocumentIo.Serialize(vm.Document));
+        Assert.Equal([hiddenByTech], reread.ShownLayers);
+        Assert.Empty(reread.HiddenLayers);
+
+        vm.FollowTechnologyCommand.Execute(null);
+
+        Assert.False(row.Visible);
+        Assert.Empty(vm.Document.ShownLayers);
+        Assert.Contains(hiddenByTech, vm.BoardOverlayLayer.HiddenLayers);
     }
 
     // ══ helpers ══════════════════════════════════════════════════════════════════════════════════
@@ -227,7 +243,7 @@ public class RailLayerVisibilityTests
         return vm;
     }
 
-    private static RailRfViewModel Window(RailDocument doc)
+    internal static RailRfViewModel Window(RailDocument doc)
     {
         var vm = new RailRfViewModel(doc, null)
         {
@@ -239,7 +255,7 @@ public class RailLayerVisibilityTests
         return vm;
     }
 
-    private static RailDocument OneRail()
+    internal static RailDocument OneRail()
     {
         var doc = new RailDocument { Name = "layers" };
         var rail = new RailSpec { Name = "+1V8", NetName = "+1V8" };
@@ -252,7 +268,7 @@ public class RailLayerVisibilityTests
         return doc;
     }
 
-    private static Technology TwoLayerTech()
+    internal static Technology TwoLayerTech()
     {
         var tech = new Technology { Name = "board" };
         tech.Layers.Add(new LayerDef { Key = new LayerKey(1, 0), Name = "L1", ZOrder = 1 });

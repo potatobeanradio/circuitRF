@@ -35240,3 +35240,33 @@ generator edit — so an existing workspace's `.clay` is rewritten once on first
   own font, and an indicative ESR in italic. `PartsColumns` (column → binding) is held to the row
   template by `PartsTableColumnGripperTests`. Widths are session-only by design: they describe how
   the table is being read, not the rail, and saving them would make a resize dirty the document.
+
+## railRF — a layer the `.ctech` hid could not be shown; the `.crail` gets its own display unit (2026-09-23)
+
+- **The layer list could only HIDE.** `RailDocument.HiddenLayers` was unioned with the technology's
+  own hidden layers, so a layer whose `.ctech` Vis box was off was a disabled row, and the only way to
+  see it was to edit the technology — the route R-rail20 was built to retire. The window now overrides
+  in both directions: `HiddenLayers` hides what the `.ctech` draws, the new `ShownLayers` shows what it
+  does not, and `RailDocument.Shows(LayerDef)` is the one answer the canvas clone
+  (`SyncCanvasTechnology`), the overlay (`SyncHiddenLayers`) and `ShownCopperLayerAt` all read. An entry
+  is written only where the box differs from the technology, so a layer ticked back to the `.ctech`'s
+  state follows it again, live. "Follow the technology" clears both sets; it moved to a glyph button
+  at the right of the list's header.
+- **The board canvas would have written railRF's unit into the `.clay`.** The canvas is a second
+  `LayoutEditorViewModel` over the layout session's own `LayoutView`, and `OnDisplayUnitChanged`
+  writes `Model.DisplayUnit` and sets `_prefsDirty`. `RefreshIfUnitChanged` already assigned
+  `canvas.DisplayUnit` — harmless only because the two units were always the same. With the unit now
+  the `.crail`'s, that line would have changed the layout editor's unit beside it and dirtied a
+  document railRF never edits. `LayoutEditorViewModel.DisplayUnitIsViewLocal` (init-only) skips the
+  model write and the dirty mark; railRF builds its canvas with it.
+- **Unit plumbing.** `RailDocument.DisplayUnit` (nullable, absent from older files) is seeded in
+  `OnBoardChanged` from the `.clay` (or the technology default); the seed recaptures the saved snapshot
+  when the window was clean, so opening an old `.crail` does not mark it dirty. `BoardLengthFormat`,
+  the DC request, `RailArtwork.PadsFor` (its notes, new optional `displayUnit`) and the `rail` CLI verb
+  (`BoardInputs.FormatFor(doc)`) all spell lengths in it. Undo carries the unit across a snapshot
+  rather than restoring it — it is a view preference, like the layout editor's, and a snapshot from
+  before the seed would otherwise un-seed it. Drawn rulers inside the `.clay` still label in the
+  layout's own unit: they are document content, drawn by `LayoutRenderer` from `view.DisplayUnit`.
+- `ComboBox.metaCombo` moved from `LayoutEditorView.axaml` to `Styles/CircuitRfStyles.axaml` so the
+  railRF picker shares it; `LayoutTechnologyIndicatorTests` reads it from there. The railRF window's own
+  `ComboBox` style centres content, so the picker is centred there rather than left-aligned.

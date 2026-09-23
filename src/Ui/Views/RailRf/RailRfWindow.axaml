@@ -1485,6 +1485,27 @@
                                     ToolTip.Tip="Layers — show or hide drawing layers on this board. This window only; nothing is written to the .ctech.">
                                 <mi:MaterialIcon Kind="LayersSearchOutline" Width="14" Height="14"/>
                             </Button>
+                            <!-- ── THE `.crail`'s OWN DISPLAY UNIT (owner, 2026-09-23) ──────────
+                                 The layout editor's Unit picker — the same ComboBox.metaCombo
+                                 style (moved to CircuitRfStyles.axaml so both windows share it),
+                                 the same unit list and the same lower-case item template — with no
+                                 "Unit:" label, so it stays a quiet part of the toolbar. It spells
+                                 every length and coordinate this window prints, messages and
+                                 refusals included, and never writes the `.clay` or the `.ctech`. -->
+                            <ComboBox Name="BoardUnitCombo" Classes="metaCombo" MinWidth="64"
+                                      Margin="6,0,0,0" VerticalAlignment="Center"
+                                      ItemsSource="{x:Static rvm:RailRfViewModel.AllDisplayUnits}"
+                                      SelectedItem="{Binding DisplayUnit, Mode=TwoWay}"
+                                      ToolTip.Tip="Units — how every length and coordinate in railRF is shown and reported. Saved in the .crail; the .clay and .ctech are not changed.">
+                                <ComboBox.Resources>
+                                    <conv:ToLowerStringConverter x:Key="ToLower"/>
+                                </ComboBox.Resources>
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Converter={StaticResource ToLower}}"/>
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
                         </StackPanel>
                         <!-- The tab strip switches the OVERLAY and NEVER the geometry (§11.3). The
                              artwork underneath is the same on all four; brief 8 draws each map. -->
@@ -1563,18 +1584,25 @@
                                     BorderBrush="{DynamicResource CrfTileBorderBrush}"
                                     BorderThickness="1" CornerRadius="4" Padding="6">
                                 <DockPanel>
-                                    <TextBlock DockPanel.Dock="Top" Classes="panelhdr"
-                                               Text="{Binding LayerListHeader}"/>
-                                    <!-- R-rail20-1e. Without it a user who has hidden four layers
-                                         has no way to find out what the document itself states,
-                                         and the two drift with nothing able to reconcile them.
-                                         Disabled — not hidden — while nothing is overridden, so
-                                         the way back is visible before it is needed. -->
-                                    <Button DockPanel.Dock="Bottom" Margin="0,6,0,0"
-                                            HorizontalAlignment="Stretch" Padding="6,3"
-                                            Command="{Binding FollowTechnologyCommand}"
-                                            Content="Follow the technology"
-                                            ToolTip.Tip="Clear this window's own layer choices, so the list reads what the .ctech says."/>
+                                    <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto">
+                                        <TextBlock Grid.Column="0" Classes="panelhdr"
+                                                   VerticalAlignment="Center"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   Text="{Binding LayerListHeader}"/>
+                                        <!-- R-rail20-1e. Without it a user who has changed four
+                                             layers has no way to find out what the document itself
+                                             states, and the two drift with nothing able to
+                                             reconcile them. A toolbar glyph on the header row, the
+                                             zoom row's own shape (owner, 2026-09-23). Disabled —
+                                             not hidden — while nothing is overridden, so the way
+                                             back is visible before it is needed. -->
+                                        <Button Grid.Column="1" Name="BoardFollowTechBtn"
+                                                Padding="6,3" VerticalAlignment="Center"
+                                                Command="{Binding FollowTechnologyCommand}"
+                                                ToolTip.Tip="Follow the technology — clear this window's own layer choices, so every layer shows or hides as the .ctech says.">
+                                            <mi:MaterialIcon Kind="VectorLink" Width="14" Height="14"/>
+                                        </Button>
+                                    </Grid>
                                     <ScrollViewer HorizontalScrollBarVisibility="Disabled">
                                         <ItemsControl ItemsSource="{Binding BoardLayers}">
                                             <ItemsControl.ItemTemplate>
@@ -1589,8 +1617,7 @@
                                                              colour chip beside it. -->
                                                         <CheckBox Grid.Column="0" Padding="0" MinWidth="0"
                                                                   Margin="0,0,8,0"
-                                                                  IsChecked="{Binding Visible}"
-                                                                  IsEnabled="{Binding CanToggle}"/>
+                                                                  IsChecked="{Binding Visible}"/>
                                                         <Border Grid.Column="1" Width="12" Height="12"
                                                                 CornerRadius="2" VerticalAlignment="Center"
                                                                 BorderBrush="{DynamicResource CrfTileBorderBrush}"

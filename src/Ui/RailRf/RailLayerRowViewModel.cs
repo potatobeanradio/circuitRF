@@ -14,10 +14,11 @@ namespace CircuitRF.Ui.RailRf;
 /// the hidden set, this row asks it to change, and the row is then told what the answer was. So a
 /// row cannot come to disagree with the drawing, and there is nothing here to write back.
 ///
-/// <para><b>A layer the TECHNOLOGY does not draw is shown and disabled</b>, never silently ticked
-/// off. The window's set is unioned with the technology's (R-rail20-1c), so a tick on such a row
-/// would be a control that can be pressed and does nothing — the line this window's own panel
-/// buttons already draw. The tooltip says which file is hiding it.</para>
+/// <para><b>A layer the TECHNOLOGY does not draw can still be ticked on here</b> (2026-09-23). It was
+/// a disabled row until then, because the window's set was unioned with the technology's — which
+/// left editing the <c>.ctech</c> as the only way to see such a layer, the route this list exists to
+/// retire. The window now overrides the technology in both directions; the tooltip still says what
+/// the <c>.ctech</c> itself states.</para>
 /// </remarks>
 public sealed partial class RailLayerRowViewModel : ObservableObject
 {
@@ -45,18 +46,14 @@ public sealed partial class RailLayerRowViewModel : ObservableObject
     /// so it is drawn at full alpha rather than at the layer's own fill opacity.</summary>
     public Avalonia.Media.Color SwatchColor { get; }
 
-    /// <summary>True where the <c>.ctech</c> itself is not drawing this layer. The box is then
-    /// unticked and disabled — see the type's own remarks.</summary>
+    /// <summary>True where the <c>.ctech</c>'s own <c>Vis</c> box is off for this layer — what
+    /// "Follow the technology" returns the box to, and what the tooltip reports.</summary>
     public bool HiddenByTechnology { get; }
 
-    /// <summary>Whether the box may be pressed at all.</summary>
-    public bool CanToggle => !HiddenByTechnology;
-
     /// <summary>What the row says about this layer, and what its tooltip is.</summary>
-    public string Tip => HiddenByTechnology
-        ? $"{Name} — the technology is not drawing this layer, so this window cannot show it. "
-        + "Its Vis box is in the .ctech."
-        : $"{Name} — show or hide it on this board. This window only; nothing is written to the .ctech.";
+    public string Tip =>
+        $"{Name} — show or hide it on this board. This window only; nothing is written to the .ctech"
+        + (HiddenByTechnology ? ", which hides this layer." : ", which shows this layer.");
 
     /// <summary>Whether the board is drawing it.</summary>
     [ObservableProperty]

@@ -1689,15 +1689,14 @@ public class RailWindowTests
     }
 
     /// <summary>
-    /// Changing the board's display unit re-states the strings, on the activation that follows.
+    /// Picking the window's display unit re-states every row's coordinates.
     /// </summary>
     /// <remarks>
-    /// A display unit raises no <c>Changed</c> event — the layout editor deliberately keeps it off the
-    /// undo stack and out of the notification the spatial index listens to — so there is nothing to
-    /// subscribe to and the window asks on activation instead. What is asserted here is the asking.
+    /// The unit is the <c>.crail</c>'s own since 2026-09-23 — seeded from the <c>.clay</c>, and from
+    /// then on the board toolbar's picker, not the layout editor's, is what changes it.
     /// </remarks>
     [Fact]
-    public void ChangingTheBoardsDisplayUnitRestatesTheCoordinates()
+    public void ChangingTheWindowsDisplayUnitRestatesTheCoordinates()
     {
         var view = new LayoutView { DbuPerMicron = 1000, DisplayUnit = LayoutUnit.Mm };
         var document = new RailDocument();
@@ -1715,12 +1714,9 @@ public class RailWindowTests
         var row = Assert.Single(vm.Loads);
         Assert.Equal("(26.5, 9.875) mm", row.Anchor);
 
-        // The layout editor's unit picker writes straight to the model.
-        view.DisplayUnit = LayoutUnit.Um;
-
         int restated = 0;
         row.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(row.Anchor)) restated++; };
-        vm.RefreshIfUnitChanged();
+        vm.DisplayUnit = LayoutUnit.Um;
 
         Assert.Equal(1, restated);
         Assert.Equal("(26500, 9875) µm", row.Anchor);
@@ -1855,48 +1851,6 @@ public class RailWindowTests
 
         Assert.Equal("(26.5, 9.875) mm", port.Name);
         Assert.Equal("(26500, 9875) µm", port.NameIn(new RailLengthFormat(LayoutUnit.Um, 1000)));
-    }
-
-    /// <summary>
-    /// A display-unit change re-states the window <b>while it is on screen</b>, with no activation.
-    /// </summary>
-    /// <remarks>
-    /// The unit deliberately stays off <c>LayoutView.Changed</c> — it is a preference, not geometry —
-    /// but it is shared state on a shared model, and railRF's board panel is a second window drawing
-    /// it. <c>DisplayUnitChanged</c> is that notification, and this drives the pair the way the window
-    /// wires them: the model raises, the view model re-states (owner, 2026-09-19).
-    /// </remarks>
-    [Fact]
-    public void ADisplayUnitChangeRestatesTheWindowWithoutWaitingForAnActivation()
-    {
-        var view = new LayoutView { DbuPerMicron = 1000, DisplayUnit = LayoutUnit.Mm };
-        var document = new RailDocument();
-        var rail = new RailSpec { Name = "+3V3", NetName = "+3V3" };
-        rail.Loads.Add(new RailLoad { Anchor = new RailPortAnchor { Point = (26_500_000, 9_875_000) } });
-        document.Rails.Add(rail);
-
-        var vm = new RailRfViewModel(document, null)
-        {
-            Board = new RailBoardInputs
-            {
-                Shapes = view.Shapes, Technology = new Technology(), View = view,
-            },
-        };
-
-        // What RailRfWindow.WatchArtwork subscribes.
-        int raised = 0;
-        view.DisplayUnitChanged += (_, _) => { raised++; vm.RefreshIfUnitChanged(); };
-
-        var row = Assert.Single(vm.Loads);
-        Assert.Equal("(26.5, 9.875) mm", row.Anchor);
-
-        view.DisplayUnit = LayoutUnit.Um;
-        Assert.Equal(1, raised);
-        Assert.Equal("(26500, 9875) µm", row.Anchor);
-
-        // Setting it to what it already is is not a change, so nothing is re-stated for it.
-        view.DisplayUnit = LayoutUnit.Um;
-        Assert.Equal(1, raised);
     }
 
     // ══ The window's own reports, 2026-09-19 ═════════════════════════════════════════════════════

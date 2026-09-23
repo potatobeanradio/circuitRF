@@ -12,9 +12,9 @@
 //
 // ── ONE FORMAT OBJECT, CARRIED ──────────────────────────────────────────────────────────────────
 //
-// The two halves of the answer — which unit, and how many DBU are in a micron — belong to the LAYOUT
-// (`LayoutView.DisplayUnit`, `LayoutView.DbuPerMicron`), not to railRF and not to a preference. So
-// they travel together, from the board inputs to whatever prints. A caller with no board has no unit
+// The two halves of the answer — which unit, and how many DBU are in a micron — travel together,
+// from the board inputs to whatever prints. The resolution belongs to the LAYOUT; the unit is the
+// `.crail`'s own `DisplayUnit` (2026-09-23), seeded from the layout's and free to differ from it. A caller with no board has no unit
 // to print in and gets `Dbu`, which says so on the face of the string rather than looking like a
 // length in whatever unit the reader assumes.
 
@@ -47,6 +47,13 @@ public readonly record struct RailLengthFormat(LayoutUnit Unit, int DbuPerMicron
     /// <summary>The artwork's format, from the layout itself.</summary>
     public static RailLengthFormat For(LayoutView view) =>
         new(view.DisplayUnit, view.DbuPerMicron);
+
+    /// <summary>
+    /// The artwork's resolution, spelled in a <c>.crail</c>'s own <see cref="RailDocument.DisplayUnit"/>
+    /// where it states one and in the layout's where it does not.
+    /// </summary>
+    public static RailLengthFormat For(LayoutView view, LayoutUnit? documentUnit) =>
+        new(documentUnit ?? view.DisplayUnit, view.DbuPerMicron);
 
     /// <summary>One length, with its unit — <c>0.209 mm</c>.</summary>
     public string Length(long dbu) =>

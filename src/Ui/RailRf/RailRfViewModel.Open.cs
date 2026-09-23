@@ -139,7 +139,7 @@ public sealed partial class RailRfViewModel
                 // over the FLATTENED copper, because a board whose parts are footprint cells keeps
                 // every land inside an instance and a pad standing on nothing takes no name.
                 var resolvedPads = RailArtwork.PadsFor(
-                    view, found.ClayPath, tech, netlist, null, shapes);
+                    view, found.ClayPath, tech, netlist, null, shapes, _document.DisplayUnit);
                 // An instance that does not resolve contributes neither geometry nor pads, and both
                 // walks report it with the SAME sentence (R-ab1-1c) — so it is said once.
                 foreach (string d in resolvedPads.Notes) if (!notes.Contains(d)) notes.Add(d);

@@ -149,7 +149,8 @@ public sealed partial class RailRfViewModel
 
         var shapes = RailArtwork.FlattenedShapes(view, board.ArtworkCellRef, board.Technology);
         PadReadsPerformed++;
-        var resolved = RailArtwork.PadsFor(view, board.ArtworkCellRef, board.Technology, BoardNetlist, null, shapes);
+        var resolved = RailArtwork.PadsFor(
+            view, board.ArtworkCellRef, board.Technology, BoardNetlist, null, shapes, _document.DisplayUnit);
         RefreshBoardPads(board, shapes, resolved, PinSignature.Of(view));
     }
 

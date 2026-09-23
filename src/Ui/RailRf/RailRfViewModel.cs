@@ -207,6 +207,11 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
         // the one case where the new document's artwork does not resolve and the old board stands.
         ApplyLayerVisibility();
 
+        // And its own display unit — or, unseeded, the board's until the board replaced after this
+        // seeds it.
+        OnPropertyChanged(nameof(DisplayUnit));
+        RefreshIfUnitChanged();
+
         CaptureSnapshot();
 
         // A new document is a new history. Keeping the old one would offer to undo an edit into a

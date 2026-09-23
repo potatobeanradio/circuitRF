@@ -392,9 +392,14 @@ public static class RailArtwork
     public static RailPadResolution PadsFor(
         LayoutView? view, string? clayPath, Technology? technology, BoardNetlist? netlist,
         Func<string, System.Collections.Generic.IReadOnlyList<string>>? portNamesOf = null,
-        System.Collections.Generic.IReadOnlyList<LayoutShape>? shapes = null)
+        System.Collections.Generic.IReadOnlyList<LayoutShape>? shapes = null,
+        LayoutUnit? displayUnit = null)
     {
         var notes = new System.Collections.Generic.List<string>();
+
+        // Every sentence below names a place on the board, in the `.crail`'s own unit where the caller
+        // has one (RailDocument.DisplayUnit) and in the layout's where it does not.
+        RailLengthFormat? format = view is null ? null : RailLengthFormat.For(view, displayUnit);
 
         var fromNetlist = PdnBoardPads.PadsOf(netlist);
         var covered = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -417,8 +422,7 @@ public static class RailArtwork
         // this short cut; see LayoutEditorViewModel.CopperPieces.)
         var stamped = view is null || !view.Shapes.Any(sh => sh.Net is { Length: > 0 })
             ? CopperPieces.Empty
-            : CopperPieces.Build(shapes ?? view.Shapes, technology, view.Shapes,
-                                    RailLengthFormat.For(view));
+            : CopperPieces.Build(shapes ?? view.Shapes, technology, view.Shapes, format);
         notes.AddRange(stamped.Refusals);
 
         var extents = new System.Collections.Generic.Dictionary<PlacedPin, long>();
@@ -481,7 +485,7 @@ public static class RailArtwork
         // In the ARTWORK's own unit — these sentences name two places on a board and a distance
         // between them, and a reader has to be able to hold a ruler against them.
         var divergences = PdnBoardDivergence.Compare(
-            fromNetlist, artwork, extents, view is null ? null : RailLengthFormat.For(view));
+            fromNetlist, artwork, extents, format);
         foreach (var d in divergences) notes.Add(d.Sentence);
 
         // Each artwork pad's LAND layer rides on the pad itself (R-rail34-1), so a refdes anchor

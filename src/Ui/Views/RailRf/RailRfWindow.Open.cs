@@ -152,7 +152,7 @@ public partial class RailRfWindow
         // is inside one — and until this call it opened with `Pads = []`: no pick list, every refdes
         // anchor falling back to a coordinate, and every mounting inductance a typed one. There is no
         // companion netlist on this path by construction, so every pad here is the artwork's own.
-        var resolvedPads = RailArtwork.PadsFor(view, clay, tech, null, null, shapes);
+        var resolvedPads = RailArtwork.PadsFor(view, clay, tech, null, null, shapes, vm.Document.DisplayUnit);
         foreach (string d in resolvedPads.Notes) if (!flattenNotes.Contains(d)) flattenNotes.Add(d);
 
         vm.Board = new RailBoardInputs
