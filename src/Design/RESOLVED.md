@@ -11882,3 +11882,26 @@ claims fail on the previous code and pass on this one.
 On the field board, after its own fixes (gnd attached, reference 3/0, the series rows): rail 1 Fast
 3.43 / Accurate 3.56 mV, the second rail Fast 1.30 / Accurate 1.34 mV, both at 30 mA and both before
 the series parts' DCR, which the board's library does not state.
+
+## Nothing entered is 0 Ω; a saved library reaches the open window (2026-09-23, same review)
+
+- **A series element's DCR with nothing entered** (row blank, no ESR on an `Other` library row) is now
+  **0 Ω**, reported as a NOTE (`RailSeriesModel.AssumedDcResistanceLine`), by owner decision. It was
+  R-rail25-3b's "lower bound" FINDING, which on a board of 0 Ω links and RF chokes flagged every rail
+  for parts whose resistance really is negligible. The DC stamp had always used 0; what changed is the
+  finding, the parts table (`0 Ω`, not `unstated`) and the model-source column (`none (0 Ω)`).
+  Capacitor ESRs are untouched: a capacitor with no stated ESR still takes its class default.
+- **A part library saved in its editor now reaches every open railRF window using it**
+  (`RailRfViewModel.ReloadPartLibrary`, called from the workspace's `PartLibrarySaved`). The window read
+  its library once, on open, so an edited ESR stayed stale until it was closed. A library that no
+  longer reads keeps the rows on screen. Gate: `PartLibraryReloadTests`.
+- **A source's output R and L had no column on the window.** The sweep refuses an ideal source and told
+  the user to state its series resistance, but the Sources card showed only the anchor and the voltage;
+  `RailSourceRowViewModel.ResistanceEntry`/`InductanceEntry` existed and nothing bound them. Both are now
+  columns. Their setters follow the window's unit rule (a bare inductance is refused, not read as henries)
+  and a typo snaps back instead of clearing the value. Gate: `SourceImpedanceEntryTests`.
+- **A source typed as 0 Ω + 0 H is refused like a blank one.** Before, only a blank one was refused. A
+  zero impedance's admittance is taken as zero, so the source silently left the sweep, and a curve of
+  the capacitors alone was presented as the rail's. The refusal now says "blank or zero" and names the R
+  column. The user doc's "What you provide" section explains both values, and Q1 points to the message
+  card.

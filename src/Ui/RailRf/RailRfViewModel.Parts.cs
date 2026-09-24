@@ -398,6 +398,34 @@ public sealed partial class RailRfViewModel
         RefreshDirty();
     }
 
+    /// <summary>
+    /// Re-reads the part library after <paramref name="savedPath"/> was saved, where it is the one this
+    /// window uses; anything else is ignored. The parts table rebuilds from it, and an answer on screen
+    /// is re-run, because its ESRs and DCRs came from the rows that just changed.
+    /// </summary>
+    /// <remarks>
+    /// A library that no longer reads keeps the rows the window already has: the editor saves
+    /// unvalidated on purpose, so a half-finished row must not empty the parts table — the run will
+    /// refuse the file by name when it is next read.
+    /// </remarks>
+    /// <returns>True where this window's library was re-read.</returns>
+    public bool ReloadPartLibrary(string savedPath)
+    {
+        ArgumentNullException.ThrowIfNull(savedPath);
+        if (PartLibraryPath is not { Length: > 0 } mine) return false;
+
+        var comparison = OperatingSystem.IsLinux() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+        if (!string.Equals(System.IO.Path.GetFullPath(mine), System.IO.Path.GetFullPath(savedPath), comparison))
+            return false;
+
+        try   { PartLibrary = PartLibraryIo.LoadFromFile(mine); }
+        catch { return false; }
+
+        if (Current is not null && CanRun && Board is { } board && SelectedRail is not null)
+            Start(board, PdnModelKind.Fast);
+        return true;
+    }
+
     /// <summary>Adds every recognised aggressor the selected rail does not already carry.</summary>
     [CommunityToolkit.Mvvm.Input.RelayCommand]
     public void AcceptRecognisedAggressors()

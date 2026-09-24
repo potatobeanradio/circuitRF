@@ -1073,6 +1073,10 @@ public partial class RailRfWindow : Window
             ? window.DataContext as RailRfViewModel
             : null;
 
+    /// <summary>Every open railRF window's view model — what a saved part library is announced to.</summary>
+    public static IEnumerable<RailRfViewModel> OpenViewModels() =>
+        [.. Open.Values.Select(w => w.DataContext).OfType<RailRfViewModel>()];
+
     /// <summary>
     /// Shows the window as an INDEPENDENT top-level, positioned over <paramref name="owner"/> but not
     /// owned by it.

@@ -727,8 +727,7 @@ public static class RailDcRun
                 {
                     RailSeriesValueSource.Row     => "the DC resistance stated on this rail's part row",
                     RailSeriesValueSource.Library => "the ESR on this part's part-library row, classed Other",
-                    _ => "UNSTATED on the part row and in the part library — stamped as zero, so the " +
-                         "total is a lower bound",
+                    _ => "none entered on the part row or in the part library, so taken as 0 Ω",
                 }));
         }
         return found;
@@ -868,7 +867,7 @@ public static class RailDcRun
         foreach (var seriesRow in rail.SeriesElements)
         {
             var seriesModel = RailSeriesModel.Resolve(seriesRow, request.PartLibrary)!;
-            if (seriesModel.UnstatedDcResistanceLine is { } lowerBound) findings.Add(lowerBound);
+            if (seriesModel.AssumedDcResistanceLine is { } assumed) notes.Add(assumed);
             else notes.Add(
                 $"Series element {seriesRow.Refdes} is on the path at " +
                 $"{(seriesModel.DcResistanceOhms ?? 0) * 1e3:0.###} mΩ" +

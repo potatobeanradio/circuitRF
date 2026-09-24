@@ -57,11 +57,12 @@ public sealed class SeriesElementWindowTests(ITestOutputHelper output)
         // The ESR column reads the DCR, which is what the element costs the rail at DC.
         Assert.Equal("60 mΩ", row.EsrText);
 
-        // UNSTATED is its own word and it is not "unresolved" (R-rail25-3b).
+        // Nothing entered is 0 Ω (owner, 2026-09-23), never "unresolved", and the tooltip says it
+        // was assumed.
         var unstated = new RailPartRowViewModel(
             ferrite with { DcResistanceOhms = null }, null, null, null, null);
-        Assert.Equal(RailPartRowViewModel.UnstatedText, unstated.EsrText);
-        Assert.NotEqual(RailPartRowViewModel.UnresolvedText, unstated.EsrText);
+        Assert.Equal("0 Ω", unstated.EsrText);
+        Assert.Contains("taken as 0 Ω", unstated.EsrTooltip, StringComparison.Ordinal);
 
         // No column of a series row reads "unresolved": it has no self-resonance, and its L column
         // is its own R-L's L — never the library's derived one or a mounting loop the solve does

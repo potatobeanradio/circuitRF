@@ -638,17 +638,23 @@ public static class PdnSweep
         {
             var source = request.Sources[k];
 
+            // BLANK OR ZERO, both: an R-L of 0 Ω + 0 H is exactly as ideal as one nobody filled in,
+            // and it was worse — its admittance is taken as zero below, so the source silently left
+            // the rail rather than shorting it, and a curve of the capacitors alone came out labelled
+            // as the rail's (field report, 2026-09-23).
             if (source.Basis == RailSourceBasis.Rl &&
-                source.SeriesResistanceOhms is not { } && source.SeriesInductanceHenries is not { })
+                source.SeriesResistanceOhms is not (> 0) && source.SeriesInductanceHenries is not (> 0))
             {
                 // An ideal source is a SHORT at every frequency, so the rail's impedance would come
                 // out identically zero and every mask would pass. That is not a small error to note
                 // beside a number; it is the absence of an answer.
                 refusal =
-                    $"Source {source.Name} states no series resistance and no series inductance, so " +
-                    "at every frequency it shorts the rail to its reference and |Z| is identically " +
-                    "zero. State its series resistance — a cell's is ohms to hundreds of ohms across " +
-                    "its life — or attach its published output-impedance curve.";
+                    $"Source {source.Name} states no output resistance and no output inductance (blank " +
+                    "or zero), so it is an ideal source: at every frequency it shorts the rail to its " +
+                    "reference and |Z| is identically zero. Enter its output resistance — the R beside " +
+                    "its voltage on the Sources card, from the regulator's datasheet (typically tens of " +
+                    "milliohms; a cell's is ohms to hundreds of ohms across its life) — or attach its " +
+                    "published output-impedance curve.";
                 return branches;
             }
 

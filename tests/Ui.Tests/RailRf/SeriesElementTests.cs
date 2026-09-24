@@ -357,8 +357,8 @@ public sealed class SeriesElementTests(ITestOutputHelper output)
 
     /// <summary>
     /// <b>Gate 6 (R-rail25-3a) and gate 7 (R-rail25-3b).</b> A series DCR is a row of the ranked
-    /// breakdown, and an UNSTATED one makes the total a stated lower bound rather than a number
-    /// that quietly omits the largest term after the source.
+    /// breakdown, and one nobody entered is 0 Ω with a note saying so (owner, 2026-09-23 — it was a
+    /// "lower bound" finding until then).
     /// </summary>
     [Fact]
     public void Gate6And7_TheSeriesDcrIsARankedBreakdownRow_AndAnUnstatedOneIsALowerBound()
@@ -380,14 +380,14 @@ public sealed class SeriesElementTests(ITestOutputHelper output)
                  $"{r.ShareOfTotal:P1}")));
         Assert.Equal(rows.OrderByDescending(r => r.DropV).First().Label, ferrite.Label);
 
-        // ── unstated is not zero ─────────────────────────────────────────────────────────────
+        // ── nothing entered is 0 Ω, and said so (owner, 2026-09-23) ─────────────────────────
         var unstated = RailDcRun.Run(DcRequest(dcrOhms: null));
         Assert.Null(unstated.Refusal);
 
-        Assert.Contains(unstated.Rails[0].Findings,
-                        f => f.Contains("LOWER BOUND", StringComparison.Ordinal));
-        Assert.DoesNotContain(stated.Rails[0].Findings,
-                              f => f.Contains("LOWER BOUND", StringComparison.Ordinal));
+        Assert.Equal(0.0, unstated.Rails[0].Breakdown
+            .Single(r => r.Label.Contains("FB1", StringComparison.Ordinal)).ResistanceOhms);
+        Assert.Contains(unstated.Rails[0].Notes, n => n.Contains("taken as 0 Ω", StringComparison.Ordinal));
+        Assert.DoesNotContain(stated.Rails[0].Notes, n => n.Contains("taken as 0 Ω", StringComparison.Ordinal));
     }
 
     /// <summary>

@@ -106,24 +106,46 @@ public sealed partial class RailSourceRowViewModel : ObservableObject
         });
     }
 
-    /// <summary>The series resistance of the R-L model, in the settable column.</summary>
+    /// <summary>
+    /// The series resistance of the source's R-L model — its output impedance, which is what the
+    /// frequency answer needs a source to state (an ideal source shorts the rail at every frequency).
+    /// </summary>
+    /// <remarks>
+    /// <b>These two had no column on the window at all</b> (field report, 2026-09-23): the sweep's
+    /// refusal told a user to state a source's series resistance, and nothing on screen could.
+    /// </remarks>
     public string ResistanceEntry
     {
         get => RailValueFormat.FormatWithUnit(_source.SeriesResistanceOhms, RailQuantity.Resistance, "");
-        set => Commit(_source with
-        {
-            SeriesResistanceOhms = RailValueFormat.TryParse(value, RailQuantity.Resistance, out double v) ? v : null,
-        });
+        set => CommitValue(value, RailQuantity.Resistance, (s, v) => s with { SeriesResistanceOhms = v });
     }
 
-    /// <summary>The series inductance of the same model.</summary>
+    /// <summary>The series inductance of the same model. A unit is required, as everywhere an
+    /// inductance is typed in this window.</summary>
     public string InductanceEntry
     {
         get => RailValueFormat.FormatWithUnit(_source.SeriesInductanceHenries, RailQuantity.Inductance, "");
-        set => Commit(_source with
+        set => CommitValue(value, RailQuantity.Inductance, (s, v) => s with { SeriesInductanceHenries = v });
+    }
+
+    /// <summary>
+    /// Empty clears the value. Anything else is stored only where it reads as a value at or above
+    /// zero — with a unit where the quantity needs one (<see cref="RailValueFormat.IsBareWhereAUnitIsRequired"/>)
+    /// — and otherwise the cell snaps back to what is stored rather than clearing it: a typo must not
+    /// silently remove a number, and a bare 2 in an inductance cell must not become 2 H.
+    /// </summary>
+    private void CommitValue(string? text, RailQuantity quantity, Func<RailSource, double?, RailSource> edit)
+    {
+        if (string.IsNullOrWhiteSpace(text)) { Commit(edit(_source, null)); return; }
+
+        if (RailValueFormat.IsBareWhereAUnitIsRequired(text, quantity)
+            || !RailValueFormat.TryParse(text, quantity, out double v) || v < 0 || !double.IsFinite(v))
         {
-            SeriesInductanceHenries = RailValueFormat.TryParse(value, RailQuantity.Inductance, out double v) ? v : null,
-        });
+            Commit(_source);
+            return;
+        }
+
+        Commit(edit(_source, v));
     }
 
     /// <summary>The row's own refusal, or null — what turns the row's flag on.</summary>

@@ -334,12 +334,11 @@ public sealed class RailPartRowViewModel
     /// <summary>The sentence behind those two columns — where the number came from, and at what
     /// frequency it was evaluated.</summary>
     public string EsrTooltip => _series is { } series
-        ? series.DcResistanceOhms is not null
-            ? "This element's DC resistance — the resistance the load current runs through, "
+        ? series.AssumedDcResistanceLine
+          ?? "This element's DC resistance — the resistance the load current runs through, "
               + (series.DcResistanceFrom == RailSeriesValueSource.Library
                   ? "from the part library's ESR on its row classed Other."
                   : "as this rail's own row states it.")
-            : series.UnstatedDcResistanceLine!
         : Model switch
     {
         null => "No ESR: this part did not resolve, so nothing here is defaulted.",

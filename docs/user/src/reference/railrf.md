@@ -141,6 +141,17 @@ the two in one press.</p>
 </div>
 
 <div class="callout note">
+<span class="label">The |Z| plot needs each source's output resistance</span>
+<p>Each row of the <b>Sources</b> card has three values: the voltage, <b>R</b> and <b>L</b> &mdash; the
+supply's output resistance and inductance. The DC answer needs only the voltage. The |Z| plot needs R, L or
+both: a source with neither (blank <i>or</i> zero) is ideal, shorts the rail at every frequency, and leaves
+nothing to plot, so the Frequency tab says so instead of drawing a curve. Take R from the regulator's
+datasheet (its output impedance at low frequency, typically tens of milliohms for a switcher or LDO) and L
+where it is given (a few nH is typical); a battery's R is ohms to hundreds of ohms over its life. Inductance
+needs a unit (<code>2 nH</code>); resistance may be bare (<code>0.05</code> is 50 mΩ).</p>
+</div>
+
+<div class="callout note">
 <span class="label">A load with no current is an observation port</span>
 <p>Leave a load row's current <b>empty</b> and it stops being a load: it contributes nothing to the DC
 solve and is still reported &mdash; listed as <i>observed</i> rather than quietly dropped &mdash; and over
@@ -313,8 +324,9 @@ cannot state an R-L. Use a Touchstone file there, or state the R-L on each rail'
 | **Ferrite bead** | The datasheet DCR. | **A Touchstone file**: the supplier's two-port S-parameters, measured series-thru. A bead's impedance falls with DC current and a datasheet curve is usually measured with none, so where the supplier offers curves at several bias currents, pick the one nearest your load current. An R-L is accepted, but it cannot follow a bead's curve, and railRF says so beside every result it produces. There is no "impedance at 100 MHz" field: that single figure does not say how much of it is R and how much is L. |
 | **RF choke** (series inductor) | The datasheet DCR. | Below its self-resonance, an R-L works: R = its DCR, L = its inductance, with a unit (`10 µH`). Above its self-resonance a choke turns capacitive, and an R-L keeps rising, which reads as better filtering than the part gives. Where that band matters, use the supplier's Touchstone file. |
 
-A blank DCR is not read as zero. The part still carries the rail's current, and the DC answer then reports
-its drop as a **lower bound**, not a total.
+A blank DCR &mdash; nothing on the row and no ESR on the part's library row &mdash; is read as **0 Ω**, and the DC
+answer notes that it was assumed. The part carries the rail's current, so enter the datasheet DCR wherever it
+is not negligible. Editing and saving the part library updates an open railRF window straight away.
 
 ## Q0 &mdash; is this rail connected, and what does it cost to get there? {#q0}
 
@@ -356,6 +368,9 @@ Three other things come out of the same solve.
 Scroll the results column past the DC answers and it judges each observation port's |Z| against its
 target, reporting the verdict as a sentence: *"Passes by 0.6 dB at its worst, 100 MHz."* A violation
 names its frequency and its margin in decibels.
+
+No curve at all? The card under the plot on the **Frequency** tab says why &mdash; most often a source with no
+output resistance; see [What you provide](#provide).
 
 Three things are on the plot besides the curve and the mask.
 

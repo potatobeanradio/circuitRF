@@ -7728,7 +7728,16 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
             var vm = new PartLibraryEditorViewModel(absolutePath, library);
             vm.SaveError        += m => Messages.Error(m);
-            vm.PartLibrarySaved += p => Messages.Success("Saved", p);
+            vm.PartLibrarySaved += p =>
+            {
+                Messages.Success("Saved", p);
+
+                // A railRF window reads its library when it opens and never again, so an ESR edited
+                // and saved here stayed at its old value in the parts table until the window was
+                // closed (field report, 2026-09-23).
+                foreach (var rail in Views.RailRf.RailRfWindow.OpenViewModels())
+                    rail.ReloadPartLibrary(p);
+            };
 
             // R-rail24-2c: what this library covers of the design that names it. Asked HERE because
             // the workspace is the only thing that can find that design — the editor is handed part

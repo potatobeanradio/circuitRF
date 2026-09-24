@@ -1197,7 +1197,7 @@
                                              SelectedItem="{Binding SelectedSource, Mode=TwoWay}">
                                         <ListBox.ItemTemplate>
                                             <DataTemplate x:DataType="rvm:RailSourceRowViewModel">
-                                                <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,1">
+                                                <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto" Margin="0,1">
                                                     <!-- THE ANCHOR IS SETTABLE (owner, 2026-09-19).
                                                          It was a TextBlock, and nothing else in the
                                                          window named a refdes or a pin — so "+" made
@@ -1215,7 +1215,18 @@
                                                     <ctl:InlineEditText Grid.Column="1" Classes="val" MinWidth="52"
                                                                         Text="{Binding VoltageEntry, Mode=TwoWay}"
                                                                         ToolTip.Tip="Open-circuit voltage. Empty is NOT zero — a source with no stated level is one the frequency answer can use and the DC answer reports."/>
-                                                    <TextBlock Grid.Column="2" Text="⚑" FontSize="11" Margin="3,0,0,0"
+                                                    <!-- The source's output impedance, as an R-L. The
+                                                         |Z| plot needs it: a source stating neither is
+                                                         ideal and shorts the rail at every frequency. -->
+                                                    <ctl:InlineEditText Grid.Column="2" Classes="val" MinWidth="52"
+                                                                        Text="{Binding ResistanceEntry, Mode=TwoWay}"
+                                                                        Watermark="R"
+                                                                        ToolTip.Tip="Output resistance of the source — the regulator's or supply's, e.g. 50 mΩ. The |Z| plot needs it: a source with no resistance and no inductance is ideal and shorts the rail at every frequency."/>
+                                                    <ctl:InlineEditText Grid.Column="3" Classes="val" MinWidth="52"
+                                                                        Text="{Binding InductanceEntry, Mode=TwoWay}"
+                                                                        Watermark="L"
+                                                                        ToolTip.Tip="Output inductance of the source, with its unit, e.g. 2 nH. Optional."/>
+                                                    <TextBlock Grid.Column="4" Text="⚑" FontSize="11" Margin="3,0,0,0"
                                                                Foreground="{DynamicResource CrfWarningBrush}"
                                                                IsVisible="{Binding IsFlagged}"
                                                                ToolTip.Tip="{Binding Refusal}"/>

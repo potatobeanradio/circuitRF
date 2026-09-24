@@ -65,11 +65,17 @@ public sealed record RailSeriesModel(RailPart Row, RailSourceModel Impedance)
     public string Refdes => Row.Refdes is { Length: > 0 } r ? r : "(unnamed series element)";
 
     /// <summary>
-    /// The DC resistance the load current runs through, in OHMS — <b>null is UNSTATED, never
-    /// zero</b> (R-rail25-3b). The row's own where it states one, else an <c>Other</c> library row's
-    /// ESR (R-rail35-2a); <see cref="DcResistanceFrom"/> says which.
+    /// The DC resistance the load current runs through, in OHMS. The row's own where it states one,
+    /// else an <c>Other</c> library row's ESR (R-rail35-2a), else <b>0 Ω</b>;
+    /// <see cref="DcResistanceFrom"/> says which.
     /// </summary>
-    public double? DcResistanceOhms { get; init; } = Row.DcResistanceOhms;
+    /// <remarks>
+    /// <b>Nothing entered is 0 Ω</b> (owner, 2026-09-23). It was UNSTATED, stamped as zero anyway and
+    /// raised as a "lower bound" finding (R-rail25-3b), which on a board of 0 Ω links and RF chokes
+    /// put a finding on every rail for parts whose resistance really is negligible. The assumption is
+    /// still said — as a note, by <see cref="AssumedDcResistanceLine"/> — so it is visible, not silent.
+    /// </remarks>
+    public double? DcResistanceOhms { get; init; } = Row.DcResistanceOhms ?? 0.0;
 
     /// <summary>Which of the row and the library stated <see cref="DcResistanceOhms"/>.</summary>
     public RailSeriesValueSource DcResistanceFrom { get; init; } =
@@ -106,7 +112,7 @@ public sealed record RailSeriesModel(RailPart Row, RailSourceModel Impedance)
     {
         RailSeriesValueSource.Row     => file ? "row file" : "row",
         RailSeriesValueSource.Library => file ? "library file" : "library",
-        _                             => "unstated",
+        _                             => "none (0 Ω)",
     };
 
     /// <summary>
@@ -147,15 +153,14 @@ public sealed record RailSeriesModel(RailPart Row, RailSourceModel Impedance)
           "nothing here says which of them this is.";
 
     /// <summary>
-    /// <b>R-rail25-3b.</b> What the DC answer says where this element states no DC resistance, or
-    /// null where it states one.
+    /// What the DC answer notes where neither the row nor the part library states this element's DC
+    /// resistance and it was taken as 0 Ω, or null where one is stated.
     /// </summary>
-    public string? UnstatedDcResistanceLine => DcResistanceOhms is not null
+    public string? AssumedDcResistanceLine => DcResistanceFrom != RailSeriesValueSource.Unstated
         ? null
-        : $"Series element {Refdes} states NO DC resistance, so this rail's DC total is a LOWER " +
-          "BOUND rather than the drop. It is not zero — it is unstated, and a series element " +
-          "carries the whole load current, so its DCR is the largest term after the source on a " +
-          "typical rail. State it to get the drop.";
+        : $"Series element {Refdes} has no DC resistance on its row or in the part library, so it " +
+          "is taken as 0 Ω. It carries the load current, so enter its datasheet DCR if it is not " +
+          "negligible.";
 
     /// <summary>The row as a report prints it.</summary>
     public string Describe()
@@ -169,7 +174,7 @@ public sealed record RailSeriesModel(RailPart Row, RailSourceModel Impedance)
         string dcr = DcResistanceOhms is { } r
             ? $"DCR {r * 1e3:0.###} mΩ" +
               (DcResistanceFrom == RailSeriesValueSource.Library ? " (the part library's ESR)" : "")
-            : "DCR unstated — the DC total is a lower bound";
+            : "DCR 0 mΩ (none entered)";
 
         return $"{Refdes}: IN SERIES with the rail; {z}; {dcr}.";
     }
@@ -233,7 +238,7 @@ public sealed record RailSeriesModel(RailPart Row, RailSourceModel Impedance)
         var (dcr, dcrFrom) =
             part.DcResistanceOhms is { } own ? (own, RailSeriesValueSource.Row)
             : libraryRow?.EsrOhms is { } esr ? (esr, RailSeriesValueSource.Library)
-            : ((double?)null, RailSeriesValueSource.Unstated);
+            : ((double?)0.0, RailSeriesValueSource.Unstated);
 
         // ── the impedance over frequency: the row's R-L or file, then the library row's file ──
         string name = part.Refdes is { Length: > 0 } r ? r : "(unnamed series element)";
