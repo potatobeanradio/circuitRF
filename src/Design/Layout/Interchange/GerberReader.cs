@@ -46,6 +46,11 @@ public sealed class GerberReadResult
     // ── What the file declared ────────────────────────────────────────────────
 
     public GerberUnit Unit { get; init; } = GerberUnit.Millimetres;
+
+    /// <summary>True when the file itself stated <see cref="Unit"/> (<c>%MO</c>, or G70/G71). A file
+    /// that paints nothing may say neither, and then <see cref="Unit"/> is only the default — which is
+    /// no evidence about the board's units and must not be counted as such.</summary>
+    public bool UnitDeclared { get; init; }
     public int IntegerDigits { get; init; }
     public int DecimalDigits { get; init; }
     public GerberNotation Notation { get; init; } = GerberNotation.Absolute;

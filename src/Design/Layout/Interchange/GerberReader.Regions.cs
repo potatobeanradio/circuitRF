@@ -299,6 +299,7 @@ public sealed partial class GerberReader
         {
             Shapes = shapes,
             Unit = format.Unit,
+            UnitDeclared = _unit is not null,
             IntegerDigits = format.IntegerDigits,
             DecimalDigits = format.DecimalDigits,
             Notation = format.Notation,

@@ -1,5 +1,22 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## Gerber import minted a technology that displayed in nanometres (2026-09-24)
+
+`GerberImport.BuildTechnology` never set `DefaultDisplayUnit`, so it took `LayoutUnit.Nm`, the
+enum's first member. Every imported board then opened with its traces in nm. The unit now comes
+from `GerberImport.DisplayUnitFor`:
+
+- The artwork's own `%MO`/G70/G71 declarations decide, by majority. A tie goes to mm.
+- If no artwork declared a unit, drill files count, but only where the unit was stated (by the
+  file, its parameter file or the caller). A unit inferred from the tool table, or defaulted, is
+  not evidence.
+- Inch maps to **Mil**, the unit inch-based boards are drawn in.
+- If nothing states a unit, the result is **Um**.
+
+`GerberReadResult.UnitDeclared` was added because `Unit` defaults to mm on a file that paints
+nothing and declares nothing, and that default is not evidence either. Both the GUI and `convert`
+go through this code. Gate: `GerberImportTests.TheMintedTechnology_DisplaysInTheUnitTheFilesDeclared`.
+
 ## A review of briefs 28-34: what was still wrong (2026-09-22)
 
 A review of the series' seven commits, and a run of the fourth field report's workspace through

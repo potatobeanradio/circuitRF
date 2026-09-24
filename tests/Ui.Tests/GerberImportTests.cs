@@ -113,6 +113,27 @@ public class GerberImportTests : IDisposable
         Assert.Single(LoadCell(result).Shapes.OfType<ViaShape>());
     }
 
+    // -- The minted technology's display unit is the unit the set was written in -----------------
+
+    [Theory]
+    [InlineData("mm", LayoutUnit.Mm)]
+    [InlineData("inch", LayoutUnit.Mil)]
+    [InlineData("unstated", LayoutUnit.Um)]   // a drill file whose unit is only inferred — never nm
+    public void TheMintedTechnology_DisplaysInTheUnitTheFilesDeclared(string kind, LayoutUnit expected)
+    {
+        var dir = Folder("unit-" + kind);
+        switch (kind)
+        {
+            case "mm":   Write(dir, "board.gtl", Artwork("Copper,L1,Top,Signal")); break;
+            case "inch": Write(dir, "board.gtl", "%FSLAX24Y24*%\n%MOIN*%\n%ADD10C,0.016*%\nD10*\nX10000Y10000D03*\nM02*\n"); break;
+            default:     Write(dir, "board.drl", "M48\nT1C0.3\n%\nT1\nX1000Y1000\nM30\n"); break;
+        }
+
+        var result = Import(dir, _root, "unit_" + kind);
+
+        Assert.Equal(expected, TechPersistence.LoadFromFile(result.TechPath!).DefaultDisplayUnit);
+    }
+
     // -- Gate 3: every skipped file is named once -------------------------------------------------
 
     [Fact]

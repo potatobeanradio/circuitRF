@@ -1016,6 +1016,7 @@ public static class GerberImport
         // ── 9. The technology this import mints (R-L4g-8, R-L4g-9) ──────────────────────────────
         control?.SetStageLabel("building the technology");
         var tech = BuildTechnology(importName, allIdentities, copperTopToBottom, finalKeyByFile, destTech, sourceLayers);
+        tech.DefaultDisplayUnit = DisplayUnitFor(reads, drills);
 
         // GI2 R-gi2-2/R-gi2-6. The skeleton names each conductor entry after the drawing layer it
         // binds, so the Stackup tab and the layer table read as one document rather than two — and
@@ -2053,6 +2054,34 @@ public static class GerberImport
         tech.Layers.Sort((a, b) => a.ZOrder.CompareTo(b.ZOrder));
         _ = copperTopToBottom;
         return tech;
+    }
+
+    /// <summary>
+    /// The minted technology's display unit — the unit the file set was WRITTEN in, not the DBU.
+    /// Left unset it was <see cref="LayoutUnit.Nm"/> (the enum's first member), so every imported
+    /// board opened reading its traces in nanometres.
+    ///
+    /// <para>The artwork's own declarations (<c>%MO</c>/G70/G71) decide, by majority; a drill file
+    /// counts only when no artwork declared anything, and only when its unit was STATED (by the
+    /// file, its parameter file or the caller) — a unit inferred from a tool table or defaulted is
+    /// not evidence of what the board was designed in. Inch maps to <see cref="LayoutUnit.Mil"/>,
+    /// the unit an inch-based board is drawn in. Nothing stated at all is <see cref="LayoutUnit.Um"/>.</para>
+    /// </summary>
+    internal static LayoutUnit DisplayUnitFor(
+        IReadOnlyList<(GerberFileClass File, GerberReadResult Read)> reads,
+        IReadOnlyList<(GerberFileClass File, ExcellonReadResult Read, GerberLayerIdentity Identity)> drills)
+    {
+        var stated = reads.Where(r => r.Read.UnitDeclared).Select(r => r.Read.Unit).ToList();
+        if (stated.Count == 0)
+            stated = drills
+                .Where(d => d.Read.Format.UnitEvidence is not (DrillFormatEvidence.ToolDiameters
+                                                               or DrillFormatEvidence.Defaulted))
+                .Select(d => d.Read.Format.Unit)
+                .ToList();
+        if (stated.Count == 0) return LayoutUnit.Um;
+
+        int inches = stated.Count(u => u == GerberUnit.Inches);
+        return inches > stated.Count - inches ? LayoutUnit.Mil : LayoutUnit.Mm;
     }
 
     /// <summary>The reconciled destination key for a source key — the same projection
