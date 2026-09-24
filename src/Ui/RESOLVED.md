@@ -35316,6 +35316,14 @@ generator edit — so an existing workspace's `.clay` is rewritten once on first
   grace period. The decision is `NewWindowFront.Hold`, which has no window in it:
   `NewWindowFrontTests`.
 - **Not seen working on screen.** Confirm it on the owner's machine.
+- **It came back the next day (2026-09-24), so the hold alone was not enough.** The cause is now
+  removed rather than reacted to: `ProjectTreeView` no longer opens a `.crail` inside the second press.
+  It holds the node and opens it on the mouse-up (or on capture loss, so a release that went elsewhere
+  cannot fire on a later click), posted at Background priority so the release finishes routing
+  first. Only `NodeKind.RailFile` is deferred: it is the one tree node that opens a separate top-level
+  window, and every other node docks inside the workspace and keeps opening on the press.
+  `NewWindowFront.Keep` stays as a second line. Still not seen on screen; a `.crail` opened from
+  Finder goes through `App.OpenFiles`, not this path.
 - A `.csmith` opens as a docked tab (`CircuitRfDockFactory.OpenDocument`), not a separate window, so
   a Smith Chart coming up behind is not this mechanism unless its tab had been torn off.
 
@@ -35399,3 +35407,42 @@ generator edit — so an existing workspace's `.clay` is rewritten once on first
   sits right before its own left-aligned TextBox. The inline editor's right-aligned `InlineEditText`
   put R a column away from its "ohms" and L against it. The boxes commit on LostFocus or Enter, not per
   keystroke, because every commit re-solves; closing the window pushes a still-focused box.
+
+## railRF — the |Z| half showed the previous rail's curve after a rail change; a progress bar for Run (2026-09-24)
+
+The owner asked whether changing rail after a run leaves the Results pane stale, and asked for a
+progress bar beside "solving…".
+
+- **The DC half was never stale; the frequency half was.** `RailDcRun` solves every rail in one run
+  and the pane reads the selected rail's slice (`SelectedRailResult`), so it follows the selector by
+  itself. But `BuildSweepRequest` sweeps ONE rail — the one selected when Run was pressed — and
+  `SweepByModel` was keyed by model kind alone. Changing rail left the old rail's |Z| curve, mask
+  verdict, anti-resonances, removal ranking and |Z|-map readout on screen under the new rail's name.
+  A run that finished after the selector moved filed the old rail's sweep as the new one's in the same
+  way, and the Accuracy toggle-back re-accepted `fast.Sweep`, which could also be another rail's.
+- **Fix:** `RailResultView.SweptRail` records which rail a sweep is of. `SweepByModel` now holds only the
+  selected rail's curves. `_sweepsByRail` keeps every rail's sweep together with the `ByModel` reading
+  it was taken beside, and reuses it only while that reading is still the current one (an edit
+  re-runs the DC answer, which is the only way a sweep is ever made, so that is exactly when it goes
+  stale). A rail change with nothing current runs `SweepSelectedRail` — a sweep only, not a Run, for
+  each reading already in hand, so it never enters Accuracy on its own. It goes through the same
+  `RunOffThread`/`PostToUi` seams, so the inline tests stay synchronous. It deliberately does NOT set
+  `IsSolving`: a sub-second sweep that swapped Run for Stop would flash the bottom bar.
+- **The header line** (`ResultsRailText`): "+3V3 · Fast · 4.1 ms", or "not yet run" / "not solved"
+  in the same muted note style, since the status strip already carries any refusal.
+- **The progress bar reads the whole run.** The only stage with a denominator — "measuring the
+  copper" — restarts at zero on every rail, so a bar drawn from it alone emptied between rails.
+  `RailDcRun` now begins a fresh stage per rail and ticks the OUTER counter at each rail boundary. The
+  window sets `RunControl.Total` to the rail count, and `Fraction` = (rails done + stage fraction) /
+  rails, never allowed to go backwards. Stages with no count (reading copper, the solve, the |Z| sweep
+  — now a stage of its own) show an indeterminate bar. Note that `RunControl.Stage =` does NOT reset
+  the stage counters, only `BeginStage` does: without the per-rail `BeginStage`, rail 2's opening
+  stages would inherit rail 1's full "N / N" count. Gate: `RailResultsRailTests`.
+- **The bar sits in its own grid column against the button row**, not inside the right-aligned
+  text StackPanel. Between BusyText and SolveStage it moved every time the stage text changed width.
+- **"No result yet" is said once, on the strip, in the warning colour.** `RailMapScene.Build` no longer
+  returns a centred "No result yet. Run the rail." note over the board. The strip is now a
+  warning-coloured lead (`StatusLeadText`) plus the muted tail (`StatusTailText`). They are separate
+  controls, not two Runs, because the `note` class's 0.75 opacity would wash out a coloured Run.
+  `StatusLine` stays the whole sentence, and the tail follows its change notification through one
+  `OnPropertyChanged` override rather than at each of its ~20 raise sites.

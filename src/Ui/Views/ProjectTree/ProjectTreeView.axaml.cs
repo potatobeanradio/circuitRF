@@ -32,6 +32,9 @@ public partial class ProjectTreeView : UserControl
     private long                      _lastPressTick;        // Environment.TickCount64
     private const int                 DoubleClickMs = 400;
 
+    // A double-click whose target opens a TOP-LEVEL window, held until the button comes up.
+    private ProjectTreeNodeViewModel? _activateOnRelease;
+
     public ProjectTreeView()
     {
         InitializeComponent();
@@ -55,6 +58,9 @@ public partial class ProjectTreeView : UserControl
         TheTreeView.AddHandler(PointerPressedEvent,  OnTreePointerPressed,  handledEventsToo: true);
         TheTreeView.AddHandler(PointerMovedEvent,    OnTreePointerMoved,    handledEventsToo: false);
         TheTreeView.AddHandler(PointerReleasedEvent, OnTreePointerReleased, handledEventsToo: true);
+        // A double-click held for its release (see _activateOnRelease) must not wait for a release
+        // that went somewhere else, and then fire on an unrelated later click.
+        TheTreeView.AddHandler(PointerCaptureLostEvent, (_, _) => ActivatePendingOnRelease(), handledEventsToo: true);
 
         // Selecting a row must not drag the HORIZONTAL scroll (owner, 2026-08-25). Subscribed on the
         // TreeView rather than on this control because RequestBringIntoView only BUBBLES (probed —
@@ -237,6 +243,22 @@ public partial class ProjectTreeView : UserControl
         {
             _lastPressVm   = null;       // reset so a third click doesn't re-fire
             _lastPressTick = 0;
+
+            // ── A .crail OPENS ON THE MOUSE-UP, NOT INSIDE THE PRESS (owner, 2026-09-24) ─────────
+            //
+            // It is the one node that opens a separate window rather than a docked tab, and a window
+            // shown from inside this press came up BEHIND the workspace: the workspace is still
+            // handling the gesture, and finishing it (the release, the platform's own ordering)
+            // raised the workspace back over the new window. NewWindowFront.Keep reacts to that
+            // after the fact and was not enough on its own — the report came back the next day.
+            // Showing the window once the gesture is over removes the thing it was reacting to.
+            // Docked documents keep opening on the press; they live inside this window.
+            if (vm.Kind == NodeKind.RailFile)
+            {
+                _activateOnRelease = vm;
+                return;
+            }
+
             vm.ActivateCommand.Execute(null);
             return;
         }
@@ -302,7 +324,20 @@ public partial class ProjectTreeView : UserControl
     }
 
     private void OnTreePointerReleased(object? sender, PointerReleasedEventArgs e)
-        => _cellPressArgs = null;
+    {
+        _cellPressArgs = null;
+        ActivatePendingOnRelease();
+    }
+
+    private void ActivatePendingOnRelease()
+    {
+        if (_activateOnRelease is not { } pending) return;
+        _activateOnRelease = null;
+
+        // Posted, so the release finishes routing through this window before another one is shown.
+        Avalonia.Threading.Dispatcher.UIThread.Post(
+            () => pending.ActivateCommand.Execute(null), Avalonia.Threading.DispatcherPriority.Background);
+    }
 
     // Returns true when the visual is on the expander ToggleButton (the disclosure triangle),
     // so we can exclude those clicks from double-click activation tracking.

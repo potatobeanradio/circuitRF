@@ -98,6 +98,16 @@ public sealed record RailLayerOption(LayerKey Key, string Name)
 /// </summary>
 public sealed partial class RailRfViewModel : ObservableObject, IDisposable
 {
+    /// <summary>
+    /// The strip is drawn as a lead and a tail (<see cref="StatusTailText"/>), and StatusLine is
+    /// announced from some twenty places — so the tail follows it here, once, rather than at each.
+    /// </summary>
+    protected override void OnPropertyChanged(System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        base.OnPropertyChanged(e);
+        if (e.PropertyName == nameof(StatusLine)) base.OnPropertyChanged(new System.ComponentModel.PropertyChangedEventArgs(nameof(StatusTailText)));
+    }
+
     /// <summary>A window with no document behind it yet — Tools ▸ railRF, before an import.</summary>
     public RailRfViewModel() : this(new RailDocument(), null) { }
 
@@ -253,6 +263,11 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
         ForgetRestoredMarkers();
         RebuildForSelectedRail();
         ShowSelectedRailRefusal();
+
+        // The DC answer is every rail's and follows the selector by itself; the |Z| curve is one
+        // rail's, and without this the previous rail's stayed on screen under this rail's name.
+        SweepSelectedRail();
+        OnPropertyChanged(nameof(ResultsRailText));
         RemoveRailCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(CanRemoveRail));
     }

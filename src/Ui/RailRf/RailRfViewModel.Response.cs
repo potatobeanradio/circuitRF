@@ -48,6 +48,8 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using CircuitRF.Design.Layout.Pdn;
 using CircuitRF.Design.RailRf;
 using CircuitRF.Engine.Pdn;
@@ -170,7 +172,7 @@ public sealed partial class RailRfViewModel
     // ── the frequency answer, filed by model kind ──────────────────────────────────────────────
 
     /// <summary>
-    /// The sweep, filed under the model kind that produced it.
+    /// The SELECTED RAIL's sweep, filed under the model kind that produced it.
     /// </summary>
     /// <remarks>
     /// <b>§2.9's fourth rule, and R-rail12-3 is the half that is visible</b>: running Accuracy keeps
@@ -178,8 +180,41 @@ public sealed partial class RailRfViewModel
     /// rather than promised in a document. Same shape as <see cref="ByModel"/>, and cleared by the
     /// same call for the same reason — a fast curve beside an accurate one from a different board is
     /// worse than no comparison.
+    ///
+    /// <para><b>Only ever one rail's</b> (owner, 2026-09-24). A run solves every rail's DC but sweeps
+    /// only the rail selected when it started, and this used to be filed by model kind alone — so
+    /// changing rail left the previous rail's curve, mask verdict, anti-resonances and removal
+    /// ranking on screen under the new rail's name. It is now emptied the moment the selector moves
+    /// and refilled from <see cref="_sweepsByRail"/> or by <see cref="SweepSelectedRail"/>. The same
+    /// instance throughout, because <see cref="RailPlotDataSources"/> holds it.</para>
     /// </remarks>
     public Dictionary<PdnModelKind, PdnSweepResult> SweepByModel { get; } = [];
+
+    /// <summary>The rail <see cref="SweepByModel"/> currently holds, or null where it holds nothing.</summary>
+    private string? _sweepByModelRail;
+
+    /// <summary>
+    /// Every rail's sweep this window has taken, with the DC reading it was taken beside.
+    /// </summary>
+    /// <remarks>
+    /// <b>Valid only while that reading is still the one in <see cref="ByModel"/></b>. Every edit that
+    /// changes a sweep re-runs the DC answer (it is the only way a sweep is ever made), so a sweep
+    /// whose reading has been replaced was taken against a document that no longer exists — and going
+    /// back to its rail takes a fresh one rather than showing it.
+    /// </remarks>
+    private readonly Dictionary<(string Rail, PdnModelKind Kind), (RailResultView With, PdnSweepResult Sweep)>
+        _sweepsByRail = new(RailKindComparer.Instance);
+
+    private CancellationTokenSource? _railSweepCts;
+
+    /// <summary>The rail-change sweep in flight, or null — what a test awaits.</summary>
+    internal Task? PendingRailSweep { get; private set; }
+
+    /// <summary>How many rail-change sweeps have been started. Counted so reuse is testable.</summary>
+    internal int RailSweepsStarted { get; private set; }
+
+    /// <summary>True while the selected rail's |Z| is being swept after the selector moved.</summary>
+    public bool IsSweepingRail => _railSweepCts is not null;
 
     /// <summary>
     /// What actually runs a sweep. <see cref="PdnSweep.Run"/> in the application; injectable for the
@@ -419,9 +454,146 @@ public sealed partial class RailRfViewModel
     /// <inheritdoc cref="HasCoincidences"/>
     public bool HasRemovalRanking => RemovalLines.Count > 0;
 
-    /// <summary>Files one finished sweep and rebuilds the plot. Called from the solve's own finish.</summary>
+    /// <summary>
+    /// Files a sweep under the rail it was taken for, and puts it on screen where that rail is the
+    /// selected one.
+    /// </summary>
+    private void FileSweep(string? rail, PdnModelKind kind, PdnSweepResult? sweep, RailResultView with)
+    {
+        if (rail is null) return;
+
+        if (sweep is { Refusal: null }) _sweepsByRail[(rail, kind)] = (with, sweep);
+        else _sweepsByRail.Remove((rail, kind));
+
+        if (RailNamesEqual(rail, SelectedRailName)) AcceptSweep(kind, sweep);
+    }
+
+    /// <summary>
+    /// Puts the selected rail's |Z| on screen after the selector moved: the sweep already taken for
+    /// it where the reading it was taken beside is still current, else a fresh one, off the UI
+    /// thread, for every reading in hand.
+    /// </summary>
+    /// <remarks>
+    /// <b>Not a Run.</b> The DC answer is every rail's and is already here, so the only thing the new
+    /// rail lacks is its curve — a PDN sweep is one sparse solve per point, where re-running the
+    /// extraction is the minutes-long "solving…" on a production board. It never enters Accuracy: an
+    /// accurate curve is swept only where the accurate DC reading is already in hand, which is the
+    /// same answer the user already asked for, for a different rail.
+    ///
+    /// <para><b>A run in flight is left to finish</b>; its own finish sees the selector moved and
+    /// calls this again.</para>
+    /// </remarks>
+    private void SweepSelectedRail()
+    {
+        CancelRailSweep();
+
+        string? rail = SelectedRailName;
+        if (!RailNamesEqual(_sweepByModelRail, rail))
+        {
+            SweepByModel.Clear();
+            _sweepByModelRail = rail;
+            ImpedanceMessage = "";
+            AnnounceSweepChanged();
+        }
+
+        if (rail is null || IsSolving) { OnPropertyChanged(nameof(ResultsRailText)); return; }
+
+        // What is already in hand and still current goes straight on screen.
+        var missing = new List<(PdnModelKind Kind, RailResultView With)>();
+        foreach (var (kind, view) in ByModel)
+        {
+            if (_sweepsByRail.TryGetValue((rail, kind), out var kept) && ReferenceEquals(kept.With, view))
+                AcceptSweep(kind, kept.Sweep);
+            else
+                missing.Add((kind, view));
+        }
+
+        if (missing.Count == 0) { OnPropertyChanged(nameof(ResultsRailText)); return; }
+
+        // Built HERE, on the UI thread, for BuildRequest's own reason: they read the rows.
+        var requests = missing.Select(m => (m.Kind, m.With, Request: BuildSweepRequest(m.Kind))).ToList();
+
+        var cts = new CancellationTokenSource();
+        _railSweepCts = cts;
+        RailSweepsStarted++;
+        OnPropertyChanged(nameof(IsSweepingRail));
+        OnPropertyChanged(nameof(ResultsRailText));
+        var token = cts.Token;
+        int remaining = requests.Count;
+
+        // Through the SAME seam a run leaves the UI thread by, one reading at a time, so a test that
+        // drives the loop inline drives this inline too. The view carried back is the reading it was
+        // swept beside with the sweep attached — which is exactly what RailResultView already is.
+        var tasks = new List<Task>(requests.Count);
+        foreach (var (kind, with, request) in requests)
+        {
+            tasks.Add(RunOffThread(() =>
+            {
+                token.ThrowIfCancellationRequested();
+                return with with { Sweep = request is null ? null : SweepFunc(request), SweptRail = rail };
+            }, token)
+            .ContinueWith(t => PostToUi(() =>
+            {
+                if (!ReferenceEquals(_railSweepCts, cts)) return;
+
+                if (t.Status == TaskStatus.RanToCompletion)
+                {
+                    // A reading replaced while this was in flight makes the sweep beside it stale.
+                    if (ByModel.TryGetValue(kind, out var now) && ReferenceEquals(now, with))
+                        FileSweep(rail, kind, t.Result.Sweep, with);
+                }
+                else if (t.Exception?.GetBaseException() is { } error and not OperationCanceledException)
+                {
+                    ImpedanceMessage = $"The |Z| sweep for rail '{rail}' did not finish: {error.Message}";
+                    AnnounceSweepChanged();
+                }
+
+                if (--remaining > 0) return;
+
+                _railSweepCts = null;
+                PendingRailSweep = null;
+                cts.Dispose();
+                OnPropertyChanged(nameof(IsSweepingRail));
+                OnPropertyChanged(nameof(ResultsRailText));
+            }), CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default));
+        }
+
+        // Inline, every task above has already finished and cleared the flag; only a real
+        // off-thread run leaves something to await.
+        if (_railSweepCts is not null) PendingRailSweep = Task.WhenAll(tasks);
+    }
+
+    private void CancelRailSweep()
+    {
+        if (_railSweepCts is not { } cts) return;
+
+        cts.Cancel();
+        _railSweepCts = null;
+        PendingRailSweep = null;
+        OnPropertyChanged(nameof(IsSweepingRail));
+    }
+
+    private static bool RailNamesEqual(string? a, string? b) =>
+        string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
+
+    private sealed class RailKindComparer : IEqualityComparer<(string Rail, PdnModelKind Kind)>
+    {
+        public static readonly RailKindComparer Instance = new();
+
+        public bool Equals((string Rail, PdnModelKind Kind) x, (string Rail, PdnModelKind Kind) y) =>
+            x.Kind == y.Kind && RailNamesEqual(x.Rail, y.Rail);
+
+        public int GetHashCode((string Rail, PdnModelKind Kind) key) =>
+            HashCode.Combine(StringComparer.OrdinalIgnoreCase.GetHashCode(key.Rail), key.Kind);
+    }
+
+    /// <summary>
+    /// Files one sweep of the SELECTED rail and rebuilds the plot. Called through
+    /// <see cref="FileSweep"/>, which is what checks the rail.
+    /// </summary>
     private void AcceptSweep(PdnModelKind kind, PdnSweepResult? sweep)
     {
+        _sweepByModelRail = SelectedRailName;
         if (sweep is { Refusal: null }) SweepByModel[kind] = sweep;
 
         ImpedanceMessage =
@@ -434,6 +606,8 @@ public sealed partial class RailRfViewModel
 
     private void ClearSweeps()
     {
+        _sweepsByRail.Clear();
+        _sweepByModelRail = null;
         SweepByModel.Clear();
         ImpedanceMessage = "";
         AnnounceSweepChanged();

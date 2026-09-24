@@ -114,6 +114,12 @@ public sealed class RailDcRequest
     /// beside the finer ones <see cref="PdnExtractionRequest.Control"/> plants inside one. A stage
     /// name is set per rail for the same reason: a chained supply is several extractions and a user
     /// watching one word is entitled to know which.</para>
+    ///
+    /// <para><b>Each rail is one leaf unit of the OUTER counter</b> — ticked when the next rail
+    /// begins and once after the last — and each begins a fresh stage. The copper-measuring stage
+    /// counts pieces within one rail and starts again at zero on the next, so a bar drawn from it
+    /// alone fills and empties once per rail and reads as a run going backwards. A caller that wants
+    /// the whole-run fraction sets <see cref="RunControl.Total"/> to the rail count.</para>
     /// </remarks>
     public RunControl? Control { get; init; }
 }
@@ -212,11 +218,17 @@ public static class RailDcRun
         void Refuse(string railName, string why) =>
             refusals.Add((railName, $"Rail '{railName}' was not solved. {why}"));
 
+        bool first = true;
         foreach (string railName in order.Order)
         {
             // Between rails, which is the coarse boundary; PdnGraphExtractor plants the fine ones
-            // inside a single extraction. See Control's own note.
-            request.Control?.Token.ThrowIfCancellationRequested();
+            // inside a single extraction. See Control's own note. Tick checks the token as well.
+            if (request.Control is { } control)
+            {
+                if (!first) control.Tick();
+                control.BeginStage($"Rail '{railName}': starting");
+            }
+            first = false;
 
             var spec = doc.Rail(railName);
             if (spec is null) continue;
@@ -271,6 +283,8 @@ public static class RailDcRun
 
             results.Add(Assemble(request, spec, extraction.Netlist!, solution, chained, edges, solved, extraction));
         }
+
+        if (!first) request.Control?.Tick();
 
         // Nothing solved is the old contract exactly — the first rail's own sentence, and no rows.
         if (results.Count == 0 && refusals.Count > 0)

@@ -334,7 +334,10 @@ public sealed class RailMapScene
         if (kind == RailMapKind.Impedance)
             return BuildImpedance(result, plane, dbuPerMicron);
 
-        if (result is null) return Empty(kind, "No result yet. Run the rail.");
+        // No note: the status strip already says "no result yet", in the warning colour, and a
+        // second sentence centred over the board only covered the artwork being looked at (owner,
+        // 2026-09-24).
+        if (result is null) return Empty(kind);
 
         return kind switch
         {

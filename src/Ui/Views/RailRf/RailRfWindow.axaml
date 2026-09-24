@@ -1680,8 +1680,9 @@
                                                     Orientation="Vertical" ClipToBounds="True"
                                                     IsVisible="{Binding HasBoard}"/>
                         <Panel>
-                            <!-- HIDDEN UNTIL THERE IS A BOARD, because the map overlay draws a
-                                 CENTRED note of its own ("No result yet. Run the rail.") and the
+                            <!-- HIDDEN UNTIL THERE IS A BOARD, because the map overlay drew a
+                                 CENTRED note of its own ("No result yet. Run the rail." — since
+                                 removed; the status strip says it, 2026-09-24) and the
                                  placeholder below is centred too — so a window with nothing imported
                                  drew the two sentences on top of each other (owner, 2026-09-18). One
                                  empty state, and it is the one that says what to do next. -->
@@ -2329,9 +2330,21 @@
             <Border Grid.Column="4" Name="ResultsPane" Classes="pane"
                     IsVisible="{Binding ShowResults}">
                 <Grid RowDefinitions="Auto,Auto,*,Auto">
-                    <Grid ColumnDefinitions="Auto,*">
+                    <Grid ColumnDefinitions="Auto,*,Auto">
                         <TextBlock Classes="panelhdr" Text="Results" VerticalAlignment="Center"/>
-                        <StackPanel Grid.Column="1" Name="ResultsTabStrip" Orientation="Horizontal"
+                        <!-- ── WHOSE NUMBERS THESE ARE (owner, 2026-09-24) ───────────────────────
+                             The rail selector is a pane away, and the pane below it said nothing
+                             about which rail it was showing. One quiet line beside the title: the
+                             rail, the reading, what it cost — or "not yet run" / "not solved" in
+                             the same style, because both are ordinary states and the status strip
+                             already carries any refusal. It trims rather than wraps, so it can
+                             never push the tab strip off the header. -->
+                        <TextBlock Grid.Column="1" Name="ResultsRailLine" Classes="note"
+                                   Text="{Binding ResultsRailText}"
+                                   TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
+                                   VerticalAlignment="Center" Margin="10,0,8,6"
+                                   ToolTip.Tip="{Binding ResultsRailText}"/>
+                        <StackPanel Grid.Column="2" Name="ResultsTabStrip" Orientation="Horizontal"
                                     Spacing="2" HorizontalAlignment="Right" Margin="0,0,0,6">
                             <!-- The same toolbar shape as the board panel's four, for the same
                                  reason (owner, 2026-09-19). SineWave is the LAYOUT EDITOR's own EM
@@ -2609,8 +2622,16 @@
              a sentence plus a separate hunt. -->
         <Border Grid.Row="2" Classes="pane" Margin="4,0,4,0" Padding="10,4">
             <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
-                <SelectableTextBlock Name="StatusStrip" Classes="note" Text="{Binding StatusLine}"
-                                     IsVisible="{Binding !HasRefusal}" VerticalAlignment="Center"/>
+                <!-- "no result yet" LEADS in the warning colour, and the rest follows in the
+                     strip's own muted note (owner, 2026-09-24): it is the one phrase on a freshly
+                     opened document that asks for something. A control of its own rather than a
+                     coloured Run, because the note class's 0.75 opacity would wash a Run out. -->
+                <DockPanel IsVisible="{Binding !HasRefusal}" VerticalAlignment="Center">
+                    <TextBlock Name="StatusLead" DockPanel.Dock="Left" Classes="warn" Margin="0"
+                               TextWrapping="NoWrap" VerticalAlignment="Top"
+                               Text="{Binding StatusLeadText}" IsVisible="{Binding HasStatusLead}"/>
+                    <SelectableTextBlock Name="StatusStrip" Classes="note" Text="{Binding StatusTailText}"/>
+                </DockPanel>
                 <SelectableTextBlock Name="RefusalStrip" Classes="warn" Text="{Binding Refusal.Sentence}"
                                      IsVisible="{Binding HasRefusal}" VerticalAlignment="Center"/>
                 <TextBlock Grid.Column="1" Classes="note" Text="both models in hand"
@@ -2635,7 +2656,7 @@
              ACCURACY IS A BUTTON HERE, NEXT TO RUN — the one control that changes what the numbers
              mean, in the place the user looks when the design is settled. Never entered
              automatically, and never left silently. -->
-        <Grid Grid.Row="3" ColumnDefinitions="*,Auto" Margin="10,6">
+        <Grid Grid.Row="3" ColumnDefinitions="*,Auto,Auto" Margin="10,6">
             <!-- THE REASON RUN IS REFUSED IS NOT REPEATED HERE. RefreshRunGate turns every gate
                  reason into a Refusal, so the strip above already carries that exact sentence and
                  turns the control that answers it red — two rows of one sentence, one of them in the
@@ -2660,7 +2681,24 @@
                            Opacity="0.75" TextTrimming="CharacterEllipsis" MaxWidth="420"/>
             </StackPanel>
 
-            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+            <!-- ── AND HOW FAR (owner, 2026-09-24) ──────────────────────────────────────────
+                 The Match Designer's own thin bar. It reads the WHOLE run — rails done plus the
+                 current rail's counted phase — so it never empties between rails, and it pulses
+                 through the phases that have no honest denominator rather than sitting still and
+                 looking hung.
+
+                 IN A COLUMN OF ITS OWN, AGAINST THE BUTTONS, not inside the right-aligned text
+                 row: there it sat between two texts that change width on every stage update, so
+                 the bar jittered left and right as they did (owner, 2026-09-24). Here the only
+                 thing to its right is the fixed button row, so it never moves; the text grows
+                 leftward from it. -->
+            <ProgressBar Grid.Column="1" Name="SolveProgress" Width="120" Height="4"
+                         Minimum="0" Maximum="1" VerticalAlignment="Center" Margin="0,0,10,0"
+                         IsVisible="{Binding IsSolving}"
+                         Value="{Binding SolveFraction}"
+                         IsIndeterminate="{Binding IsSolveProgressIndeterminate}"/>
+
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6">
                 <!-- ACCURACY IS A TOOLBAR BUTTON AND IT IS LIT WHILE ITS READING IS ON SCREEN
                      (owner, 2026-09-19: "how do I know Accuracy is turned on? Shouldn't it be a
                      button that highlights when activated, kind of like toolbar glyphs?").

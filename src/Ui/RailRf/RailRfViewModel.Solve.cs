@@ -43,6 +43,17 @@ public sealed record RailResultView(PdnModelKind Kind, RailDcRunResult Result, d
     /// removal ranking's own <c>parts × points</c> solves on the UI thread.</para>
     /// </summary>
     public PdnSweepResult? Sweep { get; init; }
+
+    /// <summary>
+    /// The rail <see cref="Sweep"/> was taken for — the one selected when the run STARTED.
+    /// </summary>
+    /// <remarks>
+    /// <b>The DC answer is every rail's and the sweep is one rail's</b>, so the two are not
+    /// interchangeable after the selector moves: a run started on one rail and finished after the
+    /// user picked another carries the first rail's curve, and filing it as the second's put one
+    /// rail's |Z| under another rail's name with nothing on screen to say so.
+    /// </remarks>
+    public string? SweptRail { get; init; }
 }
 
 public sealed partial class RailRfViewModel
@@ -145,6 +156,9 @@ public sealed partial class RailRfViewModel
         OnPropertyChanged(nameof(IsShowingAccuracy));
         OnPropertyChanged(nameof(ModelKindText));
         OnPropertyChanged(nameof(ElapsedText));
+        OnPropertyChanged(nameof(ResultsRailText));
+        OnPropertyChanged(nameof(StatusLeadText));
+        OnPropertyChanged(nameof(HasStatusLead));
         OnPropertyChanged(nameof(SelectedRailResult));
         OnPropertyChanged(nameof(Breakdown));
         OnPropertyChanged(nameof(Ports));
@@ -218,8 +232,66 @@ public sealed partial class RailRfViewModel
     /// <summary>What the status strip calls it — the SAME value, read off the same field.</summary>
     public string ModelKindText => Current is { } c ? Name(c.Kind) : "no result yet";
 
+    /// <summary>
+    /// The strip's lead when there is no result — "no result yet", drawn in the warning colour — or
+    /// empty. <see cref="StatusTailText"/> is the rest of <see cref="StatusLine"/>.
+    /// </summary>
+    /// <remarks>
+    /// <b>Split so ONE phrase can be coloured</b> (owner, 2026-09-24). A freshly opened `.crail` has
+    /// no answer yet, and that used to be said twice in the same muted grey: once at the start of the
+    /// strip and once centred over the board. The board's copy is gone; this one is now the warning
+    /// colour, so it is the one thing on the strip that reads as "press Run". <see cref="StatusLine"/>
+    /// stays the whole sentence, which is what every test and the strip's meaning are written against.
+    /// </remarks>
+    public string StatusLeadText => Current is null ? ModelKindText : "";
+
+    /// <inheritdoc cref="StatusLeadText"/>
+    public string StatusTailText
+    {
+        get
+        {
+            string line = StatusLine, lead = StatusLeadText;
+            return lead.Length > 0 && line.StartsWith(lead, StringComparison.Ordinal) ? line[lead.Length..] : line;
+        }
+    }
+
+    /// <summary>True while <see cref="StatusLeadText"/> has something to show.</summary>
+    public bool HasStatusLead => StatusLeadText.Length > 0;
+
     /// <summary>What that result cost, as the strip states it.</summary>
     public string ElapsedText => Current is { } c ? $"{c.ElapsedMilliseconds:0.#} ms" : "";
+
+    /// <summary>
+    /// "+3V3 · Fast · 4.1 ms" — the Results header's own line: which rail the numbers below are for,
+    /// and which reading they are.
+    /// </summary>
+    /// <remarks>
+    /// <b>Because the pane showed numbers and never said whose</b> (owner, 2026-09-24). The rail
+    /// selector sits above the specification column, a pane away, and until the |Z| half was filed
+    /// per rail the Frequency tab could be showing a different rail from the DC tab beside it. A rail
+    /// with nothing to show says so in the same quiet style — "not yet run" (never solved, or added
+    /// since the last run) or "not solved" (the last run refused it, and the strip says why) — rather
+    /// than as a warning, because both are ordinary states and the strip already carries any refusal.
+    /// </remarks>
+    public string ResultsRailText
+    {
+        get
+        {
+            if (SelectedRailName is not { Length: > 0 } rail) return "";
+            if (Current is not { } c) return $"{rail} · not yet run";
+
+            if (c.Result.Rail(rail) is null)
+                return c.Result.RefusalFor(rail) is not null ? $"{rail} · not solved" : $"{rail} · not yet run";
+
+            var parts = new List<string>(4) { rail, c.Kind == PdnModelKind.Fast ? "Fast" : "Accuracy" };
+
+            // Suppressed while the docs factory captures, for StatusLine's own reason.
+            if (!UiArtworkGenerator.HeadlessCapture) parts.Add(ElapsedText);
+            if (IsSweepingRail) parts.Add("sweeping |Z|…");
+
+            return string.Join(" · ", parts);
+        }
+    }
 
     /// <summary>The selected rail's own result, or null.</summary>
     public RailDcResult? SelectedRailResult =>
@@ -354,6 +426,7 @@ public sealed partial class RailRfViewModel
     private void ClearResults()
     {
         CancelInFlight();
+        CancelRailSweep();
         ByModel.Clear();
         Current = null;
         ClearSweeps();
@@ -695,7 +768,10 @@ public sealed partial class RailRfViewModel
         if (ByModel.TryGetValue(PdnModelKind.Fast, out var fast))
         {
             Current = fast;
-            AcceptSweep(fast.Kind, fast.Sweep);
+
+            // The SELECTED rail's fast curve, never `fast.Sweep`: that one is of whichever rail was
+            // selected when the fast run started, which need not be this one.
+            AcceptSweep(fast.Kind, SweepByModel.GetValueOrDefault(PdnModelKind.Fast));
         }
         else
         {
@@ -706,6 +782,10 @@ public sealed partial class RailRfViewModel
     private void Start(RailBoardInputs board, PdnModelKind kind)
     {
         CancelInFlight();
+
+        // This run sweeps the selected rail itself, so a rail-change sweep still in flight would
+        // only be overwritten by it.
+        CancelRailSweep();
 
         var cts = new CancellationTokenSource();
 
@@ -718,27 +798,42 @@ public sealed partial class RailRfViewModel
         {
             Token = cts.Token,
             Progress = new RailSolveProgress(this, cts),
+            // One leaf unit per rail — RailDcRun ticks at each rail boundary — so the bar reads the
+            // whole run rather than restarting on every rail. See SolveFraction.
+            Total = _document.Rails.Count,
         };
         _cts = cts;
         _inFlight = control;
         SolvesStarted++;
         _solvingKind = kind;
         SolveStage = "";
+        SolveFraction = 0;
+        IsSolveProgressIndeterminate = true;
         IsSolving = true;
 
         var request = BuildRequest(board, kind, control);
         // Both requests are built HERE, on the UI thread, because both read the document rows the
         // user is editing — the same rule BuildRequest has always followed.
         var sweepRequest = BuildSweepRequest(kind);
+        string? sweptRail = SelectedRailName;
         var token = cts.Token;
 
         Pending = RunOffThread(() =>
         {
             var watch = Stopwatch.StartNew();
             var result = SolveFunc(request, token);
+
+            // Its own stage, with no denominator: the sweep reports nothing while it runs, and a bar
+            // left full from the DC half would read as a run that had finished and then stuck.
+            if (sweepRequest is not null)
+                control.BeginStage($"Rail '{sweptRail}': sweeping |Z|");
             var sweep = sweepRequest is null ? null : SweepFunc(sweepRequest);
             watch.Stop();
-            return new RailResultView(kind, result, watch.Elapsed.TotalMilliseconds) { Sweep = sweep };
+            return new RailResultView(kind, result, watch.Elapsed.TotalMilliseconds)
+            {
+                Sweep = sweep,
+                SweptRail = sweptRail,
+            };
         }, token)
         .ContinueWith(t => PostToUi(() => Finish(t, cts, token)),
                       CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously,
@@ -813,7 +908,11 @@ public sealed partial class RailRfViewModel
 
         // Other rails solved and THIS one did not: its own sentence, not the first rail's.
         ShowSelectedRailRefusal();
-        AcceptSweep(view.Kind, view.Sweep);
+
+        // Filed under the rail it was TAKEN for. Where the selector moved while the run was in
+        // flight, the rail now showing has no curve from this run, and gets one of its own.
+        FileSweep(view.SweptRail, view.Kind, view.Sweep, view);
+        if (!RailNamesEqual(view.SweptRail, SelectedRailName)) SweepSelectedRail();
 
         // R-rail23-3a. AFTER the assignment above, because the baseline is built from what is on
         // screen — and the run that WAS on screen is what becomes the thing to compare against.
@@ -855,6 +954,7 @@ public sealed partial class RailRfViewModel
         _inFlight = null;
         IsSolving = false;
         SolveStage = "";
+        SolveFraction = 0;
     }
 
     /// <summary>
@@ -902,6 +1002,38 @@ public sealed partial class RailRfViewModel
     partial void OnSolveStageChanged(string value) => OnPropertyChanged(nameof(StatusLine));
 
     /// <summary>
+    /// How far through the run in flight is, 0 to 1 — the bottom bar's progress bar. Meaningful only
+    /// while <see cref="IsSolveProgressIndeterminate"/> is false.
+    /// </summary>
+    /// <remarks>
+    /// <b>Rails done, plus the fraction of the current rail's counted stage, over the rail count</b>
+    /// (<see cref="Fraction"/>). The copper-measuring stage is the one with a denominator and it
+    /// starts again at zero on every rail, so a bar drawn from it alone would fill and empty once per
+    /// rail — which is a run visibly going backwards, the one thing a progress bar must never show.
+    /// </remarks>
+    [ObservableProperty]
+    private double _solveFraction;
+
+    /// <summary>
+    /// True while the phase in flight has no honest denominator — reading the copper, following the
+    /// connectivity, the solve itself, the |Z| sweep — so the bar moves without claiming a fraction.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isSolveProgressIndeterminate = true;
+
+    /// <summary>The whole-run fraction one observation implies, or null where its stage has no
+    /// denominator. See <see cref="SolveFraction"/>.</summary>
+    internal static double? Fraction(RunProgress p)
+    {
+        if (p.StageTotal <= 0) return null;
+
+        double within = Math.Clamp((double)p.StageCompleted / p.StageTotal, 0, 1);
+        if (p.Total <= 0) return within;
+
+        return Math.Clamp((Math.Min(p.Completed, p.Total) + within) / p.Total, 0, 1);
+    }
+
+    /// <summary>
     /// Carries <see cref="RunControl"/>'s observations onto the UI thread through the view model's
     /// own <see cref="PostToUi"/> seam.
     /// </summary>
@@ -923,6 +1055,19 @@ public sealed partial class RailRfViewModel
         {
             if (!ReferenceEquals(owner._cts, cts)) return;
             owner.SolveStage = Describe(value);
+
+            // The fraction only ever moves FORWARD within one run: the stage after the counted one
+            // (the solve, the sweep) is indeterminate, and the next rail's own count starts where
+            // the rails already done leave it.
+            if (Fraction(value) is { } f)
+            {
+                owner.SolveFraction = Math.Max(owner.SolveFraction, f);
+                owner.IsSolveProgressIndeterminate = false;
+            }
+            else
+            {
+                owner.IsSolveProgressIndeterminate = true;
+            }
         });
 
         private static string Describe(RunProgress p)
