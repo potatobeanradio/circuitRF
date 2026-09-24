@@ -475,6 +475,10 @@ next section first.</p>
 <p><strong>File ▸ Archive Workspace…</strong> puts the workspace into one <code>.zip</code>: every cell, every technology, the
 workspace file, and whatever else you tick — kits, referenced files, results. <strong>The history is not in
 it unless you say so</strong>, and there is a tickbox for saying so.</p>
+<p>A file the design references from <strong>outside</strong> the workspace — a Touchstone file, a SPICE deck and the
+files it includes, a <a href="railrf.html#reuse-library">shared part library</a> and the model files it names — is a
+row of its own, <strong>ticked by default</strong>, because without it the recipient opens a design that is missing a
+piece of itself. The references are repointed at the archived copy.</p>
 <h3 id="the-one-sentence-that-matters">The one sentence that matters</h3>
 <p><strong>A file you deleted from the workspace is still in the history.</strong></p>
 <p>A history holds every earlier version of every file it ever kept, and that includes files that are not

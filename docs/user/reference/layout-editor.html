@@ -464,6 +464,10 @@ component's stable id, so a second run keeps and leaves in place what is already
 new, and <em>reports</em> — never auto-deletes — what no longer exists in the schematic. You will hand-place
 after the first generation and run it again after a schematic edit; a generator that stomped your
 placement would be one you used exactly once.</p>
+<p><strong>Where the layout is written.</strong> A schematic in a cell's <code>schematic/</code> folder writes that cell's
+<code>layout/</code> folder. A schematic saved <strong>loose</strong> — at the workspace's root, say — writes its layout
+beside it, under the same name: <code>PDN1.csch</code> updates <code>PDN1.clay</code> in the same folder. Update Schematic
+from Layout follows the same rule in the other direction.</p>
 <h3 id="update-schematic-from-layout">Update Schematic from Layout</h3>
 <p><kbd>⇧⌘U</kbd>. The mechanical inverse: it walks the <strong>layout's</strong> instances and writes the schematic to
 match. Same file targeting (create the view if absent, open it, focus it, and leave a differently-named

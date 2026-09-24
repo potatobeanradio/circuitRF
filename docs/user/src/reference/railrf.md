@@ -370,6 +370,12 @@ is not negligible. Editing and saving the part library updates an open railRF wi
 Press **Run**. You get, for each port, the voltage there and how far below the source it is; and, under
 it, **where the drop went** &mdash; every element on the path, ranked, in millivolts and in milliohms.
 
+A run solves **every rail at once**. The bar beside the buttons shows how far through the whole run it
+is, and **Stop** abandons it and leaves the last completed answer on screen. The line at the top of the
+results column names the rail the numbers belong to, which reading they are, and what it cost &mdash;
+*+3V3 · Fast · 4.1 ms*. Picking another rail in the selector shows that rail's numbers without running
+again; only its |Z| curve is swept, which takes a moment and never enters Accuracy.
+
 ```
 48.698 mV below the source, drawing 350 mA
 
