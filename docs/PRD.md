@@ -1,8 +1,10 @@
 # circuitRF — Project Requirements Document (PRD)
 
-**Status:** Approved — v1.3 baseline · **Owner:** (you) · **Date:** 2026-08-04
+**Status:** Approved — v1.4 baseline · **Owner:** (you) · **Date:** 2026-09-23
 **Scope of this document:** defines *what* circuitRF v1 must do and how we'll know it's done. It does **not** specify the data model or algorithms (those live in `docs/design/`).
 
+> **v1.3 → v1.4 (2026-09-23):** recorded the direction for **3D FEM** — full-wave EM on arbitrary 3D geometry (packages, cavities, lids, connectors) and 3D thermal (FET channel down to heatsink) — as a **v2-at-the-earliest, possibly v3** capability. **The v1 non-goal in §2 is unchanged for v1**; §2 now says where the excluded capability is headed, §15 records how external GPL tools are used, and §17 records the decisions. Design draft in [`design/fem-3d.md`](design/fem-3d.md). No change to v1 scope, the heroes, or the engine.
+>
 > **v1.2 → v1.3 (2026-08-04):** added **3D wirebond EM** as a fourth MoM kernel (§5, §8, §9), and **narrowed the §2 non-goal** from "no 3D full-wave EM" to *no FEM, no volumetric meshing, no arbitrary 3D geometry* — the previous wording would have excluded a thin-wire solver that requires none of those things. **Layout remains 2D**: a wirebond is a parametric *component* whose layout view is its 2D projection, so no 3D shape type enters the layout database and no volume mesher is written. Design detail in [`design/mom-wirebond-kernel.md`](design/mom-wirebond-kernel.md); phases **LW1/LW2** in the development plan. No change to the five heroes, the engine, or any other scope.
 >
 > **v1.1 → v1.2:** added **Hero 1B** — a ~10,000-component mechanically-generated linear network as a **performance/scale anchor** (validates the §14 10k-component / <10 s NFR), distinct from the correctness heroes; targeted at Phase 2 (§4). Recorded the engine-wide **magnitude (= peak) phasor convention** and the **RF-power-source available-power formulation** (both resolved in `linear-engine.md` rev 3). No scope change to the correctness heroes.
@@ -30,6 +32,7 @@ circuitRF v1 is deliberately bounded. The following are **not** in v1:
 - **Not a SPICE simulator.** Transient analysis is deferred; v1 ships DC, S-parameters, and harmonic balance only.
 - **Full Verilog-A is deferred to v2.** v1 ships built-in nonlinear models plus the Symbolically-Defined Device (§6). The **ASM-HEMT** GaN model rides on the v2 Verilog-A/OSDI backend (§6.1) — not in v1.
 - **Layout is 2D. EM is 2.5D planar plus 3D wirebonds — and no FEM.** The layout view is fully implemented in v1 (§8, §9) with a **2.5D method-of-moments** solver for planar geometry and a **thin-wire MoM kernel for bond wires** (§5). Out of scope: **FEM, volumetric meshing, and arbitrary 3D geometry** — the user cannot draw a 3D solid, the layout database stores no 3D shape type, and nothing meshes a volume. A wirebond is admitted as a **parametric component** whose layout view is its 2D projection and whose 3D path is generated from named parameters (loop height, profile, diameter), which is why it needs none of the excluded machinery.
+  **3D FEM is a v2 (possibly v3) capability, not v1** (§17, v1.4): full-wave EM driven through an external open-source FEM solver, 3D thermal as a native solver, and a 3D geometry view — scoped in [`design/fem-3d.md`](design/fem-3d.md). Nothing in v1 depends on it, and v1 work must not start on it.
 - **No layout auto-router.** Schematic→layout places components; the user routes. Obstacle-aware auto-routing applies to schematic wiring only.
 - **A third-party cell database is not the storage layer.** v1 uses circuitRF's own human-readable native format. An optional third-party *cell import/export bridge* may come later; full support is out of scope.
 - **No co-simulation, no system/behavioral-level modeling (e.g., X-parameter generation), no optimization/yield engine** in v1.
@@ -209,6 +212,7 @@ Advanced users must always reach every underlying setting; "easy" is the default
 
 - **circuitRF core is MIT.** No GPL/copyleft code ingested (some third-party simulators are GPL — learn from, never copy). For ASM-HEMT (§6.1): comply with the model's CMC/author license when the v2 backend lands; don't vendor model source into the MIT core in a conflicting way.
 - **circuitRF+ (future, commercial).** MIT permits a closed-source superset. **Architectural requirement:** a clean extension/plug-in boundary in v1 so commercial features layer on **without forking the core**; keep proprietary-only assumptions out of the open core.
+- **External GPL programs are run, never ingested** (v1.4, for the v2+ FEM work). A GPL tool such as a mesher may be invoked as a **separate executable** communicating only through files and exit codes; circuitRF never links it, never loads its library or in-process API, and never copies its source. The boundary is to be enforced by test, like the UI firewall.
 - **Solo now, contributors later.** Light process, but architecture, `CLAUDE.md` files, and `docs/` maintained as if contributors will arrive.
 
 ## 16. Risks (pointers; full register in the development plan)
@@ -233,6 +237,14 @@ Dominant risks: **HB convergence and two-tone frequency indexing** (now with a h
 - **How a 3D wire lives in a 2D layout → a parametric component with a 2D-projection view** (§8). No 3D shape type in the layout database; "layout is 2D" survives intact.
 - **Overmold → modelled**, via bound charge on the encapsulant surfaces with a homogeneous-fill fast mode. Not via volume meshing.
 - **Discontinuous (stepped) ground → modelled**, by meshing the ground as a conductor. Explicitly *not* something the layered-medium kernel provides.
+
+**Resolved (v1.4, 2026-09-23) — for v2 or later, not v1:**
+- **3D FEM → planned for v2 at the earliest, possibly v3.** The §2 v1 non-goal (no FEM, no volumetric meshing, no arbitrary 3D geometry) stands for v1.
+- **Full-wave FEM → an external open-source FEM solver run as a separate process** — not translated to C#, not linked as a library. The solver surveyed is Palace (Apache-2.0).
+- **Meshing → Gmsh, as an external GPL program only** (§15).
+- **Solid geometry → OpenCASCADE** — reached through Gmsh first, and through a native geometry worker process when an editable 3D view lands.
+- **3D thermal → a native C# FEM solver**, whose main product is a thermal network for the FET thermal node (§6.1).
+- The tool survey behind these choices is dated 2026-09-23 and is to be **re-surveyed before any of it is built** (`design/fem-3d.md`).
 
 **Remaining open items:**
 1. **Hero 2/4/5 power-sweep range** — TBD pending the chosen SDD FET model (small-signal start, compression depth, and the drive level(s) used for the Hero-5 IM check).
