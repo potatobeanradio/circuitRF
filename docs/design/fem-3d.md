@@ -14,7 +14,8 @@ parts of it are v3** (PRD §2, §17 v1.4). Nothing here is v1 scope and nothing 
 > | Gmsh | GPL; used by every Palace example — **version not checked** | licence unchanged? a permissively licensed mesher now good enough to replace it? |
 > | OpenCASCADE | LGPL-2.1 + exception — **version not checked** | any maintained C#/.NET binding (would remove the need for a native worker, §4.2)? |
 > | Netgen / TetGen | LGPL-2.1 / AGPL, from general knowledge — not re-verified | — |
-> | GPU binding for the viewer | Silk.NET / wgpu, from general knowledge — not prototyped | Avalonia's own 3D or GPU-surface support at that time |
+> | Avalonia GPU hosting | **12.0.3**: composition GPU interop (IOSurface/Metal, D3D11/Vulkan, DMA-BUF/Vulkan) and `OpenGlControlBase`, from Avalonia's own docs — not prototyped | still there? a built-in 3D surface? |
+> | GPU API behind it | Metal/D3D/Vulkan direct, or WebGPU via wgpu (Silk.NET bindings) — general knowledge, not prototyped | maturity of .NET WebGPU bindings |
 >
 > Also worth a fresh search at revisit time: **other open-source 3D FEM electromagnetic solvers**
 > (one with native Windows support or a permissive mesher would change §3 and §5), and
@@ -236,22 +237,96 @@ Every location runs the same files, so a result does not depend on where it was 
 
 ---
 
-## 6. The 3D viewer
+## 6. The 3D viewer — hosted in Avalonia, and fast
+
+**The bar is interactive feel, not just correctness**: orbiting, hovering and selecting should feel as
+immediate as the snappiest open-source 3D modelling tools (Blender is the reference the owner named).
+Everything in this section follows from one rule: **the screen never waits on geometry.**
+
+### 6.1 Avalonia hosts the viewport, not OpenCASCADE
+
+OpenCASCADE computes shapes; circuitRF's own renderer draws them. OCCT's bundled visualization layer
+is **not** used: it would put OCCT back in circuitRF's process (the geometry worker of §4.2 exists to
+keep it out) and it owns a native window, which is the hosting option §6.3 rejects. The worker hands
+back triangles tagged by construction object; the renderer never calls the kernel.
 
 **Not SkiaSharp.** Skia is a 2D rasterizer with no depth buffer; its 4×4 matrix only puts 2D layers in
 perspective. Software depth sorting draws a wireframe of a few hundred solids and fails at what the
 viewer must show: intersecting translucent solids, and fields on 10⁵–10⁶ elements.
 
-**GPU, inside Avalonia.** Avalonia's OpenGL control with Silk.NET bindings (MIT) is the direct route;
-a WebGPU binding over wgpu is the alternative that reaches Metal on macOS, where OpenGL is frozen at
-4.1. The decision is made at F2 on a measured prototype.
+### 6.2 What makes a 3D tool feel fast, as requirements
 
-**Split across the firewall** as `src/Render` is today: tessellation, the scene model, colour maps,
-camera and picking geometry live below the UI firewall (no Avalonia), and only the GPU drawing lives
-in `src/Ui`. That keeps a headless `render` of a 3D view possible later without a second renderer.
+1. **Geometry is GPU-resident.** Tessellations are uploaded once as vertex buffers; orbit, pan and
+   zoom change one camera matrix and upload nothing. Draws are batched per object and material, never
+   per face.
+2. **Picking is done by the GPU.** Object and face IDs are drawn into an offscreen buffer and the pixel
+   under the cursor is read back, so hover and selection cost the same at 10 objects as at 10,000.
+   Hover highlighting is a shader state change, never a retessellation.
+3. **A drag is a preview.** Moving, rotating or resizing transforms what is already drawn; the kernel
+   rebuild happens once, on release. The rules the PCell parameter handles already follow
+   (`pcell-parameter-handles.md`) govern a drag on a dimension bound to an expression.
+4. **Heavy work is off the drawing path.** The viewport always draws the last *finished* geometry; a
+   rebuild in flight never blanks or stalls it.
+5. **Keyboard-first, no modal dialogs mid-gesture** — a value can be typed while dragging.
+
+A mesh modeller works on triangles; a B-rep kernel's booleans and tessellation take tens of
+milliseconds to seconds. The kernel cannot be made that fast, so the design makes sure **nothing ever
+waits for it**.
+
+### 6.3 How Avalonia hosts it
+
+Checked against Avalonia 12.0.3 (the version this repo builds with) on 2026-09-23:
+
+| Option | How | Verdict |
+|---|---|---|
+| **Composition GPU interop** | circuitRF's own GPU device renders on its own thread into a shared texture; the compositor imports it (`CompositionDrawingSurface` — IOSurface + Metal shared events on macOS, D3D11 or Vulkan handles on Windows, DMA-BUF or Vulkan on Linux) and only composites it | **Chosen direction** |
+| `OpenGlControlBase` | Avalonia supplies an OpenGL context inside its own render pass | Simplest to prototype; OpenGL is frozen at 4.1 on macOS |
+| `NativeControlHost` | A native child window with its own swapchain | **Rejected**: Avalonia content cannot draw over it, and Dock's floating panels re-parent windows, which a native child survives badly |
+| Skia | 2D only | Rejected (§6.1) |
+
+**Why composition interop, in this repo specifically.** circuitRF has already measured that **an
+application has one compositor**: a 1,500 ms layout frame took the Project Tree, the Messages panel and
+File ▸ Quit down with it, and the only cure was bounding the frame (`src/Ui/RESOLVED.md`, "The whole
+UI crawled…"). With composition interop the compositor's share of a 3D frame is placing a finished
+texture. A 3D frame still rendering, or a kernel still rebuilding, means the previous image stays up —
+it cannot starve the rest of the window.
+
+The GPU API behind the shared texture (Metal/D3D/Vulkan directly, or WebGPU over wgpu, which targets
+all three) is decided on the F2 spike (§6.6).
+
+### 6.4 Three loops at three speeds
+
+1. **Frame loop** — GPU, at display refresh: camera, hover, gizmos, selection outline. Near-zero
+   managed work per frame, which also keeps the Debug build (the one the owner runs) responsive.
+2. **Input loop** — UI thread: turns pointer and key events into small messages to the frame loop and
+   the kernel loop. It computes no geometry.
+3. **Kernel loop** — the out-of-process geometry worker (§4.2), asynchronous:
+   - every edit carries a **generation number**; a result for a superseded generation is discarded;
+   - a **coarse tessellation first**, refined afterwards;
+   - each construction-history step is **cached**, so an edit rebuilds only the steps after it.
+
+Keeping OCCT out of process is therefore a responsiveness property as well as an isolation one: kernel
+work physically cannot block the UI thread.
+
+### 6.5 Split across the firewall
+
+As `src/Render` is today: tessellation buffers, the scene model, colour maps, camera and picking
+geometry live below the UI firewall (no Avalonia); only the GPU device and the composition surface
+live in `src/Ui`. That keeps a headless `render` of a 3D view possible later without a second renderer.
 
 **What it shows, in order:** the generated geometry (Tier A preview), the mesh, then fields read from
-Palace's VTK XML output — |E|, surface current, and for thermal, temperature — clipped by planes.
+Palace's VTK XML output — |E|, surface current, and for thermal, temperature — on boundary surfaces
+and clip planes (never the volume's millions of elements directly).
+
+### 6.6 Proving it before building it
+
+- **Spike first (opens F2):** one Avalonia pane on composition interop that orbits a million triangles
+  and GPU-picks under the cursor, on all three operating systems, before any viewer code is written.
+- **Gates are counters, not timings** (timing tests measure the machine and flake): *an orbit uploads
+  zero bytes*, *a hover makes zero kernel calls*, *a drag makes zero kernel calls until release*,
+  *a superseded generation's result is never drawn*.
+- **Feel is judged by hand.** A headless session can build and test the viewer but cannot see it;
+  "does it feel fast" is an owner check on real hardware, recorded as such.
 
 ---
 
@@ -301,7 +376,7 @@ That coupling is the reason thermal belongs in circuitRF rather than in a separa
 |---|---|---|
 | **F0** | Spike, no product code: Palace and Gmsh installed by hand; hand-written `.geo` models of one bond-wire-over-ground case and one via transition; compared against kernel W and planar MoM. Measures install cost, laptop run time and memory, and agreement — and produces **externally generated reference data** for the existing MoM kernels, useful even if nothing further is built. | any time |
 | **F1** | FEM backend, CLI first: Tier A geometry → `.geo` → Gmsh → Palace → `.sNp` + `DataSet`. Driven S-parameters, plus electrostatic/magnetostatic for package RLC. Solver-location setting (§5). | v2 |
-| **F2** | Read-only 3D viewer: geometry, mesh, fields. | v2 |
+| **F2** | Read-only 3D viewer: geometry, mesh, fields — opened by the hosting spike of §6.6. | v2 |
 | **F3** | Native thermal FEM on the F1 mesh pipeline; thermal-resistance matrix and Z_th(jω) fitted to a network on the FET thermal node. | v2 or v3 |
 | **F4** | Editable 3D view (Tier B), construction history with expressions, `tools/geometry-worker` (OCCT, Route B). | v3 |
 
@@ -324,11 +399,13 @@ a cross-check, not a reference — both are circuitRF-driven.
 - **OpenCASCADE is the geometry kernel** — through Gmsh first, through a native geometry worker when
   the editable modeler lands (§4.2).
 - Thermal FEM is **native C#** (§7).
+- The 3D viewer is **hosted in Avalonia through composition GPU interop**, drawn by circuitRF's own
+  renderer, never by OCCT's viewer; the kernel is never on the drawing path (§6).
 
 **Open:**
 1. Gmsh user-installed or bundled (§4.1), and the same question for Palace on Linux/macOS (§5).
 2. The run verb's shape — `em` with an FEM setup, or a sibling verb (§3.3).
-3. GPU API for the viewer — OpenGL or WebGPU (§6), decided on a prototype.
+3. The GPU API behind the composition surface — native per platform, or WebGPU (§6.3), decided on the F2 spike.
 4. The Tier B document's format and extension (§4.3).
 5. Where the thermal solver lives in the source tree — `src/Engine` or a project of its own.
 
