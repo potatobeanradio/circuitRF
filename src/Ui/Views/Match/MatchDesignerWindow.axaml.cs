@@ -221,6 +221,9 @@ public partial class MatchDesignerWindow : Window, ICrfMenuWindow
         window.Position = at;
         window.Show();
         window.Position = at;
+
+        // Opened from a double-click on the owner, which can raise the owner again straight after.
+        NewWindowFront.Keep(window, owner);
     }
 
     /// <summary>

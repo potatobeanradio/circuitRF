@@ -1044,6 +1044,7 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
     public void Dispose()
     {
         CancelInFlight();
+        CancelBoardOpen();
         PlotHost.Dispose();
     }
 }

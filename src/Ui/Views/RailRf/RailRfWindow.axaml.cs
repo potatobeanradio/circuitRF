@@ -992,12 +992,20 @@ public partial class RailRfWindow : Window
     // ── Opening ───────────────────────────────────────────────────────────────
 
     /// <summary>Opens (or raises) the window for one <c>.crail</c>.</summary>
-    /// <param name="notes">Everything the document's own references had to say that the caller should
-    /// post — an artwork that has moved, a part library that did not read, a technology warning.
-    /// Empty on the ordinary path, and empty for a document that names no artwork at all.</param>
+    /// <remarks>
+    /// <b>The window is shown BEFORE the board it names is read</b> (field report, 2026-09-23). The
+    /// read is seconds on a real board and used to happen first, on the UI thread, so opening a
+    /// `.crail` froze the whole application with nothing on screen. The rails, ports, target and
+    /// part library are the document's own and appear at once; the board follows — see
+    /// <c>RailRfViewModel.BeginLoadDocumentReferences</c>.
+    /// </remarks>
+    /// <param name="onRead">Called on the UI thread once the board is in, with everything the
+    /// document's own references had to say that the caller should post — an artwork that has
+    /// moved, a part library that did not read, a technology warning. Empty on the ordinary path.
+    /// Not called when the window was already open, nor when it is closed before the read ends.</param>
     public static RailRfWindow Show(
         CircuitRF.Design.RailRf.RailDocument document, string path, Window? owner,
-        out IReadOnlyList<string> notes)
+        Action<IReadOnlyList<string>> onRead)
     {
         ArgumentNullException.ThrowIfNull(document);
 
@@ -1005,20 +1013,12 @@ public partial class RailRfWindow : Window
         if (Open.TryGetValue(key, out var existing))
         {
             existing.Activate();
-            notes = [];
             return existing;
         }
 
         var vm = new RailRfViewModel(document, key);
 
-        // WHAT THE DOCUMENT NAMES IS LOADED HERE, before the window is shown — the artwork, its
-        // stackup and the part library. Opening used to construct the view model and stop, so a
-        // document whose board was on disk came up saying "import one"; see
-        // RailRfViewModel.Open.cs for the whole of it.
-        notes = vm.LoadDocumentReferences();
-
-        var window = new RailRfWindow { DataContext = vm };
-        window.AdoptLiveArtwork();   // prefer the shared session's model where the .clay is open
+        var window = new RailRfWindow { DataContext = vm };   // installs PostToUi before the read
         window._openKey = key;
         Open[key] = window;
         window.Closed += (_, _) =>
@@ -1028,6 +1028,15 @@ public partial class RailRfWindow : Window
         };
 
         ShowUnowned(window, owner);
+
+        // WHAT THE DOCUMENT NAMES IS LOADED HERE — the artwork, its stackup and the part library;
+        // see RailRfViewModel.Open.cs for the whole of it. After the window is on screen, so the
+        // wait has somewhere to be said.
+        vm.BeginLoadDocumentReferences(notes =>
+        {
+            window.AdoptLiveArtwork();   // prefer the shared session's model where the .clay is open
+            onRead(notes);
+        });
         return window;
     }
 
@@ -1114,5 +1123,8 @@ public partial class RailRfWindow : Window
         window.Position = at;
         window.Show();
         window.Position = at;
+
+        // Opened from a double-click on the owner, which can raise the owner again straight after.
+        NewWindowFront.Keep(window, owner);
     }
 }

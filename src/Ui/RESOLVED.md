@@ -35270,3 +35270,51 @@ generator edit — so an existing workspace's `.clay` is rewritten once on first
 - `ComboBox.metaCombo` moved from `LayoutEditorView.axaml` to `Styles/CircuitRfStyles.axaml` so the
   railRF picker shares it; `LayoutTechnologyIndicatorTests` reads it from there. The railRF window's own
   `ComboBox` style centres content, so the picker is centred there rather than left-aligned.
+
+## railRF — opening a `.crail` froze the application with nothing on screen (2026-09-23)
+
+- **Cause.** `RailRfWindow.Show` ran `LoadDocumentReferences` BEFORE constructing the window, on the
+  UI thread. On a two-layer evaluation board (7,253 flattened shapes, 110 pads) that read took ~5 s in
+  Debug, and ~5.2 s of it was `RailArtwork.PadsFor` alone. Resolve was 180 ms, the flatten 41 ms, and
+  `OnBoardChanged` negligible. The Messages pane said nothing either, because `OpenRailPath` posted
+  only the notes, and only after the read had finished.
+- **Fix.** The window is shown first. `RailRfViewModel.BeginLoadDocumentReferences` reads the part
+  library synchronously (one small file, which fills the parts table) and reads the board off the UI
+  thread, using the pad read's own `ReadCopperOffThread`/`PostToUi` seams. The rails, ports and target
+  appear at once. The board area shows `OpeningBoardText` with an indeterminate bar in place of "No
+  board yet" (`ShowsNoBoardYet`), and Run refuses with "still being read" rather than "no board".
+  `OpenRailPath` posts an Info line naming the board before the read and a timed "Opened" line after.
+- **The read works on a copy** (`DeserializeUnvalidated(Snapshot())`). The working copy belongs to the
+  UI thread, and an undo REPLACES it (`ApplySnapshot`), so a background reader holding `_document`
+  could be reading an object that is no longer the document.
+- **The result is dropped** if the window closed (`Dispose` → `CancelBoardOpen`), if a board was
+  imported or opened into the window in the meantime, or if `ArtworkCellRef` changed. Adopting it in
+  any of those cases would put a stale board under the user without saying so.
+- `AdoptLiveArtwork` now runs in the completion callback, because it keys on `Board`, which is null
+  until then. The synchronous `LoadDocumentReferences` remains, as `Read` + `Adopt`, for Compare and
+  for tests.
+- Gate: `RailRfFieldReport4Tests.Opening_*`, which defers the read so it can hold the moment
+  between the window and the board.
+
+## railRF — the first window opened from a project-tree double-click came up behind the workspace (2026-09-23)
+
+- **Symptom.** The first time a `.crail` was double-clicked in the project tree, its window opened
+  behind the workspace. After closing it, the next open came up in front.
+- **Cause, as far as it can be read without the GUI.** The window is shown from inside the SECOND
+  PRESS of the double-click (`ProjectTreeView.OnTreePointerPressed`), while the workspace window is
+  still handling that press. The workspace is then activated again. That fits either of two things:
+  the platform finishing an application activation the first click started, or window ordering
+  deferred to the mouse-up. Both happen only when the gesture is what brought the workspace forward,
+  which matches first-time-only. Ruled out: `RaiseFloatingToolWindows` (the reporter's `.cwsuser` has
+  no floating panels, so it returns before its own `Activate`), the Messages pane (posting never
+  activates anything), and every `Activate()` call in railRF (all are behind explicit buttons).
+- **Fix: `Views/NewWindowFront.Keep`**, called by `ShowUnowned` in both railRF and the Match
+  Designer, the two unowned windows. It responds to the effect, not a guessed cause. If the opener is
+  activated within 2 s of the window appearing and no mouse button has been pressed in either window
+  since, the new window is activated once more. A press in the opener is a deliberate return to it
+  and releases the hold. The hold undoes only the first activation, and it unsubscribes after the
+  grace period. The decision is `NewWindowFront.Hold`, which has no window in it:
+  `NewWindowFrontTests`.
+- **Not seen working on screen.** Confirm it on the owner's machine.
+- A `.csmith` opens as a docked tab (`CircuitRfDockFactory.OpenDocument`), not a separate window, so
+  a Smith Chart coming up behind is not this mechanism unless its tab had been torn off.

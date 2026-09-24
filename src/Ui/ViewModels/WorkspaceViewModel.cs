@@ -9821,13 +9821,25 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             var order = RailOrder.Resolve(doc);
             if (order.Refusal is { } refusal) Messages.Error($"{name}: {refusal}");
 
-            Views.RailRf.RailRfWindow.Show(
-                doc, full, Views.WorkspaceLocator.WindowFor(this), out var notes);
+            // SAID BEFORE THE READ, and posted with the window already up (field report,
+            // 2026-09-23): reading a real board takes seconds, and until it had its own line here a
+            // double-click looked like nothing at all.
+            if (!string.IsNullOrEmpty(doc.ArtworkCellRef)
+                && Views.RailRf.RailRfWindow.ViewModelFor(full) is null)
+                Messages.Info($"Opening {name} — reading its board '{Path.GetFileName(doc.ArtworkCellRef)}'…", full);
 
-            // What the document's own references had to say. Warnings rather than errors: a `.crail`
-            // whose artwork has moved still opens, with its rails and its target, and says why the
-            // board is not there — the window's own strip then refuses Run for the same reason.
-            foreach (string note in notes) Messages.Warning($"{name}: {note}");
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            Views.RailRf.RailRfWindow.Show(
+                doc, full, Views.WorkspaceLocator.WindowFor(this), notes =>
+                {
+                    // What the document's own references had to say. Warnings rather than errors: a
+                    // `.crail` whose artwork has moved still opens, with its rails and its target,
+                    // and says why the board is not there — the window's own strip then refuses Run
+                    // for the same reason.
+                    foreach (string note in notes) Messages.Warning($"{name}: {note}");
+                    if (!string.IsNullOrEmpty(doc.ArtworkCellRef))
+                        Messages.Info($"Opened {name} — board read in {clock.Elapsed.TotalSeconds:0.0} s.", full);
+                });
         }
         catch (Exception ex)
         {

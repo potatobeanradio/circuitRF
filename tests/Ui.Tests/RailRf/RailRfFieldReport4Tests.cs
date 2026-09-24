@@ -317,6 +317,62 @@ public sealed class RailRfFieldReport4Tests : IDisposable
         Assert.Empty(editor.Working.Stackup.Layers.Single(l => l.Name == "GND").DrawingLayers);
     }
 
+    // ── Opening a .crail shows the window before its board is read (field report, 2026-09-23) ──
+
+    /// <summary>A `.crail` on the three-cap board, opened the way the window opens one: the board read
+    /// is DEFERRED, so the test holds the moment between the window appearing and the board arriving.</summary>
+    private (RailRfViewModel Vm, Action ReadBoard) OpenDeferred()
+    {
+        var fx = ThreeCapBoard(SymbolKind.Capacitor, turnThird: false);
+        var doc = new RailDocument { Name = "Board", ArtworkCellRef = Path.GetRelativePath(fx.CellDir, fx.Clay) };
+        doc.Rails.Add(new RailSpec { Name = "+3V3", NetName = "+3V3" });
+        string crail = Path.Combine(fx.CellDir, "Board.crail");
+        RailDocumentIo.SaveToFile(crail, doc);
+
+        Action? pending = null;
+        var vm = new RailRfViewModel(doc, crail) { PostToUi = a => a() };
+        vm.ReadCopperOffThread = work => { pending = work; return System.Threading.Tasks.Task.CompletedTask; };
+        return (vm, () => pending!());
+    }
+
+    [Fact]
+    public void Opening_ShowsTheDocumentFirst_AndTheBoardWhenItHasBeenRead()
+    {
+        var (vm, readBoard) = OpenDeferred();
+        int calls = 0;
+        vm.BeginLoadDocumentReferences(_ => calls++);
+
+        // The window is up with the document's own content; the board is being read, not missing.
+        Assert.Equal(["+3V3"], vm.Rails);
+        Assert.Null(vm.Board);
+        Assert.True(vm.IsOpeningBoard);
+        Assert.False(vm.ShowsNoBoardYet);
+        Assert.False(vm.CanRun);
+        Assert.Contains("still being read", vm.RunBlockedReason, StringComparison.Ordinal);
+        Assert.Equal(0, calls);
+
+        readBoard();
+
+        Assert.NotNull(vm.Board);
+        Assert.False(vm.IsOpeningBoard);
+        Assert.False(vm.IsDirty);
+        Assert.Equal(1, calls);
+    }
+
+    [Fact]
+    public void Opening_ClosedBeforeTheBoardIsRead_DropsTheRead()
+    {
+        var (vm, readBoard) = OpenDeferred();
+        int calls = 0;
+        vm.BeginLoadDocumentReferences(_ => calls++);
+
+        vm.Dispose();
+        readBoard();
+
+        Assert.Null(vm.Board);
+        Assert.Equal(0, calls);
+    }
+
     // ── fixtures ────────────────────────────────────────────────────────────────────────────────
 
     /// <summary>A railRF window opened on the fixture's <c>.clay</c>, with the copper read inline.</summary>

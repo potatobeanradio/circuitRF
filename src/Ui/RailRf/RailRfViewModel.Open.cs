@@ -18,7 +18,12 @@
 // one document. What is HERE is the application-side half: turning a resolution into the window's
 // own `RailBoardInputs`, and handing the caller the sentences to post.
 
+using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using CommunityToolkit.Mvvm.ComponentModel;
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.Pdn;
 using CircuitRF.Design.RailRf;
@@ -46,7 +51,170 @@ public sealed partial class RailRfViewModel
     {
         if (_documentPath is not { Length: > 0 } path) return [];
 
+        var read = ReadDocumentReferences(_document, path);
+        AdoptDocumentReferences(read);
+        return read.Notes;
+    }
+
+    // ── OPENING WITHOUT HOLDING THE UI THREAD (field report, 2026-09-23) ───────────────────────
+    //
+    // The read above is seconds on a real board — nearly all of it `RailArtwork.PadsFor`, ~5 s on a
+    // two-layer evaluation board in a Debug build — and it used to run BEFORE the window existed,
+    // on the UI thread. So a double-click in the project tree did nothing visible at all: no
+    // window, no line in the Messages pane, a frozen application, and then everything at once.
+    // The window now comes up at once with what the document itself holds (its rails, its ports,
+    // its target, its part library) and the board arrives when it has been read.
+
+    /// <summary>
+    /// True while the board this document names is being read off the UI thread — what the board
+    /// says in place of "No board yet", and what Run refuses on rather than calling it missing.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isOpeningBoard;
+
+    partial void OnIsOpeningBoardChanged(bool value)
+    {
+        OnPropertyChanged(nameof(StatusLine));
+        OnPropertyChanged(nameof(ShowsNoBoardYet));
+        RefreshRunGate();
+    }
+
+    /// <summary>True when the board area should say "No board yet" — no board, and none coming.</summary>
+    public bool ShowsNoBoardYet => Board is null && !IsOpeningBoard;
+
+    /// <summary>What the board says while <see cref="IsOpeningBoard"/>.</summary>
+    public string OpeningBoardText =>
+        $"Reading the board '{System.IO.Path.GetFileName(_document.ArtworkCellRef ?? "")}' — its "
+      + "copper, its pads and the nets they sit on";
+
+    private CancellationTokenSource? _openCts;
+
+    /// <summary>The read in flight, or null. <b>Awaitable</b>, as <see cref="CopperRead"/> is.</summary>
+    internal Task? BoardOpen { get; private set; }
+
+    /// <summary>
+    /// <see cref="LoadDocumentReferences"/>, with the slow half off the UI thread.
+    /// </summary>
+    /// <remarks>
+    /// <b>The part library is read here, synchronously</b> — it is one small JSON file, and it is
+    /// what fills the parts table, so the window has something to show before the board arrives.
+    /// Everything that walks the artwork goes through <see cref="ReadCopperOffThread"/> and comes
+    /// back through <see cref="PostToUi"/>, the pad read's own two seams, so a test drives this with
+    /// no application host exactly as it drives that.
+    ///
+    /// <para><b>The read works on a COPY of the document</b>: the working copy is the UI thread's,
+    /// and an undo replaces it outright (<c>ApplySnapshot</c>). And the result is DROPPED where the
+    /// board it was read for is no longer the one wanted — the window closed, a board was imported
+    /// or opened into it meanwhile, or the artwork reference changed — because adopting it then
+    /// would put a stale board under the user with nothing saying so.</para>
+    /// </remarks>
+    /// <param name="onRead">Called on the UI thread once the board is in, with the same notes
+    /// <see cref="LoadDocumentReferences"/> returns. Not called when the read was dropped.</param>
+    public void BeginLoadDocumentReferences(Action<IReadOnlyList<string>> onRead)
+    {
+        if (_documentPath is not { Length: > 0 } path) { onRead([]); return; }
+
+        var libraryNotes = new List<string>();
+        AdoptPartLibrary(ReadPartLibrary(_document, path, libraryNotes));
+
+        if (_document.ArtworkCellRef is not { Length: > 0 } artworkRef)
+        {
+            onRead(libraryNotes);
+            return;
+        }
+
+        _openCts?.Cancel();
+        var cts = _openCts = new CancellationTokenSource();
+        var copy = RailDocumentIo.DeserializeUnvalidated(Snapshot());
+
+        IsOpeningBoard = true;
+        OnPropertyChanged(nameof(OpeningBoardText));
+
+        BoardOpen = ReadCopperOffThread(() =>
+        {
+            RailDocumentReferences? read = null;
+            string? failure = null;
+            try { read = ReadDocumentReferences(copy, path, readLibrary: false); }
+            catch (Exception ex) { failure = ex.Message; }
+
+            PostToUi(() =>
+            {
+                if (cts.IsCancellationRequested) return;
+                IsOpeningBoard = false;
+
+                if (Board is not null
+                    || !string.Equals(_document.ArtworkCellRef, artworkRef, StringComparison.Ordinal))
+                    return;
+
+                if (read is null)
+                {
+                    onRead([.. libraryNotes, $"The board '{artworkRef}' did not read: {failure}"]);
+                    return;
+                }
+
+                AdoptDocumentReferences(read);
+                onRead([.. libraryNotes, .. read.Notes]);
+            });
+        });
+    }
+
+    /// <summary>Drops a board read still in flight — the window is closing.</summary>
+    private void CancelBoardOpen()
+    {
+        _openCts?.Cancel();
+        _openCts = null;
+    }
+
+    /// <summary>
+    /// Everything a document's references resolve to — read with no view model state at all, so it
+    /// can run off the UI thread.
+    /// </summary>
+    private sealed record RailDocumentReferences(
+        RailBoardInputs? Board,
+        BoardNetlist? Netlist,
+        PlacementTable? Placement,
+        (PartLibrary Library, string? Path)? Library,
+        IReadOnlyList<string> Notes);
+
+    /// <summary>Puts a read on screen. The UI thread's half.</summary>
+    private void AdoptDocumentReferences(RailDocumentReferences read)
+    {
+        // The companions BEFORE the board: OnBoardChanged rebuilds the pick list and the parts table
+        // from them, and in this order it does so once with everything in hand.
+        if (read.Netlist is not null) BoardNetlist = read.Netlist;
+        if (read.Placement is not null) Placement = read.Placement;
+        if (read.Board is not null) Board = read.Board;
+        AdoptPartLibrary(read.Library);
+    }
+
+    private void AdoptPartLibrary((PartLibrary Library, string? Path)? library)
+    {
+        if (library is not { } l) return;
+        PartLibrary = l.Library;
+        PartLibraryPath = l.Path;
+    }
+
+    private static (PartLibrary Library, string? Path)? ReadPartLibrary(
+        RailDocument document, string path, List<string> notes)
+    {
+        var library = RailArtwork.ResolvePartLibrary(
+            document, path, out string? libraryPath, out string? libraryError);
+        if (libraryError is { Length: > 0 })
+        {
+            notes.Add($"The part library '{libraryPath}' did not read: {libraryError}. Parts are "
+                    + "reported from the rail's own rows, with no models attached.");
+            return null;
+        }
+        return library is null ? null : (library, libraryPath);
+    }
+
+    private static RailDocumentReferences ReadDocumentReferences(
+        RailDocument document, string path, bool readLibrary = true)
+    {
         var notes = new List<string>();
+        RailBoardInputs? board = null;
+        BoardNetlist? boardNetlist = null;
+        PlacementTable? placement = null;
 
         // ── THE CRASH TRAIL SAYS WHERE AN OPEN IS (field report, 2026-09-23) ─────────────────
         //
@@ -56,7 +224,7 @@ public sealed partial class RailRfViewModel
         var clock = System.Diagnostics.Stopwatch.StartNew();
         Ui.Diagnostics.CrashReporter.Note($"rail: open {System.IO.Path.GetFileName(path)}");
 
-        var found = RailArtwork.Resolve(_document, path, null, new TechnologyCache());
+        var found = RailArtwork.Resolve(document, path, null, new TechnologyCache());
         Ui.Diagnostics.CrashReporter.Note(
             $"rail: artwork {found.Outcome} — {System.IO.Path.GetFileName(found.ClayPath ?? "")}, "
           + $"{found.View?.Shapes.Count ?? 0} top-level shape(s), {clock.ElapsedMilliseconds} ms");
@@ -96,7 +264,7 @@ public sealed partial class RailRfViewModel
                 // The netlist's units are cross-checked against the ARTWORK's extent (R-gi5-10),
                 // so it is read after the artwork and in the artwork's own resolution.
                 var netlist = RailArtwork.ResolveBoardNetlist(
-                    _document, path, view.DbuPerMicron, out string? netlistPath, out string? netlistError);
+                    document, path, view.DbuPerMicron, out string? netlistPath, out string? netlistError);
                 // THE SAME SENTENCE THE IMPORT SAYS, and that is the point of routing it through
                 // RailImportReport rather than writing one here (field report, 2026-09-22). A
                 // designer who imported a file that is not a board netlist, saved, and opened the
@@ -108,16 +276,16 @@ public sealed partial class RailRfViewModel
                             + $"{RailImportReport.RefusalTail(netlistError)} Every port anchored by "
                             + "refdes is unresolved and no mounting loop can be computed; typed "
                             + "values are unaffected.");
-                else if (netlist is not null)
-                    BoardNetlist = netlist;
+                else
+                    boardNetlist = netlist;
 
                 var placed = RailArtwork.ResolvePlacement(
-                    _document, path, view.DbuPerMicron, out string? placedPath, out string? placedError);
+                    document, path, view.DbuPerMicron, out string? placedPath, out string? placedError);
                 if (placedError is { Length: > 0 })
                     notes.Add($"The placement table '{placedPath}' did not read: {placedError}. The "
                             + "parts table's Position column is empty.");
-                else if (placed is not null)
-                    Placement = placed;
+                else
+                    placement = placed;
 
                 foreach (string d in netlist?.Diagnostics ?? []) notes.Add(d);
 
@@ -139,14 +307,14 @@ public sealed partial class RailRfViewModel
                 // over the FLATTENED copper, because a board whose parts are footprint cells keeps
                 // every land inside an instance and a pad standing on nothing takes no name.
                 var resolvedPads = RailArtwork.PadsFor(
-                    view, found.ClayPath, tech, netlist, null, shapes, _document.DisplayUnit);
+                    view, found.ClayPath, tech, netlist, null, shapes, document.DisplayUnit);
                 // An instance that does not resolve contributes neither geometry nor pads, and both
                 // walks report it with the SAME sentence (R-ab1-1c) — so it is said once.
                 foreach (string d in resolvedPads.Notes) if (!notes.Contains(d)) notes.Add(d);
                 Ui.Diagnostics.CrashReporter.Note(
                     $"rail: pads read — {resolvedPads.Pads.Count} pad(s), {clock.ElapsedMilliseconds} ms");
 
-                Board = new RailBoardInputs
+                board = new RailBoardInputs
                 {
                     Shapes         = shapes,
 
@@ -167,24 +335,14 @@ public sealed partial class RailRfViewModel
                     Nets           = resolvedPads.Nets,
                     NetOrigin      = resolvedPads.NetOrigin,
                     TurnedParts    = resolvedPads.Turned,
-                    ReferenceNet   = _document.ReferenceNet,
+                    ReferenceNet   = document.ReferenceNet,
                 };
                 break;
         }
 
-        Ui.Diagnostics.CrashReporter.Note($"rail: board adopted — {clock.ElapsedMilliseconds} ms");
+        Ui.Diagnostics.CrashReporter.Note($"rail: board read — {clock.ElapsedMilliseconds} ms");
 
-        var library = RailArtwork.ResolvePartLibrary(
-            _document, path, out string? libraryPath, out string? libraryError);
-        if (libraryError is { Length: > 0 })
-            notes.Add($"The part library '{libraryPath}' did not read: {libraryError}. Parts are "
-                    + "reported from the rail's own rows, with no models attached.");
-        else if (library is not null)
-        {
-            PartLibrary = library;
-            PartLibraryPath = libraryPath;
-        }
-
-        return notes;
+        var library = readLibrary ? ReadPartLibrary(document, path, notes) : null;
+        return new RailDocumentReferences(board, boardNetlist, placement, library, notes);
     }
 }

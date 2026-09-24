@@ -1739,8 +1739,18 @@
                                 </StackPanel>
                             </Border>
                             <TextBlock Classes="note" HorizontalAlignment="Center" VerticalAlignment="Center"
-                                       IsVisible="{Binding !HasBoard}"
+                                       IsVisible="{Binding ShowsNoBoardYet}"
                                        Text="No board yet. Import one — the artwork lands in the open workspace as an ordinary cell with a layout view."/>
+                            <!-- THE BOARD A .crail NAMES, BEING READ (field report, 2026-09-23). The
+                                 window used to appear only once its board had been read, seconds
+                                 later on a real one, with the whole application frozen until then.
+                                 It opens at once now and says this where the board will be. -->
+                            <StackPanel IsVisible="{Binding IsOpeningBoard}" Spacing="6" MaxWidth="420"
+                                        HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <TextBlock Classes="note" TextWrapping="Wrap" TextAlignment="Center"
+                                           Text="{Binding OpeningBoardText}"/>
+                                <ProgressBar IsIndeterminate="True" Height="3" Minimum="0" Maximum="1"/>
+                            </StackPanel>
                             <!-- ── §2.4's |Z| MAP, WITH ITS OWN CONTROLS (owner, 2026-09-19) ────
                                  The |Z| tab used to be a dead end: a sentence in railRF's own
                                  vocabulary ("it is the plane pair's own answer") followed by

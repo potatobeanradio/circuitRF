@@ -73,6 +73,7 @@ public sealed partial class RailRfViewModel
         _padsReadFrom = PinSignature.Of(value?.View);
         SeedDisplayUnit(value);
         OnPropertyChanged(nameof(HasBoard));
+        OnPropertyChanged(nameof(ShowsNoBoardYet));
         AnnounceImpedanceMap();
 
         // ── THE SAME SCAR, A THIRD TIME ────────────────────────────────────────────────────────
@@ -429,6 +430,11 @@ public sealed partial class RailRfViewModel
     /// </remarks>
     private RailRefusal? GateRefusal()
     {
+        if (Board is null && IsOpeningBoard)
+            return new RailRefusal(
+                "The board is still being read — Run is available as soon as it is on screen.",
+                RailRefusalControl.None);
+
         if (Board is null)
             return new RailRefusal(
                 "There is no board yet. Import one — the artwork, and the placement, BOM and netlist "
@@ -1037,6 +1043,9 @@ public sealed partial class RailRfViewModel
             // took (RailRfViewModel.NetPreview.cs' header). Named rather than spinner-shaped for
             // BusyText's own reason: a user who knows the board is being read knows the answer is
             // coming, and a user who does not thinks the reference combo did nothing.
+            if (IsOpeningBoard)
+                parts.Add("reading the board — the window fills in when it is done");
+
             if (IsReadingCopper)
                 parts.Add("reading the board's copper — the layer flatten and the connectivity walk");
             else if (CopperReadError.Length > 0)

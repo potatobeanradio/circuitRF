@@ -97,14 +97,16 @@ public partial class RailRfWindow
         bool disposable = Vm is { DocumentPath: null, Board: null, IsDirty: false } scratch
                        && scratch.Document.Rails.Count == 0;
 
-        var opened = Show(document, path, this, out var notes);
-
-        // The notes belong to the window that is now showing that document, NOT to this one — this
-        // one is usually about to close. Joined into one sentence because the strip holds one
-        // refusal, and each of these is a whole statement on its own.
-        if (notes.Count > 0 && opened.Vm is { } target)
-            target.PendingImportRefusal = new RailRefusal(
-                string.Join(" ", notes), RailRefusalControl.None);
+        RailRfWindow? opened = null;
+        opened = Show(document, path, this, notes =>
+        {
+            // The notes belong to the window that is now showing that document, NOT to this one —
+            // this one is usually about to close. Joined into one sentence because the strip holds
+            // one refusal, and each of these is a whole statement on its own.
+            if (notes.Count > 0 && opened?.Vm is { } target)
+                target.PendingImportRefusal = new RailRefusal(
+                    string.Join(" ", notes), RailRefusalControl.None);
+        });
 
         if (disposable && !ReferenceEquals(opened, this)) Close();
     }
