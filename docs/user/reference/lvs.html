@@ -265,6 +265,14 @@ indices, and never a coordinate where a name exists. These are the ones you will
 <td>Both sides have it, and they disagree about what it is</td>
 </tr>
 <tr>
+<td><code>lvs.device.turned</code></td>
+<td>A resistor, capacitor or inductor placed end for end: the circuit is the same, but its pin 1 is on the other land. A <strong>warning</strong>, one per part</td>
+</tr>
+<tr>
+<td><code>lvs.device.reversed</code></td>
+<td>A diode or other one-way two-pin part placed end for end, <strong>naming both nets</strong>. An <strong>error</strong>: the board would assemble it backwards</td>
+</tr>
+<tr>
 <td><code>lvs.net.open</code></td>
 <td>One schematic net is two or more separate pieces of copper, <strong>with the pins on each</strong></td>
 </tr>
@@ -286,6 +294,15 @@ indices, and never a coordinate where a name exists. These are the ones you will
 </tr>
 </tbody>
 </table>
+<p><strong>Parts placed end for end are listed together, with one button to fix them.</strong> Two identical lands
+look the same whichever way round a resistor or capacitor sits, so a board can easily have dozens of
+them the wrong way round. The circuit is still right, but railRF, the placement table and
+cross-probing all read those parts' pin 1 backwards. The LVS panel lists every one of them — the
+full count, however many there are — with a checkbox each and a <strong>Turn these N in the layout</strong>
+button that turns the checked ones in one step you can undo, then compares again. railRF offers the
+same button for the same parts, and turning them in either window clears both. A reversed diode gets a
+button of its own and is never turned with the others, because only you know whether the part or the
+copper is the wrong half.</p>
 <p><strong>A short is never reported without its path.</strong> A short reported as a bare pair of net names is a
 finding nobody can act on, so the sentence carries the neck or via that joins them, its width and where
 it is. The same rule drives the rest: an open names the pins on each island, a property mismatch names

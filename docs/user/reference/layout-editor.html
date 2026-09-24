@@ -431,9 +431,11 @@ something, including an array's rows × columns.</p>
 <p>Type part of a designator to filter, pick a type to narrow further, and <strong>double-click</strong> a row — or
 press <kbd>Enter</kbd> — to <strong>zoom to that instance and select it</strong>. An instance whose cell no longer
 resolves is still listed and still zoomed to, at its placement point: that is often exactly why you
-are looking for it. As in the schematic, only the level you are looking at is listed; instances inside
-a placed cell are that cell's own, so push into it to find them. The panel works identically for a
-schematic — see <a href="schematic-editor.html#find">Finding a component</a>.</p>
+are looking for it. As in the schematic, only the level you are looking at is listed unless you tick
+<strong>Include sub-cells</strong>: then every instance inside every placed cell is listed too, by path (<code>U1.U2</code>),
+and double-clicking one pushes down to it. A parametric cell is listed but not searched inside — its
+geometry is generated. The panel works identically for a schematic — see
+<a href="schematic-editor.html#find">Finding a component</a>.</p>
 <h2 id="schematic-flow">Schematic ⇄ layout</h2>
 <p>Two commands under the <strong>Design</strong> menu move work between the two views. They are deliberately symmetric,
 and <strong>neither ever runs by itself</strong> — there is no save hook, no open hook, no activation hook. They run
