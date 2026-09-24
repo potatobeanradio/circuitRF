@@ -37,6 +37,7 @@ public enum RailPartsSortColumn
     Inductance,
     ModelSource,
     Location,
+    Side,
 }
 
 public sealed partial class RailRfViewModel
@@ -110,6 +111,7 @@ public sealed partial class RailRfViewModel
             RailPartsSortColumn.Inductance    => Number(a.InductanceSortKey, b.InductanceSortKey),
             RailPartsSortColumn.ModelSource   => Text(a.ModelSourceText, b.ModelSourceText),
             RailPartsSortColumn.Location      => Location(a.PositionDbu, b.PositionDbu),
+            RailPartsSortColumn.Side          => a.BoardSideIndex.CompareTo(b.BoardSideIndex),
             _                                 => 0,
         };
 

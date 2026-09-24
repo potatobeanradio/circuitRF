@@ -1016,6 +1016,10 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
     /// <summary>The cavity mode card and its own Find button — frequency.</summary>
     public bool ShowPlaneResonancesCard => IsFrequency;
 
+    /// <summary>The |Z| plot, and the marker boxes that point into it — frequency. On the DC tab it
+    /// was a set of empty axes whose explanation was on the other tab (field report, 2026-09-24).</summary>
+    public bool ShowImpedancePlot => IsFrequency;
+
     /// <summary>Whatever the frequency answer has to say that is not a curve — frequency.</summary>
     public bool ShowImpedanceMessageCard => IsFrequency && HasImpedanceMessage;
 
@@ -1039,6 +1043,7 @@ public sealed partial class RailRfViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(ShowRemovalCard));
         OnPropertyChanged(nameof(ShowPlaneResonancesCard));
         OnPropertyChanged(nameof(ShowImpedanceMessageCard));
+        OnPropertyChanged(nameof(ShowImpedancePlot));
     }
 
     public void Dispose()

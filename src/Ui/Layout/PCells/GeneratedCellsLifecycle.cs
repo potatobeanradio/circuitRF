@@ -249,16 +249,32 @@ public static class GeneratedCellsLifecycle
         return repointed;
     }
 
+    // ── EITHER SEPARATOR, WHATEVER MACHINE THIS IS (owner, 2026-09-24) ─────────────────────────
+    //
+    // A CellRef is stored as its author's machine spelled it, and a layout placed on Windows says
+    // `..\..\..\.generated-cells\smt-0402@N_…`. Path.GetFileName on macOS and Linux does not split
+    // on a backslash, so the whole string was compared with the cell name, nothing matched, nothing
+    // was repointed — and a designer's board opened here with every footprint missing and no pads,
+    // after its cells had been regenerated under their new names right beside it. The resolver that
+    // LOADS a CellRef already reads both separators; the repoint has to as well.
+
     private static bool NamesCell(string? cellRef, string cellName)
         => cellRef is { Length: > 0 }
-           && string.Equals(Path.GetFileName(Path.TrimEndingDirectorySeparator(cellRef)), cellName,
-                            StringComparison.OrdinalIgnoreCase);
+           && string.Equals(LastSegment(cellRef, out _), cellName, StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>The ref with its last segment renamed, keeping the author's own separators — a
+    /// Windows-written layout stays Windows-spelled, so the diff is the one name that changed.</summary>
     private static string ReplaceLastSegment(string cellRef, string newName)
     {
-        string trimmed = Path.TrimEndingDirectorySeparator(cellRef);
-        string? parent = Path.GetDirectoryName(trimmed);
-        return string.IsNullOrEmpty(parent) ? newName : Path.Combine(parent, newName);
+        LastSegment(cellRef, out int start);
+        return cellRef.TrimEnd('/', '\\')[..start] + newName;
+    }
+
+    private static string LastSegment(string cellRef, out int start)
+    {
+        string trimmed = cellRef.TrimEnd('/', '\\');
+        start = trimmed.LastIndexOfAny(['/', '\\']) + 1;
+        return trimmed[start..];
     }
 }
 

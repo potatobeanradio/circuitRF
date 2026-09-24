@@ -104,11 +104,9 @@ public sealed partial class RailRfViewModel
     [ObservableProperty]
     private RailBreakdownRowViewModel? _selectedBreakdownRow;
 
-    partial void OnSelectedPartChanged(RailPartRowViewModel? value)
-    {
-        TakeSelection(value);
-        SyncSeriesEditor();   // brief 35: the editor follows the selected row
-    }
+    // Selection opens nothing: the series editor is a dialog now (owner, 2026-09-24), because an
+    // editor that followed the selection pushed the table up and down as rows were clicked through.
+    partial void OnSelectedPartChanged(RailPartRowViewModel? value) => TakeSelection(value);
     partial void OnSelectedSourceChanged(RailSourceRowViewModel? value)         => TakeSelection(value);
     partial void OnSelectedLoadChanged(RailLoadRowViewModel? value)             => TakeSelection(value);
     partial void OnSelectedAggressorChanged(RailAggressorRowViewModel? value)   => TakeSelection(value);

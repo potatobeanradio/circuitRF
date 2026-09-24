@@ -27,6 +27,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using CircuitRF.Ui.RailRf;
@@ -144,6 +145,16 @@ public partial class RailRfWindow
             connection.Add(shunt);
         }
 
+        // EDIT MODEL SOURCE… on a series row (owner, 2026-09-24) — the same dialog a double-click on
+        // its model-source cell opens.
+        if (row.IsSeries)
+        {
+            var edit = new MenuItem { Header = $"Edit Model Source… ({row.Refdes})" };
+            ToolTip.SetTip(edit, "Edit this series part's model — its DC resistance, and an R-L or a Touchstone file.");
+            edit.Click += (_, _) => OpenSeriesModelDialog(row.Refdes);
+            connection.Insert(0, edit);
+        }
+
         List<object> items = [add, remove, new Separator(), .. connection, new Separator(), assign];
         if (seriesOffers.Count > 0) { items.Add(new Separator()); items.AddRange(seriesOffers); }
         items.Add(new Separator());
@@ -151,15 +162,43 @@ public partial class RailRfWindow
         menu.ItemsSource = items;
     }
 
-    /// <summary>
-    /// The series editor's Browse — a Touchstone file for the selected series row, written
-    /// relative to the <c>.crail</c> like every other reference it carries (R-rail35-1b).
-    /// </summary>
-    private async void OnSeriesBrowseClick(object? sender, RoutedEventArgs e)
-    {
-        if (Vm is not { SeriesEditor: { } editor } vm) return;
+    // ══ EDIT MODEL SOURCE… (owner, 2026-09-24) ════════════════════════════════════════════════
+    //
+    // A series row's model is edited in a dialog, opened from its context menu or by double-clicking
+    // its model-source cell. It used to open under the table whenever the row was SELECTED, which
+    // pushed the table up and down as a user clicked through it.
 
-        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+    /// <summary>Opens the dialog on one series row. Modal: the row it edits cannot change under it.</summary>
+    private async void OpenSeriesModelDialog(string refdes)
+    {
+        if (Vm is not { } vm || vm.BeginSeriesEdit(refdes) is not { } editor) return;
+        try
+        {
+            var dialog = new RailSeriesModelDialog(
+                editor, host => BrowseSeriesFile(editor, host), () => SaveSeriesFileToLibrary(editor));
+            await dialog.ShowDialog(this);
+        }
+        finally { vm.EndSeriesEdit(); }
+    }
+
+    /// <summary>A series row's model-source cell, double-clicked. Other rows' models are the part
+    /// library's, and are not edited here.</summary>
+    private void OnPartModelSourceDoubleTapped(object? sender, TappedEventArgs e)
+    {
+        if (sender is not Control { DataContext: RailPartRowViewModel { IsSeries: true } row }) return;
+        e.Handled = true;
+        OpenSeriesModelDialog(row.Refdes);
+    }
+
+    /// <summary>
+    /// The dialog's Browse — a Touchstone file for the series row, written relative to the
+    /// <c>.crail</c> like every other reference it carries (R-rail35-1b).
+    /// </summary>
+    private async void BrowseSeriesFile(RailSeriesEditorViewModel editor, Window host)
+    {
+        if (Vm is not { } vm) return;
+
+        var files = await host.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
             Title = $"railRF — {editor.Refdes}'s measured impedance",
             AllowMultiple = false,
@@ -175,6 +214,80 @@ public partial class RailRfWindow
             ? CircuitRF.Core.RefPath.ToStored(
                   Path.GetRelativePath(Path.GetDirectoryName(Path.GetFullPath(crail))!, picked))
             : picked;
+    }
+
+    /// <summary>
+    /// <b>Save to library</b> (owner, 2026-09-24) — the series row's own Touchstone file becomes its
+    /// part number's model file in the part library.
+    /// </summary>
+    /// <remarks>
+    /// Where the library row is classed Other and was saved, the row's own reference is then cleared:
+    /// it inherits the same file from the library, so the library is the one place it lives and a
+    /// later correction there reaches this row too. Otherwise the row keeps its own, and the Messages
+    /// line says why.
+    /// </remarks>
+    private void SaveSeriesFileToLibrary(RailSeriesEditorViewModel editor)
+    {
+        if (Vm is not { } vm) return;
+
+        if (editor.PartNumber is not { } partNumber)
+        {
+            vm.Refusal = new RailRefusal(
+                $"{editor.Refdes} has no part number, and the part library is keyed by one. Assign it "
+                + "one first (right-click its row ▸ Assign part number…).", RailRefusalControl.None);
+            return;
+        }
+        if (!NamesLiveLibrary(vm))
+        {
+            vm.Refusal = new RailRefusal(
+                "This design has no part library to save the file to. Create one, or use an existing "
+                + "one, from the book button under the parts table.", RailRefusalControl.None);
+            return;
+        }
+        if (vm.DocumentPath is not { Length: > 0 } crail)
+        {
+            vm.Refusal = new RailRefusal(
+                "Save this document first — the row's file is stored relative to the .crail.",
+                RailRefusalControl.None);
+            return;
+        }
+        if (WorkspaceLocator.Any() is not { } workspace)
+        {
+            vm.Refusal = new RailRefusal(
+                "The part library is edited in the workspace, and this railRF window has none open "
+                + "behind it. Open the workspace this design belongs to and try again.",
+                RailRefusalControl.None);
+            return;
+        }
+
+        string model = CircuitRF.Core.RefPath.Resolve(
+            Path.GetDirectoryName(Path.GetFullPath(crail))!, editor.TouchstoneEntry);
+        string library = Path.GetFileName(vm.PartLibraryPath)!;
+
+        if (!workspace.SaveModelToPartLibrary(vm.PartLibraryPath!, partNumber, model,
+                                              out bool saved, out bool isOther, out string? error))
+        {
+            vm.Refusal = new RailRefusal(error!, RailRefusalControl.None);
+            return;
+        }
+
+        string file = Path.GetFileName(model);
+        if (saved && isOther)
+        {
+            editor.TouchstoneEntry = "";
+            workspace.Messages.Success(
+                $"{file} is now {partNumber}'s model file in {library}; {editor.Refdes} takes it from the library.");
+        }
+        else if (!saved)
+            workspace.Messages.Warning(
+                $"{file} was set as {partNumber}'s model file in {library}, which had other unsaved edits "
+                + $"and was not saved. Save the library to keep it; {editor.Refdes} keeps its own reference "
+                + "until then.");
+        else
+            workspace.Messages.Warning(
+                $"{file} is now {partNumber}'s model file in {library}, but that row is not classed Other, "
+                + $"so a series row does not take its file. {editor.Refdes} keeps its own reference; class the "
+                + "library row Other for series rows to share it.");
     }
 
     // ══ ADDING AND REMOVING A ROW (field report, 2026-09-22) ═══════════════════════════════════
@@ -273,12 +386,12 @@ public partial class RailRfWindow
 
         var use = new MenuItem { Header = "Use existing library…" };
         ToolTip.SetTip(use, has
-            ? "Reuse a .crlib another design already built: its rows are merged into this design's "
-            + "library as one undoable edit — new part numbers added, blank fields filled, and where the "
-            + "two disagree this library's value is kept and named. Save the library to keep it."
-            : "Start from a .crlib another design already built. Its rows are copied into a new library "
-            + "in this workspace, seeded with this document's part numbers; a library already inside "
-            + "this workspace is used as it is.");
+            ? "Reuse a .crlib another design already built: merge its rows into this design's library "
+            + "(new part numbers added, blank fields filled, this library's value kept where the two "
+            + "disagree), or use it instead of this one."
+            : "Use a .crlib another design already built — where it is, shared with every design that "
+            + "names it, or copied into a new library in this workspace. A library already inside this "
+            + "workspace is used as it is.");
         use.Click += (_, _) => UseExistingPartLibrary();
 
         return [first, use];
@@ -399,11 +512,12 @@ public partial class RailRfWindow
     /// built, rather than from nothing (field report, 2026-09-23).
     /// </summary>
     /// <remarks>
-    /// <b>A library from another workspace is COPIED</b> into a new one here, seeded with this
-    /// document's part numbers exactly as Create seeds it and then merged on
-    /// <c>PartLibraryMerge</c>'s rules — so the design is saved, archived and revision-controlled with
-    /// its models. <b>One already inside this workspace is USED as it is</b>: it already travels with
-    /// the workspace, and a copy would only be a second library to keep in step with the first.
+    /// <b>A library outside this workspace is REFERENCED or COPIED, as the user chooses</b> (owner,
+    /// 2026-09-24; <see cref="RailUseLibraryDialog"/>). Referenced, it is a team's shared library and
+    /// Archive Workspace offers it with its model files; copied, it becomes a new library here, seeded
+    /// with this document's part numbers and merged on <c>PartLibraryMerge</c>'s rules. <b>One already
+    /// inside this workspace is USED as it is.</b> A design that already has a library merges the
+    /// picked one's rows into it or names the picked one instead.
     /// </remarks>
     private async void UseExistingPartLibrary()
     {
@@ -417,9 +531,25 @@ public partial class RailRfWindow
         });
         if (files is not [var file] || file.TryGetLocalPath() is not { Length: > 0 } source) return;
 
-        // A design that already has a library takes the rows INTO it — the editor's own Import, as one
-        // undoable edit the user then saves, rather than a second library beside the first.
-        if (NamesLiveLibrary(vm))
+        // What to DO with it is asked where there is a choice (owner, 2026-09-24): a library outside
+        // this workspace may be named where it is — a team's shared library — or copied in, and a
+        // design that already has one may merge the rows or name the picked library instead. A
+        // library already inside the workspace, for a design with none, is simply named.
+        bool has     = NamesLiveLibrary(vm);
+        bool outside = !workspace.IsInCurrentWorkspace(source);
+
+        var use = RailLibraryUse.Reference;
+        if (has || outside)
+        {
+            var ask = new RailUseLibraryDialog(
+                source, has ? Path.GetFileName(vm.PartLibraryPath) : null, outside);
+            use = await ask.ShowDialog<RailLibraryUse>(this);
+        }
+        if (use == RailLibraryUse.Cancel) return;
+
+        // The rows INTO the design's own library — the editor's own Import, as one undoable edit the
+        // user then saves, rather than a second library beside the first.
+        if (use == RailLibraryUse.Merge)
         {
             if (!workspace.MergeIntoPartLibrary(vm.PartLibraryPath!, source, out string? refusal))
             {
@@ -434,8 +564,8 @@ public partial class RailRfWindow
         string? error;
         CircuitRF.Design.RailRf.PartLibraryImportReport? copied = null;
 
-        if (workspace.IsInCurrentWorkspace(source))
-            crlib = workspace.UsePartLibraryForRailDocument(crail, source, out error);
+        if (use == RailLibraryUse.Reference)
+            crlib = workspace.UsePartLibraryForRailDocument(crail, source, out error, replace: has);
         else
         {
             var name = new InputNameDialog(

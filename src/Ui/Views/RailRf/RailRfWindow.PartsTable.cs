@@ -130,6 +130,16 @@ public partial class RailRfWindow
         return grip;
     }
 
+    /// <summary>The side column's index, and its width where the board has a bottom to choose.</summary>
+    private const int PartsSideColumn = 10;
+    private const double PartsSideWidth = 84;
+
+    /// <summary>Gives the side column its width, or none (owner, 2026-09-24: shown only where the
+    /// board has a bottom). The header button and each row's combo hide themselves by binding; this
+    /// is the width they would otherwise leave behind.</summary>
+    private void SyncPartsSideColumn() =>
+        SetPartsColumnWidth(PartsSideColumn, Vm is { ShowPartSides: true } ? PartsSideWidth : 0);
+
     /// <summary>One column, one width, on the header and on every row on screen.</summary>
     private void SetPartsColumnWidth(int column, double width)
     {

@@ -243,7 +243,7 @@ public sealed partial class RailRfViewModel
         {
             series = SeriesModels(rail, resolver);
             partition = SeriesRegions(rail) is { } walked
-                ? RailSeriesPartition.FromArtworkRegions(rail, walked, Board?.Pads ?? [])
+                ? RailSeriesPartition.FromArtworkRegions(rail, walked, Board is { } b ? SidedPads(b).Pads : [])
                 : RailSeriesPartition.Typed(rail);
         }
 
@@ -298,7 +298,7 @@ public sealed partial class RailRfViewModel
             Shapes = board.Shapes,
             Technology = board.Technology,
             DbuPerMicron = board.DbuPerMicron,
-            Pads = board.Pads,
+            Pads = SidedPads(board).Pads,
             ReferenceNet = ReturnNetFor(rail),
         };
 

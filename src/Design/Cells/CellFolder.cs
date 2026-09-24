@@ -91,6 +91,35 @@ public static class CellFolder
     public static string SubFolderPath(string cellFolder, ViewType type)
         => Path.Combine(cellFolder, SubFolderName(type));
 
+    /// <summary>
+    /// Where the <paramref name="other"/> view of the view file at <paramref name="viewPath"/> lives:
+    /// in a cell folder, that view's own sub-folder; for a document sitting LOOSE — at a workspace's
+    /// root, or anywhere that is not its view's sub-folder — the same folder, under the same name.
+    /// </summary>
+    /// <remarks>
+    /// Field report (2026-09-24): Update Layout from Schematic took the schematic's GRANDPARENT as the
+    /// cell folder unconditionally. For a schematic saved at a workspace's root that is the folder
+    /// ABOVE the workspace, so the layout was written outside it — where no workspace is open, and the
+    /// generated footprints then had nowhere to live — and the reverse command made a stray
+    /// <c>schematic</c> folder the same way. A loose document's other view is the one beside it.
+    /// </remarks>
+    /// <param name="own">The view type of <paramref name="viewPath"/> itself.</param>
+    public static SiblingViewLocation SiblingView(string viewPath, ViewType own, ViewType other)
+    {
+        string full = Path.GetFullPath(viewPath);
+        string dir  = Path.GetDirectoryName(full)!;
+        string name = Path.GetFileNameWithoutExtension(full);
+
+        if (string.Equals(Path.GetFileName(dir), SubFolderName(own), StringComparison.OrdinalIgnoreCase)
+            && Path.GetDirectoryName(dir) is { Length: > 0 } cellDir)
+        {
+            string targetDir = SubFolderPath(cellDir, other);
+            return new SiblingViewLocation(Path.Combine(targetDir, name + ViewExtension(other)), targetDir, cellDir);
+        }
+
+        return new SiblingViewLocation(Path.Combine(dir, name + ViewExtension(other)), dir, null);
+    }
+
     // ── Create ────────────────────────────────────────────────────────────────
 
     /// <summary>
@@ -198,3 +227,10 @@ public static class CellFolder
     private static string? ReadNamedPrimary(string cellFolder, ViewType viewType, bool useStatCache)
         => CellStat.NamedPrimary(cellFolder, viewType, useStatCache);
 }
+
+/// <summary>Where a view file's other view lives — see <see cref="CellFolder.SiblingView"/>.</summary>
+/// <param name="TargetPath">The other view's file.</param>
+/// <param name="TargetDir">The folder it is in, which may not exist yet.</param>
+/// <param name="CellDir">The cell folder both views belong to, or null for a LOOSE document — one
+/// with no cell folder, and therefore no primary view to maintain.</param>
+public readonly record struct SiblingViewLocation(string TargetPath, string TargetDir, string? CellDir);

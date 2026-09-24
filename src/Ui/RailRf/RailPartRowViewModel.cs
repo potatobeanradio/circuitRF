@@ -740,6 +740,36 @@ public sealed class RailPartRowViewModel
     /// </remarks>
     public bool IsMounted => _part.Mounted;
 
+    /// <summary>The model-source cell's tooltip — the text itself, and on a series row how to edit it.</summary>
+    public string ModelSourceTooltip => _part.IsSeries
+        ? ModelSourceText + "\n\nDouble-click to edit this part's model — its DCR, and an R-L or a Touchstone file."
+        : ModelSourceText;
+
+    // ── TOP OR BOTTOM (owner, 2026-09-24) ─────────────────────────────────────────────────────
+
+    /// <summary>The side the ARTWORK puts the part on — where its lands are — or null where it says
+    /// nothing. What the side column shows until the row states one.</summary>
+    public RailBoardSide? ArtworkSide { get; init; }
+
+    /// <summary>Whether the board has a bottom to choose — the window's <c>ShowPartSides</c>.</summary>
+    public bool ShowSide { get; init; }
+
+    /// <summary>The side railRF reads the part's pads on: the row's own, else the artwork's, else top.</summary>
+    public RailBoardSide EffectiveSide => _part.BoardSide ?? ArtworkSide ?? RailBoardSide.Top;
+
+    /// <summary>The side combo's index — 0 top, 1 bottom.</summary>
+    public int BoardSideIndex => EffectiveSide == RailBoardSide.Bottom ? 1 : 0;
+
+    /// <summary>Where the side came from, on the combo's tooltip.</summary>
+    public string BoardSideTooltip =>
+        (_part.BoardSide is not null
+            ? "Stated on this row. "
+            : ArtworkSide is RailBoardSide.Bottom
+                ? "From the artwork — the part is placed mirrored, so it is on the bottom. "
+                : "From the artwork. ")
+        + "railRF reads the part's pads on this side's copper — top or bottom. Changing it here "
+        + "changes it on every rail that names this part, and does not touch the layout.";
+
     /// <summary>True where this row is in the table but not in the answer — what greys it.</summary>
     public bool IsUnmounted => !_part.Mounted;
 

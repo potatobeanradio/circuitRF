@@ -142,13 +142,15 @@ the two in one press.</p>
 
 <div class="callout note">
 <span class="label">The |Z| plot needs each source's output resistance</span>
-<p>Each row of the <b>Sources</b> card has three values: the voltage, <b>R</b> and <b>L</b> &mdash; the
-supply's output resistance and inductance. The DC answer needs only the voltage. The |Z| plot needs R, L or
+<p>Each row of the <b>Sources</b> card has three values, under the headings <b>V open</b>, <b>R out</b> and
+<b>L out</b>: the voltage, and the supply's output resistance and inductance. Double-click a value to
+enter it. The DC answer needs only the voltage. The |Z| plot needs R, L or
 both: a source with neither (blank <i>or</i> zero) is ideal, shorts the rail at every frequency, and leaves
 nothing to plot, so the Frequency tab says so instead of drawing a curve. Take R from the regulator's
 datasheet (its output impedance at low frequency, typically tens of milliohms for a switcher or LDO) and L
 where it is given (a few nH is typical); a battery's R is ohms to hundreds of ohms over its life. Inductance
-needs a unit (<code>2 nH</code>); resistance may be bare (<code>0.05</code> is 50 mΩ).</p>
+needs a unit (<code>2 nH</code>, <code>2n H</code> or just the prefix, <code>2n</code>); resistance may be bare
+(<code>0.05</code> is 50 mΩ).</p>
 </div>
 
 <div class="callout note">
@@ -209,6 +211,21 @@ Each row is one part on the selected rail. Selecting a row outlines that part on
 - **A wide table scrolls sideways.** The columns keep their widths and the header scrolls with the
   rows, so each column stays under its header in a narrow panel.
 
+#### Top and bottom {#board-side}
+
+On a board with copper on its bottom layer, the table has a **side** column: **top** or **bottom**, the
+side of the board the part is soldered to. railRF reads the part's pads on that side's copper, so a
+capacitor on the bottom connects to the bottom-layer copper under it, not to whatever top copper happens
+to be above it. A board with nothing on its bottom copper shows no side column.
+
+The side starts as the artwork has it: a footprint placed **mirrored** is on the bottom, which is also
+how the board exports read it, and the *location* column says *bottom* after its coordinates. Pick the
+other side in the row's drop-down where the artwork does not say &mdash; a Gerber board whose footprints
+were all placed on top, say. The choice applies to the selected rows, and to that part on **every** rail
+of the document, since a part is soldered to one side; it is saved in the `.crail` and never in the part
+library, because the same part number can be fitted top side on one board and bottom side on the next.
+It does not change the layout.
+
 ### The part library {#part-library}
 
 The book button under the parts table, and the parts table's right-click menu, offer two things.
@@ -258,24 +275,31 @@ find a part only once its trailing packaging code is deleted, so a part number t
 with its end trimmed is matched to that row &mdash; when exactly one row fits &mdash; and named in the
 report above the table.
 
-#### Reusing a library from another design {#reuse-library}
+#### Sharing one library across designs {#reuse-library}
 
-Designs that buy the same part numbers can share one library's work, in any of three ways:
+A team that buys the same part numbers board after board can keep **one** `.crlib` &mdash; in a shared
+folder, next to every project &mdash; and have every design use it:
 
-- **Start from it, or add it.** **Use existing library…** on the book button (or the parts table's
-  right-click menu) picks a `.crlib`. If this document already has a library, the picked one's rows are
-  merged into it by the rules below, in the library editor, as one undoable edit &mdash; save the library to
-  keep them. If it has none, a library from another workspace is copied: a new one is created in this
-  workspace, seeded with this document's part numbers, the other library's rows are merged in, and it
-  opens with the report above its table. One already inside this workspace is used as it is.
+- **Use existing library…** on the book button (or the parts table's right-click menu) picks a `.crlib`
+  and asks what to do with it. The default, **Use It Where It Is** (**Use It Instead** where the design
+  already has a library), names the library in place: nothing is copied, and a part added or corrected
+  there reaches every design that uses it. The alternative is **Copy Into Workspace** &mdash; a new
+  library here, seeded with this document's part numbers and filled from the one you picked, which nothing
+  else will change &mdash; or, where the design already has a library, **Merge Into** it: the picked
+  library's rows are merged in by the rules below, in the library editor, as one undoable edit that you
+  then save. A library already inside this workspace, for a design with none, is used as it is.
 - **Copy its rows in.** **Import table…** also takes a `.crlib`. Part numbers this library lacks arrive
   whole, with their bias curves; for one both libraries have, only the fields this one leaves blank are
   filled. Where both state a value and they differ, **this library's is kept** and the report names both.
   A row's model file is still read from where it sits, beside the other library, and the report names each
   one. It is one undoable edit, and the copy is saved with this workspace.
-- **Point this design at it.** The import dialog's **Part library** row names a `.crlib` anywhere,
-  including in another workspace. The design reads it directly, so an edit made there reaches this design
-  too. It is not copied into this workspace, so an archive of this workspace does not carry it.
+- **Point this design at it from the import dialog.** Its **Part library** row names a `.crlib` anywhere,
+  exactly as **Use It Where It Is** does.
+
+A shared library lives outside the workspace, so **Archive Workspace…** offers it as a row of its own,
+**ticked by default**, together with every model file it names &mdash; they keep their places relative
+to the library, so the recipient's copy resolves them unchanged, and the design is repointed at the
+archived copy. Untick it to send the design without the library.
 
 ### Parts the rail runs through {#series}
 
@@ -285,9 +309,16 @@ rail runs **through** it. Right-click its row in the parts table and choose **Ma
 terminals, and a part that the board shows with both pads on the rail's copper is offered directly &mdash;
 **Add *refdes* as series element** on the same menu, or **Add as series** under the table.
 
-Selecting a series row opens its editor under the table: its **DCR**, and **either** an R-L **or** a
-Touchstone file. Every value is the row's own; a blank one takes the part library's row where that row is
-classed **Other**, and the watermark says what that is. The table's *model source* column names which won
+To edit a series part's model, right-click its row and choose **Edit Model Source…**, or double-click its
+*model source* cell. The dialog holds its **DC resistance**, and **either** an R-L **or** a Touchstone
+file; each value is applied when you leave its box (or press Enter), the rail re-solves, and every change
+is one undo step in the railRF window. Every value is the row's own; a blank one takes the part library's row where that row is
+classed **Other**, and the watermark says what that is. A file picked in the dialog stays the row's own until
+you press **Save to library**: that makes it the part number's **Model file** in the part library &mdash;
+adding the part number, classed Other, if the library lacks it &mdash; so every row with that part
+number, on any rail and in any design using the library, uses it. The row then takes the file from the
+library. If the library has other unsaved edits it is left open for you to save, and the row keeps its own
+file until you do. The table's *model source* column names which won
 for each number, so the same bead on four rails is one library row. A part classed Other that is left as
 a decoupling row is refused at Run, by name.
 
@@ -298,6 +329,12 @@ load beyond it. The sections have to form a tree from the source &mdash; a chain
 branches. railRF refuses, naming the parts, a **loop** (two series paths between the same copper, whose
 current split a lumped model cannot answer), a part with copper **around** it (it is shorted out), and
 copper that no chain of series parts connects to the source.
+
+A series part has to lie **between** the source and a load, with the rail's copper on both of its pads.
+One that hangs off the rail &mdash; a link between a switcher's inductor and the node the source is
+anchored on, say, which is upstream of the source &mdash; is refused by name, saying which end is on the
+rail. Either anchor the source on the part's far side, if the supply really enters through it, or take
+the part's row off the rail.
 
 With no artwork, the series rows are a chain in **row order**, nearest the source first, and each other
 part and load sits at the far end unless its row names the element it sits behind.
@@ -313,7 +350,7 @@ to the reference plane.
 Each of these is a series part: make it one first, as described above. Until you do, railRF treats
 it as a decoupling capacitor, and the parts table reads *unresolved* in the columns only a capacitor
 could fill. A series part's model is two things: its **DCR** and its **impedance over frequency**.
-You can state them on the rail's row, in the editor under the table, or once in the part library on a row
+You can state them on the rail's row, in its **Edit Model Source…** dialog, or once in the part library on a row
 classed **Other**, where **ESR** is the DCR and **Model file** is the impedance file. A library row
 cannot state an R-L. Use a Touchstone file there, or state the R-L on each rail's row.
 
@@ -365,8 +402,8 @@ Three other things come out of the same solve.
 
 {{ui: railrf-impedance}}
 
-Scroll the results column past the DC answers and it judges each observation port's |Z| against its
-target, reporting the verdict as a sentence: *"Passes by 0.6 dB at its worst, 100 MHz."* A violation
+On the **Frequency** tab of the results column &mdash; the |Z| plot is on that tab only &mdash; railRF judges
+each observation port's |Z| against its target, reporting the verdict as a sentence: *"Passes by 0.6 dB at its worst, 100 MHz."* A violation
 names its frequency and its margin in decibels.
 
 No curve at all? The card under the plot on the **Frequency** tab says why &mdash; most often a source with no

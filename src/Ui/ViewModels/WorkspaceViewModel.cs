@@ -7922,10 +7922,20 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// of <b>Use existing library…</b>. Copying a file that is already saved with the workspace would
     /// only make two libraries to keep in step.
     /// </summary>
+    /// <remarks>
+    /// <b>Also the REFERENCE route (owner, 2026-09-24)</b>: a library outside the workspace — one a
+    /// team shares across boards — is named where it is rather than copied, when the user chooses
+    /// that. It is document-relative like every other reference, and Archive Workspace offers it,
+    /// with its model files, as an external row ticked by default
+    /// (<c>WorkspaceArchiveScanner.PartLibraryClosure</c>).
+    /// </remarks>
+    /// <param name="replace">True to name it IN PLACE OF a library the design already has — "Use
+    /// instead". The one it replaces is left on disk untouched.</param>
     /// <returns>The library's absolute path, or null.</returns>
-    public string? UsePartLibraryForRailDocument(string crailPath, string crlibPath, out string? error)
+    public string? UsePartLibraryForRailDocument(
+        string crailPath, string crlibPath, out string? error, bool replace = false)
     {
-        if (PartLibraryTargetFor(crailPath, out error) is not { } target) return null;
+        if (PartLibraryTargetFor(crailPath, out error, replace) is not { } target) return null;
 
         string crlib = Path.GetFullPath(crlibPath);
         try   { PartLibraryIo.LoadFromFile(crlib, validate: false); }
@@ -7954,7 +7964,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// Every refusal that has to be settled before a part library is written or named — shared by
     /// Create and Use existing so the two cannot come to disagree about when a design may take one.
     /// </summary>
-    private PartLibraryTarget? PartLibraryTargetFor(string crailPath, out string? error)
+    private PartLibraryTarget? PartLibraryTargetFor(string crailPath, out string? error, bool replace = false)
     {
         error = null;
         if (CurrentWorkspacePath is not { Length: > 0 })
@@ -7984,7 +7994,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // A reference to a file that is GONE is not a library — it is the state a user is in after
         // deleting one, and refusing here left no way back but hand-editing the `.crail` (field
         // report, 2026-09-23). The new library replaces the dangling reference, and says so.
-        if (document.PartLibraryRef is { Length: > 0 } existing
+        if (!replace
+            && document.PartLibraryRef is { Length: > 0 } existing
             && File.Exists(CircuitRF.Core.RefPath.Resolve(Path.GetDirectoryName(crail)!, existing)))
         {
             error = $"'{Path.GetFileName(crail)}' already names a part library ('{existing}').";
@@ -7999,7 +8010,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     {
         error = null;
         var (crail, document, live) = target;
-        string? replaced = document.PartLibraryRef is { Length: > 0 } dangling ? dangling : null;
+        string? replaced = document.PartLibraryRef is { Length: > 0 } previous ? previous : null;
+
+        // Only a reference to a file that is GONE is reported below. One replaced on purpose — "Use
+        // instead" — is what the user just asked for, and the library it named is still on disk.
+        bool dangling = replaced is not null
+            && !File.Exists(CircuitRF.Core.RefPath.Resolve(Path.GetDirectoryName(crail)!, replaced));
 
         // The reference, and the document it goes in. Document-relative, like every other reference a
         // `.crail` carries.
@@ -8029,7 +8045,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         live?.AdoptPartLibrary(crlib);
         live?.NoteSaved(crail);
 
-        if (replaced is not null)
+        if (dangling)
             error = $"'{Path.GetFileName(crail)}' named the part library '{replaced}', which no longer "
                   + $"exists; it now names '{Path.GetFileName(crlib)}' instead.";
 
@@ -8064,6 +8080,48 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         }
 
         library.ViewModel.ImportTable(sourcePath);
+        return true;
+    }
+
+    /// <summary>
+    /// railRF's <b>Save to library</b> (owner, 2026-09-24): makes a series row's own Touchstone file the
+    /// model file of its part number in the design's part library, through the library's EDITOR — one
+    /// undoable edit, the way <see cref="MergeIntoPartLibrary"/> reaches it.
+    /// </summary>
+    /// <remarks>
+    /// <b>Saved at once only where the library had nothing else unsaved.</b> Writing it would otherwise
+    /// save edits the user had not decided to keep; then the edit is made, the library is left open
+    /// and dirty, and <paramref name="saved"/> says so. A save reaches every open railRF window through
+    /// the editor's own <c>PartLibrarySaved</c>.
+    /// </remarks>
+    /// <param name="isOther">Whether the library row is classed Other — only then does a series row
+    /// with no file of its own take the library's (R-rail35-2b).</param>
+    public bool SaveModelToPartLibrary(
+        string crlibPath, string partNumber, string modelPath,
+        out bool saved, out bool isOther, out string? error)
+    {
+        saved = false;
+        isOther = false;
+        error = null;
+
+        string target = Path.GetFullPath(crlibPath);
+        OpenOrActivatePartLibrary(target);
+        if (!_openDocsByPath.TryGetValue(target, out var doc) || doc is not PartLibraryDocument library)
+        {
+            error = $"'{Path.GetFileName(target)}' did not open, so the model file was not saved to it.";
+            return false;
+        }
+
+        var editor = library.ViewModel;
+        bool hadOtherEdits = editor.IsDirty;
+        var row = editor.SetPartModel(partNumber, modelPath);
+        isOther = !row.IsCapacitor;
+
+        if (!hadOtherEdits)
+        {
+            editor.SaveCommand.Execute(null);
+            saved = !editor.IsDirty;
+        }
         return true;
     }
 

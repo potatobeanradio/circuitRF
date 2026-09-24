@@ -116,6 +116,25 @@ public sealed class LayoutPadsTests(ITestOutputHelper output) : IDisposable
         }
     }
 
+    /// <summary>
+    /// <b>A mirrored footprint is soldered to the bottom</b> (owner, 2026-09-24): railRF reads its lands
+    /// on the bottom copper, as the board exporters already turn them over. The unmirrored part beside
+    /// it stays on the top — the land the footprint draws its pins on.
+    /// </summary>
+    [Fact]
+    public void AMirroredFootprintsLands_AreReadOnTheBottomCopper()
+    {
+        var bottom = Place("Land", "C2", Mm(9), Mm(7));
+        bottom.MirrorX = true;
+        var fx = Board(Place("Land", "C1", Mm(5), Mm(3)), bottom);
+
+        var pads = RailArtwork.PadsFor(fx.View, fx.Clay, fx.Tech, null).Pads;
+
+        Assert.All(pads.Where(p => p.Refdes == "C1"), p => Assert.Equal(Top, p.Layer));
+        Assert.All(pads.Where(p => p.Refdes == "C2"), p => Assert.Equal(Bot, p.Layer));
+        Assert.Equal(2, pads.Count(p => p.Refdes == "C2"));
+    }
+
     // ══ 3. An array placement ═══════════════════════════════════════════════════════════════════
 
     /// <summary>

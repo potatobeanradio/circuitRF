@@ -174,4 +174,33 @@ public static class PdnAttachments
                   "instead."
                 : $"{where} names {anchor.Describe(format)}, which is not on the rail's copper. Move " +
                   "it onto the rail, or give the refdes and pin the pad is under.";
+
+    /// <summary>
+    /// The refusal for a series part whose pads ARE on the board and are not both on the rail's
+    /// copper — a part that does not lie between the source and a load.
+    /// </summary>
+    /// <remarks>
+    /// Field report (2026-09-24): a 0 Ω link between a switcher's inductor and the output node was
+    /// declared series, with the source anchored on its output side, and the run said the far pad
+    /// was "not on this board". It was on the board; the copper under it simply is not the rail's,
+    /// because the part sits UPSTREAM of the source. The designer read the wrong sentence as a
+    /// question about the part's orientation. Which end is on the rail is known here, so it is said.
+    /// </remarks>
+    /// <param name="where">"Series part L1 on rail 'vsmps2'".</param>
+    /// <param name="off">An end that is not on the rail's copper.</param>
+    /// <param name="other">The part's other end.</param>
+    /// <param name="otherOnRail">Whether <paramref name="other"/> is on the rail's copper.</param>
+    public static string SeriesEndOffTheRail(
+        string where, string refdes, RailPortAnchor off, RailPortAnchor other, bool otherOnRail,
+        RailLengthFormat? format = null) =>
+        otherOnRail
+            ? $"{where} does not lie between the source and a load. Its end {other.Describe(format)} is " +
+              $"on the rail's copper, but {off.Describe(format)} is not: the copper under that pad is " +
+              $"joined to this rail by nothing but {refdes} itself, so {refdes} hangs off the rail rather " +
+              "than carrying its current. If the supply really enters through " +
+              $"{refdes}, anchor the source on {off.Describe(format)}'s side; otherwise remove " +
+              $"{refdes}'s row from this rail."
+            : $"{where} does not touch the rail: {off.Describe(format)} and {other.Describe(format)} " +
+              "are both on this board, and neither is on the rail's copper. Check the refdes, or " +
+              $"remove {refdes}'s row from this rail.";
 }

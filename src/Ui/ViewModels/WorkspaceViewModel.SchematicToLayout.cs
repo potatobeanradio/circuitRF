@@ -87,15 +87,20 @@ public partial class WorkspaceViewModel
 
         string schematicPath = doc.FilePath!;
         string schematicDir  = Path.GetDirectoryName(schematicPath)!;
-        string cellDir       = Path.GetDirectoryName(schematicDir)!;
         string schematicName = Path.GetFileNameWithoutExtension(schematicPath);
-        string layoutDir     = CellFolder.SubFolderPath(cellDir, ViewType.Layout);
-        string targetPath    = Path.Combine(layoutDir, schematicName + CellFolder.ViewExtension(ViewType.Layout));
+
+        // A schematic in a cell's schematic/ folder writes that cell's layout/; one saved loose — at a
+        // workspace's root, say — writes the layout beside it. Null cellDir is the loose case, which
+        // has no .ccell and so no primary to maintain (CellFolder.SiblingView).
+        var sibling          = CellFolder.SiblingView(schematicPath, ViewType.Schematic, ViewType.Layout);
+        string? cellDir      = sibling.CellDir;
+        string layoutDir     = sibling.TargetDir;
+        string targetPath    = sibling.TargetPath;
 
         // R-L5-17: capture primacy BEFORE touching anything.
-        var primaryBefore = CellFolder.ResolvePrimary(cellDir, ViewType.Layout);
-        bool hadNoRealPrimary = primaryBefore.State is not (PrimaryState.SoleFile or PrimaryState.NamedPresent);
-        string? primaryBeforeName = primaryBefore.ResolvedName;
+        var primaryBefore = cellDir is null ? null : CellFolder.ResolvePrimary(cellDir, ViewType.Layout);
+        bool hadNoRealPrimary = primaryBefore?.State is not (PrimaryState.SoleFile or PrimaryState.NamedPresent);
+        string? primaryBeforeName = primaryBefore?.ResolvedName;
 
         bool createdNewFile = !File.Exists(targetPath);
         if (createdNewFile)
@@ -169,7 +174,8 @@ public partial class WorkspaceViewModel
             addedRegion = result.AddedRegion;
         }
 
-        SeedWBondSidecar(doc.ViewModel.EditModel, cellDir, schematicName, layoutVm, onlyWBond);
+        SeedWBondSidecar(doc.ViewModel.EditModel, cellDir ?? layoutDir, schematicName, layoutVm, onlyWBond,
+                         looseDir: cellDir is null ? layoutDir : null);
 
         // …and now say where it went. Harmless if the canvas has not been laid out yet — neither zoom
         // does anything without valid bounds, and the canvas's own initial fit then runs against a
@@ -192,7 +198,7 @@ public partial class WorkspaceViewModel
         // (CellFolder's own SoleFile branch handles the common case for free); only the ambiguous
         // multi-file/no-named-primary case needs an explicit .ccell write. A differently-named primary
         // is left untouched and reported.
-        if (createdNewFile)
+        if (createdNewFile && cellDir is not null)
         {
             if (hadNoRealPrimary)
             {
@@ -221,15 +227,18 @@ public partial class WorkspaceViewModel
     /// before the sidecar existed has no wire overlay on it. Attaching here is what puts the wires on
     /// screen now rather than on the next reopen.</para>
     /// </summary>
+    /// <param name="looseDir">The folder a LOOSE schematic and its layout share, or null in a cell
+    /// folder — see <see cref="WBondCellSeeding.Seed"/>.</param>
     private void SeedWBondSidecar(SchematicEditModel model, string cellDir, string cellName,
-                                  LayoutEditorViewModel layoutVm, EditableComponent? only = null)
+                                  LayoutEditorViewModel layoutVm, EditableComponent? only = null,
+                                  string? looseDir = null)
     {
         // The LIVE design when this cell's layout is already open with wires on it. Passing it is what
         // makes the merge correct rather than merely visible: an open editor holds its own design object
         // and writes it back on save, so merging through the file would change nothing on screen and be
         // overwritten moments later (owner, 2026-08-17, with the workspace attached — the `.wBond` held
         // G1 and G2 while the layout showed only G1).
-        var seeded = WBondCellSeeding.Seed(model, cellDir, cellName, only, layoutVm.WireDesign);
+        var seeded = WBondCellSeeding.Seed(model, cellDir, cellName, only, layoutVm.WireDesign, looseDir);
         if (seeded.Outcome == WBondCellSeeding.Outcome.NoWBond) return;
 
         // Before the messages, so a repaint is not waiting behind a message sink.
@@ -296,20 +305,25 @@ public partial class WorkspaceViewModel
         }
 
         string layoutDir     = Path.GetDirectoryName(layoutPath)!;
-        string cellDir       = Path.GetDirectoryName(layoutDir)!;
         string layoutName    = Path.GetFileNameWithoutExtension(layoutPath);
-        string schematicDir  = CellFolder.SubFolderPath(cellDir, ViewType.Schematic);
-        string targetPath    = Path.Combine(schematicDir, layoutName + CellFolder.ViewExtension(ViewType.Schematic));
 
-        var primaryBefore = CellFolder.ResolvePrimary(cellDir, ViewType.Schematic);
-        bool hadNoRealPrimary = primaryBefore.State is not (PrimaryState.SoleFile or PrimaryState.NamedPresent);
-        string? primaryBeforeName = primaryBefore.ResolvedName;
+        // The mirror of Update Layout from Schematic's own rule: a loose layout's schematic is the
+        // one beside it, never a schematic/ folder made next to its PARENT (CellFolder.SiblingView).
+        var sibling          = CellFolder.SiblingView(layoutPath, ViewType.Layout, ViewType.Schematic);
+        string? cellDir      = sibling.CellDir;
+        string schematicDir  = sibling.TargetDir;
+        string targetPath    = sibling.TargetPath;
+
+        var primaryBefore = cellDir is null ? null : CellFolder.ResolvePrimary(cellDir, ViewType.Schematic);
+        bool hadNoRealPrimary = primaryBefore?.State is not (PrimaryState.SoleFile or PrimaryState.NamedPresent);
+        string? primaryBeforeName = primaryBefore?.ResolvedName;
 
         bool createdNewFile = !File.Exists(targetPath);
         if (createdNewFile)
         {
             Directory.CreateDirectory(schematicDir);
-            SchematicPersistence.SaveToFile(targetPath, new SchematicEditModel(), cellName: Path.GetFileName(cellDir));
+            SchematicPersistence.SaveToFile(targetPath, new SchematicEditModel(),
+                                            cellName: cellDir is null ? layoutName : Path.GetFileName(cellDir));
             _factory.ProjectTreeTool?.Refresh();
         }
 
@@ -349,7 +363,7 @@ public partial class WorkspaceViewModel
             else Messages.Success(line);
         }
 
-        if (createdNewFile)
+        if (createdNewFile && cellDir is not null)
         {
             if (hadNoRealPrimary)
             {

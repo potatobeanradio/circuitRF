@@ -204,6 +204,9 @@ public static class RailValueFormat
         return -1;
     }
 
+    /// <summary>The prefixes a bare one may stand for, in <see cref="MatchUnit"/>'s normalised spelling.</summary>
+    private const string SiPrefixes = "fpnµmkMG";
+
     /// <summary>The ladder spelling one typed token means, or null when it means none of them.</summary>
     /// <remarks>
     /// <b>Case is only ignored where ignoring it is unambiguous</b> — <c>MatchValueFormat</c>'s rule,
@@ -213,6 +216,9 @@ public static class RailValueFormat
     /// </remarks>
     private static string? MatchUnit(string token, RailQuantity quantity)
     {
+        // A space INSIDE the unit is not part of it: "400n H" is "400nH" (field report, 2026-09-24 —
+        // the two read differently, and nothing on screen said which one had been refused).
+        token = string.Concat(token.Where(c => !char.IsWhiteSpace(c)));
         if (token.Length == 0) return null;
         string normalized = token.Replace('u', 'µ').Replace("ohm", "Ω", StringComparison.OrdinalIgnoreCase);
 
@@ -221,6 +227,16 @@ public static class RailValueFormat
             if (string.Equals(u, token, StringComparison.Ordinal)
                 || string.Equals(u, normalized, StringComparison.Ordinal))
                 return u;
+
+        // A bare SI PREFIX names the field's own base unit — "400n" in an inductance field is 400 nH,
+        // and "1.2u" is the spelling the series editor's own refusal suggests. EXACT case, and never
+        // the loose match below: m and M are 1e9 apart, so "10m" in a frequency field is refused
+        // rather than read as 10 MHz.
+        if (normalized.Length == 1 && SiPrefixes.Contains(normalized[0]))
+        {
+            string withBase = normalized + BaseUnitOf(quantity);
+            return Array.Find(ladder, u => string.Equals(u, withBase, StringComparison.Ordinal));
+        }
 
         string? loose = null;
         foreach (string u in ladder)

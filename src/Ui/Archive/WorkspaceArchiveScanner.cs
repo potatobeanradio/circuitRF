@@ -453,7 +453,7 @@ public static class WorkspaceArchiveScanner
                 DisplayName = g.Title,
                 Detail      = g.Detail,
                 SourcePath  = g.Root,
-                ArchivePath = $"{ExternalFolder}/{SpiceFolder}/{folder}",
+                ArchivePath = $"{ExternalFolder}/{g.Folder}/{folder}",
                 IsDirectory = true,
                 Members     = g.Members,
                 Selected    = true,
@@ -481,6 +481,9 @@ public static class WorkspaceArchiveScanner
         public List<string> Files   { get; } = [];
         public List<string> Entries { get; } = [];      // the files a document actually names
         public List<string> Why     { get; } = [];      // what pulled each entry in
+
+        /// <summary>The sub-folder of <see cref="ExternalFolder"/> the subtree lands in.</summary>
+        public string Folder { get; init; } = SpiceFolder;
 
         public string Title => string.Join(", ", Entries.Select(Path.GetFileName));
 
@@ -523,12 +526,19 @@ public static class WorkspaceArchiveScanner
 
         foreach (var (abs, why) in externals.OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase).ToList())
         {
-            if (!IsSpiceDeck(abs)) continue;
+            bool library = IsPartLibrary(abs);
+            if (!library && !IsSpiceDeck(abs)) continue;
 
-            var closure = CloseOver(abs, plan.WorkspaceDir, kitRoots);
+            var closure = library
+                ? PartLibraryClosure(abs, plan.WorkspaceDir, kitRoots)
+                : CloseOver(abs, plan.WorkspaceDir, kitRoots);
             if (closure.Count <= 1) continue;                 // one file: today's row, unchanged
 
-            var g = new SpiceGroup { Root = CommonAncestor(closure) };
+            var g = new SpiceGroup
+            {
+                Root = CommonAncestor(closure),
+                Folder = library ? LibrariesFolder : SpiceFolder,
+            };
             g.Files.AddRange(closure);
             g.Entries.Add(abs);
             g.Why.Add(why);
@@ -580,6 +590,52 @@ public static class WorkspaceArchiveScanner
         if (!kept.Any(f => DocumentFileRefs.PathComparer.Equals(f, Path.GetFullPath(entry))))
             kept.Insert(0, Path.GetFullPath(entry));
 
+        return kept;
+    }
+
+    /// <summary>Sub-folder of <see cref="ExternalFolder"/> that receives a referenced part library
+    /// together with its model files.</summary>
+    public const string LibrariesFolder = "libraries";
+
+    private static bool IsPartLibrary(string path) =>
+        string.Equals(Path.GetExtension(path), CircuitRF.Design.RailRf.PartLibraryIo.Extension,
+                      StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// A part library a design REFERENCES from outside the workspace, and the model files it names —
+    /// which it names RELATIVE TO ITSELF, so the library alone would arrive with every Touchstone
+    /// broken. The subtree keeps their relative layout, exactly as a SPICE deck's closure does, so
+    /// the library needs no rewriting and only the design's reference to it is repointed.
+    /// </summary>
+    /// <remarks>
+    /// A model file inside the workspace or a kit is left out, as <see cref="CloseOver"/> leaves one
+    /// out: it already travels. An unreadable library travels alone — the reference names it and the
+    /// recipient must at least have that.
+    /// </remarks>
+    private static List<string> PartLibraryClosure(string entry, string workspaceDir, List<string> kitRoots)
+    {
+        string full = Path.GetFullPath(entry);
+        var kept = new List<string> { full };
+
+        CircuitRF.Design.RailRf.PartLibrary library;
+        try   { library = CircuitRF.Design.RailRf.PartLibraryIo.LoadFromFile(full, validate: false); }
+        catch { return kept; }
+
+        string dir = Path.GetDirectoryName(full)!;
+        foreach (var row in library.Rows)
+        {
+            if (row.ModelRef is not { Length: > 0 } stored) continue;
+
+            string model;
+            try { model = Path.GetFullPath(CircuitRF.Core.RefPath.Resolve(dir, stored)); } catch { continue; }
+
+            if (!File.Exists(model)) continue;
+            if (kept.Contains(model, DocumentFileRefs.PathComparer)) continue;
+            if (IsInside(model, workspaceDir)) continue;
+            if (kitRoots.Any(k => IsInside(model, k))) continue;
+
+            kept.Add(model);
+        }
         return kept;
     }
 

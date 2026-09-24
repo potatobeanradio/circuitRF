@@ -291,6 +291,16 @@ internal static class Rail
             JsonRun.Note(CliDiagnostics.RailRunNote(d));
         }
 
+        // A row that states which side of the board its part is on moves that part's lands there —
+        // the window's own call, so the verb and the window read one board (RailPartSides).
+        var (sidedPads, sidedNetPoints) = RailPartSides.Apply(
+            resolvedPads.Pads, resolvedPads.NetPoints, doc, board.Technology);
+        foreach (string d in RailPartSides.Disagreements(doc))
+        {
+            Console.Error.WriteLine("warning: " + d);
+            JsonRun.Note(CliDiagnostics.RailRunNote(d));
+        }
+
         var run = RailDcRun.Run(new RailDcRequest
         {
             Document       = doc,
@@ -299,8 +309,8 @@ internal static class Rail
             DbuPerMicron   = board.View.DbuPerMicron,
             LengthFormat   = board.FormatFor(doc),
             Model          = o.Model,
-            Pads           = resolvedPads.Pads,
-            NetPoints      = resolvedPads.NetPoints,
+            Pads           = sidedPads,
+            NetPoints      = sidedNetPoints,
             ReferenceNet   = doc.ReferenceNet,
             // Brief 35: a series element's DCR falls back to its Other library row's ESR, as the
             // window's does. An unreadable library is reported by the provenance banner below.

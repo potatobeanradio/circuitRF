@@ -73,6 +73,14 @@ public sealed partial class RailRfViewModel
     public Func<IReadOnlyList<PlacedPin>> BoardPads =>
         () => Board?.Pads ?? [];
 
+    /// <summary>
+    /// The board's pads and net points with every side a parts row states applied — <b>what every
+    /// ELECTRICAL reading takes</b> (owner, 2026-09-24; <see cref="RailPartSides"/>). The board keeps
+    /// the artwork's own reading, so turning a row back to the artwork's side needs no re-read.
+    /// </summary>
+    private (IReadOnlyList<PlacedPin> Pads, IReadOnlyList<PdnNetPoint> NetPoints) SidedPads(RailBoardInputs board) =>
+        RailPartSides.Apply(board.Pads, board.NetPoints, _document, board.Technology);
+
     /// <summary>The unit the last refresh printed in — see <see cref="RefreshIfUnitChanged"/>.</summary>
     private RailLengthFormat _lastLengthFormat = RailLengthFormat.Dbu;
 

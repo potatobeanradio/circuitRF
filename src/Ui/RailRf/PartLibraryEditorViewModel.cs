@@ -398,6 +398,12 @@ public sealed partial class PartLibraryRowViewModel(PartLibraryEditorViewModel o
         string dir = System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(owner.FilePath))!;
         ModelRef = CircuitRF.Core.RefPath.ToStored(
             System.IO.Path.GetRelativePath(dir, System.IO.Path.GetFullPath(pickedPath))) ?? "";
+
+        // The setter's Commit refreshes every field BUT the one being edited, which is right for a
+        // keystroke — the TextBox already shows it — and wrong here, where nobody typed: the picked
+        // path was stored and the cell stayed empty until the library was next opened (field
+        // report, 2026-09-24).
+        OnPropertyChanged(nameof(ModelRef));
     }
 
     // ── what the library already computes, and nothing showed (R-rail24-2) ─────────────────────
@@ -696,6 +702,40 @@ public sealed partial class PartLibraryEditorViewModel : ObservableObject
             RefreshDerived();
         }
         ImportReport = [$"{name}: {report.Summary}", .. report.Notes];
+    }
+
+    /// <summary>
+    /// Makes <paramref name="modelPath"/> the model file of <paramref name="partNumber"/>'s row, as ONE
+    /// undoable edit — adding the row, classed <see cref="PartLibraryRow.OtherClass"/>, where the
+    /// library has none. railRF's <b>Save to library</b> on a series row (owner, 2026-09-24).
+    /// </summary>
+    /// <remarks>
+    /// Stored relative to this library, as <see cref="PartLibraryRowViewModel.SetModelFile"/> stores a
+    /// picked file, so the library and its models can move together — and so Archive Workspace can
+    /// carry a SHARED library's models beside it.
+    /// </remarks>
+    /// <returns>The row, as it now stands.</returns>
+    public PartLibraryRow SetPartModel(string partNumber, string modelPath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(partNumber);
+        ArgumentException.ThrowIfNullOrWhiteSpace(modelPath);
+
+        string before = SnapshotJson();
+        var row = Working.Part(partNumber);
+        if (row is null)
+        {
+            row = new PartLibraryRow { PartNumber = partNumber.Trim(), DielectricClass = PartLibraryRow.OtherClass };
+            Working.Rows.Add(row);
+        }
+
+        string dir = System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(FilePath))!;
+        row.ModelRef = CircuitRF.Core.RefPath.ToStored(
+            System.IO.Path.GetRelativePath(dir, System.IO.Path.GetFullPath(modelPath)));
+
+        CommitEdit(before, $"Model file for {row.PartNumber}");
+        RebuildRows();
+        RefreshDerived();
+        return row;
     }
 
     private bool _suppressCommit;

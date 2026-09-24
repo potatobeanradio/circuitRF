@@ -264,6 +264,11 @@ new, and *reports* — never auto-deletes — what no longer exists in the schem
 after the first generation and run it again after a schematic edit; a generator that stomped your
 placement would be one you used exactly once.
 
+**Where the layout is written.** A schematic in a cell's `schematic/` folder writes that cell's
+`layout/` folder. A schematic saved **loose** &mdash; at the workspace's root, say &mdash; writes its layout
+beside it, under the same name: `PDN1.csch` updates `PDN1.clay` in the same folder. Update Schematic
+from Layout follows the same rule in the other direction.
+
 ### Update Schematic from Layout
 
 <kbd>⇧⌘U</kbd>. The mechanical inverse: it walks the **layout's** instances and writes the schematic to

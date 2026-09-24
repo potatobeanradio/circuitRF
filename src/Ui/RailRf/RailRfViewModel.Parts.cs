@@ -118,6 +118,8 @@ public sealed partial class RailRfViewModel
     /// </remarks>
     public void RebuildParts()
     {
+        ShowPartSides = BoardHasBottom();
+
         // The selection is kept by REFDES across a rebuild, not by reference. Every row object here
         // is new on every rebuild — and a rebuild happens on a solve, on a part edit and on the
         // placement or BOM arriving — so holding the old object would drop the user's selection, and
@@ -224,11 +226,13 @@ public sealed partial class RailRfViewModel
             string? position = null;
             (long X, long Y)? positionDbu = null;
             var positionFrom = RailPartPositionSource.Nothing;
+            bool mirrored = false;
 
             if (placedBy.TryGetValue(part.Refdes, out var placement))
             {
                 position = BoardLengthFormat().Point(placement.X, placement.Y)
                          + (placement.Mirror ? " · bottom" : "");
+                mirrored = placement.Mirror;
                 positionDbu = (placement.X, placement.Y);
                 positionFrom = RailPartPositionSource.PlacementFile;
             }
@@ -236,6 +240,7 @@ public sealed partial class RailRfViewModel
             {
                 position = BoardLengthFormat().Point(origin.X, origin.Y)
                          + (origin.Mirrored ? " · bottom" : "");
+                mirrored = origin.Mirrored;
                 positionDbu = (origin.X, origin.Y);
                 positionFrom = RailPartPositionSource.Artwork;
             }
@@ -252,7 +257,16 @@ public sealed partial class RailRfViewModel
                 element?.MountingInductanceHenries ?? part.MountingInductanceHenries,
                 position, element, boardFootprint, positionFrom,
                 seriesModels.TryGetValue(part.Refdes, out var series) ? series : null,
-                positionDbu);
+                positionDbu)
+            {
+                // Top or bottom as the ARTWORK has it: where its lands are (a mirrored footprint's
+                // are turned over when the board is read), else the placement's own mirror flag.
+                ArtworkSide = Board is { } sideBoard
+                    ? RailPartSides.FromPads(part.Refdes, sideBoard.Pads, sideBoard.Technology)
+                      ?? (mirrored ? RailBoardSide.Bottom : null)
+                    : null,
+                ShowSide = ShowPartSides,
+            };
             _partsInDocumentOrder.Add(built);
 
             if (built.IsUnresolved) PartsUnresolved++;
@@ -348,6 +362,54 @@ public sealed partial class RailRfViewModel
         if (changed == 0) return 0;
 
         RebuildParts();
+        QueueResolve();
+        return changed;
+    }
+
+    /// <summary>
+    /// Whether the parts table shows its <b>side</b> column (owner, 2026-09-24): only where the board
+    /// HAS a bottom — two outer copper layers in the stackup and copper drawn on the bottom one. A
+    /// single-sided board has no choice to offer.
+    /// </summary>
+    [ObservableProperty]
+    private bool _showPartSides;
+
+    private bool BoardHasBottom() =>
+        Board is { } board
+        && RailPartSides.OuterCopper(board.Technology) is { } outer
+        && board.Shapes.Any(sh => sh.Layer == outer.Bottom);
+
+    /// <summary>
+    /// Puts parts on the top or the bottom of the board — <b>on every rail that names them</b>: a
+    /// part is soldered to one side, and two rails disagreeing about it would be two boards.
+    /// </summary>
+    /// <remarks>
+    /// Stated even where it matches what the artwork says, because the user chose it; the next
+    /// re-read of a board that moved the part does not then move it back. The pads are re-read by
+    /// <see cref="RailPartSides.Apply"/> on the way into every electrical reading, so the board itself
+    /// is not re-read.
+    /// </remarks>
+    /// <returns>How many rows changed.</returns>
+    public int SetPartsBoardSide(IEnumerable<string> refdeses, RailBoardSide side)
+    {
+        ArgumentNullException.ThrowIfNull(refdeses);
+        var wanted = new HashSet<string>(refdeses, StringComparer.OrdinalIgnoreCase);
+        if (wanted.Count == 0) return 0;
+
+        int changed = 0;
+        foreach (var rail in _document.Rails)
+            for (int i = 0; i < rail.Parts.Count; i++)
+            {
+                var part = rail.Parts[i];
+                if (!wanted.Contains(part.Refdes) || part.BoardSide == side) continue;
+                rail.Parts[i] = part with { BoardSide = side };
+                changed++;
+            }
+
+        if (changed == 0) return 0;
+
+        RebuildParts();
+        RebuildPartOffer();
         QueueResolve();
         return changed;
     }
@@ -561,7 +623,7 @@ public sealed partial class RailRfViewModel
             ? RailPartDiscovery.Discover(new RailDiscoveryRequest
             {
                 Rail         = rail,
-                Pads         = board.Pads,
+                Pads         = SidedPads(board).Pads,
                 Regions      = SeriesRegions(rail),
                 Bom          = Bom,
                 ReferenceNet = ReturnNetFor(rail),
@@ -992,31 +1054,31 @@ public sealed partial class RailRfViewModel
     public void AcceptSeriesOffer() => AddSeriesParts();
 
     /// <summary>
-    /// The in-pane editor for the selected row, where it is series — null otherwise
-    /// (R-rail35-1b).
+    /// The editor of the <b>Edit Model Source…</b> dialog while it is open, or null (owner,
+    /// 2026-09-24).
     /// </summary>
+    /// <remarks>
+    /// It used to be an in-pane editor that opened under the parts table whenever a series row was
+    /// SELECTED — so the table jumped up and down as a user clicked through its rows. It now opens
+    /// only when asked for, from the row's context menu or its model-source cell, and selection
+    /// leaves the table where it is.
+    /// </remarks>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasSeriesEditor))]
     private RailSeriesEditorViewModel? _seriesEditor;
 
-    /// <summary>True while the selected row is series and its editor is shown.</summary>
-    public bool HasSeriesEditor => SeriesEditor is not null;
-
-    /// <summary>
-    /// Keeps <see cref="SeriesEditor"/> on the selected row — the SAME instance while the refdes is
-    /// the same, so a rebuild does not replace a field under the cursor.
-    /// </summary>
-    private void SyncSeriesEditor()
+    /// <summary>Opens the editor on a series row — null where the refdes is not one on this rail.</summary>
+    public RailSeriesEditorViewModel? BeginSeriesEdit(string refdes)
     {
-        if (SelectedPart is { IsSeries: true } row)
-        {
-            if (SeriesEditor is { } open && string.Equals(open.Refdes, row.Refdes, StringComparison.OrdinalIgnoreCase))
-                open.Refresh();
-            else
-                SeriesEditor = new RailSeriesEditorViewModel(this, row.Refdes);
-        }
-        else SeriesEditor = null;
+        if (SelectedRail?.Parts.FirstOrDefault(p => string.Equals(p.Refdes, refdes, StringComparison.OrdinalIgnoreCase))
+            is not { IsSeries: true }) return null;
+        return SeriesEditor = new RailSeriesEditorViewModel(this, refdes);
     }
+
+    /// <summary>The dialog closed.</summary>
+    public void EndSeriesEdit() => SeriesEditor = null;
+
+    /// <summary>Keeps an open editor's fields on the document — after a rebuild, an undo or a solve.</summary>
+    private void SyncSeriesEditor() => SeriesEditor?.Refresh();
 
     /// <summary>
     /// Rewrites one part row, and re-solves — the series editor's single write path.

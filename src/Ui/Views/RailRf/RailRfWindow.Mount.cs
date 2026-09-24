@@ -97,4 +97,18 @@ public partial class RailRfWindow
 
         return [item];
     }
+
+    /// <summary>
+    /// A row's top/bottom combo (owner, 2026-09-24) — one call to
+    /// <see cref="RailRfViewModel.SetPartsBoardSide"/>, on the whole selection where the row is in
+    /// it, the checkbox's own rule.
+    /// </summary>
+    private void OnPartSideChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (Vm is not { } vm || sender is not ComboBox { DataContext: RailPartRowViewModel row } box) return;
+        if (box.SelectedIndex < 0 || box.SelectedIndex == row.BoardSideIndex) return;
+
+        vm.SetPartsBoardSide(TargetsFor(row),
+            box.SelectedIndex == 1 ? CircuitRF.Design.RailRf.RailBoardSide.Bottom : CircuitRF.Design.RailRf.RailBoardSide.Top);
+    }
 }

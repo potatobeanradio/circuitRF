@@ -80,6 +80,17 @@ public enum RailPartConnection
     Series,
 }
 
+/// <summary>The side of the board a part is soldered to (owner, 2026-09-24) — see
+/// <see cref="RailPart.BoardSide"/>.</summary>
+public enum RailBoardSide
+{
+    /// <summary>Its pads are on the stackup's first copper layer.</summary>
+    Top,
+
+    /// <summary>Its pads are on the stackup's last copper layer.</summary>
+    Bottom,
+}
+
 /// <summary>
 /// Which side of a rail's series elements something sits on (R-rail25-2a, R-rail25-2d), where
 /// nothing measured it.
@@ -157,6 +168,19 @@ public sealed record RailPart
     /// deliberately absent. Two states, two spellings, and nothing may collapse them.</para>
     /// </summary>
     public bool Mounted { get; init; } = true;
+
+    /// <summary>
+    /// The side of the board the part is soldered to, or null to take it from the artwork — a
+    /// footprint placed MIRRORED is on the bottom, which is what the board exports already assume.
+    /// </summary>
+    /// <remarks>
+    /// Owner, 2026-09-24: a part on the bottom has its pads on BOTTOM copper, and railRF read every
+    /// footprint's pads on the layer the footprint draws them on — the top — so a bottom-side
+    /// capacitor was left out as "not on this rail's copper". <b>A fact about this board</b>, which is
+    /// why it lives on the rail's row and never in a <c>.crlib</c>: the same part number is fitted top
+    /// side on one board and bottom side on the next. See <see cref="RailPartSides"/>.
+    /// </remarks>
+    public RailBoardSide? BoardSide { get; init; }
 
     // ══ A SERIES ELEMENT (brief 25) ══════════════════════════════════════════════════════════
 

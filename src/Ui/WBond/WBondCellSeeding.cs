@@ -119,8 +119,14 @@ public static class WBondCellSeeding
     /// change nothing on screen AND be overwritten by that editor's next save. When it is here, it is
     /// the authority and the file is left for the editor to write.</para>
     /// </param>
+    /// <param name="looseDir">
+    /// The folder a LOOSE schematic and its layout share — one saved outside any cell folder — or null
+    /// for the ordinary cell. The wires are an attachment to the <c>.clay</c> either way, so they go
+    /// beside it; a loose document has no cell root, so there is no legacy location to honour.
+    /// </param>
     public static Result Seed(SchematicEditModel model, string cellDir, string cellName,
-                              EditableComponent? only = null, WBondDesign? liveDesign = null)
+                              EditableComponent? only = null, WBondDesign? liveDesign = null,
+                              string? looseDir = null)
     {
         ArgumentNullException.ThrowIfNull(model);
 
@@ -156,13 +162,13 @@ public static class WBondCellSeeding
         // WB40 (revised 2026-08-17): the wires are an ATTACHMENT to the .clay, so they live in layout/
         // sharing that .clay's stem — not at the cell root. Schematic → Layout emits layout/<cell>.clay,
         // so the stem is the cell name.
-        string layoutDir = Path.Combine(cellDir, CellFolder.LayoutSubFolder);
+        string layoutDir = looseDir ?? Path.Combine(cellDir, CellFolder.LayoutSubFolder);
         string path      = Path.Combine(layoutDir, cellName + ".wBond");
 
         // A pre-2026-08-17 workspace keeps its wires at the cell root. Seeding a fresh file into layout/
         // would SHADOW them (attachment resolution prefers the stem-paired one), so the user's edited
         // wires would silently stop being the ones drawn and simulated. Keep theirs, name the move.
-        string? legacy = File.Exists(path) ? null : WBondCell.LegacyRootPath(layoutDir);
+        string? legacy = File.Exists(path) || looseDir is not null ? null : WBondCell.LegacyRootPath(layoutDir);
 
         if (File.Exists(path) || legacy is not null)
         {

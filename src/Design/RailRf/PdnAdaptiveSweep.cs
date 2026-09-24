@@ -145,7 +145,12 @@ public static class PdnAdaptiveSweep
             },
             stopped: stopped);
 
-        if (outcome.Note is { Length: > 0 } note) notes.Add(note);
+        // The engine's own sentence speaks an antenna's language — |S|, a -10 dB matched bandwidth,
+        // "radiation and loss" — which a rail has none of (field report, 2026-09-24: a designer
+        // pasted three "the resonance is real; it is the MATCH that is not there" in a row). Its
+        // NUMBERS are the answer; they are said again here in a rail's terms.
+        if (outcome.Ran) notes.Add(Describe(outcome, search, solved.Keys.First(), solved.Keys.Last(), ports));
+        else if (outcome.Note is { Length: > 0 } note) notes.Add(note);
 
         if (outcome.AddedFrequencies.Count > 0)
             notes.Add(
@@ -159,4 +164,60 @@ public static class PdnAdaptiveSweep
         return new PdnSampledSweep(
             [.. solved.Keys], [.. solved.Values], outcome.AddedFrequencies, outcome.Resonances, notes);
     }
+
+    /// <summary>
+    /// The search's finding in a rail's terms: where |Z| dips and peaks, how far, and how sharply.
+    /// </summary>
+    /// <remarks>
+    /// At f0 the port impedance is real, so the engine's <see cref="PlanarResonance.ResistanceOhm"/>
+    /// IS |Z| there — the floor of a series dip or the top of an anti-resonant peak, which is the
+    /// number a rail's designer reads against a target.
+    /// </remarks>
+    internal static string Describe(
+        PlanarResonanceOutcome outcome, PlanarResonanceSettings search, double loHz, double hiHz, int ports)
+    {
+        var sb = new System.Text.StringBuilder();
+        string onPort = ports > 1 ? $" on port {search.PortNumber}" : "";
+
+        if (outcome.StoppedEarly)
+            sb.Append("The resonance search was stopped before it finished; what follows is what it had " +
+                      "found by then. ");
+
+        if (outcome.Resonances.Count == 0)
+        {
+            sb.Append($"No resonance was found{onPort} between {Hz(loHz)} and {Hz(hiHz)}: the reactance " +
+                      "does not change sign between any two solved points. A resonance narrow enough to " +
+                      "fall between two neighbouring points leaves no sign change to find, so this is not " +
+                      "proof there is none — a finer grid is what would show one.");
+        }
+        else
+        {
+            sb.Append(outcome.Resonances.Count == 1 ? "One resonance" : $"{outcome.Resonances.Count} resonances")
+              .Append($" found{onPort} between {Hz(loHz)} and {Hz(hiHz)}: ");
+            sb.Append(string.Join("; ", outcome.Resonances.Select(r =>
+                r.Kind == PlanarResonanceKind.Parallel
+                    ? $"{Hz(r.FrequencyHz)}, an anti-resonance — |Z| peaks at {Ohms(r.ResistanceOhm)}, Q {r.Q:G3}"
+                    : $"{Hz(r.FrequencyHz)}, a series resonance — |Z| dips to {Ohms(r.ResistanceOhm)}, Q {r.Q:G3}")));
+            sb.Append('.');
+        }
+
+        if (outcome.CapBound)
+            sb.Append($" The search stopped at its cap of {search.MaxAddedPoints} added point(s), so the curve " +
+                      "around these may still be coarse and a further resonance may be unfound.");
+
+        return sb.ToString();
+    }
+
+    private static string Hz(double hz) =>
+        !double.IsFinite(hz) ? "n/a"
+        : hz >= 1e9 ? $"{hz / 1e9:G4} GHz"
+        : hz >= 1e6 ? $"{hz / 1e6:G4} MHz"
+        : hz >= 1e3 ? $"{hz / 1e3:G4} kHz"
+        : $"{hz:G4} Hz";
+
+    private static string Ohms(double ohm) =>
+        !double.IsFinite(ohm) ? "n/a"
+        : Math.Abs(ohm) >= 1 ? $"{ohm:G4} Ω"
+        : Math.Abs(ohm) >= 1e-3 ? $"{ohm * 1e3:G4} mΩ"
+        : $"{ohm * 1e6:G4} µΩ";
 }

@@ -11905,3 +11905,27 @@ the series parts' DCR, which the board's library does not state.
   the capacitors alone was presented as the rail's. The refusal now says "blank or zero" and names the R
   column. The user doc's "What you provide" section explains both values, and Q1 points to the message
   card.
+
+## railRF round 6 — a series part off the rail; the resonance note; a loose view's sibling (2026-09-24)
+
+- **A series part with one end off the rail was refused as "no pad of that reference is on this
+  board".** The pad was on the board. `StampSeriesElements` passed a pad count of 0 to
+  `RefusalForUnresolved` whenever `PowerNodesFor` came back empty, so "on the board, not on the rail"
+  and "not on the board" read the same. On the field board a 0 Ω link sat between the switcher's
+  inductor and the node the source was anchored on, so it was UPSTREAM of the source. Its far pad's
+  copper (the link-to-inductor node) is not rail copper and never will be, and the designer took the
+  sentence as a question about the part's orientation. `PdnAttachments.SeriesEndOffTheRail` now names
+  which end is on the rail and gives the two ways out: anchor the source beyond the part, or take the
+  row off the rail. The old sentence stays for a reference that resolves to no pad. With the link and
+  its inductor off the rail, the field board's second rail solves (4.29 mV at 30 mA). Gate:
+  `RailRfFieldReport6Tests`.
+- **The resonance note was the antenna search's own sentence.** `PdnAdaptiveSweep` passed
+  `PlanarResonanceOutcome.Note` straight through, so a PDN run reported |S| at resonance, "no −10 dB
+  bandwidth to measure", "the MATCH that is not there" and "radiation and loss", in GHz, three times
+  over. The numbers were right and the language was not the rail's. `PdnAdaptiveSweep.Describe` now
+  restates them: f₀ in the band's own unit, series resonance as a |Z| dip and parallel as an
+  anti-resonance peak, with |Z| there (the engine's `ResistanceOhm`, since Z is real at f₀) and Q.
+  The engine's note is still used where the search declined to run.
+- **`CellFolder.SiblingView`** is where a view file's other view lives: in a cell folder, the other
+  view's sub-folder; for a loose document, beside it. Both Update commands read it. See
+  `src/Ui/RESOLVED.md`.

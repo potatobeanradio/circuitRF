@@ -35318,3 +35318,84 @@ generator edit — so an existing workspace's `.clay` is rewritten once on first
 - **Not seen working on screen.** Confirm it on the owner's machine.
 - A `.csmith` opens as a docked tab (`CircuitRfDockFactory.OpenDocument`), not a separate window, so
   a Smith Chart coming up behind is not this mechanism unless its tab had been torn off.
+
+## railRF round 6 — UX from the sixth outside report (2026-09-24)
+
+- **Update Layout from Schematic wrote its layout OUTSIDE the workspace** for a schematic saved at the
+  workspace's root. `RunLayoutUpdate` took `GetDirectoryName(schematicDir)` as the cell folder with no
+  check, and for a loose schematic that is the folder ABOVE the workspace. So `../layout/PDN1.clay` was
+  created there and opened with "Not part of any workspace", the technology prompt appeared, and the
+  PCell step refused because no workspace was open. Update Schematic from Layout made a stray
+  `schematic/` folder the same way. The designer blamed a technology rename, but that was incidental.
+  Both commands now go through `CellFolder.SiblingView`: a loose document's other view is the one
+  beside it. There is no `.ccell`, so the primary bookkeeping is skipped, and the wBond sidecar is
+  seeded beside the loose `.clay` (`WBondCellSeeding.Seed(..., looseDir)`).
+- **The |Z| plot showed on the DC tab as empty axes.** R-rail18-6a partitioned the CARDS by tab and
+  left the plot, and the marker boxes over it, on both. With an ideal source the DC tab showed a blank
+  plot, while the sentence explaining it was on the Frequency tab. `ShowImpedancePlot` gates both.
+  **Behaviour change to confirm with the owner**: the window opens on DC, so it now opens with no plot.
+- **The Sources card's R and L were not visible as fields.** An `InlineEditText` at rest is bare text,
+  so an empty R showed a faint "R" and a zero showed "0". The card now has headings (V open / R out /
+  L out) over fixed 56 px columns, which the row template shares. Fixed widths rather than
+  SharedSizeGroup, for the reason TechEditorView gives.
+- **"400n H" was refused and "400nH" read.** `MatchUnit` compared the whole trailing token, and a space
+  inside it matched nothing. Whitespace in the unit is now dropped. A bare SI prefix is also read as
+  the field's base unit, exact case only: `400n` is 400 nH and `1.2u` is 1.2 µH. `1.2u` was the spelling
+  the series editor's own refusal SUGGESTED, and the parser refused it. `10m` in a frequency field is
+  still refused rather than loosely matched to MHz. The BOM seed path is unaffected, because
+  `PartLibrarySeed.Capacitance` still requires a trailing F.
+- **A model file picked in the part library editor did not show until the library was reopened.**
+  `SetModelFile` wrote through the `ModelRef` setter. Its `Commit` → `Refresh(except: field)` skips the
+  field being edited, which is right for a keystroke (the TextBox already shows it) and wrong for a
+  picker. It now raises `ModelRef` itself.
+- **Owner decisions, same day, all three built:**
+  - **A shared library is referenced, and that is the default.** The expected use is a team keeping one
+    large `.crlib` for every project. "Use existing library…" now asks (`RailUseLibraryDialog`): **Use
+    It Where It Is** / **Use It Instead** is the default, and **Copy Into Workspace** / **Merge Into** is
+    the alternative. `UsePartLibraryForRailDocument(replace:)` names the library in place of the current
+    one and leaves the old one on disk. A replaced reference is no longer reported as "no longer exists";
+    that sentence is now kept for a reference whose file is actually gone.
+  - **The archive carries a shared library WITH its models.** An outside `.crlib` was already offered
+    through the `.crail` scan, but alone, and its `ModelRef`s are relative to ITSELF, so every
+    Touchstone broke in the archive. `WorkspaceArchiveScanner.PartLibraryClosure` groups the library
+    with its outside model files as one subtree row, like a SPICE deck's closure, under
+    `external/libraries/`, ticked by default. Model files inside the workspace or a kit are left out of
+    the group because they travel anyway. **Known gap**: an OUTSIDE library naming a model INSIDE the
+    workspace would arrive with that reference broken, because only the design's reference is repointed.
+  - **Save to library** on a series row: `WorkspaceViewModel.SaveModelToPartLibrary` → the editor's
+    `SetPartModel`, one undoable edit that adds an Other row where the part number is missing. It saves
+    at once only if the library had no other unsaved edits. When saved and the row is Other, the rail
+    row's own reference is cleared so it inherits from the library.
+  - **Top/bottom.** `RailPart.BoardSide` lives in the `.crail` and never the `.crlib`. The default comes
+    from the artwork: `RailArtwork.PadsFor` turns a MirrorX instance's lands over to the far outer
+    copper (`RailPartSides.Flip`), matching what `PcbWriter` does on export. A stated side is applied by
+    `RailPartSides.Apply` to the pads AND the net points on the way into every electrical reading
+    (`RailRfViewModel.SidedPads`, and the `rail` verb): DC, discovery, the sweep partition and the
+    mounting loops. The board keeps the artwork's reading, so no re-read is needed. The side column is
+    shown only where the stackup has two outer copper layers and there is copper on the bottom one. A
+    side edit applies to the part on EVERY rail, and `RailPartSides.Disagreements` reports a
+    hand-edited file that disagrees.
+- **The designer's workspace would not run here: every footprint was missing.** It had nothing to do
+  with railRF. His `.clay` names generated cells by hash. Here they came back under different names
+  (the hash includes the `.ctech`'s content, and his layout may predate beta.30), and
+  `GeneratedCellsLifecycle.Regenerate` should have repointed the instances. It repointed NONE, because
+  it matched `Path.GetFileName(inst.CellRef)` against the old name, and a Windows-written CellRef
+  (`..\..\..\.generated-cells\smt-0402@N_…`) has no separator macOS or Linux recognises. With no
+  footprints there were no pads, so JP1 bridged nothing, and rail 1 refused as "separate copper".
+  `NamesCell` / `ReplaceLastSegment` now split on either separator and keep the author's own. On a
+  fresh copy of his workspace: 55 instances repointed, and rail 1 gives his own report's 2.9966 V exactly.
+  Any Windows-authored layout opened on a Mac hits this the first time its generated cells change name.
+- **The side combo was drawn with both sides cut off.** The Fluent ComboBox's 64 px `ComboBoxThemeMinWidth`
+  (a local value on the template border, which no style can lower) was wider than the 70 px column
+  minus margins, so it was arranged centred and overflowed. The column is now 84 px, which also leaves
+  room for "bottom" beside the fixed 32 px chevron column, and the floor is lowered on that combo's own
+  `Resources`.
+- **The series editor made the parts table jump.** R-rail35-1b's editor lived in row 3 under the table
+  and opened whenever a series row was SELECTED, so clicking through the rows pushed the table up and
+  down. It is now **Edit Model Source…** (`RailSeriesModelDialog`), a modal dialog opened from a series
+  row's context menu or by double-clicking its model-source cell. It uses the same
+  `RailSeriesEditorViewModel`, now created by `BeginSeriesEdit`/`EndSeriesEdit` rather than by
+  selection, so the write path, re-solve and undo are unchanged. Its R and L are a real form: each label
+  sits right before its own left-aligned TextBox. The inline editor's right-aligned `InlineEditText`
+  put R a column away from its "ohms" and L against it. The boxes commit on LostFocus or Enter, not per
+  keystroke, because every commit re-solves; closing the window pushes a still-focused box.

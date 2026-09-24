@@ -1192,12 +1192,31 @@
                                             <mi:MaterialIcon Kind="Delete" Width="13" Height="13"/>
                                         </Button>
                                     </Grid>
+                                    <!-- ── COLUMN HEADINGS (field report, 2026-09-24) ───────────────
+                                         The R and L fields are InlineEditTexts, which at rest are bare
+                                         text: an empty one shows a faint single letter and a zero shows
+                                         "0". A designer told to "enter the R beside its voltage" did not
+                                         see a resistor on the card at all. Fixed widths, shared with the
+                                         row template below, so each heading sits over its own column
+                                         whether or not a row carries the ⚑. -->
+                                    <Grid ColumnDefinitions="*,56,56,56,14" Margin="0,0,0,1">
+                                        <TextBlock Classes="detailLabel" Text="anchor"/>
+                                        <TextBlock Grid.Column="1" Classes="detailLabel" Text="V open"
+                                                   HorizontalAlignment="Right"
+                                                   ToolTip.Tip="Open-circuit voltage."/>
+                                        <TextBlock Grid.Column="2" Classes="detailLabel" Text="R out"
+                                                   HorizontalAlignment="Right"
+                                                   ToolTip.Tip="Output resistance — the regulator's or supply's. The |Z| plot needs it or L out: a source with neither is ideal and shorts the rail at every frequency. Double-click the value under this heading to enter it."/>
+                                        <TextBlock Grid.Column="3" Classes="detailLabel" Text="L out"
+                                                   HorizontalAlignment="Right"
+                                                   ToolTip.Tip="Output inductance, with its unit. Optional. Double-click the value under this heading to enter it."/>
+                                    </Grid>
                                     <ListBox Name="SourceList" Classes="rows" MaxHeight="120"
                                              ItemsSource="{Binding Sources}"
                                              SelectedItem="{Binding SelectedSource, Mode=TwoWay}">
                                         <ListBox.ItemTemplate>
                                             <DataTemplate x:DataType="rvm:RailSourceRowViewModel">
-                                                <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto" Margin="0,1">
+                                                <Grid ColumnDefinitions="*,56,56,56,14" Margin="0,1">
                                                     <!-- THE ANCHOR IS SETTABLE (owner, 2026-09-19).
                                                          It was a TextBlock, and nothing else in the
                                                          window named a refdes or a pin — so "+" made
@@ -1220,11 +1239,11 @@
                                                          ideal and shorts the rail at every frequency. -->
                                                     <ctl:InlineEditText Grid.Column="2" Classes="val" MinWidth="52"
                                                                         Text="{Binding ResistanceEntry, Mode=TwoWay}"
-                                                                        Watermark="R"
+                                                                        Watermark="R out"
                                                                         ToolTip.Tip="Output resistance of the source — the regulator's or supply's, e.g. 50 mΩ. The |Z| plot needs it: a source with no resistance and no inductance is ideal and shorts the rail at every frequency."/>
                                                     <ctl:InlineEditText Grid.Column="3" Classes="val" MinWidth="52"
                                                                         Text="{Binding InductanceEntry, Mode=TwoWay}"
-                                                                        Watermark="L"
+                                                                        Watermark="L out"
                                                                         ToolTip.Tip="Output inductance of the source, with its unit, e.g. 2 nH. Optional."/>
                                                     <TextBlock Grid.Column="4" Text="⚑" FontSize="11" Margin="3,0,0,0"
                                                                Foreground="{DynamicResource CrfWarningBrush}"
@@ -1953,7 +1972,7 @@
                                           HorizontalScrollBarVisibility="Hidden"
                                           VerticalScrollBarVisibility="Disabled">
                             <Grid Name="PartsHeader" Margin="0,0,20,0"
-                                  ColumnDefinitions="20,52,130,84,100,62,64,96,110,170,*">
+                                  ColumnDefinitions="20,52,130,84,100,62,64,96,110,170,84,*">
                                 <Button Grid.Column="1" Classes="gridhdr" Content="refdes"
                                         Tag="Refdes" Click="OnPartsHeaderClick"/>
                                 <Button Grid.Column="2" Classes="gridhdr" Content="part number"
@@ -1987,6 +2006,13 @@
                                      that part on the board. -->
                                 <Button Grid.Column="9" Classes="gridhdr" Content="location"
                                         Tag="Location" Click="OnPartsHeaderClick"/>
+                                <!-- TOP OR BOTTOM (owner, 2026-09-24): which copper the part's pads
+                                     are read on. Shown only where the board has a bottom — its
+                                     width is set from ShowPartSides in RailRfWindow.PartsTable.cs. -->
+                                <Button Grid.Column="10" Classes="gridhdr" Content="side" Name="PartsSideHeader"
+                                        Tag="Side" Click="OnPartsHeaderClick"
+                                        IsVisible="{Binding ShowPartSides}"
+                                        ToolTip.Tip="The side of the board each part is soldered to. railRF reads its pads on that side's copper — a mirrored footprint starts on the bottom. Changing it does not touch the layout."/>
                             </Grid>
                             </ScrollViewer>
                             <!-- MaxHeight on the LIST, as every other card does it. The Grid's own
@@ -2017,7 +2043,7 @@
                                              no numeric column — a half-filled row is the shape a
                                              defaulted one takes, and the whole point of listing it is
                                              that it is not one. -->
-                                        <Grid ColumnDefinitions="20,52,130,84,100,62,64,96,110,170,*" Margin="0,1"
+                                        <Grid ColumnDefinitions="20,52,130,84,100,62,64,96,110,170,84,*" Margin="0,1"
                                               Loaded="OnPartRowGridLoaded" Unloaded="OnPartRowGridUnloaded"
                                               Classes.unresolved="{Binding IsUnresolved}"
                                               Classes.unmounted="{Binding IsUnmounted}"
@@ -2069,9 +2095,14 @@
                                             <TextBlock Grid.Column="7" Classes="detailLabel cell"
                                                        HorizontalAlignment="Left" Text="{Binding InductanceText}"
                                                        ToolTip.Tip="{Binding InductanceTooltip}"/>
+                                            <!-- Double-click a SERIES row's model source to edit it
+                                                 (owner, 2026-09-24) — the whole cell, stretched and
+                                                 transparent, as the location cell does it. -->
                                             <TextBlock Grid.Column="8" Classes="detailLabel cell"
-                                                       HorizontalAlignment="Left" Text="{Binding ModelSourceText}"
-                                                       ToolTip.Tip="{Binding ModelSourceText}"/>
+                                                       HorizontalAlignment="Stretch" Background="Transparent"
+                                                       Text="{Binding ModelSourceText}"
+                                                       ToolTip.Tip="{Binding ModelSourceTooltip}"
+                                                       DoubleTapped="OnPartModelSourceDoubleTapped"/>
                                             <!-- The whole CELL takes the double-click, not just the glyphs:
                                                  stretched, with a transparent background so it
                                                  hit-tests across its width. -->
@@ -2080,6 +2111,32 @@
                                                        Text="{Binding PositionText}"
                                                        ToolTip.Tip="{Binding PositionTooltip}"
                                                        DoubleTapped="OnPartLocationDoubleTapped"/>
+                                            <!-- The items are the combo's OWN and the index is bound
+                                                 one way, so no selection can be pushed before its
+                                                 items exist (src/Ui/CLAUDE.md's ComboBox trap); the
+                                                 handler writes the edit, and the rebuild puts the
+                                                 combo back under the binding. -->
+                                            <!-- 84 px wide, because the theme's chevron column is a
+                                                 fixed 32 px and "bottom" needs the rest; and the theme's
+                                                 own 64 px floor is lowered for THIS box, since a style
+                                                 cannot reach it (src/Ui/DataDisplay/RESOLVED.md). At
+                                                 70 px with 4 px margins the floor overflowed the cell and
+                                                 the box was drawn with both sides cut off (owner,
+                                                 2026-09-24). -->
+                                            <ComboBox Grid.Column="10" Name="PartSideBox"
+                                                      FontSize="10" Padding="6,1,2,1" MinHeight="0"
+                                                      Margin="2,0" HorizontalAlignment="Stretch"
+                                                      VerticalAlignment="Center"
+                                                      IsVisible="{Binding ShowSide}"
+                                                      SelectedIndex="{Binding BoardSideIndex, Mode=OneWay}"
+                                                      SelectionChanged="OnPartSideChanged"
+                                                      ToolTip.Tip="{Binding BoardSideTooltip}">
+                                                <ComboBox.Resources>
+                                                    <x:Double x:Key="ComboBoxThemeMinWidth">0</x:Double>
+                                                </ComboBox.Resources>
+                                                <ComboBoxItem Content="top"/>
+                                                <ComboBoxItem Content="bottom"/>
+                                            </ComboBox>
                                         </Grid>
                                     </DataTemplate>
                                 </ListBox.ItemTemplate>
@@ -2097,58 +2154,11 @@
                                                  IsVisible="{Binding HasPartsEmptyText}"
                                                  Text="{Binding PartsEmptyText}"/>
 
-                            <!-- ── R-rail35-1b: A SERIES ROW EDITS ITS OWN MODEL ────────────────
-                                 The DCR, and EITHER an R-L OR a Touchstone file — RailPart.Refusal
-                                 refuses both at once, so this offers the choice rather than three
-                                 independent boxes. Every field is the RAIL ROW's own; empty inherits
-                                 the part library's Other row, and the watermark says what that is.
-                                 Row 3, shared with the empty-table sentence: the two never show
-                                 together, since this needs a selected row. -->
-                            <Border Grid.Row="3" Classes="card" Margin="0,5,0,0"
-                                    IsVisible="{Binding HasSeriesEditor}">
-                                <StackPanel Spacing="3" DataContext="{Binding SeriesEditor}"
-                                            x:DataType="rvm:RailSeriesEditorViewModel">
-                                    <TextBlock Classes="note" TextWrapping="Wrap" Text="{Binding Title}"/>
-                                    <Grid ColumnDefinitions="Auto,110,Auto,Auto" ColumnSpacing="6">
-                                        <TextBlock Classes="detailLabel rowlbl" Text="DCR" VerticalAlignment="Center"/>
-                                        <ctl:InlineEditText Grid.Column="1" Classes="val"
-                                                            Text="{Binding DcrEntry, Mode=TwoWay}"
-                                                            Watermark="{Binding DcrWatermark}"
-                                                            ToolTip.Tip="The resistance the load current runs through — a bead's DCR, a switch's on-resistance. Empty takes the part library's ESR where its row is classed Other; unstated is not zero, and the DC total then says it is a lower bound."/>
-                                        <RadioButton Grid.Column="2" FontSize="10" Content="R-L"
-                                                     IsChecked="{Binding IsRlModel, Mode=TwoWay}"
-                                                     ToolTip.Tip="Model the element over frequency as a series R and L you state. A bead's impedance depends on its DC bias, and the result says so."/>
-                                        <RadioButton Grid.Column="3" FontSize="10" Content="Touchstone"
-                                                     IsChecked="{Binding IsFileModel, Mode=TwoWay}"
-                                                     ToolTip.Tip="Model it from the part's own measured curve — a two-port file measured series-thru, as supplier tools publish a bead's."/>
-                                    </Grid>
-                                    <Grid ColumnDefinitions="Auto,110,Auto,110" ColumnSpacing="6"
-                                          IsVisible="{Binding IsRlModel}">
-                                        <TextBlock Classes="detailLabel rowlbl" Text="R" VerticalAlignment="Center"/>
-                                        <ctl:InlineEditText Grid.Column="1" Classes="val"
-                                                            Text="{Binding ResistanceEntry, Mode=TwoWay}"
-                                                            Watermark="ohms"
-                                                            ToolTip.Tip="The R of the R-L model over frequency — a different number from the DCR: a bead's DCR is milliohms and its impedance at 100 MHz is hundreds of ohms."/>
-                                        <TextBlock Grid.Column="2" Classes="detailLabel rowlbl" Text="L" VerticalAlignment="Center"/>
-                                        <ctl:InlineEditText Grid.Column="3" Classes="val"
-                                                            Text="{Binding InductanceEntry, Mode=TwoWay}"
-                                                            Watermark="with a unit — 1.2 µH"
-                                                            ToolTip.Tip="The L of the same model. A unit is required: a bare number's scale is a guess."/>
-                                    </Grid>
-                                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="6"
-                                          IsVisible="{Binding IsFileModel}">
-                                        <TextBlock Classes="detailLabel rowlbl" Text="File" VerticalAlignment="Center"/>
-                                        <ctl:InlineEditText Grid.Column="1" Classes="val"
-                                                            Text="{Binding TouchstoneEntry, Mode=TwoWay}"
-                                                            Watermark="{Binding TouchstoneWatermark}"
-                                                            ToolTip.Tip="The element's own measured impedance, relative to this .crail. Empty takes the part library's Model file where its row is classed Other."/>
-                                        <Button Grid.Column="2" Content="Browse…" FontSize="10" Padding="8,1"
-                                                Click="OnSeriesBrowseClick"/>
-                                    </Grid>
-                                    <TextBlock Classes="note" TextWrapping="Wrap"
-                                               IsVisible="{Binding HasProblem}" Text="{Binding Problem}"/>
-                                </StackPanel>
-                            </Border>
+                            <!-- R-rail35-1b's series editor used to open here, under the table, whenever a
+                                 series row was selected — pushing the table up and down as a user clicked
+                                 through it (owner, 2026-09-24). It is the Edit Model Source… dialog now
+                                 (RailSeriesModelDialog), opened from the row's context menu or by
+                                 double-clicking its model-source cell. -->
 
                             <!-- ── R-rail26-4: AN OFFER, AND THE COUNTS ARE PART OF IT ───────
                                  The rows land in a document that gets saved, so this follows
@@ -2376,7 +2386,13 @@
                          with it, along with its own lower half. RailRfWindow.CapResultsPlot keeps
                          it under a share of the pane's own height; the panel then letterboxes,
                          which is what it does in any bounded row. -->
-                    <ctl:AspectRatioPanel Grid.Row="1" Name="ImpedancePlotHost" Margin="0,2">
+                    <!-- ── ON THE FREQUENCY TAB ONLY (field report, 2026-09-24) ─────────────────
+                         It is a |Z| plot, and it showed on the DC tab too — empty axes above the
+                         drop, with the ideal-source sentence that explains the emptiness on the
+                         OTHER tab. A designer read it as the DC answer failing to draw. The tabs
+                         partition this column (R-rail18-6a) and the plot is the frequency half's. -->
+                    <ctl:AspectRatioPanel Grid.Row="1" Name="ImpedancePlotHost" Margin="0,2"
+                                          IsVisible="{Binding ShowImpedancePlot}">
                         <!-- ── THE PLOT INSPECTOR OPENS HERE (owner, 2026-09-19) ──────────────
                              Double-click empty plot area and the Data Display's own inspector
                              flyout opens, which is where the Y unit lives: the curves are dBΩ and a
@@ -2739,6 +2755,7 @@
              ViewLeft/ViewTop are in. -->
         <ItemsControl Name="MarkerInfoBoxLayer" Grid.Row="0" Grid.RowSpan="4"
                       ItemsSource="{Binding PlotHost.MarkerInfoBoxes}"
+                      IsVisible="{Binding ShowImpedancePlot}"
                       Background="{x:Null}">
             <ItemsControl.ItemsPanel>
                 <ItemsPanelTemplate>

@@ -529,12 +529,18 @@ internal sealed class PdnAssembly
             var a = PowerNodesFor(part.A);
             var b = PowerNodesFor(part.B);
 
-            if (a.Count == 0)
-                return PdnAttachments.RefusalForUnresolved(
-                    $"{where}'s first end", part.A, 0, _req.LengthFormat);
-            if (b.Count == 0)
-                return PdnAttachments.RefusalForUnresolved(
-                    $"{where}'s second end", part.B, 0, _req.LengthFormat);
+            if (a.Count == 0 || b.Count == 0)
+            {
+                var (off, other, end, otherOn) = a.Count == 0
+                    ? (part.A, part.B, "first end", b.Count > 0)
+                    : (part.B, part.A, "second end", true);
+
+                // A pad that IS on the board and is not on the rail says something different from
+                // a reference the board does not have — see SeriesEndOffTheRail.
+                return off.IsPad && PdnAttachments.ResolveLands(off, _req.Pads).Count > 0
+                    ? PdnAttachments.SeriesEndOffTheRail(where, part.Refdes, off, other, otherOn, _req.LengthFormat)
+                    : PdnAttachments.RefusalForUnresolved($"{where}'s {end}", off, 0, _req.LengthFormat);
+            }
 
             int na = Merge(a), nb = Merge(b);
             if (na == nb)

@@ -956,8 +956,8 @@ public sealed partial class RailRfViewModel
         Technology     = board.Technology,
         DbuPerMicron   = board.DbuPerMicron,
         LengthFormat   = BoardLengthFormat(),
-        Pads           = board.Pads,
-        NetPoints      = board.NetPoints,
+        Pads           = SidedPads(board).Pads,
+        NetPoints      = SidedPads(board).NetPoints,
         // The LIVE document's return — the reference row edits it after the board was read, and
         // `board` is a snapshot of the document at that moment (R-rail31-1). Never the snapshot as a
         // fallback: "measured" clears the name, and the run must then measure, as the verb does.

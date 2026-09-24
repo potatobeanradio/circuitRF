@@ -480,6 +480,11 @@ next section first.
 workspace file, and whatever else you tick — kits, referenced files, results. **The history is not in
 it unless you say so**, and there is a tickbox for saying so.
 
+A file the design references from **outside** the workspace — a Touchstone file, a SPICE deck and the
+files it includes, a [shared part library](railrf.html#reuse-library) and the model files it names — is a
+row of its own, **ticked by default**, because without it the recipient opens a design that is missing a
+piece of itself. The references are repointed at the archived copy.
+
 ### The one sentence that matters
 
 **A file you deleted from the workspace is still in the history.**

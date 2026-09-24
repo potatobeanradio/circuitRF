@@ -118,6 +118,7 @@ public partial class RailRfWindow : Window
             SyncPanes();
             BindBoardOverlay(vm);
             BindImpedancePlot(vm);
+            SyncPartsSideColumn();
             BindBoardRulerUnits();
             SyncPlotTheme();
             vm.PropertyChanged += OnVmPropertyChanged;
@@ -693,6 +694,10 @@ public partial class RailRfWindow : Window
         // a binding — see CapResultsPlot. Nothing about the columns moves, so SyncPanes is not it.
         else if (e.PropertyName is nameof(RailRfViewModel.ShowResultText))
             CapResultsPlot();
+
+        // The side column exists only where the board has a bottom; hidden, it takes no width.
+        else if (e.PropertyName is nameof(RailRfViewModel.ShowPartSides))
+            SyncPartsSideColumn();
 
         // A new board is a new LayoutEditorViewModel — and with it a new resolution and a new unit
         // for the rulers to label in.

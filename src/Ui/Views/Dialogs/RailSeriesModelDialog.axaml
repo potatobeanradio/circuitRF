@@ -1,0 +1,91 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:rvm="using:CircuitRF.Ui.RailRf"
+        x:Class="CircuitRF.Ui.Views.Dialogs.RailSeriesModelDialog"
+        x:DataType="rvm:RailSeriesEditorViewModel"
+        Title="Edit Model Source"
+        Width="560"
+        SizeToContent="Height"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <Window.Styles>
+        <Style Selector="TextBlock.lbl">
+            <Setter Property="FontSize"          Value="11"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin"            Value="0,0,8,0"/>
+        </Style>
+        <Style Selector="TextBox">
+            <Setter Property="FontSize"          Value="11"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+    </Window.Styles>
+
+    <!-- A FORM, not a row of inline cells (owner, 2026-09-24). Each label sits immediately before its
+         own box and each value is left-aligned inside it, so "R" reads as the label of the box beside it
+         rather than of a right-aligned value half a column away — the inline editor's R stood a wide gap
+         from its "ohms" and its L almost touched it.
+
+         Every box commits when it loses focus (or on Enter), not on each keystroke: the view model
+         re-solves the rail on every committed value, and a half-typed "1.2 n" would be refused and
+         re-solved on the way to "1.2 nH". -->
+    <StackPanel Margin="20,16,20,16" Spacing="10">
+
+        <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+
+        <Grid ColumnDefinitions="Auto,130,*" RowDefinitions="Auto">
+            <TextBlock Classes="lbl" Text="DC resistance"/>
+            <TextBox Grid.Column="1" Name="DcrBox"
+                     Text="{Binding DcrEntry, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                     PlaceholderText="e.g. 0.05 Ω"
+                     ToolTip.Tip="The resistance the load current runs through — a bead's DCR, a switch's on-resistance. Empty takes the part library's ESR where its row is classed Other; unstated is not zero, and the DC total then says it is a lower bound."/>
+            <TextBlock Grid.Column="2" FontSize="10" Opacity="0.65" Margin="10,0,0,0"
+                       VerticalAlignment="Center" TextWrapping="Wrap"
+                       Text="{Binding DcrWatermark}"/>
+        </Grid>
+
+        <StackPanel Orientation="Horizontal" Spacing="16">
+            <TextBlock Classes="lbl" Text="Impedance over frequency"/>
+            <RadioButton Content="R-L" IsChecked="{Binding IsRlModel, Mode=TwoWay}"
+                         ToolTip.Tip="Model the element over frequency as a series R and L you state. A bead's impedance depends on its DC bias, and the result says so."/>
+            <RadioButton Content="Touchstone file" IsChecked="{Binding IsFileModel, Mode=TwoWay}"
+                         ToolTip.Tip="Model it from the part's own measured curve — a two-port file measured series-thru, as supplier tools publish a bead's."/>
+        </StackPanel>
+
+        <!-- R and L: label, box, gap, label, box. -->
+        <Grid ColumnDefinitions="Auto,130,24,Auto,130" IsVisible="{Binding IsRlModel}">
+            <TextBlock Classes="lbl" Text="R"/>
+            <TextBox Grid.Column="1" Name="ResistanceBox"
+                     Text="{Binding ResistanceEntry, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                     PlaceholderText="e.g. 0.2 Ω"
+                     ToolTip.Tip="The R of the R-L model over frequency — a different number from the DC resistance: a bead's DCR is milliohms and its impedance at 100 MHz is hundreds of ohms. Ohms may be typed bare."/>
+            <TextBlock Grid.Column="3" Classes="lbl" Text="L"/>
+            <TextBox Grid.Column="4" Name="InductanceBox"
+                     Text="{Binding InductanceEntry, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                     PlaceholderText="e.g. 1.2 nH"
+                     ToolTip.Tip="The L of the same model. A unit or a prefix is required — 1.2 nH, 1.2n — since a bare number's scale is a guess."/>
+        </Grid>
+
+        <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="6" IsVisible="{Binding IsFileModel}">
+            <TextBlock Classes="lbl" Text="File"/>
+            <TextBox Grid.Column="1" Name="FileBox"
+                     Text="{Binding TouchstoneEntry, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                     PlaceholderText="{Binding TouchstoneWatermark}"
+                     ToolTip.Tip="The element's own measured impedance, relative to this .crail. Empty takes the part library's Model file where its row is classed Other."/>
+            <Button Grid.Column="2" Content="Browse…" Click="OnBrowseClick"/>
+            <Button Grid.Column="3" Content="Save to library" Click="OnSaveToLibraryClick"
+                    IsVisible="{Binding HasOwnFile}"
+                    ToolTip.Tip="Make this file the part number's model file in the part library, so every row with this part number — on any rail, in any design using the library — uses it. The row then takes the file from the library rather than holding its own copy of the reference."/>
+        </Grid>
+
+        <TextBlock FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource CrfWarningBrush}"
+                   IsVisible="{Binding HasProblem}" Text="{Binding Problem}"/>
+
+        <TextBlock FontSize="10" Opacity="0.65" TextWrapping="Wrap"
+                   Text="Each value is applied when you leave its box, and the rail re-solves; every change is one undo step in the railRF window."/>
+
+        <Button Content="Close" HorizontalAlignment="Right" MinWidth="90"
+                HorizontalContentAlignment="Center" IsCancel="True" Click="OnCloseClick"/>
+    </StackPanel>
+</Window>

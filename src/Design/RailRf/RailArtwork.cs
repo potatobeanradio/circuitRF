@@ -493,8 +493,23 @@ public static class RailArtwork
         // which pairs netlist pads with these by value and a netlist pad states no layer. `artwork`
         // and `origins` are one-to-one by construction: a turned part's pads moved, and their lands'
         // layers did not.
+        //
+        // A footprint placed MIRRORED is soldered to the bottom (owner, 2026-09-24): its lands are
+        // turned over to the far outer copper, as the board exporters already turn them. Without it
+        // a bottom-side part's pads were looked for on top copper and the part was left out.
         if (origins.Count == artwork.Count)
-            artwork = [.. artwork.Select((p, i) => p with { Layer = origins[i].Layer })];
+        {
+            var outer = RailPartSides.OuterCopper(technology);
+            artwork = [.. artwork.Select((p, i) =>
+            {
+                var land = origins[i].Layer;
+                if (outer is { } o && view is not null
+                    && origins[i].Instance >= 0 && origins[i].Instance < view.Instances.Count
+                    && view.Instances[origins[i].Instance].MirrorX)
+                    land = RailPartSides.Flip(land, o);
+                return p with { Layer = land };
+            })];
+        }
 
         // And a netlist pad takes its land from the ARTWORK's pad for the same part: the file is the
         // evidence for what a pad is and what it is called, the artwork for which copper it is on,

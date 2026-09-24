@@ -134,6 +134,13 @@ public sealed partial class RailSeriesEditorViewModel : ObservableObject
             ? $"library: {System.IO.Path.GetFileName(f)}"
             : "a two-port file, measured series-thru";
 
+    /// <summary>True where the row states a file of its OWN — what <b>Save to library</b> offers to
+    /// make the part number's model (owner, 2026-09-24).</summary>
+    public bool HasOwnFile => Part?.TouchstoneRef is { Length: > 0 };
+
+    /// <summary>The row's part number, which the part library is keyed by, or null.</summary>
+    public string? PartNumber => Part?.PartNumber is { Length: > 0 } pn ? pn : null;
+
     /// <summary>Why the last value typed was not taken, or empty.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasProblem))]
@@ -184,5 +191,6 @@ public sealed partial class RailSeriesEditorViewModel : ObservableObject
         OnPropertyChanged(nameof(InductanceEntry));
         OnPropertyChanged(nameof(TouchstoneEntry));
         OnPropertyChanged(nameof(TouchstoneWatermark));
+        OnPropertyChanged(nameof(HasOwnFile));
     }
 }
