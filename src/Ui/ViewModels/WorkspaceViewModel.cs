@@ -1308,7 +1308,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
             case LaunchAction.NewSchematic:
                 _factory.RemoveWelcomeStub();
-                NewScratchSchematic();
+                OpenScratchSchematic();
                 break;
 
             case LaunchAction.NewWorkspace:
@@ -1339,7 +1339,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
             case LaunchAction.NewLayout:
                 _factory.RemoveWelcomeStub();
-                NewLayout();
+                OpenScratchLayout();
                 break;
 
             case LaunchAction.NewHarmonica:
@@ -1377,7 +1377,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
             case LaunchAction.NewSchematic:
                 _factory.RemoveWelcomeStub();
-                NewScratchSchematic();
+                OpenScratchSchematic();
                 break;
 
             case LaunchAction.NewSymbol:
@@ -1392,7 +1392,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
             case LaunchAction.NewLayout:
                 _factory.RemoveWelcomeStub();
-                NewLayout();
+                OpenScratchLayout();
                 break;
 
             case LaunchAction.NewHarmonica:
@@ -4309,7 +4309,23 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// NOTE: closing a scratch tab in step 1 loses it — the close-prompt comes in step 3.
     /// </summary>
     [RelayCommand]
-    private void NewScratchSchematic()
+    private async Task NewScratchSchematic()
+    {
+        // With a workspace open, a new schematic is a new CELL holding it — New Cell exactly, name
+        // prompt and templates included — so nothing is created outside a cell (owner decision,
+        // 2026-09-24, after a designer ended up with loose schematics under Known Files that nothing
+        // could simulate, compare or place). With no workspace there is no cell to make.
+        if (CurrentWorkspacePath is not null)
+        {
+            await NewCellInWorkspaceAsync();
+            return;
+        }
+
+        OpenScratchSchematic();
+    }
+
+    /// <summary>The scratch schematic itself — also what the launch action opens.</summary>
+    private void OpenScratchSchematic()
     {
         var title = NextScratchSchematicTitle();
         var model = new SchematicEditModel();
@@ -4407,7 +4423,23 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// technology; with no technology, L0b's hardcoded defaults apply.
     /// </summary>
     [RelayCommand]
-    private void NewLayout()
+    private async Task NewLayout()
+    {
+        // With a workspace open, a new layout is a new CELL holding it (see NewScratchSchematic).
+        if (CurrentWorkspacePath is not null)
+        {
+            var owner = ResolveOwner(null);
+            if (owner is null) return;
+            var name = await new InputNameDialog("New Cell", "Cell name:").ShowDialog<string?>(owner);
+            if (name is not null) await CreateCellHoldingViewAsync(name, ViewType.Layout);
+            return;
+        }
+
+        OpenScratchLayout();
+    }
+
+    /// <summary>The scratch layout itself — also what the launch action opens.</summary>
+    private void OpenScratchLayout()
     {
         var title      = NextScratchLayoutTitle();
         var resolution = ResolveTechFor(techRef: null, clayPath: null);
@@ -7669,6 +7701,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             // R-em-15/17: the mesh "renders automatically in the layout view" (D2), and is dropped
             // there the moment the setup's own state says it is no longer current.
             vm.AnalysisRefreshed += () => PushEmMeshToLayout(vm);
+            // Solve region ▸ Draw on layout… — the drag happens on the layout's own canvas.
+            vm.DrawSolveRegionRequested = () => ArmEmSolveRegionPick(vm);
             vm.Refresh();
 
             // Before anything reads a port's type: a .cem from before the type moved to the drawing
@@ -9124,11 +9158,48 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 // outside that case, which the renderer takes as "draw plain cell boundaries".
                 open.ViewModel.PlanarCurrentDensity  = vm.CurrentDensity;
                 open.ViewModel.PlanarReferencePlanes = vm.ReferencePlanes;
+                // The solve region's outline — the .cem's own statement, so it follows the setup,
+                // not the geometry, and a null clears one a previous refresh drew.
+                open.ViewModel.EmSolveRegionOutline = vm.Working.SolveRegion is { } region
+                    && region.ToDbu(open.ViewModel.Model.DbuPerMicron) is var (rx0, ry0, rx1, ry1)
+                    ? new LayoutMarquee(rx0, ry0, rx1, ry1)
+                    : null;
                 // The port TYPE used to be pushed here too, from the .cem's own list. It is on the
                 // port LABEL now (2026-09-14) — so the layout already knows it, there is nothing to
                 // adopt, and two setups can no longer hand one drawing two different answers. See
                 // LabelShape.PortKind.
             }
+    }
+
+    /// <summary>
+    /// Opens (or brings forward) the layout a <c>.cem</c> analyses and arms the solve-region drag on
+    /// it; the dragged box comes back to the editor as one undoable edit of the <c>.cem</c>. The
+    /// layout is only drawn on, never edited.
+    /// </summary>
+    private void ArmEmSolveRegionPick(EmSetupEditorViewModel vm)
+    {
+        if (vm.ResolvedLayoutPath is not { Length: > 0 } clayPath)
+        {
+            Messages.Error("This EM setup's layout could not be resolved, so there is nothing to draw " +
+                           "a solve region on. Pick the layout first.");
+            return;
+        }
+
+        // SYNCHRONOUS, like SetLayoutPortKind: the pick is armed on the document this opens.
+        if (LiveLayoutView(clayPath) is null) OpenOrActivateLayout(clayPath);
+        else ActivateIfOpen(clayPath);
+
+        foreach (var open in _openDocsByPath.Values.OfType<LayoutDocument>())
+        {
+            if (open.FilePath is not { } fp
+                || !string.Equals(Path.GetFullPath(fp), clayPath, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var layoutVm = open.ViewModel;
+            layoutVm.ArmEmRegionPick(Path.GetFileName(vm.FilePath), (x1, y1, x2, y2) =>
+                vm.SetSolveRegion(EmSolveRegion.FromDbu(x1, y1, x2, y2, layoutVm.Model.DbuPerMicron)));
+            return;
+        }
     }
 
     /// <summary>Reflects a .cem editor's dirty state onto its own tree node's dirty dot — the exact
@@ -13809,6 +13880,17 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // The new default's cached entry (if any) may be stale relative to what's on disk now;
         // Invalidate forces a fresh load, then every open layout re-resolves against it.
         if (techPath is not null) _techCache.Invalidate(techPath);
+
+        // A loose layout's session choice that was one of THIS workspace's technologies was a choice
+        // among what the workspace offered then; the default just changed, so it is asked again
+        // (the prompt now preselects the new default). Without this the old pick held until a
+        // restart — the only thing that cleared it (field report, 2026-09-24). A browsed file from
+        // elsewhere and a built-in starter are the user's own and are left alone.
+        foreach (var key in _sessionTechOverrides
+                     .Where(kv => kv.Value.Path is { } chosen && !WorkspaceRootFinder.IsOutside(chosen, workspaceDir))
+                     .Select(kv => kv.Key).ToList())
+            _sessionTechOverrides.Remove(key);
+
         RefreshAllOpenLayoutTech();
         _factory.ProjectTreeTool?.Refresh();
     }
@@ -14398,18 +14480,36 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var name   = await dialog.ShowDialog<string?>(mainWindow);
         if (name is null) return;
 
+        await CreateCellHoldingViewAsync(name, ViewType.Schematic, dialog.SelectedTemplate);
+    }
+
+    /// <summary>
+    /// A new cell at the workspace root holding one view — New Cell's own creation, and what File ▸
+    /// New Schematic and New Layout do while a workspace is open. Returns the cell folder, or null
+    /// when nothing was created (every refusal is reported).
+    /// </summary>
+    /// <remarks>
+    /// The cell exists before its view is written, and a view that fails to write does not roll it
+    /// back — R-cc-1's rule, unchanged.
+    /// </remarks>
+    internal async Task<string?> CreateCellHoldingViewAsync(
+        string name, ViewType view, ShippedSchematicTemplate? template = null)
+    {
+        if (CurrentWorkspacePath is null) return null;
+        var workspaceDir = Path.GetDirectoryName(CurrentWorkspacePath)!;
+
         var reason = NameValidator.Validate(name);
         if (reason is not null)
         {
             Messages.Error($"Invalid cell name: {reason}");
-            return;
+            return null;
         }
 
         string newCellDir = Path.Combine(workspaceDir, name);
         if (Directory.Exists(newCellDir))
         {
             Messages.Error($"A cell named '{name}' already exists.");
-            return;
+            return null;
         }
 
         try
@@ -14421,11 +14521,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         catch (Exception ex)
         {
             Messages.Error($"Failed to create cell: {ex.Message}");
-            return; // the cell was never created — nothing further to do.
+            return null; // the cell was never created — nothing further to do.
         }
 
-        // R-cc-1: same as NewCellAsync — the cell already exists regardless of what follows.
-        await CreateAndOpenSchematicFileAsync(newCellDir, name, name, dialog.SelectedTemplate);
+        if (view == ViewType.Layout) CreateAndOpenLayoutFile(newCellDir, name);
+        else await CreateAndOpenSchematicFileAsync(newCellDir, name, name, template);
+        return newCellDir;
     }
 
     /// <inheritdoc/>
@@ -14616,12 +14717,22 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             return;
         }
 
+        CreateAndOpenLayoutFile(cellDir, name);
+    }
+
+    /// <summary>
+    /// The single layout-creation path: writes an empty <c>.clay</c> named
+    /// <paramref name="name"/> into the cell's layout sub-folder and opens it — the tree's New Layout
+    /// after its own prompt, and a new cell made by File ▸ New Layout. Reports its own failures.
+    /// </summary>
+    private bool CreateAndOpenLayoutFile(string cellDir, string name)
+    {
         var ext      = CellFolder.ViewExtension(ViewType.Layout);
-        var filePath = Path.Combine(layoutDir, name + ext);
+        var filePath = Path.Combine(CellFolder.SubFolderPath(cellDir, ViewType.Layout), name + ext);
         if (File.Exists(filePath))
         {
             Messages.Error($"A file named '{name}{ext}' already exists.");
-            return;
+            return false;
         }
 
         try
@@ -14645,10 +14756,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
             RefreshCellEditorFileLists(cellDir);
             Messages.Success("Created", filePath);
+            return true;
         }
         catch (Exception ex)
         {
             Messages.Error($"Failed to create layout: {ex.Message}");
+            return false;
         }
     }
 
@@ -15242,6 +15355,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // those are different docks, and reading the primary made a tab change in the second pane
         // re-route every panel to whatever the FIRST pane happened to be showing.
         var pane = sender as IDock ?? _factory.DocumentDock;
+
+        // A tool dock's tab change is not a document change (EnumerateDocumentPanes' own note) — the
+        // bottom strip's Messages/DRC/LVS switch used to empty the LVS panel through here.
+        if (pane?.ActiveDockable is ITool) return;
+
         if (pane is not null) _activeDocumentPane = pane;
 
         ActivateDocument(pane?.ActiveDockable);

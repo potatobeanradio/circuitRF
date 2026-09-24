@@ -35,9 +35,10 @@ A schematic is a **view of a cell**, exactly as its [symbol](symbol-editor.html)
 [layout](layout-editor.html) are; the cell folder holds `schematic/`, `symbol/` and `layout/` side
 by side and a cell need not have all three. Opening one opens a document tab.
 
-You do not need a cell library to start. **File ▸ New Schematic** opens a standalone scratch sheet
-you can wire up and simulate immediately, with no workspace around it, and save into a workspace
-later if it turns out to be worth keeping.
+You do not need a cell library to start. With no workspace open, **File ▸ New Schematic** opens a
+standalone scratch sheet you can wire up and simulate immediately, and save into a workspace later if it
+turns out to be worth keeping. With a workspace open, **New Schematic** and **New Layout** create a new
+**cell** holding that view instead, so nothing lands outside a cell.
 
 Two things about the canvas are worth knowing before you draw on it:
 

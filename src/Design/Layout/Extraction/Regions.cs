@@ -132,6 +132,13 @@ public enum PdnReturnNetBasis
     /// <summary>Measured from the copper on the confirmed reference layer
     /// (<see cref="Regions.ReferenceNetOn"/>'s galvanic ambiguity).</summary>
     Measured,
+
+    /// <summary>
+    /// Neither named nor measurable, and the reference layer carries the rail's own copper beside
+    /// other copper: the return is the LARGEST galvanic net on that layer that is not the rail's
+    /// (owner decision, 2026-09-24 — it replaced R-rail31-3's refusal for exactly this case).
+    /// </summary>
+    Largest,
 }
 
 /// <summary>
@@ -143,11 +150,26 @@ public enum PdnReturnNetBasis
 /// <param name="Layer">The reference layer, as a sentence names it.</param>
 public readonly record struct PdnReturnNet(string? Net, PdnReturnNetBasis Basis, string Layer)
 {
+    /// <summary>
+    /// <see cref="PdnReturnNetBasis.Largest"/> only — the galvanic net the return IS, as an index
+    /// into the partition it was resolved over. Meaningful only with that partition: the run and the
+    /// window each resolve their own and never exchange this number. Null for every other basis.
+    /// </summary>
+    public int? GalvanicNet { get; init; }
+
+    /// <summary><see cref="PdnReturnNetBasis.Largest"/> only — that net's copper area on the
+    /// reference layer, mm².</summary>
+    public double AreaMm2 { get; init; }
+
     /// <summary>The sentence a provenance and the reference row print.</summary>
     public string Describe() => Basis switch
     {
         PdnReturnNetBasis.Named    => $"'{Net}', named in the document",
         PdnReturnNetBasis.Measured => $"'{Net}', measured from the copper on {Layer}",
+        PdnReturnNetBasis.Largest  => string.Create(System.Globalization.CultureInfo.InvariantCulture,
+            $"the largest copper on {Layer} other than the rail's own — {AreaMm2:0.##} mm²") +
+            (Net is { Length: > 0 } n ? $", net '{n}'" : ", no net named on it") +
+            ". Name a reference net to override it",
         _ => $"no net — none is named and the copper on {Layer ?? "the reference layer"} does not " +
              "measure to one, so every piece on that layer is the return",
     };
@@ -210,7 +232,8 @@ public static class Regions
         LayerKey referenceLayer,
         string? referenceNet,
         IReadOnlyList<(long X, long Y, LayerKey? Layer)> extraRailSeeds,
-        IReadOnlyList<(long X, long Y)>? bareCoordinateSeeds = null)
+        IReadOnlyList<(long X, long Y)>? bareCoordinateSeeds = null,
+        int? returnGalvanicNet = null)
     {
         var diagnostics = new List<string>();
 
@@ -230,7 +253,8 @@ public static class Regions
         // island OF THE RAIL, which is a shorted board reported as an ordinary one.
         var railNets = NetsAt(pieces, railSeeds, anyLayer: true, exceptLayer: referenceLayer);
 
-        var (refNets, returnResolved) = ReturnNets(pieces, netPoints, railNet, referenceLayer, referenceNet);
+        var (refNets, returnResolved) = ReturnNets(pieces, netPoints, railNet, referenceLayer, referenceNet,
+                                                   returnGalvanicNet);
 
         // ── R-rail31-2: A RAIL SEED NEVER CLAIMS THE RETURN NET ─────────────────────────────────
         //
@@ -348,8 +372,14 @@ public static class Regions
     /// </remarks>
     internal static (HashSet<int> Nets, bool Resolved) ReturnNets(
         IReadOnlyList<DrcNetPiece> pieces, IReadOnlyList<PdnNetPoint> netPoints, string? railNet,
-        LayerKey referenceLayer, string? referenceNet)
+        LayerKey referenceLayer, string? referenceNet, int? returnGalvanicNet = null)
     {
+        // PdnReturnNetBasis.Largest: the return is one galvanic net of THIS partition, chosen by
+        // ResolveReturnNet. A name, where there is one, still decides — it is the stronger statement.
+        if (referenceNet is not { Length: > 0 } && returnGalvanicNet is { } chosen
+            && pieces.Any(q => q.Layer == referenceLayer && q.Net == chosen))
+            return ([chosen], true);
+
         var nets = new HashSet<int>();
         bool seeded = false;
         var under = new HashSet<int>();
@@ -535,7 +565,10 @@ public static class Regions
         IReadOnlyDictionary<LayerKey, Paths64> layerRegions,
         Technology tech,
         IReadOnlyList<PdnNetPoint> netPoints,
-        LayerKey referenceLayer)
+        LayerKey referenceLayer,
+        string? railNet = null,
+        IReadOnlyList<(long X, long Y, LayerKey? Layer)>? railSeeds = null,
+        int dbuPerMicron = LayoutUnits.DefaultDbuPerMicron)
     {
         ArgumentNullException.ThrowIfNull(layerRegions);
 
@@ -543,7 +576,8 @@ public static class Regions
         if (namedNet is { Length: > 0 })
             return new PdnReturnNet(namedNet, PdnReturnNetBasis.Named, LayerLabel(tech, referenceLayer));
 
-        return ResolveReturnNet(null, DrcConnectivity.Extract(layerRegions, tech), tech, netPoints, referenceLayer);
+        return ResolveReturnNet(null, DrcConnectivity.Extract(layerRegions, tech), tech, netPoints, referenceLayer,
+                                railNet, railSeeds, dbuPerMicron);
     }
 
     /// <summary><see cref="ResolveReturnNet(string?, IReadOnlyDictionary{LayerKey, Paths64}, Technology, IReadOnlyList{PdnNetPoint}, LayerKey)"/>
@@ -553,14 +587,89 @@ public static class Regions
         IReadOnlyList<DrcNetPiece> pieces,
         Technology tech,
         IReadOnlyList<PdnNetPoint> netPoints,
-        LayerKey referenceLayer)
+        LayerKey referenceLayer,
+        string? railNet = null,
+        IReadOnlyList<(long X, long Y, LayerKey? Layer)>? railSeeds = null,
+        int dbuPerMicron = LayoutUnits.DefaultDbuPerMicron)
     {
         string layer = LayerLabel(tech, referenceLayer);
         if (namedNet is { Length: > 0 }) return new PdnReturnNet(namedNet, PdnReturnNetBasis.Named, layer);
 
-        return MeasureReturnNet(pieces, netPoints, referenceLayer) is { } measured
-            ? new PdnReturnNet(measured, PdnReturnNetBasis.Measured, layer)
-            : new PdnReturnNet(null, PdnReturnNetBasis.Unresolved, layer);
+        if (MeasureReturnNet(pieces, netPoints, referenceLayer) is { } measured)
+            return new PdnReturnNet(measured, PdnReturnNetBasis.Measured, layer);
+
+        return LargestReturn(pieces, tech, netPoints, referenceLayer, railNet, railSeeds ?? [], dbuPerMicron)
+               ?? new PdnReturnNet(null, PdnReturnNetBasis.Unresolved, layer);
+    }
+
+    /// <summary>
+    /// <see cref="PdnReturnNetBasis.Largest"/> — where the reference layer carries the rail's own
+    /// copper BESIDE other copper, the largest galvanic net on that layer that is not the rail's.
+    /// Null where the layer is not mixed (every piece is the return, as before) or where nothing on it
+    /// is anyone else's (the refusal that follows is then literally true).
+    /// </summary>
+    /// <remarks>
+    /// <b>Why this replaced a refusal</b> (owner decision, 2026-09-24). R-rail31-3 refused a mixed
+    /// reference layer and asked for the return NET by name. On a Gerber-only board there is usually
+    /// no name to give: nothing carries one but what the user typed onto a trace, so the refusal
+    /// pointed at a pick list none of whose rows stood on the plane. The largest copper on a
+    /// reference layer that is not the supply is the plane on every board this has been read
+    /// against, and the Return row says which copper was taken, how big, and that naming a net
+    /// overrides it.
+    ///
+    /// <para><b>Which copper is the rail's</b> is read the way <c>Walk</c> reads it, with one
+    /// difference that matters: a seed stating no layer counts only where ONE galvanic net covers it
+    /// off the reference layer (<see cref="ReferenceNetOn"/>'s galvanic ambiguity). A bare click on a
+    /// top trace over a bottom ground pour covers both, and counting both would make the ground "the
+    /// rail's" and hand the return to something smaller. The walk refuses that anchor anyway
+    /// (R-rail34-2); this must not have decided the return from it first.</para>
+    /// </remarks>
+    private static PdnReturnNet? LargestReturn(
+        IReadOnlyList<DrcNetPiece> pieces, Technology tech, IReadOnlyList<PdnNetPoint> netPoints,
+        LayerKey referenceLayer, string? railNet,
+        IReadOnlyList<(long X, long Y, LayerKey? Layer)> railSeeds, int dbuPerMicron)
+    {
+        var seeds = new List<(long X, long Y, LayerKey? Layer)>();
+        if (railNet is { Length: > 0 })
+            foreach (var p in netPoints)
+                if (string.Equals(p.Net, railNet, StringComparison.OrdinalIgnoreCase))
+                    seeds.Add((p.X, p.Y, p.Layer));
+        seeds.AddRange(railSeeds);
+
+        var railNets = new HashSet<int>();
+        var under = new HashSet<int>();
+        foreach (var seed in seeds)
+        {
+            under.Clear();
+            foreach (var piece in pieces)
+            {
+                if (piece.Layer == referenceLayer) continue;
+                if (seed.Layer is { } land && piece.Layer != land) continue;
+                if (!piece.Bounds.Contains(seed.X, seed.Y) || !Contains(piece.Paths, seed.X, seed.Y)) continue;
+                under.Add(piece.Net);
+            }
+            if (seed.Layer is not null || under.Count == 1) railNets.UnionWith(under);
+        }
+
+        var onLayer = pieces.Where(p => p.Layer == referenceLayer).ToList();
+        if (!onLayer.Any(p => railNets.Contains(p.Net))) return null;   // not mixed
+
+        var area = new Dictionary<int, double>();
+        foreach (var piece in onLayer)
+            if (!railNets.Contains(piece.Net))
+                area[piece.Net] = area.GetValueOrDefault(piece.Net) + Math.Abs(Clipper.Area(piece.Paths));
+        if (area.Count == 0) return null;
+
+        // Largest first; a tie goes to the lower index, so one board always answers the same way.
+        var best = area.OrderByDescending(kv => kv.Value).ThenBy(kv => kv.Key).First();
+        double dbuPerMm = (dbuPerMicron > 0 ? dbuPerMicron : LayoutUnits.DefaultDbuPerMicron) * 1000.0;
+
+        return new PdnReturnNet(NameOf(pieces, netPoints, best.Key), PdnReturnNetBasis.Largest,
+                                LayerLabel(tech, referenceLayer))
+        {
+            GalvanicNet = best.Key,
+            AreaMm2 = best.Value / (dbuPerMm * dbuPerMm),
+        };
     }
 
     /// <summary>

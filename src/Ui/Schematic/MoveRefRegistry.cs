@@ -283,6 +283,31 @@ public static class MoveRefRegistry
             n => One(RefSlot.For(n, "AssemblyRef")),
             OwnDir, PlainResolve, PlainStore),
 
+        // ── .crail ────────────────────────────────────────────────────────────
+        // Every reference a railRF document carries is relative to the `.crail` itself
+        // (RailDocument's own rule, and RailArtwork.RebaseReferences' on Save as…). Missing from this
+        // table until a field report: a `.crail` dragged one folder up in the tree kept
+        // `layout/board.clay` and opened on no board at all, and the fix was to re-point it by hand.
+        new("crail/ArtworkCellRef",  Ext(".crail"), n => One(RefSlot.For(n, "ArtworkCellRef")),  OwnDir, PlainResolve, PlainStore),
+        new("crail/TechnologyRef",   Ext(".crail"), n => One(RefSlot.For(n, "TechnologyRef")),   OwnDir, PlainResolve, PlainStore),
+        new("crail/PartLibraryRef",  Ext(".crail"), n => One(RefSlot.For(n, "PartLibraryRef")),  OwnDir, PlainResolve, PlainStore),
+        new("crail/BoardNetlistRef", Ext(".crail"), n => One(RefSlot.For(n, "BoardNetlistRef")), OwnDir, PlainResolve, PlainStore),
+        new("crail/PlacementRef",    Ext(".crail"), n => One(RefSlot.For(n, "PlacementRef")),    OwnDir, PlainResolve, PlainStore),
+        new("crail/Sources.TouchstoneRef", Ext(".crail"),
+            n => Items(n, "Rails").SelectMany(r => Items(r, "Sources"))
+                                  .Select(x => RefSlot.For(x, "TouchstoneRef")).OfType<RefSlot>(),
+            OwnDir, PlainResolve, PlainStore),
+        new("crail/Parts.TouchstoneRef", Ext(".crail"),
+            n => Items(n, "Rails").SelectMany(r => Items(r, "Parts"))
+                                  .Select(x => RefSlot.For(x, "TouchstoneRef")).OfType<RefSlot>(),
+            OwnDir, PlainResolve, PlainStore),
+
+        // ── .crlib ────────────────────────────────────────────────────────────
+        // A row's model file is relative to its own library's folder (PartLibraryMerge's note).
+        new("crlib/Parts.ModelRef", Ext(".crlib"),
+            n => Items(n, "Parts").Select(x => RefSlot.For(x, "ModelRef")).OfType<RefSlot>(),
+            OwnDir, PlainResolve, PlainStore),
+
         // ── .cws ──────────────────────────────────────────────────────────────
         // Every one of these is relative to the workspace root, which is the `.cws`'s own directory.
         new("cws/LibraryRefs",          IsCws, n => RefSlot.ForArray(n, "LibraryRefs"),   OwnDir, PlainResolve, RootStore),

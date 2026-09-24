@@ -331,6 +331,17 @@ public sealed partial class RailRfViewModel
         // the run will: a rail seed never claims the return net (R-rail31-2).
         string? measuredReturn = railReference is { } r && _referenceNetMeasuredOn == r ? _referenceReturnNet : null;
 
+        // Which copper is the rail's own — what ResolveReturnNet needs to pick the LARGEST other
+        // copper on a mixed reference layer (PdnReturnNetBasis.Largest), exactly as the run does.
+        string? railNet = SelectedRail?.NetName;
+        var railSeeds = new List<(long X, long Y, LayerKey? Layer)>();
+        if (SelectedRail is { } seedRail)
+        {
+            foreach (var src in seedRail.Sources) railSeeds.AddRange(PdnAttachments.ResolveLands(src.Anchor, board.Pads));
+            foreach (var load in seedRail.Loads) railSeeds.AddRange(PdnAttachments.ResolveLands(load.Anchor, board.Pads));
+        }
+        int dbuPerMicron = board.DbuPerMicron;
+
         CopperRead = ReadCopperOffThread(() =>
         {
           try
@@ -350,8 +361,8 @@ public sealed partial class RailRfViewModel
             // return by two routes, and on a Gerber board only this one found it.
             if (job.MeasureReference is { } layer)
                 measured = pieces is null
-                    ? Regions.ResolveReturnNet(namedReturn, regions, tech, netPoints, layer)
-                    : Regions.ResolveReturnNet(namedReturn, pieces, tech, netPoints, layer);
+                    ? Regions.ResolveReturnNet(namedReturn, regions, tech, netPoints, layer, railNet, railSeeds, dbuPerMicron)
+                    : Regions.ResolveReturnNet(namedReturn, pieces, tech, netPoints, layer, railNet, railSeeds, dbuPerMicron);
 
             if (job.PreviewNet is { } net)
             {
@@ -681,8 +692,18 @@ public sealed partial class RailRfViewModel
     /// Which net the return is and where that came from — "'GND', measured from the copper on 'GND'
     /// (layer 3/0)" — or empty before the reference is confirmed and while the answer is in flight.
     /// </summary>
+    /// <remarks>
+    /// <b>The largest-copper return is read off the RUN where there is one.</b> It depends on which
+    /// copper is the rail's own, so it moves with every anchor edit, and the run is re-made on each of
+    /// those where this window's measurement is keyed only by the layer and the named net. What the
+    /// last solve of this rail actually used is the one answer that cannot disagree with the run.
+    /// </remarks>
     public string ReturnNetNote =>
-        IsReferenceConfirmed && SelectedRail?.ReferenceLayer is { } layer && _referenceNetMeasuredOn == layer
+        IsReferenceConfirmed && SelectedRail is { ReferenceLayer: { } layer } rail
+        && NamedReturnNet is null
+        && SeriesRegions(rail)?.ReturnNet is { Basis: PdnReturnNetBasis.Largest } solved
+            ? "Return: " + solved.Describe()
+        : IsReferenceConfirmed && SelectedRail?.ReferenceLayer is { } measuredLayer && _referenceNetMeasuredOn == measuredLayer
         && string.Equals(_referenceMeasuredNamed, NamedReturnNet, StringComparison.OrdinalIgnoreCase)
         && _referenceReturn is { } ret
             ? "Return: " + ret.Describe()

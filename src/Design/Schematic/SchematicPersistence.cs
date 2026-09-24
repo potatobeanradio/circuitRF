@@ -699,16 +699,44 @@ public static class SchematicPersistence
     /// <summary>Serializes a selection of objects to a JSON fragment for clipboard use.
     /// <paramref name="sourceGridSize"/> is the source design's P (connection grid pitch);
     /// it is embedded in the payload so the paste path can detect cross-grid pastes (§5).</summary>
+    /// <param name="netLabels">The net labels to carry. A label travels only with the wire it is
+    /// anchored to — one whose owner is not among <paramref name="wires"/> is left behind, since a
+    /// name with no wire under it names nothing. <b>Until 2026-09-24 no label travelled at all</b>:
+    /// the fragment was wires and parts only, so copying a drawing into another schematic dropped
+    /// every net name (RFin, VDD…) while the picture on the clipboard still showed them.</param>
     public static string SerializeSelection(
         IEnumerable<EditableComponent> comps,
         IEnumerable<EditableWire> wires,
         IEnumerable<EditableCanvasObject> canvasObjs,
-        double sourceGridSize = 100.0)
+        double sourceGridSize = 100.0,
+        IEnumerable<EditableNetLabel>? netLabels = null)
     {
         var scratch = new SchematicEditModel { GridSize = sourceGridSize };
         foreach (var c in comps)      scratch.Components.Add(c.Clone());
-        foreach (var w in wires)      scratch.Wires.Add(w.Clone());
+
+        // A clone takes a fresh Id, so each label's owner is re-pointed at its wire's clone.
+        var cloneOf = new Dictionary<string, EditableWire>();
+        foreach (var w in wires)
+        {
+            var clone = w.Clone();
+            cloneOf[w.Id] = clone;
+            scratch.Wires.Add(clone);
+        }
+
         foreach (var o in canvasObjs) scratch.CanvasObjects.Add(o.Clone());
+
+        foreach (var n in netLabels ?? [])
+        {
+            if (!n.IsAnchored || !cloneOf.TryGetValue(n.OwnerWireId, out var owner)) continue;
+            scratch.NetLabels.Add(new EditableNetLabel
+            {
+                X = n.X, Y = n.Y, Name = n.Name,
+                OwnerWireId  = owner.Id,
+                SegmentIndex = n.SegmentIndex, AlongT = n.AlongT,
+                OffsetX      = n.OffsetX,      OffsetY = n.OffsetY,
+            });
+        }
+
         return Serialize(scratch);
     }
 
@@ -721,11 +749,22 @@ public static class SchematicPersistence
     public static (List<EditableComponent> Comps, List<EditableWire> Wires,
                    List<EditableCanvasObject> CanvasObjs, double SourceGridSize) DeserializeSelection(string json)
     {
+        var f = DeserializeSelectionWithLabels(json);
+        return (f.Comps, f.Wires, f.CanvasObjs, f.SourceGridSize);
+    }
+
+    /// <summary><see cref="DeserializeSelection"/> with the fragment's net labels, each anchored to
+    /// one of the returned wires by <c>OwnerWireId</c>.</summary>
+    public static (List<EditableComponent> Comps, List<EditableWire> Wires,
+                   List<EditableCanvasObject> CanvasObjs, List<EditableNetLabel> NetLabels,
+                   double SourceGridSize) DeserializeSelectionWithLabels(string json)
+    {
         var file = JsonSerializer.Deserialize<CschFile>(json, _jsonOpts);
-        if (file is null) return ([], [], [], 100.0);
+        if (file is null) return ([], [], [], [], 100.0);
 
         // Accept any version for clipboard fragments — don't reject on version mismatch.
         var model = FromFileModel(file, null);
-        return (model.Components, model.Wires, model.CanvasObjects, file.GridSize);
+        return (model.Components, model.Wires, model.CanvasObjects,
+                [.. model.NetLabels.Where(n => n.IsAnchored)], file.GridSize);
     }
 }

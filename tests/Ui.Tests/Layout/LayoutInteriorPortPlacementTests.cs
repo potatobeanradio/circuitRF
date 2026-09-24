@@ -243,4 +243,28 @@ public class LayoutInteriorPortPlacementTests
         using var img = surface.Snapshot();
         return SKBitmap.FromImage(img);
     }
+
+    /// <summary>
+    /// <b>Overlapping copper is one conductor, and the port goes to ITS edge</b> (round-7 field
+    /// report). A placed part's footprint pad lying over a board's own pad stood 6 µm proud of it; the
+    /// board pad's end-face midpoint was a snap feature 6 µm INSIDE the copper, the port landed there
+    /// and was drawn as an edge port on a face that was not an edge.
+    /// </summary>
+    [Fact]
+    public void APortSnappedToAPadUnderAnotherPad_LandsOnTheMergedCoppersEdge()
+    {
+        var view = new LayoutView { DbuPerMicron = Dbu, DisplayUnit = LayoutUnit.Um, SnapDbu = 0 };
+        // The board pad is the SMALLER shape, so it is the one the lookup lands on — as on the reported
+        // board, where the footprint pad is inside a placed instance and never the first answer.
+        view.Shapes.Add(new RectShape { Layer = TopCopper, X1 = Um(-5000), Y1 = Um(-240), X2 = Um(300), Y2 = Um(240) }); // trace
+        view.Shapes.Add(new RectShape { Layer = TopCopper, X1 = Um(300),   Y1 = Um(-278), X2 = Um(700), Y2 = Um(282) }); // board pad
+        view.Shapes.Add(new RectShape { Layer = TopCopper, X1 = Um(150),   Y1 = Um(-290), X2 = Um(706), Y2 = Um(260) }); // footprint pad
+        var vm = new LayoutEditorViewModel(view) { ActiveTool = LayoutEditorViewModel.Tool.Port, GeometrySnapEnabled = true };
+
+        var port = Place(vm, Um(700), Um(2), Um(20));
+
+        Assert.Equal(Um(706), port.X);
+        Assert.Equal(LayoutRotation.R180, port.PortDirection);
+        Assert.Equal(CircuitRF.Engine.Mom.PlanarPortKind.Edge, port.PortKind);
+    }
 }

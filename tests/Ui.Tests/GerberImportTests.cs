@@ -671,6 +671,13 @@ public class GerberImportTests : IDisposable
         Assert.Distinct(result.Layers.Select(l => l.LayerName));
         Assert.Contains(result.Messages, m =>
             m.Contains("Top Copper, Inner 1, Inner 2, Bottom Copper", StringComparison.Ordinal));
+
+        // The TOP of the stack paints last (highest z-order), as every shipped technology has it —
+        // minted the other way round, Bottom Copper drew over Top Copper and a railRF click on a
+        // top-side trace landed on the bottom pour. The layer table still reads top to bottom.
+        var copper = result.Technology!.Layers.Where(l => l.Purpose == "conductor").ToList();
+        Assert.Equal(["Top Copper", "Inner 1", "Inner 2", "Bottom Copper"], copper.Select(l => l.Name));
+        Assert.True(copper.Zip(copper.Skip(1)).All(p => p.First.ZOrder > p.Second.ZOrder));
     }
 
     [Fact]

@@ -627,7 +627,8 @@ An ideal, lossless transmission line specified by characteristic impedance `Z` a
 
 A physical microstrip line on the current technology's substrate: `W` is the conductor width and `L`
 the length. Unlike TLIN, its impedance and loss follow from the geometry and the substrate rather than
-being stated.
+being stated. The parameters dialog shows the **Z0** (and εeff) the current `W` gives on the resolved
+substrate; type a Z0 there instead and `W` is set to the width that gives it, as one undoable edit.
 
 {{table: components/Mlin}}
 

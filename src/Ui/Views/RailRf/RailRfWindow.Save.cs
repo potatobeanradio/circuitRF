@@ -46,12 +46,17 @@ public partial class RailRfWindow : ICrfDocumentWindow
         {
             if (StorageProvider is not { } sp) return;
 
+            IStorageFolder? start = vm.SuggestedSaveFolder is { } folder
+                ? await sp.TryGetFolderFromPathAsync(folder)
+                : null;
+
             var file = await sp.SaveFilePickerAsync(new FilePickerSaveOptions
             {
                 Title = "Save the railRF document",
+                SuggestedStartLocation = start,
                 // NO extension on the suggested name — Avalonia appends DefaultExtension itself and
                 // supplying both spells it twice (the export path's own note).
-                SuggestedFileName = SuggestedName(vm),
+                SuggestedFileName = vm.SuggestedSaveName,
                 DefaultExtension = RailDocumentIo.Extension.TrimStart('.'),
                 FileTypeChoices =
                 [
@@ -107,12 +112,6 @@ public partial class RailRfWindow : ICrfDocumentWindow
         AdoptPath(path);
         vm.NoteSaved(path);
     }
-
-    /// <summary>What the picker opens on — the document's own name, then the file it came from.</summary>
-    private static string SuggestedName(RailRfViewModel vm) =>
-        vm.Document.Name is { Length: > 0 } n ? n
-        : vm.DocumentPath is { Length: > 0 } p ? Path.GetFileNameWithoutExtension(p)
-        : "board";
 
     private bool HeldByAnotherWindow(string path) =>
         Open.TryGetValue(Path.GetFullPath(path), out var other) && !ReferenceEquals(other, this);

@@ -413,8 +413,8 @@ unsaved is offered to you first, the dock layout is rebuilt from your Window Lay
 documents the incoming workspace's `.cwsuser` had open are reopened. **File ▸ Open Recent** is the
 same operation against a list of the last few.
 
-You do not need a workspace at all to get started. **File ▸ New Schematic** opens a scratch sheet
-that belongs to no cell and no folder; wire it up and simulate it immediately. If it turns out to be
+You do not need a workspace at all to get started. With no workspace open, **File ▸ New Schematic**
+opens a scratch sheet that belongs to no cell and no folder (with one open, it creates a new cell); wire it up and simulate it immediately. If it turns out to be
 worth keeping, **File ▸ Save Schematic As…** puts it into a workspace as a cell. With no workspace
 open the Project panel lists the workspaces you had open recently instead of a tree, so getting back
 to one is a single click.

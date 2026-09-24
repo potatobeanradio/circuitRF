@@ -5019,8 +5019,8 @@ public sealed partial class SchematicViewModel : ObservableObject
     {
         var result = await SchematicClipboard.PasteAsync(clipboard);
         if (result is null) return;
-        var (comps, wires, cobjs, srcGrid) = result.Value;
-        PasteFragment(comps, wires, cobjs, srcGrid);
+        var (comps, wires, cobjs, srcGrid, netLabels) = result.Value;
+        PasteFragment(comps, wires, cobjs, srcGrid, netLabels);
     }
 
     /// <summary>
@@ -5033,7 +5033,8 @@ public sealed partial class SchematicViewModel : ObservableObject
         List<EditableComponent> comps,
         List<EditableWire> wires,
         List<EditableCanvasObject> cobjs,
-        double sourceGridSize)
+        double sourceGridSize,
+        IReadOnlyList<EditableNetLabel>? netLabels = null)
     {
         if (comps.Count == 0 && wires.Count == 0 && cobjs.Count == 0) return;
 
@@ -5047,6 +5048,7 @@ public sealed partial class SchematicViewModel : ObservableObject
             EditModel, comps, wires, cobjs,
             ids => Selection.SetAll(ids),
             sourceGridSize: sourceGridSize,
-            messageSink: _messageSink));
+            messageSink: _messageSink,
+            netLabels: netLabels));
     }
 }

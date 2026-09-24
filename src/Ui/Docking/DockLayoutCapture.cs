@@ -430,12 +430,18 @@ public static class DockLayoutCapture
     ///
     /// <para>Follows <c>VisibleDockables</c> only, never a root's <c>Windows</c> — a torn-off
     /// document's own root is a different tree and is resolved separately.</para>
+    ///
+    /// <para><b>A TOOL is not a document</b>, although Dock.Model.Mvvm's <c>Tool</c> declares
+    /// <c>IDocument</c>. Testing <c>is IDocument</c> alone made every tool dock a "document pane", so
+    /// switching the bottom strip between Messages, DRC and LVS ran the whole document activation
+    /// with a TOOL as the active document — which emptied the DRC and LVS panels ("Open a layout to
+    /// compare it", Compare disabled) while the layout was still on screen.</para>
     /// </summary>
     public static IEnumerable<IDock> EnumerateDocumentPanes(IDockable dockable)
     {
         if (dockable is not IDock dock || dock.VisibleDockables is not { } children) yield break;
 
-        if (children.Any(c => c is IDocument)) yield return dock;
+        if (children.Any(c => c is IDocument and not ITool)) yield return dock;
 
         foreach (var child in children)
         {

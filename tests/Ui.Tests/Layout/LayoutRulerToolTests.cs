@@ -227,21 +227,23 @@ public class LayoutRulerToolTests : System.IDisposable
     }
 
     [Fact]
-    public void GeometrySnap_OutranksTheShiftConstraint()
+    public void Shift_KeepsTheAxis_AndAGeometrySnapOnlySetsHowFar()
     {
-        // R-rul-10: "a snapped endpoint is a stronger statement of intent than a held modifier."
+        // Owner, 2026-09-24 — this used to be "geometry snap outranks Shift", and a corner beside the
+        // line pulled the ruler off it, so a gap could not be measured straight across. Now the
+        // cursor's direction keeps the ruler vertical and the corner decides only where it stops.
         var model = Model();
-        model.Shapes.Add(new RectShape { Layer = Metal, X1 = 3_000, Y1 = 2_000, X2 = 4_000, Y2 = 3_000 });
+        model.Shapes.Add(new RectShape { Layer = Metal, X1 = 200, Y1 = 2_000, X2 = 1_200, Y2 = 3_000 });
 
         var vm = RulerVm(model);
         vm.GeometrySnapEnabled = true;
 
-        // Shift alone would flatten this to (4000, 0) or a 45 deg point; the corner at (3000, 2000)
-        // is in tolerance and wins.
-        Place(vm, 0, 0, 3_030, 1_980, secondMods: KeyModifiers.Shift, snapTolDbu: 200);
+        // The corner at (200, 2000) is in tolerance of the cursor; the ruler stays on x = 0 and ends
+        // at the corner's height.
+        Place(vm, 0, 0, 230, 1_980, secondMods: KeyModifiers.Shift, snapTolDbu: 200);
 
         var r = Assert.Single(model.Rulers);
-        Assert.Equal(3_000, r.X2);
+        Assert.Equal(0, r.X2);
         Assert.Equal(2_000, r.Y2);
     }
 

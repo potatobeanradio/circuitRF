@@ -538,6 +538,24 @@ public sealed class TreeMoveTests : IDisposable
         Assert.NotEmpty(intent.Message);
     }
 
+    /// <summary>Field report 2026-09-24: a cell dropped on another cell's view folder moved into it.
+    /// Into the cell's own folder is refused on the same rule; a loose file there is not.</summary>
+    [Fact]
+    public void Gate7_ACellCannotBeMovedIntoAnotherCellOrItsViewFolder()
+    {
+        string host = Cell("Host");
+        string layoutDir = CellFolder.SubFolderPath(host, ViewType.Layout);
+        Directory.CreateDirectory(layoutDir);
+        string b = Cell("B");
+
+        Assert.Equal(MoveRefusal.NotMovable, TreeMove.For(b, NodeKind.Cell, layoutDir, _ws).Refusal);
+        Assert.Equal(MoveRefusal.NotMovable, TreeMove.For(b, NodeKind.Cell, host, _ws).Refusal);
+
+        string loose = Path.Combine(_ws, "board.crail");
+        File.WriteAllText(loose, "{}");
+        Assert.Equal(MoveRefusal.None, TreeMove.For(loose, NodeKind.RailFile, host, _ws).Refusal);
+    }
+
     [Fact]
     public void Gate7_ADestinationThatAlreadyHoldsThatNameIsRefused()
     {
@@ -623,6 +641,38 @@ public sealed class TreeMoveTests : IDisposable
         Assert.True(TreeMove.IsInsideACell(schDir, _ws));
 
         var intent = TreeMove.For(schDir, TreeMove.ClassifyForMove(schDir), _ws, _ws);
+        Assert.Equal(MoveRefusal.NotMovable, intent.Refusal);
+    }
+
+    /// <summary>
+    /// A field report's `.crail`, saved into its board cell's `layout/` folder beside the `.clay`:
+    /// the tree could not move it out (a file inside a cell was refused wholesale), the operating
+    /// system could, and nothing repointed `layout/…` then. Now the tree moves it and rewrites its
+    /// references — and a drop INTO a view folder, which is how a whole cell ended up under
+    /// `layout/` in the same workspace, is refused.
+    /// </summary>
+    [Fact]
+    public void ARailDocumentMovesOutOfAViewFolderWithItsReferences_AndNothingDropsIntoOne()
+    {
+        var board = Cell("Board");
+        string layoutDir = CellFolder.SubFolderPath(board, ViewType.Layout);
+        Directory.CreateDirectory(layoutDir);
+        File.WriteAllText(Path.Combine(layoutDir, "Board.clay"), "{}");
+        File.WriteAllText(Path.Combine(_ws, "parts.crlib"), "{}");
+
+        string crail = Path.Combine(layoutDir, "board.crail");
+        File.WriteAllText(crail,
+            """{ "FormatVersion": 1, "ArtworkCellRef": "Board.clay", "PartLibraryRef": "../../parts.crlib" }""");
+
+        var result = Move(crail, board);
+        Assert.Empty(result.Failures);
+
+        var moved = JsonNode.Parse(File.ReadAllText(Path.Combine(board, "board.crail")))!;
+        Assert.Equal("layout/Board.clay", moved["ArtworkCellRef"]!.GetValue<string>());
+        Assert.Equal("../parts.crlib", moved["PartLibraryRef"]!.GetValue<string>());
+
+        var other = Cell("Other");
+        var intent = TreeMove.For(other, TreeMove.ClassifyForMove(other), layoutDir, _ws);
         Assert.Equal(MoveRefusal.NotMovable, intent.Refusal);
     }
 

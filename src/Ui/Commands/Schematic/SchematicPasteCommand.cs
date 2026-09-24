@@ -17,6 +17,7 @@ internal sealed class SchematicPasteCommand : IUiCommand
     private readonly List<EditableComponent>          _comps;
     private readonly List<EditableWire>               _wires;
     private readonly List<EditableCanvasObject>       _cobjs;
+    private readonly List<EditableNetLabel>           _netLabels;
     private readonly Action<IEnumerable<string>>?     _reselect;
 
     public string Description => "Paste";
@@ -26,6 +27,8 @@ internal sealed class SchematicPasteCommand : IUiCommand
     /// When non-zero and different from <paramref name="model"/>.GridSize, connection points are
     /// snapped to the destination P and a warning is posted.
     /// </param>
+    /// <param name="netLabels">Net labels anchored to <paramref name="wires"/> — a pasted drawing keeps
+    /// its net names (RFin, VDD…) rather than arriving as anonymous wires.</param>
     public SchematicPasteCommand(
         SchematicEditModel model,
         IEnumerable<EditableComponent>    comps,
@@ -33,13 +36,18 @@ internal sealed class SchematicPasteCommand : IUiCommand
         IEnumerable<EditableCanvasObject> cobjs,
         Action<IEnumerable<string>>?      reselect = null,
         double sourceGridSize = 0,
-        IMessageSink? messageSink = null)
+        IMessageSink? messageSink = null,
+        IEnumerable<EditableNetLabel>? netLabels = null)
     {
         _model    = model;
         _comps    = ResolveNums(model, ResolveNames(model, comps.ToList()));
         _wires    = wires.ToList();
         _cobjs    = cobjs.ToList();
         _reselect = reselect;
+
+        // Only a label whose wire is being pasted with it: a name with no wire under it names nothing.
+        var pastedWireIds = _wires.Select(w => w.Id).ToHashSet();
+        _netLabels = (netLabels ?? []).Where(n => n.IsAnchored && pastedWireIds.Contains(n.OwnerWireId)).ToList();
 
         if (sourceGridSize > 0 && Math.Abs(sourceGridSize - model.GridSize) > 1e-9)
             SnapToDestGrid(model.GridSize, model.AuthorGridSize, sourceGridSize, messageSink);
@@ -50,6 +58,7 @@ internal sealed class SchematicPasteCommand : IUiCommand
         _model.Components.AddRange(_comps);
         _model.Wires.AddRange(_wires);
         _model.CanvasObjects.AddRange(_cobjs);
+        _model.NetLabels.AddRange(_netLabels);
         _model.NotifyChanged();
 
         var ids = _comps.Select(c => c.Id)
@@ -63,6 +72,7 @@ internal sealed class SchematicPasteCommand : IUiCommand
         foreach (var c in _comps) _model.Components.Remove(c);
         foreach (var w in _wires) _model.Wires.Remove(w);
         foreach (var o in _cobjs) _model.CanvasObjects.Remove(o);
+        foreach (var n in _netLabels) _model.NetLabels.Remove(n);
         _model.NotifyChanged();
     }
 

@@ -3,14 +3,16 @@ using System.Linq;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Platform.Storage;
+using System.Collections.Generic;
 using CircuitRF.Ui.Layout;
+using CircuitRF.Ui.Schematic;
 
 namespace CircuitRF.Ui.Views.Dialogs;
 
 /// <summary>
 /// The user's choice from <see cref="OrphanTechnologyDialog"/> (brief-foreign-documents.md R-fgn-4).
 /// <see cref="Path"/> non-null means a specific <c>.ctech</c> file (browsed, or picked from the current
-/// workspace's <c>tech/</c> folder) — resolved live through the same <see cref="TechnologyCache"/> every
+/// workspace) — resolved live through the same <see cref="TechnologyCache"/> every
 /// other resolution uses. <see cref="StarterTech"/> non-null (with <see cref="Path"/> null) means a
 /// built-in starter — frozen, since there is no file to track. Never both non-null.
 /// </summary>
@@ -18,7 +20,7 @@ public readonly record struct OrphanTechnologyChoice(string? Path, Technology? S
 
 /// <summary>
 /// R-fgn-4: shown once per loose <c>.clay</c> with no ancestor workspace at all — offers three routes
-/// (browse for a <c>.ctech</c>; pick one from the CURRENT workspace's <c>tech/</c> folder; or a built-in
+/// (browse for a <c>.ctech</c>; pick one from the CURRENT workspace; or a built-in
 /// starter). Session-scoped only — the caller (<c>WorkspaceViewModel</c>) never writes the choice to the
 /// file; §2.1's own guardrail points users at <c>Change Technology…</c> for a permanent choice instead
 /// of duplicating that mechanism here.
@@ -33,27 +35,18 @@ public partial class OrphanTechnologyDialog : Window
             $"'{fileName}' isn't part of any workspace, so it has no technology to draw layers with. " +
             "Choose one for this session:";
 
-        string? techDir = null;
-        if (currentWorkspacePath is not null)
+        var paths = WorkspaceTechnologies(currentWorkspacePath);
+        if (paths.Count > 0)
         {
-            techDir = Path.Combine(Path.GetDirectoryName(currentWorkspacePath)!, "tech");
-            if (Directory.Exists(techDir))
-            {
-                var items = Directory.GetFiles(techDir, "*.ctech")
-                    .OrderBy(p => p, System.StringComparer.OrdinalIgnoreCase)
-                    .Select(p => new TechFileItem(TryReadTechName(p) ?? Path.GetFileNameWithoutExtension(p), p))
-                    .ToList();
-                CurrentWorkspaceList.ItemsSource = items;
-                if (items.Count > 0)
-                {
-                    CurrentWorkspaceList.SelectedIndex = 0;
-                    CurrentWorkspaceRadio.IsChecked = true;
-                    StarterRadio.IsChecked = false;
-                }
-            }
+            var items = paths
+                .Select(p => new TechFileItem(TryReadTechName(p) ?? Path.GetFileNameWithoutExtension(p), p))
+                .ToList();
+            CurrentWorkspaceList.ItemsSource = items;
+            CurrentWorkspaceList.SelectedIndex = 0;
+            CurrentWorkspaceRadio.IsChecked = true;
+            StarterRadio.IsChecked = false;
         }
-
-        if (techDir is null || !Directory.Exists(techDir) || CurrentWorkspaceList.ItemCount == 0)
+        else
         {
             CurrentWorkspaceRadio.IsEnabled = false;
             CurrentWorkspaceList.IsEnabled = false;
@@ -61,6 +54,36 @@ public partial class OrphanTechnologyDialog : Window
 
         OkButton.Click     += (_, _) => Close(BuildResult());
         CancelButton.Click += (_, _) => Close(null);
+    }
+
+    /// <summary>
+    /// Every <c>.ctech</c> in the current workspace, <b>the workspace default first</b> — the row the
+    /// dialog preselects.
+    /// </summary>
+    /// <remarks>
+    /// It used to list the <c>tech/</c> folder only. A technology minted by a Gerber import lives
+    /// beside the import, not in <c>tech/</c> — so a designer who had just made that one the
+    /// workspace default was offered only the OTHER technology, picked it, and the session choice
+    /// then held it until a restart. The enumeration is the one the MLIN technology picker uses.
+    /// </remarks>
+    internal static IReadOnlyList<string> WorkspaceTechnologies(string? currentWorkspacePath)
+    {
+        if (currentWorkspacePath is null || Path.GetDirectoryName(currentWorkspacePath) is not { } root
+            || !Directory.Exists(root))
+            return [];
+
+        string? defaultPath = null;
+        try
+        {
+            if (WorkspacePersistence.LoadFromFile(currentWorkspacePath).DefaultTechRef is { Length: > 0 } r)
+                defaultPath = Path.GetFullPath(Path.Combine(root, r));
+        }
+        catch { /* unreadable .cws — no default to put first */ }
+
+        return [.. DocumentRemovalImpact.TechnologiesIn(root)
+            .OrderBy(p => defaultPath is not null
+                          && string.Equals(Path.GetFullPath(p), defaultPath, System.StringComparison.OrdinalIgnoreCase)
+                          ? 0 : 1)];
     }
 
     private sealed record TechFileItem(string Label, string AbsolutePath)

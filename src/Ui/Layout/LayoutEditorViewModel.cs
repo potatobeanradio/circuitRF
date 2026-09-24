@@ -3544,6 +3544,9 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         // user armed a one-shot gesture and a click can only mean "that one".
         if (_portReturnPickFor is not null) { CommitPortReturnPick(wx, wy); return; }
 
+        // The EM solve-region drag, armed from a .cem editor, owns the press on the same terms.
+        if (_emRegionPick is not null) { EmRegionPress(wx, wy); return; }
+
         if (ActiveTool == Tool.Select) { HandleSelectPress(wx, wy, mods, Math.Max(hitTolDbu, 0), Math.Max(snapTolDbu, 0), Math.Max(gripLockTolDbu, 0)); return; }
 
         if (ActiveTool == Tool.Instance) { CommitInstancePlacement(); return; }
@@ -3615,6 +3618,8 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         // §9B.12: the readout follows the cursor while it is being placed, ahead of every tool — the
         // gesture owns the pointer until a click drops it or Escape puts it back.
         if (_rulerLabelMove is not null) { UpdateRulerLabelMove(wx, wy); return; }
+
+        if (_emRegionPick is not null) { EmRegionMove(wx, wy, leftDown); return; }
 
         if (ActiveTool == Tool.Select) { HandleSelectMove(wx, wy, leftDown, mods, Math.Max(hitTolDbu, 0), Math.Max(pixelDbu, 0), Math.Max(snapTolDbu, 0), Math.Max(gripLockTolDbu, 0)); return; }
 
@@ -3716,6 +3721,8 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     /// grid while its ghost sat on the geometry).</summary>
     public void OnPointerReleased(double wx, double wy, KeyModifiers mods, long snapTolDbu = 0)
     {
+        if (_emRegionPick is not null) { EmRegionRelease(wx, wy); return; }
+
         if (ActiveTool == Tool.Select) { HandleSelectRelease(wx, wy); return; }
 
         if (!_isDrawingTwoPoint) return;
@@ -3762,6 +3769,12 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         if (_portReturnPickFor is not null)
         {
             if (key == Key.Escape) { CancelPortReturnPick(); RebuildOverlay(); }
+            return;
+        }
+
+        if (_emRegionPick is not null)
+        {
+            if (key == Key.Escape) CancelEmRegionPick();
             return;
         }
 
@@ -4243,7 +4256,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
 
         LayoutMarquee? marquee = _selectDragKind == SelectDragKind.Marquee
             ? new LayoutMarquee(_selectPressWX, _selectPressWY, _marqueeCurX, _marqueeCurY)
-            : null;
+            : EmRegionRubberBand;
 
         // brief-L3a-followups.md §2/R-fix-2: Move now covers BOTH kinds together (no more separate
         // MoveInstance drag kind) — this block and the shape one just below it are independent `if`s,

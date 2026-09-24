@@ -187,6 +187,36 @@ public class SchematicPasteAndDragTests
         Assert.Equal(600.0, dst.Components[1].X, Eps);
     }
 
+    /// <summary>
+    /// Field report, 2026-09-24: copying a drawing into another schematic lost its net names — the
+    /// fragment carried wires and parts but no labels. A label now travels with its wire, re-anchored
+    /// to the pasted copy, and undo takes it away again.
+    /// </summary>
+    [Fact]
+    public void Paste_IntoAnotherSchematic_KeepsTheNetLabels_AnchoredToThePastedWires()
+    {
+        var (src, _) = MakeModel();
+        var label = new EditableNetLabel { Name = "RFin" };
+        label.AnchorToWire(src.Wires[0], 0, 200);
+        src.NetLabels.Add(label);
+
+        string json = SchematicPersistence.SerializeSelection(
+            src.Components.ToList(), src.Wires.ToList(), src.CanvasObjects.ToList(), src.GridSize,
+            src.NetLabels);
+        var (comps, wires, cobjs, labels, srcGrid) = SchematicPersistence.DeserializeSelectionWithLabels(json);
+
+        var dst   = new SchematicEditModel { GridSize = 100, GridSnap = true };
+        var dstVm = new SchematicViewModel(dst);
+        dstVm.PasteFragment(comps, wires, cobjs, srcGrid, labels);
+
+        var pasted = Assert.Single(dst.NetLabels);
+        Assert.Equal("RFin", pasted.Name);
+        Assert.Same(dst.Wires.Single(), dst.FindWire(pasted.OwnerWireId));
+
+        dstVm.UndoRedo.Undo();
+        Assert.Empty(dst.NetLabels);
+    }
+
     [Fact]
     public void PastedObjectsStayOnTheConnectionGrid()
     {

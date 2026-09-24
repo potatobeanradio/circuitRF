@@ -371,7 +371,7 @@ public static class CrossSectionExtractor
     /// <see cref="StackupDbuPerMicron"/> for why stackup DBU are converted here and not alongside
     /// the shape coordinates). <c>Index</c> is its position in <c>Stackup.Layers</c>
     /// (top-to-bottom), so a smaller index is HIGHER in z.</summary>
-    private sealed record Band(StackupLayer Layer, double BottomM, double TopM, int Index);
+    internal sealed record Band(StackupLayer Layer, double BottomM, double TopM, int Index);
 
     /// <summary>
     /// R-em-3: <c>Stackup.Layers</c> is ordered TOP to BOTTOM, so the stack is built by accumulating
@@ -379,7 +379,7 @@ public static class CrossSectionExtractor
     /// ignored (a uniform cross-section has no vias) and contributes no thickness.
     /// Returned bottom-to-top.
     /// </summary>
-    private static List<Band> BuildStack(Stackup stackup)
+    internal static List<Band> BuildStack(Stackup stackup)
     {
         const double perDbu = 1.0 / (StackupDbuPerMicron * 1e6);
         var bands = new List<Band>();
@@ -436,7 +436,7 @@ public static class CrossSectionExtractor
         return null;
     }
 
-    private static List<EmDielectricRegion> BuildRegions(
+    internal static List<EmDielectricRegion> BuildRegions(
         List<Band> stack, double groundM, out List<string> names)
     {
         // Bottom-up: each dielectric band's region starts where the previous dielectric region

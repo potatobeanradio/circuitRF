@@ -123,10 +123,12 @@ public sealed partial class RailRfViewModel
     {
         if (offer is null || _document.Rail(offer.RailName) is not { } rail) return;
 
-        // The row the offer was made for, still anchored at that point with no layer — anything else
-        // is an edit the offer did not see, and the next run will say what it means.
+        // The row the offer was made for, still anchored at that point — anything else is an edit the
+        // offer did not see, and the next run will say what it means. The anchor MAY already state a
+        // layer: the no-copper refusal offers the other copper under an anchor that landed on the
+        // return, which is a stated layer being corrected, not an unstated one being answered.
         static bool Same(RailPortAnchor a, RailAnchorLayerOffer o) =>
-            a.Refdes is not { Length: > 0 } && a.Layer is null && a.Point == (o.X, o.Y);
+            a.Refdes is not { Length: > 0 } && a.Point == (o.X, o.Y);
 
         if (offer.IsSource)
         {

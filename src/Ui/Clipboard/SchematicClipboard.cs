@@ -41,7 +41,7 @@ public static class SchematicClipboard
     {
         if (components.Count == 0 && wires.Count == 0 && canvasObjects.Count == 0) return;
 
-        string json = SchematicPersistence.SerializeSelection(components, wires, canvasObjects, gridSize);
+        string json = SchematicPersistence.SerializeSelection(components, wires, canvasObjects, gridSize, netLabels);
 
         var (variant, transparent) = ClipboardRenderPolicy.Resolve();
         var renderTheme = SchematicRenderTheme.FromTheme(ThemeService.Active, variant);
@@ -100,9 +100,11 @@ public static class SchematicClipboard
     /// Offsets pasted items to avoid exact overlap.
     /// <c>SourceGridSize</c> in the result is the P that was active when the content was copied —
     /// pass it to <c>SchematicPasteCommand</c> so cross-grid snapping can be applied (§5).
+    /// <c>NetLabels</c> are anchored to the returned wires, so they follow any offset applied to them.
     /// </summary>
     public static async Task<(List<EditableComponent> Comps, List<EditableWire> Wires,
-        List<EditableCanvasObject> CanvasObjs, double SourceGridSize)?> PasteAsync(
+        List<EditableCanvasObject> CanvasObjs, double SourceGridSize,
+        List<EditableNetLabel> NetLabels)?> PasteAsync(
         IClipboard clipboard,
         double offsetX = 100, double offsetY = 100)
     {
@@ -114,7 +116,7 @@ public static class SchematicClipboard
 
         try
         {
-            var (comps, wires, cobjs, srcGrid) = SchematicPersistence.DeserializeSelection(json);
+            var (comps, wires, cobjs, labels, srcGrid) = SchematicPersistence.DeserializeSelectionWithLabels(json);
 
             var newComps = new List<EditableComponent>(comps.Count);
             foreach (var c in comps)
@@ -126,9 +128,18 @@ public static class SchematicClipboard
             }
 
             var newWires = new List<EditableWire>(wires.Count);
+            var newLabels = new List<EditableNetLabel>(labels.Count);
             foreach (var w in wires)
             {
                 var nw = w.Clone();
+                // The clone takes a fresh Id, so the labels anchored to this wire follow it.
+                foreach (var l in labels.Where(l => l.OwnerWireId == w.Id))
+                    newLabels.Add(new EditableNetLabel
+                    {
+                        Name = l.Name, OwnerWireId = nw.Id,
+                        SegmentIndex = l.SegmentIndex, AlongT = l.AlongT,
+                        OffsetX = l.OffsetX, OffsetY = l.OffsetY,
+                    });
                 for (int i = 0; i < nw.Points.Count; i++)
                 {
                     var pt = nw.Points[i];
@@ -146,7 +157,7 @@ public static class SchematicClipboard
                 newCobjs.Add(no);
             }
 
-            return (newComps, newWires, newCobjs, srcGrid);
+            return (newComps, newWires, newCobjs, srcGrid, newLabels);
         }
         catch { return null; }
     }

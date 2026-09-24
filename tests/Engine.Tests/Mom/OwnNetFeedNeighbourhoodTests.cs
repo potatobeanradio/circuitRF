@@ -195,7 +195,36 @@ public sealed class OwnNetFeedNeighbourhoodTests(ITestOutputHelper output)
             Assert.True(c.Breached);
             Assert.Equal(PlanarNeighbourClass.Driven, c.Neighbour);
             Assert.Equal(expectedGapUm, c.NearestM * 1e6, 3);
+
+            // …and the refusal says WHERE, not only how far (round-7 field report).
+            Assert.NotNull(c.NearestXM);
+            Assert.Contains(", at (", c.Breach(), StringComparison.Ordinal);
         }
+    }
+
+    /// <summary>
+    /// <b>A port face a little wider on one side than the copper behind it is still one feed.</b>
+    /// A placed part's footprint pad lying over an imported board's own pad, offset so it stands
+    /// proud of it on one edge, used to end the feed's band at the first column where that sliver
+    /// was empty — and the port's own pad beside the profile came back as a neighbour 0 µm away and
+    /// refused the run (round-7 field report).
+    /// </summary>
+    [Fact]
+    public void AFootprintPadProudOfTheBoardPadOnOneSide_IsNotANeighbour()
+    {
+        const double w = 2.9e-3, len = 20e-3;
+        var problem = PlanarLineFixtures.Problem(GroundedSlab.Fr4Starter, 5e9,
+            PlanarLineFixtures.Rect(0, 0, len, w),                                  // the board's line and pad
+            PlanarLineFixtures.Rect(len - 1.5e-3, -0.4e-3, len + 0.05e-3, w - 0.6e-3)); // the footprint pad
+        PlanarPort[] ports =
+        [
+            new(1, new EmPoint(0, 0.5 * w), PlanarPortSide.MinX, 50.0),
+            new(2, new EmPoint(len + 0.05e-3, 0.4 * w), PlanarPortSide.MaxX, 50.0),
+        ];
+
+        var (_, clearances, _, _) = Setup(problem, ports);
+
+        Assert.All(clearances, c => Assert.False(c.Breached, c.Breach()));
     }
 
     // ══════════════════════════════════════════════════════════════════════════════════════════

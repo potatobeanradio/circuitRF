@@ -12006,3 +12006,21 @@ bit-identity discipline is what made the accelerated path look untouched.
 **Left alone:** `PlanarStaticAim` passes no split — its terms come from `StaticScalarAt`, a different
 decomposition MIM-8 did not touch — so its grid table is still the whole kernel it always was.
 `PlanarPulsePotential.TermsFar` is named and documented for the case where that stops being true.
+
+## Feed band: a port face proud of the copper behind it (2026-09-24, round-7 field report)
+
+An imported Gerber board with a placed part's footprint pad lying over the board's own pad: the
+footprint pad (550 µm, the port's face) sat 15.5 µm lower than the board's pad, so it stood 12.5 µm
+proud of it on one edge. `FeedBands` demanded metal on EVERY profile cell in each column, so the band
+"ended" at the first column where that sliver was empty, and the port's own pad beside the profile came
+back as a DRIVEN neighbour 0 µm away — the run was refused, with the port on the true edge or not.
+Moving the label never helped because an edge port resolves to the END of the run under it anyway (the
+note prints the label's coordinates; the resolution note prints the metal edge it actually used).
+
+- The band now continues while ONE UNBROKEN run of metal overlaps the profile, and ends when no metal
+  meets it or the metal that does is split by a gap — so the pad that stops and the coil beyond it
+  (the case the rule was written for) still end it. 145 feed/port/calibration tests unchanged;
+  `OwnNetFeedNeighbourhoodTests.AFootprintPadProudOfTheBoardPadOnOneSide_IsNotANeighbour` fails on the
+  old rule with the field report's exact "0 m away" signature.
+- `PlanarFeedClearance` now carries WHERE the nearest neighbour is (`NearestXM/NearestYM`) and the
+  refusal prints it. "0 µm away" with no location sent the reviewer looking outside the solve region.

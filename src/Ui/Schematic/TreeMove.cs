@@ -72,7 +72,8 @@ public static class TreeMove
         NodeKind.Cell or NodeKind.UserFolder
      or NodeKind.OtherFile or NodeKind.DataDisplayFile or NodeKind.TechFile
      or NodeKind.ColorThemeFile or NodeKind.EmSetupFile or NodeKind.WBondFile
-     or NodeKind.HarmonicaFile or NodeKind.RailFile or NodeKind.SmithFile;
+     or NodeKind.HarmonicaFile or NodeKind.RailFile or NodeKind.SmithFile
+     or NodeKind.PartLibraryFile;
 
     /// <summary>
     /// What a path on disk moves AS. The drop carries only an absolute path — the payload is a
@@ -88,6 +89,29 @@ public static class TreeMove
                 : NodeKind.UserFolder;
 
         return File.Exists(path) ? WorkspaceScanner.ClassifyFile(path) : NodeKind.NotReadYet;
+    }
+
+    /// <summary>True when <paramref name="folder"/> is a cell's view sub-folder, or anything under
+    /// one.</summary>
+    public static bool IsViewFolderOrUnder(string folder, string workspaceRoot)
+    {
+        string root = Norm(workspaceRoot);
+        string? dir = Norm(folder);
+        string[] views =
+        [
+            CellFolder.SchematicSubFolder, CellFolder.SymbolSubFolder, CellFolder.LayoutSubFolder,
+        ];
+
+        while (dir is not null && !string.Equals(dir, root, StringComparison.OrdinalIgnoreCase))
+        {
+            string? parent = Path.GetDirectoryName(dir);
+            if (parent is null || string.Equals(parent, dir, StringComparison.Ordinal)) break;
+            if (views.Contains(Path.GetFileName(dir), StringComparer.OrdinalIgnoreCase)
+                && File.Exists(Path.Combine(parent, CellFolder.CcellFileName)))
+                return true;
+            dir = parent;
+        }
+        return false;
     }
 
     /// <summary>
@@ -164,11 +188,38 @@ public static class TreeMove
               + "be moved into it from here.",
                 src, dest);
 
-        if (IsInsideACell(src, root))
+        // A FOLDER inside a cell is refused (a view folder looks like any other folder on disk —
+        // Gate8's case). A loose DOCUMENT inside one is not: a `.crail` saved beside its `.clay`, or
+        // a `.cem` in the cell's own folder, is the user's file, and refusing it left dragging it out
+        // in the operating system's file manager as the only way — which repairs no reference.
+        if (Directory.Exists(src) && IsInsideACell(src, root))
             return TreeMoveIntent.No(
                 MoveRefusal.NotMovable,
                 "A cell's own views cannot be rearranged — a cell resolves its schematic, symbol and "
               + "layout folders by name.",
+                src, dest);
+
+        // A cell's schematic/symbol/layout folders hold THAT view's files, found by name. Something
+        // dropped into one — a whole cell dropped onto `layout/`, as a field report's workspace
+        // records — is invisible to the cell that owns the folder and to every walk that lists cells.
+        if (IsViewFolderOrUnder(dest, root))
+            return TreeMoveIntent.No(
+                MoveRefusal.NotMovable,
+                "A cell's schematic, symbol and layout folders hold that view's own files only. Drop it "
+              + "on the cell itself instead.",
+                src, dest);
+
+        // A cell or a folder never goes INTO a cell — its own folder or any view folder under it.
+        // Field report 2026-09-24: a cell dropped on another cell's `layout` folder moved there, and
+        // a cell inside a view folder is neither a cell of the workspace (the scan does not descend
+        // into views for cells) nor a view of its host. Files are unaffected: a loose document beside
+        // a cell's views is an ordinary thing to keep there.
+        if (sourceKind is NodeKind.Cell or NodeKind.UserFolder
+            && IsInsideACell(Path.Combine(dest, name), root))
+            return TreeMoveIntent.No(
+                MoveRefusal.NotMovable,
+                $"'{name}' cannot go inside a cell — a cell holds only its own views. Drop it on the "
+              + "workspace or on an ordinary folder.",
                 src, dest);
 
         // ── Nothing to do ─────────────────────────────────────────────────────

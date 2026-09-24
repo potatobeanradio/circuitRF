@@ -229,6 +229,14 @@ public readonly struct LayoutRenderOptions
     /// artwork is worse than no mesh.</summary>
     public PlanarMeshReport? PlanarMesh { get; init; }
 
+    /// <summary>
+    /// The EM solve region of the <c>.cem</c> last refreshed against this layout, in DBU — drawn as a
+    /// dashed outline over the artwork so the user can see which part of the board an EM run solves.
+    /// Null draws nothing, and every export path leaves it null, so it can never reach a picture or a
+    /// manufacturing file: it is a statement in the <c>.cem</c>, not layout content.
+    /// </summary>
+    public LayoutMarquee? EmSolveRegion { get; init; }
+
     /// <summary>L8e/D5 — the per-cell |J| map to shade the surface mesh with. Null takes the plain
     /// cell-boundary path; this IS L8b's own one-per-cell-scalar provision, now wired.</summary>
     public PlanarCurrentDensityMap? PlanarCurrentDensity { get; init; }
@@ -926,6 +934,9 @@ public static partial class LayoutRenderer
                         DrawPlanarReferencePlanes(canvas, refPlanes, theme, ps,
                                                   view.DbuPerMicron, scaleUm);
                 }
+
+                if (opts.EmSolveRegion is { } solveRegion)
+                    DrawEmSolveRegion(canvas, solveRegion, theme, ps, scaleUm);
 
                 if (opts.Overlay?.InProgressPrimitive is { } ghost)
                     DrawGhostShape(canvas, ghost, layerMap, tech, conductorAt, ps, scaleUm, theme.Background);
@@ -2146,6 +2157,23 @@ public static partial class LayoutRenderer
 
         canvas.DrawRect(rect, fillPaint);
         canvas.DrawRectDashSafe(rect, strokePaint);
+    }
+
+    /// <summary>The EM solve region: a dashed outline in the selection colour, no fill — the artwork
+    /// inside it is the point, and a wash over it would hide exactly what is being solved.</summary>
+    private static void DrawEmSolveRegion(SKCanvas canvas, LayoutMarquee r, LayoutRenderTheme theme,
+                                          PathSpace ps, double scaleUm)
+    {
+        var rect = NormalizedRect(ps.X(r.X1), ps.Y(r.Y1), ps.X(r.X2), ps.Y(r.Y2));
+        float stroke = DevicePixelsToPathSpace(scaleUm, 1.5f);
+        float dash   = DevicePixelsToPathSpace(scaleUm, 8f);
+        using var paint = new SKPaint
+        {
+            IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = stroke,
+            Color = theme.Selection.WithAlpha(230),
+            PathEffect = SKPathEffect.CreateDash([dash, dash * 0.6f], 0),
+        };
+        canvas.DrawRectDashSafe(rect, paint);
     }
 
     // ── Shape-reshape handles (L1d, docs/design/layout-view.md §6.3) ───────────────────────────

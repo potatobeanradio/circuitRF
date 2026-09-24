@@ -77,4 +77,30 @@ public static class LayoutSnapping
         long snappedMag = (long)(Math.Round(magnitude / snapDbu) * snapDbu);
         return (prevX + signX * snappedMag, prevY + signY * snappedMag);
     }
+
+    /// <summary>
+    /// A <see cref="AngleMode.Deg45"/> constraint that a geometry-snap target composes with rather than
+    /// overrides: the CURSOR's travel from the previous point picks one of the 8 directions, and the
+    /// target only says how far along it the point goes — its projection onto that direction. On an
+    /// axis direction that is the target's own coordinate on the free axis, exactly (the rule a
+    /// Shift-constrained move drag already follows, R-dup-4); on a diagonal it is the nearest point of
+    /// the diagonal, rounded to DBU with both components kept equal.
+    /// </summary>
+    public static (long X, long Y) ConstrainToTarget(
+        long prevX, long prevY, double candX, double candY, long targetX, long targetY)
+    {
+        double dx = candX - prevX, dy = candY - prevY;
+        if (dx == 0 && dy == 0) return (prevX, prevY);
+
+        const double step = Math.PI / 4.0;
+        double bucket = Math.Round(Math.Atan2(dy, dx) / step) * step;
+        int signX = (int)Math.Round(Math.Cos(bucket));
+        int signY = (int)Math.Round(Math.Sin(bucket));
+
+        if (signY == 0) return (targetX, prevY);
+        if (signX == 0) return (prevX, targetY);
+
+        long m = (long)Math.Round(((targetX - prevX) * (double)signX + (targetY - prevY) * (double)signY) / 2.0);
+        return (prevX + signX * m, prevY + signY * m);
+    }
 }

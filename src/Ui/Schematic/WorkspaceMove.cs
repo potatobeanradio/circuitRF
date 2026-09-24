@@ -154,6 +154,12 @@ public static class WorkspaceMove
         {
             string path = Relocate(captured.Path, from, to);
 
+            // A FILE that is itself the moved item takes its own-directory base with it. Relocate
+            // maps paths UNDER a moved directory, and a file's directory is never under the file, so
+            // a loose `.crail` (or `.wBond`) dragged to another folder kept its old base and every
+            // relative reference in it was left spelling the old location.
+            bool holderMoved = string.Equals(Normalize(captured.Path), from, StringComparison.OrdinalIgnoreCase);
+
             try
             {
                 var node = JsonNode.Parse(GzipTextFile.ReadAllTextAutoGzip(path));
@@ -172,7 +178,9 @@ public static class WorkspaceMove
                         var slot = live[cap.Ordinal];
 
                         string newTarget = Relocate(cap.AbsTarget, from, to);
-                        string newBase   = Relocate(cap.BaseDir,   from, to);
+                        string newBase   = holderMoved && site.BaseDirOf(path) is { } movedBase
+                            ? Normalize(movedBase)
+                            : Relocate(cap.BaseDir, from, to);
 
                         // R-tm1-6: neither end moved, so this reference is none of the move's
                         // business. Not re-derived, not normalised, not written.

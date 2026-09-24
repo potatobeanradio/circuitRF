@@ -196,6 +196,7 @@ public partial class ParameterEditorViewModel
             MicrostripSubstrateWarning  = "";
             MicrostripSubstrateResolved = false;
             NotifyMicrostripSubstrate();
+            RefreshMlinImpedance();
             return;
         }
 
@@ -218,6 +219,7 @@ public partial class ParameterEditorViewModel
             + " These components fall back to the model's own defaults.";
 
         NotifyMicrostripSubstrate();
+        RefreshMlinImpedance();
     }
 
     /// <summary>

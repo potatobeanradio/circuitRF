@@ -375,14 +375,11 @@ public static class PdnMeshExtractor
             return PdnExtraction.Refused(ownReturn, regions);
 
         if (regions.Power.Count == 0)
-            return PdnExtraction.Refused(
-                $"Rail '{rail.Name}' resolves to no copper. " +
-                (rail.NetName is { Length: > 0 } net
-                    ? $"Nothing on this board is on net '{net}', and no source or load anchor landed on " +
-                      "metal. Check the net name against the board netlist."
-                    : "The rail names no net, and no source or load anchor landed on metal. Give the " +
-                      "rail its net name, or anchor a source or a load on the rail's own copper."),
-                regions);
+        {
+            string noCopper = PdnRailConnectivity.NoCopperRefusal(request, layerRegions, referenceLayer, regions,
+                                                                  out var offers);
+            return PdnExtraction.Refused(noCopper, regions) with { AnchorAmbiguities = offers };
+        }
 
         // R-rail29-2, asked of this reading too: a rail whose source cannot reach a load galvanically
         // is refused before anything is meshed, naming the part that bridges it. Without it the mesh

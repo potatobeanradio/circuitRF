@@ -100,6 +100,15 @@ public sealed class CemPlanarMesh
     public int? DetailFloorDivisor { get; set; }
 }
 
+/// <summary>The solve region, micrometres in layout coordinates. See <see cref="EmSolveRegion"/>.</summary>
+public sealed class CemSolveRegion
+{
+    public double XMinUm { get; set; }
+    public double YMinUm { get; set; }
+    public double XMaxUm { get; set; }
+    public double YMaxUm { get; set; }
+}
+
 public sealed class CemFile
 {
     public int    FormatVersion { get; set; } = 1;
@@ -228,6 +237,13 @@ public sealed class CemFile
 
     /// <summary>Null when unused, for the same byte-identity reason as <see cref="AnalysisKind"/>.</summary>
     public CemPlanarMesh? PlanarMesh { get; set; }
+
+    /// <summary>
+    /// <b>Null means the whole layout</b>, which is what every <c>.cem</c> written before the solve
+    /// region existed means — so such a file loads AND re-serialises byte-identically, the same
+    /// omit-at-default rule every field added after the first release follows.
+    /// </summary>
+    public CemSolveRegion? SolveRegion { get; set; }
 }
 
 /// <summary>Reads and writes <c>.cem</c> files. Framework-free (no Avalonia / Skia).</summary>
@@ -314,6 +330,9 @@ public static class EmSetupPersistence
         ReferenceInputPowerDbm = s.ReferenceInputPowerDbm != 0.0 ? s.ReferenceInputPowerDbm : null,
         SnpOutputPathOverride = s.SnpOutputPathOverride is { Length: > 0 } p ? p : null,
         AnalysisKind          = s.AnalysisKind == EmAnalysisKind.Auto ? null : s.AnalysisKind,
+        SolveRegion           = s.SolveRegion is { } r
+            ? new CemSolveRegion { XMinUm = r.XMinUm, YMinUm = r.YMinUm, XMaxUm = r.XMaxUm, YMaxUm = r.YMaxUm }
+            : null,
         PlanarMesh            = s.PlanarMesh == PlanarMeshSettings.Default ? null : new CemPlanarMesh
         {
             Auto               = s.PlanarMesh.Auto,
@@ -367,6 +386,11 @@ public static class EmSetupPersistence
         ReferenceInputPowerDbm = f.ReferenceInputPowerDbm ?? 0.0,
         SnpOutputPathOverride = f.SnpOutputPathOverride ?? "",
         AnalysisKind          = f.AnalysisKind ?? EmAnalysisKind.Auto,
+        // Normalised on the way in, so a hand-edited file with its corners swapped means the box it
+        // plainly describes rather than an inside-out one that clips everything away.
+        SolveRegion           = f.SolveRegion is { } sr
+            ? EmSolveRegion.FromCorners(sr.XMinUm, sr.YMinUm, sr.XMaxUm, sr.YMaxUm)
+            : null,
         PlanarMesh            = f.PlanarMesh is { } pm
             ? new PlanarMeshSettings(pm.Auto, pm.CellsPerWavelength, pm.EdgeMesh, pm.EdgeCells,
                                      pm.BoundaryCells ?? PlanarMeshSettings.DefaultBoundaryCells,

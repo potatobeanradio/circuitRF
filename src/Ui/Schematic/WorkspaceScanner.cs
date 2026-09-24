@@ -262,7 +262,22 @@ public static class WorkspaceScanner
             if (!Directory.Exists(subDir)) continue;
 
             string[] files = Directory.GetFiles(subDir, "*" + CellFolder.ViewExtension(vt));
-            if (files.Length == 0) continue;
+
+            // Anything ELSE of circuitRF's that a user saved or dragged into a view sub-folder — a
+            // `.crail` saved beside its `.clay`, a cell dropped onto `layout/`. Listing only this
+            // view's own extension left those with no row anywhere: the file opened by path and the
+            // tree said nothing, which is how a design document ended up bookmarked as a Known File
+            // inside its own workspace, where Copy to Workspace is (rightly) unavailable.
+            string[] strays = Directory.GetFiles(subDir)
+                .Where(f => !IsHiddenTreeFile(f)
+                            && !string.Equals(Path.GetExtension(f), CellFolder.ViewExtension(vt),
+                                              StringComparison.OrdinalIgnoreCase)
+                            && ClassifyFile(f) != NodeKind.OtherFile)
+                .OrderBy(f => Path.GetFileName(f) ?? f, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            var strayDirs = SubDirsSorted(subDir).ToList();
+
+            if (files.Length == 0 && strays.Length == 0 && strayDirs.Count == 0) continue;
 
             var res = resolutions[vt];
             string? primaryName = res.State is PrimaryState.SoleFile or PrimaryState.NamedPresent
@@ -281,6 +296,13 @@ public static class WorkspaceScanner
                     string.Equals(fn, primaryName, StringComparison.OrdinalIgnoreCase);
                 viewFolder.AddChild(new ProjectTreeNode(NodeKind.ViewFile, fn, f, Rel(f, workspaceRoot), isPrimary: isPrimary));
             }
+
+            foreach (string d in strayDirs)
+                viewFolder.AddChild(File.Exists(Path.Combine(d, CellFolder.CcellFileName))
+                    ? BuildCellNode(d, workspaceRoot)
+                    : BuildUserFolderNode(d, workspaceRoot));
+            foreach (string f in strays)
+                viewFolder.AddChild(BuildFileNode(f, workspaceRoot));
 
             cellNode.AddChild(viewFolder);
         }

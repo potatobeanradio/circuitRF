@@ -490,4 +490,18 @@ public partial class ParameterEditorView : UserControl
         row.CommitDiameter();
         e.Handled = true;
     }
+
+    private void OnMlinZ0Commit(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (DataContext is ViewModels.ParameterEditorViewModel vm) vm.CommitMlinZ0Command.Execute(null);
+    }
+
+    private void OnMlinZ0KeyDown(object? sender, Avalonia.Input.KeyEventArgs e)
+    {
+        if (e.Key is not (Avalonia.Input.Key.Enter or Avalonia.Input.Key.Return)) return;
+        if (DataContext is not ViewModels.ParameterEditorViewModel vm) return;
+
+        vm.CommitMlinZ0Command.Execute(null);
+        e.Handled = true;
+    }
 }

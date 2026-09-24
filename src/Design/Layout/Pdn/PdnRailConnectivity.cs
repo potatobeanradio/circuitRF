@@ -97,13 +97,15 @@ internal static class PdnRailConnectivity
     {
         var tech = request.Technology;
         var pieces = DrcConnectivity.Extract(layerRegions, tech);
-        var returnNet = Regions.ResolveReturnNet(request.ReferenceNet, pieces, tech, request.NetPoints, referenceLayer);
+        var returnNet = Regions.ResolveReturnNet(request.ReferenceNet, pieces, tech, request.NetPoints, referenceLayer,
+                                                 request.Rail.NetName, anchorSeeds, request.DbuPerMicron);
 
-        ambiguous = Ambiguous(request, pieces, referenceLayer, returnNet.Net);
+        ambiguous = Ambiguous(request, pieces, referenceLayer, returnNet);
         if (ambiguous.Count > 0) return null;
 
         return Regions.Walk(pieces, tech, request.NetPoints, request.Rail.NetName, referenceLayer,
-                            returnNet.Net, anchorSeeds, bareCoordinateSeeds) with { ReturnNet = returnNet };
+                            returnNet.Net, anchorSeeds, bareCoordinateSeeds, returnNet.GalvanicNet)
+            with { ReturnNet = returnNet };
     }
 
     /// <summary>
@@ -112,7 +114,7 @@ internal static class PdnRailConnectivity
     /// </summary>
     private static IReadOnlyList<PdnAnchorAmbiguity> Ambiguous(
         PdnExtractionRequest request, IReadOnlyList<DrcNetPiece> pieces, LayerKey referenceLayer,
-        string? returnNet)
+        PdnReturnNet returnNet)
     {
         var rail = request.Rail;
         List<PdnAnchorAmbiguity>? found = null;
@@ -122,7 +124,8 @@ internal static class PdnRailConnectivity
         {
             if (anchor.Refdes is { Length: > 0 } || anchor.Layer is not null || anchor.Point is not { } xy) return;
 
-            ret ??= Regions.ReturnNets(pieces, request.NetPoints, rail.NetName, referenceLayer, returnNet);
+            ret ??= Regions.ReturnNets(pieces, request.NetPoints, rail.NetName, referenceLayer, returnNet.Net,
+                                       returnNet.GalvanicNet);
             var under = Regions.CopperUnder(pieces, request.Technology, request.NetPoints, xy.X, xy.Y,
                                             referenceLayer, ret.Value.Nets, ret.Value.Resolved);
             if (under.Count > 1)
@@ -159,6 +162,96 @@ internal static class PdnRailConnectivity
         }
 
         return string.Join(" ", sentences);
+    }
+
+    /// <summary>
+    /// The refusal for a rail that resolves to no copper — worded from where its anchors ACTUALLY
+    /// landed, one sentence shared by both extractors.
+    /// </summary>
+    /// <remarks>
+    /// It used to say "no source or load anchor landed on metal" whatever had happened. On a Gerber
+    /// board whose technology painted Bottom Copper over Top Copper, a source and a load dropped on a
+    /// top-side supply trace were recorded on the bottom-side ground pour: they stood on plenty of
+    /// metal, all of it the RETURN, and the sentence sent the user looking for copper that was
+    /// visibly there. The walk seeds nothing on the reference layer and nothing on a resolved return
+    /// net (<c>Regions.Walk</c>),
+    /// so those are the two things an anchor on metal can have met, and this names which. Only a
+    /// refusal pays for the partition read here.
+    /// </remarks>
+    public static string NoCopperRefusal(
+        PdnExtractionRequest request, IReadOnlyDictionary<LayerKey, Paths64> layerRegions,
+        LayerKey referenceLayer, PdnRailRegionSet regions, out IReadOnlyList<PdnAnchorAmbiguity> offers)
+    {
+        var rail = request.Rail;
+        var tech = request.Technology;
+        string head = $"Rail '{rail.Name}' resolves to no copper. ";
+        var choices = new List<PdnAnchorAmbiguity>();
+        offers = choices;
+
+        var pieces = DrcConnectivity.Extract(layerRegions, tech);
+        var (returnNets, returnResolved) =
+            Regions.ReturnNets(pieces, request.NetPoints, rail.NetName, referenceLayer, regions.ReturnNet.Net,
+                               regions.ReturnNet.GalvanicNet);
+
+        // The document's own display unit, as every other rail sentence prints (RailLengthFormat).
+        string Point(long x, long y) => request.LengthFormat.Point(x, y);
+
+        var landed = new List<string>();
+        // An anchor on the return is almost always a click that landed on the wrong layer — a pour
+        // drawn over the trace, or a layer order an import got upside down. The copper at the same
+        // point that is NOT the return is what it most likely meant, so it is offered as one click
+        // (the "Which copper?" card) rather than left to a hand edit of the `.crail`.
+        void Offer(bool isSource, int index, long x, long y)
+        {
+            var other = Regions.CopperUnder(pieces, tech, request.NetPoints, x, y, referenceLayer,
+                                            returnNets, returnResolved);
+            if (other.Count > 0) choices.Add(new PdnAnchorAmbiguity(rail.Name, isSource, index, x, y, other));
+        }
+
+        void Ask(RailPortAnchor anchor, string row, bool isSource, int index)
+        {
+            foreach (var (x, y, layer) in PdnAttachments.ResolveLands(anchor, request.Pads))
+            {
+                var under = pieces.Where(p => (layer is not { } land || p.Layer == land)
+                                              && p.Bounds.Contains(x, y) && Regions.Contains(p.Paths, x, y))
+                                  .ToList();
+                if (under.Count == 0) continue;
+
+                var off = under.Where(p => p.Layer != referenceLayer).ToList();
+                if (off.Count == 0)
+                {
+                    landed.Add($"{row} at {Point(x, y)} is on " +
+                               $"{Regions.LayerLabel(tech, referenceLayer)}, the reference layer itself, and a conductor cannot be its own return");
+                    if (anchor.Refdes is not { Length: > 0 }) Offer(isSource, index, x, y);
+                    return;
+                }
+                if (returnResolved && off.FirstOrDefault(p => returnNets.Contains(p.Net)) is { } ret)
+                {
+                    string net = regions.ReturnNet.Net is { Length: > 0 } n ? $" '{n}'" : "";
+                    landed.Add($"{row} at {Point(x, y)} is on copper on {Regions.LayerLabel(tech, ret.Layer)} " +
+                               $"that is joined to the return{net}, so it is the return and not the rail");
+                    if (anchor.Refdes is not { Length: > 0 }) Offer(isSource, index, x, y);
+                    return;
+                }
+            }
+        }
+
+        for (int i = 0; i < rail.Sources.Count; i++) Ask(rail.Sources[i].Anchor, $"Source {i + 1}", true, i);
+        for (int i = 0; i < rail.Loads.Count; i++) Ask(rail.Loads[i].Anchor, $"Load {i + 1}", false, i);
+
+        if (landed.Count > 0)
+            return head +
+                   (rail.NetName is { Length: > 0 } named ? $"Nothing on this board is on net '{named}'. " : "The rail names no net. ") +
+                   "No anchor stands on the rail's own copper — " + string.Join("; ", landed) + ". " +
+                   "Move the anchor onto the rail's own copper — hiding the layers you do not mean in the board " +
+                   "view makes a click land on the one you can see — or give the rail its net name.";
+
+        return head +
+               (rail.NetName is { Length: > 0 } net2
+                   ? $"Nothing on this board is on net '{net2}', and no source or load anchor landed on " +
+                     "metal. Check the net name against the board netlist."
+                   : "The rail names no net, and no source or load anchor landed on metal. Give the " +
+                     "rail its net name, or anchor a source or a load on the rail's own copper.");
     }
 
     /// <summary>

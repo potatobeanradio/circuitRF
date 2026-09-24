@@ -560,13 +560,20 @@ public enum PlanarNeighbourClass
 /// <param name="SubstrateHeightM">h, so the margin can be stated in the units the error follows. 0
 /// when the caller did not supply it, which leaves <see cref="Heights"/> NaN and decides nothing.</param>
 /// <param name="EndRunM">The run of line the calibration standard reproduces — the region scanned.</param>
+/// <param name="NearestXM">Where that neighbour is — the centre of its nearest metal, in the layout's own
+/// coordinates, metres — or null where there is none. A refusal that says "0 µm away" and not WHERE
+/// sent a user hunting outside their solve region for metal that was a 6 µm sliver of a placed part's
+/// pad behind the port's own end face (round-7 field report).</param>
+/// <param name="NearestYM">Metres; see <paramref name="NearestXM"/>.</param>
 public sealed record PlanarFeedClearance(
     int                  PortNumber,
     PlanarNeighbourClass Neighbour,
     double               NearestM,
     double               RequiredM,
     double               SubstrateHeightM,
-    double               EndRunM)
+    double               EndRunM,
+    double?              NearestXM = null,
+    double?              NearestYM = null)
 {
     /// <summary>Is the calibration being applied outside the condition it is valid under?</summary>
     public bool Breached => Neighbour != PlanarNeighbourClass.None && NearestM < RequiredM;
@@ -605,6 +612,7 @@ public sealed record PlanarFeedClearance(
     /// </summary>
     public string Breach(SurfaceMesher.PlanarLengthFormat? fmt = null)
         => $"port {PortNumber} has other metal {Fmt(NearestM, fmt)} away" +
+           (NearestXM is { } nx && NearestYM is { } ny ? $", at ({Fmt(nx, fmt)}, {Fmt(ny, fmt)})" : "") +
            (double.IsNaN(Heights) ? "" : $" ({Heights:0.##} substrate heights, against the " +
                                          $"{RequiredHeights:0.#} a neighbour that {Which} needs)");
 
@@ -2167,6 +2175,7 @@ public static class PlanarPorts
                   ?? port.TransverseLines[^1];
         double nearestDriven  = double.PositiveInfinity;
         double nearestPassive = double.PositiveInfinity;
+        (double X, double Y) drivenAt = default, passiveAt = default;
 
         // ── R-pcal7-1 — THE FEED'S OWN CROSS-SECTION, COLUMN BY COLUMN ──────────────────────────
         //
@@ -2260,8 +2269,10 @@ public static class PlanarPorts
             if (along < -endRunM || along > endRunM) continue;
 
             double across = Math.Max(t0 >= tHi ? t0 - tHi : tLo - t1, 0);
-            if (driven.Contains(label)) nearestDriven  = Math.Min(nearestDriven,  across);
-            else                        nearestPassive = Math.Min(nearestPassive, across);
+            var at = (0.5 * ((region?.XMin ?? c.XMin) + (region?.XMax ?? c.XMax)),
+                      0.5 * ((region?.YMin ?? c.YMin) + (region?.YMax ?? c.YMax)));
+            if (driven.Contains(label)) { if (across < nearestDriven)  { nearestDriven  = across; drivenAt  = at; } }
+            else                        { if (across < nearestPassive) { nearestPassive = across; passiveAt = at; } }
         }
 
         // Each class is judged against its OWN threshold, and the one reported is the one that is
@@ -2274,10 +2285,14 @@ public static class PlanarPorts
         return dRatio <= pRatio
             ? new PlanarFeedClearance(port.Number,
                   double.IsInfinity(nearestDriven) ? PlanarNeighbourClass.None : PlanarNeighbourClass.Driven,
-                  nearestDriven, drivenRequiredM, slabHeightM, endRunM)
+                  nearestDriven, drivenRequiredM, slabHeightM, endRunM,
+                  double.IsInfinity(nearestDriven) ? null : drivenAt.X,
+                  double.IsInfinity(nearestDriven) ? null : drivenAt.Y)
             : new PlanarFeedClearance(port.Number,
                   double.IsInfinity(nearestPassive) ? PlanarNeighbourClass.None : PlanarNeighbourClass.Passive,
-                  nearestPassive, passiveRequiredM, slabHeightM, endRunM);
+                  nearestPassive, passiveRequiredM, slabHeightM, endRunM,
+                  double.IsInfinity(nearestPassive) ? null : passiveAt.X,
+                  double.IsInfinity(nearestPassive) ? null : passiveAt.Y);
     }
 
 
@@ -2363,11 +2378,27 @@ public static class PlanarPorts
             double mid = 0.5 * (gLong[col] + gLong[col + 1]);
             if (Math.Abs(mid - port.OuterEdgeM) > endRunM) break;
 
-            bool whole = true;
-            for (int t = pLo; t <= pHi; t++) if (!Metal(col, t)) { whole = false; break; }
-            if (!whole) break;                      // the feed has ended: no band here or further in
+            // ── ONE UNBROKEN RUN OVERLAPPING THE PROFILE, NOT ONE COVERING ALL OF IT (2026-09-24) ──
+            //
+            // This used to demand metal on EVERY profile cell. A port whose own face is a little
+            // WIDER on one side than the copper further in — a placed part's footprint pad lying over
+            // an imported board's own pad, 12.5 µm proud of it on one edge — then "ended" at the
+            // first column where that 12.5 µm was empty, and the port's own copper beside the
+            // profile came back as a neighbour 0 µm away and refused the run (round-7 field report).
+            // The feed has ended when NO metal meets the profile, or when the metal that does is
+            // split by a gap — the pad that stops and the coil beyond it still end the band here.
+            int first = -1, last = -1;
+            bool split = false;
+            for (int t = pLo; t <= pHi; t++)
+            {
+                if (!Metal(col, t)) continue;
+                if (first < 0) first = t;
+                else if (t != last + 1) { split = true; break; }
+                last = t;
+            }
+            if (first < 0 || split) break;          // the feed has ended: no band here or further in
 
-            int lo = pLo, hi = pHi;
+            int lo = first, hi = last;
             while (lo - 1 >= 0    && Metal(col, lo - 1)) lo--;
             while (hi + 1 < nTran && Metal(col, hi + 1)) hi++;
             bands[col] = (lo, hi);

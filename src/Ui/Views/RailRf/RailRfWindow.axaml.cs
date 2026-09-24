@@ -1051,6 +1051,10 @@ public partial class RailRfWindow : Window
     /// because two views of one <c>.crail</c> would write it from two working copies; a standalone
     /// window writes no document at all until it is saved.
     /// </remarks>
+    /// <summary>The window this one was placed over and closes with — see <see cref="ShowUnowned"/>.
+    /// Null when it was shown with none.</summary>
+    private Window? _placementOwner;
+
     public static RailRfWindow ShowStandalone(Window? owner)
     {
         var vm = new RailRfViewModel();
@@ -1107,6 +1111,7 @@ public partial class RailRfWindow : Window
     /// </remarks>
     private static void ShowUnowned(RailRfWindow window, Window? owner)
     {
+        window._placementOwner = owner;
         if (owner is null)
         {
             window.WindowStartupLocation = WindowStartupLocation.CenterScreen;

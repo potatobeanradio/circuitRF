@@ -20,7 +20,9 @@
 // The geometry, the PortHint, the direction inference and the interior test all stayed together in
 // src/Design. Only the candidate ENUMERATION is here.
 
+using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace CircuitRF.Render;
 
@@ -110,6 +112,97 @@ public static class LayoutConductorLookup
         bool IsVisible(LayerKey key) =>
             visible.TryGetValue(key, out bool v) ? v : FallbackPalette.For(key).Visible;
 
+        // ── COPPER THAT OVERLAPS IS ONE CONDUCTOR (round-7 field report, 2026-09-24) ─────────────
+        //
+        // A placed part's footprint pad lying over an imported board's own pad is two shapes and one
+        // piece of metal. Answering with the smaller shape alone let a port snap to the board pad's
+        // end face, which was 6 µm INSIDE the copper, and be drawn as an edge port there — while the
+        // EM run, which meshes the union, used the footprint's face. The shape answered is now the
+        // union of every same-layer shape (top-level or inside a placed instance) that overlaps the
+        // one under the point, so snap-to-boundary, the edge/interior test and the direction all
+        // measure the copper. A shape nothing overlaps is answered AS ITSELF, exactly as before.
+        // Cached per lookup, which is per frame.
+        var mergedCache = new Dictionary<LayoutShape, LayoutShape>(ReferenceEqualityComparer.Instance);
+        List<(Bbox Box, IReadOnlyList<LayoutShape> Shapes)>? instanceCopper = null;
+
+        // ownInstance: the instance `best` comes from, whose OTHER pieces are not merged with it — a
+        // cell drawn as overlapping pieces (a taper's sections) is one part and keeps its box answer.
+        LayoutShape MergedWithOverlapping(LayoutShape best, Bbox box, long px, long py, int ownInstance = -1)
+        {
+            if (mergedCache.TryGetValue(best, out var hit)) return hit;
+
+            bool Overlaps(Bbox b) => b.MinX < box.MaxX && box.MinX < b.MaxX && b.MinY < box.MaxY && box.MinY < b.MaxY;
+
+            var operands = new List<LayoutShape> { best };
+            foreach (var s in view.Shapes)
+                if (!ReferenceEquals(s, best) && s.Layer == best.Layer && s is not (LabelShape or BitmapShape)
+                    && LayoutBooleans.IsClipperOperand(s) && Overlaps(LayoutGeometry.BboxOf(s)))
+                    operands.Add(s);
+
+            if (view.Instances.Count > 0)
+            {
+                instanceCopper ??= [.. view.Instances.Select(inst =>
+                    (CellHierarchy.InstanceBbox(inst, baseDir), (IReadOnlyList<LayoutShape>)[]))];
+                for (int k = 0; k < view.Instances.Count; k++)
+                {
+                    if (k == ownInstance) continue;
+                    if (instanceCopper[k].Box.IsEmpty || !Overlaps(instanceCopper[k].Box)) continue;
+                    if (instanceCopper[k].Shapes.Count == 0)
+                        instanceCopper[k] = (instanceCopper[k].Box,
+                                             LayoutFlatten.FlattenAllLevels(view.Instances[k], baseDir).Shapes);
+                    foreach (var s in instanceCopper[k].Shapes)
+                        if (s.Layer == best.Layer && LayoutBooleans.IsClipperOperand(s) && Overlaps(LayoutGeometry.BboxOf(s)))
+                            operands.Add(s);
+                }
+            }
+
+            LayoutShape answer = best;
+            if (operands.Count > 1 && LayoutBooleans.IsClipperOperand(best))
+            {
+                try
+                {
+                    var union = LayoutBooleans.Union(operands, tech).Shapes;
+                    // Nothing actually overlapped when the union has as many pieces as it had operands.
+                    if (union.Count < operands.Count)
+                        answer = union.FirstOrDefault(u => LayoutGeometry.BboxOf(u) is var ub
+                                                           && ub.MinX <= px && px <= ub.MaxX && ub.MinY <= py && py <= ub.MaxY
+                                                           && ub.MinX <= box.MinX && box.MaxX <= ub.MaxX
+                                                           && ub.MinY <= box.MinY && box.MaxY <= ub.MaxY) ?? best;
+                }
+                catch (Exception) { /* a degenerate operand: answer as drawn */ }
+            }
+
+            mergedCache[best] = answer;
+            return answer;
+        }
+
+        // The smallest copper shape of instance k containing the point, EDGE INCLUSIVE — a port snapped
+        // onto a pad's face stands exactly on it.
+        LayoutShape? InstanceCopperAt(int k, long px, long py, LayerKey? onLayer)
+        {
+            instanceCopper ??= [.. view.Instances.Select(inst =>
+                (CellHierarchy.InstanceBbox(inst, baseDir), (IReadOnlyList<LayoutShape>)[]))];
+            if (instanceCopper[k].Shapes.Count == 0)
+                instanceCopper[k] = (instanceCopper[k].Box, LayoutFlatten.FlattenAllLevels(view.Instances[k], baseDir).Shapes);
+
+            LayoutShape? found = null;
+            double foundArea = double.MaxValue;
+            foreach (var s in instanceCopper[k].Shapes)
+            {
+                if (!LayoutBooleans.IsClipperOperand(s)) continue;
+                if (onLayer is { } want ? s.Layer != want : !IsVisible(s.Layer)) continue;
+                var b = LayoutGeometry.BboxOf(s);
+                if (px < b.MinX || px > b.MaxX || py < b.MinY || py > b.MaxY) continue;
+                var paths = LayoutClipper.ToClipperPaths(s, LayoutFlattener.ResolveTolDbu(s, tech));
+                bool inside = paths.Any(path => Clipper2Lib.Clipper.PointInPolygon(new Clipper2Lib.Point64(px, py), path)
+                                                != Clipper2Lib.PointInPolygonResult.IsOutside);
+                if (!inside) continue;
+                double area = (double)(b.MaxX - b.MinX) * (b.MaxY - b.MinY);
+                if (area < foundArea) { foundArea = area; found = s; }
+            }
+            return found;
+        }
+
         return (x, y, onLayer) =>
         {
             LayoutShape? best = null;
@@ -136,14 +229,31 @@ public static class LayoutConductorLookup
 
             // The SHAPE, not only its box: a top-level conductor can be measured at the end face,
             // and for anything that changes width along its length the box is the wrong number.
-            if (best is not null) return new LayoutPortDirection.ConductorInfo(bestBox, null, best);
+            if (best is not null)
+            {
+                var merged = MergedWithOverlapping(best, bestBox, x, y);
+                return new LayoutPortDirection.ConductorInfo(LayoutGeometry.BboxOf(merged), null, merged);
+            }
 
             foreach (int i in LayoutHitTest.HitInstanceStack(view, tech, baseDir, x, y, tolDbu))
             {
                 var inst = view.Instances[i];
                 var bb = CellHierarchy.InstanceBbox(inst, baseDir);
                 if (bb.IsEmpty) continue;
-                return new LayoutPortDirection.ConductorInfo(bb, PinAt(inst, baseDir, tech, x, y, tolDbu));
+                var pin = PinAt(inst, baseDir, tech, x, y, tolDbu);
+
+                // No pin named, and the instance's own copper here OVERLAPS other copper (a footprint
+                // pad over a board's pad): answer with the merged outline, as a top-level shape does,
+                // so a port snapped onto that copper's edge measures the edge. Copper that overlaps
+                // nothing keeps the box answer it always had.
+                if (pin is null && InstanceCopperAt(i, x, y, onLayer) is { } own)
+                {
+                    var ownBox = LayoutGeometry.BboxOf(own);
+                    var merged = MergedWithOverlapping(own, ownBox, x, y, ownInstance: i);
+                    if (!ReferenceEquals(merged, own))
+                        return new LayoutPortDirection.ConductorInfo(LayoutGeometry.BboxOf(merged), null, merged);
+                }
+                return new LayoutPortDirection.ConductorInfo(bb, pin);
             }
 
             return null;

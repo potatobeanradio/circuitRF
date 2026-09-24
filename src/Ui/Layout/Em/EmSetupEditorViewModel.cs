@@ -344,7 +344,10 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     [ObservableProperty] private string? _resolvedLayoutPath;
 
     partial void OnResolvedLayoutPathChanged(string? value)
-        => OnPropertyChanged(nameof(CanOpenLayout));
+    {
+        OnPropertyChanged(nameof(CanOpenLayout));
+        DrawSolveRegionCommand.NotifyCanExecuteChanged();
+    }
 
     /// <summary>Whether there is a layout to show — what the Layout row's context menu is gated on.</summary>
     public bool CanOpenLayout => ResolvedLayoutPath is { Length: > 0 };
@@ -361,6 +364,47 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     private void OpenLayoutInNewWindow()
     {
         if (ResolvedLayoutPath is { Length: > 0 } p) OpenLayoutRequested?.Invoke(p, true);
+    }
+
+    // ── Solve region (round-7 designer feedback, 2026-09-24) ───────────────────────────────────
+
+    /// <summary>Asks the host to open this setup's layout and arm a drag on it whose rectangle comes
+    /// back through <see cref="SetSolveRegion"/>. The host owns the canvas; this file is
+    /// framework-free and draws nothing.</summary>
+    public Action? DrawSolveRegionRequested { get; set; }
+
+    /// <summary>True when the setup solves only part of its layout.</summary>
+    public bool HasSolveRegion => Working.SolveRegion is not null;
+
+    /// <summary>What the Solve region row says: the box, or that the whole layout is solved.</summary>
+    public string SolveRegionText => Working.SolveRegion?.Describe() ?? "Whole layout";
+
+    /// <summary>
+    /// Sets (or, with null, clears) the region — one undo entry, then a refresh, so the panel's notes
+    /// report what the region kept and the layout's outline follows at once.
+    /// </summary>
+    public void SetSolveRegion(EmSolveRegion? region)
+    {
+        if (Equals(region, Working.SolveRegion)) return;
+        var before = SnapshotJson();
+        Working.SolveRegion = region;
+        CommitEdit(before, region is null ? "Clear EM solve region" : "Set EM solve region");
+        RaiseSolveRegion();
+        Refresh();
+    }
+
+    /// <summary>Solve region ▸ Draw on layout… — the user drags the box on the canvas.</summary>
+    [RelayCommand(CanExecute = nameof(CanOpenLayout))]
+    private void DrawSolveRegion() => DrawSolveRegionRequested?.Invoke();
+
+    /// <summary>Solve region ▸ Clear — back to solving the whole layout.</summary>
+    [RelayCommand]
+    private void ClearSolveRegion() => SetSolveRegion(null);
+
+    private void RaiseSolveRegion()
+    {
+        OnPropertyChanged(nameof(HasSolveRegion));
+        OnPropertyChanged(nameof(SolveRegionText));
     }
     [ObservableProperty] private string _technologyName = "";
 
@@ -1648,6 +1692,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         SyncReturnPlaneChoice();
         SnpOutputPathText = Working.SnpOutputPathOverride;
         OnPropertyChanged(nameof(SnpOutputPlaceholder));
+        RaiseSolveRegion();
         RefreshMeshText();
         _suppressCommit = false;
         Refresh();
@@ -1771,8 +1816,20 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
 
         // Flattened, not source.View.Shapes: a schematic-generated layout carries every piece of
         // metal inside a placed instance and nothing at top level (owner report, 2026-08-09).
-        var geometry = EmGeometry.Flatten(source.View, source.AbsolutePath);
+        // And clipped to the solve region, through the same door the run takes (EmGeometry.ForSetup).
+        var geometry = EmGeometry.ForSetup(Working, source);
         _geometryNotes = geometry.Notes;
+
+        if (geometry.RegionRefusal is { } regionRefusal)
+        {
+            // Both refusal slots, because BlockingReason reads the one of whichever kernel the last
+            // refresh chose — and the region refuses before a kernel is chosen at all.
+            Notes = [.. _geometryNotes];
+            ExtractionRefusal       = regionRefusal;
+            PlanarExtractionRefusal = regionRefusal;
+            RaiseState();
+            return;
+        }
 
         // EM-SEV R-emsev-6 — the one line the user would have seen BEFORE spending eleven minutes.
         // Flattened shapes, for the reason above: the artwork of a schematic-generated layout is all
@@ -2116,7 +2173,15 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
             fMax = 0;
         }
 
-        var meshGeometry = EmGeometry.Flatten(source.View, source.AbsolutePath);
+        var meshGeometry = EmGeometry.ForSetup(Working, source);
+        if (meshGeometry.RegionRefusal is { } regionRefusal)
+        {
+            PlanarMeshNotes         = [.. meshGeometry.Notes];
+            PlanarExtractionRefusal = regionRefusal;
+            OnPropertyChanged(nameof(PlanarMeshSummary));
+            RaiseState();
+            return null;
+        }
         var extraction = PlanarExtractor.Extract(
             meshGeometry.Shapes, source.Technology, source.DbuPerMicron, fMax, Working.ToExtractionSettings(),
             meshGeometry.GeneratorIds);

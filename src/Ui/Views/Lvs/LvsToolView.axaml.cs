@@ -2,7 +2,9 @@ using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
+using CircuitRF.Ui.Layout;
 using CircuitRF.Ui.Layout.Lvs;
 using CircuitRF.Ui.ViewModels;
 using CircuitRF.Ui.ViewModels.Dock;
@@ -47,6 +49,25 @@ public partial class LvsToolView : UserControl
         if (result is null) return;   // the view model says why, beside the button
 
         LvsRunReport.Post(ResolveWorkspace()?.Messages ?? vm.MessageSink, result);
+    }
+
+    /// <summary>The whole comparison, as <c>circuitrf lvs -o report.txt</c> writes it.</summary>
+    private void OnCopyReportClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is LvsTool { EditorVm: { } vm }) CopyToClipboard(vm.LvsReportCopyText);
+    }
+
+    /// <summary>One finding — the row the context menu was opened on.</summary>
+    private void OnCopyFindingClick(object? sender, RoutedEventArgs e)
+    {
+        if ((sender as MenuItem)?.DataContext is LvsFindingRow row)
+            CopyToClipboard(CircuitRF.Design.Layout.Lvs.LvsReportText.Of(row.Finding));
+    }
+
+    private void CopyToClipboard(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return;
+        if (TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard) _ = clipboard.SetTextAsync(text);
     }
 
     private static WorkspaceViewModel? ResolveWorkspace() =>

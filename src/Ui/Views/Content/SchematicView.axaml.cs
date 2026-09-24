@@ -796,11 +796,11 @@ public partial class SchematicView : UserControl
 
         var result = await SchematicClipboard.PasteAsync(clipboard);
         if (result is null) return;
-        var (comps, wires, cobjs, srcGrid) = result.Value;
+        var (comps, wires, cobjs, srcGrid, netLabels) = result.Value;
 
         // View-relative placement + the undoable paste both live in the VM so this path and the
         // Edit-menu path (SchematicViewModel.ClipboardPasteAsync) cannot drift apart.
-        doc.ActiveViewModel.PasteFragment(comps, wires, cobjs, srcGrid);
+        doc.ActiveViewModel.PasteFragment(comps, wires, cobjs, srcGrid, netLabels);
     }
 
     private async Task CopySelectionToClipboardAsync(SchematicDocument doc, IClipboard clipboard, bool cut)

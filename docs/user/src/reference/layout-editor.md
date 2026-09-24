@@ -394,9 +394,10 @@ in a way nobody notices.
 
 **Shift** locks the second endpoint to horizontal, vertical or 45°. It is *not* governed by the
 document's angle mode — a Manhattan document is a statement about manufacturable artwork, and the
-diagonal gap between two Manhattan traces is exactly the measurement you most want. Geometry snap
-outranks the Shift constraint when a snap feature is in tolerance, because a snapped endpoint is a
-stronger statement of intent than a held modifier. A ruler whose endpoints coincide after snapping is
+diagonal gap between two Manhattan traces is exactly the measurement you most want. With geometry snap
+on, the two work together: your mouse movement picks the direction, and a snap feature in tolerance only
+decides where along that direction the ruler ends — so a gap can be measured straight across to an edge
+that is off to one side. A ruler whose endpoints coincide after snapping is
 discarded rather than committed.
 
 ### What the readout says
@@ -740,6 +741,40 @@ computes internally exists to tell one net's shapes from another's. Whether the 
 on the right net, every value in agreement &mdash; is a different check with a different engine: see
 {{anchor: lvs|layout versus schematic}}. A board can pass either one and fail the other.</p>
 </div>
+
+## Trace impedance {#trace-impedance}
+
+Right-click a trace and choose **Trace Impedance** to get its characteristic impedance in the
+**Messages** panel, in well under a second. It is a review check, made for imported boards: the width is
+**measured** from the copper at the point you clicked, so it works on Gerber artwork, where a trace is a
+polygon and not a drawn path with a width.
+
+It is one line, for example *Trace Z0: Z0 46.5 Ω, εeff 3.18 — GCPW, W 480, G 561/559, H 241 µm
+(G to conductors, ref Inner 2) — Top Copper (-9138.1, 1)*, where G is the gap to coplanar ground on each
+side and says what it ends on. **G to via pads** means the nearest copper beside the trace is a row of via
+lands with no pour around them; the cross-section treats that row as a continuous edge, so check that is
+what you intended. A problem found under the trace is added to the same line after ⚠. How it
+gets there:
+
+- **The reference is found from the copper, not from the technology's ground flags.** It is the nearest
+  layer below the trace whose copper covers the trace's whole width at that point (and the nearest above,
+  for a stripline). Copper beside the trace on its own layer is coplanar ground; every conductor near the
+  trace is taken to be at ground, which is the only reading a Gerber board allows.
+- **The answer is a quasi-static cross-section solve**, the same engine the EM setup uses for a uniform
+  line, so microstrip, grounded coplanar waveguide at any gap and stripline are one method. It is
+  frequency-independent and lossless: a check of the geometry, not a replacement for an EM run.
+- **It refuses rather than guess.** A pad or a short stub, a bend or a mitre, a junction and a taper
+  have no single width, and the message says which one it found. Click the middle of a straight,
+  constant-width run.
+
+It also walks the whole constant-width section and **warns where the ground under the trace breaks**
+— a trace on an inner layer routed over a cutout in the plane next to it is flagged with where the gap
+starts and ends, after ⚠ on the same line. A layer cleared under the *whole* section is not flagged —
+that is what a wide trace referenced to a deeper plane looks like, and the *ref* on the line says which
+plane was used.
+
+The **current drawing layer** decides which trace you mean where two layers carry copper at the same
+point; otherwise it is the highest one in the stackup.
 
 ## The toolbar {#toolbar}
 

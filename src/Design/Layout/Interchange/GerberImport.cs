@@ -1753,7 +1753,7 @@ public static class GerberImport
 
             var donor = destTech?.Layers.FirstOrDefault(l => l.Key == key);
             int rank = IndexOfFile(copperTopToBottom, identity.FilePath);
-            int zOrder = rank >= 0 ? rank * 10 : 1000 + sourceLayers.Count;
+            int zOrder = rank >= 0 ? CopperZOrder(rank, copperTopToBottom.Count) : 1000 + sourceLayers.Count;
 
             sourceLayers.Add(new LayerDef
             {
@@ -1872,7 +1872,7 @@ public static class GerberImport
             foreach (var layer in sourceLayers)
             {
                 if (layer.Key != key) continue;
-                layer.ZOrder = i * 10;
+                layer.ZOrder = CopperZOrder(i, copperTopToBottom.Count);
                 layer.Purpose = GerberLayerCascade.ConductorPurpose;
             }
         }
@@ -2051,10 +2051,34 @@ public static class GerberImport
             });
         }
 
-        tech.Layers.Sort((a, b) => a.ZOrder.CompareTo(b.ZOrder));
+        // The layer TABLE reads copper top to bottom, then the artwork — which is no longer the
+        // z-order itself, since the top of the stack now paints last (CopperZOrder's note).
+        static bool IsCopper(LayerDef l) =>
+            string.Equals(l.Purpose, GerberLayerCascade.ConductorPurpose, StringComparison.Ordinal);
+        tech.Layers.Sort((a, b) =>
+        {
+            int c = IsCopper(b).CompareTo(IsCopper(a));
+            if (c != 0) return c;
+            return IsCopper(a) ? b.ZOrder.CompareTo(a.ZOrder) : a.ZOrder.CompareTo(b.ZOrder);
+        });
         _ = copperTopToBottom;
         return tech;
     }
+
+    /// <summary>
+    /// The z-order of the copper at stackup <paramref name="rank"/> (0 = top) of
+    /// <paramref name="count"/>: the TOP of the stack paints LAST, so it is the highest.
+    /// </summary>
+    /// <remarks>
+    /// The renderer paints ascending z-order and the last layer painted is the topmost
+    /// (docs/design/layout-view.md §2.1) — every shipped technology gives Top Copper the highest.
+    /// Minting <c>rank * 10</c> inverted that: Bottom Copper painted over Top Copper, and every
+    /// "the copper the user sees at this point" question (railRF's anchor pick, a click's hit test)
+    /// answered with the BOTTOM layer — a source dropped on a top-side trace landed on the ground pour
+    /// on the far side of the board. All copper stays below the artwork's 1000 + n, so silk and mask
+    /// still draw over it.
+    /// </remarks>
+    internal static int CopperZOrder(int rank, int count) => (count - 1 - rank) * 10;
 
     /// <summary>
     /// The minted technology's display unit — the unit the file set was WRITTEN in, not the DBU.

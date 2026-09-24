@@ -1,5 +1,68 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## Field report 7: a rail whose anchors landed on the far side of the board (2026-09-24)
+
+A Gerber board's supply rail refused with "resolves to no copper … no source or load anchor
+landed on metal". The source and load had been clicked onto the Top Copper VDD trace.
+
+- **Root cause: the Gerber importer minted conductor z-orders upside down.** Copper was stamped
+  `rank * 10` (Top Copper 0 … Bottom Copper 30). The renderer paints ascending z-order and the last
+  layer painted is on top, so Bottom Copper drew over Top Copper. railRF's anchor pick
+  (`RailRfViewModel.ShownCopperLayerAt`) takes the topmost copper *as drawn*, so both anchors were
+  recorded on the Bottom Copper ground pour. Every shipped technology gives Top Copper the highest
+  z-order. `GerberImport.CopperZOrder` now does the same. The layer table still reads top to bottom:
+  the final sort puts copper first, in stack order, then the artwork layers.
+  Gate: `GerberImportTests.ADotG1_IsNeverTopCopper_BecauseTheSetThatHasOneAlsoHasADotGtl`.
+- **The other importers do not share the defect.** The `.kicad_pcb` reader leaves every z-order at
+  0, and the renderer breaks the tie on key. Its synthetic keys count down in layer-table order, so
+  F.Cu already draws on top. DXF and GDSII mint no stackup order at all.
+- **`ShownCopperLayerAt` is unchanged, on purpose.** It picks the copper the board view paints on
+  top, and the view paints with the same z-order, so the click and the picture agree. Ordering the
+  pick by stackup instead would make a click on a visible bottom-side pad land on a top pour that
+  is drawn underneath it. The defect was the paint order, and hiding a layer is still how a user
+  says "not that one".
+- **A technology minted before this fix stays inverted.** Nothing rewrites a user's `.ctech`.
+  Re-import the board, or swap the copper z-orders in the technology editor.
+- **The refusal names where the anchors landed.** `PdnRailConnectivity.NoCopperRefusal` is shared by
+  both extractors. For each anchor it says whether the point stands on the reference layer itself,
+  or on copper galvanically joined to the resolved return. The old sentence is kept only for anchors
+  that really stand on no copper. Solve semantics are unchanged.
+  Gate: `PdnReturnNetTests.ARailWhoseAnchorsLandOnlyOnTheReferenceSaysSoRatherThanNoMetal`.
+
+## The return on a mixed reference layer is the largest copper that is not the rail (2026-09-24)
+
+**Policy change, by owner decision.** R-rail31-3 refused a rail when three things held: no return
+net was named, none could be measured, and the reference layer carried the rail's own copper
+beside other copper. It asked the user to name the return net. A Gerber-only board has no name to
+give. Its only named copper is whatever the user typed onto a trace. So the field board could not
+be solved at all once its anchors were on the right layer.
+
+- `Regions.ResolveReturnNet` now falls through Named, then Measured, then **Largest**. Largest is the
+  galvanic net with the most copper area on the reference layer that is not the rail's own. It is
+  decided in that one function, which the run (`PdnRailConnectivity.Walk`) and the window's Return
+  row both call. The chosen net travels as `PdnReturnNet.GalvanicNet`, an index into the partition it
+  was resolved over, because an unnamed plane has no name to carry.
+  `Regions.ReturnNets` honours that index when no name is given.
+- **Which copper is the rail's** is read as `Walk` reads it, with one difference. A seed that states
+  no layer counts only where exactly one galvanic net covers it off the reference layer. Without that
+  rule, a bare click on a top trace over a bottom ground pour would make the ground "the rail's" and
+  hand the return to something smaller.
+- **When the refusal remains:** only when nothing on the reference layer belongs to anyone else. It
+  also fires when the layer is not mixed at all, where "every piece on the layer" is still the
+  return, as before. A named `ReferenceNet` always wins.
+- **What it says:** `PdnReturnNet.Describe` gives "the largest copper on 'Inner 2' (layer 11/0) other
+  than the rail's own — 548.57 mm², no net named on it. Name a reference net to override it". The
+  window's Return row reads that answer off the last solve of the rail. That is the one source that
+  cannot disagree with the run: the answer moves with every anchor edit, and the window's own
+  measurement is keyed only by layer and named net.
+- **Measured on the field board**, with the anchors on Top Copper and the reference on Inner 2: the
+  return is 548.57 mm² of unnamed Inner 2 copper, and the load sees 3.2998 V, 0.192 mV below the
+  source (Fast). The run gives the same answer with the rail named VDD and with no rail name.
+- **Test changed:** `PdnReturnNetTests.AnUnresolvableReturnWithTheRailOnItsLayerIsRefusedNamingTheLayerAndTheNet`
+  pinned exactly this refusal. It is now `…TakesTheLargestOtherCopper` and asserts the 218.56 mm²
+  plane is chosen over the rail's own land. New:
+  `TheLargestReturnIsTheBiggestPieceThatIsNotTheRails_AndANameOverridesIt`.
+
 ## Gerber import minted a technology that displayed in nanometres (2026-09-24)
 
 `GerberImport.BuildTechnology` never set `DefaultDisplayUnit`, so it took `LayoutUnit.Nm`, the
@@ -11946,3 +12009,100 @@ the series parts' DCR, which the board's library does not state.
 - **`CellFolder.SiblingView`** is where a view file's other view lives: in a cell folder, the other
   view's sub-folder; for a loose document, beside it. Both Update commands read it. See
   `src/Ui/RESOLVED.md`.
+
+## EM solve region — a box in the `.cem` that bounds what is solved (2026-09-24)
+
+- **What was asked.** On an imported board, the way to EM one trace was Clip plus Save As a second
+  `.clay`. That copy stops following the original as soon as either one is edited. `EmSetup.SolveRegion`
+  (an `EmSolveRegion` rectangle, in µm, omitted when null so old `.cem` files stay byte-identical) puts
+  the box in the setup instead.
+- **One door.** `EmGeometry.ForSetup` = `Flatten` plus `EmSolveRegionClip.Apply`. The run, the preflight,
+  the panel's Refresh, its planar-mesh preparation and `explain` all call it. If one of them flattened on
+  its own, the panel would preview a different problem from the one the run solves.
+- **The clip is the layout editor's Clip** (`LayoutBooleans.Clip`, per operand, keeping each shape's
+  layer and net). A via or label stays whole or is dropped, by its anchor. Bitmaps pass through.
+- **Ports are checked before either extractor runs**, and a port outside the box is refused by number and
+  text. Otherwise the whole board would be extracted just to be refused, which is the cost the region
+  exists to avoid. An extractor's own refusal of clipped geometry would also describe the symptom rather
+  than the cause. A port exactly on the box's edge counts as inside, because a line cut at the edge ends
+  there.
+- **Micrometres, not DBU**, because the `.cem` does not know the layout's resolution. `ToDbu` rounds
+  outward.
+- **Provenance.** When a region is set, the Touchstone "layout" line carries it (in ASCII). A file
+  written without a region is unchanged.
+- **Measured on the round-7 field board:** a 3 × 3 mm box around the RF-in trace kept 7 shapes whole, cut
+  9 and left out 3,342.
+- **Round vs square vias, measured with the planar preflight** (a 4 mm line, 1 GHz, coarse mesh):
+  - A via BARREL (`ViaShape`) is already replaced by its equal-area square (`BuildVias`), and adds 9
+    cells.
+  - A round CLEARANCE HOLE in a pour costs nothing extra: 184 cells for a 16-, 64- or 128-gon, against
+    200 for the square hole.
+  - A free-standing round PAD beside the line is the expensive case: about 1,030 cells as a circle or a
+    64/128-gon, and 1,428 as a 16-gon, against 148 for the equal-area square. That is about 7×. Squaring
+    pads would be a real saving, but it changes the geometry. It is not done, and any version of it
+    needs an accuracy check first.
+
+## Trace impedance probe — "what Z0 is this trace?" on a layout (2026-09-24)
+
+- **`TraceImpedanceProbe` (Layout/Em) answers it from the copper as drawn**, for review of imported
+  boards, where a trace is a unioned polygon with no width field. Width and direction come from the
+  minimum chord through the click over all angles (a strip's chord at φ to its axis is W/sin φ), refined
+  by golden section and then cross-checked: the edges the chord ends on and the edge nearest the click
+  must lie along the implied axis, and the width is re-measured at ±W and ±2W with the chord midpoint
+  held on the axis. A pad or stub, a bend or mitre, a junction and a taper are each a refusal with its
+  reason, never a number.
+- **The solve is the cross-section kernel's own charge solve, not a formula.** Every conductor but the
+  signal is held at 0 V, so the Maxwell matrix's C₁₁ IS the line's capacitance against its whole
+  surroundings, and Z0 = 1/(c·√(C·C₀)). That is what lets coplanar ground on the signal layer, partial
+  copper on nearer layers and a copper reference above sit in one problem without the port /
+  reference-conductor bookkeeping `QuasiStaticKernel.CanSolve` enforces for a two-port. The stack and
+  regions are `CrossSectionExtractor.BuildStack`/`BuildRegions`, made internal for this rather than
+  copied.
+- **The reference is decided by COPPER COVERAGE, never by `IsGroundReference`.** On the reported board
+  the ground-flagged layer is Inner 2, but the 200 µm trace references Inner 1 (106 µm) and the 480 µm
+  trace references Inner 2 (241 µm) because Inner 1 is cleared under it — the flag would have given the
+  wide trace the right plane and the narrow one the wrong one.
+- **A layer missing under the WHOLE constant-width section is a note, not a warning.** That is a
+  deliberate clearance, and it is exactly what the reported board does on its wide RF sections. A layer
+  missing under PART of the section is the fault a reviewer is looking for, and is a warning naming where
+  the gap starts and ends.
+- **A polygon hole must be wound against its outline.** The flattener hands rings to Clipper with the
+  NonZero rule, so a hole wound the same way as its outline is filled. Persisted holes come out of
+  Clipper's own tree and are correct; a hand-built test fixture has to wind its hole the other way.
+- Measured on the reported board (εr 4.4 as its `.ctech` states): 480 µm sections 46.5 Ω, εeff 3.18,
+  H 241 µm, G ≈ 560 µm; the 200 µm section 46.6 Ω, εeff 3.10, H 106 µm, G 308 µm. 0.1–0.75 s per probe
+  in a Debug build. Against closed forms: microstrip +0.2 % vs Hammerstad–Jensen (t/W = 0.5 %, inside
+  its thickness regime); grounded CPW −0.6 % vs the zero-thickness conformal-mapping result at 1 µm
+  metal, −2.4 % at 5 µm — the gap's sidewall capacitance, which the formula omits.
+- Gate: `tests/Ui.Tests/Em/TraceImpedanceProbeTests.cs`. Not yet on the CLI: `explain` has a
+  structured-output contract, and a coordinate query there needs its own unit rules (a bare number is a
+  refusal on a layout) and schema entry.
+
+- **railRF no-copper refusal: units and a one-click fix (2026-09-24, round 7 follow-up).** The sentence
+  naming where each anchor landed formatted its coordinates as µm by hand; it now prints through the
+  request's `LengthFormat`, as every other rail sentence does, so a `.crail` set to mm reads in mm. An
+  anchor that landed on the return or on the reference layer now also comes back as a
+  `PdnAnchorAmbiguity` listing the other copper at that point, which the window's "Which copper?" card
+  offers as one click. `ChooseAnchorLayer` accepts an anchor that already STATES a layer, since here the
+  stated layer is what is being corrected. The rail's NAME ("rail at (x, y) µm") is stored text chosen
+  when the rail was picked and does not follow a later unit change.
+
+- **Overlapping copper is one conductor — in the EM extraction AND the Port tool (2026-09-24, round-7
+  follow-up).** A placed part's footprint pad over an imported board's own pad (6 µm proud of it) was two
+  shapes everywhere that reasoned per shape:
+  - `PlanarExtractor` handed the kernel both polygons. The mesh fills their union, but
+    `PlanarFeedExtension` measures ONE polygon's end face and uniform run, saw the board pad alone as a
+    uniform feed and grew no lead; the calibration then described a line that was not there and the
+    published S11 was an open circuit (|S11| ≈ −0.1 dB at 500 MHz; −31…−38 dB with the parts removed).
+    `MergeOverlappingCopper` now unions only shapes that genuinely overlap on one level, before
+    conversion; everything else passes through as the same object, so artwork without overlaps is
+    bit-identical (706 EM tests + the port/calibration engine tests unchanged). The run notes the merge.
+  - `LayoutConductorLookup` (src/Render) answered the SMALLEST top-level shape alone, and a placed
+    instance only as its box — so the Port tool snapped to the board pad's face 6 µm inside the copper
+    and drew an edge port there, and once on the footprint's true face the lookup fell to C1's box and
+    called the port internal, facing R270. The lookup now answers the union of same-layer copper
+    overlapping the shape under the point (top-level or inside another instance; an instance's OWN
+    overlapping pieces, e.g. a taper's sections, are not merged so it keeps its box answer).
+- **Pre-existing, not from this work:** `ImportReportsWhatTheStackCannotReachTests.NeitherNoteIsAWarningOrAnError`
+  and `KitPartLayoutParametersTests.AKitsOwnSuffixSpelling_ReachesTheCellVerbatim_AndIsReportedNotSwallowed`
+  fail on a clean checkout of HEAD 0b6a2dbb as well.

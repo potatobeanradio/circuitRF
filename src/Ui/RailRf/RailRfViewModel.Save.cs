@@ -73,6 +73,49 @@ public sealed partial class RailRfViewModel
     /// <summary>The document the window opened on, before anything was edited.</summary>
     private void CaptureSnapshot() => _savedSnapshot = Snapshot();
 
+    /// <summary>
+    /// Where Save as… opens: the folder the document is already in, else the CELL folder of the
+    /// board it prices (the one holding <c>.ccell</c> above <c>layout/</c>), else the folder of the
+    /// <c>.clay</c> itself. Null with neither — the picker's own default.
+    /// </summary>
+    /// <remarks>
+    /// The picker used to open wherever the platform last left it, so a first save of real work
+    /// landed as <c>board.crail</c> in a folder outside the workspace, where the tree does not show
+    /// it and nothing offers to move it. Beside the board's cell is where the tree lists it and where
+    /// its artwork reference is one short relative hop.
+    /// </remarks>
+    public string? SuggestedSaveFolder
+    {
+        get
+        {
+            if (_documentPath is { Length: > 0 } saved
+                && System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(saved)) is { } own
+                && System.IO.Directory.Exists(own))
+                return own;
+
+            if (Board?.ArtworkCellRef is not { Length: > 0 } clay
+                || System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(clay)) is not { } dir
+                || !System.IO.Directory.Exists(dir))
+                return null;
+
+            if (string.Equals(System.IO.Path.GetFileName(dir), CircuitRF.Design.Cells.CellFolder.LayoutSubFolder,
+                              StringComparison.OrdinalIgnoreCase)
+                && System.IO.Path.GetDirectoryName(dir) is { } cell
+                && System.IO.File.Exists(System.IO.Path.Combine(cell, CircuitRF.Design.Cells.CellFolder.CcellFileName)))
+                return cell;
+
+            return dir;
+        }
+    }
+
+    /// <summary>What Save as… suggests, without the extension: the document's own name, then the file
+    /// it came from, then the board's layout it prices, and only then <c>board</c>.</summary>
+    public string SuggestedSaveName =>
+        _document.Name is { Length: > 0 } n ? n
+        : _documentPath is { Length: > 0 } p ? System.IO.Path.GetFileNameWithoutExtension(p)
+        : Board?.ArtworkCellRef is { Length: > 0 } clay ? System.IO.Path.GetFileNameWithoutExtension(clay)
+        : "board";
+
     // ── The two commands, and why the writing is not here ────────────────────────────────────
 
     /// <summary>

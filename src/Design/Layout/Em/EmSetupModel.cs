@@ -374,6 +374,14 @@ public sealed class EmSetup
     /// path <c>EmRunService</c> derives from the layout and setup names (R-em-19).</summary>
     public string SnpOutputPathOverride { get; set; } = "";
 
+    /// <summary>
+    /// <b>The part of the layout this setup solves — null solves all of it</b>, which is what every
+    /// <c>.cem</c> written before the region existed means. Applied by
+    /// <see cref="EmGeometry.ForSetup"/> before either extractor sees the geometry; see
+    /// <see cref="EmSolveRegion"/> for why it lives here rather than in the layout.
+    /// </summary>
+    public EmSolveRegion? SolveRegion { get; set; }
+
     public EmSetup Clone() => new()
     {
         AnalysisKind           = AnalysisKind,
@@ -399,6 +407,7 @@ public sealed class EmSetup
         RadiationPattern       = RadiationPattern,
         ReferenceInputPowerDbm = ReferenceInputPowerDbm,
         SnpOutputPathOverride  = SnpOutputPathOverride,
+        SolveRegion            = SolveRegion,    // record, immutable
     };
 
     /// <summary>The extraction settings this setup implies — the one place the two are married,

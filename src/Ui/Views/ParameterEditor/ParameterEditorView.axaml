@@ -669,6 +669,8 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
                     <!-- A label, not a TextBox: "Technology" is not an editable parameter NAME. The
@@ -712,6 +714,34 @@
                     <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="5"
                                Text="{Binding MicrostripSubstrateWarning}"
                                IsVisible="{Binding !MicrostripSubstrateResolved}"
+                               FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0"
+                               Foreground="{DynamicResource CrfWarningBrush}"/>
+
+                    <!-- MLIN only: the Z0 the width gives, on the substrate above, and the width a Z0
+                         needs. W stays the stored parameter; typing a Z0 here synthesises W and
+                         writes it as one undoable edit (ParameterEditorViewModel.MlinImpedance.cs). -->
+                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Z0" FontSize="11"
+                               IsVisible="{Binding IsMlinTarget}"
+                               Margin="0,4,4,0" VerticalAlignment="Center"/>
+                    <TextBox Grid.Row="2" Grid.Column="1"
+                             IsVisible="{Binding IsMlinTarget}"
+                             Text="{Binding MlinZ0Text, Mode=TwoWay}"
+                             FontSize="11" Padding="4,3" Margin="0,4,0,0"
+                             VerticalAlignment="Center"
+                             LostFocus="OnMlinZ0Commit"
+                             KeyDown="OnMlinZ0KeyDown"
+                             ToolTip.Tip="The static Z0 this width gives on the substrate above. Type a Z0 and press Enter to set W to the width that gives it."/>
+                    <StackPanel Grid.Row="2" Grid.Column="2" Grid.ColumnSpan="4"
+                                IsVisible="{Binding IsMlinTarget}"
+                                Orientation="Horizontal" Spacing="8" Margin="4,4,0,0"
+                                VerticalAlignment="Center">
+                        <TextBlock Text="Ω" FontSize="11" VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding MlinEeffText}" FontSize="11" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                    </StackPanel>
+                    <TextBlock Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="5"
+                               Text="{Binding MlinImpedanceNote}"
+                               IsVisible="{Binding HasMlinImpedanceNote}"
                                FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0"
                                Foreground="{DynamicResource CrfWarningBrush}"/>
                 </Grid>

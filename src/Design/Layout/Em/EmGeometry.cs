@@ -47,7 +47,30 @@ public static class EmGeometry
     public sealed record Result(
         IReadOnlyList<LayoutShape> Shapes,
         IReadOnlyList<string>      Notes,
-        IReadOnlyList<string>      GeneratorIds);
+        IReadOnlyList<string>      GeneratorIds,
+        string?                    RegionRefusal = null);
+
+    /// <summary>
+    /// <b>The geometry an EM SETUP sees</b>: <see cref="Flatten"/>, then the setup's
+    /// <see cref="EmSetup.SolveRegion"/> applied through <see cref="EmSolveRegionClip"/>. Every caller
+    /// that hands geometry to an extractor on a setup's behalf — the run, the preflight, the panel's
+    /// Refresh and mesh preview, <c>circuitrf explain</c> — comes through here, so the region cannot
+    /// apply to one of them and not another. With no region set this IS <see cref="Flatten"/>.
+    /// </summary>
+    public static Result ForSetup(EmSetup setup, EmLayoutSource source)
+    {
+        ArgumentNullException.ThrowIfNull(setup);
+        ArgumentNullException.ThrowIfNull(source);
+
+        var flat = Flatten(source.View, source.AbsolutePath);
+        if (setup.SolveRegion is null) return flat;
+
+        var clip = EmSolveRegionClip.Apply(flat.Shapes, source.View.Shapes, setup.SolveRegion,
+                                           source.DbuPerMicron, source.Technology);
+        var notes = new List<string>(flat.Notes);
+        if (clip.Note is { } note) notes.Add(note);
+        return new Result(clip.Shapes, notes, flat.GeneratorIds, clip.Refusal);
+    }
 
     /// <summary>
     /// Flatten <paramref name="view"/> for extraction. <paramref name="clayPath"/> is the layout's

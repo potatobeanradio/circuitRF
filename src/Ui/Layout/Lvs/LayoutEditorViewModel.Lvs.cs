@@ -116,6 +116,21 @@ public sealed partial class LayoutEditorViewModel
           + (r.Reduction == ReductionMode.On ? "on." : "off.");
 
     /// <summary>
+    /// The whole comparison as text — <see cref="LvsReportText"/>, the SAME report
+    /// <c>circuitrf lvs -o report.txt</c> writes — for the panel's Copy. Empty before a run.
+    /// </summary>
+    /// <remarks>
+    /// The findings list is rows of wrapped text that cannot be selected, so without this a
+    /// comparison could only leave the application by being retyped.
+    /// </remarks>
+    public string LvsReportCopyText => LvsResult is not { } r
+        ? ""
+        : LvsReportText.Of(CurrentCellDir is { Length: > 0 } cell
+                               ? System.IO.Path.GetFileName(cell.TrimEnd('/', '\\'))
+                               : "layout",
+                           r);
+
+    /// <summary>
     /// Which technology the layout was read against, <b>named rather than assumed</b> (R-lvs12-1b).
     /// </summary>
     /// <remarks>
@@ -189,6 +204,7 @@ public sealed partial class LayoutEditorViewModel
     {
         OnPropertyChanged(nameof(LvsSummaryText));
         OnPropertyChanged(nameof(LvsTechnologyText));
+        OnPropertyChanged(nameof(LvsReportCopyText));
         OnPropertyChanged(nameof(HasLvsResult));
         OnPropertyChanged(nameof(LvsStaleText));
         OnPropertyChanged(nameof(CanCrossProbeLvs));

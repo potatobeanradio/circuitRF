@@ -452,6 +452,16 @@ internal static class Explain
         foreach (var d in resolution.Diagnostics)
             JsonRun.Report(CliDiagnostics.CheckResolverNote(path, d));
 
+        // The solve region is a decision the .cem makes about which geometry is solved at all, so it
+        // is reported beside the walks that found that geometry. Only when one is set: a setup with
+        // none solves the whole layout, as every .cem did before the region existed, and its explain
+        // output stays exactly what it was.
+        if (setup.SolveRegion is { } region)
+            walks.Add(new ResolutionStepJson(
+                "solve region", "this .cem's SolveRegion", region.Describe(),
+                "only geometry inside the region reaches the extractors; shapes crossing its edge " +
+                "are cut there and a via is kept or left out by its centre"));
+
         ExplainReturnPlane(setup, resolution, walks);
 
         return resolution.Source is null ? 1 : 0;
@@ -483,7 +493,8 @@ internal static class Explain
             ? $"this .cem's return plane: '{named}'"
             : $"technology '{tech.Name}' ground designations";
 
-        var geometry = EmGeometry.Flatten(source.View, source.AbsolutePath);
+        var geometry = EmGeometry.ForSetup(setup, source);
+        if (geometry.RegionRefusal is not null) return;
         var planar   = PlanarExtractor.Extract(
             geometry.Shapes, tech, source.DbuPerMicron, 0,
             setup.ToExtractionSettings(setup.LayoutRef), geometry.GeneratorIds);

@@ -217,6 +217,7 @@ public sealed partial class PCellParamRowViewModel : ObservableObject
     internal void ShowValue(string text, PCellValue? raw)
     {
         ValueText = text;
+        ShownText = text;
 
         if (Editor == PCellParamEditor.Check)
         {
@@ -233,6 +234,10 @@ public sealed partial class PCellParamRowViewModel : ObservableObject
             SetProperty(ref _selectedChoice, text, nameof(SelectedChoice));
         }
     }
+
+    /// <summary>The text <see cref="ShowValue"/> last put in the field — what a commit compares against
+    /// to tell "the user typed something" from "focus left a field nobody touched".</summary>
+    internal string? ShownText { get; private set; }
 
     /// <summary>R-L5f-9: commits (LostFocus/Enter) — copy-on-write, via
     /// <see cref="LayoutEditorViewModel.EditInstancePCellParameters"/>.</summary>

@@ -557,6 +557,7 @@ public sealed class LayoutCanvas : Control
             ShowPlanarMesh = _viewModel?.ShowPlanarMesh ?? false, PlanarMesh = _viewModel?.PlanarMeshReport,
             PlanarCurrentDensity = _viewModel?.PlanarCurrentDensity,
             PlanarPorts = _viewModel?.PlanarReferencePlanes ?? [],
+            EmSolveRegion = _viewModel?.EmSolveRegionOutline,
             // SL3 R-sl3-9 — chrome for an instance whose cell's interface changed. Read from the VM's
             // last scan, never computed here: a hash reads the cell's .ccell from disk.
             InterfaceChangedCellRefs = _viewModel?.InterfaceChangedCellRefs,

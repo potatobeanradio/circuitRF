@@ -97,6 +97,46 @@ public sealed class SplitDocumentAreaActiveDocumentTests
         Assert.DoesNotContain(schematicPane, DockLayoutCapture.EnumerateDocumentPanes(root));
     }
 
+    /// <summary>
+    /// A bottom TOOL strip is not a document pane. Dock's <c>Tool</c> declares <c>IDocument</c>, so a
+    /// walk testing that alone subscribed the Messages/DRC/LVS strip as a document pane, and flipping
+    /// its tabs ran the document activation with a tool as the "document" — which emptied the LVS
+    /// panel while a layout was on screen.
+    /// </summary>
+    [Fact]
+    public void AToolStrip_IsNotADocumentPane()
+    {
+        var f = new CircuitRfDockFactory();
+        var layout = new StubDocument("Amp.clay", StubDocument.StubKind.Welcome);
+        var messages = new MessagesTool();
+        var lvs = new LvsTool();
+
+        // The premise: without it this test would pass against the old walk too.
+        Assert.IsAssignableFrom<IDocument>(lvs);
+
+        var documents = new DocumentDock
+        {
+            Id = "Documents", VisibleDockables = f.CreateList<IDockable>(layout), ActiveDockable = layout,
+        };
+        var bottom = new ToolDock
+        {
+            Id = "Bottom", VisibleDockables = f.CreateList<IDockable>(messages, new DrcTool(), lvs),
+            ActiveDockable = messages,
+        };
+        var column = new ProportionalDock
+        {
+            Orientation = Orientation.Vertical,
+            VisibleDockables = f.CreateList<IDockable>(documents, bottom),
+            ActiveDockable = documents,
+        };
+        var root = f.CreateRootDock();
+        root.VisibleDockables = f.CreateList<IDockable>(column);
+        f.InitLayout(root);
+
+        var panes = DockLayoutCapture.EnumerateDocumentPanes(root).ToList();
+        Assert.Same(documents, Assert.Single(panes));
+    }
+
     // ── The wiring, by source scan — WorkspaceViewModel needs an Avalonia app host ────────────────
 
     /// <summary>

@@ -73,6 +73,19 @@ cross-section, the ports and the mesh against the new artwork, and it is undoabl
 The reference is by path, resolved when the panel refreshes and again when it runs. If the layout is
 moved or deleted the panel says so in place of the extraction, rather than failing at Simulate time.
 
+**Solve region** — the part of the layout this setup solves. It reads **Whole layout** until you set one.
+**Draw on layout…** opens the layout and lets you drag a box around the part you care about, such as one
+section of a trace on an imported board. Only the geometry inside the box is meshed and solved:
+
+- A shape that crosses the box's edge is cut there.
+- A via is kept or left out whole, depending on where its centre is.
+- The Messages panel reports how many shapes were kept, cut and left out.
+
+Every port has to lie inside the box, and a port outside it is refused by name. The box is saved in the
+`.cem` and drawn on the layout as a dashed outline, and the layout file is not changed. **Clear** goes
+back to solving the whole layout. Setting or clearing the region is undoable. The Touchstone header
+records the region, so the file itself says it describes only part of the board.
+
 ## The toolbar: Mesh, Simulate, Cancel, Save {#toolbar}
 
 | Button | What it does |
@@ -164,7 +177,10 @@ Hover the **Ports** header for the explanation that matches the chosen kernel, b
 
 - **Full-wave.** Each port is a **port label in the layout** — place them with the layout editor's Port
   tool. Which cut of a conductor a label names is inferred from the geometry and reported in the notes;
-  an ambiguous one is refused rather than guessed.
+  an ambiguous one is refused rather than guessed. **Copper that overlaps on one layer is one
+  conductor** — a placed part's footprint pad lying over an imported board's own pad is merged before
+  meshing (the notes say so), and the Port tool snaps to the merged copper's edge, not to a face
+  buried inside it. A port whose feed has other metal too close is refused with **where** that metal is.
 - **Cross-section.** There is no meshed port at all. The ports *are* the ends of the extracted
   conductors by construction: port 2k−1 is conductor k's near end and port 2k its far end, so two
   conductors give four ports. There is nothing to place, and de-embedding is a no-op.

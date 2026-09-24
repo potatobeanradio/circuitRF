@@ -181,6 +181,26 @@ public class WorkspaceScannerTests : IDisposable
         Assert.Equal(NodeKind.RailFile, row!.Kind);
     }
 
+    /// <summary>
+    /// A document saved INTO a view folder — a `.crail` beside the `.clay` it prices — gets a row
+    /// under that folder. Listing only the view's own extension there left it with no row at all, and
+    /// a field report's user bookmarked it as a Known File inside its own workspace to reach it.
+    /// A file of no circuitRF kind stays unlisted, as it always was.
+    /// </summary>
+    [Fact]
+    public void Scan_ViewFolder_ADocumentOfAnotherKindGetsARow()
+    {
+        string cellDir = MakeCell("Board");
+        Directory.CreateDirectory(CellFolder.SubFolderPath(cellDir, ViewType.Layout));
+        AddView(cellDir, ViewType.Layout, "Board.clay");
+        AddView(cellDir, ViewType.Layout, "board.crail");
+        AddView(cellDir, ViewType.Layout, "notes.txt");
+
+        var layout = FindKind(FindKind(WorkspaceScanner.Scan(_root), NodeKind.Cell), NodeKind.CellViewFolder);
+        Assert.Equal(NodeKind.RailFile, TryFindName(layout, "board.crail")?.Kind);
+        Assert.Null(TryFindName(layout, "notes.txt"));
+    }
+
     /// <summary>The `.ccell` itself is not one of them — it is what makes the folder a cell, and the
     /// cell's own row already says so. Same rule as the workspace root's `.cws`.</summary>
     [Fact]

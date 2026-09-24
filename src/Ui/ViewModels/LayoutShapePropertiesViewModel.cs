@@ -1161,6 +1161,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             LayoutEditorViewModel.FootprintCases[caseIndex],
             densityIndex switch { 1 => DensityLevel.Most, 2 => DensityLevel.Least, _ => DensityLevel.Nominal });
 
+        SelectPinned();
         _vm!.RetargetSelectedInstanceToFootprint(reference);
         RefreshFromVm();
     }
@@ -1213,7 +1214,9 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         };
     }
 
-    private LayoutInstance? SingleSelectedInstance => _vm?.SingleSelectedInstance;
+    private LayoutInstance? SingleSelectedInstance =>
+        _pinnedInstance is null ? _vm?.SingleSelectedInstance
+        : _vm is { } vm && InstanceIndices is [int i] ? vm.EffectiveInstanceAt(i) : null;
 
     /// <summary>Free-text CellRef edit (LostFocus/Enter) — the companion "Re-target…" button in the
     /// view's code-behind opens the same cell-picker dialog the Instance tool uses and calls
@@ -1225,6 +1228,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         if (_vm is null) return;
         string trimmed = (text ?? "").Trim();
         if (trimmed.Length == 0) { RefreshFromVm(); return; }
+        SelectPinned();
         _vm.RetargetSelectedInstance(trimmed);
         RefreshFromVm();
     }
@@ -1235,6 +1239,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         if (!LayoutUnits.TryParse(text, _vm.DisplayUnit, _vm.Model.DbuPerMicron, out var x))
         { InstanceXError = "Invalid value"; return; }
         InstanceXError = null;
+        SelectPinned();
         _vm.CommitSelectedInstancePosition(x, null);
         RefreshFromVm();
     }
@@ -1245,6 +1250,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         if (!LayoutUnits.TryParse(text, _vm.DisplayUnit, _vm.Model.DbuPerMicron, out var y))
         { InstanceYError = "Invalid value"; return; }
         InstanceYError = null;
+        SelectPinned();
         _vm.CommitSelectedInstancePosition(null, y);
         RefreshFromVm();
     }
@@ -1256,6 +1262,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             || !double.IsFinite(deg))
         { InstanceRotationError = "Rotation must be an angle in degrees"; return; }
         InstanceRotationError = null;
+        SelectPinned();
         _vm.SetSelectedInstanceRotationDegrees(deg);
         RefreshFromVm();
     }
@@ -1263,6 +1270,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
     partial void OnInstanceMirrorXValueChanged(bool? oldValue, bool? newValue)
     {
         if (_isRefreshing || newValue is null || oldValue == newValue || _vm is null) return;
+        SelectPinned();
         _vm.SetSelectedInstanceMirrorX(newValue.Value);
         RefreshFromVm();
     }
@@ -1273,6 +1281,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         // The VM's own method applies to the whole selection, so the checkbox is the multi-select
         // edit R-fp4b-6d asks for the moment more than one instance is selected — and one undo entry
         // either way.
+        SelectPinned();
         _vm.SetSelectedInstancesShowRefDes(newValue.Value);
         RefreshFromVm();
     }
@@ -1287,6 +1296,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
     public void CommitInstanceRefDesText(string text)
     {
         if (_vm is null) return;
+        SelectPinned();
         _vm.CommitSelectedInstanceRefDes(text);
         RefreshFromVm();
     }
@@ -1295,6 +1305,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
     public void ResetInstanceDesignatorPosition()
     {
         if (_vm is null) return;
+        SelectPinned();
         _vm.ResetSelectedDesignatorPositions();
         RefreshFromVm();
     }
@@ -1305,6 +1316,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         if (!NumericText.TryParseDouble(text, out var mag) || mag <= 0)
         { InstanceMagError = "Magnification must be a positive number"; return; }
         InstanceMagError = null;
+        SelectPinned();
         _vm.CommitSelectedInstanceMagText(text);
         RefreshFromVm();
     }
@@ -1315,7 +1327,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         if (!int.TryParse(text, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var rows) || rows < 1)
         { InstanceRowsError = "Rows must be a positive integer"; return; }
         InstanceRowsError = null;
-        _vm.CommitSelectedInstanceArray(rows, inst.Cols, inst.PitchX, inst.PitchY);
+        SelectPinned(); _vm.CommitSelectedInstanceArray(rows, inst.Cols, inst.PitchX, inst.PitchY);
         RefreshFromVm();
     }
 
@@ -1325,7 +1337,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         if (!int.TryParse(text, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var cols) || cols < 1)
         { InstanceColsError = "Columns must be a positive integer"; return; }
         InstanceColsError = null;
-        _vm.CommitSelectedInstanceArray(inst.Rows, cols, inst.PitchX, inst.PitchY);
+        SelectPinned(); _vm.CommitSelectedInstanceArray(inst.Rows, cols, inst.PitchX, inst.PitchY);
         RefreshFromVm();
     }
 
@@ -1335,7 +1347,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         if (!LayoutUnits.TryParse(text, _vm.DisplayUnit, _vm.Model.DbuPerMicron, out var px))
         { InstancePitchXError = "Invalid value"; return; }
         InstancePitchXError = null;
-        _vm.CommitSelectedInstanceArray(inst.Rows, inst.Cols, px, inst.PitchY);
+        SelectPinned(); _vm.CommitSelectedInstanceArray(inst.Rows, inst.Cols, px, inst.PitchY);
         RefreshFromVm();
     }
 
@@ -1345,7 +1357,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         if (!LayoutUnits.TryParse(text, _vm.DisplayUnit, _vm.Model.DbuPerMicron, out var py))
         { InstancePitchYError = "Invalid value"; return; }
         InstancePitchYError = null;
-        _vm.CommitSelectedInstanceArray(inst.Rows, inst.Cols, inst.PitchX, py);
+        SelectPinned(); _vm.CommitSelectedInstanceArray(inst.Rows, inst.Cols, inst.PitchX, py);
         RefreshFromVm();
     }
 
@@ -1357,11 +1369,11 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         IsInstanceContext = true;
         IsEditingEnabled = !DragBlocksEdits();
 
-        var indices = _vm!.SelectedInstanceIndices;
+        var indices = InstanceIndices;
         IsSingleInstanceSelected = indices.Count == 1;
         if (IsSingleInstanceSelected)
         {
-            var inst = _vm.EffectiveInstanceAt(indices[0]);
+            var inst = _vm!.EffectiveInstanceAt(indices[0]);
             var resolution = CellLayoutResolver.Resolve(inst.CellRef, _vm.InstanceBaseDir);
             ApplyExternalStatus(ExternalCellStatusResolver.Classify(inst.CellRef, _vm.InstanceBaseDir));
             ApplyInterfaceChange(inst.CellRef);
@@ -1379,6 +1391,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             if (_pcellEntryModeSelectionIndex != indices[0]) { MklopfUsesWidthEntry = false; MklopfUsesF3dbEntry = false; }
             _pcellEntryModeSelectionIndex = indices[0];
             IsMklopfTarget = ResolveSelectedInstancePCellComponentName() == SymbolKind.Mklopf;
+            IsMlinTarget = ResolveSelectedInstancePCellComponentName() == SymbolKind.Mlin;
             MklopfEntryModeAvailable = IsMklopfTarget && TryResolveMklopfSubstrate(out _, out _, out _);
             OnPropertyChanged(nameof(MklopfImpedanceToggleLabel));
             OnPropertyChanged(nameof(MklopfLengthToggleLabel));
@@ -1430,6 +1443,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             ShowPCellParameterList = false;
             PCellParamRows = null; _pcellParamGeneratedCellDir = null;
             IsMklopfTarget = false; MklopfEntryModeAvailable = false;
+            IsMlinTarget = false;
             MklopfUsesWidthEntry = false; MklopfUsesF3dbEntry = false;
             _pcellEntryModeSelectionIndex = null;
             ToggleMklopfImpedanceEntryCommand.NotifyCanExecuteChanged();
@@ -1668,6 +1682,18 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
     /// gates the toggle buttons themselves (they have no meaning for any other PCell).</summary>
     public bool IsMklopfTarget { get; private set; }
 
+    /// <summary>True only when the single selected instance resolves to an MLIN-generated cell — gates
+    /// the derived <see cref="MlinZ0Row"/> row (the Z0 its width gives, and the width a Z0 needs).</summary>
+    public bool IsMlinTarget { get; private set; }
+
+    /// <summary>
+    /// MLIN's derived impedance row. Never stored on the cell: it shows the static Hammerstad-Jensen Z0
+    /// of the current <c>W</c> on the layout's own substrate, and an edit synthesises the width that
+    /// gives it and writes <c>W</c> (one undoable parameter edit, like any other row). W stays the one
+    /// authoritative parameter because the generator, its grips, LVS and the EM extractor all read W.
+    /// </summary>
+    internal const string MlinZ0Row = "Z0";
+
     /// <summary>R-L5g-1's own "disable with a reason" requirement: the Z1/Z2⇄W1/W2 and L⇄F3db
     /// conversions both need a resolved substrate (H/T/Er) — <see cref="TryResolveMklopfSubstrate"/>
     /// is the ONE place that resolution happens, the SAME <see cref="SubstrateResolver.ResolveElectrical"/>
@@ -1757,6 +1783,12 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         foreach (var name in origin.Parameters.Keys)
             if (!ordered.Contains(name)) ordered.Add(name);
 
+        if (IsMlinTarget)
+        {
+            int iW = ordered.IndexOf("W");
+            if (iW >= 0 && !ordered.Contains(MlinZ0Row)) ordered.Insert(iW + 1, MlinZ0Row);
+        }
+
         if (IsMklopfTarget)
         {
             if (MklopfUsesWidthEntry)
@@ -1813,6 +1845,8 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         // in PopulatePCellParamRow).
         if (IsMklopfTarget && MklopfPseudoParamUnit(name) is { } pseudoUnit)
             return new PCellParamRowViewModel(this, name, pseudoUnit);
+        if (IsMlinTarget && name == MlinZ0Row)
+            return new PCellParamRowViewModel(this, name, "Ω");
 
         // What the GENERATOR says about this parameter, from its two independent sources: the
         // declaration (labels, enumerations, bounds, the DIMENSION — asked of the script) and the run
@@ -1935,6 +1969,22 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         // instance's real one. W3/W4/L never matched, which is why only some rows misbehaved.
         // The pseudo-name rewrite in OrderedParamNames is already gated on IsMklopfTarget; these
         // consumers are the mirror of it and must carry the same gate.
+        if (IsMlinTarget && row.Name == MlinZ0Row)
+        {
+            if (!TryResolveMklopfSubstrate(out double mh, out double mt, out double mer))
+            { row.ShowValue("", null); row.Error = "No technology resolves — can't compute Z0."; return; }
+            // Live during a W grip drag, like every other row.
+            double w = ParametersForDisplay(origin.Parameters).Real("W", 0.0);
+            if (!(w > 0)) { row.ShowValue("", null); row.Error = "W is not a positive width."; return; }
+            var mlinReporter = new MicrostripValidityReporter("(layout MLIN Z0)");
+            double z0 = HammerstadJensen.Compute(w, mh, mt, mer, mlinReporter).Z0;
+            z0 = System.Math.Round(z0, 2);
+            var notes = mlinReporter.Drain();
+            row.Error = notes.Count > 0 ? string.Join(" ", notes.Select(n => n.Message)) : null;
+            row.ShowValue(FormatPCellParamValue(row.Unit, z0), PCellValue.Real(z0));
+            return;
+        }
+
         if (IsMklopfTarget && row.Name is "W1" or "W2" or "F3db")
         {
             if (!TryResolveMklopfSubstrate(out double h, out double t, out double er))
@@ -1999,7 +2049,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
     internal void CommitPCellParamFlag(PCellParamRowViewModel row, bool value)
     {
         if (DragBlocksEdits() || _vm is null) return;
-        var indices = _vm.SelectedInstanceIndices;
+        var indices = InstanceIndices;
         if (indices.Count != 1) return;
 
         PCellValue written;
@@ -2028,7 +2078,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         IReadOnlyDictionary<string, PCellValue> committed)
     {
         if (_vm is null || _vm.PCellHandleDragParameters is not { } live) return committed;
-        var indices = _vm.SelectedInstanceIndices;
+        var indices = InstanceIndices;
         if (indices.Count != 1 || indices[0] != _vm.PCellHandleDragInstanceIndex) return committed;
         return live;
     }
@@ -2155,7 +2205,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
     internal void CommitPCellParamField(PCellParamRowViewModel row, string text)
     {
         if (DragBlocksEdits() || _vm is null) return;
-        var indices = _vm.SelectedInstanceIndices;
+        var indices = InstanceIndices;
         if (indices.Count != 1) return;
 
         // A derived parameter is refused HERE as well as being rendered as text, because the view is
@@ -2165,6 +2215,14 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         // nothing visible, and leaves an orphaned cell behind.
         if (row.IsComputed) return;
 
+        // FOCUS LEAVING A FIELD NOBODY TYPED IN IS NOT AN EDIT (round-7 field report). The list commits
+        // on every LostFocus, and clicking the canvas is one. For a stored parameter re-writing its own
+        // value was a no-op; for a DERIVED row — MLIN's Z0, MKlopf's W1/W2/F3db — the shown value is
+        // ROUNDED, so converting it back wrote a slightly different parameter: a regenerated cell, an
+        // undo entry and a rebuilt list on every click away, which is what rendered the dialog garbled.
+        if (row.ShownText is { } shown && string.Equals(text.Trim(), shown.Trim(), StringComparison.Ordinal))
+        { row.Error = null; return; }
+
         // IsMklopfTarget gate — the write half of the same defect. Editing an MTee's W1 used to run
         // MKlopf's width→impedance conversion and MERGE Z1/Z2 into that cell's parameter set
         // (EditInstancePCellParameters merges rather than replaces). MTeePCell ignores Z1/Z2, so the
@@ -2173,6 +2231,12 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         if (IsMklopfTarget && row.Name is "W1" or "W2" or "F3db")
         {
             CommitMklopfPseudoParamField(row, text, indices[0]);
+            return;
+        }
+
+        if (IsMlinTarget && row.Name == MlinZ0Row)
+        {
+            CommitMlinZ0Field(row, text, indices[0]);
             return;
         }
 
@@ -2225,6 +2289,29 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             row.Error = null;
             _vm.EditInstancePCellParameters(instanceIndex, new Dictionary<string, PCellValue> { ["L"] = l });
         }
+        RefreshFromVm();
+    }
+
+    /// <summary>
+    /// MLIN's Z0 row: synthesises the width that gives the typed Z0 on the layout's substrate
+    /// (<see cref="HammerstadJensen.SynthesizeWidth"/>, the inverse of the Compute the row displays) and
+    /// writes it to <c>W</c>. A Z0 outside what the model's width range can produce is refused with the
+    /// model's own sentence rather than written as a clamped width.
+    /// </summary>
+    private void CommitMlinZ0Field(PCellParamRowViewModel row, string text, int instanceIndex)
+    {
+        if (!TryParsePCellParamValue(row.Unit, text, out double z0) || !(z0 > 0))
+        { row.Error = "Invalid value"; return; }
+        if (!TryResolveMklopfSubstrate(out double h, out double t, out double er))
+        { row.Error = "No technology resolves — can't compute a width."; return; }
+
+        var reporter = new MicrostripValidityReporter("(layout MLIN Z0)");
+        double w = HammerstadJensen.SynthesizeWidth(z0, h, t, er, reporter);
+        var refused = reporter.Drain();
+        if (refused.Count > 0) { row.Error = string.Join(" ", refused.Select(n => n.Message)); return; }
+
+        row.Error = null;
+        _vm!.EditInstancePCellParameters(instanceIndex, new Dictionary<string, PCellValue> { ["W"] = w });
         RefreshFromVm();
     }
 
@@ -2282,11 +2369,70 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
 
     private void OnModelChanged(object? sender, System.EventArgs e) => RefreshFromVm();
 
+    // ── PINNED TO ONE INSTANCE (round-7 field report, 2026-09-24) ─────────────────────────────────
+    //
+    // The docked Properties panel follows the selection; the double-click Component Properties window
+    // used to as well, so a click on the canvas emptied it, re-selecting rebuilt and resized it, and
+    // MKlopf's entry mode reset on every selection change. The schematic's own ParameterEditorDialog
+    // is bound to the component it was opened for (SetTargetDirect), and this is the layout's
+    // counterpart: the window shows ITS instance whatever the canvas selects, and an edit made in it
+    // selects that instance first, because the editor's instance commands act on the selection.
+    //
+    // Pinned by INDEX, following the object: a parameter edit is copy-on-write and REPLACES the
+    // instance at the same index (ReplaceInstanceCommand), while a deletion earlier in the list moves it.
+
+    private LayoutInstance? _pinnedInstance;
+    private int _pinnedIndex = -1;
+
+    /// <summary>Pins this view model to the instance at <paramref name="index"/> — see above.</summary>
+    public void PinToInstance(int index)
+    {
+        if (_vm is null || (uint)index >= (uint)_vm.Model.Instances.Count) return;
+        _pinnedIndex = index;
+        _pinnedInstance = _vm.Model.Instances[index];
+        RefreshFromVm();
+    }
+
+    /// <summary>The instance(s) this view model describes: the pinned one when pinned, else the
+    /// editor's selection.</summary>
+    private IReadOnlyList<int> InstanceIndices
+    {
+        get
+        {
+            if (_vm is null) return [];
+            if (_pinnedInstance is null) return _vm.SelectedInstanceIndices;
+
+            var list = _vm.Model.Instances;
+            int moved = list.IndexOf(_pinnedInstance);
+            if (moved >= 0) _pinnedIndex = moved;                      // still the same object
+            else if ((uint)_pinnedIndex < (uint)list.Count) _pinnedInstance = list[_pinnedIndex]; // replaced in place
+            else return [];
+            return [_pinnedIndex];
+        }
+    }
+
+    /// <summary>Before an instance edit made through the editor's selection-based commands: make the
+    /// pinned instance the selection, so the edit lands on it.</summary>
+    private void SelectPinned()
+    {
+        if (_vm is null || _pinnedInstance is null || InstanceIndices is not [int index]) return;
+        if (_vm.SelectedInstanceIndices is [int only] && only == index && _vm.SelectedIndices.Count == 0) return;
+        _vm.SelectInstance(index);
+    }
+
     // ── Refresh ────────────────────────────────────────────────────────────────
 
     private void RefreshFromVm()
     {
         if (_vm is null) { SetEmpty("No active layout."); return; }
+
+        // A window opened FOR an instance shows that instance whatever the canvas selects.
+        if (_pinnedInstance is not null)
+        {
+            if (InstanceIndices.Count == 1) RefreshInstanceContext();
+            else SetEmpty("The component this window was opened for is no longer in the layout.");
+            return;
+        }
 
         // §9B.6: a PURE ruler selection gets the ruler context. Checked before instances so a
         // ruler-only selection is never mistaken for an empty one; a MIXED selection still shows the

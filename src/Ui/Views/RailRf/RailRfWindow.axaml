@@ -1407,7 +1407,7 @@
                                 <StackPanel Spacing="3">
                                     <TextBlock Classes="cardhdr" Text="Which copper?"/>
                                     <TextBlock Classes="note"
-                                               Text="These anchors stand on the copper of more than one net. Choose the one each means."/>
+                                               Text="These anchors stand on the copper of more than one net, or on the return. Choose the copper each one means."/>
                                     <ItemsControl ItemsSource="{Binding AnchorLayerOffers}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate x:DataType="rvm:RailAnchorLayerOffer">

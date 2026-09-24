@@ -538,6 +538,9 @@ public partial class LayoutEditorView : UserControl
             var owner = TopLevel.GetTopLevel(this) as Window;
             var dialogVm = new LayoutShapePropertiesViewModel();
             dialogVm.SetContext(doc.ActiveViewModel);
+            // Bound to THIS instance, as the schematic's dialog is bound to its component: clicking
+            // the canvas no longer empties and rebuilds the window (round-7 field report).
+            if (index >= 0) dialogVm.PinToInstance(index);
             var dialog = new LayoutPCellParameterDialog { DataContext = dialogVm };
             dialog.Closed += (_, _) => dialogVm.SetContext(null); // unsubscribe from the layout VM
             dialog.Show(owner!); // owner may be null when no window parent (e.g. embedded in non-Window host)
@@ -1227,7 +1230,22 @@ public partial class LayoutEditorView : UserControl
         if (BuildReReferenceItem() is { } reReference)
             items = [reReference, new Separator(), .. items];
 
+        // Trace Impedance — offered only where there is stackup-bound copper under the click; the
+        // answer (or the reason there is none) goes to the Messages panel.
+        if (BuildTraceImpedanceItem() is { } impedance)
+            items = [.. items, new Separator(), impedance];
+
         if (sender is ContextMenu menu) menu.ItemsSource = items;
+
+        MenuItem? BuildTraceImpedanceItem()
+        {
+            if (Vm is not { } vm || vm.TraceImpedanceLayerAt((long)Math.Round(t.Wx), (long)Math.Round(t.Wy)) is null) return null;
+            var mi = new MenuItem { Header = "Trace Impedance" };
+            ToolTip.SetTip(mi, "Z0 of the trace here, from the stackup and the copper drawn — quasi-static, " +
+                               "with a warning where the ground under it is missing or broken. Result in Messages.");
+            mi.Click += (_, _) => vm.ProbeTraceImpedance((long)Math.Round(t.Wx), (long)Math.Round(t.Wy));
+            return mi;
+        }
 
         MenuItem BuildPopOutItem()
         {

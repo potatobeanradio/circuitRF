@@ -205,8 +205,12 @@ public sealed partial class LayoutEditorViewModel
     /// what makes the measurement TRUSTWORTHY: an endpoint landing 3 DBU short of the corner reports
     /// a number that is wrong in a way nobody notices.
     ///
-    /// <para><b>Geometry snap outranks the Shift constraint</b>, deliberately — a snapped endpoint is
-    /// a stronger statement of intent than a held modifier.</para>
+    /// <para><b>Shift outranks geometry snap, and the two compose</b> (owner, 2026-09-24 — this used to
+    /// be the other way round, and a snap target pulled the ruler off the axis, so a gap could not be
+    /// measured straight across). With Shift held the cursor's own direction picks one of the 8
+    /// directions and a snap target only decides HOW FAR along it the endpoint goes
+    /// (<see cref="LayoutSnapping.ConstrainToTarget"/>) — the same rule a Shift-constrained move drag
+    /// follows (R-dup-4).</para>
     ///
     /// <para><b>Shift is <see cref="AngleMode.Deg45"/> here, passed explicitly, NOT the document's own
     /// <see cref="LayoutView.AngleMode"/></b> (R-rul-10). A Manhattan document is a statement about
@@ -217,10 +221,15 @@ public sealed partial class LayoutEditorViewModel
                                             (long X, long Y)? from)
     {
         UpdateSnapMarker((long)Math.Round(wx), (long)Math.Round(wy), mods, Math.Max(snapTolDbu, 0), 1);
-        if (_snapCandidateIsRealTarget && _currentSnapCandidate is { } target) return (target.X, target.Y);
+        bool hasTarget = _snapCandidateIsRealTarget && _currentSnapCandidate is not null;
 
         if (from is { } first && (mods & KeyModifiers.Shift) != 0)
-            return LayoutSnapping.ConstrainAndSnap(first.X, first.Y, wx, wy, AngleMode.Deg45, Model.SnapDbu, false);
+            return hasTarget
+                ? LayoutSnapping.ConstrainToTarget(first.X, first.Y, wx, wy,
+                                                   _currentSnapCandidate!.Value.X, _currentSnapCandidate.Value.Y)
+                : LayoutSnapping.ConstrainAndSnap(first.X, first.Y, wx, wy, AngleMode.Deg45, Model.SnapDbu, false);
+
+        if (hasTarget) return (_currentSnapCandidate!.Value.X, _currentSnapCandidate.Value.Y);
 
         return LayoutSnapping.SnapPoint(wx, wy, Model.SnapDbu, suspend: false);
     }

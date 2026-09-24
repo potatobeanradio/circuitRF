@@ -97,8 +97,13 @@ public partial class RailRfWindow
         bool disposable = Vm is { DocumentPath: null, Board: null, IsDirty: false } scratch
                        && scratch.Document.Rails.Count == 0;
 
+        // NOT placed over THIS window when this one is about to close. ShowUnowned closes a window
+        // with the one it was placed over, so a document opened from the scratch window Tools ▸
+        // railRF makes was shown and then closed in the same breath by the Close() below — Open
+        // looked like it did nothing, while a double-click in the project tree (placed over the
+        // workspace) worked. It goes over whatever this window was placed over instead.
         RailRfWindow? opened = null;
-        opened = Show(document, path, this, notes =>
+        opened = Show(document, path, disposable ? _placementOwner : this, notes =>
         {
             // The notes belong to the window that is now showing that document, NOT to this one —
             // this one is usually about to close. Joined into one sentence because the strip holds

@@ -1025,6 +1025,22 @@ public static class PlanarExtractor
         // requirement that has no analogue for a bounded piece of artwork). Do not add one.
         double perDbu = 1.0 / (dbuPerMicron * 1e6);
 
+        // ── Overlapping copper on one level is ONE conductor (round-7 field report, 2026-09-24) ──
+        //
+        // A placed part's footprint pad lying over an imported board's own pad reached the kernel as
+        // two polygons. The mesh fills their union, so the port resolved onto the merged metal's
+        // true end face — but the feed-lead decision reads ONE polygon's end face and its uniform run
+        // (PlanarFeedExtension.TryEndFace/UniformRun), saw the board pad alone as a uniform feed, and
+        // grew no lead. The calibration then described a line that is not there and the published
+        // S11 was an open circuit. Merged here, once, every per-polygon question downstream asks
+        // about the copper. Only shapes that genuinely OVERLAP another on the same level are merged;
+        // everything else passes through untouched, so artwork with no overlaps is bit-identical.
+        conductorShapes = MergeOverlappingCopper(conductorShapes, tech, out int mergedShapes, out int mergedInto);
+        if (mergedShapes > 0)
+            notes.Add($"{mergedShapes} overlapping conductor shape(s) were merged into {mergedInto} before meshing — " +
+                      "copper that overlaps on one level is one conductor (a placed part's pad over a drawn or " +
+                      "imported pad is the usual case), and a port's feed is measured on the merged outline.");
+
         // ── L9d: one polygon list PER LEVEL, in the level order the stack is built in ─────────
         var polysByLevel = new List<PlanarPolygon>[levels.Count];
         for (int i = 0; i < levels.Count; i++) polysByLevel[i] = [];
@@ -2594,6 +2610,71 @@ public static class PlanarExtractor
     /// band's own extent and are what the absorption arithmetic and the conductor's reported
     /// thickness are written in (MIM-6).</summary>
     private sealed record Band(StackupLayer Layer, double BottomM, double TopM, int Index, double SheetM);
+
+    /// <summary>
+    /// Replaces every group of conductor shapes that genuinely overlap on one level with their union;
+    /// a shape overlapping nothing is returned as the SAME object, in its original order.
+    /// </summary>
+    private static List<(LayoutShape Shape, Band Band)> MergeOverlappingCopper(
+        List<(LayoutShape Shape, Band Band)> shapes, Technology tech, out int mergedShapes, out int mergedInto)
+    {
+        mergedShapes = 0;
+        mergedInto = 0;
+        int n = shapes.Count;
+        var parent = new int[n];
+        for (int i = 0; i < n; i++) parent[i] = i;
+        int Find(int i) { while (parent[i] != i) i = parent[i] = parent[parent[i]]; return i; }
+
+        var boxes = new Bbox[n];
+        var paths = new Clipper2Lib.Paths64?[n];
+        for (int i = 0; i < n; i++) boxes[i] = LayoutGeometry.BboxOf(shapes[i].Shape);
+
+        Clipper2Lib.Paths64 PathsOf(int i) =>
+            paths[i] ??= LayoutClipper.ToClipperPaths(shapes[i].Shape, LayoutFlattener.ResolveTolDbu(shapes[i].Shape, tech));
+
+        // A sweep in x: only boxes that overlap are ever tested, so a board is not n².
+        var order = Enumerable.Range(0, n)
+            .Where(i => LayoutBooleans.IsClipperOperand(shapes[i].Shape))
+            .OrderBy(i => boxes[i].MinX).ToList();
+        var active = new List<int>();
+        bool any = false;
+        foreach (int i in order)
+        {
+            active.RemoveAll(j => boxes[j].MaxX < boxes[i].MinX);
+            foreach (int j in active)
+            {
+                if (shapes[j].Band.Index != shapes[i].Band.Index) continue;
+                if (boxes[j].MaxY < boxes[i].MinY || boxes[i].MaxY < boxes[j].MinY) continue;
+                if (Find(i) == Find(j)) continue;
+                var common = Clipper2Lib.Clipper.Intersect(PathsOf(i), PathsOf(j), Clipper2Lib.FillRule.NonZero);
+                if (common.Sum(p => System.Math.Abs(Clipper2Lib.Clipper.Area(p))) <= 0) continue;
+                parent[Find(i)] = Find(j);
+                any = true;
+            }
+            active.Add(i);
+        }
+        if (!any) return shapes;
+
+        var groups = Enumerable.Range(0, n).GroupBy(Find).ToDictionary(g => g.Key, g => g.ToList());
+        var result = new List<(LayoutShape Shape, Band Band)>(n);
+        var emitted = new HashSet<int>();
+        for (int i = 0; i < n; i++)
+        {
+            int root = Find(i);
+            var members = groups[root];
+            if (members.Count == 1) { result.Add(shapes[i]); continue; }
+            if (!emitted.Add(root)) continue;
+
+            IReadOnlyList<LayoutShape> union;
+            try { union = LayoutBooleans.Union(members.Select(m => shapes[m].Shape).ToList(), tech).Shapes; }
+            catch (Exception) { foreach (int m in members) result.Add(shapes[m]); continue; }   // leave as drawn
+
+            mergedShapes += members.Count;
+            mergedInto   += union.Count;
+            foreach (var u in union) result.Add((u, shapes[i].Band));
+        }
+        return result;
+    }
 
     /// <summary>MIM-6: which surface of its own band a conductor's sheet sits on. Null, and every
     /// non-conductor entry, is <see cref="ConductorSheetSurface.Bottom"/> — today's behaviour.</summary>

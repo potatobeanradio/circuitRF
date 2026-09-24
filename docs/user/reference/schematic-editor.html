@@ -275,9 +275,10 @@ time in, and it is the only one an analysis runs on.</p>
 <p>A schematic is a <strong>view of a cell</strong>, exactly as its <a href="symbol-editor.html">symbol</a> and its
 <a href="layout-editor.html">layout</a> are; the cell folder holds <code>schematic/</code>, <code>symbol/</code> and <code>layout/</code> side
 by side and a cell need not have all three. Opening one opens a document tab.</p>
-<p>You do not need a cell library to start. <strong>File ▸ New Schematic</strong> opens a standalone scratch sheet
-you can wire up and simulate immediately, with no workspace around it, and save into a workspace
-later if it turns out to be worth keeping.</p>
+<p>You do not need a cell library to start. With no workspace open, <strong>File ▸ New Schematic</strong> opens a
+standalone scratch sheet you can wire up and simulate immediately, and save into a workspace later if it
+turns out to be worth keeping. With a workspace open, <strong>New Schematic</strong> and <strong>New Layout</strong> create a new
+<strong>cell</strong> holding that view instead, so nothing lands outside a cell.</p>
 <p>Two things about the canvas are worth knowing before you draw on it:</p>
 <ul>
 <li><strong>Connection is exact, not proximity.</strong> Every pin, wire vertex and junction lands on the coarse

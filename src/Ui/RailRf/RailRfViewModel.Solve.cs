@@ -906,6 +906,10 @@ public sealed partial class RailRfViewModel
         ByModel[view.Kind] = view;
         Current = view;
 
+        // The Return row may be reading this run's largest-copper answer (ReturnNetNote's note).
+        OnPropertyChanged(nameof(ReturnNetNote));
+        OnPropertyChanged(nameof(HasReturnNetNote));
+
         // Other rails solved and THIS one did not: its own sentence, not the first rail's.
         ShowSelectedRailRefusal();
 

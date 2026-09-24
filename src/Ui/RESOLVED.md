@@ -1,5 +1,79 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Field report 7: railRF and workspace files (2026-09-24)
+
+- **Tools ▸ railRF ▸ Open showed the document and closed it again.** `RailRfWindow.Show` places a
+  window over an owner and closes it when that owner closes (`ShowUnowned`). Open, run from the
+  empty scratch window, passed the scratch window as owner and then closed the scratch window, which
+  took the new one with it. A double-click in the tree places over the workspace, which is why that
+  route worked. The document now goes over whatever the scratch window was placed over
+  (`_placementOwner`).
+- **Save as… for a `.crail` opens beside the board.** It used to open wherever the platform last
+  was. It now opens in the document's own folder, else the board's cell folder (the one holding
+  `.ccell` above `layout/`), else the `.clay`'s folder. It suggests the document's name, then the
+  layout's stem, and `board` only last (`RailRfViewModel.SuggestedSaveFolder`/`SuggestedSaveName`).
+- **A `.crail` saved into `layout/` had no row in the tree.** `WorkspaceScanner` listed only the
+  view's own extension in a view folder. Any other circuitRF document there, and any folder, now
+  gets a row under that view folder. The user in the report had bookmarked the file as a Known File
+  inside its own workspace to reach it. Copy to Workspace is correctly unavailable for such a file,
+  so it looked broken. Gate: `WorkspaceScannerTests.Scan_ViewFolder_ADocumentOfAnotherKindGetsARow`.
+- **The tree could not move it out, and a move repaired nothing.** Three fixes:
+  - `TreeMove.For` refused every file inside a cell. It now refuses only folders there, because a
+    view folder looks like any other folder on disk. Loose documents such as `.crail` and `.cem`
+    move.
+  - `.crlib` is movable.
+  - Dropping anything INTO a view folder is refused. The same workspace's `.cmoves` records a whole
+    cell dropped onto `layout/`.
+  - `MoveRefRegistry` gains the `.crail` references (artwork, technology, part library, board
+    netlist, placement, and the source and part Touchstone files) and the `.crlib` `ModelRef`.
+  - `WorkspaceMove.Apply` never re-based a moved FILE's own references. `Relocate` maps paths under
+    a moved directory, and a file's directory is never under the file. That latent bug also applied
+    to a loose `.wBond`'s `AssemblyRef`. A holder that is itself the moved item now takes its base
+    from its new path.
+
+  Gate: `TreeMoveTests.ARailDocumentMovesOutOfAViewFolderWithItsReferences_AndNothingDropsIntoOne`.
+- **The `.crlib` editor drew the bias-curve heading over Add part.** The parts grid's row was a bare
+  `*` beside an Auto panel of fixed height, so a short window squeezed the grid to nothing and the
+  panel was laid over its buttons. The row now has `MinHeight="190"`. This was not seen in a running
+  window (the GUI cannot be launched from this environment).
+- **Not covered by a test:** the Open fix and the save folder are window glue.
+
+## Round-7 field report: LVS panel, paste, tree moves, technology prompt, New Schematic/Layout (2026-09-24)
+
+- **Flipping the bottom strip's tabs emptied the LVS and DRC panels and the Properties panel.**
+  `DockLayoutCapture.EnumerateDocumentPanes` picked out a pane as "any dock holding an `IDocument`",
+  and Dock.Model.Mvvm's `Tool` implements `IDocument`. Every tool dock was therefore subscribed as a
+  document pane. Choosing Messages, DRC or LVS raised `ActiveDockable` there and ran
+  `ActivateDocument` with a TOOL as the document. That sets the DRC and LVS panels to null ("Open a
+  layout to compare it", Compare greyed out) and falls through to `SetActiveSchematic(null)`, which
+  blanked Properties. This is also why a placed part's rotation seemed to be nowhere: the instance
+  inspector has always had Rotation and Mirror X rows, but the panel had just been emptied. The walk
+  now skips `ITool`, and `OnDocumentDockPropertyChanged` returns early on a tool, as the
+  focused-dockable handler already did. Test: `SplitDocumentAreaActiveDocumentTests.AToolStrip_IsNotADocumentPane`.
+- **The LVS panel's text can be copied.** The summary, stale and probe lines are
+  `SelectableTextBlock`s. A header Copy button and a row context menu (Copy / Copy Report) copy
+  `LvsReportText`, which is the same human report `circuitrf lvs -o report.txt` writes. It moved from
+  `src/Cli/Lvs.cs` to `src/Design/Layout/Lvs` for this, so there is one formatter rather than two.
+- **Copy/paste dropped net labels.** `SchematicPersistence.SerializeSelection` wrote parts and wires
+  only. It now takes the labels. A label travels only with its owner wire, re-pointed at the wire's
+  clone, because `EditableWire.Clone` takes a fresh Id. `DeserializeSelectionWithLabels` and
+  `SchematicPasteCommand` carry them in, and undo removes them. An Alt-drag duplicate still copies no
+  labels, on purpose: in the same schematic a duplicated label would silently join the copy to the
+  original's net. Test: `SchematicPasteAndDragTests.Paste_IntoAnotherSchematic_KeepsTheNetLabels_AnchoredToThePastedWires`.
+- **A cell could be dropped into another cell's view folder.** `TreeMove.For` checked that the SOURCE
+  was not inside a cell, but never checked the destination. A cell or a folder is now refused
+  anywhere inside a cell. A loose file (a `.crail`, say) may still go into a cell folder.
+- **The loose-layout technology prompt listed only `tech/`.** A Gerber import writes its technology
+  beside the import, so the one the designer had just made the workspace default was never offered.
+  They picked the other one, and that session choice held until a restart. The prompt now lists every
+  `.ctech` in the workspace, with the default first and preselected. Changing the workspace default
+  also drops any session choice that pointed inside this workspace, so the next resolve asks again.
+  A browsed file from elsewhere and a built-in starter are kept.
+- **File ▸ New Schematic / New Layout with a workspace open create a CELL** (owner decision). New
+  Schematic runs New Cell exactly. New Layout asks for a cell name, then writes the layout. Both go
+  through `CreateCellHoldingViewAsync`, which New Cell uses too. With no workspace open they are
+  scratch documents as before, and the launch actions still open scratch documents. Test: `NewViewMakesACellTests`.
+
 ## Update Layout from Schematic: a rename added a second copy of the part (2026-09-22)
 
 - **The link between a placement and its component is the instance NAME.** `LayoutInstance.SchematicId`
@@ -35446,3 +35520,68 @@ progress bar beside "solving…".
   controls, not two Runs, because the `note` class's 0.75 opacity would wash out a coloured Run.
   `StatusLine` stays the whole sentence, and the tail follows its change notification through one
   `OnPropertyChanged` override rather than at each of its ~20 raise sites.
+
+## MLIN: a Z0 field beside W, on the schematic and the layout (2026-09-24)
+
+- **Asked for:** an MLIN's parameters should say what Z0 its width gives on the workspace substrate,
+  and set the width for a Z0 typed in. It was described as a feature an earlier edit had removed.
+  **The history has no MLIN Z0 route to restore.** `git log -S`/`-G` over `src/Ui`, `src/Design` and
+  `src/Core` finds only MKlopf's Z1/Z2 ⇄ W1/W2 and L ⇄ F3db switch (`ToggleMklopfImpedanceEntry`,
+  `MicrostripKlopfEntryConversion`), which is still there on both sides.
+- **W stays the one stored parameter. Z0 is a derived, editable field, not a second entry route.**
+  MKlopf can carry Z1/Z2 because its generator reads them. MLIN's W is read by the PCell and its W
+  grips, by Schematic → Layout, by LVS and by the EM extractor, and none of them would understand a
+  stored Z0. So the field shows `HammerstadJensen.Compute(W).Z0` (static), and an edit calls
+  `HammerstadJensen.SynthesizeWidth` (a bisection over that same Compute) and writes W as one undoable
+  edit. It is always two-way, so there is no mode to toggle.
+- **Schematic:** `ParameterEditorViewModel.MlinImpedance.cs`, a row under the Technology picker.
+  The substrate comes from `MicrostripSubstrateInjection.BuildOverrides` WITH the instance's own
+  SignalLayer/GroundReference choices (the overrides `NetExtractor` injects), and from the factory's
+  fallback constants when nothing resolves (which is also what a run then simulates). MKlopf's
+  `ResolveMklopfSubstrate` ignores those two layer choices; that was left alone. A W that is an
+  expression shows no Z0 and is never overwritten, because writing a number would silently unbind it.
+  A Z0 no width in the model's validity range can produce is refused with the model's own sentence
+  rather than written as the clamped bound `SynthesizeWidth` returns.
+- **Layout:** a `Z0` pseudo-row directly after `W` in the PCell parameter list
+  (`LayoutShapePropertiesViewModel.MlinZ0Row`), gated on `IsMlinTarget` the way MKlopf's pseudo-rows
+  are gated on `IsMklopfTarget`. It is never written to the cell. It resolves the substrate through
+  `TryResolveMklopfSubstrate` (the technology's DEFAULT layer selection, MKlopf's stated
+  simplification) and follows a W grip drag live.
+- Gate: `tests/Ui.Tests/MlinZ0EntryTests.cs` (a schematic round trip against the Wheeler/Hammerstad
+  closed form plus undo, the expression refusal, and a layout round trip against `SynthesizeWidth`).
+
+- **Ruler: Shift now outranks geometry snap, and the two compose (2026-09-24, round 7 follow-up).**
+  R-rul-10 had a snap target override the Shift constraint, so a corner or edge off to one side pulled the
+  ruler off the axis and a gap could not be measured straight across. With Shift held, the cursor's own
+  travel picks one of the 8 directions and a target only decides how far along it the endpoint goes
+  (`LayoutSnapping.ConstrainToTarget`: on an axis, the target's coordinate on the free axis exactly; on a
+  diagonal, the nearest point of the diagonal) — the rule a Shift-constrained move drag already follows
+  (R-dup-4). `LayoutRulerToolTests.GeometrySnap_OutranksTheShiftConstraint` became
+  `Shift_KeepsTheAxis_AndAGeometrySnapOnlySetsHowFar`.
+- **Trace Z0 posts ONE line.** Summary, warnings and notes were three-plus Messages lines. Now each warning
+  contributes a short tag (`TraceImpedanceResult.Flags`) after ⚠ on the same line; the full sentences stay
+  on the result. No deviation from 50 Ω is printed — not every line is meant to be 50 Ω. Each gap says what it ends on — via pads or conductor (`GapLeftTo`/`GapRightTo`): with a pour deleted, the stitching-via lands beside the trace became the coplanar edge (G 624.8/636.3 µm), which the owner found useful as a way to spot the vias, so it is reported rather than filtered out. On the reported board the 561/559 µm gaps are real: the Gerber trace is 1 µm off-centre
+  between its grounds (edges at −239.010/240.990 µm, grounds at ±~800 µm).
+
+- **Parameter dialog garbled after clicking the canvas — MLIN Z0 and MKlopf W1/W2/F3db (2026-09-24).**
+  The PCell parameter list commits every field on LostFocus, and clicking the canvas is one. A stored
+  parameter re-writing its own value is a no-op, but a DERIVED row shows a ROUNDED value (Z0 to 0.01 Ω),
+  so converting it back wrote a slightly different W/Z1/Z2: a regenerated cell, an undo entry and a
+  rebuilt list on every click away, which is what redrew the dialog squashed. `PCellParamRowViewModel`
+  now records the text it last showed (`ShownText`) and `CommitPCellParamField` ignores a commit whose
+  text still matches it. The schematic MLIN Z0 field had the same round trip and now compares against the
+  displayed Z0. The pixels themselves were not seen (no GUI from this shell); the undo-stack assertion
+  in `MlinZ0EntryTests` fails without the fix.
+- **…and the real cause: the Component Properties window FOLLOWED THE SELECTION.** The focus-loss fix above
+  was real but not the reported bug. The double-click window was a `LayoutShapePropertiesViewModel` in
+  context mode, exactly like the docked panel, so any click on the canvas emptied it ("Select a shape or
+  instance…"), re-selecting rebuilt its rows and `SizeToContent` resized it — the squashed / oversized
+  redraws — and MKlopf's entry mode reset on every selection change. It is now PINNED to the instance it
+  was opened for (`PinToInstance`, the layout counterpart of the schematic dialog's `SetTargetDirect`):
+  one accessor (`InstanceIndices`) answers "which instance" for the whole view model, pinned by index and
+  following the object across a copy-on-write `ReplaceInstanceCommand`; the editor's selection-based
+  instance commands (position, rotation, mirror, designator, array, retarget) select the pinned instance
+  first. The docked panel is unpinned and unchanged. Gate:
+  `MlinZ0EntryTests.Layout_PinnedDialog_IgnoresTheCanvasSelection_AndEditsItsOwnInstance`.
+- `PCellParameterEditorKindTests` + `PCellPropertiesInspectorParameterListTests` fail when run TOGETHER
+  (one test each) and pass alone — shared state between the two classes, seen before this change too.

@@ -145,7 +145,19 @@
             </WrapPanel>
         </Border>
 
-        <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="12">
+        <!-- The parts grid's row has a FLOOR. It was a bare `*` beside an Auto bias-curve panel of
+             fixed height (a 150 px list, a 190 px plot), so in a short window the Auto row took all
+             of its height first, the star row was squeezed to nothing, and the bias panel's heading
+             was drawn on top of the Add part / Remove part buttons. With a floor the grid keeps
+             room for its header, a few rows and its buttons, and what does not fit is clipped at
+             the bottom of the window rather than drawn over the controls. -->
+        <Grid Margin="12">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*" MinHeight="190"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
 
             <!-- ── what this library covers of the design that references it (R-rail24-2c) ─────── -->
             <TextBlock Grid.Row="0"

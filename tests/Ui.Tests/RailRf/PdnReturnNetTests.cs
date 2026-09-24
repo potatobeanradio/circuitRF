@@ -153,13 +153,17 @@ public sealed class PdnReturnNetTests
     }
 
     // ── §3: no net to say which copper is the return, and the rail on the reference layer ───────
+    //
+    // Owner decision, 2026-09-24: this used to be REFUSED (R-rail31-3) with "name the reference net".
+    // A Gerber-only board has no name to give, so the return is now the LARGEST copper on the
+    // reference layer that is not the rail's own, and the provenance says so.
 
     [Fact]
-    public void AnUnresolvableReturnWithTheRailOnItsLayerIsRefusedNamingTheLayerAndTheNet()
+    public void AnUnresolvableReturnWithTheRailOnItsLayerTakesTheLargestOtherCopper()
     {
         // A VDD via down through an antipad, with a land on MID — the rail's own copper on the
         // reference layer — and no net points at all.
-        var refused = PdnGraphExtractor.Extract(Request(
+        var result = PdnGraphExtractor.Extract(Request(
         [
             Rect(Mid, -1, -5, 9.4, 5), Rect(Mid, 10.6, -5, 21, 5),
             Rect(Mid, 9.4, -5, 10.6, -0.35), Rect(Mid, 9.4, 0.85, 10.6, 5),
@@ -167,10 +171,75 @@ public sealed class PdnReturnNetTests
             Via(10, 0.25),
         ], []));
 
+        Assert.Null(result.Refusal);
+        var ret = result.Netlist!.Provenance.ReturnNet;
+        Assert.Equal(PdnReturnNetBasis.Largest, ret.Basis);
+        Assert.Null(ret.Net);
+        Assert.Equal(218.56, ret.AreaMm2, 2);          // the plane around the antipad, not the 0.3 mm² land
+        Assert.Contains("largest copper on layer 3/0", ret.Describe(), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A rail that resolves to no copper names where its anchors DID land. It used to say "no source
+    /// or load anchor landed on metal" whatever had happened; a coordinate recorded on the reference
+    /// layer stands on plenty of metal.
+    /// </summary>
+    [Fact]
+    public void ARailWhoseAnchorsLandOnlyOnTheReferenceSaysSoRatherThanNoMetal()
+    {
+        var rail = new RailSpec { Name = "R", ReferenceLayer = Mid };
+        rail.Sources.Add(new RailSource
+        {
+            Anchor = new RailPortAnchor { Point = (Mm(2), Mm(0.25)), Layer = Mid }, OpenCircuitVoltageV = 3.3,
+        });
+        rail.Loads.Add(new RailLoad
+        {
+            Anchor = new RailPortAnchor { Point = (Mm(18), Mm(0.25)), Layer = Mid }, DcCurrentA = 0.03,
+        });
+
+        var refused = PdnGraphExtractor.Extract(new PdnExtractionRequest
+        {
+            Rail = rail,
+            Shapes = [Rect(Top, 0, 0, 20, 0.5), Rect(Mid, -1, -5, 21, 5)],
+            Technology = Tech(),
+            DbuPerMicron = DbuPerMicron,
+            LengthFormat = new RailLengthFormat(LayoutUnit.Mm, DbuPerMicron),
+        });
+
         Assert.NotNull(refused.Refusal);
-        Assert.Contains("layer 3/0", refused.Refusal, StringComparison.Ordinal);
-        Assert.Contains("'VDD'", refused.Refusal, StringComparison.Ordinal);
-        Assert.Contains("ReferenceNet", refused.Refusal, StringComparison.Ordinal);
+        Assert.DoesNotContain("landed on metal", refused.Refusal, StringComparison.Ordinal);
+
+        // In the document's own unit — it printed µm whatever the .crail said.
+        Assert.Contains("Source 1 at (2, 0.25) mm is on layer 3/0, the reference layer itself", refused.Refusal,
+                        StringComparison.Ordinal);
+
+        // And the copper it most likely meant — the TOP trace at the same point — is offered as one click.
+        var offer = Assert.Single(refused.AnchorAmbiguities, a => a.IsSource);
+        Assert.Equal(Top, Assert.Single(offer.Candidates).Layer);
+    }
+
+    /// <summary>The larger of two other pieces wins, the rail's own is never a candidate however
+    /// big, and a named net still overrides the choice.</summary>
+    [Fact]
+    public void TheLargestReturnIsTheBiggestPieceThatIsNotTheRails_AndANameOverridesIt()
+    {
+        var tech = Tech();
+        var regions = LayerRegions.Build(
+        [
+            Rect(Top, 0, 0, 1, 1),            // the rail's pad, anchored below
+            Rect(Mid, 0, 0, 30, 30),          // the rail's OWN copper on MID — the biggest of all
+            Via(0.5, 0.5),
+            Rect(Mid, 40, 0, 50, 10),         // 100 mm²
+            Rect(Mid, 60, 0, 65, 10),         //  50 mm²
+        ], tech);
+        (long, long, LayerKey?)[] seeds = [(Mm(0.5), Mm(0.5), Top)];
+
+        var largest = Regions.ResolveReturnNet(null, regions, tech, [], Mid, null, seeds);
+        Assert.Equal(PdnReturnNetBasis.Largest, largest.Basis);
+        Assert.Equal(100, largest.AreaMm2, 3);
+
+        var named = Regions.ResolveReturnNet("GND", regions, tech, [], Mid, null, seeds);
+        Assert.Equal(PdnReturnNetBasis.Named, named.Basis);
     }
 
     // ── §4: a split return ──────────────────────────────────────────────────────────────────────

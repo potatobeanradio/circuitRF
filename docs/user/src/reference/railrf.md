@@ -175,11 +175,17 @@ what lets railRF leave the island out of the return, and keep the pour out of th
 | Return row | What railRF does |
 |---|---|
 | **measured from the copper** (the default) | Reads which net the copper on the Ref. layer is connected to. This is right on nearly every board, and the note under the row says what it found: *Return: 'GND', measured from the copper on 'GND' (layer 3/0)*. |
-| **a named net** | Uses that net, and the note says *named in the document*. Name one when railRF refuses because the copper on the Ref. layer does not measure to a single net, or when a board carries more than one ground (`GND` and `PGND`) and you want to say which this rail returns on. |
+| **a named net** | Uses that net, and the note says *named in the document*. Name one when the largest-copper choice below is not the ground you mean, or when a board carries more than one ground (`GND` and `PGND`) and you want to say which this rail returns on. |
 
-Where the return cannot be settled **and** the rail has copper of its own on the Ref. layer, the rail is
-**refused rather than solved**: taking every piece of that layer as the return would count the rail as its
-own return, and the drop it reported would look like an ordinary number. The refusal names the Return row.
+Where the copper cannot say **and** the rail has copper of its own on the Ref. layer — every Gerber board,
+which names no nets — the return is the **largest copper on the Ref. layer that is not the rail's own**,
+and the note says so: *the largest copper on 'Inner 2' other than the rail's own — 548.57 mm², no net named
+on it*. Naming a net overrides it. A rail is refused only when nothing on that layer is anything but the
+rail.
+
+If a source or load lands on the return (a click that hit a ground pour drawn over the trace, say), the
+refusal says where it landed and the **Which copper?** card offers the other copper at that point as one
+click.
 
 <div class="callout note">
 <span class="label">One return per board</span>

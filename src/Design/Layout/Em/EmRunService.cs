@@ -149,7 +149,7 @@ public static class EmRunService
         PlanarExtractionResult  Planar,
         EmKernelChoice          Choice,
         List<EmFinding>         Findings,
-        Diagnostic?             InternalPortRefusal);
+        Diagnostic?             EarlyRefusal);
 
     /// <summary>
     /// Flatten, run BOTH extractors, and let the registry choose — the first half of every run.
@@ -167,8 +167,24 @@ public static class EmRunService
     {
         var findings = new List<EmFinding>();
 
-        var geometry = EmGeometry.Flatten(source.View, source.AbsolutePath);
+        // Flattened, then clipped to the setup's solve region when it has one — the one door every
+        // path to an extractor goes through (EmGeometry.ForSetup).
+        var geometry = EmGeometry.ForSetup(setup, source);
         findings.AddRange(EmFindings.AsNotes(geometry.Notes));
+
+        // A solve region that leaves a port outside it (or encloses nothing) is refused BEFORE either
+        // extractor runs: the question is about what the user drew, an extractor's refusal of
+        // clipped geometry would describe the symptom rather than the cause, and extracting a whole
+        // board only to refuse it is the cost the region exists to avoid.
+        if (geometry.RegionRefusal is { } regionRefusal)
+        {
+            var noCross  = EmExtractionResult.No(regionRefusal);
+            var noPlanar = PlanarExtractionResult.No(regionRefusal);
+            var refused  = EmKernelRegistry.Choose(setup.AnalysisKind,
+                EmExtractorVerdict.No(regionRefusal), EmExtractorVerdict.No(regionRefusal));
+            return new EmExtractPhase(geometry, noCross, noPlanar, refused, findings,
+                                      EmDiagnostics.Forwarded("solve-region", regionRefusal));
+        }
 
         var crossSection = CrossSectionExtractor.Extract(
             geometry.Shapes, source.Technology!, source.DbuPerMicron,
@@ -267,7 +283,7 @@ public static class EmRunService
         var pre = Extract(setup, source, fMax);
         findings.AddRange(pre.Findings);
 
-        if (pre.InternalPortRefusal is { } internalPort)
+        if (pre.EarlyRefusal is { } internalPort)
             return new EmPreflightResult(pre.Choice.Kind, pre.Choice.KernelName, findings,
                                          internalPort.Render());
 
@@ -545,7 +561,7 @@ public static class EmRunService
         var (geometry, crossSection, planar, choice) =
             (pre.Geometry, pre.CrossSection, pre.Planar, pre.Choice);
 
-        if (pre.InternalPortRefusal is { } internalPort)
+        if (pre.EarlyRefusal is { } internalPort)
         {
             // The geometry notes are the only ones worth carrying to a refusal this early — the
             // choice's reason names a kernel that is not going to run.
@@ -942,7 +958,7 @@ public static class EmRunService
             HeaderComments: EmSnpProvenance.BuildHeader(
                 problem, setup.PlanarMesh, ports,
                 setup.Name is { Length: > 0 } n ? n : Path.GetFileNameWithoutExtension(snpBasePath),
-                setup.LayoutRef, DateTimeOffset.Now,
+                ProvenanceLayout(setup), DateTimeOffset.Now,
                 // PCAL2/R-pcal2-2 — the caveat rides on the FILE, because the finding was that the
                 // file outlives the notes. Empty on every run that did not de-embed outside the
                 // calibration's validity, so an ordinary .sNp is byte-identical to one written
@@ -962,6 +978,16 @@ public static class EmRunService
             throw new InvalidOperationException($"Touchstone export returned {result.Status}.");
     }
 
+    /// <summary>The layout line of the provenance stamp — the reference alone, as it always was, or the
+    /// reference and the solve region when one is set, so a Touchstone file read months later still
+    /// says it describes part of the board. A setup with no region writes the same bytes as before.</summary>
+    private static string ProvenanceLayout(EmSetup setup) =>
+        setup.SolveRegion is { } r ? $"{setup.LayoutRef} (solve region {Ascii(r.Describe())})" : setup.LayoutRef;
+
+    /// <summary>The Touchstone header is written in an encoding that loses "µ", "–" and "×" (the
+    /// reason the header's own first line is ASCII), so the region is spelled in ASCII there.</summary>
+    private static string Ascii(string s) => s.Replace("µm", "um").Replace("–", "-").Replace("×", "x");
+
     /// <summary>R-em-19: uses the existing <c>RfCore.Export.TouchstoneExporter</c>, with the
     /// provenance stamp riding on its new additive <c>HeaderComments</c> option.</summary>
     private static void WriteSnp(DataSet data, string snpBasePath, EmProblem problem, EmSetup setup)
@@ -980,7 +1006,7 @@ public static class EmRunService
             HeaderComments: EmSnpProvenance.BuildHeader(
                 problem, setup.Mesh,
                 setup.Name is { Length: > 0 } n ? n : Path.GetFileNameWithoutExtension(snpBasePath),
-                setup.LayoutRef, DateTimeOffset.Now));
+                ProvenanceLayout(setup), DateTimeOffset.Now));
 
         Directory.CreateDirectory(Path.GetDirectoryName(snpBasePath)!);
 

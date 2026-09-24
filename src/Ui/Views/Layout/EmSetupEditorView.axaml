@@ -267,6 +267,30 @@
                         <Button Grid.Column="2" Name="ChangeLayoutButton" Classes="ellipsis" Content="…"
                                 ToolTip.Tip="Point this EM setup at a different .clay. The cross-section, ports and mesh all re-derive against the new artwork, and the change is undoable."/>
                     </Grid>
+
+                    <!-- The part of the layout this setup solves (round-7 designer feedback). Stored in
+                         the .cem, drawn on the layout's own canvas, and the same Grid shape as the
+                         Layout row above for the same reason. Selectable, like every reported string
+                         here, so the coordinates can be copied. -->
+                    <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="6" Margin="0,3,0,0"
+                          HorizontalAlignment="Left">
+                        <TextBlock Grid.Column="0"
+                                   Text="Solve region:" Classes="colhdr" VerticalAlignment="Center"/>
+                        <SelectableTextBlock Grid.Column="1" Name="SolveRegionText"
+                                   Text="{Binding ViewModel.SolveRegionText}" Classes="colhdr"
+                                   VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis" MaxWidth="420"
+                                   ToolTip.Tip="Only the geometry inside this box is meshed and solved. Anything crossing its edge is cut there; a via is kept or left out by where its centre is. Every port must lie inside it."/>
+                        <Button Grid.Column="2" Name="DrawSolveRegionButton" Padding="6,1" FontSize="11"
+                                Content="Draw on layout…"
+                                Command="{Binding ViewModel.DrawSolveRegionCommand}"
+                                ToolTip.Tip="Open this setup's layout and drag a box around the part to solve. Escape cancels. The layout itself is not changed."/>
+                        <Button Grid.Column="3" Name="ClearSolveRegionButton" Padding="6,1" FontSize="11"
+                                Content="Clear"
+                                Command="{Binding ViewModel.ClearSolveRegionCommand}"
+                                IsVisible="{Binding ViewModel.HasSolveRegion}"
+                                ToolTip.Tip="Solve the whole layout again."/>
+                    </Grid>
                 </StackPanel>
 
                 <!-- The button cluster is ONE Grid cell, so it moves as a unit and the buttons never

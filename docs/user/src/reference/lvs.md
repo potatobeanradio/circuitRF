@@ -93,7 +93,9 @@ The panel is the [DRC panel](layout-editor.html#drc)'s pattern, control for cont
 | **Schematic &rarr; Layout** | The other direction. |
 
 Under the buttons: the technology the comparison ran against, the reduction mode, both sides' device and
-net counts, and the findings, grouped by severity. Clicking a finding zooms the layout to it.
+net counts, and the findings, grouped by severity. Clicking a finding zooms the layout to it. The text is
+selectable; **Copy** (and a finding's right-click **Copy Report**) copies the same report
+`circuitrf lvs -o` writes.
 
 <div class="callout note">
 <span class="label">A result describes what is on disk</span>

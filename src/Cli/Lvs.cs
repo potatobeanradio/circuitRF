@@ -346,52 +346,11 @@ internal static class Lvs
     }
 
     // ── the human report (R-lvs11-3b) ────────────────────────────────────────
+    //
+    // LvsReportText, in src/Design — the LVS panel's Copy writes the same text.
 
-    /// <summary>
-    /// One cell: the summary line, then the findings grouped by severity, each naming its objects.
-    /// </summary>
-    /// <remarks>
-    /// <b>The technology, the reduction mode and the counts are on the face of it</b> (R-lvs8-1a/1d,
-    /// R-lvs6-5c). A report that did not say which process the layout was read against, or whether
-    /// the collapse ran, is one two people can read differently — one counting eight fingers and
-    /// one counting one FET, each certain the other is looking at a different design.
-    /// </remarks>
-    private static void Write(StringBuilder into, string name, LvsRunResult result)
-    {
-        into.AppendLine($"{name}: {Verdict(result)}");
-        into.AppendLine(
-            $"  technology {(result.TechnologyName is { Length: > 0 } t ? $"'{t}'" : "none")}, " +
-            $"reduction {(result.Reduction == ReductionMode.On ? "on" : "off")}");
-        into.AppendLine($"  {result.Counts.Describe()}");
-
-        foreach (var severity in new[]
-                 { DiagnosticSeverity.Error, DiagnosticSeverity.Warning, DiagnosticSeverity.Info })
-        {
-            foreach (var finding in result.Findings.Where(f => f.Severity == severity))
-            {
-                into.AppendLine($"  {Channel(severity)}: {finding.Render()}"
-                              + (finding.Waived ? $"  [waived: {finding.WaiverReason}]" : ""));
-                // R-lvs8-2b: the designer's OWN names, un-reduced. A finding that could only say
-                // "the merged group at net 14" is one a user cannot act on.
-                if (finding.Objects.Count > 0)
-                    into.AppendLine($"      {string.Join(", ", finding.Objects)}");
-            }
-        }
-
-        into.AppendLine();
-    }
-
-    private static string Verdict(LvsRunResult result) =>
-        result.IsClean
-            ? "matches"
-            : $"{result.ErrorCount} error(s), {result.WarningCount} warning(s)";
-
-    private static string Channel(DiagnosticSeverity severity) => severity switch
-    {
-        DiagnosticSeverity.Error   => "error",
-        DiagnosticSeverity.Warning => "warning",
-        _                          => "note",
-    };
+    private static void Write(StringBuilder into, string name, LvsRunResult result) =>
+        LvsReportText.Write(into, name, result);
 
     // ── the --json projection (R-lvs11-3c) ───────────────────────────────────
     //
