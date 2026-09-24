@@ -379,6 +379,11 @@ xcrun notarytool store-credentials circuitrf-notary \
 It prompts for the password, validates against Apple before saving, and only writes the keychain
 entry when the three agree. Once it succeeds, builds notarise without asking again.
 
+**Don't lock the screen while a build is notarising.** notarytool can only read its stored profile
+while the Mac is unlocked, and every submission reads it again. The script keeps the display awake
+(`caffeinate`) so the screen can't lock on its own, but locking it yourself stops the next submission
+with "No Keychain password item found". Unlock the Mac and run the build again.
+
 **Notarising is not optional if you want the prompt gone.** A Developer ID signature *without*
 notarisation is still refused on first launch, so a signed-but-unnotarised build reports that plainly
 rather than implying the job is done.

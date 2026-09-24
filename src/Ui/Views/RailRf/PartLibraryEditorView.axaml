@@ -308,15 +308,15 @@
                                             <!-- C, f0 and L take a UNIT; a bare number is refused
                                                  (field report, 2026-09-23: the unit of f0 was unclear). -->
                                             <TextBox Grid.Column="6" Classes="cell"
-                                                     Watermark="100 nF"
+                                                     PlaceholderText="100 nF"
                                                      Text="{Binding CapacitanceEntry, Mode=TwoWay}"
                                                      ToolTip.Tip="Marked capacitance, with its unit: 100 nF, 4.7 uF, 12 pF. A bare number is not taken."/>
                                             <TextBox Grid.Column="7" Classes="cell"
-                                                     Watermark="28.9 MHz"
+                                                     PlaceholderText="28.9 MHz"
                                                      Text="{Binding SelfResonantFrequencyEntry, Mode=TwoWay}"
                                                      ToolTip.Tip="Self-resonant frequency, with its unit: 28.9 MHz, 1.2 GHz, 850 kHz. A bare number is not taken."/>
                                             <TextBox Grid.Column="8" Classes="cell"
-                                                     Watermark="0.3 nH"
+                                                     PlaceholderText="0.3 nH"
                                                      Text="{Binding StatedInductanceEntry, Mode=TwoWay}"
                                                      ToolTip.Tip="{Binding DisagreementSentence}"/>
                                             <!-- R-rail24-2a: derived, and therefore read-only. A stored
@@ -336,7 +336,7 @@
                                             <Grid Grid.Column="12" ColumnDefinitions="*,Auto">
                                                 <TextBox Classes="cell"
                                                          Text="{Binding ModelRef, Mode=TwoWay}"
-                                                         Watermark="parts/cap-100n.s2p"
+                                                         PlaceholderText="parts/cap-100n.s2p"
                                                          ToolTip.Tip="The path of the part's own model file, relative to this library — not a part number. A Touchstone file OVERRIDES the row and is the only route to a measured ESR. On a row classed Other it is the part's measured series impedance — a two-port measured series-thru, as a bead supplier publishes it."/>
                                                 <Button Grid.Column="1" Content="…" FontSize="10"
                                                         Padding="8,1" Margin="4,0,6,0"

@@ -195,14 +195,23 @@ crf_apple_id_hints() {
 NOTARY_PROFILE="${CRF_NOTARY_PROFILE:-circuitrf-notary}"
 NOTARISE=0
 
+# The profile is looked up by asking notarytool ITSELF, never `security find-generic-password`.
+# notarytool keeps it in the data-protection keychain, which `security` cannot see: that lookup
+# reported "no credentials" for a profile notarytool was reading perfectly well, and the build then
+# asked for credentials that were already stored. `history` is one small authenticated request,
+# which also catches a revoked app-specific password here rather than after pass 1.
 if [ "$SIGN_IDENTITY" != "-" ] && [ "${CRF_NOTARIZE:-}" != never ]; then
-    if security find-generic-password -l "$NOTARY_PROFILE" >/dev/null 2>&1 \
-    || security find-generic-password -s "com.apple.gke.notary.tool" -a "$NOTARY_PROFILE" >/dev/null 2>&1; then
+    if NOTARY_PROBE=$(xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" 2>&1); then
         NOTARISE=1
     elif [ "$INTERACTIVE" = 1 ]; then
         echo ""
         echo "Signing as: ${SIGN_IDENTITY}"
-        echo "No notary credentials are stored under the profile '${NOTARY_PROFILE}'."
+        if printf "%s" "$NOTARY_PROBE" | grep -q "No Keychain password item found"; then
+            echo "No notary credentials are stored under the profile '${NOTARY_PROFILE}'."
+        else
+            echo "The notary profile '${NOTARY_PROFILE}' could not be used. notarytool said:"
+            printf "%s\n" "$NOTARY_PROBE" | sed 's/^/    /'
+        fi
         echo "Without them the disk images are signed but NOT notarised, and macOS still refuses"
         echo "them on first launch."
         echo ""
@@ -399,6 +408,38 @@ done
 #
 # Nothing here compiles. Every bundle referenced below was built and checked in pass 1, so from this
 # point on the script is waiting on Apple and on hdiutil.
+#
+# THE SCREEN MUST NOT LOCK DURING THIS PASS. notarytool's profile lives in the data-protection
+# keychain, which is unreadable while the session is locked, and every `submit` reads it afresh. A
+# lock during the first submission's wait therefore passes unnoticed, and the NEXT one fails with
+# "No Keychain password item found" for credentials that are stored and correct. caffeinate holds the
+# display awake, which stops an idle lock, until this script exits; a lock by hand still breaks the
+# run, and crf_notarise names that cause when it happens.
+if [ "$NOTARISE" = 1 ]; then
+    caffeinate -di -w $$ &
+fi
+
+# Submits one file and waits. On failure it says whether the keychain was unreadable (the screen
+# locked, nothing Apple can log) or the submission itself was refused (read the log).
+crf_notarise() {
+    local file="$1" label="$2" out
+    out="$(mktemp)"
+    if xcrun notarytool submit "$file" --keychain-profile "$NOTARY_PROFILE" --wait 2>&1 | tee "$out"; then
+        rm -f "$out"
+        return 0
+    fi
+    if grep -q "No Keychain password item found" "$out"; then
+        echo "❌ Notarising ${label} could not read the notary profile from the keychain. The"
+        echo "   credentials were checked when this build started, so the keychain was locked:"
+        echo "   almost always because the screen locked. Unlock it and run the build again."
+    else
+        echo "❌ Notarisation of ${label} failed. For the reasons:"
+        echo "     xcrun notarytool log <submission-id> --keychain-profile $NOTARY_PROFILE"
+    fi
+    rm -f "$out"
+    return 1
+}
+
 for ARCH in $ARCHES; do
     case "$ARCH" in
         arm64) RID="osx-arm64" ;;
@@ -438,10 +479,7 @@ for ARCH in $ARCHES; do
         ditto -c -k --keepParent --sequesterRsrc "$APP_BUNDLE" "$APPZIP" || {
             echo "❌ Could not archive ${NAME}.app for notarisation."; exit 1; }
 
-        xcrun notarytool submit "$APPZIP" --keychain-profile "$NOTARY_PROFILE" --wait || {
-            echo "❌ Notarisation of ${NAME}.app failed. For the reasons:"
-            echo "     xcrun notarytool log <submission-id> --keychain-profile $NOTARY_PROFILE"
-            exit 1; }
+        crf_notarise "$APPZIP" "${NAME}.app" || exit 1
 
         echo "📎 Stapling the ticket to ${NAME}.app..."
         xcrun stapler staple "$APP_BUNDLE" || {
@@ -479,10 +517,7 @@ for ARCH in $ARCHES; do
 
         if [ "$NOTARISE" = 1 ]; then
             echo "📤 Notarising (this waits on Apple; minutes, not seconds)..."
-            xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait || {
-                echo "❌ Notarisation failed. For the reasons:"
-                echo "     xcrun notarytool log <submission-id> --keychain-profile $NOTARY_PROFILE"
-                exit 1; }
+            crf_notarise "$DMG" "$(basename "$DMG")" || exit 1
 
             echo "📎 Stapling the ticket..."
             xcrun stapler staple "$DMG" || { echo "❌ Could not staple ${DMG}."; exit 1; }
