@@ -1,0 +1,149 @@
+>> <spack>/darwin-m3/openmpi-5.0.10-mc2xrsbdhymvtrnqqhefylivaut5hg63/bin/mpirun -n 8 <spack>/darwin-m3/palace-git.v0.18.1_0.18.0-jocw3euhlqfbzt363avhq2dq56haksyl/bin/palace-arm64.bin config.json
+
+_____________     _______
+_____   __   \____ __   /____ ____________
+____   /_/  /  __ ` /  /  __ ` /  ___/  _ \
+___   _____/  /_/  /  /  /_/  /  /__/  ___/
+  /__/     \___,__/__/\___,__/\_____\_____/
+
+Git changeset ID: 0dc74cd
+Running with 8 MPI processes
+Device configuration: cpu
+Memory configuration: host-std
+libCEED backend: /cpu/self/xsmm/blocked
+
+Added 1392 duplicate vertices for interior boundaries in the mesh
+Added 2876 duplicate boundary elements for interior boundaries in the mesh
+Added 3742 boundary elements for material interfaces to the mesh
+
+Characteristic length and time scales:
+ Lc = 3.000e-03 m, tc = 1.001e-02 ns
+Finished partitioning mesh into 8 subdomains
+
+Mesh curvature order: 2
+Mesh bounding box:
+ (Xmin, Ymin, Zmin) = (-1.500e-03, -1.000e-03, +0.000e+00) m
+ (Xmax, Ymax, Zmax) = (+1.500e-03, +1.000e-03, +1.100e-03) m
+
+Parallel Mesh Stats:
+
+                minimum     average     maximum       total
+ vertices         13904       15033       16582      120265
+ edges           102969      106964      111915      855719
+ faces           179473      183231      187532     1465849
+ elements         90112       91299       92766      730392
+ neighbors            2           4           6
+
+            minimum     maximum
+ h       0.00040215   0.0797819
+ kappa      1.00467     13.4178
+
+Estimated current per-rank memory usage is: Min. 84.7M, Max. 712.3M, Avg. 164.8M, Total 1.3G
+Estimated current per-node memory usage is: Min. 1.3G, Max. 1.3G, Avg. 1.3G, Total 1.3G
+
+Configuring Robin impedance BC for lumped ports at attributes:
+ 5: Rs = 5.000e+01 Ω/sq, n = (-1.0,-0.0,+0.0)
+ 6: Rs = 5.000e+01 Ω/sq, n = (+1.0,-0.0,+0.0)
+
+Configuring lumped port circuit properties:
+ Index = 1: R = 5.000e+01 Ω
+ Index = 2: R = 5.000e+01 Ω
+
+Configuring lumped port excitation source term at attributes:
+ 5: Index = 1
+
+Configuring Dirichlet PEC BC at attributes:
+ 3-4
+
+Computing frequency response for:
+Excitation with index 1 has contributions from:
+ Lumped port  1
+
+Assembling system matrices, number of global unknowns:
+ H1 (p = 1): 120265, ND (p = 1): 855719, RT (p = 1): 1465849
+ Operator assembly level: Partial
+ Mesh geometries:
+  Tetrahedron: P = 6, Q = 4 (quadrature order = 2)
+
+Assembling multigrid hierarchy:
+ Level 0 (p = 1): 855719 unknowns
+ Level 0 (auxiliary) (p = 1): 120265 unknowns
+
+It 1/1: ω/2π = 1.000e+00 GHz (total elapsed time = 9.37e-01 s)
+
+   Residual norms for GMRES solve
+   0 (restart 0) KSP residual norm 1.374164e+01
+   1 (restart 0) KSP residual norm 5.906512e-01
+   2 (restart 0) KSP residual norm 7.412624e-03
+   3 (restart 0) KSP residual norm 6.472749e-04
+   4 (restart 0) KSP residual norm 3.845303e-05
+   5 (restart 0) KSP residual norm 1.080556e-05
+   6 (restart 0) KSP residual norm 4.624915e-06
+   7 (restart 0) KSP residual norm 2.017415e-06
+   8 (restart 0) KSP residual norm 7.189833e-07
+   9 (restart 0) KSP residual norm 2.152327e-07
+  10 (restart 0) KSP residual norm 6.342571e-08
+GMRES solver converged in 10 iterations (avg. reduction factor: 1.467e-01)
+ Sol. ||E|| = 1.355627e+01 (||RHS|| = 2.560537e-01)
+ Field energy E (2.147e-12 J) + H (8.859e-12 J) = 1.101e-11 J
+ S[1][1] = +4.569e-03+4.217e-02i, |S[1][1]| = -2.745e+01, arg(S[1][1]) = +8.382e+01
+ S[2][1] = +9.951e-01-6.909e-02i, |S[2][1]| = -2.209e-02, arg(S[2][1]) = -3.972e+00
+ Updating solution error estimates
+
+Completed 0 iterations of adaptive mesh refinement (AMR):
+ Indicator norm = 1.844e-01, global unknowns = 855719
+ Max. iterations = 0, tol. = 1.000e-02
+
+Estimated peak per-rank memory usage is: Min. 1.2G, Max. 1.7G, Avg. 1.3G, Total 10.7G
+Estimated peak per-node memory usage is: Min. 10.7G, Max. 10.7G, Avg. 10.7G, Total 10.7G
+
+Elapsed Time Report (s)           Min.        Max.        Avg.
+==============================================================
+Initialization                   1.479       5.981       5.416
+  Mesh Preprocessing             4.225       8.727       4.788
+Operator Construction            0.471       0.553       0.528
+Linear Solve                     3.034       3.157       3.103
+  Setup                          0.927       0.932       0.930
+  Preconditioner                76.528      76.653      76.583
+Estimation                       0.143       0.195       0.167
+  Construction                   4.568       4.573       4.570
+  Solve                          2.832       2.901       2.871
+Postprocessing                   0.659       0.682       0.670
+Disk IO                          8.443       8.446       8.444
+--------------------------------------------------------------
+Total                          108.128     108.143     108.136
+
+Peak Memory                   Per-Node       Total   Total HWM
+==============================================================
+Initialization                   36.6M       36.6M       36.6M
+  Mesh Preprocessing            807.2M      807.2M      843.8M
+Operator Construction           560.8M      560.8M        1.4G
+Linear Solve                    901.2M      901.2M        2.3G
+  Setup                           2.1G        2.1G        4.4G
+  Preconditioner                  4.1G        4.1G        8.5G
+Estimation                        0.0K        0.0K        8.5G
+  Construction                    1.3G        1.3G        9.9G
+  Solve                           0.0K        0.0K        9.9G
+Postprocessing                    0.0K        0.0K        9.9G
+Disk IO                         604.2M      604.2M       10.5G
+--------------------------------------------------------------
+Total                            10.5G       10.5G       10.5G
+
+      108.60 real       640.28 user        88.56 sys
+          1878294528  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+            22525516  page reclaims
+                2242  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                 337  messages sent
+                 656  messages received
+                   0  signals received
+              187757  voluntary context switches
+             2378179  involuntary context switches
+            36326644  instructions retired
+            14617715  cycles elapsed
+             1786288  peak memory footprint

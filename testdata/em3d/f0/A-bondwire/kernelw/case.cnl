@@ -1,0 +1,5 @@
+* circuitRF F0 spike -- case A through the ordinary netlist route (the lumped wBond model).
+Port:P1 in  0 Num=1 Z=50 Ohm
+Port:P2 out 0 Num=2 Z=50 Ohm
+WBond:WB1 in out File="case.wBond"
+analysis SP1 type=sparam start=1 stop=40 npts=40 Unit=GHz

@@ -1,0 +1,14 @@
+# name count tags  (SHAPE=0 FOOT=0)
+air 1
+substrate 1
+outer_pec 10
+pads 4
+port1 1
+port2 1
+wire 3
+contact 2
+tag_substrate before 10 after 10
+tag_air before 22 after 22
+fragment_returned 24 entities
+all_surfaces 20
+all_volumes 2

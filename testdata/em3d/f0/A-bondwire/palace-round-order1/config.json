@@ -1,0 +1,27 @@
+// circuitRF F0 spike -- case A, Q6 control: the wire as a VOID with the conductivity boundary (as palace-round),
+// at ELEMENT ORDER 1 and 1 GHz, to compare with palace-round-meshed-wire at the same order.
+// HAND-WRITTEN SPIKE MATERIAL (brief-em3d-1). Same mesh as palace-round.
+{
+  "Problem": { "Type": "Driven", "Verbose": 2, "Output": "postpro" },
+  "Model": { "Mesh": "../palace-round/case.msh", "L0": 1.0e-6, "Refinement": { "MaxIts": 0 } },
+  "Domains": {
+    "Materials": [
+      { "Attributes": [1], "Permeability": 1.0, "Permittivity": 1.0, "LossTan": 0.0 },
+      { "Attributes": [2], "Permeability": 1.0, "Permittivity": 9.8, "LossTan": 0.0 }
+    ]
+  },
+  "Boundaries": {
+    "PEC": { "Attributes": [3, 4] },
+    "Conductivity": [ { "Attributes": [7], "Conductivity": 4.10e7, "Permeability": 1.0 } ],
+    "LumpedPort": [
+      { "Index": 1, "R": 50.0, "Excitation": true, "Attributes": [5], "Direction": "+Z" },
+      { "Index": 2, "R": 50.0, "Attributes": [6], "Direction": "+Z" }
+    ]
+  },
+  "Solver": {
+    "Order": 1,
+    "Device": "CPU",
+    "Driven": { "Samples": [ { "Type": "Point", "Freq": [1.0] } ] },
+    "Linear": { "Type": "Default", "KSPType": "GMRES", "Tol": 1.0e-8, "MaxIts": 1000 }
+  }
+}

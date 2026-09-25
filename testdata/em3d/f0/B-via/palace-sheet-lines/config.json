@@ -1,0 +1,33 @@
+// circuitRF F0 spike -- case B, Palace driven solve. HAND-WRITTEN SPIKE MATERIAL (brief-em3d-1).
+// Attributes are the physical groups case.geo writes (see entities.txt beside the mesh).
+// Q6 VARIANT: the lines are zero-thickness sheets (attribute 8) with Thickness 35 um.
+// Port 1 (top line) points +Z from the ground plane up to the line; port 2 (bottom line) points
+// -Z from the ground plane down to the line, so both port voltages are line minus ground.
+{
+  "Problem": { "Type": "Driven", "Verbose": 2, "Output": "postpro" },
+  "Model": { "Mesh": "case.msh", "L0": 1.0e-6, "Refinement": { "MaxIts": 0 } },
+  "Domains": {
+    "Materials": [
+      { "Attributes": [1], "Permeability": 1.0, "Permittivity": 1.0, "LossTan": 0.0 },
+      { "Attributes": [2], "Permeability": 1.0, "Permittivity": 3.66, "LossTan": 0.004 }
+    ]
+  },
+  "Boundaries": {
+    "Absorbing": { "Attributes": [3], "Order": 1 },
+    "Conductivity": [ { "Attributes": [4, 5], "Conductivity": 5.8e7, "Permeability": 1.0 },
+                      { "Attributes": [8], "Conductivity": 5.8e7, "Permeability": 1.0, "Thickness": 35.0 } ],
+    "LumpedPort": [
+      { "Index": 1, "R": 50.0, "Excitation": true, "Attributes": [6], "Direction": "+Z" },
+      { "Index": 2, "R": 50.0, "Attributes": [7], "Direction": "-Z" }
+    ]
+  },
+  "Solver": {
+    "Order": 2,
+    "Device": "CPU",
+    "Driven": {
+      "Samples": [ { "Type": "Linear", "MinFreq": 0.1, "MaxFreq": 20.0, "FreqStep": 0.1 } ],
+      "AdaptiveTol": 1.0e-4
+    },
+    "Linear": { "Type": "Default", "KSPType": "GMRES", "Tol": 1.0e-8, "MaxIts": 400 }
+  }
+}

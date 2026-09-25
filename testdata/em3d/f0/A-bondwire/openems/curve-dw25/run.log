@@ -1,0 +1,44 @@
+ ---------------------------------------------------------------------- 
+ | openEMS 64bit -- version 67d3784
+ | (C) 2010-2026 Thorsten Liebig <thorsten.liebig@gmx.de>  GPL license
+ ---------------------------------------------------------------------- 
+	Used external libraries:
+		CSXCAD -- Version: dcdb62b
+		hdf5   -- Version: 2.2.0
+		          compiled against: HDF5 library version: 2.2.0
+		tinyxml -- compiled against: 2.6.2
+		fparser
+		boost  -- compiled against: 1_92
+		vtk -- Version: 9.7.0
+		       compiled against: 9.7.0
+
+Create FDTD operator (compressed SSE + multi-threading)
+FDTD simulation size: 71x31x25 --> 55025 FDTD cells 
+FDTD timestep is: 3.48496e-14 s; Nyquist rate: 358 timesteps @4.00765e+10 Hz
+Excitation signal length is: 4111 timesteps (1.43267e-10s)
+Max. number of timesteps: 2000000 ( --> 486.5 * Excitation signal length)
+Create FDTD engine (compressed SSE + multi-threading)
+Running FDTD engine... this may take a while... grab a cup of coffee?!?
+[@        4s] Timestep:        28035 || Speed:  384.7 MC/s (1.431e-04 s/TS) || Energy: ~3.33e-26 (-97.44dB)
+RunFDTD: end-criteria of -50.00dB reached after 28035 timesteps (-97.44dB)
+Time for 28035 iterations with 55025.00 cells : 4.01 sec
+Speed: 384.64 MCells/s 
+        4.10 real         4.28 user         0.01 sys
+            32571392  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+                2645  page reclaims
+                  79  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                   0  voluntary context switches
+                 783  involuntary context switches
+         85088551118  instructions retired
+         17198033847  cycles elapsed
+            11682296  peak memory footprint
+rc=0

@@ -1,0 +1,533 @@
+>> <spack>/darwin-m3/openmpi-5.0.10-mc2xrsbdhymvtrnqqhefylivaut5hg63/bin/mpirun -n 8 <spack>/darwin-m3/palace-git.v0.18.1_0.18.0-jocw3euhlqfbzt363avhq2dq56haksyl/bin/palace-arm64.bin config.json
+
+_____________     _______
+_____   __   \____ __   /____ ____________
+____   /_/  /  __ ` /  /  __ ` /  ___/  _ \
+___   _____/  /_/  /  /  /_/  /  /__/  ___/
+  /__/     \___,__/__/\___,__/\_____\_____/
+
+Git changeset ID: 0dc74cd
+Running with 8 MPI processes
+Device configuration: cpu
+Memory configuration: host-std
+libCEED backend: /cpu/self/xsmm/blocked
+
+Added 267 duplicate vertices for interior boundaries in the mesh
+Added 570 duplicate boundary elements for interior boundaries in the mesh
+Added 2986 boundary elements for material interfaces to the mesh
+
+Characteristic length and time scales:
+ Lc = 3.000e-03 m, tc = 1.001e-02 ns
+Finished partitioning mesh into 8 subdomains
+
+Mesh curvature order: 2
+Mesh bounding box:
+ (Xmin, Ymin, Zmin) = (-1.500e-03, -1.000e-03, +0.000e+00) m
+ (Xmax, Ymax, Zmax) = (+1.500e-03, +1.000e-03, +1.100e-03) m
+
+Parallel Mesh Stats:
+
+                minimum     average     maximum       total
+ vertices          2811        3260        3683       26082
+ edges            21056       22267       23762      178142
+ faces            36603       37353       38814      298831
+ elements         18036       18346       18736      146769
+ neighbors            3           4           6
+
+            minimum     maximum
+ h       0.00155352   0.0784824
+ kappa      1.01235      15.792
+
+Estimated current per-rank memory usage is: Min. 25.4M, Max. 180.6M, Avg. 45.3M, Total 362.3M
+Estimated current per-node memory usage is: Min. 362.3M, Max. 362.3M, Avg. 362.3M, Total 362.3M
+
+Configuring Robin impedance BC for lumped ports at attributes:
+ 5: Rs = 5.000e+01 Ω/sq, n = (-1.0,+0.0,-0.0)
+ 6: Rs = 5.000e+01 Ω/sq, n = (+1.0,-0.0,-0.0)
+
+Configuring lumped port circuit properties:
+ Index = 1: R = 5.000e+01 Ω
+ Index = 2: R = 5.000e+01 Ω
+
+Configuring lumped port excitation source term at attributes:
+ 5: Index = 1
+
+Configuring Dirichlet PEC BC at attributes:
+ 3-4, 7
+
+Computing adaptive fast frequency response for:
+Excitation with index 1 has contributions from:
+ Lumped port  1
+
+Beginning PROM construction offline phase:
+ 40 points for frequency sweep over [1.000e+00, 4.000e+01] GHz
+
+Assembling system matrices, number of global unknowns:
+ H1 (p = 2): 204224, ND (p = 2): 953946, RT (p = 2): 1336800
+ Operator assembly level: Partial
+ Mesh geometries:
+  Tetrahedron: P = 20, Q = 14 (quadrature order = 4)
+
+Assembling multigrid hierarchy:
+ Level 0 (p = 1): 178142 unknowns
+ Level 1 (p = 2): 953946 unknowns
+ Level 0 (auxiliary) (p = 1): 26082 unknowns
+ Level 1 (auxiliary) (p = 2): 204224 unknowns
+
+  Residual norms for GMRES solve
+  0 (restart 0) KSP residual norm 2.518016e+01
+  1 (restart 0) KSP residual norm 1.708908e+00
+  2 (restart 0) KSP residual norm 1.388576e-01
+  3 (restart 0) KSP residual norm 1.679060e-02
+  4 (restart 0) KSP residual norm 8.616772e-03
+  5 (restart 0) KSP residual norm 7.189453e-04
+  6 (restart 0) KSP residual norm 3.332397e-04
+  7 (restart 0) KSP residual norm 4.631907e-05
+  8 (restart 0) KSP residual norm 2.131071e-05
+  9 (restart 0) KSP residual norm 6.301667e-06
+ 10 (restart 0) KSP residual norm 3.463724e-06
+ 11 (restart 0) KSP residual norm 1.000047e-06
+ 12 (restart 0) KSP residual norm 2.698510e-07
+ 13 (restart 0) KSP residual norm 5.264573e-08
+GMRES solver converged in 13 iterations (avg. reduction factor: 2.149e-01)
+ Field energy E (2.049e-12 J) + H (8.779e-12 J) = 1.083e-11 J
+
+  Residual norms for GMRES solve
+  0 (restart 0) KSP residual norm 8.011453e+01
+  1 (restart 0) KSP residual norm 1.268074e+01
+  2 (restart 0) KSP residual norm 2.063734e+00
+  3 (restart 0) KSP residual norm 5.023279e-01
+  4 (restart 0) KSP residual norm 1.487191e-01
+  5 (restart 0) KSP residual norm 2.940192e-02
+  6 (restart 0) KSP residual norm 9.761753e-03
+  7 (restart 0) KSP residual norm 5.036307e-03
+  8 (restart 0) KSP residual norm 1.504590e-03
+  9 (restart 0) KSP residual norm 5.535589e-04
+ 10 (restart 0) KSP residual norm 2.036234e-04
+ 11 (restart 0) KSP residual norm 4.549638e-05
+ 12 (restart 0) KSP residual norm 2.744448e-05
+ 13 (restart 0) KSP residual norm 7.242409e-06
+ 14 (restart 0) KSP residual norm 1.845426e-06
+ 15 (restart 0) KSP residual norm 6.056334e-07
+GMRES solver converged in 15 iterations (avg. reduction factor: 2.875e-01)
+ Field energy E (3.522e-12 J) + H (2.072e-12 J) = 5.594e-12 J
+
+  Residual norms for GMRES solve
+  0 (restart 0) KSP residual norm 5.129382e+01
+  1 (restart 0) KSP residual norm 9.491453e+00
+  2 (restart 0) KSP residual norm 1.987770e+00
+  3 (restart 0) KSP residual norm 3.135024e-01
+  4 (restart 0) KSP residual norm 1.368900e-01
+  5 (restart 0) KSP residual norm 1.806646e-02
+  6 (restart 0) KSP residual norm 7.646106e-03
+  7 (restart 0) KSP residual norm 2.678043e-03
+  8 (restart 0) KSP residual norm 9.773276e-04
+  9 (restart 0) KSP residual norm 3.947343e-04
+ 10 (restart 0) KSP residual norm 1.358128e-04
+ 11 (restart 0) KSP residual norm 3.205121e-05
+ 12 (restart 0) KSP residual norm 1.947262e-05
+ 13 (restart 0) KSP residual norm 5.888565e-06
+ 14 (restart 0) KSP residual norm 1.339827e-06
+ 15 (restart 0) KSP residual norm 4.639109e-07
+GMRES solver converged in 15 iterations (avg. reduction factor: 2.909e-01)
+
+Greedy iteration 1 (n = 4): ω* = 3.033e+01 GHz (1.907e+00), error = 2.160e-03, memory = 0/2
+ Field energy E (3.375e-12 J) + H (3.008e-12 J) = 6.383e-12 J
+
+  Residual norms for GMRES solve
+  0 (restart 0) KSP residual norm 3.123356e+01
+  1 (restart 0) KSP residual norm 6.191393e+00
+  2 (restart 0) KSP residual norm 1.217678e+00
+  3 (restart 0) KSP residual norm 1.714974e-01
+  4 (restart 0) KSP residual norm 8.242986e-02
+  5 (restart 0) KSP residual norm 5.966909e-03
+  6 (restart 0) KSP residual norm 2.855641e-03
+  7 (restart 0) KSP residual norm 3.976459e-04
+  8 (restart 0) KSP residual norm 1.936530e-04
+  9 (restart 0) KSP residual norm 6.982112e-05
+ 10 (restart 0) KSP residual norm 2.938049e-05
+ 11 (restart 0) KSP residual norm 1.161864e-05
+ 12 (restart 0) KSP residual norm 6.433761e-06
+ 13 (restart 0) KSP residual norm 2.706791e-06
+ 14 (restart 0) KSP residual norm 5.269191e-07
+ 15 (restart 0) KSP residual norm 1.521136e-07
+GMRES solver converged in 15 iterations (avg. reduction factor: 2.791e-01)
+
+Greedy iteration 2 (n = 6): ω* = 1.230e+01 GHz (7.732e-01), error = 1.757e-05, memory = 1/2
+ Field energy E (2.549e-12 J) + H (6.716e-12 J) = 9.265e-12 J
+
+  Residual norms for GMRES solve
+  0 (restart 0) KSP residual norm 2.720762e+01
+  1 (restart 0) KSP residual norm 4.270990e+00
+  2 (restart 0) KSP residual norm 5.703990e-01
+  3 (restart 0) KSP residual norm 8.582975e-02
+  4 (restart 0) KSP residual norm 3.989479e-02
+  5 (restart 0) KSP residual norm 2.939397e-03
+  6 (restart 0) KSP residual norm 1.465171e-03
+  7 (restart 0) KSP residual norm 1.844575e-04
+  8 (restart 0) KSP residual norm 9.254434e-05
+  9 (restart 0) KSP residual norm 2.785717e-05
+ 10 (restart 0) KSP residual norm 1.348896e-05
+ 11 (restart 0) KSP residual norm 3.776279e-06
+ 12 (restart 0) KSP residual norm 1.085556e-06
+ 13 (restart 0) KSP residual norm 3.634037e-07
+ 14 (restart 0) KSP residual norm 2.146921e-07
+GMRES solver converged in 14 iterations (avg. reduction factor: 2.638e-01)
+
+Greedy iteration 3 (n = 8): ω* = 5.462e+00 GHz (3.434e-01), error = 5.736e-08, memory = 2/2
+ Field energy E (2.168e-12 J) + H (8.295e-12 J) = 1.046e-11 J
+
+Adaptive sampling converged with 5 frequency samples:
+ n = 10, error = 5.736e-08, tol = 1.000e-04, memory = 2/2
+ Sampled frequencies (GHz): 1.000e+00, 4.000e+01, 3.033e+01, 1.230e+01,
+                            5.462e+00
+ Sample errors: inf, inf, 2.160e-03, 1.757e-05, 5.736e-08
+ Total offline phase elapsed time: 9.86e+01 s
+
+Beginning fast frequency sweep online phase
+
+It 1/40: ω/2π = 1.000e+00 GHz (total elapsed time = 9.86e+01 s)
+
+ Sol. ||E|| = 2.535872e+01
+ Field energy E (2.049e-12 J) + H (8.779e-12 J) = 1.083e-11 J
+ S[1][1] = +2.882e-03+4.229e-02i, |S[1][1]| = -2.746e+01, arg(S[1][1]) = +8.610e+01
+ S[2][1] = +9.968e-01-6.798e-02i, |S[2][1]| = -7.826e-03, arg(S[2][1]) = -3.902e+00
+
+It 2/40: ω/2π = 2.000e+00 GHz (total elapsed time = 9.86e+01 s)
+
+ Sol. ||E|| = 2.540760e+01
+ Field energy E (2.062e-12 J) + H (8.726e-12 J) = 1.079e-11 J
+ S[1][1] = +1.145e-02+8.375e-02i, |S[1][1]| = -2.146e+01, arg(S[1][1]) = +8.221e+01
+ S[2][1] = +9.872e-01-1.351e-01i, |S[2][1]| = -3.121e-02, arg(S[2][1]) = -7.793e+00
+
+It 3/40: ω/2π = 3.000e+00 GHz (total elapsed time = 9.87e+01 s)
+
+ Sol. ||E|| = 2.548762e+01
+ Field energy E (2.083e-12 J) + H (8.639e-12 J) = 1.072e-11 J
+ S[1][1] = +2.550e-02+1.236e-01i, |S[1][1]| = -1.798e+01, arg(S[1][1]) = +7.834e+01
+ S[2][1] = +9.715e-01-2.006e-01i, |S[2][1]| = -6.986e-02, arg(S[2][1]) = -1.167e+01
+
+It 4/40: ω/2π = 4.000e+00 GHz (total elapsed time = 9.88e+01 s)
+
+ Sol. ||E|| = 2.559674e+01
+ Field energy E (2.112e-12 J) + H (8.521e-12 J) = 1.063e-11 J
+ S[1][1] = +4.466e-02+1.611e-01i, |S[1][1]| = -1.554e+01, arg(S[1][1]) = +7.450e+01
+ S[2][1] = +9.500e-01-2.637e-01i, |S[2][1]| = -1.233e-01, arg(S[2][1]) = -1.551e+01
+
+It 5/40: ω/2π = 5.000e+00 GHz (total elapsed time = 9.88e+01 s)
+
+ Sol. ||E|| = 2.573227e+01
+ Field energy E (2.149e-12 J) + H (8.372e-12 J) = 1.052e-11 J
+ S[1][1] = +6.849e-02+1.955e-01i, |S[1][1]| = -1.367e+01, arg(S[1][1]) = +7.070e+01
+ S[2][1] = +9.232e-01-3.236e-01i, |S[2][1]| = -1.910e-01, arg(S[2][1]) = -1.932e+01
+
+It 6/40: ω/2π = 6.000e+00 GHz (total elapsed time = 9.89e+01 s)
+
+ Sol. ||E|| = 2.589106e+01
+ Field energy E (2.191e-12 J) + H (8.197e-12 J) = 1.039e-11 J
+ S[1][1] = +9.643e-02+2.264e-01i, |S[1][1]| = -1.218e+01, arg(S[1][1]) = +6.693e+01
+ S[2][1] = +8.916e-01-3.800e-01i, |S[2][1]| = -2.720e-01, arg(S[2][1]) = -2.308e+01
+
+It 7/40: ω/2π = 7.000e+00 GHz (total elapsed time = 9.89e+01 s)
+
+ Sol. ||E|| = 2.606964e+01
+ Field energy E (2.239e-12 J) + H (8.000e-12 J) = 1.024e-11 J
+ S[1][1] = +1.279e-01+2.534e-01i, |S[1][1]| = -1.094e+01, arg(S[1][1]) = +6.322e+01
+ S[2][1] = +8.558e-01-4.323e-01i, |S[2][1]| = -3.656e-01, arg(S[2][1]) = -2.680e+01
+
+It 8/40: ω/2π = 8.000e+00 GHz (total elapsed time = 9.90e+01 s)
+
+ Sol. ||E|| = 2.626444e+01
+ Field energy E (2.292e-12 J) + H (7.783e-12 J) = 1.007e-11 J
+ S[1][1] = +1.621e-01+2.760e-01i, |S[1][1]| = -9.894e+00, arg(S[1][1]) = +5.957e+01
+ S[2][1] = +8.165e-01-4.801e-01i, |S[2][1]| = -4.708e-01, arg(S[2][1]) = -3.046e+01
+
+It 9/40: ω/2π = 9.000e+00 GHz (total elapsed time = 9.91e+01 s)
+
+ Sol. ||E|| = 2.647188e+01
+ Field energy E (2.348e-12 J) + H (7.550e-12 J) = 9.898e-12 J
+ S[1][1] = +1.986e-01+2.942e-01i, |S[1][1]| = -8.997e+00, arg(S[1][1]) = +5.597e+01
+ S[2][1] = +7.744e-01-5.234e-01i, |S[2][1]| = -5.866e-01, arg(S[2][1]) = -3.405e+01
+
+It 10/40: ω/2π = 1.000e+01 GHz (total elapsed time = 9.91e+01 s)
+
+ Sol. ||E|| = 2.668855e+01
+ Field energy E (2.407e-12 J) + H (7.306e-12 J) = 9.713e-12 J
+ S[1][1] = +2.366e-01+3.078e-01i, |S[1][1]| = -8.218e+00, arg(S[1][1]) = +5.244e+01
+ S[2][1] = +7.301e-01-5.619e-01i, |S[2][1]| = -7.118e-01, arg(S[2][1]) = -3.758e+01
+
+It 11/40: ω/2π = 1.100e+01 GHz (total elapsed time = 9.92e+01 s)
+
+ Sol. ||E|| = 2.691128e+01
+ Field energy E (2.468e-12 J) + H (7.052e-12 J) = 9.521e-12 J
+ S[1][1] = +2.756e-01+3.168e-01i, |S[1][1]| = -7.536e+00, arg(S[1][1]) = +4.898e+01
+ S[2][1] = +6.842e-01-5.958e-01i, |S[2][1]| = -8.455e-01, arg(S[2][1]) = -4.105e+01
+
+It 12/40: ω/2π = 1.200e+01 GHz (total elapsed time = 9.92e+01 s)
+
+ Sol. ||E|| = 2.713722e+01
+ Field energy E (2.530e-12 J) + H (6.794e-12 J) = 9.324e-12 J
+ S[1][1] = +3.149e-01+3.215e-01i, |S[1][1]| = -6.935e+00, arg(S[1][1]) = +4.559e+01
+ S[2][1] = +6.373e-01-6.250e-01i, |S[2][1]| = -9.865e-01, arg(S[2][1]) = -4.444e+01
+
+It 13/40: ω/2π = 1.300e+01 GHz (total elapsed time = 9.93e+01 s)
+
+ Sol. ||E|| = 2.736388e+01
+ Field energy E (2.592e-12 J) + H (6.533e-12 J) = 9.125e-12 J
+ S[1][1] = +3.541e-01+3.219e-01i, |S[1][1]| = -6.402e+00, arg(S[1][1]) = +4.227e+01
+ S[2][1] = +5.899e-01-6.498e-01i, |S[2][1]| = -1.134e+00, arg(S[2][1]) = -4.776e+01
+
+It 14/40: ω/2π = 1.400e+01 GHz (total elapsed time = 9.93e+01 s)
+
+ Sol. ||E|| = 2.758911e+01
+ Field energy E (2.654e-12 J) + H (6.272e-12 J) = 8.926e-12 J
+ S[1][1] = +3.927e-01+3.182e-01i, |S[1][1]| = -5.927e+00, arg(S[1][1]) = +3.902e+01
+ S[2][1] = +5.425e-01-6.703e-01i, |S[2][1]| = -1.287e+00, arg(S[2][1]) = -5.102e+01
+
+It 15/40: ω/2π = 1.500e+01 GHz (total elapsed time = 9.94e+01 s)
+
+ Sol. ||E|| = 2.781115e+01
+ Field energy E (2.715e-12 J) + H (6.013e-12 J) = 8.728e-12 J
+ S[1][1] = +4.302e-01+3.108e-01i, |S[1][1]| = -5.502e+00, arg(S[1][1]) = +3.584e+01
+ S[2][1] = +4.954e-01-6.868e-01i, |S[2][1]| = -1.444e+00, arg(S[2][1]) = -5.420e+01
+
+It 16/40: ω/2π = 1.600e+01 GHz (total elapsed time = 9.94e+01 s)
+
+ Sol. ||E|| = 2.802857e+01
+ Field energy E (2.775e-12 J) + H (5.758e-12 J) = 8.534e-12 J
+ S[1][1] = +4.665e-01+2.999e-01i, |S[1][1]| = -5.121e+00, arg(S[1][1]) = +3.274e+01
+ S[2][1] = +4.491e-01-6.996e-01i, |S[2][1]| = -1.604e+00, arg(S[2][1]) = -5.731e+01
+
+It 17/40: ω/2π = 1.700e+01 GHz (total elapsed time = 9.95e+01 s)
+
+ Sol. ||E|| = 2.824024e+01
+ Field energy E (2.833e-12 J) + H (5.509e-12 J) = 8.343e-12 J
+ S[1][1] = +5.012e-01+2.858e-01i, |S[1][1]| = -4.777e+00, arg(S[1][1]) = +2.970e+01
+ S[2][1] = +4.037e-01-7.090e-01i, |S[2][1]| = -1.768e+00, arg(S[2][1]) = -6.035e+01
+
+It 18/40: ω/2π = 1.800e+01 GHz (total elapsed time = 9.96e+01 s)
+
+ Sol. ||E|| = 2.844533e+01
+ Field energy E (2.889e-12 J) + H (5.267e-12 J) = 8.156e-12 J
+ S[1][1] = +5.340e-01+2.689e-01i, |S[1][1]| = -4.467e+00, arg(S[1][1]) = +2.673e+01
+ S[2][1] = +3.594e-01-7.152e-01i, |S[2][1]| = -1.933e+00, arg(S[2][1]) = -6.332e+01
+
+It 19/40: ω/2π = 1.900e+01 GHz (total elapsed time = 9.96e+01 s)
+
+ Sol. ||E|| = 2.864325e+01
+ Field energy E (2.943e-12 J) + H (5.032e-12 J) = 7.976e-12 J
+ S[1][1] = +5.650e-01+2.494e-01i, |S[1][1]| = -4.186e+00, arg(S[1][1]) = +2.382e+01
+ S[2][1] = +3.166e-01-7.186e-01i, |S[2][1]| = -2.100e+00, arg(S[2][1]) = -6.623e+01
+
+It 20/40: ω/2π = 2.000e+01 GHz (total elapsed time = 9.97e+01 s)
+
+ Sol. ||E|| = 2.883362e+01
+ Field energy E (2.995e-12 J) + H (4.806e-12 J) = 7.801e-12 J
+ S[1][1] = +5.938e-01+2.277e-01i, |S[1][1]| = -3.931e+00, arg(S[1][1]) = +2.098e+01
+ S[2][1] = +2.752e-01-7.195e-01i, |S[2][1]| = -2.267e+00, arg(S[2][1]) = -6.907e+01
+
+It 21/40: ω/2π = 2.100e+01 GHz (total elapsed time = 9.97e+01 s)
+
+ Sol. ||E|| = 2.901621e+01
+ Field energy E (3.044e-12 J) + H (4.589e-12 J) = 7.633e-12 J
+ S[1][1] = +6.205e-01+2.040e-01i, |S[1][1]| = -3.700e+00, arg(S[1][1]) = +1.820e+01
+ S[2][1] = +2.354e-01-7.180e-01i, |S[2][1]| = -2.434e+00, arg(S[2][1]) = -7.185e+01
+
+It 22/40: ω/2π = 2.200e+01 GHz (total elapsed time = 9.98e+01 s)
+
+ Sol. ||E|| = 2.919098e+01
+ Field energy E (3.090e-12 J) + H (4.382e-12 J) = 7.471e-12 J
+ S[1][1] = +6.450e-01+1.786e-01i, |S[1][1]| = -3.489e+00, arg(S[1][1]) = +1.548e+01
+ S[2][1] = +1.972e-01-7.145e-01i, |S[2][1]| = -2.601e+00, arg(S[2][1]) = -7.457e+01
+
+It 23/40: ω/2π = 2.300e+01 GHz (total elapsed time = 9.98e+01 s)
+
+ Sol. ||E|| = 2.935797e+01
+ Field energy E (3.133e-12 J) + H (4.183e-12 J) = 7.317e-12 J
+ S[1][1] = +6.672e-01+1.517e-01i, |S[1][1]| = -3.296e+00, arg(S[1][1]) = +1.281e+01
+ S[2][1] = +1.606e-01-7.092e-01i, |S[2][1]| = -2.767e+00, arg(S[2][1]) = -7.724e+01
+
+It 24/40: ω/2π = 2.400e+01 GHz (total elapsed time = 9.99e+01 s)
+
+ Sol. ||E|| = 2.951732e+01
+ Field energy E (3.174e-12 J) + H (3.994e-12 J) = 7.169e-12 J
+ S[1][1] = +6.872e-01+1.236e-01i, |S[1][1]| = -3.120e+00, arg(S[1][1]) = +1.020e+01
+ S[2][1] = +1.258e-01-7.024e-01i, |S[2][1]| = -2.932e+00, arg(S[2][1]) = -7.985e+01
+
+It 25/40: ω/2π = 2.500e+01 GHz (total elapsed time = 9.99e+01 s)
+
+ Sol. ||E|| = 2.966925e+01
+ Field energy E (3.213e-12 J) + H (3.815e-12 J) = 7.027e-12 J
+ S[1][1] = +7.050e-01+9.457e-02i, |S[1][1]| = -2.958e+00, arg(S[1][1]) = +7.640e+00
+ S[2][1] = +9.251e-02-6.941e-01i, |S[2][1]| = -3.095e+00, arg(S[2][1]) = -8.241e+01
+
+It 26/40: ω/2π = 2.600e+01 GHz (total elapsed time = 1.00e+02 s)
+
+ Sol. ||E|| = 2.981402e+01
+ Field energy E (3.248e-12 J) + H (3.644e-12 J) = 6.893e-12 J
+ S[1][1] = +7.207e-01+6.469e-02i, |S[1][1]| = -2.810e+00, arg(S[1][1]) = +5.129e+00
+ S[2][1] = +6.088e-02-6.846e-01i, |S[2][1]| = -3.256e+00, arg(S[2][1]) = -8.492e+01
+
+It 27/40: ω/2π = 2.700e+01 GHz (total elapsed time = 1.00e+02 s)
+
+ Sol. ||E|| = 2.995195e+01
+ Field energy E (3.282e-12 J) + H (3.483e-12 J) = 6.765e-12 J
+ S[1][1] = +7.342e-01+3.419e-02i, |S[1][1]| = -2.674e+00, arg(S[1][1]) = +2.666e+00
+ S[2][1] = +3.084e-02-6.742e-01i, |S[2][1]| = -3.416e+00, arg(S[2][1]) = -8.738e+01
+
+It 28/40: ω/2π = 2.800e+01 GHz (total elapsed time = 1.00e+02 s)
+
+ Sol. ||E|| = 3.008337e+01
+ Field energy E (3.312e-12 J) + H (3.331e-12 J) = 6.643e-12 J
+ S[1][1] = +7.456e-01+3.222e-03i, |S[1][1]| = -2.549e+00, arg(S[1][1]) = +2.476e-01
+ S[2][1] = +2.329e-03-6.628e-01i, |S[2][1]| = -3.572e+00, arg(S[2][1]) = -8.980e+01
+
+It 29/40: ω/2π = 2.900e+01 GHz (total elapsed time = 1.00e+02 s)
+
+ Sol. ||E|| = 3.020863e+01
+ Field energy E (3.341e-12 J) + H (3.187e-12 J) = 6.527e-12 J
+ S[1][1] = +7.551e-01-2.807e-02i, |S[1][1]| = -2.434e+00, arg(S[1][1]) = -2.129e+00
+ S[2][1] = -2.470e-02-6.507e-01i, |S[2][1]| = -3.727e+00, arg(S[2][1]) = -9.217e+01
+
+It 30/40: ω/2π = 3.000e+01 GHz (total elapsed time = 1.00e+02 s)
+
+ Sol. ||E|| = 3.032810e+01
+ Field energy E (3.367e-12 J) + H (3.051e-12 J) = 6.418e-12 J
+ S[1][1] = +7.626e-01-5.955e-02i, |S[1][1]| = -2.328e+00, arg(S[1][1]) = -4.465e+00
+ S[2][1] = -5.030e-02-6.379e-01i, |S[2][1]| = -3.878e+00, arg(S[2][1]) = -9.451e+01
+
+It 31/40: ω/2π = 3.100e+01 GHz (total elapsed time = 1.00e+02 s)
+
+ Sol. ||E|| = 3.044216e+01
+ Field energy E (3.391e-12 J) + H (2.923e-12 J) = 6.314e-12 J
+ S[1][1] = +7.682e-01-9.110e-02i, |S[1][1]| = -2.230e+00, arg(S[1][1]) = -6.763e+00
+ S[2][1] = -7.453e-02-6.246e-01i, |S[2][1]| = -4.026e+00, arg(S[2][1]) = -9.680e+01
+
+It 32/40: ω/2π = 3.200e+01 GHz (total elapsed time = 1.00e+02 s)
+
+ Sol. ||E|| = 3.055117e+01
+ Field energy E (3.412e-12 J) + H (2.803e-12 J) = 6.215e-12 J
+ S[1][1] = +7.720e-01-1.226e-01i, |S[1][1]| = -2.139e+00, arg(S[1][1]) = -9.025e+00
+ S[2][1] = -9.746e-02-6.109e-01i, |S[2][1]| = -4.172e+00, arg(S[2][1]) = -9.906e+01
+
+It 33/40: ω/2π = 3.300e+01 GHz (total elapsed time = 1.00e+02 s)
+
+ Sol. ||E|| = 3.065550e+01
+ Field energy E (3.432e-12 J) + H (2.689e-12 J) = 6.122e-12 J
+ S[1][1] = +7.741e-01-1.540e-01i, |S[1][1]| = -2.055e+00, arg(S[1][1]) = -1.125e+01
+ S[2][1] = -1.191e-01-5.968e-01i, |S[2][1]| = -4.314e+00, arg(S[2][1]) = -1.013e+02
+
+It 34/40: ω/2π = 3.400e+01 GHz (total elapsed time = 1.00e+02 s)
+
+ Sol. ||E|| = 3.075551e+01
+ Field energy E (3.450e-12 J) + H (2.583e-12 J) = 6.033e-12 J
+ S[1][1] = +7.745e-01-1.852e-01i, |S[1][1]| = -1.978e+00, arg(S[1][1]) = -1.345e+01
+ S[2][1] = -1.396e-01-5.824e-01i, |S[2][1]| = -4.453e+00, arg(S[2][1]) = -1.035e+02
+
+It 35/40: ω/2π = 3.500e+01 GHz (total elapsed time = 1.01e+02 s)
+
+ Sol. ||E|| = 3.085157e+01
+ Field energy E (3.466e-12 J) + H (2.483e-12 J) = 5.949e-12 J
+ S[1][1] = +7.733e-01-2.161e-01i, |S[1][1]| = -1.906e+00, arg(S[1][1]) = -1.561e+01
+ S[2][1] = -1.590e-01-5.677e-01i, |S[2][1]| = -4.589e+00, arg(S[2][1]) = -1.056e+02
+
+It 36/40: ω/2π = 3.600e+01 GHz (total elapsed time = 1.01e+02 s)
+
+ Sol. ||E|| = 3.094402e+01
+ Field energy E (3.480e-12 J) + H (2.390e-12 J) = 5.870e-12 J
+ S[1][1] = +7.706e-01-2.467e-01i, |S[1][1]| = -1.839e+00, arg(S[1][1]) = -1.775e+01
+ S[2][1] = -1.773e-01-5.529e-01i, |S[2][1]| = -4.721e+00, arg(S[2][1]) = -1.078e+02
+
+It 37/40: ω/2π = 3.700e+01 GHz (total elapsed time = 1.01e+02 s)
+
+ Sol. ||E|| = 3.103321e+01
+ Field energy E (3.493e-12 J) + H (2.302e-12 J) = 5.795e-12 J
+ S[1][1] = +7.665e-01-2.768e-01i, |S[1][1]| = -1.778e+00, arg(S[1][1]) = -1.986e+01
+ S[2][1] = -1.946e-01-5.380e-01i, |S[2][1]| = -4.850e+00, arg(S[2][1]) = -1.099e+02
+
+It 38/40: ω/2π = 3.800e+01 GHz (total elapsed time = 1.01e+02 s)
+
+ Sol. ||E|| = 3.111947e+01
+ Field energy E (3.504e-12 J) + H (2.220e-12 J) = 5.724e-12 J
+ S[1][1] = +7.609e-01-3.065e-01i, |S[1][1]| = -1.720e+00, arg(S[1][1]) = -2.194e+01
+ S[2][1] = -2.109e-01-5.230e-01i, |S[2][1]| = -4.976e+00, arg(S[2][1]) = -1.120e+02
+
+It 39/40: ω/2π = 3.900e+01 GHz (total elapsed time = 1.01e+02 s)
+
+ Sol. ||E|| = 3.120312e+01
+ Field energy E (3.514e-12 J) + H (2.144e-12 J) = 5.657e-12 J
+ S[1][1] = +7.540e-01-3.357e-01i, |S[1][1]| = -1.667e+00, arg(S[1][1]) = -2.400e+01
+ S[2][1] = -2.263e-01-5.079e-01i, |S[2][1]| = -5.098e+00, arg(S[2][1]) = -1.140e+02
+
+It 40/40: ω/2π = 4.000e+01 GHz (total elapsed time = 1.01e+02 s)
+
+ Sol. ||E|| = 3.128448e+01
+ Field energy E (3.522e-12 J) + H (2.072e-12 J) = 5.594e-12 J
+ S[1][1] = +7.459e-01-3.643e-01i, |S[1][1]| = -1.617e+00, arg(S[1][1]) = -2.603e+01
+ S[2][1] = -2.409e-01-4.928e-01i, |S[2][1]| = -5.216e+00, arg(S[2][1]) = -1.160e+02
+
+Completed 0 iterations of adaptive mesh refinement (AMR):
+ Indicator norm = 1.028e-01, global unknowns = 953946
+ Max. iterations = 0, tol. = 1.000e-02
+
+Estimated peak per-rank memory usage is: Min. 962.3M, Max. 1.1G, Avg. 1005.0M, Total 7.9G
+Estimated peak per-node memory usage is: Min. 7.9G, Max. 7.9G, Avg. 7.9G, Total 7.9G
+
+Elapsed Time Report (s)           Min.        Max.        Avg.
+==============================================================
+Initialization                   0.303       0.982       0.895
+  Mesh Preprocessing             0.819       1.497       0.904
+Operator Construction            0.533       0.568       0.546
+  Wave Ports                     0.000       0.000       0.000
+Linear Solve                     3.744       3.795       3.779
+  Setup                         22.773      22.819      22.790
+  Preconditioner                32.519      32.560      32.537
+  Coarse Solve                  22.690      22.721      22.701
+PROM Construction                0.409       0.417       0.413
+PROM Solve                       0.107       0.121       0.114
+Estimation                       0.323       0.361       0.348
+  Construction                   4.388       4.393       4.390
+  Solve                         15.208      15.253      15.225
+Postprocessing                   2.497       2.514       2.505
+Disk IO                          1.297       1.299       1.298
+--------------------------------------------------------------
+Total                          108.491     108.503     108.496
+
+Peak Memory                   Per-Node       Total   Total HWM
+==============================================================
+Initialization                   25.5M       25.5M       25.5M
+  Mesh Preprocessing            201.4M      201.4M      226.9M
+Operator Construction           699.7M      699.7M      926.6M
+  Wave Ports                      0.0K        0.0K      926.6M
+Linear Solve                    864.0K      864.0K      927.5M
+  Setup                           2.4G        2.4G        3.3G
+  Preconditioner                 97.3M       97.3M        3.4G
+  Coarse Solve                    2.9G        2.9G        6.3G
+PROM Construction                 0.0K        0.0K        6.3G
+PROM Solve                        0.0K        0.0K        6.3G
+Estimation                        0.0K        0.0K        6.3G
+  Construction                    1.2G        1.2G        7.5G
+  Solve                           0.0K        0.0K        7.5G
+Postprocessing                    0.0K        0.0K        7.5G
+Disk IO                         135.9M      135.9M        7.6G
+--------------------------------------------------------------
+Total                             7.7G        7.7G        7.7G
+
+      108.76 real       828.76 user        15.62 sys
+          1143275520  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+             3974221  page reclaims
+                2406  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                 337  messages sent
+                 656  messages received
+                   1  signals received
+                 253  voluntary context switches
+              500389  involuntary context switches
+            37132714  instructions retired
+            15011431  cycles elapsed
+             1769904  peak memory footprint

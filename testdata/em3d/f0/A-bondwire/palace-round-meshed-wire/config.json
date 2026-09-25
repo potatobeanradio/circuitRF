@@ -1,0 +1,29 @@
+// circuitRF F0 spike -- case A, Q6 variant: the wire MESHED as a gold volume (attribute 8,
+// sigma 4.10e7 S/m as a material conductivity), not a void with a boundary condition.
+// HAND-WRITTEN SPIKE MATERIAL (brief-em3d-1). One frequency, 1 GHz, where the skin depth (2.49 um)
+// can be resolved by elements of ~2 um; ELEMENT ORDER 1, because order 2 on this mesh is ~4.5 M
+// unknowns and does not fit a 16 GB machine. Compare against palace-round (void + boundary, order 2).
+{
+  "Problem": { "Type": "Driven", "Verbose": 2, "Output": "postpro" },
+  "Model": { "Mesh": "case.msh", "L0": 1.0e-6, "Refinement": { "MaxIts": 0 } },
+  "Domains": {
+    "Materials": [
+      { "Attributes": [1], "Permeability": 1.0, "Permittivity": 1.0, "LossTan": 0.0 },
+      { "Attributes": [2], "Permeability": 1.0, "Permittivity": 9.8, "LossTan": 0.0 },
+      { "Attributes": [8], "Permeability": 1.0, "Permittivity": 1.0, "Conductivity": 4.10e7 }
+    ]
+  },
+  "Boundaries": {
+    "PEC": { "Attributes": [3, 4] },
+    "LumpedPort": [
+      { "Index": 1, "R": 50.0, "Excitation": true, "Attributes": [5], "Direction": "+Z" },
+      { "Index": 2, "R": 50.0, "Attributes": [6], "Direction": "+Z" }
+    ]
+  },
+  "Solver": {
+    "Order": 1,
+    "Device": "CPU",
+    "Driven": { "Samples": [ { "Type": "Point", "Freq": [1.0] } ] },
+    "Linear": { "Type": "Default", "KSPType": "GMRES", "Tol": 1.0e-8, "MaxIts": 1000 }
+  }
+}

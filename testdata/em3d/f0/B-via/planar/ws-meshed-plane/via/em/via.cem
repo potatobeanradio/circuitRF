@@ -1,0 +1,22 @@
+{
+  "FormatVersion": 1,
+  "Name": "via-meshed-plane",
+  "LayoutRef": "via/layout/via.clay",
+  "SignalStackupLayerName": "Top Copper",
+  "Frequency": {
+    "StartExpr": "0.1",
+    "StopExpr": "20",
+    "NumPoints": 200,
+    "Mode": "PointCount",
+    "Kind": "Linear",
+    "StartUnit": "GHz",
+    "StopUnit": "GHz"
+  },
+  "DispersionCorrection": true,
+  "AnalysisKind": "Planar",
+  "AnalysisLevelNames": [
+    "Top Copper",
+    "Ground Plane",
+    "Bottom Copper"
+  ]
+}

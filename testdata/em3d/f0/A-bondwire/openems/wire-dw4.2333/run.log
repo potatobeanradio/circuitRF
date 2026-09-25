@@ -1,0 +1,53 @@
+ ---------------------------------------------------------------------- 
+ | openEMS 64bit -- version 67d3784
+ | (C) 2010-2026 Thorsten Liebig <thorsten.liebig@gmx.de>  GPL license
+ ---------------------------------------------------------------------- 
+	Used external libraries:
+		CSXCAD -- Version: dcdb62b
+		hdf5   -- Version: 2.2.0
+		          compiled against: HDF5 library version: 2.2.0
+		tinyxml -- compiled against: 2.6.2
+		fparser
+		boost  -- compiled against: 1_92
+		vtk -- Version: 9.7.0
+		       compiled against: 9.7.0
+
+Create FDTD operator (compressed SSE + multi-threading)
+FDTD simulation size: 267x47x68 --> 853332 FDTD cells 
+FDTD timestep is: 4.87635e-15 s; Nyquist rate: 2563 timesteps @4.00061e+10 Hz
+openEMS::SetupFDTD: Warning, the timestep seems to be very small --> long simulation. Check your mesh!?
+Excitation signal length is: 29375 timesteps (1.43243e-10s)
+Max. number of timesteps: 2000000 ( --> 68.0851 * Excitation signal length)
+Create FDTD engine (compressed SSE + multi-threading)
+Running FDTD engine... this may take a while... grab a cup of coffee?!?
+[@        4s] Timestep:         1920 || Speed:  332.1 MC/s (2.569e-03 s/TS) || Energy: ~4.38e-21 (- 0.00dB)
+[@        9s] Timestep:         5120 || Speed:  586.6 MC/s (1.455e-03 s/TS) || Energy: ~1.92e-17 (- 0.00dB)
+[@       13s] Timestep:         8960 || Speed:  761.0 MC/s (1.121e-03 s/TS) || Energy: ~1.73e-15 (- 0.00dB)
+[@       18s] Timestep:        13440 || Speed:  903.1 MC/s (9.449e-04 s/TS) || Energy: ~9.70e-15 (- 0.00dB)
+[@       22s] Timestep:        17920 || Speed:  917.5 MC/s (9.300e-04 s/TS) || Energy: ~4.73e-14 (- 2.61dB)
+[@       26s] Timestep:        22400 || Speed:  926.0 MC/s (9.215e-04 s/TS) || Energy: ~6.44e-15 (-11.27dB)
+[@       30s] Timestep:        26880 || Speed:  955.2 MC/s (8.934e-04 s/TS) || Energy: ~2.08e-18 (-46.19dB)
+[@       34s] Timestep:        31360 || Speed:  948.6 MC/s (8.996e-04 s/TS) || Energy: ~3.38e-21 (-74.07dB)
+Multithreaded Engine: Best performance found using 7 threads.
+RunFDTD: end-criteria of -50.00dB reached after 31360 timesteps (-74.07dB)
+Time for 31360 iterations with 853332.00 cells : 34.45 sec
+Speed: 776.69 MCells/s 
+       35.03 real        98.00 user         7.56 sys
+           117981184  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+                7937  page reclaims
+                  79  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                   0  voluntary context switches
+             2213738  involuntary context switches
+       1332135886524  instructions retired
+        390561555902  cycles elapsed
+            97190488  peak memory footprint
+rc=0

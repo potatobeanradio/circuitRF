@@ -1,0 +1,18 @@
+{
+  "FormatVersion": 1,
+  "Name": "via",
+  "LayoutRef": "via/layout/via.clay",
+  "SignalStackupLayerName": "Top Copper",
+  "GroundStackupLayerName": "Ground Plane",
+  "Frequency": {
+    "StartExpr": "0.1",
+    "StopExpr": "20",
+    "NumPoints": 200,
+    "Mode": "PointCount",
+    "Kind": "Linear",
+    "StartUnit": "GHz",
+    "StopUnit": "GHz"
+  },
+  "DispersionCorrection": true,
+  "AnalysisKind": "Planar"
+}

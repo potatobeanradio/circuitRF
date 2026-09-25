@@ -1,6 +1,6 @@
 # circuitRF — 3D full-wave EM (FEM and FDTD) and thermal (design draft)
 
-**Status:** Draft — rev 4, scoping only · **Date:** 2026-09-24 (rev 0: 2026-09-23, as `fem-3d.md`) ·
+**Status:** Draft — rev 5, scoping only · **Date:** 2026-09-24 (rev 0: 2026-09-23, as `fem-3d.md`) ·
 **Target:** **v2 at the earliest; parts of it are v3** (PRD §2, §17 v1.4). Nothing here is v1 scope and
 nothing in v1 depends on it.
 
@@ -29,6 +29,12 @@ nothing in v1 depends on it.
 > model, with a length parameter; and a **loop height defined the way assembly teams measure it** —
 > from the bottom of the foot to the top of the wire at its apex (§6.6). **Headless authoring**: the
 > 3D setup is written in the same documents as the planar one, whose reference pages now exist (§4.6).
+>
+> **rev 4 → rev 5 (2026-09-24), F0 only:** corrected where the spike refuted the text, nothing else —
+> fragment provenance is an API feature and `.geo` recovers named objects by bounding box instead
+> (§6.2, §6.4); CSXCAD's STL/PLY import is verified and a missing file is silent (§6.5); openEMS's
+> energy end criterion cannot be met on a floating structure in an open domain (§3); a signal via
+> through a reference plane is outside planar MoM (§1). Evidence: `em-3d-f0-findings.md`.
 
 > **This is a dated survey of a fast-moving landscape — re-survey before building anything.**
 > Every tool choice below reflects what the open-source ecosystem offered on the dates given, and is
@@ -90,7 +96,7 @@ consume.
 
 | Geometry | Solver today | 3D full-wave's role |
 |---|---|---|
-| Planar metal on a layered stack, vias | Planar MoM (kernels A–C) | Independent reference only |
+| Planar metal on a layered stack, vias | Planar MoM (kernels A–C) | Independent reference only — except a **signal via through a reference plane**, which planar MoM refuses (F0 case B), where 3D is the primary solver |
 | Bond-wire arrays, overmold, stepped ground meshed as a conductor | Kernel W | Independent reference; the regression anchor kernel W already calls for |
 | Leadframes, clips, stepped cavities, lids, connectors, board-to-package transitions | **None** — `mom-wirebond-kernel.md` lists "complex 3D metal" as where MoM's advantage erodes | **Primary solver** |
 | Radiating structures — antennas on a board or package, far field | Planar MoM, for planar radiators only | **Primary solver** where the radiator is 3D; FDTD's PML fits (§4.3) |
@@ -172,7 +178,12 @@ model and write it out as **one XML file**, which the `openEMS` executable then 
   aligned with the axes is exact; curves and diagonals (a bond wire's arc, a round via barrel, a taper)
   are approximated, and accuracy on them is bought with cells.
 - **No adaptive refinement**; convergence is judged by the energy left in the domain (an end
-  criterion such as −50 dB) and by re-running on a finer grid.
+  criterion such as −50 dB) and by re-running on a finer grid. **F0 found that energy criterion
+  unreachable** for a structure whose conductors float in an open (absorbing) domain — a via
+  transition's ground plane: a static field no port can drain and no absorber can remove keeps the
+  energy constant (−0.4 dB after 38 ns), while the port signals are down 129 dB after 1 ns. The
+  backend stops on the ports' own decay instead, and reads openEMS's exit code as meaning nothing:
+  it is 0 whether or not the criterion was met.
 - **No MPI or GPU engine** is listed; one machine's cores are the ceiling.
 - **No eigenmode, electrostatic or magnetostatic solver** — the problem types that make Palace a
   package RLC extractor are FEM-only (§4.3).
@@ -436,8 +447,14 @@ modelling: boxes, cylinders, spheres, cones, extrusion of arbitrary polygons, pi
 path (a bond wire), boolean union/difference/intersection, **fragments** (the operation that makes
 touching solids share faces, which a conforming mesh requires), fillets and chamfers, and STEP
 import/export. Choosing Gmsh means OCCT is already in the pipeline, out of process, at no additional
-cost. Gmsh's fragment operation also reports which output entities came from which input — the
-provenance §6.4 depends on.
+cost. Gmsh's fragment operation reports which output entities came from which input **only through
+its API**, which circuitRF may not link; a `.geo` script gets the fragment's output list and no map.
+F0 measured the substitute the first series adopts (`brief-em3d-0-overview.md` §1e): conductors made
+voids and dielectrics made disjoint before the fragment, so every volume keeps its tag
+(`Geometry.OCCBooleanPreserveNumbering`, verified), and every surface recovered by a bounding-box
+query against what circuitRF knows of it, counted against what it expected. It works, with caveats
+that belong to the writer (`em-3d-f0-findings.md` Q5) — above all that OCCT's own boxes are loose on
+curved faces, so the queries need `Geometry.OCCBoundsUseStl`.
 
 The limitation is that Route A is **batch**: each edit re-runs `gmsh`. That is fine at mesh time and
 for a read-only preview of generated geometry, and too slow and too coarse-grained for an interactive
@@ -491,8 +508,9 @@ When a dimension changes, a solid's faces are rebuilt and their indices change. 
 stored as "face 17" silently moves to a different face. **circuitRF never stores a face or volume
 index.** Materials, ports and boundaries attach to **named construction objects** (a solid, or a
 named sheet drawn for the purpose — a port sheet, a radiation box face), and the mapping to solver
-entities is rebuilt on every run: to mesh groups from the kernel's provenance (Gmsh's fragment map in
-Route A; OCCT's `Modified`/`Generated`/`IsDeleted` history in Route B), and to CSXCAD properties by
+entities is rebuilt on every run: to mesh groups from what circuitRF knows of each object (in Route A,
+bounding-box queries counted against expectation, §6.2 — not a fragment map, which `.geo` does not
+expose; OCCT's `Modified`/`Generated`/`IsDeleted` history in Route B), and to CSXCAD properties by
 name, since each named object becomes one or more named CSXCAD primitives. A named object that no
 longer yields any face is a refusal naming the object, never a guess.
 
@@ -504,8 +522,9 @@ primitives overlap, the one with the higher **priority** wins the cell. A subtra
 becomes a higher-priority solid of the surrounding material, and circuitRF assigns priorities from the
 construction order so the FDTD result means what the construction tree means. Shapes no primitive can
 state (fillets, general booleans from Tier B) are tessellated by OCCT (§6.2) and read by CSXCAD as a
-polyhedron from a triangle file — CSXCAD's polyhedron import is believed to read STL and PLY; to
-verify at F0.
+polyhedron from a triangle file. CSXCAD reads both STL and PLY (`PolyhedronReader`, verified at F0).
+**A file it cannot open is not an error**: openEMS prints `Warning: No primitives found in property`
+and solves without the solid, exit code 0 — so the backend checks the file itself before a run.
 
 **The grid is circuitRF's to write, and it is the real work of this backend.** FDTD's accuracy is
 decided almost entirely by where the grid lines fall:

@@ -1,0 +1,354 @@
+{
+  "FormatVersion": 1,
+  "Name": "F0 case B (via transition)",
+  "DefaultDisplayUnit": "Mil",
+  "DefaultSnapDbu": 25400,
+  "DefaultFlattenTolDbu": 1000,
+  "DefaultLabelHeightDbu": 1016000,
+  "DefaultViaPadDbu": 600000,
+  "DefaultViaDrillDbu": 300000,
+  "Layers": [
+    {
+      "Key": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "Name": "Top Copper",
+      "Color": {
+        "r": 200,
+        "g": 122,
+        "b": 62,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 11,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drawing",
+      "Interchange": {
+        "PcbLayerName": "F.Cu"
+      }
+    },
+    {
+      "Key": {
+        "Layer": 2,
+        "Datatype": 0
+      },
+      "Name": "Inner 1",
+      "Color": {
+        "r": 155,
+        "g": 138,
+        "b": 70,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 10,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drawing",
+      "Interchange": {
+        "PcbLayerName": "In1.Cu"
+      }
+    },
+    {
+      "Key": {
+        "Layer": 3,
+        "Datatype": 0
+      },
+      "Name": "Inner 2",
+      "Color": {
+        "r": 122,
+        "g": 147,
+        "b": 85,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 9,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drawing",
+      "Interchange": {
+        "PcbLayerName": "In2.Cu"
+      }
+    },
+    {
+      "Key": {
+        "Layer": 4,
+        "Datatype": 0
+      },
+      "Name": "Bottom Copper",
+      "Color": {
+        "r": 138,
+        "g": 80,
+        "b": 40,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 8,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drawing",
+      "Interchange": {
+        "PcbLayerName": "B.Cu"
+      }
+    },
+    {
+      "Key": {
+        "Layer": 5,
+        "Datatype": 0
+      },
+      "Name": "Soldermask Top",
+      "Color": {
+        "r": 30,
+        "g": 107,
+        "b": 60,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 7,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drawing",
+      "Interchange": {
+        "PcbLayerName": "F.Mask"
+      }
+    },
+    {
+      "Key": {
+        "Layer": 6,
+        "Datatype": 0
+      },
+      "Name": "Soldermask Bottom",
+      "Color": {
+        "r": 21,
+        "g": 80,
+        "b": 44,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 6,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drawing",
+      "Interchange": {
+        "PcbLayerName": "B.Mask"
+      }
+    },
+    {
+      "Key": {
+        "Layer": 7,
+        "Datatype": 0
+      },
+      "Name": "Silk Top",
+      "Color": {
+        "r": 242,
+        "g": 242,
+        "b": 242,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 5,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drawing",
+      "Interchange": {
+        "PcbLayerName": "F.SilkS"
+      }
+    },
+    {
+      "Key": {
+        "Layer": 8,
+        "Datatype": 0
+      },
+      "Name": "Silk Bottom",
+      "Color": {
+        "r": 200,
+        "g": 200,
+        "b": 200,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 4,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drawing",
+      "Interchange": {
+        "PcbLayerName": "B.SilkS"
+      }
+    },
+    {
+      "Key": {
+        "Layer": 9,
+        "Datatype": 0
+      },
+      "Name": "Drill",
+      "Color": {
+        "r": 32,
+        "g": 32,
+        "b": 32,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 3,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drawing"
+    },
+    {
+      "Key": {
+        "Layer": 10,
+        "Datatype": 0
+      },
+      "Name": "Ground Via",
+      "Color": {
+        "r": 74,
+        "g": 140,
+        "b": 200,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 2,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drawing"
+    },
+    {
+      "Key": {
+        "Layer": 11,
+        "Datatype": 0
+      },
+      "Name": "Outline",
+      "Color": {
+        "r": 255,
+        "g": 213,
+        "b": 0,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 1,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drawing",
+      "Interchange": {
+        "PcbLayerName": "Edge.Cuts"
+      }
+    },
+    {
+      "Key": {
+        "Layer": 12,
+        "Datatype": 0
+      },
+      "Name": "Courtyard Top",
+      "Color": {
+        "r": 198,
+        "g": 120,
+        "b": 221,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 12,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drawing",
+      "Interchange": {
+        "PcbLayerName": "F.CrtYd"
+      }
+    }
+  ],
+  "Stackup": {
+    "Top": "Open",
+    "Bottom": "Open",
+    "Layers": [
+      {
+        "Kind": "Conductor",
+        "Name": "Top Copper",
+        "ThicknessDbu": 35000,
+        "Epsr": 1.0,
+        "TanD": 0.0,
+        "Mur": 1.0,
+        "SigmaSm": 58000000.0,
+        "DrawingLayers": [
+          {
+            "Layer": 1,
+            "Datatype": 0
+          }
+        ],
+        "IsGroundReference": false
+      },
+      {
+        "Kind": "Dielectric",
+        "Name": "Dielectric 1",
+        "ThicknessDbu": 200000,
+        "Epsr": 3.66,
+        "TanD": 0.004,
+        "Mur": 1.0,
+        "SigmaSm": 0.0,
+        "DrawingLayers": [],
+        "IsGroundReference": false
+      },
+      {
+        "Kind": "Conductor",
+        "Name": "Ground Plane",
+        "ThicknessDbu": 35000,
+        "Epsr": 1.0,
+        "TanD": 0.0,
+        "Mur": 1.0,
+        "SigmaSm": 58000000.0,
+        "DrawingLayers": [
+          {
+            "Layer": 2,
+            "Datatype": 0
+          }
+        ],
+        "IsGroundReference": false
+      },
+      {
+        "Kind": "Dielectric",
+        "Name": "Dielectric 2",
+        "ThicknessDbu": 200000,
+        "Epsr": 3.66,
+        "TanD": 0.004,
+        "Mur": 1.0,
+        "SigmaSm": 0.0,
+        "DrawingLayers": [],
+        "IsGroundReference": false
+      },
+      {
+        "Kind": "Conductor",
+        "Name": "Bottom Copper",
+        "ThicknessDbu": 35000,
+        "Epsr": 1.0,
+        "TanD": 0.0,
+        "Mur": 1.0,
+        "SigmaSm": 58000000.0,
+        "DrawingLayers": [
+          {
+            "Layer": 4,
+            "Datatype": 0
+          }
+        ],
+        "IsGroundReference": false
+      },
+      {
+        "Kind": "Via",
+        "Name": "Signal Via",
+        "ThicknessDbu": 0,
+        "Epsr": 1.0,
+        "TanD": 0.0,
+        "Mur": 1.0,
+        "SigmaSm": 58000000.0,
+        "DrawingLayers": [
+          {
+            "Layer": 9,
+            "Datatype": 0
+          }
+        ],
+        "IsGroundReference": false,
+        "Fill": "Solid",
+        "SpanFromLayer": "Top Copper",
+        "SpanToLayer": "Bottom Copper"
+      }
+    ]
+  },
+  "DrcRules": []
+}

@@ -1,0 +1,54 @@
+ ---------------------------------------------------------------------- 
+ | openEMS 64bit -- version 67d3784
+ | (C) 2010-2026 Thorsten Liebig <thorsten.liebig@gmx.de>  GPL license
+ ---------------------------------------------------------------------- 
+	Used external libraries:
+		CSXCAD -- Version: dcdb62b
+		hdf5   -- Version: 2.2.0
+		          compiled against: HDF5 library version: 2.2.0
+		tinyxml -- compiled against: 2.6.2
+		fparser
+		boost  -- compiled against: 1_92
+		vtk -- Version: 9.7.0
+		       compiled against: 9.7.0
+
+Create FDTD operator (compressed SSE + multi-threading)
+FDTD simulation size: 83x75x32 --> 199200 FDTD cells 
+FDTD timestep is: 2.75357e-14 s; Nyquist rate: 907 timesteps @2.00201e+10 Hz
+Excitation signal length is: 10404 timesteps (2.86481e-10s)
+Max. number of timesteps: 73000 ( --> 7.01653 * Excitation signal length)
+Create FDTD engine (compressed SSE + multi-threading)
+Running FDTD engine... this may take a while... grab a cup of coffee?!?
+[@        4s] Timestep:         5424 || Speed:  266.9 MC/s (7.463e-04 s/TS) || Energy: ~5.34e-14 (- 0.51dB)
+[@        8s] Timestep:        13108 || Speed:  376.5 MC/s (5.290e-04 s/TS) || Energy: ~5.22e-14 (- 0.60dB)
+[@       12s] Timestep:        21696 || Speed:  422.0 MC/s (4.721e-04 s/TS) || Energy: ~5.38e-14 (- 0.47dB)
+[@       16s] Timestep:        30736 || Speed:  440.1 MC/s (4.526e-04 s/TS) || Energy: ~5.33e-14 (- 0.51dB)
+[@       20s] Timestep:        36612 || Speed:  284.7 MC/s (6.997e-04 s/TS) || Energy: ~5.31e-14 (- 0.53dB)
+Multithreaded Engine: Best performance found using 4 threads.
+[@       24s] Timestep:        45652 || Speed:  440.3 MC/s (4.524e-04 s/TS) || Energy: ~5.28e-14 (- 0.55dB)
+[@       28s] Timestep:        54692 || Speed:  443.2 MC/s (4.494e-04 s/TS) || Energy: ~5.25e-14 (- 0.57dB)
+[@       32s] Timestep:        63732 || Speed:  440.3 MC/s (4.524e-04 s/TS) || Energy: ~5.23e-14 (- 0.59dB)
+[@       36s] Timestep:        72772 || Speed:  440.5 MC/s (4.522e-04 s/TS) || Energy: ~5.21e-14 (- 0.61dB)
+RunFDTD: Warning: Max. number of timesteps was reached before the end-criteria of -50dB was reached... 
+	You may want to choose a higher number of max. timesteps... 
+Time for 73000 iterations with 199200.00 cells : 36.80 sec
+Speed: 395.11 MCells/s 
+       36.99 real        63.45 user        19.70 sys
+            48988160  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+                3677  page reclaims
+                  80  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                   0  voluntary context switches
+             9721904  involuntary context switches
+       1051969025526  instructions retired
+        305194486201  cycles elapsed
+            28131880  peak memory footprint
+rc=0

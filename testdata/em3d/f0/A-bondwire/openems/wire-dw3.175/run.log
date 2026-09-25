@@ -1,0 +1,58 @@
+ ---------------------------------------------------------------------- 
+ | openEMS 64bit -- version 67d3784
+ | (C) 2010-2026 Thorsten Liebig <thorsten.liebig@gmx.de>  GPL license
+ ---------------------------------------------------------------------- 
+	Used external libraries:
+		CSXCAD -- Version: dcdb62b
+		hdf5   -- Version: 2.2.0
+		          compiled against: HDF5 library version: 2.2.0
+		tinyxml -- compiled against: 2.6.2
+		fparser
+		boost  -- compiled against: 1_92
+		vtk -- Version: 9.7.0
+		       compiled against: 9.7.0
+
+Create FDTD operator (compressed SSE + multi-threading)
+FDTD simulation size: 346x53x85 --> 1.55873e+06 FDTD cells 
+FDTD timestep is: 3.49532e-15 s; Nyquist rate: 3576 timesteps @4.00023e+10 Hz
+openEMS::SetupFDTD: Warning, the timestep seems to be very small --> long simulation. Check your mesh!?
+Excitation signal length is: 40981 timesteps (1.43242e-10s)
+Max. number of timesteps: 2000000 ( --> 48.8031 * Excitation signal length)
+Create FDTD engine (compressed SSE + multi-threading)
+Running FDTD engine... this may take a while... grab a cup of coffee?!?
+[@        7s] Timestep:         1788 || Speed:  380.9 MC/s (4.093e-03 s/TS) || Energy: ~9.86e-21 (- 0.00dB)
+[@       13s] Timestep:         4470 || Speed:  713.9 MC/s (2.183e-03 s/TS) || Energy: ~3.26e-19 (- 0.00dB)
+[@       17s] Timestep:         7152 || Speed:  970.8 MC/s (1.606e-03 s/TS) || Energy: ~5.97e-17 (- 0.00dB)
+[@       22s] Timestep:        10728 || Speed: 1168.8 MC/s (1.334e-03 s/TS) || Energy: ~1.78e-16 (- 0.00dB)
+[@       26s] Timestep:        13410 || Speed:  963.1 MC/s (1.619e-03 s/TS) || Energy: ~1.92e-14 (- 0.00dB)
+Multithreaded Engine: Best performance found using 4 threads.
+[@       31s] Timestep:        16986 || Speed: 1166.4 MC/s (1.336e-03 s/TS) || Energy: ~7.30e-14 (- 0.00dB)
+[@       36s] Timestep:        20490 || Speed: 1169.4 MC/s (1.333e-03 s/TS) || Energy: ~2.67e-13 (- 0.00dB)
+[@       40s] Timestep:        24138 || Speed: 1160.6 MC/s (1.343e-03 s/TS) || Energy: ~3.03e-13 (- 0.00dB)
+[@       45s] Timestep:        27714 || Speed: 1166.4 MC/s (1.336e-03 s/TS) || Energy: ~3.89e-14 (- 8.91dB)
+[@       50s] Timestep:        31290 || Speed: 1158.1 MC/s (1.346e-03 s/TS) || Energy: ~1.89e-14 (-12.05dB)
+[@       55s] Timestep:        34866 || Speed: 1163.7 MC/s (1.340e-03 s/TS) || Energy: ~1.15e-16 (-34.21dB)
+[@     1m00s] Timestep:        38442 || Speed: 1161.3 MC/s (1.342e-03 s/TS) || Energy: ~4.41e-18 (-48.37dB)
+[@     1m04s] Timestep:        42018 || Speed: 1166.5 MC/s (1.336e-03 s/TS) || Energy: ~6.93e-20 (-66.41dB)
+RunFDTD: end-criteria of -50.00dB reached after 42018 timesteps (-66.41dB)
+Time for 42018 iterations with 1558730.00 cells : 64.90 sec
+Speed: 1009.16 MCells/s 
+       65.83 real       209.39 user         4.41 sys
+           190775296  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+               12337  page reclaims
+                  79  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                   2  voluntary context switches
+             1724216  involuntary context switches
+       3289177013474  instructions retired
+        802906854753  cycles elapsed
+           169984624  peak memory footprint
+rc=0

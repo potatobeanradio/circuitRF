@@ -1,0 +1,47 @@
+ ---------------------------------------------------------------------- 
+ | openEMS 64bit -- version 67d3784
+ | (C) 2010-2026 Thorsten Liebig <thorsten.liebig@gmx.de>  GPL license
+ ---------------------------------------------------------------------- 
+	Used external libraries:
+		CSXCAD -- Version: dcdb62b
+		hdf5   -- Version: 2.2.0
+		          compiled against: HDF5 library version: 2.2.0
+		tinyxml -- compiled against: 2.6.2
+		fparser
+		boost  -- compiled against: 1_92
+		vtk -- Version: 9.7.0
+		       compiled against: 9.7.0
+
+Create FDTD operator (compressed SSE + multi-threading)
+FDTD simulation size: 188x41x52 --> 400816 FDTD cells 
+FDTD timestep is: 8.57142e-15 s; Nyquist rate: 1458 timesteps @4.00092e+10 Hz
+openEMS::SetupFDTD: Warning, the timestep seems to be very small --> long simulation. Check your mesh!?
+Excitation signal length is: 16712 timesteps (1.43246e-10s)
+Max. number of timesteps: 2000000 ( --> 119.674 * Excitation signal length)
+Create FDTD engine (compressed SSE + multi-threading)
+Running FDTD engine... this may take a while... grab a cup of coffee?!?
+[@        4s] Timestep:         4368 || Speed:  415.9 MC/s (9.637e-04 s/TS) || Energy: ~1.09e-17 (- 0.00dB)
+[@        8s] Timestep:        12012 || Speed:  755.6 MC/s (5.305e-04 s/TS) || Energy: ~2.87e-15 (- 7.24dB)
+[@       12s] Timestep:        22568 || Speed: 1030.1 MC/s (3.891e-04 s/TS) || Energy: ~9.84e-24 (-91.89dB)
+RunFDTD: end-criteria of -50.00dB reached after 22568 timesteps (-91.89dB)
+Time for 22568 iterations with 400816.00 cells : 12.37 sec
+Speed: 731.12 MCells/s 
+       12.66 real        23.99 user         0.78 sys
+            70369280  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+                4967  page reclaims
+                  79  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                   3  voluntary context switches
+              410936  involuntary context switches
+        451821556357  instructions retired
+         96427886256  cycles elapsed
+            49529408  peak memory footprint
+rc=0

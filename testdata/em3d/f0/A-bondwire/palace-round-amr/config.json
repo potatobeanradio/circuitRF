@@ -1,0 +1,35 @@
+// circuitRF F0 spike -- case A, Palace driven solve, WITH 2 AMR iterations (mesh convergence check). HAND-WRITTEN SPIKE MATERIAL (brief-em3d-1).
+// Attributes are the physical groups case.geo writes (see entities.txt beside the mesh).
+{
+  "Problem": { "Type": "Driven", "Verbose": 2, "Output": "postpro" },
+  "Model": {
+    "Mesh": "../palace-round/case.msh",
+    "L0": 1.0e-6,
+    "Refinement": { "MaxIts": 2, "Tol": 1.0e-6, "MaxSize": 1500000, "UpdateFraction": 0.5 }
+  },
+  "Domains": {
+    "Materials": [
+      { "Attributes": [1], "Permeability": 1.0, "Permittivity": 1.0, "LossTan": 0.0 },
+      { "Attributes": [2], "Permeability": 1.0, "Permittivity": 9.8, "LossTan": 0.0 }
+    ]
+  },
+  "Boundaries": {
+    "PEC": { "Attributes": [3, 4] },
+    "Conductivity": [
+      { "Attributes": [7], "Conductivity": 4.10e7, "Permeability": 1.0 }
+    ],
+    "LumpedPort": [
+      { "Index": 1, "R": 50.0, "Excitation": true, "Attributes": [5], "Direction": "+Z" },
+      { "Index": 2, "R": 50.0, "Attributes": [6], "Direction": "+Z" }
+    ]
+  },
+  "Solver": {
+    "Order": 2,
+    "Device": "CPU",
+    "Driven": {
+      "Samples": [ { "Type": "Linear", "MinFreq": 1.0, "MaxFreq": 40.0, "FreqStep": 1.0 } ],
+      "AdaptiveTol": 1.0e-4
+    },
+    "Linear": { "Type": "Default", "KSPType": "GMRES", "Tol": 1.0e-8, "MaxIts": 400 }
+  }
+}

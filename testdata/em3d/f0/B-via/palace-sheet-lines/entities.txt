@@ -1,0 +1,18 @@
+# name count
+air 1
+dielectric1 1
+dielectric2 1
+antipad_fill 1
+outer_abc 6
+signal 3
+ground 7
+port1 1
+port2 1
+annuli 2
+line_sheets 4
+all_surfaces 36
+tag_d1 before 40 after 40
+tag_d2 before 54 after 54
+tag_fill before 68 after 68
+tag_air before 74 after 74
+fragment_returned 44 entities
