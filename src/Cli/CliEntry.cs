@@ -1487,6 +1487,9 @@ static int RunEm(string[] args)
 
     JsonRun.Data = result.Data;
 
+    // brief-em3d-22 R-em3d22-3c/4c — a static run's result is a matrix, printed; --json carries the cube.
+    if (setup.IsStatic3D && result.Data is { } matrixSet) PrintStaticMatrix(matrixSet, setup);
+
     if (result.Data is { } ds)
     {
         // Every group, not just the default one: an EM DataSet carries S alongside a diagnostics
@@ -1512,6 +1515,31 @@ static int RunEm(string[] args)
     }
 
     return 0;
+}
+
+/// <summary>
+/// brief-em3d-22 — the capacitance or inductance matrix on stdout, in one engineering unit chosen so the
+/// largest entry reads between 1 and 1000, rows and columns labelled with the terminals' names.
+/// </summary>
+static void PrintStaticMatrix(RfCore.Data.DataSet data, EmSetup setup)
+{
+    bool es = setup.Problem3D == CircuitRF.Engine.Em3d.Em3dProblemType.Electrostatic;
+    string cubeName = es ? CircuitRF.Engine.Em3d.Em3dStaticResult.CapacitanceCube : CircuitRF.Engine.Em3d.Em3dStaticResult.InductanceCube;
+    if (!data.Cubes.TryGetValue(cubeName, out var cube) || cube.Axes.Count != 2 || cube.Axes[0].Labels is not { } names) return;
+    int n = names.Length;
+    double[] v = cube.RealValues;
+    double max = v.Where(double.IsFinite).Select(Math.Abs).DefaultIfEmpty(0).Max();
+    string[] prefixes = ["f", "p", "n", "µ", "m", ""];
+    int e = max > 0 ? Math.Clamp((int)Math.Floor(Math.Log10(max) / 3), -5, 0) : -5;
+    double scale = Math.Pow(1000, -e);
+    string unit = prefixes[e + 5] + (es ? "F" : "H");
+    string ground = setup.Ground3D is { Length: > 0 } g ? g : "the ground-reference conductors";
+    Console.WriteLine($"{(es ? "Maxwell capacitance" : "Inductance")} ({unit}), ground = {ground}");
+    int width = Math.Max(10, names.Max(x => x.Length) + 2);
+    Console.WriteLine(new string(' ', width) + string.Concat(names.Select(x => x.PadLeft(width))));
+    for (int i = 0; i < n; i++)
+        Console.WriteLine(("  " + names[i]).PadRight(width) + string.Concat(Enumerable.Range(0, n).Select(j =>
+            (v[i * n + j] * scale).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture).PadLeft(width))));
 }
 
 /// <summary>The run's own progress, on stderr — §3.1's split, so `circuitrf em x.cem > summary.txt`

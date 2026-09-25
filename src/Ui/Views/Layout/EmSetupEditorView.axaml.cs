@@ -189,6 +189,7 @@ public partial class EmSetupEditorView : UserControl
             case { } palace when palace.StartsWith("Palace.", StringComparison.Ordinal):
                 vm.CommitPalaceField(palace);
                 break;
+            case "Terminals3D": vm.CommitTerminals(); break;
             case { } openEms when openEms.StartsWith("OpenEms.", StringComparison.Ordinal):
                 vm.CommitOpenEmsField(openEms);
                 break;

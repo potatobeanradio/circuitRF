@@ -673,6 +673,18 @@ internal static class Check
                 $"{(planarOnly.Count == 1 ? "It is" : "They are")} kept, so switching the setup back to " +
                 $"planar finds {(planarOnly.Count == 1 ? "it where it was" : "them where they were")}."));
 
+        // brief-em3d-22 R-em3d22-1b/c — a static problem on Palace only, and what it keeps but does not read.
+        if (CircuitRF.Design.Em3d.Em3dRunService.StaticSolverRefusal(setup) is { } staticOnly)
+        {
+            f.Add(CliDiagnostics.CheckEmRefused(path, staticOnly));
+            return;
+        }
+        if (setup.IsStatic3D && setup.DrivenOnlyFieldsSet() is { Count: > 0 } drivenOnly)
+            f.Add(CliDiagnostics.CheckEmNote(path,
+                $"This setup is {setup.Problem3D}, which solves no frequency and drives no port impedance, so its " +
+                $"field{(drivenOnly.Count == 1 ? "" : "s")} {string.Join(", ", drivenOnly)} " +
+                $"{(drivenOnly.Count == 1 ? "is" : "are")} kept but not read."));
+
         if (source.Technology is not { } tech)
         {
             f.Add(CliDiagnostics.CheckEmRefused(path, EmDiagnostics.NoTechnology(setup.LayoutRef).Render()));
@@ -691,12 +703,19 @@ internal static class Check
             return;
         }
 
-        var problems = problem.Validate();
+        var problems = problem.Validate().ToList();
+        // R-em3d22-2b — Palace has no floating electrostatic conductor; the run refuses before Gmsh, so check does.
+        if (problems.Count == 0 && problem.IsStatic &&
+            CircuitRF.Design.Em3d.PalaceConfigWriter.StaticRefusal(problem) is { } floating)
+            problems.Add(floating);
         foreach (string p in problems) f.Add(CliDiagnostics.CheckEmRefused(path, p));
         if (problems.Count == 0)
             f.Add(CliDiagnostics.CheckEmWouldRun(path,
-                $"3D problem for {setup.Solver3D}: {problem.Solids.Count} solid(s), {problem.Sheets.Count} " +
-                $"sheet(s), {problem.Ports.Count} port(s)", 0));
+                problem.IsStatic
+                    ? $"3D {problem.Type} problem for {setup.Solver3D}: {problem.Solids.Count} solid(s), {problem.Sheets.Count} " +
+                      $"sheet(s), {problem.Terminals.Count} terminal(s)"
+                    : $"3D problem for {setup.Solver3D}: {problem.Solids.Count} solid(s), {problem.Sheets.Count} " +
+                      $"sheet(s), {problem.Ports.Count} port(s)", 0));
     }
 
     private static void CheckAssemblyRules(string path, Findings f)

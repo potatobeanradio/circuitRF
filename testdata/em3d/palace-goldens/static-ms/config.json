@@ -1,0 +1,104 @@
+{
+  "Problem": {
+    "Type": "Magnetostatic",
+    "Verbose": 2,
+    "Output": "postpro"
+  },
+  "Model": {
+    "Mesh": "model.msh",
+    "L0": 1E-06,
+    "Refinement": {
+      "Tol": 0.01,
+      "MaxIts": 0
+    }
+  },
+  "Domains": {
+    "Materials": [
+      {
+        "Attributes": [
+          1
+        ],
+        "Permeability": 1,
+        "Permittivity": 3.66,
+        "LossTan": 0.0037
+      },
+      {
+        "Attributes": [
+          2
+        ],
+        "Permeability": 1,
+        "Permittivity": 1,
+        "LossTan": 0
+      },
+      {
+        "Attributes": [
+          6
+        ],
+        "Permeability": 1,
+        "Permittivity": 1,
+        "LossTan": 0
+      },
+      {
+        "Attributes": [
+          8
+        ],
+        "Permeability": 1,
+        "Permittivity": 1,
+        "LossTan": 0
+      },
+      {
+        "Attributes": [
+          9
+        ],
+        "Permeability": 1,
+        "Permittivity": 1,
+        "LossTan": 0
+      }
+    ]
+  },
+  "Boundaries": {
+    "PEC": {
+      "Attributes": [
+        3,
+        4,
+        5,
+        7,
+        16
+      ]
+    },
+    "PMC": {
+      "Attributes": [
+        12,
+        13,
+        14,
+        15,
+        17
+      ]
+    },
+    "SurfaceCurrent": [
+      {
+        "Index": 1,
+        "Attributes": [
+          10
+        ],
+        "Direction": "\u002BZ"
+      },
+      {
+        "Index": 2,
+        "Attributes": [
+          11
+        ],
+        "Direction": "\u002BZ"
+      }
+    ]
+  },
+  "Solver": {
+    "Order": 2,
+    "Device": "CPU",
+    "Magnetostatic": {},
+    "Linear": {
+      "Tol": 0.0001,
+      "MaxIts": 400
+    }
+  }
+}

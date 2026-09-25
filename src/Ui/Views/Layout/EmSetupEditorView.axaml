@@ -465,6 +465,54 @@
                               SelectedItem="{Binding ViewModel.Solver3DChoice}"/>
                     <TextBlock Classes="colhdr" TextWrapping="Wrap" Margin="0,3,0,0"
                                Text="{Binding ViewModel.Solver3DDescription}"/>
+                    <!-- brief-em3d-22 R-em3d22-5b: what the 3D setup solves, and a static problem's
+                         terminals. Each row is a .cem Terminals3D entry, written when a box loses focus. -->
+                    <StackPanel IsVisible="{Binding ViewModel.Is3DSetup}" Orientation="Horizontal" Spacing="8" Margin="0,6,0,0">
+                        <TextBlock Classes="colhdr" Text="Problem" VerticalAlignment="Center"/>
+                        <ComboBox Classes="cell" MinWidth="180"
+                                  ItemsSource="{x:Static em:EmSetupEditorViewModel.Problem3DChoices}"
+                                  SelectedItem="{Binding ViewModel.Problem3DChoice}"/>
+                    </StackPanel>
+                    <TextBlock IsVisible="{Binding ViewModel.Is3DSetup}" Classes="colhdr" TextWrapping="Wrap" Margin="0,3,0,0"
+                               Text="{Binding ViewModel.Problem3DDescription}"/>
+                    <StackPanel IsVisible="{Binding ViewModel.IsStaticSetup}" Spacing="2" Margin="0,6,0,0">
+                        <Grid ColumnDefinitions="110,110,70,Auto" ColumnSpacing="6">
+                            <TextBlock Grid.Column="0" Classes="colhdr" Text="Terminal"/>
+                            <TextBlock Grid.Column="1" Classes="colhdr" Text="Net"/>
+                            <TextBlock Grid.Column="2" Classes="colhdr" Text="Source port"
+                                       IsVisible="{Binding ViewModel.IsMagnetostaticSetup}"/>
+                        </Grid>
+                        <ItemsControl ItemsSource="{Binding ViewModel.TerminalRows}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="em:Em3dTerminalRow">
+                                    <Grid ColumnDefinitions="110,110,70,Auto" ColumnSpacing="6" Margin="0,1">
+                                        <TextBox Grid.Column="0" Classes="cell" Tag="Terminals3D" Text="{Binding Name}"
+                                                 LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                                 ToolTip.Tip="The terminal's name: the label of its row and column in the matrix."/>
+                                        <TextBox Grid.Column="1" Classes="cell" Tag="Terminals3D" Text="{Binding Net}"
+                                                 LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                                 ToolTip.Tip="A net of the layout, or a .wBond wire array's name. Every conductor on it is in this terminal."/>
+                                        <TextBox Grid.Column="2" Classes="cell" Tag="Terminals3D" Text="{Binding Source}"
+                                                 IsVisible="{Binding $parent[ItemsControl].((em:EmSetupDocument)DataContext).ViewModel.IsMagnetostaticSetup, FallbackValue=False}"
+                                                 LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                                 ToolTip.Tip="The port (its number) whose sheet drives this terminal's current, in and back."/>
+                                        <Button Grid.Column="3" Content="✕" Padding="6,0"
+                                                Command="{Binding $parent[ItemsControl].((em:EmSetupDocument)DataContext).ViewModel.RemoveTerminalCommand}"
+                                                CommandParameter="{Binding}"
+                                                ToolTip.Tip="Remove this terminal."/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Content="Add terminal" Command="{Binding ViewModel.AddTerminalCommand}"/>
+                            <TextBlock Classes="colhdr" Text="Ground net" VerticalAlignment="Center"/>
+                            <TextBox Classes="cell" MinWidth="110" Tag="Terminals3D" Text="{Binding ViewModel.Ground3DText}"
+                                     PlaceholderText="ground-reference"
+                                     LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                     ToolTip.Tip="The net that is the matrix's reference. Blank: the technology's ground-reference conductors, and the floor when it is a ground plane."/>
+                        </StackPanel>
+                    </StackPanel>
                     <!-- brief-em3d-21 R-em3d21-4: the preset. Its tooltip is the measured trade; the boxes
                          below show the chosen preset's values as their placeholders, and a box that is
                          filled in overrides the preset for that field only. -->

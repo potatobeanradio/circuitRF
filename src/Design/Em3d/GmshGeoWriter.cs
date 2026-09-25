@@ -67,9 +67,12 @@ public enum Em3dGroupKind
 /// <param name="Boundary">An air-box face's kind; null otherwise.</param>
 /// <param name="PortNumber">A port's number; null otherwise.</param>
 /// <param name="ThicknessM">A sheet's real thickness, metres; null otherwise.</param>
+/// <param name="Terminal">brief-em3d-22 — the static terminal a conductor belongs to ("" for the
+/// ground); null otherwise, and for every driven problem.</param>
 public sealed record Em3dGroup(
     string Name, int Attribute, int Dimension, Em3dGroupKind Kind, int Expected, bool AtLeast,
-    string? Material = null, Em3dBoundaryKind? Boundary = null, int? PortNumber = null, double? ThicknessM = null);
+    string? Material = null, Em3dBoundaryKind? Boundary = null, int? PortNumber = null, double? ThicknessM = null,
+    string? Terminal = null);
 
 /// <summary>The lowering: the script, its groups, and the groups as the file written beside the
 /// mesh — or the reason the problem cannot be lowered.</summary>
@@ -128,7 +131,7 @@ public static class GmshGeoWriter
                 return No($"The air box's {FaceKeys[k]} face is a Symmetry face, which does not say whether the " +
                           "field's electric or magnetic wall lies there. Set it to Pec (an electric wall) or Pmc " +
                           "(a magnetic one) in the setup's AirBox.");
-        if (problem.Ports.Count == 0)
+        if (problem.Ports.Count == 0 && !problem.IsStatic)
             return No("The 3D problem has no ports, so there is nothing for Palace to excite.");
 
         var materials = problem.Materials.ToDictionary(m => m.Name, StringComparer.Ordinal);
@@ -137,11 +140,19 @@ public static class GmshGeoWriter
         var groups = new List<Em3dGroup>();
         int attr = 0;
         var solidGroup = new Dictionary<int, Em3dGroup>();
+        // brief-em3d-22 — a static problem's conductors carry their terminal, so the entity check names it.
+        var terminalOf = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (problem.IsStatic)
+        {
+            foreach (string gnd in problem.GroundObjects) terminalOf[gnd] = "";
+            foreach (var t in problem.Terminals) foreach (string o in t.Objects) terminalOf[o] = t.Name;
+        }
         for (int i = 0; i < problem.Solids.Count; i++)
         {
             var s = problem.Solids[i];
             solidGroup[i] = s.Role == Em3dRole.Conductor
-                ? new Em3dGroup(s.Name, ++attr, 2, Em3dGroupKind.Conductor, 1, AtLeast: true, s.Material)
+                ? new Em3dGroup(s.Name, ++attr, 2, Em3dGroupKind.Conductor, 1, AtLeast: true, s.Material,
+                                Terminal: terminalOf.GetValueOrDefault(s.Name))
                 : new Em3dGroup(s.Name, ++attr, 3, Em3dGroupKind.Volume, 1, AtLeast: false, s.Material);
             groups.Add(solidGroup[i]);
         }
@@ -156,7 +167,7 @@ public static class GmshGeoWriter
 
         var sheetGroups = problem.Sheets.Select(sh =>
             new Em3dGroup(sh.Name, ++attr, 2, Em3dGroupKind.Sheet, 1, AtLeast: true, sh.Material,
-                          ThicknessM: sh.ThicknessM)).ToList();
+                          ThicknessM: sh.ThicknessM, Terminal: terminalOf.GetValueOrDefault(sh.Name))).ToList();
         groups.AddRange(sheetGroups);
 
         // A port sheet is AT LEAST one surface: the fragment makes it conformal with every volume it
@@ -238,7 +249,8 @@ public static class GmshGeoWriter
         {
             var p = problem.Ports[k];
             L($"// {Comment(p.Name)}: from {Comment(p.NegativeObject)} to {Comment(p.PositiveObject)}");
-            EmitRectangle(g, $"p{k}", p.Min, p.Max);
+            if (p.Annulus is { } ring) EmitAnnulus(g, $"p{k}", p, ring);
+            else EmitRectangle(g, $"p{k}", p.Min, p.Max);
         }
         L();
 
@@ -247,7 +259,7 @@ public static class GmshGeoWriter
                                  .Concat(Enumerable.Range(0, problem.Ports.Count).Select(k => $"p{k}[]")).ToList();
         L("// ---- one fragment: imprints the shared faces and the sheets, splits no volume -------------");
         L($"frag[] = BooleanFragments{{ Volume{{{string.Join(", ", meshed.Select(i => $"s{i}[]").Append("bg[]"))}}}; Delete; }}" +
-          $"{{ Surface{{{string.Join(", ", surfaces)}}}; Delete; }};");
+          (surfaces.Count == 0 ? "{ };" : $"{{ Surface{{{string.Join(", ", surfaces)}}}; Delete; }};"));
         L("allV[] = Volume{:};");
         L("allS[] = Surface{:};");
         L("single[] = CombinedBoundary{ Volume{allV[]}; };");
@@ -267,17 +279,25 @@ public static class GmshGeoWriter
             (box.Min.X, box.Min.Y, box.Min.Z, box.Max.X, box.Max.Y, box.Min.Z),
             (box.Min.X, box.Min.Y, box.Max.Z, box.Max.X, box.Max.Y, box.Max.Z),
         };
+        void ClaimPorts()
+        {
+            for (int k = 0; k < problem.Ports.Count; k++)
+            {
+                var p = problem.Ports[k];
+                L($"// {Comment(p.Name)}");
+                Claim(g, $"q{k}", [Query((p.Min.X, p.Min.Y, p.Min.Z, p.Max.X, p.Max.Y, p.Max.Z), 0)], []);
+            }
+        }
+        // brief-em3d-22 — a static problem's source sheets are claimed BEFORE the air-box faces, so a
+        // coaxial source can lie on the face its line ends at (Palace's own way to feed a coax). A driven
+        // problem keeps its order, and its script its bytes.
+        if (problem.IsStatic) ClaimPorts();
         for (int k = 0; k < 6; k++)
         {
             L($"// air box {FaceKeys[k]}");
             Claim(g, $"f{k}", [Query(faceQuery[k], 0)], []);
         }
-        for (int k = 0; k < problem.Ports.Count; k++)
-        {
-            var p = problem.Ports[k];
-            L($"// {Comment(p.Name)}");
-            Claim(g, $"q{k}", [Query((p.Min.X, p.Min.Y, p.Min.Z, p.Max.X, p.Max.Y, p.Max.Z), 0)], []);
-        }
+        if (!problem.IsStatic) ClaimPorts();
         for (int k = 0; k < problem.Sheets.Count; k++)
         {
             var sh = problem.Sheets[k];
@@ -364,7 +384,11 @@ public static class GmshGeoWriter
 
         // ── Mesh size (R-em3d7-2e): an initial mesh only ─────────────────────────────────────
         double fMax = problem.Frequency.StopHz;
-        double SizeUm(string material) => MaxElementSizeM(materials[material], fMax, settings) * 1e6;
+        // brief-em3d-22 — a static solve has no wavelength: its largest element is the same fraction of
+        // the air box's largest side, in every material.
+        double boxSide = Math.Max(box.Max.X - box.Min.X, Math.Max(box.Max.Y - box.Min.Y, box.Max.Z - box.Min.Z));
+        double SizeUm(string material) => (problem.IsStatic ? StaticMaxElementSizeM(boxSide, settings)
+                                                            : MaxElementSizeM(materials[material], fMax, settings)) * 1e6;
         var volumeSizes = new List<(string List, double Size)>();
         for (int i = 0; i < problem.Solids.Count; i++)
             if (solidGroup[i].Dimension == 3) volumeSizes.Add(($"s{i}[]", SizeUm(problem.Solids[i].Material)));
@@ -377,11 +401,14 @@ public static class GmshGeoWriter
         // a 200 µm port height). Applied around the port sheets only, so EdgeRefinement stays the knob
         // everywhere else — on case B, applying it to every conductor put 50 µm elements over the whole
         // ground plane and took a minute and a half to mesh.
-        double sizePort = Math.Min(sizeEdge, problem.Ports.Min(SmallerSide) * 1e6 / PortCellsAcross);
+        double sizePort = problem.Ports.Count == 0 ? sizeEdge
+                        : Math.Min(sizeEdge, problem.Ports.Min(SmallerSide) * 1e6 / PortCellsAcross);
         double DistMax(double near) => near + (sizeMax - near) / (settings.Grading - 1);
 
         L("// ---- the initial mesh: Palace's adaptive refinement converges the answer ------------------");
-        L($"// Largest element per material: {Num(settings.MaxElementWavelengths)} of its wavelength at {Num(fMax / 1e9)} GHz;");
+        L(problem.IsStatic
+            ? $"// Largest element: {Num(settings.MaxElementWavelengths)} of the air box's largest side (a static solve has no wavelength);"
+            : $"// Largest element per material: {Num(settings.MaxElementWavelengths)} of its wavelength at {Num(fMax / 1e9)} GHz;");
         L($"// {Num(settings.EdgeRefinement)} of the smallest at conductors and sheets; at most 1/{PortCellsAcross} of each port");
         L($"// sheet's smaller side at the ports; growing by {Num(settings.Grading)}.");
         L($"Mesh.MeshSizeMax = {Num(Round(sizeMax))};");
@@ -420,6 +447,11 @@ public static class GmshGeoWriter
 
         return new GmshLowering(g.ToString(), groups, GroupsJson(groups), null);
     }
+
+    /// <summary>brief-em3d-22 — a static problem's largest initial element, metres: the Palace section's
+    /// <c>MaxElementWavelengths</c> read as a fraction of the air box's largest side.</summary>
+    public static double StaticMaxElementSizeM(double boxLargestSideM, PalaceSettings settings)
+        => settings.MaxElementWavelengths * boxLargestSideM;
 
     /// <summary>
     /// R-em3d7-2e — the largest initial element in <paramref name="material"/>, metres: the Palace
@@ -494,7 +526,10 @@ public static class GmshGeoWriter
                 faults.Add($"'{gr.Name}' lost {got.Lost} volume(s) in the fragment, so its tags no longer name what " +
                            "they named.");
             else if (got.Count == 0 && gr.Expected > 0)
-                faults.Add($"'{gr.Name}' ({Describe(gr)}) selected nothing in the mesh.");
+                faults.Add($"'{gr.Name}' ({Describe(gr)}) selected nothing in the mesh" +
+                           (gr.Terminal is { } term
+                               ? $", so {(term.Length == 0 ? "the ground" : $"terminal '{term}'")} has no surface there."
+                               : "."));
             else if (gr.AtLeast ? got.Count < gr.Expected : got.Count != gr.Expected)
                 faults.Add($"'{gr.Name}' ({Describe(gr)}) selected {got.Count} {(gr.Dimension == 3 ? "volume" : "surface")}(s) " +
                            $"where {(gr.AtLeast ? "at least " : "")}{gr.Expected} were expected.");
@@ -544,6 +579,7 @@ public static class GmshGeoWriter
                 if (gr.Boundary is { } b) w.WriteString("Boundary", b.ToString());
                 if (gr.PortNumber is { } n) w.WriteNumber("Port", n);
                 if (gr.ThicknessM is { } t) w.WriteNumber("ThicknessM", t);
+                if (gr.Terminal is { } term) w.WriteString("Terminal", term.Length == 0 ? "(ground)" : term);
                 w.WriteEndObject();
             }
             w.WriteEndArray();
@@ -664,6 +700,16 @@ public static class GmshGeoWriter
             L($"Line(l + {k}) = {{p + {k}, p + {(k + 1) % 4}}};");
         L("c = newcl; Curve Loop(c) = {l:l + 3};");
         L($"s = news; Plane Surface(s) = {{c}}; {list}[] = {{s}};");
+    }
+
+    /// <summary>brief-em3d-22 — a coaxial port's annulus, in its plane of constant z.</summary>
+    private static void EmitAnnulus(StringBuilder g, string list, Em3dPort p, Em3dAnnulus ring)
+    {
+        void L(string line) => g.Append(line).Append('\n');
+        double cx = (p.Min.X + p.Max.X) / 2, cy = (p.Min.Y + p.Max.Y) / 2;
+        L($"d1 = news; Disk(d1) = {{{Um(cx)}, {Um(cy)}, {Um(p.Min.Z)}, {Um(ring.OuterRadiusM)}}};");
+        L($"d2 = news; Disk(d2) = {{{Um(cx)}, {Um(cy)}, {Um(p.Min.Z)}, {Um(ring.InnerRadiusM)}}};");
+        L($"{list}[] = BooleanDifference{{ Surface{{d1}}; Delete; }}{{ Surface{{d2}}; Delete; }};");
     }
 
     /// <summary><c>claimed[]</c> grows by what <paramref name="queries"/> select, less

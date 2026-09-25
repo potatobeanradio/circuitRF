@@ -1,0 +1,105 @@
+{
+  "Generator": "circuitRF brief-em3d-7: the mapping from named objects to Palace attributes",
+  "LengthUnitM": 1E-06,
+  "Groups": [
+    {
+      "Attribute": 1,
+      "Name": "RO4350",
+      "Dimension": 3,
+      "Kind": "Volume",
+      "Expected": 1,
+      "Material": "RO4350"
+    },
+    {
+      "Attribute": 2,
+      "Name": "air",
+      "Dimension": 3,
+      "Kind": "Volume",
+      "Expected": 1,
+      "Material": "Air"
+    },
+    {
+      "Attribute": 3,
+      "Name": "Top Copper (1 oz)/A",
+      "Dimension": 2,
+      "Kind": "Conductor",
+      "Expected": 1,
+      "AtLeast": true,
+      "Material": "Top Copper (1 oz)",
+      "Terminal": "A"
+    },
+    {
+      "Attribute": 4,
+      "Name": "Top Copper (1 oz)/B",
+      "Dimension": 2,
+      "Kind": "Conductor",
+      "Expected": 1,
+      "AtLeast": true,
+      "Material": "Top Copper (1 oz)",
+      "Terminal": "B"
+    },
+    {
+      "Attribute": 5,
+      "Name": "background",
+      "Dimension": 3,
+      "Kind": "Background",
+      "Expected": 0,
+      "AtLeast": true,
+      "Material": "Air"
+    },
+    {
+      "Attribute": 6,
+      "Name": "airbox/xmin",
+      "Dimension": 2,
+      "Kind": "Face",
+      "Expected": 1,
+      "AtLeast": true,
+      "Boundary": "Absorbing"
+    },
+    {
+      "Attribute": 7,
+      "Name": "airbox/xmax",
+      "Dimension": 2,
+      "Kind": "Face",
+      "Expected": 1,
+      "AtLeast": true,
+      "Boundary": "Absorbing"
+    },
+    {
+      "Attribute": 8,
+      "Name": "airbox/ymin",
+      "Dimension": 2,
+      "Kind": "Face",
+      "Expected": 1,
+      "AtLeast": true,
+      "Boundary": "Absorbing"
+    },
+    {
+      "Attribute": 9,
+      "Name": "airbox/ymax",
+      "Dimension": 2,
+      "Kind": "Face",
+      "Expected": 1,
+      "AtLeast": true,
+      "Boundary": "Absorbing"
+    },
+    {
+      "Attribute": 10,
+      "Name": "airbox/zmin",
+      "Dimension": 2,
+      "Kind": "Face",
+      "Expected": 1,
+      "AtLeast": true,
+      "Boundary": "Pec"
+    },
+    {
+      "Attribute": 11,
+      "Name": "airbox/zmax",
+      "Dimension": 2,
+      "Kind": "Face",
+      "Expected": 1,
+      "AtLeast": true,
+      "Boundary": "Absorbing"
+    }
+  ]
+}

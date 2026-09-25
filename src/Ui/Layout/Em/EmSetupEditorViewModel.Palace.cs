@@ -68,6 +68,7 @@ public sealed partial class EmSetupEditorViewModel
         OnPropertyChanged(nameof(IsPalaceSetup));
         OnPropertyChanged(nameof(IsOpenEmsSetup));
         OnPropertyChanged(nameof(Solver3DDescription));
+        RaiseStaticVisibility();
         if (_suppressCommit) return;
         if (value.Value == Working.Solver3D) return;
         var before = SnapshotJson();
@@ -155,6 +156,7 @@ public sealed partial class EmSetupEditorViewModel
         PalaceSweepAdaptiveTolText      = G(p?.SweepAdaptiveTol);
         PalaceFieldError = null;
         SyncOpenEmsFields();
+        SyncStaticFields();
         _suppressCommit = false;
     }
 

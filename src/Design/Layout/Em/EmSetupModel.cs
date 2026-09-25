@@ -12,6 +12,7 @@
 
 using System.Numerics;
 using CircuitRF.Core.Design;
+using CircuitRF.Engine.Em3d;
 using CircuitRF.Engine.Mom;
 
 namespace CircuitRF.Design.Layout.Em;
@@ -51,6 +52,16 @@ public sealed record EmAirBox(
     EmAirBoxFace? XMin = null, EmAirBoxFace? XMax = null,
     EmAirBoxFace? YMin = null, EmAirBoxFace? YMax = null,
     EmAirBoxFace? ZMin = null, EmAirBoxFace? ZMax = null);
+
+/// <summary>
+/// brief-em3d-22 R-em3d22-2a — one terminal of a static 3D solve, as the <c>.cem</c> states it.
+/// </summary>
+/// <param name="Name">The matrix row's label.</param>
+/// <param name="Net">A net of the layout, or a <c>.wBond</c> wire array's name: every conductor on it
+/// is in the terminal.</param>
+/// <param name="Source">Magnetostatic only: the port (its number, or <c>port/N</c>) whose sheet
+/// drives this terminal's current.</param>
+public sealed record EmTerminal3D(string Name, string Net, string? Source = null);
 
 /// <summary>
 /// The mutable working model behind an open <c>.cem</c>. Framework-free — the editor view model
@@ -442,6 +453,39 @@ public sealed class EmSetup
     /// Null takes circuitRF's defaults.</summary>
     public CemPalace? Palace { get; set; }
 
+    /// <summary>
+    /// brief-em3d-22 R-em3d22-1a — what the 3D solve asks: S over the sweep, or a capacitance or
+    /// inductance matrix. <see cref="Em3dProblemType.Driven"/> is every setup written before static
+    /// solves existed, and is omitted from the file.
+    /// </summary>
+    public Em3dProblemType Problem3D { get; set; }
+
+    /// <summary>True for an electrostatic or magnetostatic setup.</summary>
+    public bool IsStatic3D => Problem3D is Em3dProblemType.Electrostatic or Em3dProblemType.Magnetostatic;
+
+    /// <summary>R-em3d22-2a — a static solve's terminals, in matrix order.</summary>
+    public List<EmTerminal3D> Terminals3D { get; set; } = [];
+
+    /// <summary>R-em3d22-2a — the net that is the matrix's reference. Empty is the ground the
+    /// generator already uses: the ground-reference conductors, and the PEC floor when there is one.</summary>
+    public string Ground3D { get; set; } = "";
+
+    /// <summary>
+    /// R-em3d22-1c — what a static setup keeps but does not read, by <c>.cem</c> key: the sweep when it
+    /// is not the default, and the port impedances.
+    /// </summary>
+    public IReadOnlyList<string> DrivenOnlyFieldsSet()
+    {
+        var set = new List<string>();
+        var d = new EmSetup().Frequency;
+        var f = Frequency;
+        if ((f.StartExpr, f.StopExpr, f.StepExpr, f.NumPoints, f.Mode, f.Kind, f.StartUnit, f.StopUnit, f.StepUnit) !=
+            (d.StartExpr, d.StopExpr, d.StepExpr, d.NumPoints, d.Mode, d.Kind, d.StartUnit, d.StopUnit, d.StepUnit))
+            set.Add("Frequency");
+        if (PortZ0s.Count > 0 || Port1Z0 != new EmSetup().Port1Z0 || Port2Z0 != new EmSetup().Port2Z0) set.Add("PortZ0s");
+        return set;
+    }
+
     /// <summary>openEMS's own section (em-3d.md §4.2): the grid fields of brief-em3d-8 — see
     /// <see cref="CemOpenEms.ResolveGrid"/> for the defaults. Null takes circuitRF's defaults.</summary>
     public CemOpenEms? OpenEms { get; set; }
@@ -499,6 +543,9 @@ public sealed class EmSetup
         AirBox                 = AirBox,         // record, immutable
         Palace                 = Palace?.Clone(),
         OpenEms                = OpenEms?.Clone(),
+        Problem3D              = Problem3D,
+        Terminals3D            = [.. Terminals3D],   // records, immutable
+        Ground3D               = Ground3D,
     };
 
     /// <summary>The extraction settings this setup implies — the one place the two are married,

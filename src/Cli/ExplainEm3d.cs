@@ -112,7 +112,23 @@ internal static class ExplainEm3d
         ], Enlargements(grid.Grid));
 
         return new ExplainEm3dJson(solver, "m", 1.0, guidance, temperature, materials, solids, wires, ports, airBox,
-                                   Size(p, setup, grid), solvers, notes, warnings, null);
+                                   Size(p, setup, grid), solvers, notes, warnings, null)
+        {
+            Static = Static(p, setup),
+        };
+    }
+
+    /// <summary>brief-em3d-22 R-em3d22-2b — the terminals, the ground and what floats.</summary>
+    private static Em3dStaticJson? Static(Em3dProblem p, EmSetup setup)
+    {
+        if (!p.IsStatic) return null;
+        bool es = p.Type == Em3dProblemType.Electrostatic;
+        var terminals = p.Terminals.Select((t, k) => new Em3dTerminalJson(
+            k + 1, t.Name, setup.Terminals3D.FirstOrDefault(s => s.Name == t.Name)?.Net ?? "", t.Objects, t.SourcePort)).ToList();
+        return new Em3dStaticJson(p.Type.ToString(), terminals, p.GroundObjects, p.FloatingConductors(),
+            es ? "An electrostatic run refuses a floating conductor: Palace 0.18.1 has no isolated equipotential, " +
+                 "only a terminal's potential, ground and a zero-charge wall."
+               : "A floating conductor carries no source current, only the screening current a perfect conductor carries.");
     }
 
     /// <summary>
@@ -296,6 +312,18 @@ internal static class ExplainEm3d
                               $"reference plane at ({L(q.ReferenceOrigin[0])}, {L(q.ReferenceOrigin[1])}, {L(q.ReferenceOrigin[2])}), " +
                               $"normal ({G(q.ReferenceNormal[0])}, {G(q.ReferenceNormal[1])}, {G(q.ReferenceNormal[2])}), " +
                               $"shift {L(q.ReferenceShiftM)}");
+
+        if (r.Static is { } st)
+        {
+            Console.WriteLine($"  problem      {st.Problem}");
+            Console.WriteLine("  terminals");
+            foreach (var term in st.Terminals)
+                Console.WriteLine($"    {term.Index,3} {term.Name,-12} net '{term.Net}'" + (term.Source is { } src ? $", driven through {src}" : "") +
+                                  $": {string.Join(", ", term.Conductors)}");
+            Console.WriteLine($"    ground       {(st.Ground.Count == 0 ? "no conductor (a PEC face of the air box, if any)" : string.Join(", ", st.Ground))}");
+            Console.WriteLine($"    floating     {(st.Floating.Count == 0 ? "none" : string.Join(", ", st.Floating))}");
+            if (st.Floating.Count > 0) Console.WriteLine($"    {"",-12} {st.FloatingMeans}");
+        }
 
         if (r.AirBox is { } b)
         {

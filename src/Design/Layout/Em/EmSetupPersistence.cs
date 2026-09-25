@@ -140,6 +140,21 @@ public sealed class CemAirBox
     public CemAirBoxFace? ZMax { get; set; }
 }
 
+/// <summary>brief-em3d-22 R-em3d22-2a — one terminal of a static 3D solve.</summary>
+public sealed class CemTerminal3D
+{
+    /// <summary>The terminal's name: the label of its matrix row and column.</summary>
+    public string Name { get; set; } = "";
+
+    /// <summary>A net of the layout, or a <c>.wBond</c> wire array's name. Every conductor on it is in
+    /// the terminal.</summary>
+    public string Net { get; set; } = "";
+
+    /// <summary>Magnetostatic only: the port whose sheet drives this terminal's current — its number,
+    /// or <c>port/N</c>. Omitted for an electrostatic terminal.</summary>
+    public string? Source { get; set; }
+}
+
 /// <summary>
 /// brief-em3d-21 R-em3d21-4 — a Palace quality preset: a named set of the section's cost-deciding
 /// fields. Each is a claim about cost and accuracy, so each was MEASURED on F0's cases A and B
@@ -535,6 +550,18 @@ public sealed class CemFile
 
     /// <summary>openEMS's own section. Null takes the defaults.</summary>
     public CemOpenEms? OpenEms { get; set; }
+
+    /// <summary>brief-em3d-22 — what a 3D setup solves: Driven (S over the sweep), Electrostatic (a
+    /// capacitance matrix) or Magnetostatic (an inductance matrix). <b>Null means Driven.</b> The two
+    /// static problems run on Palace only.</summary>
+    public CircuitRF.Engine.Em3d.Em3dProblemType? Problem3D { get; set; }
+
+    /// <summary>A static 3D setup's terminals, in matrix order. Null when there are none.</summary>
+    public List<CemTerminal3D>? Terminals3D { get; set; }
+
+    /// <summary>The net that is a static solve's reference. Null is the ground-reference conductors
+    /// (and the PEC floor when there is one).</summary>
+    public string? Ground3D { get; set; }
 }
 
 /// <summary>Reads and writes <c>.cem</c> files. Framework-free (no Avalonia / Skia).</summary>
@@ -655,6 +682,11 @@ public static class EmSetupPersistence
         } : null,
         Palace         = s.Palace,
         OpenEms        = s.OpenEms,
+        Problem3D      = s.Problem3D == CircuitRF.Engine.Em3d.Em3dProblemType.Driven ? null : s.Problem3D,
+        Terminals3D    = s.Terminals3D.Count == 0 ? null
+            : [.. s.Terminals3D.Select(t => new CemTerminal3D { Name = t.Name, Net = t.Net,
+                                                                 Source = t.Source is { Length: > 0 } src ? src : null })],
+        Ground3D       = s.Ground3D is { Length: > 0 } g3 ? g3 : null,
     };
 
     private static CemAirBoxFace? ToFace(EmAirBoxFace? f)
@@ -716,6 +748,9 @@ public static class EmSetupPersistence
             : null,
         Palace                = f.Palace,
         OpenEms               = f.OpenEms,
+        Problem3D             = f.Problem3D ?? CircuitRF.Engine.Em3d.Em3dProblemType.Driven,
+        Terminals3D           = f.Terminals3D is { } ts ? [.. ts.Select(t => new EmTerminal3D(t.Name ?? "", t.Net ?? "", t.Source))] : [],
+        Ground3D              = f.Ground3D ?? "",
     };
 
     /// <summary>

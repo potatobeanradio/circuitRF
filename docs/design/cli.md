@@ -538,6 +538,14 @@ panel only (it changes every second, and a terminal row per second is noise). **
 Palace run whose memory estimate is past 150 % of the machine's, which is otherwise refused before Gmsh
 (or, when only the mesh's size shows it, before Palace, keeping the mesh for the forced re-run).
 
+**A static 3D setup prints a MATRIX, not a point count** (brief-em3d-22). `Problem3D: Electrostatic`
+or `Magnetostatic` runs Palace only (openEMS/Both are refused before discovery, and by `check`), writes
+`results/<key>.palace_es.npy` (or `_ms`) with cubes `C` + `C_mutual` (farads) or `L` + `L_mutual`
+(henries) on axes `Terminal i` × `Terminal j` labelled with the terminal names, and **no `.sNp`**. Stdout
+prints the matrix in one engineering unit chosen so the largest entry reads 1–1000 (`Maxwell capacitance
+(fF), ground = GND`, then a labelled square), and `--json`'s `data` is the DataSet. Progress on stderr
+reads `Solving: pass 1 of 1 (no refinement) · terminal k of N`.
+
 ### 8.3 What goes where, and the three lists
 
 §3.1's split, applied: the summary and the written file paths are **stdout**; progress, the resolved

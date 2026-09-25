@@ -65,6 +65,16 @@ public sealed record PalaceElapsed(double Seconds) : PalaceLogEvent;
 /// <summary>A <c>Peak Memory</c> table's <c>Total</c> row: its <c>Total HWM</c> column, in bytes.</summary>
 public sealed record PalacePeakMemory(double Bytes) : PalaceLogEvent;
 
+/// <summary>brief-em3d-22 — a static solve's opening: how many terminals (sources) it solves one by one.</summary>
+public sealed record PalaceStaticStart(int Count) : PalaceLogEvent;
+
+/// <summary>brief-em3d-22 — static solve <paramref name="Ordinal"/> of <paramref name="Count"/> starting,
+/// for terminal (or source) <paramref name="Index"/>.</summary>
+public sealed record PalaceTerminalSolve(int Ordinal, int Count, int Index) : PalaceLogEvent;
+
+/// <summary>brief-em3d-22 — Palace's linear solver stopped without reaching its tolerance.</summary>
+public sealed record PalaceLinearNotConverged(double RelativeResidual) : PalaceLogEvent;
+
 /// <summary>The log stopped matching: from here on the parser emits nothing.</summary>
 public sealed record PalaceLogUnrecognised(long Line, string Reason) : PalaceLogEvent;
 
@@ -83,6 +93,11 @@ public sealed class PalaceLogProgress
 
     private static readonly Regex Elements   = new(@"^\s*elements\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s*$", RegexOptions.CultureInvariant);
     private static readonly Regex Nd         = new(@"\bND \(p = (\d+)\): (\d+)", RegexOptions.CultureInvariant);
+    private static readonly Regex H1         = new(@"\bH1 \(p = (\d+)\): (\d+)", RegexOptions.CultureInvariant);
+    // brief-em3d-22 — the static solvers' lines (electrostaticsolver.cpp / magnetostaticsolver.cpp, 0.18.1).
+    private static readonly Regex StaticRun  = new(@"^Computing (electro|magneto)static fields for (\d+) (terminal|source) ", RegexOptions.CultureInvariant);
+    private static readonly Regex StaticIt   = new(@"^It (\d+)/(\d+): (?:Current |FluxLoop )?Index = (\d+) \(elapsed", RegexOptions.CultureInvariant);
+    private static readonly Regex NoConverge = new($@"^Linear solver did not converge, norm\(Ax-b\)/norm\(b\) = ({Num})", RegexOptions.CultureInvariant);
     private static readonly Regex Amr        = new(@"^Adaptive mesh refinement \(AMR\) iteration (\d+):\s*$", RegexOptions.CultureInvariant);
     private static readonly Regex Greedy     = new($@"^Greedy iteration (\d+) \(n = (\d+)\): \S+ = ({Num}) GHz \({Num}\), error = ({Num}|inf|nan)\b", RegexOptions.CultureInvariant);
     private static readonly Regex Sampling   = new(@"^Adaptive sampling (converged with|reached maximum) (\d+) frequency samples:\s*$", RegexOptions.CultureInvariant);
@@ -111,6 +126,13 @@ public sealed class PalaceLogProgress
 
     /// <summary>Lines read so far.</summary>
     public long Lines => _line;
+
+    /// <summary>
+    /// brief-em3d-22 — which finite-element space's size is the run's unknown count: ND (Nédélec, the
+    /// electric field — driven and magnetostatic) or H1 (the potential — electrostatic). Palace prints
+    /// all of them on one line.
+    /// </summary>
+    public bool CountsH1 { get; init; }
 
     public PalaceLogEvent? Feed(string? raw)
     {
@@ -164,9 +186,9 @@ public sealed class PalaceLogProgress
             _sawMesh = true;
             return new PalaceMeshElements(long.Parse(e.Groups[4].Value, CultureInfo.InvariantCulture));
         }
-        if (line.Contains("ND (p", StringComparison.Ordinal))
+        if (line.Contains(CountsH1 ? "H1 (p" : "ND (p", StringComparison.Ordinal))
         {
-            var n = Nd.Match(line);
+            var n = (CountsH1 ? H1 : Nd).Match(line);
             return n.Success
                 ? new PalaceUnknowns(int.Parse(n.Groups[1].Value, CultureInfo.InvariantCulture), long.Parse(n.Groups[2].Value, CultureInfo.InvariantCulture))
                 : Off($"unreadable unknown count: “{t0}”");
@@ -203,6 +225,23 @@ public sealed class PalaceLogProgress
             if (!s.Success) return Off($"unreadable sampling summary: “{line}”");
             _offlineSpoke = true;
             return new PalaceSamplingDone(I(s.Groups[2].Value), s.Groups[1].Value == "converged with");
+        }
+        if (line.StartsWith("Computing ", StringComparison.Ordinal) && line.Contains("static fields", StringComparison.Ordinal))
+        {
+            var c = StaticRun.Match(line);
+            return c.Success ? new PalaceStaticStart(I(c.Groups[2].Value)) : Off($"unreadable static solve line: “{line}”");
+        }
+        if (line.StartsWith("Linear solver did not converge", StringComparison.Ordinal))
+        {
+            var c = NoConverge.Match(line);
+            return c.Success ? new PalaceLinearNotConverged(D(c.Groups[1].Value)) : null;
+        }
+        if (line.StartsWith("It ", StringComparison.Ordinal) && line.Contains("Index = ", StringComparison.Ordinal))
+        {
+            var t = StaticIt.Match(line);
+            return t.Success
+                ? new PalaceTerminalSolve(I(t.Groups[1].Value), I(t.Groups[2].Value), I(t.Groups[3].Value))
+                : Off($"unreadable static solve line: “{line}”");
         }
         if (line.StartsWith("It ", StringComparison.Ordinal) && line.Length > 3 && char.IsAsciiDigit(line[3]))
         {
@@ -298,8 +337,10 @@ public sealed class PalaceStageTracker
     /// convergence on a LOG scale, so the row shows this instead of "k / 1000".</summary>
     public const string ConvergenceUnit = "(log scale)";
 
-    private readonly PalaceLogProgress _parser = new();
+    private readonly PalaceLogProgress _parser;
     private readonly RunControl? _control;
+    private readonly List<string> _warnings = [];
+    private int _terminalCount;
     private readonly int _maxPasses;          // N: the setup's AdaptiveMaxIterations
     private readonly double _sweepTol;
     private readonly List<string> _notes = [];
@@ -318,8 +359,10 @@ public sealed class PalaceStageTracker
     /// to that many plus one solves — the total the stage states, because it is the one Palace was
     /// given.</param>
     /// <param name="sweepTolerance">The setup's <c>SweepAdaptiveTol</c>: what the greedy error converges on.</param>
-    public PalaceStageTracker(int maxRefinementPasses, double sweepTolerance, RunControl? control)
+    /// <param name="electrostatic">brief-em3d-22 — the run is electrostatic, whose unknowns are H1's.</param>
+    public PalaceStageTracker(int maxRefinementPasses, double sweepTolerance, RunControl? control, bool electrostatic = false)
     {
+        _parser = new PalaceLogProgress { CountsH1 = electrostatic };
         _maxPasses = Math.Max(0, maxRefinementPasses);
         _sweepTol  = sweepTolerance;
         _control   = control;
@@ -330,6 +373,9 @@ public sealed class PalaceStageTracker
 
     /// <summary>Notes for the run: an early refinement convergence, an unrecognised log.</summary>
     public IReadOnlyList<string> Notes => _notes;
+
+    /// <summary>brief-em3d-22 — findings to act on: a linear solve that did not converge.</summary>
+    public IReadOnlyList<string> Warnings => _warnings;
 
     public PalaceRunSummary Summary => new(_initialElements, _finalElements, _unknowns, _refinementPasses, _samples,
                                            _peak, _seconds, !_parser.Unrecognised);
@@ -398,6 +444,32 @@ public sealed class PalaceStageTracker
                         : $"Palace's mesh refinement stopped after pass {d.Iterations + 1} of up to {d.MaxIterations + 1}, with its " +
                           $"error indicator {Sci(d.Indicator)} still above the tolerance {Sci(d.Tolerance)}: the mesh reached " +
                           "the size limit.");
+                break;
+            case PalaceStaticStart st:
+                // brief-em3d-22 R-em3d22-5a — one solve per terminal: "terminal k of N", within the pass.
+                _terminalCount = st.Count;
+                _phase = "static";
+                _stageDone = 0;
+                _control?.BeginStage($"{PassLabel()} · terminal 1 of {st.Count}", st.Count, "terminals");
+                break;
+            case PalaceTerminalSolve ts:
+                if (_phase != "static")
+                {
+                    _phase = "static";
+                    _stageDone = 0;
+                    _terminalCount = ts.Count;
+                    _control?.BeginStage($"{PassLabel()} · terminal {ts.Ordinal} of {ts.Count}", ts.Count, "terminals");
+                }
+                long done = ts.Ordinal - 1 - _stageDone;
+                _stageDone = ts.Ordinal - 1;
+                _control?.TickStage(Math.Max(0, done), $"{PassLabel()} · terminal {ts.Ordinal} of {ts.Count}");
+                break;
+            case PalaceLinearNotConverged nc:
+                string what = _terminalCount > 0 ? $"terminal {Math.Min(_stageDone + 1, _terminalCount)} of {_terminalCount}" : "a solve";
+                string warning = $"Palace's linear solver did not converge on {what} (refinement pass {_pass}): it stopped at a " +
+                                 $"relative residual of {Sci(nc.RelativeResidual)}, short of its tolerance. The numbers from that " +
+                                 "solve are not trustworthy.";
+                if (!_warnings.Contains(warning)) _warnings.Add(warning);
                 break;
             case PalaceElapsed t:
                 _seconds = t.Seconds;

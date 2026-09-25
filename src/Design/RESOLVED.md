@@ -12806,3 +12806,89 @@ and every refinement pass repeats the sampling. Against Standard (not Accurate),
 and be measured again. Not done: the obvious candidate (order 2, no refinement passes, F0's own case B
 setting) is unmeasured, and the measurement was stopped because it was taking too long. The tooltip and the reference page print these
 numbers and say Accurate is unmeasured; `PalacePresetTable.Reference` is Standard until it is.
+
+## Package RLC: electrostatic and magnetostatic — brief-em3d-22 (2026-09-25)
+
+`src/Engine/Em3d/Em3dProblem.cs` (`Em3dProblemType`, `Em3dTerminal`, `Em3dAnnulus`, `Type`/`Terminals`/
+`GroundObjects`), `src/Engine/Em3d/Em3dStaticResult.cs` (new); `EmSetupModel`/`EmSetupPersistence`
+(`Problem3D`, `Terminals3D`, `Ground3D`, all omitted at default); `Em3dGenerator` (nets on every conductor,
+terminals and ground by net), `GmshGeoWriter`, `PalaceConfigWriter` (`WriteStatic`; the driven half moved
+unchanged into `WriteDriven`), `PalaceRun.ReadTerminalMatrix`, `PalaceLogProgress` (static lines),
+`Em3dRunService.FinishStatic`; `check`, `explain`, `em`; the panel's Problem picker and terminal table.
+Gate `tests/Ui.Tests/Em3d/PalaceStaticTests.cs`; goldens `testdata/em3d/palace-goldens/static-{es,ms}/`;
+Palace's own output `testdata/em3d/static/{plates,coax-es,coax-ms}/`.
+
+**Measured against the closed forms (one fixed mesh each: order 2, no refinement, 15 % of the box's
+largest side, circles at 12 elements a turn; each gate 1-2.5 s):** parallel plates wall to wall with PMC
+sides, C = ε₀εᵣA/d to **0.0000 %** (the field is linear, which order-2 elements hold exactly); coax
+a = 100, b = 230 µm, ℓ = 1 mm, εᵣ = 2, **C +0.134 %** and **L −0.082 %**. A hand run of the coax with two
+refinement passes was within 0.02 % (C) and 0.005 % (L). The two-line layout, through `EmRunService`:
+C = [275.0, −10.3; −10.3, 275.4] fF (RF_IN/VDD, 0.5 × 3 mm over 20 mil RO4350), and with each line fed by
+its port and shorted by a via, L = [1.31, 0.11; 0.11, 1.31] nH — the microstrip's L′·ℓ plus the via.
+
+**What Palace 0.18.1 writes (its source, electrostaticsolver.cpp / magnetostaticsolver.cpp, and the runs
+committed here).** `postpro/terminal-C.csv` (the Maxwell matrix), `terminal-Cm.csv` (the mutual form:
+Cm[i][j] = −C[i][j], Cm[i][i] = the row sum, i.e. capacitance to ground), `terminal-Cinv.csv`,
+`terminal-V.csv`; magnetostatic `terminal-M.csv`, `terminal-Mm.csv` (current-difference form),
+`terminal-Minv.csv`, `terminal-I.csv`. Header `i, C[i][<index>] (F)` — whitespace-padded, read trimmed,
+by name. Log: `Computing electrostatic fields for N terminal boundaries`, then `It k/N: Index = i
+(elapsed …)` per terminal (magnetostatic: `It k/N: Current Index = i`). An electrostatic run's unknown
+count is the H1 space's (the potential), not ND's, which Palace prints on the same line — the parser
+now counts H1 for electrostatics, or the stage would show the wrong space's size.
+
+**Palace has no floating electrostatic conductor, so one is refused, named** (R-em3d22-2b). The
+schema's electrostatic boundaries are Terminal, Ground and ZeroCharge, and ZeroCharge is a Neumann
+wall, not an isolated equipotential. A conductor in no terminal and not ground is refused before Gmsh
+by `PalaceConfigWriter.StaticRefusal`, which `check` also runs. The exact remedy exists and is not
+built: solve the floating conductor as one more terminal and eliminate it from the Maxwell matrix
+(C_red = C_aa − C_af C_ff⁻¹ C_fa, zero net charge on it). That would lift the refusal with no Palace
+change, and is a follow-on for the owner to decide on.
+
+**A magnetostatic run needs a looser linear tolerance, and a coax source needs it most.** Curl-curl is
+singular, and CG on it only converges while the right-hand side is in the operator's range. Palace's
+coaxial source (`+R`/`−R`) is the 1/r mode, divergence-free exactly but only to QUADRATURE accuracy on
+the elements, so on the coax CG reached a relative residual of **1.6e-5 and then diverged** (to 1e8, and
+an inductance of 4.9e9 H) at the tolerance the driven writer uses. At `Tol` 1e-4 it stops before that,
+0.06 % from the closed form. A rectangular port sheet with a Cartesian direction carries a constant
+current, which is exactly consistent, so the layout path is not near that edge — but the one tolerance
+serves both. `Linear` is otherwise Palace's own choice per problem (CG with AMG/AMS). A linear solve
+that does not converge is now a WARNING in the run (the log line `Linear solver did not converge,
+norm(Ax-b)/norm(b) = …`), naming the terminal and pass — before this, a diverged solve was silent.
+
+**A source sheet across a solid's whole cross-section splits the solid.** The first coax attempt put
+the annulus INSIDE the dielectric; the fragment cut the dielectric in two, and the new volume belonged
+to no group — which the entity check would refuse (`classified_volumes != all_volumes`), and which
+Palace itself aborts on (`MFEM abort: STable3D`, a boundary element that is no element's face). The
+source now lies on the coax's end face, Palace's own way to feed a coax; for that, a static problem's
+port sheets are claimed BEFORE the air-box faces (a driven problem keeps its order, and its script its
+bytes — the driven goldens are unchanged).
+
+**Two writer defects a static problem exposed, both fixed.** A problem with no sheet and no port wrote
+`BooleanFragments{…}{ Surface{}; Delete; }`, a Gmsh syntax error (exit 1, with a mesh written anyway —
+F0 Q5's reason the exit code is the only signal); it now writes an empty tool list. And the mesh size
+was a fraction of a wavelength, which a static problem does not have: it is now `MaxElementWavelengths`
+read as a fraction of the air box's largest side. The generator's default padding for a static setup is
+likewise the structure's own largest extent, not λ/8 (37.5 mm at 1 GHz, for a millimetre package).
+
+**Palace's "external boundary attribute has no associated boundary condition" warning is spurious for
+terminals.** Palace 0.18.1 builds that list (configfile.cpp, `BoundaryData`) from PEC, PMC,
+conductivity, impedance, ports and surface currents, and not from `Terminal` — so every electrostatic
+run warns about its terminal attributes, which are nonetheless held at their potential (the
+closed-form gates prove it). circuitRF does not surface Palace's warnings, so nothing shows it.
+
+**The Data Display already tabulates a matrix** (R-em3d22-5c): a Table plot of `C` takes `Terminal i`
+as its rows and `Terminal j` as a family, one column per terminal. No Data Display code was written.
+The row cells show the 1-based terminal index (the axis values); the names are the axis labels, which
+a slice spec can name. Whether that reads well enough is the owner check.
+
+**Gate 8 compares writer to writer, as brief 3's gate 6 does.** "Every `.cem` round-trips
+byte-identically" is not true of the repo on disk and was not before this brief — several hand-written
+`.cem`s state `"ResonanceSearch": false` or put `AnalysisKind` elsewhere, which the writer re-spells. What
+this brief could change is what the writer EMITS for an existing file, so the gate asserts the writer's
+fixed point and that no `Problem3D`/`Terminals3D`/`Ground3D` key appears.
+
+**A committed Palace log names the binary by its absolute path on line 1**, which is this machine's
+directory layout. The fixture writer keeps only the file name (`>> palace-arm64.bin config.json`).
+
+**Not seen from this session:** the panel's Problem picker and terminal table, and the Data Display
+table (pixels).

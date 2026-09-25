@@ -37,6 +37,12 @@ public enum Em3dSweepKind { Linear, Log }
 /// <summary>A bond wire's cross-section (brief 4).</summary>
 public enum Em3dSection { Hexagon, Circle }
 
+/// <summary>
+/// brief-em3d-22 R-em3d22-1a — what a 3D problem asks: S over a sweep (<see cref="Driven"/>), or a
+/// capacitance or inductance matrix over named terminals. Brief 23 adds <c>Eigenmode</c>.
+/// </summary>
+public enum Em3dProblemType { Driven, Electrostatic, Magnetostatic }
+
 // ── Construction primitives ──────────────────────────────────────────────────────────────────
 //
 // Tier A's vocabulary, which is almost exactly CSXCAD's primitive set (§6.3). There is deliberately
@@ -147,7 +153,30 @@ public sealed record Em3dPort(
     Point3             Max,
     Point3             Direction,
     Complex            Z0,
-    Em3dReferencePlane ReferencePlane);
+    Em3dReferencePlane ReferencePlane)
+{
+    /// <summary>
+    /// brief-em3d-22 — a COAXIAL port: its sheet is this annulus, centred in the rectangle's plane,
+    /// instead of the rectangle (which is then the annulus' bounding square). Null — every port the
+    /// Tier A generator builds — is the rectangle. Only a z-normal annulus is supported.
+    /// </summary>
+    public Em3dAnnulus? Annulus { get; init; }
+}
+
+/// <summary>
+/// A coaxial port's sheet, between two radii. The current (or field) runs radially between the two
+/// objects: <paramref name="Outward"/> when the negative object is the inner one, which is Palace's
+/// <c>+R</c>.
+/// </summary>
+public sealed record Em3dAnnulus(double InnerRadiusM, double OuterRadiusM, bool Outward);
+
+/// <summary>
+/// brief-em3d-22 R-em3d22-2 — one terminal of a static solve: a name, and the conductors (solids or
+/// sheets, BY NAME — never a face index) that are held at one potential or carry one current.
+/// <paramref name="SourcePort"/> names the port whose sheet a magnetostatic solve drives its current
+/// through; an electrostatic solve reads none.
+/// </summary>
+public sealed record Em3dTerminal(string Name, IReadOnlyList<string> Objects, string? SourcePort = null);
 
 /// <summary>The six faces of the air box, each saying what it does to the field.</summary>
 public sealed record Em3dFaces(
@@ -192,6 +221,31 @@ public sealed record Em3dProblem(
     Em3dFrequency               Frequency,
     double                      OperatingTempC)
 {
+    /// <summary>brief-em3d-22 — what the problem asks. <see cref="Em3dProblemType.Driven"/> is what
+    /// every problem before static solves existed asks.</summary>
+    public Em3dProblemType Type { get; init; } = Em3dProblemType.Driven;
+
+    /// <summary>A static problem's terminals, in index order (terminal k is index k + 1).</summary>
+    public IReadOnlyList<Em3dTerminal> Terminals { get; init; } = [];
+
+    /// <summary>The conductors (by name) that are the ground terminal — the matrix's reference. A PEC
+    /// face of the air box is ground too, without being listed.</summary>
+    public IReadOnlyList<string> GroundObjects { get; init; } = [];
+
+    /// <summary>True for an electrostatic or magnetostatic problem.</summary>
+    public bool IsStatic => Type is Em3dProblemType.Electrostatic or Em3dProblemType.Magnetostatic;
+
+    /// <summary>
+    /// R-em3d22-2b — the conductors (solids and sheets) in no terminal and not ground, in problem
+    /// order. Floating is a choice the problem states, not a default: what it means is the solve's.
+    /// </summary>
+    public IReadOnlyList<string> FloatingConductors()
+    {
+        var held = new HashSet<string>(Terminals.SelectMany(t => t.Objects).Concat(GroundObjects), StringComparer.Ordinal);
+        return [.. Solids.Where(s => s.Role == Em3dRole.Conductor).Select(s => s.Name)
+                         .Concat(Sheets.Select(s => s.Name)).Where(n => !held.Contains(n))];
+    }
+
     /// <summary>
     /// Every structural problem this problem has, as sentences naming the object — empty when it is
     /// sound. <b>All of them, not the first</b> (R-em3d3-1c): a backend calls this before lowering,
@@ -283,15 +337,86 @@ public sealed record Em3dProblem(
                              $"have zero extent, and {zeroAxes} do.");
             else if (!Inside(p.Min.X, p.Min.Y, p.Min.Z, p.Max.X, p.Max.Y, p.Max.Z))
                 problems.Add($"Port {p.Number}'s sheet extends outside the air box.");
+            else if (p.Annulus is { } a)
+            {
+                double side = p.Max.X - p.Min.X;
+                if (p.Max.Z != p.Min.Z || Math.Abs((p.Max.Y - p.Min.Y) - side) > 1e-9 * Math.Max(side, 1e-12))
+                    problems.Add($"Port {p.Number} is coaxial, and its rectangle is not a square in a plane of " +
+                                 "constant z: an annulus is supported only facing z, bounded by its square.");
+                else if (!(a.InnerRadiusM > 0) || !(a.OuterRadiusM > a.InnerRadiusM) ||
+                         Math.Abs(2 * a.OuterRadiusM - side) > 1e-9 * side)
+                    problems.Add($"Port {p.Number}'s annulus needs 0 < inner radius < outer radius, and an outer " +
+                                 "diameter equal to its square's side.");
+            }
         }
 
-        if (!(Frequency.StartHz > 0) || !(Frequency.StopHz >= Frequency.StartHz) || Frequency.Points < 1)
+        if (IsStatic) ValidateTerminals(problems);
+        else if (!(Frequency.StartHz > 0) || !(Frequency.StopHz >= Frequency.StartHz) || Frequency.Points < 1)
             problems.Add($"The sweep {Frequency.StartHz.ToString("R", CultureInfo.InvariantCulture)} to " +
                          $"{Frequency.StopHz.ToString("R", CultureInfo.InvariantCulture)} Hz at " +
                          $"{Frequency.Points} point(s) is not a sweep a 3D solver can run: it needs a " +
                          "positive start, a stop at or above it, and at least one point.");
 
         return problems;
+    }
+
+    /// <summary>
+    /// R-em3d22-2 — a static problem's terminals: at least one; each named once and holding at least
+    /// one conductor; no conductor in two of them or in a terminal and ground; and, for a magnetostatic
+    /// solve, each driven through a port that touches it (R-em3d22-4a).
+    /// </summary>
+    private void ValidateTerminals(List<string> problems)
+    {
+        string kind = Type == Em3dProblemType.Electrostatic ? "electrostatic" : "magnetostatic";
+        if (Terminals.Count == 0)
+            problems.Add($"This {kind} problem names no terminal, so there is no matrix to compute. List the " +
+                         "conductors' nets in the setup's Terminals3D.");
+
+        var conductors = new HashSet<string>(Solids.Where(s => s.Role == Em3dRole.Conductor).Select(s => s.Name)
+                                                   .Concat(Sheets.Select(s => s.Name)), StringComparer.Ordinal);
+        var owner = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (string g in GroundObjects)
+        {
+            if (!conductors.Contains(g))
+                problems.Add($"The ground names '{g}', which is not a conductor or sheet of this problem.");
+            owner[g] = "the ground";
+        }
+
+        var terminalNames = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var t in Terminals)
+        {
+            if (string.IsNullOrWhiteSpace(t.Name))
+                problems.Add("A terminal has no name; a matrix row is labelled by its terminal's name.");
+            else if (!terminalNames.Add(t.Name))
+                problems.Add($"Terminal '{t.Name}' is listed twice.");
+            if (t.Objects.Count == 0)
+                problems.Add($"Terminal '{t.Name}' holds no conductor, so it has no surface to hold at a potential " +
+                             "or to carry a current.");
+            foreach (string o in t.Objects)
+            {
+                if (!conductors.Contains(o))
+                    problems.Add($"Terminal '{t.Name}' names '{o}', which is not a conductor or sheet of this problem.");
+                else if (owner.TryGetValue(o, out string? other))
+                    problems.Add($"'{o}' is in terminal '{t.Name}' and in {(other == "the ground" ? other : $"terminal '{other}'")}; " +
+                                 "a conductor is at one potential.");
+                else owner[o] = t.Name;
+            }
+
+            if (Type != Em3dProblemType.Magnetostatic) continue;
+            if (t.SourcePort is not { Length: > 0 } src)
+            {
+                problems.Add($"Magnetostatic terminal '{t.Name}' names no source: an inductance needs a path for its " +
+                             "current, entering and returning. Name the port whose sheet drives it (Source).");
+                continue;
+            }
+            var port = Ports.FirstOrDefault(p => p.Name == src);
+            if (port is null)
+                problems.Add($"Terminal '{t.Name}' is driven through '{src}', which is not a port of this problem.");
+            else if (!t.Objects.Contains(port.PositiveObject) && !t.Objects.Contains(port.NegativeObject))
+                problems.Add($"Terminal '{t.Name}' is driven through {src}, which runs from '{port.NegativeObject}' to " +
+                             $"'{port.PositiveObject}' — neither is one of the terminal's conductors, so its current " +
+                             "would not flow in them.");
+        }
     }
 
     /// <summary>Why a primitive encloses no volume, or null when it does.</summary>

@@ -333,6 +333,75 @@ public static class PalaceRun
         return new PalacePortS([.. freqs], [.. mats]);
     }
 
+    /// <summary>brief-em3d-22 — the electrostatic solve's Maxwell capacitance matrix, farads.</summary>
+    public const string CapacitanceFile = "terminal-C.csv";
+
+    /// <summary>The electrostatic solve's mutual (lumped-circuit) capacitance matrix, farads.</summary>
+    public const string MutualCapacitanceFile = "terminal-Cm.csv";
+
+    /// <summary>The magnetostatic solve's inductance matrix, henries.</summary>
+    public const string InductanceFile = "terminal-M.csv";
+
+    /// <summary>The magnetostatic solve's current-difference form of it, henries.</summary>
+    public const string MutualInductanceFile = "terminal-Mm.csv";
+
+    /// <summary>
+    /// <b>R-em3d22-3b — a terminal matrix, by column NAME.</b> Palace 0.18.1 writes a column
+    /// <c>i</c> (the row's terminal index) and one column per terminal, headed
+    /// <c>&lt;symbol&gt;[i][&lt;index&gt;] (&lt;unit&gt;)</c> — <c>C[i][2] (F)</c>, <c>C_m[i][2] (F)</c>,
+    /// <c>M[i][2] (H)</c> (read from its source, electrostaticsolver.cpp / magnetostaticsolver.cpp, and
+    /// from the runs committed under testdata/em3d/static/). Rows are matched by their <c>i</c> value,
+    /// never by position. <paramref name="indices"/> gives the matrix's order.
+    /// </summary>
+    public static double[,]? ReadTerminalMatrix(string csvPath, string symbol, string unit, IReadOnlyList<int> indices,
+                                                out string? error)
+    {
+        error = null;
+        string file = Path.GetFileName(csvPath);
+        if (!File.Exists(csvPath)) { error = $"Palace finished but wrote no {file} ({csvPath})."; return null; }
+        var lines = File.ReadAllLines(csvPath).Where(l => l.Trim().Length > 0).ToList();
+        if (lines.Count < 2) { error = $"Palace's {file} holds no row ({csvPath})."; return null; }
+        var header = lines[0].Split(',').Select(h => h.Trim()).ToList();
+        int iCol = header.IndexOf("i");
+        if (iCol < 0) { error = $"Palace's {file} has no column 'i' ({csvPath})."; return null; }
+        int n = indices.Count;
+        var cols = new int[n];
+        for (int j = 0; j < n; j++)
+        {
+            string name = $"{symbol}[i][{indices[j]}] {unit}";
+            cols[j] = header.IndexOf(name);
+            if (cols[j] < 0) { error = $"Palace's {file} has no column '{name}' ({csvPath})."; return null; }
+        }
+        var rowOf = new Dictionary<int, string[]>();
+        foreach (string line in lines.Skip(1))
+        {
+            var cells = line.Split(',');
+            if (iCol < cells.Length &&
+                double.TryParse(cells[iCol].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double iv))
+                rowOf[(int)Math.Round(iv)] = cells;
+        }
+        var m = new double[n, n];
+        for (int i = 0; i < n; i++)
+        {
+            if (!rowOf.TryGetValue(indices[i], out var cells))
+            {
+                error = $"Palace's {file} has no row for terminal {indices[i]} ({csvPath}).";
+                return null;
+            }
+            for (int j = 0; j < n; j++)
+            {
+                if (cols[j] >= cells.Length ||
+                    !double.TryParse(cells[cols[j]].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double v))
+                {
+                    error = $"Palace's {file} row for terminal {indices[i]} is not all numbers ({csvPath}).";
+                    return null;
+                }
+                m[i, j] = v;
+            }
+        }
+        return m;
+    }
+
     /// <summary>What <c>postpro/palace.json</c> records about the mesh and the adaptive passes. The
     /// initial mesh is the lowest-numbered iteration archive's, when Palace made any.</summary>
     public static PalaceRunFacts ReadFacts(string postDir)

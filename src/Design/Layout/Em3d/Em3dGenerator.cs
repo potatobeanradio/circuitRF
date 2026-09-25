@@ -145,11 +145,16 @@ public static class Em3dGenerator
         private readonly Dictionary<string, Em3dObjectOrigin> _origins = new(StringComparer.Ordinal);
         private double _tempC;
         private double _perDbu;
+        // brief-em3d-22 — each conductor's net(s), by object name: a piece's drawn net, a via's own or
+        // the net it lands on, a wire's array and its pads' nets. And the pieces on ground-reference
+        // entries, which are the ground when the setup names no Ground3D.
+        private readonly Dictionary<string, HashSet<string>> _objectNets = new(StringComparer.Ordinal);
+        private readonly List<string> _groundBandObjects = [];
 
         /// <summary>One merged conductor piece: its polygon, its name and what it became.</summary>
         private sealed record Piece(PlanarPolygon Poly, string Name, string Material, bool IsSheet,
                                     double ZBottom, double ZTop, double SheetZ, LayerKey Layer,
-                                    string? SheetReason);
+                                    string? SheetReason, string? Net = null);
 
         public Em3dGenerationResult Go()
         {
@@ -377,7 +382,7 @@ public static class Em3dGenerator
                         : $"{Fmt(t * 1e6)} µm is under {SheetMaxSkinDepths:G} skin depths " +
                           $"({Fmt(SheetMaxSkinDepths * delta * 1e6)} µm at {Fmt(fMax / 1e9)} GHz) and under " +
                           $"{SheetMaxFractionOfWidth:G} of its width ({Fmt(width * 1e6)} µm)";
-                    made.Add(new Piece(poly, name, material, sheet, band.BottomM, band.TopM, sheetZ, layer, reason));
+                    made.Add(new Piece(poly, name, material, sheet, band.BottomM, band.TopM, sheetZ, layer, reason, net));
                 }
                 pieces[band.Index] = made;
             }
@@ -538,7 +543,12 @@ public static class Em3dGenerator
                 zLow = Math.Min(zLow, z0); zHigh = Math.Max(zHigh, z1);
             }
 
-            double pad = DefaultPaddingFractionOfLongestWavelength * C0 / fMin;
+            // brief-em3d-22 — a static solve has no wavelength, so its default padding is the structure's
+            // own largest extent: far enough that the box's faces barely touch the field, and a length a
+            // package-sized problem can mesh.
+            double pad = setup.IsStatic3D
+                ? Math.Max(Math.Max(cx1 - cx0, cy1 - cy0), Math.Max(zHigh - zLow, 1e-6))
+                : DefaultPaddingFractionOfLongestWavelength * C0 / fMin;
             var box = setup.AirBox ?? new EmAirBox();
             double Pad(EmAirBoxFace? f) => f?.PaddingUm is { } um ? um * 1e-6 : pad;
             Em3dBoundaryKind Kind(EmAirBoxFace? f) => f?.Boundary ?? Em3dBoundaryKind.Absorbing;
@@ -605,6 +615,8 @@ public static class Em3dGenerator
                 {
                     order++;
                     _origins[p.Name] = new Em3dObjectOrigin(Em3dObjectKind.Conductor, b.Layer.Name, p.Layer, p.SheetReason);
+                    Net(p.Name, p.Net);
+                    if (b.Layer.IsGroundReference) _groundBandObjects.Add(p.Name);
                     if (p.IsSheet)
                         sheets.Add(new Em3dSheet(p.Name, p.Material, Ring(p.Poly.Outer),
                                                  [.. p.Poly.HoleRings.Select(Ring)], p.SheetZ, p.ZTop - p.ZBottom, order));
@@ -629,6 +641,8 @@ public static class Em3dGenerator
                 double z1 = top.TopM;
                 double z0 = pecFloor && ReferenceEquals(bottom.Layer, ground!.Layer) ? floorZ : bottom.BottomM;
                 string name = $"via/{viaN}";
+                // A via is on its own net when it names one, else on the nets of the metal it lands on.
+                var viaNets = shape.Net is { Length: > 0 } vn ? [vn] : ViaLandingNets(shape, pieces, top, bottom);
                 if (shape is ViaShape v)
                 {
                     double r = (v.DrillSize > 0 ? v.DrillSize : v.PadSize) * _perDbu / 2;
@@ -636,6 +650,7 @@ public static class Em3dGenerator
                     var e = new Point3(v.X * _perDbu, v.Y * _perDbu, z1);
                     solids.Add(Origin(new Em3dSolid(name, material, Em3dRole.Conductor, new Em3dCylinder(a, e, r), ++order),
                                       Em3dObjectKind.Via, entry.Name, shape.Layer));
+                    foreach (string n in viaNets) Net(name, n);
                     double wall = (entry.WallThicknessDbu ?? 0) * stackPerDbu;
                     if (entry.Fill == ViaFillKind.Plated && wall > 0 && wall < r)
                         solids.Add(Origin(new Em3dSolid(name + "/fill", AirMaterialName(), Em3dRole.Air,
@@ -647,22 +662,55 @@ public static class Em3dGenerator
                     var fp = PlanarExtractor.ToPolygons(shape, tech, _perDbu);
                     order++;
                     for (int k = 0; k < fp.Count; k++)
-                        solids.Add(Origin(new Em3dSolid(fp.Count == 1 ? name : $"{name}/{k + 1}", material,
-                                                        Em3dRole.Conductor, Extrude(fp[k], z0, z1), order),
+                    {
+                        string piece = fp.Count == 1 ? name : $"{name}/{k + 1}";
+                        solids.Add(Origin(new Em3dSolid(piece, material, Em3dRole.Conductor, Extrude(fp[k], z0, z1), order),
                                           Em3dObjectKind.Via, entry.Name, shape.Layer));
+                        foreach (string n in viaNets) Net(piece, n);
+                    }
                 }
             }
 
             // Bond wires after vias (R-em3d3-1d's order, as brief 3 left room for): each swept wire,
             // then its balls, which meet it face to face on the ball's top.
+            var pieceNet = pieces.Values.SelectMany(l => l).ToDictionary(p => p.Name, p => p.Net, StringComparer.Ordinal);
             foreach (var (name, material, prim) in wireBuild?.Solids ?? [])
+            {
                 solids.Add(Origin(new Em3dSolid(name, material, Em3dRole.Conductor, prim, ++order),
                                   Em3dObjectKind.Wire, null));
+                // A wire (and its balls) is on its array's name and on the nets of the pads it joins.
+                if (wireBuild!.Reports.FirstOrDefault(r => name == r.Name || name.StartsWith(r.Name + "/", StringComparison.Ordinal))
+                    is { } wr)
+                {
+                    Net(name, wr.Array);
+                    Net(name, pieceNet.GetValueOrDefault(wr.Start.Pad));
+                    Net(name, pieceNet.GetValueOrDefault(wr.End.Pad));
+                }
+            }
 
             // ── Ports (R-em3d3-2) ─────────────────────────────────────────────────────────────
             var ports = new List<Em3dPort>();
-            if (BuildPorts(bands, pieces, pecFloor ? ground : null, floorZ, ports) is { } portRefusal)
+            // brief-em3d-22 R-em3d22-1c — an electrostatic solve has no ports; a magnetostatic one keeps
+            // only the ports its terminals are driven through, each a source sheet.
+            if (setup.Problem3D != Em3dProblemType.Electrostatic &&
+                BuildPorts(bands, pieces, pecFloor ? ground : null, floorZ, ports) is { } portRefusal)
                 return No(portRefusal);
+
+            // ── Terminals and ground (R-em3d22-2), by net ─────────────────────────────────────
+            List<Em3dTerminal> terminals = [];
+            List<string> groundObjects = [];
+            if (setup.IsStatic3D)
+            {
+                if (Terminals(solids, sheets, ports, pecFloor, out terminals, out groundObjects) is { } terminalRefusal)
+                    return No(terminalRefusal);
+                if (setup.Problem3D == Em3dProblemType.Magnetostatic)
+                {
+                    var driven = terminals.Select(t => t.SourcePort).OfType<string>().ToHashSet(StringComparer.Ordinal);
+                    int dropped = ports.RemoveAll(p => !driven.Contains(p.Name));
+                    if (dropped > 0)
+                        _notes.Add($"{dropped} port(s) drive no terminal and are not in the magnetostatic problem.");
+                }
+            }
 
             // ── Notes on what was resolved and how ──────────────────────────────────────────
             if (unknownTemperature.Count > 0)
@@ -685,7 +733,12 @@ public static class Em3dGenerator
                                   : $": '{ground.Layer.Name}' is drawn or has metal below it, so it is " +
                                     "geometry rather than a floor."));
 
-            var problem = new Em3dProblem(solids, sheets, _materials, ports, airBox, frequency, _tempC);
+            var problem = new Em3dProblem(solids, sheets, _materials, ports, airBox, frequency, _tempC)
+            {
+                Type = setup.Problem3D,
+                Terminals = terminals,
+                GroundObjects = groundObjects,
+            };
             return new Em3dGenerationResult(problem, null, _notes)
             {
                 Warnings = _warnings,
@@ -695,6 +748,87 @@ public static class Em3dGenerator
                 NoAlpha = [.. noAlpha.Union(wireBuild?.NoAlpha ?? []).Order(StringComparer.Ordinal)],
                 UnknownTemperature = unknownTemperature,
             };
+        }
+
+        // ── Terminals (brief-em3d-22 R-em3d22-2) ─────────────────────────────────────────────
+
+        private void Net(string obj, string? net)
+        {
+            if (net is not { Length: > 0 }) return;
+            (_objectNets.TryGetValue(obj, out var set) ? set : _objectNets[obj] = new(StringComparer.Ordinal)).Add(net);
+        }
+
+        /// <summary>The nets of the pieces a via's footprint centre lands on, at its top and bottom.</summary>
+        private List<string> ViaLandingNets(LayoutShape shape, Dictionary<int, List<Piece>> pieces,
+                                            PlanarExtractor.StackBand top, PlanarExtractor.StackBand bottom)
+        {
+            var fp = ViaFootprint(shape).ToList();
+            if (fp.Count == 0) return [];
+            var (x0, y0, x1, y1) = fp[0].Bounds();
+            double cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+            var nets = new List<string>();
+            foreach (var band in new[] { top, bottom })
+                if (pieces.TryGetValue(band.Index, out var list))
+                    foreach (var p in list)
+                        if (p.Net is { } n && p.Poly.Contains(cx, cy) && !nets.Contains(n)) nets.Add(n);
+            return nets;
+        }
+
+        /// <summary>
+        /// R-em3d22-2a — each terminal's conductors (every one on its net), and the ground: the
+        /// setup's Ground3D net, else the ground-reference conductors and anything sharing their net.
+        /// Refuses a terminal whose net holds no conductor, naming it (R-em3d22-2c), and a magnetostatic
+        /// terminal whose source is not a port of the layout.
+        /// </summary>
+        private string? Terminals(List<Em3dSolid> solids, List<Em3dSheet> sheets, List<Em3dPort> ports, bool pecFloor,
+                                  out List<Em3dTerminal> terminals, out List<string> ground)
+        {
+            terminals = [];
+            ground = [];
+            var conductors = solids.Where(s => s.Role == Em3dRole.Conductor).Select(s => s.Name)
+                                   .Concat(sheets.Select(s => s.Name)).ToList();
+            List<string> OnNet(string net) =>
+                [.. conductors.Where(c => _objectNets.TryGetValue(c, out var nets) && nets.Contains(net))];
+
+            if (setup.Ground3D is { Length: > 0 } groundNet)
+            {
+                ground = OnNet(groundNet);
+                if (ground.Count == 0 && !pecFloor)
+                    return $"This setup's ground is net '{groundNet}' (Ground3D), and no conductor in the 3D problem is on it. " +
+                           "Name a net the layout draws, or leave Ground3D empty for the ground-reference conductors.";
+            }
+            else
+            {
+                var groundNets = _groundBandObjects.SelectMany(o => _objectNets.GetValueOrDefault(o) ?? []).ToHashSet(StringComparer.Ordinal);
+                ground = [.. conductors.Where(c => _groundBandObjects.Contains(c) ||
+                                                   (_objectNets.TryGetValue(c, out var nets) && nets.Overlaps(groundNets)))];
+            }
+
+            if (setup.Terminals3D.Count == 0)
+                return $"This {(setup.Problem3D == Em3dProblemType.Electrostatic ? "electrostatic" : "magnetostatic")} setup " +
+                       "names no terminal, so there is no matrix to compute. List each conductor's net under Terminals3D.";
+            foreach (var t in setup.Terminals3D)
+            {
+                var groundSet = ground;
+                var objects = OnNet(t.Net).Where(o => !groundSet.Contains(o)).ToList();
+                if (objects.Count == 0)
+                    return $"Terminal '{t.Name}' names net '{t.Net}', and no conductor in the 3D problem is on it" +
+                           (OnNet(t.Net).Count > 0 ? " that is not also the ground" : "") +
+                           ". A terminal is the metal of one net: name a net the layout (or a .wBond wire array) carries.";
+                string? source = null;
+                if (setup.Problem3D == Em3dProblemType.Magnetostatic)
+                {
+                    if (t.Source is not { Length: > 0 } src)
+                        return $"Magnetostatic terminal '{t.Name}' names no source. Its current needs a path in and back: " +
+                               "name the port whose sheet drives it (Source: the port's number).";
+                    source = src.StartsWith("port/", StringComparison.Ordinal) ? src : "port/" + src.Trim();
+                    if (ports.All(p => p.Name != source))
+                        return $"Terminal '{t.Name}' is driven through port '{src}', and the layout has no such port " +
+                               $"(it has {(ports.Count == 0 ? "none" : string.Join(", ", ports.Select(p => p.Number)))}).";
+                }
+                terminals.Add(new Em3dTerminal(t.Name, objects, source));
+            }
+            return null;
         }
 
         // ── Ports ────────────────────────────────────────────────────────────────────────────

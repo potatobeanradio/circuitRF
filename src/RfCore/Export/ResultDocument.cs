@@ -1083,7 +1083,22 @@ namespace RfCore.Export
         IReadOnlyList<string>                Notes,
         IReadOnlyList<string>                Warnings,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        string?                              Refusal);
+        string?                              Refusal)
+    {
+        /// <summary>brief-em3d-22 — a static setup's problem, terminals, ground and floating conductors;
+        /// null for a driven setup, so a driven report is unchanged.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public Em3dStaticJson? Static { get; init; }
+    }
+
+    /// <summary>brief-em3d-22 R-em3d22-2b — which conductors are in which terminal, which are the ground,
+    /// and which float, with what floating means for this problem.</summary>
+    public sealed record Em3dStaticJson(string Problem, IReadOnlyList<Em3dTerminalJson> Terminals,
+                                        IReadOnlyList<string> Ground, IReadOnlyList<string> Floating, string FloatingMeans);
+
+    /// <summary>One terminal: its matrix index, name, net, conductors and (magnetostatic) source port.</summary>
+    public sealed record Em3dTerminalJson(int Index, string Name, string Net, IReadOnlyList<string> Conductors,
+                                          [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Source);
 
     /// <summary>One sentence of em-3d.md §4.3's guidance, with the row it came from.</summary>
     public sealed record Em3dGuidanceJson(int Row, string Favours, string Sentence);

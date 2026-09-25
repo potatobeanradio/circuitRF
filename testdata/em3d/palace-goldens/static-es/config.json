@@ -1,0 +1,82 @@
+{
+  "Problem": {
+    "Type": "Electrostatic",
+    "Verbose": 2,
+    "Output": "postpro"
+  },
+  "Model": {
+    "Mesh": "model.msh",
+    "L0": 1E-06,
+    "Refinement": {
+      "Tol": 0.01,
+      "MaxIts": 0
+    }
+  },
+  "Domains": {
+    "Materials": [
+      {
+        "Attributes": [
+          1
+        ],
+        "Permeability": 1,
+        "Permittivity": 3.66,
+        "LossTan": 0.0037
+      },
+      {
+        "Attributes": [
+          2
+        ],
+        "Permeability": 1,
+        "Permittivity": 1,
+        "LossTan": 0
+      },
+      {
+        "Attributes": [
+          5
+        ],
+        "Permeability": 1,
+        "Permittivity": 1,
+        "LossTan": 0
+      }
+    ]
+  },
+  "Boundaries": {
+    "Ground": {
+      "Attributes": [
+        10
+      ]
+    },
+    "ZeroCharge": {
+      "Attributes": [
+        6,
+        7,
+        8,
+        9,
+        11
+      ]
+    },
+    "Terminal": [
+      {
+        "Index": 1,
+        "Attributes": [
+          3
+        ]
+      },
+      {
+        "Index": 2,
+        "Attributes": [
+          4
+        ]
+      }
+    ]
+  },
+  "Solver": {
+    "Order": 2,
+    "Device": "CPU",
+    "Electrostatic": {},
+    "Linear": {
+      "Tol": 1E-08,
+      "MaxIts": 400
+    }
+  }
+}

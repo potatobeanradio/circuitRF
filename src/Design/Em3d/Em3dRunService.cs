@@ -62,12 +62,36 @@ public static class Em3dRunService
     public static string ResultKey(EmSetup setup, Em3dSolver solver)
         => EmRunService.ResolveResultKey(setup) + "." + SolverToken(solver);
 
-    /// <summary>The <c>.npy</c>'s key: <see cref="ResultKey"/> + <see cref="EmRunService.NpyKeySuffix"/>.</summary>
-    public static string NpyKey(EmSetup setup, Em3dSolver solver) => ResultKey(setup, solver) + EmRunService.NpyKeySuffix;
+    /// <summary>The <c>.npy</c>'s key: <see cref="ResultKey"/> + <see cref="EmRunService.NpyKeySuffix"/> —
+    /// or, for a static setup, + <c>_es</c> / <c>_ms</c> (brief-em3d-22 R-em3d22-3c): a matrix is not S,
+    /// and a setup switched between the two keeps both results.</summary>
+    public static string NpyKey(EmSetup setup, Em3dSolver solver)
+        => ResultKey(setup, solver) + (StaticSuffix(setup) is { Length: > 0 } st ? st : EmRunService.NpyKeySuffix);
 
-    /// <summary>The run directory, kept after the run. <c>-o</c> does not move it (R-em3d7-5c).</summary>
+    /// <summary>The run directory, kept after the run. <c>-o</c> does not move it (R-em3d7-5c). A static
+    /// setup's is its own, <c>&lt;key&gt;.palace_es</c>, beside the driven one.</summary>
     public static string RunDirectory(string resultsRoot, EmSetup setup, Em3dSolver solver)
-        => Path.Combine(resultsRoot, ResultKey(setup, solver));
+        => Path.Combine(resultsRoot, ResultKey(setup, solver) + StaticSuffix(setup));
+
+    /// <summary>brief-em3d-22 — <c>_es</c>, <c>_ms</c>, or empty for a driven setup.</summary>
+    public static string StaticSuffix(EmSetup setup) => setup.Problem3D switch
+    {
+        Em3dProblemType.Electrostatic => "_es",
+        Em3dProblemType.Magnetostatic => "_ms",
+        _ => "",
+    };
+
+    /// <summary>
+    /// brief-em3d-22 R-em3d22-1b — a static problem runs on Palace only; on openEMS or Both it is refused
+    /// naming Palace, before anything is looked for or started. <c>check</c> reports the same sentence.
+    /// </summary>
+    public static string? StaticSolverRefusal(EmSetup setup)
+        => setup.IsStatic3D && setup.Solver3D is Em3dSolver.OpenEms or Em3dSolver.Both
+            ? $"This setup asks for a{(setup.Problem3D == Em3dProblemType.Electrostatic ? "n electrostatic" : " magnetostatic")} " +
+              $"solve on {(setup.Solver3D == Em3dSolver.Both ? "both solvers" : "openEMS")}, and only Palace solves the static " +
+              "problems: openEMS is a time-domain solver and has no static one. Set the setup's Solver3D to Palace, or run it " +
+              "with `circuitrf em --solver palace`."
+            : null;
 
     /// <summary>The Touchstone's path without its <c>.sNp</c> suffix: the override when the setup has
     /// one (<c>-o</c> moves the Touchstone only, as for planar), the solver-named stem otherwise.</summary>
@@ -132,6 +156,9 @@ public static class Em3dRunService
         var memory = new MemoryGate(confirmMemory);
         var solver = setup.Solver3D;
         bool both = solver == Em3dSolver.Both;
+
+        if (StaticSolverRefusal(setup) is { } staticOnly)
+            return log.Result(EmRunStatus.Refused, EmDiagnostics.Forwarded("em3d-static", staticOnly));
 
         // ── brief 6: every program found, validated and probed, before anything else ─────────
         var readiness = SolverDiscovery.ReadinessFor(solver);
@@ -366,7 +393,7 @@ public static class Em3dRunService
 
         // F0 Q6 — the void model is the flat-surface impedance: low by up to 10 % on a conductor whose
         // radius is under about ten skin depths at the bottom of the band.
-        if (ThinRoundConductors(problem) is { Count: > 0 } thin)
+        if (!problem.IsStatic && ThinRoundConductors(problem) is { Count: > 0 } thin)
             log.Notes.Add($"{string.Join(", ", thin.Select(n => $"'{n}'"))} {(thin.Count == 1 ? "is" : "are")} round and under ten " +
                           $"skin depths in radius at {Fmt(problem.Frequency.StartHz / 1e9)} GHz. Palace models a conductor's " +
                           "loss as a flat surface's, which on such a wire reads the resistance low by up to about 10 % at the " +
@@ -420,7 +447,8 @@ public static class Em3dRunService
         var cores = PhysicalCores.Current;
         int processes = maxCores ?? cores.Count;
         if (maxCores is null && !cores.Measured) log.Notes.Add($"Palace ran on {processes} process(es): {cores.How}.");
-        var tracker = new PalaceStageTracker(settings.AdaptiveMaxIterations, settings.SweepAdaptiveTol, control);
+        var tracker = new PalaceStageTracker(settings.AdaptiveMaxIterations, settings.SweepAdaptiveTol, control,
+                                             electrostatic: problem.Type == Em3dProblemType.Electrostatic);
         PalaceStep solved;
         string? mpiNote;
         try { solved = PalaceRun.Solve(runDir, plan.ConfigJson, palace.Path, processes, control, ct, out mpiNote, tracker, physical); }
@@ -430,13 +458,16 @@ public static class Em3dRunService
         }
         if (mpiNote is not null) log.Notes.Add(mpiNote);
         log.Notes.AddRange(tracker.Notes);
+        log.Warnings.AddRange(tracker.Warnings);
         if (solved.MemoryNote is not null) log.Notes.Add(solved.MemoryNote);
         if (solved.Cancelled) return Cancelled();
         if (!solved.Ok) return Failed(solved.Message!);
 
         control?.BeginStage(ReadingLabel);
-        var ports = problem.Ports.OrderBy(p => p.Number).ToList();
         string post = Path.Combine(runDir, PalaceConfigWriter.OutputDirectory);
+        if (problem.IsStatic)
+            return FinishStatic(problem, setup, resultsRoot, post, tracker, processes, log, palace, wall.Elapsed);
+        var ports = problem.Ports.OrderBy(p => p.Number).ToList();
         var s = PalaceRun.ReadPortS(Path.Combine(post, PalaceRun.PortSFile), [.. ports.Select(p => p.Number)], out string? readError);
         if (readError is not null) return Failed(readError);
         s = AtRequestedFrequencies(s, FrequenciesHz(problem.Frequency));
@@ -465,6 +496,83 @@ public static class Em3dRunService
         // R-em3d21-5a — the one line that says what the run cost, the last thing the run says.
         log.Notes.Add(CompletionSummary(summary, quality, wall.Elapsed));
         return new Leg(Me, EmRunStatus.Ok, null, data, npyPath, snpPath, "Palace " + palace.DescribeVersion());
+    }
+
+    /// <summary>
+    /// brief-em3d-22 R-em3d22-3c/4c — a static solve's matrices, read by column name, as a DataSet in
+    /// <c>results/</c> under <c>&lt;key&gt;.palace_es</c> or <c>_ms</c>. No Touchstone: a matrix is not S.
+    /// </summary>
+    private static Leg FinishStatic(Em3dProblem problem, EmSetup setup, string resultsRoot, string post,
+                                    PalaceStageTracker tracker, int processes, RunLog log, SolverInstallation palace, TimeSpan wall)
+    {
+        const Em3dSolver Me = Em3dSolver.Palace;
+        bool es = problem.Type == Em3dProblemType.Electrostatic;
+        int[] indices = [.. Enumerable.Range(1, problem.Terminals.Count)];
+        var (file, mutualFile, symbol, mutualSymbol, unit) = es
+            ? (PalaceRun.CapacitanceFile, PalaceRun.MutualCapacitanceFile, "C", "C_m", "(F)")
+            : (PalaceRun.InductanceFile, PalaceRun.MutualInductanceFile, "M", "M_m", "(H)");
+        var matrix = PalaceRun.ReadTerminalMatrix(Path.Combine(post, file), symbol, unit, indices, out string? error);
+        if (matrix is null) return Leg.Failed(Me, EmRunStatus.EngineError, EmDiagnostics.SolveFailed(error!));
+        var mutual = PalaceRun.ReadTerminalMatrix(Path.Combine(post, mutualFile), mutualSymbol, unit, indices, out string? mutualError);
+        if (mutual is null) log.Notes.Add($"The {(es ? "mutual capacitance" : "current-difference inductance")} form was not read: {mutualError}");
+
+        var notes = new List<string>();
+        string groundText = GroundText(problem, setup);
+        if (es)
+        {
+            notes.Add("C is the Maxwell capacitance matrix: C[i][i] is terminal i's capacitance to every other conductor " +
+                      "(the charge on i with i at 1 V and all others grounded), and C[i][j] <= 0 off the diagonal. " +
+                      "C_mutual is the lumped-circuit form: C_mutual[i][i] is i's capacitance to ground alone and " +
+                      "C_mutual[i][j] = -C[i][j] is the capacitor between i and j. " + groundText);
+            if (problem.Boundary.Faces is var f && new[] { f.XMin, f.XMax, f.YMin, f.YMax, f.ZMin, f.ZMax }.Contains(Em3dBoundaryKind.Absorbing))
+                notes.Add("An open (Absorbing) face of the air box is a zero-charge face in an electrostatic solve: no field " +
+                          "line ends on it, so every line ends on a conductor of the problem. Set a face to Pec to make it part " +
+                          "of the ground instead.");
+        }
+        else
+        {
+            notes.Add("L is the inductance matrix: L[i][i] is terminal i's self-inductance with its current through its " +
+                      "source port, and L[i][j] the mutual inductance between i and j. " + groundText);
+            notes.Add(Em3dStaticResult.InternalInductanceNote(problem));
+            if (problem.FloatingConductors() is { Count: > 0 } free)
+                notes.Add($"{free.Count} conductor(s) are in no terminal ({string.Join(", ", free.Take(6).Select(n => $"'{n}'"))}" +
+                          $"{(free.Count > 6 ? ", …" : "")}): they carry no source current, only the screening current a perfect " +
+                          "conductor carries.");
+        }
+        log.Notes.AddRange(notes);
+
+        var facts = PalaceRun.ReadFacts(post);
+        var data = Em3dStaticResult.Build(problem.Type, [.. problem.Terminals.Select(t => t.Name)], matrix, mutual, notes);
+        void Scalar(string name, double? v)
+        {
+            if (v is { } x) data.AddToGroup(PalaceGroup, name, DataCube.Scalar(x));
+        }
+        Scalar("MeshElementsInitial", facts.InitialElements);
+        Scalar("MeshElementsFinal",   facts.FinalElements);
+        Scalar("DegreesOfFreedom",    facts.DegreesOfFreedom);
+        Scalar("AdaptiveIterations",  facts.AdaptiveIterations);
+        log.Notes.Add($"Palace solved {problem.Terminals.Count} terminal(s) on {Count(facts.FinalElements)} elements " +
+                      $"({Count(facts.InitialElements)} initially, {facts.AdaptiveIterations ?? 0} adaptive pass(es)), " +
+                      $"{Count(facts.DegreesOfFreedom)} unknowns, {processes} process(es).");
+
+        string? npyPath = WriteNpy(resultsRoot, NpyKey(setup, Me), data, log);
+        log.Notes.Add(CompletionSummary(tracker.Summary, setup.Palace?.Quality ?? PalaceQuality.Standard, wall));
+        return new Leg(Me, EmRunStatus.Ok, null, data, npyPath, null, "Palace " + palace.DescribeVersion());
+    }
+
+    /// <summary>What the matrix is referred to, in a sentence.</summary>
+    private static string GroundText(Em3dProblem problem, EmSetup setup)
+    {
+        bool pecFace = new[] { problem.Boundary.Faces.XMin, problem.Boundary.Faces.XMax, problem.Boundary.Faces.YMin,
+                               problem.Boundary.Faces.YMax, problem.Boundary.Faces.ZMin, problem.Boundary.Faces.ZMax }
+                       .Contains(Em3dBoundaryKind.Pec);
+        string who = setup.Ground3D is { Length: > 0 } g ? $"net '{g}'" : "the ground-reference conductors";
+        var parts = new List<string>();
+        if (problem.GroundObjects.Count > 0) parts.Add($"{who} ({problem.GroundObjects.Count} conductor(s))");
+        if (pecFace) parts.Add("the air box's PEC face(s)");
+        return parts.Count == 0
+            ? "Nothing in this problem is ground, so the matrix is referred to no conductor outside its terminals."
+            : $"The reference (ground) is {string.Join(" and ", parts)}.";
     }
 
     /// <summary>
@@ -918,6 +1026,9 @@ public static class Em3dRunService
     public static Em3dMemoryVerdict PalaceMemoryVerdict(Em3dProblem problem, EmSetup setup, EmLayoutSource source,
                                                         PalaceSettings settings, long physicalBytes)
     {
+        // brief-em3d-22 — the volume estimate prices elements per WAVELENGTH, which a static solve does
+        // not have; its check is the one after meshing, on Gmsh's own count.
+        if (problem.IsStatic) return Em3dMemoryVerdict.Unknown;
         long? estimate = EstimatePalace(problem, settings)?.MemoryBytes;
         if (estimate is not { } e || physicalBytes <= 0 || e <= Em3dMemoryVerdict.WarnFraction * physicalBytes)
             return Em3dMemoryVerdict.Evaluate(estimate, physicalBytes, []);

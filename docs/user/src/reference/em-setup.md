@@ -587,6 +587,41 @@ part way through, the other's result is still written and no comparison is. The 
 at the same frequencies — they always are when both come from one setup — and a comparison is never
 interpolated.
 
+### Package capacitance and inductance {#package-rlc}
+
+A Palace setup can solve for a **matrix** instead of S-parameters. The **Problem** picker
+(`Problem3D`) is *Driven* (S-parameters, the default and omitted from the file), *Electrostatic* (the
+capacitance matrix) or *Magnetostatic* (the inductance matrix). The two static problems run on Palace
+only; a setup naming openEMS or both solvers is refused, and so is its `check`. They ignore the
+frequency sweep and the port impedances, which are kept but not read (`check` says so).
+
+**Terminals** (`Terminals3D`) are the matrix's rows and columns, in order. Each names a **net** — a net
+of the layout, or a `.wBond` wire array — and every conductor on it (traces, vias, bond wires) belongs to
+that terminal. **Ground net** (`Ground3D`) is the reference; left blank it is the technology's
+ground-reference conductors, and the floor of the air box when that floor is a ground plane.
+
+```
+"Problem3D": "Electrostatic",
+"Terminals3D": [ { "Name": "RF_IN", "Net": "RF_IN" }, { "Name": "VDD", "Net": "VDD" } ],
+"Ground3D": "GND"
+```
+
+- **Electrostatic** gives `C`, the *Maxwell* matrix: `C[i][i]` is terminal i's capacitance to every
+  other conductor, and each off-diagonal entry is negative. It also gives `C_mutual`, the
+  lumped-circuit form: `C_mutual[i][i]` is i's capacitance to ground alone and `C_mutual[i][j]` is the
+  capacitor you would draw between i and j. **Every conductor must be in a terminal or be ground**:
+  Palace has no floating conductor, so an unlisted one is refused by name rather than silently grounded.
+- **Magnetostatic** gives `L`. Each terminal also names a **source port** (`Source`, the port's number):
+  the port's sheet is where its current enters and returns, so the path is port → the terminal's
+  metal → back through ground. A terminal without one is refused. Conductors are surfaces, so this is
+  the **external** (RF) inductance; the run's notes give the size of the internal term the DC value
+  would add for the thickest round conductor.
+
+The air box's open faces are zero-charge (no field line ends on them) in an electrostatic solve, and a
+static setup's default padding is the structure's own size rather than a wavelength. The result is
+`results/<name>.palace_es.npy` (or `_ms`) and **no Touchstone file**; `circuitrf em` prints the matrix
+in engineering units, and `circuitrf explain` lists which conductors are in which terminal.
+
 ## Installing the 3D solvers by hand {#install-3d-solvers}
 
 A 3D setup (one whose `Solver3D` names Palace or openEMS) runs a solver circuitRF does not include. You
