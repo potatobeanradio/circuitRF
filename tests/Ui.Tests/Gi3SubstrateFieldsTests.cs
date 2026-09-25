@@ -274,8 +274,14 @@ public class Gi3SubstrateFieldsTests : IDisposable
 
         var tip = Regex.Match(element.Value, @"ToolTip\.Tip=""([^""]+)""");
         Assert.True(tip.Success, $"The {tag} field has no ToolTip.Tip.");
-        Assert.Contains(mustSay, tip.Groups[1].Value, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(mustSay, StandingTip(tip.Groups[1].Value), StringComparison.OrdinalIgnoreCase);
     }
+
+    /// <summary>brief-em3d-2: the σ box's tooltip is a binding, because a row whose named material
+    /// states σ shows the material's name instead. What it says the rest of the time is the row VM's
+    /// <c>SigmaFieldTip</c>, and that standing text is what these tests read.</summary>
+    private static string StandingTip(string xamlValue)
+        => xamlValue == "{Binding SigmaTip}" ? StackupLayerRowViewModel.SigmaFieldTip : xamlValue;
 
     /// <summary>R-gi3-3's specific requirement: say what a blank conductivity actually costs, because
     /// that is the error someone meets and the validator already reports it.</summary>
@@ -285,7 +291,7 @@ public class Gi3SubstrateFieldsTests : IDisposable
         string xaml = File.ReadAllText(Path.Combine(
             RepoRoot(), "src", "Ui", "Views", "Layout", "TechEditorView.axaml"));
         var element = Regex.Match(xaml, @"<TextBox[^>]*Tag=""Sigma""[^>]*>", RegexOptions.Singleline);
-        var tip = Regex.Match(element.Value, @"ToolTip\.Tip=""([^""]+)""").Groups[1].Value;
+        var tip = StandingTip(Regex.Match(element.Value, @"ToolTip\.Tip=""([^""]+)""").Groups[1].Value);
 
         Assert.Contains("REFUSED", tip, StringComparison.Ordinal);
 

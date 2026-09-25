@@ -902,10 +902,19 @@ internal static class CliDiagnostics
             ("path", path), ("kind", kind), ("name", name), ("reason", reason));
 
     /// <summary><c>TechValidation.Analyze</c>'s finding, with its <c>TechProblemArea</c> kept as an
-    /// argument rather than flattened into the sentence (R-aut4-4).</summary>
-    public static Diagnostic CheckTechProblem(string path, string area, string message) => Diagnostic.Create(
+    /// argument rather than flattened into the sentence (R-aut4-4).
+    ///
+    /// <para>brief-em3d-2: at the severity the VALIDATOR states — warning for every problem that
+    /// predates severities, so nothing earlier moves — and with the validator's own rule id
+    /// (<c>tech.material.unknown</c>) as the <c>rule</c> argument, null where the problem has
+    /// none. One id for every technology finding, as before; a caller filtering on a rule reads
+    /// <c>rule</c>.</para></summary>
+    public static Diagnostic CheckTechProblem(
+        string path, string area, string message,
+        DiagnosticSeverity severity = DiagnosticSeverity.Warning, string? rule = null) => Diagnostic.Create(
         "check.tech.problem", DiagnosticSeverity.Warning,
-        "{path}: {message}", ("path", path), ("area", area), ("message", message));
+        "{path}: {message}", ("path", path), ("area", area), ("message", message), ("rule", rule))
+        with { Severity = severity };
 
     /// <summary>Whatever <c>TechnologyResolver</c> or <c>EmSetupResolver</c> had to say. Both return
     /// diagnostics as strings and neither has typed values to hand, so the sentence is forwarded.</summary>

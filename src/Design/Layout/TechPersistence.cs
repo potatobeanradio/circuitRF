@@ -41,6 +41,15 @@ public sealed class CtechFile
     /// <summary>The process's own named constants, which a <see cref="DeviceRule"/>'s parameter
     /// formula may refer to (rev 1, additive).</summary>
     public List<TechConstant>? Constants { get; set; }
+
+    /// <summary>The process's named materials (brief-em3d-2 R-em3d2-1b, additive) — nullable for
+    /// <see cref="Constants"/>' reason: absent in every .ctech written before the list existed, and
+    /// omitted on write when empty so every one of those round-trips byte-identically.</summary>
+    public List<TechMaterial>? Materials { get; set; }
+
+    /// <summary>3D-only solids (brief-em3d-2 R-em3d2-3b, additive), omitted when empty — an older
+    /// build ignores the key and the planar extractors never see one.</summary>
+    public List<TechBody>? Bodies { get; set; }
 }
 
 /// <summary>Reads and writes .ctech files. Framework-free (no Avalonia / Skia).</summary>
@@ -68,6 +77,20 @@ public static class TechPersistence
 
     public static Technology Deserialize(string json)
     {
+        var tech = DeserializeUnresolved(json);
+        ResolveMaterials(tech);
+        return tech;
+    }
+
+    /// <summary>
+    /// The technology exactly as the file states it, <b>before</b> any stackup entry takes its named
+    /// material's values (brief-em3d-2 R-em3d2-4a). For <see cref="TechValidation.AnalyzeRaw"/>
+    /// alone: after <see cref="Deserialize"/> an entry's numbers always equal its material's, so the
+    /// "a hand edit made them disagree" warning can only be computed from this. Nothing that uses a
+    /// technology may load it this way.
+    /// </summary>
+    public static Technology DeserializeUnresolved(string json)
+    {
         var file = JsonSerializer.Deserialize<CtechFile>(json, JsonOpts)
             ?? throw new InvalidDataException("Failed to deserialize .ctech file.");
 
@@ -77,6 +100,39 @@ public static class TechPersistence
                 $"expected {CurrentFormatVersion}. Update the application.");
 
         return FromFileModel(file);
+    }
+
+    /// <summary>
+    /// brief-em3d-2 R-em3d2-2b — <b>the one place a named material reaches a stackup entry's
+    /// numbers.</b> An entry naming a material has its own <c>Epsr</c>/<c>TanD</c>/<c>Mur</c>
+    /// (dielectric) or <c>SigmaSm</c> (conductor or via, from <see cref="TechMaterial.Sigma20"/>, at
+    /// 20 °C) overwritten with the material's, so every existing reader of those four numbers is
+    /// correct with no change — and a save writes numbers equal to the material's, which is what an
+    /// older build then reads.
+    ///
+    /// <para>A property the material leaves null leaves the entry's own number alone (R-em3d2-2c),
+    /// and a name the technology does not define leaves all four alone (R-em3d2-2d) — both
+    /// reported by <c>check</c>, neither an exception, because a typo must not make the whole
+    /// technology unopenable. Public so an editor that changes a material or an entry's name can
+    /// re-apply the same rule rather than writing a second copy of it.</para>
+    /// </summary>
+    public static void ResolveMaterials(Technology tech)
+    {
+        if (tech.Materials.Count == 0) return;
+        foreach (var layer in tech.Stackup.Layers)
+        {
+            if (tech.FindMaterial(layer.Material) is not { } m) continue;
+            if (layer.Kind == StackupKind.Dielectric)
+            {
+                if (m.Epsr is { } epsr) layer.Epsr = epsr;
+                if (m.TanD is { } tand) layer.TanD = tand;
+                if (m.Mur  is { } mur)  layer.Mur  = mur;
+            }
+            else if (m.Sigma20 is { } sigma)
+            {
+                layer.SigmaSm = sigma;
+            }
+        }
     }
 
     public static Technology LoadFromFile(string path)
@@ -101,6 +157,8 @@ public static class TechPersistence
         LvsTolerances        = tech.LvsTolerances.Count > 0 ? [.. tech.LvsTolerances] : null,
         DeviceRules          = tech.DeviceRules.Count > 0 ? [.. tech.DeviceRules] : null,
         Constants            = tech.Constants.Count > 0 ? [.. tech.Constants] : null,
+        Materials            = tech.Materials.Count > 0 ? [.. tech.Materials] : null,
+        Bodies               = tech.Bodies.Count > 0 ? [.. tech.Bodies] : null,
     };
 
     private static Technology FromFileModel(CtechFile file)
@@ -144,5 +202,7 @@ public static class TechPersistence
         LvsTolerances        = file.LvsTolerances is { Count: > 0 } lt ? [.. lt] : [],
         DeviceRules          = file.DeviceRules is { Count: > 0 } dr ? [.. dr] : [],
         Constants            = file.Constants is { Count: > 0 } tc ? [.. tc] : [],
+        Materials            = file.Materials is { Count: > 0 } tm ? [.. tm] : [],
+        Bodies               = file.Bodies is { Count: > 0 } tb ? [.. tb] : [],
     };
 }

@@ -583,12 +583,19 @@ internal static class Check
 
     private static void CheckTechnology(string path, Findings f)
     {
-        Technology tech;
-        try { tech = TechPersistence.LoadFromFile(path); }
+        Technology tech, raw;
+        try
+        {
+            string json = GzipTextFile.ReadAllTextAutoGzip(path);
+            tech = TechPersistence.Deserialize(json);
+            // brief-em3d-2 R-em3d2-4a: the file AS WRITTEN, for the one rule a loaded technology
+            // can no longer see — a named material's numbers disagreeing with the entry's own.
+            raw  = TechPersistence.DeserializeUnresolved(json);
+        }
         catch (Exception ex) { f.Add(CliDiagnostics.CheckUnreadable(path, ex.Message)); return; }
 
-        foreach (var p in TechValidation.Analyze(tech))
-            f.Add(CliDiagnostics.CheckTechProblem(path, p.Area.ToString(), p.Message));
+        foreach (var p in TechValidation.Analyze(tech).Concat(TechValidation.AnalyzeRaw(raw)))
+            f.Add(CliDiagnostics.CheckTechProblem(path, p.Area.ToString(), p.Message, p.Severity, p.Id));
     }
 
     private static void CheckEmSetup(string path, Findings f, TechnologyCache cache)

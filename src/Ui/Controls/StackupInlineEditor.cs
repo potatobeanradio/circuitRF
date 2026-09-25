@@ -135,6 +135,10 @@ internal sealed class StackupInlineEditor
 
         var row = RowFor(vm, hit.LayerName);
         if (row is null) return null;
+        // brief-em3d-2 R-em3d2-5c: a number the entry's named material states is read-only on the
+        // card, so it is not typeable here either — a box that opened and then silently reverted on
+        // commit would be the card and the drawing disagreeing about what can be edited.
+        if (row.IsLockedByMaterial(hit.Field)) return null;
         if (SeedFor(row, hit.Field) is not { } seed) return null;
 
         return new StackupEditTarget(

@@ -143,6 +143,9 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
         OnPropertyChanged(nameof(TanDNeeds));
         OnPropertyChanged(nameof(MurNeeds));
         OnPropertyChanged(nameof(WallThicknessNeeds));
+        OnPropertyChanged(nameof(EpsrTip));
+        OnPropertyChanged(nameof(TanDTip));
+        OnPropertyChanged(nameof(MurTip));
         OnPropertyChanged(nameof(ThicknessNeedsValue));
         OnPropertyChanged(nameof(SigmaNeedsValue));
         OnPropertyChanged(nameof(EpsrNeedsValue));
@@ -181,6 +184,107 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
             StagedSigmaSm = metal.SigmaSm.ToString("0.###e+0", Inv);
             CommitSigmaSm();
         }
+    }
+
+    // ── brief-em3d-2 R-em3d2-5c — the named material ─────────────────────────────────────────
+    //
+    // The technology's own Materials, plus "(none)". While one is named, each of this row's numbers
+    // that the material STATES shows the material's value and is read-only, with a tooltip naming
+    // the material; a number the material leaves unstated stays the entry's own and stays editable
+    // (R-em3d2-2c). Choosing "(none)" makes them editable again and keeps the values that were
+    // showing, so a save always writes numbers equal to the material's.
+    //
+    // The values reach the row through TechPersistence.ResolveMaterials — the loader's own rule,
+    // applied once more — never by this file copying numbers: one door.
+
+    /// <summary>The picker's "no material" row.</summary>
+    internal const string MaterialNone = SpanNone;
+
+    public IReadOnlyList<string> MaterialChoices =>
+        [MaterialNone, .. _owner.Working.Materials.Select(m => m.Name)
+                                     .Where(n => n is { Length: > 0 })
+                                     .Distinct(StringComparer.OrdinalIgnoreCase)];
+
+    /// <summary>Whether the technology has any named material to offer — the picker is hidden
+    /// otherwise, since "(none)" alone is not a choice.</summary>
+    public bool HasMaterialChoices => _owner.Working.Materials.Count > 0;
+
+    private string _selectedMaterial = MaterialNone;
+    public string SelectedMaterial
+    {
+        get => _selectedMaterial;
+        set
+        {
+            if (!SetProperty(ref _selectedMaterial, value ?? MaterialNone) || _isRefreshing) return;
+            string? name = _selectedMaterial == MaterialNone ? null : _selectedMaterial;
+            if (string.Equals(Layer.Material, name, StringComparison.Ordinal)) return;
+
+            var before = _owner.SnapshotJson();
+            Layer.Material = name;
+            TechPersistence.ResolveMaterials(_owner.Working);
+            _owner.CommitEdit(before, name is null
+                ? $"Clear the material of {Layer.Name}"
+                : $"Make {Layer.Name} of {name}");
+            RefreshFromModel();
+        }
+    }
+
+    /// <summary>The material this row names AND the technology defines, or null. An unknown name
+    /// locks nothing: its numbers are the entry's own, which is what the loader used.</summary>
+    private TechMaterial? NamedMaterial => _owner.Working.FindMaterial(Layer.Material);
+
+    /// <summary>Whether <paramref name="field"/> shows the named material's value and is therefore
+    /// read-only. Also what the inline editor on the cross-section asks before opening a box.</summary>
+    internal bool IsLockedByMaterial(StackupField field)
+    {
+        if (NamedMaterial is not { } m) return false;
+        return field switch
+        {
+            StackupField.Epsr  => IsDielectric && m.Epsr is not null,
+            StackupField.TanD  => IsDielectric && m.TanD is not null,
+            StackupField.Mur   => IsDielectric && m.Mur  is not null,
+            StackupField.Sigma => !IsDielectric && m.Sigma20 is not null,
+            _                  => false,
+        };
+    }
+
+    public bool EpsrLocked  => IsLockedByMaterial(StackupField.Epsr);
+    public bool TanDLocked  => IsLockedByMaterial(StackupField.TanD);
+    public bool MurLocked   => IsLockedByMaterial(StackupField.Mur);
+    public bool SigmaLocked => IsLockedByMaterial(StackupField.Sigma);
+    public bool SigmaPresetEnabled => !SigmaLocked;
+
+    private string LockedTip(StackupField field)
+        => $"Set by material \"{NamedMaterial?.Name}\" in this technology. Choose (none) as the " +
+           "material to type a value of the entry's own.";
+
+    /// <summary>The tooltip each box shows: the material that sets it when locked, else the
+    /// readiness hint it always showed.</summary>
+    public string? EpsrTip  => EpsrLocked  ? LockedTip(StackupField.Epsr)  : EpsrNeeds;
+    public string? TanDTip  => TanDLocked  ? LockedTip(StackupField.TanD)  : TanDNeeds;
+    public string? MurTip   => MurLocked   ? LockedTip(StackupField.Mur)   : MurNeeds;
+    public string? SigmaTip => SigmaLocked ? LockedTip(StackupField.Sigma) : SigmaFieldTip;
+
+    /// <summary>The σ box's standing tooltip, which predates the material picker.</summary>
+    internal const string SigmaFieldTip =
+        "Conductor conductivity at 20 °C, in siemens per metre. It sets conductor loss and skin depth — " +
+        "how deep the current actually flows at frequency, and therefore how much of this metal is doing " +
+        "any work. A conductor with a conductivity of zero or less is REFUSED by the EM path rather than " +
+        "solved, which is what an imported board hits if this is left blank.";
+
+    private void RaiseMaterialViews()
+    {
+        OnPropertyChanged(nameof(MaterialChoices));
+        OnPropertyChanged(nameof(HasMaterialChoices));
+        OnPropertyChanged(nameof(EpsrLocked));
+        OnPropertyChanged(nameof(TanDLocked));
+        OnPropertyChanged(nameof(MurLocked));
+        OnPropertyChanged(nameof(SigmaLocked));
+        OnPropertyChanged(nameof(SigmaPresetEnabled));
+        OnPropertyChanged(nameof(EpsrTip));
+        OnPropertyChanged(nameof(TanDTip));
+        OnPropertyChanged(nameof(MurTip));
+        OnPropertyChanged(nameof(SigmaTip));
     }
 
     /// <summary>brief-technology-editor-units-and-layers.md R-tec-1: settable ONLY on conductor rows
@@ -522,6 +626,11 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
         StagedMur            = Layer.Mur.ToString("0.####", Inv);
         StagedSigmaSm        = Layer.SigmaSm.ToString("0.###e+0", Inv);
         SelectedConductorMaterial = ConductorMaterials.Match(Layer.SigmaSm)?.Name ?? ConductorMaterials.Custom;
+        // An unknown name shows as itself rather than as "(none)": the row must not claim a state
+        // the file does not hold. check reports it (tech.material.unknown).
+        SelectedMaterial     = Layer.Material is { Length: > 0 } mat
+            ? (NamedMaterial?.Name ?? mat) : MaterialNone;
+        RaiseMaterialViews();
         IsGroundReference    = Layer.IsGroundReference;
         SelectedSheetAt      = Layer.SheetAt ?? ConductorSheetSurface.Bottom;
         SelectedPresentWith  = Layer.PresentWithLayer is { Length: > 0 } p ? p : SpanNone;
@@ -699,6 +808,7 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
 
     public void CommitEpsr()
     {
+        if (EpsrLocked) { RefreshFromModel(); return; }   // the material's value; see R-em3d2-5c
         if (!NumericText.TryParseDouble(StagedEpsr, out var v))
         { RefreshFromModel(); return; }
         if (System.Math.Abs(v - Layer.Epsr) < 1e-12) return;
@@ -710,6 +820,7 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
 
     public void CommitTanD()
     {
+        if (TanDLocked) { RefreshFromModel(); return; }   // the material's value; see R-em3d2-5c
         if (!NumericText.TryParseDouble(StagedTanD, out var v))
         { RefreshFromModel(); return; }
         if (System.Math.Abs(v - Layer.TanD) < 1e-15) return;
@@ -721,6 +832,7 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
 
     public void CommitMur()
     {
+        if (MurLocked) { RefreshFromModel(); return; }   // the material's value; see R-em3d2-5c
         if (!NumericText.TryParseDouble(StagedMur, out var v))
         { RefreshFromModel(); return; }
         if (System.Math.Abs(v - Layer.Mur) < 1e-12) return;
@@ -732,6 +844,7 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
 
     public void CommitSigmaSm()
     {
+        if (SigmaLocked) { RefreshFromModel(); return; }   // the material's value; see R-em3d2-5c
         if (!NumericText.TryParseDouble(StagedSigmaSm, out var v))
         { RefreshFromModel(); return; }
         if (System.Math.Abs(v - Layer.SigmaSm) < 1e-6) return;

@@ -148,6 +148,24 @@ public sealed class StackupLayer
     public string Name { get; set; } = "";
     public long ThicknessDbu { get; set; }
 
+    /// <summary>
+    /// brief-em3d-2 R-em3d2-2: the <see cref="TechMaterial.Name"/> of the material this entry is
+    /// made of, or null for "this entry's own four numbers are the whole statement" — which is what
+    /// every technology written before this field means.
+    ///
+    /// <para><b>Resolved on read, in <c>TechPersistence</c> and nowhere else.</b> The loader
+    /// overwrites <see cref="Epsr"/>/<see cref="TanD"/>/<see cref="Mur"/> (a dielectric) or
+    /// <see cref="SigmaSm"/> (a conductor or via, from <see cref="TechMaterial.Sigma20"/>, at 20 °C)
+    /// with the named material's values, so the ~30 readers of those four numbers are correct with
+    /// no change. <b>Nothing else may read this field to pick a value</b>; a source scan holds that
+    /// (it may be read by <c>TechPersistence</c>, <c>TechValidation</c>, the stackup editor, and the
+    /// 3D generator). A name the technology does not define leaves the entry's own numbers in force
+    /// and is a <c>check</c> error, never an exception.</para>
+    ///
+    /// <para>Additive, nullable, no <c>.ctech</c> <c>FormatVersion</c> bump.</para>
+    /// </summary>
+    public string? Material { get; set; }
+
     // Dielectric
     public double Epsr { get; set; } = 1.0;
     public double TanD { get; set; }
@@ -615,6 +633,31 @@ public sealed class Technology
     /// </summary>
     public List<TechConstant> Constants { get; set; } = [];
 
+    /// <summary>
+    /// The process's named materials (brief-em3d-2 R-em3d2-1, docs/design/em-3d.md §4.1a) — what a
+    /// <see cref="StackupLayer.Material"/> or a <see cref="TechBody.Material"/> names. Empty is
+    /// ordinary and is every technology written before the list existed.
+    /// </summary>
+    public List<TechMaterial> Materials { get; set; } = [];
+
+    /// <summary>
+    /// 3D-only solids the stackup has no row for — mould compound, a lid, a die attach
+    /// (brief-em3d-2 R-em3d2-3). <b>No planar extractor reads this list</b>, and a separate list
+    /// rather than a new <see cref="StackupKind"/> is what makes that true by construction: the
+    /// planar path walks <see cref="Stackup"/> and has nothing to skip.
+    /// </summary>
+    public List<TechBody> Bodies { get; set; } = [];
+
+    /// <summary>The material <paramref name="name"/> names, compared ordinal and case-insensitive
+    /// (as <c>WireMaterials.ByName</c> does), or null for none/unknown.</summary>
+    public TechMaterial? FindMaterial(string? name)
+    {
+        if (string.IsNullOrEmpty(name)) return null;
+        foreach (var m in Materials)
+            if (string.Equals(m.Name, name, StringComparison.OrdinalIgnoreCase)) return m;
+        return null;
+    }
+
     /// <summary>The stipple <paramref name="name"/> resolves to, or null for none/unknown.
     ///
     /// <para>A name that resolves to nothing yields null rather than throwing: a layer referring to a
@@ -667,6 +710,112 @@ public sealed class TechConstant
     /// <summary>The unit the expression is written in — <c>Ohm</c>, <c>F</c>. Null is a bare
     /// number, which is SI by construction.</summary>
     public string? Unit { get; set; }
+}
+
+// ── Named materials and 3D bodies (brief-em3d-2, docs/design/em-3d.md §4.1a) ─────────────────
+//
+// There is no 3D materials file: a 3D problem takes its materials from the same .ctech the layout
+// and the planar solvers read. Every property is NULLABLE and null means NOT STATED — a material is
+// not a dielectric or a conductor by nature (gold is a conductor in one place and nothing in
+// another), so what it must state is decided where it is USED, and reported there by `check`.
+
+/// <summary>One named material of the process.</summary>
+public sealed class TechMaterial
+{
+    /// <summary>The key; unique within the technology, compared ordinal and case-insensitive.</summary>
+    public string Name { get; set; } = "";
+
+    /// <summary>Relative permittivity. Required where the material is used as a dielectric.</summary>
+    public double? Epsr { get; set; }
+
+    /// <summary>Optional direction-dependent εr, xx/yy/zz, for laminates and crystalline
+    /// substrates. When present a 3D solver reads this and not <see cref="Epsr"/>; the planar
+    /// solvers, which have no direction, always read <see cref="Epsr"/>.</summary>
+    public double[]? EpsrTensor { get; set; }
+
+    /// <summary>Loss tangent.</summary>
+    public double? TanD { get; set; }
+
+    /// <summary>Relative permeability.</summary>
+    public double? Mur { get; set; }
+
+    /// <summary>Conductivity at 20 °C, S/m. Required where the material is used as a conductor.
+    /// A stackup entry naming this material takes THIS value as its σ — at 20 °C, so no planar
+    /// answer moves; a 3D setup states its own operating temperature.</summary>
+    public double? Sigma20 { get; set; }
+
+    /// <summary>Temperature coefficient of resistance at 20 °C, 1/K — the pair
+    /// <see cref="Sigma20"/> makes, as a bond-wire metal already carries it:
+    /// σ(T) = σ₂₀ / (1 + α₂₀·(T − 20)).</summary>
+    public double? Alpha20 { get; set; }
+
+    /// <summary>
+    /// <b>A placeholder: carried and validated, read by nothing yet.</b> Electrical conductivity
+    /// against temperature, as (°C, S/m) points in increasing temperature — for the thermal solver
+    /// (em-3d.md §9) and for any electrical solve that later wants more than the linear
+    /// <see cref="Alpha20"/> model.
+    ///
+    /// <para>Every solver today reads <see cref="Sigma20"/> (and, for bond wires, <see cref="Alpha20"/>).
+    /// How the table and the α₂₀ pair relate when both are stated — which wins, and whether they must
+    /// agree at 20 °C — is deliberately undecided, and <c>check</c> says so at info rather than
+    /// letting a stated table look like it is in force.</para>
+    /// </summary>
+    public List<TechTemperaturePoint>? SigmaVsTemp { get; set; }
+
+    /// <summary>Thermal conductivity, W/(m·K), for the thermal solver (em-3d.md §9). Carried, read
+    /// by nothing yet.</summary>
+    public double? ThermalK { get; set; }
+
+    /// <summary>
+    /// <b>A placeholder: carried and validated, read by nothing yet.</b> Thermal conductivity
+    /// against temperature, as (°C, W/(m·K)) points in increasing temperature — the k(T) a
+    /// substrate's loss of conductivity as it heats needs (em-3d.md §9.2). How it relates to
+    /// <see cref="ThermalK"/> is decided with the thermal solver, not here.
+    /// </summary>
+    public List<TechTemperaturePoint>? ThermalKVsTemp { get; set; }
+
+    /// <summary>Mass density, kg/m³ — for the thermal solver and for parity with a bond-wire
+    /// metal.</summary>
+    public double? DensityKgM3 { get; set; }
+
+    /// <summary>Specific heat, J/(kg·K), for the thermal solver. Carried, read by nothing yet.</summary>
+    public double? SpecificHeat { get; set; }
+}
+
+/// <summary>One point of a temperature-dependent property table: the property's value at
+/// <see cref="TempC"/>. The unit of <see cref="Value"/> is the property's own.</summary>
+public sealed class TechTemperaturePoint
+{
+    /// <summary>Temperature, °C.</summary>
+    public double TempC { get; set; }
+
+    /// <summary>The property's value at <see cref="TempC"/>, in the property's own unit.</summary>
+    public double Value { get; set; }
+}
+
+/// <summary>
+/// A 3D-only solid (brief-em3d-2 R-em3d2-3): something that exists in a package but has no row in
+/// a planar stackup. Read by the 3D generator only; the planar extractors never see one.
+/// </summary>
+public sealed class TechBody
+{
+    /// <summary>Unique among bodies AND stackup entries, because the 3D generator names solids by
+    /// it.</summary>
+    public string Name { get; set; } = "";
+
+    /// <summary>A <see cref="Technology.Materials"/> name. Required.</summary>
+    public string Material { get; set; } = "";
+
+    /// <summary>A stackup entry's <see cref="StackupLayer.Name"/>: the body's bottom face is that
+    /// entry's top.</summary>
+    public string SitsOn { get; set; } = "";
+
+    /// <summary>The body's height.</summary>
+    public long ThicknessDbu { get; set; }
+
+    /// <summary>The drawing layers whose shapes give the body's outline. <b>Empty means the whole
+    /// problem laterally</b> — an overmold.</summary>
+    public List<LayerKey> OutlineLayers { get; set; } = [];
 }
 
 /// <summary>

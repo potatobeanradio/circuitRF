@@ -2,6 +2,7 @@
 // (docs/design/layout-view.md §2.4 "Missing tech file").
 
 using System.Linq;
+using CircuitRF.Diagnostics;
 
 namespace CircuitRF.Design.Layout;
 
@@ -12,7 +13,15 @@ namespace CircuitRF.Design.Layout;
 public enum TechProblemArea { Layers, Stackup, Drc, Interchange }
 
 /// <summary>One technology-consistency problem, and the tab that owns it.</summary>
-public sealed record TechProblem(TechProblemArea Area, string Message, TechFix? Fix = null);
+/// <param name="Id">A stable rule id (<c>tech.material.unknown</c>), or null for the problems that
+/// predate ids — which <c>check</c> reports under its one <c>check.tech.problem</c> id either way,
+/// carrying this as its <c>rule</c> argument.</param>
+/// <param name="Severity">How serious. <b>Warning is what every problem without an id has always
+/// been</b>, so the default changes nothing; brief-em3d-2's material and body rules state their
+/// own.</param>
+public sealed record TechProblem(
+    TechProblemArea Area, string Message, TechFix? Fix = null,
+    string? Id = null, DiagnosticSeverity Severity = DiagnosticSeverity.Warning);
 
 /// <summary>
 /// A one-step repair a problem can offer — attach <paramref name="Layer"/> to the conductor named
@@ -70,9 +79,11 @@ public static class TechValidation
     }
 
     /// <summary>The messages alone, in <see cref="Analyze"/>'s order — the long-standing shape of
-    /// this API, kept for every caller that only wants to say what is wrong.</summary>
+    /// this API, kept for every caller that only wants to say what is wrong. <b>Info findings are
+    /// left out</b> (brief-em3d-2): they say what the technology does, not what is wrong with it, and
+    /// every caller here counts or posts what it gets as problems.</summary>
     public static IReadOnlyList<string> Validate(Technology tech)
-        => [.. Analyze(tech).Select(p => p.Message)];
+        => [.. Analyze(tech).Where(p => p.Severity != DiagnosticSeverity.Info).Select(p => p.Message)];
 
     /// <summary>
     /// Every problem, each attributed to the tab that can fix it.
@@ -365,8 +376,245 @@ public static class TechValidation
 
         ValidateDeviceRules(tech, knownLayers, problems);
         ValidateInterchange(tech, problems);
+        ValidateMaterials(tech, problems);
+        ValidateBodies(tech, knownLayers, problems);
 
         return problems;
+    }
+
+    // ── Named materials and 3D bodies (brief-em3d-2 R-em3d2-4) ─────────────────────────────────
+    //
+    // Under the Stackup area: the stackup card's material picker is where a named material is
+    // chosen, and there is no Materials or Bodies tab yet (R-em3d2-5d). A problem with no tab behind
+    // it would count on no header and be reported by `check` alone.
+
+    /// <summary>The ids of brief-em3d-2's rules — one place, so a test and a reader spell them
+    /// identically.</summary>
+    public static class Ids
+    {
+        public const string MaterialUnknown         = "tech.material.unknown";
+        public const string MaterialDuplicate       = "tech.material.duplicate";
+        public const string MaterialMissingProperty = "tech.material.missing-property";
+        public const string MaterialPartial         = "tech.material.partial";
+        public const string MaterialDisagrees       = "tech.material.disagrees";
+        public const string MaterialInvalid         = "tech.material.invalid";
+        public const string MaterialNotReadYet      = "tech.material.not-read-yet";
+        public const string BodySitsOnUnknown       = "tech.body.sits-on-unknown";
+        public const string BodyNameClash           = "tech.body.name-clash";
+        public const string BodyOutlineLayerUnknown = "tech.body.outline-layer-unknown";
+    }
+
+    private static TechProblem Material(string id, DiagnosticSeverity severity, string message)
+        => new(TechProblemArea.Stackup, message, Id: id, Severity: severity);
+
+    private static string MaterialList(Technology tech)
+        => tech.Materials.Count == 0
+            ? "This technology defines no materials."
+            : "Defined materials: " + string.Join(", ", tech.Materials.Select(m => $"\"{m.Name}\"")) + ".";
+
+    private static void ValidateMaterials(Technology tech, List<TechProblem> problems)
+    {
+        // ── tech.material.duplicate — one problem per duplicated NAME, naming how many share it ───
+        foreach (var group in tech.Materials
+                     .GroupBy(m => m.Name ?? "", StringComparer.OrdinalIgnoreCase)
+                     .Where(g => g.Count() > 1))
+            problems.Add(Material(Ids.MaterialDuplicate, DiagnosticSeverity.Error,
+                $"{group.Count()} materials are named \"{group.Key}\" (material names ignore case). " +
+                "A stackup entry naming it could mean any of them; rename all but one."));
+
+        // ── the material's own shape: a tensor of three, and the temperature tables ─────────────
+        foreach (var m in tech.Materials)
+        {
+            if (m.EpsrTensor is { } tensor
+                && (tensor.Length != 3 || tensor.Any(v => !double.IsFinite(v) || v < 1)))
+                problems.Add(Material(Ids.MaterialInvalid, DiagnosticSeverity.Error,
+                    $"Material \"{m.Name}\" states an εr tensor that is not three finite values of at " +
+                    "least 1 (xx, yy, zz)."));
+
+            ValidateTemperatureTable(m, m.SigmaVsTemp, "conductivity against temperature (SigmaVsTemp)",
+                "every solver uses its conductivity at 20 °C (Sigma20)" +
+                (m.Alpha20 is not null ? " and, for a bond wire, its temperature coefficient (Alpha20)" : ""),
+                problems);
+            ValidateTemperatureTable(m, m.ThermalKVsTemp, "thermal conductivity against temperature (ThermalKVsTemp)",
+                "no thermal solver exists yet", problems);
+        }
+
+        // ── Use: every stackup entry that names one ─────────────────────────────────────────────
+        foreach (var layer in tech.Stackup.Layers)
+        {
+            if (layer.Material is null) continue;
+            string what = layer.Kind switch
+            {
+                StackupKind.Dielectric => "Dielectric",
+                StackupKind.Conductor  => "Conductor",
+                _                      => "Via",
+            };
+
+            if (tech.FindMaterial(layer.Material) is not { } m)
+            {
+                problems.Add(Material(Ids.MaterialUnknown, DiagnosticSeverity.Error,
+                    $"{what} entry \"{layer.Name}\" names material \"{layer.Material}\", which this " +
+                    $"technology does not define, so the entry's own numbers are used. {MaterialList(tech)}"));
+                continue;
+            }
+
+            if (layer.Kind == StackupKind.Dielectric)
+            {
+                if (m.Epsr is null)
+                {
+                    problems.Add(Material(Ids.MaterialMissingProperty, DiagnosticSeverity.Error,
+                        $"Dielectric entry \"{layer.Name}\" names material \"{m.Name}\", which states no " +
+                        "εr (Epsr) — a dielectric needs one. The entry's own εr is used."));
+                    continue;
+                }
+
+                // R-em3d2-2c: never silent — an entry partly defined by its material says which half.
+                var own = new List<string>();
+                if (m.TanD is null) own.Add("tanδ");
+                if (m.Mur  is null) own.Add("µr");
+                if (own.Count > 0)
+                    problems.Add(Material(Ids.MaterialPartial, DiagnosticSeverity.Info,
+                        $"Dielectric entry \"{layer.Name}\" takes εr from material \"{m.Name}\"; its " +
+                        $"{string.Join(" and ", own)} {(own.Count == 1 ? "is" : "are")} the entry's own, " +
+                        "because the material does not state " + (own.Count == 1 ? "it." : "them.")));
+            }
+            else if (m.Sigma20 is null)
+            {
+                problems.Add(Material(Ids.MaterialMissingProperty, DiagnosticSeverity.Error,
+                    $"{what} entry \"{layer.Name}\" names material \"{m.Name}\", which states no " +
+                    "conductivity at 20 °C (Sigma20) — a conductor needs one. The entry's own σ is used."));
+            }
+        }
+
+        // ── Use: every body ─────────────────────────────────────────────────────────────────────
+        foreach (var body in tech.Bodies)
+        {
+            if (tech.FindMaterial(body.Material) is not { } m)
+            {
+                problems.Add(Material(Ids.MaterialUnknown, DiagnosticSeverity.Error,
+                    string.IsNullOrEmpty(body.Material)
+                        ? $"Body \"{body.Name}\" names no material; a body needs one. {MaterialList(tech)}"
+                        : $"Body \"{body.Name}\" names material \"{body.Material}\", which this technology " +
+                          $"does not define. {MaterialList(tech)}"));
+                continue;
+            }
+            if (m.Epsr is null && m.Sigma20 is null)
+                problems.Add(Material(Ids.MaterialMissingProperty, DiagnosticSeverity.Error,
+                    $"Body \"{body.Name}\" names material \"{m.Name}\", which states neither εr (Epsr) " +
+                    "nor conductivity at 20 °C (Sigma20), so nothing says what the body is."));
+        }
+    }
+
+    /// <summary>
+    /// The owner's placeholders for temperature-dependent conductivity (2026-09-25): a table is
+    /// validated as a table — finite, above absolute zero, positive, strictly increasing in
+    /// temperature — and, being read by nothing yet, is reported at info so a stated table never
+    /// looks as though it were in force.
+    /// </summary>
+    private static void ValidateTemperatureTable(
+        TechMaterial m, List<TechTemperaturePoint>? table, string what, string instead,
+        List<TechProblem> problems)
+    {
+        if (table is not { Count: > 0 }) return;
+
+        string? fault = null;
+        for (int i = 0; i < table.Count && fault is null; i++)
+        {
+            var p = table[i];
+            if (!double.IsFinite(p.TempC) || !double.IsFinite(p.Value))
+                fault = $"point {i + 1} is not a finite number";
+            else if (p.TempC < -273.15)
+                fault = $"point {i + 1} is below absolute zero ({p.TempC} °C)";
+            else if (p.Value <= 0)
+                fault = $"point {i + 1} has a value of zero or less ({p.Value})";
+            else if (i > 0 && p.TempC <= table[i - 1].TempC)
+                fault = $"its temperatures do not strictly increase (point {i + 1}, {p.TempC} °C, " +
+                        $"follows {table[i - 1].TempC} °C)";
+        }
+
+        if (fault is not null)
+            problems.Add(Material(Ids.MaterialInvalid, DiagnosticSeverity.Error,
+                $"Material \"{m.Name}\" states {what}, but {fault}."));
+
+        problems.Add(Material(Ids.MaterialNotReadYet, DiagnosticSeverity.Info,
+            $"Material \"{m.Name}\" states {what} ({table.Count} point{(table.Count == 1 ? "" : "s")}). " +
+            $"It is carried in the file and read by nothing yet: {instead}."));
+    }
+
+    private static void ValidateBodies(
+        Technology tech, HashSet<LayerKey> knownLayers, List<TechProblem> problems)
+    {
+        if (tech.Bodies.Count == 0) return;
+
+        var entryNames = new HashSet<string>(tech.Stackup.Layers.Select(l => l.Name), StringComparer.Ordinal);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var body in tech.Bodies)
+        {
+            if (!seen.Add(body.Name))
+                problems.Add(Material(Ids.BodyNameClash, DiagnosticSeverity.Error,
+                    $"Two bodies are named \"{body.Name}\". A body's name is how the 3D problem names its " +
+                    "solid, so it must be unique."));
+            else if (entryNames.Contains(body.Name))
+                problems.Add(Material(Ids.BodyNameClash, DiagnosticSeverity.Error,
+                    $"Body \"{body.Name}\" has the same name as a stackup entry. A body's name is how the " +
+                    "3D problem names its solid, so it must differ from every entry's."));
+
+            if (!entryNames.Contains(body.SitsOn))
+                problems.Add(Material(Ids.BodySitsOnUnknown, DiagnosticSeverity.Error,
+                    $"Body \"{body.Name}\" sits on \"{body.SitsOn}\", which is not a stackup entry. " +
+                    "Entries: " + string.Join(", ", tech.Stackup.Layers.Select(l => $"\"{l.Name}\"")) + "."));
+
+            foreach (var key in body.OutlineLayers)
+                if (!knownLayers.Contains(key))
+                    problems.Add(Material(Ids.BodyOutlineLayerUnknown, DiagnosticSeverity.Error,
+                        $"Body \"{body.Name}\" takes its outline from layer ({key.Layer},{key.Datatype}), " +
+                        "which this technology does not define."));
+        }
+    }
+
+    /// <summary>
+    /// brief-em3d-2 R-em3d2-4a — <b>the one rule that reads the file as written</b>:
+    /// <c>tech.material.disagrees</c>, a stackup entry whose own numbers differ from the material it
+    /// names.
+    ///
+    /// <para>It needs the technology from <see cref="TechPersistence.DeserializeUnresolved"/>.
+    /// After an ordinary load every named entry's numbers have been overwritten with its material's,
+    /// so the rule could never fire there — an inert rule, which is exactly what the design note
+    /// forbids ("an edited number that nothing reads must not pass silently"). The editor keeps the
+    /// two equal on save, so the warning means a hand edit.</para>
+    /// </summary>
+    public static IReadOnlyList<TechProblem> AnalyzeRaw(Technology raw)
+    {
+        var problems = new List<TechProblem>();
+        foreach (var layer in raw.Stackup.Layers)
+        {
+            if (raw.FindMaterial(layer.Material) is not { } m) continue;
+
+            var differ = new List<string>();
+            if (layer.Kind == StackupKind.Dielectric)
+            {
+                if (m.Epsr is { } e && !Same(layer.Epsr, e)) differ.Add($"εr {Num(layer.Epsr)} vs {Num(e)}");
+                if (m.TanD is { } t && !Same(layer.TanD, t)) differ.Add($"tanδ {Num(layer.TanD)} vs {Num(t)}");
+                if (m.Mur  is { } u && !Same(layer.Mur,  u)) differ.Add($"µr {Num(layer.Mur)} vs {Num(u)}");
+            }
+            else if (m.Sigma20 is { } sg && !Same(layer.SigmaSm, sg))
+            {
+                differ.Add($"σ {Num(layer.SigmaSm)} vs {Num(sg)}");
+            }
+
+            if (differ.Count > 0)
+                problems.Add(Material(Ids.MaterialDisagrees, DiagnosticSeverity.Warning,
+                    $"Stackup entry \"{layer.Name}\" names material \"{m.Name}\" but its own numbers differ " +
+                    $"(entry vs material: {string.Join("; ", differ)}). The material's values are the ones " +
+                    "used; the entry's are what a build older than named materials would read. Saving from " +
+                    "the Technology editor makes them agree."));
+        }
+        return problems;
+
+        static bool Same(double a, double b)
+            => a == b || Math.Abs(a - b) <= 1e-12 * Math.Max(Math.Abs(a), Math.Abs(b));
+        static string Num(double v) => v.ToString("G6", System.Globalization.CultureInfo.InvariantCulture);
     }
 
     // ── The device-recognition deck (brief-lvs-14-recognition.md R-lvs14-2c/2d) ───────────────

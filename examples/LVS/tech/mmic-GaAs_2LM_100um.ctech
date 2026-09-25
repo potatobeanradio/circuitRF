@@ -393,5 +393,49 @@
       "ValueDbu": 4000,
       "Severity": "Error"
     }
+  ],
+  "Materials": [
+    {
+      "Name": "Gold",
+      "Sigma20": 41000000,
+      "Alpha20": 0.0034,
+      "DensityKgM3": 19300
+    },
+    {
+      "Name": "Aluminium",
+      "Sigma20": 37700000,
+      "Alpha20": 0.0039,
+      "DensityKgM3": 2700
+    },
+    {
+      "Name": "Copper",
+      "Sigma20": 58000000,
+      "Alpha20": 0.0039,
+      "DensityKgM3": 8960
+    },
+    {
+      "Name": "Silver",
+      "Sigma20": 63000000,
+      "Alpha20": 0.0038,
+      "DensityKgM3": 10490
+    },
+    {
+      "Name": "GaAs",
+      "Epsr": 12.9,
+      "TanD": 0.0006,
+      "Mur": 1
+    },
+    {
+      "Name": "MIM Dielectric",
+      "Epsr": 6.8,
+      "TanD": 0.001,
+      "Mur": 1
+    },
+    {
+      "Name": "Air",
+      "Epsr": 1,
+      "TanD": 0,
+      "Mur": 1
+    }
   ]
 }

@@ -305,5 +305,37 @@
       "ValueDbu": 152400,
       "Severity": "Error"
     }
+  ],
+  "Materials": [
+    {
+      "Name": "Gold",
+      "Sigma20": 41000000,
+      "Alpha20": 0.0034,
+      "DensityKgM3": 19300
+    },
+    {
+      "Name": "Aluminium",
+      "Sigma20": 37700000,
+      "Alpha20": 0.0039,
+      "DensityKgM3": 2700
+    },
+    {
+      "Name": "Copper",
+      "Sigma20": 58000000,
+      "Alpha20": 0.0039,
+      "DensityKgM3": 8960
+    },
+    {
+      "Name": "Silver",
+      "Sigma20": 63000000,
+      "Alpha20": 0.0038,
+      "DensityKgM3": 10490
+    },
+    {
+      "Name": "RO4350B",
+      "Epsr": 3.66,
+      "TanD": 0.0037,
+      "Mur": 1
+    }
   ]
 }

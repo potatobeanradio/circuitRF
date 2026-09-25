@@ -987,6 +987,21 @@
                                                  as a real dimension left at 0 and invited a wrong answer
                                                  (user-reported, 2026-08-30: "I am not sure what the via
                                                  thickness should be"). The Spans row answers it. -->
+                                            <!-- brief-em3d-2 R-em3d2-5c. The technology's named materials.
+                                                 While one is named, every number it states shows the
+                                                 material's value and is read-only (the loader's own
+                                                 resolve-on-read rule, applied again); "(none)" keeps
+                                                 the values showing and makes them editable. Hidden when
+                                                 the technology defines no materials, since "(none)"
+                                                 alone is not a choice. -->
+                                            <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding HasMaterialChoices}">
+                                                <TextBlock Text="Material:" Width="70" FontSize="11" VerticalAlignment="Center"/>
+                                                <ComboBox Classes="cell" MinWidth="120"
+                                                          ItemsSource="{Binding MaterialChoices}"
+                                                          SelectedItem="{Binding SelectedMaterial, Mode=TwoWay}"
+                                                          ToolTip.Tip="One of this technology's named materials. While one is named, the values it states are this entry's values, for every solver, and cannot be typed here; (none) keeps the values showing and makes them editable again."/>
+                                            </StackPanel>
+
                                             <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding !IsVia}">
                                                 <TextBlock Text="Thickness:" Width="70" FontSize="11" VerticalAlignment="Center"/>
                                                 <TextBox Classes="cell compact" Width="60" Tag="Thickness"
@@ -1015,9 +1030,11 @@
                                                 <TextBox Classes="cell compact" Width="60" Tag="Sigma"
                                                          Classes.needsvalue="{Binding SigmaNeedsValue}"
                                                          Text="{Binding StagedSigmaSm}"
-                                                         ToolTip.Tip="Conductor conductivity at 20 °C, in siemens per metre. It sets conductor loss and skin depth — how deep the current actually flows at frequency, and therefore how much of this metal is doing any work. A conductor with a conductivity of zero or less is REFUSED by the EM path rather than solved, which is what an imported board hits if this is left blank."
+                                                         IsReadOnly="{Binding SigmaLocked}"
+                                                         ToolTip.Tip="{Binding SigmaTip}"
                                                          LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
                                                 <ComboBox Classes="cell" MinWidth="96"
+                                                          IsEnabled="{Binding SigmaPresetEnabled}"
                                                           ItemsSource="{Binding ConductorMaterialChoices}"
                                                           SelectedItem="{Binding SelectedConductorMaterial, Mode=TwoWay}"
                                                           ToolTip.Tip="Fills the conductivity field with a metal's bulk value at 20 °C — copper 5.8e7, silver 6.3e7, gold 4.1e7, aluminium 3.77e7, nickel 1.43e7 S/m. A shortcut only: the field beside it stays typeable and is what gets saved, and a value matching none of these shows as Custom. Real plated or alloyed metal runs below the handbook figure, so lower it if your process states one."/>
@@ -1075,21 +1092,24 @@
                                                     <TextBlock Text="εr:" FontSize="11" VerticalAlignment="Center"/>
                                                     <TextBox Classes="cell compact" Width="60" Tag="Epsr" Text="{Binding StagedEpsr}"
                                                              Classes.needsvalue="{Binding EpsrNeedsValue}"
-                                                             ToolTip.Tip="{Binding EpsrNeeds}"
+                                                             IsReadOnly="{Binding EpsrLocked}"
+                                                             ToolTip.Tip="{Binding EpsrTip}"
                                                              LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
                                                 </StackPanel>
                                                 <StackPanel Orientation="Horizontal" Spacing="3">
                                                     <TextBlock Text="tanδ:" FontSize="11" VerticalAlignment="Center"/>
                                                     <TextBox Classes="cell compact" Width="70" Tag="TanD" Text="{Binding StagedTanD}"
                                                              Classes.needsvalue="{Binding TanDNeedsValue}"
-                                                             ToolTip.Tip="{Binding TanDNeeds}"
+                                                             IsReadOnly="{Binding TanDLocked}"
+                                                             ToolTip.Tip="{Binding TanDTip}"
                                                              LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
                                                 </StackPanel>
                                                 <StackPanel Orientation="Horizontal" Spacing="3">
                                                     <TextBlock Text="µr:" FontSize="11" VerticalAlignment="Center"/>
                                                     <TextBox Classes="cell compact" Width="60" Tag="Mur" Text="{Binding StagedMur}"
                                                              Classes.needsvalue="{Binding MurNeedsValue}"
-                                                             ToolTip.Tip="{Binding MurNeeds}"
+                                                             IsReadOnly="{Binding MurLocked}"
+                                                             ToolTip.Tip="{Binding MurTip}"
                                                              LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
                                                 </StackPanel>
                                             </StackPanel>

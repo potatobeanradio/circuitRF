@@ -597,7 +597,11 @@ public sealed partial class TechEditorViewModel : ObservableObject
         Revalidate();
     }
 
-    private void Revalidate() => ValidationProblems = TechValidation.Analyze(Working);
+    /// <summary>Warnings and errors only. An INFO finding (brief-em3d-2's partly-stated material, a
+    /// temperature table carried but not yet read) is the technology explaining itself to
+    /// <c>check</c>, not a problem for this banner to count on a tab header.</summary>
+    private void Revalidate() => ValidationProblems =
+        [.. TechValidation.Analyze(Working).Where(p => p.Severity != CircuitRF.Diagnostics.DiagnosticSeverity.Info)];
 
     partial void OnValidationProblemsChanged(IReadOnlyList<TechProblem> value) => RaiseValidationViews();
 

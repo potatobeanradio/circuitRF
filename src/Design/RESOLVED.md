@@ -12150,3 +12150,46 @@ the series parts' DCR, which the board's library does not state.
 - **Pre-existing, not from this work:** `ImportReportsWhatTheStackCannotReachTests.NeitherNoteIsAWarningOrAnError`
   and `KitPartLayoutParametersTests.AKitsOwnSuffixSpelling_ReachesTheCellVerbatim_AndIsReportedNotSwallowed`
   fail on a clean checkout of HEAD 0b6a2dbb as well.
+
+## Named materials and 3D bodies in the technology (brief-em3d-2, 2026-09-25)
+
+- **`Technology.Materials`, `StackupLayer.Material`, `Technology.Bodies`** — all additive, nullable,
+  omitted on write when empty; no `FormatVersion` bump. Gate: `tests/Ui.Tests/Em3d/TechMaterialsTests.cs`.
+- **Resolve on read is `TechPersistence.ResolveMaterials`, and it is the only door.** `Deserialize`
+  calls it; the stackup editor's material picker calls the SAME function after naming one, rather than
+  copying numbers. The "one door" gate reads compiled IL for calls to `StackupLayer.get_Material`, not
+  source text: about thirty unrelated types (`GroundedSlab`, `MediumLayer`, wire and `.wasm` types)
+  have a property called `Material`, and a text scan cannot tell them apart. `TechnologyMerge.Clone`
+  and `PatternedDielectric.Clone` deliberately do NOT copy `Material` — both copy already-resolved
+  numbers, and copying the name without its material would manufacture a `tech.material.unknown`.
+- **`tech.material.disagrees` needs the file as written** — `TechPersistence.DeserializeUnresolved` +
+  `TechValidation.AnalyzeRaw`, which `check` runs beside `Analyze`. On a loaded technology the
+  numbers always agree, so the rule would be inert there.
+- **`TechProblem` gained `Id` and `Severity`** (default Warning, which is what every earlier problem
+  was). `check` still reports every technology finding as `check.tech.problem` — the registry test
+  anchors each id on a literal `DiagnosticSeverity.` — now at the validator's severity and with the
+  rule id as the `rule` argument. `TechValidation.Validate` and the editor banner drop INFO findings:
+  they explain, they are not problems to count.
+- **Placeholders beyond the brief, at the owner's request:** `TechMaterial.SigmaVsTemp` and
+  `ThermalKVsTemp`, tables of (°C, value). Read by nothing yet; `check` validates their shape
+  (`tech.material.invalid`: finite, above absolute zero, positive, strictly increasing temperature) and
+  says at info that they are carried but unread (`tech.material.not-read-yet`), so a stated table never
+  looks as though it were in force. `Alpha20` stays. How a σ(T) table relates to the `Sigma20`/`Alpha20`
+  pair when both are stated — which wins, whether they must agree at 20 °C — is **undecided** and is the
+  thermal solver's question. `tech.material.invalid` also covers an `EpsrTensor` that is not three
+  finite values ≥ 1.
+- **Shipped technologies** carry the four wire metals (values from `WireMaterials`, held equal by a
+  test) plus their own dielectrics, and name none of them from the stackup, so no shipped byte an
+  extractor reads changed. The PCB conductors' σ is copper's and the MMIC's is gold's, so those need no
+  separate entry. `examples/LVS` and `examples/PDK PCells` carry byte copies of the MMIC technology and
+  were updated with it (`ProvingDesignTests` holds the LVS copy byte-identical).
+- **No `.ctech` on disk is in the writer's exact spelling** (hand-written, or written by an older
+  formatting), so the round-trip gate is serializer-to-serializer: no new key is emitted unless the
+  file stated it, and load∘save is a fixed point.
+- **The end-to-end solve half of the planar gate is `Category=Benchmark`**: two planar runs of a 2 mm
+  line cost 6-8 s in Debug regardless of length or point count. The extraction comparison, over every
+  example `.cem`, is the routine half.
+- **Not built, as briefed (R-em3d2-5d):** a Materials table in the Technology editor. A material is
+  authored by writing the `.ctech`; `circuitrf reference technology` describes the fields because it
+  is generated from `CtechFile`. The editor offers a per-row picker only, shown when the technology
+  defines at least one material.
