@@ -908,3 +908,9 @@ src/Design/Layout/Extraction/PlacedPins.cs|PinNaming.ArtworkOnly reads the artwo
 # iteration cap is needed, and it can only fire on a defect in the reducer itself — no document
 # reaches it, so there is nothing for the Messages window to group, collapse or hang an action on.
 src/Design/Layout/Lvs/LvsReduce.cs|LVS reduction made {groups.Count - made} collapse(s) on pass {passes} without 
+# brief-em3d-8: FdtdGrid.Fill's three invariants. The caller always passes the two air-box faces; the
+# size smoothing only ever lowers sizes, so its pass cap and the post-smoothing partition can only fire
+# on a defect in the fill itself — no geometry reaches them.
+src/Engine/Em3d/FdtdGrid.cs|An FDTD grid interval could not be partitioned after smoothing.
+src/Engine/Em3d/FdtdGrid.cs|The FDTD grid's size smoothing did not settle — a defect in FdtdGrid.Fill.
+src/Engine/Em3d/FdtdGrid.cs|The fill needs the two air-box faces at least.

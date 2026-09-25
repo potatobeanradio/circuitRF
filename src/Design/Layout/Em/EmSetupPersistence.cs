@@ -235,9 +235,55 @@ public sealed record PalaceSettings(
     }
 }
 
-/// <summary>openEMS's own settings (em-3d.md §4.2). Empty in this version; an omitted section takes
-/// circuitRF's defaults.</summary>
-public sealed class CemOpenEms { }
+/// <summary>openEMS's own settings (em-3d.md §4.2). Every field may be omitted, and an omitted field
+/// takes circuitRF's default for it; an omitted section takes every default. These place the grid
+/// lines openEMS solves on — circuitRF writes the grid itself, and `explain` reports it before a run.</summary>
+public sealed class CemOpenEms
+{
+    /// <summary>The largest grid cell allowed, as the number of cells per wavelength in the densest
+    /// material the cell passes through, at the sweep's top frequency. Default 20.</summary>
+    public double? CellsPerWavelength { get; set; }
+
+    /// <summary>The largest ratio between two neighbouring grid cells. Default 1.3.</summary>
+    public double? GradingRatio { get; set; }
+
+    /// <summary>Whether the edge of a sheet or thin conductor gets its grid lines a third of the local
+    /// cell inside the metal and two thirds outside, where the field's edge singularity lives, rather
+    /// than one line on the edge. Default true; false matches a model gridded with lines on the edges.</summary>
+    public bool? ThirdsRule { get; set; }
+
+    /// <summary>Grid lines the geometry asks for that are closer than this are merged into one, and
+    /// every merge is reported, micrometres. Default: a tenth of the smallest metal width or thickness
+    /// in the problem.</summary>
+    public double? MinCellUm { get; set; }
+
+    /// <summary>The absorbing layer's thickness, in uniform cells added outside each absorbing face of
+    /// the air box. Default 8.</summary>
+    public int? PmlCells { get; set; }
+
+    /// <summary>A copy, so an editor can change one without touching a setup that shares it.</summary>
+    public CemOpenEms Clone() => (CemOpenEms)MemberwiseClone();
+
+    /// <summary>True when no field is set: the same run as an omitted section.</summary>
+    public bool IsEmpty =>
+        CellsPerWavelength is null && GradingRatio is null && ThirdsRule is null && MinCellUm is null && PmlCells is null;
+
+    /// <summary>
+    /// brief-em3d-8 R-em3d8-6 — the section's grid fields RESOLVED, each omitted one taking
+    /// <see cref="CircuitRF.Engine.Em3d.OpenEmsGridSettings.Default"/>'s. The defaults live there, in the engine, because the
+    /// grid generator is what reads them.
+    /// </summary>
+    public static CircuitRF.Engine.Em3d.OpenEmsGridSettings ResolveGrid(CemOpenEms? section)
+    {
+        var d = CircuitRF.Engine.Em3d.OpenEmsGridSettings.Default;
+        return section is null ? d : new(
+            section.CellsPerWavelength ?? d.CellsPerWavelength,
+            section.GradingRatio       ?? d.GradingRatio,
+            section.ThirdsRule         ?? d.ThirdsRule,
+            section.MinCellUm is { } um ? um * 1e-6 : d.MinCellM,
+            section.PmlCells           ?? d.PmlCells);
+    }
+}
 
 public sealed class CemFile
 {

@@ -171,14 +171,19 @@ public sealed class Em3dRenderExplainTests(ITestOutputHelper output) : IDisposab
         Assert.Equal(("m", 1.0), (report.LengthUnit, report.LengthScale));
 
         // Round vias are §4.3 row 4's. Palace's size is an estimate from the Palace section's mesh
-        // sizes (brief-em3d-7); openEMS's row says why it is empty rather than saying 0.
+        // sizes (brief-em3d-7); openEMS's is exact — the grid generator's own grid (brief-em3d-8
+        // R-em3d8-5c), with the feature that set its smallest cell named.
         Assert.Contains(report.Guidance, g => g.Row == 4);
         var palaceSize = report.Size.Single(z => z.Backend == "palace");
         Assert.Equal("estimate", palaceSize.Kind);
         Assert.True(palaceSize.Elements > 0 && palaceSize.Unknowns > palaceSize.Elements);
         var openEmsSize = report.Size.Single(z => z.Backend == "openems");
-        Assert.Equal("unavailable", openEmsSize.Kind);
-        Assert.Null(openEmsSize.Elements);
+        Assert.Equal("exact", openEmsSize.Kind);
+        var grid = FdtdGrid.Build(src.Problem, OpenEmsGridSettings.Default);
+        Assert.Equal(grid.Cells, openEmsSize.Elements);
+        Assert.Equal([grid.X.Lines.Count, grid.Y.Lines.Count, grid.Z.Lines.Count], openEmsSize.CellsPerAxis);
+        Assert.Equal(grid.TimeStepEstimateS, openEmsSize.TimeStepS);
+        Assert.NotEmpty(openEmsSize.SmallestCellFeatures!);
 
         // The Palace estimate the row will carry counts meshed regions only: a conductor is a hole.
         var estimate = Em3dSizeEstimate.Palace(src.Problem, _ => 100 * Um, 2);

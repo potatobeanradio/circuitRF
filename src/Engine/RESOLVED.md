@@ -2565,3 +2565,55 @@ sweep has no single frequency the sample stands at, and binding the sweep coordi
 divide by a number in dBm that produces a perfectly plausible curve. `ssfreq` IS bound, unlike in the
 measurement scope, because here it is the trace's X axis in Hz rather than a name competing with a
 user's own global.
+
+## brief-em3d-8 — the FDTD grid generator (`Em3d/FdtdGrid.cs`, 2026-09-25)
+
+`FdtdGrid.Build(Em3dProblem, OpenEmsGridSettings)` writes openEMS's three line arrays and the reasons
+behind them. Per axis: collect the required lines, merge the near-coincident ones (every merge reported),
+then fill. Gate: `tests/Engine.Tests/Em3d/FdtdGridTests.cs`, 10 tests, ~0.1 s together.
+
+**The fill is exact and provably graded, and the proof is what shaped it.** Each required line gets a
+size s; an interval must start and end with cells within √r of its end sizes, so two cells meeting at a
+line differ by at most r. For n cells the largest partition is `min(H, A·r^k, B·r^(n−k+1))` and the
+smallest `max(A·r^−(k−1), B·r^−(n−k))` (A, B = the end sizes over √r); each is graded because it is a
+min/max of graded sequences, so their log-linear blend is graded for every blend factor, and the factor
+is bisected to hit the length. Three things that were not obvious:
+- **Short intervals have gaps.** With equal end sizes s, one cell covers lengths [0.88, 1.14]·s, two
+  cover [1.75, 2.28]·s, three [2.43, 3.76]·s — an interval of 1.4·s has NO partition. The sizes must
+  be repaired. Lowering BOTH ends to a uniform fill (the first attempt) cascades between short
+  intervals: case B's smallest cell came out 12.5 µm. Lowering only the LARGER end, down a ladder of
+  r^(1/8) steps, and falling back to uniform only when that fails, gives 23.5 µm on the same geometry.
+- **At the cap, the largest partition equals the length only to rounding**, and stepping to one more
+  cell can make the interval infeasible (two cells of s/√r exceed a length of s). "Reaches" is taken to
+  1e-12 relative.
+- **The smallest profile underflows.** It decays geometrically into the middle of a long interval
+  (1.3^−3000 is 0), which as plain numbers makes zero-width cells. It is computed in logs.
+
+**The thirds rule's local cell is clamped by the metal and by SEPARATE metal only.** The brief says the
+local cell is the target size at the edge; unclamped, a 100 µm strip under a 480 µm target puts its two
+inside lines across each other. The cell is at most 3/5 of the metal's width (the three cells between
+the two outside lines are then equal) and 3/7 of the gap to separate metal in the same layer (two facing
+edges' outside lines then leave a middle cell equal to the rest). **Metal whose extent meets the edge's
+own shape is not a neighbour** — counting a via pad fused to the line's end, or the antipad hole in the
+plane below, clamped the whole line's cell to 9 µm because of one pad vertex 12 µm off the edge. Below
+three MinCells the rule steps aside and the edge gets its own line, so a 10 nm drawing gap is MERGED
+and reported rather than hidden inside a thirds pair.
+
+**openEMS's own numbers, confirmed from F0's committed log** (`testdata/em3d/f0/B-via/openems/dw25-lossy/run.log`):
+its cell count is the product of the three LINE counts ("83x75x32 --> 199200 FDTD cells"), which is
+also the denominator of `Em3dSizeEstimate.OpenEmsBytesPerCell`; and its Gaussian pulse is 9/(π·f_c)
+long (2.86481e-10 s at f_c = 10 GHz). `RingDownPulses` = 6 comes from F0 too: case A reached −50 dB at
+6.8 pulse lengths, and case B's bounded run stopped at 7.0.
+
+**Case B, generated-shape, default settings:** 69 × 85 × 50 = 293,250 cells, smallest 23.5 µm on y
+(bounded by the via barrel's extremes and the port extents), Δt ≈ 6.4e-14 s. F0's hand grid was
+83 × 75 × 32 = 199,200 at 25 µm with a 400 µm cap and ratio 1.4; the defaults here are a 392 µm cap
+(λ/20 at 20 GHz in εr 3.66) and 1.3, which accounts for most of the difference.
+
+**Deviations from the brief's letter, each deliberate:** the `.cem` field is `MinCellUm`, not
+`MinCell`, because every `.cem` length is micrometres (`PaddingUm`). Gate 5 asserts the x- and z-lines
+over the strip; a far pad's own y-edges run across the whole grid (a tensor grid has no other kind of
+line), so y cannot be unchanged by construction. Gate 10 asserts a via feature (barrel, pad or
+antipad) among the smallest cell's features, which the result reports for EVERY interval tying the
+smallest size — the barrel and the port extents tie at 23.5 µm, and naming whichever rounding put
+first would name half of the answer.

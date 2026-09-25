@@ -1085,8 +1085,8 @@ namespace RfCore.Export
         IReadOnlyList<double> Min, IReadOnlyList<double> Max,
         IReadOnlyList<double> ReferenceOrigin, IReadOnlyList<double> ReferenceNormal, double ReferenceShiftM);
 
-    /// <param name="Enlargements">What a backend section asked to add to a face; empty until a backend
-    /// section can ask (briefs 7 and 9).</param>
+    /// <param name="Enlargements">What a backend asks to add outside a face, as sentences — openEMS's
+    /// PML on each absorbing face (brief-em3d-8 R-em3d8-4c).</param>
     public sealed record Em3dAirBoxJson(
         IReadOnlyList<double> Min, IReadOnlyList<double> Max, IReadOnlyList<Em3dFaceJson> Faces,
         IReadOnlyList<string> Enlargements);
@@ -1102,6 +1102,18 @@ namespace RfCore.Export
     /// generator IS the grid), or <c>unavailable</c> with <see cref="Note"/> saying why. An
     /// unavailable row carries no count at all, never a zero.
     /// </summary>
+    /// <param name="Elements">Palace's tetrahedra; openEMS's cells (the product of the three line counts,
+    /// openEMS's own count).</param>
+    /// <param name="CellsPerAxis">openEMS only (brief-em3d-8 R-em3d8-5c): grid LINES on x, y, z.</param>
+    /// <param name="SmallestCellM">openEMS only: the smallest cell of the grid.</param>
+    /// <param name="SmallestCellAxis">…on which axis (<c>x</c>, <c>y</c>, <c>z</c>).</param>
+    /// <param name="SmallestCellFeatures">…and the features that set it, as phrases naming the objects.</param>
+    /// <param name="Steps">openEMS only: time steps to cover the pulse and a nominal ring-down.</param>
+    /// <param name="Merges">openEMS only: every pair of grid lines merged for being closer than
+    /// MinCell, as a sentence naming both features.</param>
+    /// <param name="GridWarnings">openEMS only: fixed lines closer than MinCell, which were kept.</param>
+    /// <param name="Refusal">openEMS only: the sentence a run would stop with because the grid would not
+    /// fit in memory.</param>
     public sealed record Em3dSizeJson(
         string Backend, string Kind,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -1112,7 +1124,23 @@ namespace RfCore.Export
         double? TimeStepS,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         long? MemoryBytes,
-        string Note);
+        string Note,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<long>? CellsPerAxis = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double? SmallestCellM = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? SmallestCellAxis = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<string>? SmallestCellFeatures = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        long? Steps = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<string>? Merges = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<string>? GridWarnings = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Refusal = null);
 
     /// <summary>
     /// One program a 3D run needs, as discovery found it (brief-em3d-6 R-em3d6-4c): the same answer the

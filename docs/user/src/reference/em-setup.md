@@ -453,6 +453,38 @@ Before it solves, circuitRF checks that every surface in the mesh belongs to exa
 made for — each port sheet, each conductor, each face of the air box. **Any mismatch refuses the run,
 naming the object**; a boundary is never guessed onto a face.
 
+### The openEMS grid {#openems-grid}
+
+openEMS solves on a rectilinear grid — three lists of grid lines, one per axis — and circuitRF writes
+that grid itself. Its accuracy is decided almost entirely by where the lines fall, so the rules are
+fixed and every one is reported: a line **on every metal edge** aligned with an axis (a diagonal or
+curved edge gets lines at its extremes only, and is staircased between); at the edge of a strip or
+other thin metal, the **thirds rule** — lines a third of the local cell inside the metal and two thirds
+outside, where the field's edge singularity is; lines **exactly** on every port sheet's extent, every
+sheet's plane and every face of the air box; cells no larger than a set fraction of the **wavelength
+in the densest material** they pass through; and neighbouring cells that grow by at most a **grading
+ratio**. Each absorbing face gets a uniform **PML** of extra cells *outside* the air box — the box
+grows outward to hold it, never inward over the design.
+
+Two lines closer than **MinCell** are merged into one, and **every merge is reported, naming both
+features**: two shapes 10 nm apart through a drawing error would otherwise set the time step of the
+whole run without anyone seeing why. A port line or a sheet's plane is never moved; two of those
+closer than MinCell are kept, with a warning naming both.
+
+| `.cem` field (in `OpenEms`) | Default | What it does |
+|---|---|---|
+| `CellsPerWavelength` | 20 | The largest cell, as cells per wavelength in the densest material it passes through, at the top frequency |
+| `GradingRatio` | 1.3 | The largest ratio between two neighbouring cells |
+| `ThirdsRule` | true | The thirds rule at the edges of strips and other thin metal; false puts one line on each edge, as a hand-built model often does |
+| `MinCellUm` | a tenth of the smallest metal width or thickness | Lines closer than this, in micrometres, are merged — and reported |
+| `PmlCells` | 8 | Uniform cells added outside each absorbing face |
+
+`circuitrf explain` on the setup prints the grid before anything runs: lines per axis, the total
+cells, the smallest cell **and the features that set it**, the time step it allows (an estimate —
+openEMS computes its own), the steps and memory the run would take, and every merge. A grid that would
+not fit in memory is refused, naming the feature behind the smallest cell and the setting that would
+relax it.
+
 ## Installing the 3D solvers by hand {#install-3d-solvers}
 
 A 3D setup (one whose `Solver3D` names Palace or openEMS) runs a solver circuitRF does not include. You

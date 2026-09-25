@@ -38,7 +38,7 @@ internal static class ExplainEm3d
         var solvers  = Solvers(setup.Solver3D);
 
         if (src.Generated?.Problem is not { } p)
-            return new ExplainEm3dJson(solver, "m", 1.0, [], null, [], [], [], [], null, Size(null, setup), solvers, notes, warnings,
+            return new ExplainEm3dJson(solver, "m", 1.0, [], null, [], [], [], [], null, Size(null, setup, default), solvers, notes, warnings,
                                        src.Refusal ?? "the 3D problem could not be built.");
         var g = src.Generated;
 
@@ -88,6 +88,7 @@ internal static class ExplainEm3d
             q.Number, q.Name, q.PositiveObject, q.NegativeObject, q.Z0.Real, q.Z0.Imaginary,
             V(q.Min), V(q.Max), V(q.ReferencePlane.Origin), V(q.ReferencePlane.Normal), q.ReferencePlane.ShiftM)).ToList();
 
+        var grid = Grid(p, setup);
         var box = p.Boundary;
         var stated = setup.AirBox;
         Em3dFaceJson Face(string name, Em3dBoundaryKind kind, EmAirBoxFace? face) => new(
@@ -100,10 +101,10 @@ internal static class ExplainEm3d
             Face("xmin", box.Faces.XMin, stated?.XMin), Face("xmax", box.Faces.XMax, stated?.XMax),
             Face("ymin", box.Faces.YMin, stated?.YMin), Face("ymax", box.Faces.YMax, stated?.YMax),
             Face("zmin", box.Faces.ZMin, stated?.ZMin), Face("zmax", box.Faces.ZMax, stated?.ZMax),
-        ], []);
+        ], Enlargements(grid.Grid));
 
         return new ExplainEm3dJson(solver, "m", 1.0, guidance, temperature, materials, solids, wires, ports, airBox,
-                                   Size(p, setup), solvers, notes, warnings, null);
+                                   Size(p, setup, grid), solvers, notes, warnings, null);
     }
 
     /// <summary>
@@ -134,10 +135,11 @@ internal static class ExplainEm3d
     /// printing a zero. Palace's is an ESTIMATE: each meshed region's volume divided by the volume of an
     /// element at the Palace section's largest size for its material (brief-em3d-7's
     /// <see cref="GmshGeoWriter.MaxElementSizeM"/>, the formula the script itself uses). openEMS's count
-    /// is exact and comes from its grid generator, which does not exist yet. Memory is printed beside a
-    /// count and never without one.
+    /// is EXACT: <see cref="FdtdGrid.Build"/> is the grid a run writes (brief-em3d-8 R-em3d8-5c). Memory is
+    /// printed beside a count and never without one.
     /// </summary>
-    private static IReadOnlyList<Em3dSizeJson> Size(Em3dProblem? p, EmSetup setup)
+    private static IReadOnlyList<Em3dSizeJson> Size(Em3dProblem? p, EmSetup setup,
+                                                    (FdtdGridResult? Grid, string? Why) grid)
     {
         var settings = PalaceSettings.Resolve(setup.Palace);
         Em3dSizeJson palace;
@@ -159,11 +161,65 @@ internal static class ExplainEm3d
                 "conductors and ports and Palace's adaptive passes add to it, and the run reports the real " +
                 "counts. No mesher is run to get it.");
         }
-        return
-        [
-            palace,
-            new("openems", "unavailable", null, null, null, null, "grid not yet available in this build."),
-        ];
+        return [palace, OpenEmsSize(grid)];
+    }
+
+    /// <summary>
+    /// The openEMS grid for the problem, through the generator a run uses, with the section's grid
+    /// fields — or why there is none. It is arithmetic on the resolved problem: no process.
+    /// </summary>
+    private static (FdtdGridResult? Grid, string? Why) Grid(Em3dProblem p, EmSetup setup)
+    {
+        var settings = CemOpenEms.ResolveGrid(setup.OpenEms);
+        if (settings.Problems() is { Count: > 0 } bad) return (null, string.Join(" ", bad));
+        if (p.Validate() is { Count: > 0 }) return (null, "the 3D problem is not sound (see the warnings).");
+        try
+        {
+            return (FdtdGrid.Build(p, settings), null);
+        }
+        catch (InvalidOperationException e)
+        {
+            return (null, e.Message);
+        }
+    }
+
+    /// <summary>R-em3d8-5c — cells per axis, total, smallest cell and its feature, Δt, steps, memory, merges.</summary>
+    private static Em3dSizeJson OpenEmsSize((FdtdGridResult? Grid, string? Why) grid)
+    {
+        if (grid.Grid is not { } g)
+            return new("openems", "unavailable", null, null, null, null,
+                       $"no grid: {grid.Why ?? "there is no 3D problem to size."}");
+        var s = g.Smallest;
+        string axis = FdtdGrid.AxisName(s.Axis);
+        var features = s.SmallestCellFeatures.Select(f => f.Describe(s.Axis)).ToList();
+        string note =
+            $"{g.X.Lines.Count:N0} × {g.Y.Lines.Count:N0} × {g.Z.Lines.Count:N0} = {g.Cells:N0} cells, the grid a run " +
+            $"writes; smallest cell {FdtdGrid.FormatLength(s.SmallestCellM)} on {axis}, set by {string.Join("; ", features)}. " +
+            $"Time step about {g.TimeStepEstimateS:G3} s (the Courant estimate; openEMS computes its own), about " +
+            $"{g.Steps:N0} steps for the pulse and a nominal ring-down, about {g.MemoryBytes / 1e6:N0} MB. " +
+            (g.Merges.Count == 0 ? "No lines merged." : $"{g.Merges.Count} merge(s) of lines closer than MinCell " +
+                                                         $"({FdtdGrid.FormatLength(g.MinCellM)}).");
+        return new("openems", "exact", g.Cells, null, g.TimeStepEstimateS, g.MemoryBytes, note,
+                   [g.X.Lines.Count, g.Y.Lines.Count, g.Z.Lines.Count], s.SmallestCellM, axis, features, g.Steps,
+                   g.Merges.Select(m => m.Sentence).ToList(), g.Warnings, g.Refusal);
+    }
+
+    /// <summary>R-em3d8-4c — how far the openEMS grid reaches outside each absorbing face for its PML.</summary>
+    private static IReadOnlyList<string> Enlargements(FdtdGridResult? g)
+    {
+        if (g is null) return [];
+        var list = new List<string>();
+        foreach (var a in new[] { g.X, g.Y, g.Z })
+        {
+            string n = FdtdGrid.AxisName(a.Axis);
+            if (a.PmlLowM > 0)
+                list.Add($"openEMS PML: {n}min grows outward by {FdtdGrid.FormatLength(a.PmlLowM)} " +
+                         $"({FdtdGrid.FormatLength(a.Lines[1] - a.Lines[0])} cells)");
+            if (a.PmlHighM > 0)
+                list.Add($"openEMS PML: {n}max grows outward by {FdtdGrid.FormatLength(a.PmlHighM)} " +
+                         $"({FdtdGrid.FormatLength(a.Lines[^1] - a.Lines[^2])} cells)");
+        }
+        return list;
     }
 
     // ── the human report ─────────────────────────────────────────────────────────────────────
@@ -237,13 +293,18 @@ internal static class ExplainEm3d
                               $"z {L(b.Min[2])} .. {L(b.Max[2])}");
             Console.WriteLine($"  {"",-12} " + string.Join("  ", b.Faces.Select(f => $"{f.Face} {f.Boundary} ({f.From})")));
             Console.WriteLine($"  {"",-12} enlargements: " +
-                              (b.Enlargements.Count == 0 ? "none (no backend section requests one in this build)"
+                              (b.Enlargements.Count == 0 ? "none"
                                                          : string.Join("; ", b.Enlargements)));
         }
 
         Console.WriteLine("  size");
         foreach (var z in r.Size)
+        {
             Console.WriteLine($"    {z.Backend,-10} {z.Kind}: {z.Note}");
+            foreach (var m in z.Merges ?? []) Console.WriteLine($"    {"",-10} merged: {m}");
+            foreach (var w in z.GridWarnings ?? []) Console.WriteLine($"    {"",-10} warning: {w}");
+            if (z.Refusal is { } no) Console.WriteLine($"    {"",-10} a run would stop here: {no}");
+        }
 
         PrintSolvers(r.Solvers);
 

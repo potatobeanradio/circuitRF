@@ -906,9 +906,12 @@ em-3d.md §4.3's guidance for this geometry (a sentence citing its row, never a 
 the operating temperature and where it came from, each conductor's σ at it, every material and where
 its values resolved from, every solid and sheet in construction order with its bounding box (a sheet
 with the reason it is one), each wire with BOTH loop heights and the level that set its foot length,
-the ports with their reference planes, the air box's faces, and the size of the run. In this build both
-size rows say why they are unavailable (Palace's initial mesh-size settings and openEMS's grid are
-later briefs'), and an unavailable row is never printed as 0. It starts no process; the gate holds that
+the ports with their reference planes, the air box's faces, and the size of the run. Palace's size row
+is an ESTIMATE from the Palace section's mesh sizes (`brief-em3d-7`); openEMS's is EXACT, because
+`FdtdGrid.Build` is the grid a run writes (`brief-em3d-8`): lines per axis, cells, the smallest cell
+and the features that set it, the Courant Δt estimate, steps, memory, every line merge, and the refusal
+a run would stop with when the grid would not fit. The air box's `enlargements` list each absorbing
+face's PML — the grid grows OUTWARD by that much. An unavailable row says why and is never printed as 0. It starts no process; the gate holds that
 with a counter on `Em3dProcessLauncher`. In `--json` the rows are `explain.em3d`, lengths in base SI
 with `lengthUnit`/`lengthScale`.
 

@@ -442,7 +442,8 @@ public sealed class EmSetup
     /// Null takes circuitRF's defaults.</summary>
     public CemPalace? Palace { get; set; }
 
-    /// <summary>openEMS's own section. Declared empty here; brief 9 fills it in.</summary>
+    /// <summary>openEMS's own section (em-3d.md §4.2): the grid fields of brief-em3d-8 — see
+    /// <see cref="CemOpenEms.ResolveGrid"/> for the defaults. Null takes circuitRF's defaults.</summary>
     public CemOpenEms? OpenEms { get; set; }
 
     /// <summary>
@@ -497,7 +498,7 @@ public sealed class EmSetup
         OperatingTempC         = OperatingTempC,
         AirBox                 = AirBox,         // record, immutable
         Palace                 = Palace?.Clone(),
-        OpenEms                = OpenEms,        // empty until brief 9
+        OpenEms                = OpenEms?.Clone(),
     };
 
     /// <summary>The extraction settings this setup implies — the one place the two are married,
