@@ -1,0 +1,84 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    EVERY VERB, AS A LIBRARY — so the installed `circuitRF` executable can BE the command line
+    (brief-automation-13-installed-cli.md R-aut13-1).
+
+    Two executables reference this: src/Cli (the framework-dependent `CircuitRF.Cli.dll` every test,
+    script and `dotnet run` on src/Cli launches) and src/Ui (the self-contained, single-file
+    `circuitRF`, whose Program.Main hands a verb here before anything of the GUI's runs). One copy of
+    the code, two front doors — the same rule `serve` already follows by calling CliEntry.Run rather
+    than re-implementing a verb.
+
+    WHY A LIBRARY AND NOT A REFERENCE TO THE EXE. src/Ui can reference src/Cli directly, and it
+    publishes — but measured, the publish tree then carries a framework-dependent `CircuitRF.Cli`
+    apphost, its .deps.json and its .runtimeconfig.json beside `circuitRF`: three files in every
+    installer that cannot run there (no shared runtime is installed) and that nobody would ever
+    delete once they had shipped. `ValidateExecutableReferencesMatchSelfContained=false` silences the
+    check without removing them. A library states the relationship instead.
+
+    WHY THE SOURCES STAY IN src/Cli. This project compiles src/Cli's files where they are. Moving
+    them would break every path that names one — the comment-stripped source scans in
+    tests/Ui.Tests (`Authoring.cs`, `History.cs`, the scan for a second CnlWriter.Write), dozens of
+    RESOLVED.md and design-doc references, and `dotnet run` on src/Cli, which needs exactly
+    one project file in that folder. src/Cli's own .csproj compiles Program.cs and nothing else.
+
+    Framework-free, and gated by tests/Firewall.Tests exactly as CircuitRF.Cli is.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>14</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <RootNamespace>CircuitRF.Cli</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- src/Cli's sources, minus the process entry point and minus its build output — src/Cli/obj
+         holds the EXE's generated AssemblyInfo, which would give this assembly a second set of
+         assembly attributes. -->
+    <Compile Include="../Cli/**/*.cs"
+             Exclude="../Cli/Program.cs;../Cli/bin/**;../Cli/obj/**"
+             LinkBase="Cli" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Core\CircuitRF.Core.csproj" />
+    <ProjectReference Include="..\Engine\CircuitRF.Engine.csproj" />
+    <!-- The `.cem`-to-EmProblem half: the layout model, the technology model, the EM setup and the
+         extractors. Framework-free and gated by tests/Firewall.Tests exactly as Core and Engine are,
+         which is what makes the `em` verb possible at all (brief-cli-em-verb.md R-emcli-1). -->
+    <ProjectReference Include="..\Design\CircuitRF.Design.csproj" />
+    <!-- The Skia renderers, gated the same way (brief-render-1-render-layer-below-the-firewall.md).
+         Referenced from RND-1 onward so `circuitrf render` draws with the code the application
+         draws with rather than with something that resembles it (R-rnd0-1). -->
+    <ProjectReference Include="..\Render\CircuitRF.Render.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      The verb gates live in tests/Ui.Tests, and two of them cannot be written against the PROCESS.
+      `render`'s cancellation gate (brief-render-2-render-verb.md gate 7) has to install a cancelled
+      RunControl through RunHost and see the verb answer 130 with no file written; its layer-leak gate
+      (gate 5) has to run two renders in ONE process, because a leak through a shared, cached
+      Technology is by definition invisible across two. Both are exactly the property `serve` will
+      exercise in production, and neither is reachable by exec'ing the DLL.
+
+      This grant does NOT replace the process gates beside them — byte identity against a real
+      invocation is still measured by launching the DLL, because a same-process call cannot show a
+      difference that only a second process can have.
+    -->
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>CircuitRF.Ui.Tests</_Parameter1>
+    </AssemblyAttribute>
+    <!-- The packaging smoke check (tools/CliSmoke) compares `serve`'s tools/list against THIS
+         catalogue, not against a count or a copied list (R-aut13 gates). -->
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>CliSmoke</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+</Project>

@@ -50,7 +50,7 @@ using RfCore.Loadpull;
 
 namespace CircuitRF.Cli;
 
-internal static class CliEntry
+public static class CliEntry
 {
     /// <summary>Whether the device-worker log event has been subscribed. See Run.</summary>
     private static bool _workerLogHooked;
@@ -63,6 +63,16 @@ internal static class CliEntry
     /// </summary>
     public static int Run(string[] args)
     {
+// `--version` first, and plainly: the one line an installer's own smoke check and an agent that has
+// just installed circuitRF both read to learn which build answered (R-aut13-1). It is the VERSION
+// file's contents, through the assembly attribute every project is stamped with, and nothing else —
+// no document, because a caller asking which version this is has not yet decided how to talk to it.
+if (args.Length > 0 && args[0] == VersionFlag)
+{
+    Console.WriteLine(JsonRun.Version());
+    return 0;
+}
+
 // The glyph outlines a label is flattened with — the ONE thing that has to be installed before any
 // verb runs (brief-render-1-render-layer-below-the-firewall.md).
 //
@@ -128,74 +138,102 @@ JsonRun.Verb = args[0].ToLowerInvariant();
 if (JsonRun.Malformed is { } bad)
     return JsonRun.Finish(JsonRun.Fail(CliDiagnostics.NarrowingMalformed(bad.Option, bad.Text)));
 
-return JsonRun.Finish(JsonRun.Verb switch
-{
-    "sparam" => RunSparam(args[1..]),
-    "dc"     => RunDc(args[1..]),
-    "hb"     => RunHb(args[1..]),
-    "lp"  or "loadpull"         => RunLoadpull(args[1..], pursuit: false),
+// The verb's function, or null for a word that is not one. ONE table: IsVerb below asks the same
+// question of the same switch, so the installed executable's decision "is this a command line or a
+// document to open?" cannot drift from what Run will actually do with it (R-aut13-1).
+return JsonRun.Finish(Dispatch(JsonRun.Verb) is { } run ? run(args[1..]) : UnknownVerb(args[0]));
+    }
+
+    /// <summary>
+    /// The flag that prints the application version and exits 0 — the one argument the CLI
+    /// accepts first that is not a verb (brief-automation-13-installed-cli.md R-aut13-1).
+    /// </summary>
+    public const string VersionFlag = "--version";
+
+    /// <summary>
+    /// Whether <paramref name="firstArgument"/> starts a command line rather than naming a document.
+    ///
+    /// <para><b>The one question src/Ui asks,</b> as the first statement of the circuitRF
+    /// executable's <c>Main</c>: true hands the whole argument vector to <see cref="Run"/>, false
+    /// starts the GUI. It is answered by <see cref="Dispatch"/> — the switch Run dispatches on — so
+    /// no list of verbs exists anywhere else, and src/Ui never names one.</para>
+    ///
+    /// <para><b>The WHOLE argument is compared, never its file name.</b> What a double-click delivers
+    /// is a full path (Windows' <c>"%1"</c>, Linux's <c>%F</c>) or an Apple Event with no argument at
+    /// all, so a document literally named <c>check</c> arrives as <c>/home/x/check</c> or
+    /// <c>C:\x\check</c> and is never a verb. Case follows Run, which lower-cases the verb.</para>
+    /// </summary>
+    public static bool IsVerb(string firstArgument) =>
+        firstArgument == VersionFlag || Dispatch(firstArgument.ToLowerInvariant()) is not null;
+
+    /// <summary>The function each verb runs, or null for a word that is not a verb.</summary>
+    private static Func<string[], int>? Dispatch(string verb) => verb switch
+    {
+    "sparam" => RunSparam,
+    "dc"     => RunDc,
+    "hb"     => RunHb,
+    "lp"  or "loadpull"         => a => RunLoadpull(a, pursuit: false),
     "lpp" or "loadpull_pursuit" or "pursuit"
-                                => RunLoadpull(args[1..], pursuit: true),
-    "em"     => RunEm(args[1..]),
+                                => a => RunLoadpull(a, pursuit: true),
+    "em"     => RunEm,
     // The whole railRF window, with no display (brief-railrf-10-cli-verb.md). It owns no analysis:
     // every number comes out of src/Design/RailRf and every pixel out of CircuitRF.Render, which is
     // what lets a BOARD be gated in CI rather than only looked at (railrf.md §5).
-    "rail"   => CircuitRF.Cli.Rail.Run(args[1..]),
+    "rail"   => CircuitRF.Cli.Rail.Run,
     // The Smith Chart tool's answer, with no display (brief-smith-10-cli-verb.md). It owns no
     // arithmetic and no rendering: every number is src/Design/Smith's and every pixel is
     // CircuitRF.Render's, which is what makes a matching network gateable in CI rather than only
     // draggable in a window (smith-chart.md §9, P3).
-    "smith"  => CircuitRF.Cli.Smith.Run(args[1..]),
-    "convert" => CircuitRF.Cli.LayoutConvert.Run(args[1..]),
+    "smith"  => CircuitRF.Cli.Smith.Run,
+    "convert" => CircuitRF.Cli.LayoutConvert.Run,
     // R-aut3-13: `new` is ONE verb with a noun, not three — the surface has a standing cost, and
     // adding `new schematic` later is a noun rather than a fourth top-level verb.
-    "new"    => CircuitRF.Cli.Authoring.RunNew(args[1..]),
-    "import" => CircuitRF.Cli.Authoring.RunImport(args[1..]),
+    "new"    => CircuitRF.Cli.Authoring.RunNew,
+    "import" => CircuitRF.Cli.Authoring.RunImport,
     // R-aut4-1/R-aut4-6: neither runs an analysis and neither writes. They are what closes a
     // headless client's loop — it writes a document, asks whether the document is sound, and asks
     // what circuitRF made of it, without paying for a run.
-    "check"   => CircuitRF.Cli.Check.Run(args[1..]),
+    "check"   => CircuitRF.Cli.Check.Run,
     // RC-3's one headless spelling, and the only one this brief adds: the safety net has to be
     // reachable from a process with no src/Ui in it, because §1.2's agent is out of process.
     // RC-5 adds `list` and `restore`, RC-7 `commit` (R-rc0-19).
-    "history" => CircuitRF.Cli.History.Run(args[1..]),
-    "explain" => CircuitRF.Cli.Explain.Run(args[1..]),
+    "history" => CircuitRF.Cli.History.Run,
+    "explain" => CircuitRF.Cli.Explain.Run,
     // R-lvs11-1c: LVS is its own verb and is NOT a mode of `check`. `check` must stay cheap enough
     // to call after every edit and stops at elaboration; a comparison on a real board is seconds,
     // and a `check` that had become slow is a `check` people stop running. It owns no comparison —
     // every finding comes out of `LvsRun.Run`, which is what the GUI panel calls.
-    "lvs"     => CircuitRF.Cli.Lvs.Run(args[1..]),
+    "lvs"     => CircuitRF.Cli.Lvs.Run,
     // The one output the command line did not have: a picture (brief-render-2-render-verb.md). It
     // owns no rendering — every pixel comes out of the same CircuitRF.Render the application draws
     // each frame with, which is the whole reason RND-1 put that project below the firewall.
-    "render"  => CircuitRF.Cli.Render.Run(args[1..]),
+    "render"  => CircuitRF.Cli.Render.Run,
     // The inverse of a run verb: the DataSet a run wrote, loaded back through the same two readers
     // the GUI's own source library uses (brief-automation-5-protocol-adapter.md §3's `read`).
-    "read"    => CircuitRF.Cli.ReadBack.Run(args[1..]),
+    "read"    => CircuitRF.Cli.ReadBack.Run,
     // R-aut11-1, and by a wide margin the most valuable verb in the automation series: the
     // extraction the GUI's own Simulate performs, as a document. Without it nothing headless could
     // simulate a design anyone had actually drawn.
-    "netlist" => CircuitRF.Cli.Netlist.Run(args[1..]),
+    "netlist" => CircuitRF.Cli.Netlist.Run,
     // R-aut11-2: one picture out of a result file, with no `.cdd` to hand-author first. It builds
     // the document `render` consumes and hands it to `render`'s own half, so there is one plotting
     // path rather than two.
-    "plot"    => CircuitRF.Cli.PlotVerb.Run(args[1..]),
+    "plot"    => CircuitRF.Cli.PlotVerb.Run,
     // R-aut11-3: what is HERE. The server already knew how to read every one of these documents;
     // it simply never offered to enumerate them, so locating a workspace meant searching the
     // filesystem outside the surface entirely.
-    "find"    => CircuitRF.Cli.Find.Run(args[1..]),
+    "find"    => CircuitRF.Cli.Find.Run,
     // What a client may WRITE, before it writes it (brief-automation-6-reference-and-components.md).
     // The one verb here that takes no path at all: a catalogue is about no document, which is also
     // why it is not a mode of `explain`.
-    "reference" => CircuitRF.Cli.Reference.Run(args[1..]),
+    "reference" => CircuitRF.Cli.Reference.Run,
     // The protocol adapter. A VERB, not a second executable — R-aut5-1: a second apphost means a
     // second CrfRenameApphost, a second set of literals across five packaging files, and a second
     // thing a platform script can silently omit.
-    "serve"   => CircuitRF.Cli.Serve.ServeVerb.Run(args[1..]),
-    "elab"   => RunElab(args[1..]),
-    _        => UnknownVerb(args[0])
-});
-    }
+    "serve"   => CircuitRF.Cli.Serve.ServeVerb.Run,
+    "elab"   => RunElab,
+    _        => null,
+};
 
 
 // Recorded rather than printed, and the exit code is left alone: an unrecognised verb prints help on
@@ -2144,6 +2182,7 @@ static int PrintHelp()
     Console.WriteLine("  reference [topic] [type]  (what a caller may WRITE: the prose pages, and the");
     Console.WriteLine("                          generated component catalogue. Takes no path.)");
     Console.WriteLine("  serve   --root <dir>   (a protocol server on stdin/stdout, for an external client)");
+    Console.WriteLine("  --version              (the version of this build, and nothing else)");
     Console.WriteLine();
     Console.WriteLine("hb options:");
     Console.WriteLine("  -a, --analysis <name>   which analysis to run (default: the only HB chain)");

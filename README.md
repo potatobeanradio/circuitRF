@@ -226,6 +226,9 @@ dotnet run --project src/Ui
 Full CLI documentation: the
 [Command Line chapter](docs/user/reference/cli.html) of the user docs (design notes in
 [`docs/design/cli.md`](docs/design/cli.md)).
+An installed circuitRF is the command line too (`circuitrf <verb> …`, `circuitrf serve --root <dir>`
+for MCP) — for an agent installing it unattended, see
+[Installing for an agent](docs/user/reference/cli.html#agent-install).
 
 
 ```bash

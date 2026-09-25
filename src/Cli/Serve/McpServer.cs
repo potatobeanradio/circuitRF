@@ -50,11 +50,21 @@ internal sealed class McpServer
     /// </summary>
     private readonly HistoryBatch _batch;
 
-    public McpServer(JsonRpc rpc, PathRoot root)
+    /// <summary>
+    /// Whether the installation this server runs out of has changed under it (R-aut13-4). Checked
+    /// before every call; see <see cref="InstallationGuard"/> for what was measured.
+    /// </summary>
+    private readonly InstallationGuard _installation;
+
+    /// <summary>Set when the installation changed: the read loop stops after the current message.</summary>
+    private bool _leaving;
+
+    public McpServer(JsonRpc rpc, PathRoot root, InstallationGuard? installation = null)
     {
-        _rpc   = rpc;
-        _root  = root;
-        _batch = new HistoryBatch(root);
+        _rpc          = rpc;
+        _root         = root;
+        _batch        = new HistoryBatch(root);
+        _installation = installation ?? InstallationGuard.ForThisProcess();
     }
 
     /// <summary>Reads until the client disconnects. Returns the process exit code.</summary>
@@ -76,6 +86,7 @@ internal sealed class McpServer
                     break;
                 }
                 Handle(message);
+                if (_leaving) break;
             }
         }
         finally
@@ -87,7 +98,7 @@ internal sealed class McpServer
             worker.Join(TimeSpan.FromSeconds(30));
         }
 
-        return 0;
+        return _leaving ? 1 : 0;
     }
 
     // ── dispatch ─────────────────────────────────────────────────────────────
@@ -103,6 +114,18 @@ internal sealed class McpServer
         {
             // A response, not a request. This server issues no requests of its own, so there is
             // nothing it can be an answer to; ignoring it is what the protocol asks for.
+            return;
+        }
+
+        // R-aut13-4: an installation replaced under this process can no longer load code it has not
+        // already loaded, so a call is answered with the reason and the server leaves — never a
+        // server that answers some calls and fails others with a missing-file message.
+        if (method is "tools/call" or "resources/read" && _installation.Changed(out string? why))
+        {
+            string sentence = InstallationGuard.Sentence(why);
+            _rpc.Error(id, JsonRpc.InstallationChanged, sentence);
+            Console.Error.WriteLine($"[circuitRF] serve: {sentence}");
+            _leaving = true;
             return;
         }
 

@@ -50,6 +50,11 @@ Instead, briefly paraphrase owner/user messages. Pre-existing quotes are ok.
 - Build:   `dotnet build`
 - Test:    `dotnet test`
 - Run CLI: `dotnet run --project src/Cli -- <args>`
+  **The installed `circuitRF` executable IS the CLI** (AUT-13): `src/Ui/Program.Main`'s first statement
+  hands a verb to `CliEntry.Run` (`IsVerb` comes from `Run`'s own switch; the verb must be `args[0]`).
+  The verbs build as the library `src/Cli.Verbs`, which compiles `src/Cli/*.cs` in place; `src/Cli`'s
+  project is `Program.cs` only. Windows adds a console-subsystem `circuitRF.com` twin of the stub.
+  Detail: `docs/design/cli.md` §20.
   Verbs: `sparam`, `dc`, **`hb`**, **`lp`**, **`lpp`**, **`em`**, **`convert`**, **`new`**,
   **`import`**, **`check`**, **`explain`**, **`history`**, **`render`**, **`netlist`**, **`plot`**,
   **`find`**, **`rail`**, **`smith`**, **`lvs`**, `elab`. **The CLI has its own design doc —
@@ -219,7 +224,9 @@ Instead, briefly paraphrase owner/user messages. Pre-existing quotes are ok.
   narrow a run; **the no-argument form is the release form**, because 1.0.0-beta.2 shipped 7 of its
   15 artifacts when Windows defaulted to one architecture in one scope and Linux was two scripts —
   silently, since a missing update payload stops updates with no error. Held by
-  `tests/Ui.Tests/PackagingScriptTests.cs`.
+  `tests/Ui.Tests/PackagingScriptTests.cs`. **Every script runs `tools/CliSmoke` against its own
+  publish tree** and fails unless the CLI answers — beta.1–32 shipped no CLI because nothing did;
+  an architecture the host cannot execute fails unless `CRF_ALLOW_UNSMOKED=1`.
   **Each must run ON its own platform** (WiX is Windows-only, `codesign`/`hdiutil` macOS-only, and
   the Windows PE icon is only embedded when the publish happens on Windows). Step-by-step
   instructions live in `BUILDING.md`, which `README.md` links to; keep the two in step.
@@ -446,7 +453,7 @@ device;
 below the firewall since 2026-09-07 and referenced by BOTH `src/Ui` and `src/Cli`, so a headless
 picture is drawn by the code the GUI draws with rather than by a second renderer that would drift
 invisibly),
-`src/Ui` (Avalonia), `src/Cli` (headless driver +
+`src/Ui` (Avalonia), `src/Cli` + `src/Cli.Verbs` (headless driver +
 test harness). `RfCore` is an ordinary first-party project alongside the rest — see §Stack for why it is
 no longer at the repo root, and why that changed nothing architecturally.
 

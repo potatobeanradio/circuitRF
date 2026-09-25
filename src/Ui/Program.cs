@@ -25,6 +25,27 @@ sealed class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        // THE COMMAND LINE, BEFORE ANYTHING ELSE (brief-automation-13-installed-cli.md R-aut13-1).
+        // The installed circuitRF executable IS the CLI: `circuitRF check .` and `circuitRF serve
+        // --root <dir>` run the same CliEntry.Run that `dotnet run --project src/Cli` does, and exit.
+        //
+        // FIRST, and every line below this one is wrong for a CLI call — each silently:
+        //   * CrashReporter.Install writes the GUI's session file; a CLI exit is not a GUI session.
+        //   * AppRelaunch / ReleaseNotesGate would record this call as a launch of the application.
+        //   * UpdateStartup.RunBeforeUi applies a staged update and HANDS THIS PROCESS OVER (execv on
+        //     Linux), so `circuitrf check` could turn into a GUI launch of the new version.
+        //   * The Windows mutex and the Linux lock would send a CLI call made while the window is open
+        //     down the "not first" branch, forwarding its arguments to the window as files to open.
+        //   * ExternalWorkerPolicy is left out too: the installed CLI behaves exactly as src/Cli's own
+        //     executable, which installs no consent hook and runs workers (the setting's default).
+        // Avalonia is never initialised on this path — no AppBuilder, and on macOS no NSApplication,
+        // so no Dock icon and no window. src/Ui names no verb: CliEntry.IsVerb is answered by the
+        // same switch Run dispatches on. A double-click delivers a full path or, on macOS, an Apple
+        // Event with no argument at all, so opening a document never reaches this branch.
+        // ProgramHarmonica and ProgramWBond deliberately do not do this (out of AUT-13's scope).
+        if (args.Length > 0 && CircuitRF.Cli.CliEntry.IsVerb(args[0]))
+            Environment.Exit(CircuitRF.Cli.CliEntry.Run(args));
+
         // FIRST, before Avalonia: a crash while the toolkit is coming up is still a crash the user
         // needs a report for. See Diagnostics/CrashReporter for why the session file, and not the
         // exception handlers, is the part that catches a simulation death.

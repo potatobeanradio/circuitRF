@@ -155,6 +155,27 @@ Some things worth knowing before they surprise you:
 
 To package deliberately without them, set `CRF_ALLOW_NO_DEVICE_WORKER=1`.
 
+## The command line is run out of every build
+
+The installed `circuitRF` executable is also the command line (`circuitrf check .`,
+`circuitrf serve --root <dir>`), and **every packaging script runs it out of the tree it is about to
+package** — `tools/CliSmoke`, built once per run. It checks that `--version` prints the `VERSION`
+file, that `reference --json` parses, and that `serve` answers `initialize` and `tools/list` with every
+tool in the catalogue and exits when stdin closes. A failure stops the build; 1.0.0-beta.1 through
+beta.32 shipped with no command line at all because nothing ever did this.
+
+It can only run a build the machine can EXECUTE, and an architecture it could not run fails the run at
+the end as **NOT SMOKE-TESTED**:
+
+- **macOS:** the Intel image needs Rosetta on Apple Silicon — `softwareupdate --install-rosetta`.
+- **Linux:** the other architecture needs qemu's binfmt handler (`qemu-user-static`).
+- **Windows:** an x64 machine cannot run arm64 at all; Windows on ARM runs all three.
+
+Set `CRF_ALLOW_UNSMOKED=1` to accept an unchecked architecture knowingly. On Windows the check goes
+through the per-user launcher stub, which is the route an MCP client's pipes take; `circuitRF.com`,
+the console twin a typed `circuitrf` reaches, cannot be checked through a pipe — run
+`circuitrf --version` from a real cmd and PowerShell once per release (the matrix below).
+
 ---
 
 ## Windows — `.msi`, `-user.msi` and the update `.zip` (x64, arm64, x86)
@@ -616,6 +637,8 @@ any of it — the outcomes are dialogs that either appear or do not.
 | Windows | *Only if you have started Authenticode-signing:* **all six** PEs in the update `.zip` carry your certificate — `circuitRF.exe`, `senior_worker.exe`, `crf-model-host.dll`, `av_libglesv2.dll`, `libSkiaSharp.dll`, `libHarfBuzzSharp.dll`. Signing only the first fails the identity match, silently (design §9.1's Correction) | |
 | Windows | A per-user install updates with **no** UAC prompt and **no** SmartScreen warning | |
 | Linux | A `~/.local` install updates and the `.desktop` entry still launches afterwards | |
+| Windows | `circuitrf --version` and `circuitrf check <workspace>` typed in **cmd and in PowerShell**, per-user and per-machine: output appears, and the prompt waits for it (that is `circuitRF.com`; a pipe cannot test it) | |
+| All | Double-click a `.csch` and a `.clay` with circuitRF closed, then again with it open: both open in the GUI, the second in the window already open — the executable being the CLI must not have changed this | |
 | All | A read-only install (`.msi` / `.deb` / standard-user macOS) is notify-only and writes nothing | |
 
 **And one thing that is not a build step.** Design §15.5's signed manifest now exists and the key is

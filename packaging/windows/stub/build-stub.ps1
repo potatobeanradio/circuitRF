@@ -3,7 +3,15 @@
 
     .\packaging\windows\stub\build-stub.ps1 -Arch x64
 
-  Writes build\<AppName>-stub-<Arch>.exe. Called by build-windows.ps1 when -Scope perUser.
+  Writes build\<AppName>-stub-<Arch>.exe. Called by build-windows.ps1 for every architecture.
+
+    .\packaging\windows\stub\build-stub.ps1 -Arch x64 -Console
+
+  Writes build\<AppName>-console-<Arch>.com instead: the SAME source compiled for the CONSOLE
+  subsystem with -DCRF_CONSOLE, installed as circuitRF.com beside circuitRF.exe in both install
+  scopes, so a command typed in cmd or PowerShell gets a console and a shell that waits for it
+  (brief-automation-13-installed-cli.md R-aut13-2; circuitrf-stub.c says why). build-stub.sh
+  takes the same choice as its third argument; the two must agree.
 
   The stub is ~150 lines of plain Win32, so any C compiler produces the same thing. Several
   routes are tried in order and the FIRST ONE THAT PRODUCES A USABLE BINARY wins:
@@ -27,14 +35,35 @@ param(
     [ValidateSet('x64', 'arm64', 'x86')]
     [string]$Arch = 'x64',
 
-    [string]$AppName = 'circuitRF'
+    [string]$AppName = 'circuitRF',
+
+    [switch]$Console
 )
 
 $ErrorActionPreference = 'Stop'
 $src = Join-Path $PSScriptRoot 'circuitrf-stub.c'
 $out = Join-Path $PSScriptRoot 'build'
 New-Item -ItemType Directory -Force -Path $out | Out-Null
-$exe = Join-Path $out "$AppName-stub-$Arch.exe"
+# The two builds differ in exactly these, and in nothing else. The subsystem read back out of the
+# PE is 2 (GUI) for the stub and 3 (CONSOLE) for the .com, and each is wrong in its own silent way:
+# a console stub opens a console window on every shortcut launch, and a GUI .com gives a typed
+# command no console and a shell that returns before it has printed anything.
+if ($Console) {
+    $exe           = Join-Path $out "$AppName-console-$Arch.com"
+    $zigSubsystem  = '-Wl,--subsystem,console'
+    $clSubsystem   = '/SUBSYSTEM:CONSOLE'
+    $clEntry       = '/ENTRY:wmainCRTStartup'
+    $wantSubsystem = 3
+    $modeDefines   = @('-DCRF_CONSOLE')
+}
+else {
+    $exe           = Join-Path $out "$AppName-stub-$Arch.exe"
+    $zigSubsystem  = '-Wl,--subsystem,windows'
+    $clSubsystem   = '/SUBSYSTEM:WINDOWS'
+    $clEntry       = '/ENTRY:wWinMainCRTStartup'
+    $wantSubsystem = 2
+    $modeDefines   = @()
+}
 
 # Removed before anything runs: every guard below is `-not (Test-Path $exe)`, so a stub left by an
 # earlier run would skip both compilers and be packaged as though it had just been built.
@@ -157,8 +186,12 @@ function Test-StubBinary {
     if ($machine -ne $want) {
         return ("it is machine 0x{0:X4}, not the 0x{1:X4} a {2} install needs" -f $machine, $want, $WantArch)
     }
-    if ($subsystem -ne 2) {
-        return "its subsystem is $subsystem (2 is GUI); a console window would open on every launch"
+    if ($subsystem -ne $script:wantSubsystem) {
+        if ($script:wantSubsystem -eq 2) {
+            return "its subsystem is $subsystem (2 is GUI); a console window would open on every launch"
+        }
+        return ("its subsystem is $subsystem (3 is CONSOLE); a typed command would get no console " +
+                "and no shell would wait for it")
     }
     return $null
 }
@@ -237,7 +270,11 @@ $icoSrc  = Join-Path $PSScriptRoot "..\..\..\src\Ui\Assets\${AppName}Icon.ico"
 # the .res, and one left by an earlier run would be linked into a stub built from a different icon.
 if (Test-Path $resFile) { Remove-Item $resFile -Force }
 
-if (Test-Path $icoSrc) {
+if ($Console) {
+    # NOT FOR THE .com: nothing draws it - shortcuts and file associations point at the .exe - so
+    # the icon would be dead weight in it. build-stub.sh makes the same choice.
+}
+elseif (Test-Path $icoSrc) {
     $icoDst = Join-Path $out "$AppName-icon.ico"
     Copy-Item $icoSrc $icoDst -Force
     $rcFile = Join-Path $out "$AppName-icon.rc"
@@ -457,7 +494,7 @@ if ($zigExe) {
             $attempts++
             $r = Invoke-Compiler -Exe $zigExe -Environment $route.Env -Arguments (
                      @('cc', '-target', $zigTarget) + $route.Flags +
-                     @('-municode', '-Wl,--subsystem,windows', $appDefine, $src) + $iconArgs +
+                     @('-municode', $zigSubsystem, $appDefine) + $modeDefines + @($src) + $iconArgs +
                      @('-o', $exe, '-luser32'))
             if (Complete-Route $route.Label $r) { return }
 
@@ -488,9 +525,9 @@ if (Get-Command cl -ErrorAction SilentlyContinue) {
             if ($rcr.ExitCode -eq 0 -and (Test-Path $resFile)) { $resArgs = @($resFile) }
             else { Write-Host '    rc.exe could not compile the icon; building without it.' }
         }
-        $r = Invoke-Compiler cl (@('/nologo', '/O2', '/W3', '/DUNICODE', '/D_UNICODE', $appDefine, $src) +
-                                 $resArgs +
-                                 @('/link', '/SUBSYSTEM:WINDOWS', '/ENTRY:wWinMainCRTStartup',
+        $r = Invoke-Compiler cl (@('/nologo', '/O2', '/W3', '/DUNICODE', '/D_UNICODE', $appDefine) +
+                                 $modeDefines + @($src) + $resArgs +
+                                 @('/link', $clSubsystem, $clEntry,
                                    'user32.lib', "/OUT:$exe"))
     }
     finally { Pop-Location }
@@ -556,8 +593,8 @@ if (-not (Test-Path $exe)) {
         Write-Host "Building the launcher stub with cl.exe (Visual Studio, $pair) ..."
 
         $bat = Join-Path $out 'build-stub-msvc.cmd'
-        $clHead = "cl /nologo /O2 /W3 /DUNICODE /D_UNICODE $appDefine `"$src`""
-        $clTail = "/link /SUBSYSTEM:WINDOWS /ENTRY:wWinMainCRTStartup user32.lib `"/OUT:$exe`""
+        $clHead = "cl /nologo /O2 /W3 /DUNICODE /D_UNICODE $appDefine $($modeDefines -join ' ') `"$src`""
+        $clTail = "/link $clSubsystem $clEntry user32.lib `"/OUT:$exe`""
         $lines = @(
             '@echo off',
             "cd /d `"$out`"",

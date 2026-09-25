@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # -- Build the circuitRF per-user launcher stub ------------------------------------------------
 #
-#   build-stub.sh [x64|arm64|x86] [app-name]
+#   build-stub.sh [x64|arm64|x86] [app-name] [gui|console]
 #
-# Writes build/<app-name>-stub-<arch>.exe. Follows tools/senior-worker/build.sh: zig cc is the
+# Writes build/<app-name>-stub-<arch>.exe, or with `console` build/<app-name>-console-<arch>.com -
+# the SAME source compiled for the console subsystem, which a per-user and a per-machine install
+# both put beside circuitRF.exe so a command typed in cmd or PowerShell gets a console and a shell
+# that waits (brief-automation-13-installed-cli.md R-aut13-2; see circuitrf-stub.c). Follows tools/senior-worker/build.sh: zig cc is the
 # preferred route because it cross-compiles a Windows PE from any host with one download and no
 # daemon, which is what lets this stub be built and checked on a machine that is not Windows.
 #
@@ -15,6 +18,7 @@ set -eu
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 arch="${1:-x64}"
 app="${2:-circuitRF}"
+mode="${3:-gui}"
 out="$here/build"
 mkdir -p "$out"
 
@@ -32,7 +36,11 @@ if ! command -v "$ZIG" >/dev/null 2>&1; then
     exit 1
 fi
 
-exe="$out/$app-stub-$arch.exe"
+case "$mode" in
+    gui)     exe="$out/$app-stub-$arch.exe";    subsystem_flag="-Wl,--subsystem,windows"; want_subsys=0002; mode_define="" ;;
+    console) exe="$out/$app-console-$arch.com"; subsystem_flag="-Wl,--subsystem,console"; want_subsys=0003; mode_define="-DCRF_CONSOLE" ;;
+    *) echo "unknown mode '$mode' (expected gui or console)" >&2; exit 2 ;;
+esac
 rm -f "$exe"
 
 # -Wl,--subsystem,windows and NOT -mwindows. Both are meant to ask for the GUI subsystem so that
@@ -65,9 +73,13 @@ rm -f "$exe"
 #
 # A MISSING .ico IS NOT AN ERROR - they are build products of tools/IconGen, which the packaging
 # scripts run first, and an icon-less stub still launches the application.
+# NOT FOR THE .com: nothing draws it - shortcuts and associations point at the .exe - and the icon is
+# ~200 KB of a file that is otherwise ~20 KB.
 rc_arg=""
 ico="$here/../../../src/Ui/Assets/${app}Icon.ico"
-if [ -f "$ico" ]; then
+if [ "$mode" = console ]; then
+    :
+elif [ -f "$ico" ]; then
     cp "$ico" "$out/$app-icon.ico"
     printf '1 ICON "%s-icon.ico"\n' "$app" > "$out/$app-icon.rc"
     rc_arg="$out/$app-icon.rc"
@@ -76,8 +88,8 @@ else
     echo "generate it with: dotnet run --project tools/IconGen"
 fi
 
-"$ZIG" cc -target "$target" -mcpu=baseline -O2 -municode -Wl,--subsystem,windows \
-    "-DCRF_APP_NAME=$app" \
+"$ZIG" cc -target "$target" -mcpu=baseline -O2 -municode "$subsystem_flag" \
+    "-DCRF_APP_NAME=$app" ${mode_define:+"$mode_define"} \
     "$here/circuitrf-stub.c" ${rc_arg:+"$rc_arg"} -o "$exe" -luser32
 
 # Read back what was actually built, exactly as build-stub.ps1 does: never trust a toolchain to have
@@ -92,8 +104,15 @@ if [ "$got_machine" != "$machine" ]; then
     echo "built the wrong architecture: machine 0x$got_machine, expected 0x$machine for $arch" >&2
     rm -f "$exe"; exit 1
 fi
-if [ "$got_subsys" != "0002" ]; then
-    echo "subsystem is 0x$got_subsys, not 2 (GUI): a console window would open on every launch" >&2
+# 2 (GUI) for the stub, 3 (CONSOLE) for the .com - each wrong in its own silent way: a console
+# stub opens a console window on every shortcut launch, and a GUI .com gives a typed command no
+# console and a shell that does not wait for it, which is the one thing the .com exists to fix.
+if [ "$got_subsys" != "$want_subsys" ]; then
+    case "$want_subsys" in
+        0002) why="not 2 (GUI): a console window would open on every launch" ;;
+        0003) why="not 3 (CONSOLE): a typed command would get no console and no shell would wait for it" ;;
+    esac
+    echo "subsystem is 0x$got_subsys, $why" >&2
     rm -f "$exe"; exit 1
 fi
 

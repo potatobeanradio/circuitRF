@@ -1,6 +1,6 @@
 # circuitRF — the command-line interface (`src/Cli`)
 
-**Status:** current · **Covers:** `src/Cli/Program.cs` · **Related:** `ui-architecture.md`,
+**Status:** current · **Covers:** `src/Cli` (built as `src/Cli.Verbs` + the one-line `src/Cli/Program.cs`), and the installed `circuitRF` executable's dispatch (§20) · **Related:** `ui-architecture.md`,
 `loadpull.md`, `loadpull_pursuit.md`, `harmonic-balance.md`, `mom-engine.md`
 
 ## 1. What it is, and the one constraint that shapes it
@@ -24,6 +24,14 @@ engine lives in `src/Engine` or `src/RfCore`**, and nothing whose driver lives i
 `src/Design` joined that path in 2026-08: it holds the design-layer artifacts an EM problem is built
 from — the layout model, the technology model, the cell-folder format, the `.cem` and the extractors —
 and it is gated by the same firewall test. That is what the `em` verb (§8) runs on.
+
+**There are two front doors to one set of verbs** (§20, AUT-13). `src/Cli`'s sources compile into
+the library `CircuitRF.Cli.Verbs`; `src/Cli/CircuitRF.Cli.csproj` is `Program.cs` alone —
+`CliEntry.Run(args)` — and is what `dotnet run --project src/Cli`, every test and every script
+launches. The INSTALLED `circuitRF` executable is the other door: `src/Ui` references the library and
+its `Program.Main` hands a verb to the same `CliEntry.Run` before any of the GUI starts. The arrow
+into `src/Ui` does not cross the firewall the wrong way — the wall forbids the CLI referencing a UI
+framework, not the GUI referencing the CLI — and `CircuitRF.Cli.Verbs` has its own firewall row.
 
 ## 2. The verbs
 
@@ -1250,6 +1258,32 @@ path; and a verb that CREATES something cannot create it twice, so those two cal
 different destinations and the destination is substituted out. The stdout audit, the three
 root-escapes, the lifecycle and the cancellation are in the same file.
 
+### 11.8 A server outlives an update — or says so and leaves
+
+`serve` can run for hours out of an installation the GUI then updates (AUT-13 R-aut13-4). **Measured on
+macOS, not assumed:** a `serve` whose single-file bundle was exchanged under it (`renamex_np`
+`RENAME_SWAP`, which is what the updater does) went on answering `check` — every assembly it needs was
+already loaded — and failed `run` with *Could not load file or assembly 'NumFlat'* and `history` with
+*… 'System.Diagnostics.Process'*. The runtime reads a not-yet-loaded assembly out of its executable BY
+PATH, and after the exchange that path is a different file (the same finding `src/Ui/RESOLVED.md`
+records for the GUI's own update hand-over). The same family reaches Linux if an `app-<ver>` directory
+a server runs from is reclaimed; Windows cannot delete a running executable's folder.
+
+A server that answers some calls and fails others with a missing-file message is worse than a dead
+one: a client concludes the TOOL is broken — AUT-7 §3's false defect report, by another road. So
+`InstallationGuard` records the executable's size and write time at start, and before every
+`tools/call` and `resources/read` asks whether it still matches. If not, that call gets a JSON-RPC
+error **−32001** naming the reason, the sentence goes to stderr, and the server exits 1. The client's
+next launch of the same command runs the new version, because the path it launches is exactly the one
+the update replaced. Everything the guard runs is CoreLib, and `Changed` is called once at construction
+so it is prepared while its whole closure is certainly loaded. Under `dotnet CircuitRF.Cli.dll` the
+guarded file is `dotnet` itself, which never changes, so the development server never trips it.
+
+Gate: `InstalledCliTests.Serve_AnswersAndLeaves_WhenItsInstallationChangesUnderIt` (replaced and
+removed). The exchange itself was measured by hand, with a structurally different second bundle — two
+builds whose assemblies sit at the same offsets make the swap invisible, which is how the first run
+of that measurement came back clean and wrong.
+
 ## 12. `reference` — what a caller may write, before it writes it
 
 `check` tells a caller that what it wrote is wrong. `explain` tells it what circuitRF made of what it
@@ -2447,3 +2481,127 @@ the counts* on the correct board. They do not, and cannot: nothing on either exa
 and the MMIC's only sub-cells are leaf parts, so both flags leave every count identical. What they
 do change is what the run SAYS it did — the mode is on the face of the human report and of the
 document, both sides, every run — and that is what the gate pins instead.
+
+## 20. The installed CLI — the `circuitRF` executable is the command line
+
+**Every release through 1.0.0-beta.32 shipped no command-line driver at all** (AUT-13). All three
+packaging scripts published `src/Ui` only, `src/Ui` did not reference `src/Cli`, and `Program.Main`
+handled no verb — so `circuitRF serve` opened a window, and on Linux, where `/usr/bin/circuitrf` and
+`~/.local/bin/circuitrf` link to the application, the documented `circuitrf sparam amp.cnl` started
+the GUI and handed it `sparam` as a file to open. Every CLI gate stayed green throughout, because
+every one of them launches `src/Cli/bin`.
+
+### 20.1 One executable, dispatching on its first argument
+
+The owner's two requirements — no meaningful size, and the command is called `circuitRF` — point at
+one design. Each application is a self-contained single-file publish of 130–143 MB carrying its own
+runtime, Avalonia and Skia; a second self-contained executable would be another copy of all of it,
+×15 artifacts, for code that is ~0.67 MB. And it could not be called `circuitRF` anyway: it would sit
+beside the GUI's `circuitRF.exe`, or inside the same `Contents/MacOS/`, on file systems that are
+case-insensitive by default.
+
+So `src/Ui/Program.cs`'s `Main` begins:
+
+```csharp
+if (args.Length > 0 && CircuitRF.Cli.CliEntry.IsVerb(args[0]))
+    Environment.Exit(CircuitRF.Cli.CliEntry.Run(args));
+```
+
+**First, and before every line that was already there**, each of which is wrong for a CLI call and
+fails silently: `CrashReporter.Install` (a CLI exit is not a GUI session), `AppRelaunch` and
+`ReleaseNotesGate` (a CLI call is not a launch), `UpdateStartup.RunBeforeUi` (it applies a staged
+update and HANDS THE PROCESS OVER — `execv` on Linux — so `circuitrf check` could become a GUI launch of
+the new version), and the Windows mutex / Linux lock / socket (a CLI call made while the window is open
+would take the "not first" branch and forward its arguments to the window). `ExternalWorkerPolicy` is
+left out as well, so the installed CLI behaves as `src/Cli`'s own executable does. Avalonia is never
+initialised on that path: no `AppBuilder`, no `NSApplication`, no Dock icon. Only circuitRF's entry
+point does this — harmonicaRF and wBond have no CLI (out of AUT-13's scope).
+
+**`IsVerb` is answered by the switch `Run` dispatches on** (`CliEntry.Dispatch`), plus `--version`,
+the one first argument that is not a verb. No list of verbs exists anywhere else and `src/Ui` names
+none. It compares the WHOLE argument, lower-cased as `Run` does — never its file name — which is what
+keeps opening a document untouched: a double-click delivers a full path (Windows `"%1"`, Linux `%F`)
+or, on macOS, an Apple Event with no argument at all, so a file literally named `check` arrives as
+`/home/x/check` and is not a verb. The corollary is that **the verb must come first** on the installed
+executable; `circuitrf --json check .` reaches the GUI. (`JsonRun.TakeFlags` already assumed the verb
+leads — `smith`'s own `--at` is decided on `args[0]`.)
+
+`--version` prints `JsonRun.Version()` — the assembly's `InformationalVersion`, stamped from the
+`VERSION` file — and nothing else, and exits 0. It is not a document: a caller asking which build
+answered has not yet decided how to talk to it.
+
+### 20.2 A library, not a reference to the executable
+
+`src/Ui` referencing `src/Cli` directly builds and publishes — measured — but the publish tree then
+carries a framework-dependent `CircuitRF.Cli` apphost with its `.deps.json` and `.runtimeconfig.json`
+beside `circuitRF`: three files in every installer that cannot run there, since no shared runtime is
+installed. `ValidateExecutableReferencesMatchSelfContained=false` would silence NETSDK1150/1151 without
+removing them. So the verbs are `src/Cli.Verbs/CircuitRF.Cli.Verbs.csproj`, which compiles
+`src/Cli/**/*.cs` **where they stand** (minus `Program.cs`, `bin/`, `obj/`). Moving them would have
+broken every source scan that names one (`Authoring.cs`, `History.cs`, the second-`CnlWriter.Write`
+scan), dozens of document references, and `dotnet run --project src/Cli`, which needs exactly one
+project file in that folder. The `InternalsVisibleTo` grants moved with the code: `CircuitRF.Render`
+now grants `CircuitRF.Cli.Verbs`, and the verbs grant `CircuitRF.Ui.Tests` and `CliSmoke`.
+
+Measured growth of the published executable, every RID, before → after: **+668,818 to +677,648
+bytes**, which is `CircuitRF.Cli.Verbs.dll` (668,160 bytes) and nothing else; no file was added to any
+publish tree. harmonicaRF and wBond carry the same DLL unused, because the three applications are one
+`.csproj`.
+
+**What the application's module initializers change.** `src/Ui` has seven `[ModuleInitializer]`s and
+they run before `Main`, so the installed CLI gets them and `CircuitRF.Cli.dll` does not. Each only
+installs a seam — the PCell generator source for `CellPins`, the Verilog-A cache directories and
+preferred compiler, the git path, a Data Display note sink (a no-op until `CrashReporter` is
+installed), a wBond default, and a `NumericUpDown` property hook. Measured: `check --json` over all ten
+shipped examples and `lvs --json` over three are byte-identical through both doors. The one seam that
+can change an ANSWER is the PCell generator source, and only for a PCell cell written before pins were
+persisted — there the installed CLI resolves its pins exactly as the GUI does, which is the better of
+the two answers. The Verilog-A compiler and the git executable follow the user's GUI preference when
+it is set.
+
+### 20.3 Windows: the launcher stub, and `circuitRF.com`
+
+Two routes reach the CLI on Windows, and `packaging/windows/stub/circuitrf-stub.c` serves both.
+
+1. **A program spawning `circuitRF.exe` with pipes** — every MCP client. In a per-user install that
+   is the stub, which starts `app-<version>\circuitRF.exe`. It now sets `STARTF_USESTDHANDLES` with its
+   own three handles (inheriting them makes them VALID in the child; only the flag makes them its
+   stdio), and it raises its `MessageBox` only when it has no pipe, file or console to write the
+   reason to — a modal dialog on a headless agent waits for a click nobody makes.
+2. **A person typing `circuitrf` in cmd or PowerShell.** A GUI-subsystem executable gets no console
+   and neither shell waits for it. So the same source is compiled a second time with `-DCRF_CONSOLE`
+   for the CONSOLE subsystem and installed as `circuitRF.com` beside `circuitRF.exe` in both scopes.
+   `PATHEXT` puts `.COM` before `.EXE`, so a typed `circuitrf` reaches it, while shortcuts, every
+   association (`TargetFile="CircuitRfExe"`) and `CreateProcess("circuitrf")` — which appends `.exe`
+   — still reach the `.exe`. With no `current` file (a per-machine install) it starts the
+   `circuitRF.exe` beside it. It ties the child to itself with a kill-on-close job, so Ctrl+C in the
+   console does not leave a solve running in the background; `SILENT_BREAKAWAY_OK` limits that to
+   the direct child, so the GUI's own Relaunch successor and the device workers are never killed
+   with it. Both stub builders read the subsystem back out of the PE and refuse a wrong one — 2 for
+   the stub, 3 for the `.com`.
+
+Both MSIs add `INSTALLFOLDER` to `PATH` (`Part="last"`): the user's for per-user, the system's for
+per-machine, removed on uninstall. It is the folder that never changes across updates — never an
+`app-<version>` folder.
+
+### 20.4 The packaging gate: run what was built
+
+`tools/CliSmoke` is the gate that was missing for 32 releases, and every packaging script runs it
+against the tree that goes into its installers — `Contents/MacOS/circuitRF` in the bundle about to be
+imaged, `publish/linux-*/circuitRF`, and on Windows the stub laid out as a per-user install
+(stub + `current` + a copy of the publish tree), because that is the pipe route MCP clients take.
+It fails the build unless `--version` prints exactly the `VERSION` file, `reference --json` exits 0 and
+parses, and `serve` answers `initialize` with `serverInfo`, answers `tools/list` with exactly the tools
+`ToolCatalog` defines plus `batch` — compared with the catalogue, never a count — and exits 0 when stdin
+closes.
+
+An architecture the build machine cannot execute is reported as **NOT SMOKE-TESTED** and fails the run
+at the end unless `CRF_ALLOW_UNSMOKED=1`: x64 on Apple Silicon needs Rosetta, the other Linux
+architecture needs qemu's binfmt handler, and Windows on ARM runs all three. The `.com` cannot be
+checked through a pipe — a pipe is the one condition it does not exist for — so it is checked by hand
+from a real console at a phase boundary (`packaging/RESOLVED.md`).
+
+Source-tree halves, in `tests/Ui.Tests`: `Cli/InstalledCliTests.cs` (dispatch order, `IsVerb` over every
+shape a double-click delivers, `check --json` byte identity through the application executable, the
+update guard) and three text gates in `PackagingScriptTests` (the smoke step in all three scripts,
+double-click routes still targeting the `.exe` and `%F`, the `.com`'s subsystem demand).

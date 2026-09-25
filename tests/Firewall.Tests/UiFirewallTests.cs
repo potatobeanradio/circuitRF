@@ -17,6 +17,12 @@ public class UiFirewallTests
         { "CircuitRF.Core",   "CircuitRF.Core.dll"   },
         { "CircuitRF.Engine", "CircuitRF.Engine.dll" },
         { "CircuitRF.Cli",    "CircuitRF.Cli.dll"    },
+        // Where every verb lives since AUT-13 split the entry point off (src/Cli.Verbs). src/Ui
+        // references THIS assembly so the circuitRF executable can be the command line; the wall is
+        // what keeps that reference one-way — the day this row fails, `circuitrf` stops being
+        // buildable without a UI framework, and CircuitRF.Cli's own row above could not notice,
+        // because that assembly is now one line.
+        { "CircuitRF.Cli.Verbs", "CircuitRF.Cli.Verbs.dll" },
         // harmonicaRF's framework-free half (docs/design/harmonicarf.md §3.2). It ships as a
         // standalone binary too, which does NOT weaken this: the standalone app is src/Ui with a
         // different Main, and src/Harmonica stays on this side of the wall.

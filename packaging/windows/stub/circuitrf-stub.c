@@ -29,6 +29,27 @@
  * and a debugger all attach to, and an exit code that is always 0 hides every startup failure.
  *
  * Built by build-stub.ps1 (Windows) or build-stub.sh (anywhere, with zig).
+ *
+ * -- THE SAME SOURCE, BUILT A SECOND TIME, IS circuitRF.com ------------------------------------
+ *
+ * The circuitRF executable is also the command line (brief-automation-13-installed-cli.md): its
+ * Program.Main hands `circuitRF check .` or `circuitRF serve --root <dir>` to the CLI before any
+ * of the GUI starts. Two routes reach it on Windows, and this file serves both:
+ *
+ *   1. A PROGRAM that spawns circuitRF.exe with redirected pipes - every MCP client, every agent's
+ *      shell tool. The stub hands the child its own standard handles (STARTF_USESTDHANDLES), so a
+ *      GUI-subsystem child writes into the caller's pipes, and it never shows a dialog when there is
+ *      a pipe or a file to write the reason to: a modal box on a headless agent or CI box waits for
+ *      a click nobody will make.
+ *
+ *   2. A PERSON typing `circuitrf check .` in cmd or PowerShell. A GUI-subsystem executable gets no
+ *      console, and neither shell waits for it - the prompt returns at once and the output is lost.
+ *      So this file is compiled again with -DCRF_CONSOLE and the CONSOLE subsystem, and installed as
+ *      circuitRF.com beside circuitRF.exe. PATHEXT lists .COM before .EXE, so a TYPED `circuitrf`
+ *      resolves to it, while shortcuts, file associations and CreateProcess("circuitrf") - which
+ *      appends .exe - still reach the .exe. The console build never shows a dialog, and when there
+ *      is no `current` file (a per-machine install, where circuitRF.exe beside it IS the
+ *      application) it starts that .exe instead.
  */
 
 #ifdef _WIN32
@@ -148,6 +169,37 @@ static const wchar_t *arguments_after_argv0(const wchar_t *cmdline)
     return p;
 }
 
+/*
+ * Is there somewhere OTHER than a dialog to say why this failed? True when standard output is a
+ * pipe, a file or a console - i.e. a program or a shell started us, not a shortcut or a
+ * double-click. The GUI build then writes the reason to stderr and never raises a MessageBox: a
+ * modal dialog on a headless agent or CI box hangs until someone clicks it, and nobody will.
+ */
+static int has_standard_output(void)
+{
+    HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (h == NULL || h == INVALID_HANDLE_VALUE) return 0;
+    DWORD type = GetFileType(h);
+    return type == FILE_TYPE_PIPE || type == FILE_TYPE_DISK || type == FILE_TYPE_CHAR;
+}
+
+/*
+ * The reason, as UTF-8 on the stderr HANDLE - written with WriteFile rather than through the C
+ * runtime's stderr, whose initialisation in a GUI-subsystem program is not something to rely on.
+ */
+static void write_stderr(const wchar_t *text)
+{
+    HANDLE h = GetStdHandle(STD_ERROR_HANDLE);
+    if (h == NULL || h == INVALID_HANDLE_VALUE) return;
+
+    char bytes[CRF_MAX];
+    int n = WideCharToMultiByte(CP_UTF8, 0, text, -1, bytes, (int)sizeof(bytes) - 2, NULL, NULL);
+    if (n <= 1) return;
+    bytes[n - 1] = '\n';                 /* replaces the terminator counted in n */
+    DWORD written = 0;
+    WriteFile(h, bytes, (DWORD)n, &written, NULL);
+}
+
 static void report(const wchar_t *what, const wchar_t *detail)
 {
     wchar_t msg[CRF_MAX];
@@ -155,14 +207,45 @@ static void report(const wchar_t *what, const wchar_t *detail)
                CRF_APP_TITLE L" could not start.\n\n%s\n%s\n\nReinstalling "
                CRF_APP_TITLE L" will repair this.", what, detail ? detail : L"");
     msg[CRF_MAX - 1] = L'\0';
-    fwprintf(stderr, L"%s\n", msg);
-    MessageBoxW(NULL, msg, CRF_APP_TITLE, MB_ICONERROR | MB_OK);
+    write_stderr(msg);
+#ifndef CRF_CONSOLE
+    if (!has_standard_output())
+        MessageBoxW(NULL, msg, CRF_APP_TITLE, MB_ICONERROR | MB_OK);
+#endif
 }
 
-int APIENTRY wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR args, int show)
+/*
+ * Hands the child OUR standard handles. Without STARTF_USESTDHANDLES a GUI-subsystem child of a
+ * process that was given pipes writes nowhere: inheriting handles (bInheritHandles) makes them
+ * VALID in the child, but only this flag makes them its stdin/stdout/stderr. Skipped when we have
+ * none at all (a shortcut launch), so that path behaves exactly as it always has.
+ */
+static void pass_standard_handles(STARTUPINFOW *si)
 {
-    (void)inst; (void)prev; (void)args; (void)show;
+    HANDLE in  = GetStdHandle(STD_INPUT_HANDLE);
+    HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
+    HANDLE err = GetStdHandle(STD_ERROR_HANDLE);
 
+    int any = 0;
+    HANDLE all[3] = { in, out, err };
+    for (int i = 0; i < 3; i++)
+    {
+        if (all[i] == NULL || all[i] == INVALID_HANDLE_VALUE) continue;
+        any = 1;
+        /* A pipe we inherited is already inheritable; a console handle may not be. Best effort -
+         * a handle that refuses keeps whatever inheritance it had. */
+        SetHandleInformation(all[i], HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
+    }
+    if (!any) return;
+
+    si->dwFlags   |= STARTF_USESTDHANDLES;
+    si->hStdInput  = in;
+    si->hStdOutput = out;
+    si->hStdError  = err;
+}
+
+static int run(void)
+{
     wchar_t dir[CRF_MAX];
     if (!stub_directory(dir, CRF_MAX))
     {
@@ -170,18 +253,29 @@ int APIENTRY wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR args, int show)
         return 1;
     }
 
+    wchar_t exe[CRF_MAX];
     wchar_t version[512];
-    if (!read_pointer(dir, version, 512))
+    if (read_pointer(dir, version, 512))
     {
+        _snwprintf(exe, CRF_MAX, L"%s%s\\%s", dir, version, CRF_APP_EXE);
+    }
+    else
+    {
+#ifdef CRF_CONSOLE
+        /* No `current`: a per-machine install, where the application itself sits beside this .com
+         * (circuitRF.wxs installs publish\circuitRF.exe straight into Program Files). Never this
+         * stub's own name - a .com cannot start itself, because it IS the .com. In a per-user
+         * install `current` exists, and if it has been removed the .exe beside us is the GUI
+         * stub, which reports that properly. */
+        _snwprintf(exe, CRF_MAX, L"%s%s", dir, CRF_APP_EXE);
+#else
         /* `current` is written by rename and never by truncation, precisely so this cannot happen
          * from a full disk (design 13.2). Reaching here means the file was removed or replaced by
          * something else. */
         report(L"The 'current' file naming the version to run is missing or unreadable.", dir);
         return 1;
+#endif
     }
-
-    wchar_t exe[CRF_MAX];
-    _snwprintf(exe, CRF_MAX, L"%s%s\\%s", dir, version, CRF_APP_EXE);
     exe[CRF_MAX - 1] = L'\0';
 
     if (GetFileAttributesW(exe) == INVALID_FILE_ATTRIBUTES)
@@ -196,8 +290,34 @@ int APIENTRY wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR args, int show)
 
     STARTUPINFOW si = { sizeof(si) };
     PROCESS_INFORMATION pi = {0};
+    pass_standard_handles(&si);
 
-    if (!CreateProcessW(exe, cmdline, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi))
+#ifdef CRF_CONSOLE
+    /* Ctrl+C in the console reaches THIS process and not the child, which is GUI-subsystem and has
+     * no console to receive it. Without this, Ctrl+C ends the .com and leaves the child solving in
+     * the background, still printing into the console. A kill-on-close job ties the child's life
+     * to ours; SILENT_BREAKAWAY_OK keeps the tie to the DIRECT child only, so something IT starts -
+     * a device worker, or the successor of the GUI's own Relaunch - is never killed along with it.
+     * Best effort: if the job cannot be made, the child simply runs as it would have. */
+    HANDLE job = CreateJobObjectW(NULL, NULL);
+    if (job)
+    {
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits;
+        ZeroMemory(&limits, sizeof(limits));
+        limits.BasicLimitInformation.LimitFlags =
+            JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK;
+        if (!SetInformationJobObject(job, JobObjectExtendedLimitInformation, &limits, sizeof(limits)))
+        {
+            CloseHandle(job);
+            job = NULL;
+        }
+    }
+    DWORD flags = job ? CREATE_SUSPENDED : 0;
+#else
+    DWORD flags = 0;
+#endif
+
+    if (!CreateProcessW(exe, cmdline, NULL, NULL, TRUE, flags, NULL, NULL, &si, &pi))
     {
         wchar_t why[64];
         _snwprintf(why, 64, L"Windows error %lu.", (unsigned long)GetLastError());
@@ -205,8 +325,17 @@ int APIENTRY wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR args, int show)
         return 1;
     }
 
+#ifdef CRF_CONSOLE
+    if (job)
+    {
+        AssignProcessToJobObject(job, pi.hProcess);   /* best effort; see above */
+        ResumeThread(pi.hThread);
+    }
+#endif
+
     /* Wait, so that the exit code is the application's and a shortcut, a shell "open with" and a
-     * debugger all attach to something that outlives the launch. */
+     * debugger all attach to something that outlives the launch - and, for the .com, so the shell
+     * does not print its prompt over the output. */
     WaitForSingleObject(pi.hProcess, INFINITE);
 
     DWORD code = 1;
@@ -215,6 +344,20 @@ int APIENTRY wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR args, int show)
     CloseHandle(pi.hProcess);
     return (int)code;
 }
+
+#ifdef CRF_CONSOLE
+int wmain(int argc, wchar_t **argv)
+{
+    (void)argc; (void)argv;
+    return run();
+}
+#else
+int APIENTRY wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR args, int show)
+{
+    (void)inst; (void)prev; (void)args; (void)show;
+    return run();
+}
+#endif
 
 #else
 #error "The circuitRF launcher stub is a Windows-only program."

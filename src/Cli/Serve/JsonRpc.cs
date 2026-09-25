@@ -29,6 +29,9 @@ internal sealed class JsonRpc : IDisposable
     public const int MethodNotFound = -32601;
     public const int InvalidParams  = -32602;
     public const int InternalError  = -32603;
+    /// <summary>A server-defined code (the -32000..-32099 range JSON-RPC reserves for them): the
+    /// installation this server runs out of changed under it, and it is exiting (R-aut13-4).</summary>
+    public const int InstallationChanged = -32001;
 
     private readonly TextReader _in;
     private readonly TextWriter _out;

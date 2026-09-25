@@ -44,7 +44,7 @@
     `render`'s gates are about what happens INSIDE one process - a cancellation delivered through
     RunHost, and a layer selection leaking into a second render through a shared cached Technology -
     and neither can be observed by launching a process that answers one command and exits. Every
-    byte-identity gate still launches the real DLL; see src/Cli/CircuitRF.Cli.csproj for the
+    byte-identity gate still launches the real DLL; see src/Cli.Verbs/CircuitRF.Cli.Verbs.csproj for the
     InternalsVisibleTo grant this needs.
 
     Copied verbatim from tests/Engine.Tests/CircuitRF.Engine.Tests.csproj, which learned all of this

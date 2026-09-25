@@ -121,9 +121,11 @@
          LayoutRenderDetail.ToleranceDbu (the effective decimation tolerance the `detail` flag resolves
          to, which the verb REPORTS rather than leaving the caller to re-derive). Same grant src/Ui
          already has, for the same reason: a second copy of either measurement is a copy free to
-         drift, silently. -->
+         drift, silently. The grant names CircuitRF.Cli.Verbs, the assembly the verbs have compiled
+         into since AUT-13 split the entry point from them; CircuitRF.Cli itself is one line now and
+         reaches nothing here. -->
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
-      <_Parameter1>CircuitRF.Cli</_Parameter1>
+      <_Parameter1>CircuitRF.Cli.Verbs</_Parameter1>
     </AssemblyAttribute>
   </ItemGroup>
 

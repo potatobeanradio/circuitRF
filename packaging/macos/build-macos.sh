@@ -67,6 +67,17 @@ VERSION="$CRF_VERSION"
 echo "🎨 Building icons..."
 dotnet run --project "${ROOT}/tools/IconGen" -- "$APP"
 
+# The packaging smoke check (brief-automation-13-installed-cli.md) — circuitRF only: the command
+# line is dispatched from circuitRF's Program.Main, and harmonicaRF and wBond have none by design.
+# Built once, Release, so it shares the libraries the publishes build. See pass 1 for what it runs.
+SMOKE_DLL=""
+UNSMOKED=""
+if [ "$APP" = circuitrf ]; then
+    echo "🔎 Building the packaging smoke check..."
+    dotnet build "${ROOT}/tools/CliSmoke" -c Release -v quiet
+    SMOKE_DLL="${ROOT}/tools/CliSmoke/bin/Release/net10.0/CliSmoke.dll"
+fi
+
 # THE VM IMAGE IS BUILT HERE EVEN THOUGH A PLAIN BUILD LEAVES IT ALONE. Compiled device models are
 # Linux libraries — nothing on macOS can load one — so circuitRF runs the worker inside the small
 # Linux VM it ships, and the kernel and initramfs are part of that. Building them from scratch pulls
@@ -401,6 +412,42 @@ if got != want:
              f"match the host that boots it; delete tools/macos-vmhost/build and build again.")
 KPY
     fi
+
+    # ── The command line, run out of THIS bundle ──────────────────────────────
+    #
+    # THE GATE THAT WAS MISSING FOR 32 RELEASES (brief-automation-13-installed-cli.md). Every
+    # release through 1.0.0-beta.32 shipped a circuitRF with no command line at all, while every CLI
+    # gate was green — they all launched src/Cli/bin, never what goes into a disk image. This runs
+    # Contents/MacOS/circuitRF out of the bundle about to be imaged, and fails the build unless
+    # --version prints the VERSION file, `reference --json` parses, and `serve` answers initialize
+    # and tools/list (compared with the tool CATALOGUE, not a count) and exits when stdin closes.
+    #
+    # Here, in pass 1, so a broken bundle fails before a single notarisation is submitted.
+    #
+    # An x86_64 bundle on Apple Silicon runs under Rosetta; without Rosetta it cannot run at all, and
+    # an arm64 bundle cannot run on an Intel Mac. NOT SMOKE-TESTED IS NOT PASSED: that fails the run
+    # at the end unless CRF_ALLOW_UNSMOKED=1 says it is understood.
+    if [ -n "$SMOKE_DLL" ]; then
+        CAN_RUN=0
+        if [ "$MACHO_ARCH" = "$(uname -m)" ]; then
+            CAN_RUN=1
+        elif [ "$MACHO_ARCH" = x86_64 ] && arch -x86_64 /usr/bin/true 2>/dev/null; then
+            CAN_RUN=1
+        fi
+
+        if [ "$CAN_RUN" = 1 ]; then
+            echo "🔎 Smoke-testing the command line in ${NAME}.app (${ARCH})..."
+            dotnet "$SMOKE_DLL" "${APP_BUNDLE}/Contents/MacOS/${NAME}" "$VERSION" || {
+                echo "❌ The command line in ${NAME}.app (${ARCH}) does not answer (see above)."
+                echo "   This bundle must not be imaged."
+                exit 1
+            }
+        else
+            echo "⚠️  NOT SMOKE-TESTED: this $(uname -m) Mac cannot execute a ${MACHO_ARCH} bundle."
+            [ "$MACHO_ARCH" = x86_64 ] && echo "   Install Rosetta to check it: softwareupdate --install-rosetta"
+            UNSMOKED="${UNSMOKED} ${ARCH}"
+        fi
+    fi
 done
 
 
@@ -535,6 +582,15 @@ echo "✅ Built:"
 printf "%b\n" "$BUILT"
 echo ""
 
+# Reported after the images exist, so nothing built is thrown away — but the run still fails.
+if [ -n "$UNSMOKED" ]; then
+    echo "⚠️  NOT SMOKE-TESTED:${UNSMOKED}. Nothing has shown that their command line answers, which is"
+    echo "   exactly what shipped broken for 32 releases. Install Rosetta (for x64) and run again, or"
+    echo "   set CRF_ALLOW_UNSMOKED=1 to accept that knowingly."
+    [ "${CRF_ALLOW_UNSMOKED:-}" = 1 ] || UNSMOKED_FAIL=1
+    echo ""
+fi
+
 if [ "$NOTARISED" = 1 ]; then
     echo "   Signed and notarised. These open with no prompt, on any Mac, offline."
 elif [ "$SIGN_IDENTITY" != "-" ]; then
@@ -573,3 +629,6 @@ fi
 # already reading the output, rather than discovered when a published release reaches nobody.
 source "${ROOT}/packaging/signing-status.sh"
 crf_report_release_key "${ROOT}/src/Ui/Updates/ReleaseKeys.cs"
+
+[ "${UNSMOKED_FAIL:-0}" = 1 ] && exit 1
+exit 0

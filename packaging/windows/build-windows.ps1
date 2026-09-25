@@ -97,6 +97,8 @@ $exeName = 'circuitRF.exe'
 
 $built = @()
 $stubFailures = @()
+$consoleFailures = @()
+$unsmoked = @()
 
 # == Tool checks ===============================================================
 #
@@ -175,6 +177,20 @@ Write-Host 'Building icons...'
 dotnet run --project (Join-Path $root 'tools\IconGen') -- circuitrf
 if ($LASTEXITCODE -ne 0) { throw 'Icon generation failed.' }
 
+# == The packaging smoke check ==================================================
+#
+# Built once, run once per architecture against what that architecture's installers will contain -
+# see "The command line, run out of THIS publish tree" below. Release, so it shares the libraries
+# the publishes build rather than compiling a Debug copy of the whole stack beside them.
+Write-Host 'Building the packaging smoke check (tools\CliSmoke)...'
+dotnet build (Join-Path $root 'tools\CliSmoke') -c Release -v quiet
+if ($LASTEXITCODE -ne 0) { throw 'Could not build tools\CliSmoke.' }
+$smokeDll = Join-Path $root 'tools\CliSmoke\bin\Release\net10.0\CliSmoke.dll'
+
+# Which of the three this machine can EXECUTE. Windows on ARM runs all three (x64 and x86 under
+# emulation); an x64 machine runs x64 and x86 but has no way to run arm64 at all.
+$hostArch = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
+
 # == The harvester ==============================================================
 #
 # Defined once, above the loop, because PowerShell resolves a function only after its definition
@@ -246,26 +262,36 @@ foreach ($Arch in $arches) {
     $rid = "win-$Arch"
     $publish = Join-Path $root "publish\$rid"
 
-    # == The launcher stub (perUser only) ==========================================
+    # == The launcher stub, and its console twin ===================================
     #
-    # The one file in a per-user install that never changes. Built here rather than committed, for the
-    # same reason the app icons are: a binary in the repository is a binary nobody can review.
+    # ONE SOURCE, TWO BUILDS (packaging\windows\stub\circuitrf-stub.c says why):
+    #   circuitRF-stub-<arch>.exe     the per-user launcher - the one file in a per-user install
+    #                                 that never changes. Also what the smoke check below drives,
+    #                                 because it is the route an MCP client's pipes take.
+    #   circuitRF-console-<arch>.com  installed as circuitRF.com beside circuitRF.exe in BOTH
+    #                                 scopes, so a command TYPED in cmd or PowerShell gets a console
+    #                                 and a shell that waits (brief-automation-13 R-aut13-2).
+    # Built here rather than committed, for the same reason the app icons are: a binary in the
+    # repository is a binary nobody can review.
 
     # A STUB FAILURE SKIPS THE PER-USER SCOPE - it does not abandon the whole run. It used to throw,
     # so a broken C toolchain produced ZERO artifacts from a build that could have produced the three
     # machine-wide .msi files (owner-reported, 2026-08-25: zig cc crashed with an access violation and
-    # took the entire Windows release with it).
+    # took the entire Windows release with it). A missing .com is treated the same way: the
+    # installers are still built, without it, because a piped caller (every MCP client) never needed
+    # it - only a person typing into a console does.
     #
     # Skipping quietly would be worse than throwing, though, because a release that is silently short
     # of the self-updating channel is the exact failure this script was rewritten to prevent. So it is
     # LOUD here, LOUD in the summary, and the script exits non-zero at the end.
 
     $archScopes = $scopes
+    $stubExe = Join-Path $PSScriptRoot "stub\build\circuitRF-stub-$Arch.exe"
+    $comExe  = Join-Path $PSScriptRoot "stub\build\circuitRF-console-$Arch.com"
 
-    if ($scopes -contains 'perUser') {
-        $stubExe = Join-Path $PSScriptRoot "stub\build\circuitRF-stub-$Arch.exe"
+    foreach ($consoleBuild in @($false, $true)) {
         try {
-            & (Join-Path $PSScriptRoot 'stub\build-stub.ps1') -Arch $Arch -AppName 'circuitRF'
+            & (Join-Path $PSScriptRoot 'stub\build-stub.ps1') -Arch $Arch -AppName 'circuitRF' -Console:$consoleBuild
         }
         catch {
             # Indent EVERY line. The stub script reports one line per toolchain route it tried, and
@@ -273,12 +299,18 @@ foreach ($Arch in $arches) {
             # own output rather than the reason the stub is missing.
             $_.Exception.Message -split "`r?`n" | ForEach-Object { Write-Host "  $_" }
         }
+    }
 
-        if (-not (Test-Path $stubExe)) {
-            Write-Host "  No stub for $Arch, so its per-user installer is not built. Carrying on."
-            $stubFailures += $Arch
-            $archScopes = $scopes | Where-Object { $_ -ne 'perUser' }
-        }
+    if (-not (Test-Path $stubExe) -and ($scopes -contains 'perUser')) {
+        Write-Host "  No stub for $Arch, so its per-user installer is not built. Carrying on."
+        $stubFailures += $Arch
+        $archScopes = $scopes | Where-Object { $_ -ne 'perUser' }
+    }
+
+    if (-not (Test-Path $comExe)) {
+        Write-Host "  No circuitRF.com for $Arch, so its installers are built WITHOUT it: a command typed"
+        Write-Host '  in cmd or PowerShell would get no console and no shell would wait. Carrying on.'
+        $consoleFailures += $Arch
     }
 
     if (-not $archScopes) {
@@ -430,6 +462,63 @@ To package deliberately without a working one: set CRF_ALLOW_NO_DEVICE_WORKER=1
     }
 
 
+    # == The command line, run out of THIS publish tree =============================
+    #
+    # THE GATE THAT WAS MISSING FOR 32 RELEASES (brief-automation-13-installed-cli.md). Every
+    # release through 1.0.0-beta.32 shipped a circuitRF with no command line at all, and every CLI
+    # gate was green throughout, because every one of them launched src\Cli\bin - never the tree
+    # that goes into an installer. This one launches exactly that tree, and the build fails unless
+    # --version prints the VERSION file, `reference --json` parses, and `serve` answers initialize
+    # and tools/list (compared with the tool CATALOGUE, not a count) and exits when stdin closes.
+    #
+    # THROUGH THE STUB, laid out as a per-user install lays it out (stub + `current` + app-<version>),
+    # because that is the route every MCP client takes: a program spawning circuitRF.exe with
+    # redirected pipes (R-aut13-2 route 1). If there is no stub the publish tree's own circuitRF.exe
+    # is driven directly, which is what a per-machine install runs.
+    #
+    # The .com CANNOT be checked here: this drives it through a pipe, and a pipe is the one condition
+    # it does not exist for. It is checked by hand from a real console at a phase boundary and the
+    # result recorded in packaging\RESOLVED.md.
+    #
+    # A copy of the publish tree, not a junction: removing a junction with Remove-Item -Recurse under
+    # Windows PowerShell 5.1 can delete what it points at, which here is the tree about to be packaged.
+    $canRun = switch ($hostArch) {
+        'ARM64' { $true }
+        'AMD64' { $Arch -ne 'arm64' }
+        default { $Arch -eq 'x86' }
+    }
+
+    if (-not $canRun) {
+        Write-Host "WARNING: NOT SMOKE-TESTED - this $hostArch machine cannot execute a $Arch build."
+        Write-Host '         Windows on ARM runs all three; build there to check every architecture.'
+        $unsmoked += $Arch
+    }
+    else {
+        $smokeRoot = Join-Path ([System.IO.Path]::GetTempPath()) "circuitrf-smoke-$Arch"
+        if (Test-Path $smokeRoot) { Remove-Item $smokeRoot -Recurse -Force }
+        New-Item -ItemType Directory -Force -Path $smokeRoot | Out-Null
+
+        if (Test-Path $stubExe) {
+            Copy-Item -Path $publish -Destination (Join-Path $smokeRoot "app-$CrfVersion") -Recurse
+            Copy-Item -Path $stubExe -Destination (Join-Path $smokeRoot $exeName)
+            Set-Content -LiteralPath (Join-Path $smokeRoot 'current') -Value "app-$CrfVersion" -NoNewline -Encoding ASCII
+            $smokeTarget = Join-Path $smokeRoot $exeName
+            Write-Host "Smoke-testing the command line through the launcher stub ($Arch) ..."
+        }
+        else {
+            $smokeTarget = Join-Path $publish $exeName
+            Write-Host "Smoke-testing the command line in publish\$rid directly (no stub for $Arch) ..."
+        }
+
+        & dotnet $smokeDll $smokeTarget $CrfVersion
+        $smokeCode = $LASTEXITCODE
+        Remove-Item $smokeRoot -Recurse -Force -ErrorAction SilentlyContinue
+        if ($smokeCode -ne 0) {
+            throw "The command line in publish\$rid does not answer (see above). This tree must not be packaged."
+        }
+    }
+
+
     foreach ($Scope in $archScopes) {
 
         $perUser = ($Scope -eq 'perUser')
@@ -500,6 +589,12 @@ $($components.ToString().TrimEnd())
             # <?if?> branch it did NOT take, so an undefined one is an error even where it is unreachable.
             if (-not $perUser -and -not (Test-Path $stubFile)) { $stubFile = Join-Path $publish $exeName }
 
+            # circuitRF.com, when the console build succeeded. ConsoleFile is ALWAYS passed, for the
+            # reason above; HasConsole is what decides, and without the .com it names a file that
+            # exists and is never installed.
+            $hasConsole  = if (Test-Path $comExe) { 'yes' } else { 'no' }
+            $consoleFile = if (Test-Path $comExe) { $comExe } else { $stubFile }
+
             # -d Arch is the SAME value as -arch, and it is passed twice on purpose: -arch tells wix
             # what to emit, and the .wxs preprocessor cannot read it back. It selects the UpgradeCode,
             # which is per scope AND per architecture - see the note at the head of circuitRF.wxs. An
@@ -514,6 +609,8 @@ $($components.ToString().TrimEnd())
                 -d "IconFile=$icon" `
                 -d "StubFile=$stubFile" `
                 -d "CurrentFile=$currentFile" `
+                -d "HasConsole=$hasConsole" `
+                -d "ConsoleFile=$consoleFile" `
                 -ext $extensionRef `
                 -o $msi
             if ($LASTEXITCODE -ne 0) { throw 'wix build failed.' }
@@ -557,6 +654,26 @@ if ($Arch -eq 'all' -and $Scope -eq 'all' -and $built.Count -ne 9) {
 }
 
 # Non-zero exit, so a short release cannot be mistaken for a complete one.
+# NOT SMOKE-TESTED IS NOT PASSED. An architecture this machine cannot execute has not been shown to
+# have a working command line, which is precisely what shipped broken for 32 releases. So it fails
+# the run like a missing stub does, unless CRF_ALLOW_UNSMOKED=1 says that is understood.
+if ($unsmoked.Count -gt 0) {
+    Write-Host ''
+    Write-Host "NOT SMOKE-TESTED: $($unsmoked -join ', ') - this $hostArch machine cannot execute them, so"
+    Write-Host '  nothing has shown that their command line answers. Build on Windows on ARM, which runs'
+    Write-Host '  all three architectures, or set CRF_ALLOW_UNSMOKED=1 to accept that knowingly.'
+    if ($env:CRF_ALLOW_UNSMOKED -ne '1') { exit 1 }
+}
+
+if ($consoleFailures.Count -gt 0 -and $stubFailures.Count -eq 0) {
+    Write-Host ''
+    Write-Host "Incomplete: no circuitRF.com for $($consoleFailures -join ', '), so on those architectures"
+    Write-Host '  a command typed in cmd or PowerShell gets no console. Piped callers are unaffected.'
+    Write-Host '  Do not publish this build. The .com needs the same C compiler as the launcher stub;'
+    Write-Host '  packaging\windows\stub\diagnose-zig.ps1 measures what is wrong with it.'
+    exit 1
+}
+
 if ($stubFailures.Count -gt 0) {
     Write-Host ''
     Write-Host "Incomplete: no launcher stub for $($stubFailures -join ', '), so those"

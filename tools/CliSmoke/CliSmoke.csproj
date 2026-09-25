@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The packaging smoke check: runs the command line OUT OF A PUBLISH TREE and fails the build unless
+    it answers (brief-automation-13-installed-cli.md, "the gate that was missing for 32 releases").
+
+    Every packaging script runs it against the tree that goes into its installer - never against
+    src/Cli/bin, which is where every other CLI gate looks and why 1.0.0-beta.1 through beta.32
+    shipped with no command-line driver at all while all of those gates were green.
+
+    It references src/Cli.Verbs for ONE reason: to compare `serve`'s tools/list with the catalogue
+    that defines the tools, rather than with a count or a copied list that would go stale the next
+    time a tool is added (the user guide said "thirteen" for weeks after `lvs` made fourteen). That
+    makes it unlike the other programs in tools/: it is not an independent implementation of a
+    contract to be tested against, it is a probe of our own build. Not in circuitRF.slnx; the
+    packaging scripts build it, with -c Release so it shares the libraries the publish just built.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>14</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AssemblyName>CliSmoke</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Cli.Verbs\CircuitRF.Cli.Verbs.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -48,6 +48,7 @@ keywords: CLI, command line, command-line, terminal, shell, console, headless, b
 <li><a href="#elab"><code>elab</code> — the elaborated netlist</a></li>
 <li><a href="#json"><code>--json</code> — one machine-readable document</a></li>
 <li><a href="#serve"><code>serve</code> — the MCP server</a></li>
+<li><a href="#agent-install">Installing for an agent</a></li>
 <li><a href="#exit">Exit codes</a></li>
 <li><a href="#scripting">Scripting patterns</a></li>
 </ol>
@@ -61,7 +62,39 @@ the test bench's `measure` lines with the same evaluator.
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf &lt;verb&gt; &lt;file&gt; [options]</code></pre>
 
-From a source checkout there is no `circuitrf` on your path yet, so put `dotnet run --project src/Cli --`
+**The installed circuitRF executable is the command line.** There is no second program to install:
+when its first argument is a verb, circuitRF runs that verb and exits without opening a window; with
+no arguments, or with a document to open, it starts the application as it always has. Where that
+executable is depends on the platform — and the verb must be the FIRST argument, since that is how
+circuitRF tells a command line from a document to open:
+
+| Platform | Installed as | On your `PATH` |
+|---|---|---|
+| Windows, per-user installer (`…-win-x64-user.msi`) | `%LOCALAPPDATA%\Programs\circuitRF\circuitRF.exe` | yes — type `circuitrf` |
+| Windows, per-machine installer (`…-x64.msi`) | `C:\Program Files\circuitRF\circuitRF.exe` | yes — type `circuitrf` |
+| macOS | `/Applications/circuitRF.app/Contents/MacOS/circuitRF` | no — see below |
+| Linux, `.deb` | `/opt/circuitrf/circuitRF`, linked as `/usr/bin/circuitrf` | yes |
+| Linux, `.tar.gz` + `install.sh` | linked as `~/.local/bin/circuitrf` | yes, if `~/.local/bin` is |
+
+<div class="callout note">
+<span class="label">Windows: <code>circuitRF.com</code> is what you are typing</span>
+<p>Beside <code>circuitRF.exe</code> the installer puts a small <code>circuitRF.com</code>, and both
+installers add that folder to <code>PATH</code> (the user's for per-user, the system's for
+per-machine; a terminal opened <em>before</em> the install does not see it yet). Windows tries
+<code>.com</code> before <code>.exe</code>, so a <code>circuitrf</code> typed in cmd or PowerShell
+reaches the console-subsystem <code>.com</code>, which gives the command a console and makes the shell
+wait for it. Shortcuts and double-clicked documents still open <code>circuitRF.exe</code>. A program
+that starts circuitRF with its own pipes — an MCP client, a script, CI — can use either.</p>
+</div>
+
+On macOS, run the full path, or link it onto your `PATH` once:
+
+<pre><code class="cmd"><span class="prompt">$ </span>sudo ln -s /Applications/circuitRF.app/Contents/MacOS/circuitRF /usr/local/bin/circuitrf</code></pre>
+
+`circuitrf --version` prints the version of the build that answered, and nothing else — the quickest
+way to confirm which one is on your `PATH`.
+
+**From a source checkout** there is no installed executable, so put `dotnet run --project src/Cli --`
 wherever `circuitrf` appears:
 
 <pre><code class="cmd"><span class="prompt">$ </span>dotnet run --project src/Cli -- sparam mycircuit.cnl --freq 1GHz:3GHz:50MHz</code></pre>
@@ -2039,14 +2072,38 @@ started by that program, not by you, and it ends when that program disconnects.
 
 <div class="callout note">
 <span class="label">Point an MCP client at it</span>
-<p>A client is configured with a command and its arguments. The command is the circuitRF executable,
-the arguments are <code>serve --root &lt;dir&gt;</code>, and <code>--root</code> is the only directory
-tree the server will read or write, and a path escaping it is refused rather than clamped (see
-<em>What it will not do</em> below). Nothing else about the host matters, because the transport is
-the process's own stdin and stdout.</p>
+<p>A client is configured with a command and its arguments. The command is the installed circuitRF
+executable (<a href="#invoking">where it is</a>), the arguments are <code>serve --root &lt;dir&gt;</code>,
+and <code>--root</code> is the only directory tree the server will read or write, and a path escaping
+it is refused rather than clamped (see <em>What it will not do</em> below). Nothing else about the
+host matters, because the transport is the process's own stdin and stdout.</p>
 </div>
 
-**Thirteen tools, and each is a verb you already have:**
+Most clients take the same shape of configuration — a server name, a command and its arguments:
+
+```json
+{
+  "mcpServers": {
+    "circuitrf": {
+      "command": "/Applications/circuitRF.app/Contents/MacOS/circuitRF",
+      "args": ["serve", "--root", "/Users/you/designs"]
+    }
+  }
+}
+```
+
+Use the full path to the executable rather than relying on the client's `PATH`, which is often not
+your shell's. On Windows it is `%LOCALAPPDATA%\Programs\circuitRF\circuitRF.exe` or
+`C:\Program Files\circuitRF\circuitRF.exe`; on Linux, `/usr/bin/circuitrf` or
+`~/.local/bin/circuitrf`. With Claude Code it is one line:
+
+<pre><code class="cmd"><span class="prompt">$ </span>claude mcp add circuitrf -- /Applications/circuitRF.app/Contents/MacOS/circuitRF serve --root ~/designs</code></pre>
+
+**Most clients load a server when a session starts**, so one registered mid-session appears in the
+next one. Nothing is lost meanwhile: every tool is a verb, and the same verbs answer from a shell with
+the same documents.
+
+**Fourteen tools, and each is a verb you already have:**
 
 | Tool | Runs |
 |---|---|
@@ -2060,6 +2117,7 @@ the process's own stdin and stdout.</p>
 | `netlist` | `netlist` — the extraction a schematic runs as |
 | `plot` | `plot` — one picture from one result file. It takes `attachImage` too |
 | `find` | `find` — the workspaces, cells, views and analyses under a directory |
+| `lvs` | [`lvs`](#lvs) — does a cell's artwork implement its schematic |
 | `history` | [`history checkpoint`, `list` or `restore`](history.html) — the correction nouns (`rename`, `retitle`, `correct`, `review`) are on the verb but not on this server |
 | `reference` | `reference` |
 | `batch` | The **only** tool with no verb behind it: it holds a restore-point batch open across several calls, which a process that exits after one command cannot |
@@ -2120,12 +2178,72 @@ bytes.
 the run moves, and a cancellation stops the run at a work boundary and returns exit code 130 having
 written nothing.
 
+**A server outlives an update, and says so when it cannot.** A `serve` that is still running when
+the application updates itself is running out of an installation that has changed underneath it —
+and a running program cannot load code it had not already loaded from files that have since been
+replaced. So before each call the server checks that its own executable is still the one it started
+from. If not, that call is answered with a JSON-RPC error, code `-32001`, saying so, and the server
+exits. Start it again with the same command and it runs the updated version.
+
 `serve` is the one verb whose stdout is not the result: it carries the protocol, so everything else —
 progress, notes, warnings, device-worker logs — goes to stderr, where the program that started it
 picks it up. For that reason it takes no `--json` of its own; every call through it already returns
 one.
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf serve --root ~/designs 2&gt; serve.log</code></pre>
+
+## Installing for an agent {#agent-install}
+
+An agent — or any unattended script — can install circuitRF and start driving it with no person at
+the keyboard. Five steps:
+
+**1. Find the release and pick the asset.** Asset names carry the version, and every circuitRF
+release so far is a *pre*release, which GitHub's "latest release" link and a tagless
+`gh release download` both skip. **There is no fixed download URL**, so look the newest tag up
+first:
+
+<pre><code class="cmd"><span class="prompt">$ </span>TAG=$(gh release list --repo potatobeanradio/circuitRF --limit 1 --json tagName -q '.[0].tagName')
+<span class="prompt">$ </span>gh release download "$TAG" --repo potatobeanradio/circuitRF --pattern 'circuitRF-*-arm64.dmg'</code></pre>
+
+Without `gh`, the same list is `https://api.github.com/repos/potatobeanradio/circuitRF/releases`,
+newest first. A release that carries `update-manifest.json` lists every asset in it with its name,
+download URL, size and SHA-256, which is the one file to read to choose and to verify a download.
+
+| Platform | Asset |
+|---|---|
+| Windows | `circuitRF-<version>-win-x64-user.msi` — per-user, no administrator (also `arm64`, `x86`) |
+| macOS | `circuitRF-<version>-arm64.dmg` (Apple Silicon) or `circuitRF-<version>-x64.dmg` (Intel) |
+| Linux | `circuitRF-<version>-linux-x64.tar.gz` or `…-linux-arm64.tar.gz` |
+
+**2. Install it without a prompt.**
+
+<pre><code class="cmd"><span class="prompt">&gt; </span>msiexec /i circuitRF-&lt;version&gt;-win-x64-user.msi /qn</code></pre>
+
+<pre><code class="cmd"><span class="prompt">$ </span>hdiutil attach -nobrowse -mountpoint /tmp/circuitrf-dmg circuitRF-&lt;version&gt;-arm64.dmg
+<span class="prompt">$ </span>cp -R /tmp/circuitrf-dmg/circuitRF.app /Applications/
+<span class="prompt">$ </span>hdiutil detach /tmp/circuitrf-dmg</code></pre>
+
+<pre><code class="cmd"><span class="prompt">$ </span>tar -xzf circuitRF-&lt;version&gt;-linux-x64.tar.gz
+<span class="prompt">$ </span>./circuitRF-&lt;version&gt;/install.sh</code></pre>
+
+The Windows install adds circuitRF to the user's `PATH`, but only processes started afterwards see
+it — so in the session that installed it, use the full path,
+`%LOCALAPPDATA%\Programs\circuitRF\circuitRF.exe`. The Linux one links `~/.local/bin/circuitrf`.
+
+**3. Check that it answers:**
+
+<pre><code class="cmd"><span class="prompt">$ </span>/Applications/circuitRF.app/Contents/MacOS/circuitRF --version</code></pre>
+
+It prints the release's version — the tag from step 1 — and exits `0`, opening no window. Anything else means the path is wrong.
+
+**4. Register the server** with the client: the command is that same executable, the arguments are
+`serve --root <dir>` ([above](#serve)).
+
+**5. Keep working in the meantime.** Most clients load a newly registered server only when their
+next session starts, so the tools will not appear in the session that did the install. Nothing is
+lost: every MCP tool is a verb returning the same JSON document, so the same work can be driven from
+the shell right away — `circuitrf check <path> --json` returns byte for byte what the `check` tool
+would.
 
 ---
 

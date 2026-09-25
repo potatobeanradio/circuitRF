@@ -329,11 +329,50 @@
       </Component>
     </ComponentGroup>
 
+    <!--
+      THE COMMAND LINE (brief-automation-13-installed-cli.md R-aut13-2). circuitRF.exe IS the CLI -
+      Program.Main hands a verb to it before any of the GUI starts - so this adds two things only:
+
+      circuitRF.com, beside circuitRF.exe in BOTH scopes. It is the launcher stub compiled a second
+      time for the CONSOLE subsystem. PATHEXT lists .COM before .EXE, so a command TYPED in cmd or
+      PowerShell resolves to it and gets a console and a shell that waits; shortcuts, every file
+      association above (TargetFile="CircuitRfExe") and CreateProcess("circuitrf"), which appends
+      .exe, still reach the .exe. HasConsole is "no" only when no C compiler could build it, and
+      build-windows.ps1 then fails the run at the end rather than shipping the gap silently.
+
+      INSTALLFOLDER on PATH - the USER's for perUser, the system's for perMachine, removed on
+      uninstall. It is the folder holding the stub and the .com, which never changes across updates;
+      an app-<version> folder does, and must never be on PATH.
+    -->
+    <ComponentGroup Id="CommandLine" Directory="INSTALLFOLDER">
+      <?if $(var.HasConsole) = "yes" ?>
+        <Component Id="CircuitRfComComp">
+          <File Id="CircuitRfCom" Name="circuitRF.com" Source="$(var.ConsoleFile)" KeyPath="yes" />
+        </Component>
+      <?endif?>
+      <?if $(var.Scope) = "perUser" ?>
+        <Component Id="CliPathComp" Guid="0A31D098-5FBE-4B07-A2DE-7909476A5156">
+          <Environment Id="CliPath" Name="PATH" Value="[INSTALLFOLDER]"
+                       Action="set" Part="last" Permanent="no" System="no" />
+          <RegistryValue Root="HKCU" Key="Software\circuitRF\circuitRF"
+                         Name="CommandLineOnPath" Type="integer" Value="1" KeyPath="yes" />
+        </Component>
+      <?else?>
+        <Component Id="CliPathComp" Guid="31252C45-2532-43A3-8633-86EAF42AC818">
+          <Environment Id="CliPath" Name="PATH" Value="[INSTALLFOLDER]"
+                       Action="set" Part="last" Permanent="no" System="yes" />
+          <RegistryValue Root="HKLM" Key="Software\circuitRF\circuitRF"
+                         Name="CommandLineOnPath" Type="integer" Value="1" KeyPath="yes" />
+        </Component>
+      <?endif?>
+    </ComponentGroup>
+
     <!-- ═══ FEATURES ══════════════════════════════════════════════════════════ -->
 
     <Feature Id="MainFeature" Title="circuitRF" Description="The circuitRF application." Level="1">
       <ComponentGroupRef Id="MainExecutable" />
       <ComponentGroupRef Id="PublishedFiles" />
+      <ComponentGroupRef Id="CommandLine" />
       <ComponentRef Id="StartMenuShortcutComp" />
       <?if $(var.Scope) = "perUser" ?>
         <ComponentGroupRef Id="PointerAndStaging" />

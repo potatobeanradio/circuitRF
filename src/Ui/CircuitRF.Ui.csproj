@@ -272,6 +272,14 @@
          src/Harmonica, never the reverse — src/Harmonica is on the far side of the UI firewall and
          tests/Firewall.Tests asserts it references no Avalonia (docs/design/harmonicarf.md §3.2). -->
     <ProjectReference Include="../Harmonica/CircuitRF.Harmonica.csproj" />
+    <!-- Every CLI verb, so the circuitRF executable IS the command line: Program.Main hands a
+         verb to CliEntry.Run before anything of the GUI's runs (brief-automation-13-installed-cli.md
+         R-aut13-1). The LIBRARY, never src/Cli itself — referencing the exe ships a framework-
+         dependent apphost and its two JSON files in every installer (see src/Cli.Verbs' .csproj).
+         Legal across the firewall in this direction: the wall forbids src/Cli referencing a UI
+         framework, not src/Ui referencing src/Cli. It costs the bundle CircuitRF.Cli.Verbs.dll and
+         nothing else, because everything it references is already here. -->
+    <ProjectReference Include="../Cli.Verbs/CircuitRF.Cli.Verbs.csproj" />
   </ItemGroup>
 
   <ItemGroup>

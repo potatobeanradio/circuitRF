@@ -1301,4 +1301,62 @@ public class PackagingScriptTests
         Assert.Contains("\"${PUBLISH}/=/opt/circuitrf/\"", linux, StringComparison.Ordinal);
         Assert.Contains("cp -a \"${PUBLISH}/.\"", linux, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// <b>Every platform script runs the command line out of what it just built</b>
+    /// (brief-automation-13-installed-cli.md). 1.0.0-beta.1 through beta.32 shipped with no command
+    /// line at all while every CLI gate was green, because they all launched src/Cli/bin and nothing
+    /// ever ran what an installer holds. tools/CliSmoke is that check; this is what keeps a script from
+    /// losing it quietly — a step one script drops is the defect the brief exists to remove.
+    /// </summary>
+    [Theory]
+    [InlineData("packaging/macos/build-macos.sh", "tools/CliSmoke")]
+    [InlineData("packaging/linux/build-linux.sh", "tools/CliSmoke")]
+    [InlineData("packaging/windows/build-windows.ps1", "tools\\CliSmoke")]
+    public void EachPlatformScript_SmokeTestsTheCommandLineItBuilt(string script, string tool)
+    {
+        string text = File.ReadAllText(RepoFile(script.Split('/')));
+        Assert.Contains(tool, text, StringComparison.Ordinal);
+        // Run, not merely built: the script passes the built application and the VERSION to it.
+        Assert.Matches(@"dotnet\s+""?\$\{?(SMOKE_DLL|smokeDll)\}?""?\s", text);
+    }
+
+    /// <summary>
+    /// <b>Opening a document by double-click is untouched by the executable becoming the CLI.</b>
+    /// Every Windows open verb targets the .EXE — never circuitRF.com, which is console-subsystem and
+    /// would flash a console window on every double-click — and the Linux desktop entry still hands
+    /// the application full paths (%F), which CliEntry.IsVerb never mistakes for a verb.
+    /// </summary>
+    [Fact]
+    public void DoubleClickRoutes_StillTargetTheApplicationExe()
+    {
+        string wxs = File.ReadAllText(RepoFile("packaging", "windows", "circuitRF.wxs"));
+        var verbs = System.Text.RegularExpressions.Regex.Matches(wxs, "<Verb [^>]*>");
+        Assert.NotEmpty(verbs);
+        foreach (System.Text.RegularExpressions.Match v in verbs)
+            Assert.Contains("TargetFile=\"CircuitRfExe\"", v.Value, StringComparison.Ordinal);
+        Assert.Contains("<File Id=\"CircuitRfCom\" Name=\"circuitRF.com\"", wxs, StringComparison.Ordinal);
+
+        string exec = File.ReadAllLines(RepoFile("packaging", "linux", "circuitrf.desktop"))
+                          .Single(l => l.StartsWith("Exec=", StringComparison.Ordinal));
+        Assert.EndsWith(" %F", exec.TrimEnd(), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// <b>circuitRF.com is the stub built for the CONSOLE subsystem, and both builders say so.</b>
+    /// A GUI-subsystem .com is the one wrong answer nobody would see: a typed <c>circuitrf check .</c>
+    /// would get no console and the shell would print its prompt before any output. The stub builders
+    /// already read the subsystem back out of the PE for the .exe; this holds them to demanding 3 for
+    /// the .com as well.
+    /// </summary>
+    [Theory]
+    [InlineData("packaging/windows/stub/build-stub.sh", "want_subsys=0003", "-Wl,--subsystem,console")]
+    [InlineData("packaging/windows/stub/build-stub.ps1", "$wantSubsystem = 3", "-Wl,--subsystem,console")]
+    public void StubBuilders_DemandTheConsoleSubsystemForTheCom(string script, string demand, string flag)
+    {
+        string text = File.ReadAllText(RepoFile(script.Split('/')));
+        Assert.Contains(demand, text, StringComparison.Ordinal);
+        Assert.Contains(flag, text, StringComparison.Ordinal);
+        Assert.Contains("CRF_CONSOLE", text, StringComparison.Ordinal);
+    }
 }

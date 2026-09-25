@@ -5,6 +5,72 @@ symptom first, because that is what the next person will have in front of them.
 
 ---
 
+## No installer through 1.0.0-beta.32 contained a command line (AUT-13, 2026-09-24)
+
+**Symptom:** an agent told to install circuitRF from a release and drive it over MCP had nothing to
+drive. All three scripts published `src/Ui` only, `src/Ui` did not reference `src/Cli`, and
+`Program.Main` handled no verb — so `circuitRF serve` opened a window, and on Linux the documented
+`circuitrf sparam amp.cnl` (through the `.deb`'s `/usr/bin/circuitrf` or `install.sh`'s
+`~/.local/bin/circuitrf`, both links to the application) **started the GUI** and handed it `sparam`
+as a file to open.
+
+**Why 32 releases did not notice:** every CLI and `serve` gate launches `src/Cli/bin`, and
+`PackagingScriptTests` reads script TEXT. Nothing ever ran what an installer holds. That is now
+`tools/CliSmoke`, run by all three scripts against their own publish output — `--version` must print
+the `VERSION` file exactly, `reference --json` must parse, `serve` must answer `initialize` and
+`tools/list` (against `ToolCatalog`, never a count) and exit when stdin closes. On Windows it drives
+the launcher stub laid out as a per-user install, because that is the pipe route MCP clients take.
+
+**Not smoke-tested is not passed.** An architecture the build machine cannot execute fails the run at
+the end unless `CRF_ALLOW_UNSMOKED=1`. This Mac has no Rosetta, which is how that case was found: the
+smoke tool's first version crashed with *Bad CPU type in executable* on the x64 bundle. The scripts
+now decide up front — Rosetta (`softwareupdate --install-rosetta`) for x64 on Apple Silicon, qemu's
+binfmt handler for the other Linux architecture, and Windows on ARM, which runs all three.
+
+**The Windows stub, and why the per-machine MSI now needs a C compiler too.** The stub gained
+`STARTF_USESTDHANDLES` (without it a GUI-subsystem child writes nowhere, however the handles are
+inherited) and stopped raising its `MessageBox` when it has a pipe, file or console to write to. The
+same source, compiled with `-DCRF_CONSOLE` for the CONSOLE subsystem, is `circuitRF.com` in BOTH
+scopes, so it is built for every architecture now, not only when per-user is asked for. A failed
+`.com` build still produces the installers, without it, and fails the run at the end — the same
+shape the 2026-08-25 zig crash settled for the stub. Both MSIs add the install folder to `PATH`.
+
+**Sizes, measured.** The published executable, before → after, every RID (all are single-file, so
+this is the whole of each artifact's payload change; no file was added to any publish tree):
+
+| RID | before | after | growth |
+|---|---:|---:|---:|
+| osx-arm64 | 141,232,301 | 141,909,949 | +677,648 |
+| osx-x64 | 133,904,093 | 134,578,157 | +674,064 |
+| linux-x64 | 134,197,064 | 134,865,882 | +668,818 |
+| linux-arm64 | 141,681,838 | 142,354,240 | +672,402 |
+| win-x64 | 134,153,718 | 134,826,120 | +672,402 |
+| win-arm64 | 143,242,764 | 143,915,166 | +672,402 |
+| win-x86 | 129,955,318 | 130,627,720 | +672,402 |
+
+That is `CircuitRF.Cli.Verbs.dll` (668,160 bytes then; 670,208 with the update guard) and nothing
+else; it compresses to ~240 KB (gzip -9), which is the expected growth of each `.dmg`, `.tar.gz`,
+`.zip` and MSI cab. The Windows MSIs add `circuitRF.com` on top: 191,488 (x64), 174,592 (arm64) and
+244,224 (x86) bytes as built by zig 0.16.0 — the stub's size, minus its icon, which the `.com` does
+not carry because nothing draws it. **Every figure is under the brief's 2 MB threshold.**
+
+**Still to record, at the next release on each platform** — none of it can be produced from one Mac:
+
+- The 15 artifacts' own sizes, before and after (the table above is their payload, measured by
+  cross-publishing every RID from macOS; the containers need each platform's own script).
+- The Windows smoke run through the stub's pipe route, which is the only verification
+  `STARTF_USESTDHANDLES` has — it was built and its PE fields read back here (zig cross-compile, all
+  three architectures, both subsystems), never executed.
+- The `.com` from a real console, once, by hand: `circuitrf --version` and `circuitrf check <ws>` in
+  cmd and in PowerShell, per-user and per-machine. A pipe is the one condition it does not exist for,
+  so no scripted check can stand in.
+- Double-click, by hand, on each platform: a `.csch` and a `.clay` with circuitRF closed and again with
+  it open — both must open in the GUI, the second in the window already open.
+- Linux: the smoke run itself. Docker was not running on this machine, so no Linux binary was
+  executed; the dispatch is platform-independent code, but the script path is unexercised.
+
+---
+
 ## The x86 installer stalls on "Computing space requirements": one UpgradeCode for three architectures (2026-09-10)
 
 **Symptom, as reported:** the 32-bit Windows installer gets stuck on *Computing space requirements*

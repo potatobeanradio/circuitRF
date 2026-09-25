@@ -6,6 +6,9 @@
   <Folder Name="/src/Cli/">
     <Project Path="src/Cli/CircuitRF.Cli.csproj" />
   </Folder>
+  <Folder Name="/src/Cli.Verbs/">
+    <Project Path="src/Cli.Verbs/CircuitRF.Cli.Verbs.csproj" />
+  </Folder>
   <Folder Name="/src/RfCore/">
     <Project Path="src/RfCore/RfCore.csproj" />
   </Folder>

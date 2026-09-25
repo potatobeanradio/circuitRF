@@ -86,6 +86,19 @@ BUILT=()
 echo "Building icons..."
 dotnet run --project "${ROOT}/tools/IconGen" -- circuitrf
 
+# The packaging smoke check (brief-automation-13-installed-cli.md). Built once, Release, so it
+# shares the libraries the publishes build; run once per architecture below.
+echo "Building the packaging smoke check..."
+dotnet build "${ROOT}/tools/CliSmoke" -c Release -v quiet
+SMOKE_DLL="${ROOT}/tools/CliSmoke/bin/Release/net10.0/CliSmoke.dll"
+UNSMOKED=""
+
+case "$(uname -m)" in
+    x86_64)        HOST_ARCH=x64   ;;
+    aarch64|arm64) HOST_ARCH=arm64 ;;
+    *)             HOST_ARCH="$(uname -m)" ;;
+esac
+
 for ARCH in $ARCHES; do
 
     echo ""
@@ -203,6 +216,37 @@ for ARCH in $ARCHES; do
         fi
     fi
 
+    # -- The command line, run out of THIS publish tree ----------------------
+    #
+    # THE GATE THAT WAS MISSING FOR 32 RELEASES (brief-automation-13-installed-cli.md). Every release
+    # through 1.0.0-beta.32 shipped a circuitRF with no command line at all - on Linux worse than
+    # absent, since the .deb's /usr/bin/circuitrf link STARTED THE GUI - while every CLI gate was
+    # green, because they all launched src/Cli/bin and never the tree that goes into a package. This
+    # runs ${PUBLISH}/circuitRF, which is what both the .deb and the tarball carry, and fails the
+    # build unless --version prints the VERSION file, `reference --json` parses, and `serve` answers
+    # initialize and tools/list (compared with the tool CATALOGUE, not a count) and exits when stdin
+    # closes.
+    #
+    # The other architecture runs only through qemu's binfmt handler (qemu-user-static). NOT
+    # SMOKE-TESTED IS NOT PASSED: that fails the run at the end unless CRF_ALLOW_UNSMOKED=1.
+    case "$ARCH" in
+        x64)   QEMU_BINFMT=/proc/sys/fs/binfmt_misc/qemu-x86_64  ;;
+        arm64) QEMU_BINFMT=/proc/sys/fs/binfmt_misc/qemu-aarch64 ;;
+    esac
+
+    if [ "$ARCH" = "$HOST_ARCH" ] || [ -e "$QEMU_BINFMT" ]; then
+        echo "Smoke-testing the command line in ${PUBLISH} ..."
+        dotnet "$SMOKE_DLL" "${PUBLISH}/circuitRF" "$CRF_VERSION" || {
+            echo "ERROR: the command line in ${PUBLISH} does not answer (see above)."
+            echo "       This tree must not be packaged."
+            exit 1
+        }
+    else
+        echo "WARNING: NOT SMOKE-TESTED - this ${HOST_ARCH} machine cannot execute a ${ARCH} build."
+        echo "         Install qemu-user-static (binfmt) to check it, or build on ${ARCH}."
+        UNSMOKED="${UNSMOKED} ${ARCH}"
+    fi
+
     for KIND in $KINDS; do
         case "$KIND" in
 
@@ -305,8 +349,21 @@ if [ "$ARCH_ARG" = "both" ] && [ "$KIND_ARG" = "both" ] && [ "${#BUILT[@]}" -ne 
     echo "WARNING: expected 4 files for a full run, got ${#BUILT[@]}."
 fi
 
+# Reported after the packages exist, so nothing built is thrown away - but the run still fails.
+UNSMOKED_FAIL=0
+if [ -n "$UNSMOKED" ]; then
+    echo ""
+    echo "NOT SMOKE-TESTED:${UNSMOKED}. Nothing has shown that their command line answers, which is"
+    echo "  exactly what shipped broken for 32 releases. Install qemu-user-static and run again, or"
+    echo "  set CRF_ALLOW_UNSMOKED=1 to accept that knowingly."
+    [ "${CRF_ALLOW_UNSMOKED:-}" = 1 ] || UNSMOKED_FAIL=1
+fi
+
 # Whether these artifacts can ever be installed as an AUTOMATIC UPDATE is decided by the release key
 # compiled into the binary, not by anything this script did - so it is stated here, where someone is
 # already reading the output, rather than discovered when a published release reaches nobody.
 source "${ROOT}/packaging/signing-status.sh"
 crf_report_release_key "${ROOT}/src/Ui/Updates/ReleaseKeys.cs"
+
+[ "$UNSMOKED_FAIL" = 1 ] && exit 1
+exit 0

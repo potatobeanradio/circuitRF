@@ -1,35 +1,15 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
-  <ItemGroup>
-    <ProjectReference Include="..\Core\CircuitRF.Core.csproj" />
-    <ProjectReference Include="..\Engine\CircuitRF.Engine.csproj" />
-    <!-- The `.cem`-to-EmProblem half: the layout model, the technology model, the EM setup and the
-         extractors. Framework-free and gated by tests/Firewall.Tests exactly as Core and Engine are,
-         which is what makes the `em` verb possible at all (brief-cli-em-verb.md R-emcli-1). -->
-    <ProjectReference Include="..\Design\CircuitRF.Design.csproj" />
-    <!-- The Skia renderers, gated the same way (brief-render-1-render-layer-below-the-firewall.md).
-         Referenced from RND-1 onward so `circuitrf render` draws with the code the application
-         draws with rather than with something that resembles it (R-rnd0-1). -->
-    <ProjectReference Include="..\Render\CircuitRF.Render.csproj" />
-  </ItemGroup>
+  <!--
+    THE PROCESS ENTRY POINT, AND NOTHING ELSE. Every verb lives in src/Cli.Verbs, which compiles the
+    other files in this folder where they stand (see that project for why they did not move). This
+    project is `CircuitRF.Cli.dll` — what `dotnet run` on src/Cli, every CLI test and every build
+    script launches — and it is one line: CliEntry.Run(args).
 
-  <ItemGroup>
-    <!--
-      The verb gates live in tests/Ui.Tests, and two of them cannot be written against the PROCESS.
-      `render`'s cancellation gate (brief-render-2-render-verb.md gate 7) has to install a cancelled
-      RunControl through RunHost and see the verb answer 130 with no file written; its layer-leak gate
-      (gate 5) has to run two renders in ONE process, because a leak through a shared, cached
-      Technology is by definition invisible across two. Both are exactly the property `serve` will
-      exercise in production, and neither is reachable by exec'ing the DLL.
-
-      This grant does NOT replace the process gates beside them — byte identity against a real
-      invocation is still measured by launching the DLL, because a same-process call cannot show a
-      difference that only a second process can have.
-    -->
-    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
-      <_Parameter1>CircuitRF.Ui.Tests</_Parameter1>
-    </AssemblyAttribute>
-  </ItemGroup>
+    The installed `circuitRF` executable is the SAME CliEntry.Run reached through src/Ui's
+    Program.Main (brief-automation-13-installed-cli.md R-aut13-1); this one is the developer's and
+    the tests' front door to it.
+  -->
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -38,6 +18,15 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Cli.Verbs\CircuitRF.Cli.Verbs.csproj" />
+  </ItemGroup>
 
 </Project>

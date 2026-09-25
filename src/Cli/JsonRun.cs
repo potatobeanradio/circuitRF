@@ -474,7 +474,7 @@ internal static class JsonRun
     /// The version, read from the assembly rather than written down — the repo-root <c>VERSION</c>
     /// file is the single source (see <c>src/Ui/AppVersion.cs</c> for why there is exactly one).
     /// </summary>
-    private static string Version()
+    internal static string Version()
     {
         var asm = typeof(JsonRun).Assembly;
         string? v = asm.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion

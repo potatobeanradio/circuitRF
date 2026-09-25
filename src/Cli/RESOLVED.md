@@ -6,6 +6,51 @@ what the design says.
 
 ---
 
+## AUT-13 — the installed `circuitRF` executable is the CLI (2026-09-24)
+
+`docs/design/cli.md` §20 has the design; these are the things that turned out to be true.
+
+**`src/Ui` → `src/Cli` publishes, and is still the wrong reference.** Measured: no NETSDK1150 at all
+(`-r` flows the RID to the referenced exe), but the self-contained publish tree gains a
+framework-dependent `CircuitRF.Cli` apphost, `CircuitRF.Cli.deps.json` and
+`CircuitRF.Cli.runtimeconfig.json` — dead files in every installer. Hence `src/Cli.Verbs`, which
+compiles this folder's sources in place. **Its `Compile` glob must exclude `../Cli/obj/**`:** that
+holds the EXE's generated `AssemblyInfo.cs`, and including it gives the library a second set of
+assembly attributes. And every `InternalsVisibleTo("CircuitRF.Cli")` elsewhere had to follow the code
+— only `CircuitRF.Render` had one, and the build names the members it hides.
+
+**`IsVerb` comes from `Run`'s own switch.** The switch expression became `Dispatch(string)`, returning
+the verb's function or null; `Run` calls it and `IsVerb` asks it. Two lists would drift, and the
+installed executable's "command line or document?" decision is the one place a drift is silent.
+
+**The application's seven module initializers run before its `Main`**, so the installed CLI gets them
+and `CircuitRF.Cli.dll` does not. Measured harmless: `check --json` over all ten shipped examples and
+`lvs --json` over three are byte-identical through both front doors. The PCell generator seam can
+change an answer only for a PCell cell written before pins were persisted, and there the installed CLI
+gives the GUI's answer. A future initializer that does more than install a seam — reads a file, starts
+a thread — runs on every CLI call too; `InstalledCliTests`' byte-identity gate is what would notice.
+
+**A running `serve` after a macOS update: measured, and it degrades rather than dies.** With the
+bundle exchanged under it (`renamex_np RENAME_SWAP`, as the updater does), `check` still answered and
+`run` / `history` failed with *Could not load file or assembly 'NumFlat'* / *'System.Diagnostics.
+Process'* — each returned as an ordinary tool error, and the server kept going. That half-working state
+is what `InstallationGuard` replaces with one JSON-RPC error (−32001) and an exit. **The measurement is
+easy to get wrong:** the first run swapped in the pre-change build of the same RID, and EVERYTHING
+still worked — the two bundles differ only by one assembly near the end, so every assembly before it
+sits at the same offset and the swap is invisible. The x64 build (laid out differently throughout)
+is what showed the failure. Deleting the tree instead (the Linux reclaim shape) is caught the same way.
+
+**`--version` is plain text, and first.** It is taken before `JsonRun.TakeFlags`, so `--version
+--json` still prints only the version: a caller asking which build answered has not chosen a protocol
+yet. The version string is `JsonRun.Version()` — the one reader of `InformationalVersion` in this
+assembly besides `McpServer`'s `serverInfo`, which reads the same attribute.
+
+**The installed form wants the verb FIRST.** `circuitrf --json check .` works under `dotnet run` and
+opens the GUI when installed, because `IsVerb` looks at `args[0]`. Nothing documented put a flag
+first, and `TakeFlags` already assumed the verb leads (`smith`'s `--at`); the user guide now says so.
+
+---
+
 ## `check` learned the terminal map, and a `.ccell` became a path it accepts (2026-09-21)
 
 `brief-lvs-1-terminal-map.md` R-lvs1-4. `Check.cs` gained a row in §10.2's validator table and
