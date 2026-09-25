@@ -162,6 +162,10 @@ public static class LayoutPersistence
         // and still a one-line diff for one moved vertex.
         Converters                  = { new JsonStringEnumConverter(), new PCells.PCellValueJsonConverter(),
                                         new CoordinatePairsJsonConverter() },
+        // Every object contract also catches the keys the read does not bind, so a load can SAY it
+        // ignored one (LayoutLoadAudit): a misspelt "Xy" used to empty a polygon without a word.
+        TypeInfoResolver            = new System.Text.Json.Serialization.Metadata.DefaultJsonTypeInfoResolver
+                                      { Modifiers = { LayoutLoadAudit.CaptureUnknownFields } },
     };
 
     // ── Write ─────────────────────────────────────────────────────────────────
@@ -174,23 +178,27 @@ public static class LayoutPersistence
 
     // ── Read ──────────────────────────────────────────────────────────────────
 
-    public static LayoutView Deserialize(string json) => FromFileModel(ParseFile(json), default, null);
+    public static LayoutView Deserialize(string json)
+    {
+        var (file, captured) = ParseFile(json);
+        return WithUnknownFields(FromFileModel(file, default, null), captured, file);
+    }
 
     /// <summary>JSON text to the on-disk file model, version check included — split out of
     /// <see cref="Deserialize"/> so the interruptible overload of <see cref="LoadFromFile(string,
     /// CancellationToken, Action{int, int})"/> can put a cancellation point between the parse and the
     /// shape loop without a second copy of the version rule.</summary>
-    private static ClayFile ParseFile(string json)
+    private static (ClayFile File, List<(object Owner, Dictionary<string, JsonElement> Keys)> Captured) ParseFile(string json)
     {
-        var file = JsonSerializer.Deserialize<ClayFile>(json, JsonOpts)
-            ?? throw new InvalidDataException("Failed to deserialize .clay file.");
+        var (file, captured) = LayoutLoadAudit.Capturing(() => JsonSerializer.Deserialize<ClayFile>(json, JsonOpts));
+        if (file is null) throw new InvalidDataException("Failed to deserialize .clay file.");
 
         if (file.FormatVersion > CurrentFormatVersion)
             throw new InvalidDataException(
                 $".clay format_version {file.FormatVersion} is newer than " +
                 $"expected {CurrentFormatVersion}. Update the application.");
 
-        return file;
+        return (file, captured);
     }
 
     public static LayoutView LoadFromFile(string path) => LoadFromFile(path, default, null);
@@ -289,10 +297,24 @@ public static class LayoutPersistence
     {
         string text = GzipTextFile.ReadAllTextAutoGzip(path);
         cancellation.ThrowIfCancellationRequested();
-        var file = ParseFile(text);
+        var (file, captured) = ParseFile(text);
         cancellation.ThrowIfCancellationRequested();
-        var view = FromFileModel(file, cancellation, onShapesLoaded);
+        var view = WithUnknownFields(FromFileModel(file, cancellation, onShapesLoaded), captured, file);
         ResolveRelativeBitmapPaths(view, Path.GetDirectoryName(Path.GetFullPath(path)));
+        return view;
+    }
+
+    /// <summary>
+    /// Puts the keys the read IGNORED in front of whatever the shape loop found — first, because an
+    /// unknown key is usually the reason a shape came out degenerate (a <c>Poly</c> spelt with
+    /// <c>"Points"</c> is both), and the cause should be read before the symptom. See
+    /// <see cref="LayoutLoadAudit"/>.
+    /// </summary>
+    private static LayoutView WithUnknownFields(
+        LayoutView view, List<(object Owner, Dictionary<string, JsonElement> Keys)> captured, ClayFile file)
+    {
+        var unknown = LayoutLoadAudit.UnknownFields(captured, file);
+        if (unknown.Count > 0) view.LoadFindings = [.. unknown, .. view.LoadFindings];
         return view;
     }
 
@@ -389,8 +411,10 @@ public static class LayoutPersistence
         // bar cannot show more than a few dozen steps anyway.
         const int ReportEvery = 256;
         int total = file.Shapes.Count, loaded = 0;
+        var degenerate = new LayoutLoadAudit.DegenerateTally();
         foreach (var shape in file.Shapes)
         {
+            degenerate.Add(shape, loaded);
             PadEdgesIfShort(shape);
             // §3.1a R10b / R-L1e-0: a hand-edited (or otherwise not-Clipper2-produced) shape may carry
             // an invalid hole — enforce validity on load rather than trust it. A no-op for the
@@ -408,6 +432,7 @@ public static class LayoutPersistence
         if (file.DrcWaivers is not null) view.DrcWaivers.AddRange(file.DrcWaivers);
         if (file.LvsWaivers is not null) view.LvsWaivers.AddRange(file.LvsWaivers);
         if (file.Rulers is not null) view.Rulers.AddRange(file.Rulers);
+        view.LoadFindings = [.. degenerate.Findings()];
 
         return view;
     }

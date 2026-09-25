@@ -1,3 +1,4 @@
+using CircuitRF.Design.Layout;
 using CircuitRF.Diagnostics;
 
 namespace CircuitRF.Cli;
@@ -1088,6 +1089,27 @@ internal static class CliDiagnostics
 
     /// <summary>Anything the DRC run could not do — an unresolved instance, an unmapped
     /// cross-technology sub-cell, the flatten ceiling. Stated rather than dropped.</summary>
+    /// <summary>
+    /// What <c>LayoutPersistence</c> noticed while reading a layout and did not refuse it for — the
+    /// same sentence the GUI posts on a fresh load (<c>LayoutLoadAudit</c>), so the two cannot
+    /// disagree. An ignored key is a WARNING, because a file from a newer circuitRF carries keys this
+    /// build does not know and is not broken for it; a shape with too few vertices is an ERROR, because
+    /// nothing circuitRF writes produces one — the F0 spike's hand-written ground plane (<c>"Points"</c>
+    /// for <c>"Xy"</c>) loaded with no vertices and this command used to pass it clean.
+    /// </summary>
+    public static Diagnostic CheckLayoutLoadFinding(string path, LayoutLoadFinding finding) =>
+        finding.Kind == LayoutLoadFindingKind.DegenerateShape
+            ? CheckLayoutDegenerateShape(path, finding.Message)
+            : CheckLayoutUnknownField(path, finding.Message);
+
+    private static Diagnostic CheckLayoutDegenerateShape(string path, string text) => Diagnostic.Create(
+        "check.layout.degenerate-shape", DiagnosticSeverity.Error,
+        "{path}: {text}", ("path", path), ("text", text));
+
+    private static Diagnostic CheckLayoutUnknownField(string path, string text) => Diagnostic.Create(
+        "check.layout.unknown-field", DiagnosticSeverity.Warning,
+        "{path}: {text}", ("path", path), ("text", text));
+
     public static Diagnostic CheckDrcNote(string path, string text) => Diagnostic.Create(
         "check.drc.note", DiagnosticSeverity.Warning,
         "{path}: {text}", ("path", path), ("text", text));

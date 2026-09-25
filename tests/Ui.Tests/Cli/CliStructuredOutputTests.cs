@@ -439,6 +439,9 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "check.file.unreadable",
         "check.footprint.pad-count",
         "check.footprint.unresolved",
+        // What LayoutPersistence ignored or could not make a shape of (LayoutLoadAudit, 2026-09-24).
+        "check.layout.degenerate-shape",
+        "check.layout.unknown-field",
         "check.name.invalid",
         "check.path.interchange",
         "check.path.not-found",

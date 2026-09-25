@@ -11662,6 +11662,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             return existing!;
         var model = preloaded ?? LayoutPersistence.LoadFromFile(key);
 
+        // What the read ignored or could not make a shape of (LayoutLoadAudit) — once per fresh load,
+        // one line per kind, the same sentences `circuitrf check` reports.
+        foreach (var finding in model.LoadFindings)
+            if (finding.IsError) Messages.Error(finding.Message, key);
+            else Messages.Warning(finding.Message, key);
+
         int removedRatsnest = SchematicToLayoutGenerator.RemoveRatsnestShapes(model);
 
         var vm = RegisterLayoutSession(key, BuildLayoutSessionVm(model, key));

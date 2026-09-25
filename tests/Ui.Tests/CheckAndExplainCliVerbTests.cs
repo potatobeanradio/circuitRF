@@ -361,6 +361,25 @@ public sealed class CheckAndExplainCliVerbTests(ITestOutputHelper output) : IDis
         Assert.Equal("MinSpacing",     Argument(doc, "check.drc.violation", "kind"));
     }
 
+    /// <summary><c>LayoutPersistence</c>'s own load findings (<c>LayoutLoadAudit</c>): a polygon spelt
+    /// with "Points" loads with no vertices. The F0 spike's case B ground plane did exactly this and
+    /// `check` passed it with 0 errors; now the ignored key is a warning, the empty shape an error.</summary>
+    [Fact]
+    public void LayoutPersistence_APolygonWithNoVertices_IsAnErrorAndItsIgnoredKeyAWarning()
+    {
+        string clay = Path.Combine(Dir("ws/cell/layout"), "Amp.clay");
+        File.WriteAllText(clay, """
+            { "FormatVersion": 1, "Shapes": [
+                { "$type": "Poly", "Layer": { "Layer": 2, "Datatype": 0 }, "Points": [0, 0, 100, 0, 100, 100] }
+            ], "Instances": [] }
+            """);
+
+        var run = RunCli("check", clay, "--json");
+        AssertHasDiagnostic(run, "check.layout.unknown-field");
+        AssertHasDiagnostic(run, "check.layout.degenerate-shape");
+        Assert.Equal(1, run.ExitCode);
+    }
+
     /// <summary>The `.wasm` predicate parser — the assembly rule set's own authority on its rules,
     /// and the same one the DRC engine compiles them with.</summary>
     [Fact]

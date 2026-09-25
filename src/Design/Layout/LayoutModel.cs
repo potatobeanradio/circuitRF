@@ -1053,6 +1053,15 @@ public sealed class LayoutView
     public string? TechRef { get; set; }
 
     /// <summary>
+    /// What <see cref="LayoutPersistence"/> noticed while reading this view from a file and did NOT
+    /// refuse it for — keys it ignored, shapes too small to be shapes (<see cref="LayoutLoadAudit"/>).
+    /// Empty for a view built in memory or read cleanly. Never persisted: it describes the file as it
+    /// was READ, and a save writes neither the unknown keys nor anything about them. The GUI posts it
+    /// once per fresh load; <c>circuitrf check</c> reports it.
+    /// </summary>
+    public IReadOnlyList<LayoutLoadFinding> LoadFindings { get; set; } = [];
+
+    /// <summary>
     /// This cell's connection points (§9, R3). Empty for a cell that declares none — which is the
     /// ordinary case for hand-drawn artwork and not a defect.
     ///

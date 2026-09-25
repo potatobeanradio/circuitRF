@@ -658,6 +658,7 @@ rather than missing; what `src/Cli/Check.cs` adds is the WALK and the reporting,
 |---|---|---|
 | `CellViewFileValidator.DescribeDefect` | `src/Design/Cells` | is the file the view its extension claims? |
 | `CellFolder.ResolvePrimary` | `src/Design/Cells` | primacy — a named primary that is missing, or none chosen |
+| `LayoutPersistence` (`LayoutView.LoadFindings`, built by `LayoutLoadAudit`) | `src/Design/Layout` | what reading a `.clay` IGNORED — a key the reader does not know (a warning: a newer file carries some) — and a `Poly`/`Path`/`Curve` with too few vertices to be a shape (an error). The GUI posts the same findings on a fresh load |
 | `NameValidator` | `src/Design/Cells` | a cell name the GUI would reject |
 | `TechValidation.Analyze` | `src/Design/Layout` | a `.ctech`'s problems, already typed as `TechProblem` |
 | `TechnologyResolver.ResolveForDocument` | `src/Design/Layout` | the technology walk-up |

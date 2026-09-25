@@ -461,11 +461,11 @@ Re-surveyed on 2026-09-24 before installing: Palace's newest release is still **
 
 ## 7. Things F0 found that are not questions
 
-- **circuitRF's `.clay` reader ignores an unknown field silently.** A polygon written with `"Points"`
+- **circuitRF's `.clay` reader ignored an unknown field silently.** A polygon written with `"Points"`
   instead of `"Xy"` loaded as a polygon with **no vertices**, `check` reported 0 errors, and the
-  ground plane would have vanished from the solve. Found while authoring case B; not fixed here (no
-  product code in this brief) — worth a brief of its own, since `circuitrf check` is the gate headless
-  authors rely on.
+  ground plane would have vanished from the solve. Found while authoring case B. **Fixed after F0
+  (2026-09-24):** the read now reports an ignored key as a warning and a shape with too few vertices
+  as an error, in `check` and in the GUI alike (`src/Design/RESOLVED.md`).
 - **Kernel W is reachable only from the GUI.** The netlist route stamps the lumped model; the
   distributed MoM is reached only through `WBondTouchstoneExport`, so the spike called it from a
   scratch harness. A headless reference run of kernel W needs a verb.

@@ -1,5 +1,46 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## A `.clay` key the reader ignored, and a shape with no vertices, now say so (2026-09-24)
+
+The 3D-EM F0 spike wrote a ground plane as `{"$type": "Poly", "Points": [...]}`; the format's field
+is `Xy`. It loaded as a polygon with **no vertices**, `circuitrf check` reported 0 errors, and the
+planar solve would have run without the plane (`docs/design/em-3d-f0-findings.md` §7).
+
+- **Root cause: the reader ignores unknown keys, on purpose, and said nothing when it did.**
+  Ignoring them is right — a file from a newer circuitRF must still open (`SmithDesignIo` states
+  the same rule) — so the fix REPORTS rather than refuses. `LayoutView.LoadFindings` (never
+  persisted) carries what the read ignored (`UnknownField`, a warning) and every `Poly` under 3
+  vertices, `Path`/`Curve` under 2, or odd-length `Xy` (`DegenerateShape`, an error: nothing
+  circuitRF writes produces one, and none of the repository's 34 layouts has one). Aggregated —
+  one line per key per kind, one per kind of degenerate shape — so a bad key on 50,000 shapes is
+  one line. `check` reports them as `check.layout.unknown-field` / `check.layout.degenerate-shape`;
+  the GUI posts the same sentences once per fresh load (`GetOrCreateLayoutSession`), so the two
+  cannot disagree — `check` still owns no rule.
+- **How the keys are found: the serializer tells us, during the one read.** `LayoutLoadAudit.
+  CaptureUnknownFields` is a contract modifier that gives every reference-type object contract an
+  extension-data property. **A second pass over the text was built first and measured out:** a
+  `Utf8JsonReader` walk against the same contract cost 190–250 ms of a 430–500 ms load on a 61 MB
+  synthetic board, and ~135–200 ms after removing every per-node allocation — the vertex lists are
+  most of the bytes, and skipping them still means tokenizing them. The modifier costs nothing
+  measurable (parse medians 216 vs 211 ms Release, 248 vs 256 ms Debug, with vs without).
+- **Two traps in the modifier, both found by running it, not by reading about it.** (1) The
+  serializer calls the extension-data SETTER with an empty dictionary and then reads it back through
+  the GETTER to add the key, so a getter that always answers null makes the read throw
+  `InvalidOperationException`. The getter answers from a per-read table keyed by object identity,
+  which exists only inside `Capturing` — so a SAVE, where it answers null, writes nothing: what a read
+  ignored is reported, never carried back out. (2) Value types get no capture (`LayerKey`): the
+  extension-data path needs a settable reference.
+- **The regression the repository's own layouts caught.** The first version asked the serializer for
+  the contract of a property's declared type, and a `LayerKey?` (a label's `PortLayer`) has a
+  `Nullable<T>` contract — an object with NO properties — so every key under it looked unknown, on 8
+  of the 34 layouts. Unwrap `Nullable<T>` before asking. The modifier approach does not walk types at
+  all and cannot have that bug; the lesson is to run an audit over every file the repo holds before
+  trusting it.
+- Gate: `tests/Ui.Tests/Layout/LayoutLoadAuditTests.cs` (the F0 case; every shape kind and nested
+  record with no finding; one key on 500 shapes is one finding and a save writes neither it nor the
+  capture), `CheckAndExplainCliVerbTests.LayoutPersistence_APolygonWithNoVertices_…` (the CLI as a
+  process: both ids, exit 1), and the two ids in `CliStructuredOutputTests`' committed list.
+
 ## Field report 7: a rail whose anchors landed on the far side of the board (2026-09-24)
 
 A Gerber board's supply rail refused with "resolves to no copper … no source or load anchor

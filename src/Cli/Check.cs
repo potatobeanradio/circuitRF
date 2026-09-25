@@ -506,6 +506,10 @@ internal static class Check
         try { view = LayoutPersistence.LoadFromFile(path); }
         catch (Exception ex) { f.Add(CliDiagnostics.CheckUnreadable(path, ex.Message)); return; }
 
+        // What the read ignored or could not make a shape of — the reader's own findings, which the
+        // GUI posts on a fresh load (LayoutLoadAudit); nothing here decides what counts.
+        foreach (var finding in view.LoadFindings) f.Add(CliDiagnostics.CheckLayoutLoadFinding(path, finding));
+
         string full    = Path.GetFullPath(path);
         var (tech, _)  = TechnologyResolver.ResolveForDocument(view.TechRef, full, null, cache);
 
