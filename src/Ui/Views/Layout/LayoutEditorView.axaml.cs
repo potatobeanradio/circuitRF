@@ -1690,6 +1690,20 @@ public partial class LayoutEditorView : UserControl
     // actual hierarchy walk + write. The fidelity dialog states what will change BEFORE any bytes
     // are written, and blocks the write outright if the plan carries a coordinate overflow.
 
+    // Impedance Analysis (round 8): the options dialog runs the analysis and writes the PDF itself,
+    // so a cancelled run can still write the layers it finished.
+    private async void OnImpedanceAnalysis(object? sender, RoutedEventArgs e)
+    {
+        if (Vm is not { } vm) return;
+        if (TopLevel.GetTopLevel(this) is not Window owner) return;
+        if (vm.Technology is null)
+        {
+            vm.ReportError("Impedance Analysis: this layout has no technology, so there is no stackup to take an impedance from.");
+            return;
+        }
+        await new TraceImpedanceAnalysisDialog(vm).ShowDialog<bool>(owner);
+    }
+
     private async void OnExportGdsii(object? sender, RoutedEventArgs e) => await OnExportGdsiiAsync();
 
     private async Task OnExportGdsiiAsync()

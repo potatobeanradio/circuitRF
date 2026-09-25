@@ -224,6 +224,45 @@ public class TraceImpedanceProbeTests
         Assert.Contains("G to via pads", r.Summary(), StringComparison.Ordinal);
     }
 
+    /// <summary>Round 8: imported artwork carries jogs of a few microns (a 5 µm offset in a 381 µm
+    /// trace on the reported board). The minimum chord through a jog leans across it, and the edge
+    /// check used to read that as a bend and refuse the trace.</summary>
+    [Fact]
+    public void AFewMicronJog_IsStillOneStraightTrace()
+    {
+        var tech = Tech(35, 300, 4.4);
+        // Left edge x = −190.5 below y = 0 and −195.5 above y = 90; right edge +190.5 / +185.5; the
+        // 90 µm between is the jog, drawn as one slanted facet each side.
+        var trace = new PolygonShape
+        {
+            Layer = Top,
+            Xy = [Um(-190.5), Um(-5000), Um(190.5), Um(-5000), Um(190.5), Um(0), Um(185.5), Um(90),
+                  Um(185.5), Um(5000), Um(-195.5), Um(5000), Um(-195.5), Um(90), Um(-190.5), Um(0)],
+        };
+        LayoutShape[] shapes = [trace, Rect(Gnd, -8000, -8000, 8000, 8000)];
+
+        var r = Probe(shapes, tech, 0, 45);
+
+        Assert.True(r.Ok, r.Refusal);
+        Assert.Equal(381, r.WidthM * 1e6, 381 * 0.02);
+    }
+
+    /// <summary>Round 8: the current drawing layer was the inner plane under the trace, so the probe
+    /// measured the PLANE and refused. A refusal on the preferred layer falls through to the next
+    /// copper layer at the point, and the answer says so.</summary>
+    [Fact]
+    public void APlaneAsTheLayerMeant_FallsThroughToTheTraceAbove()
+    {
+        var tech = Tech(35, 500, 4.4);
+        LayoutShape[] shapes = [Rect(Top, -6000, -500, 6000, 500), Rect(Gnd, -8000, -8000, 8000, 8000)];
+
+        var r = TraceImpedanceProbe.ProbeFirst(shapes, tech, LayoutUnits.DefaultDbuPerMicron, 0, 0, [Gnd, Top]);
+
+        Assert.True(r.Ok, r.Refusal);
+        Assert.Equal("Top", r.SignalLayer);
+        Assert.Contains(r.Notes, n => n.StartsWith("'Plane' has no straight trace", StringComparison.Ordinal));
+    }
+
     /// <summary>A straight strip of width <paramref name="w"/> from (x1, y1) to (x2, y2), µm.</summary>
     private static long[] Line(double x1, double y1, double x2, double y2, double w)
     {

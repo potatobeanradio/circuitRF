@@ -716,6 +716,35 @@ internal static class ToolCatalog
                     ""),
             ]),
 
+        // Trace Impedance Analysis — the `impedance` verb with no second implementation. A reviewer's
+        // question an agent is well placed to ask on a board it did not draw: which traces are not
+        // the target impedance, and where does the return path under them break.
+        new("impedance",
+            "Trace Impedance Analysis of a layout: find every trace on the chosen copper layers, cut it "
+          + "along its length with a quasi-static cross-section solve, and report per trace Z0 min/max/mean, "
+          + "the share inside target +/- tolerance, the line type (microstrip, grounded CPW, stripline…), "
+          + "and every finding: Z0 out of band, a return path that breaks or steps to another layer. "
+          + "Exit 0 when every trace passes, 1 when one fails. Writes nothing unless output is given.",
+            null, null,
+            [
+                new("", [ "impedance" ],
+                    [new("path", true, "A .clay, or a cell folder holding one.")],
+                    [
+                        new("target", "--target", OptKind.Number, "The target Z0 in ohms. Default 50."),
+                        new("tolerance", "--tol", OptKind.Number,
+                            "The tolerance, percent either side of the target. Default 10."),
+                        new("layers", "--layers", OptKind.StrList,
+                            "The copper layers to analyse, by the technology's layer names. Default every "
+                          + "copper layer. A name that is not a copper layer is refused with the names that are."),
+                        new("maxWidth", "--max-width", OptKind.Number,
+                            "The widest copper read as a trace, in um. Default from the stackup."),
+                        new("output", "-o", OptKind.Path,
+                            "Write the PDF report here (the one the layout editor exports). Must end in .pdf."),
+                        Summary,
+                    ],
+                    ""),
+            ]),
+
         new("read",
             "Read a file back: a result file as cubes, or one of circuitRF's own documents as its own text.",
             null, null,

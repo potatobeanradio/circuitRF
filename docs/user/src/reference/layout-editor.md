@@ -774,7 +774,92 @@ that is what a wide trace referenced to a deeper plane looks like, and the *ref*
 plane was used.
 
 The **current drawing layer** decides which trace you mean where two layers carry copper at the same
-point; otherwise it is the highest one in the stackup.
+point; otherwise it is the highest one in the stackup. When that layer has no straight trace at the
+point &mdash; most often because it is a **plane under the trace** &mdash; the other copper layers there
+are tried in turn, and the line names the layer it measured.
+
+Imported artwork is rarely perfectly straight. A **jog of a few microns** in a trace's edge, where a
+Gerber stroke was split, is not a bend: the direction is taken from the trace's centre line, not from
+the one edge beside the click. And where the coplanar ground beside the trace **is not straight**
+&mdash; a pour that juts in toward the trace for part of its run &mdash; the answer is for the gap at the
+point you clicked, and the line adds *G right varies 184–259 µm along the run* so you know the number
+is local. The [Impedance Analysis](#impedance-analysis) report shows Z0 along the whole trace.
+
+## Impedance Analysis {#impedance-analysis}
+
+The **Impedance Analysis** button on the toolbar (the **Z₀** tile beside Check Design Rules) checks
+**every trace on the layers you choose** against a target impedance and writes the review as a PDF
+&mdash; the document you file with a board you send out with an impedance-control note. It is
+[Trace impedance](#trace-impedance) run end to end along every trace, from the same cross-section
+solve, so a trace's number in the report is the number you get by right-clicking it.
+
+The dialog asks three things:
+
+- **Impedance Z₀** &mdash; the target, in ohms. 50 Ω by default.
+- **Tolerance** &mdash; ± this many percent passes, 10 % by default. The dialog shows the pass band it
+  gives you, for example *45.0 – 55.0 Ω*.
+- **Layers** &mdash; every copper layer of the stackup, all ticked by default. A layer with no copper
+  on it is shown but cannot be ticked.
+
+**Export…** asks where to save the `.pdf`, then runs. A bar shows the layer being analysed and how far
+through it the run is; a whole eight-layer board of about 300 traces takes a couple of minutes, a
+single outer layer a few seconds. **Cancel** stops the run and still writes the report for **every
+layer that finished**, with a note on its first page saying it was cancelled. The target, tolerance
+and layer choice are remembered until you close circuitRF. The Messages panel gets one line with the
+verdict and a link to the file.
+
+### What counts as a trace {#impedance-traces}
+
+The analysis works on the copper as drawn, so it reads imported Gerber artwork as well as a layout
+you drew:
+
+- **A trace is a stretch with two long parallel edges facing each other.** Stretches that meet within
+  about a width of each other &mdash; through a jog, round a **bend or a mitre**, across a **width
+  step** &mdash; are one trace. The corner of a bend has no single width and is **not cut and not
+  flagged**, so a hard 90° turn is not a false alarm.
+- **A trace ends** at a junction, at a via, at a pad or where the copper ends. **A via ends it**: what
+  continues on another layer is that layer's trace, and is a row of its own. The table says what each
+  end is.
+- **Pours and planes are skipped.** A copper island much larger than the strips found in it, or one
+  carrying a row of vias, is a pour; the report says how many it skipped on each layer. Copper wider
+  than about ten times the distance to the nearest other copper layer is not read as a trace.
+
+Each trace is cut once per width along its length, and each cut is the quasi-static solve
+[Trace impedance](#trace-impedance) describes: the reference is found from the copper, and every
+other conductor near the trace is held at ground.
+
+### What it flags {#impedance-findings}
+
+A trace **fails** when any of these is found on it, and each is numbered on the layer's map:
+
+- **Z0 outside target ± tolerance**, with the stretch it is out over and its range.
+- **A broken return path** &mdash; the nearest layer under (or over) the trace stops covering it part
+  of the way, while covering it elsewhere along the same trace. A layer cleared under the **whole**
+  trace is not a fault; it is noted, with the deeper layer that became the reference.
+- **Copper only partly under the trace** &mdash; a plane edge running beneath it.
+- **A reference step** &mdash; the reference itself changes from one layer to another along the trace.
+
+### The report {#impedance-report}
+
+- **A summary page**: the target and pass band, the technology, the layers, the counts of traces that
+  pass and fail, and per layer the worst excursion from the target.
+- **A map page per layer**: the layer's copper in grey with every trace drawn over it **coloured by its
+  Z0** &mdash; green inside the pass band, blue below, red above &mdash; its id, and a numbered marker at
+  every finding. The colour scale and the pass band are on the page.
+- **A table per layer**: each trace's start and end, what each end is, its length and width, its line
+  **type**, Z0 min, max and average, the share of its length inside the band, its reference layers,
+  PASS or FAIL, and then the numbered findings in full.
+
+The **type** is microstrip, **GCPW** (grounded coplanar waveguide: a plane below and ground beside it on
+both sides), **GCPW 1-side**, stripline or CPW. A trace that is **both** along its run &mdash; grounded CPW
+where the pour runs beside it and microstrip where the pour falls away &mdash; lists both, with the share
+of its length each covers, for example *GCPW 73%, Microstrip 27%*.
+
+**Units** are the layout's own &mdash; whatever the layout's unit is set to (µm, mm, mil…) &mdash; and every
+page's footer says which, beside Z0 in Ω.
+
+The same analysis and the same PDF are available headlessly as
+[`circuitrf impedance`](cli.html#impedance).
 
 ## The toolbar {#toolbar}
 

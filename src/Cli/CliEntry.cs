@@ -204,6 +204,9 @@ return JsonRun.Finish(Dispatch(JsonRun.Verb) is { } run ? run(args[1..]) : Unkno
     // and a `check` that had become slow is a `check` people stop running. It owns no comparison —
     // every finding comes out of `LvsRun.Run`, which is what the GUI panel calls.
     "lvs"     => CircuitRF.Cli.Lvs.Run,
+    // Trace Impedance Analysis: every trace on the chosen copper layers against a target Z0, as the
+    // layout editor's Impedance Analysis runs it. Owns no analysis and no page — see its header.
+    "impedance" => CircuitRF.Cli.Impedance.Run,
     // The one output the command line did not have: a picture (brief-render-2-render-verb.md). It
     // owns no rendering — every pixel comes out of the same CircuitRF.Render the application draws
     // each frame with, which is the whole reason RND-1 put that project below the firewall.
@@ -2204,6 +2207,7 @@ static int PrintHelp()
     Console.WriteLine("  check   <path>         (is it well formed, does it resolve, is it sound)");
     Console.WriteLine("  explain <path>         (what did circuitRF resolve it to, and by which walk)");
     Console.WriteLine("  lvs     <path>         (does the artwork implement the drawing?)");
+    Console.WriteLine("  impedance <layout> [-o report.pdf]  (every trace's Z0 against a target, and its return path)");
     Console.WriteLine("  render  <path> -o out.svg  (a schematic, symbol or layout as a picture)");
     Console.WriteLine("  read    <path>         (a result file as cubes, or a document as its own text)");
     Console.WriteLine("  plot    <result> -o out.svg --trace cube=S,i=2,j=1,y=db   (one picture, no .cdd)");
@@ -2265,6 +2269,14 @@ static int PrintHelp()
     Console.WriteLine("  --severity warning|error   what decides the exit code. Default error;");
     Console.WriteLine("                          warnings are reported either way.");
     Console.WriteLine("  -o report.txt           the human report. With no -o nothing is written.");
+    Console.WriteLine();
+    Console.WriteLine("impedance options:   <layout> is a .clay or a cell folder holding one");
+    Console.WriteLine("  --target 50             the target Z0, ohms. Default 50.");
+    Console.WriteLine("  --tol 10                the tolerance, percent either side. Default 10.");
+    Console.WriteLine("  --layers \"A,B\"          the copper layers, by name. Default every copper layer.");
+    Console.WriteLine("  --max-width <um>        the widest copper read as a trace. Default from the stackup.");
+    Console.WriteLine("  -o report.pdf           the report the layout editor exports. Exit 0 all pass,");
+    Console.WriteLine("                          1 any fail, 130 cancelled (the finished layers are written).");
     Console.WriteLine();
     Console.WriteLine("convert options:");
     Console.WriteLine("  formats: clay | gdsii | dxf | gerber | board — inferred from the paths");

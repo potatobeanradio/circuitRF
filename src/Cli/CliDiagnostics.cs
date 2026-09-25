@@ -2989,4 +2989,73 @@ internal static class CliDiagnostics
     public static Diagnostic LvsCancelled() => new(
         "lvs.cancelled", DiagnosticSeverity.Error,
         "lvs: cancelled. Nothing was written.");
+    // ── impedance (Trace Impedance Analysis) ──────────────────────────────────────────────────
+    //
+    // Every id here is a REFUSAL of the verb's own. What the analysis FOUND — a trace out of band,
+    // a broken return — is the report, not a diagnostic: a failing trace is the verb working.
+
+    public static Diagnostic ImpedancePathRequired() => new(
+        "impedance.args.path-required", DiagnosticSeverity.Error,
+        "impedance: a layout is required — a .clay, or a cell folder holding one.");
+
+    public static Diagnostic ImpedanceUnknownOption(string option) => Diagnostic.Create(
+        "impedance.args.unknown-option", DiagnosticSeverity.Error,
+        "impedance: unknown option '{option}'.", ("option", option));
+
+    public static Diagnostic ImpedanceMultiplePaths() => new(
+        "impedance.args.multiple-paths", DiagnosticSeverity.Error,
+        "impedance: one layout at a time.");
+
+    public static Diagnostic ImpedanceBadNumber(string option, string text, string wanted) => Diagnostic.Create(
+        "impedance.args.bad-number", DiagnosticSeverity.Error,
+        "impedance: {option} takes {wanted}, got '{text}'.",
+        ("option", option), ("text", text), ("wanted", wanted));
+
+    public static Diagnostic ImpedanceOutputNotPdf(string path) => Diagnostic.Create(
+        "impedance.args.output-not-pdf", DiagnosticSeverity.Error,
+        "impedance: the report is a PDF — give -o a path ending in .pdf, got '{path}'.", ("path", path));
+
+    public static Diagnostic ImpedancePathNotFound(string path) => Diagnostic.Create(
+        "impedance.path.not-found", DiagnosticSeverity.Error,
+        "No such file or folder: {path}", ("path", path));
+
+    public static Diagnostic ImpedanceNotALayout(string path, string kind) => Diagnostic.Create(
+        "impedance.path.not-a-layout", DiagnosticSeverity.Error,
+        "'{path}' is {kind}, and impedance analyses a layout's copper. Give a .clay, or a cell folder "
+      + "that holds one.",
+        ("path", path), ("kind", kind));
+
+    public static Diagnostic ImpedanceLayoutUnreadable(string path, string why) => Diagnostic.Create(
+        "impedance.path.unreadable", DiagnosticSeverity.Error,
+        "impedance: '{path}' could not be read: {why}", ("path", path), ("why", why));
+
+    public static Diagnostic ImpedanceNoTechnology(string path) => Diagnostic.Create(
+        "impedance.layout.no-technology", DiagnosticSeverity.Error,
+        "impedance: '{path}' resolves no technology, so it has no copper layers to name.", ("path", path));
+
+    /// <summary>A --layers name that is not a copper layer of the layout's technology — refused with
+    /// the names that are, never skipped: a review that quietly analysed fewer layers than it was
+    /// asked for reads exactly like one that found nothing wrong on them.</summary>
+    public static Diagnostic ImpedanceUnknownLayer(string name, string known) => Diagnostic.Create(
+        "impedance.layers.unknown", DiagnosticSeverity.Error,
+        "impedance: '{name}' is not a copper layer of this layout's technology. Its copper layers are: {known}.",
+        ("name", name), ("known", known));
+
+    public static Diagnostic ImpedanceRefused(string path, string why) => Diagnostic.Create(
+        "impedance.refused", DiagnosticSeverity.Error,
+        "impedance: '{path}' was not analysed: {why}", ("path", path), ("why", why));
+
+    public static Diagnostic ImpedanceOutputFailed(string path, string why) => Diagnostic.Create(
+        "impedance.output.write-failed", DiagnosticSeverity.Error,
+        "impedance: '{path}' was not written: {why}", ("path", path), ("why", why));
+
+    public static Diagnostic ImpedanceCancelled() => new(
+        "impedance.cancelled", DiagnosticSeverity.Error,
+        "impedance: cancelled before the first layer finished. Nothing was written.");
+
+    public static Diagnostic ImpedanceCancelledPartial(int done, int asked) => Diagnostic.Create(
+        "impedance.cancelled-partial", DiagnosticSeverity.Warning,
+        "impedance: cancelled after {done} of {asked} layers; the report holds the layers that finished.",
+        ("done", done.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+        ("asked", asked.ToString(System.Globalization.CultureInfo.InvariantCulture)));
 }

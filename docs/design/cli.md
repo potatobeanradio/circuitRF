@@ -2690,3 +2690,29 @@ Source-tree halves, in `tests/Ui.Tests`: `Cli/InstalledCliTests.cs` (dispatch or
 shape a double-click delivers, `check --json` byte identity through the application executable, the
 update guard) and three text gates in `PackagingScriptTests` (the smoke step in all three scripts,
 double-click routes still targeting the `.exe` and `%F`, the `.com`'s subsystem demand).
+
+## 21. `impedance` — Trace Impedance Analysis, headless
+
+`circuitrf impedance <layout> [--target 50] [--tol 10] [--layers "A,B"] [--max-width <um>] [-o report.pdf]`
+
+**It owns no analysis and no page.** Every number is `TraceImpedanceAnalysis.AnalyzeFile`
+(`src/Design/Layout/Em`) and every pixel of the PDF is `TraceImpedanceReportDocument.Pdf`
+(`src/Render/Renderers`) — the two calls the layout editor's Impedance Analysis dialog makes — so the
+headless report and the exported one are the same document. `src/Cli/Impedance.cs` is argument
+parsing, the layer-name lookup, refusals and reporting.
+
+- **Input.** A `.clay`, or a cell folder (its primary layout view). Anything else is refused by KIND
+  (`impedance.path.not-a-layout`).
+- **Layers by NAME, refused with the names that exist.** `--layers` resolves against the layout's own
+  technology; a name that is not a stackup-bound copper layer is `impedance.layers.unknown` listing the
+  copper layers. A review that quietly analysed fewer layers than it was asked for reads exactly like
+  one that found nothing wrong.
+- **Units.** stdout and the PDF speak the layout's own `DisplayUnit`; `--json` is µm throughout, so a
+  script reads one unit whatever the layout says.
+- **Exit codes.** 0 every trace passes; 1 one fails, is unsolved, or the run is refused; 130 cancelled.
+  **A cancelled run writes the layers that finished** (owner, 2026-09-25) — the analysis is layer by
+  layer so that stopping a long run keeps what it has done. This is the one verb where a cancellation
+  writes anything, and the report's first page says it was cancelled.
+- **The findings are the report, not diagnostics.** Every `impedance.` id is a refusal of the verb's
+  own; a failing trace is the verb working.
+- MCP: the `impedance` tool, single-mode, `path` positional (`ToolCatalog`).

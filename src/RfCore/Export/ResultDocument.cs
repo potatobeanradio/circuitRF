@@ -154,7 +154,9 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         SmithReportJson? Smith = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        LvsReportJson? Lvs = null);
+        LvsReportJson? Lvs = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        ImpedanceReportJson? Impedance = null);
 
     /// <summary>
     /// What an <c>NDF=yes</c> run found (brief-wsprobe-6 R-wsp6-2): the right-half-plane pole count
@@ -579,6 +581,62 @@ namespace RfCore.Export
         IReadOnlyList<string>           SubCells,
         IReadOnlyList<LvsFindingJson>   Findings,
         IReadOnlyList<LvsTurnedPartJson> Turned);
+
+    /// <summary>
+    /// What <c>impedance</c> analysed and what it found — a projection of the Trace Impedance
+    /// Analysis report. Coordinates and lengths are in µm; impedances in Ω.
+    /// </summary>
+    public sealed record ImpedanceReportJson(
+        string                             Title,
+        string                             Technology,
+        double                             TargetOhms,
+        double                             TolerancePercent,
+        bool                               Cancelled,
+        int                                Traces,
+        int                                Pass,
+        int                                Fail,
+        IReadOnlyList<ImpedanceLayerJson>  Layers);
+
+    public sealed record ImpedanceLayerJson(
+        string                             Layer,
+        int                                PoursSkipped,
+        IReadOnlyList<ImpedanceTraceJson>  Traces);
+
+    /// <param name="Verdict"><c>pass</c>, <c>fail</c> or <c>unsolved</c>.</param>
+    /// <param name="StartsAt">What the start is: <c>via</c>, <c>pad</c>, <c>junction</c>,
+    /// <c>open end</c> or <c>continues</c>. Likewise <paramref name="EndsAt"/>.</param>
+    /// <param name="InTolerance">The share of the solved length inside the pass band, 0–1.</param>
+    /// <param name="Configuration">The line type over most of the trace.</param>
+    /// <param name="Types">Every line type the trace is along some of its length, most first — a
+    /// trace that is grounded CPW where its side ground runs beside it and microstrip where it
+    /// falls away is both, and says so.</param>
+    public sealed record ImpedanceTraceJson(
+        string                             Id,
+        string                             Verdict,
+        double[]                           Start,
+        double[]                           End,
+        string                             StartsAt,
+        string                             EndsAt,
+        double                             Length,
+        double                             WidthMin,
+        double                             WidthMax,
+        double?                            Z0Min,
+        double?                            Z0Max,
+        double?                            Z0Mean,
+        double                             InTolerance,
+        string                             Configuration,
+        IReadOnlyList<ImpedanceTypeJson>   Types,
+        IReadOnlyList<string>              References,
+        IReadOnlyList<ImpedanceIssueJson>  Issues,
+        IReadOnlyList<string>              Notes);
+
+    /// <summary>One line type a trace is along part of its length — microstrip, grounded coplanar
+    /// waveguide, stripline… — and the share of its solved length it is, 0–1.</summary>
+    public sealed record ImpedanceTypeJson(string Type, double Share);
+
+    /// <param name="Kind"><c>out-of-tolerance</c>, <c>return-broken</c>, <c>partial-reference</c>,
+    /// <c>reference-step</c>, <c>no-reference</c> or <c>unsolved</c>.</param>
+    public sealed record ImpedanceIssueJson(string Kind, double[] From, double[] To, string Message);
 
     /// <summary>
     /// What <c>lvs</c> compared, and what it concluded.

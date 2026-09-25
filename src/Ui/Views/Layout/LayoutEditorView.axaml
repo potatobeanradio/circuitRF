@@ -433,6 +433,25 @@
                             <mi:MaterialIcon Kind="ShieldCheckOutline" Width="16" Height="16"/>
                         </Button>
 
+                        <!-- Impedance Analysis (round 8): every trace against a target Z0, as a PDF for
+                             the review file. Beside Check Design Rules because both are "check the
+                             whole layout" actions a reviewer runs repeatedly. LETTERED like EM, with
+                             the symbol a board designer reads as characteristic impedance, so it is
+                             not one more pictogram to learn. -->
+                        <Button Click="OnImpedanceAnalysis"
+                                ToolTip.Tip="Impedance Analysis… — every trace against a target Z0 and its return path, exported as a PDF report"
+                                Padding="6,3">
+                            <Panel Width="16" Height="16">
+                                <Border Width="16" Height="12" CornerRadius="2"
+                                        BorderThickness="1.2"
+                                        BorderBrush="{Binding $parent[Button].Foreground}"
+                                        VerticalAlignment="Center" HorizontalAlignment="Center">
+                                    <TextBlock Text="Z₀" FontSize="8" FontWeight="Bold"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                            </Panel>
+                        </Button>
+
                         <!-- EM (owner request, 2026-08-09): the only EM entry point outside the .cem
                              editor itself. Opens this layout's own EM setup, creating it (named after
                              the layout file) the first time. Sits beside Check Design Rules because

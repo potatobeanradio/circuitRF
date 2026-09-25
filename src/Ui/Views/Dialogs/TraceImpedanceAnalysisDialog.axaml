@@ -1,0 +1,127 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CircuitRF.Ui.Views.Dialogs.TraceImpedanceAnalysisDialog"
+        Title="Impedance Analysis"
+        Width="440"
+        SizeToContent="Height"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <!-- Trace Impedance Analysis (round 8). Target, tolerance and layers, then Export: a save picker,
+         then the run with a per-layer progress bar and Cancel. A cancelled run still writes the
+         layers it finished. The work is TraceImpedanceAnalysis; this window only asks and reports. -->
+    <Window.Styles>
+        <Style Selector="Border.card">
+            <Setter Property="Padding" Value="14,12"/>
+            <Setter Property="CornerRadius" Value="6"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource CrfTileBorderBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"/>
+        </Style>
+        <Style Selector="TextBlock.section">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Opacity" Value="0.75"/>
+        </Style>
+        <Style Selector="TextBlock.unit">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Opacity" Value="0.6"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="6,0,0,0"/>
+        </Style>
+        <Style Selector="Button.link">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="4,1"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Opacity" Value="0.8"/>
+        </Style>
+    </Window.Styles>
+
+    <StackPanel Margin="20,18,20,18" Spacing="14">
+
+        <!-- Header: the Z0 tile the toolbar button draws, a title and one line of what this does. -->
+        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+            <Border Grid.Column="0" Width="40" Height="40" CornerRadius="8"
+                    Background="{DynamicResource SystemAccentColor}" VerticalAlignment="Top">
+                <TextBlock Text="Z₀" FontSize="17" FontWeight="Bold" Foreground="White"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                <TextBlock Text="Impedance Analysis" FontSize="15" FontWeight="SemiBold"/>
+                <TextBlock Text="Check every trace against a target impedance and its return path, and export the review as a PDF."
+                           FontSize="11" Opacity="0.65" TextWrapping="Wrap"/>
+            </StackPanel>
+        </Grid>
+
+        <!-- Target -->
+        <Border Classes="card" x:Name="TargetCard">
+            <StackPanel Spacing="10">
+                <TextBlock Classes="section" Text="TARGET"/>
+                <Grid ColumnDefinitions="*,16,*">
+                    <StackPanel Grid.Column="0" Spacing="4">
+                        <TextBlock Text="Impedance Z₀" FontSize="11" Opacity="0.7"/>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBox x:Name="TargetBox" Width="90" FontSize="13" Text="50"
+                                     HorizontalContentAlignment="Right" TextChanged="OnInputChanged"/>
+                            <TextBlock Classes="unit" Text="Ω"/>
+                        </StackPanel>
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Spacing="4">
+                        <TextBlock Text="Tolerance" FontSize="11" Opacity="0.7"/>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Classes="unit" Text="±" Margin="0,0,6,0"/>
+                            <TextBox x:Name="ToleranceBox" Width="70" FontSize="13" Text="10"
+                                     HorizontalContentAlignment="Right" TextChanged="OnInputChanged"/>
+                            <TextBlock Classes="unit" Text="%"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Grid>
+                <Border CornerRadius="4" Padding="8,5" Background="{DynamicResource SystemControlBackgroundBaseLowBrush}">
+                    <TextBlock x:Name="BandText" FontSize="11" Text="Pass band 45.0 – 55.0 Ω"/>
+                </Border>
+            </StackPanel>
+        </Border>
+
+        <!-- Layers -->
+        <Border Classes="card" x:Name="LayersCard">
+            <StackPanel Spacing="8">
+                <Grid ColumnDefinitions="*,Auto,Auto">
+                    <TextBlock Grid.Column="0" Classes="section" Text="LAYERS" VerticalAlignment="Center"/>
+                    <Button Grid.Column="1" Classes="link" Content="All" Click="OnAllClick"/>
+                    <Button Grid.Column="2" Classes="link" Content="None" Click="OnNoneClick"/>
+                </Grid>
+                <ScrollViewer MaxHeight="210" VerticalScrollBarVisibility="Auto">
+                    <StackPanel x:Name="LayerList" Spacing="2"/>
+                </ScrollViewer>
+            </StackPanel>
+        </Border>
+
+        <!-- Progress, shown once Export has a file to write -->
+        <Border Classes="card" x:Name="ProgressCard" IsVisible="False">
+            <StackPanel Spacing="6">
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Grid.Column="0" x:Name="LayerText" FontSize="12" FontWeight="SemiBold"
+                               TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Grid.Column="1" x:Name="LayerCountText" FontSize="11" Opacity="0.65"/>
+                </Grid>
+                <ProgressBar x:Name="LayerBar" Minimum="0" Maximum="1" Height="6" CornerRadius="3"/>
+                <TextBlock x:Name="StageText" FontSize="11" Opacity="0.65" TextTrimming="CharacterEllipsis"/>
+                <ProgressBar x:Name="OverallBar" Minimum="0" Maximum="1" Height="3" CornerRadius="2" Opacity="0.6"/>
+            </StackPanel>
+        </Border>
+
+        <TextBlock x:Name="ValidationText" FontSize="11" TextWrapping="Wrap" IsVisible="False"
+                   Foreground="{DynamicResource CrfWarningBrush}"/>
+
+        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+            <TextBlock Grid.Column="0" FontSize="10" Opacity="0.5" VerticalAlignment="Center" TextWrapping="Wrap"
+                       x:Name="FootText" Text="A long run can be cancelled; the layers that finished are still written."/>
+            <Button Grid.Column="1" x:Name="CancelButton" Content="Cancel" MinWidth="84" FontSize="12"
+                    HorizontalContentAlignment="Center" Click="OnCancelClick"/>
+            <Button Grid.Column="2" x:Name="ExportButton" Content="Export…" MinWidth="96" FontSize="12"
+                    IsDefault="True" Classes="accent" HorizontalContentAlignment="Center" Click="OnExportClick"/>
+        </Grid>
+    </StackPanel>
+</Window>

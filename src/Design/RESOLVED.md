@@ -12688,3 +12688,42 @@ launch the GUI. Worth a look: the 3D EM tab's four rows, and whether the tab str
 - **A failed comparison write** still exits 0, as a failed planar `.npy` write does.
 - **An unknown enum value in a `.wBond`** makes the whole file unreadable.
 
+
+## Trace impedance round 8 — the probe's two refusals on a real board, and Impedance Analysis (2026-09-25)
+
+- **The reported "not a straight run" was two faults, and fixing either alone did not answer the
+  click.** (1) The current drawing layer was the inner PLANE under the trace, so the probe measured the
+  plane (a 5.4 mm "narrowest cut") — `ProbeFirst` now takes the preferred layer and every other copper
+  layer at the point, unions the window once, and answers from the first with a straight trace, saying
+  which. (2) On the right layer the trace itself carries a **5 µm jog over ~90 µm** (a split Gerber
+  stroke). The minimum chord through a jog leans across it (383.8 µm at 6.4° off a 381 µm trace), so
+  the axis was wrong and the edge check read the jog's facets as a bend. The axis is now refined from a
+  least-squares fit of chord MIDPOINTS at ±W/2, ±W, ±2W; an edge whose whole extent across the axis is
+  within the drift tolerance (4 % of W) is not a bend; width and drift are held over ±W, copper must
+  continue for ±2W. The reviewer's point then read 53.9 Ω, and 1.4 W from a 381→320 µm neck-down —
+  which the old ±2W window had refused as "a width step next to the point".
+- **The "top-side ground juts out" was real geometry, not a solver fault**: the pour steps from a
+  259 µm gap to 184 µm for 240 µm of the run. The probe answers for the gap at the cut and now FLAGS a
+  coplanar gap varying by more than 10 % along the section (`G right varies …`).
+- **A plane from `Stackup.Bottom = Ground` was put UNDER the bottom copper layer's own underside** (h = 0)
+  for any trace on the bottom layer when that flag was set. It now needs dielectric between.
+- **Finding traces in unioned copper:** anti-parallel long-edge pairs facing each other across copper
+  (ray check at ¼, ½, ¾) give PIECES; piece ends within 1.25 W on the same island, leaving in different
+  directions, are joined; an end with two candidates is a junction and ends every trace there. Pours are
+  islands whose area exceeds 8× their pieces' (or that carry ≥ 4 vias). On the round-8 board: 292 traces
+  on 8 layers, 57 pours skipped, finding + cutting ~1 s.
+- **Cost was the SOLVES, and it was the conductor count, not the station count.** The first whole-board
+  run was >10 min: one 99 µm trace whose reference was 1.4 mm down gathered 40 conductors over an
+  8.5 mm reach and took 28 s per solve (dense BEM, ~n³). Three things fixed it: the reach is bounded by
+  the nearer coplanar ground when there is ground both sides; per layer only what overlaps the trace
+  and the NEAREST interval each side enter; and the nearest 6 conductors overall. Solves are keyed so
+  identical cuts share one — the key quantises every edge by its distance from the signal (1.5 % of W
+  near, 4 % of the distance beyond the knee, 25 % for an interval's far end). Result: 2–3 min for the
+  whole 8-layer board (Release, 10 cores), ~2–4 s for Top Copper alone; the probe's answers unchanged
+  to 0.1 Ω. The inner striplines stay the cost (≈75 % of cuts unique: traces on the next layer cross
+  under them at every angle).
+- **Layer by layer**, so a cancelled run keeps every layer it finished and the report is written for
+  them (owner). The analysis, the PDF (`TraceImpedanceReportDocument`, `src/Render`) and the CLI verb
+  are one path; the dialog and `circuitrf impedance` call the same two functions.
+- Gate: `tests/Ui.Tests/Em/TraceImpedanceAnalysisTests.cs` and the two round-8 cases in
+  `TraceImpedanceProbeTests.cs`.

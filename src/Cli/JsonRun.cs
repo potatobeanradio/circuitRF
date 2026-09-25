@@ -146,6 +146,10 @@ internal static class JsonRun
     /// the per-cell structure, the counts and the reduction mode a flat array cannot.</summary>
     public static LvsReportJson? Lvs;
 
+    /// <summary>What <c>impedance</c> analysed and found — a projection of the Trace Impedance
+    /// Analysis report and nothing else.</summary>
+    public static ImpedanceReportJson? Impedance;
+
     /// <summary>
     /// Where <see cref="Finish"/> writes, instead of stdout. Set by <c>serve</c> only.
     ///
@@ -188,6 +192,7 @@ internal static class JsonRun
         Rail                = null;
         Smith               = null;
         Lvs                 = null;
+        Impedance           = null;
         _summaryOnly        = false;
         _diagnosticsSummary = false;
         Malformed           = null;
@@ -410,9 +415,9 @@ internal static class JsonRun
         // into it.
         if (Check is not null || Explain is not null || Document is not null || Reference is not null
          || History is not null || Render is not null || Find is not null || Smith is not null
-         || Lvs is not null)
+         || Lvs is not null || Impedance is not null)
             return new ResultPayload(null, null, Check, Explain, Document, Reference, History, Render,
-                                     Find: Find, Smith: Smith, Lvs: Lvs);
+                                     Find: Find, Smith: Smith, Lvs: Lvs, Impedance: Impedance);
 
         // `rail` is the one verb that carries a report AND a DataSet — the cubes are the field and
         // the report is the domain shape §2.4 asks for — so a refused run still answers with its

@@ -123,6 +123,7 @@ convention behind both.</p>
 | `rail` | `.crail` | The same DC solve and via check [railRF](railrf.html)'s **Run** button calls | The ports, the ranked breakdown and the via check to stdout; `-o .csv/.npy/.mat/.txt/.svg/.pdf` |
 | `smith` | `.csmith` | The same cascade evaluator the Smith Chart window walks on every edit | The reading and the per-node table to stdout; `-o .s1p` for the load Γ, `-o .svg/.pdf/.png` for the chart |
 | `lvs` | a cell folder, a workspace, a `.clay` or a `.csch` | The same comparison the [LVS panel](lvs.html)'s **Compare** button calls | **Nothing** — the report to stdout; `-o report.txt` |
+| `impedance` | a `.clay` or a cell folder | The same analysis the layout editor's [Impedance Analysis](layout-editor.html#impedance-analysis) runs | The per-trace report to stdout; `-o report.pdf` |
 | `convert` | any layout format | The same importer and exporter **File ▸ Import/Export** runs | The layout in the format you asked for |
 | `new workspace` | a directory | The same code **File ▸ New Workspace** runs | A `.cws` and, unless you say otherwise, a copied technology |
 | `new cell` | a workspace + a name | The same code **New Cell** runs | A cell folder and one empty-but-valid file per view |
@@ -736,6 +737,37 @@ slow is a `check` people stop running. What `check` does carry is the
 
 See {{anchor: lvs|the LVS chapter}} for what the findings mean and a worked example on the shipped
 example workspace.
+
+## `impedance` — every trace against a target Z0 {#impedance}
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf impedance &lt;layout&gt; [--target 50] [--tol 10] [--layers "Top Copper,Inner 2"]
+<span class="prompt">  </span>[--max-width &lt;um&gt;] [-o report.pdf]</code></pre>
+
+`impedance` is the layout editor's [Impedance Analysis](layout-editor.html#impedance-analysis): it finds
+every trace on the chosen copper layers, cuts it along its length with the same quasi-static
+cross-section solve the canvas's **Trace Impedance** uses, and reports per trace Z0 min, max and
+average, the share of its length inside target ± tolerance, its line type, and every finding &mdash; Z0
+out of band, a return path that breaks, copper only partly under it, a reference that steps to another
+layer. `-o` writes the **same PDF** the dialog exports.
+
+The path is a **`.clay`** or a **cell folder** holding one. The technology resolves exactly as the editor
+resolves it, and placed cells are flattened as a design-rule check flattens them.
+
+| Option | Meaning |
+|---|---|
+| `--target <ohms>` | The target Z0. Default `50`. `50`, `50ohm` and `50R` all read as 50 Ω. |
+| `--tol <percent>` | ± this many percent passes. Default `10`. |
+| `--layers "A,B"` | The copper layers, by the technology's layer names. Default every copper layer. A name that is not a copper layer is refused with the names that are. |
+| `--max-width <um>` | The widest copper read as a trace. Default ten times the distance to the nearest other copper layer, between 1 and 8 mm. |
+| `-o report.pdf` | The PDF report. With no `-o` it writes nothing. |
+
+stdout is one line per trace, its findings under it; stderr says which layer is being analysed. Lengths
+and coordinates are in **the layout's own unit**. With `--json` the result carries every layer, trace and
+finding, with coordinates and lengths in **µm** whatever the layout's unit, so a script reads one unit.
+
+**Exit 0** when every trace passes, **1** when one fails (or cannot be solved) or the run is refused,
+**130** on a cancellation. A cancelled run still writes the report for the layers that **finished**,
+and says on its first page that it was cancelled.
 
 ## `smith` — a matching network, headless {#smith}
 
@@ -2103,7 +2135,7 @@ your shell's. On Windows it is `%LOCALAPPDATA%\Programs\circuitRF\circuitRF.exe`
 next one. Nothing is lost meanwhile: every tool is a verb, and the same verbs answer from a shell with
 the same documents.
 
-**Fourteen tools, and each is a verb you already have:**
+**Fifteen tools, and each is a verb you already have:**
 
 | Tool | Runs |
 |---|---|
@@ -2118,6 +2150,7 @@ the same documents.
 | `plot` | `plot` — one picture from one result file. It takes `attachImage` too |
 | `find` | `find` — the workspaces, cells, views and analyses under a directory |
 | `lvs` | [`lvs`](#lvs) — does a cell's artwork implement its schematic |
+| `impedance` | [`impedance`](#impedance) — every trace on a layout against a target Z0, and its return path |
 | `history` | [`history checkpoint`, `list` or `restore`](history.html) — the correction nouns (`rename`, `retitle`, `correct`, `review`) are on the verb but not on this server |
 | `reference` | `reference` |
 | `batch` | The **only** tool with no verb behind it: it holds a restore-point batch open across several calls, which a process that exits after one command cannot |

@@ -789,8 +789,11 @@ public sealed class ServeProtocolAdapterTests(ITestOutputHelper output) : IDispo
         // `lvs` is brief-lvs-11-cli-verb.md's, and it is the one whose value here is greater than on
         // a command line: an agent that has just written a `.clay` CANNOT LOOK AT THE SCREEN, so
         // asking whether the artwork implements the drawing is the only way it can find out.
+        //
+        // `impedance` is the Trace Impedance Analysis — a board review an agent can run on artwork it
+        // did not draw.
         Assert.Equal(["run", "check", "explain", "create", "import", "render", "netlist", "plot",
-                      "find", "lvs", "read", "history", "reference", "batch"],
+                      "find", "lvs", "impedance", "read", "history", "reference", "batch"],
                      tools);
 
         Assert.Equal(0, server.Close());
@@ -876,6 +879,8 @@ public sealed class ServeProtocolAdapterTests(ITestOutputHelper output) : IDispo
             // brief-lvs-11-cli-verb.md R-lvs11-5a. Single-mode, like `check` and `render`: the
             // document kind comes from the path, so there is no selector to key on.
             ["lvs/"]              = ["path"],
+            // Trace Impedance Analysis. Single-mode: one layout, its layers named by flag.
+            ["impedance/"]        = ["path"],
             // `reference` has no REQUIRED positional at all: its no-argument form is the topic list,
             // which is a real answer rather than a usage error. Both of its positionals are therefore
             // probed as arguments below, which is what this gate is for.
@@ -954,6 +959,7 @@ public sealed class ServeProtocolAdapterTests(ITestOutputHelper output) : IDispo
                     Assert.DoesNotContain("cli.args.multiple-inputs", ids);
                     Assert.DoesNotContain("convert.args.multiple-inputs", ids);
                     Assert.DoesNotContain("render.args.multiple-paths", ids);
+                    Assert.DoesNotContain("impedance.args.multiple-paths", ids);
                 }
             }
         }

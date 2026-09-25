@@ -600,6 +600,22 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         // than the safety net — so its empty state and its not-found are separate ids.
         "history.versions.empty",
         "history.versions.no-such-version",
+        // Trace Impedance Analysis. Every one is a REFUSAL of the verb's own; what the analysis
+        // finds is the report, not a diagnostic.
+        "impedance.args.bad-number",
+        "impedance.args.multiple-paths",
+        "impedance.args.output-not-pdf",
+        "impedance.args.path-required",
+        "impedance.args.unknown-option",
+        "impedance.cancelled",
+        "impedance.cancelled-partial",
+        "impedance.layers.unknown",
+        "impedance.layout.no-technology",
+        "impedance.output.write-failed",
+        "impedance.path.not-a-layout",
+        "impedance.path.not-found",
+        "impedance.path.unreadable",
+        "impedance.refused",
         "import.args.into-required",
         "import.args.multiple-sources",
         "import.args.noun-required",

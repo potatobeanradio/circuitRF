@@ -67,7 +67,7 @@ public sealed class InstalledCliTests
         string[] verbs =
         [
             "sparam", "dc", "hb", "lp", "loadpull", "lpp", "loadpull_pursuit", "pursuit", "em", "rail",
-            "smith", "convert", "new", "import", "check", "history", "explain", "lvs", "render", "read",
+            "smith", "convert", "new", "import", "check", "history", "explain", "lvs", "impedance", "render", "read",
             "netlist", "plot", "find", "reference", "serve", "elab", "--version",
             // Run lower-cases the verb, so IsVerb must agree with it.
             "Check", "SERVE",
