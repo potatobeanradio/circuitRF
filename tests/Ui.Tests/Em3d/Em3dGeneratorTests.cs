@@ -250,7 +250,7 @@ public sealed class Em3dGeneratorTests
 
     /// <summary>`circuitrf reference layout`'s own example, on the technology it names, with the
     /// em-setup page's own frequency plan and Solver3D set.</summary>
-    private static (EmSetup, EmLayoutSource) Microstrip()
+    internal static (EmSetup, EmLayoutSource) Microstrip()
     {
         const string clay = """
             {
@@ -279,7 +279,7 @@ public sealed class Em3dGeneratorTests
 
     /// <summary>F0's case B (testdata/em3d/f0/B-via/planar/ws) — its own .clay and .ctech, with the
     /// signal via made a plated barrel with a 25 µm wall.</summary>
-    private static (EmSetup, EmLayoutSource) CaseB(bool plated)
+    internal static (EmSetup, EmLayoutSource) CaseB(bool plated)
     {
         string ws = Path.Combine(RepoRoot(), "testdata", "em3d", "f0", "B-via", "planar", "ws");
         string clay = Path.Combine(ws, "via", "layout", "via.clay");

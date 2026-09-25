@@ -300,7 +300,7 @@ public sealed class Em3dWireTests
 
     // ── fixtures ────────────────────────────────────────────────────────────────────────────────
 
-    private static Em3dGenerationResult Generate(WBondDesign design, Technology? tech = null,
+    internal static Em3dGenerationResult Generate(WBondDesign design, Technology? tech = null,
                                                  Em3dWireSource? wires = null)
     {
         tech ??= CaseATech();

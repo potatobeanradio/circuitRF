@@ -989,7 +989,127 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         ExplainExtentsJson?                 Extents = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        IReadOnlyList<ExplainFootprintJson>? Footprints = null);
+        IReadOnlyList<ExplainFootprintJson>? Footprints = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        ExplainEm3dJson?                    Em3d = null);
+
+    // ── explain on a 3D EM setup (brief-em3d-5 R-em3d5-3) ────────────────────
+
+    /// <summary>
+    /// A 3D setup, as <c>explain</c> reports it: the solver and §4.3's guidance for this geometry, the
+    /// temperature, the materials and where each resolved from, every solid and sheet, the wires, the
+    /// ports, the air box and the size of the run before it starts.
+    ///
+    /// <para><b>Every length is base SI, and <see cref="LengthUnit"/>/<see cref="LengthScale"/> say
+    /// so</b> (R-em3d5-3e) — <c>explain</c>'s standing rule, because a scale read without its unit once
+    /// produced a 2 Hz run. Conductivity is S/m and temperature °C, named in the field.</para>
+    /// </summary>
+    /// <param name="Refusal">Why the 3D problem could not be built; every other row is then empty.</param>
+    public sealed record ExplainEm3dJson(
+        string                               Solver,
+        string                               LengthUnit,
+        double                               LengthScale,
+        IReadOnlyList<Em3dGuidanceJson>      Guidance,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        Em3dTemperatureJson?                 Temperature,
+        IReadOnlyList<Em3dMaterialJson>      Materials,
+        IReadOnlyList<Em3dSolidJson>         Solids,
+        IReadOnlyList<Em3dWireJson>          Wires,
+        IReadOnlyList<Em3dPortJson>          Ports,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        Em3dAirBoxJson?                      AirBox,
+        IReadOnlyList<Em3dSizeJson>          Size,
+        IReadOnlyList<string>                Notes,
+        IReadOnlyList<string>                Warnings,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string?                              Refusal);
+
+    /// <summary>One sentence of em-3d.md §4.3's guidance, with the row it came from.</summary>
+    public sealed record Em3dGuidanceJson(int Row, string Favours, string Sentence);
+
+    /// <param name="From"><c>field</c> when the <c>.cem</c> states it, <c>default</c> otherwise.</param>
+    /// <param name="NoAlpha">Materials stating σ₂₀ but no α₂₀: σ₂₀ is used at every temperature.</param>
+    /// <param name="UnknownTemperature">Conductor stackup entries naming no material: their σ is used
+    /// as given, at no known temperature.</param>
+    public sealed record Em3dTemperatureJson(
+        double OperatingTempC, string From, IReadOnlyList<Em3dConductivityJson> Conductors,
+        IReadOnlyList<string> NoAlpha, IReadOnlyList<string> UnknownTemperature);
+
+    public sealed record Em3dConductivityJson(string Material, double SigmaSm);
+
+    /// <param name="From">Where the values resolved from: the technology's Materials, the
+    /// <c>.wBond</c>'s, a stackup entry's own numbers, or free space.</param>
+    public sealed record Em3dMaterialJson(
+        string Name, double Epsr,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<double>? EpsrTensor,
+        double TanD, double Mur, double SigmaSm, string From);
+
+    /// <param name="Kind"><c>solid</c> or <c>sheet</c>.</param>
+    /// <param name="SheetReason">Why the generator made it a sheet (brief 3 §5f).</param>
+    /// <param name="ThicknessM">A sheet's real thickness, carried with it.</param>
+    public sealed record Em3dSolidJson(
+        string Name, string Kind, string Role, string Material, string Primitive, int Order,
+        double X0, double Y0, double Z0, double X1, double Y1, double Z1,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? SheetReason,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double? ThicknessM);
+
+    /// <summary>
+    /// One bond wire as the 3D model built it. <b>Both loop heights, labelled</b> (brief-em3d-4 §5b):
+    /// <see cref="AssemblyLoopHeightM"/> is em-3d.md §6.6's (the wire's top surface at its apex minus
+    /// the lower pad's top), <see cref="WBondLoopHeightM"/> is wBond's own (the axis polyline's rise).
+    /// </summary>
+    /// <param name="FootLengthFrom">Which level set the foot length: <c>wire</c>, <c>array</c>,
+    /// <c>assembly-rules</c> or <c>built-in</c>.</param>
+    public sealed record Em3dWireJson(
+        string Name, string Material, string Section, double DiameterM,
+        Em3dWireEndJson Start, Em3dWireEndJson End,
+        double FootLengthM, string FootLengthFrom,
+        double BallDiameterM, string BallDiameterFrom, double BallHeightM, string BallHeightFrom,
+        double AssemblyLoopHeightM, double WBondLoopHeightM);
+
+    public sealed record Em3dWireEndJson(
+        string Style, string Pad,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double? FootLengthM,
+        bool Neck, double OverhangM);
+
+    /// <param name="ReferenceNormal">Unit normal INTO the structure.</param>
+    public sealed record Em3dPortJson(
+        int Number, string Name, string Positive, string Negative, double Z0Re, double Z0Im,
+        IReadOnlyList<double> Min, IReadOnlyList<double> Max,
+        IReadOnlyList<double> ReferenceOrigin, IReadOnlyList<double> ReferenceNormal, double ReferenceShiftM);
+
+    /// <param name="Enlargements">What a backend section asked to add to a face; empty until a backend
+    /// section can ask (briefs 7 and 9).</param>
+    public sealed record Em3dAirBoxJson(
+        IReadOnlyList<double> Min, IReadOnlyList<double> Max, IReadOnlyList<Em3dFaceJson> Faces,
+        IReadOnlyList<string> Enlargements);
+
+    /// <param name="PaddingM">The face's distance from the outermost geometry, metres.</param>
+    /// <param name="From"><c>setup</c> when the <c>.cem</c>'s AirBox states the face, <c>default</c>
+    /// otherwise, <c>floor</c> for the PEC floor on an undrawn ground plane.</param>
+    public sealed record Em3dFaceJson(string Face, string Boundary, string From);
+
+    /// <summary>
+    /// One backend's size. <see cref="Kind"/> says which kind of number it is, never confused:
+    /// <c>estimate</c> (Palace — a mesher decides the real count), <c>exact</c> (openEMS — the grid
+    /// generator IS the grid), or <c>unavailable</c> with <see cref="Note"/> saying why. An
+    /// unavailable row carries no count at all, never a zero.
+    /// </summary>
+    public sealed record Em3dSizeJson(
+        string Backend, string Kind,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        long? Elements,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        long? Unknowns,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double? TimeStepS,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        long? MemoryBytes,
+        string Note);
 
     // ── reference, on the wire (brief-automation-6-reference-and-components.md) ──
 
@@ -1451,7 +1571,31 @@ namespace RfCore.Export
         RenderCountersJson?             Counters,
         long                            Bytes,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        RenderDataDisplayJson?          DataDisplay = null);
+        RenderDataDisplayJson?          DataDisplay = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        RenderEm3dJson?                 Em3d = null);
+
+    /// <summary>
+    /// What <c>render</c> drew of a 3D EM setup (brief-em3d-5): which picture, where the plane
+    /// landed after snapping to a boundary, and which objects it cut — the answer to "is the copper
+    /// in this section" without reading SVG.
+    /// </summary>
+    /// <param name="View"><c>section</c> or <c>iso</c>.</param>
+    /// <param name="Plane"><c>xy</c>, <c>xz</c> or <c>yz</c> for a section; <c>iso</c> otherwise.</param>
+    /// <param name="At">The plane along its normal AFTER snapping, in <paramref name="Unit"/>; absent
+    /// for the isometric view.</param>
+    /// <param name="Objects">Every solid and sheet the picture draws, in draw (construction) order.</param>
+    public sealed record RenderEm3dJson(
+        string View,
+        string Plane,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Axis,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double? At,
+        string Unit,
+        double Scale,
+        IReadOnlyList<string> Objects,
+        IReadOnlyList<int> Ports);
 
     /// <summary>
     /// What <c>render</c> decided about a <c>.cdd</c> (RND-4), which is a different set of questions

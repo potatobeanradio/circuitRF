@@ -62,7 +62,7 @@ Thirteen verbs run no analysis, so none of §3-§6 applies to them and §7's exi
 | `import part` | a component file or folder | `ComponentRead` + `ComponentImport.Import` | a cell folder holding the land patterns and the symbol |
 | `check` | a workspace, a cell folder, or one document | the validators that already exist | **nothing** — §10 |
 | `explain` | the same, plus `--expr` / `--analysis` / `--ref` / `--cells` / `--layers` / `--extents` / `--footprints` | reports what resolution DECIDED | **nothing** — §10 |
-| `render` | the same three view documents, a cell folder, a workspace + `--cell`, or a `.cdd` | draws it with the renderer the GUI draws with | one `.svg` / `.pdf` / `.png` — §13, and §13.7 for a data display |
+| `render` | the same three view documents, a cell folder, a workspace + `--cell`, a `.cdd`, or a 3D `.cem` | draws it with the renderer the GUI draws with | one `.svg` / `.pdf` / `.png` — §13, §13.7 for a data display, §13.8 for a 3D setup |
 | `read` | a result file, or one of circuitRF's own documents | loads it back through the readers the GUI reads through | **nothing** — §11.4 |
 | `netlist` | a `.csch`, a cell folder, or a workspace + `--cell` | the extraction the GUI's own Simulate performs | one `.cnl`, or the text on stdout — §14 |
 | `plot` | a result file | builds a one-plot data display and draws it | one `.svg` / `.pdf` / `.png`, and the `.cdd` under `--write-cdd` — §15 |
@@ -879,6 +879,17 @@ The seven questions are **refused together rather than ordered** (R-rnd3-2) — 
 different, and a precedence nobody stated would be an invention. `--all` is `--cells`' own modifier and
 is refused beside anything else; `--view` is only ever a cell folder's disambiguator, spelled exactly
 as `render` spells it, and a cell folder holding more than one view is a refusal LISTING them.
+
+**A 3D `.cem` (`brief-em3d-5`) reports its problem IN ADDITION to the walks above**: the solver and
+em-3d.md §4.3's guidance for this geometry (a sentence citing its row, never a change to `Solver3D`),
+the operating temperature and where it came from, each conductor's σ at it, every material and where
+its values resolved from, every solid and sheet in construction order with its bounding box (a sheet
+with the reason it is one), each wire with BOTH loop heights and the level that set its foot length,
+the ports with their reference planes, the air box's faces, and the size of the run. In this build both
+size rows say why they are unavailable (Palace's initial mesh-size settings and openEMS's grid are
+later briefs'), and an unavailable row is never printed as 0. It starts no process; the gate holds that
+with a counter on `Em3dProcessLauncher`. In `--json` the rows are `explain.em3d`, lengths in base SI
+with `lengthUnit`/`lengthScale`.
 
 **R-aut4-8: `explain` never guesses and never falls back silently.** Where resolution fails, that is
 the answer — a diagnostic naming what was looked for and where it was looked, because a caller uses
@@ -1737,6 +1748,33 @@ normalisation is Skia's SVG element ids, whose counter is per process and in hex
 with none at all.
 
 ---
+
+### 13.8 A 3D EM setup — sections and an outline, with no solver
+
+`brief-em3d-5-render-and-explain.md`. A `.cem` whose `Solver3D` is set is drawn from the problem the
+backend would receive — generated in-process by `Em3dGenerator` through the `.cem`'s own two walk-ups,
+so no solver, no mesher and no window is involved (`src/Cli/RenderEm3d.cs`, `Em3dSetupSource.cs`):
+
+```
+circuitrf render amp.cem -o top.svg  --section z=35um       # the XY plane at that height
+circuitrf render amp.cem -o side.svg --section xz@y=1.2mm   # or yz@x=…, vertical cuts
+circuitrf render amp.cem -o iso.svg  --iso                  # silhouettes and sharp edges
+```
+
+**Exactly one view, refused together rather than ordered**, and no view at all is a refusal listing
+the three. **Every length carries an SI unit; a bare number is a refusal**, for §13.3's reason. A
+planar `.cem` is a refusal NAMING ITS LAYOUT, which is what a picture of it would show. The layout
+options (`--window`, `--layers`, `--detail`, `--grid`, …) and the `.cdd` ones are refused by name.
+
+**The interface convention** is stated in the picture's caption: a solid is drawn where bottom ≤
+plane < top, and the plane snaps onto any boundary within a part in a billion first — so
+`z=<the substrate's top>` shows the copper, every time. **The isometric view has no hidden-line
+removal** and its caption says so. A view is framed on the model, not on the air box (which the
+generator pads by λ/8 at the lowest frequency); a face outside the frame is labelled with its distance.
+Conductors take their drawing layer's colour from the technology; `--json` adds `render.em3d` with the
+plane after snapping, in metres, and every object the picture drew. Gate:
+`tests/Ui.Tests/Em3d/Em3dRenderExplainTests.cs` — the verb as a process against the in-process render,
+section and outline, SVG and PDF.
 
 ## 14. `netlist` — the extraction, as a document
 

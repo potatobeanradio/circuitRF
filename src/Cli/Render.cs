@@ -111,6 +111,12 @@ internal static class Render
         /// application's own Export writes (R-rnd4-6) rather than this verb's 1600x1200, and without
         /// this flag those two defaults cannot be told apart.</summary>
         public bool         SizeStated;
+
+        // ── a 3D EM setup only (brief-em3d-5) ────────────────────────────────
+        /// <summary>Every <c>--section</c> typed, in order. A list so that two of them can be refused
+        /// together (R-em3d5-2b) rather than the second silently winning.</summary>
+        public List<string> Sections = new();
+        public bool         Iso;
     }
 
     /// <summary>R-rnd2-3's default page. Points for a vector format, device pixels for a raster one —
@@ -166,7 +172,8 @@ internal static class Render
             "                        [--layer-colors name=#rrggbb,...] [--detail full|screen|<px>]\n" +
             "                        [--theme name|file.ccolor] [--variant light|dark]\n" +
             "                        [--background opaque|transparent] [--grid] [--no-rulers]\n" +
-            "  a .cdd adds:          [--data file]... [--tab name|n] [--plot n] [--all-tabs]");
+            "  a .cdd adds:          [--data file]... [--tab name|n] [--plot n] [--all-tabs]\n" +
+            "  a 3D .cem takes:      --section z=<len> | --section xz@y=<len> | --section yz@x=<len> | --iso");
         return 1;
     }
 
@@ -306,6 +313,10 @@ internal static class Render
                     o.PlotIndex = pi;
                     continue;
                 case "--all-tabs": o.AllTabs = true; continue;
+
+                // ── a 3D EM setup only (brief-em3d-5) ─────────────────────────
+                case "--section" when i + 1 < args.Length: o.Sections.Add(args[++i]); continue;
+                case "--iso": o.Iso = true; continue;
 
                 default:
                     if (a.StartsWith('-'))
@@ -466,6 +477,14 @@ internal static class Render
         control?.BeginStage("resolve");
         Progress("resolve");
 
+        // brief-em3d-5. A `.cem` is drawn only as a 3D setup, and the two 3D options draw nothing else
+        // — each is refused on the other's document rather than ignored.
+        var kind = DocumentKinds.Classify(o.Path!);
+        if (kind == DocumentKind.EmSetup) return RenderEm3d.Draw(o.Path!, Em3dRequest(o));
+        if (o.Sections.Count > 0 || o.Iso)
+            return JsonRun.Fail(CliDiagnostics.RenderEm3dNotA3dSetup(
+                o.Iso ? "--iso" : "--section", o.Path!, DocumentKinds.Name(kind)));
+
         // A `.cdd` is a different document with a different anatomy — it holds no geometry, it names
         // its data, and it lays out several plots on a page rather than framing one drawing in a
         // viewport. It is still THIS verb (R-rnd0-4), inferred through the same classifier, but it
@@ -501,6 +520,33 @@ internal static class Render
             ViewType.Symbol => DrawSymbol(o, t),
             _               => DrawSchematic(o, t),
         };
+    }
+
+    /// <summary>What <see cref="RenderEm3d"/> needs of this verb's options, and the first option typed that
+    /// a 3D picture has no use for.</summary>
+    private static RenderEm3d.Request Em3dRequest(Options o)
+    {
+        string? inapplicable =
+              o.WindowText is not null ? "--window"
+            : o.CenterText is not null ? "--center"
+            : o.SpanText   is not null ? "--span"
+            : o.FitStated              ? "--fit"
+            : LayerOptionNamed(o)      ?? (o.View is not null ? "--view"
+            : o.Cell is not null       ? "--cell"
+            : o.Detail != Detail.Full  ? "--detail"
+            : o.Grid                   ? "--grid"
+            : o.NoRulers               ? "--no-rulers"
+            : o.Data.Count > 0         ? "--data"
+            : o.Tab is not null        ? "--tab"
+            : o.PlotIndex is not null  ? "--plot"
+            : o.AllTabs                ? "--all-tabs"
+            : null);
+
+        return new RenderEm3d.Request(
+            o.Output!, o.Format == Format.Pdf ? "pdf" : o.Format == Format.Png ? "png" : "svg",
+            o.Sections, o.Iso, inapplicable, o.Width, o.Height, o.Scale, o.Margin, o.Transparent, o.Variant,
+            themeOf: path => { var (theme, name, from, refusal) = ResolveTheme(o, path); return (theme, name, from, refusal); },
+            emit: (w, h, draw) => Emit(o, w, h, draw));
     }
 
     /// <summary>

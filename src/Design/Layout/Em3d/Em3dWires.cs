@@ -112,6 +112,9 @@ internal sealed class Em3dWireBuild
     public List<string> Notes { get; } = [];
     public List<string> Warnings { get; } = [];
     public string? Refusal { get; set; }
+
+    /// <summary>Wire metals stating σ₂₀ but no α₂₀ (brief-em3d-5's temperature rows).</summary>
+    public SortedSet<string> NoAlpha { get; } = new(StringComparer.Ordinal);
 }
 
 public static class Em3dWires
@@ -158,7 +161,7 @@ public static class Em3dWires
     // ── The build ────────────────────────────────────────────────────────────────────────────
 
     internal static Em3dWireBuild Build(Em3dWireSource source, IReadOnlyList<Em3dWirePad> pads, double zOriginM,
-                                        Technology tech, double tempC, Func<Em3dMaterial, string> addMaterial)
+                                        Technology tech, double tempC, Func<Em3dMaterial, bool, string> addMaterial)
     {
         var build  = new Em3dWireBuild();
         var design = source.Design;
@@ -166,7 +169,7 @@ public static class Em3dWires
         catch (InvalidOperationException ex) { build.Refusal = ex.Message; return build; }
 
         var materialNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        var noAlpha       = new SortedSet<string>(StringComparer.Ordinal);
+        var noAlpha       = build.NoAlpha;
         var builtInFoot   = new SortedSet<long>();
         var builtInBallD  = new SortedSet<long>();
         var builtInBallH  = new SortedSet<long>();
@@ -251,7 +254,7 @@ public static class Em3dWires
     /// <summary>R-em3d4-6 — a wire's metal: the technology's Materials first, then the .wBond's own
     /// list. Never <see cref="WBondDesign.MaterialFor"/>, which falls back silently to gold.</summary>
     private static string? ResolveMetal(string wireName, string metal, WBondDesign design, Technology tech,
-                                        double tempC, Func<Em3dMaterial, string> addMaterial,
+                                        double tempC, Func<Em3dMaterial, bool, string> addMaterial,
                                         SortedSet<string> noAlpha, Em3dWireBuild build, out string? refusal)
     {
         refusal = null;
@@ -274,11 +277,11 @@ public static class Em3dWires
             double sigma = s20;
             if (tm.Alpha20 is { } alpha) sigma = new WireMaterial(tm.Name, s20, alpha, 0).SigmaAt(tempC);
             else noAlpha.Add(tm.Name);
-            return addMaterial(new Em3dMaterial(tm.Name, 1, null, 0, tm.Mur ?? 1, sigma));
+            return addMaterial(new Em3dMaterial(tm.Name, 1, null, 0, tm.Mur ?? 1, sigma), false);
         }
 
         if (own is not null)
-            return addMaterial(new Em3dMaterial(own.Name, 1, null, 0, 1, own.SigmaAt(tempC)));
+            return addMaterial(new Em3dMaterial(own.Name, 1, null, 0, 1, own.SigmaAt(tempC)), true);
 
         var known = tech.Materials.Where(m => m.Sigma20 is not null).Select(m => m.Name)
                         .Concat(design.Materials.Select(m => m.Name))

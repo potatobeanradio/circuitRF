@@ -12293,3 +12293,25 @@ the series parts' DCR, which the board's library does not state.
 - **Not built as written, R-em3d4-1d:** the wBond editor has no wire TABLE. The four fields are rows in
   the Properties Inspector's wire context (`WBondWirePropertiesView`), where the per-wire diameter and
   metal already are. `WireTableCsv` is unchanged, so an imported table's wires take the defaults.
+
+## The generator keeps provenance beside the 3D problem — brief-em3d-5 (2026-09-25)
+
+`explain` on a 3D setup must say where each material resolved from and why a conductor became a
+sheet, and `render` must paint a conductor in its drawing layer's colour. None of that was
+recoverable from `Em3dProblem`, and re-deriving it afterwards would have restated the generator's
+rules. So `Em3dGenerationResult` gained side tables, filled where each decision is made: `Origins`
+(per object: kind, stackup entry, drawing layer, sheet reason), `MaterialSources`, `NoAlpha`
+(stackup and wire metals together) and `UnknownTemperature`. They sit beside the problem, not in it:
+the problem is what a backend reads, and none of this is physics. The wire build's material callback
+now says whether a metal came from the `.wBond`, which is the one source the generator could not
+otherwise tell apart.
+
+**Nothing reaches a process from `explain` or `render`.** `Em3dProcessLauncher` is the one place a
+3D solver, mesher or probe is to be started (briefs 6, 7, 9), and its counter is what the gate reads.
+
+**The size rows are both "unavailable" in this build, deliberately.** Palace's estimate is
+`Em3dSizeEstimate.Palace` (Σ meshed-region volume ÷ regular-tetrahedron volume at the region's initial
+edge; conductors are holes; unknowns and memory from F0's measured ratios, each named with its run). It
+has no caller yet because the `.cem`'s Palace section has no initial mesh-size fields (brief 7). The
+openEMS count is brief 8's grid. An unavailable row carries no count, never a zero.
+

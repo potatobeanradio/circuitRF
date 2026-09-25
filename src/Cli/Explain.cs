@@ -157,6 +157,7 @@ internal static class Explain
         ExplainLayersJson?                  layers   = null;
         ExplainExtentsJson?                 extents  = null;
         IReadOnlyList<ExplainFootprintJson>? footprints = null;
+        ExplainEm3dJson?                    em3d     = null;
 
         // The document's OWN resolution always runs, whatever was asked: "which workspace, which
         // technology" is context for every other answer, and a report that omitted it would leave a
@@ -164,7 +165,7 @@ internal static class Explain
         switch (kind)
         {
             case DocumentKind.Layout:   ExplainLayout(path, walks); break;
-            case DocumentKind.EmSetup:  exit |= ExplainEmSetup(path, walks); break;
+            case DocumentKind.EmSetup:  exit |= ExplainEmSetup(path, walks, out em3d); break;
             case DocumentKind.Netlist:
             case DocumentKind.Schematic:
             case DocumentKind.Cell:
@@ -258,9 +259,10 @@ internal static class Explain
 
         JsonRun.Explain = new ExplainReportJson(
             path, DocumentKinds.Name(kind), walks, analyses, value, refRes, cells, layers, extents,
-            footprints);
+            footprints, em3d);
 
         Print(path, kind, walks, analyses, value, refRes, cells, layers, extents, footprints);
+        if (em3d is not null) ExplainEm3d.Print(em3d);
         return exit;
     }
 
@@ -425,8 +427,9 @@ internal static class Explain
     /// (<c>cli.md</c> §8.1). Resolution goes through <c>EmSetupResolver.Resolve</c> itself, so what
     /// is reported here is what <c>circuitrf em</c> actually used (Gate 5).
     /// </summary>
-    private static int ExplainEmSetup(string path, List<ResolutionStepJson> walks)
+    private static int ExplainEmSetup(string path, List<ResolutionStepJson> walks, out ExplainEm3dJson? em3d)
     {
+        em3d = null;
         string full = Path.GetFullPath(path);
         string? cws = Workspace(path, walks);
 
@@ -463,6 +466,15 @@ internal static class Explain
                 "are cut there and a via is kept or left out by its centre"));
 
         ExplainReturnPlane(setup, resolution, walks);
+
+        // brief-em3d-5 R-em3d5-3: a 3D setup reports its problem IN ADDITION to the walks above,
+        // generated through the one path `render` draws it through.
+        if (setup.Is3D)
+        {
+            var source = Em3dSetupSource.From(full, setup, resolution);
+            em3d = ExplainEm3d.Build(source);
+            if (source.Refusal is not null && resolution.Source is not null) return 1;
+        }
 
         return resolution.Source is null ? 1 : 0;
     }

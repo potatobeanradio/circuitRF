@@ -1900,6 +1900,66 @@ internal static class CliDiagnostics
       + "'{name}' would have been ignored. Its two palettes are chosen with --variant light or "
       + "--variant dark.", ("name", name));
 
+    // ── render, a 3D EM setup (brief-em3d-5) ─────────────────────────────────
+
+    /// <summary>R-em3d5-2a: a planar `.cem` has no 3D problem to draw, and what a picture of it would
+    /// show is its layout — so the refusal names the file to render instead.</summary>
+    public static Diagnostic RenderEm3dPlanar(string path, string layout) => Diagnostic.Create(
+        "render.em3d.planar", DiagnosticSeverity.Error,
+        "render: '{path}' is a planar EM setup (it sets no Solver3D), so it has no 3D problem to draw. "
+      + "What it solves is its layout: render '{layout}'.",
+        ("path", path), ("layout", layout));
+
+    /// <summary>R-em3d5-2b: which of the three pictures is the caller's question, never defaulted.</summary>
+    public static Diagnostic RenderEm3dViewRequired(string path) => Diagnostic.Create(
+        "render.em3d.view-required", DiagnosticSeverity.Error,
+        "render: '{path}' is a 3D EM setup. Say which picture: --section z=<length> (the XY plane at "
+      + "that height), --section xz@y=<length> or --section yz@x=<length> (vertical cuts), or --iso "
+      + "(an isometric outline).", ("path", path));
+
+    /// <summary>R-em3d5-2b: refused together rather than ordered, as --fit/--window are.</summary>
+    public static Diagnostic RenderEm3dMultipleViews(string views) => Diagnostic.Create(
+        "render.em3d.multiple-views", DiagnosticSeverity.Error,
+        "render: {views} ask for different pictures. Pass exactly one --section or --iso per render.",
+        ("views", views));
+
+    public static Diagnostic RenderEm3dSectionMalformed(string text) => Diagnostic.Create(
+        "render.em3d.section-malformed", DiagnosticSeverity.Error,
+        "render: --section '{text}' is not a plane. Write z=<length>, xz@y=<length> or yz@x=<length>, "
+      + "for example z=35um.", ("text", text));
+
+    /// <summary>R-em3d5-2b: every length carries an SI unit, for the reason a layout coordinate does.</summary>
+    public static Diagnostic RenderEm3dUnitRequired(string text, string examples) => Diagnostic.Create(
+        "render.em3d.unit-required", DiagnosticSeverity.Error,
+        "render: --section '{text}' gives a bare number, and a 3D length carries a unit — nanometres, "
+      + "micrometres and millimetres are three plausible planes. Write it as {examples}.",
+        ("text", text), ("examples", examples));
+
+    /// <summary>An option that describes a layout drawing and nothing a 3D picture has. Named rather
+    /// than ignored, on R-rnd0-6's rule.</summary>
+    public static Diagnostic RenderEm3dNotApplicable(string option) => Diagnostic.Create(
+        "render.em3d.not-applicable", DiagnosticSeverity.Error,
+        "render: {option} describes a layout or a data display, and a 3D setup's picture has neither "
+      + "its viewport nor its layers: it is framed on the model and drawn whole. Use --section or --iso, "
+      + "with --size, --margin, --theme, --variant and --background.", ("option", option));
+
+    public static Diagnostic RenderEm3dNotA3dSetup(string option, string path, string kind) => Diagnostic.Create(
+        "render.em3d.not-3d", DiagnosticSeverity.Error,
+        "render: {option} draws a 3D EM setup (a .cem with a Solver3D), and '{path}' is {kind}.",
+        ("option", option), ("path", path), ("kind", kind));
+
+    public static Diagnostic RenderEm3dUnbuildable(string path, string reason) => Diagnostic.Create(
+        "render.em3d.unbuildable", DiagnosticSeverity.Error,
+        "render: the 3D problem of '{path}' could not be built, so there is nothing to draw: {reason}",
+        ("path", path), ("reason", reason));
+
+    /// <summary>A picture of a problem that fails its own validation is still drawn — it is often
+    /// the fastest way to see why — and says so.</summary>
+    public static Diagnostic RenderEm3dProblems(string path, int count) => Diagnostic.Create(
+        "render.em3d.problems", DiagnosticSeverity.Info,
+        "'{path}': the 3D problem drawn has {count} structural problem(s) a backend would refuse; "
+      + "`circuitrf check` lists them.", ("path", path), ("count", count.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+
     public static Diagnostic RenderMarginMalformed(string text) => Diagnostic.Create(
         "render.margin.malformed", DiagnosticSeverity.Error,
         "render: --margin expects a fraction of the extent per side, between 0 and 0.45, got '{text}'.",

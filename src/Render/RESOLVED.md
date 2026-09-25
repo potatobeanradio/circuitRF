@@ -3706,3 +3706,45 @@ drawn polygon on the cell's level; null when nothing grew), and
 `LayoutRenderer.ShowCurrentDensityOutsideDrawnMetal` (default false) is the switch that decides
 whether the heat-map pass skips the unmasked cells. The plain mesh overlay still draws the lead's
 cell boundaries.
+
+## A 3D setup's section and isometric outline — brief-em3d-5 (2026-09-25)
+
+`Em3dSectionScene` (the cut, or the projected outline) and `Em3dSectionRenderer` (the drawing) draw
+an `Em3dProblem` for `render --section` / `--iso`. Findings:
+
+- **Framed on the content, not the air box.** The generator pads the box by an eighth of the longest
+  wavelength, which for F0 case B's 100 MHz start is ~375 mm around a via a few millimetres across. A
+  picture framed on the box is a picture of a dot. The frame is conductors, sheets, ports and anything
+  not as wide as the box, padded by 15 % of its largest side and clipped to the box; a face outside
+  the frame is labelled at the frame's edge with how far beyond it lies. A slab (a box as wide as the
+  air box) contributes its height only, and the air above the stack contributes nothing.
+- **The half-open rule needs the crossing test to be "strictly above".** A solid is present where
+  bottom ≤ plane < top. For a polygon cut by a line that means an edge crosses when exactly one end is
+  STRICTLY above the line: with "at or above", a rectangle cut exactly at its bottom edge has every
+  vertex "above" and produces no interval, so the rule silently inverts at the one height a caller asks
+  about. The mesh cut classifies a vertex the same way. The plane is snapped first to any boundary
+  within 1e-9 of the box's largest side, so `z=543um` lands on the copper's bottom bitwise whatever the
+  DBU-to-metre conversion's last bit did.
+- **Mesh-cut loops close exactly because each crossing is keyed by its EDGE**, computed from the
+  edge's lower-indexed vertex, so both triangles sharing an edge produce one point. Keying by
+  coordinates would need a tolerance, and would fuse the distinct crossings that meet at a vertex
+  lying exactly on the plane.
+- **Paint order is construction order.** The problem resolves overlap by order (the later solid owns
+  the volume), so painting in order shows exactly the solid that owns each point, and a plated via's
+  air bore paints over its barrel. Air paints the page background; with `--background transparent` it
+  is not painted, so the bore then shows the barrel behind it (said on `Em3dRenderStyle`).
+- **A grey base fill does not turn in hue.** Dielectrics are the stackup theme's dielectric fill
+  rotated 47° per material; at that fill's own saturation two substrates came out the same grey, so the
+  saturation has a floor. The index is the material's position in the PROBLEM, so a material keeps its
+  colour from one view to the next.
+- **A darker shade of a light fill vanishes on the dark variant.** Isometric dielectric edges are the
+  stackup theme's band edge, not a shade of their fill.
+- **Byte identity, SVG and PDF.** PDF is byte-identical between the CLI process and an in-process
+  render. SVG differs only in Skia's `clipPath` ids (the counter recorded above), and the gate applies
+  `RenderCliVerbTests`' one named exclusion and nothing else.
+- **The isometric outline has no hidden-line removal and says so in its caption.** Sharp edges
+  (> 30° between faces) and silhouette edges are drawn from the one tessellation
+  (`Em3dTessellation`, `src/Engine/Em3d`); an extruded polygon's are drawn from its rings, because
+  nothing in this repo triangulates a polygon with holes, and `Em3dTessellation.Of` says so for that
+  primitive rather than returning half a solid.
+

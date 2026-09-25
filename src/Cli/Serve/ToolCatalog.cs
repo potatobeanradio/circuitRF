@@ -443,14 +443,14 @@ internal static class ToolCatalog
         // is the first tool whose PURPOSE is to write a file: it writes only where the caller named,
         // and there is still no tool that deletes (cli.md 11.5).
         new("render",
-            "Draw a schematic, a symbol, a layout or a data display as a picture: .svg, .pdf or .png. "
-          + "The document kind comes from the path. Ask explain --extents and --layers first if you "
-          + "need a window or a layer name.",
+            "Draw a schematic, a symbol, a layout, a data display, or a 3D EM setup's model as a picture: "
+          + ".svg, .pdf or .png. The document kind comes from the path. Ask explain --extents and --layers "
+          + "first if you need a window or a layer name.",
             null, null,
             [
                 new("", [ "render" ],
                     [new("path", true,
-                         "The .csch .csym .clay or .cdd, a cell folder, or a workspace with cell.")],
+                         "The .csch .csym .clay .cdd or 3D .cem, a cell folder, or a workspace with cell.")],
                     [
                         new("output", "-o", OptKind.Path,
                             "Required. Where the picture is written; its extension picks the format: .svg, .pdf or .png."),
@@ -521,6 +521,16 @@ internal static class ToolCatalog
                         new("plot", "--plot", OptKind.Integer, ".cdd only: which plot on that tab, from 1."),
                         new("allTabs", "--all-tabs", OptKind.Flag,
                             ".cdd only: every tab, one page each. pdf only."),
+
+                        // brief-em3d-5: a 3D setup takes exactly one of these two, refused together.
+                        new("section", "--section", OptKind.Str,
+                            "3D .cem only: a section through the model — z=<length> (the XY plane at that height), "
+                          + "xz@y=<length> or yz@x=<length>. EVERY LENGTH CARRIES AN SI UNIT (z=35um); a bare number "
+                          + "is refused. A solid is drawn where its bottom <= plane < its top, so z at the top of "
+                          + "the copper shows the layer above it."),
+                        new("iso", "--iso", OptKind.Flag,
+                            "3D .cem only: an isometric outline — silhouettes and sharp edges, with no hidden-line "
+                          + "removal. Refused together with section."),
                     ],
                     ""),
             ],

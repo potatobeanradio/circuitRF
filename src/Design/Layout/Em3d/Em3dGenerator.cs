@@ -44,7 +44,42 @@ public sealed record Em3dGenerationResult(Em3dProblem? Problem, string? Refusal,
 
     /// <summary>What the model made of each bond wire (brief-em3d-4), in array then member order.</summary>
     public IReadOnlyList<Em3dWireReport> Wires { get; init; } = [];
+
+    /// <summary>
+    /// brief-em3d-5 — where each solid and sheet came from, by name: the stackup entry, the drawing
+    /// layer whose colour a picture paints it in, and why a conductor became a sheet. Kept BESIDE the
+    /// problem rather than in it: the problem is what a backend reads, and none of this is physics.
+    /// </summary>
+    public IReadOnlyDictionary<string, Em3dObjectOrigin> Origins { get; init; } =
+        new Dictionary<string, Em3dObjectOrigin>();
+
+    /// <summary>brief-em3d-5 R-em3d5-3a — where each material's values resolved from, by material
+    /// name: the technology's Materials, the <c>.wBond</c>'s own list, a stackup entry's own numbers,
+    /// or free space.</summary>
+    public IReadOnlyDictionary<string, string> MaterialSources { get; init; } = new Dictionary<string, string>();
+
+    /// <summary>Materials that state σ₂₀ but no α₂₀, so σ₂₀ is used at every temperature.</summary>
+    public IReadOnlyList<string> NoAlpha { get; init; } = [];
+
+    /// <summary>Conductor stackup entries that name no material, so their σ is a number of unknown
+    /// temperature, used as given.</summary>
+    public IReadOnlyList<string> UnknownTemperature { get; init; } = [];
 }
+
+/// <summary>What kind of thing in the design a solid or sheet of the 3D problem is.</summary>
+public enum Em3dObjectKind { Dielectric, Air, Body, Conductor, Via, Wire }
+
+/// <summary>
+/// Where one named object of the 3D problem came from (brief-em3d-5).
+/// </summary>
+/// <param name="StackupEntry">The stackup entry it was built from; null for a body, a wire, or the
+/// air above the stack.</param>
+/// <param name="DrawingLayer">The drawing layer whose shapes it was built from — a conductor's or a
+/// via's. What a picture paints it with, through the technology's own layer palette.</param>
+/// <param name="SheetReason">Why the generator made it a sheet rather than a volume; null for a
+/// solid.</param>
+public sealed record Em3dObjectOrigin(Em3dObjectKind Kind, string? StackupEntry, LayerKey? DrawingLayer,
+                                      string? SheetReason);
 
 public static class Em3dGenerator
 {
@@ -106,12 +141,15 @@ public static class Em3dGenerator
         private readonly List<string> _warnings = [];
         private readonly List<Em3dMaterial> _materials = [];
         private readonly Dictionary<string, Em3dMaterial> _materialByName = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, string> _materialSource = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, Em3dObjectOrigin> _origins = new(StringComparer.Ordinal);
         private double _tempC;
         private double _perDbu;
 
         /// <summary>One merged conductor piece: its polygon, its name and what it became.</summary>
         private sealed record Piece(PlanarPolygon Poly, string Name, string Material, bool IsSheet,
-                                    double ZBottom, double ZTop, double SheetZ);
+                                    double ZBottom, double ZTop, double SheetZ, LayerKey Layer,
+                                    string? SheetReason);
 
         public Em3dGenerationResult Go()
         {
@@ -203,11 +241,11 @@ public static class Em3dGenerator
                 _notes.Add($"{mergedShapes} overlapping conductor shape(s) were merged into {mergedInto} — " +
                            "copper that overlaps on one level is one conductor, in 3D as in the planar model.");
 
-            var polysByBand = new Dictionary<int, List<(PlanarPolygon Poly, string? Net)>>();
+            var polysByBand = new Dictionary<int, List<(PlanarPolygon Poly, string? Net, LayerKey Layer)>>();
             foreach (var (shape, level) in merged)
                 foreach (var poly in PlanarExtractor.ToPolygons(shape, tech, _perDbu))
                     (polysByBand.TryGetValue(level, out var l) ? l : polysByBand[level] = [])
-                        .Add((poly, shape.Net is { Length: > 0 } n ? n : null));
+                        .Add((poly, shape.Net is { Length: > 0 } n ? n : null, shape.Layer));
 
             if (polysByBand.Count == 0)
                 return No($"This EM setup is pointed at geometry with nothing on a layer bound to a " +
@@ -265,10 +303,11 @@ public static class Em3dGenerator
                         if (m.Alpha20 is { } a20) sigma = new WireMaterial(m.Name, s20, a20, 0).SigmaAt(_tempC);
                         else noAlpha.Add(m.Name);
                     }
-                    return Add(new Em3dMaterial(m.Name, m.Epsr ?? 1, null, m.TanD ?? 0, m.Mur ?? 1, sigma));
+                    return Add(new Em3dMaterial(m.Name, m.Epsr ?? 1, null, m.TanD ?? 0, m.Mur ?? 1, sigma),
+                               TechnologySource());
                 }
                 if (!unknownTemperature.Contains(entry.Name)) unknownTemperature.Add(entry.Name);
-                return Add(new Em3dMaterial(entry.Name, 1, null, 0, entry.Mur, entry.SigmaSm));
+                return Add(new Em3dMaterial(entry.Name, 1, null, 0, entry.Mur, entry.SigmaSm), EntrySource(entry));
             }
 
             string DielectricMaterial(StackupLayer entry)
@@ -278,7 +317,8 @@ public static class Em3dGenerator
                 var m = tech.FindMaterial(entry.Material);
                 return Add(new Em3dMaterial(m?.Name ?? entry.Name, entry.Epsr,
                                             m?.EpsrTensor is { Length: 3 } t ? [.. t] : null,
-                                            entry.TanD, entry.Mur, 0));
+                                            entry.TanD, entry.Mur, 0),
+                           m is null ? EntrySource(entry) : TechnologySource());
             }
 
             string BodyMaterial(TechMaterial m, out Em3dRole role)
@@ -291,7 +331,7 @@ public static class Em3dGenerator
                 }
                 role = m.Epsr is null && m.EpsrTensor is null && sigma > 0 ? Em3dRole.Conductor : Em3dRole.Dielectric;
                 return Add(new Em3dMaterial(m.Name, m.Epsr ?? 1, m.EpsrTensor is { Length: 3 } t ? [.. t] : null,
-                                            m.TanD ?? 0, m.Mur ?? 1, sigma));
+                                            m.TanD ?? 0, m.Mur ?? 1, sigma), TechnologySource());
             }
 
             // ── Conductor pieces: named, sheet or solid ──────────────────────────────────────
@@ -310,7 +350,7 @@ public static class Em3dGenerator
                 var netSeen = new Dictionary<string, int>(StringComparer.Ordinal);
                 int unnamed = 0;
                 var made = new List<Piece>(list.Count);
-                foreach (var (poly, net) in list)
+                foreach (var (poly, net, layer) in list)
                 {
                     // R-em3d3-5g — what the user already calls it: the net, else a piece ordinal in
                     // merge order. Both are deterministic: merge order is document order.
@@ -325,7 +365,12 @@ public static class Em3dGenerator
                     double width = CharacteristicWidth(poly);
                     bool sheet = t <= 0 ||
                                  (delta > 0 && t < SheetMaxSkinDepths * delta && t < SheetMaxFractionOfWidth * width);
-                    made.Add(new Piece(poly, name, material, sheet, band.BottomM, band.TopM, sheetZ));
+                    string? reason = !sheet ? null
+                        : t <= 0 ? $"'{band.Layer.Name}' has zero thickness in the stackup"
+                        : $"{Fmt(t * 1e6)} µm is under {SheetMaxSkinDepths:G} skin depths " +
+                          $"({Fmt(SheetMaxSkinDepths * delta * 1e6)} µm at {Fmt(fMax / 1e9)} GHz) and under " +
+                          $"{SheetMaxFractionOfWidth:G} of its width ({Fmt(width * 1e6)} µm)";
+                    made.Add(new Piece(poly, name, material, sheet, band.BottomM, band.TopM, sheetZ, layer, reason));
                 }
                 pieces[band.Index] = made;
             }
@@ -431,7 +476,10 @@ public static class Em3dGenerator
                 }
                 var pads = pieces.Values.SelectMany(l => l)
                                  .Select(p => new Em3dWirePad(p.Name, p.Poly, p.IsSheet ? p.SheetZ : p.ZTop)).ToList();
-                wireBuild = Em3dWires.Build(wireSource, pads, zOrigin, tech, _tempC, Add);
+                string wbondSource = wireSource.Path is { } wbPath
+                    ? $".wBond '{Path.GetFileName(wbPath)}' Materials" : "the .wBond's Materials";
+                wireBuild = Em3dWires.Build(wireSource, pads, zOrigin, tech, _tempC,
+                                            (m, fromWBond) => Add(m, fromWBond ? wbondSource : TechnologySource()));
                 _notes.AddRange(wireBuild.Notes);
                 _warnings.AddRange(wireBuild.Warnings);
                 if (wireBuild.Refusal is { } wireRefusal) return No(wireRefusal);
@@ -507,35 +555,40 @@ public static class Em3dGenerator
                 if (lateral is { Count: 0 }) continue;
                 order++;
                 if (lateral is null)
-                    solids.Add(new Em3dSolid(b.Layer.Name, material, Em3dRole.Dielectric, FullExtent(z0, z1), order));
+                    solids.Add(Origin(new Em3dSolid(b.Layer.Name, material, Em3dRole.Dielectric, FullExtent(z0, z1), order),
+                                      Em3dObjectKind.Dielectric, b.Layer.Name));
                 else
                     for (int k = 0; k < lateral.Count; k++)
-                        solids.Add(new Em3dSolid(lateral.Count == 1 ? b.Layer.Name : $"{b.Layer.Name}/{k + 1}",
-                                                 material, Em3dRole.Dielectric, Extrude(lateral[k], z0, z1), order));
+                        solids.Add(Origin(new Em3dSolid(lateral.Count == 1 ? b.Layer.Name : $"{b.Layer.Name}/{k + 1}",
+                                                        material, Em3dRole.Dielectric, Extrude(lateral[k], z0, z1), order),
+                                          Em3dObjectKind.Dielectric, b.Layer.Name));
                 if (film is null) airBottom = double.IsNaN(airBottom) ? z1 : Math.Max(airBottom, z1);
             }
 
             if (double.IsNaN(airBottom)) airBottom = boxMin.Z;
             if (boxMax.Z > airBottom)
-                solids.Add(new Em3dSolid(AirSolidName, AirMaterialName(), Em3dRole.Air,
-                                         FullExtent(airBottom, boxMax.Z), ++order));
+                solids.Add(Origin(new Em3dSolid(AirSolidName, AirMaterialName(), Em3dRole.Air,
+                                                FullExtent(airBottom, boxMax.Z), ++order), Em3dObjectKind.Air, null));
 
             foreach (var (body, z0, z1, polys) in bodies)
             {
                 string material = BodyMaterial(tech.FindMaterial(body.Material)!, out var role);
                 order++;
                 if (polys.Count == 0)
-                    solids.Add(new Em3dSolid(body.Name, material, role, FullExtent(z0, z1), order));
+                    solids.Add(Origin(new Em3dSolid(body.Name, material, role, FullExtent(z0, z1), order),
+                                      Em3dObjectKind.Body, null));
                 else
                     for (int k = 0; k < polys.Count; k++)
-                        solids.Add(new Em3dSolid(polys.Count == 1 ? body.Name : $"{body.Name}/{k + 1}",
-                                                 material, role, Extrude(polys[k], z0, z1), order));
+                        solids.Add(Origin(new Em3dSolid(polys.Count == 1 ? body.Name : $"{body.Name}/{k + 1}",
+                                                        material, role, Extrude(polys[k], z0, z1), order),
+                                          Em3dObjectKind.Body, null));
             }
 
             foreach (var b in bands.Where(b => pieces.ContainsKey(b.Index)))
                 foreach (var p in pieces[b.Index])
                 {
                     order++;
+                    _origins[p.Name] = new Em3dObjectOrigin(Em3dObjectKind.Conductor, b.Layer.Name, p.Layer, p.SheetReason);
                     if (p.IsSheet)
                         sheets.Add(new Em3dSheet(p.Name, p.Material, Ring(p.Poly.Outer),
                                                  [.. p.Poly.HoleRings.Select(Ring)], p.SheetZ, p.ZTop - p.ZBottom, order));
@@ -565,26 +618,30 @@ public static class Em3dGenerator
                     double r = (v.DrillSize > 0 ? v.DrillSize : v.PadSize) * _perDbu / 2;
                     var a = new Point3(v.X * _perDbu, v.Y * _perDbu, z0);
                     var e = new Point3(v.X * _perDbu, v.Y * _perDbu, z1);
-                    solids.Add(new Em3dSolid(name, material, Em3dRole.Conductor, new Em3dCylinder(a, e, r), ++order));
+                    solids.Add(Origin(new Em3dSolid(name, material, Em3dRole.Conductor, new Em3dCylinder(a, e, r), ++order),
+                                      Em3dObjectKind.Via, entry.Name, shape.Layer));
                     double wall = (entry.WallThicknessDbu ?? 0) * stackPerDbu;
                     if (entry.Fill == ViaFillKind.Plated && wall > 0 && wall < r)
-                        solids.Add(new Em3dSolid(name + "/fill", AirMaterialName(), Em3dRole.Air,
-                                                 new Em3dCylinder(a, e, r - wall), ++order));
+                        solids.Add(Origin(new Em3dSolid(name + "/fill", AirMaterialName(), Em3dRole.Air,
+                                                        new Em3dCylinder(a, e, r - wall), ++order),
+                                          Em3dObjectKind.Air, entry.Name));
                 }
                 else
                 {
                     var fp = PlanarExtractor.ToPolygons(shape, tech, _perDbu);
                     order++;
                     for (int k = 0; k < fp.Count; k++)
-                        solids.Add(new Em3dSolid(fp.Count == 1 ? name : $"{name}/{k + 1}", material,
-                                                 Em3dRole.Conductor, Extrude(fp[k], z0, z1), order));
+                        solids.Add(Origin(new Em3dSolid(fp.Count == 1 ? name : $"{name}/{k + 1}", material,
+                                                        Em3dRole.Conductor, Extrude(fp[k], z0, z1), order),
+                                          Em3dObjectKind.Via, entry.Name, shape.Layer));
                 }
             }
 
             // Bond wires after vias (R-em3d3-1d's order, as brief 3 left room for): each swept wire,
             // then its balls, which meet it face to face on the ball's top.
             foreach (var (name, material, prim) in wireBuild?.Solids ?? [])
-                solids.Add(new Em3dSolid(name, material, Em3dRole.Conductor, prim, ++order));
+                solids.Add(Origin(new Em3dSolid(name, material, Em3dRole.Conductor, prim, ++order),
+                                  Em3dObjectKind.Wire, null));
 
             // ── Ports (R-em3d3-2) ─────────────────────────────────────────────────────────────
             var ports = new List<Em3dPort>();
@@ -616,6 +673,10 @@ public static class Em3dGenerator
             {
                 Warnings = _warnings,
                 Wires = wireBuild?.Reports ?? [],
+                Origins = _origins,
+                MaterialSources = _materialSource,
+                NoAlpha = [.. noAlpha.Union(wireBuild?.NoAlpha ?? []).Order(StringComparer.Ordinal)],
+                UnknownTemperature = unknownTemperature,
             };
         }
 
@@ -809,18 +870,29 @@ public static class Em3dGenerator
 
         // ── Helpers ──────────────────────────────────────────────────────────────────────────
 
-        private string Add(Em3dMaterial m)
+        private string Add(Em3dMaterial m, string source)
         {
             if (_materialByName.TryGetValue(m.Name, out var have))
             {
                 if (have == m || SameValues(have, m)) return m.Name;
                 // An anonymous entry sharing a name with a named material, with different numbers: kept
                 // apart rather than silently merged into whichever came first.
-                return Add(m with { Name = "stackup/" + m.Name });
+                return Add(m with { Name = "stackup/" + m.Name }, source);
             }
             _materials.Add(m);
             _materialByName[m.Name] = m;
+            _materialSource[m.Name] = source;
             return m.Name;
+        }
+
+        private string TechnologySource() => $"technology '{tech.Name}' Materials";
+
+        private static string EntrySource(StackupLayer entry) => $"stackup entry '{entry.Name}' (its own numbers)";
+
+        private Em3dSolid Origin(Em3dSolid s, Em3dObjectKind kind, string? entry, LayerKey? layer = null)
+        {
+            _origins[s.Name] = new Em3dObjectOrigin(kind, entry, layer, null);
+            return s;
         }
 
         private static bool SameValues(Em3dMaterial a, Em3dMaterial b) =>
@@ -830,8 +902,8 @@ public static class Em3dGenerator
         private string AirMaterialName()
         {
             if (tech.FindMaterial(AirMaterial) is { } m)
-                return Add(new Em3dMaterial(m.Name, m.Epsr ?? 1, null, m.TanD ?? 0, m.Mur ?? 1, 0));
-            return Add(new Em3dMaterial(AirMaterial, 1, null, 0, 1, 0));
+                return Add(new Em3dMaterial(m.Name, m.Epsr ?? 1, null, m.TanD ?? 0, m.Mur ?? 1, 0), TechnologySource());
+            return Add(new Em3dMaterial(AirMaterial, 1, null, 0, 1, 0), "built in (free space)");
         }
 
         private IEnumerable<PlanarPolygon> ViaFootprint(LayoutShape shape)
