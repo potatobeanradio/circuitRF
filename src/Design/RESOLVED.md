@@ -12375,3 +12375,69 @@ could run. If the strip clips, the header is the thing to shorten, not the dialo
 **The GPL scan must not follow links or hidden directories.** Its first run died on an emulator prefix
 under `tools/` whose drive links reach the whole disk. The walker now skips
 dot-directories and anything with a `LinkTarget`.
+
+## The Palace backend — brief-em3d-7 (2026-09-25)
+
+`src/Design/Em3d/{GmshGeoWriter,PalaceConfigWriter,PalaceRun,Em3dRunService}.cs`; gate
+`tests/Ui.Tests/Em3d/PalaceBackendTests.cs`; goldens `testdata/em3d/palace-goldens/` (with a
+`.gitattributes` that turns end-of-line conversion off, or the byte gate fails on a Windows checkout);
+the schema Palace 0.18.1 installs, `testdata/em3d/palace-schema/0.18.1.json`.
+
+**F0's §1e recipe survives being generated, with one change to how conductor faces are found.** F0
+selected each conductor's faces by a bounding box and then subtracted whatever else fell inside it,
+by hand. Generated, that subtraction has to be general, so the script first takes
+`CombinedBoundary{ Volume{:}; }` — the faces that bound exactly ONE meshed volume, which after the
+fragment are the box's faces and the conductor voids' and nothing else — and a conductor is its box
+INTERSECTED with that set. Conductors claim smallest box first, so a pad inside a plane's box keeps its
+own faces. Volumes are not queried at all: with `OCCBooleanPreserveNumbering` they keep their tags, and
+the table prints how many of each solid's tags did NOT survive, which must be 0. The books close as F0
+asked: the count of single-sided faces no group claimed is printed and must be 0 (else Palace would
+treat them as PMC). Case B plated: every object got its count, 0 unclassified, 172 surfaces.
+
+**Two deliberate departures from the brief's text.** (1) R-em3d7-2f puts `Mesh 3;` in the script;
+R-em3d7-3a runs `gmsh model.geo -3`. Both would mesh twice, so the script only sets options and the
+command line meshes, as F0 ran it. The entity table is printed at parse time, so it exists even when a
+mesh fails. (2) The script is in MICROMETRES with Palace `L0 = 1e-6`, not metres: OCCT's tolerances
+are absolute (1e-7 in model units), which in metres sits two orders from a bond wire's section.
+
+**The refined size near metal needed a floor from the PORTS, and ONLY at the ports.** With the λ-based
+size alone, a thin stack is meshed by elements larger than itself (a 0.2 mm stripline got 1,616
+elements and |S11| of −7 dB). The first fix applied the port floor (¼ of the smallest port side, F0's
+own hand-mesh practice) to every conductor: case B's gate then meshed for 97 s, because the ground
+plane is a conductor and filled the board with 50 µm elements — and the floor overrode the user's
+`EdgeRefinement`, a hidden setting. It is now a separate distance field around the port sheets only
+(3 s), and `EdgeRefinement` governs everything else.
+
+**A Tier A lumped port carries a real series parasitic of ~0.3 nH on a 0.5 mm-tall sheet, and it is a
+reference-plane effect, not an error.** Gate 6's single 30 mm stripline read a group delay 3.8 % long
+and |S11| near −22 dB where Cohn's Z0 (51.2 Ω) predicts below −32 dB. Two adaptive passes and a
+2× finer mesh moved the delay by < 1 ps (154.1 → 153.2 ps), so it is not the mesh. Differencing two
+lengths (10 and 30 mm) cancels it: 99.28 ps against the closed form's 98.95 (+0.33 %). The line's Z0
+read from the ABCD C term — which a series parasitic cannot reach — is 47.9–52.3 Ω on the first lobe;
+near θ = π it is dominated by the ports' shunt part (33–59 Ω) and is not read there. A stripline also
+needs its planes TIED: with absorbing side faces the top PEC floats and the launch is not a stripline's.
+Brief 10's reference-plane work is where this parasitic is removed; F0 met the same thing as kernel W's
+197 pH.
+
+**Palace writes `port-S.csv` only for "multiple simple" excitations.** Each lumped port is given
+`"Excitation": <its number>`, so Palace solves one column per port and names the columns
+`|S[i][j]| (dB)` / `arg(S[i][j]) (deg.)` with j that number — read by name, never by position (the
+column order is Palace's loop order, measured on a 2-port run).
+
+**Palace's wrapper needs `mpirun` to run on more than one process, and a Spack install puts it in the
+MPI package's own prefix**, not beside Palace. `PalaceRun.FindMpiLauncher` tries `CIRCUITRF_MPIRUN`,
+then beside Palace, then `PATH`; with none it runs `--serial` and the run's notes say so. The process
+count is the planar core setting, so the CLI (which passes none) runs on every core.
+
+**Refused rather than guessed:** a `Symmetry` air-box face (it does not say electric or magnetic wall),
+a port with a reactive or non-positive Z0 (a lumped port is referenced to a resistance; an L or C would
+be one frequency's reactance), a problem with no ports.
+
+**`explain`'s Palace size row is now an estimate** from the section's own sizes, through
+`GmshGeoWriter.MaxElementSizeM` — the formula the script uses. Brief 5's test asserted it unavailable;
+updated. Brief 5's gate 6 also asserted the process-wide solve counter was 0 before it ran, which this
+brief's Gmsh gates break by design: it now asserts no increase, and the two classes share a collection.
+
+**Not run in this session:** gate 7 (the generated case B against F0's Palace reference; minutes and
+~7 GB). Gates 6, 9, 10 and 11b ran once each, on this Mac with `CIRCUITRF_PALACE` and
+`CIRCUITRF_MPIRUN` set, and pass; without Palace they skip with a reason.

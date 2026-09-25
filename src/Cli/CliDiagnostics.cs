@@ -282,6 +282,13 @@ internal static class CliDiagnostics
         "cli.measurement.failed", DiagnosticSeverity.Warning, "{text}", ("text", text));
 
     /// <summary>A warning from the EM setup resolver — a technology that would not resolve, say.</summary>
+    /// <summary>brief-em3d-7 R-em3d7-1b — <c>em --solver</c> names a 3D solver, and only those.</summary>
+    public static Diagnostic EmUnknownSolver(string value) => Diagnostic.Create(
+        "cli.em.unknown-solver",
+        DiagnosticSeverity.Error,
+        "em: --solver takes palace or openems, not '{value}'.",
+        ("value", value));
+
     public static Diagnostic EmSetupWarning(string text) => Diagnostic.Create(
         "em.setup.warning", DiagnosticSeverity.Warning, "{text}", ("text", text));
 

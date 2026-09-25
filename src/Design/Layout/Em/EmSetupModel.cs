@@ -438,7 +438,7 @@ public sealed class EmSetup
     /// <summary>R-em3d3-6 — the air box, per face. Null is the generator's default on every face.</summary>
     public EmAirBox? AirBox { get; set; }
 
-    /// <summary>Palace's own section (em-3d.md §4.2). Declared empty here; brief 7 fills it in.
+    /// <summary>Palace's own section (em-3d.md §4.2; brief-em3d-7 R-em3d7-6a) — see <see cref="PalaceSettings"/> for the defaults.
     /// Null takes circuitRF's defaults.</summary>
     public CemPalace? Palace { get; set; }
 
@@ -496,7 +496,7 @@ public sealed class EmSetup
         Solver3D               = Solver3D,
         OperatingTempC         = OperatingTempC,
         AirBox                 = AirBox,         // record, immutable
-        Palace                 = Palace,         // empty until brief 7
+        Palace                 = Palace?.Clone(),
         OpenEms                = OpenEms,        // empty until brief 9
     };
 

@@ -1316,6 +1316,7 @@ static string FormatOhms(double re, double im)
 static int RunEm(string[] args)
 {
     string? input = null, output = null, workspace = null;
+    Em3dSolver? solver = null;
 
     for (int i = 0; i < args.Length; i++)
     {
@@ -1323,6 +1324,18 @@ static int RunEm(string[] args)
         {
             case "-o" or "--output" when i + 1 < args.Length:
                 output = args[++i];
+                break;
+            // brief-em3d-7 R-em3d7-1b (owner decision D1) — the 3D solver for THIS run, overriding the
+            // setup's Solver3D in memory only. Nothing is written back: the .cem is not saved here.
+            case "--solver" when i + 1 < args.Length:
+                string name = args[++i];
+                solver = name.ToLowerInvariant() switch
+                {
+                    "palace"  => Em3dSolver.Palace,
+                    "openems" => Em3dSolver.OpenEms,
+                    _         => null,
+                };
+                if (solver is null) return JsonRun.Fail(CliDiagnostics.EmUnknownSolver(name));
                 break;
             case "--workspace" when i + 1 < args.Length:
                 workspace = args[++i];
@@ -1338,7 +1351,7 @@ static int RunEm(string[] args)
     if (input is null)
     {
         int code = JsonRun.Fail(CliDiagnostics.InputRequired("em", ".cem"));
-        Console.Error.WriteLine("Usage: circuitrf em <setup.cem> [-o out.sNp] [--workspace <file.cws>]");
+        Console.Error.WriteLine("Usage: circuitrf em <setup.cem> [-o out.sNp] [--workspace <file.cws>] [--solver palace|openems]");
         return code;
     }
     JsonRun.InputPath = input;
@@ -1356,6 +1369,8 @@ static int RunEm(string[] args)
     {
         return JsonRun.Fail(CliDiagnostics.SetupUnreadable(cemPath, ex.Message));
     }
+
+    if (solver is { } chosen) setup.Solver3D = chosen;
 
     // R-emcli-5 — a WALK-UP, not a flag. The .cem's own ancestor .cws is what LayoutRef is relative
     // to, exactly as it is in the GUI; with no workspace above it the reference falls back to the
@@ -1448,7 +1463,8 @@ static int RunEm(string[] args)
     }
 
     Console.WriteLine($"EM setup:  {(setup.Name.Length > 0 ? setup.Name : Path.GetFileNameWithoutExtension(cemPath))}");
-    Console.WriteLine($"Kernel:    {result.KernelName} ({result.Kind})");
+    // A 3D run has no planar kernel; its KernelName is the solver and version (brief-em3d-7).
+    Console.WriteLine(setup.Is3D ? $"Solver:    {result.KernelName}" : $"Kernel:    {result.KernelName} ({result.Kind})");
 
     JsonRun.Data = result.Data;
 

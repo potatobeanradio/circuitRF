@@ -140,9 +140,100 @@ public sealed class CemAirBox
     public CemAirBoxFace? ZMax { get; set; }
 }
 
-/// <summary>Palace's own settings (em-3d.md §4.2). Empty in this version; an omitted section takes
-/// circuitRF's defaults.</summary>
-public sealed class CemPalace { }
+/// <summary>Palace's own settings (em-3d.md §4.2). Every field may be omitted, and an omitted field
+/// takes circuitRF's default for it; an omitted section takes every default. The initial mesh these
+/// size is only a starting point: Palace's adaptive refinement converges the answer.</summary>
+public sealed class CemPalace
+{
+    /// <summary>The largest element allowed in each material, as a fraction of the wavelength in that
+    /// material at the sweep's top frequency. Default 0.1 (a tenth of a wavelength).</summary>
+    public double? MaxElementWavelengths { get; set; }
+
+    /// <summary>The element size at conductor surfaces, sheet edges and port sheets, as a fraction of
+    /// the smallest per-material maximum. Default 0.2.</summary>
+    public double? EdgeRefinement { get; set; }
+
+    /// <summary>How fast elements may grow away from a refined surface: the ratio between neighbouring
+    /// element sizes. Default 1.3.</summary>
+    public double? Grading { get; set; }
+
+    /// <summary>The finite-element order Palace solves with. Default 2.</summary>
+    public int? ElementOrder { get; set; }
+
+    /// <summary>The relative error at which Palace's adaptive mesh refinement stops. Default 0.01.</summary>
+    public double? AdaptiveTol { get; set; }
+
+    /// <summary>The most adaptive mesh refinement passes Palace makes; 0 solves on the initial mesh.
+    /// Default 2.</summary>
+    public int? AdaptiveMaxIterations { get; set; }
+
+    /// <summary>The error tolerance of Palace's adaptive frequency sweep, which solves a few frequencies
+    /// and interpolates the rest. Default 0.0001.</summary>
+    public double? SweepAdaptiveTol { get; set; }
+
+    /// <summary>A copy, so an editor can change one without touching a setup that shares it.</summary>
+    public CemPalace Clone() => (CemPalace)MemberwiseClone();
+
+    /// <summary>True when no field is set: the same run as an omitted section.</summary>
+    public bool IsEmpty =>
+        MaxElementWavelengths is null && EdgeRefinement is null && Grading is null && ElementOrder is null &&
+        AdaptiveTol is null && AdaptiveMaxIterations is null && SweepAdaptiveTol is null;
+}
+
+/// <summary>
+/// brief-em3d-7 R-em3d7-6a — the Palace section RESOLVED: every field a value. <b>The defaults live
+/// here and nowhere else</b>; the panel, the writers and <c>explain</c> all read them from
+/// <see cref="Default"/>.
+/// </summary>
+public sealed record PalaceSettings(
+    double MaxElementWavelengths,
+    double EdgeRefinement,
+    double Grading,
+    int    ElementOrder,
+    double AdaptiveTol,
+    int    AdaptiveMaxIterations,
+    double SweepAdaptiveTol)
+{
+    /// <summary>
+    /// The shipped defaults. λ/10 per material and a fifth of that at metal and ports is F0's case B
+    /// order of magnitude (docs/design/em-3d-f0-findings.md: 250 µm in the board, 60 µm at the signal,
+    /// growth ~1.3). Refinement tolerance 0.01 is Palace's own default; two passes bound the memory a
+    /// first run can take (F0 §4: two passes cost 1.5× the peak of none). The sweep tolerance is the
+    /// one every F0 reference ran at.
+    /// </summary>
+    public static PalaceSettings Default { get; } = new(0.1, 0.2, 1.3, 2, 0.01, 2, 1e-4);
+
+    /// <summary>The section's values, each omitted one taking <see cref="Default"/>'s.</summary>
+    public static PalaceSettings Resolve(CemPalace? section) => section is null ? Default : new(
+        section.MaxElementWavelengths ?? Default.MaxElementWavelengths,
+        section.EdgeRefinement        ?? Default.EdgeRefinement,
+        section.Grading               ?? Default.Grading,
+        section.ElementOrder          ?? Default.ElementOrder,
+        section.AdaptiveTol           ?? Default.AdaptiveTol,
+        section.AdaptiveMaxIterations ?? Default.AdaptiveMaxIterations,
+        section.SweepAdaptiveTol      ?? Default.SweepAdaptiveTol);
+
+    /// <summary>Every value that cannot be run, as sentences naming the field — empty when all can.</summary>
+    public IReadOnlyList<string> Problems()
+    {
+        var p = new List<string>();
+        if (!(MaxElementWavelengths > 0) || double.IsInfinity(MaxElementWavelengths))
+            p.Add($"Palace.MaxElementWavelengths is {MaxElementWavelengths}; it must be a positive fraction of a wavelength.");
+        if (!(EdgeRefinement > 0 && EdgeRefinement <= 1))
+            p.Add($"Palace.EdgeRefinement is {EdgeRefinement}; it must be above 0 and at most 1.");
+        if (!(Grading > 1) || double.IsInfinity(Grading))
+            p.Add($"Palace.Grading is {Grading}; it must be above 1.");
+        if (ElementOrder is < 1 or > 6)
+            p.Add($"Palace.ElementOrder is {ElementOrder}; it must be 1 to 6.");
+        if (!(AdaptiveTol > 0))
+            p.Add($"Palace.AdaptiveTol is {AdaptiveTol}; it must be positive.");
+        if (AdaptiveMaxIterations < 0)
+            p.Add($"Palace.AdaptiveMaxIterations is {AdaptiveMaxIterations}; it must be 0 or more.");
+        if (!(SweepAdaptiveTol >= 0))
+            p.Add($"Palace.SweepAdaptiveTol is {SweepAdaptiveTol}; it must be 0 or more.");
+        return p;
+    }
+}
 
 /// <summary>openEMS's own settings (em-3d.md §4.2). Empty in this version; an omitted section takes
 /// circuitRF's defaults.</summary>

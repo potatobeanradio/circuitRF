@@ -519,23 +519,11 @@ public static class EmRunService
         }
 
         // brief-em3d-3 — a 3D setup never falls through to a planar kernel (overview §1g).
+        // brief-em3d-7 R-em3d7-1a — it is run behind this door, which stays the only one: the discovery
+        // checks (brief 6) come first there, then the backend. Nothing below this line changes for a
+        // planar setup.
         if (setup.Is3D)
-        {
-            // brief-em3d-6 R-em3d6-2b/4d — at the top of every 3D run: each program the solver needs is
-            // found, its version checked against the validated list and its build probed (cached per
-            // binary), and the first one that fails refuses the run naming its remedy. The same call
-            // answers Settings and `explain`, so all three say the same thing.
-            if (CircuitRF.Design.Em3d.SolverDiscovery.ReadinessFor(setup.Solver3D).FirstOrDefault(r => !r.Proceeds) is { } blocked)
-            {
-                var unavailable = EmDiagnostics.SolverUnavailable(blocked.Name, blocked.Refusal!);
-                return new EmRunResult(EmRunStatus.Refused, null, null, null, null, null,
-                    unavailable.Render(), warnings, Diagnostic: unavailable);
-            }
-
-            var d = EmDiagnostics.ThreeDSolverNotBuilt(setup.Solver3D.ToString());
-            return new EmRunResult(EmRunStatus.Refused, null, null, null, null, null,
-                d.Render(), warnings, Diagnostic: d);
-        }
+            return CircuitRF.Design.Em3d.Em3dRunService.Run(setup, source, resultsRoot, ct, control, maxCores);
 
         // ── A .cem WRITTEN BEFORE THE TYPE MOVED TO THE DRAWING ─────────────────────────────────
         //

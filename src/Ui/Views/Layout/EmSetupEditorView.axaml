@@ -452,6 +452,72 @@
                      Left is the CHOICE (what to run, and why that kernel); right is the OUTCOME
                      (what the geometry resolved to, and everything the extraction had to say).
                      ColumnSpacing is the padding between them. -->
+                <!-- ── brief-em3d-7 R-em3d7-6b: which solver, and Palace's own section ─────────
+                     Every control here writes a .cem field through the same undoable commit as the
+                     rest of the panel (R-em-11). A blank Palace box is that field's default, shown
+                     as its placeholder, and the defaults are PalaceSettings.Default — the ones the
+                     writers read. -->
+                <Border Classes="group">
+                  <StackPanel Spacing="2">
+                    <TextBlock Classes="grouphdr" Text="Solver"/>
+                    <ComboBox Classes="cell" MaxWidth="220" HorizontalAlignment="Left"
+                              ItemsSource="{x:Static em:EmSetupEditorViewModel.Solver3DChoices}"
+                              SelectedItem="{Binding ViewModel.Solver3DChoice}"/>
+                    <TextBlock Classes="colhdr" TextWrapping="Wrap" Margin="0,3,0,0"
+                               Text="{Binding ViewModel.Solver3DDescription}"/>
+                    <Grid IsVisible="{Binding ViewModel.IsPalaceSetup}" Margin="0,6,0,0"
+                          ColumnDefinitions="Auto,90" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
+                          ColumnSpacing="8" RowSpacing="2" HorizontalAlignment="Left">
+                        <TextBlock Grid.Row="0" Grid.Column="0" Classes="colhdr" Text="Largest element (λ)" VerticalAlignment="Center"/>
+                        <TextBox   Grid.Row="0" Grid.Column="1" Classes="num" Tag="Palace.MaxElementWavelengths"
+                                   Text="{Binding ViewModel.PalaceMaxElementWavelengthsText}"
+                                   PlaceholderText="{x:Static em:EmSetupEditorViewModel.PalaceDefaultMaxElementWavelengths}"
+                                   LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                   ToolTip.Tip="The largest element in each material, as a fraction of the wavelength in that material at the sweep's top frequency. Only the starting mesh: Palace's adaptive refinement adds elements where its error estimate says the answer needs them."/>
+                        <TextBlock Grid.Row="1" Grid.Column="0" Classes="colhdr" Text="At metal and ports" VerticalAlignment="Center"/>
+                        <TextBox   Grid.Row="1" Grid.Column="1" Classes="num" Tag="Palace.EdgeRefinement"
+                                   Text="{Binding ViewModel.PalaceEdgeRefinementText}"
+                                   PlaceholderText="{x:Static em:EmSetupEditorViewModel.PalaceDefaultEdgeRefinement}"
+                                   LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                   ToolTip.Tip="The element size at conductor surfaces, sheets and port sheets, as a fraction of the smallest largest-element size above."/>
+                        <TextBlock Grid.Row="2" Grid.Column="0" Classes="colhdr" Text="Grading" VerticalAlignment="Center"/>
+                        <TextBox   Grid.Row="2" Grid.Column="1" Classes="num" Tag="Palace.Grading"
+                                   Text="{Binding ViewModel.PalaceGradingText}"
+                                   PlaceholderText="{x:Static em:EmSetupEditorViewModel.PalaceDefaultGrading}"
+                                   LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                   ToolTip.Tip="How fast elements grow away from metal and ports: the ratio between neighbouring element sizes. Greater than 1."/>
+                        <TextBlock Grid.Row="3" Grid.Column="0" Classes="colhdr" Text="Element order" VerticalAlignment="Center"/>
+                        <TextBox   Grid.Row="3" Grid.Column="1" Classes="num" Tag="Palace.ElementOrder"
+                                   Text="{Binding ViewModel.PalaceElementOrderText}"
+                                   PlaceholderText="{x:Static em:EmSetupEditorViewModel.PalaceDefaultElementOrder}"
+                                   LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                   ToolTip.Tip="The finite-element order Palace solves with. 2 is accurate on a coarser mesh; 1 is several times cheaper per element and needs a finer one."/>
+                        <TextBlock Grid.Row="4" Grid.Column="0" Classes="colhdr" Text="Refinement tolerance" VerticalAlignment="Center"/>
+                        <TextBox   Grid.Row="4" Grid.Column="1" Classes="num" Tag="Palace.AdaptiveTol"
+                                   Text="{Binding ViewModel.PalaceAdaptiveTolText}"
+                                   PlaceholderText="{x:Static em:EmSetupEditorViewModel.PalaceDefaultAdaptiveTol}"
+                                   LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                   ToolTip.Tip="The relative error at which Palace stops refining the mesh."/>
+                        <TextBlock Grid.Row="5" Grid.Column="0" Classes="colhdr" Text="Refinement passes" VerticalAlignment="Center"/>
+                        <TextBox   Grid.Row="5" Grid.Column="1" Classes="num" Tag="Palace.AdaptiveMaxIterations"
+                                   Text="{Binding ViewModel.PalaceAdaptiveMaxIterationsText}"
+                                   PlaceholderText="{x:Static em:EmSetupEditorViewModel.PalaceDefaultAdaptiveMaxIterations}"
+                                   LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                   ToolTip.Tip="The most adaptive refinement passes. 0 solves the starting mesh only. Each pass costs a solve and grows memory."/>
+                        <TextBlock Grid.Row="6" Grid.Column="0" Classes="colhdr" Text="Sweep tolerance" VerticalAlignment="Center"/>
+                        <TextBox   Grid.Row="6" Grid.Column="1" Classes="num" Tag="Palace.SweepAdaptiveTol"
+                                   Text="{Binding ViewModel.PalaceSweepAdaptiveTolText}"
+                                   PlaceholderText="{x:Static em:EmSetupEditorViewModel.PalaceDefaultSweepAdaptiveTol}"
+                                   LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                   ToolTip.Tip="The error tolerance of Palace's adaptive frequency sweep, which solves a few frequencies and interpolates the rest. 0 solves every frequency."/>
+                        <SelectableTextBlock Grid.Row="7" Grid.Column="0" Grid.ColumnSpan="2" FontSize="10" TextWrapping="Wrap"
+                                   Foreground="{DynamicResource CrfWarningBrush}"
+                                   Text="{Binding ViewModel.PalaceFieldError}"
+                                   IsVisible="{Binding ViewModel.PalaceFieldError, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+                    </Grid>
+                  </StackPanel>
+                </Border>
+
                 <Border Classes="group">
                   <StackPanel Spacing="2">
                 <TextBlock Classes="grouphdr" Text="Analysis"/>

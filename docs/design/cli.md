@@ -494,6 +494,27 @@ With no workspace above the `.cem`, `results/` is created beside the `.cem` itse
 fallback there is the scratch recovery session, which does not exist headlessly; using the `.cem`'s
 directory reuses the fallback its `LayoutRef` already has rather than inventing a third rule.
 
+### 8.2a A 3D setup: `--solver`, and the solver in the path (brief-em3d-7)
+
+```
+circuitrf em via.cem                     # Solver3D: Palace → results/via.palace.s2p (+ via.palace_em.npy)
+circuitrf em via.cem --solver palace     # this run only; the .cem is not rewritten
+```
+
+**The verb is `em`** (owner decision D1): a 3D setup is a `.cem`, and a sibling verb would split one
+format's runs in two. `--solver palace|openems` overrides the setup's `Solver3D` in memory for this run
+and never writes it back; any other value is refused (`cli.em.unknown-solver`). A 3D setup goes through
+the same door — `EmRunService.Run` hands it to `Em3dRunService`, and nothing else calls that — so the
+exit codes are this verb's own: a refusal (a missing or unvalidated solver, a 3D problem that cannot be
+built, a mesh whose entity check fails) exits 1 with the run service's sentence, a cancellation 130.
+
+**A 3D result carries its solver in its name** (em-3d.md §4.5), so running a second solver on one setup
+never overwrites the first: `<key>.palace.sNp`, the `.npy` key `<key>.palace_em`, and a run directory
+`results/<key>.palace/` that is **kept** — the `.geo` script, the mesh and its SHA-256, `groups.json`
+(named object → Palace attribute), `entities.txt`, `config.json`, both programs' logs and Palace's
+`postpro/` — so a run can be repeated by hand. An unchanged script reuses the mesh. `-o` still moves
+the Touchstone only. **A planar result's path does not move by one byte.**
+
 ### 8.3 What goes where, and the three lists
 
 §3.1's split, applied: the summary and the written file paths are **stdout**; progress, the resolved

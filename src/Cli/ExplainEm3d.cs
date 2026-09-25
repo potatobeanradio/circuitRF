@@ -38,7 +38,7 @@ internal static class ExplainEm3d
         var solvers  = Solvers(setup.Solver3D);
 
         if (src.Generated?.Problem is not { } p)
-            return new ExplainEm3dJson(solver, "m", 1.0, [], null, [], [], [], [], null, Size(), solvers, notes, warnings,
+            return new ExplainEm3dJson(solver, "m", 1.0, [], null, [], [], [], [], null, Size(null, setup), solvers, notes, warnings,
                                        src.Refusal ?? "the 3D problem could not be built.");
         var g = src.Generated;
 
@@ -103,7 +103,7 @@ internal static class ExplainEm3d
         ], []);
 
         return new ExplainEm3dJson(solver, "m", 1.0, guidance, temperature, materials, solids, wires, ports, airBox,
-                                   Size(), solvers, notes, warnings, null);
+                                   Size(p, setup), solvers, notes, warnings, null);
     }
 
     /// <summary>
@@ -130,22 +130,41 @@ internal static class ExplainEm3d
                r.Rejected, r.Proceeds, r.Refusal)).ToList();
 
     /// <summary>
-    /// R-em3d5-3c. <b>Neither backend's size can be computed in this build, and each row says why
-    /// rather than printing a zero.</b> Palace's estimate divides each meshed region's volume by an
-    /// initial element volume (<see cref="Em3dSizeEstimate.Palace"/>), and the setup's Palace section
-    /// does not yet carry the initial mesh-size settings that would give one. openEMS's count is exact
-    /// and comes from its grid generator, which does not exist yet. Memory is printed beside a count and
-    /// never without one.
+    /// R-em3d5-3c. Each row says which kind of number it is, and an unavailable one says why rather than
+    /// printing a zero. Palace's is an ESTIMATE: each meshed region's volume divided by the volume of an
+    /// element at the Palace section's largest size for its material (brief-em3d-7's
+    /// <see cref="GmshGeoWriter.MaxElementSizeM"/>, the formula the script itself uses). openEMS's count
+    /// is exact and comes from its grid generator, which does not exist yet. Memory is printed beside a
+    /// count and never without one.
     /// </summary>
-    private static IReadOnlyList<Em3dSizeJson> Size() =>
-    [
-        new("palace", "unavailable", null, null, null, null,
-            "no estimate yet: this build's Palace section has no initial mesh-size settings to divide the " +
-            "meshed volumes by. When it does, the figure is an estimate that adaptive refinement will grow, " +
-            "and the run's first line reports the real initial count. No mesher is run to get it."),
-        new("openems", "unavailable", null, null, null, null,
-            "grid not yet available in this build."),
-    ];
+    private static IReadOnlyList<Em3dSizeJson> Size(Em3dProblem? p, EmSetup setup)
+    {
+        var settings = PalaceSettings.Resolve(setup.Palace);
+        Em3dSizeJson palace;
+        if (p is null)
+            palace = new("palace", "unavailable", null, null, null, null, "there is no 3D problem to size.");
+        else if (settings.ElementOrder is not (1 or 2))
+            palace = new("palace", "unavailable", null, null, null, null,
+                $"no estimate at element order {settings.ElementOrder}: the unknowns per element are measured at " +
+                "orders 1 and 2 only.");
+        else
+        {
+            var byName = p.Materials.ToDictionary(m => m.Name, StringComparer.Ordinal);
+            var est = Em3dSizeEstimate.Palace(
+                p, s => GmshGeoWriter.MaxElementSizeM(byName[s.Material], p.Frequency.StopHz, settings), settings.ElementOrder);
+            palace = new("palace", "estimate", est.Tetrahedra, est.Unknowns, null, est.MemoryBytes,
+                $"about {est.Tetrahedra:N0} elements and {est.Unknowns:N0} unknowns at order {est.Order}" +
+                (est.MemoryBytes is { } b ? $", about {b / 1e9:0.#} GB" : "") +
+                ", from each meshed region's volume at its largest element. The refinement at " +
+                "conductors and ports and Palace's adaptive passes add to it, and the run reports the real " +
+                "counts. No mesher is run to get it.");
+        }
+        return
+        [
+            palace,
+            new("openems", "unavailable", null, null, null, null, "grid not yet available in this build."),
+        ];
+    }
 
     // ── the human report ─────────────────────────────────────────────────────────────────────
 

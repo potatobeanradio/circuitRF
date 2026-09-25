@@ -665,7 +665,10 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     /// yet. <c>EmRunService.RunPlanar</c> and <c>Preview</c> order the two the same way.</para>
     /// </summary>
     public string? BlockingReason =>
-        SelectedKernel == EmAnalysisKind.Planar
+        // brief-em3d-7 — a 3D setup is not refused by the planar extractors it does not use; its run
+        // reports its own refusals (the solver checks, the 3D problem, the mesh's entity check).
+        Is3DSetup ? null
+        : SelectedKernel == EmAnalysisKind.Planar
             ? PlanarExtractionRefusal ?? PortRefusal ?? KernelRefusal ?? PlanarBudgetRefusal
             : InternalPortOnTheWrongKernel ?? ExtractionRefusal ?? KernelRefusal;
 
@@ -688,9 +691,10 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
 
     public bool CanRun =>
         !IsBusy &&
-        (SelectedKernel == EmAnalysisKind.Planar
+        (Is3DSetup ||
+         (SelectedKernel == EmAnalysisKind.Planar
             ? PlanarProblem is not null && BlockingReason is null
-            : Problem is not null && BlockingReason is null);
+            : Problem is not null && BlockingReason is null));
 
     // ── Frequency (R-em-11: reuse FrequencySpecViewModel, never a second frequency editor) ─────
 
@@ -1688,6 +1692,8 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         RadiationPattern     = Working.RadiationPattern;
         ReferenceInputPowerDbm = Working.ReferenceInputPowerDbm;
         AnalysisKind = Working.AnalysisKind;
+        SyncSolver3DFields();
+        _suppressCommit = true;
         SignalLayerChoice = Working.SignalStackupLayerName is { Length: > 0 } s ? s : InferSignalLayer;
         SyncReturnPlaneChoice();
         SnpOutputPathText = Working.SnpOutputPathOverride;

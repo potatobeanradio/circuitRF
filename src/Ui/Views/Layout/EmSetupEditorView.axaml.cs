@@ -186,6 +186,9 @@ public partial class EmSetupEditorView : UserControl
         {
             case "Port1Z0": vm.CommitPortZ0(1); break;
             case "Port2Z0": vm.CommitPortZ0(2); break;
+            case { } palace when palace.StartsWith("Palace.", StringComparison.Ordinal):
+                vm.CommitPalaceField(palace);
+                break;
             default:        vm.CommitMeshField(tag); break;
         }
     }

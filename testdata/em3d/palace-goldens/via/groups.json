@@ -1,0 +1,153 @@
+{
+  "Generator": "circuitRF brief-em3d-7: the mapping from named objects to Palace attributes",
+  "LengthUnitM": 1E-06,
+  "Groups": [
+    {
+      "Attribute": 1,
+      "Name": "Dielectric 2",
+      "Dimension": 3,
+      "Kind": "Volume",
+      "Expected": 1,
+      "Material": "Dielectric 2"
+    },
+    {
+      "Attribute": 2,
+      "Name": "Dielectric 1",
+      "Dimension": 3,
+      "Kind": "Volume",
+      "Expected": 1,
+      "Material": "Dielectric 1"
+    },
+    {
+      "Attribute": 3,
+      "Name": "air",
+      "Dimension": 3,
+      "Kind": "Volume",
+      "Expected": 1,
+      "Material": "Air"
+    },
+    {
+      "Attribute": 4,
+      "Name": "Bottom Copper/1",
+      "Dimension": 2,
+      "Kind": "Conductor",
+      "Expected": 1,
+      "AtLeast": true,
+      "Material": "Bottom Copper"
+    },
+    {
+      "Attribute": 5,
+      "Name": "Ground Plane/1",
+      "Dimension": 2,
+      "Kind": "Conductor",
+      "Expected": 1,
+      "AtLeast": true,
+      "Material": "Ground Plane"
+    },
+    {
+      "Attribute": 6,
+      "Name": "Top Copper/1",
+      "Dimension": 2,
+      "Kind": "Conductor",
+      "Expected": 1,
+      "AtLeast": true,
+      "Material": "Top Copper"
+    },
+    {
+      "Attribute": 7,
+      "Name": "via/1",
+      "Dimension": 2,
+      "Kind": "Conductor",
+      "Expected": 1,
+      "AtLeast": true,
+      "Material": "Signal Via"
+    },
+    {
+      "Attribute": 8,
+      "Name": "via/1/fill",
+      "Dimension": 3,
+      "Kind": "Volume",
+      "Expected": 1,
+      "Material": "Air"
+    },
+    {
+      "Attribute": 9,
+      "Name": "background",
+      "Dimension": 3,
+      "Kind": "Background",
+      "Expected": 0,
+      "AtLeast": true,
+      "Material": "Air"
+    },
+    {
+      "Attribute": 10,
+      "Name": "port/1",
+      "Dimension": 2,
+      "Kind": "Port",
+      "Expected": 1,
+      "Port": 1
+    },
+    {
+      "Attribute": 11,
+      "Name": "port/2",
+      "Dimension": 2,
+      "Kind": "Port",
+      "Expected": 1,
+      "Port": 2
+    },
+    {
+      "Attribute": 12,
+      "Name": "airbox/xmin",
+      "Dimension": 2,
+      "Kind": "Face",
+      "Expected": 1,
+      "AtLeast": true,
+      "Boundary": "Absorbing"
+    },
+    {
+      "Attribute": 13,
+      "Name": "airbox/xmax",
+      "Dimension": 2,
+      "Kind": "Face",
+      "Expected": 1,
+      "AtLeast": true,
+      "Boundary": "Absorbing"
+    },
+    {
+      "Attribute": 14,
+      "Name": "airbox/ymin",
+      "Dimension": 2,
+      "Kind": "Face",
+      "Expected": 1,
+      "AtLeast": true,
+      "Boundary": "Absorbing"
+    },
+    {
+      "Attribute": 15,
+      "Name": "airbox/ymax",
+      "Dimension": 2,
+      "Kind": "Face",
+      "Expected": 1,
+      "AtLeast": true,
+      "Boundary": "Absorbing"
+    },
+    {
+      "Attribute": 16,
+      "Name": "airbox/zmin",
+      "Dimension": 2,
+      "Kind": "Face",
+      "Expected": 1,
+      "AtLeast": true,
+      "Boundary": "Absorbing"
+    },
+    {
+      "Attribute": 17,
+      "Name": "airbox/zmax",
+      "Dimension": 2,
+      "Kind": "Face",
+      "Expected": 1,
+      "AtLeast": true,
+      "Boundary": "Absorbing"
+    }
+  ]
+}

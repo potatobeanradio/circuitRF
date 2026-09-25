@@ -87,6 +87,22 @@ public static class EmSnpProvenance
                        GeometryHash(problem), MeshHash(mesh), PortHash(ports),
                        setupName, layoutRef, when, caveats, PlanarKernel.ModelRevision, portMap);
 
+    /// <summary>
+    /// brief-em3d-7 R-em3d7-5d — a 3D run's stamp: the planar one EXTENDED, not a second header format.
+    /// The three hashes cover what the solver was handed (the geometry script, the solver section, the
+    /// ports); the model line names the solver and its version; <paramref name="solverLines"/> carry
+    /// the mesh it started and finished on, the adaptive passes and the operating temperature, which
+    /// the notes say and the file must say too.
+    /// </summary>
+    public static IReadOnlyList<string> BuildHeader3D(
+        string solverName, string geometryHash, string meshHash, string portHash, string solverVersion,
+        IReadOnlyList<string> solverLines, string setupName, string layoutRef, DateTimeOffset when)
+        => BuildHeader(solverName, geometryHash, meshHash, portHash, setupName, layoutRef, when,
+                       caveats: null, modelRevision: solverVersion, portMap: solverLines);
+
+    /// <summary>The same SHA-256 the planar stamps use, over text a caller has already made canonical.</summary>
+    public static string HashText(string canonical) => Sha(canonical);
+
     private static IReadOnlyList<string> BuildHeader(
         string kernelName, string geometry, string mesh, string ports,
         string setupName, string layoutRef, DateTimeOffset when,

@@ -170,9 +170,15 @@ public sealed class Em3dRenderExplainTests(ITestOutputHelper output) : IDisposab
         Assert.Equal(["xmin", "xmax", "ymin", "ymax", "zmin", "zmax"], report.AirBox!.Faces.Select(f => f.Face));
         Assert.Equal(("m", 1.0), (report.LengthUnit, report.LengthScale));
 
-        // Round vias are §4.3 row 4's; the size rows say why they are empty rather than saying 0.
+        // Round vias are §4.3 row 4's. Palace's size is an estimate from the Palace section's mesh
+        // sizes (brief-em3d-7); openEMS's row says why it is empty rather than saying 0.
         Assert.Contains(report.Guidance, g => g.Row == 4);
-        Assert.All(report.Size, z => { Assert.Equal("unavailable", z.Kind); Assert.Null(z.Elements); });
+        var palaceSize = report.Size.Single(z => z.Backend == "palace");
+        Assert.Equal("estimate", palaceSize.Kind);
+        Assert.True(palaceSize.Elements > 0 && palaceSize.Unknowns > palaceSize.Elements);
+        var openEmsSize = report.Size.Single(z => z.Backend == "openems");
+        Assert.Equal("unavailable", openEmsSize.Kind);
+        Assert.Null(openEmsSize.Elements);
 
         // The Palace estimate the row will carry counts meshed regions only: a conductor is a hole.
         var estimate = Em3dSizeEstimate.Palace(src.Problem, _ => 100 * Um, 2);
@@ -192,8 +198,9 @@ public sealed class Em3dRenderExplainTests(ITestOutputHelper output) : IDisposab
         long before = Em3dProcessLauncher.SolvesStarted;
         Assert.Equal(0, InProcessCli("explain", ws.Cem3d));
         Assert.Equal(0, InProcessCli("render", ws.Cem3d, "-o", Path.Combine(_root, "p.png"), "--size", "200x150", "--iso"));
-        Assert.Equal(0, before);
-        Assert.Equal(0, Em3dProcessLauncher.SolvesStarted);
+        // A delta, not zero: brief-em3d-7's gates start Gmsh in this test process, and share this
+        // class's collection so none can run in between.
+        Assert.Equal(before, Em3dProcessLauncher.SolvesStarted);
     }
 
     // ── 7. Mitred sweep joints ──────────────────────────────────────────────────────────────────

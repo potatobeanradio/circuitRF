@@ -421,6 +421,38 @@ workspace and let each schematic pick up its new Touchstone.
 The verb, its options, the three message lists, the exit codes and a worked example from an empty
 folder are in [The Command Line](cli.html#em).
 
+## Solver — planar or 3D {#solver-3d}
+
+The **Solver** group at the top of the panel picks who solves the setup: circuitRF's own planar and
+cross-section kernels (the default), or a 3D solver — **Palace** (finite elements) or openEMS. A 3D
+setup builds a 3D model from the layout, its technology and any bond wires, and the planar settings
+below are kept but not read. openEMS is not runnable in this version; choosing it is refused at
+Simulate with a sentence saying so.
+
+With Palace chosen the panel shows Palace's own settings. **A blank box is the default shown in it**, and
+every box is a field of the `.cem` — nothing here lives only in the panel.
+
+| Setting | `.cem` field | Default | What it does |
+|---|---|---|---|
+| Largest element (λ) | `MaxElementWavelengths` | 0.1 | The largest element in each material, as a fraction of the wavelength in that material at the top frequency |
+| At metal and ports | `EdgeRefinement` | 0.2 | The element size at conductors and sheets, as a fraction of the smallest size above. Port sheets are always at least four elements across their smaller side |
+| Grading | `Grading` | 1.3 | How fast elements grow away from metal and ports |
+| Element order | `ElementOrder` | 2 | Palace's finite-element order |
+| Refinement tolerance | `AdaptiveTol` | 0.01 | The error at which Palace stops refining the mesh |
+| Refinement passes | `AdaptiveMaxIterations` | 2 | The most refinement passes; 0 solves the starting mesh only. Each pass costs a solve and memory |
+| Sweep tolerance | `SweepAdaptiveTol` | 0.0001 | The tolerance of Palace's adaptive frequency sweep; 0 solves every frequency |
+
+The settings above size only the **starting** mesh; Palace's adaptive refinement adds elements where its
+error estimate says the answer needs them. Simulate then runs Gmsh on the model and Palace on the mesh,
+using the same *Cores* setting as the planar solver (as MPI processes). A 3D result is named after its
+solver — `results/<name>.palace.sNp` and `<name>.palace_em.npy` — so it never replaces a planar or an
+openEMS result, and the folder `results/<name>.palace/` holds everything the run made (the geometry
+script, the mesh, the Palace configuration, both programs' logs). An unchanged model reuses its mesh.
+
+Before it solves, circuitRF checks that every surface in the mesh belongs to exactly the object it was
+made for — each port sheet, each conductor, each face of the air box. **Any mismatch refuses the run,
+naming the object**; a boundary is never guessed onto a face.
+
 ## Installing the 3D solvers by hand {#install-3d-solvers}
 
 A 3D setup (one whose `Solver3D` names Palace or openEMS) runs a solver circuitRF does not include. You
@@ -465,7 +497,10 @@ It took three corrections, each of which fails with a message that names the wro
 State the variants in the spec (`+superlu-dist+sundials+slepc+libxsmm+gslib~arpack`) — without them
 Spack silently turned three of Palace's defaults off. With the environment loaded, `which palace`
 prints the launcher; name that path in Settings ▸ 3D EM, since the environment is not loaded when
-circuitRF starts. Other platforms: *not yet verified* — [Palace](https://github.com/awslabs/palace).
+circuitRF starts. Palace runs on more than one core through MPI's `mpirun`, which circuitRF looks for
+beside Palace and on `PATH`; in a Spack install it is in the MPI package's own folder, so name it with
+the environment variable `CIRCUITRF_MPIRUN` (`which mpirun` with the environment loaded). Without one,
+Palace runs as a single process and the run's notes say so. Other platforms: *not yet verified* — see Palace's own documentation.
 **Palace does not run natively on Windows**; openEMS does.
 
 <div class="callout note">
