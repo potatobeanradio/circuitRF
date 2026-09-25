@@ -17,6 +17,11 @@
 //
 // and lands by the rule below with the token `openems`.
 //
+// Both (brief-em3d-10) generates the problem ONCE, lowers it for both backends before either starts,
+// runs Palace and then openEMS, and writes Em3dComparison's DataSet (src/Engine) beside the two
+// results as `<key>.compare_em.npy`. See "The run" below for the three phases and why the refusals
+// all come first.
+//
 // WHERE RESULTS LAND (R-em3d7-5, em-3d.md §4.5 — this brief is the first backend built, so it owns the
 // rule and brief 9 reuses it): the solver is part of a 3D result's name, so running a second solver on
 // one setup never overwrites the first. `<key>.palace.sNp`, the `.npy` key `<key>.palace` +
@@ -71,6 +76,49 @@ public static class Em3dRunService
             ? EmRunService.ResolveSnpBasePath(resultsRoot, setup)
             : Path.Combine(resultsRoot, ResultKey(setup, solver));
 
+    // ── The run ──────────────────────────────────────────────────────────────────────────────
+    //
+    // Three phases, and only the last starts a process:
+    //
+    //   1. discovery (brief 6), then each backend's settings
+    //   2. the problem, generated ONCE (R-em3d10-1a), then each backend's lowering — Palace's .geo
+    //      and configuration, openEMS's grid and CSXCAD model
+    //   3. execution: Gmsh + Palace, or openEMS once per port — or both, Palace first (R-em3d10-1c)
+    //
+    // Everything a backend can refuse is refused in 1 or 2, so a setup asking for both solvers learns
+    // that one of them cannot run before the other has spent half an hour (R-em3d10-4b), and is told
+    // the flag that runs the one that can. Phase 3 is where R-em3d10-4a applies: a solver failing
+    // THERE leaves the other's result written.
+
+    /// <summary>How many times a run in this process has generated its 3D problem — R-em3d10-1a's
+    /// counter. A run through both solvers generates once and hands the one problem to both.</summary>
+    public static long ProblemsGenerated => Interlocked.Read(ref _problemsGenerated);
+    private static long _problemsGenerated;
+
+    /// <summary>The token a both-run's comparison adds to the result stem (R-em3d10-2c).</summary>
+    public const string CompareToken = "compare";
+
+    /// <summary>R-em3d10-2c — the comparison's key in <c>results/</c>: <c>&lt;key&gt;.compare_em</c>.</summary>
+    public static string CompareNpyKey(EmSetup setup)
+        => EmRunService.ResolveResultKey(setup) + "." + CompareToken + EmRunService.NpyKeySuffix;
+
+    /// <summary>
+    /// R-em3d10-5 — one solver's Touchstone stem in a both-run. <c>-o base</c> gives
+    /// <c>base.palace</c> and <c>base.openems</c>, since one path cannot hold two results; with no
+    /// <c>-o</c> it is the single-solver stem, <c>results/&lt;key&gt;.&lt;solver&gt;</c>.
+    /// </summary>
+    public static string BothSnpBasePath(string resultsRoot, EmSetup setup, Em3dSolver solver)
+        => setup.SnpOutputPathOverride is { Length: > 0 }
+            ? EmRunService.ResolveSnpBasePath(resultsRoot, setup) + "." + SolverToken(solver)
+            : Path.Combine(resultsRoot, ResultKey(setup, solver));
+
+    /// <summary>R-em3d10-2c/5 — where a both-run's comparison lands: <c>base.compare_em.npy</c> with
+    /// <c>-o base</c>, <c>results/&lt;key&gt;.compare_em.npy</c> beside the two results otherwise.</summary>
+    public static string ComparePath(string resultsRoot, EmSetup setup)
+        => setup.SnpOutputPathOverride is { Length: > 0 }
+            ? EmRunService.ResolveSnpBasePath(resultsRoot, setup) + "." + CompareToken + EmRunService.NpyKeySuffix + ".npy"
+            : Path.Combine(resultsRoot, CompareNpyKey(setup) + ".npy");
+
     /// <summary>
     /// The run. Only <see cref="EmRunService.Run"/> calls this. <paramref name="source"/> has a
     /// technology — the door checked it.
@@ -78,83 +126,254 @@ public static class Em3dRunService
     internal static EmRunResult Run(EmSetup setup, EmLayoutSource source, string resultsRoot,
                                     CancellationToken ct, RunControl? control, int? maxCores)
     {
-        var warnings = new List<string>();
-        var notes    = new List<string>();
-        var errors   = new List<string>();
-
-        EmRunResult Refused(Diagnostic d) =>
-            new(EmRunStatus.Refused, null, null, null, null, null, d.Render(), warnings,
-                Notes: notes, Errors: errors, Diagnostic: d);
-        EmRunResult Failed(Diagnostic d) =>
-            new(EmRunStatus.EngineError, null, null, null, null, null, d.Render(), warnings,
-                Notes: notes, Errors: errors, Diagnostic: d);
-        EmRunResult Cancelled()
-        {
-            var c = EmDiagnostics.Cancelled();
-            return new(EmRunStatus.Cancelled, null, null, null, null, null, c.Render(), warnings,
-                       Notes: notes, Errors: errors, Diagnostic: c);
-        }
+        var log = new RunLog();
+        var solver = setup.Solver3D;
+        bool both = solver == Em3dSolver.Both;
 
         // ── brief 6: every program found, validated and probed, before anything else ─────────
-        var readiness = SolverDiscovery.ReadinessFor(setup.Solver3D);
+        var readiness = SolverDiscovery.ReadinessFor(solver);
         if (readiness.FirstOrDefault(r => !r.Proceeds) is { } blocked)
-            return Refused(EmDiagnostics.SolverUnavailable(blocked.Name, blocked.Refusal!));
-        if (setup.Solver3D == Em3dSolver.OpenEms)
-            return RunOpenEms(setup, source, resultsRoot, ct, control, maxCores, readiness);
-        if (setup.Solver3D != Em3dSolver.Palace)
-            return Refused(EmDiagnostics.ThreeDSolverNotBuilt(setup.Solver3D.ToString()));
+        {
+            var unavailable = EmDiagnostics.SolverUnavailable(blocked.Name, blocked.Refusal!);
+            if (!both) return log.Result(EmRunStatus.Refused, unavailable);
+            bool palaceReady  = readiness.Where(r => r.Tool is SolverTool.Palace or SolverTool.Gmsh).All(r => r.Proceeds);
+            bool openEmsReady = readiness.Where(r => r.Tool == SolverTool.OpenEms).All(r => r.Proceeds);
+            return log.Result(EmRunStatus.Refused, EmDiagnostics.BothRefusedBeforeWork(
+                string.Join(" ", readiness.Where(r => !r.Proceeds).Select(r => r.Refusal)),
+                palaceReady ? Remedy(Em3dSolver.Palace) : openEmsReady ? Remedy(Em3dSolver.OpenEms) : ""));
+        }
+        bool palace  = solver is Em3dSolver.Palace or Em3dSolver.Both;
+        bool openEms = solver is Em3dSolver.OpenEms or Em3dSolver.Both;
+        if (!palace && !openEms) return log.Result(EmRunStatus.Refused, EmDiagnostics.ThreeDSolverNotBuilt(solver.ToString()));
 
-        var palace = readiness.Single(r => r.Tool == SolverTool.Palace).Installation!;
-        var gmsh   = readiness.Single(r => r.Tool == SolverTool.Gmsh).Installation!;
-        notes.Add($"Solver: Palace {palace.DescribeVersion()} at {palace.Path}; mesher: Gmsh " +
-                  $"{gmsh.DescribeVersion()} at {gmsh.Path}.");
+        // ── each backend's settings ───────────────────────────────────────────────────────────
+        Stop? palaceStop = null, openEmsStop = null;
+        PalaceSettings? palaceSettings = null;
+        OpenEmsGridSettings? gridSettings = null;
+        OpenEmsRunSettings? runSettings = null;
+        if (palace)
+        {
+            var p = readiness.Single(r => r.Tool == SolverTool.Palace).Installation!;
+            var g = readiness.Single(r => r.Tool == SolverTool.Gmsh).Installation!;
+            log.Notes.Add($"Solver: Palace {p.DescribeVersion()} at {p.Path}; mesher: Gmsh {g.DescribeVersion()} at {g.Path}.");
+            palaceSettings = PalaceSettings.Resolve(setup.Palace);
+            if (palaceSettings.Problems() is { Count: > 0 } bad)
+                palaceStop = new(EmRunStatus.Refused, EmDiagnostics.Forwarded("palace-settings", string.Join(" ", bad)));
+        }
+        if (openEms)
+        {
+            var o = readiness.Single(r => r.Tool == SolverTool.OpenEms).Installation!;
+            log.Notes.Add($"Solver: openEMS {o.DescribeVersion()} at {o.Path}.");
+            gridSettings = CemOpenEms.ResolveGrid(setup.OpenEms);
+            runSettings  = CemOpenEms.ResolveRun(setup.OpenEms);
+            if (gridSettings.Problems().Concat(runSettings.Problems()).ToList() is { Count: > 0 } bad)
+                openEmsStop = new(EmRunStatus.Refused, EmDiagnostics.Forwarded("openems-settings", string.Join(" ", bad)));
+        }
+        // A single solver stops at its first refusal. Both go on while either could still run, so the
+        // refusal can say whether the other one would have.
+        if ((!both || (palaceStop is not null && openEmsStop is not null)) && (palaceStop ?? openEmsStop) is { } early)
+            return both ? BothRefused(palaceStop, openEmsStop, log) : log.Result(early.Status, early.Diagnostic);
 
-        var settings = PalaceSettings.Resolve(setup.Palace);
-        if (settings.Problems() is { Count: > 0 } bad)
-            return Refused(EmDiagnostics.Forwarded("palace-settings", string.Join(" ", bad)));
-
-        // ── brief 3: the problem ──────────────────────────────────────────────────────────────
+        // ── brief 3: the problem, once ────────────────────────────────────────────────────────
         control?.BeginStage("building the 3D problem");
+        Interlocked.Increment(ref _problemsGenerated);
         var generated = Em3dGenerator.Generate(setup, source, source.Technology!);
-        notes.AddRange(generated.Notes);
-        warnings.AddRange(generated.Warnings);
-        if (!generated.Ok) return Refused(EmDiagnostics.Forwarded("em3d-problem", generated.Refusal));
+        log.Notes.AddRange(generated.Notes);
+        log.Warnings.AddRange(generated.Warnings);
+        if (!generated.Ok) return log.Result(EmRunStatus.Refused, EmDiagnostics.Forwarded("em3d-problem", generated.Refusal));
         var problem = generated.Problem!;
         if (problem.Validate() is { Count: > 0 } invalid)
-            return Refused(EmDiagnostics.Forwarded("em3d-problem", string.Join(" ", invalid)));
+            return log.Result(EmRunStatus.Refused, EmDiagnostics.Forwarded("em3d-problem", string.Join(" ", invalid)));
 
-        // ── the lowering ──────────────────────────────────────────────────────────────────────
+        // ── each backend's lowering: no process yet ──────────────────────────────────────────
+        PalacePlan? palacePlan = null;
+        OpenEmsPlan? openEmsPlan = null;
+        if (palace && palaceStop is null)
+            palacePlan = PreparePalace(problem, palaceSettings!, readiness, log, out palaceStop);
+        if (openEms && openEmsStop is null)
+            openEmsPlan = PrepareOpenEms(problem, gridSettings!, runSettings!, readiness, control, log, out openEmsStop);
+        if ((palaceStop ?? openEmsStop) is { } refused)
+            return both ? BothRefused(palaceStop, openEmsStop, log) : log.Result(refused.Status, refused.Diagnostic);
+
+        // ── execution ─────────────────────────────────────────────────────────────────────────
+        if (solver == Em3dSolver.Palace)
+            return Single(ExecutePalace(palacePlan!, problem, setup, resultsRoot, SnpBasePath(resultsRoot, setup, Em3dSolver.Palace),
+                                        ct, control, maxCores, log), log);
+        if (solver == Em3dSolver.OpenEms)
+            return Single(ExecuteOpenEms(openEmsPlan!, problem, setup, resultsRoot, SnpBasePath(resultsRoot, setup, Em3dSolver.OpenEms),
+                                         ct, control, maxCores, log), log);
+        return RunBoth(palacePlan!, openEmsPlan!, problem, setup, resultsRoot, ct, control, maxCores, log);
+    }
+
+    /// <summary>
+    /// R-em3d10-1 — Palace, then openEMS, on the one problem; then the comparison. A failure of one
+    /// keeps the other's result (R-em3d10-4a); a cancellation keeps what had already finished and
+    /// writes nothing for what was running (R-em3d10-4c).
+    /// </summary>
+    private static EmRunResult RunBoth(PalacePlan palacePlan, OpenEmsPlan openEmsPlan, Em3dProblem problem, EmSetup setup,
+                                       string resultsRoot, CancellationToken ct, RunControl? control, int? maxCores, RunLog log)
+    {
+        log.Notes.Add("Both solvers run on the one 3D problem generated above, one after the other — Palace, then " +
+                      "openEMS — because each already uses every core.");
+
+        control?.BeginStage("Palace, the first of two solvers");
+        var p = ExecutePalace(palacePlan, problem, setup, resultsRoot, BothSnpBasePath(resultsRoot, setup, Em3dSolver.Palace),
+                              ct, control, maxCores, log);
+        if (p.Status == EmRunStatus.Cancelled) return log.Result(EmRunStatus.Cancelled, EmDiagnostics.Cancelled());
+
+        control?.BeginStage("openEMS, the second of two solvers");
+        var o = ExecuteOpenEms(openEmsPlan, problem, setup, resultsRoot, BothSnpBasePath(resultsRoot, setup, Em3dSolver.OpenEms),
+                               ct, control, maxCores, log);
+
+        var outputs = new List<EmRunOutput>();
+        foreach (var leg in new[] { p, o }.Where(l => l.Ok))
+        {
+            if (leg.SnpPath is { } snp) outputs.Add(new("touchstone", snp));
+            if (leg.NpyPath is { } npy) outputs.Add(new("npy", npy));
+        }
+
+        if (o.Status == EmRunStatus.Cancelled)
+            return log.Result(EmRunStatus.Cancelled,
+                              p.Ok ? EmDiagnostics.CancelledKeeping("openEMS", "Palace", Where(p)) : EmDiagnostics.Cancelled(),
+                              outputs);
+        if (!p.Ok && !o.Ok)
+            return log.Result(p.Status, EmDiagnostics.BothSolversFailed(p.Stop!.Render(), o.Stop!.Render()));
+        if (!p.Ok || !o.Ok)
+        {
+            var (bad, good) = p.Ok ? (o, p) : (p, o);
+            return log.Result(bad.Status, EmDiagnostics.OneSolverFailed(Name(bad.Solver), bad.Stop!.Render(), Name(good.Solver), Where(good)),
+                              outputs);
+        }
+
+        // ── the comparison (R-em3d10-2, 3) ────────────────────────────────────────────────────
+        var compared = Em3dComparison.Compare(p.Data!["S"], o.Data!["S"], problem, o.Facts!);
+        if (compared.Data is not { } data)
+            return log.Result(EmRunStatus.EngineError, EmDiagnostics.ComparisonRefused(compared.Refusal!), outputs);
+
+        log.Warnings.AddRange(compared.Warnings);
+        log.Notes.InsertRange(0, [compared.Summary!, .. compared.Notes]);     // the line a user reads first
+
+        string path = ComparePath(resultsRoot, setup);
+        string? written = null;
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            if (File.Exists(path)) File.Delete(path);                       // this file only, as ResultsWriter does
+            DataSetExporter.Export(data, path, ExportFormat.Npy);
+            written = Path.GetFullPath(path);
+            outputs.Add(new("npy", written));
+        }
+        catch (Exception e)
+        {
+            log.Errors.Add($"The comparison could not be written to '{path}': {e.Message}");
+        }
+
+        return new EmRunResult(EmRunStatus.Ok, data, null, null, written, null, null, log.Warnings,
+                               KernelName: $"{p.KernelName} and {o.KernelName}", Notes: log.Notes, Errors: log.Errors,
+                               Outputs: outputs);
+    }
+
+    private static string Name(Em3dSolver s) => s == Em3dSolver.Palace ? "Palace" : "openEMS";
+
+    /// <summary>Where a leg's result is, for a sentence naming it.</summary>
+    private static string Where(Leg leg)
+        => string.Join(" and ", new[] { leg.SnpPath, leg.NpyPath }.OfType<string>()) is { Length: > 0 } w
+            ? w : "(its files could not be written; the errors above say why)";
+
+    /// <summary>R-em3d10-4b's pointer to the solver that would run.</summary>
+    private static string Remedy(Em3dSolver ready)
+        => $" {Name(ready)} is ready: run it alone with `circuitrf em --solver {SolverToken(ready)}`, or set the setup's " +
+           $"Solver3D to {ready}.";
+
+    private static EmRunResult BothRefused(Stop? palace, Stop? openEms, RunLog log)
+    {
+        string text = string.Join(" ", new[] { palace, openEms }.OfType<Stop>().Select(s => s.Diagnostic.Render()));
+        string remedy = palace is null ? Remedy(Em3dSolver.Palace) : openEms is null ? Remedy(Em3dSolver.OpenEms) : "";
+        return log.Result((palace ?? openEms)!.Status, EmDiagnostics.BothRefusedBeforeWork(text, remedy));
+    }
+
+    private static EmRunResult Single(Leg leg, RunLog log)
+        => leg.Ok
+            ? new EmRunResult(EmRunStatus.Ok, leg.Data, null, null, leg.NpyPath, leg.SnpPath, null, log.Warnings,
+                              Notes: log.Notes, Errors: log.Errors, KernelName: leg.KernelName)
+            : log.Result(leg.Status, leg.Stop!);
+
+    /// <summary>Why a phase did not go on, and which status says so.</summary>
+    private sealed record Stop(EmRunStatus Status, Diagnostic Diagnostic);
+
+    /// <summary>One solver's execution: its status, and on success its data and files.</summary>
+    private sealed record Leg(Em3dSolver Solver, EmRunStatus Status, Diagnostic? Stop, DataSet? Data,
+                              string? NpyPath, string? SnpPath, string KernelName, Em3dComparisonFacts? Facts = null)
+    {
+        public bool Ok => Status == EmRunStatus.Ok;
+        public static Leg Failed(Em3dSolver s, EmRunStatus status, Diagnostic d) => new(s, status, d, null, null, null, "");
+    }
+
+    /// <summary>The run's three lists (R-emcli-6), shared by both backends in a both-run.</summary>
+    private sealed class RunLog
+    {
+        public List<string> Notes { get; } = [];
+        public List<string> Warnings { get; } = [];
+        public List<string> Errors { get; } = [];
+
+        public EmRunResult Result(EmRunStatus status, Diagnostic d, IReadOnlyList<EmRunOutput>? outputs = null)
+            => new(status, null, null, null, null, null, d.Render(), Warnings,
+                   Notes: Notes, Errors: Errors, Diagnostic: d, Outputs: outputs is { Count: > 0 } ? outputs : null);
+    }
+
+    // ── Palace (brief-em3d-7) ─────────────────────────────────────────────────────────────────
+
+    private sealed record PalacePlan(PalaceSettings Settings, GmshLowering Lowering, string ConfigJson,
+                                     SolverInstallation Palace, SolverInstallation Gmsh);
+
+    private static PalacePlan? PreparePalace(Em3dProblem problem, PalaceSettings settings, IReadOnlyList<SolverReadiness> readiness,
+                                             RunLog log, out Stop? stop)
+    {
+        stop = null;
         var lowering = GmshGeoWriter.Write(problem, settings);
-        if (!lowering.Ok) return Refused(EmDiagnostics.Forwarded("palace-lowering", lowering.Refusal));
+        if (!lowering.Ok) { stop = new(EmRunStatus.Refused, EmDiagnostics.Forwarded("palace-lowering", lowering.Refusal)); return null; }
         var config = PalaceConfigWriter.Write(problem, lowering.Groups, settings);
-        if (!config.Ok) return Refused(EmDiagnostics.Forwarded("palace-lowering", config.Refusal));
+        if (!config.Ok) { stop = new(EmRunStatus.Refused, EmDiagnostics.Forwarded("palace-lowering", config.Refusal)); return null; }
 
         // F0 Q6 — the void model is the flat-surface impedance: low by up to 10 % on a conductor whose
         // radius is under about ten skin depths at the bottom of the band.
         if (ThinRoundConductors(problem) is { Count: > 0 } thin)
-            notes.Add($"{string.Join(", ", thin.Select(n => $"'{n}'"))} {(thin.Count == 1 ? "is" : "are")} round and under ten " +
-                      $"skin depths in radius at {Fmt(problem.Frequency.StartHz / 1e9)} GHz. Palace models a conductor's " +
-                      "loss as a flat surface's, which on such a wire reads the resistance low by up to about 10 % at the " +
-                      "bottom of the band (3 % at 10 GHz on a 1 mil wire); inductance is not affected.");
+            log.Notes.Add($"{string.Join(", ", thin.Select(n => $"'{n}'"))} {(thin.Count == 1 ? "is" : "are")} round and under ten " +
+                          $"skin depths in radius at {Fmt(problem.Frequency.StartHz / 1e9)} GHz. Palace models a conductor's " +
+                          "loss as a flat surface's, which on such a wire reads the resistance low by up to about 10 % at the " +
+                          "bottom of the band (3 % at 10 GHz on a 1 mil wire); inductance is not affected.");
 
-        string runDir = RunDirectory(resultsRoot, setup, Em3dSolver.Palace);
+        return new PalacePlan(settings, lowering, config.Json!,
+                              readiness.Single(r => r.Tool == SolverTool.Palace).Installation!,
+                              readiness.Single(r => r.Tool == SolverTool.Gmsh).Installation!);
+    }
+
+    private static Leg ExecutePalace(PalacePlan plan, Em3dProblem problem, EmSetup setup, string resultsRoot, string snpBase,
+                                     CancellationToken ct, RunControl? control, int? maxCores, RunLog log)
+    {
+        const Em3dSolver Me = Em3dSolver.Palace;
+        Leg Failed(string reason) => Leg.Failed(Me, EmRunStatus.EngineError, EmDiagnostics.SolveFailed(reason));
+        Leg Cancelled() => Leg.Failed(Me, EmRunStatus.Cancelled, EmDiagnostics.Cancelled());
+        var (settings, lowering, palace) = (plan.Settings, plan.Lowering, plan.Palace);
+
+        string runDir = RunDirectory(resultsRoot, setup, Me);
         try { Directory.CreateDirectory(runDir); }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            return Failed(EmDiagnostics.SolveFailed($"the run directory '{runDir}' could not be created ({e.Message})."));
+            return Failed($"the run directory '{runDir}' could not be created ({e.Message}).");
         }
 
         // ── Gmsh, then the entity check ───────────────────────────────────────────────────────
         PalaceStep meshed;
-        try { meshed = PalaceRun.Mesh(runDir, lowering, gmsh.Path, control, ct); }
+        try { meshed = PalaceRun.Mesh(runDir, lowering, plan.Gmsh.Path, control, ct); }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            return Failed(EmDiagnostics.SolveFailed($"the mesh could not be staged in '{runDir}' ({e.Message})."));
+            return Failed($"the mesh could not be staged in '{runDir}' ({e.Message}).");
         }
         if (meshed.Cancelled) return Cancelled();
-        if (meshed.Refused) return Refused(EmDiagnostics.Forwarded("palace-mesh", meshed.Message));
-        if (!meshed.Ok) return Failed(EmDiagnostics.SolveFailed(meshed.Message!));
-        notes.Add(meshed.Reused
+        if (meshed.Refused) return Leg.Failed(Me, EmRunStatus.Refused, EmDiagnostics.Forwarded("palace-mesh", meshed.Message));
+        if (!meshed.Ok) return Failed(meshed.Message!);
+        log.Notes.Add(meshed.Reused
             ? $"The geometry script is unchanged since the last run, so its mesh was reused ({runDir})."
             : $"Meshed with Gmsh in {runDir}.");
 
@@ -162,55 +381,75 @@ public static class Em3dRunService
         int processes = maxCores ?? EmSolveCores.ProcessorCount;
         PalaceStep solved;
         string? mpiNote;
-        try { solved = PalaceRun.Solve(runDir, config.Json!, palace.Path, processes, control, ct, out mpiNote); }
+        try { solved = PalaceRun.Solve(runDir, plan.ConfigJson, palace.Path, processes, control, ct, out mpiNote); }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            return Failed(EmDiagnostics.SolveFailed($"Palace could not be staged in '{runDir}' ({e.Message})."));
+            return Failed($"Palace could not be staged in '{runDir}' ({e.Message}).");
         }
-        if (mpiNote is not null) notes.Add(mpiNote);
+        if (mpiNote is not null) log.Notes.Add(mpiNote);
         if (solved.Cancelled) return Cancelled();
-        if (!solved.Ok) return Failed(EmDiagnostics.SolveFailed(solved.Message!));
+        if (!solved.Ok) return Failed(solved.Message!);
 
         var ports = problem.Ports.OrderBy(p => p.Number).ToList();
         string post = Path.Combine(runDir, PalaceConfigWriter.OutputDirectory);
         var s = PalaceRun.ReadPortS(Path.Combine(post, PalaceRun.PortSFile), [.. ports.Select(p => p.Number)], out string? readError);
-        if (readError is not null) return Failed(EmDiagnostics.SolveFailed(readError));
+        if (readError is not null) return Failed(readError);
+        s = AtRequestedFrequencies(s, FrequenciesHz(problem.Frequency));
         var facts = PalaceRun.ReadFacts(post);
-        notes.Add($"Palace solved {s.FrequenciesHz.Length} frequencies on {Count(facts.FinalElements)} elements " +
-                  $"({Count(facts.InitialElements)} initially, {facts.AdaptiveIterations ?? 0} adaptive pass(es)), " +
-                  $"{Count(facts.DegreesOfFreedom)} unknowns, {processes} process(es).");
+        log.Notes.Add($"Palace solved {s.FrequenciesHz.Length} frequencies on {Count(facts.FinalElements)} elements " +
+                      $"({Count(facts.InitialElements)} initially, {facts.AdaptiveIterations ?? 0} adaptive pass(es)), " +
+                      $"{Count(facts.DegreesOfFreedom)} unknowns, {processes} process(es).");
 
         // ── The DataSet: S and Z0 in the house convention, plus Palace's own record ─────────────
         var data = BuildDataSet(s, ports, facts);
 
-        string snpBase = SnpBasePath(resultsRoot, setup, Em3dSolver.Palace);
         string? snpPath = snpBase + $".s{ports.Count}p";
-        string? npyPath = null;
-        try
-        {
-            var written = ResultsWriter.WriteRun(
-                Path.GetDirectoryName(resultsRoot.TrimEnd(Path.DirectorySeparatorChar)) ?? resultsRoot,
-                NpyKey(setup, Em3dSolver.Palace), data);
-            if (written.Error is { } writeError)
-                errors.Add($"The EM result could not be written to results/: {writeError}");
-            npyPath = written.Written.Count > 0 ? written.Written[0] : null;
-        }
-        catch (Exception e)
-        {
-            errors.Add($"The EM result could not be written to results/: {e.Message}");
-        }
+        string? npyPath = WriteNpy(resultsRoot, NpyKey(setup, Me), data, log);
 
         string? snpError;
         try { snpError = WriteSnp(data, snpBase, setup, problem, lowering, settings, palace, facts); }
         catch (Exception e) { snpError = e.Message; }
         if (snpError is not null)
         {
-            errors.Add($"The .snp could not be written to '{snpPath}': {snpError}");
+            log.Errors.Add($"The .snp could not be written to '{snpPath}': {snpError}");
             snpPath = null;
         }
 
-        return new EmRunResult(EmRunStatus.Ok, data, null, null, npyPath, snpPath, null, warnings,
-                               Notes: notes, Errors: errors, KernelName: "Palace " + palace.DescribeVersion());
+        return new Leg(Me, EmRunStatus.Ok, null, data, npyPath, snpPath, "Palace " + palace.DescribeVersion());
+    }
+
+    /// <summary>
+    /// R-em3d10-2a — Palace's <c>port-S.csv</c> prints each frequency to nine significant digits, so
+    /// what is read back can sit a few hertz off the frequency Palace was asked for and solved at. When
+    /// every row matches the requested sweep to that printed precision, the requested values are the
+    /// frequencies; otherwise the file's own are kept, and a comparison against another solver refuses.
+    /// </summary>
+    internal static PalacePortS AtRequestedFrequencies(PalacePortS s, double[] requested)
+    {
+        const double PrintedPrecision = 1e-8;      // nine significant digits, with room for Palace's own arithmetic
+        if (s.FrequenciesHz.Length != requested.Length) return s;
+        for (int k = 0; k < requested.Length; k++)
+            if (!(Math.Abs(s.FrequenciesHz[k] - requested[k]) <= PrintedPrecision * Math.Abs(requested[k])))
+                return s;
+        return s with { FrequenciesHz = (double[])requested.Clone() };
+    }
+
+    /// <summary>A solver's grouped <c>.npy</c> in <c>results/</c>; null, with an error, when it could not be written.</summary>
+    private static string? WriteNpy(string resultsRoot, string key, DataSet data, RunLog log)
+    {
+        try
+        {
+            var written = ResultsWriter.WriteRun(
+                Path.GetDirectoryName(resultsRoot.TrimEnd(Path.DirectorySeparatorChar)) ?? resultsRoot, key, data);
+            if (written.Error is { } writeError)
+                log.Errors.Add($"The EM result could not be written to results/: {writeError}");
+            return written.Written.Count > 0 ? written.Written[0] : null;
+        }
+        catch (Exception e)
+        {
+            log.Errors.Add($"The EM result could not be written to results/: {e.Message}");
+            return null;
+        }
     }
 
     // ── openEMS (brief-em3d-9) ────────────────────────────────────────────────────────────────
@@ -224,68 +463,54 @@ public static class Em3dRunService
     /// </summary>
     public const double TimeStepRatioLow = 0.5, TimeStepRatioHigh = 1.0;
 
-    private static EmRunResult RunOpenEms(EmSetup setup, EmLayoutSource source, string resultsRoot,
-                                          CancellationToken ct, RunControl? control, int? maxCores,
-                                          IReadOnlyList<SolverReadiness> readiness)
+    private sealed record OpenEmsPlan(OpenEmsGridSettings GridSettings, OpenEmsRunSettings RunSettings, FdtdGridResult Grid,
+                                      CsxcadLowering Lowering, SolverInstallation OpenEms);
+
+    private static OpenEmsPlan? PrepareOpenEms(Em3dProblem problem, OpenEmsGridSettings gridSettings, OpenEmsRunSettings runSettings,
+                                               IReadOnlyList<SolverReadiness> readiness, RunControl? control, RunLog log, out Stop? stop)
     {
-        var warnings = new List<string>();
-        var notes    = new List<string>();
-        var errors   = new List<string>();
-        EmRunResult Refused(Diagnostic d) =>
-            new(EmRunStatus.Refused, null, null, null, null, null, d.Render(), warnings,
-                Notes: notes, Errors: errors, Diagnostic: d);
-        EmRunResult Failed(Diagnostic d) =>
-            new(EmRunStatus.EngineError, null, null, null, null, null, d.Render(), warnings,
-                Notes: notes, Errors: errors, Diagnostic: d);
-        EmRunResult Cancelled()
-        {
-            var c = EmDiagnostics.Cancelled();
-            return new(EmRunStatus.Cancelled, null, null, null, null, null, c.Render(), warnings,
-                       Notes: notes, Errors: errors, Diagnostic: c);
-        }
-
-        var openEms = readiness.Single(r => r.Tool == SolverTool.OpenEms).Installation!;
-        notes.Add($"Solver: openEMS {openEms.DescribeVersion()} at {openEms.Path}.");
-
-        var gridSettings = CemOpenEms.ResolveGrid(setup.OpenEms);
-        var runSettings  = CemOpenEms.ResolveRun(setup.OpenEms);
-        if (gridSettings.Problems().Concat(runSettings.Problems()).ToList() is { Count: > 0 } bad)
-            return Refused(EmDiagnostics.Forwarded("openems-settings", string.Join(" ", bad)));
-
-        // ── brief 3: the problem ──────────────────────────────────────────────────────────────
-        control?.BeginStage("building the 3D problem");
-        var generated = Em3dGenerator.Generate(setup, source, source.Technology!);
-        notes.AddRange(generated.Notes);
-        warnings.AddRange(generated.Warnings);
-        if (!generated.Ok) return Refused(EmDiagnostics.Forwarded("em3d-problem", generated.Refusal));
-        var problem = generated.Problem!;
-        if (problem.Validate() is { Count: > 0 } invalid)
-            return Refused(EmDiagnostics.Forwarded("em3d-problem", string.Join(" ", invalid)));
+        stop = null;
 
         // ── brief 8: the grid, then the lowering ──────────────────────────────────────────────
         control?.BeginStage("placing the FDTD grid");
         FdtdGridResult grid;
         try { grid = FdtdGrid.Build(problem, gridSettings); }
-        catch (InvalidOperationException e) { return Failed(EmDiagnostics.SolveFailed($"the FDTD grid could not be built ({e.Message})")); }
-        if (grid.Refusal is { } tooBig) return Refused(EmDiagnostics.Forwarded("openems-grid", tooBig));
-        warnings.AddRange(grid.Warnings);
-        notes.AddRange(grid.Merges.Select(m => m.Sentence));
+        catch (InvalidOperationException e)
+        {
+            stop = new(EmRunStatus.EngineError, EmDiagnostics.SolveFailed($"the FDTD grid could not be built ({e.Message})"));
+            return null;
+        }
+        if (grid.Refusal is { } tooBig) { stop = new(EmRunStatus.Refused, EmDiagnostics.Forwarded("openems-grid", tooBig)); return null; }
+        log.Warnings.AddRange(grid.Warnings);
+        log.Notes.AddRange(grid.Merges.Select(m => m.Sentence));
 
         var lowering = CsxcadWriter.Write(problem, grid, gridSettings, runSettings);
-        if (!lowering.Ok) return Refused(EmDiagnostics.Forwarded("openems-lowering", lowering.Refusal));
-        notes.AddRange(lowering.Notes);
+        if (!lowering.Ok) { stop = new(EmRunStatus.Refused, EmDiagnostics.Forwarded("openems-lowering", lowering.Refusal)); return null; }
+        log.Notes.AddRange(lowering.Notes);
         int n = lowering.Ports.Count;
         var s0 = grid.Smallest;
-        notes.Add($"openEMS grid: {grid.X.Lines.Count:N0} × {grid.Y.Lines.Count:N0} × {grid.Z.Lines.Count:N0} = {grid.Cells:N0} " +
-                  $"cells; smallest cell {FdtdGrid.FormatLength(s0.SmallestCellM)} on {FdtdGrid.AxisName(s0.Axis)}, set by " +
-                  $"{string.Join("; ", s0.SmallestCellFeatures.Select(f => f.Describe(s0.Axis)))}. openEMS runs once per port: " +
-                  $"{n} run{(n == 1 ? "" : "s")}, each up to {lowering.MaxTimeSteps:N0} time steps.");
+        log.Notes.Add($"openEMS grid: {grid.X.Lines.Count:N0} × {grid.Y.Lines.Count:N0} × {grid.Z.Lines.Count:N0} = {grid.Cells:N0} " +
+                      $"cells; smallest cell {FdtdGrid.FormatLength(s0.SmallestCellM)} on {FdtdGrid.AxisName(s0.Axis)}, set by " +
+                      $"{string.Join("; ", s0.SmallestCellFeatures.Select(f => f.Describe(s0.Axis)))}. openEMS runs once per port: " +
+                      $"{n} run{(n == 1 ? "" : "s")}, each up to {lowering.MaxTimeSteps:N0} time steps.");
 
-        string runDir = RunDirectory(resultsRoot, setup, Em3dSolver.OpenEms);
+        return new OpenEmsPlan(gridSettings, runSettings, grid, lowering,
+                               readiness.Single(r => r.Tool == SolverTool.OpenEms).Installation!);
+    }
+
+    private static Leg ExecuteOpenEms(OpenEmsPlan plan, Em3dProblem problem, EmSetup setup, string resultsRoot, string snpBase,
+                                      CancellationToken ct, RunControl? control, int? maxCores, RunLog log)
+    {
+        const Em3dSolver Me = Em3dSolver.OpenEms;
+        Leg Failed(string reason) => Leg.Failed(Me, EmRunStatus.EngineError, EmDiagnostics.SolveFailed(reason));
+        var (grid, lowering, runSettings, openEms) = (plan.Grid, plan.Lowering, plan.RunSettings, plan.OpenEms);
+        int n = lowering.Ports.Count;
+
+        string runDir = RunDirectory(resultsRoot, setup, Me);
         try { OpenEmsRun.Stage(runDir, lowering); }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            return Failed(EmDiagnostics.SolveFailed($"the openEMS run could not be staged in '{runDir}' ({e.Message})."));
+            return Failed($"the openEMS run could not be staged in '{runDir}' ({e.Message}).");
         }
 
         // ── One run per port (R-em3d9-3a) ─────────────────────────────────────────────────────
@@ -301,28 +526,28 @@ public static class Em3dRunService
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
-                return Failed(EmDiagnostics.SolveFailed($"openEMS could not be run in '{runDir}' ({e.Message})."));
+                return Failed($"openEMS could not be run in '{runDir}' ({e.Message}).");
             }
-            if (r.Cancelled) return Cancelled();
-            if (!r.Ok) return Failed(EmDiagnostics.SolveFailed(r.Message!));
+            if (r.Cancelled) return Leg.Failed(Me, EmRunStatus.Cancelled, EmDiagnostics.Cancelled());
+            if (!r.Ok) return Failed(r.Message!);
             runs.Add(r);
 
             var facts = r.Facts!;
             if (!r.Converged)
-                warnings.Add($"openEMS's run exciting port {r.Port} stopped at its limit of {lowering.MaxTimeSteps:N0} time steps" +
-                             (double.IsNaN(r.DecayDb) ? ", before the excitation pulse and one pulse length after it had passed"
-                                                      : $" with the port signals {Db(r.DecayDb)} below their peak") +
-                             (facts.EnergyDb is { } e0 ? $" and the field energy {Db(e0)} below its own" : "") +
-                             $", against an end criterion of {Db(runSettings.EndCriterionDb)}. It has NOT converged: the " +
-                             "result is written, and the energy still ringing in the structure is missing from it. Raise the " +
-                             "openEMS section's MaxTimeSteps.");
+                log.Warnings.Add($"openEMS's run exciting port {r.Port} stopped at its limit of {lowering.MaxTimeSteps:N0} time steps" +
+                                 (double.IsNaN(r.DecayDb) ? ", before the excitation pulse and one pulse length after it had passed"
+                                                          : $" with the port signals {Db(r.DecayDb)} below their peak") +
+                                 (facts.EnergyDb is { } e0 ? $" and the field energy {Db(e0)} below its own" : "") +
+                                 $", against an end criterion of {Db(runSettings.EndCriterionDb)}. It has NOT converged: the " +
+                                 "result is written, and the energy still ringing in the structure is missing from it. Raise the " +
+                                 "openEMS section's MaxTimeSteps.");
             if (facts.TimeStepS is { } dt && grid.TimeStepEstimateS > 0)
             {
                 double ratio = dt / grid.TimeStepEstimateS;
                 if (ratio < TimeStepRatioLow || ratio > TimeStepRatioHigh)
-                    warnings.Add($"openEMS chose a time step of {dt:G4} s, {ratio:G3} times circuitRF's Courant estimate of " +
-                                 $"{grid.TimeStepEstimateS:G4} s — outside {TimeStepRatioLow}–{TimeStepRatioHigh}. The answer " +
-                                 "is still openEMS's; the estimate circuitRF reports before a run is what disagrees.");
+                    log.Warnings.Add($"openEMS chose a time step of {dt:G4} s, {ratio:G3} times circuitRF's Courant estimate of " +
+                                     $"{grid.TimeStepEstimateS:G4} s — outside {TimeStepRatioLow}–{TimeStepRatioHigh}. The answer " +
+                                     "is still openEMS's; the estimate circuitRF reports before a run is what disagrees.");
             }
         }
 
@@ -331,38 +556,25 @@ public static class Em3dRunService
         double[] freqs = FrequenciesHz(problem.Frequency);
         var result = FdtdPortTransform.Solve([.. runs.Select(r => r.Probes!)], freqs, lowering.Ports,
                                              [.. ports.Select(p => p.Z0)]);
-        if (result.Error is { } singular) return Failed(EmDiagnostics.SolveFailed(singular));
+        if (result.Error is { } singular) return Failed(singular);
 
         var data = BuildOpenEmsDataSet(result, ports, grid, runs, runSettings);
 
-        string snpBase = SnpBasePath(resultsRoot, setup, Em3dSolver.OpenEms);
         string? snpPath = snpBase + $".s{ports.Count}p";
-        string? npyPath = null;
-        try
-        {
-            var written = ResultsWriter.WriteRun(
-                Path.GetDirectoryName(resultsRoot.TrimEnd(Path.DirectorySeparatorChar)) ?? resultsRoot,
-                NpyKey(setup, Em3dSolver.OpenEms), data);
-            if (written.Error is { } writeError)
-                errors.Add($"The EM result could not be written to results/: {writeError}");
-            npyPath = written.Written.Count > 0 ? written.Written[0] : null;
-        }
-        catch (Exception e)
-        {
-            errors.Add($"The EM result could not be written to results/: {e.Message}");
-        }
+        string? npyPath = WriteNpy(resultsRoot, NpyKey(setup, Me), data, log);
 
         string? snpError;
-        try { snpError = WriteOpenEmsSnp(data, snpBase, setup, problem, grid, gridSettings, runSettings, lowering, openEms, runs); }
+        try { snpError = WriteOpenEmsSnp(data, snpBase, setup, problem, grid, plan.GridSettings, runSettings, lowering, openEms, runs); }
         catch (Exception e) { snpError = e.Message; }
         if (snpError is not null)
         {
-            errors.Add($"The .snp could not be written to '{snpPath}': {snpError}");
+            log.Errors.Add($"The .snp could not be written to '{snpPath}': {snpError}");
             snpPath = null;
         }
 
-        return new EmRunResult(EmRunStatus.Ok, data, null, null, npyPath, snpPath, null, warnings,
-                               Notes: notes, Errors: errors, KernelName: "openEMS " + openEms.DescribeVersion());
+        var comparisonFacts = new Em3dComparisonFacts(lowering.DielectricFitHz, lowering.PecSolids, lowering.SubCellWires,
+                                                      [.. runs.Where(r => !r.Converged).Select(r => r.Port)]);
+        return new Leg(Me, EmRunStatus.Ok, null, data, npyPath, snpPath, "openEMS " + openEms.DescribeVersion(), comparisonFacts);
     }
 
     /// <summary>The sweep's frequencies, as Palace's <c>NSample</c> spaces them: both ends included.</summary>

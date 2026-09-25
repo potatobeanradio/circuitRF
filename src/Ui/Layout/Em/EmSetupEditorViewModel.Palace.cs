@@ -24,6 +24,8 @@ public sealed partial class EmSetupEditorViewModel
         new(Em3dSolver.None,    "Planar (circuitRF)"),
         new(Em3dSolver.Palace,  "3D — Palace (FEM)"),
         new(Em3dSolver.OpenEms, "3D — openEMS (FDTD)"),
+        // brief-em3d-10 — both on one generated problem, and the comparison beside them.
+        new(Em3dSolver.Both,    "3D — both, and compare"),
     ];
 
     [ObservableProperty] private Em3dSolverChoice _solver3DChoice = Solver3DChoices[0];
@@ -32,10 +34,10 @@ public sealed partial class EmSetupEditorViewModel
     public bool Is3DSetup => Solver3DChoice.Value != Em3dSolver.None;
 
     /// <summary>True when Palace's section is shown.</summary>
-    public bool IsPalaceSetup => Solver3DChoice.Value == Em3dSolver.Palace;
+    public bool IsPalaceSetup => Solver3DChoice.Value is Em3dSolver.Palace or Em3dSolver.Both;
 
     /// <summary>True when openEMS's section is shown (brief-em3d-9 R-em3d9-6).</summary>
-    public bool IsOpenEmsSetup => Solver3DChoice.Value == Em3dSolver.OpenEms;
+    public bool IsOpenEmsSetup => Solver3DChoice.Value is Em3dSolver.OpenEms or Em3dSolver.Both;
 
     public string Solver3DDescription => Solver3DChoice.Value switch
     {

@@ -515,6 +515,19 @@ never overwrites the first: `<key>.palace.sNp`, the `.npy` key `<key>.palace_em`
 `postpro/` — so a run can be repeated by hand. An unchanged script reuses the mesh. `-o` still moves
 the Touchstone only. **A planar result's path does not move by one byte.**
 
+**`--solver both` (or `Solver3D: Both`) runs Palace and then openEMS on one generated problem**
+(brief-em3d-10), each result landing where it would alone, plus a comparison, `<key>.compare_em.npy`
+— `S_palace`, `S_openems`, `dMag_dB`, `dPhase_deg` (wrapped to (−180°, 180°]) and `dVec` = |ΔS|, each
+over `[freq, i, j]`, so `circuitrf plot x.compare_em.npy --trace cube=dMag_dB,i=2,j=1` needs no `.cdd`.
+Its first `note:` is the summary — the largest S21 and S11 differences and where — followed by what
+makes a difference expected on THIS run; the same sentences are in the file, as the labels of the
+`compare.Notes` cube. The comparison needs the two frequency vectors equal and refuses otherwise; it
+never interpolates. With `-o base` the files are `base.palace.sNp`, `base.openems.sNp` and
+`base.compare_em.npy`, and every file written is listed on stdout and in `--json`.
+Everything either backend can refuse is refused **before either starts**, naming `--solver palace` or
+`--solver openems` when one of them would run. A solver failing mid-run keeps the other's result,
+writes no comparison and exits 1; a cancellation keeps a finished Palace result and exits 130.
+
 ### 8.3 What goes where, and the three lists
 
 §3.1's split, applied: the summary and the written file paths are **stdout**; progress, the resolved

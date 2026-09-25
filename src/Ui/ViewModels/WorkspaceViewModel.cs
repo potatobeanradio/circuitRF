@@ -8792,8 +8792,16 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             vm.AdoptPlanarResult(planarMesh, result.PlanarSolve);
             vm.AdoptCurrentDensity(result.CurrentDensity, result.PlanarPorts ?? []);
         }
-        if (result.SnpPath is { } snp) Messages.Success("Wrote s-parameters", snp);
-        if (result.NpyPath is { } npyWritten) Messages.Success("Wrote results", npyWritten);
+        // A 3D setup run through both solvers writes each one's files and the comparison
+        // (brief-em3d-10); Outputs lists them all.
+        if (result.Outputs is { } outputs)
+            foreach (var o in outputs)
+                Messages.Success(o.Kind == "touchstone" ? "Wrote s-parameters" : "Wrote results", o.Path);
+        else
+        {
+            if (result.SnpPath is { } snp) Messages.Success("Wrote s-parameters", snp);
+            if (result.NpyPath is { } npyWritten) Messages.Success("Wrote results", npyWritten);
+        }
 
         // The window moved to another workspace while this was solving. The write above is still
         // correct — it went to the workspace the run was started in — but the Data Display below is

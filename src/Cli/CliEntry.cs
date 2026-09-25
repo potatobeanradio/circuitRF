@@ -1333,6 +1333,8 @@ static int RunEm(string[] args)
                 {
                     "palace"  => Em3dSolver.Palace,
                     "openems" => Em3dSolver.OpenEms,
+                    // brief-em3d-10 — both, on one generated problem, and the comparison.
+                    "both"    => Em3dSolver.Both,
                     _         => null,
                 };
                 if (solver is null) return JsonRun.Fail(CliDiagnostics.EmUnknownSolver(name));
@@ -1351,7 +1353,7 @@ static int RunEm(string[] args)
     if (input is null)
     {
         int code = JsonRun.Fail(CliDiagnostics.InputRequired("em", ".cem"));
-        Console.Error.WriteLine("Usage: circuitrf em <setup.cem> [-o out.sNp] [--workspace <file.cws>] [--solver palace|openems]");
+        Console.Error.WriteLine("Usage: circuitrf em <setup.cem> [-o out.sNp] [--workspace <file.cws>] [--solver palace|openems|both]");
         return code;
     }
     JsonRun.InputPath = input;
@@ -1454,6 +1456,10 @@ static int RunEm(string[] args)
     // act on.
     if (result.Status != EmRunStatus.Ok)
     {
+        // brief-em3d-10 R-em3d10-4 — a run through both solvers keeps what one of them produced when
+        // the other fails or is stopped. Those files were written and are listed, exit code or not.
+        foreach (var o in result.Outputs ?? [])
+        { Console.WriteLine($"Wrote {o.Path}"); JsonRun.AddOutput(o.Kind, o.Path); }
         Console.Error.WriteLine($"{DescribeEmStatus(result.Status)}: {result.Error}");
         // The refusal's own coded form, which EmRunService has carried alongside the string since
         // brief-localization-groundwork's R-loc-5 and which the CLI has until now discarded. The
@@ -1482,8 +1488,15 @@ static int RunEm(string[] args)
 
     // BOTH files, because they are not redundant (cli.md §8.2): the Touchstone is the network and
     // the .npy carries the diagnostics group that makes a wrong answer diagnosable.
-    if (result.SnpPath is { } snp) { Console.WriteLine($"Wrote {snp}"); JsonRun.AddOutput("touchstone", snp); }
-    if (result.NpyPath is { } npy) { Console.WriteLine($"Wrote {npy}"); JsonRun.AddOutput("npy", npy); }
+    // A run through both solvers writes two of each and the comparison (R-em3d10-5); Outputs lists
+    // them all, and SnpPath/NpyPath are then not the whole story.
+    if (result.Outputs is { } outputs)
+        foreach (var o in outputs) { Console.WriteLine($"Wrote {o.Path}"); JsonRun.AddOutput(o.Kind, o.Path); }
+    else
+    {
+        if (result.SnpPath is { } snp) { Console.WriteLine($"Wrote {snp}"); JsonRun.AddOutput("touchstone", snp); }
+        if (result.NpyPath is { } npy) { Console.WriteLine($"Wrote {npy}"); JsonRun.AddOutput("npy", npy); }
+    }
 
     return 0;
 }

@@ -286,7 +286,7 @@ internal static class CliDiagnostics
     public static Diagnostic EmUnknownSolver(string value) => Diagnostic.Create(
         "cli.em.unknown-solver",
         DiagnosticSeverity.Error,
-        "em: --solver takes palace or openems, not '{value}'.",
+        "em: --solver takes palace, openems or both, not '{value}'.",
         ("value", value));
 
     public static Diagnostic EmSetupWarning(string text) => Diagnostic.Create(

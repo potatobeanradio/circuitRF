@@ -88,7 +88,18 @@ public sealed record EmRunResult(
     /// filtering by kind, dedup of a refusal repeated at every sweep point, and a place to hang an
     /// action.</para>
     /// </summary>
-    Diagnostic? Diagnostic = null);
+    Diagnostic? Diagnostic = null,
+    /// <summary>
+    /// Every file the run wrote, when it wrote more than one Touchstone — a 3D setup run through
+    /// both solvers (brief-em3d-10 R-em3d10-5): each solver's <c>.sNp</c> and <c>.npy</c>, and the
+    /// comparison. Null otherwise, and then <see cref="SnpPath"/> and <see cref="NpyPath"/> are the
+    /// whole list. Carried on a non-Ok status too: a result one solver produced is kept and listed
+    /// when the other fails or is cancelled (R-em3d10-4).
+    /// </summary>
+    IReadOnlyList<EmRunOutput>? Outputs = null);
+
+/// <summary>One file a run wrote: what it is (<c>touchstone</c>, <c>npy</c>) and where.</summary>
+public sealed record EmRunOutput(string Kind, string Path);
 
 /// <summary>
 /// <b>What <see cref="EmRunService.Preflight"/> found</b> — the extract-and-mesh phase of a run,

@@ -12509,3 +12509,58 @@ run: the same case at a finer `CellsPerWavelength`, which would say how much of 
 - The log writer is closed before the log is parsed: an earlier version read it while buffered and
   reported every run "unconverged, dt unreported".
 - Gate 7 (stripline closed form, 98.745 ps against 98.951) runs in 2 s and is in the routine tier.
+
+## Running both solvers — brief-em3d-10 (2026-09-25)
+
+`src/Design/Em3d/Em3dRunService.cs` (restructured), `src/Engine/Em3d/Em3dComparison.cs` (new),
+`em --solver both`; gates `tests/Engine.Tests/Em3d/Em3dComparisonTests.cs` (1, 2, 6) and
+`tests/Ui.Tests/Em3d/RunBothTests.cs` (3, 4, 5, 7, 8).
+
+**The run is now three phases, and only the last starts a process**: discovery and each backend's
+settings; the problem, generated once (`Em3dRunService.ProblemsGenerated` counts it), and each backend's
+lowering — Palace's `.geo` and configuration, openEMS's grid and CSXCAD model; then execution. The
+single-solver paths go through the same phases, so they refuse exactly what they refused before, in the
+same words.
+
+**Every refusal that costs no process is made before either solver starts**, not only discovery's
+(R-em3d10-4b). The brief's 4a says a refusing solver leaves the other running, but a settings problem,
+a grid too large or a lowering refusal is known in seconds, and the brief's own reason for 4b — tell the
+user in the first second, not after the FEM run — applies to them equally. So all of them refuse the
+both-run up front and name the flag that runs the other solver (`circuitrf em --solver palace`) when
+that one got through its own checks. 4a applies to what fails during execution: Palace's mesh entity
+check, a solver's exit code, an unreadable result.
+
+**Palace's frequencies are read back rounded.** `port-S.csv` prints f to nine significant digits, so a
+read-back frequency can sit hertz away from the one requested, and the comparison's exact-equality rule
+(R-em3d10-2a) would refuse on nothing but formatting. `AtRequestedFrequencies` takes the requested sweep
+when every row matches it to 1e-8 relative, and keeps the file's own values otherwise, so a real grid
+mismatch still refuses. This applies to a Palace-only run too: its `.sNp` now carries the exact
+requested frequencies.
+
+**Where things live, against the brief's Area line.** The comparison's arithmetic and notes are in
+`src/Engine/Em3d`, not `src/Design/Em3d`: the brief puts its gates in `Engine.Tests`, which references
+no Design project. The openEMS facts it needs (fit frequency, PEC solids, thin wires, unconverged
+ports) cross as plain values in `Em3dComparisonFacts`. The notes are CARRIED IN THE FILE as the labels
+of a `compare.Notes` cube (value 0 a note, 1 a warning) — a DataSet and the `.npy` writer have no
+free-text field, and an axis label is the one string that already survives the writer and the reader.
+`compare.ReferencePlaneShift` records each port's plane shift from the problem (zero for Tier A).
+
+**`EmRunResult.Outputs`** lists every file when a run writes more than one Touchstone. It is carried on
+a failed or cancelled both-run too, so the CLI prints `Wrote …` for the result that was kept before the
+refusal line, and `--json` lists it.
+
+**Firewall false positive.** A warning ending "…missing from openEMS's result" matched
+`SolverBoundaryTests`' import-line pattern (`from\s+openems`). Reworded; the scan was left alone.
+
+**Measured, 2026-09-25, on the F0 machine.** The small microstrip (brief 7's: 2 mm of air, order 1, no
+refinement passes) through both took 25 s; the summary read S21 0.478 dB and 10.3° at 10 GHz. That mesh
+is deliberately coarse and nothing gates on it. Gates 3 (25 s) and 4 (7 s) are `Category=Benchmark`.
+**Gate 7 (F0 case B through both, against Q1's 0.035 dB and 0.6 % of electrical length) was written and
+NOT run.** Brief 9's gate 8 measured circuitRF's openEMS run of case B at +1.4 % group delay against
+Palace, which is more than 0.6 %, so gate 7 is expected to fail on phase until that is resolved.
+
+**Left as found.** For a both-run the openEMS lowering's own notes about the dielectric fit and PEC
+solids appear beside the comparison's restatement of them as expected differences; the two say
+different things (what was done, what it does to the difference) but overlap. The GUI's automatic Data
+Display after a 3D run keys its `.cdd` on `ResolveNpyKey(setup)` (`<key>_em`), not on the solver-named
+file it opens — true since brief 7, and now also for the comparison.

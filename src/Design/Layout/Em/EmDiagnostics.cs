@@ -37,6 +37,15 @@ public static class EmDiagnostics
         DiagnosticSeverity.Info,
         "The EM run was stopped. Nothing was written.");
 
+    /// <summary>brief-em3d-10 R-em3d10-4c — a both-run stopped during its second solver. Nothing was
+    /// written for that one; the first solver's finished result was kept, and this says where.</summary>
+    public static Diagnostic CancelledKeeping(string stopped, string kept, string where) => Diagnostic.Create(
+        "em.run.cancelled-kept",
+        DiagnosticSeverity.Info,
+        "The EM run was stopped while {stopped} was running, and nothing was written for it. {kept}'s result, " +
+        "finished before, was kept: {where}.",
+        ("stopped", stopped), ("kept", kept), ("where", where));
+
     /// <summary>The <c>.cem</c> names a layout that could not be resolved.</summary>
     public static Diagnostic NoLayout(string layoutRef) => Diagnostic.Create(
         "em.layout.not-found",
@@ -108,6 +117,40 @@ public static class EmDiagnostics
         DiagnosticSeverity.Error,
         "{refusal}",
         ("tool", tool), ("refusal", refusal));
+
+    /// <summary>
+    /// brief-em3d-10 R-em3d10-4b — a setup asking for both solvers, refused before either started.
+    /// <paramref name="remedy"/> names the solver that WOULD run, and the flag that runs it alone,
+    /// when there is one: the user learns that now rather than after the other solver's run.
+    /// </summary>
+    public static Diagnostic BothRefusedBeforeWork(string refusal, string remedy) => Diagnostic.Create(
+        "em.solver-3d.both-refused",
+        DiagnosticSeverity.Error,
+        "{refusal} Nothing was run: a setup asking for both solvers checks both before starting either.{remedy}",
+        ("refusal", refusal), ("remedy", remedy));
+
+    /// <summary>R-em3d10-4a — one solver produced a result and the other did not. The result that
+    /// was produced is kept and named; the comparison, which needs both, was not written.</summary>
+    public static Diagnostic OneSolverFailed(string failed, string reason, string succeeded, string where) => Diagnostic.Create(
+        "em.solver-3d.one-failed",
+        DiagnosticSeverity.Error,
+        "{failed} did not produce a result: {reason} {succeeded}'s result was written: {where}. No comparison was " +
+        "written, because it needs both.",
+        ("failed", failed), ("reason", reason), ("succeeded", succeeded), ("where", where));
+
+    /// <summary>R-em3d10-4a — neither solver produced a result.</summary>
+    public static Diagnostic BothSolversFailed(string palaceReason, string openEmsReason) => Diagnostic.Create(
+        "em.solver-3d.both-failed",
+        DiagnosticSeverity.Error,
+        "Neither solver produced a result. Palace: {palace} openEMS: {openems}",
+        ("palace", palaceReason), ("openems", openEmsReason));
+
+    /// <summary>R-em3d10-2a — both results written, and they could not be compared.</summary>
+    public static Diagnostic ComparisonRefused(string reason) => Diagnostic.Create(
+        "em.solver-3d.comparison-refused",
+        DiagnosticSeverity.Error,
+        "Both solvers ran and both results were written, but no comparison was made: {reason}",
+        ("reason", reason));
 
     /// <summary>The solve threw. Distinct from a refusal: circuitRF failed, the setup did not.</summary>
     public static Diagnostic SolveFailed(string reason) => Diagnostic.Create(

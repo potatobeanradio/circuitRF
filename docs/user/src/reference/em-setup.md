@@ -525,6 +525,27 @@ one is continued through it. The result lands beside a Palace one without replac
 `results/<name>.openems.sNp` and `<name>.openems_em.npy` — and `results/<name>.openems/` keeps the model
 and, per port, openEMS's log and probe files, so a run can be repeated by hand.
 
+### Running both, and the difference {#run-both}
+
+**3D — both, and compare** (`Solver3D: Both`, or `circuitrf em x.cem --solver both`) builds the 3D model
+once and runs Palace and then openEMS on it, one after the other. Each result lands where it would
+alone, and a third file, `results/<name>.compare_em.npy`, holds the difference: both S matrices,
+`dMag_dB`, `dPhase_deg` and `dVec` (the magnitude of S_Palace − S_openEMS, which stays meaningful where
+|S| is small and a dB difference is not). It opens in the Data Display like any result.
+
+The first line the run writes is the summary: the largest S21 and S11 differences over the band and
+where they occur. After it comes what makes a difference **expected** on this model — which solver
+suits its geometry better, a lossy substrate, metal that openEMS treats as perfect, a
+wire below the grid cell — and, as a warning, an openEMS run that did not reach its end criterion, which
+is the first thing to fix. **Agreement is a cross-check, not a validation**: both solvers read the same
+model, so an error in building it would appear in both.
+
+Both solvers are checked before either starts, so a missing openEMS is reported in the first second,
+not after the Palace run, with the setting that runs the one that is available. If one solver fails
+part way through, the other's result is still written and no comparison is. The two results must be
+at the same frequencies — they always are when both come from one setup — and a comparison is never
+interpolated.
+
 ## Installing the 3D solvers by hand {#install-3d-solvers}
 
 A 3D setup (one whose `Solver3D` names Palace or openEMS) runs a solver circuitRF does not include. You
