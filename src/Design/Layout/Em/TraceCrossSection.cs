@@ -77,6 +77,10 @@ internal sealed class TraceCut
     /// <summary>The stackup's own bottom was taken as ground because no copper was.</summary>
     public bool StackupBottomUsed { get; init; }
 
+    /// <summary>The reference below is a layer the technology marks as ground with NO copper drawn on
+    /// it — taken as a solid plane — or null.</summary>
+    public CrossSectionExtractor.Band? ImpliedBelow { get; init; }
+
     public List<EmConductor> Conductors { get; init; } = [];
     public double? GapL { get; init; }
     public double? GapR { get; init; }
@@ -107,6 +111,10 @@ internal static class TraceCrossSection
 
     /// <summary>At most this many conductors besides the signal enter one solve — the nearest.</summary>
     public const int MaxConductors = 6;
+
+    /// <summary>Nothing at all is drawn on the band.</summary>
+    public static bool Undrawn(TraceStack s, CrossSectionExtractor.Band band) =>
+        !s.Copper.TryGetValue(band.Index, out var cu) || cu.Paths.Count == 0;
 
     public static double Coverage(TraceStack s, CrossSectionExtractor.Band band, double px, double py,
                                   double ux, double uy, double a, double b) =>
@@ -142,6 +150,24 @@ internal static class TraceCrossSection
 
         var (lowerRef, skippedBelow) = FindReference(below);
         var (upperRef, skippedAbove) = FindReference(above);
+
+        // No copper covers the trace below — but a layer the technology MARKS as the ground reference
+        // and on which nothing at all is drawn is a plane the design leaves implied, not a clearance.
+        // A layout drawn in circuitRF commonly draws only its top copper and lets the stackup's ground
+        // layer stand for the plane; taking the stackup's bottom boundary instead put the ground a
+        // copper thickness too deep and read a 50 Ω line as 52.3 Ω. Copper, where there is any on that
+        // layer, still decides: an imported board draws its planes, and there the flag says nothing
+        // about where the copper actually is.
+        CrossSectionExtractor.Band? impliedBelow = null;
+        if (lowerRef is null)
+        {
+            impliedBelow = below.FirstOrDefault(b => b.Layer.IsGroundReference && Undrawn(s, b));
+            if (impliedBelow is not null)
+            {
+                lowerRef = impliedBelow;
+                skippedBelow = [.. skippedBelow.TakeWhile(k => !ReferenceEquals(k.Band, impliedBelow))];
+            }
+        }
 
         double metresPerDbu = s.MetresPerDbu;
         double? hBelow = lowerRef is null ? null : signal.BottomM - lowerRef.TopM;
@@ -296,6 +322,7 @@ internal static class TraceCrossSection
             SkippedBelow = skippedBelow, SkippedAbove = skippedAbove,
             Plane = plane, GroundM = groundM, HBelow = hBelow, HAbove = hAbove, HDbu = hDbu, Reach = reach,
             StackupBottomUsed = stackupBottom,
+            ImpliedBelow = impliedBelow,
             Conductors = conductors, GapL = gapL, GapR = gapR, Grounded = grounded,
             Configuration = config,
             Refusal = !plane && grounded == 0 ? "no return conductor" : null,

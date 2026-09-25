@@ -68,6 +68,44 @@ public class TraceImpedanceAnalysisTests
         Assert.Equal("microstrip", Assert.Single(trace.Configurations).Name);
     }
 
+    /// <summary>A layout that draws only its top copper and lets the technology's ground-flagged layer
+    /// stand for the plane reads as if the plane were drawn — not against the stackup's bottom
+    /// boundary a copper thickness deeper, which read a 50 Ω line as 52.3 Ω (round 8).</summary>
+    [Fact]
+    public void AnUndrawnGroundFlaggedLayer_IsTakenAsThePlane()
+    {
+        LayoutShape[] drawn = [Rect(Top, -6000, -500, 6000, 500), Rect(Gnd, -8000, -8000, 8000, 8000)];
+        LayoutShape[] implied = [Rect(Top, -6000, -500, 6000, 500)];
+        var tech = Tech();
+        tech.Stackup.Layers[2].IsGroundReference = true;
+        tech.Stackup.Bottom = BoundaryCondition.Ground;
+        var options = new TraceImpedanceOptions { Layers = [Top] };
+
+        var withPlane = Assert.Single(TraceImpedanceAnalysis.Analyze(drawn, tech, LayoutUnits.DefaultDbuPerMicron, options).Layers[0].Traces);
+        var withFlag  = Assert.Single(TraceImpedanceAnalysis.Analyze(implied, tech, LayoutUnits.DefaultDbuPerMicron, options).Layers[0].Traces);
+
+        Assert.Equal(withPlane.Z0Mean!.Value, withFlag.Z0Mean!.Value, withPlane.Z0Mean.Value * 0.002);
+        Assert.Contains(withFlag.Notes, n => n.StartsWith("Nothing is drawn on 'Plane'", StringComparison.Ordinal));
+    }
+
+    /// <summary>A trace that runs onto a narrower component pad does not take the pad in as its last
+    /// few mils: an end piece shorter than it is wide is the land, not the line (round 8's 0201 pads
+    /// read 57.6 Ω at the end of a 50 Ω trace).</summary>
+    [Fact]
+    public void APadAtATracesEnd_IsNotPartOfTheTrace()
+    {
+        LayoutShape[] shapes =
+        [
+            Rect(Top, -6000, -500, 6000, 500),
+            Rect(Top, 5800, -420, 6600, 420),      // the pad: narrower than the trace, overlapping its end
+            Rect(Gnd, -8000, -8000, 8000, 8000),
+        ];
+
+        var trace = Assert.Single(Assert.Single(Analyze(shapes).Layers).Traces);
+
+        Assert.Equal(1000, trace.WidthMin / LayoutUnits.DefaultDbuPerMicron, 1.0);
+    }
+
     /// <summary>A trace with a 90° bend is one trace: the bend's corner is not cut, and not flagged.</summary>
     [Fact]
     public void ABentTrace_IsOneTrace_AndItsCornerIsNotFlagged()

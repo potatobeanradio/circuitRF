@@ -12727,3 +12727,12 @@ launch the GUI. Worth a look: the 3D EM tab's four rows, and whether the tab str
   are one path; the dialog and `circuitrf impedance` call the same two functions.
 - Gate: `tests/Ui.Tests/Em/TraceImpedanceAnalysisTests.cs` and the two round-8 cases in
   `TraceImpedanceProbeTests.cs`.
+- **A layout drawn in circuitRF read 52.3 Ω for a 50 Ω line (2026-09-25).** It draws only top copper
+  and lets the technology's ground-flagged Bottom Copper stand for the plane. Coverage found no copper
+  under the trace, so the reference fell through to `Stackup.Bottom = Ground` — the boundary UNDER the
+  bottom copper, 35 µm deeper than the dielectric's underside (h 543 µm instead of 508). A layer the
+  technology marks `IsGroundReference` on which NOTHING is drawn is now taken as a solid plane at its
+  top, with a note; copper still decides wherever the layer has any, so an imported board's cleared
+  plane is not papered over by its flag. The same board's 0201 pads, narrower than the 42 mil trace
+  and overlapping its ends, were joined on as width steps and read 57.6 Ω: an END piece shorter than
+  it is wide is a land and is trimmed. Both 50.2 Ω after.

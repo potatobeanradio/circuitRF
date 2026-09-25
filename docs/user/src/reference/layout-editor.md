@@ -759,7 +759,10 @@ gets there:
 - **The reference is found from the copper, not from the technology's ground flags.** It is the nearest
   layer below the trace whose copper covers the trace's whole width at that point (and the nearest above,
   for a stripline). Copper beside the trace on its own layer is coplanar ground; every conductor near the
-  trace is taken to be at ground, which is the only reading a Gerber board allows.
+  trace is taken to be at ground, which is the only reading a Gerber board allows. The one exception is
+  a layer with **nothing drawn on it at all** that the technology marks as the ground reference &mdash; a
+  layout that draws only its top copper and lets the stackup's ground layer stand for the plane. That
+  layer is taken as a solid plane, and the answer says so.
 - **The answer is a quasi-static cross-section solve**, the same engine the EM setup uses for a uniform
   line, so microstrip, grounded coplanar waveguide at any gap and stripline are one method. It is
   frequency-independent and lossless: a check of the geometry, not a replacement for an EM run.
@@ -841,8 +844,10 @@ A trace **fails** when any of these is found on it, and each is numbered on the 
 
 ### The report {#impedance-report}
 
-- **A summary page**: the target and pass band, the technology, the layers, the counts of traces that
-  pass and fail, and per layer the worst excursion from the target.
+- **A summary page** &mdash; always one page: the target and pass band, the technology and its `.ctech`
+  file, the layers, the counts of traces that pass and fail, and per layer the worst excursion from the
+  target. On the right is the **stackup** the traces were solved against, drawn exactly as the
+  technology editor's Stackup tab draws it, with each layer's thickness, εr, tanδ and conductivity.
 - **A map page per layer**: the layer's copper in grey with every trace drawn over it **coloured by its
   Z0** &mdash; green inside the pass band, blue below, red above &mdash; its id, and a numbered marker at
   every finding. The colour scale and the pass band are on the page.

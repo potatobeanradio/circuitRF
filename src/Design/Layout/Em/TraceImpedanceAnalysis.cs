@@ -220,6 +220,12 @@ public sealed record TraceImpedanceReport
     public string Title { get; init; } = "";
     public string? SourcePath { get; init; }
     public string TechnologyName { get; init; } = "";
+
+    /// <summary>The technology the layout resolved, for the report's stackup drawing.</summary>
+    public Technology? Technology { get; init; }
+
+    /// <summary>The <c>.ctech</c> it was read from, or null for one that is not a file.</summary>
+    public string? TechnologyPath { get; init; }
     public double TargetOhms { get; init; }
     public double TolerancePercent { get; init; }
     public double LowOhms => TargetOhms * (1 - TolerancePercent / 100);
@@ -354,6 +360,7 @@ public static class TraceImpedanceAnalysis
         {
             Title = CellTitle(full),
             SourcePath = full,
+            TechnologyPath = resolved.ResolvedPath,
         };
     }
 
@@ -569,6 +576,7 @@ public static class TraceImpedanceAnalysis
         return new TraceImpedanceReport
         {
             TechnologyName = tech.Name,
+            Technology = tech,
             TargetOhms = options.TargetOhms,
             TolerancePercent = options.TolerancePercent,
             DbuPerMicron = dbuPerMicron,
@@ -879,6 +887,16 @@ public static class TraceImpedanceAnalysis
         for (int k = 0; k < 2 * m; k++)          // closed loops, if any
             if (!used[k / 2]) Walk(k);
 
+        // A piece at a chain's END that is shorter than it is wide is the land the trace runs onto — a
+        // component pad the trace overlaps, joined to it as a "width step" — not a line: round 8's
+        // 0201 pads read 57.6 Ω as the last 18.7 mil of a 50 Ω trace. Trimmed, repeatedly, from both
+        // ends; a piece like that INSIDE a chain is a genuine step and stays.
+        foreach (var c in chains)
+        {
+            while (c.Pieces.Count > 1 && c.Pieces[0].Piece.Length < c.Pieces[0].Piece.Width) { c.Pieces.RemoveAt(0); c.StartJunction = false; }
+            while (c.Pieces.Count > 1 && c.Pieces[^1].Piece.Length < c.Pieces[^1].Piece.Width) { c.Pieces.RemoveAt(c.Pieces.Count - 1); c.EndJunction = false; }
+        }
+
         // A chain shorter than MinAspect widths is a pad; one piece shorter than a width is a corner.
         return [.. chains.Where(c =>
         {
@@ -1057,6 +1075,9 @@ public static class TraceImpedanceAnalysis
                     $"The reference {where} steps from '{ra}' to '{rb}' at {fmt.Pt(s.X, s.Y)}."));
             }
         }
+        if (chain.Stations.Select(st => st.Cut?.ImpliedBelow).FirstOrDefault(b => b is not null) is { } implied)
+            runNotes.Add($"Nothing is drawn on '{implied.Layer.Name}', which the technology marks as the ground " +
+                         "reference, so it was taken as a solid plane under the trace.");
         Side(c => c.Below, c => c.LowerRef, c => c.SkippedBelow, "below");
         Side(c => c.Above, c => c.UpperRef, c => c.SkippedAbove, "above");
 

@@ -123,7 +123,7 @@ public partial class LayoutEditorViewModel
             return null;
         }
         if (report.Refusal is { } why) { ReportError($"Impedance Analysis: {why}"); return null; }
-        report = report with { Title = title, SourcePath = source };
+        report = report with { Title = title, SourcePath = source, TechnologyPath = ResolvedTechPath };
 
         if (report.Layers.Count == 0)
         {

@@ -456,6 +456,9 @@ public static class TraceImpedanceProbe
                 $"({string.Join(", ", cut.Below.Select(b => $"'{b.Layer.Name}'"))}).");
             flags.Add("no ground under the trace");
         }
+        if (cut.ImpliedBelow is { } implied)
+            notes.Add($"Nothing is drawn on '{implied.Layer.Name}', which the technology marks as the ground " +
+                      "reference, so it was taken as a solid plane under the trace.");
         if (cut.StackupBottomUsed)
         {
             warnings.Add(
@@ -512,7 +515,7 @@ public static class TraceImpedanceProbe
 
                 foreach (var band in new[] { nearestBelow, nearestAbove })
                 {
-                    if (band is null) continue;
+                    if (band is null || ReferenceEquals(band, cut.ImpliedBelow)) continue;
                     if (TraceCrossSection.Coverage(ctx, band, qx, qy, ux, uy, q.T0, q.T1) >= FullCoverage) continue;
                     if (!uncovered.TryGetValue(band.Index, out var list)) uncovered[band.Index] = list = [];
                     list.Add(dir * s);

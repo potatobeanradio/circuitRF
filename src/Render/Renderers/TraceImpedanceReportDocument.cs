@@ -183,13 +183,19 @@ public static class TraceImpedanceReportDocument
             return lines;
         }
 
-        private float Paragraph(string text, float x, float y, float width, SKFont font, SKColor color, float lead = 1.4f)
+        /// <summary>Wrapped text from <paramref name="y"/> down; a line that would pass
+        /// <paramref name="maxY"/> is not drawn, and the last one drawn ends in an ellipsis.</summary>
+        private float Paragraph(string text, float x, float y, float width, SKFont font, SKColor color,
+                                float lead = 1.4f, float maxY = float.MaxValue)
         {
             using var ink = Fill(color);
-            foreach (var line in Wrap(text, font, width))
+            var lines = Wrap(text, font, width);
+            for (int i = 0; i < lines.Count; i++)
             {
+                if (y + font.Size * lead > maxY) break;
                 y += font.Size * lead;
-                C.DrawText(line, x, y, SKTextAlign.Left, font, ink);
+                bool last = i + 1 < lines.Count && y + font.Size * lead > maxY;
+                C.DrawText(last ? Clip(lines[i] + " …", font, width) : lines[i], x, y, SKTextAlign.Left, font, ink);
             }
             return y;
         }
@@ -207,46 +213,61 @@ public static class TraceImpedanceReportDocument
 
         // ── the summary page ────────────────────────────────────────────────────────────────────
 
+        /// <summary>
+        /// The summary — ALWAYS one page (owner, 2026-09-25). Two columns: what was analysed and what
+        /// was found on the left, the stackup it was analysed against on the right, drawn by the
+        /// renderer the Technology editor's Stackup tab paints with, labels and all. Every block on the
+        /// left is written against the page's bottom and clipped there rather than continued, in
+        /// order of what a reviewer needs first; the method text is last because it is the same on
+        /// every report.
+        /// </summary>
         public void Summary()
         {
             NewPage("Summary");
             using var ink = Fill(Ink);
             using var muted = Fill(Muted);
+            using var accent = Fill(Accent);
+
+            const float leftW = 408f, gap = 20f;
+            float x0 = Margin, rightX = Margin + leftW + gap, rightW = PageW - Margin - rightX;
 
             _y += 16;
-            C.DrawText("Trace Impedance Analysis", Margin, _y, SKTextAlign.Left, _title, ink);
+            C.DrawText("Trace Impedance Analysis", x0, _y, SKTextAlign.Left, _title, ink);
             _y += 18;
-            C.DrawText(report.Title, Margin, _y, SKTextAlign.Left, _h1, Fill(Accent));
-            _y += 6;
+            C.DrawText(Clip(report.Title, _h1, leftW), x0, _y, SKTextAlign.Left, _h1, accent);
+            float columnsTop = _y + 8;
 
+            // ── left: the facts ─────────────────────────────────────────────────────────────────
             var facts = new List<(string, string)>
             {
                 ("Target", $"{report.TargetOhms:0.##} Ω ± {report.TolerancePercent:0.##} %  " +
                            $"(pass band {report.LowOhms:0.0}–{report.HighOhms:0.0} Ω)"),
-                ("Technology", report.TechnologyName),
+                ("Technology", report.TechnologyPath is { Length: > 0 } tp
+                    ? $"{report.TechnologyName}  ({Path.GetFileName(tp)})" : report.TechnologyName),
                 ("Layers", report.LayersRequested.Count > 0 ? string.Join(", ", report.LayersRequested)
                                                             : string.Join(", ", report.Layers.Select(l => l.Name))),
-                ("Source", report.SourcePath ?? report.Title),
+                ("Source", report.SourcePath is { Length: > 0 } sp ? Path.GetFileName(sp) : report.Title),
                 ("Created", $"{report.CreatedUtc.ToLocalTime():yyyy-MM-dd HH:mm}  ·  {report.StationCount:N0} cross-sections, " +
                             $"{report.SolveCount:N0} solved, {report.Elapsed.TotalSeconds:0.#} s"),
             };
-            float y = _y + 8;
+            float y = columnsTop;
             foreach (var (k, v) in facts)
             {
                 y += 13;
-                C.DrawText(k, Margin, y, SKTextAlign.Left, _bold, muted);
-                C.DrawText(Clip(v, _body, PageW - 2 * Margin - 80), Margin + 80, y, SKTextAlign.Left, _body, ink);
+                C.DrawText(k, x0, y, SKTextAlign.Left, _bold, muted);
+                C.DrawText(Clip(v, _body, leftW - 72), x0 + 72, y, SKTextAlign.Left, _body, ink);
             }
-            _y = y + 14;
+            _y = y + 12;
 
             if (report.Cancelled)
             {
                 using var warn = Fill(new SKColor(0xfd, 0xf1, 0xe6));
-                C.DrawRoundRect(new SKRect(Margin, _y, PageW - Margin, _y + 22), 3, 3, warn);
-                C.DrawText($"Cancelled — this report holds the {report.Layers.Count} of {report.LayersRequested.Count} " +
-                           "layers that finished before the run was stopped.",
-                           Margin + 10, _y + 14.5f, SKTextAlign.Left, _bold, Fill(new SKColor(0x9a, 0x4a, 0x00)));
-                _y += 32;
+                using var warnInk = Fill(new SKColor(0x9a, 0x4a, 0x00));
+                C.DrawRoundRect(new SKRect(x0, _y, x0 + leftW, _y + 20), 3, 3, warn);
+                C.DrawText(Clip($"Cancelled — the {report.Layers.Count} of {report.LayersRequested.Count} layers that " +
+                                "finished before the run was stopped.", _bold, leftW - 16),
+                           x0 + 8, _y + 13.5f, SKTextAlign.Left, _bold, warnInk);
+                _y += 28;
             }
 
             // Tiles.
@@ -257,23 +278,24 @@ public static class TraceImpedanceReportDocument
                 ("Fail", report.FailCount.ToString(), FailInk),
                 ("Layers", report.Layers.Count.ToString(), Ink),
             };
-            float tileW = (PageW - 2 * Margin - 3 * 12) / 4f;
+            float tileW = (leftW - 3 * 10) / 4f;
             for (int i = 0; i < tiles.Length; i++)
             {
-                float x = Margin + i * (tileW + 12);
+                float x = x0 + i * (tileW + 10);
                 using var band = Fill(Band);
-                C.DrawRoundRect(new SKRect(x, _y, x + tileW, _y + 54), 4, 4, band);
-                C.DrawText(tiles[i].Value, x + 12, _y + 31, SKTextAlign.Left, _big, Fill(tiles[i].Color));
-                C.DrawText(tiles[i].Label, x + 12, _y + 46, SKTextAlign.Left, _small, muted);
+                using var valueInk = Fill(tiles[i].Color);
+                C.DrawRoundRect(new SKRect(x, _y, x + tileW, _y + 46), 4, 4, band);
+                C.DrawText(tiles[i].Value, x + 10, _y + 27, SKTextAlign.Left, _big, valueInk);
+                C.DrawText(tiles[i].Label, x + 10, _y + 40, SKTextAlign.Left, _small, muted);
             }
-            _y += 72;
+            _y += 60;
 
-            // Per-layer table.
-            C.DrawText("By layer", Margin, _y, SKTextAlign.Left, _h2, ink);
-            _y += 6;
-            float[] cols = [Margin, Margin + 170, Margin + 240, Margin + 300, Margin + 360, Margin + 450];
-            string[] heads = ["Layer", "Traces", "Pass", "Fail", "Pours skipped", "Worst Z0 excursion"];
-            Header(cols, heads);
+            // Per-layer table — every layer, however many; a layer is one short row.
+            C.DrawText("By layer", x0, _y, SKTextAlign.Left, _h2, ink);
+            _y += 5;
+            float[] cols = [x0, x0 + 120, x0 + 166, x0 + 204, x0 + 242, x0 + 290];
+            string[] heads = ["Layer", "Traces", "Pass", "Fail", "Pours", "Worst Z0 excursion"];
+            Header(cols, heads, x0 + leftW);
             foreach (var l in report.Layers)
             {
                 double? worst = l.Traces.SelectMany(t => new[] { t.Z0Min, t.Z0Max })
@@ -286,61 +308,122 @@ public static class TraceImpedanceReportDocument
                            l.Traces.Count(t => t.Verdict == TraceVerdict.Fail).ToString(),
                            l.PoursSkipped.ToString(),
                            worst is { } w ? $"{w:0.0} Ω ({(w - report.TargetOhms) / report.TargetOhms:+0%;-0%})" : "—"],
-                    [Ink, Ink, PassInk, FailInk, Muted, Ink]);
+                    [Ink, Ink, PassInk, FailInk, Muted, Ink], right: x0 + leftW);
             }
             _y += 16;
 
-            // Method and notes.
-            C.DrawText("How it was measured", Margin, _y, SKTextAlign.Left, _h2, ink);
-            string method =
-                "Traces are found in the copper as drawn: a stretch with two long parallel edges facing each other is a trace, " +
-                "and stretches meeting within about a width of each other — through a jog, a bend, a mitre or a width step — " +
-                "are one trace. A junction, a via and the end of the copper end a trace; what continues on another layer is " +
-                "that layer's trace. Copper islands read as pours or planes are not analysed. Each trace is cut once per " +
-                "width along its length and each cut is a quasi-static cross-section solve: the reference below (and above) " +
-                "is the nearest layer whose copper covers the trace's whole width at that cut, and every other conductor " +
-                "near it is held at ground. Corner regions of bends are not cut and are not flagged. A trace FAILS when any " +
-                "of it is outside target ± tolerance, when the nearest layer under (or over) it stops covering it part of " +
-                "the way, or when its reference steps to another layer. The solve is lossless and frequency-independent — a " +
-                "review of the geometry, not a replacement for an EM run.";
-            _y = Paragraph(method, Margin, _y + 2, PageW - 2 * Margin, _body, Muted);
-            _y += 22;
-            C.DrawText("Line types", Margin, _y, SKTextAlign.Left, _h2, ink);
-            _y += 2;
-            foreach (var (shortName, meaning) in TraceImpedanceReport.TypeLegend)
+            // Line types.
+            if (_y + 20 < Bottom)
             {
-                _y += _body.Size * 1.45f;
-                C.DrawText(shortName, Margin, _y, SKTextAlign.Left, _bold, ink);
-                C.DrawText(meaning, Margin + 100, _y, SKTextAlign.Left, _body, muted);
+                C.DrawText("Line types", x0, _y, SKTextAlign.Left, _h2, ink);
+                using var smallBold = Font(SkiaFonts.PlexSemiBold, _small.Size);
+                _y += 1;
+                foreach (var (shortName, meaning) in TraceImpedanceReport.TypeLegend)
+                {
+                    if (_y + _small.Size * 1.5f > Bottom) break;
+                    _y += _small.Size * 1.5f;
+                    C.DrawText(shortName, x0, _y, SKTextAlign.Left, smallBold, ink);
+                    C.DrawText(Clip(meaning, _small, leftW - 72), x0 + 72, _y, SKTextAlign.Left, _small, muted);
+                }
+                _y += 12;
             }
-            _y += 4;
+
             foreach (var note in report.Notes)
-                _y = Paragraph("• " + note, Margin, _y + 2, PageW - 2 * Margin, _body, Ink);
+                _y = Paragraph("• " + note, x0, _y, leftW, _small, Ink, 1.35f, Bottom) + 2;
+
+            // Method — last, and clipped to the page.
+            if (_y + 24 < Bottom)
+            {
+                _y += 8;
+                C.DrawText("How it was measured", x0, _y, SKTextAlign.Left, _h2, ink);
+                string method =
+                    "Traces are found in the copper as drawn: two long parallel edges facing each other are a trace, and " +
+                    "stretches meeting within about a width — through a jog, a bend, a mitre or a width step — are one " +
+                    "trace. A junction, a via, a pad and the end of the copper end a trace; what continues on another layer " +
+                    "is that layer's trace. Pours and planes are not analysed. Each trace is cut once per width, and each cut " +
+                    "is a quasi-static cross-section solve over the stackup at right: the reference below (and above) is " +
+                    "the nearest layer whose copper covers the trace's whole width there, and every other conductor near " +
+                    "it is held at ground. Bend corners are not cut and not flagged. A trace FAILS when any of it is " +
+                    "outside target ± tolerance, when the nearest layer under (or over) it stops covering it part of the " +
+                    "way, or when its reference steps to another layer. The solve is lossless and frequency-independent: " +
+                    "a review of the geometry, not a replacement for an EM run.";
+                _y = Paragraph(method, x0, _y + 1, leftW, _small, Muted, 1.35f, Bottom);
+            }
+
+            // ── right: the stackup ──────────────────────────────────────────────────────────────
+            DrawStackup(new SKRect(rightX, columnsTop, rightX + rightW, Bottom));
         }
 
-        private void Header(float[] cols, string[] heads)
+        /// <summary>The stackup the analysis cut through, as the Technology editor's Stackup tab
+        /// draws it — bands, vias and the tab's own text labels — scaled uniformly into
+        /// <paramref name="box"/>, with the technology's name and <c>.ctech</c> file above it.</summary>
+        private void DrawStackup(SKRect box)
+        {
+            using var ink = Fill(Ink);
+            using var muted = Fill(Muted);
+            float y = box.Top + 13;
+            C.DrawText("Stackup", box.Left, y, SKTextAlign.Left, _h2, ink);
+            y += 12;
+            C.DrawText(Clip(report.TechnologyName, _body, box.Width), box.Left, y, SKTextAlign.Left, _body, ink);
+            if (report.TechnologyPath is { Length: > 0 } path)
+            {
+                y += 11;
+                C.DrawText(Clip(Path.GetFileName(path), _small, box.Width), box.Left, y, SKTextAlign.Left, _small, muted);
+            }
+            y += 8;
+
+            if (report.Technology is not { } tech)
+            {
+                C.DrawText("No stackup.", box.Left, y + 12, SKTextAlign.Left, _body, muted);
+                return;
+            }
+
+            // Laid out wide enough that no spec wraps — the width the tab's own copy-as-picture uses —
+            // then scaled down to the column, uniformly: a stackup stretched on one axis misstates
+            // every thickness in it.
+            // The narrowest layout that keeps the tab's label column BESIDE the bands (a narrower one
+            // stacks the specs beneath the drawing, which the page has no height for), widened until no
+            // spec wraps — so the scale-down to the column is as small as it can be.
+            float w = 400f;
+            while (w < 1600f && StackupScene.Build(tech, w).LabelColumnDropped) w += 20f;
+            var scene = StackupScene.Build(tech, StackupScene.WidthThatFitsLabels(tech, w, 1600f));
+            var area = new SKRect(box.Left, y, box.Right, box.Bottom);
+            float scale = Math.Min(area.Width / Math.Max(1f, scene.Width), area.Height / Math.Max(1f, scene.Height));
+            scale = Math.Min(scale, 1f);
+
+            using (var frame = Stroke(Rule, 0.6f))
+                C.DrawRoundRect(new SKRect(area.Left, area.Top, area.Left + scene.Width * scale, area.Top + scene.Height * scale), 3, 3, frame);
+            C.Save();
+            C.Translate(area.Left, area.Top);
+            C.Scale(scale);
+            StackupRenderer.Draw(C, scene, StackupRenderTheme.Light, transparentBackground: true);
+            C.Restore();
+        }
+
+        private void Header(float[] cols, string[] heads, float right = PageW - Margin)
         {
             using var band = Fill(Band);
             using var muted = Fill(Muted);
-            C.DrawRect(Margin, _y, PageW - 2 * Margin, 15, band);
+            C.DrawRect(cols[0], _y, right - cols[0], 15, band);
             using var headFont = Font(SkiaFonts.PlexSemiBold, 7.5f);
             for (int i = 0; i < heads.Length; i++)
                 C.DrawText(heads[i], cols[i] + 3, _y + 10.5f, SKTextAlign.Left, headFont, muted);
             _y += 15;
         }
 
-        private void Row(float[] cols, string[] cells, SKColor[] colors, SKColor? background = null)
+        private void Row(float[] cols, string[] cells, SKColor[] colors, SKColor? background = null,
+                         float right = PageW - Margin)
         {
-            if (background is { } bg) using (var p = Fill(bg)) C.DrawRect(Margin, _y, PageW - 2 * Margin, 13, p);
+            if (background is { } bg) using (var p = Fill(bg)) C.DrawRect(cols[0], _y, right - cols[0], 13, p);
             for (int i = 0; i < cells.Length; i++)
             {
-                float width = (i + 1 < cols.Length ? cols[i + 1] : PageW - Margin) - cols[i] - 6;
+                float width = (i + 1 < cols.Length ? cols[i + 1] : right) - cols[i] - 6;
                 using var ink = Fill(colors[Math.Min(i, colors.Length - 1)]);
                 C.DrawText(Clip(cells[i], _body, width), cols[i] + 3, _y + 9.5f, SKTextAlign.Left, _body, ink);
             }
             _y += 13;
             using var rule = Stroke(Rule, 0.4f);
-            C.DrawLine(Margin, _y, PageW - Margin, _y, rule);
+            C.DrawLine(cols[0], _y, right, _y, rule);
         }
 
         // ── the map page ────────────────────────────────────────────────────────────────────────
