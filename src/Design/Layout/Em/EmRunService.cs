@@ -478,15 +478,20 @@ public static class EmRunService
     /// the far side of the UI firewall. Clamped by <see cref="EmSolveCores.Sanitise"/> exactly as a
     /// stored value is, so a caller cannot ask for more cores than the machine has. It enters no
     /// provenance hash (R-emp-7), because it cannot change an answer (R-emp-8).</param>
+    /// <param name="confirmMemory">brief-em3d-21 R-em3d21-2b — asked, with the warning's sentence, when
+    /// a 3D Palace run's memory estimate is past 150 % of this machine's: true starts it anyway. The
+    /// panel shows a dialog; the CLI answers with <c>--force</c>. Null refuses such a run. Called on the
+    /// run's own thread, before Gmsh and again before Palace (once the mesh's size is known).</param>
     public static EmRunResult Run(
         EmSetup            setup,
         EmLayoutSource?    source,
         string             resultsRoot,
         CancellationToken  ct = default,
         RunControl?        control = null,
-        int?               maxCores = null)
+        int?               maxCores = null,
+        Func<string, bool>? confirmMemory = null)
     {
-        try { return RunCore(setup, source, resultsRoot, ct, control, maxCores); }
+        try { return RunCore(setup, source, resultsRoot, ct, control, maxCores, confirmMemory); }
         catch (OperationCanceledException)
         {
             // A stopped run is a normal outcome, not a failure — and it wrote nothing, because every
@@ -504,7 +509,8 @@ public static class EmRunService
         string             resultsRoot,
         CancellationToken  ct,
         RunControl?        control,
-        int?               maxCores)
+        int?               maxCores,
+        Func<string, bool>? confirmMemory)
     {
         // One token, not two. RunControl bundles cancellation WITH progress precisely so a caller
         // wires both once; where a control is supplied its token is authoritative and the bare `ct`
@@ -534,7 +540,7 @@ public static class EmRunService
         // checks (brief 6) come first there, then the backend. Nothing below this line changes for a
         // planar setup.
         if (setup.Is3D)
-            return CircuitRF.Design.Em3d.Em3dRunService.Run(setup, source, resultsRoot, ct, control, maxCores);
+            return CircuitRF.Design.Em3d.Em3dRunService.Run(setup, source, resultsRoot, ct, control, maxCores, confirmMemory);
 
         // ── A .cem WRITTEN BEFORE THE TYPE MOVED TO THE DRAWING ─────────────────────────────────
         //

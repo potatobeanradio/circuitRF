@@ -140,11 +140,32 @@ public sealed class CemAirBox
     public CemAirBoxFace? ZMax { get; set; }
 }
 
+/// <summary>
+/// brief-em3d-21 R-em3d21-4 — a Palace quality preset: a named set of the section's cost-deciding
+/// fields. Each is a claim about cost and accuracy, so each was MEASURED on F0's cases A and B
+/// (src/Design/RESOLVED.md §brief-em3d-21 holds the table); <see cref="Standard"/> is exactly the
+/// defaults every run had before presets existed.
+/// </summary>
+public enum PalaceQuality
+{
+    /// <summary>Element order 1, no refinement passes, sweep tolerance 1e-3: the cheapest honest run.</summary>
+    Draft,
+    /// <summary>Today's defaults — <see cref="PalaceSettings.Default"/>, field for field.</summary>
+    Standard,
+    /// <summary>Order 2, up to 3 refinement passes at tolerance 0.005, sweep tolerance 1e-5.</summary>
+    Accurate,
+}
+
 /// <summary>Palace's own settings (em-3d.md §4.2). Every field may be omitted, and an omitted field
-/// takes circuitRF's default for it; an omitted section takes every default. The initial mesh these
-/// size is only a starting point: Palace's adaptive refinement converges the answer.</summary>
+/// takes the preset's value for it (<see cref="Quality"/>, Standard when omitted); an omitted section
+/// takes every default. The initial mesh these size is only a starting point: Palace's adaptive
+/// refinement converges the answer.</summary>
 public sealed class CemPalace
 {
+    /// <summary>The quality preset: Draft, Standard or Accurate. Omitted means Standard, which is the
+    /// defaults below. An explicit field overrides the preset's value for that field only.</summary>
+    public PalaceQuality? Quality { get; set; }
+
     /// <summary>The largest element allowed in each material, as a fraction of the wavelength in that
     /// material at the sweep's top frequency. Default 0.1 (a tenth of a wavelength).</summary>
     public double? MaxElementWavelengths { get; set; }
@@ -176,7 +197,7 @@ public sealed class CemPalace
 
     /// <summary>True when no field is set: the same run as an omitted section.</summary>
     public bool IsEmpty =>
-        MaxElementWavelengths is null && EdgeRefinement is null && Grading is null && ElementOrder is null &&
+        Quality is null && MaxElementWavelengths is null && EdgeRefinement is null && Grading is null && ElementOrder is null &&
         AdaptiveTol is null && AdaptiveMaxIterations is null && SweepAdaptiveTol is null;
 }
 
@@ -203,15 +224,35 @@ public sealed record PalaceSettings(
     /// </summary>
     public static PalaceSettings Default { get; } = new(0.1, 0.2, 1.3, 2, 0.01, 2, 1e-4);
 
-    /// <summary>The section's values, each omitted one taking <see cref="Default"/>'s.</summary>
-    public static PalaceSettings Resolve(CemPalace? section) => section is null ? Default : new(
-        section.MaxElementWavelengths ?? Default.MaxElementWavelengths,
-        section.EdgeRefinement        ?? Default.EdgeRefinement,
-        section.Grading               ?? Default.Grading,
-        section.ElementOrder          ?? Default.ElementOrder,
-        section.AdaptiveTol           ?? Default.AdaptiveTol,
-        section.AdaptiveMaxIterations ?? Default.AdaptiveMaxIterations,
-        section.SweepAdaptiveTol      ?? Default.SweepAdaptiveTol);
+    /// <summary>
+    /// brief-em3d-21 R-em3d21-4 — a preset's values. <b>Standard is <see cref="Default"/></b>, so no
+    /// golden and no existing answer moves. Draft and Accurate change only the element order, the
+    /// refinement and the sweep tolerance: the starting mesh's sizes are the same in all three, so a
+    /// preset change reuses the mesh.
+    /// </summary>
+    public static PalaceSettings Preset(PalaceQuality quality) => quality switch
+    {
+        PalaceQuality.Draft    => Default with { ElementOrder = 1, AdaptiveMaxIterations = 0, SweepAdaptiveTol = 1e-3 },
+        PalaceQuality.Accurate => Default with { ElementOrder = 2, AdaptiveMaxIterations = 3, AdaptiveTol = 0.005,
+                                                 SweepAdaptiveTol = 1e-5 },
+        _                      => Default,
+    };
+
+    /// <summary>The section's values: the preset first (Standard when the section names none), then
+    /// every field the section sets, each overriding the preset's value for that field.</summary>
+    public static PalaceSettings Resolve(CemPalace? section)
+    {
+        if (section is null) return Default;
+        var p = Preset(section.Quality ?? PalaceQuality.Standard);
+        return new(
+            section.MaxElementWavelengths ?? p.MaxElementWavelengths,
+            section.EdgeRefinement        ?? p.EdgeRefinement,
+            section.Grading               ?? p.Grading,
+            section.ElementOrder          ?? p.ElementOrder,
+            section.AdaptiveTol           ?? p.AdaptiveTol,
+            section.AdaptiveMaxIterations ?? p.AdaptiveMaxIterations,
+            section.SweepAdaptiveTol      ?? p.SweepAdaptiveTol);
+    }
 
     /// <summary>Every value that cannot be run, as sentences naming the field — empty when all can.</summary>
     public IReadOnlyList<string> Problems()

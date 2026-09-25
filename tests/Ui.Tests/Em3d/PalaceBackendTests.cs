@@ -437,9 +437,12 @@ public sealed class PalaceBackendTests(ITestOutputHelper output) : IDisposable
 
     /// <summary>A workspace holding the small microstrip — .cws, technology, cell layout, .cem — laid
     /// out as the GUI lays one out. Returns the .cem's path.</summary>
-    private string SmallWorkspace(string name)
+    private string SmallWorkspace(string name) => SmallWorkspace(_root, name);
+
+    /// <summary>The same, under <paramref name="root"/> — brief-em3d-21's live gates run it too.</summary>
+    internal static string SmallWorkspace(string root, string name)
     {
-        string ws = Path.Combine(_root, name);
+        string ws = Path.Combine(root, name);
         var (setup, source) = Em3dGeneratorTests.Microstrip();
         Shrink(setup);
         setup.Name = "ms";
@@ -524,8 +527,11 @@ public sealed class PalaceBackendTests(ITestOutputHelper output) : IDisposable
         catch (InvalidOperationException) { return false; }
     }
 
-    private static string[] WithoutWriteStamp(IEnumerable<string> lines)
-        => [.. lines.Where(l => !l.Contains("circuitRF-EM written:", StringComparison.Ordinal))];
+    // brief-em3d-21 R-em3d21-5b: the run-cost line (wall time, peak memory) differs between two runs of
+    // one setup exactly as the write stamp does, so it is left out with it.
+    internal static string[] WithoutWriteStamp(IEnumerable<string> lines)
+        => [.. lines.Where(l => !l.Contains("circuitRF-EM written:", StringComparison.Ordinal) &&
+                                !l.Contains(Em3dRunService.CostProvenancePrefix, StringComparison.Ordinal))];
 
     internal static double[] Unwrap(double[] p)
     {

@@ -8647,7 +8647,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             //    thing to want: a resonance search keeps adding full-wave points after the resonance
             //    is on screen, and each of those is tens of seconds. It says what it will do rather
             //    than only that it heard, for the reason Cancel does.
-            stop: () =>
+            // brief-em3d-21 R-em3d21-6b — a 3D run cannot finish early and keep what it has, so it
+            // offers no Stop at all: the panel's button reads Cancel and cancels.
+            stop: setup.Is3D ? null : () =>
             {
                 Messages.Info(adaptive
                     ? "Stopping the EM analysis at the next work boundary. Everything solved so far " +
@@ -8673,6 +8675,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 // every surface and the ordering rule (a cancel outranks a stop, never the reverse)
                 // is enforced in one place.
                 vm.StopRequested   = cancellation.Stop;
+                vm.StopIsCancel    = setup.Is3D;
                 vm.IsRunning       = true;
                 // The workspace-level record of this run, for the gestures that would otherwise
                 // close the workspace out from under it (RefusedWhileEmWorkInFlight). Added on the
@@ -8683,7 +8686,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 // UI side that owns the preferences file, and handed to the run service as an
                 // argument. EmRunService itself lives in CircuitRF.Design and cannot reach it.
                 result = await Task.Run(() => EmRunService.Run(
-                    setup, source, resultsRoot, default, control, EmSolveCorePreference.Preferred));
+                    setup, source, resultsRoot, default, control, EmSolveCorePreference.Preferred, ConfirmEmMemory));
             }
             catch (Exception ex)
             {
@@ -8700,6 +8703,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 vm.IsStopping      = false;
                 vm.CancelRequested = null;
                 vm.StopRequested   = null;
+                vm.StopIsCancel    = false;
             }
         }
 
@@ -9011,6 +9015,22 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// <para>It rides in the TRAILING counter on the sweep row, never in the text left of the bar,
     /// for the reason the remark above gives: text that grows to the left moves the bar. The stage
     /// row's label is the changing part by design, so there it goes in the label.</para></param>
+    /// <summary>
+    /// brief-em3d-21 R-em3d21-2b — asked by a Palace run, on ITS thread, when its memory estimate is
+    /// past 150 % of this machine's: before Gmsh starts, and again before Palace once the mesh's size is
+    /// known. The dialog runs on the UI thread and the run waits for the answer; nothing has started a
+    /// solver while it is open.
+    /// </summary>
+    private bool ConfirmEmMemory(string warning)
+        => Dispatcher.UIThread.InvokeAsync(async () =>
+        {
+            if (ResolveOwner(null) is not { } owner) return false;
+            var choice = await new Views.Dialogs.SaveChangesDialog(
+                warning, saveLabel: "Simulate Anyway", dontSaveLabel: null, cancelLabel: "Don't Simulate",
+                title: "This Run May Not Fit in Memory").ShowDialog<SaveChangesResult>(owner);
+            return choice == SaveChangesResult.Save;
+        }).GetAwaiter().GetResult();
+
     internal static void ReportEmProgress(
         IProgressMessage sweepLive, IProgressMessage stageLive,
         string setupName, RunProgress p, bool adaptive, bool stopping = false)
@@ -9028,6 +9048,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                              indeterminate: true);
 
         string what = string.IsNullOrEmpty(p.Stage) ? "starting" : p.Stage;
+        // brief-em3d-21 R-em3d21-2c — a live figure beside the stage (a 3D solver's memory in use).
+        if (!string.IsNullOrEmpty(p.StageDetail)) what += " · " + p.StageDetail;
         if (stopping) what += " (stopping)";
         if (p.StageTotal > 0)
             stageLive.Update($"EM '{setupName}' — {what}",
@@ -9055,6 +9077,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// </summary>
     internal static string StageCounter(RunProgress p)
     {
+        // brief-em3d-21 R-em3d21-1c — Palace's sampling bar is a CONVERGENCE on a log scale, not a
+        // count of anything done, so it carries no "k / 1000": the row says what the bar is instead.
+        if (p.StageUnit == CircuitRF.Design.Em3d.PalaceStageTracker.ConvergenceUnit) return p.StageUnit;
         string counter = FormatCounter(p.StageCompleted, p.StageTotal);
         return string.IsNullOrEmpty(p.StageUnit) ? counter : $"{counter} {p.StageUnit}";
     }

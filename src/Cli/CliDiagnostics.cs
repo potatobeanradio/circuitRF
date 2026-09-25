@@ -289,6 +289,17 @@ internal static class CliDiagnostics
         "em: --solver takes palace, openems or both, not '{value}'.",
         ("value", value));
 
+    /// <summary>brief-em3d-21 R-em3d21-6a — <c>em --solver</c> on a PLANAR setup is refused, naming the
+    /// field that makes a setup 3D. It used to convert the run silently, and a demonstration that
+    /// switches solvers without saying so is the wrong kind of surprise.</summary>
+    public static Diagnostic EmSolverOnPlanar(string value, string setup) => Diagnostic.Create(
+        "cli.em.solver-on-planar",
+        DiagnosticSeverity.Error,
+        "em: --solver {value} was given, but '{setup}' is a planar setup (it has no Solver3D). --solver chooses " +
+        "between 3D solvers only; to run this setup in 3D, set its Solver3D field (Palace, OpenEms or Both) in the " +
+        ".cem or the panel's Solver picker.",
+        ("value", value), ("setup", setup));
+
     public static Diagnostic EmSetupWarning(string text) => Diagnostic.Create(
         "em.setup.warning", DiagnosticSeverity.Warning, "{text}", ("text", text));
 

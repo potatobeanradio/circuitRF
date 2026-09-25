@@ -486,6 +486,7 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "cli.args.set-malformed",
         "cli.args.unknown-option",
         "cli.em.setup-unreadable",
+        "cli.em.solver-on-planar",
         "cli.em.unknown-solver",
         "cli.input.not-found",
         // AUT-11 R-aut11-1. The one id that changed an EXISTING verb: a run of a document that is

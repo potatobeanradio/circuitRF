@@ -1318,8 +1318,9 @@ static string FormatOhms(double re, double im)
 /// </summary>
 static int RunEm(string[] args)
 {
-    string? input = null, output = null, workspace = null;
+    string? input = null, output = null, workspace = null, solverName = null;
     Em3dSolver? solver = null;
+    bool force = false;
 
     for (int i = 0; i < args.Length; i++)
     {
@@ -1331,7 +1332,7 @@ static int RunEm(string[] args)
             // brief-em3d-7 R-em3d7-1b (owner decision D1) — the 3D solver for THIS run, overriding the
             // setup's Solver3D in memory only. Nothing is written back: the .cem is not saved here.
             case "--solver" when i + 1 < args.Length:
-                string name = args[++i];
+                string name = solverName = args[++i];
                 solver = name.ToLowerInvariant() switch
                 {
                     "palace"  => Em3dSolver.Palace,
@@ -1345,6 +1346,11 @@ static int RunEm(string[] args)
             case "--workspace" when i + 1 < args.Length:
                 workspace = args[++i];
                 break;
+            // brief-em3d-21 R-em3d21-2b — start a Palace run whose memory estimate is past 150 % of this
+            // machine's. The panel asks instead; headless there is nobody to ask.
+            case "--force":
+                force = true;
+                break;
             default:
                 if (args[i].StartsWith('-'))
                     return JsonRun.Fail(CliDiagnostics.RunUnknownOption("em", args[i]));
@@ -1356,7 +1362,7 @@ static int RunEm(string[] args)
     if (input is null)
     {
         int code = JsonRun.Fail(CliDiagnostics.InputRequired("em", ".cem"));
-        Console.Error.WriteLine("Usage: circuitrf em <setup.cem> [-o out.sNp] [--workspace <file.cws>] [--solver palace|openems|both]");
+        Console.Error.WriteLine("Usage: circuitrf em <setup.cem> [-o out.sNp] [--workspace <file.cws>] [--solver palace|openems|both] [--force]");
         return code;
     }
     JsonRun.InputPath = input;
@@ -1375,6 +1381,9 @@ static int RunEm(string[] args)
         return JsonRun.Fail(CliDiagnostics.SetupUnreadable(cemPath, ex.Message));
     }
 
+    // brief-em3d-21 R-em3d21-6a — --solver chooses between 3D solvers; it never makes a planar setup 3D.
+    if (solver is not null && !setup.Is3D)
+        return JsonRun.Fail(CliDiagnostics.EmSolverOnPlanar(solverName!, Path.GetFileName(cemPath)));
     if (solver is { } chosen) setup.Solver3D = chosen;
 
     // R-emcli-5 — a WALK-UP, not a flag. The .cem's own ancestor .cws is what LayoutRef is relative
@@ -1428,7 +1437,8 @@ static int RunEm(string[] args)
     EmRunResult result;
     try
     {
-        result = EmRunService.Run(setup, resolution.Source, resultsRoot, RunHost.Cancellation, EmProgressToStderr());
+        result = EmRunService.Run(setup, resolution.Source, resultsRoot, RunHost.Cancellation, EmProgressToStderr(),
+                                  confirmMemory: force ? _ => true : null);
     }
     catch (Exception ex)
     {

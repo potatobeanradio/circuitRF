@@ -10,6 +10,12 @@ using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace CircuitRF.Ui.Layout.Em;
 
+/// <summary>One row of the Palace preset picker (brief-em3d-21 R-em3d21-4).</summary>
+public sealed record PalaceQualityChoice(PalaceQuality Value, string Label)
+{
+    public override string ToString() => Label;
+}
+
 /// <summary>One row of the Solver picker.</summary>
 public sealed record Em3dSolverChoice(Em3dSolver Value, string Label)
 {
@@ -81,14 +87,57 @@ public sealed partial class EmSetupEditorViewModel
     [ObservableProperty] private string _palaceSweepAdaptiveTolText      = "";
     [ObservableProperty] private string? _palaceFieldError;
 
-    /// <summary>What a blank box stands for — the one set of defaults the writers read.</summary>
-    public static string PalaceDefaultMaxElementWavelengths => G(PalaceSettings.Default.MaxElementWavelengths);
-    public static string PalaceDefaultEdgeRefinement        => G(PalaceSettings.Default.EdgeRefinement);
-    public static string PalaceDefaultGrading               => G(PalaceSettings.Default.Grading);
-    public static string PalaceDefaultElementOrder          => PalaceSettings.Default.ElementOrder.ToString(CultureInfo.InvariantCulture);
-    public static string PalaceDefaultAdaptiveTol           => G(PalaceSettings.Default.AdaptiveTol);
-    public static string PalaceDefaultAdaptiveMaxIterations => PalaceSettings.Default.AdaptiveMaxIterations.ToString(CultureInfo.InvariantCulture);
-    public static string PalaceDefaultSweepAdaptiveTol      => G(PalaceSettings.Default.SweepAdaptiveTol);
+    // ── brief-em3d-21 R-em3d21-4: the preset ─────────────────────────────────────────────────
+
+    /// <summary>The three presets. Standard is today's defaults; the tooltip carries what each one
+    /// costs and how far it lands from Accurate, as measured (src/Design/RESOLVED.md §brief-em3d-21).</summary>
+    public static IReadOnlyList<PalaceQualityChoice> PalaceQualityChoices { get; } =
+    [
+        new(PalaceQuality.Draft,    "Draft"),
+        new(PalaceQuality.Standard, "Standard"),
+        new(PalaceQuality.Accurate, "Accurate"),
+    ];
+
+    /// <summary>What each preset trades, as measured on F0's cases A and B. The figures are the
+    /// measurement's, not estimates; a preset whose deviation grew would change them.</summary>
+    public static string PalaceQualityTip => CircuitRF.Design.Em3d.PalacePresetTable.Tooltip;
+
+    [ObservableProperty] private PalaceQualityChoice _palaceQualityChoice = PalaceQualityChoices[1];
+
+    partial void OnPalaceQualityChoiceChanged(PalaceQualityChoice value)
+    {
+        RaisePalacePlaceholders();
+        if (_suppressCommit) return;
+        var section = Working.Palace?.Clone() ?? new CemPalace();
+        // Standard is written as no field at all, so choosing it on a setup that never named one is no edit.
+        section.Quality = value.Value == PalaceQuality.Standard ? null : value.Value;
+        var before = SnapshotJson();
+        Working.Palace = section.IsEmpty ? null : section;
+        if (SnapshotJson() == before) return;
+        CommitEdit(before, "Change Palace preset");
+    }
+
+    private PalaceSettings PresetShown => PalaceSettings.Preset(PalaceQualityChoice.Value);
+
+    /// <summary>What a blank box stands for — the chosen preset's value, the one the writers read.</summary>
+    public string PalaceDefaultMaxElementWavelengths => G(PresetShown.MaxElementWavelengths);
+    public string PalaceDefaultEdgeRefinement        => G(PresetShown.EdgeRefinement);
+    public string PalaceDefaultGrading               => G(PresetShown.Grading);
+    public string PalaceDefaultElementOrder          => PresetShown.ElementOrder.ToString(CultureInfo.InvariantCulture);
+    public string PalaceDefaultAdaptiveTol           => G(PresetShown.AdaptiveTol);
+    public string PalaceDefaultAdaptiveMaxIterations => PresetShown.AdaptiveMaxIterations.ToString(CultureInfo.InvariantCulture);
+    public string PalaceDefaultSweepAdaptiveTol      => G(PresetShown.SweepAdaptiveTol);
+
+    private void RaisePalacePlaceholders()
+    {
+        OnPropertyChanged(nameof(PalaceDefaultMaxElementWavelengths));
+        OnPropertyChanged(nameof(PalaceDefaultEdgeRefinement));
+        OnPropertyChanged(nameof(PalaceDefaultGrading));
+        OnPropertyChanged(nameof(PalaceDefaultElementOrder));
+        OnPropertyChanged(nameof(PalaceDefaultAdaptiveTol));
+        OnPropertyChanged(nameof(PalaceDefaultAdaptiveMaxIterations));
+        OnPropertyChanged(nameof(PalaceDefaultSweepAdaptiveTol));
+    }
 
     private void SyncSolver3DFields()
     {
@@ -96,6 +145,7 @@ public sealed partial class EmSetupEditorViewModel
         Solver3DChoice = Solver3DChoices.FirstOrDefault(c => c.Value == Working.Solver3D)
                          ?? new Em3dSolverChoice(Working.Solver3D, Working.Solver3D.ToString());
         var p = Working.Palace;
+        PalaceQualityChoice = PalaceQualityChoices.First(c => c.Value == (p?.Quality ?? PalaceQuality.Standard));
         PalaceMaxElementWavelengthsText = G(p?.MaxElementWavelengths);
         PalaceEdgeRefinementText        = G(p?.EdgeRefinement);
         PalaceGradingText               = G(p?.Grading);

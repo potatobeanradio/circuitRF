@@ -210,7 +210,26 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     /// <para>An escalation reads correctly: a cancel asked for after a stop says "Cancelling…",
     /// because the stronger request is the one that will happen.</para>
     /// </summary>
-    public string StopButtonText => IsCancelling ? "Cancelling…" : IsStopping ? "Stopping…" : "Stop";
+    public string StopButtonText => IsCancelling ? "Cancelling…" : IsStopping ? "Stopping…" : StopIsCancel ? "Cancel" : "Stop";
+
+    /// <summary>
+    /// brief-em3d-21 R-em3d21-6b — true while the run in flight is a 3D one. Palace cannot finish
+    /// early and keep what it has, and neither can the rest of the 3D path, so its running button is
+    /// labelled <b>Cancel</b> and does what Cancel does: the panel never shows a Stop that behaves like
+    /// Cancel. Set by the host alongside <see cref="IsRunning"/>.
+    /// </summary>
+    [ObservableProperty] private bool _stopIsCancel;
+
+    partial void OnStopIsCancelChanged(bool value)
+    {
+        OnPropertyChanged(nameof(StopButtonText));
+        OnPropertyChanged(nameof(StopButtonTip));
+    }
+
+    /// <summary>The running button's tooltip, which says which of the two halts it is.</summary>
+    public string StopButtonTip => StopIsCancel
+        ? "Cancel the 3D run: stop the solver now and write nothing. A 3D solver cannot finish early and keep what it has."
+        : "Finish the EM run now and KEEP the points already solved. It stops at the next work boundary. Right-click to cancel instead, which throws the run away.";
 
     [RelayCommand(CanExecute = nameof(CanCancelMesh))]
     public void CancelMesh() => CancelMeshRequested?.Invoke();
@@ -2385,7 +2404,11 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     /// goes to "Stopping…" rather than waiting silently.</para>
     /// </summary>
     [RelayCommand(CanExecute = nameof(CanStopSimulate))]
-    public void StopSimulate() => StopRequested?.Invoke();
+    public void StopSimulate()
+    {
+        if (StopIsCancel) CancelRequested?.Invoke();
+        else StopRequested?.Invoke();
+    }
 
     // A cancel after a stop is still allowed — the stronger request wins and the host's own
     // RunCancellation enforces the ordering — so this is gated on the stop, not on both.

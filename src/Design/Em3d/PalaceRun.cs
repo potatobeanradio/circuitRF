@@ -29,7 +29,25 @@ namespace CircuitRF.Design.Em3d;
 public sealed record PalaceStep(bool Ok, bool Cancelled, bool Refused, string? Message, bool Reused = false)
 {
     public static PalaceStep Done(bool reused = false) => new(true, false, false, null, reused);
+
+    /// <summary>brief-em3d-21 R-em3d21-2c — the process tree's highest resident memory seen, bytes,
+    /// where this OS lets it be read.</summary>
+    public long? PeakResidentBytes { get; init; }
+
+    /// <summary>The one-time note a tree reaching 90 % of physical memory gets.</summary>
+    public string? MemoryNote { get; init; }
+
+    /// <summary>A mesh step's tetrahedra, as Gmsh reported creating them — from this run's log, or from
+    /// the log the reused mesh was made with. Null when Gmsh printed no count.</summary>
+    public long? Tetrahedra { get; init; }
 }
+
+/// <summary>
+/// brief-em3d-21 — what a running program's output and memory are watched with: a line handler, fed
+/// on the RUN's thread (so a cancellation it throws can kill the tree), and the machine's memory for
+/// the once-a-second resident sample. Null handler: the stage ticks once per line, as before.
+/// </summary>
+public sealed record ProcessWatch(Action<string>? OnLine, long PhysicalBytes);
 
 /// <summary>What Palace said about the run it made (<c>postpro/palace.json</c>): the mesh it started
 /// from and the one it finished on, and how many adaptive passes lay between.</summary>
@@ -49,6 +67,9 @@ public static class PalaceRun
 
     /// <summary>Names the MPI launcher for one process, as <c>CIRCUITRF_PALACE</c> names Palace.</summary>
     public const string MpiLauncherVariable = "CIRCUITRF_MPIRUN";
+
+    /// <summary>The stage a run whose geometry is unchanged shows instead of meshing.</summary>
+    public const string MeshReusedLabel = "Mesh reused (the geometry script is unchanged)";
 
     private static long _gmsh, _palace;
 
@@ -70,7 +91,7 @@ public static class PalaceRun
     /// (R-em3d7-3b) — on a reused mesh too, since the check is the thing that makes a mesh usable.
     /// </summary>
     public static PalaceStep Mesh(string runDir, GmshLowering lowering, string gmsh, RunControl? control,
-                                  CancellationToken ct)
+                                  CancellationToken ct, long physicalBytes = 0)
     {
         ArgumentNullException.ThrowIfNull(lowering);
         if (!lowering.Ok) return new(false, false, true, lowering.Refusal);
@@ -81,6 +102,7 @@ public static class PalaceRun
         string entPath  = Path.Combine(runDir, GmshGeoWriter.EntitiesFile);
         string hashPath = Path.Combine(runDir, MeshHashFile);
         string logPath  = Path.Combine(runDir, GmshLogFile);
+        GmshLogProgress? gmshLog = null;
 
         WriteText(Path.Combine(runDir, GmshGeoWriter.GroupsFile), lowering.GroupsJson!);
         string hash = Sha256(lowering.Geo!);
@@ -94,10 +116,12 @@ public static class PalaceRun
                 if (File.Exists(stale)) File.Delete(stale);
             WriteText(geoPath, lowering.Geo!);
 
-            control?.BeginStage("meshing (Gmsh)", 0, "lines");
+            // brief-em3d-21 R-em3d21-1e — Gmsh's own stage lines, not a count of them.
+            gmshLog = new GmshLogProgress(control);
+            gmshLog.Begin();
             Interlocked.Increment(ref _gmsh);
             var run = RunProcess(gmsh, [GmshGeoWriter.GeoFile, "-3", "-o", GmshGeoWriter.MeshFile], runDir, logPath,
-                                 Em3dProcessKind.Mesher, env: null, control, ct);
+                                 Em3dProcessKind.Mesher, env: null, control, ct, new ProcessWatch(gmshLog.Line, physicalBytes));
             if (run.Cancelled) return new(false, true, false, null);
             if (run.StartFailure is { } why)
                 return new(false, false, false, $"Gmsh could not be started ({why}).");
@@ -112,7 +136,15 @@ public static class PalaceRun
             return new(false, false, true, refusal + $" The script and its entity table are in {runDir}.");
 
         if (!reuse) WriteText(hashPath, hash + "\n");
-        return PalaceStep.Done(reuse);
+        // R-em3d21-1e — a reused mesh is said, not shown as a meshing stage. Its size is the log it was
+        // made with, read by the same reader.
+        if (reuse)
+        {
+            control?.BeginStage(MeshReusedLabel);
+            gmshLog = new GmshLogProgress(null);
+            if (File.Exists(logPath)) foreach (string line in File.ReadLines(logPath)) gmshLog.Line(line);
+        }
+        return PalaceStep.Done(reuse) with { Tetrahedra = gmshLog?.Tetrahedra };
     }
 
     // ── Palace ───────────────────────────────────────────────────────────────────────────────
@@ -122,8 +154,11 @@ public static class PalaceRun
     /// existing core setting, so one knob means one thing — R-em3d7-4c). With more than one it goes
     /// through MPI; <paramref name="note"/> says so when no launcher was found and it ran as one.
     /// </summary>
+    /// <param name="tracker">Reads Palace's log into stages (brief-em3d-21). Null: the stage ticks
+    /// once per line, as it did before.</param>
     public static PalaceStep Solve(string runDir, string configJson, string palace, int processes,
-                                   RunControl? control, CancellationToken ct, out string? note)
+                                   RunControl? control, CancellationToken ct, out string? note,
+                                   PalaceStageTracker? tracker = null, long physicalBytes = 0)
     {
         note = null;
         WriteText(Path.Combine(runDir, PalaceConfigWriter.ConfigFile), configJson);
@@ -155,17 +190,19 @@ public static class PalaceRun
             args.Add("--serial");
         args.Add(PalaceConfigWriter.ConfigFile);
 
-        control?.BeginStage("solving (Palace)", 0, "lines");
+        if (tracker is not null) tracker.Begin();
+        else control?.BeginStage("solving (Palace)", 0, "lines");
         Interlocked.Increment(ref _palace);
         var run = RunProcess(exe, args, runDir, Path.Combine(runDir, PalaceLogFile), Em3dProcessKind.Solver,
-                             env: new Dictionary<string, string> { ["OMP_NUM_THREADS"] = "1" }, control, ct);
+                             env: new Dictionary<string, string> { ["OMP_NUM_THREADS"] = "1" }, control, ct,
+                             new ProcessWatch(tracker is null ? null : tracker.Line, physicalBytes));
         if (run.Cancelled) return new(false, true, false, null);
         if (run.StartFailure is { } why) return new(false, false, false, $"Palace could not be started ({why}).");
         if (run.ExitCode != 0)
             return new(false, false, false,
                 $"Palace failed (exit code {run.ExitCode}). Its own words: {Quote(run.Tail, "rror")} " +
                 $"The full log is {Path.Combine(runDir, PalaceLogFile)}.");
-        return PalaceStep.Done();
+        return PalaceStep.Done() with { PeakResidentBytes = run.PeakResident, MemoryNote = run.MemoryNote };
     }
 
     /// <summary>The <c>mpirun</c> named in Settings ▸ 3D EM, or null. Installed by <c>src/Ui</c>
@@ -334,11 +371,12 @@ public static class PalaceRun
 
     // ── one child process ────────────────────────────────────────────────────────────────────
 
-    private sealed record ProcessRun(int ExitCode, bool Cancelled, string? StartFailure, IReadOnlyList<string> Tail);
+    private sealed record ProcessRun(int ExitCode, bool Cancelled, string? StartFailure, IReadOnlyList<string> Tail,
+                                     long? PeakResident = null, string? MemoryNote = null);
 
     private static ProcessRun RunProcess(string exe, IReadOnlyList<string> args, string cwd, string logPath,
                                          Em3dProcessKind kind, IReadOnlyDictionary<string, string>? env,
-                                         RunControl? control, CancellationToken ct)
+                                         RunControl? control, CancellationToken ct, ProcessWatch? watch = null)
     {
         if (ct.IsCancellationRequested) return new(-1, true, null, []);
 
@@ -355,6 +393,7 @@ public static class PalaceRun
 
         var gate = new Lock();
         var tail = new Queue<string>();
+        var pending = new Queue<string>();       // lines not yet handed to the watcher (the run's thread drains it)
         long lines = 0;
         using var log = new StreamWriter(logPath, append: false, new UTF8Encoding(false)) { NewLine = "\n" };
         void Line(string? text)
@@ -365,6 +404,7 @@ public static class PalaceRun
                 log.WriteLine(text);
                 tail.Enqueue(text);
                 if (tail.Count > 60) tail.Dequeue();
+                if (watch?.OnLine is not null) pending.Enqueue(text);
                 lines++;
             }
         }
@@ -383,6 +423,47 @@ public static class PalaceRun
             p.BeginErrorReadLine();
 
             long reported = 0;
+            long? peak = null;
+            string? memoryNote = null;
+            var sampled = Stopwatch.StartNew();
+            // Hands every line read so far to the watcher, or ticks the stage once per line without one.
+            // On the run's thread, so a cancellation thrown by the control lands here.
+            void Drain()
+            {
+                if (watch?.OnLine is { } onLine)
+                {
+                    while (true)
+                    {
+                        string next;
+                        lock (gate) { if (pending.Count == 0) break; next = pending.Dequeue(); }
+                        onLine(next);
+                    }
+                    return;
+                }
+                long now;
+                lock (gate) now = lines;
+                if (now > reported && control is not null)
+                {
+                    control.TickStage(now - reported);
+                    reported = now;
+                }
+            }
+            // R-em3d21-2c — the whole tree's resident memory, once a second, beside the stage.
+            void Sample()
+            {
+                if (watch is null || sampled.ElapsedMilliseconds < 1000) return;
+                sampled.Restart();
+                if (ProcessTreeMemory.ResidentBytes(p.Id) is not { } rss || rss <= 0) return;
+                peak = Math.Max(peak ?? 0, rss);
+                string detail = $"{MachineMemory.Format(rss)} in use";
+                if (memoryNote is null && watch.PhysicalBytes > 0 && rss >= Em3dMemoryVerdict.InUseNoteFraction * watch.PhysicalBytes)
+                    memoryNote = $"{Path.GetFileName(exe)} and the processes it started reached {MachineMemory.Format(rss)} of resident " +
+                                 $"memory, {(100.0 * rss / watch.PhysicalBytes).ToString("0", CultureInfo.InvariantCulture)} % of " +
+                                 $"this machine's {MachineMemory.Format(watch.PhysicalBytes)}. Past this the operating system " +
+                                 "swaps, and the run slows sharply; it was not stopped.";
+                if (memoryNote is not null) detail += " — near this machine's memory";
+                control?.SetStageDetail(detail);
+            }
             while (!p.WaitForExit(100))
             {
                 if (ct.IsCancellationRequested)
@@ -390,18 +471,15 @@ public static class PalaceRun
                     Kill(p);
                     return new(-1, true, null, []);
                 }
-                long now;
-                lock (gate) now = lines;
-                if (now > reported && control is not null)
-                {
-                    try { control.TickStage(now - reported); }
-                    catch (OperationCanceledException) { Kill(p); return new(-1, true, null, []); }
-                    reported = now;
-                }
+                try { Drain(); }
+                catch (OperationCanceledException) { Kill(p); return new(-1, true, null, []); }
+                Sample();
             }
             p.WaitForExit();                  // drains the asynchronous readers
             if (ct.IsCancellationRequested) return new(-1, true, null, []);
-            lock (gate) return new(p.ExitCode, false, null, [.. tail]);
+            try { Drain(); }
+            catch (OperationCanceledException) { return new(-1, true, null, []); }
+            lock (gate) return new(p.ExitCode, false, null, [.. tail], peak, memoryNote);
         }
     }
 

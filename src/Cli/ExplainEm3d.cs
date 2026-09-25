@@ -154,22 +154,16 @@ internal static class ExplainEm3d
         Em3dSizeJson palace;
         if (p is null)
             palace = new("palace", "unavailable", null, null, null, null, "there is no 3D problem to size.");
-        else if (settings.ElementOrder is not (1 or 2))
+        else if (Em3dRunService.EstimatePalace(p, settings) is not { } est)
             palace = new("palace", "unavailable", null, null, null, null,
                 $"no estimate at element order {settings.ElementOrder}: the unknowns per element are measured at " +
                 "orders 1 and 2 only.");
         else
         {
-            var byName = p.Materials.ToDictionary(m => m.Name, StringComparer.Ordinal);
-            // The background is meshed as the problem's air, or free space with none — GmshGeoWriter's rule.
-            var backgroundMaterial = p.Solids.FirstOrDefault(s => s.Role == Em3dRole.Air) is { } air
-                ? byName[air.Material] : new Em3dMaterial("(free space)", 1, null, 0, 1, 0);
-            var est = Em3dSizeEstimate.Palace(
-                p, s => GmshGeoWriter.MaxElementSizeM(byName[s.Material], p.Frequency.StopHz, settings), settings.ElementOrder,
-                GmshGeoWriter.MaxElementSizeM(backgroundMaterial, p.Frequency.StopHz, settings));
             palace = new("palace", "estimate", est.Tetrahedra, est.Unknowns, null, est.MemoryBytes,
                 $"about {est.Tetrahedra:N0} elements and {est.Unknowns:N0} unknowns at order {est.Order}" +
-                (est.MemoryBytes is { } b ? $", about {b / 1e9:0.#} GB" : "") +
+                (est.MemoryBytes is { } b ? $", about {b / 1e9:0.#} GB" +
+                    (settings.AdaptiveMaxIterations > 0 ? " with refinement passes allowed" : "") : "") +
                 ", from each meshed region's volume at its largest element. The refinement at " +
                 "conductors and ports and Palace's adaptive passes add to it, and the run reports the real " +
                 "counts. No mesher is run to get it.");

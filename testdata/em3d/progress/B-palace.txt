@@ -1,0 +1,12 @@
+Solving: pass 1 of 1 (no refinement)
+Solving: pass 1 of 1 (no refinement) · 593,548 unknowns
+Sweep: sampling · error 2.65e-1 → tolerance 1.0e-4  [0/1000 (log scale)]
+Sweep: sampling · error 3.62e-2 → tolerance 1.0e-4  [253/1000 (log scale)]
+Sweep: sampling · error 8.83e-3 → tolerance 1.0e-4  [431/1000 (log scale)]
+Sweep: sampling · error 7.35e-4 → tolerance 1.0e-4  [747/1000 (log scale)]
+Sweep: sampling · error 3.83e-4 → tolerance 1.0e-4  [830/1000 (log scale)]
+Sweep: sampling · error 3.62e-4 → tolerance 1.0e-4  [837/1000 (log scale)]
+Sweep: sampling · error 9.63e-6 → tolerance 1.0e-4  [1000/1000 (log scale)]
+Sweep: sampling · error 2.12e-5 → tolerance 1.0e-4  [1000/1000 (log scale)]
+Sweep: evaluating frequencies  [200/200 frequencies]
+summary: initial 87467, final 87467, unknowns 593548, passes 0, samples 10, peak 7000000000, seconds 270.838

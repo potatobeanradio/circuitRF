@@ -27,9 +27,12 @@ namespace CircuitRF.Engine;
 /// the far-field pattern count that happens to equal it, with nothing on the second row saying
 /// which. Naming the denominator's unit where the stage declares it is the fix: the stage knows
 /// what it is counting, and the row that renders the counter does not have to guess.</para></param>
+/// <param name="StageDetail">A live figure beside the stage that is NOT a stage change — a solver's
+/// memory in use, sampled once a second (brief-em3d-21 R-em3d21-2c). A terminal that prints a row per
+/// stage change ignores it; a progress row shows it after the stage. Cleared by every new stage.</param>
 public sealed record RunProgress(
     string Stage, long Completed, long Total, long StageCompleted = 0, long StageTotal = 0,
-    string StageUnit = "");
+    string StageUnit = "", string StageDetail = "");
 
 /// <summary>
 /// Cancellation and progress for an engine run — the ONE object every engine takes, so a caller
@@ -61,6 +64,7 @@ public sealed class RunControl
     private long _stageCompleted;
     private long _stageTotal;
     private string _stageUnit = "";
+    private string _stageDetail = "";
     private readonly Stopwatch _sinceLastReport = Stopwatch.StartNew();
     private string _stage = "";
 
@@ -146,7 +150,18 @@ public sealed class RunControl
         Interlocked.Exchange(ref _stageCompleted, 0);
         Interlocked.Exchange(ref _stageTotal, Math.Max(stageTotal, 0));
         _stageUnit = unit ?? "";
+        _stageDetail = "";
         _stage = name ?? "";
+        ReportNow();
+    }
+
+    /// <summary>Sets the live figure shown beside the stage (<see cref="RunProgress.StageDetail"/>)
+    /// without touching the stage, its label or either counter. Reports only when it changed.</summary>
+    public void SetStageDetail(string detail)
+    {
+        detail ??= "";
+        if (detail == _stageDetail) return;
+        _stageDetail = detail;
         ReportNow();
     }
 
@@ -220,6 +235,6 @@ public sealed class RunControl
         _sinceLastReport.Restart();
         Progress?.Report(new RunProgress(
             _stage, done, Total,
-            Interlocked.Read(ref _stageCompleted), Interlocked.Read(ref _stageTotal), _stageUnit));
+            Interlocked.Read(ref _stageCompleted), Interlocked.Read(ref _stageTotal), _stageUnit, _stageDetail));
     }
 }

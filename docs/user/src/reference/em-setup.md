@@ -432,6 +432,22 @@ both, so switching solver never loses the other's settings.
 With Palace chosen the panel shows Palace's own settings. **A blank box is the default shown in it**, and
 every box is a field of the `.cem` — nothing here lives only in the panel.
 
+**Quality** (`Quality`: `Draft`, `Standard` or `Accurate`) sets the element order, the refinement and the
+sweep tolerance together. Omitted, it is `Standard`, which is exactly the defaults in the table below.
+The boxes show the chosen preset's values as their placeholders, and **a box you fill in overrides the
+preset for that field only**.
+
+| Preset | Element order | Refinement passes | Refinement tolerance | Sweep tolerance |
+|---|---|---|---|---|
+| Draft | 1 | 0 | — | 0.001 |
+| Standard | 2 | 2 | 0.01 | 0.0001 |
+| Accurate | 2 | 3 | 0.005 | 0.00001 |
+
+Measured once on F0's via transition (case B, 0.1–20 GHz, 200 points) on a 10-core, 16 GB machine:
+**Draft** took 74 s at 3.8 GB, and its |S21| is within 0.1 dB of Standard's but its phase is up to
+**20.6°** away; **Standard** took 35 min at 9.3 GB. Draft is for a quick look at magnitudes, not phase.
+Accurate has not been measured.
+
 | Setting | `.cem` field | Default | What it does |
 |---|---|---|---|
 | Largest element (λ) | `MaxElementWavelengths` | 0.1 | The largest element in each material, as a fraction of the wavelength in that material at the top frequency |
@@ -452,6 +468,31 @@ script, the mesh, the Palace configuration, both programs' logs). An unchanged m
 Before it solves, circuitRF checks that every surface in the mesh belongs to exactly the object it was
 made for — each port sheet, each conductor, each face of the air box. **Any mismatch refuses the run,
 naming the object**; a boundary is never guessed onto a face.
+
+**Will it fit?** Palace's memory is checked against the machine's twice: before Gmsh starts, from the
+model's volumes, and again once Gmsh has reported how many tetrahedra it made, before Palace starts.
+The second check is the one that counts on a bond wire or any small conductor, where the refinement
+around the metal is nearly the whole mesh and the volumes alone say almost nothing. Past **75 %** of
+the machine's memory the run carries a warning naming the estimate and what would shrink it — the
+Draft preset, no refinement passes, a smaller air box — each with the estimate it would give. Past
+**150 %** Simulate asks before going on (headless, `circuitrf em` needs `--force`). A warning never stops
+a run on its own: the estimate uses the highest memory per unknown circuitRF has measured.
+
+**While it runs**, the progress row names Palace's own stages, from its own log: *Meshing (Gmsh)*;
+*Solving: refinement pass k of N* with the unknown count; *Sweep: sampling* with Palace's error and the
+tolerance it converges on (the bar is that convergence on a log scale, not a share of the work — the
+number of samples is not known in advance); *Sweep: evaluating frequencies* with a count; *Reading
+results*. A multi-port setup samples and sweeps each port's excitation in turn, and the row says which.
+Beside the stage is the memory Palace's processes are using, read once a second. If Palace prints
+something circuitRF does not recognise (a Palace version it has not been validated against), the row
+falls back to a count of log lines, with no bar, and the run's notes say so. A 3D run cannot finish
+early and keep what it has, so its running button reads **Cancel**, not Stop.
+
+**When it finishes**, one line says what it cost — wall time, Palace's own peak memory, the tetrahedra
+it started and finished with, the unknowns, the refinement passes, the sweep's samples and the preset —
+and the `.sNp`'s header records the same (`circuitRF-EM 3D run:` and `circuitRF-EM 3D run cost:`).
+Palace runs one MPI process per **physical** core by default; a *Cores* setting above the physical count
+is refused rather than oversubscribed.
 
 ### The openEMS grid {#openems-grid}
 

@@ -1,0 +1,22 @@
+Solving: refinement pass 1 of 3
+Solving: refinement pass 1 of 3 · 953,946 unknowns
+Sweep: sampling · error 9.36e-3 → tolerance 1.0e-4  [0/1000 (log scale)]
+Sweep: sampling · error 6.25e-4 → tolerance 1.0e-4  [596/1000 (log scale)]
+Sweep: sampling · error 5.75e-6 → tolerance 1.0e-4  [1000/1000 (log scale)]
+Sweep: sampling · error 1.88e-6 → tolerance 1.0e-4  [1000/1000 (log scale)]
+Sweep: evaluating frequencies  [40/40 frequencies]
+Solving: refinement pass 2 of 3
+Solving: refinement pass 2 of 3 · 958,324 unknowns
+Sweep: sampling · error 9.36e-3 → tolerance 1.0e-4  [0/1000 (log scale)]
+Sweep: sampling · error 6.36e-4 → tolerance 1.0e-4  [592/1000 (log scale)]
+Sweep: sampling · error 5.74e-6 → tolerance 1.0e-4  [1000/1000 (log scale)]
+Sweep: sampling · error 1.95e-6 → tolerance 1.0e-4  [1000/1000 (log scale)]
+Sweep: evaluating frequencies  [40/40 frequencies]
+Solving: refinement pass 3 of 3
+Solving: refinement pass 3 of 3 · 987,180 unknowns
+Sweep: sampling · error 9.38e-3 → tolerance 1.0e-4  [0/1000 (log scale)]
+Sweep: sampling · error 6.63e-4 → tolerance 1.0e-4  [584/1000 (log scale)]
+Sweep: sampling · error 5.64e-6 → tolerance 1.0e-4  [1000/1000 (log scale)]
+Sweep: sampling · error 1.88e-6 → tolerance 1.0e-4  [1000/1000 (log scale)]
+Sweep: evaluating frequencies  [40/40 frequencies]
+summary: initial 146769, final 153510, unknowns 987180, passes 2, samples 6, peak 11900000000, seconds 415.4

@@ -123,10 +123,13 @@ public static class Em3dRunService
     /// The run. Only <see cref="EmRunService.Run"/> calls this. <paramref name="source"/> has a
     /// technology — the door checked it.
     /// </summary>
+    /// <param name="confirmMemory">brief-em3d-21 R-em3d21-2b — see <see cref="EmRunService.Run"/>.</param>
     internal static EmRunResult Run(EmSetup setup, EmLayoutSource source, string resultsRoot,
-                                    CancellationToken ct, RunControl? control, int? maxCores)
+                                    CancellationToken ct, RunControl? control, int? maxCores,
+                                    Func<string, bool>? confirmMemory = null)
     {
         var log = new RunLog();
+        var memory = new MemoryGate(confirmMemory);
         var solver = setup.Solver3D;
         bool both = solver == Em3dSolver.Both;
 
@@ -159,6 +162,10 @@ public static class Em3dRunService
             palaceSettings = PalaceSettings.Resolve(setup.Palace);
             if (palaceSettings.Problems() is { Count: > 0 } bad)
                 palaceStop = new(EmRunStatus.Refused, EmDiagnostics.Forwarded("palace-settings", string.Join(" ", bad)));
+            // brief-em3d-21 R-em3d21-3b — an explicit core count past the physical one is refused, never
+            // oversubscribed.
+            else if (RankRefusal(maxCores, PhysicalCores.Current) is { } ranks)
+                palaceStop = new(EmRunStatus.Refused, EmDiagnostics.Forwarded("palace-ranks", ranks));
         }
         if (openEms)
         {
@@ -190,6 +197,13 @@ public static class Em3dRunService
         OpenEmsPlan? openEmsPlan = null;
         if (palace && palaceStop is null)
             palacePlan = PreparePalace(problem, palaceSettings!, readiness, log, out palaceStop);
+        // brief-em3d-21 R-em3d21-2 — will it fit? A warning, and past 150 % a confirmation; still no process.
+        if (palacePlan is not null && palaceStop is null &&
+            memory.Admit(PalaceMemoryVerdict(problem, setup, source, palaceSettings!, MachineMemory.PhysicalBytes), log) is { } tooBig)
+        {
+            palaceStop = new(EmRunStatus.Refused, EmDiagnostics.Forwarded(MemoryRefusalSource, tooBig));
+            palacePlan = null;
+        }
         if (openEms && openEmsStop is null)
             openEmsPlan = PrepareOpenEms(problem, gridSettings!, runSettings!, readiness, control, log, out openEmsStop);
         if ((palaceStop ?? openEmsStop) is { } refused)
@@ -198,11 +212,11 @@ public static class Em3dRunService
         // ── execution ─────────────────────────────────────────────────────────────────────────
         if (solver == Em3dSolver.Palace)
             return Single(ExecutePalace(palacePlan!, problem, setup, resultsRoot, SnpBasePath(resultsRoot, setup, Em3dSolver.Palace),
-                                        ct, control, maxCores, log), log);
+                                        ct, control, maxCores, log, memory), log);
         if (solver == Em3dSolver.OpenEms)
             return Single(ExecuteOpenEms(openEmsPlan!, problem, setup, resultsRoot, SnpBasePath(resultsRoot, setup, Em3dSolver.OpenEms),
                                          ct, control, maxCores, log), log);
-        return RunBoth(palacePlan!, openEmsPlan!, problem, setup, resultsRoot, ct, control, maxCores, log);
+        return RunBoth(palacePlan!, openEmsPlan!, problem, setup, resultsRoot, ct, control, maxCores, log, memory);
     }
 
     /// <summary>
@@ -211,7 +225,8 @@ public static class Em3dRunService
     /// writes nothing for what was running (R-em3d10-4c).
     /// </summary>
     private static EmRunResult RunBoth(PalacePlan palacePlan, OpenEmsPlan openEmsPlan, Em3dProblem problem, EmSetup setup,
-                                       string resultsRoot, CancellationToken ct, RunControl? control, int? maxCores, RunLog log)
+                                       string resultsRoot, CancellationToken ct, RunControl? control, int? maxCores, RunLog log,
+                                       MemoryGate memory)
     {
         log.Notes.Add("Both solvers run on the one 3D problem generated above, one after the other — Palace, then " +
                       "openEMS — because each already uses every core.");
@@ -228,7 +243,7 @@ public static class Em3dRunService
 
         control?.BeginStage("Palace, the first of two solvers");
         var p = ExecutePalace(palacePlan, problem, setup, resultsRoot, BothSnpBasePath(resultsRoot, setup, Em3dSolver.Palace),
-                              ct, control, maxCores, log);
+                              ct, control, maxCores, log, memory);
         if (p.Status == EmRunStatus.Cancelled) return log.Result(EmRunStatus.Cancelled, EmDiagnostics.Cancelled());
 
         control?.BeginStage("openEMS, the second of two solvers");
@@ -363,12 +378,14 @@ public static class Em3dRunService
     }
 
     private static Leg ExecutePalace(PalacePlan plan, Em3dProblem problem, EmSetup setup, string resultsRoot, string snpBase,
-                                     CancellationToken ct, RunControl? control, int? maxCores, RunLog log)
+                                     CancellationToken ct, RunControl? control, int? maxCores, RunLog log, MemoryGate memory)
     {
         const Em3dSolver Me = Em3dSolver.Palace;
         Leg Failed(string reason) => Leg.Failed(Me, EmRunStatus.EngineError, EmDiagnostics.SolveFailed(reason));
         Leg Cancelled() => Leg.Failed(Me, EmRunStatus.Cancelled, EmDiagnostics.Cancelled());
         var (settings, lowering, palace) = (plan.Settings, plan.Lowering, plan.Palace);
+        var wall = System.Diagnostics.Stopwatch.StartNew();
+        long physical = MachineMemory.PhysicalBytes;
 
         string runDir = RunDirectory(resultsRoot, setup, Me);
         try { Directory.CreateDirectory(runDir); }
@@ -379,7 +396,7 @@ public static class Em3dRunService
 
         // ── Gmsh, then the entity check ───────────────────────────────────────────────────────
         PalaceStep meshed;
-        try { meshed = PalaceRun.Mesh(runDir, lowering, plan.Gmsh.Path, control, ct); }
+        try { meshed = PalaceRun.Mesh(runDir, lowering, plan.Gmsh.Path, control, ct, physical); }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             return Failed($"the mesh could not be staged in '{runDir}' ({e.Message}).");
@@ -391,19 +408,33 @@ public static class Em3dRunService
             ? $"The geometry script is unchanged since the last run, so its mesh was reused ({runDir})."
             : $"Meshed with Gmsh in {runDir}.");
 
+        // brief-em3d-21 R-em3d21-2 — the mesh's size is known now, and on a problem whose mesh is mostly
+        // refinement (a bond wire) it is the first figure that can say the run will not fit.
+        if (meshed.Tetrahedra is { } tets &&
+            memory.Admit(MeshMemoryVerdict(tets, settings, physical), log) is { } tooBig)
+            return Leg.Failed(Me, EmRunStatus.Refused, EmDiagnostics.Forwarded(MemoryRefusalSource,
+                tooBig + $" The mesh is kept in {runDir}, so a run started anyway reuses it."));
+
         // ── Palace ────────────────────────────────────────────────────────────────────────────
-        int processes = maxCores ?? EmSolveCores.ProcessorCount;
+        // brief-em3d-21 R-em3d21-3a — one MPI rank per PHYSICAL core by default (Open MPI's slot count).
+        var cores = PhysicalCores.Current;
+        int processes = maxCores ?? cores.Count;
+        if (maxCores is null && !cores.Measured) log.Notes.Add($"Palace ran on {processes} process(es): {cores.How}.");
+        var tracker = new PalaceStageTracker(settings.AdaptiveMaxIterations, settings.SweepAdaptiveTol, control);
         PalaceStep solved;
         string? mpiNote;
-        try { solved = PalaceRun.Solve(runDir, plan.ConfigJson, palace.Path, processes, control, ct, out mpiNote); }
+        try { solved = PalaceRun.Solve(runDir, plan.ConfigJson, palace.Path, processes, control, ct, out mpiNote, tracker, physical); }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             return Failed($"Palace could not be staged in '{runDir}' ({e.Message}).");
         }
         if (mpiNote is not null) log.Notes.Add(mpiNote);
+        log.Notes.AddRange(tracker.Notes);
+        if (solved.MemoryNote is not null) log.Notes.Add(solved.MemoryNote);
         if (solved.Cancelled) return Cancelled();
         if (!solved.Ok) return Failed(solved.Message!);
 
+        control?.BeginStage(ReadingLabel);
         var ports = problem.Ports.OrderBy(p => p.Number).ToList();
         string post = Path.Combine(runDir, PalaceConfigWriter.OutputDirectory);
         var s = PalaceRun.ReadPortS(Path.Combine(post, PalaceRun.PortSFile), [.. ports.Select(p => p.Number)], out string? readError);
@@ -416,12 +447,14 @@ public static class Em3dRunService
 
         // ── The DataSet: S and Z0 in the house convention, plus Palace's own record ─────────────
         var data = BuildDataSet(s, ports, facts);
+        var summary = tracker.Summary;
+        var quality = setup.Palace?.Quality ?? PalaceQuality.Standard;
 
         string? snpPath = snpBase + $".s{ports.Count}p";
         string? npyPath = WriteNpy(resultsRoot, NpyKey(setup, Me), data, log);
 
         string? snpError;
-        try { snpError = WriteSnp(data, snpBase, setup, problem, lowering, settings, palace, facts); }
+        try { snpError = WriteSnp(data, snpBase, setup, problem, lowering, settings, palace, facts, summary, quality, wall.Elapsed); }
         catch (Exception e) { snpError = e.Message; }
         if (snpError is not null)
         {
@@ -429,6 +462,8 @@ public static class Em3dRunService
             snpPath = null;
         }
 
+        // R-em3d21-5a — the one line that says what the run cost, the last thing the run says.
+        log.Notes.Add(CompletionSummary(summary, quality, wall.Elapsed));
         return new Leg(Me, EmRunStatus.Ok, null, data, npyPath, snpPath, "Palace " + palace.DescribeVersion());
     }
 
@@ -763,7 +798,7 @@ public static class Em3dRunService
     /// when written; otherwise why not.</summary>
     private static string? WriteSnp(DataSet data, string snpBase, EmSetup setup, Em3dProblem problem,
                                  GmshLowering lowering, PalaceSettings settings, SolverInstallation palace,
-                                 PalaceRunFacts facts)
+                                 PalaceRunFacts facts, PalaceRunSummary summary, PalaceQuality quality, TimeSpan wall)
     {
         string? group = data.Groups.FirstOrDefault(g => data.CubesIn(g).ContainsKey("S"));
         if (group is null) return "the solved DataSet carries no S cube";
@@ -786,6 +821,11 @@ public static class Em3dRunService
         lines.Add($"circuitRF-EM 3D mesh: {Count(facts.InitialElements)} elements initially, {Count(facts.FinalElements)} " +
                   $"finally, {facts.AdaptiveIterations ?? 0} adaptive pass(es), element order {settings.ElementOrder}");
         lines.Add($"circuitRF-EM 3D operating temperature: {R(problem.OperatingTempC)} C");
+        // brief-em3d-21 R-em3d21-5b — added fields, none renamed. What the solve WAS is one line; what it
+        // COST (wall time, peak memory) is another, because it differs between two runs of one setup
+        // exactly as the write stamp does.
+        lines.Add(RunProvenancePrefix + RunProvenance(summary, quality));
+        lines.Add(CostProvenancePrefix + CostProvenance(summary, wall));
 
         double z0 = problem.Ports.OrderBy(p => p.Number).First().Z0.Real;
         var opts = new TouchstoneExportOptions(
@@ -811,6 +851,190 @@ public static class Em3dRunService
             allSweepFiles:        false,
             baseFilePathNoSuffix: snpBase);
         return result.Status == TouchstoneExportStatus.Ok ? null : $"Touchstone export returned {result.Status}.";
+    }
+
+    // ── brief-em3d-21: ranks, memory, and what the run cost ───────────────────────────────────
+
+    /// <summary>The diagnostic source a memory refusal carries (<c>em.refused.palace-memory</c>).</summary>
+    public const string MemoryRefusalSource = "palace-memory";
+
+    /// <summary>The stage after Palace exits.</summary>
+    public const string ReadingLabel = "Reading results";
+
+    /// <summary>R-em3d21-5b — the <c>.sNp</c> line recording what the solve was.</summary>
+    public const string RunProvenancePrefix = "circuitRF-EM 3D run: ";
+
+    /// <summary>R-em3d21-5b — the <c>.sNp</c> line recording what the solve cost: it differs between two
+    /// runs of one setup, as the write stamp does, so a byte comparison of two runs leaves it out.</summary>
+    public const string CostProvenancePrefix = "circuitRF-EM 3D run cost: ";
+
+    /// <summary>R-em3d21-3b — an explicit process count past the physical core count, refused naming it.</summary>
+    internal static string? RankRefusal(int? asked, PhysicalCoreReading cores)
+        => asked is { } n && n > cores.Count
+            ? $"This run asks for {n} Palace processes (the Cores setting), and this machine has {cores.Count} physical " +
+              $"core{(cores.Count == 1 ? "" : "s")} ({(cores.Measured ? "read from " + cores.How : cores.How)}). Palace " +
+              "runs one MPI process per core, and MPI refuses more processes than physical cores; forced, they run " +
+              $"slower, not faster, so circuitRF does not oversubscribe. Choose {cores.Count} or fewer under Cores, or " +
+              "Automatic."
+            : null;
+
+    /// <summary>
+    /// Palace's size for <paramref name="p"/> at <paramref name="settings"/>, ESTIMATED (brief-em3d-5
+    /// R-em3d5-3c): each meshed region's volume at the Palace section's largest element for its
+    /// material (<see cref="GmshGeoWriter.MaxElementSizeM"/>, the formula the script uses), and the
+    /// memory that implies with refinement allowed or not. Null at an element order no measurement covers.
+    /// <c>explain</c> prints this and the fit check compares it, so the two cannot disagree.
+    /// </summary>
+    public static Em3dPalaceEstimate? EstimatePalace(Em3dProblem p, PalaceSettings settings)
+    {
+        if (settings.ElementOrder is not (1 or 2)) return null;
+        var byName = p.Materials.ToDictionary(m => m.Name, StringComparer.Ordinal);
+        // The background is meshed as the problem's air, or free space with none — GmshGeoWriter's rule.
+        var background = p.Solids.FirstOrDefault(s => s.Role == Em3dRole.Air) is { } air
+            ? byName[air.Material] : new Em3dMaterial("(free space)", 1, null, 0, 1, 0);
+        return Em3dSizeEstimate.Palace(
+            p, s => GmshGeoWriter.MaxElementSizeM(byName[s.Material], p.Frequency.StopHz, settings), settings.ElementOrder,
+            GmshGeoWriter.MaxElementSizeM(background, p.Frequency.StopHz, settings), settings.AdaptiveMaxIterations);
+    }
+
+    /// <summary>The fit check for a setup as the panel is about to run it: generates the problem and
+    /// compares against this machine. The panel calls it before Simulate starts anything.</summary>
+    public static Em3dMemoryVerdict PalaceMemoryVerdict(EmSetup setup, EmLayoutSource source)
+    {
+        if (source.Technology is null || setup.Solver3D is not (Em3dSolver.Palace or Em3dSolver.Both)) return Em3dMemoryVerdict.Unknown;
+        var settings = PalaceSettings.Resolve(setup.Palace);
+        if (settings.Problems().Count > 0) return Em3dMemoryVerdict.Unknown;
+        var generated = Em3dGenerator.Generate(setup, source, source.Technology);
+        return generated.Problem is { } p && generated.Ok
+            ? PalaceMemoryVerdict(p, setup, source, settings, MachineMemory.PhysicalBytes)
+            : Em3dMemoryVerdict.Unknown;
+    }
+
+    /// <summary>
+    /// R-em3d21-2a/b — the estimate against <paramref name="physicalBytes"/>, with the remedies a
+    /// warning names, each with the estimate it would give: the Draft preset, no refinement passes, and
+    /// an air box with half the padding (regenerated, so its figure is the smaller problem's).
+    /// </summary>
+    public static Em3dMemoryVerdict PalaceMemoryVerdict(Em3dProblem problem, EmSetup setup, EmLayoutSource source,
+                                                        PalaceSettings settings, long physicalBytes)
+    {
+        long? estimate = EstimatePalace(problem, settings)?.MemoryBytes;
+        if (estimate is not { } e || physicalBytes <= 0 || e <= Em3dMemoryVerdict.WarnFraction * physicalBytes)
+            return Em3dMemoryVerdict.Evaluate(estimate, physicalBytes, []);
+
+        var remedies = new List<Em3dMemoryRemedy>();
+        var draft = PalaceSettings.Preset(PalaceQuality.Draft);
+        var asDraft = settings with
+        {
+            ElementOrder = draft.ElementOrder, AdaptiveMaxIterations = draft.AdaptiveMaxIterations,
+            AdaptiveTol = draft.AdaptiveTol, SweepAdaptiveTol = draft.SweepAdaptiveTol,
+        };
+        if (asDraft != settings)
+            remedies.Add(new("the Draft preset (Palace.Quality: Draft)", EstimatePalace(problem, asDraft)?.MemoryBytes));
+        if (settings.AdaptiveMaxIterations > 0)
+            remedies.Add(new("no refinement passes (Palace.AdaptiveMaxIterations: 0)",
+                             EstimatePalace(problem, settings with { AdaptiveMaxIterations = 0 })?.MemoryBytes));
+        if (source.Technology is { } tech)
+        {
+            double defaultPadUm = Em3dGenerator.DefaultPaddingFractionOfLongestWavelength * 299_792_458.0 /
+                                  problem.Frequency.StartHz * 1e6;
+            EmAirBoxFace Half(EmAirBoxFace? f) => new((f?.PaddingUm ?? defaultPadUm) / 2, f?.Boundary);
+            var box = setup.AirBox ?? new EmAirBox();
+            var smaller = setup.Clone();
+            smaller.AirBox = new EmAirBox(Half(box.XMin), Half(box.XMax), Half(box.YMin), Half(box.YMax),
+                                          Half(box.ZMin), Half(box.ZMax));
+            var regenerated = Em3dGenerator.Generate(smaller, source, tech);
+            if (regenerated.Ok && regenerated.Problem is { } q)
+                remedies.Add(new("an air box with half the padding on every side (AirBox)", EstimatePalace(q, settings)?.MemoryBytes));
+        }
+        return Em3dMemoryVerdict.Evaluate(e, physicalBytes, [.. remedies.OrderBy(r => r.EstimateBytes ?? long.MaxValue)],
+            basis: "Before meshing, from the 3D model's volumes:");
+    }
+
+    /// <summary>
+    /// R-em3d21-2 — the check once Gmsh has made the mesh: <paramref name="tetrahedra"/> as Gmsh
+    /// reported creating them, through the measured unknowns and bytes per unknown. The remedies are the
+    /// ones a mesh this size can be priced for without meshing again.
+    /// </summary>
+    public static Em3dMemoryVerdict MeshMemoryVerdict(long tetrahedra, PalaceSettings settings, long physicalBytes)
+    {
+        if (settings.ElementOrder is not (1 or 2)) return Em3dMemoryVerdict.Unknown;
+        long e = Em3dSizeEstimate.PalaceMemoryBytesForMesh(tetrahedra, settings.ElementOrder, settings.AdaptiveMaxIterations);
+        var remedies = new List<Em3dMemoryRemedy>();
+        if (settings.ElementOrder != 1 || settings.AdaptiveMaxIterations > 0)
+            remedies.Add(new("the Draft preset (Palace.Quality: Draft)", Em3dSizeEstimate.PalaceMemoryBytesForMesh(tetrahedra, 1, 0)));
+        if (settings.AdaptiveMaxIterations > 0)
+            remedies.Add(new("no refinement passes (Palace.AdaptiveMaxIterations: 0)",
+                             Em3dSizeEstimate.PalaceMemoryBytesForMesh(tetrahedra, settings.ElementOrder, 0)));
+        return Em3dMemoryVerdict.Evaluate(e, physicalBytes, [.. remedies.OrderBy(r => r.EstimateBytes)],
+            basis: $"Gmsh made {tetrahedra.ToString("N0", CultureInfo.InvariantCulture)} tetrahedra.");
+    }
+
+    /// <summary>
+    /// R-em3d21-2b — one run's memory decisions: a warning is posted once at its highest level, and a
+    /// run past 150 % is confirmed once (the panel's question, the CLI's --force) or refused.
+    /// </summary>
+    private sealed class MemoryGate(Func<string, bool>? confirm)
+    {
+        private Em3dMemoryLevel _posted = Em3dMemoryLevel.Fits;
+        private bool _confirmed;
+
+        /// <summary>Null to go on; otherwise the refusal.</summary>
+        public string? Admit(Em3dMemoryVerdict verdict, RunLog log)
+        {
+            if (verdict.Level == Em3dMemoryLevel.Fits || verdict.Text is null) return null;
+            if (verdict.Level == Em3dMemoryLevel.Severe && !_confirmed)
+            {
+                if (confirm?.Invoke(verdict.Text) != true)
+                    return verdict.Text + " To start it anyway, confirm it when Simulate asks, or pass --force to `circuitrf em`.";
+                _confirmed = true;
+                log.Warnings.Add(verdict.Text + " It was started anyway, as confirmed.");
+                _posted = verdict.Level;
+                return null;
+            }
+            if (verdict.Level > _posted) log.Warnings.Add(verdict.Text);
+            _posted = (Em3dMemoryLevel)Math.Max((int)_posted, (int)verdict.Level);
+            return null;
+        }
+    }
+
+    /// <summary>R-em3d21-5a — "Palace done in 2 min 27 s · peak memory 7.4 GB · …", every figure the
+    /// parser read from Palace's log, and a field Palace did not print left out rather than guessed.</summary>
+    public static string CompletionSummary(PalaceRunSummary s, PalaceQuality quality, TimeSpan wall)
+    {
+        var parts = new List<string> { $"Palace done in {Duration(wall)}" };
+        if (s.PeakMemoryBytes is { } m) parts.Add($"peak memory {MachineMemory.Format(m)} (Palace's own)");
+        if (s.InitialElements is { } a)
+            parts.Add(s.FinalElements is { } b && b != a ? $"{a:N0} → {b:N0} tetrahedra" : $"{a:N0} tetrahedra");
+        if (s.Unknowns is { } u) parts.Add($"{u:N0} unknowns");
+        if (s.RefinementPasses is { } r) parts.Add($"{r} refinement pass{(r == 1 ? "" : "es")}");
+        if (s.SweepSamples is { } n) parts.Add($"{n} frequency sample{(n == 1 ? "" : "s")}");
+        parts.Add($"preset {quality}");
+        if (!s.LogRecognised) parts.Add("Palace's log format was not recognised, so some figures are missing");
+        return string.Join(" · ", parts) + ".";
+    }
+
+    private static string RunProvenance(PalaceRunSummary s, PalaceQuality quality)
+        => string.Join("; ",
+            $"preset {quality}",
+            $"{N(s.InitialElements)} -> {N(s.FinalElements)} tetrahedra",
+            $"{N(s.Unknowns)} unknowns",
+            $"{N(s.RefinementPasses)} refinement pass(es)",
+            $"{N(s.SweepSamples)} frequency sample(s)");
+
+    private static string CostProvenance(PalaceRunSummary s, TimeSpan wall)
+        => $"wall {wall.TotalSeconds.ToString("0", CultureInfo.InvariantCulture)} s; Palace peak memory " +
+           (s.PeakMemoryBytes is { } m ? Ascii(MachineMemory.Format(m)) : "unreported");
+
+    private static string N(long? v) => v?.ToString(CultureInfo.InvariantCulture) ?? "unreported";
+    private static string N(int? v) => v?.ToString(CultureInfo.InvariantCulture) ?? "unreported";
+
+    /// <summary>"2 min 27 s", "48 s", "1 h 3 min".</summary>
+    public static string Duration(TimeSpan t)
+    {
+        if (t.TotalSeconds < 60) return $"{Math.Max(0, (int)Math.Round(t.TotalSeconds))} s";
+        if (t.TotalMinutes < 60) return $"{(int)t.TotalMinutes} min {t.Seconds} s";
+        return $"{(int)t.TotalHours} h {t.Minutes} min";
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────────────────────

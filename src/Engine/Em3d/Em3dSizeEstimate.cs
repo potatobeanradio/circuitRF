@@ -11,8 +11,8 @@ namespace CircuitRF.Engine.Em3d;
 /// <summary>One region's share of a Palace estimate.</summary>
 public sealed record Em3dRegionEstimate(string Solid, double VolumeM3, double ElementEdgeM, double Tetrahedra);
 
-/// <summary>A Palace mesh size, ESTIMATED. <see cref="MemoryBytes"/> is null where no measurement
-/// gives a per-unknown figure at this element order.</summary>
+/// <summary>A Palace mesh size, ESTIMATED, and the peak memory it implies (orders 1 and 2 each have a
+/// measured per-unknown figure; the record keeps the field nullable for an order that has none).</summary>
 public sealed record Em3dPalaceEstimate(
     long Tetrahedra, long Unknowns, int Order, long? MemoryBytes, IReadOnlyList<Em3dRegionEstimate> Regions);
 
@@ -30,10 +30,27 @@ public static class Em3dSizeEstimate
     /// Palace's peak memory per unknown at order 2, all eight ranks together, as Palace reports it:
     /// F0's <c>B palace</c>, 7.0 GB for 593,548 unknowns — the HIGHEST of the order-2 runs without
     /// adaptive refinement (case A's is 7.4 GB for 953,946), so an estimate errs toward not fitting.
-    /// There is no order-1 figure: F0's one order-1 run (6.6 GB for 178,142 unknowns) is dominated by
-    /// what eight ranks cost before the first unknown, so it separates nothing per unknown.
+    /// Order 1 has its own figure below, which is mostly fixed cost.
     /// </summary>
     public const double PalaceBytesPerUnknownOrder2 = 7.0e9 / 593_548.0;
+
+    /// <summary>
+    /// brief-em3d-21 R-em3d21-2 — Palace's peak memory per unknown at order 1: F0's
+    /// <c>A palace-round-order1</c>, 6.6 GB for 178,142 unknowns (eight ranks). That run's memory is
+    /// mostly what the ranks cost before the first unknown, so as a per-unknown figure it errs high on
+    /// any larger problem — the direction a fit check wants — and low only on problems far too small
+    /// for memory to be the question. It is what makes a Draft run's memory printable at all.
+    /// </summary>
+    public const double PalaceBytesPerUnknownOrder1 = 6.6e9 / 178_142.0;
+
+    /// <summary>
+    /// brief-em3d-21 R-em3d21-2 — how much adaptive mesh refinement multiplies Palace's peak: F0's
+    /// case A on one starting mesh, 11.9 GB with two passes (<c>A palace-round-amr</c>) against 7.4 GB
+    /// with none (<c>A palace-round</c>). Most of it is the error estimator, which costs the same from
+    /// the first pass on (that run's first solve alone peaked at 10.8 GB); the passes themselves add
+    /// the refined elements.
+    /// </summary>
+    public const double PalaceRefinementMemoryFactor = 11.9 / 7.4;
 
     /// <summary>
     /// openEMS's peak resident memory per cell: F0's wire ladder at its finest rung, 182 MB for
@@ -57,8 +74,10 @@ public static class Em3dSizeEstimate
     /// solid claims, which the mesher fills as air (brief 7's <c>background</c> group). On a setup whose
     /// floor is absorbing that is everything below the stack, often as large as the air above it, so
     /// leaving it out halved the count. Null leaves it out.</param>
+    /// <param name="refinementPasses">The most adaptive refinement passes the run allows; any at all
+    /// multiplies the memory by <see cref="PalaceRefinementMemoryFactor"/>.</param>
     public static Em3dPalaceEstimate Palace(Em3dProblem problem, Func<Em3dSolid, double> initialEdgeM, int order,
-                                            double? backgroundEdgeM = null)
+                                            double? backgroundEdgeM = null, int refinementPasses = 0)
     {
         ArgumentNullException.ThrowIfNull(problem);
         ArgumentNullException.ThrowIfNull(initialEdgeM);
@@ -88,9 +107,26 @@ public static class Em3dSizeEstimate
             tets += n;
         }
         long unknowns = (long)Math.Round(tets * (order == 1 ? UnknownsPerTetOrder1 : UnknownsPerTetOrder2));
-        long? memory = order == 2 ? (long)Math.Round(unknowns * PalaceBytesPerUnknownOrder2) : null;
-        return new Em3dPalaceEstimate((long)Math.Round(tets), unknowns, order, memory, regions);
+        return new Em3dPalaceEstimate((long)Math.Round(tets), unknowns, order,
+                                      PalaceMemoryBytes(unknowns, order, refinementPasses), regions);
     }
+
+    /// <summary>
+    /// brief-em3d-21 — Palace's peak memory for a mesh whose tetrahedra are KNOWN (Gmsh has printed its
+    /// count), through the same measured unknowns-per-tetrahedron and bytes-per-unknown figures. After
+    /// meshing this is the check that counts: the volume estimate above leaves out the refinement at
+    /// conductors and ports, which on a bond wire is nearly the whole mesh (F0's case A: 146,769
+    /// tetrahedra, where the volumes alone give about 500).
+    /// </summary>
+    public static long PalaceMemoryBytesForMesh(long tetrahedra, int order, int refinementPasses)
+        => PalaceMemoryBytes((long)Math.Round(tetrahedra * (order == 1 ? UnknownsPerTetOrder1 : UnknownsPerTetOrder2)),
+                             order, refinementPasses);
+
+    /// <summary>Palace's peak memory for <paramref name="unknowns"/> at <paramref name="order"/>, with
+    /// <see cref="PalaceRefinementMemoryFactor"/> when any refinement pass is allowed.</summary>
+    public static long PalaceMemoryBytes(long unknowns, int order, int refinementPasses)
+        => (long)Math.Round(unknowns * (order == 1 ? PalaceBytesPerUnknownOrder1 : PalaceBytesPerUnknownOrder2)
+                            * (refinementPasses > 0 ? PalaceRefinementMemoryFactor : 1));
 
     /// <summary>openEMS's memory for a grid of <paramref name="cells"/> cells — brief 8 supplies the
     /// count.</summary>

@@ -528,6 +528,16 @@ Everything either backend can refuse is refused **before either starts**, naming
 `--solver openems` when one of them would run. A solver failing mid-run keeps the other's result,
 writes no comparison and exits 1; a cancellation keeps a finished Palace result and exits 130.
 
+**`--solver` on a PLANAR setup is refused** (`cli.em.solver-on-planar`, exit 1, brief-em3d-21): it
+chooses between 3D solvers and never makes a setup 3D — that is the `.cem`'s `Solver3D` field. It used
+to convert the run silently. **A Palace run prints Palace's own stages on stderr** — `Meshing (Gmsh)`,
+`Solving: refinement pass k of N`, `Sweep: sampling · error … → tolerance …`, `Sweep: evaluating
+frequencies`, `Reading results` — one row per stage change, and ends with a `note:` summary of what it
+cost; **stdout and `--json` are unchanged**. The memory Palace's processes are using is shown by the
+panel only (it changes every second, and a terminal row per second is noise). **`--force`** starts a
+Palace run whose memory estimate is past 150 % of the machine's, which is otherwise refused before Gmsh
+(or, when only the mesh's size shows it, before Palace, keeping the mesh for the forced re-run).
+
 ### 8.3 What goes where, and the three lists
 
 §3.1's split, applied: the summary and the written file paths are **stdout**; progress, the resolved

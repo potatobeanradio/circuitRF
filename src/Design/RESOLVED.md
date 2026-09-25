@@ -12736,3 +12736,73 @@ launch the GUI. Worth a look: the 3D EM tab's four rows, and whether the tab str
   plane is not papered over by its flag. The same board's 0201 pads, narrower than the 42 mil trace
   and overlapping its ends, were joined on as width steps and read 57.6 Ω: an END piece shorter than
   it is wide is a land and is trimmed. Both 50.2 Ω after.
+
+## A Palace run you can watch — brief-em3d-21 (2026-09-25)
+
+`src/Design/Em3d/{PalaceLogProgress,Em3dMemory,PalacePresetTable}.cs` (new), `PalaceRun.cs`,
+`Em3dRunService.cs`; `src/Engine/Em3d/PhysicalCores.cs` (new), `Em3dSizeEstimate.cs`; `RunControl`
+gained a `StageDetail`; gates `tests/Ui.Tests/Em3d/PalaceProgressTests.cs` and
+`tests/Engine.Tests/Em3d/PhysicalCoresTests.cs`; committed stage sequences `testdata/em3d/progress/`.
+
+**The volume estimate cannot see a bond wire, so the memory check runs twice.** Brief 21 assumed
+`Em3dSizeEstimate`'s Palace figure errs high. It errs high per UNKNOWN, but its tetrahedra come from
+region volumes only, and on F0's case A the mesh is almost all refinement around the wire: the volumes
+give **492 tetrahedra, 0.06 GB**, where Gmsh made 149,252 and Palace peaked at 7.4 GB. A check before
+Gmsh could never warn on case A. So the check runs again after meshing, before Palace starts, on the
+count Gmsh prints itself (`- N tetrahedra created`: 149,252 against the 146,769 Palace read after
+optimisation, so ~2 % high), through the same measured unknowns-per-tetrahedron and bytes-per-unknown.
+Gate 5 is that second check on F0's committed `gmsh.log`, and pins the first check's 492 beside it. A
+refusal after meshing keeps the mesh, so the forced re-run reuses it. Both checks share one
+confirmation (`EmRunService.Run`'s `confirmMemory`: the panel's dialog, the CLI's `--force`), asked at
+most once per run.
+
+**Two memory figures had to be added, both from F0's table.** Order 1 had no per-unknown figure (brief
+5 declined one: F0's single order-1 run is mostly fixed cost), but a Draft run needs one to be priced;
+`PalaceBytesPerUnknownOrder1` is that run's 6.6 GB / 178,142, which errs high on anything larger than
+case A. Refinement multiplies the peak by `PalaceRefinementMemoryFactor` = 11.9 / 7.4 (case A with two
+passes against none, one starting mesh). Most of that is the error estimator, which costs the same
+from the first pass: the two-pass run's FIRST solve alone peaked at 10.8 GB.
+
+**Small runs are fixed-cost.** The smallest gate case (16,740 unknowns, order 1, 10 ranks) peaked at
+822 MB, 49 KB per unknown against case A's 37. A per-unknown estimate is low there, and does not
+matter: the check is about runs near the machine's memory.
+
+**circuitRF excites every port, so Palace samples and sweeps once per excitation**, and says so only
+when there is more than one (Palace v0.18.1's source: `Adding excitation index k (i/n):` and
+`Sweeping excitation index k (i/n):`). F0's logs excite one port and never print them; the first live
+run showed the greedy error jumping from 2.8e-5 back to 6.7e-4 at the second port. Each excitation now
+starts its own stage and its own bar.
+
+**The sampling bar is a best-so-far.** Palace's greedy error is not monotone (case B: 3.6e-4, 9.6e-6,
+2.1e-5), and it needs two consecutive samples under the tolerance, so the error can be below tolerance
+while sampling continues. The bar keeps the best convergence reached (it never runs backwards); the
+label shows the current error.
+
+**Stop was inert on every 3D run, not only Palace.** Nothing under `src/Design/Em3d` reads
+`RunControl.StopRequested`, so openEMS's and a both-run's "Stopping…" ran to completion as well. The
+Cancel-not-Stop button therefore applies to every 3D setup, and the Messages bars offer no Stop there.
+
+**The `.sNp` gained two lines, `circuitRF-EM 3D run:` (preset, tetrahedra, unknowns, passes, samples)
+and `circuitRF-EM 3D run cost:` (wall time, Palace's peak).** The cost differs between two runs of one
+setup exactly as the write stamp does, so brief 7's gate 9 (CLI against in-process, byte for byte) now
+leaves that line out beside the stamp. Nothing was renamed.
+
+**Physical cores:** macOS through `sysctlbyname("hw.physicalcpu")` (10 here, equal to the logical
+count: no SMT); Linux from `/proc/cpuinfo`'s (physical id, core id) pairs, or `thread_siblings_list`
+where arm64 prints neither; Windows from `GetLogicalProcessorInformationEx`'s core records. Each parser
+is gated on a sample; the Linux and Windows readers have not run on those systems from this session.
+
+**Not seen from this session:** the panel (pixels), the memory dialog, and a run whose tree crossed
+90 % of memory.
+
+**The preset measurement was stopped part-way, and Draft fails its own rule on phase.** Measured
+through `PalacePresetMeasurementTests` (`CRF_MEASURE_PALACE_PRESETS=1`, `CRF_MEASURE_PALACE_PRESETS_DIR`
+keeps every log), alone, on the F0 Mac with 10 ranks. Case B: Draft 74 s wall, Palace peak 3.8 GB,
+124,975 unknowns; Standard 2,075 s, 9.3 GB, 866,936 unknowns after two passes, with 2.5 GB of swap in
+use. Accurate was stopped in its third solve (over 23 min in), and case A was never started: the brief's
+"3 × 2 × 2–7 min" was an underestimate by roughly a factor of ten, because every port is an excitation
+and every refinement pass repeats the sampling. Against Standard (not Accurate), Draft's |S21| is within
+0.096 dB but ∠S21 is up to **20.6°** off — past the brief's 5°, which says Draft's values should change
+and be measured again. Not done: the obvious candidate (order 2, no refinement passes, F0's own case B
+setting) is unmeasured, and the measurement was stopped because it was taking too long. The tooltip and the reference page print these
+numbers and say Accurate is unmeasured; `PalacePresetTable.Reference` is Standard until it is.
