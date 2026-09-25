@@ -34,6 +34,9 @@ public sealed partial class EmSetupEditorViewModel
     /// <summary>True when Palace's section is shown.</summary>
     public bool IsPalaceSetup => Solver3DChoice.Value == Em3dSolver.Palace;
 
+    /// <summary>True when openEMS's section is shown (brief-em3d-9 R-em3d9-6).</summary>
+    public bool IsOpenEmsSetup => Solver3DChoice.Value == Em3dSolver.OpenEms;
+
     public string Solver3DDescription => Solver3DChoice.Value switch
     {
         Em3dSolver.Palace =>
@@ -41,8 +44,9 @@ public sealed partial class EmSetupEditorViewModel
             "solves it with Palace, both installed separately (Settings ▸ 3D EM). The planar settings below are " +
             "kept but not used.",
         Em3dSolver.OpenEms =>
-            "openEMS is not runnable in this version of circuitRF; Simulate says so. The planar settings below " +
-            "are kept but not used.",
+            "Generates a 3D model from the layout, its technology and any bond wires, places circuitRF's own FDTD " +
+            "grid on it and solves it with openEMS, installed separately (Settings ▸ 3D EM) — once per port. The " +
+            "planar settings below are kept but not used.",
         _ => "circuitRF's own planar and cross-section solvers, chosen under Analysis.",
     };
 
@@ -50,6 +54,7 @@ public sealed partial class EmSetupEditorViewModel
     {
         OnPropertyChanged(nameof(Is3DSetup));
         OnPropertyChanged(nameof(IsPalaceSetup));
+        OnPropertyChanged(nameof(IsOpenEmsSetup));
         OnPropertyChanged(nameof(Solver3DDescription));
         if (_suppressCommit) return;
         if (value.Value == Working.Solver3D) return;
@@ -93,6 +98,7 @@ public sealed partial class EmSetupEditorViewModel
         PalaceAdaptiveMaxIterationsText = p?.AdaptiveMaxIterations?.ToString(CultureInfo.InvariantCulture) ?? "";
         PalaceSweepAdaptiveTolText      = G(p?.SweepAdaptiveTol);
         PalaceFieldError = null;
+        SyncOpenEmsFields();
         _suppressCommit = false;
     }
 

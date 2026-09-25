@@ -515,6 +515,56 @@
                                    Text="{Binding ViewModel.PalaceFieldError}"
                                    IsVisible="{Binding ViewModel.PalaceFieldError, Converter={x:Static ObjectConverters.IsNotNull}}"/>
                     </Grid>
+                    <!-- brief-em3d-9 R-em3d9-6: openEMS's section — brief 8's grid fields and the two run
+                         fields. The same rules as Palace's: a blank box is the default the generator and the
+                         writer read, and every change is one undoable .cem edit. -->
+                    <Grid IsVisible="{Binding ViewModel.IsOpenEmsSetup}" Margin="0,6,0,0"
+                          ColumnDefinitions="Auto,90" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
+                          ColumnSpacing="8" RowSpacing="2" HorizontalAlignment="Left">
+                        <TextBlock Grid.Row="0" Grid.Column="0" Classes="colhdr" Text="Cells per wavelength" VerticalAlignment="Center"/>
+                        <TextBox   Grid.Row="0" Grid.Column="1" Classes="num" Tag="OpenEms.CellsPerWavelength"
+                                   Text="{Binding ViewModel.OpenEmsCellsPerWavelengthText}"
+                                   PlaceholderText="{x:Static em:EmSetupEditorViewModel.OpenEmsDefaultCellsPerWavelength}"
+                                   LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                   ToolTip.Tip="The largest grid cell, as the number of cells per wavelength in the densest material it passes through at the sweep's top frequency."/>
+                        <TextBlock Grid.Row="1" Grid.Column="0" Classes="colhdr" Text="Grading" VerticalAlignment="Center"/>
+                        <TextBox   Grid.Row="1" Grid.Column="1" Classes="num" Tag="OpenEms.GradingRatio"
+                                   Text="{Binding ViewModel.OpenEmsGradingRatioText}"
+                                   PlaceholderText="{x:Static em:EmSetupEditorViewModel.OpenEmsDefaultGradingRatio}"
+                                   LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                   ToolTip.Tip="The largest ratio between two neighbouring grid cells. Above 1, at most 4."/>
+                        <TextBlock Grid.Row="2" Grid.Column="0" Classes="colhdr" Text="Merge lines closer than (µm)" VerticalAlignment="Center"/>
+                        <TextBox   Grid.Row="2" Grid.Column="1" Classes="num" Tag="OpenEms.MinCellUm"
+                                   Text="{Binding ViewModel.OpenEmsMinCellUmText}"
+                                   PlaceholderText="{x:Static em:EmSetupEditorViewModel.OpenEmsDefaultMinCellUm}"
+                                   LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                   ToolTip.Tip="Grid lines the geometry asks for that are closer than this are merged, and each merge is reported. Blank: a tenth of the smallest metal width or thickness. The smallest cell sets the time step for the whole run."/>
+                        <TextBlock Grid.Row="3" Grid.Column="0" Classes="colhdr" Text="PML cells" VerticalAlignment="Center"/>
+                        <TextBox   Grid.Row="3" Grid.Column="1" Classes="num" Tag="OpenEms.PmlCells"
+                                   Text="{Binding ViewModel.OpenEmsPmlCellsText}"
+                                   PlaceholderText="{x:Static em:EmSetupEditorViewModel.OpenEmsDefaultPmlCells}"
+                                   LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                   ToolTip.Tip="The absorbing layer's thickness, in uniform cells added outside each absorbing face of the air box. 0 uses a first-order Mur boundary instead."/>
+                        <TextBlock Grid.Row="4" Grid.Column="0" Classes="colhdr" Text="End criterion (dB)" VerticalAlignment="Center"/>
+                        <TextBox   Grid.Row="4" Grid.Column="1" Classes="num" Tag="OpenEms.EndCriterionDb"
+                                   Text="{Binding ViewModel.OpenEmsEndCriterionDbText}"
+                                   PlaceholderText="{x:Static em:EmSetupEditorViewModel.OpenEmsDefaultEndCriterionDb}"
+                                   LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                   ToolTip.Tip="A run stops when every port's voltage and current has fallen this far below its peak. Negative."/>
+                        <TextBlock Grid.Row="5" Grid.Column="0" Classes="colhdr" Text="Max time steps" VerticalAlignment="Center"/>
+                        <TextBox   Grid.Row="5" Grid.Column="1" Classes="num" Tag="OpenEms.MaxTimeSteps"
+                                   Text="{Binding ViewModel.OpenEmsMaxTimeStepsText}"
+                                   PlaceholderText="{x:Static em:EmSetupEditorViewModel.OpenEmsDefaultMaxTimeSteps}"
+                                   LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                   ToolTip.Tip="The most time steps one run may take. A run that reaches it before the end criterion has not converged; its result is written with a warning. Blank: ten times the grid's own estimate."/>
+                        <CheckBox Grid.Row="6" Grid.Column="0" Grid.ColumnSpan="2" Content="Thirds rule at metal edges"
+                                  IsChecked="{Binding ViewModel.OpenEmsThirdsRule}"
+                                  ToolTip.Tip="Places a strip's edge lines a third of the local cell inside the metal and two thirds outside, where the edge field lives, rather than one line on the edge."/>
+                        <SelectableTextBlock Grid.Row="7" Grid.Column="0" Grid.ColumnSpan="2" FontSize="10" TextWrapping="Wrap"
+                                   Foreground="{DynamicResource CrfWarningBrush}"
+                                   Text="{Binding ViewModel.OpenEmsFieldError}"
+                                   IsVisible="{Binding ViewModel.OpenEmsFieldError, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+                    </Grid>
                   </StackPanel>
                 </Border>
 

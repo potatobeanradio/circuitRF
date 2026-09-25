@@ -12441,3 +12441,71 @@ brief's Gmsh gates break by design: it now asserts no increase, and the two clas
 **Not run in this session:** gate 7 (the generated case B against F0's Palace reference; minutes and
 ~7 GB). Gates 6, 9, 10 and 11b ran once each, on this Mac with `CIRCUITRF_PALACE` and
 `CIRCUITRF_MPIRUN` set, and pass; without Palace they skip with a reason.
+
+## The openEMS backend — brief-em3d-9 (2026-09-25)
+
+`src/Design/Em3d/{CsxcadWriter,OpenEmsRun}.cs`, `src/Engine/Em3d/FdtdPortTransform.cs`, openEMS in
+`Em3dRunService`; gates `tests/Engine.Tests/Em3d/FdtdPortTransformTests.cs` and
+`tests/Ui.Tests/Em3d/OpenEmsBackendTests.cs`; goldens `testdata/em3d/openems-goldens/` (with the same
+no-end-of-line-conversion `.gitattributes` as Palace's). The run gates find openEMS in `~/opt/openEMS/bin`
+with no environment variable.
+
+**The brief's Z = U·I⁻¹ is singular for its own gate-1 network.** A series R-L-C between two ports has
+I₁ = −I₂ in every run, so I has no inverse (and anything close to a thru is ill-conditioned). The
+transform uses RfCore's definition rearranged so I is never inverted: S = √y·(U − Z₀I)(U + Z₀I)⁻¹·√z,
+which equals `RFNetwork.ZToS` wherever Z exists (gate 2, complex Z₀, to 1e-12) and uses RfCore's own
+`ComplexSqrt`. The singular case the brief wanted named (R-em3d9-4d) is now a singular INCIDENT-wave
+matrix — a port the excitation never reaches — named by port and frequency. Gate 1: 7.7e-11 against the
+analytic S; with the current's half step dropped the error grows from 6.8e-4 (1 GHz) to 5.2e-3 (10 GHz).
+Its first attempt read 1.3e-6: the record stopped at 1.5 ns, where the slow pole (100 ps) still held
+e^−13.5 of the signal — a truncation error, not an integration one.
+
+**The end criterion: circuitRF watches the ports, and stops openEMS through its own `ABORT` file.** F0
+found openEMS's energy criterion unreachable on case B and its exit code meaningless (Q11), so
+em-3d.md §3 says the backend stops on the ports' decay. openEMS checks for a file named `ABORT` in its
+working directory every time step and then finishes gracefully, post-processing included, and it ends
+each probe sample's line with a flush — so `OpenEmsRun` tails the probe files and writes `ABORT` once
+every port's voltage and current, over the last pulse length, is `EndCriterionDb` below that kind's peak
+over all ports. openEMS's energy criterion is written at the same level as a second way to finish. The
+file is deleted afterwards, or a re-run by hand stops at its first step. Seen working on the stripline
+(stopped at 118–127 dB down; a 500 ms poll on a run that fast). **On the generated case B the ENERGY
+criterion fired first (−50 dB at 0.46 ns), where F0 had it stuck at −0.4 dB**: F0's box was first-order
+Mur, ours is PML, which evidently drains the floating ground plane's static field. So the "unreachable"
+finding belongs to Mur, not to the geometry.
+
+**Brief 3e's time-step band [0.5, 1.0] is violated by construction.** The Courant estimate (brief 8)
+takes the smallest cell of EACH axis as if they met in one cell; openEMS's default method 3 (F0's) is
+local and less restrictive. Measured: via transition 1.065e-14 s against 1.155e-14 (0.92); stripline
+6.53e-13 against 4.45e-13 (**1.47**, so the warning fires). Kept as the brief specifies — the owner's call
+whether the estimate becomes per-cell or the band widens.
+
+**Gate 8 (generated case B against F0's openEMS run) fails its phase tolerance.** |S21| is within
+0.073 dB (tolerance 0.1), but ∠S21 drifts to −9.9° at 20 GHz (tolerance 2°). Against F0's PALACE runs
+the group delays are: Palace 59.17 ps (lossy) / 59.10 (lossless), F0 openEMS 58.65 (−0.9 %), circuitRF
+openEMS 60.01 (+1.4 %) — the two FDTD grids err in opposite directions, ours by 6.0° at 20 GHz and 2.2°
+at 10 GHz, where F0's own openEMS was 2.1° off Palace. The gate was NOT loosened. Two contributors found:
+(1) without an outline the generator carries every dielectric to the air box, which F0's board did not —
+the gate's fixture now draws the board on an `Edge.Cuts` layer (−12° → −9.9°), and brief 7's gate 7 has
+the same unmatched geometry; (2) brief 8's grid puts the PORT's extent line exactly on the strip edge,
+between the thirds rule's two lines (a 3.48 µm cell at y = ±200 µm), which defeats the thirds rule and
+sets a time step 2.6× smaller than F0's 25 µm grid (≈ 100 s per port run against F0's 37 s). Not yet
+run: the same case at a finer `CellsPerWavelength`, which would say how much of the rest is dispersion.
+
+**Deliberate choices where the brief left room:**
+- One model, N files: `model.xml` in the run directory holds no excitation (a record, not run); each
+  `p<k>/model.xml` is it with port k's `<Excitation>` as the LAST property, so no ID moves (gate 6).
+- A polygon's hole is a KEYHOLE: one ring, the hole joined by a zero-width horizontal slit through the
+  metal. CSXCAD's inside test is a winding number, so the slit's two edges cancel and a point on it
+  counts as inside — which is right, since the slit lies in metal. No hole-filling priority guesswork.
+- Every conductor SOLID is PEC, wires included, and all are named; sheets are `ConductingSheet`.
+- A wire below its grid cell is a `Curve` — openEMS's only thin conductor. It has no radius, so the
+  brief's "matched perimeter" is not expressible; the note says the cell sets the effective radius.
+  Round wires above the cell are CSXCAD's `Wire` (F0 Q2 validated it), hexagons the Em3dTessellation
+  polyhedron.
+- A solid reaching an absorbing face is continued through the PML to the grid's edge, noted.
+- A `Symmetry` face is refused, as Palace's writer refuses it. A complex Z₀ is accepted (unlike Palace):
+  the port's resistor is Re Z₀ and the transform references the full complex value.
+- `MaxTimeSteps` defaults to 10× the grid's step estimate; `EndCriterionDb` to −50.
+- The log writer is closed before the log is parsed: an earlier version read it while buffered and
+  reported every run "unconverged, dt unreported".
+- Gate 7 (stripline closed form, 98.745 ps against 98.951) runs in 2 s and is in the routine tier.

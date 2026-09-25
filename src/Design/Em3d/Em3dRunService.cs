@@ -10,6 +10,13 @@
 // The version and capability checks run FIRST, so a missing or unvalidated program costs seconds and
 // starts no mesher (R-em3d7-4c, gate 11).
 //
+// openEMS (brief-em3d-9) is the second backend behind the same door:
+//
+//   discovery -> Em3dGenerator -> FdtdGrid (brief 8) -> CsxcadWriter -> openEMS once per port
+//             -> probe files -> FdtdPortTransform (src/Engine) -> .sNp + .npy
+//
+// and lands by the rule below with the token `openems`.
+//
 // WHERE RESULTS LAND (R-em3d7-5, em-3d.md §4.5 — this brief is the first backend built, so it owns the
 // rule and brief 9 reuses it): the solver is part of a 3D result's name, so running a second solver on
 // one setup never overwrites the first. `<key>.palace.sNp`, the `.npy` key `<key>.palace` +
@@ -92,6 +99,8 @@ public static class Em3dRunService
         var readiness = SolverDiscovery.ReadinessFor(setup.Solver3D);
         if (readiness.FirstOrDefault(r => !r.Proceeds) is { } blocked)
             return Refused(EmDiagnostics.SolverUnavailable(blocked.Name, blocked.Refusal!));
+        if (setup.Solver3D == Em3dSolver.OpenEms)
+            return RunOpenEms(setup, source, resultsRoot, ct, control, maxCores, readiness);
         if (setup.Solver3D != Em3dSolver.Palace)
             return Refused(EmDiagnostics.ThreeDSolverNotBuilt(setup.Solver3D.ToString()));
 
@@ -203,6 +212,275 @@ public static class Em3dRunService
         return new EmRunResult(EmRunStatus.Ok, data, null, null, npyPath, snpPath, null, warnings,
                                Notes: notes, Errors: errors, KernelName: "Palace " + palace.DescribeVersion());
     }
+
+    // ── openEMS (brief-em3d-9) ────────────────────────────────────────────────────────────────
+
+    /// <summary>The diagnostics group an openEMS <c>.npy</c> carries beside S.</summary>
+    public const string OpenEmsGroup = "openems";
+
+    /// <summary>
+    /// R-em3d9-3e: openEMS's own time step against brief 8's Courant estimate. Outside this band the
+    /// grid or the estimate is wrong, and the run says so.
+    /// </summary>
+    public const double TimeStepRatioLow = 0.5, TimeStepRatioHigh = 1.0;
+
+    private static EmRunResult RunOpenEms(EmSetup setup, EmLayoutSource source, string resultsRoot,
+                                          CancellationToken ct, RunControl? control, int? maxCores,
+                                          IReadOnlyList<SolverReadiness> readiness)
+    {
+        var warnings = new List<string>();
+        var notes    = new List<string>();
+        var errors   = new List<string>();
+        EmRunResult Refused(Diagnostic d) =>
+            new(EmRunStatus.Refused, null, null, null, null, null, d.Render(), warnings,
+                Notes: notes, Errors: errors, Diagnostic: d);
+        EmRunResult Failed(Diagnostic d) =>
+            new(EmRunStatus.EngineError, null, null, null, null, null, d.Render(), warnings,
+                Notes: notes, Errors: errors, Diagnostic: d);
+        EmRunResult Cancelled()
+        {
+            var c = EmDiagnostics.Cancelled();
+            return new(EmRunStatus.Cancelled, null, null, null, null, null, c.Render(), warnings,
+                       Notes: notes, Errors: errors, Diagnostic: c);
+        }
+
+        var openEms = readiness.Single(r => r.Tool == SolverTool.OpenEms).Installation!;
+        notes.Add($"Solver: openEMS {openEms.DescribeVersion()} at {openEms.Path}.");
+
+        var gridSettings = CemOpenEms.ResolveGrid(setup.OpenEms);
+        var runSettings  = CemOpenEms.ResolveRun(setup.OpenEms);
+        if (gridSettings.Problems().Concat(runSettings.Problems()).ToList() is { Count: > 0 } bad)
+            return Refused(EmDiagnostics.Forwarded("openems-settings", string.Join(" ", bad)));
+
+        // ── brief 3: the problem ──────────────────────────────────────────────────────────────
+        control?.BeginStage("building the 3D problem");
+        var generated = Em3dGenerator.Generate(setup, source, source.Technology!);
+        notes.AddRange(generated.Notes);
+        warnings.AddRange(generated.Warnings);
+        if (!generated.Ok) return Refused(EmDiagnostics.Forwarded("em3d-problem", generated.Refusal));
+        var problem = generated.Problem!;
+        if (problem.Validate() is { Count: > 0 } invalid)
+            return Refused(EmDiagnostics.Forwarded("em3d-problem", string.Join(" ", invalid)));
+
+        // ── brief 8: the grid, then the lowering ──────────────────────────────────────────────
+        control?.BeginStage("placing the FDTD grid");
+        FdtdGridResult grid;
+        try { grid = FdtdGrid.Build(problem, gridSettings); }
+        catch (InvalidOperationException e) { return Failed(EmDiagnostics.SolveFailed($"the FDTD grid could not be built ({e.Message})")); }
+        if (grid.Refusal is { } tooBig) return Refused(EmDiagnostics.Forwarded("openems-grid", tooBig));
+        warnings.AddRange(grid.Warnings);
+        notes.AddRange(grid.Merges.Select(m => m.Sentence));
+
+        var lowering = CsxcadWriter.Write(problem, grid, gridSettings, runSettings);
+        if (!lowering.Ok) return Refused(EmDiagnostics.Forwarded("openems-lowering", lowering.Refusal));
+        notes.AddRange(lowering.Notes);
+        int n = lowering.Ports.Count;
+        var s0 = grid.Smallest;
+        notes.Add($"openEMS grid: {grid.X.Lines.Count:N0} × {grid.Y.Lines.Count:N0} × {grid.Z.Lines.Count:N0} = {grid.Cells:N0} " +
+                  $"cells; smallest cell {FdtdGrid.FormatLength(s0.SmallestCellM)} on {FdtdGrid.AxisName(s0.Axis)}, set by " +
+                  $"{string.Join("; ", s0.SmallestCellFeatures.Select(f => f.Describe(s0.Axis)))}. openEMS runs once per port: " +
+                  $"{n} run{(n == 1 ? "" : "s")}, each up to {lowering.MaxTimeSteps:N0} time steps.");
+
+        string runDir = RunDirectory(resultsRoot, setup, Em3dSolver.OpenEms);
+        try { OpenEmsRun.Stage(runDir, lowering); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return Failed(EmDiagnostics.SolveFailed($"the openEMS run could not be staged in '{runDir}' ({e.Message})."));
+        }
+
+        // ── One run per port (R-em3d9-3a) ─────────────────────────────────────────────────────
+        int? threads = maxCores is { } c ? EmSolveCores.Sanitise(c) : null;
+        var runs = new List<OpenEmsPortRun>();
+        for (int k = 0; k < n; k++)
+        {
+            OpenEmsPortRun r;
+            try
+            {
+                r = OpenEmsRun.RunPort(runDir, lowering, k, openEms.Path, threads, runSettings.EndCriterionDb,
+                                       grid.ExcitationS, control, ct);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                return Failed(EmDiagnostics.SolveFailed($"openEMS could not be run in '{runDir}' ({e.Message})."));
+            }
+            if (r.Cancelled) return Cancelled();
+            if (!r.Ok) return Failed(EmDiagnostics.SolveFailed(r.Message!));
+            runs.Add(r);
+
+            var facts = r.Facts!;
+            if (!r.Converged)
+                warnings.Add($"openEMS's run exciting port {r.Port} stopped at its limit of {lowering.MaxTimeSteps:N0} time steps" +
+                             (double.IsNaN(r.DecayDb) ? ", before the excitation pulse and one pulse length after it had passed"
+                                                      : $" with the port signals {Db(r.DecayDb)} below their peak") +
+                             (facts.EnergyDb is { } e0 ? $" and the field energy {Db(e0)} below its own" : "") +
+                             $", against an end criterion of {Db(runSettings.EndCriterionDb)}. It has NOT converged: the " +
+                             "result is written, and the energy still ringing in the structure is missing from it. Raise the " +
+                             "openEMS section's MaxTimeSteps.");
+            if (facts.TimeStepS is { } dt && grid.TimeStepEstimateS > 0)
+            {
+                double ratio = dt / grid.TimeStepEstimateS;
+                if (ratio < TimeStepRatioLow || ratio > TimeStepRatioHigh)
+                    warnings.Add($"openEMS chose a time step of {dt:G4} s, {ratio:G3} times circuitRF's Courant estimate of " +
+                                 $"{grid.TimeStepEstimateS:G4} s — outside {TimeStepRatioLow}–{TimeStepRatioHigh}. The answer " +
+                                 "is still openEMS's; the estimate circuitRF reports before a run is what disagrees.");
+            }
+        }
+
+        // ── The transform (R-em3d9-4) ────────────────────────────────────────────────────────
+        var ports = problem.Ports.OrderBy(p => p.Number).ToList();
+        double[] freqs = FrequenciesHz(problem.Frequency);
+        var result = FdtdPortTransform.Solve([.. runs.Select(r => r.Probes!)], freqs, lowering.Ports,
+                                             [.. ports.Select(p => p.Z0)]);
+        if (result.Error is { } singular) return Failed(EmDiagnostics.SolveFailed(singular));
+
+        var data = BuildOpenEmsDataSet(result, ports, grid, runs, runSettings);
+
+        string snpBase = SnpBasePath(resultsRoot, setup, Em3dSolver.OpenEms);
+        string? snpPath = snpBase + $".s{ports.Count}p";
+        string? npyPath = null;
+        try
+        {
+            var written = ResultsWriter.WriteRun(
+                Path.GetDirectoryName(resultsRoot.TrimEnd(Path.DirectorySeparatorChar)) ?? resultsRoot,
+                NpyKey(setup, Em3dSolver.OpenEms), data);
+            if (written.Error is { } writeError)
+                errors.Add($"The EM result could not be written to results/: {writeError}");
+            npyPath = written.Written.Count > 0 ? written.Written[0] : null;
+        }
+        catch (Exception e)
+        {
+            errors.Add($"The EM result could not be written to results/: {e.Message}");
+        }
+
+        string? snpError;
+        try { snpError = WriteOpenEmsSnp(data, snpBase, setup, problem, grid, gridSettings, runSettings, lowering, openEms, runs); }
+        catch (Exception e) { snpError = e.Message; }
+        if (snpError is not null)
+        {
+            errors.Add($"The .snp could not be written to '{snpPath}': {snpError}");
+            snpPath = null;
+        }
+
+        return new EmRunResult(EmRunStatus.Ok, data, null, null, npyPath, snpPath, null, warnings,
+                               Notes: notes, Errors: errors, KernelName: "openEMS " + openEms.DescribeVersion());
+    }
+
+    /// <summary>The sweep's frequencies, as Palace's <c>NSample</c> spaces them: both ends included.</summary>
+    public static double[] FrequenciesHz(Em3dFrequency f)
+    {
+        if (f.Points <= 1 || f.StopHz == f.StartHz) return [f.StartHz];
+        var v = new double[f.Points];
+        for (int k = 0; k < f.Points; k++)
+        {
+            double a = (double)k / (f.Points - 1);
+            v[k] = f.Kind == Em3dSweepKind.Log
+                ? f.StartHz * Math.Pow(f.StopHz / f.StartHz, a)
+                : f.StartHz + (f.StopHz - f.StartHz) * a;
+        }
+        v[^1] = f.StopHz;
+        return v;
+    }
+
+    private static DataSet BuildOpenEmsDataSet(FdtdPortResult r, IReadOnlyList<Em3dPort> ports, FdtdGridResult grid,
+                                               IReadOnlyList<OpenEmsPortRun> runs, OpenEmsRunSettings settings)
+    {
+        var z0 = ports.Select(p => p.Z0).ToArray();
+        var snp = new SNP(r.FrequenciesHz, r.S, MatrixType.S, MatrixFormat.RI, z0[0]);
+        var ds = DataSetBuilder.FromSnp(snp);
+        ds.Add("Z0", DataSetBuilder.BuildZ0Cube(z0));
+
+        void Scalar(string name, double? v)
+        {
+            if (v is { } x && double.IsFinite(x)) ds.AddToGroup(OpenEmsGroup, name, DataCube.Scalar(x));
+        }
+        Scalar("GridCells", grid.Cells);
+        Scalar("GridLinesX", grid.X.Lines.Count);
+        Scalar("GridLinesY", grid.Y.Lines.Count);
+        Scalar("GridLinesZ", grid.Z.Lines.Count);
+        Scalar("SmallestCell", grid.Smallest.SmallestCellM);
+        Scalar("TimeStepEstimate", grid.TimeStepEstimateS);
+        Scalar("EndCriterionDb", settings.EndCriterionDb);
+        foreach (var run in runs)
+        {
+            Scalar($"TimeStep_p{run.Port}", run.Facts?.TimeStepS);
+            Scalar($"StepsRun_p{run.Port}", run.Facts?.StepsRun);
+            Scalar($"PortDecayDb_p{run.Port}", run.DecayDb);
+            Scalar($"EnergyDb_p{run.Port}", run.Facts?.EnergyDb);
+            Scalar($"Converged_p{run.Port}", run.Converged ? 1 : 0);
+        }
+        return ds;
+    }
+
+    /// <summary>R-em3d9-5b — the planar exporter with the 3D stamp and openEMS's provenance lines.</summary>
+    private static string? WriteOpenEmsSnp(DataSet data, string snpBase, EmSetup setup, Em3dProblem problem, FdtdGridResult grid,
+                                           OpenEmsGridSettings gridSettings, OpenEmsRunSettings runSettings, CsxcadLowering lowering,
+                                           SolverInstallation openEms, IReadOnlyList<OpenEmsPortRun> runs)
+    {
+        string? group = data.Groups.FirstOrDefault(g => data.CubesIn(g).ContainsKey("S"));
+        if (group is null) return "the solved DataSet carries no S cube";
+
+        string R(double v) => v.ToString("R", CultureInfo.InvariantCulture);
+        var portText = new StringBuilder();
+        foreach (var p in problem.Ports)
+            portText.Append($"{p.Number}:{p.PositiveObject}:{p.NegativeObject}:{R(p.Min.X)},{R(p.Min.Y)},{R(p.Min.Z)}:" +
+                            $"{R(p.Max.X)},{R(p.Max.Y)},{R(p.Max.Z)}:{R(p.Z0.Real)},{R(p.Z0.Imaginary)}|");
+        string settingsText = string.Join("|", R(gridSettings.CellsPerWavelength), R(gridSettings.GradingRatio),
+            gridSettings.ThirdsRule, gridSettings.MinCellM is { } mc ? R(mc) : "auto", gridSettings.PmlCells,
+            R(runSettings.EndCriterionDb), lowering.MaxTimeSteps);
+
+        var s0 = grid.Smallest;
+        var lines = new List<string>();
+        foreach (var p in problem.Ports.OrderBy(p => p.Number))
+            lines.Add($"{EmProvenanceStamp.PortPrefixNumbered}{p.Number}: '{Ascii(p.Name)}' from '{Ascii(p.NegativeObject)}' " +
+                      $"to '{Ascii(p.PositiveObject)}', lumped, {R(p.Z0.Real)} Ohm");
+        lines.Add($"circuitRF-EM 3D grid: {grid.X.Lines.Count} x {grid.Y.Lines.Count} x {grid.Z.Lines.Count} = {grid.Cells} cells; " +
+                  $"smallest cell {Ascii(FdtdGrid.FormatLength(s0.SmallestCellM))} on {FdtdGrid.AxisName(s0.Axis)}, set by " +
+                  Ascii(string.Join("; ", s0.SmallestCellFeatures.Select(f => f.Describe(s0.Axis)))));
+        foreach (var run in runs)
+        {
+            var f = run.Facts!;
+            lines.Add($"circuitRF-EM 3D openEMS run port {run.Port}: dt {(f.TimeStepS is { } dt ? dt.ToString("G6", CultureInfo.InvariantCulture) : "unreported")} s " +
+                      $"(estimate {grid.TimeStepEstimateS.ToString("G6", CultureInfo.InvariantCulture)} s), " +
+                      $"{(f.StepsRun is { } st ? st.ToString(CultureInfo.InvariantCulture) : "an unreported number of")} steps, " +
+                      $"port signals {(double.IsNaN(run.DecayDb) ? "unmeasured (stopped within the pulse)" : Db(run.DecayDb))} and energy {(f.EnergyDb is { } e ? Db(e) : "unreported")} against {Db(runSettings.EndCriterionDb)}, " +
+                      (f.Aborted ? "stopped by circuitRF on the ports' decay, converged"
+                       : f.EnergyCriterionMet ? "stopped by openEMS's energy criterion, converged"
+                       : run.Converged ? "converged" : "stopped at the step limit, NOT converged"));
+        }
+        lines.Add($"circuitRF-EM 3D dielectric loss fitted at: {R(lowering.DielectricFitHz / 1e9)} GHz");
+        lines.Add("circuitRF-EM 3D perfect conductors: " + (lowering.PecSolids.Count == 0 ? "none" : string.Join(", ", lowering.PecSolids.Select(Ascii))));
+        if (lowering.SubCellWires.Count > 0)
+            lines.Add("circuitRF-EM 3D sub-cell wires: " + string.Join(", ", lowering.SubCellWires.Select(Ascii)));
+        lines.Add($"circuitRF-EM 3D operating temperature: {R(problem.OperatingTempC)} C");
+
+        double z0 = problem.Ports.OrderBy(p => p.Number).First().Z0.Real;
+        var opts = new TouchstoneExportOptions(
+            Z0Ohms:         z0 > 0 ? z0 : 50,
+            Digits:         10,
+            DigitFormat:    'g',
+            MatrixFormat:   MatrixFormat.RI,
+            HeaderComments: EmSnpProvenance.BuildHeader3D(
+                "openEMS",
+                EmSnpProvenance.HashText(lowering.Model!),
+                EmSnpProvenance.HashText(settingsText),
+                EmSnpProvenance.HashText(portText.ToString()),
+                "openEMS " + openEms.DescribeVersion(),
+                lines,
+                setup.Name is { Length: > 0 } nm ? nm : Path.GetFileNameWithoutExtension(snpBase),
+                setup.SolveRegion is { } reg ? $"{setup.LayoutRef} (solve region {Ascii(reg.Describe())})" : setup.LayoutRef,
+                DateTimeOffset.Now));
+
+        Directory.CreateDirectory(Path.GetDirectoryName(snpBase)!);
+        var result = TouchstoneExporter.Export(
+            data, group, opts,
+            pinnedIndexByAxis:    new Dictionary<string, int>(),
+            allSweepFiles:        false,
+            baseFilePathNoSuffix: snpBase);
+        return result.Status == TouchstoneExportStatus.Ok ? null : $"Touchstone export returned {result.Status}.";
+    }
+
+    private static string Db(double db) => double.IsNegativeInfinity(db) ? "over 300 dB"
+                                           : $"{Math.Abs(db).ToString("0.#", CultureInfo.InvariantCulture)} dB";
 
     // ── Results ──────────────────────────────────────────────────────────────────────────────
 

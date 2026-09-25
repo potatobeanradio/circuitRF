@@ -426,8 +426,8 @@ folder are in [The Command Line](cli.html#em).
 The **Solver** group at the top of the panel picks who solves the setup: circuitRF's own planar and
 cross-section kernels (the default), or a 3D solver — **Palace** (finite elements) or openEMS. A 3D
 setup builds a 3D model from the layout, its technology and any bond wires, and the planar settings
-below are kept but not read. openEMS is not runnable in this version; choosing it is refused at
-Simulate with a sentence saying so.
+below are kept but not read. Palace and openEMS each have their own section below, and a setup keeps
+both, so switching solver never loses the other's settings.
 
 With Palace chosen the panel shows Palace's own settings. **A blank box is the default shown in it**, and
 every box is a field of the `.cem` — nothing here lives only in the panel.
@@ -484,6 +484,46 @@ cells, the smallest cell **and the features that set it**, the time step it allo
 openEMS computes its own), the steps and memory the run would take, and every merge. A grid that would
 not fit in memory is refused, naming the feature behind the smallest cell and the setting that would
 relax it.
+
+### Running openEMS {#openems-run}
+
+With openEMS chosen the panel shows the grid settings above and two of its own, each a field of the
+`.cem`'s `OpenEms` section; a blank box is the default.
+
+| `.cem` field (in `OpenEms`) | Default | What it does |
+|---|---|---|
+| `EndCriterionDb` | −50 | A run stops when every port's voltage and current has fallen this far below its peak |
+| `MaxTimeSteps` | ten times the grid's own estimate | The most time steps one run may take |
+
+**openEMS excites one port per simulation, so an N-port setup is N runs**, one after another, each
+using every core — a 4-port takes about four times as long as a 2-port, and the progress line says
+*port k of N*. circuitRF writes openEMS's model itself, runs the `openEMS` program, reads the voltage
+and current it recorded at every port, and computes the S-parameters from them with the same
+definition of a wave as every other result, including a complex port impedance.
+
+**When a run stops.** openEMS's own stopping rule is the field energy left in the model, and on a
+board whose metal floats in open space — a via transition's ground plane — that energy never falls,
+while the ports went quiet long before. So circuitRF watches the ports: once every port's signals have
+fallen by `EndCriterionDb`, it tells openEMS to finish. **A run that reaches `MaxTimeSteps` first has not
+converged**: its result is still written, with a warning stating how far the signals fell against the
+criterion, and it is never presented as converged.
+
+**What FDTD cannot say that Palace can**, each stated in the run's notes, never hidden:
+
+- **Dielectric loss is exact at one frequency.** openEMS holds a material's conductivity constant, which
+  reproduces a loss tangent only at the band centre; away from it the loss grows as 1/f, where Palace
+  holds tanδ constant. On a lossy substrate this is the largest expected difference between the two.
+- **Solid metal is a perfect conductor.** A grid cannot resolve a metal's skin depth, so solid
+  conductors — vias, thick lines, bond wires — are lossless in openEMS. Thin metal written as a sheet
+  keeps its conductivity and thickness.
+- **A bond wire thinner than the grid cell around it** is written as openEMS's thin conductor, whose
+  effective radius is set by the cell, not the wire: expect too much inductance. A grid step of half
+  the wire's radius around it matched Palace within 0.1 dB in circuitRF's own validation.
+
+Absorbing faces are PML (`PmlCells`; 0 gives a first-order Mur boundary instead), and anything reaching
+one is continued through it. The result lands beside a Palace one without replacing it —
+`results/<name>.openems.sNp` and `<name>.openems_em.npy` — and `results/<name>.openems/` keeps the model
+and, per port, openEMS's log and probe files, so a run can be repeated by hand.
 
 ## Installing the 3D solvers by hand {#install-3d-solvers}
 

@@ -290,6 +290,9 @@ public sealed class PalaceBackendTests(ITestOutputHelper output) : IDisposable
             Assert.Equal(key + ".palace", Em3dRunService.ResultKey(setup, Em3dSolver.Palace));
             Assert.Equal(key + ".palace_em", Em3dRunService.NpyKey(setup, Em3dSolver.Palace));
             Assert.Equal(Path.Combine(results, key + ".palace"), Em3dRunService.RunDirectory(results, setup, Em3dSolver.Palace));
+            // brief-em3d-9 R-em3d9-5a: openEMS lands by the same rule, beside Palace, never over it.
+            Assert.Equal(key + ".openems", Em3dRunService.ResultKey(setup, Em3dSolver.OpenEms));
+            Assert.Equal(key + ".openems_em", Em3dRunService.NpyKey(setup, Em3dSolver.OpenEms));
         }
     }
 
@@ -426,7 +429,7 @@ public sealed class PalaceBackendTests(ITestOutputHelper output) : IDisposable
         setup.Palace = new CemPalace { ElementOrder = 1, AdaptiveMaxIterations = 0 };
     }
 
-    private static EmAirBox Padded(double um)
+    internal static EmAirBox Padded(double um)
     {
         var face = new EmAirBoxFace(um, null);
         return new EmAirBox(face, face, face, face, face, face);
@@ -453,7 +456,7 @@ public sealed class PalaceBackendTests(ITestOutputHelper output) : IDisposable
     /// <summary>The stripline for gate 6: a strip of width <paramref name="w"/> and length
     /// <paramref name="len"/> as a 1 µm sheet centred in 1 mm of εr <paramref name="er"/>, over an
     /// undrawn ground plane (the PEC floor) and under a PEC top face.</summary>
-    private static (EmSetup, EmLayoutSource) Stripline(double w, double b, double len, double er)
+    internal static (EmSetup, EmLayoutSource) Stripline(double w, double b, double len, double er)
     {
         long lower = (long)Math.Round(b / 2 / Um * 1000), upper = lower - 1000;
         string erText = er.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
@@ -514,7 +517,7 @@ public sealed class PalaceBackendTests(ITestOutputHelper output) : IDisposable
 
     private static string Gmsh() => SolverDiscovery.Gmsh.Find(out _)!.Path;
 
-    private static bool Alive(int pid)
+    internal static bool Alive(int pid)
     {
         try { using var p = Process.GetProcessById(pid); return !p.HasExited; }
         catch (ArgumentException) { return false; }
@@ -524,7 +527,7 @@ public sealed class PalaceBackendTests(ITestOutputHelper output) : IDisposable
     private static string[] WithoutWriteStamp(IEnumerable<string> lines)
         => [.. lines.Where(l => !l.Contains("circuitRF-EM written:", StringComparison.Ordinal))];
 
-    private static double[] Unwrap(double[] p)
+    internal static double[] Unwrap(double[] p)
     {
         var o = (double[])p.Clone();
         for (int i = 1; i < o.Length; i++)
@@ -534,7 +537,7 @@ public sealed class PalaceBackendTests(ITestOutputHelper output) : IDisposable
         return o;
     }
 
-    private static double Slope(double[] x, double[] y)
+    internal static double Slope(double[] x, double[] y)
     {
         double mx = x.Average(), my = y.Average();
         return x.Zip(y, (a, c) => (a - mx) * (c - my)).Sum() / x.Sum(a => (a - mx) * (a - mx));

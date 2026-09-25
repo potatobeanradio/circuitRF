@@ -914,3 +914,4 @@ src/Design/Layout/Lvs/LvsReduce.cs|LVS reduction made {groups.Count - made} coll
 src/Engine/Em3d/FdtdGrid.cs|An FDTD grid interval could not be partitioned after smoothing.
 src/Engine/Em3d/FdtdGrid.cs|The FDTD grid's size smoothing did not settle — a defect in FdtdGrid.Fill.
 src/Engine/Em3d/FdtdGrid.cs|The fill needs the two air-box faces at least.
+src/Engine/Em3d/FdtdPortTransform.cs|There must be one run per port, each carrying every port's probes, and one Z0 per port.

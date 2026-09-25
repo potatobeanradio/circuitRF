@@ -261,12 +261,23 @@ public sealed class CemOpenEms
     /// the air box. Default 8.</summary>
     public int? PmlCells { get; set; }
 
+    /// <summary>How far the port signals must fall below their peak before a run stops, in dB (negative).
+    /// circuitRF watches every port's voltage and current and stops openEMS when all of them have decayed
+    /// this far; openEMS's own field-energy criterion is set to the same level. Default −50.</summary>
+    public double? EndCriterionDb { get; set; }
+
+    /// <summary>The most time steps one run may take. A run that reaches it before the end criterion has
+    /// not converged: its result is still written, with a warning stating how far the signals fell.
+    /// Default: ten times the steps the grid estimates for the pulse and its ring-down.</summary>
+    public long? MaxTimeSteps { get; set; }
+
     /// <summary>A copy, so an editor can change one without touching a setup that shares it.</summary>
     public CemOpenEms Clone() => (CemOpenEms)MemberwiseClone();
 
     /// <summary>True when no field is set: the same run as an omitted section.</summary>
     public bool IsEmpty =>
-        CellsPerWavelength is null && GradingRatio is null && ThirdsRule is null && MinCellUm is null && PmlCells is null;
+        CellsPerWavelength is null && GradingRatio is null && ThirdsRule is null && MinCellUm is null && PmlCells is null &&
+        EndCriterionDb is null && MaxTimeSteps is null;
 
     /// <summary>
     /// brief-em3d-8 R-em3d8-6 — the section's grid fields RESOLVED, each omitted one taking
@@ -282,6 +293,49 @@ public sealed class CemOpenEms
             section.ThirdsRule         ?? d.ThirdsRule,
             section.MinCellUm is { } um ? um * 1e-6 : d.MinCellM,
             section.PmlCells           ?? d.PmlCells);
+    }
+
+    /// <summary>brief-em3d-9 R-em3d9-6 — the section's run fields RESOLVED, each omitted one taking
+    /// <see cref="OpenEmsRunSettings.Default"/>'s.</summary>
+    public static OpenEmsRunSettings ResolveRun(CemOpenEms? section)
+    {
+        var d = OpenEmsRunSettings.Default;
+        return section is null ? d : new(section.EndCriterionDb ?? d.EndCriterionDb, section.MaxTimeSteps ?? d.MaxTimeSteps);
+    }
+}
+
+/// <summary>
+/// brief-em3d-9 R-em3d9-6 — the openEMS section's RUN fields, resolved. <b>The defaults live here and
+/// nowhere else</b>; the grid's live in <see cref="CircuitRF.Engine.Em3d.OpenEmsGridSettings.Default"/>.
+/// </summary>
+/// <param name="EndCriterionDb">The port-signal decay a run stops at, dB below peak (negative).</param>
+/// <param name="MaxTimeSteps">The step ceiling; null takes <see cref="DefaultStepsFactor"/> times the
+/// grid's own estimate (<see cref="CircuitRF.Engine.Em3d.FdtdGridResult.Steps"/>).</param>
+public sealed record OpenEmsRunSettings(double EndCriterionDb, long? MaxTimeSteps)
+{
+    /// <summary>
+    /// −50 dB is openEMS's own customary end criterion and F0's (em-3d-f0-findings.md Q11). The ceiling
+    /// is ten times the grid's estimate of the pulse plus six pulse lengths of ring-down, which both F0
+    /// cases met (6.8 and 7.0 pulses), so a run that reaches it has rung for seventy.
+    /// </summary>
+    public static OpenEmsRunSettings Default { get; } = new(-50, null);
+
+    /// <summary>The default ceiling as a multiple of the grid's step estimate.</summary>
+    public const int DefaultStepsFactor = 10;
+
+    /// <summary>The ceiling for a grid that estimates <paramref name="estimatedSteps"/>.</summary>
+    public long StepCeiling(long estimatedSteps) => MaxTimeSteps ?? Math.Max(1, estimatedSteps) * DefaultStepsFactor;
+
+    /// <summary>Every value that cannot be run, as sentences naming the field — empty when all can.</summary>
+    public IReadOnlyList<string> Problems()
+    {
+        var p = new List<string>();
+        if (!(EndCriterionDb < 0) || !(EndCriterionDb >= -200))
+            p.Add($"OpenEms.EndCriterionDb is {EndCriterionDb.ToString("G6", System.Globalization.CultureInfo.InvariantCulture)}; " +
+                  "it must be a decay below 0 dB, and at least −200.");
+        if (MaxTimeSteps is { } m && m < 1)
+            p.Add($"OpenEms.MaxTimeSteps is {m}; it must be at least 1.");
+        return p;
     }
 }
 

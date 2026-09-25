@@ -161,7 +161,7 @@ internal static class ExplainEm3d
                 "conductors and ports and Palace's adaptive passes add to it, and the run reports the real " +
                 "counts. No mesher is run to get it.");
         }
-        return [palace, OpenEmsSize(grid)];
+        return [palace, OpenEmsSize(grid, p?.Ports.Count ?? 0)];
     }
 
     /// <summary>
@@ -184,7 +184,7 @@ internal static class ExplainEm3d
     }
 
     /// <summary>R-em3d8-5c — cells per axis, total, smallest cell and its feature, Δt, steps, memory, merges.</summary>
-    private static Em3dSizeJson OpenEmsSize((FdtdGridResult? Grid, string? Why) grid)
+    private static Em3dSizeJson OpenEmsSize((FdtdGridResult? Grid, string? Why) grid, int ports)
     {
         if (grid.Grid is not { } g)
             return new("openems", "unavailable", null, null, null, null,
@@ -198,7 +198,10 @@ internal static class ExplainEm3d
             $"Time step about {g.TimeStepEstimateS:G3} s (the Courant estimate; openEMS computes its own), about " +
             $"{g.Steps:N0} steps for the pulse and a nominal ring-down, about {g.MemoryBytes / 1e6:N0} MB. " +
             (g.Merges.Count == 0 ? "No lines merged." : $"{g.Merges.Count} merge(s) of lines closer than MinCell " +
-                                                         $"({FdtdGrid.FormatLength(g.MinCellM)}).");
+                                                         $"({FdtdGrid.FormatLength(g.MinCellM)}).") +
+            // brief-em3d-9 R-em3d9-3a: openEMS excites one port per simulation.
+            (ports > 1 ? $" openEMS runs once per port: {ports} runs, one after another, so the whole takes about " +
+                         $"{ports} times one run." : "");
         return new("openems", "exact", g.Cells, null, g.TimeStepEstimateS, g.MemoryBytes, note,
                    [g.X.Lines.Count, g.Y.Lines.Count, g.Z.Lines.Count], s.SmallestCellM, axis, features, g.Steps,
                    g.Merges.Select(m => m.Sentence).ToList(), g.Warnings, g.Refusal);

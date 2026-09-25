@@ -184,6 +184,8 @@ public sealed class Em3dRenderExplainTests(ITestOutputHelper output) : IDisposab
         Assert.Equal([grid.X.Lines.Count, grid.Y.Lines.Count, grid.Z.Lines.Count], openEmsSize.CellsPerAxis);
         Assert.Equal(grid.TimeStepEstimateS, openEmsSize.TimeStepS);
         Assert.NotEmpty(openEmsSize.SmallestCellFeatures!);
+        // brief-em3d-9 R-em3d9-3a: one openEMS run per port, said before anything runs.
+        Assert.Contains($"openEMS runs once per port: {src.Problem.Ports.Count} runs", openEmsSize.Note);
 
         // The Palace estimate the row will carry counts meshed regions only: a conductor is a hole.
         var estimate = Em3dSizeEstimate.Palace(src.Problem, _ => 100 * Um, 2);
