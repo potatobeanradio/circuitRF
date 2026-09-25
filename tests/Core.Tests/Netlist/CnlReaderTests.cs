@@ -397,4 +397,20 @@ public class CnlReaderTests
         Assert.Equal("Vs_mag", rOv.Expression);
         Assert.Null(rOv.Unit);
     }
+
+    /// <summary>
+    /// A wBond's relative <c>File</c> resolves against the netlist's source directory, as an SnP's
+    /// does. It used to be passed through as written, so the run verbs — which set no elaborator
+    /// base — resolved it against the process's working directory: the same <c>.cnl</c> ran from its
+    /// own folder and failed from anywhere else.
+    /// </summary>
+    [Fact]
+    public void AWBondsRelativeFile_ResolvesAgainstTheSourceDirectory()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "crf-src-dir");
+        var (_, tb) = new CnlReader().Read("WBond:WB1 in out File=\"wb/pair.wBond\"", "tb", dir);
+
+        string expected = Path.GetFullPath(Path.Combine(dir, "wb/pair.wBond")).Replace('\\', '/');
+        Assert.Equal($"\"{expected}\"", tb.Instances.Single().Overrides.Single(o => o.Name == "File").Expression);
+    }
 }

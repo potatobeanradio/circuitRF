@@ -1666,6 +1666,12 @@ public sealed class CnlReader
 
         bool isSnP = typeName.Equals("SnP", StringComparison.OrdinalIgnoreCase);
 
+        // wBond's File names a .wBond design, and a relative one resolves exactly as an SnP's does —
+        // against this netlist's source directory. It used to reach the elaborator as written, and
+        // the headless run verbs set no elaborator base, so it resolved against the PROCESS's
+        // working directory: one .cnl ran from its own folder and failed from anywhere else.
+        bool resolvesFile = isSnP || typeName.Equals("wBond", StringComparison.OrdinalIgnoreCase);
+
         // Tolerate whitespace around '=' in param assignments: "C = 1 uF", "C =1", "C= 1" all become
         // the canonical "C=1" token (the trailing unit stays its own token). Safe here because the
         // expression-bearing lines (Z_Port/SDD/Tuner) were already dispatched above, and quoted
@@ -1690,8 +1696,8 @@ public sealed class CnlReader
                 if (isSnP && IsIgnoredSnpParam(pname))
                     { i++; continue; }
 
-                // SnP File: resolve relative path to absolute using source directory
-                if (isSnP && pname.Equals("File", StringComparison.OrdinalIgnoreCase) &&
+                // SnP/wBond File: resolve relative path to absolute using source directory
+                if (resolvesFile && pname.Equals("File", StringComparison.OrdinalIgnoreCase) &&
                     pexpr.Length >= 2 && pexpr[0] == '"' && pexpr[^1] == '"')
                 {
                     var rawPath      = pexpr[1..^1];

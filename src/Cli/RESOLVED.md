@@ -2626,3 +2626,43 @@ as a clean run with a note, and under `--json` the way to make that structural r
 for `JsonRun.Lvs` to stay null: the document then has no `result.lvs` key at all, so a caller cannot
 read a run that could not happen as one that concluded something. The gate asserts the absence, not
 just the exit code.
+
+## `reference layout`, `em-setup` and `wbond` — the 2D authoring pages (2026-09-24)
+
+Three more generated format topics, so a client can write the documents an EM or wirebond run needs
+without copying one that happens to be on the machine. `docs/design/em-3d.md` §4.6 points at them:
+the 3D setup it plans is a `.cem` generated from the same three inputs, so these pages are the
+authoring surface 3D extends, not a 2D side project. Each example was run end to end when written —
+the `.clay` through `check` and `render`, the `.cem` through `em` (4 points, ~5 s, |S11| < −35 dB),
+the `.wBond` through a `.cnl` and `sparam` — and `GeneratedReferenceTests` holds the cheap half: each
+example is read by the format's OWN reader, not merely parsed as JSON.
+
+**The walk could not describe a `.clay` before this, and nothing said so.** `DocumentSchema.Walk`
+listed a polymorphic base's own four fields and stopped: `LayoutShape` names neither its `$type`
+discriminator nor any derived kind, so the page had no coordinates on it at all. It now reads the
+same `JsonPolymorphic`/`JsonDerivedType` attributes System.Text.Json reads, adds the discriminator row
+to the base and one block per kind, titled with the value that selects it. Arrays (`long[]` — a
+polygon's `Xy`) also spelled as the CLR name and were not descended into; both fixed.
+
+**`$type` must be the FIRST field of a shape.** Written after `Layer`, the whole file is refused
+("must specify a type discriminator") — System.Text.Json's default, measured, not assumed. The page
+says so, because a hand-written or generated file will not naturally put it first.
+
+**`WBondIo`'s four DTOs are public now**, for the walk and nothing else — they were private nested
+types, which reflection from another assembly cannot name at compile time. The comment above them
+says no one may construct one.
+
+**A wBond's relative `File=` resolved against the PROCESS's working directory — fixed in
+`CnlReader`.** The same `.cnl` ran from its own folder and failed from anywhere else. The elaborator
+already resolved it (`ResolveWBondParameters` → `ResolveSnpFilePath`), but only against
+`Elaborator.BaseDirectory`, which the GUI sets to the workspace root and **no run verb sets at all**.
+What the run verbs rely on for an SnP is `CnlReader`, which makes a relative `File=` absolute against
+the source directory at read time — the `.cnl`'s own folder, or a `.csch`'s workspace root through
+`SchematicCircuit.ReferenceBaseOf` — and that rule named SnP alone. It now covers wBond too. The GUI is
+unchanged: Simulate reads `netlist.cnl` at the workspace root, so the reader's base and the
+elaborator's are the same folder. Gate: `CnlReaderTests.AWBondsRelativeFile_ResolvesAgainstTheSourceDirectory`,
+and the page's example now names the file relatively.
+
+**`DispersionCorrection` is the one `.cem` flag whose omission is not the GUI's default** — the field
+is non-nullable on purpose (its model default flipped to true and every existing file carries it), so
+a file that leaves it out reads false. The page says to write it.

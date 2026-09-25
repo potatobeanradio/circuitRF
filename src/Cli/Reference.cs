@@ -22,7 +22,7 @@ namespace CircuitRF.Cli;
 /// maintained (<see cref="ReferenceLibrary"/>); the rest are GENERATED at every call from the thing
 /// that enforces them — the component catalogue from the live registries
 /// (<see cref="ComponentCatalog"/>), the analysis directives from the schema <c>CnlReader</c>
-/// validates against (<see cref="AnalysisDirectiveSchema"/>), and the two document formats by
+/// validates against (<see cref="AnalysisDirectiveSchema"/>), and the document formats by
 /// reflection over the types their readers deserialise into (<see cref="DocumentSchema"/>). There is
 /// no third thing — in particular no grammar, schema or BNF WRITTEN BY HAND, because that would be a
 /// second description of a reader that drifts from it silently, which is the exact failure this

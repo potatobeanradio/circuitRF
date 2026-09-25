@@ -308,6 +308,56 @@ public sealed class GeneratedReferenceTests(ITestOutputHelper output)
     }
 
     /// <summary>
+    /// The three formats a client writes to run EM and wirebond work headlessly carry an example the
+    /// format's OWN reader accepts — parsing as JSON is not enough, because a <c>.clay</c> whose shape
+    /// puts <c>$type</c> second is valid JSON and a refused layout. The examples were also run end to
+    /// end (check, render, em, sparam) when written; this is the part that can go stale cheaply.
+    /// </summary>
+    [Theory]
+    [InlineData("layout")]
+    [InlineData("em-setup")]
+    [InlineData("wbond")]
+    public void AFormatTopicsExampleIsReadByItsOwnReader(string topic)
+    {
+        var run = RunCli("reference", topic);
+        Assert.Equal(0, run.ExitCode);
+        string example = FirstJsonObject(run.StdOut);
+
+        switch (topic)
+        {
+            case "layout":
+                var layout = CircuitRF.Design.Layout.LayoutPersistence.Deserialize(example);
+                Assert.Equal(3, layout.Shapes.Count);
+                break;
+            case "em-setup":
+                var setup = CircuitRF.Design.Layout.Em.EmSetupPersistence.Deserialize(example);
+                Assert.Equal("thru/layout/thru.clay", setup.LayoutRef);
+                break;
+            case "wbond":
+                var design = CircuitRF.WBond.WBondIo.Read(example);
+                Assert.Equal(2, design.Arrays.Single().Wires.Count);
+                break;
+        }
+    }
+
+    /// <summary>
+    /// A polymorphic list — a <c>.clay</c>'s shapes — is written as its DERIVED kinds, so the page
+    /// must name the discriminator and every kind's fields. The base type alone lists four fields
+    /// and none of the coordinates, which is what the walk produced before it read the attributes.
+    /// </summary>
+    [Fact]
+    public void ThePolymorphicShapeListNamesEveryKindAndItsDiscriminator()
+    {
+        var run = RunCli("reference", "layout");
+        Assert.Equal(0, run.ExitCode);
+
+        foreach (var d in typeof(CircuitRF.Design.Layout.LayoutShape)
+                     .GetCustomAttributes(typeof(System.Text.Json.Serialization.JsonDerivedTypeAttribute), false)
+                     .Cast<System.Text.Json.Serialization.JsonDerivedTypeAttribute>())
+            Assert.Contains($"{d.DerivedType.Name}   ($type: \"{d.TypeDiscriminator}\")", run.StdOut, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// Every field the generated half names is a field the reader's own type declares. The page is
     /// a walk over that type, so this pins the walk rather than the fields: a renderer that started
     /// inventing rows, or dropping them, would pass no other test here.

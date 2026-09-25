@@ -43,8 +43,10 @@ internal static class DocumentSchema
     // ── the formats ──────────────────────────────────────────────────────────
 
     /// <summary>
-    /// The formats served as generated topics. Both are here for the same reason: they are documents
-    /// a client has to write and that <c>create</c> does not make one of.
+    /// The formats served as generated topics. All are here for the same reason: they are documents
+    /// a client has to write and that <c>create</c> does not make (or makes only empty). The
+    /// <c>.clay</c>/<c>.cem</c>/<c>.wBond</c> three are what EM and wirebond work needs headlessly,
+    /// and docs/design/em-3d.md points at them as the authoring surface a 3D setup extends.
     /// </summary>
     public static readonly Format[] All =
     [
@@ -52,6 +54,12 @@ internal static class DocumentSchema
             typeof(CircuitRF.Render.DataDisplay.DataDisplayConfig), CddPreamble),
         new("technology", "The .ctech technology format", ".ctech",
             typeof(CircuitRF.Design.Layout.CtechFile), CtechPreamble),
+        new("layout", "The .clay layout format", ".clay",
+            typeof(CircuitRF.Design.Layout.ClayFile), ClayPreamble),
+        new("em-setup", "The .cem EM setup format", ".cem",
+            typeof(CircuitRF.Design.Layout.Em.CemFile), CemPreamble),
+        new("wbond", "The .wBond wirebond format", ".wBond",
+            typeof(CircuitRF.WBond.WBondIo.WBondDocument), WBondPreamble),
     ];
 
     public static Format? Find(string topic)
@@ -165,6 +173,155 @@ internal static class DocumentSchema
         Every field the reader understands follows, with its default.
         """;
 
+    private const string ClayPreamble = """
+        A layout is a cell's physical artwork: shapes on drawing layers, instances of other cells,
+        and the EM ports a .cem solves between. It is JSON, one file per cell, at
+        <cell>/layout/<cell>.clay. `new cell <workspace> <name> --views layout` writes an empty one
+        whose DbuPerMicron, DisplayUnit and SnapDbu come from the workspace's technology; start from
+        that rather than a blank file.
+
+        A 50 ohm microstrip through-line on the shipped pcb-2layer_RO4350B_20mil_1oz technology,
+        10 mm long and 1.1 mm wide, with an EM port at each end. This is a whole file; `check`
+        passes it, `render` draws it, and the em-setup topic's example solves it:
+
+            {
+              "FormatVersion": 1,
+              "DbuPerMicron": 1000,
+              "DisplayUnit": "Mm",
+              "SnapDbu": 10000,
+              "Shapes": [
+                { "$type": "Rect", "Layer": { "Layer": 1, "Datatype": 0 },
+                  "X1": 0, "Y1": -550000, "X2": 10000000, "Y2": 550000 },
+                { "$type": "Label", "Layer": { "Layer": 1, "Datatype": 0 },
+                  "X": 0, "Y": 0, "Text": "1", "Height": 400000,
+                  "IsPort": true, "PortDirection": "R0" },
+                { "$type": "Label", "Layer": { "Layer": 1, "Datatype": 0 },
+                  "X": 10000000, "Y": 0, "Text": "2", "Height": 400000,
+                  "IsPort": true, "PortDirection": "R180" }
+              ],
+              "Instances": []
+            }
+
+            circuitrf check  ws/thru/layout/thru.clay
+            circuitrf render ws/thru/layout/thru.clay -o thru.svg
+
+        Six things that are not obvious from the field list:
+
+          * Every coordinate and size is an integer DBU. DbuPerMicron says what one is worth: at the
+            default 1000, one DBU is one nanometre, so 1.1 mm is 1100000. y is UP.
+          * A shape's Layer is the (Layer, Datatype) Key of a drawing layer in the technology, never
+            its name. `reference technology` explains the Key; the workspace's own .ctech lists them.
+          * "$type" picks the kind of shape and MUST be the first field of each shape. Written
+            anywhere else, the whole file is refused with "must specify a type discriminator".
+          * Poly, Curve and Path store their vertices as ONE flat list, x0, y0, x1, y1, ... A Poly's
+            Holes are further flat lists of the same kind.
+          * An EM port is a Label with IsPort true, placed ON the conductor's edge. Its Text is the
+            port number. PortDirection is the way current flows INTO the metal (R0 = +x, R90 = +y,
+            R180 = -x, R270 = -y); omitted, it is inferred from the geometry, and an ambiguous
+            inference is refused at run time rather than guessed.
+          * DisplayUnit and SnapDbu are editor conveniences. Nothing is computed from them.
+
+        Every field the reader understands follows, with its default. Shapes are listed once per
+        kind, each with the "$type" value that selects it.
+        """;
+
+    private const string CemPreamble = """
+        An EM setup is one electromagnetic run: which layout, which conductor of the stackup carries
+        the signal, the frequency plan, the ports' reference impedances and the mesh. It is JSON; by
+        convention it lives at <cell>/em/<name>.cem. `circuitrf em <file.cem>` runs it with no other
+        argument and writes exactly what the GUI's Simulate writes: <workspace>/results/<Name>.sNp
+        and <Name>_em.npy (`-o` moves the Touchstone only).
+
+        This solves the layout topic's microstrip through-line, 1 to 10 GHz at 4 points, in about
+        5 seconds on a laptop; |S11| comes back below -35 dB. It is a whole file:
+
+            {
+              "FormatVersion": 1,
+              "Name": "thru",
+              "LayoutRef": "thru/layout/thru.clay",
+              "SignalStackupLayerName": "Top Copper (1 oz)",
+              "Frequency": {
+                "StartExpr": "1", "StopExpr": "10", "NumPoints": 4,
+                "Mode": "PointCount", "Kind": "Linear",
+                "StartUnit": "GHz", "StopUnit": "GHz"
+              },
+              "DispersionCorrection": true,
+              "AnalysisKind": "Planar"
+            }
+
+            circuitrf check ws
+            circuitrf em    ws/thru/em/thru.cem
+
+        Six things that are not obvious from the field list:
+
+          * LayoutRef is relative to the WORKSPACE folder (the one holding .cws), not to the .cem.
+            The technology is the layout's own, resolved from its workspace; a .cem names none.
+          * SignalStackupLayerName is a STACKUP entry's Name ("Top Copper (1 oz)"), not a drawing
+            layer's ("Top Copper"). The technology's Stackup lists them.
+          * Frequency: StartExpr and StopExpr are expressions in StartUnit and StopUnit. Mode
+            PointCount uses NumPoints; Mode StepSize uses StepExpr in StepUnit.
+          * Port impedances: Port1Z0Real/Imag and Port2Z0Real/Imag cover two ports. For more, PortZ0s
+            is a flat [re, im, re, im, ...] list in port-number order, and wins where present.
+          * AnalysisKind: Planar is the full-wave planar solver; CrossSection is the 2-D per-unit-
+            length solve of a uniform line; omitted means Auto, which picks between them and says
+            which in the run's notes.
+          * DispersionCorrection: a new setup made in the GUI writes true, but a file that OMITS it
+            reads false. Write it. Every other omitted flag reads as the GUI's default.
+
+        Every field the reader understands follows, with its default.
+        """;
+
+    private const string WBondPreamble = """
+        A wirebond design is a set of named ARRAYS of bond wires, each wire a 3-D polyline. It is
+        JSON, self-contained, and what the wBond editor saves. A schematic's wBond component usually
+        CARRIES its wires embedded in its Design parameter; a hand-written netlist names a .wBond
+        file instead.
+
+        Two 1 mil gold wires, 1 mm span, 100 um apart, feet 10 mil above the ground plane and crests
+        at 16 mil. This is a whole file:
+
+            {
+              "FormatVersion": 1,
+              "Arrays": [
+                {
+                  "Name": "G1",
+                  "Wires": [
+                    { "DiameterNm": 25400, "Material": "Gold",
+                      "Points": [ [0, 0, 254000], [254000, 0, 406400], [1016000, 0, 254000] ] },
+                    { "DiameterNm": 25400, "Material": "Gold",
+                      "Points": [ [0, 101600, 254000], [254000, 101600, 406400], [1016000, 101600, 254000] ] }
+                  ]
+                }
+              ]
+            }
+
+        Simulated through a netlist (`reference components WBond` lists every parameter):
+
+            Port:P1 in  0 Num=1 Z=50 Ohm
+            Port:P2 out 0 Num=2 Z=50 Ohm
+            WBond:WB1 in out File="pair.wBond"
+            analysis SP1 type=sparam start=1 stop=10 npts=4 Unit=GHz
+
+        Six things that are not obvious from the field list:
+
+          * Points are [x, y, z] in integer NANOMETRES, whatever unit the editor displays; z is
+            measured from the ground plane at z = 0. Points[0] is where current ENTERS the wire,
+            and reversing the list changes the sign of every mutual inductance it takes part in.
+          * EVERY array in the file is two nets on the WBond instance, its input end then its output
+            end, in the file's array order. The instance's Arrays parameter ("G1|G2") only RECORDS
+            the order it was wired against, so a reordered file is reported rather than rewired.
+          * Material names a metal: Gold, Aluminium, Copper and Silver are built in. A Materials list
+            REPLACES the built-in metals rather than adding to them, so a file that defines one
+            custom metal must also list every built-in one its wires name.
+          * A relative File= resolves against the .cnl's own folder, exactly as an SnP's does, so
+            the netlist above expects pair.wBond beside it.
+          * Omitted fields take the editor's defaults: OperatingTempC 85 (degrees C), ground plane
+            on, capacitance on, OvermoldEr 1 (air).
+          * EmbeddedGeometry and ViewState are the editor's own; leave them out when writing a file.
+
+        Every field the reader understands follows, with its default.
+        """;
+
     // ── rendering ────────────────────────────────────────────────────────────
 
     /// <summary>The topic's text. Pure — the topic list and the resource listing measure it by
@@ -235,11 +392,35 @@ internal static class DocumentSchema
                 }
             }
 
-            objects.Add(new Block(type.Name, rows));
+            // A polymorphic base (a .clay's shapes) is written as one of its DERIVED types, picked by
+            // a discriminator — and the base alone names neither the discriminator nor any derived
+            // type's fields, which are most of what a shape is. Both are read off the same
+            // attributes System.Text.Json reads, so the page states what the reader accepts.
+            var derived = type.GetCustomAttributes<JsonDerivedTypeAttribute>(inherit: false).ToList();
+            if (derived.Count > 0)
+            {
+                string key = type.GetCustomAttribute<JsonPolymorphicAttribute>()?.TypeDiscriminatorPropertyName
+                             ?? "$type";
+                rows.Insert(0, new Field(key, "string (which kind)",
+                    string.Join(" | ", derived.Select(d => d.TypeDiscriminator))));
+
+                foreach (var d in derived)
+                    if (seen.Add(d.DerivedType)) queue.Enqueue(d.DerivedType);
+            }
+
+            string title = type.Name;
+            if (type.BaseType?.GetCustomAttributes<JsonDerivedTypeAttribute>(inherit: false)
+                    .FirstOrDefault(d => d.DerivedType == type) is { } self)
+                title += $"   ({BaseKey(type.BaseType)}: \"{self.TypeDiscriminator}\")";
+
+            objects.Add(new Block(title, rows));
         }
 
         return [.. objects, .. enums.OrderBy(e => e.Type, StringComparer.Ordinal)];
     }
+
+    private static string BaseKey(Type polymorphicBase)
+        => polymorphicBase.GetCustomAttribute<JsonPolymorphicAttribute>()?.TypeDiscriminatorPropertyName ?? "$type";
 
     private static Block EnumBlock(Type t) => new(
         t.Name + "   (one of)",
@@ -251,6 +432,11 @@ internal static class DocumentSchema
     private static IEnumerable<Type> Referenced(Type t)
     {
         t = Nullable.GetUnderlyingType(t) ?? t;
+        if (t.IsArray)
+        {
+            foreach (var inner in Referenced(t.GetElementType()!)) yield return inner;
+            yield break;
+        }
         if (t.IsGenericType)
         {
             foreach (var arg in t.GetGenericArguments())
@@ -273,6 +459,8 @@ internal static class DocumentSchema
         if (t == typeof(byte))                            return "integer (0-255)";
         if (t == typeof(double) || t == typeof(float))    return "number";
         if (t == typeof(uint))                            return "integer (ARGB)";
+
+        if (t.IsArray) return "[" + Spell(t.GetElementType()!) + "]";
 
         if (t.IsGenericType)
         {

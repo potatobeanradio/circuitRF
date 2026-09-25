@@ -148,7 +148,12 @@ public static class WBondIo
 
     // ---------------------------------------------------------------- DTOs
 
-    private sealed class WBondDocument
+    // The four DTOs are PUBLIC for one reader outside this assembly: `circuitrf reference wbond`
+    // generates the format's field list by reflection over them (src/Cli/DocumentSchema.cs), which is
+    // what keeps that page from being a hand-written second copy of this reader. Nothing else may
+    // construct one — WBondDesign is the model, these are only its on-disk spelling.
+
+    public sealed class WBondDocument
     {
         public int FormatVersion { get; set; }
 
@@ -177,7 +182,7 @@ public static class WBondIo
         public string? ViewState { get; set; }
     }
 
-    private sealed class MaterialDto
+    public sealed class MaterialDto
     {
         public string Name { get; set; } = "";
         public double Sigma20 { get; set; }
@@ -185,13 +190,13 @@ public static class WBondIo
         public double DensityKgM3 { get; set; }
     }
 
-    private sealed class ArrayDto
+    public sealed class ArrayDto
     {
         public string Name { get; set; } = "";
         public List<WireDto>? Wires { get; set; }
     }
 
-    private sealed class WireDto
+    public sealed class WireDto
     {
         public long DiameterNm { get; set; }
         public string? Material { get; set; }

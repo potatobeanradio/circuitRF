@@ -1160,8 +1160,9 @@ standing cost. **The example is a real one** — it was written out and run befo
 
 ### 11.3a Resources — the cheaper channel for the same bytes
 
-The server also declares MCP **resources**, one per reference topic — the four generated ones
-included, so `circuitrf://reference/analyses`, `.../data-display` and `.../technology` are advertised
+The server also declares MCP **resources**, one per reference topic — the generated ones
+included, so `circuitrf://reference/analyses`, `.../data-display`, `.../technology`, `.../layout`,
+`.../em-setup` and `.../wbond` are advertised
 beside the authored pages — at `circuitrf://reference/<topic>`. This is the correct channel for the reference surface: a resource
 costs a URI, a title and a size until it is read, where a tool description is a standing per-session
 cost. Each entry advertises its `size` in bytes for the reason the CLI's own topic list prints one —
@@ -1270,6 +1271,9 @@ circuitrf reference analyses            # every analysis directive and every key
 circuitrf reference analyses sparam     # one directive
 circuitrf reference data-display        # the .cdd format, generated from the reader's own type
 circuitrf reference technology          # the .ctech format, likewise
+circuitrf reference layout              # the .clay format
+circuitrf reference em-setup            # the .cem format
+circuitrf reference wbond               # the .wBond format
 ```
 
 It takes no path, reads no file and writes nothing — the only verb here about no document at all,
@@ -1304,9 +1308,11 @@ this whole series exists to prevent.
 **Three more topics are generated the same way** (AUT-10). `analyses` is read from
 `AnalysisDirectiveSchema` — the table `CnlReader` itself validates against — so every `type=` token,
 every alias, every key, its default and whether it is required come from the thing that enforces
-them. `data-display` and `technology` are read by REFLECTION from `DataDisplayConfig` and `CtechFile`,
-the types their readers deserialise into, with each field's default taken off a freshly-constructed
-instance. Each of those two carries an authored preamble — what the format is for, and a minimal
+them. `data-display`, `technology`, `layout`, `em-setup` and `wbond` are read by REFLECTION from
+`DataDisplayConfig`, `CtechFile`, `ClayFile`, `CemFile` and `WBondIo.WBondDocument`, the types their
+readers deserialise into, with each field's default taken off a freshly-constructed instance, and a
+polymorphic list (a layout's shapes) expanded into every kind with the `$type` value that selects it.
+Each carries an authored preamble — what the format is for, and a minimal
 example that was written out and run — and everything after the preamble is generated.
 
 **What the generated half deliberately will not say is what a field MEANS.** A `.ctech` type carries
@@ -1322,8 +1328,10 @@ byte, so what ships is the authoring critical path: `netlist`, `expressions`, `u
 excluded deliberately** — at 54 kB it is the largest page of them all, and a protocol client already
 has every verb's schema from `tools/list`, so it is the one page it needs least.
 
-The generated topics follow: `data-display`, `technology`, `analyses`, `components`. The first two are
-here because they are formats a client must WRITE and that `create` does not make one of — the
+The generated topics follow: `data-display`, `technology`, `layout`, `em-setup`, `wbond`, `analyses`,
+`components`. The five formats are here because they are documents a client must WRITE and that
+`create` does not make (or makes only empty) — `layout`, `em-setup` and `wbond` are the authoring
+surface for EM and wirebond runs, and the one `docs/design/em-3d.md` §4.6 extends to 3D — the
 exercise behind this series got a plot only because an unrelated `.cdd` happened to be on the machine
 to copy from.
 
