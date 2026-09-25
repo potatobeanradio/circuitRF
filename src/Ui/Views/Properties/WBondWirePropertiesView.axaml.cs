@@ -70,6 +70,7 @@ public partial class WBondWirePropertiesView : UserControl
             case "Diameter":   Vm?.CommitDiameter(text); break;
             case "LoopHeight": Vm?.CommitLoopHeight(text); break;
             case "Span":       Vm?.CommitSpan(text); break;
+            case "FootLength": Vm?.CommitFootLength(text); break;
         }
     }
 
@@ -94,6 +95,21 @@ public partial class WBondWirePropertiesView : UserControl
     private void OnMaterialChanged(object? sender, SelectionChangedEventArgs e)
     {
         if (sender is ComboBox { SelectedItem: string name }) Vm?.CommitMaterial(name);
+    }
+
+    private void OnCrossSectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (sender is ComboBox { SelectedItem: string name }) Vm?.CommitCrossSection(name);
+    }
+
+    private void OnStartBondChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (sender is ComboBox { SelectedItem: string name }) Vm?.CommitBond(start: true, name);
+    }
+
+    private void OnEndBondChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (sender is ComboBox { SelectedItem: string name }) Vm?.CommitBond(start: false, name);
     }
 
     /// <summary>

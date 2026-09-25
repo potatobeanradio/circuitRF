@@ -12247,3 +12247,49 @@ the series parts' DCR, which the board's library does not state.
 - **`CircuitRF.WBond.Point3` collides with `CircuitRF.Engine.Em3d.Point3`**: the generator imports only
   `WireMaterial` by alias. `StackupLayer.Material`'s IL gate now lists the generator, which reads it for
   the tensor only a named material carries (every other value is already resolved on read).
+
+## Bond wires in the 3D problem (brief-em3d-4, 2026-09-25)
+
+- **D2 answered: the foot and ball defaults live in the `.wasm`** (`DefaultFootLengthNm`,
+  `DefaultBallDiameterNm`, `DefaultBallHeightNm` on `WasmFile`, nullable, no format bump).
+  `WireBondProcess.Resolve` (`src/Design/Layout/Em3d/WireBondProcess.cs`) is the only code that knows
+  that; the chain is wire → array → `.wasm` → built in, and each value carries its `Source` for
+  `explain`. The `.wasm` resolves as a wBond document's does: the `.wBond`'s `AssemblyRef` relative to
+  its own folder, then the nearest `.cws`'s `DefaultAssemblyRef`.
+- **The built-in starting values are UNVERIFIED**: foot 2d, ball diameter 2.5d, ball height 0.5d, and the
+  inserted neck's minimum height 1d. §6.6's "about twice the diameter" is the only one with a source.
+  Every run that uses one says so, naming the value and the `.wasm` field. They stand until the owner's
+  assembly data (brief-em3d-1 §1) replaces them.
+- **The brief's pad lookup does not exist where it says.** `WBondEmbedding` encodes a design onto a
+  schematic component; it finds no pad, and kernel W never finds one (its ground plane is z = 0 and
+  it knows no artwork). The 3D generator lands a wire end on the conductor pieces of the problem it is
+  building (so the foot meets exactly the object the mesher sees), choosing the HIGHEST top where
+  pieces stack. It asks the any-layer question LVS already asks of a foot (`AssemblyRead.Emit`), because
+  a foot carries a height, not a layer. A sheet pad's top is its sheet plane.
+- **The wire model's z origin is the top of the lowest ground-reference conductor**, the convention
+  `WBondLayerHeights` states for wire DRC. With no ground reference, the bottom of the stack, and a note.
+- **A wedge end's point moves in z to its foot's axis** (pad top + half the section height). Joining the
+  stored end point to the foot with a vertical step instead would leave a sub-micron kink, or a turn back
+  on itself when the point sits below the axis; one note gives the count and the largest move. On F0's
+  case A the file's end points are 12.7 µm above the pads (a round wire's half-height), so a hexagon
+  moves them down 1.18 µm. A ball end's point is replaced by the centre of the ball's top face.
+- **`Em3dSweep` now carries resolved rings**, one per path vertex (square at the ends, mitred at interior
+  vertices, the mean of the two segments' mitre points so a twisting wire stays symmetric). The old
+  `Up`/`Size` fields could not express the near-vertical rule, and a foot bottom computed as axis minus
+  half a height does not reproduce the pad's z bitwise. `Size` became `Diameter` (the ROUND wire's d).
+  Nothing had used the old shape. A turn sharper than 150° is refused by name, because the mitred rings
+  either side of it would overlap.
+- **Assembly loop-height override: out of scope.** §6.6 says the 3D setup accepts the assembly height as
+  an override; that needs a rule for how the axis is reshaped to meet it, which `LoopShape` owns, and it
+  is a separate decision. The 3D model REPORTS it, with wBond's own number beside it
+  (`Em3dWireReport.AssemblyLoopHeightM` / `WBondLoopHeightM`).
+- **Wire metals**: the technology's `Materials` first, then the `.wBond`'s list, matched without case
+  as kernel W matches. Both defining a name differently is a warning, and the technology's values are
+  used. A name found nowhere is a refusal listing the known metals. `WBondDesign.MaterialFor` is never
+  called (it falls back silently to gold; recorded in `src/WBond/RESOLVED.md`).
+- **`Em3dGenerationResult` gained `Warnings` and `Wires`.** `check` reports the warnings as
+  `check.em.finding` warnings. A stem-paired `.wBond` that cannot be read is a refusal in 3D, not the
+  silent absence the layout editor reports.
+- **Not built as written, R-em3d4-1d:** the wBond editor has no wire TABLE. The four fields are rows in
+  the Properties Inspector's wire context (`WBondWirePropertiesView`), where the per-wire diameter and
+  metal already are. `WireTableCsv` is unchanged, so an imported table's wires take the defaults.

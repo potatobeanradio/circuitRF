@@ -76,6 +76,46 @@
                               HorizontalAlignment="Stretch" FontSize="11"/>
                 </Grid>
 
+                <!-- brief-em3d-4: the 3D model's per-wire fields. Kernel W reads none of them; they
+                     shape the wire only in a 3D setup (cross-section, a foot at a wedge end, a ball
+                     at a ball end). A blank foot defers to the array, then the assembly process. -->
+                <Grid ColumnDefinitions="62,*">
+                    <TextBlock Grid.Column="0" Text="3D section" VerticalAlignment="Center" FontSize="11"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                    <ComboBox Grid.Column="1" ItemsSource="{Binding CrossSections}" SelectedItem="{Binding CrossSection}"
+                              SelectionChanged="OnCrossSectionChanged"
+                              ToolTip.Tip="The wire's cross-section in a 3D model. Kernel W does not use it."
+                              HorizontalAlignment="Stretch" FontSize="11"/>
+                </Grid>
+
+                <Grid ColumnDefinitions="62,*">
+                    <TextBlock Grid.Column="0" Text="In bond" VerticalAlignment="Center" FontSize="11"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                    <ComboBox Grid.Column="1" ItemsSource="{Binding BondStyles}" SelectedItem="{Binding StartBond}"
+                              SelectionChanged="OnStartBondChanged"
+                              ToolTip.Tip="How the input end is bonded, in a 3D model. Kernel W does not use it."
+                              HorizontalAlignment="Stretch" FontSize="11"/>
+                </Grid>
+
+                <Grid ColumnDefinitions="62,*">
+                    <TextBlock Grid.Column="0" Text="Out bond" VerticalAlignment="Center" FontSize="11"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                    <ComboBox Grid.Column="1" ItemsSource="{Binding BondStyles}" SelectedItem="{Binding EndBond}"
+                              SelectionChanged="OnEndBondChanged"
+                              ToolTip.Tip="How the output end is bonded, in a 3D model. Kernel W does not use it."
+                              HorizontalAlignment="Stretch" FontSize="11"/>
+                </Grid>
+
+                <Grid ColumnDefinitions="62,*">
+                    <TextBlock Grid.Column="0" Text="Foot" VerticalAlignment="Center" FontSize="11"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                    <TextBox Grid.Column="1" Text="{Binding FootLengthText}" Tag="FootLength"
+                             Watermark="array / process default"
+                             Classes.error="{Binding HasFootLengthError}" ToolTip.Tip="{Binding FootLengthError}"
+                             GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                             FontSize="11" Padding="4,2"/>
+                </Grid>
+
                 <!-- Loop height (max z − min z, §3.0) and span, both editable. Setting the height on
                      a wire bound to a shared profile DETACHES it — one wire cannot both follow a
                      shared shape and stand at its own height; the Profile row above flips to "(free)"

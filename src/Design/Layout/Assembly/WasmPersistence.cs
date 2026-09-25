@@ -29,6 +29,11 @@ public sealed class WasmDocumentFile
     public List<long> AllowedDiametersNm { get; set; } = [];
     public List<string> AllowedMetals { get; set; } = [];
     public List<WasmEnvelope> Envelopes { get; set; } = [];
+
+    // brief-em3d-4 R-em3d4-3 — nullable and omitted when unset, so no format_version bump.
+    public long? DefaultFootLengthNm { get; set; }
+    public long? DefaultBallDiameterNm { get; set; }
+    public long? DefaultBallHeightNm { get; set; }
 }
 
 /// <summary>Reads and writes `.wasm` assembly rule files. Framework-free (no Avalonia / Skia).</summary>
@@ -90,6 +95,9 @@ public static class WasmPersistence
         AllowedDiametersNm = [.. w.AllowedDiametersNm],
         AllowedMetals      = [.. w.AllowedMetals],
         Envelopes          = [.. w.Envelopes],
+        DefaultFootLengthNm   = w.DefaultFootLengthNm,
+        DefaultBallDiameterNm = w.DefaultBallDiameterNm,
+        DefaultBallHeightNm   = w.DefaultBallHeightNm,
     };
 
     private static WasmFile FromFileModel(WasmDocumentFile f) => new()
@@ -101,5 +109,8 @@ public static class WasmPersistence
         AllowedDiametersNm = [.. f.AllowedDiametersNm],
         AllowedMetals      = [.. f.AllowedMetals],
         Envelopes          = [.. f.Envelopes],
+        DefaultFootLengthNm   = f.DefaultFootLengthNm,
+        DefaultBallDiameterNm = f.DefaultBallDiameterNm,
+        DefaultBallHeightNm   = f.DefaultBallHeightNm,
     };
 }

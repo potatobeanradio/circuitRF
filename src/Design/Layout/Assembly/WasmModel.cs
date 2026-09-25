@@ -169,6 +169,23 @@ public sealed class WasmFile
     /// <summary>Named piecewise-linear tables the rules look limits up in.</summary>
     public List<WasmEnvelope> Envelopes { get; set; } = [];
 
+    // ── The bond process's geometry, for the 3D model (brief-em3d-4 R-em3d4-3, owner decision D2) ──
+    //
+    // The foot and ball are properties of the ASSEMBLY LINE — how this house's bonder is set up — so
+    // they live in this document rather than the .ctech (em-3d.md §6.6 suggested the technology; D2,
+    // 2026-09-25, chose the .wasm, which already resolves per workspace with a per-.wBond override).
+    // Null means "not stated". Only WireBondProcess.Resolve reads them; moving them changes that one
+    // function. Kernel W never sees a foot or a ball.
+
+    /// <summary>The wedge-foot length the house bonds with, nm — the length of wire lying on the pad.</summary>
+    public long? DefaultFootLengthNm { get; set; }
+
+    /// <summary>The flattened ball's diameter, nm.</summary>
+    public long? DefaultBallDiameterNm { get; set; }
+
+    /// <summary>The flattened ball's height above its pad, nm.</summary>
+    public long? DefaultBallHeightNm { get; set; }
+
     /// <summary>Every rule, section by section in WB32's own order. The checker's flat view.</summary>
     public IEnumerable<(WasmSection Section, WasmRule Rule)> AllRules()
     {

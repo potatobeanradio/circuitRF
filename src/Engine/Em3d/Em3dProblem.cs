@@ -60,11 +60,21 @@ public sealed record Em3dBox(Point3 Min, Point3 Max) : Em3dPrimitive;
 /// <summary>A right circular cylinder — a round via.</summary>
 public sealed record Em3dCylinder(Point3 AxisStart, Point3 AxisEnd, double Radius) : Em3dPrimitive;
 
-/// <summary>A section swept along a polyline (brief 4's bond wires). <paramref name="Up"/> fixes
-/// the section's roll; <paramref name="Size"/> is the diameter (circle) or the across-flats
-/// dimension (hexagon).</summary>
+/// <summary>
+/// A bond wire's section swept along its axis polyline (brief-em3d-4 R-em3d4-2), <b>resolved</b>:
+/// <paramref name="Rings"/> holds the section at every vertex of <paramref name="Path"/> — mitred at an
+/// interior vertex, square at the two ends — with vertex k of each ring joined to vertex k of the next
+/// by the solid's lateral edges. The rings ARE the geometry, decided once by the generator (the roll,
+/// the near-vertical rule, a foot's bottom lying exactly on its pad), so no backend re-derives a
+/// frame. A backend that sweeps a true section along the path may use <paramref name="Section"/> and
+/// <paramref name="Diameter"/> (the ROUND wire's d; <see cref="Em3dWireSection"/> sizes the hexagon
+/// from it) and must then take the section's orientation from the rings.
+/// </summary>
 public sealed record Em3dSweep(
-    IReadOnlyList<Point3> Path, Em3dSection Section, Point3 Up, double Size) : Em3dPrimitive;
+    IReadOnlyList<Point3>                Path,
+    Em3dSection                          Section,
+    double                               Diameter,
+    IReadOnlyList<IReadOnlyList<Point3>> Rings) : Em3dPrimitive;
 
 /// <summary>A sphere (brief 4's balls; bumps, later).</summary>
 public sealed record Em3dSphere(Point3 Center, double Radius) : Em3dPrimitive;
@@ -293,7 +303,9 @@ public sealed record Em3dProblem(
             "has zero extent on at least one axis",
         Em3dCylinder c when !(c.Radius > 0) => "has zero radius",
         Em3dCylinder c when c.AxisStart == c.AxisEnd => "has zero length",
-        Em3dSweep w when !(w.Size > 0) || w.Path.Count < 2 => "has no section or no path",
+        Em3dSweep w when !(w.Diameter > 0) || w.Path.Count < 2 => "has no section or no path",
+        Em3dSweep w when w.Rings.Count != w.Path.Count || w.Rings.Any(r => r.Count < 3) =>
+            "does not have one section ring of at least three vertices per path vertex",
         Em3dSphere s when !(s.Radius > 0) => "has zero radius",
         Em3dTruncatedSphere t when !(t.Radius > 0) || !(t.ZMax > t.ZMin) => "has zero volume",
         _ => null,
@@ -323,14 +335,15 @@ public sealed record Em3dProblem(
             }
             case Em3dSweep w:
             {
-                double h = w.Size / 2;
+                // The rings are the solid's vertices, so their bound is exact.
                 double x0 = double.PositiveInfinity, y0 = x0, z0 = x0;
                 double x1 = double.NegativeInfinity, y1 = x1, z1 = x1;
-                foreach (var q in w.Path)
-                {
-                    x0 = Math.Min(x0, q.X - h); y0 = Math.Min(y0, q.Y - h); z0 = Math.Min(z0, q.Z - h);
-                    x1 = Math.Max(x1, q.X + h); y1 = Math.Max(y1, q.Y + h); z1 = Math.Max(z1, q.Z + h);
-                }
+                foreach (var ring in w.Rings)
+                    foreach (var q in ring)
+                    {
+                        x0 = Math.Min(x0, q.X); y0 = Math.Min(y0, q.Y); z0 = Math.Min(z0, q.Z);
+                        x1 = Math.Max(x1, q.X); y1 = Math.Max(y1, q.Y); z1 = Math.Max(z1, q.Z);
+                    }
                 return (x0, y0, z0, x1, y1, z1);
             }
             case Em3dSphere s:

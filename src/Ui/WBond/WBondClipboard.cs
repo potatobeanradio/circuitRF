@@ -38,6 +38,12 @@ public static class WBondClipboard
 
         /// <summary>Flat x,y,z triples — the same convention the `.wBond` file uses.</summary>
         public long[] Points { get; set; } = [];
+
+        // brief-em3d-4 — the 3D model's per-wire fields ride with the shape; null is the default.
+        public WireCrossSection? CrossSection { get; set; }
+        public BondStyle? StartBond { get; set; }
+        public BondStyle? EndBond { get; set; }
+        public long? FootLengthNm { get; set; }
     }
 
     public sealed class Payload
@@ -76,6 +82,10 @@ public static class WBondClipboard
                     DiameterNm = wire.DiameterNm,
                     Material = wire.Material,
                     Points = [.. wire.Points.SelectMany(p => new[] { p.X, p.Y, p.Z })],
+                    CrossSection = wire.CrossSection,
+                    StartBond = wire.StartBond,
+                    EndBond = wire.EndBond,
+                    FootLengthNm = wire.FootLengthNm,
                 });
             }
         }
@@ -150,6 +160,10 @@ public static class WBondClipboard
             {
                 DiameterNm = entry.DiameterNm > 0 ? entry.DiameterNm : WBondDefaults.ShippedDiameterNm,
                 Material = string.IsNullOrWhiteSpace(entry.Material) ? WBondDefaults.ShippedMaterial : entry.Material,
+                CrossSection = entry.CrossSection,
+                StartBond = entry.StartBond,
+                EndBond = entry.EndBond,
+                FootLengthNm = entry.FootLengthNm,
             };
 
             for (int i = 0; i + 2 < entry.Points.Length; i += 3)

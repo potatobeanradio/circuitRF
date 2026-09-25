@@ -538,6 +538,9 @@ can act on.
 instead would write a result for a solver the setup did not ask for. `check` on such a setup builds
 the 3D problem (`Em3dGenerator`) in place of the planar preflight, reports `Em3dProblem.Validate()`'s
 findings as errors, and names the planar-only fields the setup keeps but does not read, at info.
+The layout's stem-paired `.wBond` is part of that problem (brief-em3d-4): its wires' refusals are the
+generator's, and a foot overhanging its pad or a metal defined differently by the technology and the
+`.wBond` is a warning (`check.em.finding`).
 
 ### 8.5 What the verb does NOT do
 

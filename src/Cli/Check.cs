@@ -684,6 +684,7 @@ internal static class Check
         catch (Exception ex) { f.Add(CliDiagnostics.CheckEmRefused(path, ex.Message)); return; }
 
         foreach (string note in generated.Notes) f.Add(CliDiagnostics.CheckEmNote(path, note));
+        foreach (string warning in generated.Warnings) f.Add(CliDiagnostics.CheckEmFinding(path, warning, true));
         if (generated.Problem is not { } problem)
         {
             f.Add(CliDiagnostics.CheckEmRefused(path, generated.Refusal ?? "the 3D problem could not be built."));

@@ -74,6 +74,27 @@ public sealed partial class WBondWirePropertiesViewModel : ObservableObject
 
     [ObservableProperty] private string _material = "";
 
+    // ── The 3D model's fields (brief-em3d-4 R-em3d4-1d). Kernel W reads none of them. ──────────────
+
+    private static readonly string[] CrossSectionNames = Enum.GetNames<WireCrossSection>();
+    private static readonly string[] BondStyleNames = Enum.GetNames<BondStyle>();
+
+    /// <summary>The cross-section choices. A stable reference, for the reason the class remarks give.</summary>
+    public IReadOnlyList<string> CrossSections => CrossSectionNames;
+
+    /// <summary>The bond-style choices, shared by both ends.</summary>
+    public IReadOnlyList<string> BondStyles => BondStyleNames;
+
+    [ObservableProperty] private string _crossSection = nameof(WireCrossSection.Hexagon);
+    [ObservableProperty] private string _startBond = nameof(BondStyle.Wedge);
+    [ObservableProperty] private string _endBond = nameof(BondStyle.Wedge);
+
+    /// <summary>This wire's own foot length; blank means it defers to its array, then the assembly
+    /// process's default.</summary>
+    [ObservableProperty] private string _footLengthText = "";
+    [ObservableProperty] private string? _footLengthError;
+    public bool HasFootLengthError => FootLengthError is not null;
+
     private string[] _materialsCache = [];
     private string[] _groupsCache = [];
 
@@ -213,6 +234,11 @@ public sealed partial class WBondWirePropertiesViewModel : ObservableObject
 
         GroupName = GroupOf(index) ?? "";
         Material = wire.Material;
+        CrossSection = (wire.CrossSection ?? WireCrossSection.Hexagon).ToString();
+        StartBond = (wire.StartBond ?? BondStyle.Wedge).ToString();
+        EndBond = (wire.EndBond ?? BondStyle.Wedge).ToString();
+        if (_focusedField != "FootLength")
+            FootLengthText = wire.FootLengthNm is { } foot ? Format(foot) : "";
 
         WireSummary = $"{wire.Points.Count} points";
 
@@ -444,6 +470,42 @@ public sealed partial class WBondWirePropertiesViewModel : ObservableObject
         Refresh();
     }
 
+    public void CommitCrossSection(string? name)
+    {
+        if (_vm is null || _wireIndex < 0 || !Enum.TryParse<WireCrossSection>(name, out var section)) return;
+        // The default is stored as null, so a file that never chose one keeps omitting it.
+        _vm.SetWireCrossSection(_wireIndex, section == WireCrossSection.Hexagon ? null : section);
+        Refresh();
+    }
+
+    public void CommitBond(bool start, string? name)
+    {
+        if (_vm is null || _wireIndex < 0 || !Enum.TryParse<BondStyle>(name, out var style)) return;
+        _vm.SetWireBond(_wireIndex, start, style == BondStyle.Wedge ? null : style);
+        Refresh();
+    }
+
+    /// <summary>Sets this wire's own foot length. Blank clears it, so the array's or the process's applies.</summary>
+    public void CommitFootLength(string text)
+    {
+        if (_vm is null || _wireIndex < 0) return;
+
+        long? nm = null;
+        if (!string.IsNullOrWhiteSpace(text))
+        {
+            if (!WBondUnits.TryParseLength(text, Unit, out long parsed) || parsed <= 0)
+            {
+                FootLengthError = "Not a positive length (blank uses the array's or the process's).";
+                return;
+            }
+            nm = parsed;
+        }
+
+        FootLengthError = null;
+        _vm.SetWireFootLength(_wireIndex, nm);
+        Refresh();
+    }
+
     private Wire? CurrentWire() =>
         _vm is null || _wireIndex < 0 ? null : _vm.Design.AllWires().ElementAtOrDefault(_wireIndex);
 
@@ -453,6 +515,7 @@ public sealed partial class WBondWirePropertiesViewModel : ObservableObject
     partial void OnDiameterErrorChanged(string? value) => OnPropertyChanged(nameof(HasDiameterError));
     partial void OnLoopHeightErrorChanged(string? value) => OnPropertyChanged(nameof(HasLoopHeightError));
     partial void OnSpanErrorChanged(string? value) => OnPropertyChanged(nameof(HasSpanError));
+    partial void OnFootLengthErrorChanged(string? value) => OnPropertyChanged(nameof(HasFootLengthError));
 }
 
 /// <summary>One point of the selected wire: X, Y and Z, each independently editable.</summary>

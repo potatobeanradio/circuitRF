@@ -37,6 +37,13 @@ namespace CircuitRF.Design.Layout.Em3d;
 public sealed record Em3dGenerationResult(Em3dProblem? Problem, string? Refusal, IReadOnlyList<string> Notes)
 {
     public bool Ok => Problem is not null && Refusal is null;
+
+    /// <summary>Findings a user should act on that do not stop the problem being built — a foot that
+    /// overhangs its pad, a metal the technology and the <c>.wBond</c> define differently.</summary>
+    public IReadOnlyList<string> Warnings { get; init; } = [];
+
+    /// <summary>What the model made of each bond wire (brief-em3d-4), in array then member order.</summary>
+    public IReadOnlyList<Em3dWireReport> Wires { get; init; } = [];
 }
 
 public static class Em3dGenerator
@@ -80,19 +87,23 @@ public static class Em3dGenerator
     /// relative to the <c>.cem</c>'s workspace, the technology relative to the layout's), which this
     /// method does not repeat.
     /// </summary>
-    public static Em3dGenerationResult Generate(EmSetup setup, EmLayoutSource source, Technology tech)
+    /// <param name="wires">The bond wires to include. Null — the ordinary case — takes the
+    /// <c>.wBond</c> stem-paired with the layout (WB40), if it has one.</param>
+    public static Em3dGenerationResult Generate(EmSetup setup, EmLayoutSource source, Technology tech,
+                                                Em3dWireSource? wires = null)
     {
         ArgumentNullException.ThrowIfNull(setup);
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(tech);
-        return new Run(setup, source, tech).Go();
+        return new Run(setup, source, tech, wires).Go();
     }
 
     // ── One generation ─────────────────────────────────────────────────────────────────────────
 
-    private sealed class Run(EmSetup setup, EmLayoutSource source, Technology tech)
+    private sealed class Run(EmSetup setup, EmLayoutSource source, Technology tech, Em3dWireSource? wires)
     {
         private readonly List<string> _notes = [];
+        private readonly List<string> _warnings = [];
         private readonly List<Em3dMaterial> _materials = [];
         private readonly Dictionary<string, Em3dMaterial> _materialByName = new(StringComparer.Ordinal);
         private double _tempC;
@@ -396,6 +407,36 @@ public static class Em3dGenerator
                 bodies.Add((body, on.TopM, on.TopM + body.ThicknessDbu * stackPerDbu, polys));
             }
 
+            // ── Bond wires (brief-em3d-4): the stem-paired .wBond, landed on this problem's pieces ──
+            Em3dWireBuild? wireBuild = null;
+            var wireSource = wires;
+            if (wireSource is null)
+            {
+                wireSource = Em3dWireSource.ForLayout(source.AbsolutePath, out string? wbNote, out string? wbRefusal);
+                if (wbRefusal is not null) return No(wbRefusal);
+                if (wbNote is not null) _notes.Add(wbNote);
+            }
+            if (wireSource is { Design.WireCount: > 0 })
+            {
+                // The wire model's z = 0 is the top of the lowest ground-reference conductor
+                // (WBondLayerHeights' convention, the plane kernel W images in).
+                double zOrigin;
+                if (ground is not null) zOrigin = ground.TopM;
+                else
+                {
+                    zOrigin = bands.Min(b => b.BottomM);
+                    _notes.Add($"Technology '{tech.Name}' designates no ground-reference conductor, so the wires' " +
+                               "z = 0 is taken as the bottom of the stack. Mark the ground plane to place them " +
+                               "where kernel W does.");
+                }
+                var pads = pieces.Values.SelectMany(l => l)
+                                 .Select(p => new Em3dWirePad(p.Name, p.Poly, p.IsSheet ? p.SheetZ : p.ZTop)).ToList();
+                wireBuild = Em3dWires.Build(wireSource, pads, zOrigin, tech, _tempC, Add);
+                _notes.AddRange(wireBuild.Notes);
+                _warnings.AddRange(wireBuild.Warnings);
+                if (wireBuild.Refusal is { } wireRefusal) return No(wireRefusal);
+            }
+
             // ── Content bounds, then the air box (R-em3d3-6) ─────────────────────────────────
             double cx0 = double.PositiveInfinity, cy0 = cx0, cx1 = double.NegativeInfinity, cy1 = cx1;
             void Grow(PlanarPolygon p)
@@ -426,6 +467,12 @@ public static class Em3dGenerator
                 zLow  = Math.Min(zLow, pecFloor && ReferenceEquals(v.Bottom.Layer, ground!.Layer) ? floorZ : v.Bottom.BottomM);
                 zHigh = Math.Max(zHigh, v.Top.TopM);
             }
+            foreach (var (_, _, prim) in wireBuild?.Solids ?? [])
+            {
+                var (x0, y0, z0, x1, y1, z1) = Em3dProblem.Bounds(prim);
+                cx0 = Math.Min(cx0, x0); cy0 = Math.Min(cy0, y0); cx1 = Math.Max(cx1, x1); cy1 = Math.Max(cy1, y1);
+                zLow = Math.Min(zLow, z0); zHigh = Math.Max(zHigh, z1);
+            }
 
             double pad = DefaultPaddingFractionOfLongestWavelength * C0 / fMin;
             var box = setup.AirBox ?? new EmAirBox();
@@ -441,7 +488,7 @@ public static class Em3dGenerator
             // ── Solids, in construction order (R-em3d3-1d) ───────────────────────────────────
             //
             // Bottom-up: dielectrics, then the air above the stack, then bodies, then conductors (metal
-            // wins over what it is embedded in), then vias. Wires (brief 4) come after vias. STATED
+            // wins over what it is embedded in), then vias, then bond wires (brief 4). STATED
             // here so no backend infers it.
             var solids = new List<Em3dSolid>();
             var sheets = new List<Em3dSheet>();
@@ -534,6 +581,11 @@ public static class Em3dGenerator
                 }
             }
 
+            // Bond wires after vias (R-em3d3-1d's order, as brief 3 left room for): each swept wire,
+            // then its balls, which meet it face to face on the ball's top.
+            foreach (var (name, material, prim) in wireBuild?.Solids ?? [])
+                solids.Add(new Em3dSolid(name, material, Em3dRole.Conductor, prim, ++order));
+
             // ── Ports (R-em3d3-2) ─────────────────────────────────────────────────────────────
             var ports = new List<Em3dPort>();
             if (BuildPorts(bands, pieces, pecFloor ? ground : null, floorZ, ports) is { } portRefusal)
@@ -560,7 +612,11 @@ public static class Em3dGenerator
                                     "geometry rather than a floor."));
 
             var problem = new Em3dProblem(solids, sheets, _materials, ports, airBox, frequency, _tempC);
-            return new Em3dGenerationResult(problem, null, _notes);
+            return new Em3dGenerationResult(problem, null, _notes)
+            {
+                Warnings = _warnings,
+                Wires = wireBuild?.Reports ?? [],
+            };
         }
 
         // ── Ports ────────────────────────────────────────────────────────────────────────────
@@ -812,7 +868,7 @@ public static class Em3dGenerator
             return s;
         }
 
-        private Em3dGenerationResult No(string refusal) => new(null, refusal, _notes);
+        private Em3dGenerationResult No(string refusal) => new(null, refusal, _notes) { Warnings = _warnings };
 
         private static string Fmt(double v) => v.ToString("G6", CultureInfo.InvariantCulture);
     }

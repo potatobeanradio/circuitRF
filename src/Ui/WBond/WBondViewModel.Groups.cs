@@ -587,6 +587,38 @@ public sealed partial class WBondViewModel
         return true;
     }
 
+    // ── The 3D model's per-wire fields (brief-em3d-4 R-em3d4-1d) ─────────────────────────────────
+    //
+    // Kernel W reads none of these, but they are the document: an edit is undoable and dirties it
+    // like any other, so they go through the same structural commit (whose refill is a no-op for them).
+
+    /// <summary>Sets one wire's 3D cross-section; null is the default (hexagon).</summary>
+    public bool SetWireCrossSection(int wireIndex, WireCrossSection? section)
+        => EditWire3D(wireIndex, w => w.CrossSection == section, w => w.CrossSection = section);
+
+    /// <summary>Sets how one END of a wire is bonded; null is the default (wedge).</summary>
+    public bool SetWireBond(int wireIndex, bool start, BondStyle? style)
+        => EditWire3D(wireIndex, w => (start ? w.StartBond : w.EndBond) == style,
+                      w => { if (start) w.StartBond = style; else w.EndBond = style; });
+
+    /// <summary>Sets one wire's foot length in nanometres; null defers to the array and the process.</summary>
+    public bool SetWireFootLength(int wireIndex, long? footLengthNm)
+    {
+        if (footLengthNm is <= 0) return false;
+        return EditWire3D(wireIndex, w => w.FootLengthNm == footLengthNm, w => w.FootLengthNm = footLengthNm);
+    }
+
+    private bool EditWire3D(int wireIndex, Func<Wire, bool> unchanged, Action<Wire> edit)
+    {
+        if (_design.AllWires().ElementAtOrDefault(wireIndex) is not { } wire) return false;
+        if (unchanged(wire)) return false;
+
+        PushUndo();
+        edit(wire);
+        CommitStructuralChange();
+        return true;
+    }
+
     /// <summary>Removes the whole group and every wire in it.</summary>
     public int DeleteGroup(int arrayIndex)
     {

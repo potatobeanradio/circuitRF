@@ -327,6 +327,7 @@ public static class WireEdits
                 Material = source.Material,
                 Locked = source.Locked,
             };
+            copy.Copy3DFieldsFrom(source);
 
             foreach (var p in source.Points)
                 copy.Points.Add(new Point3(p.X + pitchX * k, p.Y + pitchY * k, p.Z));

@@ -152,3 +152,19 @@ Also worth stating rather than discovering: the quasi-static assumption gets **s
 because the wavelength in the medium shortens by √ε_r. At ε_r = 4 a 1 mm wire is electrically twice as
 long as it was in air, so the lumped and distributed models part company sooner than they do in air.
 Nothing refuses on that account — the distributed model exists for exactly that regime.
+
+## Observation for the owner, not a fix: `MaterialFor` falls back silently (brief-em3d-4, 2026-09-25)
+
+`WBondDesign.MaterialFor` resolves an unknown metal name to the design's first material, then to gold,
+with no diagnostic. Kernel W therefore solves a wire whose `Material` is a typo as gold (or whatever the
+file lists first). That behaviour is out of scope to change in brief-em3d-4. The 3D generator does not
+call it: it resolves names itself and refuses a name found nowhere.
+
+## The ball/wedge designation is back, and kernel W still does not read it (brief-em3d-4)
+
+`Wire.CrossSection`, `StartBond`, `EndBond`, `FootLengthNm` and `WireArray.FootLengthNm` are read only by
+the 3D generator. `tests/Ui.Tests/Em3d/Em3dWireTests.cs` gate 7 holds that with a source scan of
+`src/WBond/` (outside `WBondDesign.cs`/`WBondIo.cs`) and by comparing `WireMesh.Build` on every repo
+`.wBond` with and without the fields set. `Wire.Reverse` swaps `StartBond`/`EndBond` with the points,
+because a ball stays on the pad it was bonded to. Duplicate, paste and the duplicate ghost carry the
+fields with the shape.

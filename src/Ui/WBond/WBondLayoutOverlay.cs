@@ -1033,6 +1033,7 @@ public sealed partial class WBondLayoutOverlay : ILayoutCanvasOverlay
             var source = wires[index];
 
             var copy = new Wire { DiameterNm = source.DiameterNm, Material = source.Material };
+            copy.Copy3DFieldsFrom(source);
             foreach (var p in source.Points) copy.Points.Add(new Point3(p.X + dxNm, p.Y + dyNm, p.Z));
             result.Add(copy);
         }

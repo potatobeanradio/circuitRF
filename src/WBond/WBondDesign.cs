@@ -17,6 +17,32 @@ public readonly record struct Point3(long X, long Y, long Z)
 }
 
 /// <summary>
+/// A wire's cross-section in a 3D model (brief-em3d-4 R-em3d4-1a, em-3d.md §6.6). <b>Kernel W never
+/// reads it</b> — it models every wire as a filament with a radius.
+/// </summary>
+public enum WireCrossSection
+{
+    /// <summary>The default: a flat-topped, flat-bottomed hexagon with the round wire's perimeter,
+    /// so a foot lands on its pad face to face.</summary>
+    Hexagon,
+
+    /// <summary>A circle of the wire's diameter.</summary>
+    Round,
+}
+
+/// <summary>
+/// How one END of a wire is bonded (brief-em3d-4 R-em3d4-1a, em-3d.md §6.6). A wedge end has a foot
+/// lying on its pad; a ball end lands vertically on a flattened ball. <b>Kernel W never reads it</b>.
+/// </summary>
+public enum BondStyle
+{
+    /// <summary>The default, and the dominant case.</summary>
+    Wedge,
+
+    Ball,
+}
+
+/// <summary>
 /// One bond wire: a polyline of at least two points, with a diameter and a metal.
 ///
 /// <para><b><see cref="Points"/> is the truth, and now the ONLY truth (D1 / WB2).</b> A wire is
@@ -43,6 +69,36 @@ public sealed class Wire
     public string Material { get; set; } = WireMaterials.Default.Name;
 
     public bool Locked { get; set; }
+
+    // ── The 3D model's fields (brief-em3d-4 R-em3d4-1) ──────────────────────────────────────────
+    //
+    // Null is the default and is what the file omits: Hexagon, wedge at both ends, the foot length
+    // the array or the assembly process states. The ball/wedge designation was removed on 2026-08-18
+    // because nothing read it (LoopShape's header); it returns because the 3D generator reads it.
+    // KERNEL W STILL DOES NOT — a source scan outside WBondDesign/WBondIo holds that, so kernel W
+    // starting to branch on bond style is a decision, never drift.
+
+    /// <summary>The 3D model's cross-section; null means <see cref="WireCrossSection.Hexagon"/>.</summary>
+    public WireCrossSection? CrossSection { get; set; }
+
+    /// <summary>How <c>Points[0]</c> is bonded; null means <see cref="BondStyle.Wedge"/>.</summary>
+    public BondStyle? StartBond { get; set; }
+
+    /// <summary>How <c>Points[^1]</c> is bonded; null means <see cref="BondStyle.Wedge"/>.</summary>
+    public BondStyle? EndBond { get; set; }
+
+    /// <summary>This wire's wedge-foot length in nanometres; null defers to the array, then to the
+    /// assembly process (<c>WireBondProcess.Resolve</c> is the one place that chain is walked).</summary>
+    public long? FootLengthNm { get; set; }
+
+    /// <summary>Copies the per-wire 3D fields — what a duplicate or a paste carries with the shape.</summary>
+    public void Copy3DFieldsFrom(Wire source)
+    {
+        CrossSection = source.CrossSection;
+        StartBond    = source.StartBond;
+        EndBond      = source.EndBond;
+        FootLengthNm = source.FootLengthNm;
+    }
 
     /// <summary>Wire radius in metres — what the physics layer actually wants.</summary>
     public double RadiusMetres => WBondUnits.ToMetres(DiameterNm) / 2.0;
@@ -130,8 +186,17 @@ public sealed class Wire
         return total;
     }
 
-    /// <summary>Reverses the current-direction convention (WB26b). Explicit, never inferred.</summary>
-    public void Reverse() => Points.Reverse();
+    /// <summary>
+    /// Reverses the current-direction convention (WB26b). Explicit, never inferred.
+    ///
+    /// <para>The bond styles are per END, so they swap with the points: a ball stays on the pad it
+    /// was bonded to, whichever end current now enters.</para>
+    /// </summary>
+    public void Reverse()
+    {
+        Points.Reverse();
+        (StartBond, EndBond) = (EndBond, StartBond);
+    }
 }
 
 /// <summary>
@@ -143,6 +208,12 @@ public sealed class WireArray
     public required string Name { get; set; }
 
     public List<Wire> Wires { get; init; } = [];
+
+    /// <summary>
+    /// A wedge-foot length, in nanometres, for every member that states none of its own
+    /// (brief-em3d-4 R-em3d4-1b). Null defers to the assembly process. Read only by the 3D model.
+    /// </summary>
+    public long? FootLengthNm { get; set; }
 }
 
 /// <summary>

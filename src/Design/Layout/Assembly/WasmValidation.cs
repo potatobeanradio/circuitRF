@@ -22,8 +22,24 @@ public static class WasmValidation
         ValidateEnvelopes(wasm, problems);
         ValidateRules(wasm, problems);
         ValidateMaterials(wasm, problems);
+        ValidateBondProcess(wasm, problems);
 
         return problems;
+    }
+
+    /// <summary>brief-em3d-4 R-em3d4-3 — a stated foot or ball dimension must be a length. A zero or
+    /// negative one is reported and the 3D model falls back as though it were unstated, saying so.</summary>
+    private static void ValidateBondProcess(WasmFile wasm, List<string> problems)
+    {
+        foreach (var (name, value) in new[]
+                 {
+                     (nameof(WasmFile.DefaultFootLengthNm), wasm.DefaultFootLengthNm),
+                     (nameof(WasmFile.DefaultBallDiameterNm), wasm.DefaultBallDiameterNm),
+                     (nameof(WasmFile.DefaultBallHeightNm), wasm.DefaultBallHeightNm),
+                 })
+            if (value is <= 0)
+                problems.Add($"{name} is {value} nm; a bond-process dimension must be a positive length, " +
+                             "so the 3D model ignores it and uses its built-in starting value.");
     }
 
     private static void ValidateEnvelopes(WasmFile wasm, List<string> problems)

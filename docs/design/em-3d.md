@@ -584,11 +584,12 @@ dominant case; a ball–wedge wire has a ball at its first bond and a wedge at i
   **outward, away from the loop**, along the plan direction of the wire's end, so the loop a `.wBond`
   describes is untouched and kernel W — which never sees a foot — is unchanged. Its length is a
   parameter, **the foot length**: how far the wire stays bonded to the pad or lead. A process default
-  lives in the technology beside §4.1a's materials (a bond process is a property of the assembly
-  line, like a via's plating), overridable per array or per wire. A starting default of about twice
+  lives in the assembly rule file (`.wasm`, owner decision D2, 2026-09-25: a bond process is a
+  property of the assembly line, and the `.wasm` is that line's own document), overridable per array
+  or per wire. A starting default of about twice
   the wire diameter is to be checked at F0 against assembly data, not assumed.
 - **A ball end lands vertically.** The wire meets the top face of the ball — a flattened sphere or a
-  disc, its diameter and height again a process default in the technology — and either cross-section
+  disc, its diameter and height again a process default in the `.wasm` — and either cross-section
   works there, because a vertical wire lands end-on, face to face. If the `.wBond` path does not
   arrive vertically, the 3D model adds the vertical neck; kernel W is again unchanged.
 
@@ -609,7 +610,7 @@ and accepts as an override, is the assembly one.
 
 **Where the new fields live.** Cross-section and bond style per end are per-wire fields in `.wBond`
 (additive and nullable; absent means hexagon, wedge–wedge). Foot length and ball size are process
-defaults in the technology, overridable per array or per wire. **The ball/wedge designation was
+defaults in the `.wasm` (D2), the foot length overridable per array or per wire. **The ball/wedge designation was
 removed from wBond on 2026-08-18 because nothing read it** (`src/WBond/LoopShape.cs`); it returns
 here because the 3D generator does, and a `.wBond` written in between reads as wedge–wedge.
 

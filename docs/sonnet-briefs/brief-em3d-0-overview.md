@@ -224,7 +224,7 @@ None blocks briefs 2, 3, 5 or 8. Each is stated where it bites, with the brief's
 | # | Decision | Brief's default | Blocks |
 |---|---|---|---|
 | D1 | The run verb: `em` on a 3D `.cem`, or a sibling verb (note Open 1) | **`em`**, as §4.6 leans. The solver is a field of the setup, overridable with `--solver` | 7 |
-| D2 | Foot length / ball size defaults: `.ctech` (note) or `.wasm` (§1d) | **`.wasm`**, if the owner agrees; otherwise `.ctech` exactly as the note says | 4 |
+| D2 | Foot length / ball size defaults: `.ctech` (note) or `.wasm` (§1d) | **Decided 2026-09-25: `.wasm`** | 4 |
 | D3 | 3D setup operating temperature default (§1c) | **20 °C**, so a 3D result is comparable with planar as shipped | 3 |
 | D4 | F1 or F1b first | **F0's recommendation** (brief 1) | 7 vs 9 |
 | D5 | This series' scope: installation half deferred (§4) | as written | — |

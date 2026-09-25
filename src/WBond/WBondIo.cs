@@ -85,11 +85,16 @@ public static class WBondIo
         Arrays = [.. design.Arrays.Select(a => new ArrayDto
         {
             Name = a.Name,
+            FootLengthNm = a.FootLengthNm,
             Wires = [.. a.Wires.Select(w => new WireDto
             {
                 DiameterNm = w.DiameterNm,
                 Material = w.Material,
                 Locked = w.Locked ? true : null,
+                CrossSection = w.CrossSection,
+                StartBond = w.StartBond,
+                EndBond = w.EndBond,
+                FootLengthNm = w.FootLengthNm,
                 Points = [.. w.Points.Select(p => new[] { p.X, p.Y, p.Z })],
             })],
         })],
@@ -127,7 +132,7 @@ public static class WBondIo
 
         foreach (var a in doc.Arrays ?? [])
         {
-            var array = new WireArray { Name = a.Name };
+            var array = new WireArray { Name = a.Name, FootLengthNm = a.FootLengthNm };
             foreach (var w in a.Wires ?? [])
             {
                 var wire = new Wire
@@ -135,6 +140,13 @@ public static class WBondIo
                     DiameterNm = w.DiameterNm,
                     Material = w.Material ?? WireMaterials.Default.Name,
                     Locked = w.Locked ?? false,
+                    // Absent is null, and null is the default (brief-em3d-4 R-em3d4-1a): a .wBond
+                    // written before these existed — or between the 2026-08-18 removal of the old
+                    // ball/wedge designation and now — reads as hexagon, wedge-wedge.
+                    CrossSection = w.CrossSection,
+                    StartBond = w.StartBond,
+                    EndBond = w.EndBond,
+                    FootLengthNm = w.FootLengthNm,
                 };
                 foreach (var p in w.Points ?? [])
                     wire.Points.Add(new Point3(p[0], p[1], p[2]));
@@ -193,6 +205,10 @@ public static class WBondIo
     public sealed class ArrayDto
     {
         public string Name { get; set; } = "";
+
+        /// <summary>See <see cref="WireArray.FootLengthNm"/>. Additive and nullable — no version bump.</summary>
+        public long? FootLengthNm { get; set; }
+
         public List<WireDto>? Wires { get; set; }
     }
 
@@ -201,6 +217,24 @@ public static class WBondIo
         public long DiameterNm { get; set; }
         public string? Material { get; set; }
         public bool? Locked { get; set; }
+
+        // brief-em3d-4 R-em3d4-1a — the 3D model's per-wire fields. Additive, nullable, omitted at
+        // default, and no FormatVersion bump. Enums are written by NAME, so a file reads as English.
+
+        /// <summary>See <see cref="Wire.CrossSection"/>. Absent means Hexagon.</summary>
+        [JsonConverter(typeof(JsonStringEnumConverter<WireCrossSection>))]
+        public WireCrossSection? CrossSection { get; set; }
+
+        /// <summary>See <see cref="Wire.StartBond"/>. Absent means Wedge.</summary>
+        [JsonConverter(typeof(JsonStringEnumConverter<BondStyle>))]
+        public BondStyle? StartBond { get; set; }
+
+        /// <summary>See <see cref="Wire.EndBond"/>. Absent means Wedge.</summary>
+        [JsonConverter(typeof(JsonStringEnumConverter<BondStyle>))]
+        public BondStyle? EndBond { get; set; }
+
+        /// <summary>See <see cref="Wire.FootLengthNm"/>. Absent defers to the array, then the process.</summary>
+        public long? FootLengthNm { get; set; }
 
         /// <summary>x/y/z triples in DBU. Integer, so a round trip is exact by construction.</summary>
         public List<long[]>? Points { get; set; }
