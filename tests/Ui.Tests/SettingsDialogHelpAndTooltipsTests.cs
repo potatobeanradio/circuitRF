@@ -74,6 +74,7 @@ public class SettingsDialogHelpAndTooltipsTests
     [InlineData("VerilogACompilerSettingsView.axaml")]
     [InlineData("GitPathSettingsView.axaml")]
     [InlineData("RevisionControlSettingsView.axaml")]
+    [InlineData("Em3dSolverSettingsView.axaml")]
     public void EveryParagraphTooltipWrapsAndIsBounded(string file)
     {
         foreach (var block in Between(Dialog(file), "<ToolTip.Tip>", "</ToolTip.Tip>"))
@@ -140,14 +141,14 @@ public class SettingsDialogHelpAndTooltipsTests
 
         foreach (var id in new[] { "settings-general", "settings-technology", "settings-security",
                                    "settings-revision-control", "settings-color-theme",
-                                   "settings-wirebonds" })
+                                   "settings-wirebonds", "settings-3d-em" })
         {
             Assert.Contains(FigureCatalog.Catalog, r => r.Id == id);
             Assert.Contains("{{ui: " + id + "}}", page);
         }
 
         int tabs = Occurrences(Dialog("SettingsView.axaml"), "<TabItem Header=");
-        Assert.Equal(6, tabs);
+        Assert.Equal(7, tabs);
     }
 
     /// <summary>

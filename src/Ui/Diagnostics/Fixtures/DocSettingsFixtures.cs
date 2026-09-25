@@ -64,6 +64,15 @@ public static class DocSettingsFixtures
     /// <summary>Wirebonds: the per-user creation defaults, and the built-in wire-clearance rule.</summary>
     public static FigureScene Wirebonds() => Tab(5);
 
+    /// <summary>
+    /// 3D EM: the Palace, Gmsh and openEMS rows (brief-em3d-6). Last, so nothing above it moved.
+    ///
+    /// <para>The status lines read "Not checked yet." in the figure: discovery runs when the tab is
+    /// SHOWN (its <c>Loaded</c>), which a captured tab never is — and a figure that ran it would show
+    /// whatever the generating machine has installed.</para>
+    /// </summary>
+    public static FigureScene Em3dSolvers() => Tab(6);
+
     // ── Shared ────────────────────────────────────────────────────────────────
 
     private static FigureScene Tab(int index)

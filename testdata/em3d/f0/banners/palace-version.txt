@@ -1,0 +1,2 @@
+Palace version: 0dc74cd
+Schema version: 1-7-0

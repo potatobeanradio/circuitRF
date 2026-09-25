@@ -74,7 +74,11 @@
                  would have been a "Wirebond" header with its last letters missing, at a width the
                  user chose and nobody tests at. 720 leaves 692 px usable, 72 px spare. The window
                  can no longer be dragged narrower than its own tab strip, which is the honest
-                 constraint; a seventh header will need this number raised again, or shorter names. -->
+                 constraint; a seventh header will need this number raised again, or shorter names.
+
+                 The SEVENTH header took the second route: "3D EM" (brief-em3d-6), estimated at ~59 px,
+                 ~13 px spare — see that tab's own comment for how the estimate was made and that it
+                 was not measured. An eighth header will not fit at 720. -->
             <TabControl.ItemsPanel>
                 <ItemsPanelTemplate>
                     <StackPanel Orientation="Horizontal"/>
@@ -527,6 +531,24 @@
                         </Grid>
 
                     </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ── 3D EM tab (brief-em3d-6 R-em3d6-4a) ─────────────────────────
+                 LAST, so no per-tab figure index above it moves. One row per program a 3D EM run can
+                 need — Palace, Gmsh, openEMS — each saying what was found, where, which version,
+                 whether circuitRF has validated it and how it was found. The controls live in
+                 Em3dSolverSettingsView, as Revision Control's and Technology's do.
+
+                 The header is "3D EM" and not "3D EM Solvers" because of the tab strip's width (see the
+                 note at the top of this TabControl): the six headers measured 620 px against 692 usable
+                 at MinWidth 720, and "3D EM" at FontSize 13 with 10 px padding each side comes to about
+                 59 px — ESTIMATED from the Inter glyph advances that reproduce "Wirebonds"' measured
+                 85 px, NOT measured on the headless harness — leaving roughly 13 px spare. The longer
+                 name would have needed MinWidth raised, which moves every Settings figure. -->
+            <TabItem Header="3D EM">
+                <ScrollViewer Margin="0,8,0,0" HorizontalScrollBarVisibility="Disabled">
+                    <dlg:Em3dSolverSettingsView/>
                 </ScrollViewer>
             </TabItem>
 

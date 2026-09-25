@@ -22,7 +22,7 @@ namespace CircuitRF.Ui.Tests.Em3d;
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 //  brief-em3d-5 — see a 3D setup before solving it: `render` sections and the isometric outline,
 //  and `explain` on a 3D setup. §4's eight gates. No solver anywhere, and gate 6 holds that no
-//  process is started to answer either verb.
+//  mesher or solver process is started to answer either verb (a version probe is, since brief 6).
 //
 //  Party to the typeface collection: gate 3 compares rendered TEXT bytes against a fresh CLI
 //  process, which has no typeface override to read (SkiaFontsTypefaceCollection's membership rule).
@@ -185,12 +185,15 @@ public sealed class Em3dRenderExplainTests(ITestOutputHelper output) : IDisposab
     [Fact]
     public void Gate6_ExplainAndRenderStartNoProcess()
     {
+        // Narrowed by brief-em3d-6 R-em3d6-4c from "no process" to "no SOLVE process": explain's solver
+        // section asks each program its version (and Palace for a dry run) through the same launcher,
+        // which is a probe and is allowed. A mesher or a solver is still never started by either verb.
         var ws = CaseBWorkspace();
-        long before = Em3dProcessLauncher.Started;
+        long before = Em3dProcessLauncher.SolvesStarted;
         Assert.Equal(0, InProcessCli("explain", ws.Cem3d));
         Assert.Equal(0, InProcessCli("render", ws.Cem3d, "-o", Path.Combine(_root, "p.png"), "--size", "200x150", "--iso"));
         Assert.Equal(0, before);
-        Assert.Equal(0, Em3dProcessLauncher.Started);
+        Assert.Equal(0, Em3dProcessLauncher.SolvesStarted);
     }
 
     // ── 7. Mitred sweep joints ──────────────────────────────────────────────────────────────────

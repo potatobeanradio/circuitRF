@@ -17,6 +17,7 @@ keywords: preferences, options, configuration, theme, dark mode, colours, colors
 <li><a href="#revision-control">Revision Control</a></li>
 <li><a href="#color-theme">Color Theme</a></li>
 <li><a href="#wirebonds">Wirebonds</a></li>
+<li><a href="#em3d">3D EM</a></li>
 <li><a href="#footer">The footer: Help, Revert, Cancel, Close</a></li>
 <li><a href="#where">Where the settings are stored</a></li>
 </ol>
@@ -431,6 +432,30 @@ rules are checked **as well as** this one, never instead of it.
 
 Everything about the wires themselves — loop height, span, the array basis, the inductance the kernel
 computes and the S-parameters it exports — is in {{anchor: wbond.html|the wBond chapter}}.
+
+## 3D EM {#em3d}
+
+{{ui: settings-3d-em}}
+
+A 3D EM setup runs one of two separately installed solvers — **Palace** (FEM) or **openEMS** (FDTD) —
+and Palace's problems are meshed by **Gmsh**. circuitRF includes none of the three. This tab has one row
+per program, and each row says what circuitRF found: the version, whether it is one circuitRF has
+validated, where the program is, and how it was found.
+
+| Control | Default | What it does |
+|---|---|---|
+| **Path** (one per program) | blank | The program to run. **Blank means search**: the environment variable (`CIRCUITRF_PALACE`, `CIRCUITRF_GMSH`, `CIRCUITRF_OPENEMS`), then `PATH`, then the usual install folders. A path you name here always wins, and if it does not work circuitRF says so rather than using a different one it found somewhere else. |
+
+**A version circuitRF has not validated is refused, not just flagged.** Palace's configuration changes
+meaning between versions, and a setting read the wrong way gives an answer that looks plausible. The
+row says which versions are validated. The same check runs at the start of every 3D run and in
+`circuitrf explain`, so all three always agree.
+
+The Palace row also carries its licence note: a default Palace build includes ParMETIS, which may be
+used commercially for evaluation only. If you build Palace, you accept those terms.
+
+How each program was installed for validation is in
+{{anchor: em-setup.html#install-3d-solvers|Installing the 3D solvers by hand}}.
 
 ## The footer: Help, Revert, Cancel, Close {#footer}
 

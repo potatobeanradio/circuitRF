@@ -98,6 +98,17 @@ public static class EmDiagnostics
         "written. Remove Solver3D from the setup to run it with the planar solvers.",
         ("solver", solver));
 
+    /// <summary>
+    /// brief-em3d-6 — a program the 3D setup needs is missing, unvalidated, or lacks a capability. The
+    /// sentence is <c>SolverDiscovery</c>'s, which is also what Settings and <c>explain</c> show, so it
+    /// is carried rather than re-authored: three places saying it three ways is how they drift.
+    /// </summary>
+    public static Diagnostic SolverUnavailable(string tool, string refusal) => Diagnostic.Create(
+        "em.solver-3d.unavailable",
+        DiagnosticSeverity.Error,
+        "{refusal}",
+        ("tool", tool), ("refusal", refusal));
+
     /// <summary>The solve threw. Distinct from a refusal: circuitRF failed, the setup did not.</summary>
     public static Diagnostic SolveFailed(string reason) => Diagnostic.Create(
         "em.solve.failed",

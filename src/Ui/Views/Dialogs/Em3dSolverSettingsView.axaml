@@ -1,0 +1,71 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="CircuitRF.Ui.Views.Dialogs.Em3dSolverSettingsView">
+
+  <!--
+    brief-em3d-6 R-em3d6-4a — the three programs a 3D EM run can need, one row each: what was found,
+    where, which version, whether circuitRF has validated it, and how it was found. A path box names
+    one; BLANK IS THE DEFAULT and means "search" (Settings, then CIRCUITRF_*, then PATH, then the
+    default directories — SolverDiscovery.Find), exactly as the Verilog-A compiler row does.
+
+    circuitRF ships none of these programs and links to none (em-3d.md §7.1). Unlike the Verilog-A
+    compiler they ARE named here: a page telling someone how to install three separate programs
+    cannot be written without their names (owner, 2026-09-24).
+
+    The status lines are filled when the tab is first shown, off the UI thread — asking three programs
+    their version is three short processes, and a Settings dialog that paused to open would be
+    charging every user for a feature most never use.
+  -->
+
+  <StackPanel Spacing="0">
+    <TextBlock Text="3D EM Solvers" FontSize="11" FontWeight="SemiBold"
+               Opacity="0.55" Margin="0,0,0,6"/>
+    <TextBlock FontSize="11" Opacity="0.75" TextWrapping="Wrap" Margin="0,0,0,12"
+               Text="circuitRF includes none of these programs. Install the ones your 3D setups use, then check each row below. Leave a path blank to search for it."/>
+
+    <!-- ── Palace ─────────────────────────────────────────────────────── -->
+    <TextBlock Text="Palace (FEM)" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,4"/>
+    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto">
+      <TextBox Grid.Row="0" Grid.Column="0" Name="PalaceBox" FontSize="12"
+               PlaceholderText="Leave blank to search (CIRCUITRF_PALACE, then PATH)"
+               LostFocus="OnPathCommitted">
+        <ToolTip.Tip>
+          <TextBlock TextWrapping="Wrap" MaxWidth="360"
+                     Text="Palace's own 'palace' launcher script, normally in the bin folder of the installation. circuitRF asks it for its version, and once per installed build runs a dry run of a tiny configuration to check the build can do what a 3D run needs."/>
+        </ToolTip.Tip>
+      </TextBox>
+      <Button Grid.Row="0" Grid.Column="1" Content="Browse…" FontSize="11" Padding="8,3" Margin="6,0,0,0"
+              Tag="PalaceBox" Click="OnBrowse" ToolTip.Tip="Pick the Palace launcher from disk"/>
+      <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Name="PalaceStatus" FontSize="11" Opacity="0.75"
+                 TextWrapping="Wrap" Margin="0,4,0,0" Text="Not checked yet."/>
+      <!-- R-em3d6-4b: the ParMETIS sentence, once, in the row, in plain words. Not a dialog. -->
+      <TextBlock Grid.Row="2" Grid.ColumnSpan="2" Name="ParmetisNote" FontSize="11" Opacity="0.6"
+                 TextWrapping="Wrap" Margin="0,4,0,0"
+                 Text="A default Palace build includes ParMETIS, whose licence allows commercial use for evaluation only. If you build Palace, you accept those terms."/>
+    </Grid>
+
+    <!-- ── Gmsh ───────────────────────────────────────────────────────── -->
+    <TextBlock Text="Gmsh (meshes Palace's problems)" FontSize="12" FontWeight="SemiBold" Margin="0,16,0,4"/>
+    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+      <TextBox Grid.Row="0" Grid.Column="0" Name="GmshBox" FontSize="12"
+               PlaceholderText="Leave blank to search (CIRCUITRF_GMSH, then PATH)"
+               LostFocus="OnPathCommitted"/>
+      <Button Grid.Row="0" Grid.Column="1" Content="Browse…" FontSize="11" Padding="8,3" Margin="6,0,0,0"
+              Tag="GmshBox" Click="OnBrowse" ToolTip.Tip="Pick the Gmsh executable from disk"/>
+      <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Name="GmshStatus" FontSize="11" Opacity="0.75"
+                 TextWrapping="Wrap" Margin="0,4,0,0" Text="Not checked yet."/>
+    </Grid>
+
+    <!-- ── openEMS ────────────────────────────────────────────────────── -->
+    <TextBlock Text="openEMS (FDTD)" FontSize="12" FontWeight="SemiBold" Margin="0,16,0,4"/>
+    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+      <TextBox Grid.Row="0" Grid.Column="0" Name="OpenEmsBox" FontSize="12"
+               PlaceholderText="Leave blank to search (CIRCUITRF_OPENEMS, then PATH)"
+               LostFocus="OnPathCommitted"/>
+      <Button Grid.Row="0" Grid.Column="1" Content="Browse…" FontSize="11" Padding="8,3" Margin="6,0,0,0"
+              Tag="OpenEmsBox" Click="OnBrowse" ToolTip.Tip="Pick the openEMS executable from disk"/>
+      <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Name="OpenEmsStatus" FontSize="11" Opacity="0.75"
+                 TextWrapping="Wrap" Margin="0,4,0,0" Text="Not checked yet."/>
+    </Grid>
+  </StackPanel>
+</UserControl>

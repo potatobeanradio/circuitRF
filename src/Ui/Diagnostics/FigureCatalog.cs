@@ -545,6 +545,12 @@ public static class FigureCatalog
             "Settings, Wirebonds: the defaults a newly drawn wire is created with, and the built-in "
           + "assembly rule for how close two wires may pass."),
 
+        new("settings-3d-em", DocSettingsFixtures.Em3dSolvers,
+            DocSettingsFixtures.Width, DocSettingsFixtures.Height,
+            WindowFrame.Titled("circuitRF Settings"),
+            "Settings, 3D EM: one row per program a 3D EM run can need - Palace, Gmsh and openEMS - "
+          + "with a path to name it and a line saying what circuitRF found. Blank means search."),
+
         new("cv-editor", DocCvFixtures.Editor, 620, 500,
             WindowFrame.Titled("C-V Editor - C1"),
             "The C-V Editor: a measured C(V) table, the fit order, and the polynomial it fits."),

@@ -12315,3 +12315,63 @@ edge; conductors are holes; unknowns and memory from F0's measured ratios, each 
 has no caller yet because the `.cem`'s Palace section has no initial mesh-size fields (brief 7). The
 openEMS count is brief 8's grid. An unavailable row carries no count, never a zero.
 
+
+## Finding the 3D solvers — brief-em3d-6 (2026-09-25)
+
+`src/Design/Em3d/SolverDiscovery.cs`: one class, one instance per tool (`Palace`, `Gmsh`, `OpenEms`),
+the Verilog-A compiler's and git's walk (Settings → `CIRCUITRF_*` → `PATH` → default directories), a
+version check against a one-entry validated list per tool, and a cached capability probe for Palace.
+`SolverDiscovery.ReadinessFor(solver)` is the one answer: `EmRunService.Run` calls it at the top of every
+3D run, `explain` reports it under *solvers*, and Settings ▸ 3D EM shows the `Find` half. Gates:
+`tests/Ui.Tests/Em3d/SolverDiscoveryTests.cs`, `tests/Firewall.Tests/SolverBoundaryTests.cs`.
+
+**Palace is asked everything with `--serial`.** The installed `palace` is a bash wrapper that launches
+`palace-<arch>.bin` through `mpirun` unless told `--serial`; outside the Spack environment `mpirun` is
+not on `PATH` and the wrapper exits 1 before Palace starts (F0 Q9). With `--serial`, `--version` and
+`--dry-run` both work from a bare process, and the `.bin` itself accepts `--serial` too — measured on
+the F0 install, so a user who names either file is asked the same way.
+
+**The capability probe is a dry run on a one-tetrahedron mesh circuitRF writes.** `--dry-run` validates
+the configuration against the schema compiled into the binary *and opens the mesh*, so it needs a real
+one. A 4-node MSH 2.2 file with a port face and three PEC faces is enough: 0.15 s, exit 0 and
+`Dry-run: No errors detected`; a missing mesh or an unknown key exits 134 (checked, so the probe is not
+vacuous). It runs in a temp directory that is deleted afterwards; the probe writes nothing there
+itself.
+
+**The capability cache stamps the `.bin`, not only the wrapper.** Spack installs the wrapper with a
+normalised timestamp (the F0 install's reads 1970) that does not change on a rebuild, so a stamp of the
+candidate alone would have kept a stale answer forever. The stamp is size + write time of the candidate,
+its symlink target, and every `palace-*.bin` beside it. Only a definite answer is cached — a timeout or
+a start failure says nothing about the build.
+
+**openEMS is asked `--help`, not `--version`.** `--version` is an unknown option and aborts (F0 Q11);
+`--help` prints the same banner and exits 0 (checked 2026-09-25). The banner carries CSXCAD's hash too,
+and both must match the validated entry, because CSXCAD is what parses the XML brief 9 will write.
+
+**Gmsh stays strict.** R-em3d6-2b allows a warning for a newer minor version only on an F0 finding that
+the `.geo` constructs are unchanged across it. F0 ran exactly one Gmsh and compared it with no other, so
+there is no finding, and a different version is a refusal like the other two.
+
+**Found and validated are separate answers.** The first program that starts and identifies itself is
+the one found, whatever its version; walking on to a validated copy elsewhere would run a different
+program from the one the user's own shell runs. The Settings row says "NOT validated", and every run
+refuses it naming the validated list.
+
+**The brief's `UserFacingTextGateTests` premise does not hold.** R-em3d6-4a asks for the three names to
+be added to that gate's allowlist. The gate does not gate product names: it freezes `throw new
+…Exception("…")` text below the firewall. Nothing here throws a message, so there is nothing to add,
+and no test anywhere bans the three names — the refusals name them freely, as §7.1 decides.
+
+**Brief 5's process gate is narrowed, not removed.** `Em3dProcessLauncher.Start` now takes a kind
+(`Probe`, `Mesher`, `Solver`); `explain` starts probes by design, and gate 6 asserts
+`SolvesStarted == 0`. Its old `before == 0` on the all-kinds counter would also have been
+order-dependent, since the discovery tests start probes in the same process.
+
+**The Settings tab is "3D EM", seventh and last**, so no per-tab figure index moved. Its width is an
+ESTIMATE (~59 px, into the ~72 px the six headers left at `MinWidth` 720), made from Inter's glyph advances calibrated
+on "Wirebonds"' measured 85 px — not measured on the headless harness, which nothing in this session
+could run. If the strip clips, the header is the thing to shorten, not the dialog to widen.
+
+**The GPL scan must not follow links or hidden directories.** Its first run died on an emulator prefix
+under `tools/` whose drive links reach the whole disk. The walker now skips
+dot-directories and anything with a `LinkTarget`.

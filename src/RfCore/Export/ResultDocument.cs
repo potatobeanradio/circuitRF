@@ -1004,6 +1004,8 @@ namespace RfCore.Export
     /// so</b> (R-em3d5-3e) — <c>explain</c>'s standing rule, because a scale read without its unit once
     /// produced a 2 Hz run. Conductivity is S/m and temperature °C, named in the field.</para>
     /// </summary>
+    /// <param name="Solvers">Each program the setup's solver needs and what discovery found (brief-em3d-6
+    /// R-em3d6-4c) — reported even when the problem could not be built.</param>
     /// <param name="Refusal">Why the 3D problem could not be built; every other row is then empty.</param>
     public sealed record ExplainEm3dJson(
         string                               Solver,
@@ -1019,6 +1021,7 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         Em3dAirBoxJson?                      AirBox,
         IReadOnlyList<Em3dSizeJson>          Size,
+        IReadOnlyList<Em3dSolverJson>        Solvers,
         IReadOnlyList<string>                Notes,
         IReadOnlyList<string>                Warnings,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -1110,6 +1113,36 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         long? MemoryBytes,
         string Note);
+
+    /// <summary>
+    /// One program a 3D run needs, as discovery found it (brief-em3d-6 R-em3d6-4c): the same answer the
+    /// run gets at its top and the Settings page shows. <see cref="Proceeds"/> is whether a run would get
+    /// past this program; <see cref="Refusal"/> is the sentence it would stop with.
+    /// </summary>
+    /// <param name="Tool"><c>Palace</c>, <c>Gmsh</c> or <c>openEMS</c>.</param>
+    /// <param name="Version">What the program printed — a git hash for Palace and openEMS.</param>
+    /// <param name="Release">The validated release that version is, or null when it is not one.</param>
+    /// <param name="HowFound"><c>settings</c>, <c>environment</c>, <c>path</c> or <c>default-directory</c>.</param>
+    /// <param name="Rejected">Every candidate tried before the answer, and why it was not taken.</param>
+    public sealed record Em3dSolverJson(
+        string Tool, bool Found,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Path,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Version,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Release,
+        bool Validated,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? HowFound,
+        IReadOnlyList<Em3dCapabilityJson> Capabilities,
+        IReadOnlyList<string> Rejected,
+        bool Proceeds,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Refusal);
+
+    /// <param name="FromCache">True when the answer was the cached one for this binary, so no probe ran.</param>
+    public sealed record Em3dCapabilityJson(string Capability, bool Available, string Detail, bool FromCache);
 
     // ── reference, on the wire (brief-automation-6-reference-and-components.md) ──
 

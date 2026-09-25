@@ -393,6 +393,28 @@ public sealed class AppPreferences
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? VerilogACompiler { get; set; }
 
+    // ── 3D EM solvers (brief-em3d-6, docs/design/em-3d.md §7.1) ──────────────────────────────────
+    //
+    // Three paths, one per program, in VerilogACompiler's shape and for its reasons: per USER because
+    // where a program is installed is a property of the MACHINE, null meaning "search", and a named
+    // path OUTRANKING the environment variable and PATH (SolverDiscovery.Find). Read through
+    // SolverDiscovery and nowhere else; Em3dSolverPathInstaller is the seam.
+
+    /// <summary>The Palace circuitRF runs — its <c>palace</c> wrapper, normally. Null means search.</summary>
+    [JsonPropertyName("em3d_palace")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Em3dPalacePath { get; set; }
+
+    /// <summary>The Gmsh circuitRF runs to mesh a Palace problem. Null means search.</summary>
+    [JsonPropertyName("em3d_gmsh")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Em3dGmshPath { get; set; }
+
+    /// <summary>The openEMS circuitRF runs. Null means search.</summary>
+    [JsonPropertyName("em3d_openems")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Em3dOpenEmsPath { get; set; }
+
     // ── Revision control (RC-4, docs/design/revision-control.md §10A) ─────────────────────────────
     //
     // NINE application-wide preferences, all nullable and all absent-means-the-documented-default, in

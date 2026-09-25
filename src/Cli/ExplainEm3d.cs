@@ -1,4 +1,5 @@
 using System.Globalization;
+using CircuitRF.Design.Em3d;
 using CircuitRF.Design.Layout.Em;
 using CircuitRF.Design.Layout.Em3d;
 using CircuitRF.Engine.Em3d;
@@ -34,9 +35,10 @@ internal static class ExplainEm3d
         };
         var notes    = src.Generated?.Notes ?? [];
         var warnings = src.Generated?.Warnings ?? [];
+        var solvers  = Solvers(setup.Solver3D);
 
         if (src.Generated?.Problem is not { } p)
-            return new ExplainEm3dJson(solver, "m", 1.0, [], null, [], [], [], [], null, Size(), notes, warnings,
+            return new ExplainEm3dJson(solver, "m", 1.0, [], null, [], [], [], [], null, Size(), solvers, notes, warnings,
                                        src.Refusal ?? "the 3D problem could not be built.");
         var g = src.Generated;
 
@@ -101,8 +103,31 @@ internal static class ExplainEm3d
         ], []);
 
         return new ExplainEm3dJson(solver, "m", 1.0, guidance, temperature, materials, solids, wires, ports, airBox,
-                                   Size(), notes, warnings, null);
+                                   Size(), solvers, notes, warnings, null);
     }
+
+    /// <summary>
+    /// R-em3d6-4c. Each program the setup's solver needs, through <c>SolverDiscovery.ReadinessFor</c> —
+    /// the call the run itself makes at its top, so this says what a run would do rather than restating
+    /// the rule. It starts version probes and, for an uncached Palace, one dry run; it never starts a
+    /// mesher or a solver (gate 6 counts that).
+    /// </summary>
+    private static IReadOnlyList<Em3dSolverJson> Solvers(Em3dSolver solver)
+        => SolverDiscovery.ReadinessFor(solver).Select(r => new Em3dSolverJson(
+               r.Name, r.Installation is not null, r.Installation?.Path, r.Installation?.Version,
+               r.Installation?.Release, r.Installation?.Validated ?? false,
+               r.Installation?.HowFound switch
+               {
+                   SolverHowFound.Settings    => "settings",
+                   SolverHowFound.Environment => "environment",
+                   SolverHowFound.Path        => "path",
+                   null                       => null,
+                   _                          => "default-directory",
+               },
+               r.Capabilities.Select(c => new Em3dCapabilityJson(
+                   c.Capability == SolverCapability.DrivenLumpedPorts ? "driven-lumped-ports" : c.Capability.ToString(),
+                   c.Available, c.Detail, c.FromCache)).ToList(),
+               r.Rejected, r.Proceeds, r.Refusal)).ToList();
 
     /// <summary>
     /// R-em3d5-3c. <b>Neither backend's size can be computed in this build, and each row says why
@@ -133,6 +158,7 @@ internal static class ExplainEm3d
         if (r.Refusal is { } refusal)
         {
             Console.WriteLine($"  {"",-12} the 3D problem could not be built: {refusal}");
+            PrintSolvers(r.Solvers);
             return;
         }
         foreach (var g in r.Guidance)
@@ -200,8 +226,28 @@ internal static class ExplainEm3d
         foreach (var z in r.Size)
             Console.WriteLine($"    {z.Backend,-10} {z.Kind}: {z.Note}");
 
+        PrintSolvers(r.Solvers);
+
         foreach (var w in r.Warnings) Console.WriteLine($"  warning: {w}");
         foreach (var n in r.Notes)    Console.WriteLine($"  note: {n}");
+    }
+
+    private static void PrintSolvers(IReadOnlyList<Em3dSolverJson> solvers)
+    {
+        Console.WriteLine("  solvers");
+        foreach (var s in solvers)
+        {
+            if (!s.Found)
+                Console.WriteLine($"    {s.Tool,-10} not found");
+            else
+                Console.WriteLine($"    {s.Tool,-10} {s.Version}" +
+                                  (s.Release is not { } rel ? ", NOT validated" : rel == s.Version ? ", validated" : $" = {rel}, validated") +
+                                  $" — {s.Path} ({s.HowFound})");
+            foreach (var c in s.Capabilities)
+                Console.WriteLine($"    {"",-10} {c.Capability}: {(c.Available ? "yes" : "no")}" +
+                                  $"{(c.FromCache ? " (cached for this binary)" : "")} — {c.Detail}");
+            Console.WriteLine($"    {"",-10} " + (s.Proceeds ? "a run would proceed past this program" : $"a run would stop here: {s.Refusal}"));
+        }
     }
 
     private static string EndText(Em3dWireEndJson e)

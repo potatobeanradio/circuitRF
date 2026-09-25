@@ -25,6 +25,7 @@ keywords: EM, electromagnetic, cem, ports, mesh, extraction, simulate layout, su
 <li><a href="#blocked">When Simulate is greyed out</a></li>
 <li><a href="#results">Where the results land</a></li>
 <li><a href="#headless">Running the setup without the GUI</a></li>
+<li><a href="#install-3d-solvers">Installing the 3D solvers by hand</a></li>
 <li><a href="#overlays">What the layout shows after a run</a></li>
 </ol>
 </nav>
@@ -419,6 +420,63 @@ workspace and let each schematic pick up its new Touchstone.
 
 The verb, its options, the three message lists, the exit codes and a worked example from an empty
 folder are in [The Command Line](cli.html#em).
+
+## Installing the 3D solvers by hand {#install-3d-solvers}
+
+A 3D setup (one whose `Solver3D` names Palace or openEMS) runs a solver circuitRF does not include. You
+install it yourself, and circuitRF finds it — or you name it in
+{{anchor: settings.html#em3d|Settings ▸ 3D EM}}. **circuitRF runs only the versions it has validated**
+and refuses any other, naming the validated ones, because a solver's input can change meaning between
+versions and the result would look plausible either way.
+
+| Program | Validated version | What it reports |
+|---|---|---|
+| Palace | 0.18.1 | `palace --serial --version` prints `Palace version: 0dc74cd` and `Schema version: 1-7-0` — a git hash, never "0.18.1" |
+| Gmsh | 4.15.2 | `gmsh --version` prints `4.15.2` (the Homebrew build adds `-git`) |
+| openEMS | 0.37.0-rc3 | `openEMS --help` prints a banner with `version 67d3784` and `CSXCAD -- Version: dcdb62b` |
+
+Below is exactly what was done to validate them. **Only macOS on arm64 has been verified.** On
+Windows and Linux the routes are *not yet verified*; use the upstream instructions linked with each
+program, and check the Settings row afterwards.
+
+**Gmsh** — macOS: `brew install gmsh`. Other platforms: *not yet verified* —
+[gmsh.info](https://gmsh.info).
+
+**openEMS** — macOS: install its dependencies with `brew install cmake boost hdf5 cgal vtk`, then
+
+<pre><code class="cmd"><span class="prompt">$ </span>git clone --recursive -b v0.37.0-rc3 https://github.com/thliebig/openEMS-Project.git
+<span class="prompt">$ </span>cd openEMS-Project
+<span class="prompt">$ </span>./update_openEMS.sh ~/opt/openEMS --disable-GUI --python --njobs=4</code></pre>
+
+circuitRF looks in `~/opt/openEMS/bin` by itself. (The validation build included the Python interface;
+circuitRF never uses it.) Other platforms: *not yet verified* —
+[openEMS-Project](https://github.com/thliebig/openEMS-Project).
+
+**Palace** — macOS: built with Spack v1.2 from Palace's own recipe and environment file
+(`docs/src/developer/spack/` in Palace's source at the `v0.18.1` tag, including its `setup-macos.sh`).
+It took three corrections, each of which fails with a message that names the wrong thing:
+
+| What you see | What fixes it |
+|---|---|
+| `[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed` | Spack is running on a Python with no certificate store. Set `SPACK_PYTHON` to one that has one (Homebrew's `python3`). |
+| `No such variant 'gkrand' in package metis` | Spack's package repository is older than Palace's recipe needs: `spack repo update -b develop builtin`, as Palace's own FAQ says. |
+| `PETSc could not be found`, after `Illegal instruction`, about 17 minutes in | On an M4 Mac, Spack targets `m4` and the compiler then emits instructions the M4 cannot run. Add `packages: all: require: target=m3` to the environment and rebuild. |
+
+State the variants in the spec (`+superlu-dist+sundials+slepc+libxsmm+gslib~arpack`) — without them
+Spack silently turned three of Palace's defaults off. With the environment loaded, `which palace`
+prints the launcher; name that path in Settings ▸ 3D EM, since the environment is not loaded when
+circuitRF starts. Other platforms: *not yet verified* — [Palace](https://github.com/awslabs/palace).
+**Palace does not run natively on Windows**; openEMS does.
+
+<div class="callout note">
+<span class="label">Palace's licence note</span>
+<p>A default Palace build includes ParMETIS, whose licence allows commercial use for evaluation only.
+If you build Palace, you accept those terms. circuitRF distributes no copy of Palace, so it passes on
+none.</p>
+</div>
+
+When a row in Settings ▸ 3D EM reads *validated*, the program is ready. `circuitrf explain` on a 3D
+`.cem` gives the same answer from the command line, under *solvers*.
 
 ## What the layout shows after a run {#overlays}
 
