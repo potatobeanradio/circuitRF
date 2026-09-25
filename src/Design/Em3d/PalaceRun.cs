@@ -132,10 +132,14 @@ public static class PalaceRun
         string post = Path.Combine(runDir, PalaceConfigWriter.OutputDirectory);
         if (Directory.Exists(post)) Directory.Delete(post, recursive: true);
 
-        string? mpirun = processes > 1 ? FindMpiLauncher(palace) : null;
-        if (processes > 1 && mpirun is null)
-            note = $"Palace ran as one process: {processes} were asked for, and no MPI launcher (mpirun) was found " +
-                   $"beside Palace, on PATH, or named by {MpiLauncherVariable}.";
+        string? mpirun = null;
+        if (processes > 1)
+        {
+            var launcher = FindMpiLauncher(palace);
+            mpirun = launcher.Path;
+            if (mpirun is null)
+                note = $"Palace ran as one process: {processes} were asked for, and {launcher.How}.";
+        }
 
         bool bareBinary = palace.EndsWith(".bin", StringComparison.Ordinal);
         string exe = palace;
@@ -164,23 +168,58 @@ public static class PalaceRun
         return PalaceStep.Done();
     }
 
-    /// <summary>The MPI launcher: <see cref="MpiLauncherVariable"/>, then an <c>mpirun</c> beside Palace,
-    /// then one on <c>PATH</c>. Null when there is none — Palace then runs as one process.</summary>
-    internal static string? FindMpiLauncher(string palace)
+    /// <summary>The <c>mpirun</c> named in Settings ▸ 3D EM, or null. Installed by <c>src/Ui</c>
+    /// (<c>Em3dSolverPathInstaller</c>), read when needed — the seam <see cref="SolverDiscovery.PreferredCommand"/> is.</summary>
+    public static Func<string?>? PreferredMpiLauncher { get; set; }
+
+    /// <summary>An MPI launcher, or null <see cref="Path"/> with <see cref="How"/> saying what was tried.</summary>
+    public sealed record MpiLauncher(string? Path, string How);
+
+    /// <summary>
+    /// The MPI launcher Palace runs under. In order: the one named in Settings, then
+    /// <see cref="MpiLauncherVariable"/> — a NAMED launcher that is missing is reported, never silently
+    /// replaced, as <see cref="SolverDiscovery.Find"/> treats a named program — then an <c>mpirun</c>
+    /// beside Palace (a Spack view puts it there), then <b>the MPI this Palace was built against</b>,
+    /// from the Spack database (<see cref="SpackInstalls.MpiLauncherFor"/>; Palace's own recipe has no
+    /// view, so this is where its <c>mpirun</c> is), then <c>PATH</c>, then <c>~/.local/bin</c>,
+    /// <c>/opt/homebrew/bin</c>, <c>/usr/local/bin</c> — a Finder-launched application's <c>PATH</c>
+    /// holds none of them. The Spack match outranks <c>PATH</c> because a different MPI's launcher can
+    /// start the ranks and then fail to connect them.
+    /// </summary>
+    public static MpiLauncher FindMpiLauncher(string palace, IReadOnlyList<string>? spackRoots = null)
     {
-        if (Environment.GetEnvironmentVariable(MpiLauncherVariable)?.Trim() is { Length: > 0 } named && File.Exists(named))
-            return Path.GetFullPath(named);
-        if (Path.GetDirectoryName(palace) is { } dir && Path.Combine(dir, "mpirun") is var beside && File.Exists(beside))
-            return beside;
-        foreach (string d in (Environment.GetEnvironmentVariable("PATH") ?? "")
-                     .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+        if (PreferredMpiLauncher?.Invoke()?.Trim() is { Length: > 0 } preferred)
+            return File.Exists(preferred)
+                ? new(System.IO.Path.GetFullPath(preferred), "set in Settings")
+                : new(null, $"the MPI launcher set in Settings ('{preferred}') does not exist");
+        if (Environment.GetEnvironmentVariable(MpiLauncherVariable)?.Trim() is { Length: > 0 } named)
+            return File.Exists(named)
+                ? new(System.IO.Path.GetFullPath(named), $"named by {MpiLauncherVariable}")
+                : new(null, $"the MPI launcher named by {MpiLauncherVariable} ('{named}') does not exist");
+
+        if (System.IO.Path.GetDirectoryName(palace) is { } dir && System.IO.Path.Combine(dir, "mpirun") is var beside
+            && File.Exists(beside))
+            return new(beside, "found beside Palace");
+        if (SpackInstalls.MpiLauncherFor(palace, spackRoots) is { } linked)
+            return new(linked, "the MPI Palace was built with, from its Spack installation");
+
+        var dirs = (Environment.GetEnvironmentVariable("PATH") ?? "")
+            .Split(System.IO.Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries).Select(d => d.Trim()).ToList();
+        if (!OperatingSystem.IsWindows())
+        {
+            string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            if (home.Length > 0) dirs.Add(System.IO.Path.Combine(home, ".local", "bin"));
+            dirs.AddRange(["/opt/homebrew/bin", "/usr/local/bin"]);
+        }
+        foreach (string d in dirs)
         {
             string candidate;
-            try { candidate = Path.Combine(d.Trim(), "mpirun"); }
+            try { candidate = System.IO.Path.Combine(d, "mpirun"); }
             catch (ArgumentException) { continue; }
-            if (File.Exists(candidate)) return candidate;
+            if (File.Exists(candidate)) return new(candidate, "found on PATH or in a default directory");
         }
-        return null;
+        return new(null, $"no MPI launcher (mpirun) was found in Settings, {MpiLauncherVariable}, beside Palace, " +
+                         "in Palace's Spack installation, on PATH or in the default directories");
     }
 
     // ── Reading back ─────────────────────────────────────────────────────────────────────────

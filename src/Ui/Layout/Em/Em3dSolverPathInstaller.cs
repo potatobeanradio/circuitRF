@@ -1,5 +1,6 @@
 // Hands CircuitRF.Design the one thing 3D EM solver discovery needs from the application: which Palace,
-// Gmsh and openEMS the user named in Settings ▸ 3D EM (brief-em3d-6 R-em3d6-1a).
+// Gmsh and openEMS the user named in Settings ▸ 3D EM (brief-em3d-6 R-em3d6-1a), and the mpirun
+// Palace runs under.
 //
 // The preferences live above the firewall in AppPreferences and CircuitRF.Design may not reach them,
 // so SolverDiscovery exposes the seam and this fills it — exactly as GitPathInstaller fills
@@ -28,5 +29,6 @@ internal static class Em3dSolverPathInstaller
         SolverDiscovery.Palace.PreferredCommand  = () => AppPreferencesIo.Load().Em3dPalacePath;
         SolverDiscovery.Gmsh.PreferredCommand    = () => AppPreferencesIo.Load().Em3dGmshPath;
         SolverDiscovery.OpenEms.PreferredCommand = () => AppPreferencesIo.Load().Em3dOpenEmsPath;
+        PalaceRun.PreferredMpiLauncher           = () => AppPreferencesIo.Load().Em3dMpiLauncherPath;
     }
 }

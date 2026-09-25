@@ -216,6 +216,16 @@ public static class Em3dRunService
         log.Notes.Add("Both solvers run on the one 3D problem generated above, one after the other — Palace, then " +
                       "openEMS — because each already uses every core.");
 
+        // An earlier run's comparison describes files this run is about to rewrite. Left in place past
+        // a failed leg or a refused comparison, it would sit beside the fresh result disagreeing with
+        // it; only this run may put one there. This file only, as ResultsWriter deletes only its own.
+        try { if (File.Exists(ComparePath(resultsRoot, setup))) File.Delete(ComparePath(resultsRoot, setup)); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            log.Warnings.Add($"An earlier comparison, '{ComparePath(resultsRoot, setup)}', could not be removed " +
+                             $"({e.Message}); it does not describe this run.");
+        }
+
         control?.BeginStage("Palace, the first of two solvers");
         var p = ExecutePalace(palacePlan, problem, setup, resultsRoot, BothSnpBasePath(resultsRoot, setup, Em3dSolver.Palace),
                               ct, control, maxCores, log);
@@ -233,9 +243,13 @@ public static class Em3dRunService
         }
 
         if (o.Status == EmRunStatus.Cancelled)
+        {
+            // Palace had already failed: its reason is the other half of what this run found.
+            if (!p.Ok && p.Stop is { } palaceStop) log.Errors.Add(palaceStop.Render());
             return log.Result(EmRunStatus.Cancelled,
                               p.Ok ? EmDiagnostics.CancelledKeeping("openEMS", "Palace", Where(p)) : EmDiagnostics.Cancelled(),
                               outputs);
+        }
         if (!p.Ok && !o.Ok)
             return log.Result(p.Status, EmDiagnostics.BothSolversFailed(p.Stop!.Render(), o.Stop!.Render()));
         if (!p.Ok || !o.Ok)
@@ -513,6 +527,26 @@ public static class Em3dRunService
             return Failed($"the openEMS run could not be staged in '{runDir}' ({e.Message}).");
         }
 
+        // The earliest the ports' decay may stop a run: the pulse, then a crossing of the STRUCTURE's
+        // diagonal (conductors and ports — the air box's padding carries no signal between ports) and
+        // back at the slowest wave speed in the problem. Before then a far port may not yet have seen
+        // its first arrival (OpenEmsRun.Decay).
+        double x0 = double.PositiveInfinity, y0 = x0, z0 = x0, x1 = double.NegativeInfinity, y1 = x1, z1 = x1;
+        void Grow(double ax, double ay, double az, double bx, double by, double bz)
+        {
+            x0 = Math.Min(x0, ax); y0 = Math.Min(y0, ay); z0 = Math.Min(z0, az);
+            x1 = Math.Max(x1, bx); y1 = Math.Max(y1, by); z1 = Math.Max(z1, bz);
+        }
+        foreach (var solid in problem.Solids.Where(s => s.Role == Em3dRole.Conductor))
+        {
+            var b = Em3dProblem.Bounds(solid.Primitive);
+            Grow(b.X0, b.Y0, b.Z0, b.X1, b.Y1, b.Z1);
+        }
+        foreach (var port in problem.Ports) Grow(port.Min.X, port.Min.Y, port.Min.Z, port.Max.X, port.Max.Y, port.Max.Z);
+        double diagonal = x1 >= x0 ? Math.Sqrt((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0) + (z1 - z0) * (z1 - z0)) : 0;
+        double slowest = problem.Materials.Select(m => Math.Sqrt(Math.Max(1, m.Epsr) * Math.Max(1, m.Mur))).DefaultIfEmpty(1).Max();
+        double settleS = grid.ExcitationS + 2 * diagonal * slowest / 299_792_458.0;
+
         // ── One run per port (R-em3d9-3a) ─────────────────────────────────────────────────────
         int? threads = maxCores is { } c ? EmSolveCores.Sanitise(c) : null;
         var runs = new List<OpenEmsPortRun>();
@@ -522,7 +556,7 @@ public static class Em3dRunService
             try
             {
                 r = OpenEmsRun.RunPort(runDir, lowering, k, openEms.Path, threads, runSettings.EndCriterionDb,
-                                       grid.ExcitationS, control, ct);
+                                       grid.ExcitationS, control, ct, settleS);
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {

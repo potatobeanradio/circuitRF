@@ -1112,7 +1112,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     {
         if (resolution.Tech is null) return "";
 
+        // Info findings explain; they are not counted in the issue total, so not here either.
         var byArea = TechValidation.Analyze(resolution.Tech)
+                                   .Where(p => p.Severity != CircuitRF.Diagnostics.DiagnosticSeverity.Info)
                                    .GroupBy(p => p.Area)
                                    .Select(g => $"{TabName(g.Key)} {g.Count()}")
                                    .ToList();
@@ -8739,6 +8741,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 Messages.PostDiagnostic(diagnostic);
             else
                 Messages.Error(result.Error ?? "The EM solve failed.");
+
+            // A both-run that failed on one solver kept the other's result (brief-em3d-10 R-em3d10-4a):
+            // it was rewritten, so an open display of it must show the new numbers.
+            await PostKeptEmOutputsAsync(result);
             return;
         }
 
@@ -8773,6 +8779,15 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             // Appended, not replaced: the row keeps the point count it reached, which is the one
             // thing worth knowing about a run somebody stopped. keepBar: false (owner request,
             // 2026-08-14) — the bar glyph goes once the run settles; the text stays.
+            if (result.Outputs is { Count: > 0 })
+            {
+                // A both-run stopped during openEMS keeps Palace's finished result (R-em3d10-4c), and
+                // saying "no solution was written" after a long FEM run would be the one wrong answer.
+                sweepLive.Finish(MessageLevel.Warning, "EM stopped — the finished solver's result was kept", keepBar: false);
+                if (result.Diagnostic is { } kept) Messages.PostDiagnostic(kept);
+                await PostKeptEmOutputsAsync(result);
+                return;
+            }
             sweepLive.Finish(MessageLevel.Warning, "EM stopped — no solution was written", keepBar: false);
             if (adaptive)
                 Messages.Info(
@@ -8819,12 +8834,34 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         if (result.NpyPath is { } npy)
         {
-            await RefreshOpenDataDisplaysAsync([npy]);
+            // Every .npy the run wrote: a both-run rewrites each solver's as well as the comparison.
+            await RefreshOpenDataDisplaysAsync([.. WrittenEmNpys(result)]);
             // ResolveNpyKey, not ResolveResultKey — the EM results file (and therefore the .cdd named
             // after it) is deliberately distinct from the schematic's, or an EM run on cell "MLin"
             // replaces MLin's schematic results and its Data Display. See EmRunService.NpyKeySuffix.
-            await AutoOpenOrCreateDataDisplayAsync(baseDir, EmRunService.ResolveNpyKey(setup), npy);
+            //
+            // A 3D result is named after its solver (`<key>.palace_em`, brief-em3d-7 R-em3d7-5a), so its
+            // display is keyed on the file it shows. Keyed on `<key>_em`, it reopened whatever display
+            // that name already had — a planar run's, or the other solver's — bound to the old file.
+            string displayKey = setup.Is3D ? Path.GetFileNameWithoutExtension(npy) : EmRunService.ResolveNpyKey(setup);
+            await AutoOpenOrCreateDataDisplayAsync(baseDir, displayKey, npy);
         }
+    }
+
+    /// <summary>The .npy files an EM run wrote — every one a both-run lists, else its one.</summary>
+    private static IEnumerable<string> WrittenEmNpys(EmRunResult result)
+        => result.Outputs is { } outputs
+            ? outputs.Where(o => o.Kind == "npy").Select(o => o.Path)
+            : result.NpyPath is { } npy ? [npy] : [];
+
+    /// <summary>A run that stopped or failed but KEPT one solver's result: say where it is, and refresh
+    /// any display already showing it.</summary>
+    private async Task PostKeptEmOutputsAsync(EmRunResult result)
+    {
+        if (result.Outputs is not { Count: > 0 } outputs) return;
+        foreach (var o in outputs)
+            Messages.Success(o.Kind == "touchstone" ? "Wrote s-parameters" : "Wrote results", o.Path);
+        await RefreshOpenDataDisplaysAsync([.. WrittenEmNpys(result)]);
     }
 
     /// <summary>

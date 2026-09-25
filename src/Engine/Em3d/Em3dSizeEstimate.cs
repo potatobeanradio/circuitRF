@@ -53,7 +53,12 @@ public static class Em3dSizeEstimate
     /// <param name="initialEdgeM">A solid's initial element edge, metres — the Palace section's
     /// size fields (brief 7) resolved for that solid.</param>
     /// <param name="order">The Nédélec element order, 1 or 2.</param>
-    public static Em3dPalaceEstimate Palace(Em3dProblem problem, Func<Em3dSolid, double> initialEdgeM, int order)
+    /// <param name="backgroundEdgeM">The initial edge of the BACKGROUND — the part of the air box no
+    /// solid claims, which the mesher fills as air (brief 7's <c>background</c> group). On a setup whose
+    /// floor is absorbing that is everything below the stack, often as large as the air above it, so
+    /// leaving it out halved the count. Null leaves it out.</param>
+    public static Em3dPalaceEstimate Palace(Em3dProblem problem, Func<Em3dSolid, double> initialEdgeM, int order,
+                                            double? backgroundEdgeM = null)
     {
         ArgumentNullException.ThrowIfNull(problem);
         ArgumentNullException.ThrowIfNull(initialEdgeM);
@@ -68,6 +73,18 @@ public static class Em3dSizeEstimate
             double v = Volume(s.Primitive);
             double n = h > 0 ? v / (h * h * h / (6 * Math.Sqrt(2))) : 0;
             regions.Add(new Em3dRegionEstimate(s.Name, v, h, n));
+            tets += n;
+        }
+        if (backgroundEdgeM is { } hb && hb > 0)
+        {
+            // The box less every solid, conductors included (a hole is still not background). Solids
+            // counted twice where they overlap make this smaller, never larger, so it cannot go past
+            // the real background — and it is clamped at zero.
+            var (lo, hi) = (problem.Boundary.Min, problem.Boundary.Max);
+            double box = (hi.X - lo.X) * (hi.Y - lo.Y) * (hi.Z - lo.Z);
+            double v = Math.Max(0, box - problem.Solids.Sum(s => Volume(s.Primitive)));
+            double n = v / (hb * hb * hb / (6 * Math.Sqrt(2)));
+            if (v > 0) regions.Add(new Em3dRegionEstimate("background", v, hb, n));
             tets += n;
         }
         long unknowns = (long)Math.Round(tets * (order == 1 ? UnknownsPerTetOrder1 : UnknownsPerTetOrder2));

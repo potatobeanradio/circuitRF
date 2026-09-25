@@ -588,12 +588,19 @@ It took three corrections, each of which fails with a message that names the wro
 | `PETSc could not be found`, after `Illegal instruction`, about 17 minutes in | On an M4 Mac, Spack targets `m4` and the compiler then emits instructions the M4 cannot run. Add `packages: all: require: target=m3` to the environment and rebuild. |
 
 State the variants in the spec (`+superlu-dist+sundials+slepc+libxsmm+gslib~arpack`) — without them
-Spack silently turned three of Palace's defaults off. With the environment loaded, `which palace`
-prints the launcher; name that path in Settings ▸ 3D EM, since the environment is not loaded when
-circuitRF starts. Palace runs on more than one core through MPI's `mpirun`, which circuitRF looks for
-beside Palace and on `PATH`; in a Spack install it is in the MPI package's own folder, so name it with
-the environment variable `CIRCUITRF_MPIRUN` (`which mpirun` with the environment loaded). Without one,
-Palace runs as a single process and the run's notes say so. Other platforms: *not yet verified* — see Palace's own documentation.
+Spack silently turned three of Palace's defaults off.
+
+**There is nothing to set up afterwards.** Palace's recipe installs with no Spack *view*, so nothing it
+builds is ever on your `PATH`, and the environment is not loaded when circuitRF starts. circuitRF reads
+Spack's own install record instead — in `$SPACK_ROOT/opt/spack`, `~/spack/opt/spack`, `~/opt/spack`
+(the recipe's install tree) and `/opt/spack` — and finds Palace there by itself. Palace uses more than
+one core through MPI's `mpirun`, and the same record says which MPI this Palace was built against, so
+circuitRF uses exactly that `mpirun`. A different MPI's `mpirun` found on `PATH` can start the processes
+and then fail to connect them, so that one comes later in the search. If your install tree is somewhere else,
+name Palace (and `mpirun`, if you want more than one core) in Settings ▸ 3D EM. `which palace` and
+`which mpirun`, run with the environment loaded, print the two paths. Without an `mpirun`, Palace runs
+as a single process and the run's notes say so. Other platforms: *not yet verified* — see Palace's own
+documentation.
 **Palace does not run natively on Windows**; openEMS does.
 
 <div class="callout note">

@@ -179,6 +179,55 @@ public sealed class Em3dWireTests
         }
     }
 
+    /// <summary>A dogleg that turns 120° in PLAN. Judged against the unrotated previous axis, the
+    /// section's across-axis flipped there: "up" became −z and the mitre ring at the turn had zero
+    /// area. Each ring must keep the section's full height in z.</summary>
+    [Fact]
+    public void ASweepTurningPast90DegreesInPlan_KeepsItsSectionUpright()
+    {
+        var design = OneWire(
+            new WPoint3(-475_000, 0, 112_700), new WPoint3(-375_000, 0, 300_000), new WPoint3(0, 0, 300_000),
+            new WPoint3(-100_000, 173_205, 300_000), new WPoint3(300_000, 300_000, 300_000),
+            new WPoint3(475_000, 0, 112_700));
+        var result = Generate(design);
+        Assert.True(result.Ok, result.Refusal);
+        var rings = Sweep(result, "wire/G1/1").Rings;
+
+        double height = Math.Sqrt(3) * Math.PI * D / 6;
+        for (int i = 2; i <= 3; i++)                                  // the two plan turns, at constant z
+            Assert.True(rings[i].Max(q => q.Z) - rings[i].Min(q => q.Z) > 0.99 * height,
+                        $"ring {i} lost its height: the section flipped");
+    }
+
+    /// <summary>Undo restores the 3D fields, not only the points: Reverse swaps the bond styles with the
+    /// points, and an undo that put back only the points left the ball on the other pad. An array's foot
+    /// length survives a structural undo, and a property edit undoes.</summary>
+    [Fact]
+    public void Undo_RestoresBondStylesFootLengthsAndSection_NotOnlyPoints()
+    {
+        var design = OneWire(new WPoint3(-475_000, 0, 112_700), new WPoint3(475_000, 0, 112_700));
+        var wire = design.AllWires().Single();
+        wire.StartBond = BondStyle.Ball;
+        design.Arrays[0].FootLengthNm = 60_000;
+        var vm = new CircuitRF.Ui.WBond.WBondViewModel(design);
+
+        vm.Selection = new WireSelection { Wires = { 0 } };
+        vm.ReverseSelection();
+        Assert.Equal(BondStyle.Ball, wire.EndBond);
+        vm.Undo();
+        Assert.Equal((BondStyle.Ball, (BondStyle?)null), (wire.StartBond, wire.EndBond));
+
+        vm.SetWireCrossSection(0, WireCrossSection.Round);
+        vm.Undo();
+        Assert.Null(wire.CrossSection);
+
+        // A structural edit and its undo rebuild the arrays; the foot length rides along.
+        vm.Selection = new WireSelection { Wires = { 0 } };
+        vm.DeleteSelection();
+        vm.Undo();
+        Assert.Equal(60_000, vm.Design.Arrays.Single().FootLengthNm);
+    }
+
     // ── 7. Kernel W unchanged ───────────────────────────────────────────────────────────────────
 
     [Fact]

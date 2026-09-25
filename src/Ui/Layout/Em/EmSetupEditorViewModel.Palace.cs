@@ -18,7 +18,7 @@ public sealed record Em3dSolverChoice(Em3dSolver Value, string Label)
 
 public sealed partial class EmSetupEditorViewModel
 {
-    /// <summary>Planar, then the two 3D solvers. "Both" is brief 10's and is not offered yet.</summary>
+    /// <summary>Planar, the two 3D solvers, and both of them on one problem (brief 10).</summary>
     public static IReadOnlyList<Em3dSolverChoice> Solver3DChoices { get; } =
     [
         new(Em3dSolver.None,    "Planar (circuitRF)"),
@@ -48,6 +48,10 @@ public sealed partial class EmSetupEditorViewModel
         Em3dSolver.OpenEms =>
             "Generates a 3D model from the layout, its technology and any bond wires, places circuitRF's own FDTD " +
             "grid on it and solves it with openEMS, installed separately (Settings ▸ 3D EM) — once per port. The " +
+            "planar settings below are kept but not used.",
+        Em3dSolver.Both =>
+            "Generates one 3D model from the layout, its technology and any bond wires and solves it with Palace, " +
+            "then with openEMS (Settings ▸ 3D EM), writing each solver's result and a comparison of the two. The " +
             "planar settings below are kept but not used.",
         _ => "circuitRF's own planar and cross-section solvers, chosen under Analysis.",
     };

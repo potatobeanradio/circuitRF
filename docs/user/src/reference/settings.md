@@ -444,7 +444,8 @@ validated, where the program is, and how it was found.
 
 | Control | Default | What it does |
 |---|---|---|
-| **Path** (one per program) | blank | The program to run. **Blank means search**: the environment variable (`CIRCUITRF_PALACE`, `CIRCUITRF_GMSH`, `CIRCUITRF_OPENEMS`), then `PATH`, then the usual install folders. A path you name here always wins, and if it does not work circuitRF says so rather than using a different one it found somewhere else. |
+| **Path** (one per program) | blank | The program to run. **Blank means search**: the environment variable (`CIRCUITRF_PALACE`, `CIRCUITRF_GMSH`, `CIRCUITRF_OPENEMS`), then `PATH`, then the usual install folders (`~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, and `~/opt/openEMS/bin` for openEMS), then Spack's install record, which is where a Palace built with Palace's own recipe is found. A path you name here always wins, and if it does not work circuitRF says so rather than using a different one it found somewhere else. |
+| **MPI launcher** | blank | The `mpirun` that lets Palace use more than one core. **Blank means search**: `CIRCUITRF_MPIRUN`, then an `mpirun` beside Palace, then — for a Palace built with Spack — the MPI that build was linked against, then `PATH` and the usual install folders. The row shows which one a run would use. Without one, Palace still runs, on one core. |
 
 **A version circuitRF has not validated is refused, not just flagged.** Palace's configuration changes
 meaning between versions, and a setting read the wrong way gives an answer that looks plausible. The

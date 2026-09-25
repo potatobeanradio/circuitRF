@@ -159,8 +159,12 @@ public static class GmshGeoWriter
                           ThicknessM: sh.ThicknessM)).ToList();
         groups.AddRange(sheetGroups);
 
+        // A port sheet is AT LEAST one surface: the fragment makes it conformal with every volume it
+        // passes through, so a sheet crossing an interface between two slabs (prepreg on core, a trace
+        // over an inner-layer plane) comes back as one piece per slab. The query is the sheet's own
+        // zero-thickness box, so only coplanar pieces inside the rectangle can match — the sheet itself.
         var portGroups = problem.Ports.Select(p =>
-            new Em3dGroup(p.Name, ++attr, 2, Em3dGroupKind.Port, 1, AtLeast: false, PortNumber: p.Number)).ToList();
+            new Em3dGroup(p.Name, ++attr, 2, Em3dGroupKind.Port, 1, AtLeast: true, PortNumber: p.Number)).ToList();
         groups.AddRange(portGroups);
 
         var faceGroups = FaceKeys.Select((key, k) =>

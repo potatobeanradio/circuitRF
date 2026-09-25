@@ -200,14 +200,27 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
     /// <summary>The picker's "no material" row.</summary>
     internal const string MaterialNone = SpanNone;
 
-    public IReadOnlyList<string> MaterialChoices =>
-        [MaterialNone, .. _owner.Working.Materials.Select(m => m.Name)
-                                     .Where(n => n is { Length: > 0 })
-                                     .Distinct(StringComparer.OrdinalIgnoreCase)];
+    /// <summary>
+    /// "(none)", every material the technology defines, and — when this row names one the technology
+    /// does NOT define — that name too. Without it the combo cannot show the selection it is given, and
+    /// a write-back of null would clear the name and hide <c>tech.material.unknown</c>.
+    /// </summary>
+    public IReadOnlyList<string> MaterialChoices
+    {
+        get
+        {
+            var names = _owner.Working.Materials.Select(m => m.Name)
+                                                .Where(n => n is { Length: > 0 })
+                                                .Distinct(StringComparer.OrdinalIgnoreCase)
+                                                .ToList();
+            if (Layer.Material is { Length: > 0 } stated && NamedMaterial is null) names.Add(stated);
+            return [MaterialNone, .. names];
+        }
+    }
 
-    /// <summary>Whether the technology has any named material to offer — the picker is hidden
+    /// <summary>Whether there is a named material to offer or to show — the picker is hidden
     /// otherwise, since "(none)" alone is not a choice.</summary>
-    public bool HasMaterialChoices => _owner.Working.Materials.Count > 0;
+    public bool HasMaterialChoices => _owner.Working.Materials.Count > 0 || Layer.Material is { Length: > 0 };
 
     private string _selectedMaterial = MaterialNone;
     public string SelectedMaterial
@@ -627,7 +640,9 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
         StagedSigmaSm        = Layer.SigmaSm.ToString("0.###e+0", Inv);
         SelectedConductorMaterial = ConductorMaterials.Match(Layer.SigmaSm)?.Name ?? ConductorMaterials.Custom;
         // An unknown name shows as itself rather than as "(none)": the row must not claim a state
-        // the file does not hold. check reports it (tech.material.unknown).
+        // the file does not hold. check reports it (tech.material.unknown). The list is raised FIRST,
+        // so the combo holds the item before it is asked to select it.
+        OnPropertyChanged(nameof(MaterialChoices));
         SelectedMaterial     = Layer.Material is { Length: > 0 } mat
             ? (NamedMaterial?.Name ?? mat) : MaterialNone;
         RaiseMaterialViews();

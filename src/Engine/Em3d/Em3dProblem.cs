@@ -325,13 +325,18 @@ public sealed record Em3dProblem(
                 return (b.Min.X, b.Min.Y, b.Min.Z, b.Max.X, b.Max.Y, b.Max.Z);
             case Em3dCylinder c:
             {
-                // Bound the two end discs by their radius on every axis — exact for a vertical via,
-                // conservative for any other.
+                // The end discs' exact bound: a disc of radius r normal to unit axis a reaches
+                // r·√(1 − aᵢ²) along axis i — r across a vertical via, 0 along it, and in between for a
+                // tilted one (which the earlier "0 in z unless horizontal" missed).
                 double r = c.Radius;
-                return (Math.Min(c.AxisStart.X, c.AxisEnd.X) - r, Math.Min(c.AxisStart.Y, c.AxisEnd.Y) - r,
-                        Math.Min(c.AxisStart.Z, c.AxisEnd.Z) - (c.AxisStart.Z == c.AxisEnd.Z ? r : 0),
-                        Math.Max(c.AxisStart.X, c.AxisEnd.X) + r, Math.Max(c.AxisStart.Y, c.AxisEnd.Y) + r,
-                        Math.Max(c.AxisStart.Z, c.AxisEnd.Z) + (c.AxisStart.Z == c.AxisEnd.Z ? r : 0));
+                double dx = c.AxisEnd.X - c.AxisStart.X, dy = c.AxisEnd.Y - c.AxisStart.Y, dz = c.AxisEnd.Z - c.AxisStart.Z;
+                double sq = dx * dx + dy * dy + dz * dz;       // not √ then squared: a vertical axis must give 1 exactly
+                double Reach(double ai) => sq > 0 ? r * Math.Sqrt(Math.Max(0, 1 - ai * ai / sq)) : r;
+                double rx = Reach(dx), ry = Reach(dy), rz = Reach(dz);
+                return (Math.Min(c.AxisStart.X, c.AxisEnd.X) - rx, Math.Min(c.AxisStart.Y, c.AxisEnd.Y) - ry,
+                        Math.Min(c.AxisStart.Z, c.AxisEnd.Z) - rz,
+                        Math.Max(c.AxisStart.X, c.AxisEnd.X) + rx, Math.Max(c.AxisStart.Y, c.AxisEnd.Y) + ry,
+                        Math.Max(c.AxisStart.Z, c.AxisEnd.Z) + rz);
             }
             case Em3dSweep w:
             {

@@ -448,6 +448,12 @@ public static class TechnologyMerge
             }
         }
 
+        // brief-em3d-4's three bond-geometry defaults: a source's value fills one the target does not
+        // state, and never overrides one it does — the target's house has already answered.
+        target.DefaultFootLengthNm   ??= source.DefaultFootLengthNm;
+        target.DefaultBallDiameterNm ??= source.DefaultBallDiameterNm;
+        target.DefaultBallHeightNm   ??= source.DefaultBallHeightNm;
+
         // Envelopes ride along with the rules that look them up. Bringing rules without their tables
         // is the assembly-side twin of importing DRC rules without their layers — the rule looks
         // perfectly healthy and measures against a limit that does not exist — so a missing table is

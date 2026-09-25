@@ -397,9 +397,12 @@ public static class FdtdGrid
 
                     var (h, setBy) = ctx.LocalCell(axis, shape, e, metalSide, Math.Min(pb, qb), Math.Max(pb, qb));
                     double outside = e - metalSide * 2 * h / 3;
-                    // Too narrow for two lines that the merge would not undo, or an edge on the air
-                    // box whose outside line would leave it: the line goes on the edge.
-                    if (!(h >= ThirdsMinCells * minCellM) || outside < ctx.BoxMin(axis) || outside > ctx.BoxMax(axis))
+                    // Too narrow for two lines that the merge would not undo, an edge on the air box
+                    // whose outside line would leave it, or an edge SHORTER than its local cell — a facet
+                    // of a tessellated circle, whose thirds pair would only crowd its neighbours' lines:
+                    // the line goes on the edge.
+                    if (!(h >= ThirdsMinCells * minCellM) || outside < ctx.BoxMin(axis) || outside > ctx.BoxMax(axis)
+                        || Math.Abs(qb - pb) < h)
                     {
                         Add(e, false, new FdtdLineSource(shape.Name, FdtdLineKind.MetalEdge, e));
                         continue;
@@ -920,14 +923,14 @@ public static class FdtdGrid
             double h = MaxCellAt(a, e);
             string? by = null;
 
-            // The metal's width: the nearest vertex of the same outline on the metal side.
+            // The metal's width ACROSS THIS EDGE: rays cast from a quarter, half and three quarters along
+            // the edge into the metal, to the first boundary each meets. The nearest vertex anywhere on
+            // the outline was used before, and a line fused to its via pad took its "width" from a pad
+            // vertex beyond the edge's end: 19.8 µm for a 400 µm line, a 3.48 µm cell beside the port
+            // line, and two identical lines gridded differently depending on the pad's tessellation.
             double width = double.PositiveInfinity;
-            foreach (var r in shape.Rings!)
-                foreach (var q in r)
-                {
-                    double d = (A(q, a) - e) * metalSide;
-                    if (d > Tol) width = Math.Min(width, d);
-                }
+            foreach (double f in new[] { 0.25, 0.5, 0.75 })
+                width = Math.Min(width, RayToBoundary(shape.Rings!, a, e, b0 + f * (b1 - b0), metalSide));
             h = Math.Min(h, ThirdsWidthFraction * width);
 
             // The gap: the nearest coordinate, outside this edge, of separate metal in this layer alongside it.
@@ -937,6 +940,30 @@ public static class FdtdGrid
                 if (!s.Conductor || ReferenceEquals(s, shape) || !(s.Z0 <= shape.Z1 + Tol && s.Z1 >= shape.Z0 - Tol)) continue;
                 var (o0, o1) = s.Range(across);
                 if (o1 < b0 - Tol || o0 > b1 + Tol) continue;
+
+                if (s.Rings is not null)
+                {
+                    // An outline: its gap is measured by the same rays, outward, across this edge's span.
+                    // Metal just outside the edge is the SAME conductor (a pad on the line's end), not a
+                    // neighbour. Judging that by bounding boxes skipped every pour whose box contains the
+                    // line — a coplanar waveguide's ground — and left its slot with no gap clamp at all.
+                    double gap = double.PositiveInfinity;
+                    bool touching = false;
+                    foreach (double f in new[] { 0.25, 0.5, 0.75 })
+                    {
+                        double b = b0 + f * (b1 - b0);
+                        if (s.Contains2D(Pt(e - metalSide * Probe, b, a))) { touching = true; break; }
+                        gap = Math.Min(gap, RayToBoundary(s.Rings, a, e, b, -metalSide));
+                    }
+                    if (!touching && ThirdsGapFraction * gap < h)
+                    {
+                        h = ThirdsGapFraction * gap;
+                        by = s.Name;
+                    }
+                    continue;
+                }
+
+                // A curved or swept solid (a barrel, a wire): its extremes, and its box decides contact.
                 if (s.X0 <= shape.X1 + Tol && s.X1 >= shape.X0 - Tol && s.Y0 <= shape.Y1 + Tol && s.Y1 >= shape.Y0 - Tol)
                     continue;
                 foreach (double c in Coordinates(s, a))
@@ -950,6 +977,28 @@ public static class FdtdGrid
                 }
             }
             return (h, by);
+        }
+
+        /// <summary>
+        /// How far a ray from (<paramref name="e"/>, <paramref name="b"/>) travels along axis
+        /// <paramref name="a"/>, in direction <paramref name="side"/>, before crossing any ring's boundary
+        /// — ignoring crossings within <see cref="Tol"/> of the start, which are the edge itself.
+        /// </summary>
+        private double RayToBoundary(IReadOnlyList<IReadOnlyList<Point2>> rings, FdtdAxis a, double e, double b, int side)
+        {
+            double best = double.PositiveInfinity;
+            foreach (var r in rings)
+                for (int i = 0; i < r.Count; i++)
+                {
+                    var p = r[i];
+                    var q = r[(i + 1) % r.Count];
+                    double pb = B(p, a), qb = B(q, a);
+                    if ((pb > b) == (qb > b)) continue;                   // does not straddle the ray's line
+                    double at = A(p, a) + (b - pb) / (qb - pb) * (A(q, a) - A(p, a));
+                    double d = (at - e) * side;
+                    if (d > Tol) best = Math.Min(best, d);
+                }
+            return best;
         }
 
         private static IEnumerable<double> Coordinates(Shape s, FdtdAxis a)

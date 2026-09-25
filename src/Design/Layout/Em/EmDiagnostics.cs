@@ -95,16 +95,17 @@ public static class EmDiagnostics
         ("kernelName", kernelName));
 
     /// <summary>
-    /// brief-em3d-3 — a setup that names a 3D solver, in a build that has no 3D backend yet (briefs 7
-    /// and 9 add them). Refused rather than run: running the planar kernel instead would write a
-    /// result for a solver the setup did not ask for, to the path a 3D result will later own.
+    /// brief-em3d-3 — a 3D setup handed to a path that only knows the planar solvers: the planar
+    /// preflight, or a Solver3D value no backend answers to. Refused rather than run, because running
+    /// the planar kernel instead would write a result for a solver the setup did not ask for. (Its id
+    /// predates briefs 7 and 9, which added the backends; the id is kept, the sentence is not.)
     /// </summary>
     public static Diagnostic ThreeDSolverNotBuilt(string solver) => Diagnostic.Create(
         "em.solver-3d.not-built",
         DiagnosticSeverity.Error,
-        "This EM setup names the 3D solver {solver}, and this version of circuitRF can build the 3D " +
-        "problem (`circuitrf check` does) but cannot run it yet. Nothing was solved and nothing was " +
-        "written. Remove Solver3D from the setup to run it with the planar solvers.",
+        "This EM setup names the 3D solver {solver}, which the planar solvers' checks do not apply to. " +
+        "Nothing was solved and nothing was written. `circuitrf check` builds its 3D problem, " +
+        "`circuitrf explain` reports it, and `circuitrf em` runs it.",
         ("solver", solver));
 
     /// <summary>

@@ -12309,7 +12309,8 @@ otherwise tell apart.
 **Nothing reaches a process from `explain` or `render`.** `Em3dProcessLauncher` is the one place a
 3D solver, mesher or probe is to be started (briefs 6, 7, 9), and its counter is what the gate reads.
 
-**The size rows are both "unavailable" in this build, deliberately.** Palace's estimate is
+*(Superseded: brief 7 filled the Palace row with an estimate and brief 8 the openEMS row with the exact
+grid count — see their sections below.)* **At brief 5, the size rows were both "unavailable", deliberately.** Palace's estimate is
 `Em3dSizeEstimate.Palace` (Σ meshed-region volume ÷ regular-tetrahedron volume at the region's initial
 edge; conductors are holes; unknowns and memory from F0's measured ratios, each named with its run). It
 has no caller yet because the `.cem`'s Palace section has no initial mesh-size fields (brief 7). The
@@ -12564,3 +12565,126 @@ solids appear beside the comparison's restatement of them as expected difference
 different things (what was done, what it does to the difference) but overlap. The GUI's automatic Data
 Display after a 3D run keys its `.cdd` on `ResolveNpyKey(setup)` (`<key>_em`), not on the solver-named
 file it opens — true since brief 7, and now also for the comparison.
+
+## Review of the EM3D series, and finding Spack installs (2026-09-25)
+
+A review of briefs 2-10 after they were built. Gates: the files named below; each new test was run once
+against the old code and failed.
+
+**Spack discovery — a Palace built by Palace's own recipe is found with no setup.** That recipe installs
+with `view: false` into `$HOME/opt/spack`, padded to 256 characters, so the program sits at
+`~/opt/spack/__spack_path_placeholder__/…/palace-<ver>-<hash>/bin/palace`, on no `PATH` and in no
+default directory. A GUI started from Finder has no shell environment either, so Settings ▸ 3D EM said
+"Not found" on the machine the whole series was validated on. Every Palace gate had been reached through
+`CIRCUITRF_PALACE`. `SpackInstalls` (`src/Design/Em3d/`) reads each install tree's
+`.spack-db/index.json`. The tree roots are `$SPACK_ROOT/opt/spack`, `~/spack/opt/spack`, `~/opt/spack` and
+`/opt/spack`, and the lookup descends the `__spack_p*` padding chain to reach the database. It reads the
+database rather than walking the tree, because the directory projection is configurable. The database is
+also the only thing that answers **which MPI this Palace links**: the Palace record lists a dependency
+whose `virtuals` include `mpi`, and that record's prefix holds the `mpirun` that is certain to launch it.
+Spack is `SolverDiscovery`'s last route (`SolverHowFound.Spack`, reported as `spack` by `explain`).
+`PalaceRun.FindMpiLauncher` now looks in this order:
+1. Settings (a new row, `em3d_mpirun`).
+2. `CIRCUITRF_MPIRUN`.
+3. Beside Palace.
+4. The Spack-linked MPI.
+5. `PATH`.
+6. `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`.
+
+The Spack-linked MPI outranks `PATH` because a different MPI's launcher can start the ranks and then fail
+to connect them. A named launcher that does not exist is reported, never replaced. Gate:
+`SolverDiscoveryTests.Gate7b`. Consequence: on a machine with Palace built this way, every `[PalaceFact]`
+test now runs instead of skipping. The routine ones take 0.3–3 s; the long ones were already
+`Category=Benchmark`.
+
+**Two test classes raced on a shared instance, and it only showed once Palace was found.**
+`RunBothTests.Gate8` empties `SolverDiscovery.OpenEms`'s candidates for one run, while
+`SolverDiscoveryTests.Gate8` reads that same instance. The fix is not code: `SolverDiscoveryTests` now
+joins the 3D-run collection.
+
+**FdtdGrid: the thirds rule's width was a vertex, not a width** — the cause of brief 9's 3.48 µm cell.
+`LocalCell` took the nearest vertex of the outline on the metal side, anywhere. A line fused with its via
+pad took a pad vertex beyond the edge's end: 19.8 µm for a 400 µm line. The width is now measured by
+rays cast across the edge from a quarter, a half and three quarters along it. The gap to a neighbour is
+measured the same way: metal just outside the edge counts as the same conductor, and anything else is a
+neighbour across a gap. The old test was whether the two bounding boxes overlap, which skipped a
+coplanar waveguide's ground pour because its box contains the line's. An aligned edge **shorter than its
+own local cell** now carries a single line on the edge, not a thirds pair. That case is mostly a facet
+of a tessellated circle, where the ray-cast width is the pad's diameter; without the rule, the new
+widths put thirds pairs around the pad's facets and made a 7.4 µm x cell. The effect on the generated
+case B:
+- The smallest y cell went from 3.48 µm, at the strip edge, to 4.39 µm.
+- That 4.39 µm cell is where the strip's inside thirds line (120 µm) lands 5 µm from the barrel's extreme
+  (125 µm). Both lines stay, because 5 µm is above the merge threshold (0.1 × 35 µm). That threshold is
+  the brief's rule, not a bug.
+- The time-step count fell from 1.76 M to 1.41 M.
+- The openEMS via golden was rewritten.
+
+Gates: `FdtdGridTests.Gate1b` (a strip stepping in to a tab) and `Gate1c` (a coplanar slot).
+**Brief 9's gate 8, re-run once after the fix: it still fails on phase, by less.**
+- |S21| is within 0.076 dB, against a tolerance of 0.1.
+- ∠S21 is off by 8.6° at 20 GHz, against a 2° tolerance. It was 9.9°.
+- dt is 6.30e-14 s; both port runs took 49 s together, where they used to take about 200 s.
+- The error still grows linearly with frequency (0.84° at 2 GHz, 4.2° at 10 GHz), so it is an
+  electrical-length difference and not something at the band edge. The 3.48 µm cell was a small part
+  of it.
+
+Not yet tried: the same case at a finer `CellsPerWavelength`, and with the thirds rule off.
+
+**The ports' decay could stop a run before the far port had been reached.** It was allowed from two pulse
+lengths. On a matched line longer than about one pulse length of delay, every probe is quiet in between,
+and the run stopped with S21 ≈ 0, reported as converged. It now waits until the pulse plus two crossings
+of the **structure's** diagonal (conductors and ports, at the slowest wave speed in the problem). It is
+not measured on the air box, whose λ/8 padding is about 1 m on case B.
+
+**The other fixes**:
+- **Palace port groups are "at least one" surface.** The fragment splits a sheet that crosses a slab
+  interface, so a trace referenced to a plane two slabs down was refused. The Palace goldens gained
+  `"AtLeast": true` on the port groups.
+- **Palace capability probe:** a failed probe is no longer cached. Its exit code, 134, is also what an
+  environment problem ends in. The binary stamp now includes the `.bin` beside a symlink's target.
+- **An `AirBox.ZMin` that restates the floor** (`Pec`, or a padding alone) keeps the PEC floor. Only a
+  different stated boundary moves the floor below the geometry. Before, any stated `ZMin` refused every
+  port on an undrawn ground.
+- **Materials:** a named conductor material with no `Sigma20` is reported as the entry's own σ at an
+  unknown temperature, because that is what is used.
+- **An unresolvable `PresentWithLayer`** keeps the film, as the planar extractor keeps it.
+- **Cylinder bounds** are now exact on every axis. A tilted barrel's z extent was under-bounded.
+- **The Palace size estimate** counts the background, the region no solid claims, which the mesher fills
+  as air. On an absorbing floor that is the whole region below the stack.
+- **Wire section frames:** a wire turning more than 90° in plan flipped its section frame, which zeroed
+  the mitre ring. It is now judged against the previous across-axis carried through the turn (Rodrigues).
+- **wBond undo** restores diameter, metal, section, bond styles, per-wire foot length and the array foot
+  length. It used to restore points only, so undoing a Reverse left the ball on the other pad, and undoing
+  a diameter or metal change had never done anything. A merge carries the array's foot length, and the
+  inspector compares effective values, so selecting a wire no longer rewrites a stated default.
+- **Stackup picker:** it offers an unknown material name, so the row can show it.
+- **`.wasm` merge:** it fills the three bond defaults.
+- **Messages panel:** the tab breakdown drops info findings.
+- **openEMS log:** the writer ignores a line that arrives after it is closed.
+- **Both-runs:** a both-run deletes an earlier comparison before it starts, and keeps Palace's failure
+  reason when openEMS is then cancelled.
+- **GUI after a 3D run:** the Data Display is keyed on the file the run wrote (`<key>.palace_em`, not
+  `<key>_em`), and every `.npy` the run wrote is refreshed. A cancelled or failed both-run that kept
+  Palace's result now says so.
+- **Panel text:** the panel describes "both".
+- **MCP:** the `em` tool advertises `solver`.
+- **`explain`** notes the hexagon's measured extra loss (F0 Q3, R-em3d4-2e), which the model does not
+  correct for.
+- **Stale sentence:** the preflight's "cannot run it yet" was removed.
+
+**Brief 7's R-em3d7-6b completion note:** the new Settings row (MPI launcher) and brief 7's panel
+controls were verified by compiler and tests only. No pixels were seen, because this session cannot
+launch the GUI. Worth a look: the 3D EM tab's four rows, and whether the tab strip still fits at
+`MinWidth` 720.
+
+**Found and left, for a decision:**
+- **The MPI rank count is `Environment.ProcessorCount`.** That is the logical count, and Open MPI's
+  default slot count is physical cores, so on an x86 machine with SMT a "use every core" Palace run would
+  be refused for lack of slots. It is unverifiable here: Apple Silicon has no SMT.
+- **Undrawn ground planes other than the lowest** have no representation in the 3D problem.
+- **An integer on the port axis is a position, not a port number**, when ports are not numbered 1..N.
+- **`--solver` on a planar `.cem`** turns it into a 3D run rather than refusing.
+- **A failed comparison write** still exits 0, as a failed planar `.npy` write does.
+- **An unknown enum value in a `.wBond`** makes the whole file unreadable.
+

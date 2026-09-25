@@ -1488,7 +1488,25 @@ public sealed partial class WBondViewModel : ObservableObject
     /// point lists is O(N·points) and allocation-light, where a `.wBond` round trip would be
     /// milliseconds of JSON per undo push.</para>
     /// </summary>
-    private sealed record DesignSnapshot(ArraySnapshot[] Arrays, Point3[][] Points);
+    private sealed record DesignSnapshot(ArraySnapshot[] Arrays, Point3[][] Points, WireProps[] Props);
+
+    /// <summary>
+    /// A wire's per-wire properties an edit here can change — diameter, metal, and the 3D model's
+    /// section, bond styles and foot (brief-em3d-4). Points alone left every one of them out of undo:
+    /// Ctrl+Z after Reverse put the points back and left the swapped bond styles, so a ball moved to
+    /// the other pad.
+    /// </summary>
+    private sealed record WireProps(long DiameterNm, string Material, WireCrossSection? CrossSection,
+                                    BondStyle? StartBond, BondStyle? EndBond, long? FootLengthNm)
+    {
+        public static WireProps Of(Wire w) => new(w.DiameterNm, w.Material, w.CrossSection, w.StartBond, w.EndBond, w.FootLengthNm);
+
+        public void ApplyTo(Wire w)
+        {
+            w.DiameterNm = DiameterNm; w.Material = Material; w.CrossSection = CrossSection;
+            w.StartBond = StartBond; w.EndBond = EndBond; w.FootLengthNm = FootLengthNm;
+        }
+    }
 
     /// <summary>
     /// One array's identity and MEMBERSHIP, by wire reference.
@@ -1498,14 +1516,15 @@ public sealed partial class WBondViewModel : ObservableObject
     /// rather than a reconstruction of it. A wire ADDED after the snapshot is simply absent from it
     /// and therefore disappears on undo, with no bookkeeping either way.</para>
     /// </summary>
-    private sealed record ArraySnapshot(string Name, Wire[] Wires);
+    private sealed record ArraySnapshot(string Name, Wire[] Wires, long? FootLengthNm);
 
     private DesignSnapshot Capture()
     {
         var wires = _design.AllWires().ToList();
         return new DesignSnapshot(
-            [.. _design.Arrays.Select(a => new ArraySnapshot(a.Name, [.. a.Wires]))],
-            [.. wires.Select(w => w.Points.ToArray())]);
+            [.. _design.Arrays.Select(a => new ArraySnapshot(a.Name, [.. a.Wires], a.FootLengthNm))],
+            [.. wires.Select(w => w.Points.ToArray())],
+            [.. wires.Select(WireProps.Of)]);
     }
 
     private bool _inGesture;
@@ -1655,7 +1674,18 @@ public sealed partial class WBondViewModel : ObservableObject
         {
             _design.Arrays.Clear();
             foreach (var a in snapshot.Arrays)
-                _design.Arrays.Add(new WireArray { Name = a.Name, Wires = [.. a.Wires] });
+                _design.Arrays.Add(new WireArray { Name = a.Name, Wires = [.. a.Wires], FootLengthNm = a.FootLengthNm });
+        }
+        else
+        {
+            // Same arrays, same order — an array's own foot length is the one array field an edit
+            // changes without changing membership.
+            for (int a = 0; a < snapshot.Arrays.Length; a++)
+                if (_design.Arrays[a].FootLengthNm != snapshot.Arrays[a].FootLengthNm)
+                {
+                    _design.Arrays[a].FootLengthNm = snapshot.Arrays[a].FootLengthNm;
+                    structural = true;
+                }
         }
 
         var wires = _design.AllWires().ToList();
@@ -1666,6 +1696,16 @@ public sealed partial class WBondViewModel : ObservableObject
         // whether it had moved or not — at 500 wires that is the whole matrix for one wire's worth of
         // edit, and it is most of why an undo felt slower than the drag that preceded it.
         var changed = new List<int>();
+
+        for (int i = 0; i < limit && i < snapshot.Props.Length; i++)
+        {
+            // A diameter or metal changes the matrix; nothing narrower than a full refill is right.
+            if (WireProps.Of(wires[i]) != snapshot.Props[i])
+            {
+                snapshot.Props[i].ApplyTo(wires[i]);
+                structural = true;
+            }
+        }
 
         for (int i = 0; i < limit; i++)
         {

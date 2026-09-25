@@ -6,7 +6,9 @@
     brief-em3d-6 R-em3d6-4a — the three programs a 3D EM run can need, one row each: what was found,
     where, which version, whether circuitRF has validated it, and how it was found. A path box names
     one; BLANK IS THE DEFAULT and means "search" (Settings, then CIRCUITRF_*, then PATH, then the
-    default directories — SolverDiscovery.Find), exactly as the Verilog-A compiler row does.
+    default directories, then Spack's install database — SolverDiscovery.Find), exactly as the
+    Verilog-A compiler row does. A fourth row does the same for the mpirun Palace runs under
+    (PalaceRun.FindMpiLauncher).
 
     circuitRF ships none of these programs and links to none (em-3d.md §7.1). Unlike the Verilog-A
     compiler they ARE named here: a page telling someone how to install three separate programs
@@ -27,7 +29,7 @@
     <TextBlock Text="Palace (FEM)" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,4"/>
     <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto">
       <TextBox Grid.Row="0" Grid.Column="0" Name="PalaceBox" FontSize="12"
-               PlaceholderText="Leave blank to search (CIRCUITRF_PALACE, then PATH)"
+               PlaceholderText="Leave blank to search (CIRCUITRF_PALACE, PATH, then Spack)"
                LostFocus="OnPathCommitted">
         <ToolTip.Tip>
           <TextBlock TextWrapping="Wrap" MaxWidth="360"
@@ -44,11 +46,28 @@
                  Text="A default Palace build includes ParMETIS, whose licence allows commercial use for evaluation only. If you build Palace, you accept those terms."/>
     </Grid>
 
+    <!-- ── MPI launcher: how Palace uses more than one core ─────────────── -->
+    <TextBlock Text="MPI launcher (runs Palace on several cores)" FontSize="12" FontWeight="SemiBold" Margin="0,16,0,4"/>
+    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+      <TextBox Grid.Row="0" Grid.Column="0" Name="MpiBox" FontSize="12"
+               PlaceholderText="Leave blank to search (CIRCUITRF_MPIRUN, Palace's own MPI, then PATH)"
+               LostFocus="OnPathCommitted">
+        <ToolTip.Tip>
+          <TextBlock TextWrapping="Wrap" MaxWidth="360"
+                     Text="The mpirun of the MPI Palace was built with. Blank finds it: beside Palace, or, for a Palace built with Spack, the exact MPI that build links. Without one, Palace still runs, on one core."/>
+        </ToolTip.Tip>
+      </TextBox>
+      <Button Grid.Row="0" Grid.Column="1" Content="Browse…" FontSize="11" Padding="8,3" Margin="6,0,0,0"
+              Tag="MpiBox" Click="OnBrowse" ToolTip.Tip="Pick mpirun from disk"/>
+      <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Name="MpiStatus" FontSize="11" Opacity="0.75"
+                 TextWrapping="Wrap" Margin="0,4,0,0" Text="Not checked yet."/>
+    </Grid>
+
     <!-- ── Gmsh ───────────────────────────────────────────────────────── -->
     <TextBlock Text="Gmsh (meshes Palace's problems)" FontSize="12" FontWeight="SemiBold" Margin="0,16,0,4"/>
     <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
       <TextBox Grid.Row="0" Grid.Column="0" Name="GmshBox" FontSize="12"
-               PlaceholderText="Leave blank to search (CIRCUITRF_GMSH, then PATH)"
+               PlaceholderText="Leave blank to search (CIRCUITRF_GMSH, PATH, then Spack)"
                LostFocus="OnPathCommitted"/>
       <Button Grid.Row="0" Grid.Column="1" Content="Browse…" FontSize="11" Padding="8,3" Margin="6,0,0,0"
               Tag="GmshBox" Click="OnBrowse" ToolTip.Tip="Pick the Gmsh executable from disk"/>
@@ -60,7 +79,7 @@
     <TextBlock Text="openEMS (FDTD)" FontSize="12" FontWeight="SemiBold" Margin="0,16,0,4"/>
     <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
       <TextBox Grid.Row="0" Grid.Column="0" Name="OpenEmsBox" FontSize="12"
-               PlaceholderText="Leave blank to search (CIRCUITRF_OPENEMS, then PATH)"
+               PlaceholderText="Leave blank to search (CIRCUITRF_OPENEMS, PATH, then Spack)"
                LostFocus="OnPathCommitted"/>
       <Button Grid.Row="0" Grid.Column="1" Content="Browse…" FontSize="11" Padding="8,3" Margin="6,0,0,0"
               Tag="OpenEmsBox" Click="OnBrowse" ToolTip.Tip="Pick the openEMS executable from disk"/>

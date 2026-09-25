@@ -41,6 +41,7 @@ public partial class Em3dSolverSettingsView : UserControl
             PalaceBox.Text  = p.Em3dPalacePath  ?? "";
             GmshBox.Text    = p.Em3dGmshPath    ?? "";
             OpenEmsBox.Text = p.Em3dOpenEmsPath ?? "";
+            MpiBox.Text     = p.Em3dMpiLauncherPath ?? "";
         }
         finally { _loading = false; }
     }
@@ -55,6 +56,28 @@ public partial class Em3dSolverSettingsView : UserControl
     private void RefreshAll()
     {
         foreach (var (discovery, status) in Rows) Refresh(discovery, status);
+        RefreshMpi();
+    }
+
+    /// <summary>The MPI row: which mpirun a Palace run would use, found against the Palace the
+    /// Palace row finds — the Spack route needs to know which Palace it is asking about.</summary>
+    private void RefreshMpi()
+    {
+        MpiStatus.Text = "Checking…";
+        _ = Task.Run(() =>
+        {
+            string text;
+            try
+            {
+                string palace = SolverDiscovery.Palace.Find(out _)?.Path ?? "";
+                var launcher = PalaceRun.FindMpiLauncher(palace);
+                text = launcher.Path is { } path
+                    ? $"{path} ({launcher.How})."
+                    : $"Not found: {launcher.How}. Palace will run on one core.";
+            }
+            catch (Exception ex) { text = ex.Message; }
+            Dispatcher.UIThread.Post(() => MpiStatus.Text = text);
+        });
     }
 
     /// <summary>Runs discovery for one row off the UI thread and writes its answer back.</summary>
@@ -83,7 +106,8 @@ public partial class Em3dSolverSettingsView : UserControl
         if (_loading || sender is not TextBox box) return;
 
         string? typed = box.Text?.Trim() is { Length: > 0 } t ? t : null;
-        if (box == PalaceBox)       { AppPreferencesIo.Update(p => p.Em3dPalacePath  = typed); Refresh(SolverDiscovery.Palace,  PalaceStatus); }
+        if (box == PalaceBox)       { AppPreferencesIo.Update(p => p.Em3dPalacePath  = typed); Refresh(SolverDiscovery.Palace,  PalaceStatus); RefreshMpi(); }
+        else if (box == MpiBox)     { AppPreferencesIo.Update(p => p.Em3dMpiLauncherPath = typed); RefreshMpi(); }
         else if (box == GmshBox)    { AppPreferencesIo.Update(p => p.Em3dGmshPath    = typed); Refresh(SolverDiscovery.Gmsh,    GmshStatus); }
         else if (box == OpenEmsBox) { AppPreferencesIo.Update(p => p.Em3dOpenEmsPath = typed); Refresh(SolverDiscovery.OpenEms, OpenEmsStatus); }
     }

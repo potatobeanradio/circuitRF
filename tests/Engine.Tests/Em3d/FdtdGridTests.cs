@@ -54,6 +54,58 @@ public sealed class FdtdGridTests(ITestOutputHelper output)
         Assert.DoesNotContain(off.X.Required, l => l.Sources.Any(s => s.Kind is FdtdLineKind.ThirdsInside or FdtdLineKind.ThirdsOutside));
     }
 
+    /// <summary>
+    /// The width the thirds rule reads is the metal's ACROSS the edge. A strip whose end steps in to a
+    /// narrower tab has the step's vertex 200 µm inside its long edge's line but beyond that edge's end;
+    /// read as the width, it halved the local cell (on the generated case B, where a line is fused to its
+    /// via pad, a pad vertex made a 3.48 µm cell). The long edge's pair sits where a plain 600 µm
+    /// strip's does.
+    /// </summary>
+    [Fact]
+    public void Gate1b_TheThirdsWidthIsTheMetalAcrossTheEdge_NotAVertexBeyondItsEnd()
+    {
+        var box = Box(-1500, 1500, -2000, 2000, 0, 1254, pecFloor: true);
+        IReadOnlyList<Point2> tee =
+        [
+            new(-300 * Um, -2000 * Um), new(300 * Um, -2000 * Um), new(300 * Um, 1500 * Um), new(100 * Um, 1500 * Um),
+            new(100 * Um, 1700 * Um), new(-300 * Um, 1700 * Um),
+        ];
+        var p = new Em3dProblem([Substrate(-1500, 1500, -2000, 2000, 254), AirSolid(box)],
+                                [new Em3dSheet("strip", "Copper", tee, [], 254 * Um, 5 * Um, 10)], Materials,
+                                [PortY(1, "strip", -300 * Um, 300 * Um, -2000 * Um, 254 * Um)], box, Band, 20);
+
+        double h = Math.Min(C0 / (20e9 * Math.Sqrt(9.8) * 20), 0.6 * 600 * Um);
+        var x = FdtdGrid.Build(p, Defaults, Plenty).X.Lines;
+        AssertLine(x, 300 * Um - h / 3);
+        AssertLine(x, 300 * Um + 2 * h / 3);
+    }
+
+    /// <summary>
+    /// A coplanar waveguide: a 400 µm strip in a 100 µm slot cut in a same-layer ground pour. The pour's
+    /// box CONTAINS the strip's, which the gap clamp used to read as "the same conductor" — so neither
+    /// side of the slot was clamped, and the strip's outside line landed 160 µm out, inside the pour.
+    /// Clamped at 3/7 of the slot, the local cell is too small for a pair, and both slot edges carry
+    /// their own lines.
+    /// </summary>
+    [Fact]
+    public void Gate1c_ACoplanarSlot_ClampsBothEdgesThirds_ToTheGap()
+    {
+        var box = Box(-1500, 1500, -2000, 2000, 0, 1254, pecFloor: true);
+        var p = new Em3dProblem(
+            [Substrate(-1500, 1500, -2000, 2000, 254), AirSolid(box)],
+            [
+                Sheet("strip", -200 * Um, 200 * Um, -1900 * Um, 1900 * Um, 254 * Um),
+                new Em3dSheet("pour", "Copper", Rect(-1500, 1500, -2000, 2000), [Rect(-300, 300, -1900, 1900)],
+                              254 * Um, 5 * Um, 11),
+            ],
+            Materials, [PortY(1, "strip", -200 * Um, 200 * Um, -1900 * Um, 254 * Um)], box, Band, 20);
+
+        var x = FdtdGrid.Build(p, Defaults, Plenty).X.Lines;
+        AssertLine(x, 200 * Um);
+        AssertLine(x, 300 * Um);
+        Assert.DoesNotContain(x, v => v > 200 * Um + 1e-9 && v < 300 * Um - 1e-9 && Math.Abs(v - 250 * Um) > 30 * Um);
+    }
+
     // ── 2. Grading everywhere ───────────────────────────────────────────────────────────────────
 
     [Fact]

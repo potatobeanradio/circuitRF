@@ -285,8 +285,12 @@ public static class Em3dGenerator
                 && viaSpans.All(v => v.Bottom.BottomM >= ground.BottomM - 1e-15)
                 && tech.Bodies.All(body => bands.FirstOrDefault(b => b.Layer.Name == body.SitsOn) is not { } on
                                            || on.TopM >= ground.TopM - 1e-15);
+            // The .cem's floor steps §6's rule aside only when it states a DIFFERENT boundary. A ZMin
+            // that says Pec, or states only a padding, is the default floor restated: turning the floor
+            // off for it left an undrawn ground with no representation and refused every port on it.
             var zMinFace = setup.AirBox?.ZMin;
-            if (zMinFace is not null) pecFloor = false;       // the .cem states the floor; §6's rule steps aside
+            bool floorStatedAway = zMinFace?.Boundary is { } zMinKind && zMinKind != Em3dBoundaryKind.Pec;
+            if (floorStatedAway) pecFloor = false;
             double floorZ = pecFloor ? ground!.TopM : double.NaN;
 
             // ── Materials resolved at T (R-em3d3-4) ──────────────────────────────────────────
@@ -303,8 +307,11 @@ public static class Em3dGenerator
                         if (m.Alpha20 is { } a20) sigma = new WireMaterial(m.Name, s20, a20, 0).SigmaAt(_tempC);
                         else noAlpha.Add(m.Name);
                     }
+                    // A material that states no σ₂₀ leaves the entry's own σ in force — a number of
+                    // unknown temperature, from the stackup entry, and reported as both.
+                    else if (!unknownTemperature.Contains(entry.Name)) unknownTemperature.Add(entry.Name);
                     return Add(new Em3dMaterial(m.Name, m.Epsr ?? 1, null, m.TanD ?? 0, m.Mur ?? 1, sigma),
-                               TechnologySource());
+                               m.Sigma20 is null ? EntrySource(entry) : TechnologySource());
                 }
                 if (!unknownTemperature.Contains(entry.Name)) unknownTemperature.Add(entry.Name);
                 return Add(new Em3dMaterial(entry.Name, 1, null, 0, entry.Mur, entry.SigmaSm), EntrySource(entry));
@@ -410,6 +417,15 @@ public static class Em3dGenerator
                                                    b.Layer.PresentWithLayer is { Length: > 0 }))
             {
                 string tie = b.Layer.PresentWithLayer!;
+                // A name in NEITHER namespace leaves the film active, as the planar extractor leaves
+                // it (StackupLayer.PresentWithLayer): dropping it on a typo would thin the medium.
+                if (!bands.Any(x => x.Layer.Kind == StackupKind.Conductor && x.Layer.Name == tie)
+                    && !tech.Layers.Any(l => l.Name == tie))
+                {
+                    _notes.Add($"Dielectric '{b.Layer.Name}' is tied to '{tie}', which is neither a conductor " +
+                               "entry nor a drawing layer, so it is kept everywhere, as the planar solver keeps it.");
+                    continue;
+                }
                 var polys = new List<PlanarPolygon>();
                 if (bands.FirstOrDefault(x => x.Layer.Kind == StackupKind.Conductor && x.Layer.Name == tie) is { } plate)
                     polys.AddRange(pieces.TryGetValue(plate.Index, out var pl) ? pl.Select(p => p.Poly) : []);
@@ -661,9 +677,10 @@ public static class Em3dGenerator
                            $"{Fmt(_tempC)} °C included.");
             _notes.Add(pecFloor
                 ? $"The air box's floor is '{ground!.Layer.Name}' as a PEC plane at {Fmt(floorZ * 1e6)} µm: it is " +
-                  "the lowest ground-reference conductor, nothing is drawn on it and nothing is drawn below it."
+                  "the lowest ground-reference conductor, nothing is drawn on it and nothing is drawn below it." +
+                  (zMinFace?.PaddingUm is not null ? " The AirBox ZMin padding does not apply to a floor on the plane." : "")
                 : "The air box's floor is below the geometry" +
-                  (zMinFace is not null ? ", as this setup's AirBox states." :
+                  (floorStatedAway ? ", as this setup's AirBox states." :
                    ground is null ? ": the technology designates no ground-reference conductor."
                                   : $": '{ground.Layer.Name}' is drawn or has metal below it, so it is " +
                                     "geometry rather than a floor."));

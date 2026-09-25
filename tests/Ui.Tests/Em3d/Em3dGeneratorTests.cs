@@ -76,6 +76,22 @@ public sealed class Em3dGeneratorTests
         Assert.Equal(new Em3dFrequency(1e9, 10e9, 4, Em3dSweepKind.Linear), p.Frequency);
     }
 
+    /// <summary>A ZMin that restates the default floor (Pec, or a padding alone) keeps the PEC floor on
+    /// the undrawn plane. Turning the floor off for it left that plane with no representation and
+    /// refused both ports; only a DIFFERENT stated boundary moves the floor below the geometry.</summary>
+    [Theory]
+    [InlineData(Em3dBoundaryKind.Pec, null)]
+    [InlineData(null, 1500.0)]
+    public void Gate1b_AZMinRestatingTheDefault_KeepsThePecFloor(Em3dBoundaryKind? kind, double? padding)
+    {
+        var (setup, source) = Microstrip();
+        setup.AirBox = new EmAirBox(ZMin: new EmAirBoxFace(padding, kind));
+        var result = Em3dGenerator.Generate(setup, source, source.Technology!);
+        Assert.True(result.Ok, result.Refusal);
+        Assert.Equal(Em3dBoundaryKind.Pec, result.Problem!.Boundary.Faces.ZMin);
+        Assert.Equal(35 * Um, result.Problem.Boundary.Min.Z, 15);
+    }
+
     // ── 2. Determinism ──────────────────────────────────────────────────────────────────────────
 
     [Fact]

@@ -12,7 +12,7 @@ namespace CircuitRF.Design.Em3d;
 public enum SolverTool { Palace, Gmsh, OpenEms }
 
 /// <summary>Where a program was found — the column the Settings row shows.</summary>
-public enum SolverHowFound { Settings, Environment, Path, DefaultDirectory }
+public enum SolverHowFound { Settings, Environment, Path, DefaultDirectory, Spack }
 
 /// <summary>
 /// Something a user-built program may or may not be able to do (em-3d.md §7.1). Only what a brief
@@ -98,6 +98,10 @@ public sealed record SolverReadiness(
 /// <see cref="SearchDirectories"/> — because a Finder-launched application's <c>PATH</c> holds only
 /// <c>/usr/bin:/bin:/usr/sbin:/sbin</c> (measured on an installed build), so a program the user runs
 /// from a terminal is otherwise invisible to the application.</item>
+/// <item>Last, the Spack install database (<see cref="SpackInstalls"/>), for the tool's
+/// <see cref="SpackPackage"/>. Palace's own recipe installs with no view, so a Palace built exactly as
+/// its documentation says is on no <c>PATH</c> and in no default directory, and without this route
+/// every user who followed that recipe would have had to find a hashed prefix by hand.</item>
 /// <item><b>A NAMED program that does not work is reported, never silently replaced</b> by one found
 /// elsewhere: a user who named a Palace and got a different one has been overruled without being
 /// told.</item>
@@ -167,14 +171,14 @@ public sealed class SolverDiscovery
             // without its git history is not validated: it was never run, and nothing it prints could be
             // shown to identify it.
             validated: [new SolverValidatedVersion("0.18.1", "0dc74cd", "1-7-0")],
-            extraDirectories: []),
+            extraDirectories: [], spackPackage: "palace"),
 
         SolverTool.Gmsh => new(
             SolverTool.Gmsh, "Gmsh", "CIRCUITRF_GMSH", ["gmsh"],
             versionArguments: ["--version"],
             // docs/design/em-3d-f0-findings.md §6 — the Homebrew bottle, OCC 7.9.3.
             validated: [new SolverValidatedVersion("4.15.2", "4.15.2", null)],
-            extraDirectories: []),
+            extraDirectories: [], spackPackage: "gmsh"),
 
         _ => new(
             SolverTool.OpenEms, "openEMS", "CIRCUITRF_OPENEMS", ["openEMS"],
@@ -182,7 +186,7 @@ public sealed class SolverDiscovery
             // docs/design/em-3d-f0-findings.md §6 — 0.37.0-rc3 (git 67d3784), CSXCAD dcdb62b. A release
             // candidate: replace this entry when 0.37.0 final ships and testdata/em3d/f0 has been re-run.
             validated: [new SolverValidatedVersion("0.37.0-rc3", "67d3784", "dcdb62b")],
-            extraDirectories: [Path.Combine(Home(), "opt", "openEMS", "bin")]),
+            extraDirectories: [Path.Combine(Home(), "opt", "openEMS", "bin")], spackPackage: "openems"),
     };
 
     /// <summary>The instance for <paramref name="tool"/>.</summary>
@@ -222,7 +226,7 @@ public sealed class SolverDiscovery
     internal SolverDiscovery(
         SolverTool tool, string name, string environmentVariable, IReadOnlyList<string> candidates,
         IReadOnlyList<string> versionArguments, IReadOnlyList<SolverValidatedVersion> validated,
-        IReadOnlyList<string> extraDirectories)
+        IReadOnlyList<string> extraDirectories, string? spackPackage = null)
     {
         Tool                = tool;
         Name                = name;
@@ -231,6 +235,7 @@ public sealed class SolverDiscovery
         _versionArguments   = versionArguments;
         ValidatedVersions   = validated;
         SearchDirectories   = DefaultSearchDirectories(extraDirectories);
+        SpackPackage        = spackPackage;
     }
 
     public SolverTool Tool { get; }
@@ -256,6 +261,16 @@ public sealed class SolverDiscovery
     /// Windows, where a GUI process does inherit the user's <c>PATH</c>. Settable for tests.
     /// </summary>
     public IReadOnlyList<string> SearchDirectories { get; set; }
+
+    /// <summary>
+    /// The tool's Spack package name, looked up in every Spack install database once the directories
+    /// have failed; each installed prefix's <c>bin/&lt;candidate&gt;</c> is a candidate, most recently
+    /// installed first. Null disables the route. Settable for tests.
+    /// </summary>
+    public string? SpackPackage { get; set; }
+
+    /// <summary>The Spack install-tree roots looked in. Settable for tests.</summary>
+    public IReadOnlyList<string> SpackRoots { get; set; } = SpackInstalls.DefaultRoots;
 
     /// <summary>The versions this tool is validated at — a short list, data in one place (R-em3d6-2a).</summary>
     public IReadOnlyList<SolverValidatedVersion> ValidatedVersions { get; }
@@ -328,6 +343,13 @@ public sealed class SolverDiscovery
         foreach (string candidate in InSearchDirectories())
         {
             if (TryProbe(candidate, SolverHowFound.DefaultDirectory, $"found at {candidate}", out var chosen, out string? why))
+                return chosen;
+            notes.Add($"'{candidate}': {why}");
+        }
+
+        foreach (string candidate in InSpack())
+        {
+            if (TryProbe(candidate, SolverHowFound.Spack, $"found in a Spack installation at {candidate}", out var chosen, out string? why))
                 return chosen;
             notes.Add($"'{candidate}': {why}");
         }
@@ -422,9 +444,11 @@ public sealed class SolverDiscovery
         Interlocked.Increment(ref _capabilityProbes);
         var (verdict, definitive) = RunPalaceProbe(installation.Path, capability);
 
-        // Only a definite answer is kept. A probe that timed out or could not start says nothing about
-        // the build, and caching it would refuse every later run of a binary that was fine.
-        if (definitive && stamp is not null)
+        // Only a definite YES is kept. A probe that timed out or could not start says nothing about the
+        // build, and neither does every failed dry run: exit 134 is also what an MPI, environment or
+        // temp-directory problem ends in, and a cached "no" would go on telling the user to rebuild
+        // Palace after they had fixed the real cause. A failing probe costs 0.15 s to ask again.
+        if (definitive && verdict.Available && stamp is not null)
             CapabilityCache.Write(CacheFile, installation.Path, stamp, verdict);
         return verdict;
     }
@@ -468,7 +492,8 @@ public sealed class SolverDiscovery
     {
         if (found is null)
             return rejected.Count == 0
-                ? $"Not found: nothing named {string.Join(" or ", CandidateCommands)} on PATH or in the default directories."
+                ? $"Not found: nothing named {string.Join(" or ", CandidateCommands)} on PATH, in the default directories " +
+                  "or in a Spack installation."
                 : $"Not found. Tried: {string.Join("; ", rejected)}.";
 
         string how = found.HowFound switch
@@ -476,6 +501,7 @@ public sealed class SolverDiscovery
             SolverHowFound.Settings    => "set here",
             SolverHowFound.Environment => $"named by {EnvironmentVariable}",
             SolverHowFound.Path        => "found on PATH",
+            SolverHowFound.Spack       => "found in a Spack installation",
             _                          => "found in a default directory",
         };
         string validity = found.Validated
@@ -734,6 +760,26 @@ public sealed class SolverDiscovery
         }
     }
 
+    /// <summary>Each installed Spack prefix's <c>bin/&lt;candidate&gt;</c> for <see cref="SpackPackage"/>.
+    /// Derived from <see cref="CandidateCommands"/>, so emptying that disables this route too.</summary>
+    private IEnumerable<string> InSpack()
+    {
+        if (SpackPackage is not { Length: > 0 } package) yield break;
+        var commands = CandidateCommands
+            .Where(c => !string.IsNullOrWhiteSpace(c)
+                        && !c.Contains(Path.DirectorySeparatorChar) && !c.Contains(Path.AltDirectorySeparatorChar))
+            .Select(c => c.Trim()).ToList();
+        if (commands.Count == 0) yield break;
+        foreach (var install in SpackInstalls.Find(package, SpackRoots))
+            foreach (string command in commands)
+            {
+                string candidate;
+                try { candidate = Path.Combine(install.Prefix, "bin", command); }
+                catch (ArgumentException) { continue; }
+                if (Exists(candidate)) yield return candidate;
+            }
+    }
+
     private static bool Exists(string path)
     {
         try { return File.Exists(path); }
@@ -773,9 +819,20 @@ public sealed class SolverDiscovery
                     parts.Add($"{target.FullName}|{target.Length}|{target.LastWriteTimeUtc.Ticks}");
             }
             Add(path);
-            if (Tool == SolverTool.Palace && Path.GetDirectoryName(path) is { } dir)
-                foreach (string bin in Directory.EnumerateFiles(dir, "palace-*.bin").Order(StringComparer.Ordinal))
-                    Add(bin);
+            if (Tool == SolverTool.Palace)
+            {
+                // Beside the named file AND beside what it links to: a ~/.local/bin/palace symlink's own
+                // folder holds no .bin, and the wrapper it reaches keeps a normalised timestamp.
+                var dirs = new SortedSet<string>(StringComparer.Ordinal);
+                if (Path.GetDirectoryName(path) is { } dir) dirs.Add(dir);
+                var fi = new FileInfo(path);
+                if (fi.LinkTarget is not null && fi.ResolveLinkTarget(returnFinalTarget: true) is FileInfo target
+                    && target.DirectoryName is { } targetDir)
+                    dirs.Add(targetDir);
+                foreach (string d in dirs)
+                    foreach (string bin in Directory.EnumerateFiles(d, "palace-*.bin").Order(StringComparer.Ordinal))
+                        Add(bin);
+            }
             return string.Join(";", parts);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return null; }

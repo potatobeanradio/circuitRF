@@ -464,8 +464,12 @@ public static class Em3dWires
                 across = Unit(Sub(prev, Scale(t[j], Dot(prev, t[j]))));        // carried over
             else
             {
+                // Continuous, never flipped — judged against the previous across-axis CARRIED THROUGH
+                // the turn from t[j-1] to t[j]. Compared unrotated, a plan turn beyond 90° flipped it,
+                // which put the section's "up" at −z and mitred the joint ring to zero area.
                 across = Level(t[j]);
-                if (Dot(across, prev) < 0) across = Scale(across, -1);          // continuous, never flipped
+                var carried = j == 0 ? prev : Transport(prev, t[j - 1], t[j]);
+                if (Dot(across, carried) < 0) across = Scale(across, -1);
             }
             s[j] = across;
             u[j] = Cross(t[j], across);
@@ -562,6 +566,22 @@ public static class Em3dWires
     private static Point3 Sub(Point3 a, Point3 b) => new(a.X - b.X, a.Y - b.Y, a.Z - b.Z);
     private static Point3 Scale(Point3 a, double k) => new(a.X * k, a.Y * k, a.Z * k);
     private static double Dot(Point3 a, Point3 b) => a.X * b.X + a.Y * b.Y + a.Z * b.Z;
+
+    /// <summary><paramref name="v"/> rotated by the rotation that takes unit <paramref name="from"/> to
+    /// unit <paramref name="to"/> about their common normal (Rodrigues). Parallel tangents leave it as it
+    /// is; an antiparallel pair cannot reach here — a turn past 150° is refused before the rings.</summary>
+    private static Point3 Transport(Point3 v, Point3 from, Point3 to)
+    {
+        var k = Cross(from, to);
+        double sin = Math.Sqrt(Dot(k, k)), cos = Dot(from, to);
+        if (sin < 1e-12) return v;
+        k = Scale(k, 1 / sin);
+        var kxv = Cross(k, v);
+        double kv = Dot(k, v) * (1 - cos);
+        return new Point3(v.X * cos + kxv.X * sin + k.X * kv,
+                          v.Y * cos + kxv.Y * sin + k.Y * kv,
+                          v.Z * cos + kxv.Z * sin + k.Z * kv);
+    }
     private static Point3 Cross(Point3 a, Point3 b) =>
         new(a.Y * b.Z - a.Z * b.Y, a.Z * b.X - a.X * b.Z, a.X * b.Y - a.Y * b.X);
     private static double Dist(Point3 a, Point3 b) => Math.Sqrt(Dot(Sub(a, b), Sub(a, b)));

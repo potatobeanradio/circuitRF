@@ -19,6 +19,10 @@ namespace CircuitRF.Ui.Tests.Em3d;
 //  other test in the process.
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 
+// Gate 8 reads the SHARED instances, which RunBothTests' gate 8 empties for the length of one run —
+// so the two share the 3D-run collection and never overlap. It went unseen while [PalaceFact] skipped
+// on every machine with no CIRCUITRF_PALACE; Spack discovery made both run.
+[Collection(SkiaFontsTypefaceCollection.Name)]
 public sealed class SolverDiscoveryTests : IDisposable
 {
     private static readonly bool Windows = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
@@ -172,8 +176,12 @@ public sealed class SolverDiscoveryTests : IDisposable
     public void Gate5_AFailedDryRunIsARefusalNamingTheCapability()
     {
         string palace = Fake("nocap", "palace-version.txt", dryRunOk: false);
-        var readiness = Discovery(SolverTool.Palace, preferred: palace, env: null)
-            .Check(SolverDiscovery.CapabilitiesFor(SolverTool.Palace));
+        var d = Discovery(SolverTool.Palace, preferred: palace, env: null);
+        var readiness = d.Check(SolverDiscovery.CapabilitiesFor(SolverTool.Palace));
+
+        // A "no" is never cached: the same exit also ends an environment problem the user can fix.
+        d.Check(SolverDiscovery.CapabilitiesFor(SolverTool.Palace));
+        Assert.Equal(2, d.CapabilityProbesRun);
 
         Assert.False(readiness.Proceeds);
         Assert.Contains("driven solves with lumped ports", readiness.Refusal);
@@ -203,6 +211,61 @@ public sealed class SolverDiscoveryTests : IDisposable
 
         // Only Palace carries it: openEMS IS the Windows answer.
         Assert.DoesNotContain("natively", SolverDiscovery.Create(SolverTool.OpenEms).DescribeFailure([], windows: true));
+    }
+
+    // ── 7b. a Palace built by Palace's own Spack recipe is found with no setup ─────────────────
+
+    /// <summary>
+    /// Palace's recipe installs with no view, into a PADDED tree (<c>padded_length: 256</c>), so the
+    /// program is on no PATH and in no default directory. Discovery reads Spack's install database and
+    /// finds it after every other route; the MPI launcher is the one that database says this Palace
+    /// links — not a newer install's, and not one that is not installed.
+    /// </summary>
+    [Fact]
+    public void Gate7b_ASpackInstalledPalace_AndTheMpiItLinks_AreFoundFromTheInstallDatabase()
+    {
+        string tree = Path.Combine(_root, "spack", "__spack_path_placeholder__", "__spack_path_placeholder__", "__spack_pat");
+        string Prefix(string name) => Path.Combine(tree, "darwin-m3", name);
+        string palacePrefix = Prefix("palace-0.18.1-aaaa"), mpiPrefix = Prefix("openmpi-5.0.10-bbbb");
+        Directory.CreateDirectory(Path.Combine(palacePrefix, "bin"));
+        Directory.CreateDirectory(Path.Combine(mpiPrefix, "bin"));
+        Directory.CreateDirectory(Path.Combine(Prefix("openmpi-4.1.0-cccc"), "bin"));
+        File.Copy(Fake("scratch", "palace-version.txt"), Path.Combine(palacePrefix, "bin", Command));
+        if (!Windows) File.SetUnixFileMode(Path.Combine(palacePrefix, "bin", Command), UnixFileMode.UserRead | UnixFileMode.UserExecute);
+        File.WriteAllText(Path.Combine(mpiPrefix, "bin", "mpirun"), "");
+        File.WriteAllText(Path.Combine(Prefix("openmpi-4.1.0-cccc"), "bin", "mpirun"), "");
+
+        string Esc(string p) => p.Replace("\\", "\\\\");
+        Directory.CreateDirectory(Path.Combine(tree, ".spack-db"));
+        File.WriteAllText(Path.Combine(tree, ".spack-db", "index.json"), $$"""
+            { "database": { "version": "8", "installs": {
+              "aaaa": { "installed": true, "path": "{{Esc(palacePrefix)}}", "installation_time": 100,
+                        "spec": { "name": "palace", "version": "0.18.1", "dependencies": [
+                          { "name": "cmake",   "hash": "dddd", "parameters": { "deptypes": ["build"], "virtuals": [] } },
+                          { "name": "openmpi", "hash": "bbbb", "parameters": { "deptypes": ["build", "link"], "virtuals": ["mpi"] } } ] } },
+              "bbbb": { "installed": true,  "path": "{{Esc(mpiPrefix)}}", "installation_time": 50, "spec": { "name": "openmpi", "version": "5.0.10" } },
+              "cccc": { "installed": true,  "path": "{{Esc(Prefix("openmpi-4.1.0-cccc"))}}", "installation_time": 200, "spec": { "name": "openmpi", "version": "4.1.0" } },
+              "eeee": { "installed": false, "path": "{{Esc(Prefix("palace-0.19.0-eeee"))}}", "installation_time": 300, "spec": { "name": "palace", "version": "0.19.0" } }
+            } } }
+            """);
+
+        var d = Discovery(SolverTool.Palace, preferred: null, env: null, path: false);
+        d.SearchDirectories = [Path.Combine(_root, "nothing-here")];
+        d.SpackRoots        = [Path.Combine(_root, "spack")];
+        Assert.Equal((SolverHowFound.Spack, Path.Combine(palacePrefix, "bin", Command)), Where(d));
+        Assert.Contains("Spack", d.DescribeForSettings(d.Find(out _), []));
+
+        Assert.Equal(Path.Combine(mpiPrefix, "bin", "mpirun"),
+                     SpackInstalls.MpiLauncherFor(Path.Combine(palacePrefix, "bin", Command), d.SpackRoots));
+        Assert.Null(SpackInstalls.MpiLauncherFor(Path.Combine(_root, "elsewhere", "palace"), d.SpackRoots));
+
+        // Earlier routes still win, and a tool with no Spack package never looks.
+        Fake("default", "palace-version.txt");
+        var withDefault = Discovery(SolverTool.Palace, preferred: null, env: null, path: false);
+        withDefault.SpackRoots = d.SpackRoots;
+        Assert.Equal(SolverHowFound.DefaultDirectory, Where(withDefault).Item1);
+        d.SpackPackage = null;
+        Assert.Null(d.Find(out _));
     }
 
     // ── 8. the real tools, when this machine has F0's installs ──────────────────────────────────

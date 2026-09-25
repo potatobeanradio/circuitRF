@@ -191,6 +191,13 @@ public sealed class Em3dRenderExplainTests(ITestOutputHelper output) : IDisposab
         var estimate = Em3dSizeEstimate.Palace(src.Problem, _ => 100 * Um, 2);
         Assert.DoesNotContain(estimate.Regions, r => src.Problem.Solids.Single(s => s.Name == r.Solid).Role == Em3dRole.Conductor);
         Assert.NotNull(estimate.MemoryBytes);
+
+        // …and it counts the BACKGROUND too — what no solid claims, which the mesher fills as air. Case B's
+        // floor is absorbing, so that is the whole region below the stack.
+        var withBackground = Em3dSizeEstimate.Palace(src.Problem, _ => 100 * Um, 2, backgroundEdgeM: 100 * Um);
+        var background = Assert.Single(withBackground.Regions, r => r.Solid == "background");
+        Assert.True(background.VolumeM3 > 0);
+        Assert.True(withBackground.Tetrahedra > estimate.Tetrahedra);
     }
 
     // ── 6. Zero processes ───────────────────────────────────────────────────────────────────────

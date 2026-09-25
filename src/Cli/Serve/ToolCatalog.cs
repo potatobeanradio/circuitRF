@@ -306,8 +306,11 @@ internal static class ToolCatalog
                     [new("path", true, "The .cem to run.")],
                     [Output, .. Narrowing,
                      new("workspace", "--workspace", OptKind.Path,
-                         "The .cws paths resolve against. Default: the nearest one above the .cem.")],
-                    "Electromagnetic extraction of the layout the .cem names. Writes a Touchstone and a .npy."),
+                         "The .cws paths resolve against. Default: the nearest one above the .cem."),
+                     new("solver", "--solver", OptKind.Str,
+                         "A 3D setup's solver for this run only: palace, openems or both. Default: the .cem's Solver3D.")],
+                    "Electromagnetic extraction of the layout the .cem names. Writes a Touchstone and a .npy; a 3D "
+                  + "setup run with both solvers writes each one's and a comparison .npy."),
             ]),
 
         new("check",

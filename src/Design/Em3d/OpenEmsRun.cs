@@ -95,7 +95,8 @@ public static class OpenEmsRun
     /// <paramref name="threads"/> null lets openEMS choose (it measures which count is fastest).
     /// </summary>
     public static OpenEmsPortRun RunPort(string runDir, CsxcadLowering lowering, int index, string openEms, int? threads,
-                                         double endCriterionDb, double windowS, RunControl? control, CancellationToken ct)
+                                         double endCriterionDb, double windowS, RunControl? control, CancellationToken ct,
+                                         double settleS = 0)
     {
         int port = lowering.Ports[index];
         int n = lowering.Ports.Count;
@@ -130,11 +131,16 @@ public static class OpenEmsRun
         var tail = new Queue<string>();
         long latestStep = 0;
         var log = new StreamWriter(logPath, append: false, new UTF8Encoding(false)) { NewLine = "\n", AutoFlush = true };
+        // Set under the gate before the writer is disposed. After a Kill, the timed WaitForExit does not
+        // wait for the redirected streams, so a late line can still arrive — and a handler that throws
+        // on a disposed writer is rethrown on a thread-pool thread, which ends the process.
+        bool closed = false;
         void Line(string? text)
         {
             if (text is null) return;
             lock (gate)
             {
+                if (closed) return;
                 log.WriteLine(text);
                 tail.Enqueue(text);
                 if (tail.Count > 60) tail.Dequeue();
@@ -153,6 +159,7 @@ public static class OpenEmsRun
         bool stoppedOnDecay = false;
         using (log)
         using (p)
+        try
         {
             ProcessStarted?.Invoke(p);
             p.OutputDataReceived += (_, e) => Line(e.Data);
@@ -177,7 +184,7 @@ public static class OpenEmsRun
                 {
                     watch.Restart();
                     foreach (var tl in tails) tl.Poll();
-                    if (Decay(Pairs(tails), windowS) is { } level && level <= endCriterionDb)
+                    if (Decay(Pairs(tails), windowS, settleS) is { } level && level <= endCriterionDb)
                     {
                         // openEMS's own graceful stop: it checks for this file every time step.
                         try { WriteText(abort, "circuitRF: the port signals have decayed to the end criterion.\n"); stoppedOnDecay = true; }
@@ -195,6 +202,10 @@ public static class OpenEmsRun
                 return Fail($"openEMS failed on port {port}'s run (exit code {p.ExitCode}). Its own words: " +
                             $"{Quote(lastLines)} The full log is {logPath}.");
         }
+        finally
+        {
+            lock (gate) closed = true;
+        }
 
         // The log is closed — and so flushed — before it is read: the writer above buffers.
         string logText = File.ReadAllText(logPath);
@@ -209,7 +220,7 @@ public static class OpenEmsRun
             probes.Add(new FdtdPortProbes(u!, i!));
         }
 
-        double decay = Decay(probes, windowS) ?? double.NaN;      // NaN: stopped before a window past the pulse
+        double decay = Decay(probes, windowS, settleS) ?? double.NaN;      // NaN: stopped before a window past the pulse
         bool converged = facts.Aborted || facts.EnergyCriterionMet || decay <= endCriterionDb;
         return new OpenEmsPortRun(port, true, false, null, facts, decay, converged, probes);
     }
@@ -221,9 +232,16 @@ public static class OpenEmsRun
     /// <paramref name="windowS"/> of each probe, against the peak of that KIND (voltage or current)
     /// over every port — so a port that never saw much signal is judged on the excited port's scale,
     /// as openEMS's own criterion judges the whole domain's energy. In dB, 20·log10 of that ratio,
-    /// which is the energy ratio's 10·log10. Null until every probe has run a window past the first.
+    /// which is the energy ratio's 10·log10. Null until every probe has run a window past the first,
+    /// and until <paramref name="settleS"/>.
+    ///
+    /// <para><b>Why <paramref name="settleS"/>.</b> Two pulse lengths is not enough on a long structure:
+    /// once the pulse has left the excited port of a matched line, every probe is quiet — the far port
+    /// has not been reached yet — and the decay test passed with S21 ≈ 0, reported as converged. The
+    /// caller passes the pulse plus twice the box's diagonal at the slowest wave speed in it, which is
+    /// the longest any port can wait for the first arrival and its return.</para>
     /// </summary>
-    public static double? Decay(IReadOnlyList<FdtdPortProbes> probes, double windowS)
+    public static double? Decay(IReadOnlyList<FdtdPortProbes> probes, double windowS, double settleS = 0)
     {
         if (probes.Count == 0) return null;
         double end = double.PositiveInfinity;
@@ -233,7 +251,7 @@ public static class OpenEmsRun
                 if (x.TimeS.Length == 0) return null;
                 end = Math.Min(end, x.TimeS[^1]);
             }
-        if (!(end >= 2 * windowS)) return null;
+        if (!(end >= 2 * windowS) || !(end >= settleS)) return null;
 
         double level = 0;
         foreach (bool voltage in new[] { true, false })

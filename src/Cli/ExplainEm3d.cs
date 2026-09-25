@@ -84,6 +84,14 @@ internal static class ExplainEm3d
             w.Process.BallHeight.Nm * 1e-9, Level(w.Process.BallHeight.Source),
             w.AssemblyLoopHeightM, w.WBondLoopHeightM)).ToList();
 
+        // R-em3d4-2e — the section is not corrected for, so say what it costs, beside the wire rows.
+        if (g.Wires.Any(w => w.Section == Em3dSection.Hexagon))
+            notes = [.. notes,
+                "A hexagonal wire dissipates more than the round wire of equal perimeter that kernel W models — " +
+                "+1.7 % at 1 GHz, +5.0 % at 10 GHz, +2.5 % at 40 GHz, measured with Palace when circuitRF's 3D " +
+                "solvers were validated (the 10 GHz figure is 5 ± 3 %). The 3D model does not " +
+                "correct for it, so that much of a loss difference against kernel W is the section."];
+
         var ports = p.Ports.Select(q => new Em3dPortJson(
             q.Number, q.Name, q.PositiveObject, q.NegativeObject, q.Z0.Real, q.Z0.Imaginary,
             V(q.Min), V(q.Max), V(q.ReferencePlane.Origin), V(q.ReferencePlane.Normal), q.ReferencePlane.ShiftM)).ToList();
@@ -122,6 +130,7 @@ internal static class ExplainEm3d
                    SolverHowFound.Settings    => "settings",
                    SolverHowFound.Environment => "environment",
                    SolverHowFound.Path        => "path",
+                   SolverHowFound.Spack       => "spack",
                    null                       => null,
                    _                          => "default-directory",
                },
@@ -152,8 +161,12 @@ internal static class ExplainEm3d
         else
         {
             var byName = p.Materials.ToDictionary(m => m.Name, StringComparer.Ordinal);
+            // The background is meshed as the problem's air, or free space with none — GmshGeoWriter's rule.
+            var backgroundMaterial = p.Solids.FirstOrDefault(s => s.Role == Em3dRole.Air) is { } air
+                ? byName[air.Material] : new Em3dMaterial("(free space)", 1, null, 0, 1, 0);
             var est = Em3dSizeEstimate.Palace(
-                p, s => GmshGeoWriter.MaxElementSizeM(byName[s.Material], p.Frequency.StopHz, settings), settings.ElementOrder);
+                p, s => GmshGeoWriter.MaxElementSizeM(byName[s.Material], p.Frequency.StopHz, settings), settings.ElementOrder,
+                GmshGeoWriter.MaxElementSizeM(backgroundMaterial, p.Frequency.StopHz, settings));
             palace = new("palace", "estimate", est.Tetrahedra, est.Unknowns, null, est.MemoryBytes,
                 $"about {est.Tetrahedra:N0} elements and {est.Unknowns:N0} unknowns at order {est.Order}" +
                 (est.MemoryBytes is { } b ? $", about {b / 1e9:0.#} GB" : "") +

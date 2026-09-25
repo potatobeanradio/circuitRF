@@ -42,6 +42,7 @@
       "Dimension": 2,
       "Kind": "Port",
       "Expected": 1,
+      "AtLeast": true,
       "Port": 1
     },
     {
@@ -50,6 +51,7 @@
       "Dimension": 2,
       "Kind": "Port",
       "Expected": 1,
+      "AtLeast": true,
       "Port": 2
     },
     {

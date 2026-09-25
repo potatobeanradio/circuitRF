@@ -271,7 +271,7 @@ public sealed partial class WBondViewModel
 
             if (target is null)
             {
-                target = new WireArray { Name = source.Name };
+                target = new WireArray { Name = source.Name, FootLengthNm = source.FootLengthNm };
                 _design.Arrays.Add(target);
             }
 
@@ -594,11 +594,15 @@ public sealed partial class WBondViewModel
 
     /// <summary>Sets one wire's 3D cross-section; null is the default (hexagon).</summary>
     public bool SetWireCrossSection(int wireIndex, WireCrossSection? section)
-        => EditWire3D(wireIndex, w => w.CrossSection == section, w => w.CrossSection = section);
+        => EditWire3D(wireIndex, w => (w.CrossSection ?? WireCrossSection.Hexagon) == (section ?? WireCrossSection.Hexagon),
+                      w => w.CrossSection = section);
 
     /// <summary>Sets how one END of a wire is bonded; null is the default (wedge).</summary>
     public bool SetWireBond(int wireIndex, bool start, BondStyle? style)
-        => EditWire3D(wireIndex, w => (start ? w.StartBond : w.EndBond) == style,
+        // Compared as the EFFECTIVE value: the combo re-selects on every refresh, and a file that
+        // states the default ("Wedge") would otherwise be rewritten to null — and dirtied — just by
+        // selecting the wire.
+        => EditWire3D(wireIndex, w => ((start ? w.StartBond : w.EndBond) ?? BondStyle.Wedge) == (style ?? BondStyle.Wedge),
                       w => { if (start) w.StartBond = style; else w.EndBond = style; });
 
     /// <summary>Sets one wire's foot length in nanometres; null defers to the array and the process.</summary>
