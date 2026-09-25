@@ -2618,6 +2618,24 @@ public static class PlanarExtractor
     private static List<(LayoutShape Shape, Band Band)> MergeOverlappingCopper(
         List<(LayoutShape Shape, Band Band)> shapes, Technology tech, out int mergedShapes, out int mergedInto)
     {
+        // brief-em3d-3: the body is shared with the 3D generator, keyed on the stackup position —
+        // which is what `Band.Index` already was here — so both agree on what copper is connected.
+        var byIndex = new Dictionary<int, Band>();
+        foreach (var (_, band) in shapes) byIndex.TryAdd(band.Index, band);
+        return [.. MergeOverlapping([.. shapes.Select(x => (x.Shape, x.Band.Index))], tech,
+                                    out mergedShapes, out mergedInto)
+                  .Select(x => (x.Shape, byIndex[x.Level]))];
+    }
+
+    /// <summary>
+    /// <b>One conductor, however many shapes drew it</b>: shapes on the same <paramref name="shapes"/>
+    /// level that genuinely OVERLAP (common area &gt; 0) are replaced by their union; everything else
+    /// passes through untouched, in its original order. The planar extractor's own merge, and the one
+    /// the 3D generator calls (brief-em3d-3 R-em3d3-5b) so the two models agree on what is connected.
+    /// </summary>
+    internal static List<(LayoutShape Shape, int Level)> MergeOverlapping(
+        List<(LayoutShape Shape, int Level)> shapes, Technology tech, out int mergedShapes, out int mergedInto)
+    {
         mergedShapes = 0;
         mergedInto = 0;
         int n = shapes.Count;
@@ -2643,7 +2661,7 @@ public static class PlanarExtractor
             active.RemoveAll(j => boxes[j].MaxX < boxes[i].MinX);
             foreach (int j in active)
             {
-                if (shapes[j].Band.Index != shapes[i].Band.Index) continue;
+                if (shapes[j].Level != shapes[i].Level) continue;
                 if (boxes[j].MaxY < boxes[i].MinY || boxes[i].MaxY < boxes[j].MinY) continue;
                 if (Find(i) == Find(j)) continue;
                 var common = Clipper2Lib.Clipper.Intersect(PathsOf(i), PathsOf(j), Clipper2Lib.FillRule.NonZero);
@@ -2656,7 +2674,7 @@ public static class PlanarExtractor
         if (!any) return shapes;
 
         var groups = Enumerable.Range(0, n).GroupBy(Find).ToDictionary(g => g.Key, g => g.ToList());
-        var result = new List<(LayoutShape Shape, Band Band)>(n);
+        var result = new List<(LayoutShape Shape, int Level)>(n);
         var emitted = new HashSet<int>();
         for (int i = 0; i < n; i++)
         {
@@ -2671,7 +2689,7 @@ public static class PlanarExtractor
 
             mergedShapes += members.Count;
             mergedInto   += union.Count;
-            foreach (var u in union) result.Add((u, shapes[i].Band));
+            foreach (var u in union) result.Add((u, shapes[i].Level));
         }
         return result;
     }
@@ -2785,6 +2803,71 @@ public static class PlanarExtractor
             if (entry.SpanFromLayer is { Length: > 0 } from) viaLands.Add(from);
             if (entry.SpanToLayer   is { Length: > 0 } to)   viaLands.Add(to);
         }
+    }
+
+    // ── brief-em3d-3 — the planar rules the 3D generator reuses rather than restates ──────────────
+    //
+    // Each is a thin door onto a function this file already runs. The 3D generator needs the same
+    // answers — where a stackup entry sits in z (the two-DBU-scales rule), which plane a conductor
+    // returns through (R-em-4, and RP-3's flip when the plane is above), which copper is one
+    // conductor, and how a shape becomes polygons — and a second spelling of any of them would be a
+    // 3D model that disagrees with the planar one on exactly the geometry a cross-check compares.
+
+    /// <summary>A non-via stackup entry's z extent, metres, bottom-to-top, with its position in
+    /// <c>Stackup.Layers</c>.</summary>
+    internal sealed record StackBand(StackupLayer Layer, int Index, double BottomM, double TopM);
+
+    /// <summary><see cref="BuildStack"/>'s answer: every non-via entry, bottom-to-top.</summary>
+    internal static IReadOnlyList<StackBand> StackBands(Stackup stackup)
+        => [.. BuildStack(stackup).Select(b => new StackBand(b.Layer, b.Index, b.BottomM, b.TopM))];
+
+    /// <summary>
+    /// The ground-designated conductor a conductor at stackup position <paramref name="index"/>
+    /// returns through: R-em-4's <see cref="HighestGroundBelow"/> in the stackup's own orientation,
+    /// else — RP-3 — the same query in the mirrored stack, which finds the nearest designated plane
+    /// ABOVE. Null when the stackup designates no plane on either side.
+    /// </summary>
+    internal static StackupLayer? InferredReturnPlane(Stackup stackup, int index, out bool above)
+    {
+        above = false;
+        var stack = BuildStack(stackup);
+        var band = stack.FirstOrDefault(b => b.Index == index);
+        if (band is null) return null;
+        if (HighestGroundBelow(stack, band.SheetM) is { } below) return below.Layer;
+
+        var mirrored = MirrorStack(stack, stack[^1].TopM);
+        var flipped  = mirrored.First(b => b.Index == index);
+        if (HighestGroundBelow(mirrored, flipped.SheetM) is { } over) { above = true; return over.Layer; }
+        return null;
+    }
+
+    /// <summary>The via binding (plated entries only; a non-plated hole is not metal), with the count
+    /// of non-plated entries left out.</summary>
+    internal static Dictionary<LayerKey, StackupLayer> ViaBinding(Stackup stackup, out int nonPlated)
+        => BuildViaBinding(stackup, out nonPlated);
+
+    /// <summary>
+    /// A shape as the polygons an extraction reads: a width-bearing Path outlined (ANT-1), then the
+    /// layout's own flatten at its own tolerance, outer ring plus holes, degenerate rings dropped —
+    /// the conductor path's chain in <see cref="Extract"/>, verbatim.
+    /// </summary>
+    internal static List<PlanarPolygon> ToPolygons(LayoutShape shape, Technology tech, double perDbu)
+    {
+        var polys = new List<PlanarPolygon>();
+        long tol = LayoutFlattener.ResolveTolDbu(shape, tech);
+        foreach (var region in RegionsToMesh(shape, tech))
+        {
+            IReadOnlyList<long[]> rings;
+            try { rings = LayoutFlattener.Flatten(region, tol); }
+            catch (ArgumentOutOfRangeException) { continue; }
+            if (rings.Count == 0 || rings[0].Length < 6) continue;
+
+            var holes = new List<IReadOnlyList<EmPoint>>();
+            for (int i = 1; i < rings.Count; i++)
+                if (rings[i].Length >= 6) holes.Add(ToPoints(rings[i], perDbu));
+            polys.Add(new PlanarPolygon(ToPoints(rings[0], perDbu), holes.Count == 0 ? null : holes));
+        }
+        return polys;
     }
 
     private static Dictionary<LayerKey, List<Band>> BuildLayerBinding(List<Band> stack)

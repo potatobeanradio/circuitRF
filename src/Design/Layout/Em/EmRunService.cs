@@ -252,6 +252,9 @@ public static class EmRunService
         if (source.Technology is null)
             return new EmPreflightResult(EmAnalysisKind.CrossSection, "", [],
                                          EmDiagnostics.NoTechnology(setup.LayoutRef).Render());
+        if (setup.Is3D)
+            return new EmPreflightResult(EmAnalysisKind.CrossSection, "", [],
+                                         EmDiagnostics.ThreeDSolverNotBuilt(setup.Solver3D.ToString()).Render());
 
         var findings = new List<EmFinding>();
 
@@ -511,6 +514,14 @@ public static class EmRunService
         if (source.Technology is null)
         {
             var d = EmDiagnostics.NoTechnology(setup.LayoutRef);
+            return new EmRunResult(EmRunStatus.Refused, null, null, null, null, null,
+                d.Render(), warnings, Diagnostic: d);
+        }
+
+        // brief-em3d-3 — a 3D setup never falls through to a planar kernel (overview §1g).
+        if (setup.Is3D)
+        {
+            var d = EmDiagnostics.ThreeDSolverNotBuilt(setup.Solver3D.ToString());
             return new EmRunResult(EmRunStatus.Refused, null, null, null, null, null,
                 d.Render(), warnings, Diagnostic: d);
         }

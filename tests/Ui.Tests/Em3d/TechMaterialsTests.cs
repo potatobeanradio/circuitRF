@@ -194,6 +194,7 @@ public sealed class TechMaterialsTests(ITestOutputHelper output) : IDisposable
             "CircuitRF.Design.Layout.TechValidation",
             "CircuitRF.Ui.Layout.StackupLayerRowViewModel",
             "CircuitRF.Ui.Controls.StackupInlineEditor",
+            "CircuitRF.Design.Layout.Em3d.Em3dGenerator",   // brief-em3d-3: the tensor only it carries
         ];
 
         var readers = new List<string>();

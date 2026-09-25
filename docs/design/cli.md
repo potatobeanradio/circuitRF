@@ -533,6 +533,12 @@ can act on.
 | `Refused`, `NoLayout`, `EngineError` | 1 |
 | `Cancelled` | 130 |
 
+**A `.cem` that names a 3D solver (`Solver3D`) is `Refused`** until a 3D backend exists
+(brief-em3d-3; briefs 7 and 9 add them), with `em.solver-3d.not-built`: running a planar kernel
+instead would write a result for a solver the setup did not ask for. `check` on such a setup builds
+the 3D problem (`Em3dGenerator`) in place of the planar preflight, reports `Em3dProblem.Validate()`'s
+findings as errors, and names the planar-only fields the setup keeps but does not read, at info.
+
 ### 8.5 What the verb does NOT do
 
 - **Create or edit a `.cem`.** It runs one. A setup with no ports, no technology or no signal

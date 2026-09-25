@@ -12193,3 +12193,57 @@ the series parts' DCR, which the board's library does not state.
   authored by writing the `.ctech`; `circuitrf reference technology` describes the fields because it
   is generated from `CtechFile`. The editor offers a per-row picker only, shown when the technology
   defines at least one material.
+
+## The solver-neutral 3D problem and the Tier A generator (brief-em3d-3, 2026-09-25)
+
+- **`Em3dProblem` is in `src/Engine/Em3d/`, the generator in `src/Design/Layout/Em3d/Em3dGenerator.cs`,
+  the `.cem` DTOs (`CemAirBox`, `CemAirBoxFace`, `CemPalace`, `CemOpenEms`) in
+  `src/Design/Layout/Em/EmSetupPersistence.cs`** — the reference page expands only types in `CemFile`'s
+  own assembly; the enum `Em3dBoundaryKind` lives in the engine and is expanded anyway, because the
+  schema walk expands enums from any assembly. Gates: `tests/Ui.Tests/Em3d/Em3dGeneratorTests.cs`,
+  `tests/Engine.Tests/Em3d/Em3dProblemTests.cs`.
+- **The planar extractor's rules are reused through thin internal doors, not restated:**
+  `PlanarExtractor.StackBands` (the two-DBU-scales z), `InferredReturnPlane` (R-em-4's
+  `HighestGroundBelow`, then RP-3's mirror, which is what finds the plane ABOVE a bottom-side line —
+  F0 case B's port 2), `MergeOverlapping`, `ToPolygons`, `ViaBinding`. `MergeOverlappingCopper` is now a
+  wrapper over `MergeOverlapping` keyed on the stackup index `Band.Index` already was; same algorithm,
+  same order, `OverlappingCopperMergeTests` unchanged.
+- **The planar merge joins OVERLAPPING copper (common area > 0), not merely touching copper.** The brief
+  says "touching"; 3D uses the planar rule because agreeing with the planar model on connectivity is
+  the stated purpose.
+- **Ports come from `EmPortExtraction.Extract` run over the generator's own multi-level problem** (every
+  non-ground conductor that carries artwork), so numbering, side inference and every refusal sentence
+  are the planar extractor's own. Only EDGE ports referenced to a plane are built; an internal or
+  conductor-referenced port is refused by name. The sheet spans the metal's width at the end the
+  planar extractor chose, from the conductor's facing surface to the return's.
+- **The board outline had no shared finder.** Nothing in `src/` identifies the board-outline layer (the
+  rail solver's `RailBoardInputs.BoardOutline` is assigned by nothing). The interchange code names it
+  two ways, and `Em3dGenerator.BoardOutlineLayers` reads exactly those: a layer whose
+  `Interchange.PcbLayerName` is `Edge.Cuts` (the board reader/writer and every shipped PCB technology),
+  or whose `Interchange.GerberFileFunction` is `Profile` (X2's word, recorded by a Gerber import). A
+  layer merely NAMED "Outline" does not count. Only closed shapes there give a region; an outline drawn
+  as strokes is reported and the dielectrics extend to the air box.
+- **The PEC floor applies only to an UNDRAWN lowest ground-reference conductor with nothing drawn
+  below it** — the planar kernel's laterally infinite plane. A drawn plane is solids with holes, and a
+  PEC floor at its top would short the antipad the via exists to clear; the floor then goes below
+  everything, absorbing. A via whose span ends on the floor plane stops at the floor.
+- **Inner conductor bands** (dielectric directly above and below) are filled, where no metal is drawn,
+  by the dielectric the band's `SheetAt` faces away from — the planar absorption rule. Outer bands are
+  air: the metal sits on the board. Case B's antipad is therefore filled by `Dielectric 1`, as F0 built it.
+- **Provisional, pending a measurement:** the sheet thresholds (3δ at the top frequency AND 1/10 of
+  2·Area/Perimeter) and the default padding (1/8 of c / the lowest non-zero frequency). F0's Q6 says a
+  sheet matches loss but not phase on a 35 µm line and that the threshold belongs well below
+  t/h = 0.17. **The padding rule is large at a low start frequency**: case B's 0.1 GHz start gives
+  375 mm of air around a 10 mm board (F0 used 1.5 mm). The rule is the brief's (a fraction of the
+  longest wavelength); an `AirBox` face overrides it. Worth revisiting before brief 7 meshes one.
+- **Ten `.cem` files in the repo state `"ResonanceSearch": false`, which the writer omits**, so "every
+  `.cem` loads and saves byte-identically" was never true of the bytes on disk. Gate 6 is the writer
+  fixed point plus "no 3D key appears in a planar file", as brief 2's `.ctech` gate is.
+- **A 3D `.cem` is refused by `em` and Simulate** (`em.solver-3d.not-built`, in `EmRunService.Run` and
+  `Preflight`) until brief 7 adds a backend: running the planar kernel instead would write a result for
+  a solver the setup did not ask for. `check` on a 3D setup builds the problem instead of the planar
+  preflight, reports `Validate()`'s findings as errors and the ignored planar fields at info, under the
+  existing `check.em.*` ids.
+- **`CircuitRF.WBond.Point3` collides with `CircuitRF.Engine.Em3d.Point3`**: the generator imports only
+  `WireMaterial` by alias. `StackupLayer.Material`'s IL gate now lists the generator, which reads it for
+  the tensor only a named material carries (every other value is already resolved on read).

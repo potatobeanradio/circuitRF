@@ -175,7 +175,13 @@ public static class EmKernelRegistry
         "cross-section kernel cannot. It fills and factors a dense complex matrix at every " +
         "frequency, so it is orders of magnitude slower.");
 
-    /// <summary>Every registered kernel, in the order Auto considers them (cheapest first).</summary>
+    /// <summary>Every registered kernel, in the order Auto considers them (cheapest first).
+    ///
+    /// <para><b>No 3D solver is registered here, and none may be</b> (brief-em3d-3 R-em3d3-3a). A 3D
+    /// solve is chosen by NAME, through the <c>.cem</c>'s own <c>Solver3D</c> field, which is not an
+    /// <see cref="EmAnalysisKind"/> member — so <see cref="EmAnalysisKind.Auto"/> cannot reach one by
+    /// construction. A 3D solve needs an installed program, can take an hour, and would change the
+    /// number an existing <c>.cem</c> produces.</para></summary>
     public static IReadOnlyList<EmKernelDescriptor> Kernels { get; } = [CrossSection, Planar];
 
     /// <summary>

@@ -24,6 +24,35 @@ namespace CircuitRF.Design.Layout.Em;
 // enum gained one member, Auto, which no pre-L8e file can contain.
 
 /// <summary>
+/// <b>brief-em3d-3 R-em3d3-3 — which 3D solver a setup runs, if any.</b> <see cref="None"/> is a
+/// planar setup exactly as every <c>.cem</c> before this field was; anything else makes the setup a
+/// 3D one.
+///
+/// <para><b>A separate field, never an <see cref="EmAnalysisKind"/> member</b> (overview §1g,
+/// R-em3d3-3a). <c>Auto</c> picks among the planar kernels and must never land on a 3D solver: one
+/// needs an installed program, can take an hour, and would change the number an existing
+/// <c>.cem</c> produces. Keeping 3D out of that enum is what makes "3D is chosen by name only" true
+/// by construction rather than by a rule inside the registry.</para>
+/// </summary>
+public enum Em3dSolver { None, Palace, OpenEms, Both }
+
+/// <summary>One face of a 3D setup's air box, as the <c>.cem</c> states it. Either half may be
+/// omitted, and an omitted half takes the generator's default for that face.</summary>
+/// <param name="PaddingUm">Distance from the outermost geometry to this face, micrometres.</param>
+/// <param name="Boundary">What the face does to the field.</param>
+public sealed record EmAirBoxFace(double? PaddingUm, CircuitRF.Engine.Em3d.Em3dBoundaryKind? Boundary);
+
+/// <summary>
+/// A 3D setup's air box, per face (R-em3d3-6). A null face is the generator's default for it
+/// (§6's rule: a fraction of the longest wavelength on five faces, and the floor on the lowest
+/// ground plane where there is one).
+/// </summary>
+public sealed record EmAirBox(
+    EmAirBoxFace? XMin = null, EmAirBoxFace? XMax = null,
+    EmAirBoxFace? YMin = null, EmAirBoxFace? YMax = null,
+    EmAirBoxFace? ZMin = null, EmAirBoxFace? ZMax = null);
+
+/// <summary>
 /// The mutable working model behind an open <c>.cem</c>. Framework-free — the editor view model
 /// wraps this, the same split <c>TechEditorViewModel</c>/<c>Technology</c> already uses.
 /// </summary>
@@ -382,6 +411,62 @@ public sealed class EmSetup
     /// </summary>
     public EmSolveRegion? SolveRegion { get; set; }
 
+    // ── brief-em3d-3 — the 3D setup's fields (R-em3d3-3) ─────────────────────────────────────────
+    //
+    // All additive, nullable and omitted at default: a planar .cem gains no byte. A setup switched
+    // to 3D keeps every planar field (and check notes them, at info); switched back, they are where
+    // they were. That is em-3d.md §4.2's "both sections kept", applied to planar vs 3D.
+
+    /// <summary>R-em3d3-3a — which 3D solver this setup runs. <see cref="Em3dSolver.None"/> is a
+    /// planar setup.</summary>
+    public Em3dSolver Solver3D { get; set; }
+
+    /// <summary>True when this setup is a 3D one.</summary>
+    public bool Is3D => Solver3D != Em3dSolver.None;
+
+    /// <summary>
+    /// R-em3d3-4 — the temperature every solid's conductivity is evaluated at, °C. Null is
+    /// <see cref="DefaultOperatingTempC"/>. Read by the 3D generator only; the planar solvers take
+    /// each stackup entry's σ as the technology states it.
+    /// </summary>
+    public double? OperatingTempC { get; set; }
+
+    /// <summary>R-em3d3-4a / owner decision D3: a 3D result at 20 °C is comparable with a planar
+    /// one as shipped, since a stackup entry naming a material resolves to its σ at 20 °C.</summary>
+    public const double DefaultOperatingTempC = 20.0;
+
+    /// <summary>R-em3d3-6 — the air box, per face. Null is the generator's default on every face.</summary>
+    public EmAirBox? AirBox { get; set; }
+
+    /// <summary>Palace's own section (em-3d.md §4.2). Declared empty here; brief 7 fills it in.
+    /// Null takes circuitRF's defaults.</summary>
+    public CemPalace? Palace { get; set; }
+
+    /// <summary>openEMS's own section. Declared empty here; brief 9 fills it in.</summary>
+    public CemOpenEms? OpenEms { get; set; }
+
+    /// <summary>
+    /// R-em3d3-3b — the planar-only fields this setup sets away from their defaults, by their
+    /// <c>.cem</c> key. A 3D setup ignores every one of them; <c>check</c> names them at info so a
+    /// setting that is kept but not read is never silent.
+    /// </summary>
+    public IReadOnlyList<string> PlanarOnlyFieldsSet()
+    {
+        var set = new List<string>();
+        if (AnalysisKind != EmAnalysisKind.Auto)                 set.Add("AnalysisKind");
+        if (SignalStackupLayerName.Length > 0)                   set.Add("SignalStackupLayerName");
+        if (AnalysisLevelNames.Count > 0)                        set.Add("AnalysisLevelNames");
+        if (PlanarMesh != PlanarMeshSettings.Default)            set.Add("PlanarMesh");
+        if (Mesh != EmMeshSettings.Default)                      set.Add("Mesh");
+        if (!AdaptiveSampling)                                   set.Add("AdaptiveSampling");
+        if (ResonanceSearch)                                     set.Add("ResonanceSearch");
+        if (DirectVerticalKernel)                                set.Add("DirectVerticalKernel");
+        if (AcceleratedSolve)                                    set.Add("AcceleratedSolve");
+        if (RadiationPattern)                                    set.Add("RadiationPattern");
+        if (DeembedOutsideCalibrationValidity)                   set.Add("DeembedOutsideCalibrationValidity");
+        return set;
+    }
+
     public EmSetup Clone() => new()
     {
         AnalysisKind           = AnalysisKind,
@@ -408,6 +493,11 @@ public sealed class EmSetup
         ReferenceInputPowerDbm = ReferenceInputPowerDbm,
         SnpOutputPathOverride  = SnpOutputPathOverride,
         SolveRegion            = SolveRegion,    // record, immutable
+        Solver3D               = Solver3D,
+        OperatingTempC         = OperatingTempC,
+        AirBox                 = AirBox,         // record, immutable
+        Palace                 = Palace,         // empty until brief 7
+        OpenEms                = OpenEms,        // empty until brief 9
     };
 
     /// <summary>The extraction settings this setup implies — the one place the two are married,

@@ -623,6 +623,17 @@ internal static class Check
             return;
         }
 
+        // ── brief-em3d-3 — A 3D SETUP: BUILD THE 3D PROBLEM, AND NOTHING ELSE ────────────────────
+        //
+        // The planar preflight answers a question a 3D setup does not ask (it would refuse case B's
+        // via transition, which is exactly what 3D exists for). The generator is the 3D run's own
+        // first step, so a setup that checks clean here is one whose problem the backend receives.
+        if (setup.Is3D)
+        {
+            CheckEm3dSetup(path, f, setup, resolution.Source);
+            return;
+        }
+
         // ── EM-SEV R-emsev-5 — RUN THE EXTRACTION AND THE MESH, AND NOTHING ELSE ─────────────────
         //
         // Until this, `check` on a `.cem` reported "0 errors, 0 warnings, 0 notes" for a setup whose
@@ -650,6 +661,41 @@ internal static class Check
         if (pre.Refusal is { } refusal) f.Add(CliDiagnostics.CheckEmRefused(path, refusal));
         else f.Add(CliDiagnostics.CheckEmWouldRun(
             path, pre.KernelName, pre.PlanarMesh?.Mesh.Bases.Count ?? 0));
+    }
+
+    private static void CheckEm3dSetup(string path, Findings f, EmSetup setup, EmLayoutSource source)
+    {
+        // R-em3d3-3b — kept, not read: said at info so a setting that does nothing is never silent.
+        if (setup.PlanarOnlyFieldsSet() is { Count: > 0 } planarOnly)
+            f.Add(CliDiagnostics.CheckEmNote(path,
+                $"This setup runs the 3D solver {setup.Solver3D}, which ignores its planar-only " +
+                $"field{(planarOnly.Count == 1 ? "" : "s")} {string.Join(", ", planarOnly)}. " +
+                $"{(planarOnly.Count == 1 ? "It is" : "They are")} kept, so switching the setup back to " +
+                $"planar finds {(planarOnly.Count == 1 ? "it where it was" : "them where they were")}."));
+
+        if (source.Technology is not { } tech)
+        {
+            f.Add(CliDiagnostics.CheckEmRefused(path, EmDiagnostics.NoTechnology(setup.LayoutRef).Render()));
+            return;
+        }
+
+        CircuitRF.Design.Layout.Em3d.Em3dGenerationResult generated;
+        try { generated = CircuitRF.Design.Layout.Em3d.Em3dGenerator.Generate(setup, source, tech); }
+        catch (Exception ex) { f.Add(CliDiagnostics.CheckEmRefused(path, ex.Message)); return; }
+
+        foreach (string note in generated.Notes) f.Add(CliDiagnostics.CheckEmNote(path, note));
+        if (generated.Problem is not { } problem)
+        {
+            f.Add(CliDiagnostics.CheckEmRefused(path, generated.Refusal ?? "the 3D problem could not be built."));
+            return;
+        }
+
+        var problems = problem.Validate();
+        foreach (string p in problems) f.Add(CliDiagnostics.CheckEmRefused(path, p));
+        if (problems.Count == 0)
+            f.Add(CliDiagnostics.CheckEmWouldRun(path,
+                $"3D problem for {setup.Solver3D}: {problem.Solids.Count} solid(s), {problem.Sheets.Count} " +
+                $"sheet(s), {problem.Ports.Count} port(s)", 0));
     }
 
     private static void CheckAssemblyRules(string path, Findings f)

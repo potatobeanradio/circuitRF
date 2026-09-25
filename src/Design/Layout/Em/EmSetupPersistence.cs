@@ -109,6 +109,45 @@ public sealed class CemSolveRegion
     public double YMaxUm { get; set; }
 }
 
+// ── brief-em3d-3 R-em3d3-3 — the 3D setup's file types ─────────────────────────────────────────
+//
+// Declared HERE, in CircuitRF.Design, and not beside Em3dProblem in the engine, because the
+// generated reference page (`circuitrf reference em-setup`) expands a type only when it lives in
+// CemFile's own assembly (R-em3d3-3c). The enum they name comes from the engine: enums are expanded
+// wherever they live.
+
+/// <summary>One face of the air box. Either half may be omitted; an omitted half takes the
+/// generator's default for that face.</summary>
+public sealed class CemAirBoxFace
+{
+    /// <summary>Distance from the outermost geometry to this face, micrometres.</summary>
+    public double? PaddingUm { get; set; }
+
+    /// <summary>What this face does to the field.</summary>
+    public CircuitRF.Engine.Em3d.Em3dBoundaryKind? Boundary { get; set; }
+}
+
+/// <summary>A 3D setup's air box, one entry per face. An omitted face takes the default: a fraction
+/// of the longest wavelength in the band on the four sides and the top, and the floor on the lowest
+/// ground plane (PEC) when there is one, absorbing otherwise.</summary>
+public sealed class CemAirBox
+{
+    public CemAirBoxFace? XMin { get; set; }
+    public CemAirBoxFace? XMax { get; set; }
+    public CemAirBoxFace? YMin { get; set; }
+    public CemAirBoxFace? YMax { get; set; }
+    public CemAirBoxFace? ZMin { get; set; }
+    public CemAirBoxFace? ZMax { get; set; }
+}
+
+/// <summary>Palace's own settings (em-3d.md §4.2). Empty in this version; an omitted section takes
+/// circuitRF's defaults.</summary>
+public sealed class CemPalace { }
+
+/// <summary>openEMS's own settings (em-3d.md §4.2). Empty in this version; an omitted section takes
+/// circuitRF's defaults.</summary>
+public sealed class CemOpenEms { }
+
 public sealed class CemFile
 {
     public int    FormatVersion { get; set; } = 1;
@@ -244,6 +283,26 @@ public sealed class CemFile
     /// omit-at-default rule every field added after the first release follows.
     /// </summary>
     public CemSolveRegion? SolveRegion { get; set; }
+
+    /// <summary>
+    /// brief-em3d-3 — <b>null means None</b>: a planar setup, which is what every <c>.cem</c> written
+    /// before 3D existed means. Anything else makes this a 3D setup and the planar-only fields above
+    /// are kept but not read. Chosen by name only; Auto never resolves to a 3D solver.
+    /// </summary>
+    public Em3dSolver? Solver3D { get; set; }
+
+    /// <summary>The temperature a 3D setup evaluates every conductor's σ at, °C. <b>Null means
+    /// 20 °C.</b> Read by 3D setups only.</summary>
+    public double? OperatingTempC { get; set; }
+
+    /// <summary>A 3D setup's air box, per face. Null takes the default on every face.</summary>
+    public CemAirBox? AirBox { get; set; }
+
+    /// <summary>Palace's own section. Null takes the defaults.</summary>
+    public CemPalace? Palace { get; set; }
+
+    /// <summary>openEMS's own section. Null takes the defaults.</summary>
+    public CemOpenEms? OpenEms { get; set; }
 }
 
 /// <summary>Reads and writes <c>.cem</c> files. Framework-free (no Avalonia / Skia).</summary>
@@ -354,7 +413,23 @@ public static class EmSetupPersistence
                 s.PlanarMesh.DetailFloorDivisor == PlanarMeshSettings.DefaultDetailFloorDivisor
                     ? null : s.PlanarMesh.DetailFloorDivisor,
         },
+        Solver3D       = s.Solver3D == Em3dSolver.None ? null : s.Solver3D,
+        OperatingTempC = s.OperatingTempC,
+        AirBox         = s.AirBox is { } box ? new CemAirBox
+        {
+            XMin = ToFace(box.XMin), XMax = ToFace(box.XMax),
+            YMin = ToFace(box.YMin), YMax = ToFace(box.YMax),
+            ZMin = ToFace(box.ZMin), ZMax = ToFace(box.ZMax),
+        } : null,
+        Palace         = s.Palace,
+        OpenEms        = s.OpenEms,
     };
+
+    private static CemAirBoxFace? ToFace(EmAirBoxFace? f)
+        => f is null ? null : new CemAirBoxFace { PaddingUm = f.PaddingUm, Boundary = f.Boundary };
+
+    private static EmAirBoxFace? FromFace(CemAirBoxFace? f)
+        => f is null ? null : new EmAirBoxFace(f.PaddingUm, f.Boundary);
 
     private static EmSetup FromFileModel(CemFile f) => new()
     {
@@ -401,6 +476,14 @@ public static class EmSetupPersistence
                                      pm.DetailFloorDivisor
                                          ?? PlanarMeshSettings.DefaultDetailFloorDivisor)
             : PlanarMeshSettings.Default,
+        Solver3D              = f.Solver3D ?? Em3dSolver.None,
+        OperatingTempC        = f.OperatingTempC,
+        AirBox                = f.AirBox is { } box
+            ? new EmAirBox(FromFace(box.XMin), FromFace(box.XMax), FromFace(box.YMin),
+                           FromFace(box.YMax), FromFace(box.ZMin), FromFace(box.ZMax))
+            : null,
+        Palace                = f.Palace,
+        OpenEms               = f.OpenEms,
     };
 
     /// <summary>
