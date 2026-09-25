@@ -1036,7 +1036,7 @@ That coupling is the reason thermal belongs in circuitRF rather than in a separa
 | **F0** | Spike, no product code: Palace, openEMS and Gmsh installed by hand; hand-written models of one bond-wire-over-ground case and one via transition, **run through both solvers**; compared against kernel W, planar MoM and each other. Measures install cost, laptop run time and memory, agreement, **FDTD's cost on the curved bond wire** (the case §4.3 expects it to struggle with), **installing each solver several times on each platform** — how long it takes, every failure met and what fixed it, which seeds the install assistant's recipes and its table of known failures (§7.2), whether CSXCAD reads a triangle file (§6.5), **the hexagon's corner-crowding resistance against a round wire of equal perimeter** and **a default foot length** (§6.6) — and produces **externally generated reference data** for the existing MoM kernels, useful even if nothing further is built. | any time |
 | **F1** | The solver-neutral 3D problem (§4.1) and the Palace backend, CLI first: Tier A → problem → `.geo` → Gmsh → Palace → `.sNp` + `DataSet`. The technology's named materials and bodies (§4.1a); bond wires with the hexagonal cross-section, bond styles, feet and the assembly loop height (§6.6); 3D ports, `render` sections and `explain`'s size report (§4.6). Driven S-parameters, plus electrostatic/magnetostatic for package RLC. Discovery, version and capability checks (§7.1); the install assistant, its uninstall, and their CLI spelling (§7.2); the solver-location setting (§7.3), including driving the user's own Linux subsystem on Windows (§7.4); the installation page. | v2 |
 | **F1b** | The openEMS backend on the same problem: CSXCAD writer, the grid generator (§6.5), circuitRF's own port post-processing (§5.3); run-both and the difference `DataSet` (§4.4); solver in the result path (§4.5). | v2 |
-| **FU** | Upstream, not product code: help the community Palace package recipe land (linux-64), then extend it to macOS; offer §7.4's Windows findings to Palace. Whatever lands, §7.1's discovery picks up with no circuitRF change. | alongside F1 |
+| **FU** | Upstream, not product code: help the community Palace package recipe land (linux-64), then extend it to macOS; offer §7.4's Windows findings to Palace. Whatever lands, §7.1's discovery picks up with no circuitRF change — once discovery looks in conda environments (`brief-em3d-24`). **Deferred (owner, 2026-09-25):** nothing is posted publicly until circuitRF's Palace integration has been demonstrated; it blocks nothing in F2–F4. | after F2 |
 | **F2** | Read-only 3D viewer: geometry, mesh or grid, fields from either solver — opened by the hosting spike of §8.6. | v2 |
 | **F3** | Native thermal FEM on the F1 mesh pipeline; thermal-resistance matrix and Z_th(jω) fitted to a network on the FET thermal node. | v2 or v3 |
 | **F4** | Editable 3D view (Tier B), construction history with expressions, `tools/geometry-worker` (OCCT, Route B), feeding both backends. | v3 |
@@ -1098,6 +1098,12 @@ shared geometry are cross-checks, not references — all of them are circuitRF-d
   wBond's own definition is unchanged (§6.6).
 - **3D runs are authored headlessly through the same documents as planar ones**; the `.clay`, `.cem`
   and `.wBond` reference pages exist (§4.6).
+
+**Made (2026-09-25):**
+- **FU waits until Palace is demonstrated inside circuitRF** — no upstream issue, pull request or post
+  before then. FU blocks nothing in F2, F3 or F4; what deferring it costs is install time (a from-source
+  build) and Windows reach (no native Palace). The second series
+  (`docs/sonnet-briefs/brief-em3d-20-overview.md`) carries F1's remainder and F2; F3 is not briefed yet.
 
 **Open:**
 1. The run verb's shape — `em` with a 3D setup, or a sibling verb (§5.3; §4.6 leans towards `em`).
