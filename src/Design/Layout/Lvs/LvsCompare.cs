@@ -601,6 +601,32 @@ public static class LvsCompare
             ? l
             : $"net {index}";
 
+    /// <summary>
+    /// A layout net as a sentence says it: its stamped name, else the OTHER parts' pins on it — a
+    /// layout net's number is an index the designer never drew.
+    /// </summary>
+    private static string Reaches(LvsNetlist layout, int net, LvsDevice self)
+    {
+        if (net < 0 || net >= layout.Nets.Count) return "";
+        if (layout.Nets[net].Label is { Length: > 0 } label) return $"'{label}'";
+
+        var others = new List<string>();
+        foreach (var (device, terminal) in layout.Nets[net].Pins)
+        {
+            var d = layout.Devices[device];
+            if (ReferenceEquals(d, self) || terminal >= d.Terminals.Count) continue;
+            string port = d.Terminals[terminal].Name is { Length: > 0 } n ? n : d.Terminals[terminal].Port.ToString();
+            others.AddRange(d.Group.Select(member => $"{member}.{port}"));
+        }
+
+        return others.Count switch
+        {
+            0 => "copper no other part touches",
+            <= 3 => $"the copper {string.Join(", ", others)} {(others.Count == 1 ? "is" : "are")} on",
+            _ => $"the copper {string.Join(", ", others.Take(3))} and {others.Count - 3} more are on",
+        };
+    }
+
     // ── Parts placed end for end (brief LVS 16) ──────────────────────────────────────────────
 
     /// <summary>
@@ -658,7 +684,8 @@ public static class LvsCompare
 
             wrong.Add(LvsDiagnostics.TerminalWrongNet(
                 ds.Path, ts.Port, ts.Name,
-                NetName(schematic, ts.NetIndex), NetName(layout, tl.NetIndex)));
+                NetName(schematic, ts.NetIndex), NetName(layout, tl.NetIndex),
+                Reaches(layout, tl.NetIndex, dl)));
         }
         return (wrong, common);
     }

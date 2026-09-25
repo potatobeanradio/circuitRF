@@ -238,9 +238,9 @@ Now the same schematic, byte for byte, against artwork with six faults in it:
       R4
   error: The schematic's 'C1' has no counterpart in the layout (1 indistinguishable device(s) in the schematic against 0 in the layout).
       C1
-  error: Schematic net '0' is 2 separate pieces of copper in the layout: 0 (R2.1, R2.2, R1.1, R3.2); net 1 (R1.2).
+  error: Open: schematic net '0' should connect R1.2 and R3.2, but in the layout they are on 2 pieces of copper that do not touch: R3.2 (that copper also reaches R2.1, R2.2, R1.1); R1.2.
       0, R2.1, R2.2, R1.1, R3.2, R1.2
-  error: 2 schematic nets are one piece of copper ('0'): 0, IN. They are joined through a 200.064 µm neck of Top Copper at (1500, 4675) µm.
+  error: Short: schematic nets '0' and 'IN' are joined by one piece of copper in the layout. It carries R3.2 (on '0') and R2.1, R1.1 (on 'IN'). They are joined through a 200.064 µm neck of Top Copper at (1500, 4675) µm.
       0, IN
   error: R3 R: schematic 294 Ω, layout 150 Ω, tolerance 1 %.
       R3, R3
@@ -251,8 +251,9 @@ Now the same schematic, byte for byte, against artwork with six faults in it:
 
 Six faults, six findings, in one run. Read against the README's table they line up one for one: an extra
 part, a missing part, an open, a short, a wrong value and a mis-wired terminal. The short carries the
-0.2 mm spur that causes it and its coordinate; the open names which pins ended up on the island that
-reaches nothing else; the value mismatch prints both values and the tolerance.
+0.2 mm spur that causes it and its coordinate, and which of each net's pins that copper reaches; the
+open names the net's own pins on each piece of copper, then whatever else that piece reaches; the value
+mismatch prints both values and the tolerance.
 
 Note what the **fifth** one is. `R3` is the right kind of part, in the right place, with the right
 designator, wired correctly &mdash; and it is the wrong resistor. No topology check of any kind will
@@ -276,11 +277,12 @@ S-parameter sweep. It has no artwork, so it is reported and skipped rather than 
 
 That is the undrawn ground reference, reported unconditionally.
 
-The second thing is the one error this cell reports: its **spiral inductor** is one continuous piece of
-metal, so a galvanic reading of the copper finds its two terminals on one net and correctly says that
-two schematic nets are one piece of copper. The spiral is a device, and a device's internal metal is not
-interconnect &mdash; but nothing in the artwork says which continuous run of copper is a component. That
-is what [device recognition](#recognize) is for, and it is why this cell reports one short.
+The second thing is its **spiral inductor**, which is one continuous piece of metal from one terminal
+to the other. A placed part whose own copper joins its terminals &mdash; a spiral, a microstrip line, a
+bend, a tee &mdash; is read as a part and not as wire: its copper is left out of the connectivity, and
+each terminal is read at its pin, on whatever copper is under that pin. Two lines placed end to end join
+where their ends meet, and an open stub's far end is a net of its own, exactly as the schematic draws
+it. So the cell compares clean.
 
 ## Waivers {#waivers}
 
@@ -362,7 +364,9 @@ Four things, stated plainly, because a check whose boundary is unstated is one p
    copper is still what the copper *looks* like, not what the fab will build. A device the process
    cannot manufacture is caught by design rules and by the process's own sign-off, not here.
 
-One more, and it is a limit of the reading rather than a non-goal: **a device's internal copper is
-interconnect to the extraction unless something says otherwise.** A spiral inductor drawn as one run of
-metal reads as a short between its own terminals, which is what the shipped
-[MMIC cell](#example-mmic) demonstrates.
+One more, and it is a limit of the reading rather than a non-goal: **a line joins other copper only at
+its ends.** A trace that overlaps a line part-way along without covering an end, or a stub that meets a
+line with no tee, reads as not connected. The schematic cannot draw that junction either, so the
+comparison reports it as an open. And a part is read this way only when it is placed as a part &mdash;
+a spiral drawn as loose shapes, with no placement, is still copper, which is what
+[device recognition](#recognize) is for.

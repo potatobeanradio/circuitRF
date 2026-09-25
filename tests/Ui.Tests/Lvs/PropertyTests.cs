@@ -369,6 +369,28 @@ public sealed class PropertyTests
             Two(("R", 50.0, UnitDimension.None), ("W", 1.0e-5, UnitDimension.None))));
     }
 
+    // A line's substrate (Er, H, T, …) is the circuit's and never the artwork's. When the artwork
+    // was drawn by the component's OWN generator, a parameter it does not carry is one it does not
+    // take — said once per generator at info, not warned per parameter per line.
+
+    [Fact]
+    public void AParameterTheComponentsOwnGeneratorDoesNotTakeIsOneInfoLinePerGenerator()
+    {
+        var found = Pass(
+            Two(("W", 1.0e-5, UnitDimension.Length), ("Er", 3.66, UnitDimension.None)).Generator("Mlin"),
+            Two(("W", 1.0e-5, UnitDimension.Length)).Generator("Mlin"));
+
+        var note = Assert.Single(found);
+        Assert.Equal("lvs.property.not-drawn", note.Id);
+        Assert.Equal(DiagnosticSeverity.Info, note.Severity);
+        Assert.Equal("Er", note.Arguments["parameters"]);
+
+        // A different generator on the artwork is still the warning it always was.
+        Assert.Equal("lvs.property.missing", Assert.Single(Pass(
+            Two(("W", 1.0e-5, UnitDimension.Length), ("Er", 3.66, UnitDimension.None)).Generator("Mlin"),
+            Two(("W", 1.0e-5, UnitDimension.Length)).Generator("Mtaper"))).Id);
+    }
+
     // ── Running the pass over two built netlists ─────────────────────────────────────────────
 
     /// <summary>
@@ -433,6 +455,13 @@ public sealed class PropertyTests
         public Build Anchor(string schematicPath)
         {
             _devices[^1] = _devices[^1] with { AnchorId = schematicPath };
+            return this;
+        }
+
+        /// <summary>Marks the last device as drawn by (or drawn AS) a built-in generator.</summary>
+        public Build Generator(string generator)
+        {
+            _devices[^1] = _devices[^1] with { Generator = generator };
             return this;
         }
 

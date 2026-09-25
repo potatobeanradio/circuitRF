@@ -198,11 +198,19 @@ public static class LayoutRead
 
         foreach (string note in padNotes) notes.Add(LvsDiagnostics.UnresolvedInstance(note));
 
+        // A part that IS copper — a line, a spiral — is a device and not interconnect: its metal
+        // leaves the partition and its pins are read at their ends (LayoutReadBodies' header).
+        var bodies = LayoutReadBodies.Find(view, placed, modules, tech);
+        IReadOnlyList<LayoutDesignFlatten.TaggedShape> shapes = bodies.Any
+            ? [.. flat.Shapes.Where(t => !bodies.Paths.Contains(t.InstancePath))]
+            : flat.Shapes;
+
         // R-lvs9-2d: a module read as a cell keeps its internals, and only its declared boundary
         // pads join this level's copper. With no hierarchy this is every shape the flatten made,
         // byte for byte as before.
-        var copper = LayoutReadHierarchy.CopperFor(flat.Shapes, view, modules, pads, origins);
+        var copper = LayoutReadHierarchy.CopperFor(shapes, view, modules, pads, origins);
         var pieces = CopperPieces.Build(copper, tech, view.Shapes);
+        bodies.ReadPins(pads, origins, pieces, hierarchy);
 
         // R-lvs9-5a2's third counter. CopperPieces unions once per call, by LayerRegions.Build's
         // own construction, so counting the calls IS counting the unions — and what the brief
@@ -323,7 +331,7 @@ public static class LayoutRead
                     int net = ResolveTerminal(
                         terminal, instIndex, r, c, path,
                         padsByPin, pads, origins, pieces, tech, nets, notes,
-                        deviceIndex, terminals.Count, padGeometry, hierarchy);
+                        deviceIndex, terminals.Count, padGeometry, hierarchy, bodies);
 
                     terminals.Add(new LvsTerminal(terminal.Port, terminal.Name, net));
                     nets.Attach(net, deviceIndex, terminals.Count - 1);
@@ -351,6 +359,8 @@ public static class LayoutRead
                     CrossedMembers = !isArray && crossed.Contains(instIndex) ? [path] : [],
                     Interchangeable = terminals.Count == 2
                                       && kindOf is not null && TurnedParts.IsSymmetric(kindOf(instIndex)),
+                    Generator = DeviceTypes.TryGetSymbolKind(subView?.PCellOrigin?.GeneratorId, out var drawnAs)
+                        ? drawnAs.ToString() : "",
                 });
             }
         }
@@ -483,7 +493,7 @@ public static class LayoutRead
         IReadOnlyList<PlacedPin> pads, IReadOnlyList<PlacedPinOrigin> origins,
         CopperPieces pieces, Technology? tech, NetTable nets, List<Diagnostic> notes,
         int deviceIndex, int terminalIndex, List<LvsPadGeometry> padGeometry,
-        LvsHierarchyContext? hierarchy)
+        LvsHierarchyContext? hierarchy, LayoutReadBodies bodies)
     {
         var reached = new List<int>();
 
@@ -493,6 +503,16 @@ public static class LayoutRead
 
             foreach (int p in padIndices)
             {
+                // A line's end: already read, and never "on no copper" — its copper is the part.
+                if (bodies.TryResolve(p, nets, out int bodyNet, out int bodyPiece))
+                {
+                    padGeometry.Add(new LvsPadGeometry(
+                        deviceIndex, terminalIndex, pads[p].X, pads[p].Y,
+                        origins[p].Layer, origins[p].WidthDbu, bodyPiece));
+                    if (!reached.Contains(bodyNet)) reached.Add(bodyNet);
+                    continue;
+                }
+
                 // R-ab2-2d: ON THE PIN'S OWN LAYER. A pad takes the name — and the identity — of
                 // the piece it lands on, and asking any-layer would have a top pad answer with the
                 // net of whatever sits under it on the bottom.

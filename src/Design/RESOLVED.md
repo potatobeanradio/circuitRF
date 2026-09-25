@@ -11445,6 +11445,9 @@ them. A board never shows this (two land-pattern pads are separate copper) and a
 shows it (the plates are on different conductors), so the spiral is the first fixture in the
 repository that could. `ProvingDesignTests` pins the current answer so it cannot change silently.
 
+**Closed for placed parts on 2026-09-24.** See `Layout/Lvs/RESOLVED.md` and `LayoutReadBodies`. `Bias tee` now
+compares clean.
+
 ### Two smaller things
 
 **A symmetric two-terminal device with its pads exchanged IS reported.** The terminal map names pin 1

@@ -196,6 +196,7 @@ public static class LvsFindingIds
         "lvs.property.unread-differs",
         "lvs.property.layout-silent",
         "lvs.property.missing",
+        "lvs.property.not-drawn",
         "lvs.property.multiplicity",
         "lvs.property.tolerance-unestablished",
         "lvs.reduce.multiplicity-unstated",

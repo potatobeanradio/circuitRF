@@ -408,31 +408,25 @@ public sealed class ProvingDesignTests
     private static Diagnostic Single(LvsRunResult result, string id)
         => Assert.Single(result.Comparison.Findings, f => f.Id == id);
 
-    // ══ The MMIC does NOT compare clean, and this is what it reports ════════════════════════════
+    // ══ The MMIC compares clean — its spiral is a part, not a wire ══════════════════════════════
     //
-    // NOT a gate brief 5 or brief 7 asked for — it is here so a real, known limitation cannot
-    // quietly change. A spiral inductor IS one continuous piece of metal, so a galvanic extraction
-    // reads its two terminals as one net and the comparison correctly concludes that two schematic
-    // nets are one piece of copper. The artwork is right, the extraction is right and the
-    // comparison is right; what is missing is the rule that a DEVICE's own internal copper is not
-    // interconnect, which is brief 3's `IsDevice` walk and brief 14's recognition — not this
-    // brief's, which changes no extraction. `src/Design/RESOLVED.md` carries the detail.
+    // A spiral inductor IS one continuous piece of metal, and a galvanic extraction used to read
+    // its two terminals as one net and report the one short this cell had. A placed device whose
+    // own copper joins its terminals is now a BODY (LayoutReadBodies): its copper leaves the
+    // partition and its terminals are read at its pins. This pins the new answer the way the old
+    // test pinned the old one, so it cannot change silently either.
 
     [Fact]
-    public void TheMmicSpiralStillReadsAsAShortBecauseItsCopperIsInterconnect()
+    public void TheMmicSpiralIsAPartSoTheMmicComparesClean()
     {
         var result = LvsRun.Run(Lvs(Mmic));
 
         Assert.Equal(4, result.Comparison.Devices.Count);
         Assert.Equal(4, result.Comparison.Anchors);
+        Assert.DoesNotContain(result.Diagnostics, d => d.Severity > DiagnosticSeverity.Info);
 
-        var only = Assert.Single(result.Diagnostics, d => d.Severity > DiagnosticSeverity.Info);
-        Assert.Equal("lvs.net.short", only.Id);
-        Assert.Equal(2, only.Arguments["count"]);
-
-        // The inductor is the reason, on its face: both its terminals are on one layout net.
         var spiral = Assert.Single(result.Layout.Devices, d => d.Designator == "L1");
-        Assert.Equal(spiral.Terminals[0].NetIndex, spiral.Terminals[1].NetIndex);
+        Assert.NotEqual(spiral.Terminals[0].NetIndex, spiral.Terminals[1].NetIndex);
     }
 
     // ══ 8 — the MMIC reaches ground through metal nobody drew ═══════════════════════════════════

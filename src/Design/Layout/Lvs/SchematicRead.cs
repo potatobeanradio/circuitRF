@@ -208,6 +208,7 @@ public static class SchematicRead
                                   (long)Math.Round(comp?.X ?? 0), (long)Math.Round(comp?.Y ?? 0)))
             {
                 ParameterFacts = FactsOf(comp, parameters),
+                Generator = comp is { CellRef: null or "" } ? comp.Symbol.ToString() : "",
             });
         }
 

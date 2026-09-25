@@ -2,6 +2,39 @@
 
 ---
 
+## A microstrip board: 14 errors and 20 warnings, 4 of them real (field report, 2026-09-24)
+
+A five-line filter (three series `MLIN`s, four shunt parts, four open stubs) reported 14 errors and
+20 warnings. The designer could not read the first one. Three separate causes:
+
+- **A line shorted its own terminals.** The §13.7 spiral limit, at board scale: a placed part that
+  IS copper put both of its terminals on one piece, so every series line shorted its neighbours and
+  every stub shorted its open end. Ten of the fourteen errors came from this. Fixed in
+  `LayoutReadBodies` (its header gives the rule), which also closes `Bias tee`'s one short.
+  - **Coincident pins are joined only between bodies.** Every other part's pin sits on its own pad
+    copper, so the ordinary lookup already finds it.
+  - **A comparable cell is never a body.** The first cut let a `--flat` run read a die (a cell with
+    its own schematic) as a body, and `AssemblyTests`' flat control caught it. Flat means one graph
+    of all the die's metal.
+  - **Not handled:** a pin landing part-way along another line, with no pin there, reads as an
+    open. A finding id for it was considered and left out. The comparison already reports the open,
+    and a new id needs a catalogue entry, a docs row and a producing fixture.
+- **Five substrate parameters warned on every line.** `Er`, `H`, `T`, `Sigma` and `TanD` are the
+  circuit's, and the `MLIN` generator never takes them. R-lvs10-2d read "the artwork states values
+  and not this one" as "a different generator". That is wrong when the artwork was drawn by the
+  component's own generator. `LvsDevice.Generator` now carries the built-in kind on both sides, and
+  such a parameter is one `lvs.property.not-drawn` info line per generator.
+- **The sentences named internal indices.** "Schematic net '6' is 2 separate pieces of copper:
+  net 2 (L1.2, ML7.1, ML7.2); net 3 (…)" listed every pin on every island, and "net 2" is a number
+  nobody drew. Open, short and wrong-net now name the net's own pins first, then what else that copper
+  reaches. A layout net is named by the parts on it. **The `net`/`nets` argument VALUES are
+  unchanged** because `LvsWaiverKey` builds waiver identity from them. The new wording rides on new
+  arguments (`subject`, `members`, `pair`, `carries`, `reaches`).
+
+What is left on that board is real. `ML5`, `ML6` and `ML7` are identical stubs placed in each
+other's positions, and that produces two opens, a short and a wrong-net line. No check says
+"these designators look swapped" in so many words. That would be the next improvement.
+
 ## An LVS waiver key must NOT reuse `LvsFinding.Key` (brief-lvs-12-gui.md R-lvs12-4b)
 
 `LvsFinding.Key` is `DrcEngine.KeyFor`'s form: id, objects, **and the marker's exact box**. Its own

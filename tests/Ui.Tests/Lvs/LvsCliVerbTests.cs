@@ -336,28 +336,30 @@ public sealed class LvsCliVerbTests(ITestOutputHelper output) : IDisposable
     // ══ gate 10 — the typed arguments, read without touching the sentence ═══════════════════════
     //
     // R-lvs11-3c. The id is the contract and the sentence is not, so a caller reads the layer and
-    // the coordinate as VALUES. The MMIC is the fixture that carries both: its spiral reads as a
-    // short through a via at a measured point, and its ground comes from a stackup entry that draws
-    // no layer at all.
+    // the coordinate as VALUES. Two fixtures carry them: the broken attenuator's short through a
+    // 0.2 mm spur at a measured point, and the MMIC's ground, which comes from a stackup entry that
+    // draws no layer at all. (The MMIC's spiral used to be the short too; a part that IS copper no
+    // longer shorts its own terminals, and the MMIC now compares clean.)
 
     [Fact]
     public void JsonCarriesTypedArguments_AConductorAndACoordinate()
     {
-        Assert.Equal(1, InProcess("lvs", Lvs(Mmic), "--json"));
-        var findings = Findings(Payload(LastDocument)).ToList();
-
-        var shortFinding = Assert.Single(findings, f => f.GetProperty("id").GetString() == "lvs.net.short");
-        var a = shortFinding.GetProperty("arguments");
-        Assert.Equal(365_000, a.GetProperty("x").GetInt64());
-        Assert.Equal(465_000, a.GetProperty("y").GetInt64());
-        Assert.Equal( 10_000, a.GetProperty("widthDbu").GetInt64());
+        Assert.Equal(0, InProcess("lvs", Lvs(Mmic), "--json"));
 
         // The conductor, as a value: the stackup entry the ground reference came from, which is the
         // one layer on this technology that draws nothing and so cannot be read off the artwork.
-        var ground = Assert.Single(findings,
+        var ground = Assert.Single(Findings(Payload(LastDocument)),
             f => f.GetProperty("id").GetString() == "lvs.ground.reference-undrawn");
         Assert.Equal("Backside Metal", ground.GetProperty("arguments").GetProperty("stackupEntry").GetString());
         Assert.Equal(2, ground.GetProperty("arguments").GetProperty("vias").GetInt32());
+
+        Assert.Equal(1, InProcess("lvs", Lvs(Broken), "--json"));
+        var shortFinding = Assert.Single(Findings(Payload(LastDocument)),
+            f => f.GetProperty("id").GetString() == "lvs.net.short");
+        var a = shortFinding.GetProperty("arguments");
+        Assert.InRange(a.GetProperty("x").GetInt64(), 1_400_000, 1_600_000);
+        Assert.InRange(a.GetProperty("y").GetInt64(), 3_550_000, 5_800_000);
+        Assert.InRange(a.GetProperty("widthDbu").GetInt64(), 199_000, 201_000);
 
         // And where to look — the marker, in the layout's own DBU, four numbers rather than a
         // sentence a panel would have to parse back apart.

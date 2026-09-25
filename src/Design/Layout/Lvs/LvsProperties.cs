@@ -250,6 +250,11 @@ internal static class LvsProperties
         // devices of it there were, and what the schematic had wanted compared.
         var silent = new Dictionary<string, (int Devices, SortedSet<string> Wanted)>(StringComparer.Ordinal);
 
+        // The same shape for a part the artwork was drawn FROM: what its generator takes, and what
+        // the schematic carries that it does not — a line's substrate, one line per generator.
+        var notDrawn = new Dictionary<string, (HashSet<string> Devices, string Stated, SortedSet<string> Names)>(
+            StringComparer.Ordinal);
+
         // R-lvs10-6e's one line per dimension, and only for a dimension something actually
         // compared — a gap nothing ran into is not a gap worth a line.
         var unestablished = new Dictionary<UnitDimension, int>();
@@ -301,6 +306,20 @@ internal static class LvsProperties
                 // is not the same thing as stating none: the two are not the same generator.
                 if (!TryValue(l, name, out object? drawn, out _))
                 {
+                    // Drawn by this component's own generator, so the generator does not take it:
+                    // nothing in the artwork depends on it, and that is said once per generator.
+                    if (s.Generator.Length > 0 && s.Generator == l.Generator)
+                    {
+                        if (!notDrawn.TryGetValue(s.Generator, out var entry))
+                            entry = (new HashSet<string>(StringComparer.Ordinal),
+                                     string.Join(", ", l.Parameters.Keys.OrderBy(k => k, StringComparer.Ordinal)),
+                                     new SortedSet<string>(StringComparer.Ordinal));
+                        entry.Names.Add(name);
+                        entry.Devices.Add(s.Path);
+                        notDrawn[s.Generator] = entry;
+                        continue;
+                    }
+
                     found.Add(LvsDiagnostics.PropertyMissing(
                         s.Path, l.Path, name, LvsValueFormat.Of(asked, Dimension(s, l, name)),
                         string.Join(", ", l.Parameters.Keys.OrderBy(k => k, StringComparer.Ordinal))));
@@ -332,6 +351,10 @@ internal static class LvsProperties
         foreach (var (type, tally) in silent.OrderBy(e => e.Key, StringComparer.Ordinal))
             found.Add(LvsDiagnostics.PropertyLayoutSilent(
                 type, tally.Devices, string.Join(", ", tally.Wanted)));
+
+        foreach (var (generator, tally) in notDrawn.OrderBy(e => e.Key, StringComparer.Ordinal))
+            found.Add(LvsDiagnostics.PropertyNotDrawn(
+                generator, tally.Devices.Count, tally.Stated, string.Join(", ", tally.Names)));
 
         foreach (var (dimension, count) in unestablished.OrderBy(e => e.Key))
             found.Add(LvsDiagnostics.ToleranceUnestablished(dimension.ToString(), count));

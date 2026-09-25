@@ -173,6 +173,18 @@ public sealed record LvsDevice(
     /// "antiparallel" part and arriving as an unmatched device.
     /// </remarks>
     public bool Interchangeable { get; init; }
+
+    /// <summary>
+    /// The built-in generator this part IS — <c>"Mlin"</c> — on either side: the component kind a
+    /// schematic part was drawn as, the kind the generator that drew a layout cell produces. Empty
+    /// for everything else (a land pattern, a kit cell).
+    /// </summary>
+    /// <remarks>
+    /// Equal on both sides means the artwork was drawn FROM this component, so a parameter the
+    /// artwork does not state is one the generator never takes (a line's substrate), not a sign of
+    /// a different generator (<c>LvsProperties</c>).
+    /// </remarks>
+    public string Generator { get; init; } = "";
 }
 
 /// <summary>One net.</summary>

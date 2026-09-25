@@ -1145,6 +1145,18 @@ this cell is the first fixture in the repository that could show it (a board's t
 are separate copper, and a MIM capacitor's plates are on different conductors). It is stated on the
 user documentation page as a limit rather than hidden, and the example's README says why.
 
+**Closed for PLACED parts, 2026-09-24** (`LayoutReadBodies`). A field report on a five-line
+microstrip filter turned the limit from one spiral into most of a design: every series `MLIN`
+shorted its two neighbours, every open stub shorted its far end, and ten of fourteen errors were
+this. A placed device whose own cell joins two of its terminals with its own copper is now a
+*body*: its copper leaves the partition, and each terminal is read at its pin — on whatever other
+copper is under it, else on another body's pin at the same point (two lines end to end, a bend, a
+tee), else alone (an open end). Decided once per cell from the cell's own shapes and pins; a cell
+that places others, or has a schematic of its own, is never a body. `Bias tee` now compares clean.
+What remains of the limit is tier 3's: copper drawn as loose shapes with no placement is still
+interconnect, and a line joins only at its ends — a trace overlapping it part-way along reads as
+not connected.
+
 ### 13.8 §11's non-goals are unchanged, and one more was added by construction
 
 `--recognize` reads what copper **looks like**, never whether the process would actually make that

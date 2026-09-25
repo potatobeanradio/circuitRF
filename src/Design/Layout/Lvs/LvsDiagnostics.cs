@@ -341,14 +341,18 @@ public static class LvsDiagnostics
     /// an island of its own net is an open (<see cref="NetOpen"/>) and reporting it here as well
     /// would turn one missing via into a finding per pin.
     /// </remarks>
+    /// <param name="reaches">What the sentence calls the layout net — <c>'VDD'</c>, or the other
+    /// pins on it where nobody named it. Empty falls back to <paramref name="found"/>, which stays
+    /// the typed name.</param>
     public static Diagnostic TerminalWrongNet(
-        string path, int port, string terminal, string expected, string found)
+        string path, int port, string terminal, string expected, string found, string reaches = "")
         => Diagnostic.Create(
             "lvs.terminal.wrong-net", DiagnosticSeverity.Error,
             "{path} terminal {port} ('{terminal}') is on '{expected}' in the schematic and reaches "
-            + "'{found}' in the layout.",
+            + "{reaches} in the layout.",
             ("path", path), ("port", port), ("terminal", terminal),
-            ("expected", expected), ("found", found));
+            ("expected", expected), ("found", found),
+            ("reaches", reaches.Length > 0 ? reaches : $"'{found}'"));
 
     /// <summary>
     /// Two or more schematic nets are one piece of copper — <b>with the PATH</b> (R-lvs8-4b),
@@ -369,22 +373,44 @@ public static class LvsDiagnostics
     /// the number rather than the sentence</b>. Zero where nothing was located.</param>
     /// <param name="x">Where, DBU.</param>
     /// <param name="y">DBU.</param>
+    /// <param name="pair">The two nets as the sentence says them — <c>'IN' and 'OUT'</c>. Empty
+    /// falls back to <paramref name="nets"/>, which stays the WAIVER identity and so is never
+    /// reworded (<c>LvsWaiverKey</c>).</param>
+    /// <param name="carries">" It carries …": which of each net's pins the copper reaches, or
+    /// empty. Without it a user is told two nets touch and not where to start looking.</param>
     public static Diagnostic NetShort(
         string nets, int count, string layoutNet,
-        string through = "", long widthDbu = 0, long x = 0, long y = 0) => Diagnostic.Create(
+        string through = "", long widthDbu = 0, long x = 0, long y = 0,
+        string pair = "", string carries = "") => Diagnostic.Create(
         "lvs.net.short", DiagnosticSeverity.Error,
-        "{count} schematic nets are one piece of copper ('{layoutNet}'): {nets}.{through}",
+        "Short: schematic nets {pair} are joined by one piece of copper in the layout.{carries}{through}",
         ("nets", nets), ("count", count), ("layoutNet", layoutNet), ("through", through),
-        ("widthDbu", widthDbu), ("x", x), ("y", y));
+        ("widthDbu", widthDbu), ("x", x), ("y", y),
+        ("pair", pair.Length > 0 ? pair : nets), ("carries", carries));
 
     /// <summary>
     /// One schematic net is several pieces of copper — <b>with the ISLANDS</b> (R-lvs8-5a) and a
     /// marker on each.
     /// </summary>
-    public static Diagnostic NetOpen(string net, int islands, string pins) => Diagnostic.Create(
-        "lvs.net.open", DiagnosticSeverity.Error,
-        "Schematic net '{net}' is {islands} separate pieces of copper in the layout: {pins}.",
-        ("net", net), ("islands", islands), ("pins", pins));
+    /// <remarks>
+    /// <b>Each island names the net's OWN pins first</b>, and the rest of that copper after them.
+    /// The first wording listed every pin on every island, and a designer reading "net '6' is
+    /// L1.2, ML7.1, ML7.2; L2.2, ML5.1, ML5.2" could not tell which of those six the net was about
+    /// (field report, 2026-09-24).
+    /// </remarks>
+    /// <param name="net">The net's name — the WAIVER identity, so never reworded.</param>
+    /// <param name="subject">"Schematic net 'IN'", or "An unnamed schematic net". Empty falls back
+    /// to <paramref name="net"/>.</param>
+    /// <param name="members">The net's own pins, as the designer names them.</param>
+    public static Diagnostic NetOpen(
+        string net, int islands, string pins, string subject = "", string members = "")
+        => Diagnostic.Create(
+            "lvs.net.open", DiagnosticSeverity.Error,
+            "Open: {subject} should connect {members}, but in the layout they are on {islands} pieces "
+            + "of copper that do not touch: {pins}.",
+            ("net", net), ("islands", islands), ("pins", pins),
+            ("subject", subject.Length > 0 ? subject : $"schematic net '{net}'"),
+            ("members", members.Length > 0 ? members : "its pins"));
 
     /// <summary>
     /// R-lvs8-5c. An island with no pin on it at all. <b>A warning, and NOT an open</b>:
@@ -469,6 +495,21 @@ public static class LvsDiagnostics
             "'{cellName}' ({devices} device(s)) states no values of its own, so the schematic's "
             + "{parameters} had nothing to be compared against.",
             ("cellName", cellName), ("devices", devices), ("parameters", parameters));
+
+    /// <summary>
+    /// A part drawn by its own component's generator carries parameters that generator never takes
+    /// — a line's substrate (Er, H, T, …) is the circuit's, not the artwork's. <b>Once per
+    /// generator, at info</b>, on <see cref="PropertyLayoutSilent"/>'s terms: said, not compared,
+    /// and not a warning about every line on the board (field report, 2026-09-24: twenty of them
+    /// on a five-line filter, each calling the two sides "not the same generator").
+    /// </summary>
+    public static Diagnostic PropertyNotDrawn(string generator, int devices, string stated, string parameters)
+        => Diagnostic.Create(
+            "lvs.property.not-drawn", DiagnosticSeverity.Info,
+            "The {generator} generator draws from {stated} only, so the schematic's {parameters} "
+            + "({devices} device(s)) have nothing in the artwork to be compared against.",
+            ("generator", generator.ToUpperInvariant()), ("devices", devices), ("stated", stated),
+            ("parameters", parameters));
 
     /// <summary>
     /// R-lvs10-2d. <b>Not the same thing as <see cref="PropertyLayoutSilent"/>.</b> The artwork

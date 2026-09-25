@@ -106,10 +106,20 @@ internal static class LvsReport
                       + $"{context.Geometry.Format.Point(s.X, s.Y)}."
                 : "";
 
+            // Which of each net's pins the shared copper actually reaches — the place to start.
+            var onA = context.SchematicPinsOnLayoutNet(a, layoutNet);
+            var onB = context.SchematicPinsOnLayoutNet(b, layoutNet);
+            string carries = onA.Count > 0 && onB.Count > 0
+                ? $" It carries {Few(onA)} (on {context.SchematicNetPhrase(a)}) and {Few(onB)} "
+                  + $"(on {context.SchematicNetPhrase(b)})."
+                : "";
+
             var diagnostic = LvsDiagnostics.NetShort(
                 $"{context.SchematicNet(a)}, {context.SchematicNet(b)}", 2,
                 context.LayoutNet(layoutNet),
-                through, step?.WidthDbu ?? 0, step?.X ?? 0, step?.Y ?? 0);
+                through, step?.WidthDbu ?? 0, step?.X ?? 0, step?.Y ?? 0,
+                pair: $"{context.SchematicNetPhrase(a)} and {context.SchematicNetPhrase(b)}",
+                carries: carries);
 
             string[] objects = [context.SchematicNet(a), context.SchematicNet(b)];
 
@@ -154,15 +164,32 @@ internal static class LvsReport
         return best;
     }
 
+    /// <summary>Up to three names and a count of the rest — a pour carries a hundred pins.</summary>
+    private static string Few(IReadOnlyList<string> names)
+        => names.Count <= 3
+            ? string.Join(", ", names)
+            : $"{string.Join(", ", names.Take(3))} and {names.Count - 3} more";
+
+    /// <summary>"A", "A and B", "A, B and C".</summary>
+    private static string And(IReadOnlyList<string> names)
+        => names.Count <= 1
+            ? string.Join("", names)
+            : $"{string.Join(", ", names.Take(names.Count - 1))} and {names[^1]}";
+
     // ── Opens: the island structure (R-lvs8-5) ───────────────────────────────────────────────
 
     private static IEnumerable<LvsFinding> Opens(Context context)
     {
         foreach (var open in context.Comparison.Opens)
         {
-            string pins = string.Join("; ", open.LayoutNets.Select(context.DescribeIsland));
+            int net = open.SchematicNet;
+            string pins = string.Join("; ", open.LayoutNets.Select(island => context.DescribeIsland(net, island)));
+            var members = context.SchematicPinNames(net);
             var diagnostic = LvsDiagnostics.NetOpen(
-                context.SchematicNet(open.SchematicNet), open.LayoutNets.Count, pins);
+                context.SchematicNet(net), open.LayoutNets.Count, pins,
+                subject: context.SchematicNetLabel(net) is { } label
+                    ? $"schematic net '{label}'" : "an unnamed schematic net",
+                members: members.Count > 0 ? And(members) : "");
 
             // R-lvs8-5a: a marker PER ISLAND, which is what makes the finding readable — three
             // rings on the canvas is the sentence, drawn.
@@ -393,24 +420,81 @@ internal static class LvsReport
         /// <summary>A layout net's name.</summary>
         public string LayoutNet(int index) => NameOf(layout, index);
 
-        /// <summary>One island, as the open's sentence names it: its pins, or that it has none.</summary>
-        public string DescribeIsland(int net)
+        /// <summary>
+        /// One island, as the open's sentence names it: the schematic net's OWN pins on it, then
+        /// whatever else that copper reaches. A layout net's number is not a name anybody drew, so
+        /// it is said only where the island carries none of the net's pins.
+        /// </summary>
+        public string DescribeIsland(int schematicNet, int island)
         {
-            var pins = PinNamesOn(net);
-            return pins.Count == 0
-                ? $"{NameOf(layout, net)} (no pins)"
-                : $"{NameOf(layout, net)} ({string.Join(", ", pins)})";
+            var mine = SchematicPinsOnLayoutNet(schematicNet, island);
+            var others = PinNamesOn(island).Where(p => !mine.Contains(p, StringComparer.Ordinal)).ToList();
+
+            if (mine.Count == 0)
+                return others.Count == 0
+                    ? $"a piece with no pins ({NameOf(layout, island)})"
+                    : $"a piece reaching {string.Join(", ", others)}";
+
+            return others.Count == 0
+                ? string.Join(", ", mine)
+                : $"{string.Join(", ", mine)} (that copper also reaches {string.Join(", ", others)})";
+        }
+
+        /// <summary>A schematic net's label, or null where nobody named it.</summary>
+        public string? SchematicNetLabel(int index)
+            => index >= 0 && index < schematic.Nets.Count && schematic.Nets[index].Label is { Length: > 0 } l
+                ? l : null;
+
+        /// <summary>
+        /// A schematic net as a sentence says it: <c>'IN'</c>, or — where nobody named it — by the
+        /// first pin on it. "net 11" is an index the designer never saw.
+        /// </summary>
+        public string SchematicNetPhrase(int index)
+        {
+            if (SchematicNetLabel(index) is { } label) return $"'{label}'";
+            var pins = SchematicPinNames(index);
+            return pins.Count > 0 ? $"the unnamed net at {pins[0]}" : $"'{NameOf(schematic, index)}'";
+        }
+
+        /// <summary>Every pin on a schematic net, by the designer's own name for the part.</summary>
+        public IReadOnlyList<string> SchematicPinNames(int net)
+            => net < 0 || net >= schematic.Nets.Count ? [] : PinNames(schematic, schematic.Nets[net].Pins);
+
+        /// <summary>
+        /// The schematic net's pins whose PAIRED layout terminal is on <paramref name="layoutNet"/>,
+        /// named as the layout names them — through the pairing, so a part matched by structure
+        /// under another designator is still found.
+        /// </summary>
+        public IReadOnlyList<string> SchematicPinsOnLayoutNet(int schematicNet, int layoutNet)
+        {
+            var found = new List<string>();
+            foreach (var pair in comparison.Devices.OrderBy(p => p.Schematic))
+            {
+                var ds = schematic.Devices[pair.Schematic];
+                var dl = layout.Devices[pair.Layout];
+                foreach (var ts in ds.Terminals.OrderBy(t => t.Port))
+                {
+                    if (ts.NetIndex != schematicNet) continue;
+                    int terminal = LayoutTerminal(ds, dl, ts.Port);
+                    if (terminal < 0 || dl.Terminals[terminal].NetIndex != layoutNet) continue;
+                    found.AddRange(PinNames(layout, [(pair.Layout, terminal)]));
+                }
+            }
+            return found;
         }
 
         /// <summary>Every pin on a layout net, by the designer's own name for the part — un-reduced
         /// (R-lvs8-2b).</summary>
         public IReadOnlyList<string> PinNamesOn(int net)
+            => net < 0 || net >= layout.Nets.Count ? [] : PinNames(layout, layout.Nets[net].Pins);
+
+        private static List<string> PinNames(
+            LvsNetlist netlist, IEnumerable<(int Device, int Terminal)> pins)
         {
-            if (net < 0 || net >= layout.Nets.Count) return [];
             var names = new List<string>();
-            foreach (var (device, terminal) in layout.Nets[net].Pins)
+            foreach (var (device, terminal) in pins)
             {
-                var d = layout.Devices[device];
+                var d = netlist.Devices[device];
                 string port = terminal < d.Terminals.Count
                     ? (d.Terminals[terminal].Name is { Length: > 0 } n ? n : d.Terminals[terminal].Port.ToString())
                     : "?";

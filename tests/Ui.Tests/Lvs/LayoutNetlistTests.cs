@@ -451,6 +451,48 @@ public sealed class LayoutNetlistTests : IDisposable
         Assert.Contains(tagged.Shapes, t => t is { InstancePath: "R1", SubCellPin: "A" });
     }
 
+    // ══ A part that IS copper ════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// A line's own metal joins its two ends, and a galvanic reading therefore shorted every series
+    /// line and every open stub (field report, 2026-09-24). A line is a body: its terminals are read
+    /// at its ends — on the pad under an end, on another line's end abutting it, or alone.
+    /// </summary>
+    /// <remarks>
+    /// Two lines end to end with a part's pad under the first one's start, and a third line that
+    /// touches nothing. By hand: A.1 is on the pad's net, A.2 and B.1 are one junction with no
+    /// copper of their own, and B.2, C.1 and C.2 are each alone — five nets, where the old reading
+    /// found two (A+B as one piece, C as another).
+    /// </remarks>
+    [Fact]
+    public void ALineIsABodyItsEndsAreItsTerminalsAndAbuttingEndsAreOneNet()
+    {
+        var tech = TwoLayerTech(groundReference: false);
+        string pad = PartCell("Pad1", Top, ("P", 0, 0));
+        string line = LineCell("Line2mm", Mm(2), Um(500));
+
+        var netlist = Read(MakeBoard(tech, (view, layoutDir) =>
+        {
+            view.Instances.Add(Place(pad,  layoutDir, Mm(1), Mm(5), 0, false, "P1"));
+            view.Instances.Add(Place(line, layoutDir, Mm(1), Mm(5), 0, false, "A"));
+            view.Instances.Add(Place(line, layoutDir, Mm(3), Mm(5), 0, false, "B"));
+            view.Instances.Add(Place(line, layoutDir, Mm(1), Mm(9), 0, false, "C"));
+        }));
+
+        Assert.Equal(NetOf(netlist, "P1", "P"), NetOf(netlist, "A", "1"));
+        Assert.Equal(NetOf(netlist, "A", "2"), NetOf(netlist, "B", "1"));
+        Assert.NotEqual(NetOf(netlist, "A", "1"), NetOf(netlist, "A", "2"));
+        Assert.NotEqual(NetOf(netlist, "C", "1"), NetOf(netlist, "C", "2"));
+        Assert.Equal(5, new[]
+        {
+            NetOf(netlist, "A", "1"), NetOf(netlist, "A", "2"), NetOf(netlist, "B", "2"),
+            NetOf(netlist, "C", "1"), NetOf(netlist, "C", "2"),
+        }.Distinct().Count());
+
+        // An end on nothing but its own line is an open end, not a pad that missed its copper.
+        Assert.DoesNotContain(netlist.Notes, n => n.Id == "lvs.pin.no-copper");
+    }
+
     // ── Reading ─────────────────────────────────────────────────────────────────────────────────
 
     private sealed record Board(LayoutView View, string Clay, string CellDir, Technology Tech);
@@ -751,6 +793,34 @@ public sealed class LayoutNetlistTests : IDisposable
 
     private string PartCell(string name, LayerKey layer, params (string Pin, long X, long Y)[] pins)
         => PartCell(name, layer, pins, null);
+
+    /// <summary>A two-terminal line: ONE rectangle of top copper, pin 1 at its start and pin 2 at
+    /// its end — what the microstrip generators draw.</summary>
+    private string LineCell(string name, long length, long width)
+    {
+        string cellDir = CellFolder.CreateCellFolder(_root, name);
+        if (File.Exists(Path.Combine(CellFolder.SubFolderPath(cellDir, ViewType.Layout), name + ".clay")))
+            return cellDir;
+
+        string[] ports = ["1", "2"];
+        SymbolPersistence.SaveToFile(
+            Path.Combine(CellFolder.SubFolderPath(cellDir, ViewType.Symbol), name + ".csym"),
+            new Symbol([], [.. ports.Select((n, i) => new SymbolPin(0, i * 100, i + 1, n))], ports.Length));
+
+        var view = new LayoutView { DbuPerMicron = Dbu };
+        view.Pins.Add(new LayoutPin { Name = "1", X = 0,      Y = 0, WidthDbu = width, Layer = Top });
+        view.Pins.Add(new LayoutPin { Name = "2", X = length, Y = 0, WidthDbu = width, Layer = Top });
+        view.Shapes.Add(Rect(Top, 0, -width / 2, length, width / 2));
+        LayoutPersistence.SaveToFile(
+            Path.Combine(CellFolder.SubFolderPath(cellDir, ViewType.Layout), name + ".clay"), view);
+
+        string ccellPath = Path.Combine(cellDir, CellFolder.CcellFileName);
+        var ccell = CellPersistence.LoadFromFile(ccellPath);
+        ccell.NumPorts = ports.Length;
+        CellPersistence.SaveToFile(ccellPath, ccell);
+
+        return cellDir;
+    }
 
     /// <summary>A cell with no symbol, no ports and no designator — interconnect. A via fence
     /// draws on the VIA layer and is silent; a nameless slab of copper is R-lvs3-3c's warning.</summary>
