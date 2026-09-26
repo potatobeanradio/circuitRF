@@ -10,6 +10,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Styling;
+using Avalonia.VisualTree;
 using CircuitRF.Design.Schematic;
 using CircuitRF.Design.Smith;
 using CircuitRF.Ui.Clipboard;
@@ -17,6 +18,7 @@ using CircuitRF.Ui.Controls;
 using CircuitRF.Ui.DataDisplay;
 using CircuitRF.Ui.DataDisplay.Controls;
 using CircuitRF.Ui.DataDisplay.ViewModels;
+using CircuitRF.Ui.Schematic;
 using CircuitRF.Ui.Smith;
 using CircuitRF.Ui.ViewModels;
 
@@ -57,10 +59,14 @@ public partial class SmithChartView : UserControl
         // splitter drag on the generator column does exactly that — and a marker info box that
         // stayed behind would be pointing at nothing.
         LayoutUpdated += (_, _) => SyncPlotContainer();
+
+        WireNetworkInlineEditor();
     }
 
     private void OnDataContextChanged(object? sender, EventArgs e)
     {
+        DismissLabelEditor();
+
         if (_doc is not null)
         {
             _doc.ActivationFocusRequested -= OnActivationFocusRequested;
@@ -187,6 +193,140 @@ public partial class SmithChartView : UserControl
         }
 
         base.OnKeyDown(e);
+    }
+
+    // ── The network pane's inline value editor ────────────────────────────────
+
+    private SchematicInlineEditBox? _labelEditor;
+    private SmithInlineEditTarget?  _labelEditTarget;
+
+    /// <summary>
+    /// Puts <b>the schematic editor's own inline text box</b> over the network pane — the control the
+    /// Match Designer's network pane hosts, with the same three-key contract: Return commits, focus
+    /// leaving commits, Escape reverts.
+    /// </summary>
+    /// <remarks>
+    /// <b>A line's <c>F</c> could not be changed at all</b> before this: the strip's rows are the
+    /// draggable parameters, and a reference frequency is not one. The labels on the drawing are what
+    /// the user reads, so they are what the user edits.
+    ///
+    /// <para><b>Enter and Escape are taken in the TUNNEL</b>, ahead of the document's own
+    /// <c>KeyBinding</c>s and the workspace window's — SchematicView's lesson: a window-level Escape
+    /// that marks the key handled first leaves the box open, and the deferred LostFocus then commits
+    /// the text Escape was meant to throw away.</para>
+    /// </remarks>
+    private void WireNetworkInlineEditor()
+    {
+        _labelEditor = new SchematicInlineEditBox();
+        NetworkCanvasHost.Children.Add(_labelEditor);
+
+        NetworkCanvas.LabelDoubleTapped += OnNetworkLabelDoubleTapped;
+        NetworkCanvas.ViewportChanged   += (_, _) => RepositionLabelEditor();
+
+        AddHandler(KeyDownEvent, OnLabelEditorKeyDownTunnel, RoutingStrategies.Tunnel,
+                   handledEventsToo: true);
+
+        // A press anywhere outside the box commits it. Most of this document is not focusable — the
+        // pane backgrounds, the labels, the borders — so a click on one moves focus nowhere and the
+        // box would never hear about it (the Match Designer's owner-reported "it does not close").
+        AddHandler(PointerPressedEvent, OnPointerPressedTunnel, RoutingStrategies.Tunnel,
+                   handledEventsToo: true);
+
+        // Deferred, so a click that moves focus INSIDE the box (its own context menu, a drag-select)
+        // is not read as leaving it.
+        _labelEditor.LostFocus += (_, _) =>
+            Avalonia.Threading.Dispatcher.UIThread.Post(
+                () =>
+                {
+                    if (_labelEditor is { IsVisible: true } b && !b.IsKeyboardFocusWithin)
+                        CommitLabelEdit();
+                },
+                Avalonia.Threading.DispatcherPriority.Background);
+    }
+
+    private void OnNetworkLabelDoubleTapped(object? sender, SchematicHitTest.HitResult hit)
+    {
+        if (_doc?.ViewModel is not { } vm || _labelEditor is null) return;
+
+        // An editor already open is COMMITTED, not abandoned — the deferred LostFocus check would see
+        // the new box already focused and drop the first edit in silence.
+        if (_labelEditor.IsVisible) CommitLabelEdit();
+
+        if (vm.ResolveInlineEdit(hit) is not { } target
+         || NetworkCanvas.AnchorFor(target.ComponentId, target.Row) is not { } at)
+        {
+            DismissLabelEditor();
+            return;
+        }
+
+        _labelEditTarget = target;
+        // The ANCHOR comes from the drawing; the TEXT does not — it is the value, formatted by the
+        // view model, so the box never opens holding a string its own parser refuses.
+        _labelEditor.Open(target.SeedText, at.X, at.Y, at.FontSize);
+
+        Avalonia.Threading.Dispatcher.UIThread.Post(
+            () =>
+            {
+                _labelEditor?.Focus();
+                _labelEditor?.SelectValueOnly();
+            },
+            Avalonia.Threading.DispatcherPriority.Input);
+    }
+
+    private void RepositionLabelEditor()
+    {
+        if (_labelEditor is not { IsVisible: true } || _labelEditTarget is not { } target) return;
+
+        if (NetworkCanvas.AnchorFor(target.ComponentId, target.Row) is not { } at)
+        {
+            DismissLabelEditor();      // the element it was about is no longer in the drawing
+            return;
+        }
+        _labelEditor.MoveTo(at.X, at.Y, at.FontSize);
+    }
+
+    private void OnLabelEditorKeyDownTunnel(object? sender, KeyEventArgs e)
+    {
+        if (_labelEditor is not { IsVisible: true } box || !box.IsKeyboardFocusWithin) return;
+
+        if (e.Key is Key.Return or Key.Enter)
+        {
+            CommitLabelEdit();
+            NetworkCanvas.Focus();
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Escape)
+        {
+            DismissLabelEditor();
+            NetworkCanvas.Focus();
+            e.Handled = true;
+        }
+    }
+
+    private void OnPointerPressedTunnel(object? sender, PointerPressedEventArgs e)
+    {
+        if (_labelEditor is not { IsVisible: true }) return;
+        if (e.Source is Visual from
+         && from.FindAncestorOfType<SchematicInlineEditBox>(includeSelf: true) is not null)
+            return;
+        CommitLabelEdit();
+    }
+
+    private void CommitLabelEdit()
+    {
+        if (_labelEditor is null) return;
+        string text = _labelEditor.Text ?? "";
+        var target = _labelEditTarget;
+
+        // Dismiss FIRST, so the LostFocus this triggers sees a hidden box and returns.
+        DismissLabelEditor();
+        if (target is not null) _doc?.ViewModel.CommitInlineEdit(target, text);
+    }
+
+    private void DismissLabelEditor()
+    {
+        _labelEditTarget = null;
+        if (_labelEditor is not null) _labelEditor.IsVisible = false;
     }
 
     /// <summary>The Smith Chart chapter, through the launcher every other Help button in the

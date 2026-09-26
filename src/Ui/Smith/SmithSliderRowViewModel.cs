@@ -355,6 +355,10 @@ public sealed partial class SmithSliderRowViewModel : ObservableObject
         return MatchValueFormat.FormatWithUnit(v, q, MatchValueFormat.AutoUnit, 5);
     }
 
+    /// <summary>Whether <paramref name="text"/> is a value this row can read — what the network pane's
+    /// inline editor asks before writing, so a refusal can say so rather than snap back silently.</summary>
+    internal bool TryParseEntry(string? text, out double value) => TryParse(text, out value);
+
     private bool TryParse(string? text, out double value)
     {
         if (Quantity is { } q)

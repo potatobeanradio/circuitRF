@@ -78,9 +78,10 @@ public static class SmithComponentMap
     /// <summary>
     /// The parameters this kind exposes — one slider each, in the order the window shows them.
     ///
-    /// <para><b>A TLIN's reference frequency is deliberately absent.</b> It is an editable field on
-    /// the element's row, never a slider and never a gripper's parameter: a line whose F_ref moved
-    /// under a drag would be a different physical line at every sample (§3.3).</para>
+    /// <para><b>A TLIN's reference frequency is deliberately absent.</b> It is edited by
+    /// double-clicking its label on the network pane (<c>SmithChartViewModel.InlineEdit.cs</c>), never
+    /// a slider and never a gripper's parameter: a line whose F_ref moved under a drag would be a
+    /// different physical line at every sample (§3.3).</para>
     /// </summary>
     public static IReadOnlyList<SmithParameter> Parameters(SmithElementKind kind)
     {

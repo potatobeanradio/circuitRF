@@ -35698,3 +35698,32 @@ consistent (vtable slots, keyed-mutex keys 0/1, formats, cbuffer layout, blend, 
   The dielectrics are finite, which the owner accepted; the generator's notes about a 3D solve are not
   repeated, and the one note is "Planar setup, shown in 3D." No mesh or grid — the mesh toggle's tip
   points to the layout view, where the planar mesh is drawn.
+
+## Smith Chart: inline value editor on the network pane (2026-09-26)
+
+Owner report: a TLIN's F, E and Z₀ could not be changed from the network drawing. **F had no door
+at all** — the strip's rows are `SmithComponentMap.Parameters`, the draggable ones, and a reference
+frequency is deliberately not one; yet `SmithComponentMap`'s comment, the user reference and the
+stranded-F_ref strip note all said it was "an editable field on the element's row". Nothing ever
+built that field.
+
+- Double-clicking a label (or the name, or the glyph → its active parameter) on `SmithNetworkCanvas`
+  now opens **the schematic editor's own `SchematicInlineEditBox`**, hosted as the Match Designer's
+  network pane hosts it. The anchor is `MatchSchematicLabels.Locate` over the projection's
+  `SchematicModel`; resolve and commit are `SmithChartViewModel.InlineEdit.cs`.
+- **A slider-backed value is committed THROUGH its slider row** (a temporary one when the strip is
+  showing another element). The row widens its range before writing the value; writing the value
+  directly would leave it outside the live slider's range, and the slider's coercion would clamp it
+  and write the clamped value back — `src/Ui/Match/RESOLVED.md`'s defect.
+- Re-committing the seed is not an edit (it is rounded to the label's digits). A commit re-checks the
+  element's NAME at the stored index, so an undo or reorder while the box was open cannot land the
+  value on a different part.
+- Enter/Escape are taken in a tunnel handler, and a press anywhere outside the box commits it — both
+  lessons from SchematicView and the Match Designer.
+- Not covered: a Z1P's `complex(re,im)` label (its two parts stay on the sliders) and a file element's
+  `File` label (a file is chosen, not typed).
+- **Follow-up: "E = 90° draws a full circle" is F_ref, not the units.** E is degrees end to end
+  (Smith cascade `θ = E·π/180·f/F_ref`; the engine's `TLineModel` gets `90 deg` as π/2 from the
+  elaborator), and at f = F_ref a 90° line sweeps exactly 180° of Γ (100 Ω → 25 Ω). A full circle is
+  f = 2·F_ref — e.g. a TLIN pasted from a schematic keeps the registry's `F = 1 GHz`, or the generator
+  table moved after placement. Reproduced with `circuitrf smith` on the same line at F_ref 2 vs 1 GHz.

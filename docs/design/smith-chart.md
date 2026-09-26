@@ -236,8 +236,8 @@ load point is plotted at several frequencies is to see the network come apart at
 line whose electrical length did not change with frequency would be the one element in the cascade that
 never did.
 
-- **F_ref defaults to the design frequency at the moment the element is placed**, and is an editable field
-  on the element's row. It does **not** follow the design frequency afterwards: a line that silently
+- **F_ref defaults to the design frequency at the moment the element is placed**, and is edited by
+  double-clicking its `F` label on the network pane (the inline value editor). It does **not** follow the design frequency afterwards: a line that silently
   re-specified itself whenever the user retuned the chart would be a different physical line each time,
   and the load points would stop meaning anything. The status strip says so once, the first time a design
   frequency change leaves a TLIN's F_ref behind.

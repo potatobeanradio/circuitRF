@@ -184,6 +184,11 @@ C and Z<sub>0</sub>, and linear for an electrical length and for the parts of a 
 outside the range re-centres the range rather than clamping the value**. Dragging is live: every step
 re-evaluates and redraws, and one drag is one undo entry.
 
+The values drawn on the network are editable too: **double-click a label** &mdash; `Z = 50 Ω`,
+`E = 90 deg`, `F = 2 GHz`, an element's name &mdash; and type over it, exactly as on a schematic page.
+**Return** or clicking away commits, **Esc** reverts. Double-clicking a part's symbol opens its active
+value. This is also the only place a line's F<sub>ref</sub> is edited, since it has no slider.
+
 <div class="callout note">
 <span class="label">A line's length is quoted at its own reference frequency</span>
 <p>A TLIN carries both a characteristic impedance and an electrical length, and the length is stated
@@ -192,7 +197,7 @@ That is what makes a line come apart at the band edges like a real one.</p>
 <p><b>F<sub>ref</sub> defaults to the design frequency when the element is placed and then stays put.</b>
 It does not follow the design frequency afterwards: a line that silently re-specified itself whenever
 you retuned would be a different physical line each time, and the per-frequency load points would stop
-meaning anything. It is an editable field on the element's row, so you can move it deliberately.</p>
+meaning anything. Double-click the line's <code>F</code> label on the network to move it deliberately.</p>
 </div>
 
 ### Discrete component values {#discrete}

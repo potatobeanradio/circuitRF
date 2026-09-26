@@ -534,27 +534,33 @@ public sealed partial class SmithChartViewModel
         set
         {
             if (SelectedElement is not { } e) return;
-
-            string name = (value ?? "").Trim();
-            if (name.Length == 0 || string.Equals(name, e.Name, StringComparison.Ordinal))
-            {
-                OnPropertyChanged();
-                return;
-            }
-
-            if (_design.Elements.Any(o => !ReferenceEquals(o, e)
-                                       && string.Equals(o.Name, name, StringComparison.OrdinalIgnoreCase)))
-            {
-                StripNotice = $"'{name}' is already the name of another element — an element's name is "
-                            + "what every refusal, every slider and every undo entry says about it, so "
-                            + "two of them cannot share one.";
-                OnPropertyChanged();
-                return;
-            }
-
-            _selectedElementName = name;
-            Edit($"Rename {e.Name} to {name}", () => e.Name = name);
+            if (!RenameElement(e, value)) OnPropertyChanged();
         }
+    }
+
+    /// <summary>
+    /// Renames one element — the Name field's write and the network pane's inline editor's, one rule.
+    /// Returns true when the name changed.
+    /// </summary>
+    private bool RenameElement(SmithElement e, string? value)
+    {
+        string name = (value ?? "").Trim();
+        if (name.Length == 0 || string.Equals(name, e.Name, StringComparison.Ordinal)) return false;
+
+        if (_design.Elements.Any(o => !ReferenceEquals(o, e)
+                                   && string.Equals(o.Name, name, StringComparison.OrdinalIgnoreCase)))
+        {
+            StripNotice = $"'{name}' is already the name of another element — an element's name is "
+                        + "what every refusal, every slider and every undo entry says about it, so "
+                        + "two of them cannot share one.";
+            return false;
+        }
+
+        // Selection is kept by NAME (RebuildNetwork), so a renamed selected element has to carry its
+        // selection across to the new one.
+        if (ReferenceEquals(e, SelectedElement)) _selectedElementName = name;
+        Edit($"Rename {e.Name} to {name}", () => e.Name = name);
+        return true;
     }
 
     /// <summary>

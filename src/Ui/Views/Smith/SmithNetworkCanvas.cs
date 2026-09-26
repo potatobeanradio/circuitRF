@@ -9,6 +9,8 @@ using Avalonia.Rendering.SceneGraph;
 using Avalonia.Skia;
 using Avalonia.Styling;
 using CircuitRF.Design.Smith;
+using CircuitRF.Ui.Matching;
+using CircuitRF.Ui.Renderers;
 using CircuitRF.Ui.Schematic;
 using CircuitRF.Ui.Smith;
 using CircuitRF.Ui.Theming;
@@ -164,6 +166,7 @@ public sealed class SmithNetworkCanvas : Control
     {
         if (!Fit()) return;
         InvalidateVisual();
+        ViewportChanged?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>
@@ -284,6 +287,7 @@ public sealed class SmithNetworkCanvas : Control
         _fitted = true;
         e.Handled = true;
         InvalidateVisual();
+        ViewportChanged?.Invoke(this, EventArgs.Empty);
     }
 
     /// <inheritdoc/>
@@ -382,6 +386,7 @@ public sealed class SmithNetworkCanvas : Control
             _panFrom = to;
             _fitted  = true;
             InvalidateVisual();
+            ViewportChanged?.Invoke(this, EventArgs.Empty);
             return;
         }
 
@@ -432,6 +437,7 @@ public sealed class SmithNetworkCanvas : Control
         {
             _zoomBoxCurrent = e.GetPosition(this);
             ZoomToBox();
+            ViewportChanged?.Invoke(this, EventArgs.Empty);
 
             // ONE BOX PER ARM, exactly as the schematic and layout editors do it: the tool goes back
             // to Select afterwards rather than staying latched, because the common case is one
@@ -495,6 +501,64 @@ public sealed class SmithNetworkCanvas : Control
             else _vm?.ClearSelectionCommand.Execute(null);
             e.Handled = true;
         }
+    }
+
+    // ── The inline value editor (double-click a label) ───────────────────────
+
+    /// <summary>
+    /// Raised when a component, its name or one of its parameter labels is double-clicked. The HOST
+    /// decides what, if anything, that edits — <see cref="SmithChartViewModel.ResolveInlineEdit"/>.
+    /// </summary>
+    public event EventHandler<SchematicHitTest.HitResult>? LabelDoubleTapped;
+
+    /// <summary>
+    /// Raised after any zoom, pan or re-fit, so an open editor can follow the label it sits on.
+    /// </summary>
+    public event EventHandler? ViewportChanged;
+
+    /// <summary>
+    /// <b>Double-click edits what was clicked</b>, the schematic page's own gesture on its own
+    /// hit-test.
+    /// </summary>
+    /// <remarks>
+    /// Zoomed far enough out, the renderer draws no labels, and an editor opened then would sit over
+    /// text that is not on screen — so nothing opens. An armed zoom box owns the left button, double
+    /// or not. The event is only marked handled when something took it.
+    /// </remarks>
+    protected override void OnDoubleTapped(TappedEventArgs e)
+    {
+        base.OnDoubleTapped(e);
+        if (_vm is null || _zoomBoxArmed || _zoomBoxDragging) return;
+        if (!SchematicRenderer.LabelsVisibleAt(_zoom)) return;
+
+        var (wx, wy) = ToWorld(e.GetPosition(this));
+        var hit = SchematicHitTest.Test(_projection.Edit, _projection.Model, _projection.Index,
+                                       wx, wy, zoom: _zoom);
+
+        if (hit.Kind is not (SchematicHitTest.HitKind.Component
+                          or SchematicHitTest.HitKind.ComponentName
+                          or SchematicHitTest.HitKind.ComponentParam))
+            return;
+
+        LabelDoubleTapped?.Invoke(this, hit);
+        e.Handled = true;
+    }
+
+    /// <summary>
+    /// Where the editable text of one label row starts, in control-local pixels, at the CURRENT zoom
+    /// and pan — past the row's "<c>Z = </c>" prefix — or null when the row is no longer drawn.
+    /// </summary>
+    /// <remarks>
+    /// The row geometry is <see cref="MatchSchematicLabels.Locate"/>'s, which reads the renderer's own
+    /// <c>LabelRowGeometry</c> with the renderer's own arguments. This pane draws the same
+    /// <c>SchematicModel</c> the Designer's does, so there is no second answer to write.
+    /// </remarks>
+    public (double X, double Y, double FontSize)? AnchorFor(string componentId, int row)
+    {
+        if (MatchSchematicLabels.Locate(_projection.Model, componentId, row) is not { } at) return null;
+        return ((at.BaseX + at.PrefixWidth - _panX) * _zoom,
+                (at.BaselineY - _panY) * _zoom,
+                Controls.SchematicInlineEditBox.FontSizeAt(_zoom));
     }
 
     // ── Render ───────────────────────────────────────────────────────────────

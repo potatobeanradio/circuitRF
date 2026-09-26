@@ -888,9 +888,14 @@
                     </StackPanel>
                 </Grid>
 
+                <!-- The Panel shares the canvas's coordinate space exactly, which is what lets the
+                     inline value editor (the schematic editor's own SchematicInlineEditBox, added from
+                     code-behind) sit on a label using the canvas's screen numbers unchanged. -->
                 <Border Grid.Row="1" Classes="card" Padding="0" Margin="0,0,0,4" ClipToBounds="True">
-                    <sv:SmithNetworkCanvas Name="NetworkCanvas"
-                                           ViewModel="{Binding ViewModel}"/>
+                    <Panel Name="NetworkCanvasHost">
+                        <sv:SmithNetworkCanvas Name="NetworkCanvas"
+                                               ViewModel="{Binding ViewModel}"/>
+                    </Panel>
                 </Border>
 
                 <!-- ── The selected element: its name, its Enabled box and its sliders ──────────
