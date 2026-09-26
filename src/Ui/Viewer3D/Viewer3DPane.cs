@@ -36,6 +36,10 @@ public sealed class Viewer3DPane : Control
     /// counts a release timeout (reported on the status line, never retried in a loop).</summary>
     public const int ReleaseTimeoutMs = 250;
 
+    /// <summary>A press and release closer than this (DIPs) is a click, not a drag: a mouse click or a
+    /// trackpad tap routinely reports a pixel of motion.</summary>
+    public const double ClickSlopDips = 3;
+
     private Viewer3DViewModel? _vm;
     private Compositor? _compositor;
     private ICompositionGpuInterop? _interop;
@@ -44,6 +48,8 @@ public sealed class Viewer3DPane : Control
     private readonly Action _tick;
     private bool _tickQueued;
     private int _imgW, _imgH;
+    private int _attachGen;
+    private TopLevel? _topLevel;
 
     private Thread? _thread;
     private readonly AutoResetEvent _go = new(false);
@@ -98,12 +104,21 @@ public sealed class Viewer3DPane : Control
     protected override async void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
+        // A Dock float or re-dock can detach and re-attach before the await below returns: only the
+        // LATEST attach may build a surface and start a render thread, or a second thread would share
+        // _go, _plan and the images with the first, and no detach would ever join it.
+        int gen = ++_attachGen;
+        _topLevel = TopLevel.GetTopLevel(this);
+        if (_topLevel is not null) _topLevel.ScalingChanged += OnScalingChanged;
         try
         {
             var visual = ElementComposition.GetElementVisual(this);
             if (visual is null) { SetFault("the view has no composition visual."); return; }
-            _compositor = visual.Compositor;
-            _interop = await _compositor.TryGetCompositionGpuInterop();
+            var compositor = visual.Compositor;
+            var interop = await compositor.TryGetCompositionGpuInterop();
+            if (gen != _attachGen) return;
+            _compositor = compositor;
+            _interop = interop;
             if (_interop is null) { SetFault("this window's compositor offers no GPU interop, so the 3D view cannot present."); return; }
             if (_vm is null) return;
             var backend = _vm.Session.EnsureBackend();
@@ -115,6 +130,14 @@ public sealed class Viewer3DPane : Control
             _visual.Size = new Vector(Bounds.Width, Bounds.Height);
             ElementComposition.SetElementChildVisual(this, _visual);
 
+            if (_thread is { IsAlive: false }) _thread = null;
+            if (_thread is not null)
+            {
+                // The last detach could not join its thread (it outlived Join's timeout): it must stop
+                // before a new one starts, never be revived by clearing _stop under it.
+                SetFault("the previous render thread has not stopped; close and reopen the 3D view.");
+                return;
+            }
             _stop = false;
             _thread = new Thread(RenderLoop) { IsBackground = true, Name = "viewer3d-render" };
             _thread.Start();
@@ -127,10 +150,11 @@ public sealed class Viewer3DPane : Control
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnDetachedFromVisualTree(e);
+        ++_attachGen;
+        if (_topLevel is not null) { _topLevel.ScalingChanged -= OnScalingChanged; _topLevel = null; }
         _stop = true;
         _go.Set();
-        _thread?.Join(2000);
-        _thread = null;
+        if (_thread is null || _thread.Join(2000)) _thread = null;
         ElementComposition.SetElementChildVisual(this, null);
         // The images belong to THIS compositor; the device and the uploaded buffers stay with the
         // session, so a re-dock re-imports three images and uploads no geometry.
@@ -151,6 +175,9 @@ public sealed class Viewer3DPane : Control
             RequestFrame();
         }
     }
+
+    /// <summary>The window moved to a monitor of another scale: the images are re-sized on the next frame.</summary>
+    private void OnScalingChanged(object? sender, EventArgs e) => RequestFrame();
 
     private void SetFault(string? why)
     {
@@ -227,23 +254,31 @@ public sealed class Viewer3DPane : Control
             _go.WaitOne();
             if (_stop) return;
             var s = _vm!.Session;
-            var backend = s.Backend!;
             int image = _nextImage;
             ulong value = _frame;
             try
             {
-                if (!backend.WaitReusable(image, ReleaseTimeoutMs))
+                // The whole frame, the wait included, holds the render lock: a tab closed mid-frame
+                // disposes the session under this lock, and a backend freed during WaitReusable would
+                // leave a native call (D3D11's AcquireSync) on a released object — an access violation
+                // no catch can stop. The UI thread takes the lock only to create or release images,
+                // which it never does while a frame is in flight.
+                lock (s.RenderLock)
                 {
-                    // The compositor still holds this image (a minimised or occluded window may not
-                    // composite at all). Never draw into an image we do not hold — D3D11's keyed
-                    // mutex and Vulkan's release semaphore both forbid it — so this frame is skipped,
-                    // counted, and asked for again; nothing loops here.
-                    ReleaseTimeouts++;
-                    _busy = false;
-                    Avalonia.Threading.Dispatcher.UIThread.Post(RequestFrame, Avalonia.Threading.DispatcherPriority.Background);
-                    continue;
+                    if (s.Backend is not { } backend) return;      // the session was disposed
+                    if (!backend.WaitReusable(image, ReleaseTimeoutMs))
+                    {
+                        // The compositor still holds this image (a minimised or occluded window may not
+                        // composite at all). Never draw into an image we do not hold — D3D11's keyed
+                        // mutex and Vulkan's release semaphore both forbid it — so this frame is skipped,
+                        // counted, and asked for again; nothing loops here.
+                        ReleaseTimeouts++;
+                        _busy = false;
+                        Avalonia.Threading.Dispatcher.UIThread.Post(RequestFrame, Avalonia.Threading.DispatcherPriority.Background);
+                        continue;
+                    }
+                    if (!s.Frame(image, _plan, value, _planScene, _pMesh, _pSection, _pGrid, _pOrbit)) return;
                 }
-                s.Frame(image, _plan, value, _planScene, _pMesh, _pSection, _pGrid, _pOrbit);
                 _doneImage = image;
                 _doneValue = value;
                 _done = true;
@@ -260,7 +295,7 @@ public sealed class Viewer3DPane : Control
 
     // ── input (R-em3d28-4a) ─────────────────────────────────────────────────────────────────
 
-    private Point? _last;
+    private Point? _last, _pressedAt;
     private bool _orbiting, _panning;
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)
@@ -268,7 +303,7 @@ public sealed class Viewer3DPane : Control
         base.OnPointerPressed(e);
         Focus();
         var p = e.GetCurrentPoint(this);
-        _last = p.Position;
+        _last = _pressedAt = p.Position;
         _panning = p.Properties.IsMiddleButtonPressed || (p.Properties.IsLeftButtonPressed && e.KeyModifiers.HasFlag(KeyModifiers.Shift))
                    || p.Properties.IsRightButtonPressed;
         _orbiting = !_panning && p.Properties.IsLeftButtonPressed;
@@ -286,7 +321,7 @@ public sealed class Viewer3DPane : Control
         if (_last is { } last && (_orbiting || _panning))
         {
             var d = pos - last;
-            if (Math.Abs(d.X) + Math.Abs(d.Y) > 0) _moved = true;
+            if (_pressedAt is { } at && Math.Abs(pos.X - at.X) + Math.Abs(pos.Y - at.Y) > ClickSlopDips) _moved = true;
             if (_orbiting) _vm?.Orbit((float)d.X, (float)d.Y);
             else _vm?.Pan((float)d.X, (float)d.Y, (float)Bounds.Height);
             _last = pos;
@@ -299,8 +334,17 @@ public sealed class Viewer3DPane : Control
         base.OnPointerReleased(e);
         if (_orbiting && !_moved) _vm?.Click();
         _orbiting = _panning = false;
-        _last = null;
+        _last = _pressedAt = null;
         e.Pointer.Capture(null);
+    }
+
+    /// <summary>Alt-Tab or a focus steal mid-drag loses the capture and the release never arrives:
+    /// without this, every later hover would keep orbiting or panning until the next click.</summary>
+    protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)
+    {
+        base.OnPointerCaptureLost(e);
+        _orbiting = _panning = false;
+        _last = _pressedAt = null;
     }
 
     protected override void OnPointerExited(PointerEventArgs e)
@@ -331,9 +375,10 @@ public sealed class Viewer3DPane : Control
         if (_vm is null || e.KeyModifiers != KeyModifiers.None) return;
         StandardView3D? v = e.Key switch
         {
-            Key.D1 => StandardView3D.Iso, Key.D2 => StandardView3D.Top, Key.D3 => StandardView3D.Front,
-            Key.D4 => StandardView3D.Right, Key.D5 => StandardView3D.Back, Key.D6 => StandardView3D.Left,
-            Key.D7 => StandardView3D.Bottom, _ => null,
+            Key.D1 or Key.NumPad1 => StandardView3D.Iso, Key.D2 or Key.NumPad2 => StandardView3D.Top,
+            Key.D3 or Key.NumPad3 => StandardView3D.Front, Key.D4 or Key.NumPad4 => StandardView3D.Right,
+            Key.D5 or Key.NumPad5 => StandardView3D.Back, Key.D6 or Key.NumPad6 => StandardView3D.Left,
+            Key.D7 or Key.NumPad7 => StandardView3D.Bottom, _ => null,
         };
         if (v is { } view) { _vm.StandardViewCommand.Execute(view); e.Handled = true; return; }
         switch (e.Key)

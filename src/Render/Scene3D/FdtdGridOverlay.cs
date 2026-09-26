@@ -47,6 +47,13 @@ public static class FdtdGridOverlay
         }
 
         // ── on conductor surfaces ────────────────────────────────────────────────────────────
+        // Vertices are FLOAT and scene-local, so a vertex the grid put a line through exactly comes back
+        // a few ulps above or below it — and which side decides whether the metal's own edge (the one
+        // line §8.5 exists to show) is drawn. Coordinates within SnapUlps of a line are taken as ON it,
+        // and a triangle with an EDGE on a line draws that edge.
+        var far = Vector3.Max(Vector3.Abs(scene.BoundsMin), Vector3.Abs(scene.BoundsMax));
+        float reach = MathF.Max(far.X, MathF.Max(far.Y, far.Z));
+        double tol = SnapUlps * 1.1920929e-7 * reach;       // float's machine epsilon × the extent
         foreach (var batch in scene.Batches)
         {
             ct.ThrowIfCancellationRequested();
@@ -59,7 +66,8 @@ public static class FdtdGridOverlay
                 for (int i = batch.FirstIndex; i < batch.FirstIndex + batch.IndexCount; i += 3)
                 {
                     var p0 = P(scene, scene.Indices[i]); var p1 = P(scene, scene.Indices[i + 1]); var p2 = P(scene, scene.Indices[i + 2]);
-                    double d0 = C(p0, axis) + shift, d1 = C(p1, axis) + shift, d2 = C(p2, axis) + shift;
+                    double d0 = Snap(lines, C(p0, axis) + shift, tol), d1 = Snap(lines, C(p1, axis) + shift, tol),
+                           d2 = Snap(lines, C(p2, axis) + shift, tol);
                     double lo = Math.Min(d0, Math.Min(d1, d2)), hi = Math.Max(d0, Math.Max(d1, d2));
                     if (hi <= lo) continue;                                  // a face lying in a grid plane
                     for (int k = LowerBound(lines, lo); k < lines.Count && lines[k] <= hi; k++)
@@ -67,8 +75,11 @@ public static class FdtdGridOverlay
                         double g = lines[k];
                         Vector3 h0 = default, h1 = default;
                         int h = 0;
-                        Edge(p0, d0, p1, d1); Edge(p1, d1, p2, d2); Edge(p0, d0, p2, d2);
-                        if (h == 2)
+                        if (d0 == g && d1 == g) { h0 = p0; h1 = p1; h = 2; }      // an edge ON the line
+                        else if (d1 == g && d2 == g) { h0 = p1; h1 = p2; h = 2; }
+                        else if (d0 == g && d2 == g) { h0 = p0; h1 = p2; h = 2; }
+                        else { Edge(p0, d0, p1, d1); Edge(p1, d1, p2, d2); Edge(p0, d0, p2, d2); }
+                        if (h == 2 && h0 != h1)
                         {
                             outv.Add(new Scene3DVertex(h0.X, h0.Y, h0.Z, 0, metalInk));
                             outv.Add(new Scene3DVertex(h1.X, h1.Y, h1.Z, 0, metalInk));
@@ -112,6 +123,18 @@ public static class FdtdGridOverlay
             outv.Add(new Scene3DVertex(q0.X, q0.Y, q0.Z, 0, rgba));
             outv.Add(new Scene3DVertex(q1.X, q1.Y, q1.Z, 0, rgba));
         }
+    }
+
+    /// <summary>How many float ulps of the scene's extent a vertex may sit off a grid line and still be
+    /// taken as on it.</summary>
+    public const double SnapUlps = 4;
+
+    private static double Snap(IReadOnlyList<double> lines, double d, double tol)
+    {
+        int k = LowerBound(lines, d);
+        if (k < lines.Count && lines[k] - d <= tol) return lines[k];
+        if (k > 0 && d - lines[k - 1] <= tol) return lines[k - 1];
+        return d;
     }
 
     /// <summary>The smallest spacing between consecutive lines — what the label states.</summary>

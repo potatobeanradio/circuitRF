@@ -3,8 +3,9 @@
 // On every fixture shape: the triangles' area equals the polygon's area minus its holes to 1e-12
 // relative, every triangle is wound counter-clockwise, and none lies outside the outline or inside a
 // hole (its centroid and its edge midpoints are all in the polygon). The shapes are the ones a layout
-// produces: slivers, collinear runs, a hole touching the outline at one vertex, and a 10,000-vertex
-// board outline.
+// produces: slivers, collinear runs (exact, and a diagonal one from DBU that is only nearly collinear), a
+// hole touching the outline at one vertex, holes touching each other, an outline touching itself, and a
+// 10,000-vertex board outline.
 
 using CircuitRF.Engine.Em3d;
 using Xunit;
@@ -43,8 +44,22 @@ public sealed class CapTriangulationTests
         ["hole at a corner"]     = (R(0, 0, 10, 0, 10, 10, 0, 10), [R(0, 0, 3, 1, 1, 3)]),
         ["hole on an edge"]      = (R(0, 0, 10, 0, 10, 10, 0, 10), [R(5, 0, 6, 2, 4, 2)]),
         ["three holes"]          = (R(0, 0, 10, 0, 10, 6, 0, 6), [R(1, 1, 3, 1, 3, 3, 1, 3), Circle(6, 3, 1.5, 24, cw: true), R(8, 1, 9, 1, 8.5, 5)]),
+        ["diagonal run in DBU"]  = (DiagonalRun(), []),
+        ["pinched at one vertex"] = (R(0, 0, 1, 0, 1, 1, 2, 1, 2, 2, 1, 2, 1, 1, 0, 1), []),
+        ["two holes touching"]   = (R(0, 0, 10, 0, 10, 10, 0, 10), [R(2, 2, 5, 2, 5, 5, 2, 5), R(5, 5, 8, 5, 8, 8, 5, 8)]),
         ["board, 10,000 vertices"] = (Board(), [.. Enumerable.Range(0, 12).Select(k => Circle(-0.06 + 0.024 * (k % 6), -0.015 + 0.03 * (k / 6), 4e-3, 32))]),
     };
+
+    /// <summary>A 45° edge sampled at integer DBU and scaled to metres, as a layout hands it over: only
+    /// NEARLY collinear in doubles, so no point is filtered and each is a tiny reflex or convex one.</summary>
+    private static List<Point2> DiagonalRun()
+    {
+        const double dbu = 1e-9;
+        var p = new List<Point2> { new(0, 0), new(3000 * dbu, 0) };
+        for (int k = 1; k <= 997; k++) p.Add(new((3000 + 7 * k) * dbu, 7 * k * dbu));
+        p.Add(new(0, 7 * 997 * dbu));
+        return p;
+    }
 
     /// <summary>A board-sized wavy outline, 10,000 vertices, 0.2 × 0.1 m.</summary>
     private static List<Point2> Board()

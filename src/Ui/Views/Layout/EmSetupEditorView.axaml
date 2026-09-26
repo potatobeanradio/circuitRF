@@ -388,9 +388,8 @@
 
                 <!-- brief-em3d-28 R-em3d28-5: what is about to be solved, in 3D, before any solve. -->
                 <Button Name="Show3DButton" Margin="4,0,0,0"
-                        IsVisible="{Binding ViewModel.Is3DSetup}"
                         Command="{Binding ViewModel.Show3DCommand}"
-                        ToolTip.Tip="Open this setup's 3D view: the solids, ports and air box it will solve, and after a run the mesh or grid.">
+                        ToolTip.Tip="Open this setup's 3D view: the layout's solids, ports and air box in 3D, and after a 3D run the mesh or grid.">
                     <StackPanel Orientation="Horizontal" Spacing="4">
                         <mi:MaterialIcon Kind="CubeOutline" Width="14" Height="14"/>
                         <TextBlock Text="Show 3D"/>

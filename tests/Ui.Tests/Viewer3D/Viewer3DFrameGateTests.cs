@@ -11,6 +11,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Avalonia.Rendering.Composition;
 using CircuitRF.Design.Layout.Em3d;
+using CircuitRF.Engine.Em3d;
 using CircuitRF.Render;
 using CircuitRF.Render.Scene3D;
 using CircuitRF.Ui.Tests.Em3d;
@@ -113,6 +114,7 @@ public sealed class Viewer3DFrameGateTests : IDisposable
         var scene = Scene3DBuilder.Build(g.Problem!, 1, g.Origins);
         var fake = new RecordingBackend();
         using var session = new Viewer3DSession(() => fake);
+        session.EnsureBackend();                        // the pane does this on attach
         var view = new Viewer3DViewState { Camera = Camera3D.Fit(scene.ContentMin, scene.ContentMax, 1.6f) };
         view.Adopt(scene, null);
         var plan = new Scene3DFramePlan();
@@ -165,6 +167,7 @@ public sealed class Viewer3DFrameGateTests : IDisposable
         var scene = vm.Scene;
         uint wire = scene.Objects.First(o => o.Kind == Scene3DKind.Wire).Id;
         fake.Answer = wire;
+        vm.Session.EnsureBackend();
 
         long tessellations = Scene3DBuilder.Tessellations, builds = vm.Source.Builds;
         var plan = new Scene3DFramePlan();
@@ -211,6 +214,31 @@ public sealed class Viewer3DFrameGateTests : IDisposable
         Assert.True(vm.View.Camera.Distance > before * 1.3f);
     }
 
+    // ── a planar setup, shown in 3D ─────────────────────────────────────────────────────────
+
+    /// <summary>Show 3D is offered for a planar setup too: its layout through the stackup, with one
+    /// note saying what it is — and no mesh or grid, which only a 3D solver makes.</summary>
+    [Fact]
+    public void APlanarSetup_IsShownInThreeD_WithOneNote()
+    {
+        var (setup, source) = Em3dGeneratorTests.CaseB(plated: true);
+        setup.Solver3D = Em3dSolver.None;
+        using var ready = new ManualResetEventSlim(false);
+        using var vm = new Viewer3DViewModel(Path.Combine(_root, "via.cem"),
+            () => new Viewer3DInputs(setup.Clone(), source, null, ColorTheme.BuiltIn, ColorVariant.Light),
+            () => new RecordingBackend(), () => _root, a => a());
+        vm.Source.SceneReady += _ => ready.Set();
+        vm.Regenerate();
+        Assert.True(ready.Wait(TimeSpan.FromSeconds(30)));
+        SpinWait.SpinUntil(() => vm.Scene.Generation == 1, TimeSpan.FromSeconds(5));
+
+        Assert.Contains(vm.Scene.Objects, o => o.Kind == Scene3DKind.Conductor);
+        Assert.Contains(vm.Scene.Objects, o => o.Kind == Scene3DKind.Port);
+        Assert.Equal(["Planar setup, shown in 3D."], vm.Scene.Notes);
+        Assert.False(vm.MeshAvailable);
+        Assert.False(vm.GridAvailable);
+    }
+
     // ── the real Metal backend, offscreen ───────────────────────────────────────────────────
 
     [Fact]
@@ -225,6 +253,7 @@ public sealed class Viewer3DFrameGateTests : IDisposable
         var view = new Viewer3DViewState { Camera = Camera3D.Fit(scene.ContentMin, scene.ContentMax, w / (float)h) };
         view.Adopt(scene, null);
         var session = new Viewer3DSession(() => metal);
+        session.EnsureBackend();
 
         // A pixel on the wire, found by the CPU.
         (int X, int Y)? onWire = null;

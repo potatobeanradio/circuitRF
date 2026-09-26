@@ -13,6 +13,7 @@
 // A MALFORMED FILE REFUSES WITH ITS PLACE: the line number for text, the byte offset inside a binary
 // section, and what was expected there.
 
+using System.Buffers.Binary;
 using System.Globalization;
 using System.Text;
 
@@ -245,6 +246,7 @@ public static class MshReader
         private int _pos, _len;
         private long _offset;             // bytes consumed before _buf[0]
         private int _line;
+        private bool _binary;
         private readonly StringBuilder _sb = new();
 
         private bool Fill()
@@ -288,14 +290,16 @@ public static class MshReader
 
         public int ReadInt32()
         {
-            if (_len - _pos >= 4) { int v = BitConverter.ToInt32(_buf, _pos); _pos += 4; return v; }
-            Span<byte> b = stackalloc byte[4]; Need(4, b); return BitConverter.ToInt32(b);
+            _binary = true;
+            if (_len - _pos >= 4) { int v = BinaryPrimitives.ReadInt32LittleEndian(_buf.AsSpan(_pos)); _pos += 4; return v; }
+            Span<byte> b = stackalloc byte[4]; Need(4, b); return BinaryPrimitives.ReadInt32LittleEndian(b);
         }
 
         public double ReadDouble()
         {
-            if (_len - _pos >= 8) { double v = BitConverter.ToDouble(_buf, _pos); _pos += 8; return v; }
-            Span<byte> b = stackalloc byte[8]; Need(8, b); return BitConverter.ToDouble(b);
+            _binary = true;
+            if (_len - _pos >= 8) { double v = BinaryPrimitives.ReadDoubleLittleEndian(_buf.AsSpan(_pos)); _pos += 8; return v; }
+            Span<byte> b = stackalloc byte[8]; Need(8, b); return BinaryPrimitives.ReadDoubleLittleEndian(b);
         }
 
         public string[] Tokens(string line) => line.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
@@ -310,6 +314,8 @@ public static class MshReader
             => double.TryParse(t, NumberStyles.Float, CultureInfo.InvariantCulture, out double v) ? v : throw Bad($"a number, found '{t.ToString()}'");
 
         public InvalidDataException Bad(string expected)
-            => new($"{name}, line {_line} (byte {_offset + _pos}): expected {expected}.");
+            => new(_binary   // a binary block has no lines, so a count past one names the wrong line
+                ? $"{name}, byte {_offset + _pos}: expected {expected}."
+                : $"{name}, line {_line} (byte {_offset + _pos}): expected {expected}.");
     }
 }

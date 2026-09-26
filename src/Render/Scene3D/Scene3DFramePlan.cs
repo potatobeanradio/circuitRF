@@ -148,14 +148,18 @@ public sealed class Scene3DFramePlan
             Add(ref Draws, ref DrawCount, Scene3DPipeline.Lines, Scene3DBuffer.Overlay2, 0, grid.Lines.Length);
 
         // Translucent objects back to front, one draw each (brief 27 §2.4: per object, not per triangle).
+        // Keyed on VIEW DEPTH, not distance from the eye: orthographic allows a negative near plane, so
+        // after zooming in the eye sits inside the scene and objects behind it are still drawn — the
+        // nearest to the viewer, though the eye is closer to them than to what they cover.
         var eye = view.Camera.Eye;
+        var forward = view.Camera.Forward;
         int n = 0;
         var batches = scene.Batches;
         for (int i = 0; i < batches.Length; i++)
         {
             if (!batches[i].Translucent || !view.IsVisible(batches[i].ObjectId)) continue;
             _order[n] = i;
-            _keys[n] = -Vector3.DistanceSquared(scene.Objects[batches[i].ObjectId - 1].Centroid, eye);
+            _keys[n] = -Vector3.Dot(scene.Objects[batches[i].ObjectId - 1].Centroid - eye, forward);
             n++;
         }
         Array.Sort(_keys, _order, 0, n);

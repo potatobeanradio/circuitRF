@@ -145,6 +145,11 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
         _pickId = NewTexture(1, 1, FmtR32Uint, 4, 0);
         _pickPos = NewTexture(1, 1, FmtRGBA32Float, 4, 0);
         _pickDepth = NewTexture(1, 1, FmtDepth32F, 4, 2);
+
+        // The pipelines hold what they need; the library and its functions were ours (new…), the
+        // vertex descriptor was not (a class factory's autoreleased object).
+        foreach (nint f in new[] { vs, fsc, fsl, fsp }) Send(f, S.release);
+        Send(lib, S.release);
     }
 
     // ── geometry ────────────────────────────────────────────────────────────────────────────
@@ -457,10 +462,24 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
         }
     }
 
+    /// <summary>Everything this backend made or retained — a closed 3D tab otherwise kept the device, its
+    /// pipelines and a full-size depth texture alive for the rest of the session.</summary>
     public override void Dispose()
     {
+        for (int i = 0; i < Ring; i++)
+        {
+            if (_rbCmd[i] == 0) continue;
+            Send(_rbCmd[i], S.waitUntilCompleted);      // its blit writes a readback buffer freed below
+            Release(ref _rbCmd[i]);
+        }
         ReleaseImages();
         Release(ref _vb); Release(ref _ib); Release(ref _lines);
         for (int i = 0; i < 3; i++) Release(ref _overlays[i]);
+        for (int i = 0; i < Ring; i++) Release(ref _rb[i]);
+        Release(ref _depth); Release(ref _pickId); Release(ref _pickPos); Release(ref _pickDepth);
+        Release(ref _pOpaque); Release(ref _pTrans); Release(ref _pLines); Release(ref _pPick);
+        Release(ref _dsWrite); Release(ref _dsNoWrite);
+        if (_queue != 0) Send(_queue, S.release);
+        if (_device != 0) Send(_device, S.release);
     }
 }

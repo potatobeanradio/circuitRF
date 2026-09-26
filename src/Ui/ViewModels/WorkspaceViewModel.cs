@@ -1493,6 +1493,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             // A torn-off document belonging to the OLD workspace closes with it; a foreign one
             // survives. Must run while CurrentWorkspacePath still names the workspace being left.
             CloseFloatedDocumentsOwnedByWorkspace(CurrentWorkspacePath);
+            Release3DViewsOfOutgoingWorkspace();
             _openDocsByPath.Clear();
             _scratchDocs.Clear();
             _scratchSymbols.Clear();
@@ -2411,6 +2412,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         _focusedWindowIsToolOnly = false;
         _activeDocumentPane      = null;
 
+        Release3DViewsOfOutgoingWorkspace();
         _openDocsByPath.Clear();
         _scratchDocs.Clear();
         _scratchSymbols.Clear();
@@ -3115,6 +3117,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var stillOpenScratchHarmonicas   = _scratchHarmonicas.Where(d   => !IsDockableDocked(d)).ToList();
         var stillOpenScratchSmithCharts  = _scratchSmithCharts.Where(d  => !IsDockableDocked(d)).ToList();
 
+        _viewer3DCameras = null;           // the next workspace's .cwsuser holds its own
         _openDocsByPath.Clear();
         foreach (var dockable in stillOpen)
         {
@@ -3131,6 +3134,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 PartLibraryDocument plibd        => plibd.FilePath,
                 MarkdownDocument mdd             => mdd.FilePath,
                 CellParameterEditorDocument cpd  => Path.GetDirectoryName(cpd.ViewModel.EditModel.CcellPath),
+                Viewer3D.Viewer3DDocument v3d    => Viewer3D.Viewer3DDocument.KeyFor(v3d.CemPath),
                 _ => null,
             };
             if (path is not null) _openDocsByPath[path] = dockable;

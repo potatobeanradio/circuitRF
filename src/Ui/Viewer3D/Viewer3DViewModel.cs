@@ -74,9 +74,25 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
     private bool _fitted;
     private CancellationTokenSource? _overlayCts;
     private MshMesh? _mesh;
-    private string? _meshPath;
-    private FdtdGridResult? _grid;
+    /// <summary>The file _mesh was read from, AS IT WAS: a re-run rewrites the same path, so the path
+    /// alone would keep showing the old mesh and its old count.</summary>
+    private MeshStamp? _meshStamp;
+    private MeshStamp? _meshLoading;
+    /// <summary>The FDTD grid and the scene it was built for. Written by whichever overlay task builds
+    /// it first, cancelled or not — a clip-plane drag cancels every task before its successor, and a
+    /// cache filled only on completion would rebuild the grid on every tick of the drag.</summary>
+    private (Scene3DModel Scene, FdtdGridResult Grid)? _grid;
     private long _overlayVersion;
+    private bool _disposed;
+
+    private sealed record MeshStamp(string Path, DateTime WrittenUtc, long Length)
+    {
+        public static MeshStamp? Of(string path)
+        {
+            try { var f = new FileInfo(path); return f.Exists ? new MeshStamp(path, f.LastWriteTimeUtc, f.Length) : null; }
+            catch (Exception) { return null; }
+        }
+    }
 
     public string CemPath { get; }
     public string Title { get; }
@@ -121,6 +137,7 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
     /// <summary>Asks for a new scene now, from a snapshot taken on this (the UI) thread.</summary>
     public void Regenerate()
     {
+        if (_disposed) return;
         var inputs = _prepare();
         long gen = Source.Request(inputs);
         _inputs[gen] = inputs;
@@ -130,6 +147,7 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
     /// <summary>A .cem, .clay, .ctech or .wBond changed: regenerate after the burst settles.</summary>
     public void Invalidate()
     {
+        if (_disposed) return;
         _debounce?.Dispose();
         _debounce = new System.Threading.Timer(_ => _post(Regenerate), null, RegenerateDebounceMs, Timeout.Infinite);
     }
@@ -144,6 +162,7 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
         var inputs = (Viewer3DInputs)state!;
         if (inputs.Refusal is not null || inputs.Source is not { } source) return Scene3DModel.Empty(gen, [inputs.Refusal ?? "no layout"]);
         if (source.Technology is not { } tech) return Scene3DModel.Empty(gen, [EmDiagnostics.NoTechnology(inputs.Setup.LayoutRef).Render()]);
+        if (!inputs.Setup.Is3D) return BuildPlanar(gen, inputs, source, tech, ct);
         var g = Em3dGenerator.Generate(inputs.Setup, source, tech);
         ct.ThrowIfCancellationRequested();
         var notes = new List<string>();
@@ -169,10 +188,30 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
         return Scene3DBuilder.Build(g.Problem, gen, g.Origins, tech, inputs.Theme, inputs.Variant, notes);
     }
 
+    /// <summary>
+    /// A PLANAR setup, for a look in 3D: its layout through the stackup, as a driven 3D problem with every
+    /// port lumped would be built — the air box at the generator's default and the dielectrics finite.
+    /// Nothing about a 3D solve is asked of it, so the generator's notes on one are not repeated; the
+    /// single note says what the picture is.
+    /// </summary>
+    private static Scene3DModel BuildPlanar(long gen, Viewer3DInputs inputs, EmLayoutSource source,
+                                            Technology tech, CancellationToken ct)
+    {
+        var preview = inputs.Setup.Clone();
+        preview.Solver3D = Em3dSolver.Palace;
+        preview.Problem3D = Em3dProblemType.Driven;
+        preview.Ports3D = [];
+        var g = Em3dGenerator.Generate(preview, source, tech);
+        ct.ThrowIfCancellationRequested();
+        if (g.Problem is null) return Scene3DModel.Empty(gen, [g.Refusal ?? "the layout could not be built in 3D."]);
+        return Scene3DBuilder.Build(g.Problem, gen, g.Origins, tech, inputs.Theme, inputs.Variant,
+                                    ["Planar setup, shown in 3D."]);
+    }
+
     /// <summary>UI thread: the newest scene arrived. Keeps the user's toggles, fits the first one.</summary>
     internal void Adopt(Scene3DModel scene)
     {
-        if (scene.Generation < Scene.Generation) return;
+        if (_disposed || scene.Generation < Scene.Generation) return;
         if (_inputs.TryGetValue(scene.Generation, out var inputs))
         {
             _lastSetup = inputs.Setup;
@@ -291,6 +330,8 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
     // ── status and hover ────────────────────────────────────────────────────────────────────
 
     [ObservableProperty] private bool _isRegenerating;
+
+    partial void OnIsRegeneratingChanged(bool value) => OnPropertyChanged(nameof(Status));
     [ObservableProperty] private string _notes = "";
     [ObservableProperty] private string _hoverText = "";
     [ObservableProperty] private string _cursorText = "";
@@ -298,7 +339,8 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
 
     public string Status => Scene.Objects.Length == 0
         ? (Scene.Notes.Count > 0 ? "Nothing to show: " + Scene.Notes[0] : "Generating the 3D problem…")
-        : $"{Scene.Objects.Length} objects, {Scene.TriangleCount:N0} triangles, {Scene.Batches.Length} draws (generation {Scene.Generation})";
+        : $"{Scene.Objects.Length} objects, {Scene.TriangleCount:N0} triangles, {Scene.Batches.Length} draws (generation {Scene.Generation})"
+          + (IsRegenerating ? " — regenerating…" : "");
 
     /// <summary>Frame loop → UI: the ID pass's answer arrived. Updates the tooltip and the dimension
     /// under the cursor. Touches no geometry.</summary>
@@ -451,7 +493,8 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
     [ObservableProperty] private bool _showGrid;
 
     public string MeshTip => MeshAvailable ? "Show the mesh Gmsh made (boundary triangles, and the tetrahedra the clip plane cuts)"
-                                           : "Simulate to mesh";
+                           : _lastSetup is { Is3D: false } ? "The planar mesh is shown in the layout view"
+                           : "Simulate to mesh";
     public string GridTip => GridAvailable ? "Show the FDTD grid on the clip plane and where it meets the metal"
                                            : "The FDTD grid is shown for an openEMS setup";
 
@@ -483,31 +526,38 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
     public void RefreshSolverOverlays()
     {
         MeshAvailable = MeshPath() is not null;
+        OnPropertyChanged(nameof(MeshTip));
         if (MeshAvailable && ShowMeshWhenAvailable) { ShowMeshWhenAvailable = false; ShowMesh = true; }
         if (!MeshAvailable && ShowMesh) ShowMesh = false;
-        if (_meshPath is not null && MeshPath() != _meshPath) { _mesh = null; _meshPath = null; }
+        if (_meshStamp is not null && (MeshPath() is not { } now || MeshStamp.Of(now) != _meshStamp))
+        {
+            _mesh = null; _meshStamp = null;
+            MeshText = "";
+        }
         if (ShowMesh) LoadMesh();
 
         GridAvailable = _lastSetup?.Solver3D is Em3dSolver.OpenEms or Em3dSolver.Both && Scene.Problem is not null;
-        _grid = null;
         if (!GridAvailable && ShowGrid) ShowGrid = false;
         ScheduleClipOverlays();
     }
 
-    /// <summary>The mesh is micrometres (GmshGeoWriter's units, Palace L0 = 1e-6).</summary>
-    public const double MeshToMetres = 1e-6;
+    /// <summary>The mesh is in GmshGeoWriter's units (Palace's L0).</summary>
+    public const double MeshToMetres = GmshGeoWriter.LengthUnitM;
 
     private void LoadMesh()
     {
         if (MeshPath() is not { } path) return;
         var scene = Scene;
         bool dark = ThemeService.CurrentVariant == ColorVariant.Dark;
-        if (_mesh is not null && _meshPath == path)
+        var stamp = MeshStamp.Of(path);
+        if (_mesh is not null && stamp is not null && _meshStamp == stamp)
         {
             MeshOverlay = new Scene3DOverlay(Render.Scene3D.MeshOverlay.BoundaryWireframe(_mesh, scene, MeshToMetres, dark), ++_overlayVersion);
             ScheduleClipOverlays();
             return;
         }
+        if (stamp is not null && _meshLoading == stamp) return;      // already being read
+        _meshLoading = stamp;
         MeshText = "Reading the mesh…";
         Task.Run(() =>
         {
@@ -517,14 +567,23 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
                 var lines = Render.Scene3D.MeshOverlay.BoundaryWireframe(m, scene, MeshToMetres, dark);
                 _post(() =>
                 {
-                    _mesh = m; _meshPath = path;
+                    if (_meshLoading == stamp) _meshLoading = null;
+                    if (_disposed) return;
+                    _mesh = m; _meshStamp = stamp;
                     MeshOverlay = new Scene3DOverlay(lines, ++_overlayVersion);
                     MeshText = $"Mesh: {m.TetCount:N0} tetrahedra, {m.TriangleCount:N0} boundary triangles, {m.NodeCount:N0} nodes";
                     ScheduleClipOverlays();
                     FrameRequested?.Invoke();
                 });
             }
-            catch (Exception ex) { _post(() => MeshText = "The mesh could not be read: " + ex.Message); }
+            catch (Exception ex)
+            {
+                _post(() =>
+                {
+                    if (_meshLoading == stamp) _meshLoading = null;
+                    MeshText = "The mesh could not be read: " + ex.Message;
+                });
+            }
         });
     }
 
@@ -540,7 +599,7 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
         bool wantSection = ShowMesh && ClipEnabled && mesh is not null;
         bool wantGrid = ShowGrid && GridAvailable && scene.Problem is not null;
         var setup = _lastSetup;
-        var grid = _grid;
+        var grid = _grid is { } cached && ReferenceEquals(cached.Scene, scene) ? cached.Grid : null;
         bool dark = ThemeService.CurrentVariant == ColorVariant.Dark;
         if (!wantSection) SectionOverlay = Scene3DOverlay.None;
         if (!wantGrid) { GridOverlay = Scene3DOverlay.None; GridLabels = []; OnPropertyChanged(nameof(GridLabels)); }
@@ -556,14 +615,18 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
                 FdtdGridDrawing? drawing = null;
                 if (wantGrid)
                 {
-                    grid ??= FdtdGrid.Build(scene.Problem!, CemOpenEms.ResolveGrid(setup?.OpenEms));
+                    if (grid is null)
+                    {
+                        grid = FdtdGrid.Build(scene.Problem!, CemOpenEms.ResolveGrid(setup?.OpenEms));
+                        var built = grid;
+                        _post(() => { if (ReferenceEquals(Scene, scene)) _grid = (scene, built); });
+                    }
                     drawing = FdtdGridOverlay.Build(grid, scene, clip, dark, cts.Token);
                 }
                 if (cts.IsCancellationRequested) return;
                 _post(() =>
                 {
                     if (cts.IsCancellationRequested) return;
-                    _grid = grid;
                     if (section is not null) SectionOverlay = new Scene3DOverlay(section, ++_overlayVersion);
                     if (drawing is not null)
                     {
@@ -601,8 +664,8 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
             !Ok(c.TargetX) || !Ok(c.TargetY) || !Ok(c.TargetZ))
             return;
         View.Camera.Target = new Vector3((float)c.TargetX, (float)c.TargetY, (float)c.TargetZ);
-        View.Camera.Yaw = (float)c.Yaw;
-        View.Camera.Pitch = (float)c.Pitch;
+        View.Camera.Yaw = (float)Math.IEEERemainder(c.Yaw, 2 * Math.PI);
+        View.Camera.Pitch = (float)Math.Clamp(c.Pitch, -Math.PI / 2, Math.PI / 2);     // as Orbit keeps it
         View.Camera.Distance = (float)c.Distance;
         IsPerspective = !c.Orthographic;
         View.Camera.Projection = c.Orthographic ? Projection3D.Orthographic : Projection3D.Perspective;
@@ -614,6 +677,11 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
     {
         if (!_fitted) return _pendingCamera;
         var c = View.Camera;
+        // JSON cannot write a NaN or an infinity (the whole .cwsuser save would throw), and a camera
+        // that is not finite is not one worth restoring anyway.
+        if (!float.IsFinite(c.Target.X) || !float.IsFinite(c.Target.Y) || !float.IsFinite(c.Target.Z) ||
+            !float.IsFinite(c.Yaw) || !float.IsFinite(c.Pitch) || !(c.Distance > 0) || !float.IsFinite(c.Distance))
+            return null;
         return new Design.Workspace.CwsCamera3D
         {
             TargetX = c.Target.X, TargetY = c.Target.Y, TargetZ = c.Target.Z,
@@ -624,6 +692,8 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
+        if (_disposed) return;
+        _disposed = true;
         _debounce?.Dispose();
         _overlayCts?.Cancel();
         Source.Dispose();

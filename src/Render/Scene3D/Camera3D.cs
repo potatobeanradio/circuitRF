@@ -93,7 +93,8 @@ public struct Camera3D
 
     public void Orbit(float dxPixels, float dyPixels)
     {
-        Yaw -= dxPixels * OrbitRadiansPerPixel;
+        // Wrapped: the yaw is persisted, and an unbounded one loses float precision turn by turn.
+        Yaw = MathF.IEEERemainder(Yaw - dxPixels * OrbitRadiansPerPixel, 2 * MathF.PI);
         Pitch = Math.Clamp(Pitch + dyPixels * OrbitRadiansPerPixel, -MathF.PI / 2, MathF.PI / 2);
     }
 

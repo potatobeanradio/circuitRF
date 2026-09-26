@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Threading;
 using CircuitRF.Render;
 using CircuitRF.Ui.Viewer3D;
 
@@ -66,11 +67,17 @@ public partial class Viewer3DView : UserControl
         _vm.View.Background = ThemeService.CurrentVariant == ColorVariant.Dark ? (0.12f, 0.13f, 0.15f) : (0.93f, 0.94f, 0.96f);
     }
 
+    /// <summary>ItemsControl.ScrollIntoView resolves an item among the TOP-level items only, and a leaf
+    /// sits under a group whose children are not realized until it expands — so the group is expanded
+    /// first and the leaf's container brought into view once layout has made it.</summary>
     private void Reveal(Viewer3DTreeItem item)
     {
         foreach (var c in ObjectTree.GetRealizedContainers())
             if (c is TreeViewItem group && group.DataContext is Viewer3DTreeGroup g && g.Items.Contains(item))
+            {
                 group.IsExpanded = true;
-        ObjectTree.ScrollIntoView(item);
+                Dispatcher.UIThread.Post(() => group.ContainerFromItem(item)?.BringIntoView(), DispatcherPriority.Loaded);
+                return;
+            }
     }
 }

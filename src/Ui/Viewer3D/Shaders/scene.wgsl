@@ -1,6 +1,6 @@
 // brief-em3d-28 R-em3d28-1c — THE one shader source for every 3D-view backend. tools/ShaderGen
 // cross-compiles it offline to scene.metal (Metal), scene.hlsl (D3D11) and scene.spv (Vulkan); each
-// generated file records this file's SHA-256, and Viewer3DShaderTests fails when they disagree.
+// generated file records this file's SHA-256, and Viewer3DFrameGateTests.Gate1b fails when they disagree.
 // Edit this file, then regenerate:  tools/ShaderGen  ->  shadergen src/Ui/Viewer3D/Shaders/scene.wgsl src/Ui/Viewer3D/Shaders
 //
 // The uniform block is Scene3DFramePlan's: vp, eye, clip, hover, selection, flags (112 bytes).

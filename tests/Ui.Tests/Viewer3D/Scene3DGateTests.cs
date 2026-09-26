@@ -132,11 +132,30 @@ public sealed class Scene3DGateTests : IDisposable
 
     private static string Testdata(params string[] parts) => Path.Combine([PalaceBackendTests.RepoRoot(), "testdata", .. parts]);
 
-    /// <summary>The counts Gmsh itself printed reading the mesh back (count.geo's Printf lines).</summary>
-    private static (int Nodes, int Triangles, int Tets) GmshCounts(string log)
+    /// <summary>The counts Gmsh itself printed reading the mesh back (count.geo's Printf lines, and its
+    /// own "Info    : N elements" line).</summary>
+    private static (int Nodes, int Triangles, int Tets, long Elements) GmshCounts(string log)
     {
         int Get(string key) => int.Parse(File.ReadLines(log).Single(l => l.StartsWith(key + " ", StringComparison.Ordinal))[(key.Length + 1)..]);
-        return (Get("nodes"), Get("triangles"), Get("tetrahedra"));
+        string el = File.ReadLines(log).Single(l => l.StartsWith("Info", StringComparison.Ordinal) && l.EndsWith(" elements", StringComparison.Ordinal));
+        long elements = long.Parse(el[(el.IndexOf(':') + 1)..^" elements".Length].Trim());
+        return (Get("nodes"), Get("triangles"), Get("tetrahedra"), elements);
+    }
+
+    /// <summary>F0 case A's mesh is 15.6 MB and not committed: the gate SKIPS, saying so, when neither
+    /// <c>CRF_F0_CASE_A_MSH</c> nor tools/Viewer3dSpike/data/case.msh is there.</summary>
+    private sealed class F0CaseAMeshFactAttribute : FactAttribute
+    {
+        public const string RelativePath = "tools/Viewer3dSpike/data/case.msh";
+
+        public static string? Path => Environment.GetEnvironmentVariable("CRF_F0_CASE_A_MSH") is { Length: > 0 } env && File.Exists(env)
+            ? env : FixturePaths.Find(RelativePath);
+
+        public F0CaseAMeshFactAttribute()
+        {
+            if (Path is null)
+                Skip = $"Missing fixture '{RelativePath}' (or CRF_F0_CASE_A_MSH) — tools/Viewer3dSpike/README §1 regenerates it";
+        }
     }
 
     [Theory]
@@ -145,22 +164,18 @@ public sealed class Scene3DGateTests : IDisposable
     public void Gate7_TheReadersCounts_AreGmshsOwn(string file)
     {
         var mesh = MshReader.Read(Testdata("em3d", "viewer", "small-mesh", file));
-        var (nodes, tris, tets) = GmshCounts(Testdata("em3d", "viewer", "small-mesh", "gmsh-counts.log"));
-        Assert.Equal((nodes, tris, tets), (mesh.NodeCount, mesh.TriangleCount, mesh.TetCount));
+        var (nodes, tris, tets, elements) = GmshCounts(Testdata("em3d", "viewer", "small-mesh", "gmsh-counts.log"));
+        Assert.Equal((nodes, tris, tets, elements), (mesh.NodeCount, mesh.TriangleCount, mesh.TetCount, mesh.ElementCount));
         Assert.Equal(file.Contains("binary"), mesh.Binary);
         Assert.Equal(["air", "outer_pec", "substrate", "via", "via_wall"], mesh.PhysicalNames.Values.Order());
     }
 
-    [Fact]
+    [F0CaseAMeshFact]
     public void Gate7_F0CaseA_GivesGmshsCounts_AndPalacesElementCount()
     {
-        // The 15.6 MB mesh is not committed; tools/Viewer3dSpike/README §1 regenerates it.
-        string msh = Environment.GetEnvironmentVariable("CRF_F0_CASE_A_MSH")
-                     ?? Path.Combine(PalaceBackendTests.RepoRoot(), "tools", "Viewer3dSpike", "data", "case.msh");
-        if (!File.Exists(msh)) return;
-        var mesh = MshReader.Read(msh);
-        var (nodes, tris, tets) = GmshCounts(Testdata("em3d", "f0", "A-bondwire", "palace-round", "gmsh-counts.log"));
-        Assert.Equal((nodes, tris, tets), (mesh.NodeCount, mesh.TriangleCount, mesh.TetCount));
+        var mesh = MshReader.Read(F0CaseAMeshFactAttribute.Path!);
+        var (nodes, tris, tets, elements) = GmshCounts(Testdata("em3d", "f0", "A-bondwire", "palace-round", "gmsh-counts.log"));
+        Assert.Equal((nodes, tris, tets, elements), (mesh.NodeCount, mesh.TriangleCount, mesh.TetCount, mesh.ElementCount));
         Assert.Equal(146_769, mesh.TetCount);   // palace.log's element total for this run (brief 21's summary)
     }
 
@@ -207,6 +222,39 @@ public sealed class Scene3DGateTests : IDisposable
         foreach (var label in drawing.Labels)
             Assert.Equal(FdtdGridOverlay.MinSpacing(grid.Axis(label.Axis).Lines), label.SmallestCellM, 15);
         Assert.Equal(3, drawing.Labels.Count);
+    }
+
+    /// <summary>The line §8.5 exists to show: where the grid puts a line exactly on a conductor's edge,
+    /// that edge is drawn — on BOTH sides of the metal. A face with an edge ON the line crosses nothing,
+    /// so before the overlay drew such an edge itself only the side whose third vertex lay below the line
+    /// was drawn (the square's x = 1 edge here, never its x = 0 one); and a float vertex a few ulps off
+    /// an exact line decided the same question by rounding.</summary>
+    [Fact]
+    public void Gate8_AGridLineOnAConductorEdge_IsDrawnOnBothSidesOfTheMetal()
+    {
+        var (g, setup) = Via();
+        var built = FdtdGrid.Build(g.Problem!, CemOpenEms.ResolveGrid(setup.OpenEms));
+        var grid = built with
+        {
+            X = built.X with { Lines = [-1, 0, 1, 2] },
+            Y = built.Y with { Lines = [-1, 2] },
+            Z = built.Z with { Lines = [-1, 1] },
+        };
+        // One conductor: the unit square at z = 0, as two triangles.
+        var scene = new Scene3DModel
+        {
+            Generation = 1, Origin = (0, 0, 0),
+            Vertices = [new(0, 0, 0, 1, 0), new(1, 0, 0, 1, 0), new(1, 1, 0, 1, 0), new(0, 1, 0, 1, 0)],
+            Indices = [0, 1, 2, 0, 2, 3],
+            LineVertices = [],
+            Objects = [new Scene3DObject { Id = 1, Name = "square", Kind = Scene3DKind.Conductor, Rgba = 0 }],
+            Batches = [new Scene3DBatch(1, 0, 0, 6, false)],
+            LineBatches = [],
+            BoundsMin = new(-1, -1, -1), BoundsMax = new(2, 2, 1), ContentMin = Vector3.Zero, ContentMax = new(1, 1, 0),
+        };
+        var metal = Segments(FdtdGridOverlay.Build(grid, scene, default).Lines, scene);
+        foreach (double x in new[] { 0.0, 1.0 })
+            Assert.Contains(metal, s => s.A.X == x && s.B.X == x && Math.Abs(s.A.Y - s.B.Y) == 1);
     }
 
     private static List<(Vector3d A, Vector3d B)> Segments(Scene3DVertex[] v, Scene3DModel scene)

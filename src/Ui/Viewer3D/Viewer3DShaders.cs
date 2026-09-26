@@ -1,6 +1,6 @@
 // brief-em3d-28 R-em3d28-1c — the generated shaders, read from this assembly's embedded resources.
 // All three come from Shaders/scene.wgsl through tools/ShaderGen; none is edited by hand, and
-// Viewer3DShaderTests fails when one was generated from a different WGSL than the one committed.
+// Viewer3DFrameGateTests.Gate1b fails when one was generated from a different WGSL than the one committed.
 
 using System.Reflection;
 

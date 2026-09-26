@@ -71,10 +71,10 @@ public partial class WorkspaceViewModel
             return new Viewer3DInputs(new EmSetup(), null, $"the setup could not be read: {ex.Message}",
                                       ThemeService.Active, ThemeService.CurrentVariant);
         }
-        string? refusal = setup.Is3D ? null
-            : "this setup has no 3D solver. Choose Palace or openEMS as its 3D solver to see it in 3D.";
-        var source = refusal is null ? ResolveEmLayout(cemPath, setup.LayoutRef) : null;
-        if (refusal is null && source is null) refusal = "its layout reference resolves to nothing.";
+        // A planar setup is shown too — its layout through the stackup, for a look in 3D (the view model
+        // builds it as a 3D problem would be built).
+        var source = ResolveEmLayout(cemPath, setup.LayoutRef);
+        string? refusal = source is null ? "its layout reference resolves to nothing." : null;
         return new Viewer3DInputs(setup, source, refusal, ThemeService.Active, ThemeService.CurrentVariant);
     }
 
@@ -115,10 +115,11 @@ public partial class WorkspaceViewModel
                 IncludeSubdirectories = true,
                 NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName,
             };
+            // The watcher raises on a pool thread; the view model is the UI thread's.
             void OnChange(object? _, FileSystemEventArgs e)
             {
                 if (Viewer3DInputs.Contains(Path.GetExtension(e.FullPath).ToLowerInvariant()))
-                    doc.ViewModel.Invalidate();
+                    Dispatcher.UIThread.Post(doc.ViewModel.Invalidate);
             }
             w.Changed += OnChange;
             w.Created += OnChange;
@@ -130,6 +131,18 @@ public partial class WorkspaceViewModel
         {
             Messages.Warning($"The 3D view will not follow saves of its technology or .wBond: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// A workspace switch drops the dock tree without closing its documents one by one, so a docked 3D
+    /// view would keep its watcher (regenerating through the INCOMING workspace's layout resolution) and
+    /// its GPU device. Released here, after the outgoing session was persisted; the camera table goes
+    /// with it, since the next workspace's .cwsuser holds its own.
+    /// </summary>
+    private void Release3DViewsOfOutgoingWorkspace()
+    {
+        foreach (var doc in _openDocsByPath.Values.OfType<Viewer3DDocument>().ToList()) Closed3DView(doc);
+        _viewer3DCameras = null;
     }
 
     private void Closed3DView(Viewer3DDocument doc)
@@ -156,7 +169,11 @@ public partial class WorkspaceViewModel
         if (GetResultsRoot() is not { } results || WorkspaceRootDir is not { } root) return false;
 
         string full = Path.GetFullPath(dir);
-        foreach (string cem in Directory.EnumerateFiles(root, "*.cem", SearchOption.AllDirectories))
+        var walk = new EnumerationOptions
+        {
+            RecurseSubdirectories = true, IgnoreInaccessible = true, AttributesToSkip = FileAttributes.ReparsePoint,
+        };
+        foreach (string cem in Directory.EnumerateFiles(root, "*.cem", walk))
         {
             EmSetup setup;
             try { setup = EmSetupPersistence.LoadFromFile(cem); }
@@ -169,7 +186,10 @@ public partial class WorkspaceViewModel
                     continue;
                 OpenOrActivate3DView(cem);
                 if (_openDocsByPath.TryGetValue(Viewer3DDocument.KeyFor(cem), out var d) && d is Viewer3DDocument v)
+                {
                     v.ViewModel.ShowMeshWhenAvailable = solver == Em3dSolver.Palace;
+                    v.ViewModel.RefreshSolverOverlays();   // a view already open adopts no new scene
+                }
                 return true;
             }
         }

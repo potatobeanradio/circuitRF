@@ -35656,3 +35656,45 @@ backend offscreen in a Linux container on a software driver. D3D11 has never run
 - Not done: route B (no platform has been shown unable to present — step 0's Windows and Linux-GPU runs
   are the owner's, findings §7/§8); a run directory opens the view of the `.cem` whose run it is, found
   by `Em3dRunService.RunDirectory`, since the directory holds the lowering, not the problem.
+
+### Review of brief-em3d-28 (2026-09-25)
+
+A review of the commit, with Windows unrun. D3D11 was read line by line against the spike and found
+consistent (vtable slots, keyed-mutex keys 0/1, formats, cbuffer layout, blend, winding); what was fixed:
+- **Closing a tab mid-frame could free the backend under the render thread** — `WaitReusable` ran
+  outside `RenderLock`, so D3D11's raw `AcquireSync` could reach a released mutex (an access violation no
+  catch stops), and `Session.Frame`'s `EnsureBackend` could build a second GPU device after disposal. The
+  whole frame, wait included, now holds the lock, and `Frame` never creates a backend (the pane's attach
+  does). The async attach is generation-checked, so a fast float/re-dock cannot start a second thread.
+- **A docked 3D view outlived a workspace switch** — the dock tree is dropped without closing its
+  documents, so its watcher kept regenerating through the NEXT workspace's layout resolution and its GPU
+  device was never freed; the camera table also carried over into the next `.cwsuser`. Now released at
+  both switch paths; a floated one closes with its workspace (`BelongsToWorkspace`).
+- **A Palace re-run showed the old mesh** — the cache was keyed on the path, which a re-run rewrites; it
+  is keyed on path, write time and length now. The clip-plane drag rebuilt the FDTD grid on every tick
+  (the cache was filled only by an uncancelled task); it is cached per scene as soon as it is built.
+- Vulkan: a fence wait with no timeout (a cancelled compositor update left the queue waiting on a
+  semaphore nobody signals — the window froze on detach), a 250 ms UI stall per resize (waiting on an
+  update that completes only after the UI thread commits), an instance leaked per failed device attempt.
+  Metal's `Dispose` released only images and buffers — device, queue, pipelines and the full-size depth
+  texture stayed alive per closed tab.
+- **FDTD grid on metal: a face with an edge ON a grid line crosses nothing**, so only the side of the
+  metal whose third vertex lay below the line drew its edge. Such edges are drawn directly now, and a
+  float vertex within 4 ulps of a line is taken as on it.
+- Smaller: pointer capture lost mid-drag kept orbiting; a 1-px jitter blocked click-select (3 DIP slop);
+  the tree never revealed a nested pick (`ScrollIntoView` resolves top-level items only); translucent
+  sort used eye distance (wrong once an orthographic eye sits inside the scene — view depth now); the
+  triangulator lost earcut's zero-length-diagonal case and scanned outer × hole vertices per hole.
+- Gates strengthened: gate 7 asserts Gmsh's element count and SKIPS with a reason when the F0 mesh is
+  absent (it passed silently); the native-package check reads the resolved assets graph, transitive
+  packages included, and fails when it finds no GPU package to check.
+- **Left as found, deliberately:** the exported Vulkan image is never released to
+  `VK_QUEUE_FAMILY_EXTERNAL` (a spec requirement that matters on drivers with compressed surfaces; the
+  GL-side acquire layout is Avalonia's and unverified — add it if a real GPU shows corruption); `fs_line`
+  ignores the clip plane, so wireframe and grid lines on the discarded side still draw (clipping them
+  needs a tolerance, since section and on-plane grid lines lie exactly ON the plane).
+- **Show 3D is offered for a PLANAR setup too** (owner request): the layout through the stackup, built
+  as a driven 3D problem with every port lumped and the default air box (`Viewer3DViewModel.BuildPlanar`).
+  The dielectrics are finite, which the owner accepted; the generator's notes about a 3D solve are not
+  repeated, and the one note is "Planar setup, shown in 3D." No mesh or grid — the mesh toggle's tip
+  points to the layout view, where the planar mesh is drawn.

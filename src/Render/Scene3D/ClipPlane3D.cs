@@ -63,7 +63,12 @@ public struct ClipPlane3D
     /// <summary>The range the plane can be dragged over for <paramref name="min"/>..<paramref name="max"/>.</summary>
     public readonly (float Lo, float Hi) Range(Vector3 min, Vector3 max)
     {
-        var n = Axis switch { ClipAxis3D.X => Vector3.UnitX, ClipAxis3D.Y => Vector3.UnitY, ClipAxis3D.Z => Vector3.UnitZ, _ => Normal };
+        // Along the UNFLIPPED normal, the direction Offset is measured in (Equation negates both).
+        var n = Axis switch
+        {
+            ClipAxis3D.X => Vector3.UnitX, ClipAxis3D.Y => Vector3.UnitY, ClipAxis3D.Z => Vector3.UnitZ,
+            _ => ViewNormal == Vector3.Zero ? Vector3.UnitZ : Vector3.Normalize(ViewNormal),
+        };
         float lo = float.MaxValue, hi = float.MinValue;
         for (int k = 0; k < 8; k++)
         {

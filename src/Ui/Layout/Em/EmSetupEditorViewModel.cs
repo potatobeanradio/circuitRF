@@ -1066,7 +1066,8 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     /// <summary>brief-em3d-28 R-em3d28-5 — Show 3D: the shell opens the 3D view beside this panel.</summary>
     public Action? Show3DRequested { get; set; }
 
-    /// <summary>Show 3D is offered for a 3D setup — it shows what is about to be solved, before any solve.</summary>
+    /// <summary>Show 3D is offered for every setup: a 3D one shows what is about to be solved, before any
+    /// solve; a planar one shows its layout through the stackup, for a look in 3D.</summary>
     [RelayCommand]
     private void Show3D() => Show3DRequested?.Invoke();
 

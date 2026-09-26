@@ -47,6 +47,10 @@ namespace CircuitRF.Ui.Viewer3D.Vulkan;
 internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
 {
     private const int Ring = 3;
+
+    /// <summary>How long a frame's fence may take before the GPU is declared stuck (a fault, never an
+    /// endless wait: the render thread holds the render lock, and the UI thread takes it on detach).</summary>
+    private const ulong FenceTimeoutNs = 2_000_000_000;
     private const int UniformStride = 256;    // ≥ 112 and a multiple of every minUniformBufferOffsetAlignment (≤ 256)
     private const VkFormat ColorFormat = VkFormat.R8G8B8A8Unorm;
     private const VkFormat DepthFormat = VkFormat.D32Sfloat;
@@ -125,6 +129,9 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
     {
         if (vkInitialize() != VkResult.Success)
             throw new Viewer3DPresentFault("This machine has no Vulkan loader (libvulkan.so.1).");
+        // An earlier attempt that failed after making its instance left it here: never leak one per try.
+        _vi?.vkDestroyInstance(null);
+        _vi = null;
         var app = new VkApplicationInfo { apiVersion = VkVersion.Version_1_1 };
         fixed (byte* name = "circuitRF 3D view"u8) app.pApplicationName = name;
         var ici = new VkInstanceCreateInfo { pApplicationInfo = &app };
@@ -321,7 +328,8 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
             srcSubpass = VK_SUBPASS_EXTERNAL, dstSubpass = 0,
             srcStageMask = VkPipelineStageFlags.ColorAttachmentOutput | VkPipelineStageFlags.Transfer | VkPipelineStageFlags.LateFragmentTests,
             dstStageMask = VkPipelineStageFlags.ColorAttachmentOutput | VkPipelineStageFlags.EarlyFragmentTests,
-            srcAccessMask = VkAccessFlags.None,
+            // The previous frame's attachment WRITES, made available before this one's (write after write).
+            srcAccessMask = VkAccessFlags.ColorAttachmentWrite | VkAccessFlags.DepthStencilAttachmentWrite,
             dstAccessMask = VkAccessFlags.ColorAttachmentWrite | VkAccessFlags.DepthStencilAttachmentWrite,
         };
         // out: the colour writes are visible to a transfer read (the compositor's, or the pick copy)
@@ -629,9 +637,12 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
     {
         if (_images.Length == 0 || _api is not { } api) { _images = []; return; }
         api.vkDeviceWaitIdle();
+        // No wait on the compositor's pending update: this runs on the UI thread, and that update
+        // completes only after the UI thread commits its batch — a wait here always timed out, stalling
+        // every resize. Our side is idle (above), and the compositor's imports hold their own
+        // references to the memory and semaphore payloads.
         foreach (var im in _images)
         {
-            im.Pending?.Wait(250);
             Dispose(im.Imported); Dispose(im.ReadyImported); Dispose(im.ReleasedImported);
             api.vkDestroyFramebuffer(im.Framebuffer, null);
             Destroy(api, im.Color); Destroy(api, im.Depth);
@@ -676,6 +687,10 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
                 throw new Viewer3DPresentFault($"The compositor has not finished with the 3D view's image {image}, so its release cannot be waited for.");
             if (im.Pending is { IsFaulted: true } f)
                 throw new Viewer3DPresentFault($"The compositor's update of the 3D view's image {image} failed: {f.Exception?.GetBaseException().Message}");
+            // Cancelled: the compositor never took the image, so the release semaphore will never be
+            // signalled and waiting on it would stall the GPU queue for good.
+            if (im.Pending is { IsCanceled: true })
+                throw new Viewer3DPresentFault($"The compositor cancelled its update of the 3D view's image {image}.");
             wait = im.Released;
             im.ReleaseOwed = false;
         }
@@ -686,7 +701,7 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         if (_submitted[f0])
         {
             var fence = _fence[f0];
-            Check(api.vkWaitForFences(1, &fence, true, ulong.MaxValue), "vkWaitForFences");
+            Check(api.vkWaitForFences(1, &fence, true, FenceTimeoutNs), "vkWaitForFences");
             ReadPick(f0);
             Check(api.vkResetFences(1, &fence), "vkResetFences");
             _submitted[f0] = false;
@@ -871,7 +886,12 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
 
     public override void Dispose()
     {
-        if (_api is not { } api) return;
+        if (_api is not { } api)
+        {
+            _vi?.vkDestroyInstance(null);      // a device that failed to come up after its instance did
+            _vi = null;
+            return;
+        }
         api.vkDeviceWaitIdle();
         ReleaseImages();
         Free(api, _vb); Free(api, _ib); Free(api, _lines);

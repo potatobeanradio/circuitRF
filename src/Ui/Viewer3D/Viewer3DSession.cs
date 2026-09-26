@@ -16,6 +16,7 @@ public sealed class Viewer3DSession(Func<Viewer3DBackend> create) : IDisposable
     private long _uploadedGeneration = -1;
     private readonly long[] _overlayVersions = [-1, -1, -1];
     private Scene3DModel? _uploadedScene;
+    private bool _disposed;
 
     /// <summary>Serialises the render thread against a backend teardown.</summary>
     public object RenderLock { get; } = new();
@@ -31,6 +32,7 @@ public sealed class Viewer3DSession(Func<Viewer3DBackend> create) : IDisposable
 
     public Viewer3DBackend EnsureBackend()
     {
+        ObjectDisposedException.ThrowIf(_disposed, this);
         if (Backend is null)
         {
             Backend = create();
@@ -42,14 +44,15 @@ public sealed class Viewer3DSession(Func<Viewer3DBackend> create) : IDisposable
     /// <summary>
     /// Render thread: uploads whatever the frame needs that the backend does not already hold, then
     /// draws <paramref name="plan"/> into <paramref name="image"/>. Counted on the backend's lane —
-    /// a frame whose camera alone changed adds 0 upload bytes.
+    /// a frame whose camera alone changed adds 0 upload bytes. A session disposed under the render
+    /// thread (the tab closed mid-frame) draws nothing and creates nothing: false.
     /// </summary>
-    public void Frame(int image, Scene3DFramePlan plan, ulong frame, Scene3DModel scene,
+    public bool Frame(int image, Scene3DFramePlan plan, ulong frame, Scene3DModel scene,
                       Scene3DOverlay mesh, Scene3DOverlay section, Scene3DOverlay grid, bool orbiting)
     {
-        var b = EnsureBackend();
         lock (RenderLock)
         {
+            if (Backend is not { } b) return false;
             b.Counters.BeginFrame(orbiting);
             if (!ReferenceEquals(scene, _uploadedScene) || scene.Generation != _uploadedGeneration)
             {
@@ -62,6 +65,7 @@ public sealed class Viewer3DSession(Func<Viewer3DBackend> create) : IDisposable
             Sync(b, Scene3DBuffer.Overlay2, 2, grid);
             b.Render(image, plan, frame);
             b.Counters.EndFrame();
+            return true;
         }
     }
 
@@ -76,6 +80,7 @@ public sealed class Viewer3DSession(Func<Viewer3DBackend> create) : IDisposable
     {
         lock (RenderLock)
         {
+            _disposed = true;
             Backend?.Dispose();
             Backend = null;
         }

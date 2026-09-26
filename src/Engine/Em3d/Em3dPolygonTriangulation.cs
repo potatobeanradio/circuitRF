@@ -221,9 +221,21 @@ public static class Em3dPolygonTriangulation
         private static Node? TouchingVertex(Node hole, Node outer, out Node? holeAt)
         {
             holeAt = null;
+            // Only an outer vertex inside the hole's bounds can touch it: without this test every merge
+            // compares every ring vertex against every hole vertex, and a pour with thousands of
+            // antipads pays outer × hole per hole in the background regeneration.
+            double x0 = hole.X, x1 = hole.X, y0 = hole.Y, y1 = hole.Y;
+            var q = hole.Next;
+            while (q != hole)
+            {
+                x0 = Math.Min(x0, q.X); x1 = Math.Max(x1, q.X);
+                y0 = Math.Min(y0, q.Y); y1 = Math.Max(y1, q.Y);
+                q = q.Next;
+            }
             var p = outer;
             do
             {
+                if (p.X < x0 || p.X > x1 || p.Y < y0 || p.Y > y1) { p = p.Next; continue; }
                 var h = hole;
                 do
                 {
@@ -443,10 +455,15 @@ public static class Em3dPolygonTriangulation
             } while (a != start);
         }
 
+        /// <summary>A split a→b stays inside the ring — or joins two COINCIDENT vertices that are both
+        /// reflex, the zero-length split a touch or a bridge leaves behind (TouchingVertex makes such
+        /// pairs deliberately, with different indices, so SplitClip's index test does not exclude them;
+        /// without this case the only valid split of such a ring is never found and its area is lost).</summary>
         private static bool IsValidDiagonal(Node a, Node b)
             => a.Next.I != b.I && a.Prev.I != b.I && !IntersectsPolygon(a, b)
-               && LocallyInside(a, b) && LocallyInside(b, a) && MiddleInside(a, b)
-               && (Area2(a.Prev, a, b.Prev) != 0 || Area2(a, b.Prev, b) != 0);
+               && ((LocallyInside(a, b) && LocallyInside(b, a) && MiddleInside(a, b)
+                    && (Area2(a.Prev, a, b.Prev) != 0 || Area2(a, b.Prev, b) != 0))
+                   || (Equal(a, b) && Area2(a.Prev, a, a.Next) < 0 && Area2(b.Prev, b, b.Next) < 0));
 
         // ── the Morton index ─────────────────────────────────────────────────────────────────
 

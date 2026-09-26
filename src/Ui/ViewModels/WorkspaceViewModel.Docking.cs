@@ -1522,6 +1522,9 @@ public partial class WorkspaceViewModel
             DataDisplayDocument dd          => dd.FilePath,
             LayoutDocument lad              => lad.FilePath,
             TechDocument td                 => td.FilePath,
+            // Its file watcher and GPU session belong to this workspace: left open, it would keep
+            // regenerating through the NEXT workspace's layout resolution.
+            Viewer3D.Viewer3DDocument v3d   => v3d.CemPath,
             _                               => null,
         };
 

@@ -59,22 +59,33 @@ public class GpuFirewallTests
         string root = RepoRoot();
         var csproj = XDocument.Load(Path.Combine(root, "src", "Ui", "CircuitRF.Ui.csproj"));
         var gpu = csproj.Descendants("PackageReference")
-            .Select(e => (Id: (string?)e.Attribute("Include") ?? "", Version: (string?)e.Attribute("Version") ?? ""))
-            .Where(p => GpuAssemblyPrefixes.Any(x => p.Id.StartsWith(x, StringComparison.OrdinalIgnoreCase)))
+            .Select(e => (string?)e.Attribute("Include") ?? "")
+            .Where(id => GpuAssemblyPrefixes.Any(x => id.StartsWith(x, StringComparison.OrdinalIgnoreCase)))
             .ToList();
-        string cache = Environment.GetEnvironmentVariable("NUGET_PACKAGES")
-                       ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".nuget", "packages");
-        foreach (var (id, version) in gpu)
+        // Vacuity guard: the backends need their bindings, so finding none means they moved (to a props
+        // file, say) and this test would otherwise pass having checked nothing.
+        Assert.NotEmpty(gpu);
+
+        // The RESOLVED graph, transitive dependencies included, as restore wrote it: every GPU-binding
+        // library's file list, read from the assets file rather than a package cache that may not hold it.
+        string assets = Path.Combine(root, "src", "Ui", "obj", "project.assets.json");
+        Assert.True(File.Exists(assets), $"{assets} is missing: restore src/Ui before running the firewall tests.");
+        using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllBytes(assets));
+        var checkedLibs = new List<string>();
+        foreach (var lib in doc.RootElement.GetProperty("libraries").EnumerateObject())
         {
-            string dir = Path.Combine(cache, id.ToLowerInvariant(), version);
-            if (!Directory.Exists(dir)) continue;       // not restored on this machine: the build would have failed first
-            var native = Directory.Exists(Path.Combine(dir, "runtimes"))
-                ? Directory.EnumerateDirectories(Path.Combine(dir, "runtimes"), "native", SearchOption.AllDirectories)
-                           .SelectMany(d => Directory.EnumerateFiles(d)).ToList()
+            if (!GpuAssemblyPrefixes.Any(x => lib.Name.StartsWith(x, StringComparison.OrdinalIgnoreCase))) continue;
+            checkedLibs.Add(lib.Name);
+            var native = lib.Value.TryGetProperty("files", out var files)
+                ? files.EnumerateArray().Select(f => f.GetString() ?? "")
+                       .Where(f => f.StartsWith("runtimes/", StringComparison.OrdinalIgnoreCase)
+                                   && f.Contains("/native/", StringComparison.OrdinalIgnoreCase)).ToList()
                 : [];
-            Assert.True(native.Count == 0, $"{id} {version} carries a native library ({string.Join(", ", native.Select(Path.GetFileName))}); " +
+            Assert.True(native.Count == 0, $"{lib.Name} carries a native library ({string.Join(", ", native)}); " +
                                            "route A is decided with no native package (R-em3d28-1c).");
         }
+        foreach (string id in gpu)
+            Assert.Contains(checkedLibs, l => l.StartsWith(id + "/", StringComparison.OrdinalIgnoreCase));
     }
 
     private static string RepoRoot()
