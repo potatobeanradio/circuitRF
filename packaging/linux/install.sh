@@ -4,7 +4,7 @@ set -euo pipefail
 # ── circuitRF user-local installer ────────────────────────────────────────────
 #
 #   ./install.sh            install (or upgrade) into ~/.local
-#   ./install.sh --uninstall
+#   ./install.sh --uninstall [--yes]
 #
 # No root, no package manager, no system directory. This is the Linux channel that can update
 # itself, because everything it writes is inside $HOME (docs/design/auto-update.md §1).
@@ -28,9 +28,58 @@ ICONS="${DATA_HOME}/icons/hicolor/512x512/apps"
 MIME="${DATA_HOME}/mime"
 
 # ── uninstall ─────────────────────────────────────────────────────────────────
+#
+#   ./install.sh --uninstall [--yes]
+#
+# Also installed as ${ROOT}/install.sh, which is the copy circuitRF's own "Uninstall circuitRF..."
+# runs (with --yes, after its own warning and after it has removed the solvers itself).
+#
+# ROOT IS ALSO circuitRF's PER-USER FOLDER. On Linux the application keeps its preferences, recovery
+# files and the 3D solvers the install assistant built under ${XDG_DATA_HOME:-~/.local/share}/circuitRF
+# - the same directory. So this removes ONLY what this script and the updater laid down (app-*,
+# current, staging, this script) and never the directory wholesale: an `rm -rf "$ROOT"` here deleted
+# every preference while printing that it had left them alone (brief-em3d-25).
+#
+# The 3D solvers circuitRF installed go too, with a warning (docs/design/em-3d.md §7.2): the CLI prints
+# what it would remove and its size, and nothing is removed unless the user says yes. The removal is
+# the CLI's own `solver remove --all`, the function the application calls - never a path this script
+# works out for itself.
 
 if [ "${1:-}" = "--uninstall" ]; then
-    rm -rf "$ROOT"
+    YES=""
+    [ "${2:-}" = "--yes" ] && YES="yes"
+    APP="${ROOT}/current/circuitRF"
+
+    # Asked, not guessed: without --yes the CLI removes nothing and says (by code, in --json) whether
+    # there is anything to remove. Captured rather than piped, since the refusal exits 1 and pipefail
+    # would read that as "no".
+    PLAN=""
+    [ -x "$APP" ] && PLAN="$("$APP" solver remove --all --json 2>/dev/null || true)"
+    if printf '%s' "$PLAN" | grep -q "solver.remove.consent-required"; then
+        echo "Uninstalling circuitRF also removes the 3D solvers it installed for you. Reinstalling"
+        echo "circuitRF later means reinstalling them too. Solvers other accounts installed stay theirs."
+        echo ""
+        "$APP" solver remove --all 2>&1 | sed '$d' || true
+        if [ -z "$YES" ]; then
+            ANSWER=""
+            read -r -p "Uninstall circuitRF and remove these solvers? [y/N] " ANSWER || ANSWER=""
+            case "$ANSWER" in
+                y|Y|yes|YES) ;;
+                *) echo "Nothing was removed."; exit 1 ;;
+            esac
+        fi
+        "$APP" solver remove --all --yes || {
+            echo "circuitRF was not uninstalled, because its solvers could not be removed (above)." >&2
+            exit 1
+        }
+    fi
+
+    for d in "${ROOT}"/app-*; do
+        [ -e "$d" ] && rm -rf "$d"
+    done
+    rm -rf "${ROOT}/staging" "${ROOT}/current.tmp"
+    rm -f  "${ROOT}/current" "${ROOT}/install.sh"
+    rmdir  "$ROOT" 2>/dev/null || true
     rm -f  "${BIN_DIR}/circuitrf"
     rm -f  "${APPS}/circuitrf.desktop"
     rm -f  "${ICONS}/circuitrf.png"
@@ -66,6 +115,14 @@ fi
 }
 
 mkdir -p "$ROOT" "$BIN_DIR" "$APPS" "$ICONS" "${MIME}/packages" "${ROOT}/staging"
+
+# The uninstaller travels with the install: circuitRF's "Uninstall circuitRF..." runs this copy, since
+# the archive it came from is long gone by then.
+if [ "${HERE}" != "${ROOT}" ]; then
+    cp "${HERE}/install.sh" "${ROOT}/install.sh.tmp"
+    chmod +x "${ROOT}/install.sh.tmp"
+    mv -f "${ROOT}/install.sh.tmp" "${ROOT}/install.sh"
+fi
 
 echo "Installing ${VERSION_DIR} into ${ROOT} ..."
 rm -rf "${ROOT}/${VERSION_DIR}.partial"

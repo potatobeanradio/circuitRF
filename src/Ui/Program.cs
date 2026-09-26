@@ -22,6 +22,9 @@ sealed class Program
     // where src/Cli can reach it and the two halves must not each spell it for themselves.
     private const string PipeName = CircuitRF.Design.Revision.WindowChannel.EndpointName;
 
+    /// <summary>True for a <c>--uninstall</c> launch: <see cref="App"/> shows only the uninstall warning.</summary>
+    internal static bool UninstallOnly { get; private set; }
+
     [STAThread]
     public static void Main(string[] args)
     {
@@ -45,6 +48,17 @@ sealed class Program
         // ProgramHarmonica and ProgramWBond deliberately do not do this (out of AUT-13's scope).
         if (args.Length > 0 && CircuitRF.Cli.CliEntry.IsVerb(args[0]))
             Environment.Exit(CircuitRF.Cli.CliEntry.Run(args));
+
+        // brief-em3d-25 R-em3d25-4b — the Windows Apps list's Uninstall runs `circuitRF.exe --uninstall`:
+        // the warning, the solvers, then msiexec. Before everything below, for the CLI's reasons: it is not
+        // a GUI session to report on, it must never apply a staged update (an uninstall that upgraded
+        // first would be absurd), and it must not forward itself to an open window as a file to open.
+        if (args.Length == 1 && args[0] == Uninstall.AppUninstall.Argument)
+        {
+            UninstallOnly = true;
+            BuildAvaloniaApp().StartWithClassicDesktopLifetime([]);
+            return;
+        }
 
         // FIRST, before Avalonia: a crash while the toolkit is coming up is still a crash the user
         // needs a report for. See Diagnostics/CrashReporter for why the session file, and not the

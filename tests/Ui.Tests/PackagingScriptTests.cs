@@ -1359,4 +1359,52 @@ public class PackagingScriptTests
         Assert.Contains(flag, text, StringComparison.Ordinal);
         Assert.Contains("CRF_CONSOLE", text, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// brief-em3d-25 gate 6, the packaging half (R-em3d25-4b, 5a, 5b). A major upgrade works by
+    /// uninstalling the previous version, so anything attached to removal must be conditioned on a REAL
+    /// removal — otherwise every update would delete a day-long Palace build. There is no such action
+    /// today (the solver removal is the application's, run before msiexec); this holds any later one to
+    /// the condition, and holds that no component can reach the per-user folder the solvers live in.
+    /// The Apps-list entry must run circuitRF's own uninstall, which is the only route that can warn.
+    /// And the tarball's uninstall must never delete its root wholesale: on Linux that directory IS the
+    /// per-user folder, solvers and preferences included.
+    /// </summary>
+    [Fact]
+    public void AnUpgradeCannotRemoveASolver_AndTheAppsEntryRunsCircuitRfsOwnUninstall()
+    {
+        var wxs = XDocument.Load(RepoFile("packaging", "windows", "circuitRF.wxs"));
+        XNamespace w = "http://wixtoolset.org/schemas/v4/wxs";
+
+        foreach (var custom in wxs.Descendants(w + "Custom"))
+        {
+            string condition = ((string?)custom.Attribute("Condition") ?? custom.Value).Replace(" ", "");
+            if (condition.Contains("REMOVE", StringComparison.Ordinal))
+                Assert.True(condition.Contains("NOTUPGRADINGPRODUCTCODE", StringComparison.Ordinal),
+                            $"the removal-time action '{(string?)custom.Attribute("Action")}' would also run inside an upgrade: {condition}");
+        }
+        Assert.DoesNotContain(wxs.Descendants(w + "CustomAction"),
+                              a => a.Attributes().Any(x => x.Value.Contains("solver", StringComparison.OrdinalIgnoreCase)));
+
+        // Nothing addresses the per-user folder: LocalAppData holds only Programs\circuitRF, and no
+        // attribute anywhere names the solver roots.
+        var localAppData = wxs.Descendants(w + "StandardDirectory").Where(d => (string?)d.Attribute("Id") == "LocalAppDataFolder");
+        Assert.All(localAppData.Elements(w + "Directory"), d => Assert.Equal("Programs", (string?)d.Attribute("Name")));
+        Assert.DoesNotContain(wxs.Descendants().Attributes(),
+                              a => a.Value.Contains("solvers", StringComparison.OrdinalIgnoreCase) || a.Value.Contains(".circuitRF", StringComparison.Ordinal));
+
+        string Property(string id) => wxs.Descendants(w + "Property").Single(p => (string?)p.Attribute("Id") == id).Attribute("Value")!.Value;
+        Assert.Equal("1", Property("ARPSYSTEMCOMPONENT"));
+        var values = wxs.Descendants(w + "RegistryValue").GroupBy(v => (string?)v.Attribute("Name") ?? "")
+                        .ToDictionary(g => g.Key, g => (string?)g.First().Attribute("Value"), StringComparer.Ordinal);
+        Assert.Equal("\"[INSTALLFOLDER]circuitRF.exe\" --uninstall", values["UninstallString"]);
+        Assert.Equal("[ProductCode]", values["ProductCode"]);
+
+        string install = File.ReadAllText(RepoFile("packaging", "linux", "install.sh"));
+        Assert.DoesNotMatch(new System.Text.RegularExpressions.Regex(@"rm\s+-rf\s+""\$(\{ROOT\}|ROOT)""\s*$", System.Text.RegularExpressions.RegexOptions.Multiline), install);
+        Assert.Contains("solver remove --all", install, StringComparison.Ordinal);
+        // The updater installs only app-<ver>/, so the uninstaller must ride inside it.
+        Assert.Contains("cp \"${HERE}/install.sh\" \"${APPDIR}/install.sh\"",
+                        File.ReadAllText(RepoFile("packaging", "linux", "build-linux.sh")), StringComparison.Ordinal);
+    }
 }

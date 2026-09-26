@@ -306,7 +306,7 @@ public sealed class SolverInstaller
         try
         {
             Directory.CreateDirectory(toolDir);
-            gate = new FileStream(Path.Combine(toolDir, ".install.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite,
+            gate = new FileStream(Path.Combine(toolDir, SolverHomes.InstallLockFile), FileMode.OpenOrCreate, FileAccess.ReadWrite,
                                   FileShare.None, 1, FileOptions.DeleteOnClose);
         }
         catch (IOException)
@@ -452,6 +452,24 @@ public sealed class SolverInstaller
         else if (found is not null)
             sb.Append($" A 3D run still uses the {discovery.Name} {found.HowFoundText} ({found.Path}), which comes first; " +
                       "clear that in Settings ▸ 3D EM to use this one.");
+        sb.Append(DescribeSuperseded(recipe));
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// brief-em3d-25 R-em3d25-3 — every older version of this tool circuitRF installed, with its size,
+    /// offered for removal and never removed: a user may still want to compare old results against it.
+    /// </summary>
+    internal string DescribeSuperseded(SolverRecipe recipe)
+    {
+        var older = new SolverUninstaller([Root]) { Discovery = Discovery }.Superseded(recipe.Tool, recipe.Version);
+        if (older.Count == 0) return "";
+        string name = Discovery(recipe.Tool).Name;
+        var sb = new StringBuilder();
+        sb.Append($" circuitRF also installed {(older.Count == 1 ? "an older version" : "older versions")} of {name}, kept so earlier results can be compared: ");
+        sb.Append(string.Join("; ", older.Select(o => $"{name} {o.Record.Version} ({SolverUninstaller.Size(o.Bytes)}, at {o.Record.Home})")));
+        sb.Append(". Settings ▸ 3D EM offers to remove " + (older.Count == 1 ? "it" : "each") +
+                  $", as does 'circuitrf solver remove {SolverHomes.ToolId(recipe.Tool)} --version <v>'.");
         return sb.ToString();
     }
 
@@ -984,7 +1002,7 @@ public sealed class SolverInstaller
 
     private static string FirstLine(string s) => s.Split('\n').Select(l => l.Trim()).FirstOrDefault(l => l.Length > 0) ?? "";
 
-    private static long MeasureBytes(string dir)
+    internal static long MeasureBytes(string dir)
     {
         long total = 0;
         var options = new EnumerationOptions { RecurseSubdirectories = true, AttributesToSkip = FileAttributes.ReparsePoint, IgnoreInaccessible = true };

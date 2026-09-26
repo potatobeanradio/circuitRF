@@ -2745,10 +2745,11 @@ parsing, the layer-name lookup, refusals and reporting.
 
 ## 22. `solver` — the 3D solver install assistant, headless
 
-`circuitrf solver list` · `circuitrf solver install <palace|gmsh|openems> [--version <v>] [--yes]`
+`circuitrf solver list` · `circuitrf solver install <palace|gmsh|openems> [--version <v>] [--yes]` ·
+`circuitrf solver remove <palace|gmsh|openems> [--version <v>] [--yes]` · `circuitrf solver remove --all [--yes]`
 
 (brief-em3d-24 R-em3d24-7; `em-3d.md` §7.2's "a build machine installs the same way the GUI does".)
-**One verb with nouns, on `history`'s pattern** (owner decision D1); brief 25 adds `remove`.
+**One verb with nouns, on `history`'s pattern** (owner decision D1); brief-em3d-25 added `remove`.
 
 **It owns no install logic.** `list` is `SolverStatus.Of` — the call each Settings ▸ 3D EM row makes —
 and `install` is `SolverInstaller.Consent` then `SolverInstaller.Install` (`src/Design/Em3d/Install`),
@@ -2773,3 +2774,22 @@ parsing, the consent refusal, progress on stderr and reporting; a comment-stripp
 - `list` exits 0 whatever it finds; each tool's line says found or not, the route, the version, whether
   it is validated, each capability probe, and — where installing would change what a run finds — the
   command that installs it here.
+  It also lists each home circuitRF installed, with the command that removes it.
+
+**`remove` (brief-em3d-25)** is `SolverUninstaller.PlanOne`/`PlanAll` then `SolverUninstaller.Remove` —
+what each Settings row's *Uninstall …*, *Remove all 3D solvers* and *Uninstall circuitRF…* call.
+
+- **Only what circuitRF installed.** A tool found any other way is `solver.remove.refused`, naming where
+  it was found and that circuitRF did not install it. Several installed versions and no `--version` is
+  the same refusal, listing them.
+- **Nothing is removed without `--yes`.** Without it the verb prints the confirmation on stderr — each
+  home, its size measured now, that removal is permanent, what reinstalling cost on this computer, that
+  documents are untouched — and exits 1 (`solver.remove.consent-required`). With `--yes` the
+  confirmation is not repeated; the report names what went.
+- **Refused while in use** — by a 3D run in any process (each holds an `in-use.<pid>` lock in the home;
+  a dead pid's lock is ignored and deleted) or by an install of that tool. `--all` is all or nothing.
+- **Exit codes.** 0 removed (each home in `--json` `outputs` as `removed`); 1 refused, or
+  `solver.remove.incomplete` when files could not be deleted — the home is already out of discovery's
+  sight (renamed `<home>.removing`), the files are listed by path, and the next `remove` finishes it.
+- **There is no `circuitrf uninstall`** (R-em3d25-4c): a build machine runs `solver remove --all --yes`
+  and then the platform's own uninstall.

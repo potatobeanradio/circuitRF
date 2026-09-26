@@ -747,6 +747,63 @@ installing, or patches anything.
 Settings entry. circuitRF looks in `$CONDA_PREFIX` and in the environments of `~/miniforge3`,
 `~/mambaforge`, `~/miniconda3`, `~/anaconda3` and `/opt/conda`. The same version check applies to it.
 
+## Removing the 3D solvers {#uninstall-solvers}
+
+A Palace built from source takes gigabytes. When you are done with 3D EM you can get that space back.
+circuitRF removes **only what it installed**. A solver you installed yourself, or one it finds on
+`PATH`, in Spack or in conda, has no Uninstall, and circuitRF never deletes it.
+
+There are four ways, and they all do the same thing:
+
+- **Uninstall …** under the solver's row in {{anchor: settings.html#em3d|Settings ▸ 3D EM}}. There is one
+  button for each version circuitRF installed.
+- **Remove all 3D solvers …** at the foot of that page. It removes every one after a single
+  confirmation.
+- `circuitrf solver remove palace --yes`, or `circuitrf solver remove --all --yes`, from a terminal.
+  Without `--yes` it only shows what it would remove.
+- **Help ▸ Uninstall circuitRF …**, which removes the solvers and then circuitRF itself (see below).
+
+**The confirmation shows the space it frees**, measured at that moment. It also says that removal is
+permanent, and how long the install took on your computer, because getting a solver back means
+installing it again.
+
+**Your documents are never touched.** Setups, meshes, results and run folders live in your workspaces,
+and every one of them stays. After a removal, a 3D run offers **Install …** again.
+
+**A solver that is in use is not removed.** If a 3D run or an install is using it, in this window or in
+a `circuitrf` command in a terminal, nothing is removed and the message says what is using it. **Remove
+all** is all or nothing: if one solver is in use, none are removed.
+
+**If a file cannot be deleted**, for example because a program still has it open, the solver is
+already gone as far as circuitRF is concerned, so no run will use it. The message lists each file that
+remains. Close whatever holds it and remove again, and circuitRF finishes the job.
+
+**Older versions are kept until you remove them.** When circuitRF installs a newer version of a solver,
+it lists any older version it installed, with its size, and offers to remove it. It never removes one
+by itself, because you may want to compare older results against it.
+
+### Uninstalling circuitRF {#uninstall-circuitrf}
+
+**Help ▸ Uninstall circuitRF …** removes the 3D solvers circuitRF installed for you, then circuitRF
+itself. It warns you first, because reinstalling circuitRF later means reinstalling the solvers too.
+
+| How circuitRF was installed | What Uninstall circuitRF … does after removing the solvers |
+|---|---|
+| Windows `.msi` | Runs the Windows uninstall, which asks you to confirm once more. The Apps list's **Uninstall** runs this same command. |
+| macOS | Moves circuitRF to the Trash. |
+| Linux `.tar.gz` | Runs its own `install.sh --uninstall`. Running `~/.local/share/circuitRF/current/install.sh --uninstall` yourself does the same, solvers and warning included. |
+| Linux `.deb` | Tells you the command that removes it, `sudo apt remove circuitrf`. The package manager removes a `.deb`. |
+
+It reaches only your own account. Solvers another person installed on the same computer stay in their
+folder; their own **Remove all 3D solvers** removes them.
+
+**If you remove circuitRF some other way**, such as dragging it to the Trash or using the package
+manager, the solvers stay where they are. When you install circuitRF again it finds them and uses them
+without reinstalling, and their Settings rows still offer **Uninstall …**. To get the space back
+instead, run **Uninstall circuitRF …** first.
+
+**Updating circuitRF never removes a solver.**
+
 ## Installing the 3D solvers by hand {#install-3d-solvers}
 
 A 3D setup (one whose `Solver3D` names Palace or openEMS) runs a solver circuitRF does not include. You

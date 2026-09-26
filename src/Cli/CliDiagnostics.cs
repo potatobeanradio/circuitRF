@@ -3074,11 +3074,11 @@ internal static class CliDiagnostics
 
     public static Diagnostic SolverNounRequired() => new(
         "solver.args.noun-required", DiagnosticSeverity.Error,
-        "solver: say what to do — 'solver list' or 'solver install <palace|gmsh|openems>'.");
+        "solver: say what to do — 'solver list', 'solver install <palace|gmsh|openems>' or 'solver remove <tool>|--all'.");
 
     public static Diagnostic SolverUnknownNoun(string noun) => Diagnostic.Create(
         "solver.args.unknown-noun", DiagnosticSeverity.Error,
-        "solver: there is nothing called '{noun}'. Known: list, install.", ("noun", noun));
+        "solver: there is nothing called '{noun}'. Known: list, install, remove.", ("noun", noun));
 
     public static Diagnostic SolverUnknownOption(string noun, string option) => Diagnostic.Create(
         "solver.args.unknown-option", DiagnosticSeverity.Error,
@@ -3114,4 +3114,27 @@ internal static class CliDiagnostics
 
     public static Diagnostic SolverInstallCancelled(string report) => Diagnostic.Create(
         "solver.install.cancelled", DiagnosticSeverity.Warning, "{report}", ("report", report));
+
+    // ── solver remove (brief-em3d-25) ─────────────────────────────────────────────────────────────────
+
+    public static Diagnostic SolverRemoveTargetRequired() => new(
+        "solver.remove.target-required", DiagnosticSeverity.Error,
+        "solver remove: say what to remove — palace, gmsh or openems, or --all for every solver circuitRF installed.");
+
+    public static Diagnostic SolverRemoveAllWithTool(string tool) => Diagnostic.Create(
+        "solver.remove.all-with-tool", DiagnosticSeverity.Error,
+        "solver remove: --all removes every solver circuitRF installed, so it takes no tool ('{tool}').", ("tool", tool));
+
+    /// <summary>R-em3d25-1a/1c — not ours, several versions, in use, an install running: nothing removed.</summary>
+    public static Diagnostic SolverRemoveRefused(string report) => Diagnostic.Create(
+        "solver.remove.refused", DiagnosticSeverity.Error, "{report}", ("report", report));
+
+    /// <summary>Gate 8: without --yes nothing is removed. The confirmation has been printed above this line.</summary>
+    public static Diagnostic SolverRemoveConsentRequired(string command) => Diagnostic.Create(
+        "solver.remove.consent-required", DiagnosticSeverity.Error,
+        "solver remove: nothing was removed. To go ahead, run '{command} --yes'.", ("command", command));
+
+    /// <summary>R-em3d25-1d — out of discovery's sight, but files remained; the report lists them by path.</summary>
+    public static Diagnostic SolverRemoveIncomplete(string report) => Diagnostic.Create(
+        "solver.remove.incomplete", DiagnosticSeverity.Error, "{report}", ("report", report));
 }

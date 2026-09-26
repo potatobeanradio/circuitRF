@@ -13049,3 +13049,63 @@ asset digest, and it matches the file (`948d04e6…`).
 
 **Gmsh's macOS archive links OpenCASCADE 7.8.1**; F0's Homebrew Gmsh linked 7.9.3. Both report 4.15.2,
 which is the version circuitRF checks. Not measured against F0's meshes.
+
+## Uninstall — brief-em3d-25 (2026-09-25)
+
+`src/Design/Em3d/Install/SolverUninstaller.cs` (plans, measured confirmation, all-or-nothing removal,
+rename-then-delete) and `SolverInUse.cs` (the in-use registry), `solver remove` in `src/Cli/Solver.cs`,
+and in `src/Ui` the Settings rows' *Uninstall …* / *Remove all 3D solvers*, `SolverRemovalRunner`,
+`TextConfirmDialog`, and `src/Ui/Uninstall/` (*Uninstall circuitRF…*, the `--uninstall` start, the macOS
+Trash). Packaging: `circuitRF.wxs` (Apps-list routing, product code) and `install.sh --uninstall`. Gates:
+`tests/Ui.Tests/Em3d/SolverUninstallTests.cs` (gates 1-9) and
+`PackagingScriptTests.AnUpgradeCannotRemoveASolver_AndTheAppsEntryRunsCircuitRfsOwnUninstall`. Pixels not
+seen, and nothing Windows-side run — the brief's §7 owner checks are all outstanding.
+
+**Found: the Linux tarball's `install.sh --uninstall` deleted every preference.** It ran `rm -rf "$ROOT"`
+with `ROOT=${XDG_DATA_HOME:-~/.local/share}/circuitRF` — which on Linux is ALSO
+`UserStateDirectory.Dir` (`LocalApplicationData/circuitRF`). So it removed preferences, recovery files and,
+now, every circuitRF-installed solver, then printed "Your workspaces and preferences were left alone".
+It now removes only what it and the updater laid down (`app-*`, `current`, `staging`, itself) and
+`rmdir`s the root only if empty. It also copies itself to `$ROOT/install.sh` at install time, since
+*Uninstall circuitRF…* needs a copy that outlives the archive; an install made before this change has
+none and the command says so. **That root copy alone would have failed every UPDATED install**: the updater extracts only `app-<ver>/` from the tarball, and `install.sh` sits beside it, so `build-linux.sh` now also puts `install.sh` inside `app-<ver>/`, and the application runs `current/install.sh` first. The solvers go through `circuitRF solver remove --all` with the same
+warning; whether there is anything to remove is read from `--json`'s diagnostic code rather than a
+pipeline, because the refusal exits 1 and `pipefail` would read that as "no". Mimicked in a fake
+`$HOME`: declined → nothing removed; yes → app and solver gone, `preferences.json` kept.
+
+**Windows never reads an MSI entry's `UninstallString`.** For an Apps entry marked `WindowsInstaller=1`
+it calls the installer directly, so the brief's "point the uninstall string at the stub" cannot be done
+on the MSI's own entry. The MSI's entry is hidden (`ARPSYSTEMCOMPONENT=1`) and `AppsEntryComp` writes
+`Uninstall\circuitRF-<arch>` with `UninstallString = "[INSTALLFOLDER]circuitRF.exe" --uninstall` and a
+plain-MSI `QuietUninstallString` for administrators. Explicit component GUIDs per scope, so a major
+upgrade shares the component rather than removing the entry the new version just wrote. The product
+code is recorded under `Software\circuitRF\circuitRF` and read from both registry views — a 32-bit
+package writes HKLM through `WOW6432Node`. **The stub did not change**: it already forwards its
+arguments verbatim. `msiexec /x` runs with its own UI, not `/passive`, so its one confirmation gives the
+application time to quit and a held file shows up in its files-in-use dialog — at the cost of a second
+confirmation after circuitRF's own warning.
+
+**Deviation: the `.wxs` has no removal custom action.** Gate 6 expected one conditioned
+`REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE`. The solver removal is the application's, run before
+`msiexec`, so nothing MSI-side exists for an upgrade to trip; the gate now holds any future
+removal-time `Custom` to that condition and forbids a custom action naming `solver`.
+
+**`--` inside an XML comment is illegal**, and the new packaging test caught one (`circuitRF.exe
+--uninstall` in the explanatory comment) through `XDocument.Load` — WiX would have refused the build on
+the owner's Windows machine, the furthest point from the edit.
+
+**macOS protects `~/.Trash` itself** (`ls ~/.Trash`: *Operation not permitted* from this shell), so a
+rename into it is not a design. `MacTrash` calls `-[NSFileManager trashItemAtURL:resultingItemURL:error:]`
+through the Objective-C runtime (the `MacOsAppMenu` pattern), which needs no access to the folder;
+verified by trashing a dummy bundle from a scratch harness compiling the same file, and moving it back.
+
+**An interrupted removal leaves nothing published**, so "the next attempt finishes it" had nothing to
+plan. A plan now carries each `*.removing` directory as a leftover, with its size; `PlanOne` on a tool
+with no home but leftovers, and `PlanAll`, finish them. Removal takes the installer's own
+`.install.lock` (now `SolverHomes.InstallLockFile`), so an install and a removal exclude each other
+across processes, and an install in progress refuses a removal by name.
+
+**In use, across processes, is a lock file in the home.** `SolverInUse.HoldPrograms` maps each program
+a run found to its published home by walking up to `install.json` (`SolverHomes.HomeOf`); a program
+under no home holds nothing. `Em3dRunService.Run` holds every home it found for its whole length. A lock
+whose pid has exited — or carries this process's pid with no holder here — is stale and deleted.

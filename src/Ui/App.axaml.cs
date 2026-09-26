@@ -131,6 +131,15 @@ public partial class App : Application
         // a workspace reset.
         AppDomain.CurrentDomain.ProcessExit += (_, _) => CircuitRF.Ui.Layout.PCells.PCellRegistry.ClearResolvers();
 
+        // brief-em3d-25 — `circuitRF.exe --uninstall` from the Windows Apps list: the uninstall warning and
+        // nothing else. No workspace window, no update check, no release notes.
+        if (Program.UninstallOnly && ApplicationLifetime is IClassicDesktopStyleApplicationLifetime uninstalling)
+        {
+            _ = Uninstall.UninstallCircuitRfRunner.RunStandaloneAsync(uninstalling);
+            base.OnFrameworkInitializationCompleted();
+            return;
+        }
+
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             _desktop = desktop;

@@ -14,6 +14,10 @@
     installing would change what a run finds (SolverStatus.OfferInstall), and its status line says which
     KIND the program is: "Installed by circuitRF" (brief 25 can remove it) or "Found at …" (never removed).
 
+    brief-em3d-25 — under each row, one Uninstall … per home circuitRF installed for that tool (an older
+    version is labelled as one, R-em3d25-3), built in code from SolverUninstaller.Installed; a program
+    circuitRF did not install gets none. At the foot, Remove all 3D solvers … — one confirmation for all.
+
     circuitRF ships none of these programs and links to none (em-3d.md §7.1). Unlike the Verilog-A
     compiler they ARE named here: a page telling someone how to install three separate programs
     cannot be written without their names (owner, 2026-09-24).
@@ -36,7 +40,7 @@
 
     <!-- ── Palace ─────────────────────────────────────────────────────── -->
     <SelectableTextBlock Text="Palace (FEM)" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,4"/>
-    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto">
+    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto">
       <TextBox Grid.Row="0" Grid.Column="0" Name="PalaceBox" FontSize="12"
                PlaceholderText="Leave blank to search (CIRCUITRF_PALACE, PATH, then Spack)"
                LostFocus="OnPathCommitted">
@@ -64,6 +68,7 @@
       <Button Grid.Row="3" Grid.ColumnSpan="2" Name="PalaceInstall" Content="Install Palace…" FontSize="11" Padding="8,3"
               Margin="0,6,0,0" HorizontalAlignment="Left" IsVisible="False" Tag="Palace" Click="OnInstall"
               ToolTip.Tip="Download Palace from its own upstream and build it for this computer. Shows what it will fetch and where it will go before anything is downloaded."/>
+      <StackPanel Grid.Row="4" Grid.ColumnSpan="2" Name="PalaceRemovals" Spacing="4"/>
     </Grid>
 
     <!-- ── MPI launcher: how Palace uses more than one core ─────────────── -->
@@ -93,7 +98,7 @@
 
     <!-- ── Gmsh ───────────────────────────────────────────────────────── -->
     <SelectableTextBlock Text="Gmsh (meshes Palace's problems)" FontSize="12" FontWeight="SemiBold" Margin="0,16,0,4"/>
-    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto">
+    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto">
       <TextBox Grid.Row="0" Grid.Column="0" Name="GmshBox" FontSize="12"
                PlaceholderText="Leave blank to search (CIRCUITRF_GMSH, PATH, then Spack)"
                LostFocus="OnPathCommitted"/>
@@ -112,11 +117,12 @@
       <Button Grid.Row="2" Grid.ColumnSpan="2" Name="GmshInstall" Content="Install Gmsh…" FontSize="11" Padding="8,3"
               Margin="0,6,0,0" HorizontalAlignment="Left" IsVisible="False" Tag="Gmsh" Click="OnInstall"
               ToolTip.Tip="Download Gmsh's own published archive for this computer. Shows what it will fetch and where it will go before anything is downloaded."/>
+      <StackPanel Grid.Row="3" Grid.ColumnSpan="2" Name="GmshRemovals" Spacing="4"/>
     </Grid>
 
     <!-- ── openEMS ────────────────────────────────────────────────────── -->
     <SelectableTextBlock Text="openEMS (FDTD)" FontSize="12" FontWeight="SemiBold" Margin="0,16,0,4"/>
-    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto">
+    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto">
       <TextBox Grid.Row="0" Grid.Column="0" Name="OpenEmsBox" FontSize="12"
                PlaceholderText="Leave blank to search (CIRCUITRF_OPENEMS, PATH, then Spack)"
                LostFocus="OnPathCommitted"/>
@@ -135,6 +141,12 @@
       <Button Grid.Row="2" Grid.ColumnSpan="2" Name="OpenEmsInstall" Content="Install openEMS…" FontSize="11" Padding="8,3"
               Margin="0,6,0,0" HorizontalAlignment="Left" IsVisible="False" Tag="OpenEms" Click="OnInstall"
               ToolTip.Tip="Download openEMS from its own upstream and install it for this computer. Shows what it will fetch and where it will go before anything is downloaded."/>
+      <StackPanel Grid.Row="3" Grid.ColumnSpan="2" Name="OpenEmsRemovals" Spacing="4"/>
     </Grid>
+
+    <!-- ── brief-em3d-25 R-em3d25-2: every circuitRF-installed solver, one confirmation ── -->
+    <Button Name="RemoveAll" Content="Remove all 3D solvers…" FontSize="11" Padding="8,3" Margin="0,16,0,0"
+            HorizontalAlignment="Left" IsVisible="False" Click="OnRemoveAll"
+            ToolTip.Tip="Remove every 3D solver circuitRF installed for this account. Lists each with its size first; nothing is removed if any is in use. Your documents are not touched."/>
   </StackPanel>
 </UserControl>

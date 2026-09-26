@@ -206,6 +206,12 @@ public static class Em3dRunService
         bool openEms = solver is Em3dSolver.OpenEms or Em3dSolver.Both;
         if (!palace && !openEms) return log.Result(EmRunStatus.Refused, EmDiagnostics.ThreeDSolverNotBuilt(solver.ToString()));
 
+        // brief-em3d-25 R-em3d25-1c — every circuitRF-installed program this run found is held until it
+        // returns, here and (by a lock file in its home) in every other process, so Uninstall refuses
+        // rather than deleting a solver from under the run. A program circuitRF did not install holds nothing.
+        using var inUse = Install.SolverInUse.HoldPrograms(readiness.Select(r => r.Installation?.Path),
+            $"the 3D EM run of '{(setup.Name is { Length: > 0 } n ? n : EmRunService.ResolveResultKey(setup))}'");
+
         // ── each backend's settings ───────────────────────────────────────────────────────────
         Stop? palaceStop = null, openEmsStop = null;
         PalaceSettings? palaceSettings = null;

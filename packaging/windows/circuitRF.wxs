@@ -110,6 +110,33 @@
     <Property Id="ARPPRODUCTICON" Value="circuitRFIcon.ico" />
     <Property Id="ARPURLINFOABOUT" Value="https://github.com/potatobeanradio/circuitRF" />
 
+    <!--
+      THE APPS-LIST ENTRY RUNS circuitRF's OWN UNINSTALL (brief-em3d-25 R-em3d25-4b, em-3d.md §7.2
+      point 2). Uninstalling circuitRF also removes the 3D solvers it installed for the user - with a
+      warning, because a from-source Palace is an hours-long build to get back. An MSI cannot give that
+      warning: Windows runs an MSI's removal with its reduced interface, and for an entry marked
+      WindowsInstaller=1 it calls the installer directly and never reads the entry's UninstallString.
+      So the MSI's own entry is hidden (ARPSYSTEMCOMPONENT) and AppsEntryComp below writes the one the
+      user sees, whose Uninstall runs circuitRF.exe with its uninstall argument (AppUninstall.Argument):
+      the warning, then the solvers, then `msiexec /x` for this product code. In perUser scope circuitRF.exe is the stub, which never
+      changes and forwards its arguments to whichever version `current` names; in perMachine it is the
+      installed executable.
+
+      QuietUninstallString is the plain MSI removal, for an administrator's silent uninstall. It shows
+      nothing and removes no solver - the solvers stay in the user's folder with their install record,
+      and a later reinstall finds and uses them (§7.2 point 4).
+
+      NOTHING HERE RUNS INSIDE AN UPGRADE (R-em3d25-5a). The solver removal is the application's, not
+      a custom action, so MajorUpgrade's removal of the previous version cannot reach it; and the
+      solver homes live in the per-user folder, which no component below references (R-em3d25-5b).
+      PackagingScriptTests holds both. Any removal-time custom action added later must be conditioned
+      REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE, and that test fails if it is not.
+
+      Only the owner can verify this, on Windows (brief-em3d-25 §7).
+    -->
+    <Property Id="ARPSYSTEMCOMPONENT" Value="1" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+
     <!-- ═══ DIRECTORIES ═══════════════════════════════════════════════════════ -->
 
     <?if $(var.Scope) = "perUser" ?>
@@ -367,12 +394,44 @@
       <?endif?>
     </ComponentGroup>
 
+    <!--
+      The Apps-list entry (see ARPSYSTEMCOMPONENT above) and the product code the application's own
+      Uninstall circuitRF... hands to msiexec. Explicit GUIDs, per scope, so a major upgrade SHARES the
+      component with the version it replaces rather than removing the entry the new one just wrote.
+      The key carries the architecture so an x86 and an x64 install on one machine keep one entry each.
+    -->
+    <?if $(var.Scope) = "perUser" ?>
+      <?define ArpRoot = "HKCU" ?>
+      <?define ArpGuid = "6F0C2B8E-3D4A-4E59-A8C1-2B7D90E4F6A1" ?>
+    <?else?>
+      <?define ArpRoot = "HKLM" ?>
+      <?define ArpGuid = "C83A5E17-9B02-4F6D-B4E8-71D2A0C95F3E" ?>
+    <?endif?>
+    <ComponentGroup Id="AppsEntry" Directory="INSTALLFOLDER">
+      <Component Id="AppsEntryComp" Guid="$(var.ArpGuid)">
+        <RegistryKey Root="$(var.ArpRoot)" Key="Software\Microsoft\Windows\CurrentVersion\Uninstall\circuitRF-$(var.Arch)">
+          <RegistryValue Name="DisplayName" Type="string" Value="circuitRF" KeyPath="yes" />
+          <RegistryValue Name="DisplayVersion" Type="string" Value="$(var.Version)" />
+          <RegistryValue Name="Publisher" Type="string" Value="potatobeanradio" />
+          <RegistryValue Name="DisplayIcon" Type="string" Value="[INSTALLFOLDER]circuitRF.exe" />
+          <RegistryValue Name="InstallLocation" Type="string" Value="[INSTALLFOLDER]" />
+          <RegistryValue Name="URLInfoAbout" Type="string" Value="https://github.com/potatobeanradio/circuitRF" />
+          <RegistryValue Name="UninstallString" Type="string" Value="&quot;[INSTALLFOLDER]circuitRF.exe&quot; --uninstall" />
+          <RegistryValue Name="QuietUninstallString" Type="string" Value="MsiExec.exe /X[ProductCode] /qn" />
+          <RegistryValue Name="NoModify" Type="integer" Value="1" />
+          <RegistryValue Name="NoRepair" Type="integer" Value="1" />
+        </RegistryKey>
+        <RegistryValue Root="$(var.ArpRoot)" Key="Software\circuitRF\circuitRF" Name="ProductCode" Type="string" Value="[ProductCode]" />
+      </Component>
+    </ComponentGroup>
+
     <!-- ═══ FEATURES ══════════════════════════════════════════════════════════ -->
 
     <Feature Id="MainFeature" Title="circuitRF" Description="The circuitRF application." Level="1">
       <ComponentGroupRef Id="MainExecutable" />
       <ComponentGroupRef Id="PublishedFiles" />
       <ComponentGroupRef Id="CommandLine" />
+      <ComponentGroupRef Id="AppsEntry" />
       <ComponentRef Id="StartMenuShortcutComp" />
       <?if $(var.Scope) = "perUser" ?>
         <ComponentGroupRef Id="PointerAndStaging" />

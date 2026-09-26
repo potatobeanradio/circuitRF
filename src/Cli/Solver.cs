@@ -5,16 +5,18 @@ using CircuitRF.Engine;
 namespace CircuitRF.Cli;
 
 /// <summary>
-/// <c>circuitrf solver &lt;list|install&gt;</c> — the install assistant's headless spelling
+/// <c>circuitrf solver &lt;list|install|remove&gt;</c> — the install assistant's headless spelling
 /// (brief-em3d-24 R-em3d24-7, em-3d.md §7.2: "a build machine installs the same way the GUI does, from the
 /// same recipe and the same install record"). ONE verb with nouns, on <c>history</c>'s pattern (owner
-/// decision D1); brief 25 adds <c>remove</c>.
+/// decision D1); brief 25 added <c>remove</c>.
 ///
-/// <para><b>This file holds no install logic</b>: argument parsing, the consent refusal, progress on
+/// <para><b>This file holds no install or removal logic</b>: argument parsing, the consent refusal, progress on
 /// stderr and reporting. <c>list</c> is <see cref="SolverStatus.Of"/> — what each Settings ▸ 3D EM row
 /// shows — and <c>install</c> is <see cref="SolverInstaller.Consent"/> then
 /// <see cref="SolverInstaller.Install"/>, which the Settings row and a refusal's <i>Install …</i> action
-/// call too. A comment-stripped source scan in <c>SolverInstallTests</c> holds that, on
+/// call too; <c>remove</c> is <see cref="SolverUninstaller.PlanOne"/> or <see cref="SolverUninstaller.PlanAll"/>
+/// then <see cref="SolverUninstaller.Remove"/>, which Settings and <i>Uninstall circuitRF…</i> call. A
+/// comment-stripped source scan in <c>SolverInstallTests</c> holds that, on
 /// <c>Authoring.cs</c>' terms.</para>
 ///
 /// <para><b>Nothing is fetched without <c>--yes</c></b> (R-em3d24-2a). Without it the verb prints the
@@ -38,6 +40,7 @@ internal static class Solver
         {
             "list"    => List(args[1..]),
             "install" => Install(args[1..]),
+            "remove"  => Remove(args[1..]),
             _         => UnknownNoun(noun),
         };
     }
@@ -52,6 +55,8 @@ internal static class Solver
     {
         Console.Error.WriteLine("usage: circuitrf solver list");
         Console.Error.WriteLine("       circuitrf solver install <palace|gmsh|openems> [--version <v>] [--yes]");
+        Console.Error.WriteLine("       circuitrf solver remove <palace|gmsh|openems> [--version <v>] [--yes]");
+        Console.Error.WriteLine("       circuitrf solver remove --all [--yes]");
         return 1;
     }
 
@@ -75,6 +80,10 @@ internal static class Solver
             }
             foreach (var c in s.Capabilities)
                 Console.WriteLine($"  {Describe(c.Capability)}: {(c.Available ? "yes" : "no")} — {c.Detail}");
+            // brief-em3d-25 — only what circuitRF installed has a remove command; the rest is the user's.
+            foreach (var home in new SolverUninstaller().Installed(tool))
+                Console.WriteLine($"  installed by circuitRF: {home.Version} at {home.Home}; " +
+                                  $"remove: circuitrf solver remove {SolverHomes.ToolId(tool)} --version {home.Version}");
             if (s.OfferInstall)
                 Console.WriteLine($"  install: circuitrf solver install {SolverHomes.ToolId(tool)}   (recipe {s.Recipe!.Id})");
             else if (s.Recipe is null && s.Found is not { Validated: true })
@@ -164,6 +173,68 @@ internal static class Solver
         finally
         {
             Console.CancelKeyPress -= onCancel;
+        }
+    }
+
+    // ── solver remove ─────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// brief-em3d-25 R-em3d25-1/2 — the confirmation on stderr, then nothing without <c>--yes</c> (exit 1,
+    /// gate 8). Exit codes: 0 removed; 1 refused (not installed by circuitRF, several versions and none
+    /// named, in use, an install running) or incomplete, with the files left listed by path.
+    /// </summary>
+    private static int Remove(string[] args)
+    {
+        string? name    = null;
+        string? version = null;
+        bool    all     = false;
+        bool    yes     = false;
+        for (int i = 0; i < args.Length; i++)
+        {
+            switch (args[i])
+            {
+                case "--yes" or "-y":                            yes = true; break;
+                case "--all":                                    all = true; break;
+                case "--version" when i + 1 < args.Length:       version = args[++i]; break;
+                case var a when a.StartsWith('-'):               return JsonRun.Fail(CliDiagnostics.SolverUnknownOption("remove", a));
+                case var a when name is null:                    name = a; break;
+                case var a:                                      return JsonRun.Fail(CliDiagnostics.SolverUnknownOption("remove", a));
+            }
+        }
+        if (all && name is not null) return JsonRun.Fail(CliDiagnostics.SolverRemoveAllWithTool(name));
+        if (!all && name is null)   return JsonRun.Fail(CliDiagnostics.SolverRemoveTargetRequired());
+        if (all && version is not null) return JsonRun.Fail(CliDiagnostics.SolverUnknownOption("remove --all", "--version"));
+
+        var uninstaller = new SolverUninstaller();
+        SolverRemovalPlan plan;
+        if (all) plan = uninstaller.PlanAll();
+        else if (SolverHomes.ToolFromId(name) is { } tool) plan = uninstaller.PlanOne(tool, version);
+        else return JsonRun.Fail(CliDiagnostics.SolverUnknownTool(name!));
+
+        if (plan.Refusal is { } refusal) return JsonRun.Fail(CliDiagnostics.SolverRemoveRefused(refusal));
+
+        // The confirmation is the question; with --yes it has been answered, and the report names what went.
+        if (!yes)
+        {
+            Console.Error.WriteLine(plan.Confirmation);
+            Console.Error.WriteLine();
+        }
+        string command = all ? "circuitrf solver remove --all"
+                       : plan.Homes.Count > 0 ? $"circuitrf solver remove {name!.ToLowerInvariant()} --version {plan.Homes[0].Record.Version}"
+                       : $"circuitrf solver remove {name!.ToLowerInvariant()}";
+        if (!yes) return JsonRun.Fail(CliDiagnostics.SolverRemoveConsentRequired(command));
+
+        var outcome = uninstaller.Remove(plan);
+        foreach (string home in outcome.Removed) JsonRun.AddOutput("removed", home);
+        switch (outcome.Status)
+        {
+            case RemovalStatus.Removed:
+                Console.WriteLine(outcome.Report);
+                return 0;
+            case RemovalStatus.Refused:
+                return JsonRun.Fail(CliDiagnostics.SolverRemoveRefused(outcome.Report));
+            default:
+                return JsonRun.Fail(CliDiagnostics.SolverRemoveIncomplete(outcome.Report));
         }
     }
 

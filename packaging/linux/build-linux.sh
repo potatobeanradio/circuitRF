@@ -309,6 +309,11 @@ for ARCH in $ARCHES; do
             chmod +x "${APPDIR}/circuitRF" 2>/dev/null || true
             [ -f "${APPDIR}/senior_worker" ] && chmod +x "${APPDIR}/senior_worker"
             [ -f "${APPDIR}/osdi-worker" ]   && chmod +x "${APPDIR}/osdi-worker"
+            # The uninstaller rides INSIDE the version directory too (brief-em3d-25): the updater installs
+            # only app-<ver>/ out of this archive, so a copy beside it never reaches an updated install,
+            # and "Uninstall circuitRF..." runs current/install.sh --uninstall.
+            cp "${HERE}/install.sh" "${APPDIR}/install.sh"
+            chmod +x "${APPDIR}/install.sh"
 
             cp "${HERE}/install.sh"          "${STAGE}/circuitRF-${CRF_VERSION}/install.sh"
             cp "${HERE}/circuitrf-mime.xml"  "${STAGE}/circuitRF-${CRF_VERSION}/circuitrf-mime.xml"

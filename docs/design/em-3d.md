@@ -807,8 +807,14 @@ So the design is:
 **A headless spelling** is part of the design, as it is for every capability here (`docs/design/cli.md`):
 a build machine installs — and uninstalls — a solver the same way the GUI does, from the same recipe
 and the same install record. *Decided in brief-em3d-24:* one verb with nouns, `circuitrf solver list` and
-`circuitrf solver install <tool> [--yes]` (owner decision D1; brief 25 adds `remove`), calling the same
-functions the Settings rows call. `docs/design/cli.md` §22.
+`circuitrf solver install <tool> [--yes]` (owner decision D1), calling the same
+functions the Settings rows call; brief-em3d-25 added `circuitrf solver remove <tool> [--version <v>] [--yes]`
+and `solver remove --all [--yes]` (`SolverUninstaller`). `docs/design/cli.md` §22. *Decided in brief-em3d-25:*
+the Windows Apps-list routing hides the MSI's own entry (`ARPSYSTEMCOMPONENT`) and writes one whose
+Uninstall runs `circuitRF.exe --uninstall`, because Windows never reads an MSI entry's
+`UninstallString`; the solver removal is the application's, so the `.wxs` carries no removal-time custom
+action for an upgrade to trip. On Linux the tarball's install root IS the per-user folder, so
+`install.sh --uninstall` removes only what it laid down and never the directory wholesale.
 
 ### 7.3 Locations
 

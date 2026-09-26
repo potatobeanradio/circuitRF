@@ -30,6 +30,15 @@ public static class SolverHomes
     /// <summary>The suffix of a relocatable home under construction.</summary>
     public const string PartialSuffix = ".partial";
 
+    /// <summary>The lock an install holds in its tool's directory for its whole length — and a removal
+    /// takes, so the two exclude each other across processes.</summary>
+    public const string InstallLockFile = ".install.lock";
+
+    /// <summary>The suffix a home is renamed to before it is deleted (brief-em3d-25 R-em3d25-1d): a delete
+    /// that stops part way leaves this, which is never a discovery location, and the next removal
+    /// finishes it.</summary>
+    public const string RemovingSuffix = ".removing";
+
     /// <summary>The directory holding every tool's homes, as described in the type's remarks.</summary>
     public static string DefaultRoot
     {
@@ -89,8 +98,8 @@ public static class SolverHomes
 
     /// <summary>
     /// Every published home of <paramref name="tool"/> under <paramref name="roots"/>: a directory whose
-    /// record reads and names that tool. Newest install first. A <c>.partial</c> directory is never
-    /// returned, whatever it holds.
+    /// record reads and names that tool. Newest install first. A <c>.partial</c> or <c>.removing</c>
+    /// directory is never returned, whatever it holds.
     /// </summary>
     public static IReadOnlyList<InstallRecord> Published(SolverTool tool, IEnumerable<string> roots)
     {
@@ -103,11 +112,28 @@ public static class SolverHomes
             catch (Exception e) when (e is IOException or UnauthorizedAccessException) { continue; }
             foreach (string home in homes)
             {
-                if (home.EndsWith(PartialSuffix, StringComparison.Ordinal)) continue;
+                if (home.EndsWith(PartialSuffix, StringComparison.Ordinal) || home.EndsWith(RemovingSuffix, StringComparison.Ordinal)) continue;
                 if (InstallRecord.TryRead(Path.Combine(home, RecordFile)) is { } record && record.Tool == tool)
                     found.Add(record);
             }
         }
         return found.OrderByDescending(r => r.InstalledAt).ThenBy(r => r.Home, StringComparer.Ordinal).ToList();
+    }
+
+    /// <summary>
+    /// The published home <paramref name="program"/> lives in — the nearest ancestor holding
+    /// <see cref="RecordFile"/> — or null for a program circuitRF did not install.
+    /// </summary>
+    public static string? HomeOf(string program)
+    {
+        DirectoryInfo? dir;
+        try { dir = new FileInfo(Path.GetFullPath(program)).Directory; }
+        catch (Exception e) when (e is ArgumentException or IOException or NotSupportedException) { return null; }
+        for (; dir is not null; dir = dir.Parent)
+        {
+            if (dir.Name.EndsWith(PartialSuffix, StringComparison.Ordinal) || dir.Name.EndsWith(RemovingSuffix, StringComparison.Ordinal)) return null;
+            if (File.Exists(Path.Combine(dir.FullName, RecordFile))) return dir.FullName;
+        }
+        return null;
     }
 }

@@ -34,10 +34,17 @@ public partial class Em3dSolverSettingsView : UserControl
         Loaded += (_, _) => RefreshAll();
         // brief-em3d-24 — an install that ends (however it ends) changes what discovery finds.
         CircuitRF.Ui.Layout.Em.SolverInstallRunner.Finished += OnInstallFinished;
-        DetachedFromVisualTree += (_, _) => CircuitRF.Ui.Layout.Em.SolverInstallRunner.Finished -= OnInstallFinished;
+        CircuitRF.Ui.Layout.Em.SolverRemovalRunner.Finished += OnRemovalFinished;
+        DetachedFromVisualTree += (_, _) =>
+        {
+            CircuitRF.Ui.Layout.Em.SolverInstallRunner.Finished -= OnInstallFinished;
+            CircuitRF.Ui.Layout.Em.SolverRemovalRunner.Finished -= OnRemovalFinished;
+        };
     }
 
     private void OnInstallFinished(SolverTool tool) => Dispatcher.UIThread.Post(RefreshAll);
+
+    private void OnRemovalFinished() => Dispatcher.UIThread.Post(RefreshAll);
 
     public void Load()
     {
@@ -53,20 +60,84 @@ public partial class Em3dSolverSettingsView : UserControl
         finally { _loading = false; }
     }
 
-    private (SolverDiscovery Discovery, TextBlock Status, Button Install)[] Rows =>
+    private (SolverDiscovery Discovery, TextBlock Status, Button Install, StackPanel Removals)[] Rows =>
     [
-        (SolverDiscovery.Palace,  PalaceStatus,  PalaceInstall),
-        (SolverDiscovery.Gmsh,    GmshStatus,    GmshInstall),
-        (SolverDiscovery.OpenEms, OpenEmsStatus, OpenEmsInstall),
+        (SolverDiscovery.Palace,  PalaceStatus,  PalaceInstall,  PalaceRemovals),
+        (SolverDiscovery.Gmsh,    GmshStatus,    GmshInstall,    GmshRemovals),
+        (SolverDiscovery.OpenEms, OpenEmsStatus, OpenEmsInstall, OpenEmsRemovals),
     ];
 
     private void RefreshAll()
     {
-        foreach (var (discovery, status, install) in Rows) Refresh(discovery, status, install);
+        foreach (var (discovery, status, install, _) in Rows) Refresh(discovery, status, install);
         RefreshMpi();
+        RefreshRemovals();
     }
 
-    private (SolverDiscovery, TextBlock, Button) Row(SolverTool tool) => Rows[tool switch
+    /// <summary>
+    /// brief-em3d-25 — one <i>Uninstall …</i> per home circuitRF installed, newest first, each with its size
+    /// measured now; a home other than the newest is labelled as the older version it is (R-em3d25-3). A
+    /// program circuitRF did not install has no button here, whatever its row says.
+    /// </summary>
+    private void RefreshRemovals()
+    {
+        _ = Task.Run(() =>
+        {
+            // PlanAll measures every home once, and sees an interrupted removal's leftovers, which only
+            // Remove all offers to finish.
+            var plan  = new SolverUninstaller().PlanAll();
+            var homes = Enum.GetValues<SolverTool>().ToDictionary(t => t, t => plan.Homes.Where(h => h.Record.Tool == t)
+                .Select(h => (h.Record, h.Bytes)).ToList());
+            Dispatcher.UIThread.Post(() =>
+            {
+                foreach (var (discovery, _, _, panel) in Rows)
+                {
+                    panel.Children.Clear();
+                    var list = homes[discovery.Tool];
+                    for (int i = 0; i < list.Count; i++)
+                    {
+                        var (record, bytes) = list[i];
+                        string label = i == 0
+                            ? $"Uninstall {discovery.Name} {record.Version} ({SolverUninstaller.Size(bytes)})…"
+                            : $"Remove older {discovery.Name} {record.Version} ({SolverUninstaller.Size(bytes)})…";
+                        var button = new Button
+                        {
+                            Content = label, FontSize = 11, Padding = new Avalonia.Thickness(8, 3),
+                            Margin = new Avalonia.Thickness(0, i == 0 ? 6 : 0, 0, 0),
+                            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left,
+                        };
+                        ToolTip.SetTip(button, $"Installed by circuitRF at {record.Home}. Shows the space it frees before anything is removed; your documents are not touched.");
+                        var tool = discovery.Tool;
+                        string version = record.Version;
+                        button.Click += async (_, _) =>
+                        {
+                            button.IsEnabled = false;
+                            await CircuitRF.Ui.Layout.Em.SolverRemovalRunner.RemoveAsync(
+                                u => u.PlanOne(tool, version), TopLevel.GetTopLevel(this) as Window, messages: null,
+                                $"Uninstall {discovery.Name} {version}");
+                            button.IsEnabled = true;
+                        };
+                        panel.Children.Add(button);
+                    }
+                }
+                RemoveAll.IsVisible = plan.CanProceed;
+            });
+        });
+    }
+
+    /// <summary>brief-em3d-25 R-em3d25-2 — every circuitRF-installed solver, after one confirmation.</summary>
+    private async void OnRemoveAll(object? sender, RoutedEventArgs e)
+    {
+        RemoveAll.IsEnabled = false;
+        try
+        {
+            await CircuitRF.Ui.Layout.Em.SolverRemovalRunner.RemoveAsync(
+                u => u.PlanAll(), TopLevel.GetTopLevel(this) as Window, messages: null, "Remove all 3D solvers");
+        }
+        finally { RemoveAll.IsEnabled = true; }
+    }
+
+    private (SolverDiscovery, TextBlock, Button, StackPanel) Row(SolverTool tool) => Rows[tool switch
     {
         SolverTool.Palace => 0,
         SolverTool.Gmsh   => 1,
@@ -184,7 +255,7 @@ public partial class Em3dSolverSettingsView : UserControl
         try
         {
             var install = CircuitRF.Ui.Layout.Em.SolverInstallRunner.InstallAsync(tool, TopLevel.GetTopLevel(this) as Window, messages: null);
-            var (discovery, status, btn) = Row(tool);
+            var (discovery, status, btn, _) = Row(tool);
             Refresh(discovery, status, btn);
             await install;
         }
