@@ -993,8 +993,10 @@ UI crawled…"). With composition interop the compositor's share of a 3D frame i
 texture. A 3D frame still rendering, or a kernel still rebuilding, means the previous image stays up —
 it cannot starve the rest of the window.
 
-The GPU API behind the shared texture (Metal/D3D/Vulkan directly, or WebGPU over wgpu, which targets
-all three) is decided on the F2 spike (§8.6).
+The GPU API behind the shared texture was decided on the F2 spike (§8.6, §11): **each platform's own
+API — Metal, D3D11, Vulkan — with one WGSL shader source cross-compiled offline**; WebGPU over
+wgpu-native is the secondary route, built at once only on a platform where the native route fails,
+and eventually on all three.
 
 ### 8.4 Three loops at three speeds
 
@@ -1153,10 +1155,18 @@ shared geometry are cross-checks, not references — all of them are circuitRF-d
   before then. FU blocks nothing in F2, F3 or F4; what deferring it costs is install time (a from-source
   build) and Windows reach (no native Palace). The second series
   (`docs/sonnet-briefs/brief-em3d-20-overview.md`) carries F1's remainder and F2; F3 is not briefed yet.
+- **The 3D viewer's GPU API (D3, Open 2): each platform's own API is the primary route** — Metal on
+  macOS, D3D11 on Windows, Vulkan on Linux — behind composition GPU interop, with **one WGSL shader
+  source** cross-compiled offline to MSL/HLSL/SPIR-V and the generated shaders committed. Decided on
+  the F2 spike's evidence (`em-3d-f2-spike-findings.md`), before the Windows and Linux halves were
+  tested. **WebGPU through wgpu-native is the secondary route**: implemented immediately only on a
+  platform where the native route does not work, and implemented on all three later. Its native
+  library is accepted for that use.
 
 **Open:**
 1. The run verb's shape — `em` with a 3D setup, or a sibling verb (§5.3; §4.6 leans towards `em`).
-2. The GPU API behind the composition surface — native per platform, or WebGPU (§8.3), decided on the F2 spike.
+2. *Decided 2026-09-25 — see "Made (2026-09-25)" above (native per platform first, WebGPU second).
+   Kept here so the numbering the briefs cite still holds.*
 3. The Tier B document's format and extension (§6.3).
 4. Where the thermal solver lives in the source tree — `src/Engine` or a project of its own.
 5. Whether F1 (Palace) or F1b (openEMS) ships first (§10).

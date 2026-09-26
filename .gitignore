@@ -83,3 +83,8 @@ release-key*
 # an EM run is not covered by that one and is not a thing to commit either — an example ships its
 # design and its EM SETUP, and the user generates the rest.
 examples/*/results/
+
+# Brief em3d-27 F2 spike: wgpu-native binaries (fetched by fetch-wgpu.sh/.ps1) and the regenerated
+# F0 case A mesh (data/case.msh, ~15 MB, rebuilt by Gmsh from testdata/em3d/f0/A-bondwire/palace-round/case.geo)
+tools/Viewer3dSpike/native/
+tools/Viewer3dSpike/data/

@@ -223,7 +223,7 @@ it is shown.
 |---|---|---|---|
 | D1 | The install verb's spelling (note Open 6) | **`solver`**: one verb with nouns (`list`, `install`, `remove`), following `history`'s pattern | 24 |
 | D2 | MPI rank default | **physical cores**, overridable by `EmSolveCores` | 21 |
-| D3 | The GPU API and any native dependency it brings (note Open 2) | **the spike's recommendation** | 28 |
+| D3 | The GPU API and any native dependency it brings (note Open 2) | **Decided 2026-09-25:** each platform's own API (Metal / D3D11 / Vulkan) with one WGSL source, primary; WebGPU via wgpu-native secondary — built at once only where the native route fails, on all platforms later | 28 |
 | D4 | Eigenmode in this series | **in**: its gate is a closed form, and a mode shape is the viewer's best picture | 23 |
 | D5 | Windows install runs (§1b) | **owner makes them**, three per tool, in the F0 log format | 26 closes |
 | D6 | *Uninstall circuitRF…* in this series or later | **in** (brief 25 §4), because the design ties it to shipping the assistant; it can ship later without harm, because leftovers are reused (§7.2 point 4) | — |

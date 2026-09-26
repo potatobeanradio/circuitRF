@@ -1,0 +1,86 @@
+struct U {
+    row_major float4x4 vp;
+    float4 eye;
+    uint hover;
+    uint sel;
+    uint per;
+    uint pad;
+    float4 colors[32];
+};
+
+struct VO {
+    float4 pos : SV_Position;
+    float3 world : LOC0;
+    nointerpolation uint id : LOC1;
+};
+
+cbuffer u : register(b0) { U u; }
+
+struct VertexOutput_vs {
+    float3 world : LOC0;
+    nointerpolation uint id_1 : LOC1;
+    float4 pos : SV_Position;
+};
+
+struct FragmentInput_fs_color {
+    float3 world_1 : LOC0;
+    nointerpolation uint id_2 : LOC1;
+    float4 pos_1 : SV_Position;
+};
+
+struct FragmentInput_fs_pick {
+    float3 world_2 : LOC0;
+    nointerpolation uint id_3 : LOC1;
+    float4 pos_2 : SV_Position;
+};
+
+VertexOutput_vs vs(float3 p : LOC0, uint id : LOC1)
+{
+    VO o = (VO)0;
+
+    float4x4 _e6 = u.vp;
+    o.pos = mul(float4(p, 1.0), _e6);
+    o.world = p;
+    o.id = id;
+    VO _e12 = o;
+    const VO vo = _e12;
+    const VertexOutput_vs vo_1 = { vo.world, vo.id, vo.pos };
+    return vo_1;
+}
+
+uint naga_mod(uint lhs, uint rhs) {
+    return lhs % (rhs == 0u ? 1u : rhs);
+}
+
+float4 fs_color(FragmentInput_fs_color fragmentinput_fs_color) : SV_Target0
+{
+    VO i = { fragmentinput_fs_color.pos_1, fragmentinput_fs_color.world_1, fragmentinput_fs_color.id_2 };
+    float3 rgb = (float3)0;
+
+    float3 _e2 = ddx(i.world);
+    float3 _e4 = ddy(i.world);
+    float3 n = normalize(cross(_e2, _e4));
+    float4 _e9 = u.eye;
+    float d = abs(dot(n, normalize((_e9.xyz - i.world))));
+    uint _e23 = u.per;
+    float4 c = u.colors[naga_mod((i.id - 1u), _e23)];
+    rgb = (c.xyz * (0.25 + (0.75 * d)));
+    uint _e37 = u.hover;
+    if ((i.id == _e37)) {
+        float3 _e39 = rgb;
+        rgb = lerp(_e39, float3(0.2, 0.9, 1.0), 0.6);
+    }
+    uint _e49 = u.sel;
+    if ((i.id == _e49)) {
+        float3 _e51 = rgb;
+        rgb = lerp(_e51, float3(1.0, 0.3, 1.0), 0.6);
+    }
+    float3 _e58 = rgb;
+    return float4(_e58, c.w);
+}
+
+uint fs_pick(FragmentInput_fs_pick fragmentinput_fs_pick) : SV_Target0
+{
+    VO i_1 = { fragmentinput_fs_pick.pos_2, fragmentinput_fs_pick.world_2, fragmentinput_fs_pick.id_3 };
+    return i_1.id;
+}

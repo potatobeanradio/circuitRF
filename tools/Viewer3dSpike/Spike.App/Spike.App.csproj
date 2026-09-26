@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Brief em3d-27 (F2 spike): the Avalonia pane, hosted three ways (routes A, B, C), inside a real
+    window with a text box beside it and inside a Dock panel that can be floated and re-docked.
+    THROWAWAY; not in circuitrf.slnx; nothing under src/ may reference it. Package versions match
+    src/Ui exactly so the spike measures the Avalonia/Dock circuitRF actually ships.
+  -->
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>14</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AssemblyName>Viewer3dSpike</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.0.3" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.0.3" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.0.3" />
+    <PackageReference Include="Dock.Avalonia" Version="12.0.0.2" />
+    <PackageReference Include="Dock.Model.Mvvm" Version="12.0.0.2" />
+    <PackageReference Include="Dock.Avalonia.Themes.Fluent" Version="12.0.0.2" />
+    <ProjectReference Include="../Spike.Render/Spike.Render.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -3,9 +3,9 @@
 **Series:** [3D EM, second series](brief-em3d-20-overview.md) · **Tag:** `R-em3d28-n` ·
 **Design note:** [`em-3d.md`](../design/em-3d.md) §8.1–§8.5; `em-3d-f2-spike-findings.md` (brief 27)
 **Area:** `src/Render/Scene3D/` (new: no GPU, no Avalonia), `src/Engine/Em3d/Em3dTessellation.cs`
-(extruded-polygon caps), `src/Ui/Viewer3D/` (new: the GPU device and surface only), the `.cem` panel
-(*Show 3D*), the Dock document factory
-**Depends on:** 27, and **the owner's decision D3** · **Blocks:** 29
+(extruded-polygon caps), `src/Ui/Viewer3D/` (new: the GPU backends and surface only), the `.cem` panel
+(*Show 3D*), the Dock document factory, `tools/Viewer3dSpike/` (step 0 only)
+**Depends on:** 27; **D3 decided 2026-09-25 — route A primary, route B secondary** (§1c) · **Blocks:** 29
 
 ---
 
@@ -23,6 +23,24 @@ solve, which is the point of §4.6. It shows:
 
 ---
 
+## 0b. `R-em3d28-0` — first, prove route A where it has not run
+
+D3 chose route A (each platform's own GPU API behind composition interop) knowing that only its macOS
+half was built. **Before any viewer code grows, extend `tools/Viewer3dSpike/` with the two missing
+halves**, in the spike's shape, so the owner can run them:
+- **Windows: D3D11.** Avalonia's default there is ANGLE over D3D11, which imports a D3D11 texture by
+  shared handle (`D3D11TextureGlobalSharedHandle` / `D3D11TextureNtHandle`) with a keyed mutex. A
+  harness backend and an `InteropPane` image source.
+- **Linux: Vulkan.** Avalonia's default there is GLX; it imports `VulkanOpaquePosixFileDescriptor`
+  images and semaphores where the GL driver offers the external-memory extensions. A harness backend
+  and an image source. **The pane prints what the compositor offered** (it already does); if GLX
+  offers nothing, try Avalonia's `X11RenderingMode.Vulkan` before calling the platform failed.
+- Shaders from the one WGSL source (§1c), not hand-written per language.
+
+The same four counters, the same asserts, Debug and Release, and the owner's hand checks on each OS
+recorded in `em-3d-f2-spike-findings.md` §7. **If a half cannot be made to present, that platform
+takes route B now** (§1c) and the findings say why.
+
 ## 1. `R-em3d28-1` — the split across the firewall (§8.5)
 
 **`R-em3d28-1a`** `src/Render/Scene3D/` holds everything that is not a GPU call:
@@ -37,9 +55,38 @@ solve, which is the point of §4.6. It shows:
 It references **no GPU API and no Avalonia**, and the firewall test holds that. This is what keeps a
 later headless `render` of a 3D view possible without a second renderer (§8.5).
 
-**`R-em3d28-1b`** `src/Ui/Viewer3D/` holds only the device, buffers, shaders, the composition surface
-and input translation, per D3. **If the owner's D3 choice brings a native dependency, it is referenced
-by `src/Ui` only.** A test asserts that no project below the firewall references it.
+**`R-em3d28-1b`** `src/Ui/Viewer3D/` holds only the GPU backends, buffers, shaders, the composition
+surface and input translation. **One backend interface, three backends** — Metal (macOS), D3D11
+(Windows), Vulkan (Linux) — chosen at run time by platform, so a route-B backend can slot in beside
+them without touching the scene model. The pane's shape is the spike's `InteropPane`: a render thread
+of its own, a three-image swapchain imported into the compositor once, and a UI-thread share per frame
+that only hands a finished image over.
+
+**`R-em3d28-1c` D3, as decided.** Route A is primary and adds **no native package**: the platform APIs
+are the OS's, reached through hand-written interop (as the spike's `ObjC.cs`) or a managed binding
+named in the completion note. **Shaders are one WGSL source** in `src/Ui/Viewer3D/Shaders/`,
+cross-compiled offline by naga to `.metal`, `.hlsl` and `.spv`, and the outputs are committed; each
+generated file records the hash of the WGSL it came from, and a test fails when they disagree (an edit
+to the WGSL without regenerating). naga's CLI has no MSL binding map (findings §5.4): use its library
+from a small build tool, or a checked fix-up — not a hand edit. **Route B** (WebGPU through
+wgpu-native) is built now only for a platform where step 0 shows route A cannot present; it is built
+for every platform in a later brief. Its native library is accepted for that use, is referenced by
+`src/Ui` only, and ships in that platform's installer. A test asserts that no project below the
+firewall references any GPU API or native GPU library.
+
+**`R-em3d28-1d` Rules brief 27 learned the hard way** (findings §5):
+- **The shared image's alpha stays 1.** Blend alpha with `ONE, ONE_MINUS_SRC_ALPHA`, or every
+  translucent object punches a hole through the pane.
+- **Check every native handle before encoding with it.** A message to nil is a silent no-op; a
+  missing ready signal made the compositor wait forever and froze the whole window. A present step
+  that cannot signal is a fault, reported, never a timeout loop.
+- **Measure pick latency paced**, as the compositor paces the app.
+- **Avalonia 12's macOS compositor is Metal by default** (its API documentation says OpenGL). The
+  owner's run showed it imports IOSurface with MetalSharedEvent timeline semaphores — use those.
+- **`Update*Async` allocates a `Task` per presented frame** (408 B measured). Record it on the UI lane;
+  it is Avalonia's, not a defect of the pane.
+- **Keep the device and uploaded buffers in an object that outlives the view**, so a Dock float or
+  re-dock re-imports three images and uploads no geometry.
 
 ---
 
@@ -129,8 +176,12 @@ units.
 `tests/Ui.Tests/Viewer3D/` for the scene model (headless), `tests/Firewall.Tests` for the split. These
 are the §8.6 counters, not timings.
 
-1. **Firewall.** `src/Render` references no GPU API and no Avalonia. Only `src/Ui` references D3's
-   dependency.
+0. **Step 0.** Route A's D3D11 and Vulkan halves pass the spike harness's asserts on their OS (owner
+   runs recorded), or the platform's route-B fallback does and the findings say why.
+1. **Firewall.** `src/Render` references no GPU API and no Avalonia; no project below the firewall
+   references a GPU API or native GPU library; route A adds no native package.
+1b. **Shaders current.** Every committed `.metal`/`.hlsl`/`.spv` carries the hash of the WGSL it was
+   generated from, and it matches.
 2. **Batches.** The scene for F0 case A and for series 1's via transition has one draw per
    (object, material), independent of triangle count.
 3. **Orbit uploads nothing.** With the GPU layer behind a recording fake, 100 camera changes upload 0
@@ -149,7 +200,7 @@ are the §8.6 counters, not timings.
 
 ## 7. Owner check (pixels not seen from this session)
 
-On each OS:
+On each OS, on the route that OS runs (A, or B where step 0 fell back):
 - orbit the F0 case A model and the via transition;
 - hover, click, the object tree and the clip plane;
 - float the tab in Dock and re-dock it;

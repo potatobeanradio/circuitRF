@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Brief em3d-27 (F2 spike). THROWAWAY renderers, one per route, none referencing Avalonia — the
+    headless harness and the Avalonia pane drive the same code. No NuGet package: GL is loaded by
+    GetProcAddress, Metal through the Objective-C runtime, wgpu-native through NativeLibrary from
+    tools/Viewer3dSpike/native/ (fetched by fetch-wgpu.sh / fetch-wgpu.ps1, never committed).
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>14</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Spike.Scene/Spike.Scene.csproj" />
+  </ItemGroup>
+
+</Project>

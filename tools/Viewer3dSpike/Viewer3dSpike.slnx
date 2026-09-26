@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="Spike.Scene/Spike.Scene.csproj" />
+  <Project Path="Spike.Render/Spike.Render.csproj" />
+  <Project Path="Spike.Harness/Spike.Harness.csproj" />
+  <Project Path="Spike.App/Spike.App.csproj" />
+</Solution>
