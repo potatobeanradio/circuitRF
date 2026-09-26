@@ -31,8 +31,8 @@ MIME="${DATA_HOME}/mime"
 #
 #   ./install.sh --uninstall [--yes]
 #
-# Also installed as ${ROOT}/install.sh, which is the copy circuitRF's own "Uninstall circuitRF..."
-# runs (with --yes, after its own warning and after it has removed the solvers itself).
+# Also installed as ${ROOT}/install.sh and ${ROOT}/current/install.sh, so the user can run it after
+# the archive it came from is long gone.
 #
 # ROOT IS ALSO circuitRF's PER-USER FOLDER. On Linux the application keeps its preferences, recovery
 # files and the 3D solvers the install assistant built under ${XDG_DATA_HOME:-~/.local/share}/circuitRF
@@ -116,8 +116,8 @@ fi
 
 mkdir -p "$ROOT" "$BIN_DIR" "$APPS" "$ICONS" "${MIME}/packages" "${ROOT}/staging"
 
-# The uninstaller travels with the install: circuitRF's "Uninstall circuitRF..." runs this copy, since
-# the archive it came from is long gone by then.
+# The uninstaller travels with the install, since the archive it came from is long gone by the time
+# anyone runs it.
 if [ "${HERE}" != "${ROOT}" ]; then
     cp "${HERE}/install.sh" "${ROOT}/install.sh.tmp"
     chmod +x "${ROOT}/install.sh.tmp"

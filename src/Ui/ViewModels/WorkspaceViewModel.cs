@@ -4280,14 +4280,6 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// anyway would be the second code path <c>UpdatePolicy</c> forbids. The dialog then shows the
     /// releases page instead, which is the whole answer when nothing can be downloaded.</para>
     /// </summary>
-    /// <summary>
-    /// Help ▸ <i>Uninstall circuitRF…</i> (brief-em3d-25 R-em3d25-4a): the warning, the 3D solvers circuitRF
-    /// installed, then circuitRF itself. The Windows Apps list reaches the same flow through
-    /// <c>circuitRF.exe --uninstall</c>.
-    /// </summary>
-    [RelayCommand]
-    private Task UninstallCircuitRf(Window? owner) => Uninstall.UninstallCircuitRfRunner.RunAsync(ResolveOwner(owner));
-
     [RelayCommand]
     private async Task ShowReleaseNotes(Window? owner)
     {

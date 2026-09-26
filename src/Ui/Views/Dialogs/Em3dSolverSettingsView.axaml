@@ -159,5 +159,11 @@
     <Button Name="RemoveAll" Content="Remove all 3D solvers…" FontSize="11" Padding="8,3" Margin="0,16,0,0"
             HorizontalAlignment="Left" IsVisible="False" Click="OnRemoveAll"
             ToolTip.Tip="Remove every 3D solver circuitRF installed for this account. Lists each with its size first; nothing is removed if any is in use. Your documents are not touched."/>
+    <!-- Where removing circuitRF runs none of its code (the macOS Trash, a .deb), the solvers stay behind
+         (em-3d.md §7.2 point 4); this is where that user gets the space back. Hidden on Windows, whose
+         Apps-list uninstall removes them. -->
+    <SelectableTextBlock Name="RemoveAllNote" FontSize="11" Opacity="0.6" TextWrapping="Wrap" Margin="0,4,0,0"
+               IsVisible="False"
+               Text="Removing circuitRF (dragging it to the Trash, or with the package manager) leaves these solvers behind. Remove them here first to get the space back."/>
   </StackPanel>
 </UserControl>

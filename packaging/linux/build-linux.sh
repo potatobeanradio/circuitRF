@@ -311,7 +311,7 @@ for ARCH in $ARCHES; do
             [ -f "${APPDIR}/osdi-worker" ]   && chmod +x "${APPDIR}/osdi-worker"
             # The uninstaller rides INSIDE the version directory too (brief-em3d-25): the updater installs
             # only app-<ver>/ out of this archive, so a copy beside it never reaches an updated install,
-            # and "Uninstall circuitRF..." runs current/install.sh --uninstall.
+            # and the documented uninstall is current/install.sh --uninstall.
             cp "${HERE}/install.sh" "${APPDIR}/install.sh"
             chmod +x "${APPDIR}/install.sh"
 

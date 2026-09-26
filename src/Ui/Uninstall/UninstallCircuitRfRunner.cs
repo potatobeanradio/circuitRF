@@ -6,37 +6,30 @@ using CircuitRF.Ui.Views.Dialogs;
 namespace CircuitRF.Ui.Uninstall;
 
 /// <summary>
-/// The window half of <i>Uninstall circuitRF…</i> (brief-em3d-25 R-em3d25-4a): the warning, then the
+/// The window half of the Windows Apps-list uninstall (brief-em3d-25 R-em3d25-4b): the warning, then the
 /// solvers, then circuitRF. The decisions — what is removed, how, and every sentence shown — are
 /// <see cref="AppUninstall"/>'s and <see cref="SolverUninstaller"/>'s; this file only asks and reports.
+/// There is no in-app menu command for it: an application is removed the way its platform removes
+/// applications, and Settings ▸ 3D EM is where the solvers are removed on their own (2026-09-26).
 /// </summary>
 internal static class UninstallCircuitRfRunner
 {
     private const string Title = "Uninstall circuitRF";
 
-    /// <summary>Help ▸ <i>Uninstall circuitRF…</i>. Quits through <see cref="App.Quit"/> — which asks about
-    /// unsaved work — once circuitRF is on its way out.</summary>
-    public static async Task RunAsync(Window? owner)
-    {
-        if (await AskAndRemoveAsync(owner) is { } quit && quit)
-            (Avalonia.Application.Current as App)?.Quit();
-    }
-
     /// <summary>
-    /// The Windows Apps-list route, <c>circuitRF.exe --uninstall</c>: no workspace window, so the question
-    /// is a window of its own, and the process ends when it is answered.
+    /// <c>circuitRF.exe --uninstall</c>: no workspace window, so the question is a window of its own, and
+    /// the process ends when it is answered.
     /// </summary>
     public static async Task RunStandaloneAsync(Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)
     {
         desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
-        try { await AskAndRemoveAsync(owner: null); }
+        try { await AskAndRemoveAsync(); }
         finally { desktop.Shutdown(); }
     }
 
-    /// <summary>True when circuitRF should now close; false when it stays (cancelled, refused, or a
-    /// <c>.deb</c> whose removal is the package manager's); null when there was nothing to do.</summary>
-    private static async Task<bool?> AskAndRemoveAsync(Window? owner)
+    private static async Task AskAndRemoveAsync()
     {
+        Window? owner = null;   // the Apps-list start has no window to own the dialogs
         var (plan, removal) = await Task.Run(() => (new SolverUninstaller().PlanAll(), AppUninstall.Detect()));
 
         if (removal.Kind == AppRemovalKind.Unsupported)
@@ -45,13 +38,13 @@ internal static class UninstallCircuitRfRunner
                 removal.Describe + (plan.CanProceed
                     ? " The 3D solvers circuitRF installed can still be removed from Settings ▸ 3D EM ▸ Remove all 3D solvers."
                     : ""), confirmLabel: null);
-            return null;
+            return;
         }
 
         if (!await TextConfirmDialog.AskAsync(owner, Title, "Uninstall circuitRF?", AppUninstall.Warning(plan, removal),
                                               plan.CanProceed ? $"_Uninstall circuitRF and its solvers ({SolverUninstaller.Size(plan.TotalBytes)})"
                                                               : "_Uninstall circuitRF"))
-            return false;
+            return;
 
         // Step 2 — exactly Remove all 3D solvers; a refusal (one in use) stops here with circuitRF intact.
         if (plan.CanProceed)
@@ -60,14 +53,13 @@ internal static class UninstallCircuitRfRunner
             if (outcome.Status != RemovalStatus.Removed)
             {
                 await TextConfirmDialog.AskAsync(owner, Title, "circuitRF was not uninstalled", outcome.Report, confirmLabel: null);
-                return false;
+                return;
             }
         }
 
         // Step 3 — circuitRF itself.
         string? report = await Task.Run(() => AppUninstall.RemoveApp(removal));
-        if (report is null) return true;
-        await TextConfirmDialog.AskAsync(owner, Title, "Uninstall circuitRF", report, confirmLabel: null);
-        return false;
+        if (report is not null)
+            await TextConfirmDialog.AskAsync(owner, Title, "Uninstall circuitRF", report, confirmLabel: null);
     }
 }

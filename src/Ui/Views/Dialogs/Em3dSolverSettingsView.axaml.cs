@@ -128,6 +128,7 @@ public partial class Em3dSolverSettingsView : UserControl
                     }
                 }
                 RemoveAll.IsVisible = plan.CanProceed;
+                RemoveAllNote.IsVisible = plan.CanProceed && !OperatingSystem.IsWindows();
             });
         });
     }

@@ -2777,7 +2777,7 @@ parsing, the consent refusal, progress on stderr and reporting; a comment-stripp
   It also lists each home circuitRF installed, with the command that removes it.
 
 **`remove` (brief-em3d-25)** is `SolverUninstaller.PlanOne`/`PlanAll` then `SolverUninstaller.Remove` —
-what each Settings row's *Uninstall …*, *Remove all 3D solvers* and *Uninstall circuitRF…* call.
+what each Settings row's *Uninstall …*, *Remove all 3D solvers* and the Windows Apps-list uninstall call.
 
 - **Only what circuitRF installed.** A tool found any other way is `solver.remove.refused`, naming where
   it was found and that circuitRF did not install it. Several installed versions and no `--version` is

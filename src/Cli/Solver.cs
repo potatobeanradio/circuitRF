@@ -15,7 +15,7 @@ namespace CircuitRF.Cli;
 /// shows — and <c>install</c> is <see cref="SolverInstaller.Consent"/> then
 /// <see cref="SolverInstaller.Install"/>, which the Settings row and a refusal's <i>Install …</i> action
 /// call too; <c>remove</c> is <see cref="SolverUninstaller.PlanOne"/> or <see cref="SolverUninstaller.PlanAll"/>
-/// then <see cref="SolverUninstaller.Remove"/>, which Settings and <i>Uninstall circuitRF…</i> call. A
+/// then <see cref="SolverUninstaller.Remove"/>, which Settings and the Windows Apps-list uninstall call. A
 /// comment-stripped source scan in <c>SolverInstallTests</c> holds that, on
 /// <c>Authoring.cs</c>' terms.</para>
 ///

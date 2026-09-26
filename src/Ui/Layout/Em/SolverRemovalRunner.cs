@@ -9,7 +9,7 @@ namespace CircuitRF.Ui.Layout.Em;
 
 /// <summary>
 /// The GUI's removal of circuitRF-installed solvers (brief-em3d-25): a Settings ▸ 3D EM row's
-/// <i>Uninstall …</i>, <i>Remove all 3D solvers…</i>, and step 2 of <i>Uninstall circuitRF…</i>. It plans
+/// <i>Uninstall …</i> and <i>Remove all 3D solvers…</i>. It plans
 /// with <see cref="SolverUninstaller"/> (sizes measured now), asks with the plan's own confirmation, and
 /// removes with <see cref="SolverUninstaller.Remove"/> — the functions <c>circuitrf solver remove</c>
 /// calls. It owns no removal logic: this file is a dialog and a report.

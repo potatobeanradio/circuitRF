@@ -49,7 +49,7 @@ public sealed record RemovalOutcome(RemovalStatus Status, string Report, IReadOn
 /// <summary>
 /// Removes what the install assistant installed (brief-em3d-25, em-3d.md §7.2 "What the assistant
 /// installs, it can uninstall"). <b>The one implementation</b> — the Settings rows, <i>Remove all 3D
-/// solvers</i>, <i>Uninstall circuitRF…</i> and <c>circuitrf solver remove</c> all call it.
+/// solvers</i>, the Windows Apps-list uninstall and <c>circuitrf solver remove</c> all call it.
 ///
 /// <para><b>By the record, and by nothing else</b> (R-em3d25-1a). A home is removable because its
 /// <c>install.json</c> says circuitRF put it there; removal is that directory, because every version's

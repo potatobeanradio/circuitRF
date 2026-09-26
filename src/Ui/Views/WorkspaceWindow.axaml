@@ -283,9 +283,6 @@
                              automatic updates are off (a manual check is still a network call) and
                              when the install site is read-only. -->
                         <NativeMenuItem Header="Check for Updates…" Command="{Binding CheckForUpdatesCommand}"/>
-                        <NativeMenuItemSeparator/>
-                        <!-- brief-em3d-25: the warning, the 3D solvers circuitRF installed, then the app. -->
-                        <NativeMenuItem Header="Uninstall circuitRF…" Command="{Binding UninstallCircuitRfCommand}" CommandParameter="{Binding $parent[Window]}"/>
                     </NativeMenu>
                 </NativeMenuItem.Menu>
             </NativeMenuItem>
@@ -964,12 +961,6 @@
                     <MenuItem.Icon><mi:MaterialIcon Kind="CloudDownloadOutline" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
                 <Separator/>
-                <!-- brief-em3d-25: the warning, the 3D solvers circuitRF installed, then the app. -->
-                <MenuItem Header="U_ninstall circuitRF…"
-                          Command="{Binding UninstallCircuitRfCommand}"
-                          CommandParameter="{Binding $parent[Window]}">
-                    <MenuItem.Icon><mi:MaterialIcon Kind="DeleteOutline" Width="16" Height="16"/></MenuItem.Icon>
-                </MenuItem>
                 <MenuItem Header="About circuitRF…"
                           Click="OnAboutMenuItemClick">
                     <MenuItem.Icon><mi:MaterialIcon Kind="InformationOutline" Width="16" Height="16"/></MenuItem.Icon>

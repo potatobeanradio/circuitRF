@@ -13061,6 +13061,15 @@ Trash). Packaging: `circuitRF.wxs` (Apps-list routing, product code) and `instal
 `PackagingScriptTests.AnUpgradeCannotRemoveASolver_AndTheAppsEntryRunsCircuitRfsOwnUninstall`. Pixels not
 seen, and nothing Windows-side run — the brief's §7 owner checks are all outstanding.
 
+**Withdrawn 2026-09-26: Help ▸ *Uninstall circuitRF…*.** The owner judged an application uninstalling
+itself from its own Help menu out of step with every other application; users remove an application
+the way their platform does. What remains: the Windows Apps list's `circuitRF.exe --uninstall` (the
+normal Windows pattern for an uninstall that must ask), the tarball's `install.sh --uninstall`, and
+Settings ▸ 3D EM's per-tool *Uninstall …* / *Remove all 3D solvers*, which now carries a note on macOS
+and Linux that removing circuitRF leaves the solvers behind. `AppUninstall` is Windows-only
+(`MacTrash.cs` and the Linux script/`.deb` branches were deleted — they were reachable only from the
+menu), and em-3d.md §7.2 point 1 records the change.
+
 **Found: the Linux tarball's `install.sh --uninstall` deleted every preference.** It ran `rm -rf "$ROOT"`
 with `ROOT=${XDG_DATA_HOME:-~/.local/share}/circuitRF` — which on Linux is ALSO
 `UserStateDirectory.Dir` (`LocalApplicationData/circuitRF`). So it removed preferences, recovery files and,

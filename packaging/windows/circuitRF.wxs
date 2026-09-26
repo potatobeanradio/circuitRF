@@ -395,8 +395,8 @@
     </ComponentGroup>
 
     <!--
-      The Apps-list entry (see ARPSYSTEMCOMPONENT above) and the product code the application's own
-      Uninstall circuitRF... hands to msiexec. Explicit GUIDs, per scope, so a major upgrade SHARES the
+      The Apps-list entry (see ARPSYSTEMCOMPONENT above) and the product code the application's
+      uninstall-argument start hands to msiexec. Explicit GUIDs, per scope, so a major upgrade SHARES the
       component with the version it replaces rather than removing the entry the new one just wrote.
       The key carries the architecture so an x86 and an x64 install on one machine keep one entry each.
     -->
