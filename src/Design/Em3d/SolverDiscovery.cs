@@ -11,8 +11,9 @@ namespace CircuitRF.Design.Em3d;
 /// <summary>The three programs a 3D EM run can need. circuitRF distributes none of them (em-3d.md §7.1).</summary>
 public enum SolverTool { Palace, Gmsh, OpenEms }
 
-/// <summary>Where a program was found — the column the Settings row shows.</summary>
-public enum SolverHowFound { Settings, Environment, Path, DefaultDirectory, Spack }
+/// <summary>Where a program was found — the column the Settings row shows. <see cref="Installed"/> and
+/// <see cref="Conda"/> are brief-em3d-24's two routes; they are appended so no stored value changes.</summary>
+public enum SolverHowFound { Settings, Environment, Path, DefaultDirectory, Spack, Installed, Conda }
 
 /// <summary>
 /// Something a user-built program may or may not be able to do (em-3d.md §7.1). Only what a brief
@@ -107,10 +108,20 @@ public sealed record SolverReadiness(
 /// <see cref="SearchDirectories"/> — because a Finder-launched application's <c>PATH</c> holds only
 /// <c>/usr/bin:/bin:/usr/sbin:/sbin</c> (measured on an installed build), so a program the user runs
 /// from a terminal is otherwise invisible to the application.</item>
-/// <item>Last, the Spack install database (<see cref="SpackInstalls"/>), for the tool's
+/// <item><b>Installed by circuitRF</b> (brief-em3d-24 R-em3d24-5a), after Settings and the environment
+/// variable and BEFORE <c>PATH</c>: the install assistant's own homes, read from their install records
+/// (<see cref="Install.SolverHomes"/>). A home is only a candidate once its record exists, so a build that
+/// is running, failed or was cancelled is never found. Before <c>PATH</c> because the user asked
+/// circuitRF for exactly this program; after the two NAMED routes because naming one overrules it.</item>
+/// <item>Then the Spack install database (<see cref="SpackInstalls"/>), for the tool's
 /// <see cref="SpackPackage"/>. Palace's own recipe installs with no view, so a Palace built exactly as
 /// its documentation says is on no <c>PATH</c> and in no default directory, and without this route
 /// every user who followed that recipe would have had to find a hashed prefix by hand.</item>
+/// <item>Last, <b>conda environments</b> (R-em3d24-5b, overview §1a): <c>$CONDA_PREFIX/bin</c>, then
+/// <c>envs/*/bin</c> under the directories the conda installers default to. Read-only; no environment is
+/// ever activated. A GUI-launched app has no <c>PATH</c> into one, so without this a community Palace
+/// package would need a Settings entry on every machine. The version check still applies to what it
+/// finds.</item>
 /// <item><b>A NAMED program that does not work is reported, never silently replaced</b> by one found
 /// elsewhere: a user who named a Palace and got a different one has been overruled without being
 /// told.</item>
@@ -297,6 +308,19 @@ public sealed class SolverDiscovery
     /// <summary>The Spack install-tree roots looked in. Settable for tests.</summary>
     public IReadOnlyList<string> SpackRoots { get; set; } = SpackInstalls.DefaultRoots;
 
+    /// <summary>The install assistant's roots (brief-em3d-24); null reads
+    /// <see cref="Install.SolverHomes.DefaultRoots"/> at the moment of the search, so a redirected state
+    /// directory is followed. Settable for tests.</summary>
+    public IReadOnlyList<string>? InstallRoots { get; set; }
+
+    /// <summary>
+    /// The conda installations whose <c>envs/*/bin</c> are searched (R-em3d24-5b): <c>~/miniforge3</c>,
+    /// <c>~/mambaforge</c>, <c>~/miniconda3</c>, <c>~/anaconda3</c> and <c>/opt/conda</c> — where the installers
+    /// put themselves by default. <c>$CONDA_PREFIX</c> is read through <see cref="ReadEnvironment"/> as well.
+    /// Settable for tests.
+    /// </summary>
+    public IReadOnlyList<string> CondaBases { get; set; } = DefaultCondaBases();
+
     /// <summary>The versions this tool is validated at — a short list, data in one place (R-em3d6-2a).</summary>
     public IReadOnlyList<SolverValidatedVersion> ValidatedVersions { get; }
 
@@ -354,6 +378,13 @@ public sealed class SolverDiscovery
             return null;
         }
 
+        foreach (var record in InstalledByCircuitRf())
+        {
+            if (TryProbe(record.Program, SolverHowFound.Installed, $"installed by circuitRF at {record.Home}", out var chosen, out string? why))
+                return chosen;
+            notes.Add($"'{record.Program}' (installed by circuitRF): {why}");
+        }
+
         foreach (string command in CandidateCommands)
         {
             if (string.IsNullOrWhiteSpace(command)) continue;
@@ -375,6 +406,13 @@ public sealed class SolverDiscovery
         foreach (string candidate in InSpack())
         {
             if (TryProbe(candidate, SolverHowFound.Spack, $"found in a Spack installation at {candidate}", out var chosen, out string? why))
+                return chosen;
+            notes.Add($"'{candidate}': {why}");
+        }
+
+        foreach (string candidate in InConda())
+        {
+            if (TryProbe(candidate, SolverHowFound.Conda, $"found in a conda environment at {candidate}", out var chosen, out string? why))
                 return chosen;
             notes.Add($"'{candidate}': {why}");
         }
@@ -500,6 +538,11 @@ public sealed class SolverDiscovery
         sb.Append($"To use a {Name} that is already installed, name it in Settings ▸ 3D EM, or set the " +
                   $"environment variable {EnvironmentVariable} to its full path. ");
         sb.Append($"To install it, follow “{ManualInstallSection}” in the EM Setup reference ({ManualInstallPage}).");
+        // brief-em3d-24 — the assistant, where this machine has a recipe. Palace on Windows has none until the
+        // Linux subsystem route (brief-em3d-26), and the Windows sentence below already says what does run.
+        if (!(windows && Tool == SolverTool.Palace) && Install.SolverRecipes.For(Tool) is not null)
+            sb.Append($" circuitRF can also install it for you, from its own upstream: Install {Name}… on this message or " +
+                      $"in Settings ▸ 3D EM, or 'circuitrf solver install {Install.SolverHomes.ToolId(Tool)}'.");
         if (windows && Tool == SolverTool.Palace)
             sb.Append(" Palace does not run natively on Windows, and running it through the Linux subsystem is " +
                       "not part of this version of circuitRF. openEMS runs natively on Windows and is the 3D " +
@@ -517,22 +560,29 @@ public sealed class SolverDiscovery
     {
         if (found is null)
             return rejected.Count == 0
-                ? $"Not found: nothing named {string.Join(" or ", CandidateCommands)} on PATH, in the default directories " +
-                  "or in a Spack installation."
+                ? $"Not found: nothing named {string.Join(" or ", CandidateCommands)} installed by circuitRF, on PATH, in " +
+                  "the default directories, in a Spack installation or in a conda environment."
                 : $"Not found. Tried: {string.Join("; ", rejected)}.";
+
+        string validity = found.Validated
+            ? "validated"
+            : $"NOT validated — a 3D run will refuse it; circuitRF runs {string.Join(", ", ValidatedVersions.Select(v => v.ToString()))}";
+
+        // brief-em3d-24 R-em3d24-5a — the row says which KIND each tool is: one circuitRF installed (and can
+        // later remove, brief 25), or one it merely found, which it never offers to remove.
+        if (found.HowFound == SolverHowFound.Installed)
+            return $"Installed by circuitRF, {found.Path}, {found.DescribeVersion()}, {validity}.";
 
         string how = found.HowFound switch
         {
             SolverHowFound.Settings    => "set here",
             SolverHowFound.Environment => $"named by {EnvironmentVariable}",
-            SolverHowFound.Path        => "found on PATH",
-            SolverHowFound.Spack       => "found in a Spack installation",
-            _                          => "found in a default directory",
+            SolverHowFound.Path        => "on PATH",
+            SolverHowFound.Spack       => "in a Spack installation",
+            SolverHowFound.Conda       => "in a conda environment",
+            _                          => "in a default directory",
         };
-        string validity = found.Validated
-            ? "validated"
-            : $"NOT validated — a 3D run will refuse it; circuitRF runs {string.Join(", ", ValidatedVersions.Select(v => v.ToString()))}";
-        return $"{found.DescribeVersion()}, {validity}. {found.Path} ({how}).";
+        return $"{found.DescribeVersion()}, {validity}. Found at {found.Path} ({how}).";
     }
 
     /// <summary>The refusal for a program found at a version circuitRF has not validated (R-em3d6-2b).</summary>
@@ -872,6 +922,67 @@ public sealed class SolverDiscovery
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// The install assistant's published homes for this tool, newest first — only those whose recorded
+    /// program carries one of <see cref="CandidateCommands"/>' names, so emptying that list disables this
+    /// route like every other unprompted one.
+    /// </summary>
+    private IEnumerable<Install.InstallRecord> InstalledByCircuitRf()
+    {
+        var names = BareCandidates();
+        if (names.Count == 0) yield break;
+        foreach (var record in Install.SolverHomes.Published(Tool, InstallRoots ?? Install.SolverHomes.DefaultRoots))
+        {
+            string file = Path.GetFileName(record.Program);
+            if (names.Any(n => string.Equals(n, file, StringComparison.Ordinal)
+                            || string.Equals(n, Path.GetFileNameWithoutExtension(file), StringComparison.OrdinalIgnoreCase)))
+                yield return record;
+        }
+    }
+
+    /// <summary>R-em3d24-5b — <c>$CONDA_PREFIX/bin/&lt;candidate&gt;</c>, then each default conda installation's
+    /// <c>envs/*/bin/&lt;candidate&gt;</c>, environments in name order. Nothing is activated.</summary>
+    private IEnumerable<string> InConda()
+    {
+        var commands = BareCandidates();
+        if (commands.Count == 0) yield break;
+        var bins = new List<string>();
+        if (ReadEnvironment("CONDA_PREFIX")?.Trim() is { Length: > 0 } active) bins.Add(Path.Combine(active, "bin"));
+        foreach (string conda in CondaBases.Where(b => b.Length > 0))
+        {
+            string envs = Path.Combine(conda, "envs");
+            try
+            {
+                if (Directory.Exists(envs))
+                    bins.AddRange(Directory.EnumerateDirectories(envs).Order(StringComparer.Ordinal).Select(e => Path.Combine(e, "bin")));
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+        }
+        foreach (string bin in bins.Distinct(StringComparer.Ordinal))
+            foreach (string command in commands)
+            {
+                string candidate;
+                try { candidate = Path.Combine(bin, command); }
+                catch (ArgumentException) { continue; }
+                if (Exists(candidate)) yield return candidate;
+            }
+    }
+
+    private List<string> BareCandidates() => CandidateCommands
+        .Where(c => !string.IsNullOrWhiteSpace(c)
+                    && !c.Contains(Path.DirectorySeparatorChar) && !c.Contains(Path.AltDirectorySeparatorChar))
+        .Select(c => c.Trim()).ToList();
+
+    private static IReadOnlyList<string> DefaultCondaBases()
+    {
+        string home = Home();
+        var list = new List<string>();
+        if (home.Length > 0)
+            list.AddRange(new[] { "miniforge3", "mambaforge", "miniconda3", "anaconda3" }.Select(d => Path.Combine(home, d)));
+        if (!OperatingSystem.IsWindows()) list.Add("/opt/conda");
+        return list;
     }
 
     /// <summary>Each installed Spack prefix's <c>bin/&lt;candidate&gt;</c> for <see cref="SpackPackage"/>.

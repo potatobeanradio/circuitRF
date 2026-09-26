@@ -180,6 +180,12 @@ wall clock on 2026-09-24; disk is `du` of what the step added.
 | 9 | macOS 27.0 arm64 | Gmsh | 4.15.2 | `brew install gmsh` | 21:35:48 – 21:37:01 | 413 MB (10 formulae incl. OpenCASCADE) | worked | — | — |
 | 10 | macOS 27.0 arm64 | openEMS dependencies | boost, hdf5, cgal, vtk (+Qt) | `brew install cmake boost hdf5 cgal vtk` (openEMS's macOS instructions; its Homebrew formula is documented as broken) | 21:37:48 – 21:43:25 | 2.0 GB (30 formulae) | worked | — | — |
 | 11 | macOS 27.0 arm64 | openEMS, CSXCAD, Python interface | 0.37.0-rc3 | `git clone --recursive -b v0.37.0-rc3 https://github.com/thliebig/openEMS-Project.git`; `./update_openEMS.sh ~/opt/openEMS --disable-GUI --python --njobs=4` | 21:44:12 – 21:46:55 (2 min 43 s) | 152 MB + 116 MB source | **worked first time** | — | — |
+| 12 | macOS 27.0 arm64 | Gmsh | 4.15.2 | circuitRF `solver install gmsh` (recipe `gmsh-4.15.2-macos-arm64`, upstream SDK archive), 2026-09-25 | 17:52 (16 s) | 134 MB (94 MB after the archive is dropped) | worked; `gmsh --version` 4.15.2, OCC 7.8.1 | — | — |
+| 13 | Ubuntu 24.04 arm64 (`ubuntu@sha256:008173c2…`), Docker Desktop 29.6.2 on the M4, 8 GB | Palace | 0.18.1 | circuitRF `solver install palace --yes` (recipe `palace-0.18.1-linux-arm64`, 73 Spack packages, `-j 4`) | 17:56:02 – 18:24:35 | 2.05 GB | **worked**, all three capability probes passed | first attempt of the day (before the fix) put the home at a RELATIVE path: `~/.local/share` did not exist, so .NET returned "" for LocalApplicationData | `SpecialFolderOption.DoNotVerify` in `UserStateDirectory` |
+| 14 | Ubuntu 24.04 arm64, same image | Palace | 0.18.1 | same, from clean | 18:25:02 – 18:53:55 | 2.05 GB | **worked** | — | — |
+| 15 | Ubuntu 24.04 arm64, same image | Palace | 0.18.1 | same, from clean | 18:53:56 – 19:23:31 | 2.05 GB | **worked** | — | — |
+| — | Debian 12 arm64 | Palace | 0.18.1 | same | 19:23:55 – stopped at package 36 of 73 | — | **not completed**: stopped by the owner's time limit, no failure seen | — | — |
+| — | Debian 12 ×2, Fedora ×3, openEMS once, Gmsh x64 once | | | | | | **not run** (owner's time limit) | | |
 | — | Windows 11 x64 | openEMS, Gmsh native; Palace in the Linux subsystem | — | three clean installs each | — | — | **not done** — the owner's | — | — |
 | — | Linux x64 | Palace, openEMS, Gmsh | — | three clean installs each | — | — | **not done** — the owner's | — | — |
 

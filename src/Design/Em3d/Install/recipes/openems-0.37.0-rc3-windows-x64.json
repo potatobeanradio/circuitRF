@@ -1,0 +1,41 @@
+{
+  "$schema": "./recipe.schema.json",
+  "comment": "R-em3d24-4b. Upstream's published 64-bit Windows archive for the validated release candidate. Its digest is GitHub's, published with the release asset. Whether the Windows build prints the same openEMS and CSXCAD hashes as F0's macOS build is the owner's Windows run to show (brief-em3d-26); the check after the install refuses it if not.",
+  "id": "openems-0.37.0-rc3-windows-x64",
+  "tool": "openems",
+  "version": "0.37.0-rc3",
+  "platform": "windows",
+  "architecture": "x64",
+  "layout": "relocatable",
+  "layoutNote": "Upstream's binary archive: the programs load their libraries from beside themselves, so the home is built in .partial and renamed into place.",
+  "sources": [
+    {
+      "id": "archive",
+      "url": "https://github.com/thliebig/openEMS-Project/releases/download/v0.37.0-rc3/openEMS_x64_v0.37.0-rc3_msvc.zip",
+      "fetchedBy": "circuitRF",
+      "file": "openEMS_x64_v0.37.0-rc3_msvc.zip",
+      "sha256": "948d04e67a0b7ee4b149176e746b23e609a8ac46c525ba75d6c11071f354339a"
+    }
+  ],
+  "prerequisites": [],
+  "steps": [
+    {
+      "name": "Download openEMS 0.37.0-rc3",
+      "kind": "download",
+      "source": "archive"
+    },
+    {
+      "name": "Unpack openEMS",
+      "kind": "extract",
+      "source": "archive",
+      "into": "${home}"
+    }
+  ],
+  "program": "${home}/openEMS/openEMS.exe",
+  "measured": {
+    "minutes": null,
+    "diskGB": null,
+    "source": "not yet measured: the owner's Windows runs (brief-em3d-26); the archive is 65 MB"
+  },
+  "knownFailures": []
+}

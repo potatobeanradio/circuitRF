@@ -65,6 +65,15 @@
     <EmbeddedResource Include="resources\technologies\*.ctech" />
   </ItemGroup>
 
+  <!-- brief-em3d-24 R-em3d24-1: the solver install recipes and their schema, read by SolverRecipes out of
+       this assembly. The LogicalName is fixed so a recipe's resource name is its file name, which is what
+       SolverInstallTests validates against the schema. A recipe file left out of this glob would compile,
+       enumerate nothing and install nothing. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Em3d\Install\recipes\*.json"
+                      LogicalName="CircuitRF.Design.Em3d.Install.recipes.%(Filename)%(Extension)" />
+  </ItemGroup>
+
   <!-- The reference pages `circuitrf reference` serves
        (docs/sonnet-briefs/brief-automation-6-reference-and-components.md R-aut6-5/R-aut6-6).
 

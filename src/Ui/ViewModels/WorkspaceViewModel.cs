@@ -8741,7 +8741,17 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             // failure") has to key on, and the id only exists up to here. Falls back to the rendered
             // string for a result that predates the conversion (brief-localization-groundwork.md
             // R-loc-5 §8.3).
-            if (result.Diagnostic is { } diagnostic)
+            // brief-em3d-24 §0 — a 3D run refused because a solver is missing offers Install … on the very row
+            // that says so. The diagnostic carries the tool id only where installing would help (a recipe
+            // exists here, and no named program outranks an installed one), so the row never offers an
+            // install that would change nothing a run sees. The sentence reads the same without the button.
+            if (result.Diagnostic is { Id: "em.solver-3d.unavailable" } unavailable
+                && unavailable.Arguments.TryGetValue("install", out var installId)
+                && CircuitRF.Design.Em3d.Install.SolverHomes.ToolFromId(installId as string) is { } installTool)
+                Messages.PostAction(MessageLevel.Error, unavailable.Render(),
+                                    $"Install {CircuitRF.Design.Em3d.SolverDiscovery.For(installTool).Name}…",
+                                    () => CircuitRF.Ui.Layout.Em.SolverInstallRunner.InstallAsync(installTool, owner: null, Messages));
+            else if (result.Diagnostic is { } diagnostic)
                 Messages.PostDiagnostic(diagnostic);
             else
                 Messages.Error(result.Error ?? "The EM solve failed.");

@@ -158,6 +158,8 @@ internal static class ExplainEm3d
                    SolverHowFound.Environment => "environment",
                    SolverHowFound.Path        => "path",
                    SolverHowFound.Spack       => "spack",
+                   SolverHowFound.Installed   => "installed",
+                   SolverHowFound.Conda       => "conda",
                    null                       => null,
                    _                          => "default-directory",
                },

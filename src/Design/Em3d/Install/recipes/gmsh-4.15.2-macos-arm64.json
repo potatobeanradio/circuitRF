@@ -1,0 +1,42 @@
+{
+  "$schema": "./recipe.schema.json",
+  "comment": "R-em3d24-4a. The SDK archive rather than the .dmg: it unpacks with no disk image to mount. Its build links OpenCASCADE 7.8.1 where F0's Homebrew Gmsh linked 7.9.3; the version circuitRF checks is Gmsh's own.",
+  "id": "gmsh-4.15.2-macos-arm64",
+  "tool": "gmsh",
+  "version": "4.15.2",
+  "platform": "macos",
+  "architecture": "arm64",
+  "layout": "relocatable",
+  "layoutNote": "Upstream's binary archive: the program finds its libraries relative to itself, so the home is built in .partial and renamed into place.",
+  "sources": [
+    {
+      "id": "archive",
+      "url": "https://gmsh.info/bin/MacOSX/gmsh-4.15.2-MacOSARM-sdk.tgz",
+      "fetchedBy": "circuitRF",
+      "file": "gmsh-4.15.2-MacOSARM-sdk.tgz",
+      "sha256": null,
+      "checksumNote": "gmsh.info publishes no checksum for its binary archives, so this download is not verified against one"
+    }
+  ],
+  "prerequisites": [],
+  "steps": [
+    {
+      "name": "Download Gmsh 4.15.2",
+      "kind": "download",
+      "source": "archive"
+    },
+    {
+      "name": "Unpack Gmsh",
+      "kind": "extract",
+      "source": "archive",
+      "into": "${home}"
+    }
+  ],
+  "program": "${home}/gmsh-4.15.2-MacOSARM-sdk/bin/gmsh",
+  "measured": {
+    "minutes": 0.5,
+    "diskGB": 0.13,
+    "source": "circuitRF archive trial, macOS 27.0 on an Apple M4, 2026-09-25: 36 MB download in 20 s, 94 MB unpacked; 'gmsh --version' printed 4.15.2 (R-em3d24-4a)"
+  },
+  "knownFailures": []
+}

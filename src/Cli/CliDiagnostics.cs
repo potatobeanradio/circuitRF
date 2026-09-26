@@ -3069,4 +3069,49 @@ internal static class CliDiagnostics
         "impedance: cancelled after {done} of {asked} layers; the report holds the layers that finished.",
         ("done", done.ToString(System.Globalization.CultureInfo.InvariantCulture)),
         ("asked", asked.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+
+    // ── solver (brief-em3d-24 R-em3d24-7) ─────────────────────────────────────────────────────────────
+
+    public static Diagnostic SolverNounRequired() => new(
+        "solver.args.noun-required", DiagnosticSeverity.Error,
+        "solver: say what to do — 'solver list' or 'solver install <palace|gmsh|openems>'.");
+
+    public static Diagnostic SolverUnknownNoun(string noun) => Diagnostic.Create(
+        "solver.args.unknown-noun", DiagnosticSeverity.Error,
+        "solver: there is nothing called '{noun}'. Known: list, install.", ("noun", noun));
+
+    public static Diagnostic SolverUnknownOption(string noun, string option) => Diagnostic.Create(
+        "solver.args.unknown-option", DiagnosticSeverity.Error,
+        "solver {noun}: '{option}' is not an option here.", ("noun", noun), ("option", option));
+
+    public static Diagnostic SolverToolRequired() => new(
+        "solver.install.tool-required", DiagnosticSeverity.Error,
+        "solver install: say which tool — palace, gmsh or openems.");
+
+    public static Diagnostic SolverUnknownTool(string tool) => Diagnostic.Create(
+        "solver.install.unknown-tool", DiagnosticSeverity.Error,
+        "solver install: '{tool}' is not a tool circuitRF installs. Known: palace, gmsh, openems.", ("tool", tool));
+
+    /// <summary>No recipe for this tool (and version) on this platform — the list of platforms that DO
+    /// have one says whether the answer is "not here" or "not at all".</summary>
+    public static Diagnostic SolverNoRecipe(string tool, string? version, string here, string platforms) => Diagnostic.Create(
+        "solver.install.no-recipe", DiagnosticSeverity.Error,
+        "solver install: circuitRF has no install recipe for {tool}{version} on {here}. Recipes exist for: {platforms}.",
+        ("tool", tool), ("version", version is null ? "" : " " + version), ("here", here), ("platforms", platforms));
+
+    /// <summary>R-em3d24-2a: without --yes nothing is fetched. The consent text has already been printed
+    /// above this line.</summary>
+    public static Diagnostic SolverConsentRequired(string tool) => Diagnostic.Create(
+        "solver.install.consent-required", DiagnosticSeverity.Error,
+        "solver install: nothing was downloaded. To go ahead, run 'circuitrf solver install {tool} --yes'.",
+        ("tool", tool));
+
+    public static Diagnostic SolverInstallRefused(string report) => Diagnostic.Create(
+        "solver.install.refused", DiagnosticSeverity.Error, "{report}", ("report", report));
+
+    public static Diagnostic SolverInstallFailed(string report, string step, string log) => Diagnostic.Create(
+        "solver.install.failed", DiagnosticSeverity.Error, "{report}", ("report", report), ("step", step), ("log", log));
+
+    public static Diagnostic SolverInstallCancelled(string report) => Diagnostic.Create(
+        "solver.install.cancelled", DiagnosticSeverity.Warning, "{report}", ("report", report));
 }

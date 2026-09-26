@@ -1,0 +1,102 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://circuitrf/em3d/solver-recipe.schema.json",
+  "title": "circuitRF solver install recipe",
+  "description": "One validated version of one 3D EM tool on one platform and architecture (brief-em3d-24 R-em3d24-1). Read by SolverRecipes.Parse; every shipped recipe is validated against this file by SolverInstallTests.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "tool", "version", "platform", "architecture", "layout", "layoutNote", "sources", "prerequisites", "steps", "program", "measured", "knownFailures"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "comment": { "type": "string" },
+    "id": { "type": "string", "pattern": "^(palace|gmsh|openems)-[0-9][0-9A-Za-z.\\-]*-(macos|linux|windows)-(arm64|x64)$" },
+    "tool": { "enum": ["palace", "gmsh", "openems"] },
+    "version": { "type": "string", "minLength": 1 },
+    "platform": { "enum": ["macos", "linux", "windows"] },
+    "architecture": { "enum": ["arm64", "x64"] },
+    "layout": { "enum": ["relocatable", "in-place"] },
+    "layoutNote": { "type": "string", "minLength": 1 },
+    "needsSpaceFreePath": { "type": "boolean" },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["url", "fetchedBy"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "url": { "type": "string", "pattern": "^https://" },
+          "fetchedBy": { "type": "string", "minLength": 1 },
+          "file": { "type": "string", "pattern": "^[^/\\\\]+$" },
+          "sha256": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" },
+          "checksumNote": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "prerequisites": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "name", "remedy"],
+        "properties": {
+          "kind": { "enum": ["program", "file", "command"] },
+          "name": { "type": "string", "minLength": 1 },
+          "path": { "type": "string", "minLength": 1 },
+          "search": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+          "variable": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]*$" },
+          "arguments": { "type": "array", "items": { "type": "string" } },
+          "minVersion": { "type": "string", "pattern": "^[0-9]+(\\.[0-9]+)*$" },
+          "remedy": {
+            "type": "object",
+            "minProperties": 1,
+            "additionalProperties": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
+    "environment": { "type": "object", "additionalProperties": { "type": "string" } },
+    "clearEnvironment": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "kind"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "kind": { "enum": ["download", "extract", "run", "symlink", "write"] },
+          "comment": { "type": "string" },
+          "command": { "type": "string", "minLength": 1 },
+          "arguments": { "type": "array", "items": { "type": "string" } },
+          "workingDirectory": { "type": "string", "minLength": 1 },
+          "captureAs": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]*$" },
+          "expect": { "type": "string", "minLength": 1 },
+          "progress": { "enum": ["lines", "spack-concretize", "spack-install"] },
+          "source": { "type": "string", "minLength": 1 },
+          "into": { "type": "string", "minLength": 1 },
+          "link": { "type": "string", "minLength": 1 },
+          "target": { "type": "string", "minLength": 1 },
+          "path": { "type": "string", "minLength": 1 },
+          "lines": { "type": "array", "minItems": 1, "items": { "type": "string" } }
+        }
+      }
+    },
+    "spackSpec": { "type": "string", "minLength": 1 },
+    "program": { "type": "string", "minLength": 1 },
+    "spackInstallTree": { "type": "string", "minLength": 1 },
+    "measured": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source"],
+      "properties": {
+        "minutes": { "type": ["number", "null"], "minimum": 0 },
+        "diskGB": { "type": ["number", "null"], "minimum": 0 },
+        "source": { "type": "string", "minLength": 1 }
+      }
+    },
+    "knownFailures": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+  }
+}

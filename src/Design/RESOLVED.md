@@ -12982,3 +12982,70 @@ ports `Q_ext` is Palace's `port-Q.csv` and `Q_unloaded = 1/(1/Q − Σ 1/Q_ext)`
 two, labelled so. Participation is `domain-E.csv`'s `p_elec[k]`, one energy domain per meshed volume group.
 
 **Not seen from this session:** the port-kind table, the eigenmode boxes and the mode table (pixels).
+
+## The install assistant — brief-em3d-24 (2026-09-25)
+
+`src/Design/Em3d/Install/` (recipes as embedded JSON + schema, `SolverInstaller`, `SolverHomes`,
+`InstallRecord`, `KnownFailures`, `SolverStatus`), `src/Design/Net/StreamingDownload.cs` (the updater's
+transfer loop, moved), two discovery routes in `SolverDiscovery`, `src/Cli/Solver.cs`, and in `src/Ui` the
+Settings rows, `SolverInstallConsentDialog` and `SolverInstallRunner`. Gate:
+`tests/Ui.Tests/Em3d/SolverInstallTests.cs` (15 tests, < 1 s). Pixels not seen — the owner check list is
+the brief's §10.
+
+**The brief's §1c premise was already done.** The per-user directory moved below the firewall in RC-3 as
+`CircuitRF.Design.UserStateDirectory`, with `AppDataRoot` already a forwarder. No `AppDataPaths` was
+added — a second name for one directory is what that type exists to prevent. Gate 1 tests the two that
+exist.
+
+**Found: on a fresh Linux account every per-user file went to a RELATIVE path.** .NET's
+`GetFolderPath(LocalApplicationData)` returns `""` when the folder does not exist yet, and on a clean
+Ubuntu 24.04 container `~/.local/share` does not — so `UserStateDirectory.Dir` was `circuitRF`, relative
+to the working directory. The first container install cloned Spack into `/circuitRF/...` and then failed
+to start a relative program path. Fixed with `SpecialFolderOption.DoNotVerify`; the installer also
+refuses a non-absolute root. **Found and left** (same latent fault, outside this brief):
+`ThemeResolver`, `TemplateManager`, `PythonInterpreterDiscovery` and `ExternalProviderLoader` call the
+same API without `DoNotVerify`.
+
+**A source build cannot be published by renaming `.partial`.** Spack and CMake write every library's
+absolute path into the binaries (`otool -l` on F0's Palace: every `LC_RPATH` and install name absolute).
+So a recipe is `relocatable` (upstream archives: built in `<home>.partial`, renamed) or `in-place`
+(Spack, openEMS's build script: built at the final path). **Either way a home is published only when
+`install.json` exists**, and discovery's `Installed` route reads nothing else — which is what R-em3d24-2d
+actually asks for ("cancelling leaves nothing that discovery would find"). Debris of either kind goes at
+the next attempt.
+
+**macOS: the state directory has a space, and autotools will not build under one.** Measured with Spack
+v1.2.2 building `gmake` under a directory named `space test`: `configure: error: unsafe srcdir value`.
+`~/Library/Application Support/circuitRF/solvers` therefore cannot hold a Palace. `SolverHomes.DefaultRoot`
+falls back to `~/.circuitRF/solvers` when the state directory's path has whitespace, and never escapes a
+redirected state directory (a test's or DocGen's). `DefaultRoots` lists both so a record is found
+whichever wrote it. Recorded as the known failure `autotools-path-has-space`.
+
+**F0's `target=m3` would have broken an M1 or M2.** `m3` is `-mcpu=apple-m3`; an M1 lacks its v8.6
+features. The recipe says `target=:m3` — "m3 or older" in archspec's DAG (`m4 → m3 → m2 → m1`), which
+resolves to `m3` on this M4 and to the chip itself on older ones.
+
+**Spack v1.2.2 prints `[+] <hash> <name>@<version> <prefix> (<time>)`**, not the brief's `[+] <prefix>`
+(measured). The parser reads both. `spack concretize` marks each node it will build with ` - `, which is
+the *N* of "package k of N" — 73 on Ubuntu 24.04 arm64, where Spack builds cmake, perl and the rest
+itself (the Mac recipe marks Homebrew's as externals, as Palace's `setup-macos.sh` does).
+
+**`${jobs}`, not `${cores}`, for compile parallelism**: physical cores capped at one per 2 GiB of the
+memory the process can see (a container's limit). 8 on the 16 GB M4 (F0's own `-j 8`), 4 in Docker
+Desktop's 8 GB VM.
+
+**A static-initializer ordering bug, caught by gate 2.** `SolverRecipes.All` was a static property
+initializer declared ABOVE the serializer options it parsed with; C# runs those in text order, so every
+recipe parsed with null options, matched no property, and was dropped as invalid — an assistant with no
+recipes and no error. Now `Lazy<>`.
+
+**Linux arm64 has no Gmsh from upstream.** gmsh.info publishes Linux builds for x64 only, and PyPI has no
+aarch64 wheel of 4.15.2. So on Linux arm64 the assistant can install Palace but not the mesher it needs;
+the Gmsh row says no recipe exists there and lists where one does.
+
+**openEMS 0.37.0 final had not shipped** (tags end at `v0.37.0-rc3`, 2026-09-25), so the release
+candidate stays the validated version (R-em3d24-4b). Its Windows archive's digest is GitHub's published
+asset digest, and it matches the file (`948d04e6…`).
+
+**Gmsh's macOS archive links OpenCASCADE 7.8.1**; F0's Homebrew Gmsh linked 7.9.3. Both report 4.15.2,
+which is the version circuitRF checks. Not measured against F0's meshes.

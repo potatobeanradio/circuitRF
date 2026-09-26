@@ -25,6 +25,7 @@ keywords: EM, electromagnetic, cem, ports, mesh, extraction, simulate layout, su
 <li><a href="#blocked">When Simulate is greyed out</a></li>
 <li><a href="#results">Where the results land</a></li>
 <li><a href="#headless">Running the setup without the GUI</a></li>
+<li><a href="#install-assistant">Letting circuitRF install the 3D solvers</a></li>
 <li><a href="#install-3d-solvers">Installing the 3D solvers by hand</a></li>
 <li><a href="#overlays">What the layout shows after a run</a></li>
 </ol>
@@ -679,6 +680,69 @@ resonance inside my band?". `Eigenmode` sets how many modes (`Count`, default 3)
 
 The result is `results/<name>.palace_eig.npy` and no Touchstone file; `circuitrf em` prints the mode
 table and the panel shows it after a run. Palace's own files stay in the run folder.
+
+## Letting circuitRF install the 3D solvers {#install-assistant}
+
+circuitRF can install Palace, Gmsh and openEMS for you. It downloads each one from its own upstream
+and installs it for your user account only. It never needs administrator rights.
+
+There are three ways to start an install, and they all do the same thing:
+
+- **Install …** on the message a 3D run gives when a solver is missing.
+- **Install …** on the solver's row in {{anchor: settings.html#em3d|Settings ▸ 3D EM}}.
+- `circuitrf solver install palace --yes` from a terminal, which is how a build machine does it.
+
+**Nothing is downloaded until you agree.** First you see what will happen:
+
+- the program and version;
+- every web address it fetches from, and how each download is checked;
+- the folder it installs into;
+- how long it took and how much disk it used when it was measured, and on which machine;
+- for Palace, its licence note.
+
+**What each platform can install:**
+
+| Program | macOS (Apple silicon) | Linux | Windows |
+|---|---|---|---|
+| Palace 0.18.1 | yes. It is built from source, which takes about an hour. | yes (arm64 and x64). It is built from source. | not yet |
+| Gmsh 4.15.2 | yes, from Gmsh's own archive, in under a minute | x64 only. Gmsh publishes no Linux arm64 build. | yes, from Gmsh's own archive |
+| openEMS 0.37.0-rc3 | yes. It is built by openEMS's own script. | yes. It is built by openEMS's own script. | yes, from openEMS's own archive |
+
+**Some installs need tools you install first.** A source build needs a compiler and some libraries.
+If one is missing, nothing is downloaded. circuitRF names the one command to run for your system, such
+as `xcode-select --install`, `brew install …` or `sudo apt-get install …`, and you run it yourself.
+circuitRF never runs `sudo` and never asks for your password.
+
+**The install runs in the background.** Its progress is in the Messages panel. A Palace build shows
+*package k of N* as each of its libraries is built. **Cancel** stops the install at any point.
+Cancelling installs nothing, and the next attempt removes whatever the cancelled one left behind.
+
+**An install is only reported as done once it has been checked.** circuitRF checks the installed
+program the same way it checks one before a run: its version, and for Palace every capability a 3D
+setup can need. Only then does the Settings row read *Installed by circuitRF*. From then on a 3D run
+finds that copy before anything on `PATH`. A path you name in Settings, or in `CIRCUITRF_PALACE`,
+`CIRCUITRF_GMSH` or `CIRCUITRF_OPENEMS`, still takes precedence.
+
+**Where it goes.** Each program goes into its own folder, one per version:
+
+- Linux: `~/.local/share/circuitRF/solvers/`
+- Windows: `%LOCALAPPDATA%\circuitRF\solvers\`
+- macOS: `~/.circuitRF/solvers/`. It is not in `~/Library/Application Support/circuitRF`, because a
+  source build refuses to run in a folder whose path contains a space.
+
+Each folder holds an `install.json`. It records what was installed, where it was downloaded from and
+whether each download's checksum was verified. Palace comes with its own copy of Spack inside that
+folder, so a Spack you already have is never read or changed.
+
+**If an install fails**, the message names the step that failed and quotes the tool's own last error
+lines word for word. It also gives the path of the full log. If circuitRF's own installs have met the
+same failure before, the message adds what fixed it and where that was seen. Otherwise it says
+circuitRF has not seen this failure. circuitRF never retries on its own, switches to another way of
+installing, or patches anything.
+
+**A Palace from conda is found too.** A Palace installed in a conda environment is found without any
+Settings entry. circuitRF looks in `$CONDA_PREFIX` and in the environments of `~/miniforge3`,
+`~/mambaforge`, `~/miniconda3`, `~/anaconda3` and `/opt/conda`. The same version check applies to it.
 
 ## Installing the 3D solvers by hand {#install-3d-solvers}
 

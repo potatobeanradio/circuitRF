@@ -1,0 +1,201 @@
+{
+  "$schema": "./recipe.schema.json",
+  "comment": "R-em3d24-4b. openEMS publishes no macOS binary, so this runs upstream's build script as F0 did (row 11 of testdata/em3d/f0/README.md §Install). 0.37.0 final had not shipped on 2026-09-25 (tags end at v0.37.0-rc3), so the release candidate stays the validated version.",
+  "id": "openems-0.37.0-rc3-macos-arm64",
+  "tool": "openems",
+  "version": "0.37.0-rc3",
+  "platform": "macos",
+  "architecture": "arm64",
+  "layout": "in-place",
+  "layoutNote": "Built from source by upstream's own script with an absolute install prefix, which CMake writes into the libraries' paths: it cannot be moved after it is built, so the home is built in place and published by writing its record last.",
+  "needsSpaceFreePath": true,
+  "sources": [
+    {
+      "id": "openems",
+      "url": "https://github.com/thliebig/openEMS-Project.git",
+      "fetchedBy": "git",
+      "checksumNote": "a git clone of tag v0.37.0-rc3, checked against its commit 0c9d988ea026cec33fc98a1849ab238e74715c21 after the clone"
+    },
+    {
+      "url": "https://github.com/thliebig/CSXCAD.git",
+      "fetchedBy": "git (a submodule)",
+      "checksumNote": "cloned at the commit the tagged project pins"
+    },
+    {
+      "url": "https://github.com/thliebig/openEMS.git",
+      "fetchedBy": "git (a submodule)",
+      "checksumNote": "cloned at the commit the tagged project pins"
+    },
+    {
+      "url": "https://github.com/thliebig/fparser.git",
+      "fetchedBy": "git (a submodule)",
+      "checksumNote": "cloned at the commit the tagged project pins"
+    },
+    {
+      "url": "https://github.com/thliebig/QCSXCAD.git",
+      "fetchedBy": "git (a submodule; not built with --disable-GUI)",
+      "checksumNote": "cloned at the commit the tagged project pins"
+    },
+    {
+      "url": "https://github.com/thliebig/AppCSXCAD.git",
+      "fetchedBy": "git (a submodule; not built with --disable-GUI)",
+      "checksumNote": "cloned at the commit the tagged project pins"
+    },
+    {
+      "url": "https://github.com/thliebig/CTB.git",
+      "fetchedBy": "git (a submodule; not built)",
+      "checksumNote": "cloned at the commit the tagged project pins"
+    },
+    {
+      "url": "https://github.com/koendv/hyp2mat.git",
+      "fetchedBy": "git (a submodule; not built)",
+      "checksumNote": "cloned at the commit the tagged project pins"
+    },
+    {
+      "url": "https://sourceforge.net/projects/tinyxml/files/tinyxml/2.6.2/tinyxml_2_6_2.tar.gz",
+      "fetchedBy": "openEMS's build script (TinyXML, built from source on macOS)",
+      "checksumNote": "checked by upstream's own build script against the SHA-256 written in it"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/alpinelinux/aports/b1ff376e83eb49c0127b039b3684eccdf9a60694/community/tinyxml/",
+      "fetchedBy": "openEMS's build script (four TinyXML patches)",
+      "checksumNote": "checked by upstream's own build script against the SHA-256 written in it"
+    },
+    {
+      "url": "https://gist.githubusercontent.com/scpeters/6325123/raw/cfb079be67997cb19a1aee60449714a1dedefed5/tinyxml_CMakeLists.patch",
+      "fetchedBy": "openEMS's build script (TinyXML's CMake patch)",
+      "checksumNote": "checked by upstream's own build script against the SHA-256 written in it"
+    }
+  ],
+  "prerequisites": [
+    {
+      "kind": "command",
+      "name": "Apple's command-line developer tools",
+      "path": "/usr/bin/xcode-select",
+      "arguments": [
+        "-p"
+      ],
+      "remedy": {
+        "default": "xcode-select --install"
+      }
+    },
+    {
+      "kind": "program",
+      "name": "git",
+      "search": [
+        "/opt/homebrew/bin",
+        "/usr/bin"
+      ],
+      "variable": "git",
+      "remedy": {
+        "default": "xcode-select --install"
+      }
+    },
+    {
+      "kind": "file",
+      "name": "Homebrew",
+      "path": "/opt/homebrew/bin/brew",
+      "remedy": {
+        "default": "/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"   # Homebrew's own installer, from https://brew.sh"
+      }
+    },
+    {
+      "kind": "file",
+      "name": "Homebrew's vtk",
+      "path": "/opt/homebrew/opt/vtk",
+      "remedy": {
+        "default": "brew install cmake boost hdf5 cgal vtk"
+      }
+    },
+    {
+      "kind": "file",
+      "name": "Homebrew's cmake",
+      "path": "/opt/homebrew/opt/cmake/bin/cmake",
+      "remedy": {
+        "default": "brew install cmake boost hdf5 cgal vtk"
+      }
+    },
+    {
+      "kind": "file",
+      "name": "Homebrew's boost",
+      "path": "/opt/homebrew/opt/boost/include/boost/version.hpp",
+      "remedy": {
+        "default": "brew install cmake boost hdf5 cgal vtk"
+      }
+    },
+    {
+      "kind": "file",
+      "name": "Homebrew's hdf5",
+      "path": "/opt/homebrew/opt/hdf5/include/hdf5.h",
+      "remedy": {
+        "default": "brew install cmake boost hdf5 cgal vtk"
+      }
+    },
+    {
+      "kind": "file",
+      "name": "Homebrew's cgal",
+      "path": "/opt/homebrew/opt/cgal/include/CGAL/version.h",
+      "remedy": {
+        "default": "brew install cmake boost hdf5 cgal vtk"
+      }
+    }
+  ],
+  "environment": {
+    "PATH": "/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+  },
+  "clearEnvironment": [
+    "PYTHONPATH",
+    "PYTHONHOME",
+    "CMAKE_PREFIX_PATH"
+  ],
+  "steps": [
+    {
+      "name": "Clone openEMS 0.37.0-rc3",
+      "kind": "run",
+      "command": "${git}",
+      "arguments": [
+        "clone",
+        "--quiet",
+        "--recursive",
+        "--branch",
+        "v0.37.0-rc3",
+        "https://github.com/thliebig/openEMS-Project.git",
+        "${home}/src"
+      ]
+    },
+    {
+      "name": "Check openEMS's commit",
+      "kind": "run",
+      "command": "${git}",
+      "arguments": [
+        "-C",
+        "${home}/src",
+        "rev-parse",
+        "HEAD"
+      ],
+      "captureAs": "openems",
+      "expect": "0c9d988ea026cec33fc98a1849ab238e74715c21"
+    },
+    {
+      "name": "Build openEMS",
+      "kind": "run",
+      "command": "${home}/src/update_openEMS.sh",
+      "arguments": [
+        "${home}",
+        "--disable-GUI",
+        "--njobs=${jobs}"
+      ],
+      "workingDirectory": "${home}/src",
+      "comment": "upstream's own build script, started by its path with an argument list, exactly as F0 ran it but without --python"
+    }
+  ],
+  "program": "${home}/bin/openEMS",
+  "measured": {
+    "minutes": 8,
+    "diskGB": 0.27,
+    "source": "F0, macOS 27.0 on an Apple M4, 2026-09-24: 2 min 43 s of build after the Homebrew dependencies, 152 MB installed and 116 MB of source (testdata/em3d/f0/README.md §Install, rows 10-11)"
+  },
+  "knownFailures": [
+    "autotools-path-has-space"
+  ]
+}

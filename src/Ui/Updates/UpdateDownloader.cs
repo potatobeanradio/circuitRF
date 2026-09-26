@@ -70,8 +70,6 @@ public sealed class UpdateDownloader
     /// </summary>
     public long MaxTransferBytes { get; init; } = MaxPayloadBytes;
 
-    private const int BufferSize = 128 * 1024;
-
     /// <summary>
     /// The most bytes any release asset may be, advertised or actually transferred.
     ///
@@ -158,97 +156,36 @@ public sealed class UpdateDownloader
             return new DownloadResult(DownloadOutcome.Completed, finalPath, 0);
         }
 
-        long transferred = 0;
-
-        try
-        {
-            using var req = new HttpRequestMessage(HttpMethod.Get, asset.Url);
-            if (resumeFrom > 0) req.Headers.Range = new RangeHeaderValue(resumeFrom, null);
-
-            using HttpResponseMessage res =
-                await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
-
-            // A server that ignores the Range header answers 200 with the WHOLE file. Honouring that
-            // while appending would produce a file that is the right length and the wrong content —
-            // so the partial is discarded and the transfer starts over.
-            if (resumeFrom > 0 && res.StatusCode != HttpStatusCode.PartialContent)
+        // The transfer itself — the idle timeout, the Range fallback and the byte cap — is
+        // CircuitRF.Design.Net.StreamingDownload, below the firewall since brief-em3d-24 so the solver
+        // install assistant runs the same loop headlessly. What stays here is what only an update
+        // needs: the free-space re-check every SpaceRecheckInterval bytes.
+        long cap = asset.Size > 0 ? asset.Size : MaxTransferBytes;
+        // Counted per attempt from zero, as the loop always did — a server that ignores Range restarts
+        // the file, and the running total then goes DOWN, which must not skip a check.
+        long lastTotal = resumeFrom, sinceCheck = 0;
+        var transfer = await CircuitRF.Design.Net.StreamingDownload.TransferAsync(
+            _http, asset.Url!, partialPath, resumeFrom, cap, StallTimeout, progress,
+            keepGoing: total =>
             {
-                resumeFrom = 0;
-                try { File.Delete(partialPath); } catch { /* best effort */ }
-            }
-
-            if (!res.IsSuccessStatusCode) return new DownloadResult(DownloadOutcome.Failed, null, 0);
-
-            using Stream src = await res.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
-            using var dst = new FileStream(partialPath,
-                                           resumeFrom > 0 ? FileMode.Append : FileMode.Create,
-                                           FileAccess.Write, FileShare.None, BufferSize);
-
-            byte[] buffer = new byte[BufferSize];
-            long sinceCheck = 0;
-
-            while (true)
-            {
-                // A per-READ deadline, re-armed each time bytes arrive. HttpClient.Timeout cannot do
-                // this job: it bounds the ENTIRE operation including the response body, so a 30 s
-                // client timeout is a 30 s budget for a 160 MB payload and fails on anything slower
-                // than ~5.5 MB/s. That was the shipping configuration until this was found in review
-                // (2026-08-25), and because a failed check is silent and resumes only at the next
-                // 24-hour window, a slow connection could never converge on a complete file.
-                using var stall = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                stall.CancelAfter(StallTimeout);
-
-                int n;
-                try
-                {
-                    n = await src.ReadAsync(buffer, stall.Token).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (!ct.IsCancellationRequested)
-                {
-                    // Stalled, not cancelled. The partial stays and the next check resumes from it.
-                    await dst.FlushAsync(CancellationToken.None).ConfigureAwait(false);
-                    return new DownloadResult(DownloadOutcome.Failed, null, transferred);
-                }
-
-                if (n == 0) break;
-
-                await dst.WriteAsync(buffer.AsMemory(0, n), ct).ConfigureAwait(false);
-                transferred += n;
-                sinceCheck  += n;
-                progress?.Report(resumeFrom + transferred);
-
-                // The stop condition a feed that publishes no size does not give us. Without it the
-                // loop's only bound is the free-space re-check, i.e. the whole volume.
-                long cap = asset.Size > 0 ? asset.Size : MaxTransferBytes;
-                if (resumeFrom + transferred > cap)
-                {
-                    await dst.FlushAsync(CancellationToken.None).ConfigureAwait(false);
-                    try { File.Delete(partialPath); } catch { /* the reclaim takes it */ }
-                    return new DownloadResult(DownloadOutcome.Failed, null, transferred);
-                }
-
-                if (sinceCheck < SpaceRecheckInterval) continue;
-
+                sinceCheck += total >= lastTotal ? total - lastTotal : total;
+                lastTotal = total;
+                if (sinceCheck < SpaceRecheckInterval) return true;
                 sinceCheck = 0;
                 SpaceChecks++;
-                if (_space.AvailableFreeSpace(stagingDirectory) < requiredFreeBytes)
-                {
-                    // The partial stays: it costs nothing, the next attempt resumes from it, and the
-                    // launch-time reclaim removes it if the update never happens.
-                    await dst.FlushAsync(ct).ConfigureAwait(false);
-                    return new DownloadResult(DownloadOutcome.OutOfSpace, null, transferred);
-                }
-            }
+                // The partial stays when space runs out: it costs nothing, the next attempt resumes
+                // from it, and the launch-time reclaim removes it if the update never happens.
+                return _space.AvailableFreeSpace(stagingDirectory) >= requiredFreeBytes;
+            },
+            ct).ConfigureAwait(false);
+        long transferred = transfer.Transferred;
 
-            await dst.FlushAsync(ct).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
+        switch (transfer.End)
         {
-            return new DownloadResult(DownloadOutcome.Cancelled, null, transferred);
-        }
-        catch (Exception e) when (e is HttpRequestException or IOException or InvalidOperationException)
-        {
-            return new DownloadResult(DownloadOutcome.Failed, null, transferred);
+            case CircuitRF.Design.Net.TransferEnd.Completed:       break;
+            case CircuitRF.Design.Net.TransferEnd.Cancelled:       return new DownloadResult(DownloadOutcome.Cancelled, null, transferred);
+            case CircuitRF.Design.Net.TransferEnd.StoppedByCaller: return new DownloadResult(DownloadOutcome.OutOfSpace, null, transferred);
+            default:                                               return new DownloadResult(DownloadOutcome.Failed, null, transferred);
         }
 
         // Only a file of exactly the advertised length gets the real name. A size of 0 means the feed

@@ -1,0 +1,445 @@
+{
+  "$schema": "./recipe.schema.json",
+  "comment": "Palace's Spack recipe on Linux: the macOS recipe's environment with the distribution's own GCC and no Homebrew. No target cap: a Linux processor's own features are what Spack detects, and SVE, where present, is usable.",
+  "id": "palace-0.18.1-linux-x64",
+  "tool": "palace",
+  "version": "0.18.1",
+  "platform": "linux",
+  "architecture": "x64",
+  "layout": "in-place",
+  "layoutNote": "A Spack build: every library's absolute path is written into the binaries that load it (measured on F0's Palace), so the home cannot be renamed after the build. It is built in place and published by writing its record last. The Spack clone, its configuration, caches, stage and install tree are all inside the home, so the user's own Spack is neither read nor changed.",
+  "needsSpaceFreePath": true,
+  "sources": [
+    {
+      "id": "spack",
+      "url": "https://github.com/spack/spack.git",
+      "fetchedBy": "git",
+      "checksumNote": "a git clone of tag v1.2.2, checked against its commit 3e19345b6e12f5ff1b874f4059622fc6a1fd804a after the clone"
+    },
+    {
+      "id": "builtin",
+      "url": "https://github.com/spack/spack-packages.git",
+      "fetchedBy": "Spack (its builtin package repository)",
+      "checksumNote": "pinned to commit 0ec478de0ec43571366def16bad549d6e4287abf, the first that builds Palace 0.18.1's recipe (spack-packages PR 4000), and checked after the update"
+    },
+    {
+      "id": "palace",
+      "url": "https://github.com/awslabs/palace.git",
+      "fetchedBy": "git, and Spack (Palace's own recipe and source)",
+      "checksumNote": "a git clone of tag v0.18.1, checked against its commit 0dc74cdf8c36c58b69b21c4a06e816048ec0b83f after the clone"
+    },
+    {
+      "url": "https://ghcr.io/spack/bootstrap-buildcache-v2.2",
+      "fetchedBy": "Spack (clingo, the solver it plans the build with)",
+      "checksumNote": "verified by Spack against its bootstrap buildcache's own checksums"
+    },
+    {
+      "url": "https://mirror.spack.io",
+      "fetchedBy": "Spack (the source of each of Palace's ~25 dependencies, falling back to each package's own upstream)",
+      "checksumNote": "each source is verified by Spack against the SHA-256 in its package recipe"
+    }
+  ],
+  "prerequisites": [
+    {
+      "kind": "program",
+      "name": "git",
+      "search": [
+        "/usr/bin",
+        "/usr/local/bin"
+      ],
+      "remedy": {
+        "ubuntu": "sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
+        "debian": "sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
+        "fedora": "sudo dnf install gcc gcc-c++ gcc-gfortran make git python3 patch unzip bzip2 xz file which ca-certificates curl",
+        "default": "install Spack's prerequisites: a C, C++ and Fortran compiler, make, git, Python 3, patch, unzip, bzip2, xz, file and curl (Spack's 'Installing prerequisites' page lists them per distribution)"
+      },
+      "variable": "git"
+    },
+    {
+      "kind": "program",
+      "name": "gcc",
+      "search": [
+        "/usr/bin",
+        "/usr/local/bin"
+      ],
+      "remedy": {
+        "ubuntu": "sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
+        "debian": "sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
+        "fedora": "sudo dnf install gcc gcc-c++ gcc-gfortran make git python3 patch unzip bzip2 xz file which ca-certificates curl",
+        "default": "install Spack's prerequisites: a C, C++ and Fortran compiler, make, git, Python 3, patch, unzip, bzip2, xz, file and curl (Spack's 'Installing prerequisites' page lists them per distribution)"
+      }
+    },
+    {
+      "kind": "program",
+      "name": "g++",
+      "search": [
+        "/usr/bin",
+        "/usr/local/bin"
+      ],
+      "remedy": {
+        "ubuntu": "sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
+        "debian": "sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
+        "fedora": "sudo dnf install gcc gcc-c++ gcc-gfortran make git python3 patch unzip bzip2 xz file which ca-certificates curl",
+        "default": "install Spack's prerequisites: a C, C++ and Fortran compiler, make, git, Python 3, patch, unzip, bzip2, xz, file and curl (Spack's 'Installing prerequisites' page lists them per distribution)"
+      }
+    },
+    {
+      "kind": "program",
+      "name": "gfortran",
+      "search": [
+        "/usr/bin",
+        "/usr/local/bin"
+      ],
+      "remedy": {
+        "ubuntu": "sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
+        "debian": "sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
+        "fedora": "sudo dnf install gcc gcc-c++ gcc-gfortran make git python3 patch unzip bzip2 xz file which ca-certificates curl",
+        "default": "install Spack's prerequisites: a C, C++ and Fortran compiler, make, git, Python 3, patch, unzip, bzip2, xz, file and curl (Spack's 'Installing prerequisites' page lists them per distribution)"
+      }
+    },
+    {
+      "kind": "program",
+      "name": "make",
+      "search": [
+        "/usr/bin",
+        "/usr/local/bin"
+      ],
+      "remedy": {
+        "ubuntu": "sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
+        "debian": "sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
+        "fedora": "sudo dnf install gcc gcc-c++ gcc-gfortran make git python3 patch unzip bzip2 xz file which ca-certificates curl",
+        "default": "install Spack's prerequisites: a C, C++ and Fortran compiler, make, git, Python 3, patch, unzip, bzip2, xz, file and curl (Spack's 'Installing prerequisites' page lists them per distribution)"
+      }
+    },
+    {
+      "kind": "program",
+      "name": "patch",
+      "search": [
+        "/usr/bin",
+        "/usr/local/bin"
+      ],
+      "remedy": {
+        "ubuntu": "sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
+        "debian": "sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
+        "fedora": "sudo dnf install gcc gcc-c++ gcc-gfortran make git python3 patch unzip bzip2 xz file which ca-certificates curl",
+        "default": "install Spack's prerequisites: a C, C++ and Fortran compiler, make, git, Python 3, patch, unzip, bzip2, xz, file and curl (Spack's 'Installing prerequisites' page lists them per distribution)"
+      }
+    },
+    {
+      "kind": "program",
+      "name": "unzip",
+      "search": [
+        "/usr/bin",
+        "/usr/local/bin"
+      ],
+      "remedy": {
+        "ubuntu": "sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
+        "debian": "sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
+        "fedora": "sudo dnf install gcc gcc-c++ gcc-gfortran make git python3 patch unzip bzip2 xz file which ca-certificates curl",
+        "default": "install Spack's prerequisites: a C, C++ and Fortran compiler, make, git, Python 3, patch, unzip, bzip2, xz, file and curl (Spack's 'Installing prerequisites' page lists them per distribution)"
+      }
+    },
+    {
+      "kind": "program",
+      "name": "bzip2",
+      "search": [
+        "/usr/bin",
+        "/usr/local/bin"
+      ],
+      "remedy": {
+        "ubuntu": "sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
+        "debian": "sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
+        "fedora": "sudo dnf install gcc gcc-c++ gcc-gfortran make git python3 patch unzip bzip2 xz file which ca-certificates curl",
+        "default": "install Spack's prerequisites: a C, C++ and Fortran compiler, make, git, Python 3, patch, unzip, bzip2, xz, file and curl (Spack's 'Installing prerequisites' page lists them per distribution)"
+      }
+    },
+    {
+      "kind": "program",
+      "name": "xz",
+      "search": [
+        "/usr/bin",
+        "/usr/local/bin"
+      ],
+      "remedy": {
+        "ubuntu": "sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
+        "debian": "sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
+        "fedora": "sudo dnf install gcc gcc-c++ gcc-gfortran make git python3 patch unzip bzip2 xz file which ca-certificates curl",
+        "default": "install Spack's prerequisites: a C, C++ and Fortran compiler, make, git, Python 3, patch, unzip, bzip2, xz, file and curl (Spack's 'Installing prerequisites' page lists them per distribution)"
+      }
+    },
+    {
+      "kind": "program",
+      "name": "file",
+      "search": [
+        "/usr/bin",
+        "/usr/local/bin"
+      ],
+      "remedy": {
+        "ubuntu": "sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
+        "debian": "sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
+        "fedora": "sudo dnf install gcc gcc-c++ gcc-gfortran make git python3 patch unzip bzip2 xz file which ca-certificates curl",
+        "default": "install Spack's prerequisites: a C, C++ and Fortran compiler, make, git, Python 3, patch, unzip, bzip2, xz, file and curl (Spack's 'Installing prerequisites' page lists them per distribution)"
+      }
+    },
+    {
+      "kind": "program",
+      "name": "curl",
+      "search": [
+        "/usr/bin",
+        "/usr/local/bin"
+      ],
+      "remedy": {
+        "ubuntu": "sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
+        "debian": "sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
+        "fedora": "sudo dnf install gcc gcc-c++ gcc-gfortran make git python3 patch unzip bzip2 xz file which ca-certificates curl",
+        "default": "install Spack's prerequisites: a C, C++ and Fortran compiler, make, git, Python 3, patch, unzip, bzip2, xz, file and curl (Spack's 'Installing prerequisites' page lists them per distribution)"
+      }
+    },
+    {
+      "kind": "command",
+      "name": "Python 3 with a working certificate store",
+      "variable": "python",
+      "arguments": [
+        "-c",
+        "import ssl, sys; sys.exit(0 if ssl.create_default_context().cert_store_stats()['x509_ca'] > 0 else 1)"
+      ],
+      "remedy": {
+        "ubuntu": "sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
+        "debian": "sudo apt-get install build-essential gfortran git python3 patch unzip bzip2 xz-utils file ca-certificates curl",
+        "fedora": "sudo dnf install gcc gcc-c++ gcc-gfortran make git python3 patch unzip bzip2 xz file which ca-certificates curl",
+        "default": "install Spack's prerequisites: a C, C++ and Fortran compiler, make, git, Python 3, patch, unzip, bzip2, xz, file and curl (Spack's 'Installing prerequisites' page lists them per distribution)"
+      },
+      "path": "/usr/bin/python3"
+    }
+  ],
+  "environment": {
+    "PATH": "/usr/local/bin:/usr/bin:/bin",
+    "SPACK_PYTHON": "${python}",
+    "SPACK_USER_CONFIG_PATH": "${home}/spack-user",
+    "SPACK_USER_CACHE_PATH": "${home}/spack-cache",
+    "SPACK_DISABLE_LOCAL_CONFIG": "1"
+  },
+  "clearEnvironment": [
+    "SPACK_*",
+    "PYTHONPATH",
+    "PYTHONHOME"
+  ],
+  "steps": [
+    {
+      "name": "Clone Spack v1.2.2",
+      "kind": "run",
+      "command": "${git}",
+      "arguments": [
+        "clone",
+        "--quiet",
+        "-c",
+        "feature.manyFiles=true",
+        "--depth=1",
+        "--branch",
+        "v1.2.2",
+        "https://github.com/spack/spack.git",
+        "${home}/spack"
+      ]
+    },
+    {
+      "name": "Check Spack's commit",
+      "kind": "run",
+      "command": "${git}",
+      "arguments": [
+        "-C",
+        "${home}/spack",
+        "rev-parse",
+        "HEAD"
+      ],
+      "captureAs": "spack",
+      "expect": "3e19345b6e12f5ff1b874f4059622fc6a1fd804a"
+    },
+    {
+      "name": "Clone Palace 0.18.1",
+      "kind": "run",
+      "command": "${git}",
+      "arguments": [
+        "clone",
+        "--quiet",
+        "--depth=1",
+        "--branch",
+        "v0.18.1",
+        "https://github.com/awslabs/palace.git",
+        "${home}/palace"
+      ]
+    },
+    {
+      "name": "Check Palace's commit",
+      "kind": "run",
+      "command": "${git}",
+      "arguments": [
+        "-C",
+        "${home}/palace",
+        "rev-parse",
+        "HEAD"
+      ],
+      "captureAs": "palace",
+      "expect": "0dc74cdf8c36c58b69b21c4a06e816048ec0b83f"
+    },
+    {
+      "name": "Write the Spack environment",
+      "kind": "write",
+      "path": "${home}/env/spack.yaml",
+      "lines": [
+        "# Written by circuitRF's install assistant from recipe ${recipeId}. Palace's own",
+        "# docs/src/developer/spack/spack.yaml at v0.18.1, with the spec's variants stated, the",
+        "# install tree, stage and caches inside this home, and Palace's local recipe registered.",
+        "spack:",
+        "  specs:",
+        "  - local.palace@git.v0.18.1=0.18.0+superlu-dist+sundials+slepc+libxsmm+gslib~arpack",
+        "  view: false",
+        "  config:",
+        "    install_tree:",
+        "      root: ${home}/opt",
+        "      padded_length: 256",
+        "    build_stage:",
+        "    - ${home}/stage",
+        "    source_cache: ${home}/spack-cache/sources",
+        "    misc_cache: ${home}/spack-cache/misc",
+        "  concretizer:",
+        "    reuse: false",
+        "    unify: true",
+        "  packages:",
+        "    c:",
+        "      require: [gcc]",
+        "    cxx:",
+        "      require: [gcc]",
+        "    fortran:",
+        "      require: [gcc]",
+        "    petsc:",
+        "      require: ~hdf5",
+        "    mpi:",
+        "      require: openmpi",
+        "    openmpi:",
+        "      require: '@5:'",
+        "    blas:",
+        "      require: openblas",
+        "    lapack:",
+        "      require: openblas",
+        "    metis:",
+        "      require: cflags=-fPIC cppflags=-fPIC",
+        "    gmake:",
+        "      require: cflags=-std=gnu17",
+        "    mfem:",
+        "      require: +exceptions",
+        "  repos:",
+        "    local: ${home}/palace/spack_repo/local"
+      ]
+    },
+    {
+      "name": "Pin Spack's package repository",
+      "kind": "run",
+      "command": "${home}/spack/bin/spack",
+      "arguments": [
+        "repo",
+        "update",
+        "--commit",
+        "0ec478de0ec43571366def16bad549d6e4287abf",
+        "builtin"
+      ],
+      "comment": "F0 failure 2 (No such variant 'gkrand'): v1.2.2's own package repository predates PR 4000. A commit, not a branch, so every install gets the same recipes."
+    },
+    {
+      "name": "Find Spack's package repository",
+      "kind": "run",
+      "command": "${home}/spack/bin/spack",
+      "arguments": [
+        "location",
+        "--repo",
+        "builtin"
+      ],
+      "captureAs": "builtinRepo"
+    },
+    {
+      "name": "Check the package repository's commit",
+      "kind": "run",
+      "command": "${git}",
+      "arguments": [
+        "-C",
+        "${builtinRepo}",
+        "rev-parse",
+        "HEAD"
+      ],
+      "captureAs": "builtin",
+      "expect": "0ec478de0ec43571366def16bad549d6e4287abf"
+    },
+    {
+      "name": "Link Spack's MFEM recipe into Palace's",
+      "kind": "symlink",
+      "link": "${home}/palace/spack_repo/local/packages/mfem",
+      "target": "${builtinRepo}/packages/mfem",
+      "comment": "Palace's documented workaround for spack/spack#51505 (docs/src/developer/spack.md)"
+    },
+    {
+      "name": "Find the compilers",
+      "kind": "run",
+      "command": "${home}/spack/bin/spack",
+      "arguments": [
+        "-e",
+        "${home}/env",
+        "compiler",
+        "find"
+      ]
+    },
+    {
+      "name": "Plan the build",
+      "kind": "run",
+      "command": "${home}/spack/bin/spack",
+      "arguments": [
+        "-e",
+        "${home}/env",
+        "concretize",
+        "-f"
+      ],
+      "progress": "spack-concretize"
+    },
+    {
+      "name": "Build Palace and its dependencies",
+      "kind": "run",
+      "command": "${home}/spack/bin/spack",
+      "arguments": [
+        "-e",
+        "${home}/env",
+        "install",
+        "--only-concrete",
+        "--fail-fast",
+        "-j",
+        "${jobs}"
+      ],
+      "progress": "spack-install"
+    },
+    {
+      "name": "Find the installed Palace",
+      "kind": "run",
+      "command": "${home}/spack/bin/spack",
+      "arguments": [
+        "-e",
+        "${home}/env",
+        "location",
+        "-i",
+        "palace"
+      ],
+      "captureAs": "palacePrefix"
+    }
+  ],
+  "spackSpec": "local.palace@git.v0.18.1=0.18.0+superlu-dist+sundials+slepc+libxsmm+gslib~arpack",
+  "program": "${palacePrefix}/bin/palace",
+  "spackInstallTree": "${home}/opt",
+  "measured": {
+    "minutes": null,
+    "diskGB": null,
+    "source": "measured by the Linux container runs, testdata/em3d/f0/README.md §Install"
+  },
+  "knownFailures": [
+    "spack-ssl-certificates",
+    "spack-builtin-repo-too-old",
+    "spack-target-emits-sve",
+    "spack-variants-dropped",
+    "mirror-checksum-transient"
+  ]
+}

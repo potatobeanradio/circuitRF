@@ -1,0 +1,42 @@
+{
+  "$schema": "./recipe.schema.json",
+  "comment": "R-em3d24-4a. Upstream publishes Linux builds for x64 only: there is no Linux arm64 archive and no aarch64 wheel of Gmsh 4.15.2, so Linux arm64 has no recipe.",
+  "id": "gmsh-4.15.2-linux-x64",
+  "tool": "gmsh",
+  "version": "4.15.2",
+  "platform": "linux",
+  "architecture": "x64",
+  "layout": "relocatable",
+  "layoutNote": "Upstream's binary archive: the program finds its libraries relative to itself, so the home is built in .partial and renamed into place.",
+  "sources": [
+    {
+      "id": "archive",
+      "url": "https://gmsh.info/bin/Linux/gmsh-4.15.2-Linux64.tgz",
+      "fetchedBy": "circuitRF",
+      "file": "gmsh-4.15.2-Linux64.tgz",
+      "sha256": null,
+      "checksumNote": "gmsh.info publishes no checksum for its binary archives, so this download is not verified against one"
+    }
+  ],
+  "prerequisites": [],
+  "steps": [
+    {
+      "name": "Download Gmsh 4.15.2",
+      "kind": "download",
+      "source": "archive"
+    },
+    {
+      "name": "Unpack Gmsh",
+      "kind": "extract",
+      "source": "archive",
+      "into": "${home}"
+    }
+  ],
+  "program": "${home}/gmsh-4.15.2-Linux64/bin/gmsh",
+  "measured": {
+    "minutes": null,
+    "diskGB": null,
+    "source": "measured by the Linux container runs, testdata/em3d/f0/README.md \u00a7Install"
+  },
+  "knownFailures": []
+}

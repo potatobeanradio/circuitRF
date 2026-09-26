@@ -207,6 +207,10 @@ return JsonRun.Finish(Dispatch(JsonRun.Verb) is { } run ? run(args[1..]) : Unkno
     // Trace Impedance Analysis: every trace on the chosen copper layers against a target Z0, as the
     // layout editor's Impedance Analysis runs it. Owns no analysis and no page — see its header.
     "impedance" => CircuitRF.Cli.Impedance.Run,
+    // brief-em3d-24 R-em3d24-7 (owner decision D1: `solver`, one verb with nouns). The install assistant's
+    // headless spelling: a build machine installs a 3D solver the way the GUI does, from the same recipe,
+    // and the verb holds none of the logic — see its header.
+    "solver"    => CircuitRF.Cli.Solver.Run,
     // The one output the command line did not have: a picture (brief-render-2-render-verb.md). It
     // owns no rendering — every pixel comes out of the same CircuitRF.Render the application draws
     // each frame with, which is the whole reason RND-1 put that project below the firewall.
@@ -2286,6 +2290,9 @@ static int PrintHelp()
     Console.WriteLine("  find    <root>         (what is here: workspaces, cells, views, analyses)");
     Console.WriteLine("  reference [topic] [type]  (what a caller may WRITE: the prose pages, and the");
     Console.WriteLine("                          generated component catalogue. Takes no path.)");
+    Console.WriteLine("  solver list            (Palace, Gmsh, openEMS: found where, which version, what they can do)");
+    Console.WriteLine("  solver install <palace|gmsh|openems> [--yes]  (from its own upstream; without --yes,");
+    Console.WriteLine("                          prints what it would fetch and where it would go, and exits 1)");
     Console.WriteLine("  serve   --root <dir>   (a protocol server on stdin/stdout, for an external client)");
     Console.WriteLine("  --version              (the version of this build, and nothing else)");
     Console.WriteLine();

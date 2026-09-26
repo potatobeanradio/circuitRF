@@ -444,8 +444,12 @@ validated, where the program is, and how it was found.
 
 | Control | Default | What it does |
 |---|---|---|
-| **Path** (one per program) | blank | The program to run. **Blank means search**: the environment variable (`CIRCUITRF_PALACE`, `CIRCUITRF_GMSH`, `CIRCUITRF_OPENEMS`), then `PATH`, then the usual install folders (`~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, and `~/opt/openEMS/bin` for openEMS), then Spack's install record, which is where a Palace built with Palace's own recipe is found. A path you name here always wins, and if it does not work circuitRF says so rather than using a different one it found somewhere else. |
+| **Path** (one per program) | blank | The program to run. **Blank means search**: the environment variable (`CIRCUITRF_PALACE`, `CIRCUITRF_GMSH`, `CIRCUITRF_OPENEMS`), then a copy circuitRF installed, then `PATH`, then the usual install folders (`~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, and `~/opt/openEMS/bin` for openEMS), then Spack's install record, which is where a Palace built with Palace's own recipe is found, then conda environments. A path you name here always wins, and if it does not work circuitRF says so rather than using a different one it found somewhere else. |
+| **Install …** (one per program) | shown when it would help | Installs the program from its own upstream, after showing you what it will fetch and where it will go. Shown when this computer has an install recipe for it and nothing validated was found. See {{anchor: em-setup.html#install-assistant|Letting circuitRF install them}}. |
 | **MPI launcher** | blank | The `mpirun` that lets Palace use more than one core. **Blank means search**: `CIRCUITRF_MPIRUN`, then an `mpirun` beside Palace, then — for a Palace built with Spack — the MPI that build was linked against, then `PATH` and the usual install folders. The row shows which one a run would use. Without one, Palace still runs, on one core. |
+
+**Each row says which kind of program it found.** *Installed by circuitRF* is a copy the install
+assistant put there. Anything else reads *Found at …*, and circuitRF never offers to remove it.
 
 **A version circuitRF has not validated is refused, not just flagged.** Palace's configuration changes
 meaning between versions, and a setting read the wrong way gives an answer that looks plausible. The

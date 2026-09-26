@@ -2742,3 +2742,34 @@ parsing, the layer-name lookup, refusals and reporting.
 - **The findings are the report, not diagnostics.** Every `impedance.` id is a refusal of the verb's
   own; a failing trace is the verb working.
 - MCP: the `impedance` tool, single-mode, `path` positional (`ToolCatalog`).
+
+## 22. `solver` — the 3D solver install assistant, headless
+
+`circuitrf solver list` · `circuitrf solver install <palace|gmsh|openems> [--version <v>] [--yes]`
+
+(brief-em3d-24 R-em3d24-7; `em-3d.md` §7.2's "a build machine installs the same way the GUI does".)
+**One verb with nouns, on `history`'s pattern** (owner decision D1); brief 25 adds `remove`.
+
+**It owns no install logic.** `list` is `SolverStatus.Of` — the call each Settings ▸ 3D EM row makes —
+and `install` is `SolverInstaller.Consent` then `SolverInstaller.Install` (`src/Design/Em3d/Install`),
+which the Settings row and a 3D run's *Install …* action call too. `src/Cli/Solver.cs` is argument
+parsing, the consent refusal, progress on stderr and reporting; a comment-stripped source scan in
+`SolverInstallTests` holds it (and the GUI runner) to that.
+
+- **Nothing is fetched without `--yes`.** Without it the verb prints the consent text on stderr — the
+  program and version, every upstream URL and how each is checked, where it installs, what it cost when
+  measured and on what machine, the ParMETIS sentence for Palace — and exits 1
+  (`solver.install.consent-required`). It creates nothing, not even the state directory.
+- **A missing prerequisite is a refusal before any download**, naming the one command the user runs for
+  the detected distribution (`solver.install.refused`). circuitRF never runs `sudo`.
+- **Progress** is one stderr row per stage, keyed on the stage's name, and the stage's live figure (bytes
+  downloaded, the Spack package being built) at most every two seconds. A Palace build prints
+  *package k of N*, N from Spack's own plan.
+- **Ctrl-C cancels cleanly**: the running step's process tree is stopped and nothing is published. A
+  second Ctrl-C ends the process at once.
+- **Exit codes.** 0 installed or already installed (the program's path on stdout and in `--json`
+  `outputs`); 1 refused or failed, with the report on stderr (`solver.install.failed` carries `step` and
+  `log`); 130 cancelled.
+- `list` exits 0 whatever it finds; each tool's line says found or not, the route, the version, whether
+  it is validated, each capability probe, and — where installing would change what a run finds — the
+  command that installs it here.

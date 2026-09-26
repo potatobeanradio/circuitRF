@@ -26,18 +26,27 @@ public enum Em3dProcessKind
     Mesher,
     /// <summary>Palace or openEMS, solving one.</summary>
     Solver,
+
+    /// <summary>brief-em3d-24 — one step of a solver's install recipe (git, Spack, an upstream build
+    /// script). Counted apart from solves, and apart from probes, so "declining consent started nothing"
+    /// is a counter rather than a hope.</summary>
+    Installer,
 }
 
 public static class Em3dProcessLauncher
 {
     private static long _started;
     private static long _solves;
+    private static long _installSteps;
 
     /// <summary>How many processes this process has started through <see cref="Start"/>, of any kind.</summary>
     public static long Started => Interlocked.Read(ref _started);
 
     /// <summary>How many of those were a mesher or a solver — anything but a probe.</summary>
     public static long SolvesStarted => Interlocked.Read(ref _solves);
+
+    /// <summary>How many install-recipe steps this process has started (brief-em3d-24).</summary>
+    public static long InstallStepsStarted => Interlocked.Read(ref _installSteps);
 
     /// <summary>Starts <paramref name="info"/>, counting it under <paramref name="kind"/>. Null when the
     /// operating system started nothing, exactly as <see cref="Process.Start(ProcessStartInfo)"/>
@@ -46,7 +55,8 @@ public static class Em3dProcessLauncher
     {
         ArgumentNullException.ThrowIfNull(info);
         Interlocked.Increment(ref _started);
-        if (kind != Em3dProcessKind.Probe) Interlocked.Increment(ref _solves);
+        if (kind is Em3dProcessKind.Mesher or Em3dProcessKind.Solver) Interlocked.Increment(ref _solves);
+        if (kind == Em3dProcessKind.Installer) Interlocked.Increment(ref _installSteps);
         return Process.Start(info);
     }
 }

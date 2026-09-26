@@ -1,0 +1,236 @@
+{
+  "$schema": "./recipe.schema.json",
+  "comment": "R-em3d24-4b. Upstream's build script with --disable-GUI, over the distribution's own development packages (openEMS's install/requirements page). The remedy is that page's list for this distribution.",
+  "id": "openems-0.37.0-rc3-linux-x64",
+  "tool": "openems",
+  "version": "0.37.0-rc3",
+  "platform": "linux",
+  "architecture": "x64",
+  "layout": "in-place",
+  "layoutNote": "Built from source by upstream's own script with an absolute install prefix, which CMake writes into the libraries' paths: it cannot be moved after it is built, so the home is built in place and published by writing its record last.",
+  "needsSpaceFreePath": true,
+  "sources": [
+    {
+      "id": "openems",
+      "url": "https://github.com/thliebig/openEMS-Project.git",
+      "fetchedBy": "git",
+      "checksumNote": "a git clone of tag v0.37.0-rc3, checked against its commit 0c9d988ea026cec33fc98a1849ab238e74715c21 after the clone"
+    },
+    {
+      "url": "https://github.com/thliebig/CSXCAD.git",
+      "fetchedBy": "git (a submodule)",
+      "checksumNote": "cloned at the commit the tagged project pins"
+    },
+    {
+      "url": "https://github.com/thliebig/openEMS.git",
+      "fetchedBy": "git (a submodule)",
+      "checksumNote": "cloned at the commit the tagged project pins"
+    },
+    {
+      "url": "https://github.com/thliebig/fparser.git",
+      "fetchedBy": "git (a submodule)",
+      "checksumNote": "cloned at the commit the tagged project pins"
+    },
+    {
+      "url": "https://github.com/thliebig/QCSXCAD.git",
+      "fetchedBy": "git (a submodule; not built with --disable-GUI)",
+      "checksumNote": "cloned at the commit the tagged project pins"
+    },
+    {
+      "url": "https://github.com/thliebig/AppCSXCAD.git",
+      "fetchedBy": "git (a submodule; not built with --disable-GUI)",
+      "checksumNote": "cloned at the commit the tagged project pins"
+    },
+    {
+      "url": "https://github.com/thliebig/CTB.git",
+      "fetchedBy": "git (a submodule; not built)",
+      "checksumNote": "cloned at the commit the tagged project pins"
+    },
+    {
+      "url": "https://github.com/koendv/hyp2mat.git",
+      "fetchedBy": "git (a submodule; not built)",
+      "checksumNote": "cloned at the commit the tagged project pins"
+    }
+  ],
+  "prerequisites": [
+    {
+      "kind": "program",
+      "name": "git",
+      "search": [
+        "/usr/bin",
+        "/usr/local/bin"
+      ],
+      "variable": "git",
+      "remedy": {
+        "ubuntu": "sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
+        "debian": "sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
+        "fedora": "sudo dnf install gcc gcc-c++ make cmake git boost-devel tinyxml-devel hdf5-devel CGAL-devel vtk-devel",
+        "default": "install openEMS's build dependencies: a C++ compiler, make, git, cmake, and the development packages of HDF5, TinyXML, Boost, CGAL and VTK 9 (openEMS's install/requirements page lists them per distribution)"
+      }
+    },
+    {
+      "kind": "program",
+      "name": "g++",
+      "search": [
+        "/usr/bin",
+        "/usr/local/bin"
+      ],
+      "remedy": {
+        "ubuntu": "sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
+        "debian": "sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
+        "fedora": "sudo dnf install gcc gcc-c++ make cmake git boost-devel tinyxml-devel hdf5-devel CGAL-devel vtk-devel",
+        "default": "install openEMS's build dependencies: a C++ compiler, make, git, cmake, and the development packages of HDF5, TinyXML, Boost, CGAL and VTK 9 (openEMS's install/requirements page lists them per distribution)"
+      }
+    },
+    {
+      "kind": "program",
+      "name": "make",
+      "search": [
+        "/usr/bin",
+        "/usr/local/bin"
+      ],
+      "remedy": {
+        "ubuntu": "sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
+        "debian": "sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
+        "fedora": "sudo dnf install gcc gcc-c++ make cmake git boost-devel tinyxml-devel hdf5-devel CGAL-devel vtk-devel",
+        "default": "install openEMS's build dependencies: a C++ compiler, make, git, cmake, and the development packages of HDF5, TinyXML, Boost, CGAL and VTK 9 (openEMS's install/requirements page lists them per distribution)"
+      }
+    },
+    {
+      "kind": "program",
+      "name": "cmake",
+      "search": [
+        "/usr/bin",
+        "/usr/local/bin"
+      ],
+      "remedy": {
+        "ubuntu": "sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
+        "debian": "sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
+        "fedora": "sudo dnf install gcc gcc-c++ make cmake git boost-devel tinyxml-devel hdf5-devel CGAL-devel vtk-devel",
+        "default": "install openEMS's build dependencies: a C++ compiler, make, git, cmake, and the development packages of HDF5, TinyXML, Boost, CGAL and VTK 9 (openEMS's install/requirements page lists them per distribution)"
+      }
+    },
+    {
+      "kind": "file",
+      "name": "hdf5.h",
+      "search": [
+        "/usr/include/hdf5/serial",
+        "/usr/include"
+      ],
+      "remedy": {
+        "ubuntu": "sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
+        "debian": "sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
+        "fedora": "sudo dnf install gcc gcc-c++ make cmake git boost-devel tinyxml-devel hdf5-devel CGAL-devel vtk-devel",
+        "default": "install openEMS's build dependencies: a C++ compiler, make, git, cmake, and the development packages of HDF5, TinyXML, Boost, CGAL and VTK 9 (openEMS's install/requirements page lists them per distribution)"
+      }
+    },
+    {
+      "kind": "file",
+      "name": "tinyxml.h",
+      "search": [
+        "/usr/include"
+      ],
+      "remedy": {
+        "ubuntu": "sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
+        "debian": "sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
+        "fedora": "sudo dnf install gcc gcc-c++ make cmake git boost-devel tinyxml-devel hdf5-devel CGAL-devel vtk-devel",
+        "default": "install openEMS's build dependencies: a C++ compiler, make, git, cmake, and the development packages of HDF5, TinyXML, Boost, CGAL and VTK 9 (openEMS's install/requirements page lists them per distribution)"
+      }
+    },
+    {
+      "kind": "file",
+      "name": "version.hpp",
+      "search": [
+        "/usr/include/boost"
+      ],
+      "remedy": {
+        "ubuntu": "sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
+        "debian": "sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
+        "fedora": "sudo dnf install gcc gcc-c++ make cmake git boost-devel tinyxml-devel hdf5-devel CGAL-devel vtk-devel",
+        "default": "install openEMS's build dependencies: a C++ compiler, make, git, cmake, and the development packages of HDF5, TinyXML, Boost, CGAL and VTK 9 (openEMS's install/requirements page lists them per distribution)"
+      }
+    },
+    {
+      "kind": "file",
+      "name": "version.h",
+      "search": [
+        "/usr/include/CGAL"
+      ],
+      "remedy": {
+        "ubuntu": "sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
+        "debian": "sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
+        "fedora": "sudo dnf install gcc gcc-c++ make cmake git boost-devel tinyxml-devel hdf5-devel CGAL-devel vtk-devel",
+        "default": "install openEMS's build dependencies: a C++ compiler, make, git, cmake, and the development packages of HDF5, TinyXML, Boost, CGAL and VTK 9 (openEMS's install/requirements page lists them per distribution)"
+      }
+    },
+    {
+      "kind": "file",
+      "name": "vtk-9*",
+      "search": [
+        "/usr/include"
+      ],
+      "remedy": {
+        "ubuntu": "sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
+        "debian": "sudo apt-get install build-essential git cmake libhdf5-dev libtinyxml-dev libboost-all-dev libcgal-dev libvtk9-dev",
+        "fedora": "sudo dnf install gcc gcc-c++ make cmake git boost-devel tinyxml-devel hdf5-devel CGAL-devel vtk-devel",
+        "default": "install openEMS's build dependencies: a C++ compiler, make, git, cmake, and the development packages of HDF5, TinyXML, Boost, CGAL and VTK 9 (openEMS's install/requirements page lists them per distribution)"
+      }
+    }
+  ],
+  "environment": {
+    "PATH": "/usr/local/bin:/usr/bin:/bin"
+  },
+  "clearEnvironment": [
+    "PYTHONPATH",
+    "PYTHONHOME",
+    "CMAKE_PREFIX_PATH"
+  ],
+  "steps": [
+    {
+      "name": "Clone openEMS 0.37.0-rc3",
+      "kind": "run",
+      "command": "${git}",
+      "arguments": [
+        "clone",
+        "--quiet",
+        "--recursive",
+        "--branch",
+        "v0.37.0-rc3",
+        "https://github.com/thliebig/openEMS-Project.git",
+        "${home}/src"
+      ]
+    },
+    {
+      "name": "Check openEMS's commit",
+      "kind": "run",
+      "command": "${git}",
+      "arguments": [
+        "-C",
+        "${home}/src",
+        "rev-parse",
+        "HEAD"
+      ],
+      "captureAs": "openems",
+      "expect": "0c9d988ea026cec33fc98a1849ab238e74715c21"
+    },
+    {
+      "name": "Build openEMS",
+      "kind": "run",
+      "command": "${home}/src/update_openEMS.sh",
+      "arguments": [
+        "${home}",
+        "--disable-GUI",
+        "--njobs=${jobs}"
+      ],
+      "workingDirectory": "${home}/src",
+      "comment": "upstream's own build script, started by its path with an argument list, exactly as F0 ran it but without --python"
+    }
+  ],
+  "program": "${home}/bin/openEMS",
+  "measured": {
+    "minutes": null,
+    "diskGB": null,
+    "source": "measured by the Linux container runs, testdata/em3d/f0/README.md §Install"
+  },
+  "knownFailures": []
+}

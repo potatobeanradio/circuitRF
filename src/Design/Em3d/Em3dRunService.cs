@@ -194,7 +194,7 @@ public static class Em3dRunService
         var readiness = SolverDiscovery.ReadinessFor(solver, setup);
         if (readiness.FirstOrDefault(r => !r.Proceeds) is { } blocked)
         {
-            var unavailable = EmDiagnostics.SolverUnavailable(blocked.Name, blocked.Refusal!);
+            var unavailable = EmDiagnostics.SolverUnavailable(blocked.Name, blocked.Refusal!, Install.SolverInstaller.OfferFor(blocked));
             if (!both) return log.Result(EmRunStatus.Refused, unavailable);
             bool palaceReady  = readiness.Where(r => r.Tool is SolverTool.Palace or SolverTool.Gmsh).All(r => r.Proceeds);
             bool openEmsReady = readiness.Where(r => r.Tool == SolverTool.OpenEms).All(r => r.Proceeds);

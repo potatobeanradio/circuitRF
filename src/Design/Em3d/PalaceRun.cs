@@ -260,6 +260,10 @@ public static class PalaceRun
         if (System.IO.Path.GetDirectoryName(palace) is { } dir && System.IO.Path.Combine(dir, "mpirun") is var beside
             && File.Exists(beside))
             return new(beside, "found beside Palace");
+        // brief-em3d-24 — a Palace the install assistant built lives in a Spack tree of its own inside its home,
+        // which no default root names; its install record does.
+        if (InstalledSpackTree(palace) is { } tree && SpackInstalls.MpiLauncherFor(palace, [tree]) is { } own)
+            return new(own, "the MPI Palace was built with, from the Spack tree circuitRF installed it in");
         if (SpackInstalls.MpiLauncherFor(palace, spackRoots) is { } linked)
             return new(linked, "the MPI Palace was built with, from its Spack installation");
 
@@ -280,6 +284,18 @@ public static class PalaceRun
         }
         return new(null, $"no MPI launcher (mpirun) was found in Settings, {MpiLauncherVariable}, beside Palace, " +
                          "in Palace's Spack installation, on PATH or in the default directories");
+    }
+
+    /// <summary>The Spack install tree of the circuitRF-installed home <paramref name="palace"/> lives in, or null.</summary>
+    private static string? InstalledSpackTree(string palace)
+    {
+        string full;
+        try { full = System.IO.Path.GetFullPath(palace); }
+        catch (Exception e) when (e is ArgumentException or PathTooLongException or NotSupportedException) { return null; }
+        return Install.SolverHomes.Published(SolverTool.Palace, Install.SolverHomes.DefaultRoots)
+            .FirstOrDefault(r => r.SpackInstallTree is not null
+                                 && full.StartsWith(r.Home.TrimEnd(System.IO.Path.DirectorySeparatorChar) + System.IO.Path.DirectorySeparatorChar, StringComparison.Ordinal))
+            ?.SpackInstallTree;
     }
 
     // ── Reading back ─────────────────────────────────────────────────────────────────────────

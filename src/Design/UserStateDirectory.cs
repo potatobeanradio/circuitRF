@@ -57,11 +57,16 @@ public static class UserStateDirectory
     /// <summary>True when <see cref="RedirectTo"/> has moved the state directory somewhere else.</summary>
     public static bool IsRedirected => _override is not null;
 
-    /// <summary>The directory itself. Not created here — each caller creates what it writes.</summary>
+    /// <summary>The directory itself. Not created here — each caller creates what it writes.
+    /// <para><b><c>DoNotVerify</c> is load-bearing</b> (brief-em3d-24, found in a clean Ubuntu 24.04
+    /// container): without it .NET returns an EMPTY string for a special folder that does not exist yet,
+    /// and on a fresh Linux account <c>~/.local/share</c> does not — so this became the RELATIVE path
+    /// <c>circuitRF</c>, and every per-user file landed under whatever the working directory was.</para></summary>
     public static string Dir => _override
         ?? (Environment.GetEnvironmentVariable(EnvironmentVariable)?.Trim() is { Length: > 0 } fromEnv
                 ? fromEnv
-                : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "circuitRF"));
+                : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData,
+                                                         Environment.SpecialFolderOption.DoNotVerify), "circuitRF"));
 
     /// <summary>A named sub-directory of it, e.g. <c>recovery</c>.</summary>
     public static string SubDir(string name) => Path.Combine(Dir, name);

@@ -649,7 +649,11 @@ misuse**:
   `PATH` (the finding `src/Core/RESOLVED.md` records for the compiler: a Finder-launched app's `PATH`
   holds only the four system directories). **A named program that does not work is reported, never
   silently replaced** by one found elsewhere. The candidate command names live in one list per tool,
-  the only place in circuitRF that names it.
+  the only place in circuitRF that names it. *Built in brief-em3d-24:* the full order is Settings, the
+  environment variable, **a copy the install assistant installed** (read from its install record, and
+  only once that record exists), `PATH`, the default directories, Spack's install database, then
+  **conda environments** (`$CONDA_PREFIX/bin`, and `envs/*/bin` under the conda installers' default
+  folders) — the route that picks up a community Palace package with no circuitRF change.
 - **Version check before every run** against the validated versions (§5.3). An unvalidated version is
   a refusal naming the versions that are validated — for Palace this matters, because its
   configuration changes meaning across versions.
@@ -696,11 +700,22 @@ licence, onto the user's machine at the user's request: circuitRF still redistri
   rights — except for the one step circuitRF cannot do for a Windows user, enabling the Linux
   subsystem (§7.4), which it explains and does not attempt. On Windows, Palace is installed into the
   user's own Linux subsystem distribution, inside its Linux filesystem.
+  *Built in brief-em3d-24:* `<state>/solvers/<tool>/<version>/`, one self-contained home per validated
+  version, Palace with its own Spack clone, configuration, caches and install tree inside it. **On macOS
+  the state directory is `~/Library/Application Support/circuitRF`, and autotools will not build under a
+  path containing a space** (`configure: error: unsafe srcdir value`, measured) — so where the state
+  directory's path has whitespace the solvers go to `~/.circuitRF/solvers` instead. A redirected state
+  directory is never escaped.
 - **A downloaded archive is verified** against the checksum upstream publishes, where it publishes one;
   where it does not, the installation says so rather than implying a check it did not make.
 - **It runs in the background, with progress and cancellation**, on the same `RunControl` the EM runs
   use: a day-long build must not hold a window hostage. Cancelling leaves nothing half-installed where
   discovery would find it.
+  *Built in brief-em3d-24:* a home counts only once its `install.json` exists. An upstream archive is
+  built in `<home>.partial/` and renamed into place; **a source build cannot be renamed** — Spack and
+  CMake write every library's absolute path into the binaries (measured on F0's Palace) — so it is
+  built in place and published by writing its record last. Whatever an earlier attempt left is removed
+  at the next attempt.
 - **What it installed is what discovery finds.** On success circuitRF names the installed program in
   the tool's Settings row, runs the version and capability checks (§7.1) against it at once, and
   reports the result. An install is not called a success until those checks pass.
@@ -791,7 +806,9 @@ So the design is:
 
 **A headless spelling** is part of the design, as it is for every capability here (`docs/design/cli.md`):
 a build machine installs — and uninstalls — a solver the same way the GUI does, from the same recipe
-and the same install record. Its shape is decided with F1.
+and the same install record. *Decided in brief-em3d-24:* one verb with nouns, `circuitrf solver list` and
+`circuitrf solver install <tool> [--yes]` (owner decision D1; brief 25 adds `remove`), calling the same
+functions the Settings rows call. `docs/design/cli.md` §22.
 
 ### 7.3 Locations
 

@@ -113,11 +113,14 @@ public static class EmDiagnostics
     /// sentence is <c>SolverDiscovery</c>'s, which is also what Settings and <c>explain</c> show, so it
     /// is carried rather than re-authored: three places saying it three ways is how they drift.
     /// </summary>
-    public static Diagnostic SolverUnavailable(string tool, string refusal) => Diagnostic.Create(
-        "em.solver-3d.unavailable",
-        DiagnosticSeverity.Error,
-        "{refusal}",
-        ("tool", tool), ("refusal", refusal));
+    /// <param name="install">brief-em3d-24 — the tool id the install assistant can install here
+    /// (<c>palace</c>, <c>gmsh</c>, <c>openems</c>), or null. It is what the Messages row hangs its
+    /// <i>Install …</i> action on: the diagnostic knows what it is, so the window does not parse a sentence.</param>
+    public static Diagnostic SolverUnavailable(string tool, string refusal, string? install = null) => install is null
+        ? Diagnostic.Create("em.solver-3d.unavailable", DiagnosticSeverity.Error, "{refusal}",
+                            ("tool", tool), ("refusal", refusal))
+        : Diagnostic.Create("em.solver-3d.unavailable", DiagnosticSeverity.Error, "{refusal}",
+                            ("tool", tool), ("refusal", refusal), ("install", install));
 
     /// <summary>
     /// brief-em3d-10 R-em3d10-4b — a setup asking for both solvers, refused before either started.

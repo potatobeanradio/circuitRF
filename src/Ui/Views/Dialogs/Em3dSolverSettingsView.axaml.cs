@@ -3,6 +3,7 @@ using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using CircuitRF.Design.Em3d;
+using CircuitRF.Design.Em3d.Install;
 using CircuitRF.Ui.Theming;
 
 namespace CircuitRF.Ui.Views.Dialogs;
@@ -30,7 +31,12 @@ public partial class Em3dSolverSettingsView : UserControl
         // Loaded fires when the tab is first SHOWN, not when the dialog is built: asking three programs
         // their version is not a cost every opening of Settings should pay.
         Loaded += (_, _) => RefreshAll();
+        // brief-em3d-24 — an install that ends (however it ends) changes what discovery finds.
+        CircuitRF.Ui.Layout.Em.SolverInstallRunner.Finished += OnInstallFinished;
+        DetachedFromVisualTree += (_, _) => CircuitRF.Ui.Layout.Em.SolverInstallRunner.Finished -= OnInstallFinished;
     }
+
+    private void OnInstallFinished(SolverTool tool) => Dispatcher.UIThread.Post(RefreshAll);
 
     public void Load()
     {
@@ -46,18 +52,25 @@ public partial class Em3dSolverSettingsView : UserControl
         finally { _loading = false; }
     }
 
-    private (SolverDiscovery Discovery, TextBlock Status)[] Rows =>
+    private (SolverDiscovery Discovery, TextBlock Status, Button Install)[] Rows =>
     [
-        (SolverDiscovery.Palace,  PalaceStatus),
-        (SolverDiscovery.Gmsh,    GmshStatus),
-        (SolverDiscovery.OpenEms, OpenEmsStatus),
+        (SolverDiscovery.Palace,  PalaceStatus,  PalaceInstall),
+        (SolverDiscovery.Gmsh,    GmshStatus,    GmshInstall),
+        (SolverDiscovery.OpenEms, OpenEmsStatus, OpenEmsInstall),
     ];
 
     private void RefreshAll()
     {
-        foreach (var (discovery, status) in Rows) Refresh(discovery, status);
+        foreach (var (discovery, status, install) in Rows) Refresh(discovery, status, install);
         RefreshMpi();
     }
+
+    private (SolverDiscovery, TextBlock, Button) Row(SolverTool tool) => Rows[tool switch
+    {
+        SolverTool.Palace => 0,
+        SolverTool.Gmsh   => 1,
+        _                 => 2,
+    }];
 
     /// <summary>The MPI row: which mpirun a Palace run would use, found against the Palace the
     /// Palace row finds — the Spack route needs to know which Palace it is asking about.</summary>
@@ -80,21 +93,47 @@ public partial class Em3dSolverSettingsView : UserControl
         });
     }
 
-    /// <summary>Runs discovery for one row off the UI thread and writes its answer back.</summary>
-    private static void Refresh(SolverDiscovery discovery, TextBlock status)
+    /// <summary>Runs discovery for one row off the UI thread and writes its answer back —
+    /// <see cref="SolverStatus.Of"/>, which <c>circuitrf solver list</c> prints too.</summary>
+    private static void Refresh(SolverDiscovery discovery, TextBlock status, Button install)
     {
         status.Text = "Checking…";
+        install.IsVisible = false;
         _ = Task.Run(() =>
         {
             string text;
+            bool offer = false;
             try
             {
-                var found = discovery.Find(out var rejected);
-                text = discovery.DescribeForSettings(found, rejected);
+                var row = SolverStatus.Of(discovery.Tool, discovery);
+                text  = row.Summary;
+                offer = row.OfferInstall;
             }
             catch (Exception ex) { text = ex.Message; }
-            Dispatcher.UIThread.Post(() => status.Text = text);
+            Dispatcher.UIThread.Post(() =>
+            {
+                status.Text = text;
+                bool running = CircuitRF.Ui.Layout.Em.SolverInstallRunner.IsRunning(discovery.Tool);
+                install.IsVisible = offer || running;
+                install.IsEnabled = !running;
+                install.Content   = running ? $"Installing {discovery.Name}… (see Messages)" : $"Install {discovery.Name}…";
+            });
         });
+    }
+
+    /// <summary>brief-em3d-24 — the row's Install …: consent, then the install in the background.</summary>
+    private async void OnInstall(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: string name } button || !Enum.TryParse<SolverTool>(name, out var tool)) return;
+        button.IsEnabled = false;
+        try
+        {
+            var install = CircuitRF.Ui.Layout.Em.SolverInstallRunner.InstallAsync(tool, TopLevel.GetTopLevel(this) as Window, messages: null);
+            var (discovery, status, btn) = Row(tool);
+            Refresh(discovery, status, btn);
+            await install;
+        }
+        catch (Exception ex) { Row(tool).Item2.Text = ex.Message; }
     }
 
     /// <summary>
@@ -106,10 +145,10 @@ public partial class Em3dSolverSettingsView : UserControl
         if (_loading || sender is not TextBox box) return;
 
         string? typed = box.Text?.Trim() is { Length: > 0 } t ? t : null;
-        if (box == PalaceBox)       { AppPreferencesIo.Update(p => p.Em3dPalacePath  = typed); Refresh(SolverDiscovery.Palace,  PalaceStatus); RefreshMpi(); }
+        if (box == PalaceBox)       { AppPreferencesIo.Update(p => p.Em3dPalacePath  = typed); Refresh(SolverDiscovery.Palace,  PalaceStatus,  PalaceInstall); RefreshMpi(); }
         else if (box == MpiBox)     { AppPreferencesIo.Update(p => p.Em3dMpiLauncherPath = typed); RefreshMpi(); }
-        else if (box == GmshBox)    { AppPreferencesIo.Update(p => p.Em3dGmshPath    = typed); Refresh(SolverDiscovery.Gmsh,    GmshStatus); }
-        else if (box == OpenEmsBox) { AppPreferencesIo.Update(p => p.Em3dOpenEmsPath = typed); Refresh(SolverDiscovery.OpenEms, OpenEmsStatus); }
+        else if (box == GmshBox)    { AppPreferencesIo.Update(p => p.Em3dGmshPath    = typed); Refresh(SolverDiscovery.Gmsh,    GmshStatus,    GmshInstall); }
+        else if (box == OpenEmsBox) { AppPreferencesIo.Update(p => p.Em3dOpenEmsPath = typed); Refresh(SolverDiscovery.OpenEms, OpenEmsStatus, OpenEmsInstall); }
     }
 
     private async void OnBrowse(object? sender, RoutedEventArgs e)

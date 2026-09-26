@@ -6,7 +6,8 @@ namespace CircuitRF.Ui.Tests.Em3d;
 /// brief-em3d-7 gate 2 — a JSON Schema draft-07 validator for exactly the keywords Palace 0.18.1's
 /// schema uses (testdata/em3d/palace-schema/0.18.1.json): <c>$ref</c> to <c>#/$defs/…</c>, type, const,
 /// enum, properties / additionalProperties / required, items / additionalItems / minItems / maxItems /
-/// contains, the numeric bounds, minLength, allOf / anyOf / oneOf / not, and if / then / else.
+/// contains, the numeric bounds, minLength, allOf / anyOf / oneOf / not, and if / then / else — plus
+/// pattern and minProperties, which the solver recipe schema adds (brief-em3d-24).
 ///
 /// <para><b>An unknown keyword is a FAILURE of the validator, not something it skips</b> — a keyword
 /// silently ignored is a constraint silently unchecked, and the gate would then pass a configuration
@@ -82,6 +83,17 @@ internal sealed class DraftSevenSchema(JsonElement root)
                 case "minLength":
                     if (inst.ValueKind == JsonValueKind.String && inst.GetString()!.Length < kw.Value.GetInt32())
                         errors.Add($"{path}: shorter than {kw.Value}");
+                    break;
+                // brief-em3d-24 — the solver recipe schema's two keywords Palace's does not use. Draft-07: a
+                // pattern is an unanchored ECMA-262 search, applied to strings only.
+                case "pattern":
+                    if (inst.ValueKind == JsonValueKind.String
+                        && !System.Text.RegularExpressions.Regex.IsMatch(inst.GetString()!, kw.Value.GetString()!, System.Text.RegularExpressions.RegexOptions.ECMAScript))
+                        errors.Add($"{path}: '{inst.GetString()}' does not match {kw.Value}");
+                    break;
+                case "minProperties":
+                    if (inst.ValueKind == JsonValueKind.Object && inst.EnumerateObject().Count() < kw.Value.GetInt32())
+                        errors.Add($"{path}: fewer than {kw.Value} properties");
                     break;
                 case "allOf":
                     foreach (var sub in kw.Value.EnumerateArray()) Check(sub, inst, path, errors);
