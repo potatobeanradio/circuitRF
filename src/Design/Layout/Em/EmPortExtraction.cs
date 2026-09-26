@@ -203,13 +203,22 @@ public static class EmPortExtraction
     /// port may grow down to the ground plane where the artwork has no via — the TECHNOLOGY's own
     /// default via size, in metres, which is why it comes from the caller rather than from here.
     /// Null means grow nothing and refuse such a port instead. See <c>PlanarGroundPath</c>.</param>
+    /// <param name="technology">The technology, for which conductor level each drawing layer is. A port
+    /// whose point has metal on more than one level is resolved to the level its OWN layer names — its
+    /// committed <see cref="LabelShape.PortLayer"/>, else the label's drawing layer — when that is one of
+    /// them; null resolves no port that way, and such a port is refused as ambiguous.</param>
+    /// <param name="analysisLevelsApply">Whether the setup has analysis levels a user can narrow (a planar
+    /// setup) — false for a 3D one, whose levels are every signal conductor, so a refusal does not offer a
+    /// remedy the panel does not have.</param>
     public static EmPortExtractionResult Extract(
         IReadOnlyList<LayoutShape> shapes,
         PlanarProblem              problem,
         int                        dbuPerMicron,
         Func<int, Complex>?        z0For = null,
         LayoutUnit                 displayUnit = LayoutUnit.Um,
-        double?                    groundPathWidthM = null)
+        double?                    groundPathWidthM = null,
+        Technology?                technology = null,
+        bool                       analysisLevelsApply = true)
     {
         ArgumentNullException.ThrowIfNull(shapes);
         ArgumentNullException.ThrowIfNull(problem);
@@ -365,6 +374,26 @@ public static class EmPortExtraction
             }
 
             var (poly, level, containing) = NearestPolygon(problem, x, y);
+
+            // ── METAL ON TWO LEVELS, AND THE PORT SAYS WHICH ──────────────────────────────────
+            //
+            // Windows report, 2026-09-26: a two-layer board's 3D view showed nothing, refused with
+            // "Port 3 … sits on metal on 2 of this EM setup's 2 conductor levels". The guard below is
+            // right for a port that says nothing about its level — but a port placed with the Port tool
+            // COMMITS the layer of the metal it was clicked on (PortLayer), and PlanarExtractor already
+            // builds the planar levels from exactly that. Only this check never read it, so a port on a
+            // top-side trace over bottom-side copper was refused whenever both levels were meshed —
+            // always, for a 3D setup, whose levels are every signal conductor. When the port's own layer
+            // names one of the levels under it, that is the level: nothing is guessed.
+            if (poly is not null && containing.Count > 1 && viaLevel is null &&
+                OwnLevel(label, problem, technology) is { } own && containing.Contains(own) &&
+                PolygonOn(problem, own, x, y) is { } ownPoly)
+            {
+                poly = ownPoly;
+                level = own;
+                containing = [own];
+            }
+
             if (poly is not null && containing.Count > 1 && viaLevel is null)
             {
                 string portProblem =
@@ -374,7 +403,9 @@ public static class EmPortExtraction
                     "port's LEVEL is part of its identity: driving the wrong one drives a different " +
                     "conductor with the same footprint, which produces a complete and plausible " +
                     "answer for a structure that was not drawn. Move the label to a point where only " +
-                    "the level you mean carries metal, or narrow this setup's analysis levels.";
+                    "the level you mean carries metal, put it on that level's drawing layer (the Port tool " +
+                    "does, placed on the metal you mean)" +
+                    (analysisLevelsApply ? ", or narrow this setup's analysis levels." : ".");
                 firstProblem ??= portProblem;
                 rows.Add(new EmPortRow(number, label, null, portProblem, kind));
                 continue;
@@ -552,7 +583,7 @@ public static class EmPortExtraction
                         string.Join(", ", negContaining.Select(i => $"'{problem.Layers[i].Name}'")) + "). A port's level " +
                         "is part of its identity and two terminals is two chances to land on the wrong " +
                         "one silently. Move the return point to somewhere only the level you mean " +
-                        "carries metal, or narrow this setup's analysis levels.";
+                        "carries metal" + (analysisLevelsApply ? ", or narrow this setup's analysis levels." : ".");
                     firstProblem ??= portProblem;
                     rows.Add(new EmPortRow(number, label, null, portProblem, kind));
                     continue;
@@ -742,6 +773,26 @@ public static class EmPortExtraction
     /// </summary>
     /// <returns><c>Levels</c> is every conductor level whose metal CONTAINS the point, lowest first;
     /// empty when the point is off the metal and <c>Poly</c> is the nearest conductor instead.</returns>
+    /// <summary>The conductor level a port's own layer names — its committed PortLayer, else the label's
+    /// drawing layer — by the technology's stackup, or null when neither names a level of this problem.</summary>
+    private static int? OwnLevel(LabelShape label, PlanarProblem problem, Technology? technology)
+    {
+        if (technology is null) return null;
+        foreach (var key in new[] { label.PortLayer, (LayerKey?)label.Layer })
+        {
+            if (key is not { } k) continue;
+            var conductor = technology.Stackup.Layers.FirstOrDefault(l => l.Kind == StackupKind.Conductor && l.DrawingLayers.Contains(k));
+            if (conductor is null) continue;
+            for (int i = 0; i < problem.Layers.Count; i++)
+                if (problem.Layers[i].Name == conductor.Name) return i;
+        }
+        return null;
+    }
+
+    /// <summary>A polygon of level <paramref name="level"/> that contains the point, or null.</summary>
+    private static PlanarPolygon? PolygonOn(PlanarProblem problem, int level, double x, double y)
+        => problem.Layers[level].Polygons.FirstOrDefault(p => p.Contains(x, y));
+
     private static (PlanarPolygon? Poly, int Level, IReadOnlyList<int> Levels) NearestPolygon(
         PlanarProblem problem, double x, double y)
     {

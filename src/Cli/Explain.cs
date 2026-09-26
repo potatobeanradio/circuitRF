@@ -565,7 +565,7 @@ internal static class Explain
         var ports = EmPortExtraction.Extract(
             source.View.Shapes, problem, source.DbuPerMicron, setup.ResolvePortZ0,
             source.View.DisplayUnit,
-            EmPortExtraction.DefaultGroundPathWidthM(source.Technology));
+            EmPortExtraction.DefaultGroundPathWidthM(source.Technology), source.Technology);
 
         if (!ports.Rows.Any(r => r.Port?.IsConductorReferenced == true)) return;
 

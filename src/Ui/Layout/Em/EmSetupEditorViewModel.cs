@@ -1986,7 +1986,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         var ports = EmPortExtraction.Extract(
             source.View.Shapes, planar.Problem!, source.DbuPerMicron, Working.ResolvePortZ0,
             source.View.DisplayUnit,
-            EmPortExtraction.DefaultGroundPathWidthM(source.Technology));
+            EmPortExtraction.DefaultGroundPathWidthM(source.Technology), source.Technology);
 
         PortRefusal = ports.Ok ? null : ports.Refusal;
         PlanarPorts = ports.Ports;

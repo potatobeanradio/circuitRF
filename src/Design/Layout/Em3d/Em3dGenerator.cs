@@ -904,8 +904,11 @@ public static class Em3dGenerator
                 b.Layer.Name, [.. pieces[b.Index].Select(p => p.Poly)], b.Layer.SigmaSm, b.TopM - b.BottomM)).ToList();
             var portProblem = new PlanarProblem(layers, new GroundedSlab(1, new EmMaterial(1, 0)), 0);
 
+            // Every signal conductor is a level here, so a port over copper on another layer is resolved by
+            // its own layer (the technology says which level that is), and no refusal offers analysis levels.
             var extracted = EmPortExtraction.Extract(source.View.Shapes, portProblem, source.DbuPerMicron,
-                                                     setup.ResolvePortZ0, source.View.DisplayUnit);
+                                                     setup.ResolvePortZ0, source.View.DisplayUnit,
+                                                     technology: source.Technology, analysisLevelsApply: false);
             _notes.AddRange(extracted.Notes);
             if (!extracted.Ok) return extracted.Refusal;
 

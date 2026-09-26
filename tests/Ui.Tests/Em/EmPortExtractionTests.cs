@@ -270,6 +270,54 @@ public class EmPortExtractionTests
         Assert.Contains("'Metal2'", r.Refusal!, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// Windows report, 2026-09-26: a two-layer board's 3D view was empty, refused with "Port 3 … sits on
+    /// metal on 2 of this EM setup's 2 conductor levels". A port whose OWN layer names one of the levels
+    /// under it — its committed PortLayer, else the label's drawing layer — is on that level, so it is
+    /// not ambiguous. One that names neither is still refused, and a 3D setup's refusal offers no
+    /// analysis levels, which it does not have.
+    /// </summary>
+    [Fact]
+    public void MetalOnTwoLevelsUnderOnePort_ResolvesToTheLevelThePortsOwnLayerNames()
+    {
+        var metal1 = new LayerKey(1, 0);
+        var metal2 = new LayerKey(2, 0);
+        var text   = new LayerKey(63, 0);
+        long len = 200 * Dbu, wide = 30 * Dbu;
+        var tech = StarterTechnologies.MmicGaAs();
+        LayoutShape[] Shapes(LabelShape p1, LabelShape p2) =>
+        [
+            new RectShape { Layer = metal1, X1 = 0, Y1 = 0, X2 = len, Y2 = wide },
+            new RectShape { Layer = metal2, X1 = 0, Y1 = 0, X2 = len, Y2 = wide },
+            p1, p2,
+        ];
+        LabelShape Label(string t, long x, LayerKey layer, LayerKey? committed = null) =>
+            new() { Layer = layer, PortLayer = committed, X = x, Y = wide / 2, Text = t, Height = 5 * Dbu, IsPort = true };
+
+        // The label's drawing layer is Metal1's.
+        var onLayer = Shapes(Label("P1", 0, metal1), Label("P2", len, metal1));
+        var problem = PlanarExtractor.Extract(onLayer, tech, Dbu, 20e9).Problem!;
+        int m1 = problem.Layers.ToList().FindIndex(l => l.Name == "Metal1");
+        int m2 = problem.Layers.ToList().FindIndex(l => l.Name == "Metal2");
+        var r = EmPortExtraction.Extract(onLayer, problem, Dbu, technology: tech);
+        Assert.True(r.Ok, r.Refusal);
+        Assert.All(r.Ports, p => Assert.Equal(m1, p.LayerIndex ?? 0));
+
+        // A committed PortLayer wins over the label's own layer (a text layer here, which names nothing).
+        var committed = Shapes(Label("P1", 0, text, metal2), Label("P2", len, text, metal2));
+        r = EmPortExtraction.Extract(committed, problem, Dbu, technology: tech);
+        Assert.True(r.Ok, r.Refusal);
+        Assert.All(r.Ports, p => Assert.Equal(m2, p.LayerIndex ?? 0));
+
+        // Neither names a level: still ambiguous, and a 3D setup is not told to narrow analysis levels.
+        var silent = Shapes(Label("P1", 0, text), Label("P2", len, text));
+        r = EmPortExtraction.Extract(silent, problem, Dbu, technology: tech, analysisLevelsApply: false);
+        Assert.False(r.Ok);
+        Assert.Contains("2 of this EM setup's 2 conductor levels", r.Refusal!, StringComparison.Ordinal);
+        Assert.DoesNotContain("analysis levels", r.Refusal!, StringComparison.Ordinal);
+        Assert.Contains("drawing layer", r.Refusal!, StringComparison.Ordinal);
+    }
+
     // ── The impedance lives in the .cem, never on the shape ───────────────────────────────────
 
     [Fact]

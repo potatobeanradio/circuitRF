@@ -320,7 +320,7 @@ public static class EmRunService
         var ports = EmPortExtraction.Extract(
             source.View.Shapes, problem, source.DbuPerMicron, setup.ResolvePortZ0,
             source.View.DisplayUnit,
-            EmPortExtraction.DefaultGroundPathWidthM(source.Technology));
+            EmPortExtraction.DefaultGroundPathWidthM(source.Technology), source.Technology);
 
         findings.AddRange(EmFindings.AsNotes(ports.Notes));
         if (!ports.Ok)
@@ -736,7 +736,7 @@ public static class EmRunService
         var ports = EmPortExtraction.Extract(
             source.View.Shapes, problem, source.DbuPerMicron, setup.ResolvePortZ0,
             source.View.DisplayUnit,
-            EmPortExtraction.DefaultGroundPathWidthM(source.Technology));
+            EmPortExtraction.DefaultGroundPathWidthM(source.Technology), source.Technology);
 
         notes.AddRange(ports.Notes);
         if (!ports.Ok)

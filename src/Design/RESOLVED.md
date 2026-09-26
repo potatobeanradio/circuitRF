@@ -13228,3 +13228,28 @@ box, at the cell centres (`DumpMode 2`, why in `src/Render/RESOLVED.md`). The tw
 exactly that box. The F0 structural comparison (`OpenEmsBackendTests.Gate5`) now lowers with fields off,
 since F0's hand-written case dumps none. **Not measured: what the dump costs a large run** — the DFT runs
 over the whole box during the run, and on the stripline (a 9 × 25 × 2-cell dump) nothing was visible.
+
+## A port on a two-layer board emptied the 3D view: its own layer was never read (2026-09-26)
+
+A Windows report of a 3D view showing only the axis gimbal turned out not to be the GPU at all: the pane
+was drawing its clear colour, and the status line read *"Nothing to show: Port 3 ('P3') … sits on metal
+on 2 of this EM setup's 2 conductor levels ('Bottom Copper', 'Top Copper')"*. The generator had refused.
+
+**The ambiguity guard in `EmPortExtraction` never read the port's own layer.** A port placed with the Port
+tool COMMITS the layer of the metal it was clicked on (`LabelShape.PortLayer`), and `PlanarExtractor`
+already builds the planar levels from exactly that (`LevelsThePortsReach`: PortLayer, else the label's
+drawing layer). The guard counted every level with metal under the point regardless. A planar setup
+rarely met it, since its levels are the ones the ports reach; a **3D setup always did**, because
+`Em3dGenerator.BuildPorts` makes every signal conductor a level, so any top-side port over bottom-side
+copper on a two-layer board was refused. Its remedy was also unreachable there: "narrow this setup's
+analysis levels" names a list the panel hides for a 3D solver and the 3D generator does not read.
+
+Now, when a port's point has metal on several levels and its own layer (PortLayer, else the label's
+layer, mapped through the technology's stackup) names one of them, that is the port's level — nothing
+is guessed, so the guard still refuses a port whose layer names none of them. The refusal no longer
+offers analysis levels on a 3D setup (`analysisLevelsApply: false`) and names the drawing-layer remedy.
+All four callers (both planar run paths, the setup panel and `explain`) pass the technology, so they
+agree with a run. Gate: `EmPortExtractionTests.MetalOnTwoLevelsUnderOnePort_ResolvesToTheLevelThePortsOwnLayerNames`.
+
+**Left:** the 3D view still shows nothing at all when the generator refuses. Drawing the geometry with the
+refusal as a note (as a wave-port refusal already is) would let a user see the port they are asked to move.
