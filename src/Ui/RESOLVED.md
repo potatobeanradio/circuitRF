@@ -35585,3 +35585,20 @@ progress bar beside "solving…".
   `MlinZ0EntryTests.Layout_PinnedDialog_IgnoresTheCanvasSelection_AndEditsItsOwnInstance`.
 - `PCellParameterEditorKindTests` + `PCellPropertiesInspectorParameterListTests` fail when run TOGETHER
   (one test each) and pass alone — shared state between the two classes, seen before this change too.
+
+## EM Setup: the 3D port table listed only the ports the `.cem` had an entry for (2026-09-25)
+
+Owner report: a two-port layout, and the 3D solver's port table showed one row. `SyncEigenFields` built
+`Port3DRows` from `Working.Ports3D` alone, and `EmSetupPersistence` (and now `CommitPorts3D`) drops
+every entry that `EmPort3D.IsDefault` — a lumped port with no overrides. So a port nobody had touched
+had no row, and nothing on screen said it existed; the only way to see it was "Add port row", which
+asked the user to type a number the layout already knew. `RebuildPort3DRows` now merges the layout's
+port labels (`PortRows`, the same extraction the planar list reads, which survives a port refusal) with
+the saved entries, and runs whenever either side changes. A row the layout no longer labels is a
+leftover entry and is the only kind that can be removed.
+
+Same change: each 3D row carries the port's Z₀, written through `CommitPortZ0Slot` — the ONE writer
+of a `PortZ0s` slot, shared with the planar list's `CommitPortRow` — and the Ports group is hidden for
+a 3D setup, so ports are configured in one place. The analysis-type picker moved into the Solver group's
+right column and the old Analysis group became a full-width Notes group gated on `ShowNotesGroup`.
+Gate: `tests/Ui.Tests/Em/Em3dPortTableTests.cs`.

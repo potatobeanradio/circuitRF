@@ -181,8 +181,13 @@ public class EmPanelDeclutterTests
             new EmSetup { Name = "x" });
 
         Assert.False(vm.HasNotes);                       // no layout resolves: nothing to say
+        Assert.False(vm.ShowNotesGroup);                 // so no Notes heading over an empty box
+        var raised = new List<string?>();
+        vm.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
         vm.Notes = ["something"];
         Assert.True(vm.HasNotes);
+        Assert.True(vm.ShowNotesGroup);
+        Assert.Contains(nameof(vm.ShowNotesGroup), raised);
     }
 
     [Fact]
@@ -275,28 +280,32 @@ public class EmPanelDeclutterTests
     }
 
     [Fact]
-    public void TheAnalysisGroup_SplitsIntoTwoRealColumns_NotAReflowingWrapPanel()
+    public void TheAnalysisType_SitsBesideTheSolver_AndTheNotesGroupIsOneColumn()
     {
-        // A WrapPanel only saves height while both blocks happen to fit side by side; in a docked
-        // panel it reflows to one column and the group comes out TALLER, which is what the first
-        // attempt did. A 50/50 Grid always splits.
+        // The analysis-type picker is the Solver group's RIGHT column, in a real two-column Grid —
+        // a WrapPanel only saves height while both blocks happen to fit side by side; in a docked
+        // panel it reflows to one column and the group comes out TALLER.
         string xaml = File.ReadAllText(RepoFile("src/Ui/Views/Layout/EmSetupEditorView.axaml"));
 
-        int hdr = xaml.IndexOf("Text=\"Analysis\"", StringComparison.Ordinal);
-        Assert.True(hdr > 0);
-        int grid = xaml.IndexOf("<Grid ColumnDefinitions=\"*,*\"", hdr, StringComparison.Ordinal);
-        Assert.True(grid > hdr, "the Analysis group is not a two-column Grid");
+        int solver = xaml.IndexOf("Classes=\"grouphdr\" Text=\"Solver\"", StringComparison.Ordinal);
+        Assert.True(solver > 0);
+        int grid = xaml.IndexOf("<Grid ColumnDefinitions=\"*,*\"", solver, StringComparison.Ordinal);
         Assert.Contains("ColumnSpacing", xaml[grid..(grid + 120)], StringComparison.Ordinal);
-
-        // The notes are the tallest thing in the group, so they have to be IN the right-hand column
-        // (beside the description) rather than full width below both, or the split buys nothing.
-        // Checked positionally against the column marker rather than against a closing tag, since
-        // the readback carries a nested Grid of its own.
+        int solverCombo = xaml.IndexOf("EmSetupEditorViewModel.Solver3DChoices", grid, StringComparison.Ordinal);
         int rightColumn = xaml.IndexOf("Grid.Column=\"1\"", grid, StringComparison.Ordinal);
-        int notes       = xaml.IndexOf("ViewModel.HasNotes", grid, StringComparison.Ordinal);
-        int nextGroup   = xaml.IndexOf("Text=\"Frequency\"", grid, StringComparison.Ordinal);
-        Assert.True(rightColumn > grid, "the Analysis group has no right-hand column");
-        Assert.InRange(notes, rightColumn, nextGroup);
+        int kindCombo   = xaml.IndexOf("EmSetupEditorViewModel.AnalysisKindChoices", StringComparison.Ordinal);
+        int gridEnd     = xaml.IndexOf("</Grid>", kindCombo, StringComparison.Ordinal);
+        Assert.InRange(solverCombo, grid, rightColumn);
+        Assert.InRange(kindCombo, rightColumn, gridEnd);
+
+        // The group it came from is renamed Notes and splits nothing: the notes take the full width.
+        Assert.DoesNotContain("Classes=\"grouphdr\" Text=\"Analysis\"", xaml, StringComparison.Ordinal);
+        int notes     = xaml.IndexOf("Classes=\"grouphdr\" Text=\"Notes\"", StringComparison.Ordinal);
+        int notesEnd  = xaml.IndexOf("</Border>", notes, StringComparison.Ordinal);
+        Assert.True(notes > gridEnd, "the Notes group is not below the Solver group");
+        string group  = xaml[notes..notesEnd];
+        Assert.DoesNotContain("<Grid ColumnDefinitions=\"*,*\"", group, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.HasNotes", group, StringComparison.Ordinal);
     }
 
     // ── The conformal overlay renders as CUT CELLS at ordinary zoom ───────────────────────────

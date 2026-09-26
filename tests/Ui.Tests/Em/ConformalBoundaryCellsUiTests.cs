@@ -232,13 +232,26 @@ public class ConformalBoundaryCellsUiTests
         Assert.All(vm.PortRows, r => Assert.False(r.ShowKind));
 
         // The flags alone proved nothing once: the Analysis group was never BOUND to one, so it
-        // stayed on screen for a 3D setup while this test passed. Assert the markup's gate too.
+        // stayed on screen for a 3D setup while this test passed. Assert the markup's gates too —
+        // the Notes group's, and the analysis-type column's beside the solver.
+        Assert.False(vm.ShowNotesGroup);
         string axaml = File.ReadAllText(RepoFile("src/Ui/Views/Layout/EmSetupEditorView.axaml"));
-        int header = axaml.IndexOf("Classes=\"grouphdr\" Text=\"Analysis\"", StringComparison.Ordinal);
-        Assert.True(header >= 0, "the Analysis group header is gone");
+        int header = axaml.IndexOf("Classes=\"grouphdr\" Text=\"Notes\"", StringComparison.Ordinal);
+        Assert.True(header >= 0, "the Notes group header is gone");
         int border = axaml.LastIndexOf("<Border Classes=\"group\"", header, StringComparison.Ordinal);
         string borderTag = axaml[border..axaml.IndexOf('>', border)];
-        Assert.Contains("ViewModel.ShowCircuitRfSolverControls", borderTag);
+        Assert.Contains("ViewModel.ShowNotesGroup", borderTag);
+
+        int picker = axaml.IndexOf("EmSetupEditorViewModel.AnalysisKindChoices", StringComparison.Ordinal);
+        int column = axaml.LastIndexOf("<StackPanel Grid.Column=\"1\"", picker, StringComparison.Ordinal);
+        string columnTag = axaml[column..axaml.IndexOf('>', column)];
+        Assert.Contains("ViewModel.ShowCircuitRfSolverControls", columnTag);
+
+        // A 3D setup's ports are configured in the Solver group's port table only.
+        int ports = axaml.IndexOf("Classes=\"grouphdr\" Text=\"Ports\"", StringComparison.Ordinal);
+        int portsBorder = axaml.LastIndexOf("<Border Classes=\"group\"", ports, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.ShowCircuitRfSolverControls",
+                        axaml[portsBorder..axaml.IndexOf('>', portsBorder)]);
 
         Directory.Delete(dir, true);
     }

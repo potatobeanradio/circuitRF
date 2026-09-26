@@ -281,10 +281,15 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     /// <inheritdoc cref="Warnings"/>
     [ObservableProperty] private ObservableCollection<string> _planarMeshWarnings = [];
 
-    /// <summary>Gates the Notes label AND its list together, so a heading is never left standing over
-    /// nothing — the failure a bare "Cross-section" heading over a null readback already produced
-    /// once (owner report, 2026-08-11).</summary>
+    /// <summary>Gates the notes list, so nothing is left standing over an empty one — the failure a
+    /// bare "Cross-section" heading over a null readback already produced once (owner report,
+    /// 2026-08-11).</summary>
     public bool HasNotes => Notes.Count > 0;
+
+    /// <summary>Gates the whole Notes group: a circuitRF-kernel setup with a readback or notes to
+    /// show. Its analysis-type picker moved beside the solver (2026-09-25), so without the content
+    /// half of this gate the group heading would stand over an empty box.</summary>
+    public bool ShowNotesGroup => ShowCircuitRfSolverControls && (Readback is not null || HasNotes);
 
     /// <summary>Gates the warning block, which takes no height when there is nothing to rank.</summary>
     public bool HasWarnings => Warnings.Count > 0;
@@ -301,8 +306,11 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     partial void OnNotesChanged(ObservableCollection<string> value)
     {
         OnPropertyChanged(nameof(HasNotes));
+        OnPropertyChanged(nameof(ShowNotesGroup));
         OnPropertyChanged(nameof(NotesText));
     }
+
+    partial void OnReadbackChanged(EmCrossSectionReadback? value) => OnPropertyChanged(nameof(ShowNotesGroup));
 
     partial void OnWarningsChanged(ObservableCollection<string> value)
     {
@@ -1124,14 +1132,22 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         if (index < 0 || index >= PortRows.Count) return;
 
         var row = PortRows[index];
-        if (!TryParseComplexOhms(row.Text, out var z))
+        CommitPortZ0Slot(row.PortNumber, row.Text, e => row.Error = e);
+    }
+
+    /// <summary>The one writer of a port's <see cref="EmSetup.PortZ0s"/> slot, shared by the planar
+    /// list and the 3D port table so the two can never write it differently.</summary>
+    private void CommitPortZ0Slot(int portNumber, string text, Action<string?> setError)
+    {
+        if (_suppressCommit) return;
+        if (!TryParseComplexOhms(text, out var z))
         {
-            row.Error = "Enter a resistance in ohms, or a complex value like 50+10j.";
+            setError("Enter a resistance in ohms, or a complex value like 50+10j.");
             return;
         }
-        row.Error = null;
+        setError(null);
 
-        int slot = row.PortNumber - 1;
+        int slot = portNumber - 1;
         if (slot < 0) return;
 
         var before = SnapshotJson();
@@ -1140,7 +1156,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         if (list[slot] == z) return;                        // no-change guard: no undo entry
         list[slot] = z;
 
-        CommitEdit(before, $"Change port {row.PortNumber} reference impedance");
+        CommitEdit(before, $"Change port {portNumber} reference impedance");
         Refresh();
     }
 
@@ -1235,6 +1251,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         }
         OnPropertyChanged(nameof(ShowPortList));
         OnPropertyChanged(nameof(ShowNearFarPortZ0));
+        RebuildPort3DRows();
     }
 
     public void CommitMeshField(string field)
@@ -2056,6 +2073,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         }
         OnPropertyChanged(nameof(ShowPortList));
         OnPropertyChanged(nameof(ShowNearFarPortZ0));
+        RebuildPort3DRows();
     }
 
     private static string SideLabel(PlanarPortSide s) => s switch

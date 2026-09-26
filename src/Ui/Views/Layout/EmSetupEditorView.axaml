@@ -442,16 +442,9 @@
                      prose names — so a message saying "set Analysis to X" always names something
                      this dropdown actually offers.
 
-                     TWO COLUMNS, and a real Grid rather than a WrapPanel (owner request,
-                     2026-08-11: "the whole point is to make the Analysis group occupy less vertical
-                     space"). A WrapPanel only saves height while both blocks happen to fit side by
-                     side — in a docked panel it reflowed to one column and the group came out
-                     TALLER than before, which is what the first attempt did. A 50/50 Grid always
-                     splits, so the group's height is max(left, right) rather than their sum.
-
-                     Left is the CHOICE (what to run, and why that kernel); right is the OUTCOME
-                     (what the geometry resolved to, and everything the extraction had to say).
-                     ColumnSpacing is the padding between them. -->
+                     The CHOICE (what to run, and why that kernel) sits in the Solver group's right
+                     column; the OUTCOME (what the geometry resolved to, and everything the
+                     extraction had to say) is the Notes group below it, one full-width column. -->
                 <!-- ── brief-em3d-7 R-em3d7-6b: which solver, and Palace's own section ─────────
                      Every control here writes a .cem field through the same undoable commit as the
                      rest of the panel (R-em-11). A blank Palace box is that field's default, shown
@@ -460,11 +453,43 @@
                 <Border Classes="group">
                   <StackPanel Spacing="2">
                     <TextBlock Classes="grouphdr" Text="Solver"/>
-                    <ComboBox Classes="cell" MaxWidth="220" HorizontalAlignment="Left"
-                              ItemsSource="{x:Static em:EmSetupEditorViewModel.Solver3DChoices}"
-                              SelectedItem="{Binding ViewModel.Solver3DChoice}"/>
-                    <TextBlock Classes="colhdr" TextWrapping="Wrap" Margin="0,3,0,0"
-                               Text="{Binding ViewModel.Solver3DDescription}"/>
+                    <!-- Two real columns (owner request, 2026-09-25): WHO solves on the left, and —
+                         for the circuitRF solver only — WHICH of its analyses on the right. The
+                         analysis type used to head its own group; beside the solver it costs no
+                         height, and that group now holds only the notes, full width. A Grid rather
+                         than a WrapPanel for the reason the old group gave: a WrapPanel reflows to one
+                         column in a docked panel and comes out taller. -->
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="16">
+                        <StackPanel Grid.Column="0" Spacing="2">
+                            <ComboBox Classes="cell" MaxWidth="220" HorizontalAlignment="Left"
+                                      ItemsSource="{x:Static em:EmSetupEditorViewModel.Solver3DChoices}"
+                                      SelectedItem="{Binding ViewModel.Solver3DChoice}"/>
+                            <TextBlock Classes="colhdr" TextWrapping="Wrap" Margin="0,3,0,0"
+                                       Text="{Binding ViewModel.Solver3DDescription}"/>
+                        </StackPanel>
+
+                        <!-- Hidden for a 3D setup: a 3D run reads neither the analysis kind nor the
+                             kernel it names. -->
+                        <StackPanel Grid.Column="1" Spacing="2"
+                                    IsVisible="{Binding ViewModel.ShowCircuitRfSolverControls}">
+                            <!-- Owner request: the analysis type never needs the full panel width. -->
+                            <ComboBox Classes="cell" MaxWidth="200" HorizontalAlignment="Left"
+                                      ItemsSource="{x:Static em:EmSetupEditorViewModel.AnalysisKindChoices}"
+                                      SelectedItem="{Binding ViewModel.AnalysisKind}">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Converter={x:Static conv:EmAnalysisKindNameConverter.Instance}}"/>
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                            <TextBlock Classes="colhdr" TextWrapping="Wrap" Margin="0,3,0,0"
+                                       Text="{Binding ViewModel.AnalysisKindDescription}"/>
+                            <TextBlock FontSize="11" Margin="0,4,0,0"
+                                       Text="{Binding ViewModel.SelectedKernelName}" FontWeight="SemiBold"/>
+                            <TextBlock Classes="colhdr" TextWrapping="Wrap"
+                                       Text="{Binding ViewModel.KernelChoiceReason}"/>
+                        </StackPanel>
+                    </Grid>
                     <!-- brief-em3d-22 R-em3d22-5b: what the 3D setup solves, and a static problem's
                          terminals. Each row is a .cem Terminals3D entry, written when a box loses focus. -->
                     <StackPanel IsVisible="{Binding ViewModel.Is3DSetup}" Orientation="Horizontal" Spacing="8" Margin="0,6,0,0">
@@ -514,44 +539,59 @@
                         </StackPanel>
                     </StackPanel>
                     <!-- brief-em3d-23: each port's kind (lumped or wave, mixable), a wave port's extent and offset
-                         (Ports3D); an eigenmode setup's count and target (Eigenmode); and the modes of its last run. -->
+                         (Ports3D); an eigenmode setup's count and target (Eigenmode); and the modes of its last run.
+                         One row per port the LAYOUT labels, with its reference impedance beside it
+                         (owner request, 2026-09-25): for a 3D setup this is the only place ports are
+                         configured, and the Ports group below is hidden. -->
                     <StackPanel IsVisible="{Binding ViewModel.IsPortKindSetup}" Spacing="2" Margin="0,6,0,0">
-                        <Grid ColumnDefinitions="50,90,70,70,80,Auto" ColumnSpacing="6">
+                        <Grid ColumnDefinitions="40,80,90,70,70,80,Auto" ColumnSpacing="6">
                             <TextBlock Grid.Column="0" Classes="colhdr" Text="Port"/>
-                            <TextBlock Grid.Column="1" Classes="colhdr" Text="Kind" ToolTip.Tip="{x:Static em:EmSetupEditorViewModel.Port3DKindTip}"/>
-                            <TextBlock Grid.Column="2" Classes="colhdr" Text="Width (× w)"/>
-                            <TextBlock Grid.Column="3" Classes="colhdr" Text="Height (× h)"/>
-                            <TextBlock Grid.Column="4" Classes="colhdr" Text="Offset (µm)"/>
+                            <TextBlock Grid.Column="1" Classes="colhdr" Text="Z₀ (Ω)"/>
+                            <TextBlock Grid.Column="2" Classes="colhdr" Text="Kind" ToolTip.Tip="{x:Static em:EmSetupEditorViewModel.Port3DKindTip}"/>
+                            <TextBlock Grid.Column="3" Classes="colhdr" Text="Width (× w)"/>
+                            <TextBlock Grid.Column="4" Classes="colhdr" Text="Height (× h)"/>
+                            <TextBlock Grid.Column="5" Classes="colhdr" Text="Offset (µm)"/>
                         </Grid>
                         <ItemsControl ItemsSource="{Binding ViewModel.Port3DRows}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate x:DataType="em:Em3dPortRow">
-                                    <Grid ColumnDefinitions="50,90,70,70,80,Auto" ColumnSpacing="6" Margin="0,1">
-                                        <TextBox Grid.Column="0" Classes="cell" Tag="Ports3D" Text="{Binding Port}"
+                                    <StackPanel Margin="0,1">
+                                    <Grid ColumnDefinitions="40,80,90,70,70,80,Auto" ColumnSpacing="6">
+                                        <TextBlock Grid.Column="0" Text="{Binding Port}" VerticalAlignment="Center"
+                                                   ToolTip.Tip="The port's number, as its label in the layout states it."/>
+                                        <TextBox Grid.Column="1" Classes="cell" Tag="Port3DZ0" Text="{Binding Z0Text}"
                                                  LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
-                                                 ToolTip.Tip="The port's number, as its label states it. A port with no row is lumped."/>
-                                        <ComboBox Grid.Column="1" Classes="cell"
+                                                 ToolTip.Tip="The port's reference impedance in ohms: a resistance, or a complex value like 50+10j."/>
+                                        <ComboBox Grid.Column="2" Classes="cell"
                                                   ItemsSource="{x:Static em:EmSetupEditorViewModel.Port3DKindChoices}"
                                                   SelectedItem="{Binding Kind}"
                                                   ToolTip.Tip="{x:Static em:EmSetupEditorViewModel.Port3DKindTip}"/>
-                                        <TextBox Grid.Column="2" Classes="cell" Tag="Ports3D" Text="{Binding Width}" IsEnabled="{Binding IsWave}"
+                                        <TextBox Grid.Column="3" Classes="cell" Tag="Ports3D" Text="{Binding Width}" IsEnabled="{Binding IsWave}"
                                                  PlaceholderText="rule" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
                                                  ToolTip.Tip="The wave port's width in line widths. Blank: the sizing rule, 10 line widths (10 substrate heights for a line narrower than its substrate)."/>
-                                        <TextBox Grid.Column="3" Classes="cell" Tag="Ports3D" Text="{Binding Height}" IsEnabled="{Binding IsWave}"
+                                        <TextBox Grid.Column="4" Classes="cell" Tag="Ports3D" Text="{Binding Height}" IsEnabled="{Binding IsWave}"
                                                  PlaceholderText="rule" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
                                                  ToolTip.Tip="The wave port's height in multiples of the line's height above its return. Blank: 8."/>
-                                        <TextBox Grid.Column="4" Classes="cell" Tag="Ports3D" Text="{Binding OffsetUm}" IsEnabled="{Binding IsWave}"
+                                        <TextBox Grid.Column="5" Classes="cell" Tag="Ports3D" Text="{Binding OffsetUm}" IsEnabled="{Binding IsWave}"
                                                  PlaceholderText="0" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
                                                  ToolTip.Tip="How far into the structure the wave port's reference plane lies. Palace de-embeds the line between."/>
-                                        <Button Grid.Column="5" Content="✕" Padding="6,0"
+                                        <!-- Only a leftover row can go: a port the layout labels is
+                                             configured, never removed, here. -->
+                                        <Button Grid.Column="6" Content="✕" Padding="6,0"
+                                                IsVisible="{Binding !InLayout}"
                                                 Command="{Binding $parent[ItemsControl].((em:EmSetupDocument)DataContext).ViewModel.RemovePort3DCommand}"
                                                 CommandParameter="{Binding}"
-                                                ToolTip.Tip="Remove this row: the port is lumped again."/>
+                                                ToolTip.Tip="The layout has no label for this port any more. Remove its leftover settings."/>
                                     </Grid>
+                                    <SelectableTextBlock FontSize="10" Foreground="{DynamicResource CrfWarningBrush}"
+                                                         Text="{Binding Z0Error}" IsVisible="{Binding HasZ0Error}"/>
+                                    <SelectableTextBlock FontSize="10" TextWrapping="Wrap" Margin="0,2,0,4"
+                                                         Foreground="{DynamicResource CrfWarningBrush}"
+                                                         Text="{Binding Problem}" IsVisible="{Binding HasProblem}"/>
+                                    </StackPanel>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
-                        <Button Content="Add port row" Command="{Binding ViewModel.AddPort3DCommand}"/>
                     </StackPanel>
                     <StackPanel IsVisible="{Binding ViewModel.IsEigenmodeSetup}" Spacing="2" Margin="0,6,0,0">
                         <StackPanel Orientation="Horizontal" Spacing="8">
@@ -703,93 +743,64 @@
                   </StackPanel>
                 </Border>
 
-                <!-- Hidden for a 3D setup: a 3D run reads neither the analysis kind nor the kernel
-                     it names, and every note and warning below is the PLANAR / cross-section
-                     extraction's, not the 3D generator's. -->
-                <Border Classes="group" IsVisible="{Binding ViewModel.ShowCircuitRfSolverControls}">
+                <!-- The extraction's OUTCOME, one full-width column (owner request, 2026-09-25): the
+                     analysis-type picker it used to share this group with moved up beside the
+                     solver. Hidden for a 3D setup — every note and warning here is the PLANAR /
+                     cross-section extraction's, not the 3D generator's — and hidden when there is
+                     nothing to show, so the group heading never stands over an empty box. -->
+                <Border Classes="group" IsVisible="{Binding ViewModel.ShowNotesGroup}">
                   <StackPanel Spacing="2">
-                <TextBlock Classes="grouphdr" Text="Analysis"/>
-                <Grid ColumnDefinitions="*,*" ColumnSpacing="16">
+                <TextBlock Classes="grouphdr" Text="Notes"/>
+                    <!-- ── Cross-section readback (R-em-8: rendered, never recomputed) ──
+                         The WHOLE block is gated on Readback, header included. Readback is the
+                         cross-section kernel's own product and is null for a full-wave setup, so
+                         without the gate a planar setup showed a "Cross-section" heading with
+                         nothing whatsoever under it (owner report, 2026-08-11). A heading with
+                         no content reads as a rendering failure, not as an empty section. -->
+                    <StackPanel Spacing="2"
+                                IsVisible="{Binding ViewModel.Readback, Converter={x:Static ObjectConverters.IsNotNull}}">
+                        <TextBlock Classes="colhdr" FontWeight="SemiBold" Text="Cross-section"/>
+                        <TextBlock Text="{Binding ViewModel.Readback.Summary}" TextWrapping="Wrap"
+                                   FontSize="11"/>
 
-                    <StackPanel Grid.Column="0" Spacing="2">
-                        <!-- Owner request: the analysis type never needs the full panel width. -->
-                        <ComboBox Classes="cell" MaxWidth="200" HorizontalAlignment="Left"
-                                  ItemsSource="{x:Static em:EmSetupEditorViewModel.AnalysisKindChoices}"
-                                  SelectedItem="{Binding ViewModel.AnalysisKind}">
-                            <ComboBox.ItemTemplate>
-                                <DataTemplate>
-                                    <TextBlock Text="{Binding Converter={x:Static conv:EmAnalysisKindNameConverter.Instance}}"/>
-                                </DataTemplate>
-                            </ComboBox.ItemTemplate>
-                        </ComboBox>
-                        <TextBlock Classes="colhdr" TextWrapping="Wrap" Margin="0,3,0,0"
-                                   Text="{Binding ViewModel.AnalysisKindDescription}"/>
-                        <TextBlock FontSize="11" Margin="0,4,0,0"
-                                   Text="{Binding ViewModel.SelectedKernelName}" FontWeight="SemiBold"/>
-                        <TextBlock Classes="colhdr" TextWrapping="Wrap"
-                                   Text="{Binding ViewModel.KernelChoiceReason}"/>
+                        <Grid ColumnDefinitions="110,*" RowDefinitions="Auto,Auto,Auto" Margin="0,4,0,0">
+                            <TextBlock Grid.Row="0" Grid.Column="0" Classes="colhdr" Text="Propagation axis"/>
+                            <TextBlock Grid.Row="0" Grid.Column="1" FontSize="11" Text="{Binding ViewModel.Readback.Axis}"/>
+                            <TextBlock Grid.Row="1" Grid.Column="0" Classes="colhdr" Text="Signal layer"/>
+                            <TextBlock Grid.Row="1" Grid.Column="1" FontSize="11" Text="{Binding ViewModel.Readback.SignalLayerName}"/>
+                            <TextBlock Grid.Row="2" Grid.Column="0" Classes="colhdr" Text="Ground reference"/>
+                            <TextBlock Grid.Row="2" Grid.Column="1" FontSize="11" Text="{Binding ViewModel.Readback.GroundLayerName}"/>
+                        </Grid>
                     </StackPanel>
 
-                    <StackPanel Grid.Column="1" Spacing="2">
-                        <!-- ── Cross-section readback (R-em-8: rendered, never recomputed) ──
-                             The WHOLE block is gated on Readback, header included. Readback is the
-                             cross-section kernel's own product and is null for a full-wave setup, so
-                             without the gate a planar setup showed a "Cross-section" heading with
-                             nothing whatsoever under it (owner report, 2026-08-11). A heading with
-                             no content reads as a rendering failure, not as an empty section. -->
-                        <StackPanel Spacing="2"
-                                    IsVisible="{Binding ViewModel.Readback, Converter={x:Static ObjectConverters.IsNotNull}}">
-                            <TextBlock Classes="colhdr" FontWeight="SemiBold" Text="Cross-section"/>
-                            <TextBlock Text="{Binding ViewModel.Readback.Summary}" TextWrapping="Wrap"
-                                       FontSize="11"/>
-
-                            <Grid ColumnDefinitions="110,*" RowDefinitions="Auto,Auto,Auto" Margin="0,4,0,0">
-                                <TextBlock Grid.Row="0" Grid.Column="0" Classes="colhdr" Text="Propagation axis"/>
-                                <TextBlock Grid.Row="0" Grid.Column="1" FontSize="11" Text="{Binding ViewModel.Readback.Axis}"/>
-                                <TextBlock Grid.Row="1" Grid.Column="0" Classes="colhdr" Text="Signal layer"/>
-                                <TextBlock Grid.Row="1" Grid.Column="1" FontSize="11" Text="{Binding ViewModel.Readback.SignalLayerName}"/>
-                                <TextBlock Grid.Row="2" Grid.Column="0" Classes="colhdr" Text="Ground reference"/>
-                                <TextBlock Grid.Row="2" Grid.Column="1" FontSize="11" Text="{Binding ViewModel.Readback.GroundLayerName}"/>
-                            </Grid>
-                        </StackPanel>
-
-                        <!-- The extraction notes — what geometry was seen, what was ignored and why,
-                             and where each port resolved to. They live in the RIGHT column with the
-                             readback, not full width below both, because that is what actually buys
-                             the height back: they are the tallest thing in the group, and beside the
-                             description they cost nothing instead of stacking under it.
-
-                             HasNotes gates the label AND the list together, so the heading can never
-                             be left standing over nothing — the exact failure the ungated
-                             "Cross-section" heading produced. -->
-                        <StackPanel IsVisible="{Binding ViewModel.HasNotes}" Margin="0,6,0,0" Spacing="2">
-                            <!-- EM-SEV R-emsev-1 — the findings that change WHAT WAS SOLVED, above
-                                 the ones that merely explain it, in the warning brush. The run has
-                                 ranked these since EM-SEV; this panel joined them into the note
-                                 block, so a level carrying a user's capacitor read as one paragraph
-                                 of eighteen in the very dialog holding the tick box that fixes it.
-                                 Still ONE block per class, per the 2026-09-09 copy instruction. -->
-                            <!-- Selectable, like every other warning-coloured string here —
-                                 EmSetupLayoutRowTests.EveryWarningColouredString_IsSelectable is
-                                 mechanical about it, and a heading nobody can drag through breaks
-                                 a selection that starts above it and ends below. -->
-                            <SelectableTextBlock Classes="colhdr" FontWeight="SemiBold" Text="Warnings"
-                                       Foreground="{DynamicResource CrfWarningBrush}"
-                                       IsVisible="{Binding ViewModel.HasWarnings}"/>
-                            <SelectableTextBlock Text="{Binding ViewModel.WarningsText}"
-                                                 Foreground="{DynamicResource CrfWarningBrush}"
-                                                 IsVisible="{Binding ViewModel.HasWarnings}"
-                                                 TextWrapping="Wrap" FontSize="10"/>
-                            <TextBlock Classes="colhdr" FontWeight="SemiBold" Text="Notes"/>
-                            <!-- ONE block, not an ItemsControl of them — an ItemsControl selects one
-                                 LINE at a time and copying a report out means dragging each note
-                                 separately (owner instruction, 2026-09-09). -->
-                            <SelectableTextBlock Text="{Binding ViewModel.NotesText}"
-                                                 TextWrapping="Wrap" FontSize="10" Opacity="0.75"/>
-                        </StackPanel>
+                    <!-- The extraction notes — what geometry was seen, what was ignored and why,
+                         and where each port resolved to. HasNotes gates the block, so nothing is
+                         left standing over an empty list — the exact failure the ungated
+                         "Cross-section" heading produced. -->
+                    <StackPanel IsVisible="{Binding ViewModel.HasNotes}" Margin="0,6,0,0" Spacing="2">
+                        <!-- EM-SEV R-emsev-1 — the findings that change WHAT WAS SOLVED, above
+                             the ones that merely explain it, in the warning brush. The run has
+                             ranked these since EM-SEV; this panel joined them into the note
+                             block, so a level carrying a user's capacitor read as one paragraph
+                             of eighteen in the very dialog holding the tick box that fixes it.
+                             Still ONE block per class, per the 2026-09-09 copy instruction. -->
+                        <!-- Selectable, like every other warning-coloured string here —
+                             EmSetupLayoutRowTests.EveryWarningColouredString_IsSelectable is
+                             mechanical about it, and a heading nobody can drag through breaks
+                             a selection that starts above it and ends below. -->
+                        <SelectableTextBlock Classes="colhdr" FontWeight="SemiBold" Text="Warnings"
+                                   Foreground="{DynamicResource CrfWarningBrush}"
+                                   IsVisible="{Binding ViewModel.HasWarnings}"/>
+                        <SelectableTextBlock Text="{Binding ViewModel.WarningsText}"
+                                             Foreground="{DynamicResource CrfWarningBrush}"
+                                             IsVisible="{Binding ViewModel.HasWarnings}"
+                                             TextWrapping="Wrap" FontSize="10"/>
+                        <!-- ONE block, not an ItemsControl of them — an ItemsControl selects one
+                             LINE at a time and copying a report out means dragging each note
+                             separately (owner instruction, 2026-09-09). -->
+                        <SelectableTextBlock Text="{Binding ViewModel.NotesText}"
+                                             TextWrapping="Wrap" FontSize="10" Opacity="0.75"/>
                     </StackPanel>
-                </Grid>
-
                   </StackPanel>
                 </Border>
 
@@ -979,7 +990,9 @@
                 </Border>
 
                 <!-- ── Ports ───────────────────────────────────────────────── -->
-                <Border Classes="group">
+                <!-- Hidden for a 3D setup: its ports — impedance included — are configured in the
+                     Solver group's port table, so there is one place to do it, not two. -->
+                <Border Classes="group" IsVisible="{Binding ViewModel.ShowCircuitRfSolverControls}">
                   <StackPanel Spacing="2">
                 <!-- Owner request, 2026-08-11: the two paragraphs that used to sit in this group are
                      now the group header's TOOLTIP. They explain how ports WORK, which is worth one

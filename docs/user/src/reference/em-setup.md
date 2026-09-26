@@ -108,7 +108,8 @@ the unknown count is what decides whether the run takes seconds or is refused �
 
 {{ui: em-setup-loaded}}
 
-**Analysis** chooses which kernel you are asking for:
+**Analysis** chooses which kernel you are asking for. It sits in the **Solver** group, beside the solver
+picker, and appears only while circuitRF's own solver is chosen:
 
 | Choice | Meaning |
 |---|---|
@@ -124,11 +125,12 @@ while you can still do something about it.
 Asking for a kernel the geometry does not support is refused with the reason, rather than silently
 demoted to the other one.
 
+Everything the extraction resolved goes in the **Notes** group below it, one full-width column.
 **Cross-section** shows a readback — the propagation axis, the signal layer and the ground reference the
 extractor resolved, plus a one-line summary of the conductors it found. Read it. It is the cheapest
 possible check that the tool is looking at the structure you think it is.
 
-**Notes** collects everything the extraction had to say that is not an error: a shape that was merged, a
+The notes themselves collect everything the extraction had to say that is not an error: a shape that was merged, a
 generator-produced instance that was flattened, an inferred port direction. Notes are not warnings, but
 they are the first place to look when a result surprises you.
 
@@ -430,7 +432,7 @@ Compare**. A 3D setup builds a 3D model from the layout, its technology and any 
 settings a 3D run does not read — the surface mesh, adaptive sampling, the port type, the planar
 solver options and the radiation pattern — are hidden while a 3D solver is chosen; they stay in the
 `.cem` and come back when you switch to Planar. What a 3D run does read stays: the frequency sweep,
-each port's Z₀, the return plane, the solve region and the core count. Palace and openEMS each have their own section below, and a setup keeps
+each port's Z₀ (set in the Solver group's port table), the return plane, the solve region and the core count. Palace and openEMS each have their own section below, and a setup keeps
 both, so switching solver never loses the other's settings.
 
 With Palace chosen the panel shows Palace's own settings. **A blank box is the default shown in it**, and
@@ -634,8 +636,11 @@ a step in S11 at the top of the band. A **wave port** has none: it is a region o
 fed by the line's own mode, which Palace computes on that face at every frequency. Palace only; a setup
 naming openEMS or both solvers is refused, and so is its `check`.
 
-The **Ports** table (`Ports3D`) sets each port's kind by its number. Lumped and wave ports may be
-**mixed** in one setup.
+The port table in the **Solver** group lists every port the layout labels, and it is the one place a
+3D setup's ports are configured — the planar **Ports** group is hidden while a 3D solver is chosen. Each
+row sets the port's reference impedance **Z₀** and its kind (`Ports3D`). Lumped and wave ports may be
+**mixed** in one setup. A row whose port the layout no longer labels is leftover settings, and only
+that kind of row can be removed.
 
 ```
 "Ports3D": [ { "Port": 1, "Kind": "Wave" }, { "Port": 2, "Kind": "Wave", "OffsetUm": 500 } ]

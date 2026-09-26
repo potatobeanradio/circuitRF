@@ -1,10 +1,16 @@
 // brief-em3d-23 — the panel's port-kind table, an eigenmode setup's count and target, and the modes a run
 // found.
 //
-// NOTHING THAT AFFECTS THE ANSWER LIVES ONLY HERE (R-em-11): the table writes Ports3D and the two boxes
-// write Eigenmode, each through the same undoable CommitEdit every other control uses. Both are staged
-// text, written when a box loses focus (or the kind picker changes); a row whose port is blank is not
-// written, and a row that states nothing but Lumped is written as nothing (EmPort3D.IsDefault).
+// NOTHING THAT AFFECTS THE ANSWER LIVES ONLY HERE (R-em-11): the table writes Ports3D (and each row's
+// Z0 writes PortZ0s) and the two boxes write Eigenmode, each through the same undoable CommitEdit every
+// other control uses. Both are staged text, written when a box loses focus (or the kind picker
+// changes); a row that states nothing but Lumped is written as nothing (EmPort3D.IsDefault).
+//
+// THE TABLE LISTS EVERY PORT THE LAYOUT HAS (owner report, 2026-09-25: two ports in the layout, one
+// row in the table). It was built from Ports3D alone, and a lumped port at its defaults is written as
+// nothing — so a port nobody had changed had no row, and nothing said it existed. The rows are now the
+// layout's port labels (PortRows, the same extraction the planar list reads) merged with any Ports3D
+// entry, and the table is the ONE place a 3D setup's ports are configured: the Ports group is hidden.
 
 using System.Collections.ObjectModel;
 using System.Globalization;
@@ -22,6 +28,23 @@ public sealed partial class Em3dPortRow : ObservableObject
     internal Action? KindChanged { get; set; }
 
     [ObservableProperty] private string _port = "";
+
+    /// <summary>True when the layout has a label for this port. A row that is only a leftover
+    /// <c>.cem</c> entry — its label since deleted or renumbered — is the only kind that can be removed.</summary>
+    public bool InLayout { get; init; }
+
+    /// <summary>Why the layout's label did not resolve to a conductor, or null.</summary>
+    public string? Problem { get; init; }
+
+    public bool HasProblem => Problem is not null;
+
+    /// <summary>The port's reference impedance, as typed (<c>EmSetup.PortZ0s</c>).</summary>
+    [ObservableProperty] private string _z0Text = "50";
+    [ObservableProperty] private string? _z0Error;
+
+    public bool HasZ0Error => Z0Error is not null;
+
+    partial void OnZ0ErrorChanged(string? value) => OnPropertyChanged(nameof(HasZ0Error));
     [ObservableProperty] private Em3dPortKind _kind = Em3dPortKind.Lumped;
     [ObservableProperty] private string _width = "";
     [ObservableProperty] private string _height = "";
@@ -79,18 +102,36 @@ public sealed partial class EmSetupEditorViewModel
 
     private void SyncEigenFields()
     {
-        foreach (var r in Port3DRows) r.KindChanged = null;
-        Port3DRows.Clear();
-        foreach (var p in Working.Ports3D) Port3DRows.Add(Row(p));
+        RebuildPort3DRows();
         EigenCountText  = Working.Eigenmode?.Count?.ToString(CultureInfo.InvariantCulture) ?? "";
         EigenTargetText = Working.Eigenmode?.TargetGHz?.ToString("R", CultureInfo.InvariantCulture) ?? "";
         EigenFieldError = null;
         RaiseEigenVisibility();
     }
 
-    private Em3dPortRow Row(EmPort3D p) => new()
+    /// <summary>One row per port the layout labels, plus one per Ports3D entry naming a port it does
+    /// not, in port order. Called whenever either side changes: a snapshot applied, or the layout's
+    /// ports re-extracted.</summary>
+    private void RebuildPort3DRows()
+    {
+        foreach (var r in Port3DRows) r.KindChanged = null;
+        Port3DRows.Clear();
+        var numbers = new SortedSet<int>(PortRows.Select(r => r.PortNumber).Where(n => n > 0));
+        numbers.UnionWith(Working.Ports3D.Select(p => p.Port));
+        foreach (int n in numbers)
+        {
+            var layout = PortRows.FirstOrDefault(r => r.PortNumber == n);
+            var saved  = Working.Ports3D.LastOrDefault(p => p.Port == n) ?? new EmPort3D(n);
+            Port3DRows.Add(Row(saved, layout is not null, layout?.Problem));
+        }
+    }
+
+    private Em3dPortRow Row(EmPort3D p, bool inLayout, string? problem) => new()
     {
         Port = p.Port.ToString(CultureInfo.InvariantCulture),
+        InLayout = inLayout,
+        Problem = problem,
+        Z0Text = FormatComplexOhms(Working.ResolvePortZ0(p.Port - 1)),
         Kind = p.Kind,
         Width = p.WidthFactor?.ToString("R", CultureInfo.InvariantCulture) ?? "",
         Height = p.HeightFactor?.ToString("R", CultureInfo.InvariantCulture) ?? "",
@@ -119,7 +160,8 @@ public sealed partial class EmSetupEditorViewModel
                 EigenFieldError = $"Port {n}'s width, height and offset must be numbers, or blank for the default.";
                 return;
             }
-            list.Add(new EmPort3D(n, r.Kind, width, height, offset));
+            var entry = new EmPort3D(n, r.Kind, width, height, offset);
+            if (!entry.IsDefault) list.Add(entry);
         }
         EigenFieldError = null;
         var before = SnapshotJson();
@@ -155,19 +197,19 @@ public sealed partial class EmSetupEditorViewModel
         CommitEdit(before, "Change eigenmode settings");
     }
 
-    [RelayCommand]
-    private void AddPort3D()
+    /// <summary>Writes one row's reference impedance — the same <c>PortZ0s</c> slot the planar list's
+    /// row writes, which is what a 3D run reads (<c>EmSetup.ResolvePortZ0</c>).</summary>
+    public void CommitPort3DZ0(Em3dPortRow row)
     {
-        int next = Port3DRows.Select(r => int.TryParse(r.Port, out int n) ? n : 0).DefaultIfEmpty(0).Max() + 1;
-        var row = Row(new EmPort3D(next, Em3dPortKind.Wave));
-        Port3DRows.Add(row);
-        CommitPorts3D();
+        if (!int.TryParse(row.Port, NumberStyles.Integer, CultureInfo.InvariantCulture, out int n)) return;
+        CommitPortZ0Slot(n, row.Z0Text, e => row.Z0Error = e);
     }
 
+    /// <summary>Removes a leftover entry: a row whose port the layout no longer labels.</summary>
     [RelayCommand]
     private void RemovePort3D(Em3dPortRow? row)
     {
-        if (row is null || !Port3DRows.Remove(row)) return;
+        if (row is null || row.InLayout || !Port3DRows.Remove(row)) return;
         row.KindChanged = null;
         CommitPorts3D();
     }

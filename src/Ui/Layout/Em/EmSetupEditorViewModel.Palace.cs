@@ -54,8 +54,8 @@ public sealed partial class EmSetupEditorViewModel
     /// <summary>The return plane: read by the planar kernel and by the 3D generator's ports.</summary>
     public bool ShowReturnPlane => IsPlanarAnalysis || Is3DSetup;
 
-    /// <summary>Controls every circuitRF-kernel run reads and no 3D run does (the Analysis group —
-    /// kind, kernel and the extraction's notes — the signal conductor, the planar/cross-section
+    /// <summary>Controls every circuitRF-kernel run reads and no 3D run does (the analysis kind and
+    /// kernel beside the solver, the Notes group, the signal conductor, the planar/cross-section
     /// solver options, the radiation pattern).</summary>
     public bool ShowCircuitRfSolverControls => !Is3DSetup;
 
@@ -65,6 +65,7 @@ public sealed partial class EmSetupEditorViewModel
         OnPropertyChanged(nameof(ShowCrossSectionControls));
         OnPropertyChanged(nameof(ShowReturnPlane));
         OnPropertyChanged(nameof(ShowCircuitRfSolverControls));
+        OnPropertyChanged(nameof(ShowNotesGroup));
     }
 
     /// <summary>True when Palace's section is shown.</summary>
