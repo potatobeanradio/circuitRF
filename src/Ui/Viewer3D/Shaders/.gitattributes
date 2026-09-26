@@ -1,0 +1,5 @@
+# brief-em3d-28: the shader hash is over the WGSL's exact bytes, so a CRLF checkout must not touch it.
+*.wgsl -text
+*.metal -text
+*.hlsl -text
+*.spv binary

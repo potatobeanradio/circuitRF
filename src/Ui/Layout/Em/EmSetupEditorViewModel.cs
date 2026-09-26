@@ -1047,6 +1047,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         var afterJson = SnapshotJson();
         if (afterJson == beforeJson) return;
         UndoRedo.Execute(new EmSetupSnapshotCommand(this, beforeJson, afterJson, description));
+        SetupChanged?.Invoke();
     }
 
     internal void ApplySnapshot(string json)
@@ -1055,7 +1056,19 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         Frequency = NewFrequencyVm();
         OnPropertyChanged(nameof(Frequency));
         RebuildAll();
+        SetupChanged?.Invoke();
     }
+
+    /// <summary>brief-em3d-28 R-em3d28-2d — the working setup changed (an edit, an undo or a redo). A 3D
+    /// view of this setup regenerates on it.</summary>
+    public event Action? SetupChanged;
+
+    /// <summary>brief-em3d-28 R-em3d28-5 — Show 3D: the shell opens the 3D view beside this panel.</summary>
+    public Action? Show3DRequested { get; set; }
+
+    /// <summary>Show 3D is offered for a 3D setup — it shows what is about to be solved, before any solve.</summary>
+    [RelayCommand]
+    private void Show3D() => Show3DRequested?.Invoke();
 
     // ── Field commits ──────────────────────────────────────────────────────────────────────────
 

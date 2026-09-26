@@ -1,0 +1,12 @@
+Info    : Running 'gmsh count.geo -' [Gmsh 4.15.2-git, 1 node, max. 1 thread]
+Info    : Started on Fri Sep 25 22:27:06 2026
+Info    : Reading 'count.geo'...
+Info    : Reading 'case.msh'...
+Info    : 203120 nodes
+Info    : 157021 elements
+Info    : Done reading 'case.msh'
+nodes 203120
+triangles 10252
+tetrahedra 146769
+Info    : Done reading 'count.geo'
+Info    : Stopped on Fri Sep 25 22:27:06 2026 (From start: Wall 0.0952111s, CPU 0.159136s)

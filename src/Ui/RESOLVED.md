@@ -35602,3 +35602,57 @@ of a `PortZ0s` slot, shared with the planar list's `CommitPortRow` — and the P
 a 3D setup, so ports are configured in one place. The analysis-type picker moved into the Solver group's
 right column and the old Analysis group became a full-width Notes group gated on `ShowNotesGroup`.
 Gate: `tests/Ui.Tests/Em/Em3dPortTableTests.cs`.
+
+## The 3D view — brief-em3d-28 (2026-09-25)
+
+Built: `src/Render/Scene3D/` (scene model, camera, picking, clip plane, colour maps, the `.msh` reader,
+mesh and FDTD-grid overlays, the generation-numbered `Scene3DSource`, the per-frame `Scene3DFramePlan`),
+`src/Engine/Em3d/Em3dPolygonTriangulation.cs` (the extruded polygon's caps), and `src/Ui/Viewer3D/`
+(one `Viewer3DBackend` contract; Metal, D3D11 and Vulkan backends; the composition-interop pane; the
+document, view model and view). Gates: `tests/Ui.Tests/Viewer3D/` and `tests/Firewall.Tests/GpuFirewallTests.cs`.
+**Nothing of it was seen in a window from the agent's session**; the Metal backend was driven
+offscreen (its ID pass names what the CPU pick names, every pixel's alpha is 255), and the Vulkan
+backend offscreen in a Linux container on a software driver. D3D11 has never run.
+
+- **The brief said the mesh reader reads MSH 2.2 ASCII "the format GmshGeoWriter asks for" — the writer
+  asks for BINARY** (`Mesh.Binary = 1`). `MshReader` reads both, streaming, and refuses with the line
+  and byte offset.
+- **Gmsh's meshing log never prints the final tetrahedron count.** "149252 tetrahedra created" is before
+  optimisation; F0 case A's file holds 146,769. Gate 7 compares against Gmsh's OWN read-back
+  (`gmsh count.geo -`, printing `Mesh.NbTetrahedra`, committed as `gmsh-counts.log`) — and 146,769 is
+  exactly Palace's element total in that run's `palace.log`. F0 case A's mesh is 15.6 MB (9.6 MB
+  gzipped) and is NOT committed: its gate runs when `tools/Viewer3dSpike/data/case.msh` (or
+  `CRF_F0_CASE_A_MSH`) exists and passes silently otherwise; the routine gate runs on
+  `testdata/em3d/viewer/small-mesh/` (a real Gmsh mesh, binary and ASCII, 812 KB).
+- **A default `Camera3D` has a zero field of view, and `CreatePerspectiveFieldOfView` throws on it** —
+  the owner's first run showed "fieldOfView('0')" in the pane for a setup that refused (never fitted).
+  `Viewer3DViewState` now starts with a real camera and `ProjectionMatrix` guards both the angle and a
+  degenerate depth range.
+- **…and that broken camera was SAVED.** Closing the faulted view wrote its zero-distance camera to the
+  `.cwsuser`; reopened, the wheel could not zoom at all (zoom multiplies the distance, and 0 × f = 0)
+  until a view button re-fitted it (owner report). Now a view that never framed a scene persists no
+  camera, a restored camera that is not finite and positive is ignored in favour of the fit, and
+  `ZoomAt` restarts a lost distance from the scene's size.
+- **A setup that refuses over a wave port now DRAWS, with its wave ports shown as lumped** (owner's
+  setup: a wave port whose line stops short of the box face). The refusal is the first note, verbatim,
+  followed by "Shown for inspection…", so the picture is never mistaken for a problem that runs. The
+  view's status and notes are `SelectableTextBlock`s (owner request: copy a refusal to share it).
+- **SPIR-V carries the WGSL hash in `OpSourceExtension`**, not `OpModuleProcessed`, which needs SPIR-V
+  1.1 and so a Vulkan 1.1 driver. Metal's default front-facing winding is CLOCKWISE — the backend sets
+  counter-clockwise, which the clip plane's back-face caps depend on. **Vulkan's `FlipY` is false**:
+  naga's SPIR-V already flips clip y, and flipping again renders upside down (a pick cannot catch it —
+  it reads the same pixel either way).
+- **A compositor that has not released an image SKIPS the frame** (counted), never draws into it: D3D11's
+  keyed mutex and Vulkan's release semaphore both forbid it, and a minimised window may never release.
+- Picking and the hover label ignore the air and the box's faces, which enclose everything else and
+  would otherwise be all a cursor ever found. "Outermost dielectric starts hidden" is read as the
+  dielectric enclosing the most volume.
+- The camera is per-user view state: `CwsFile.Viewer3DCameras`, moved to the `.cwsuser` with the dock
+  layout, keyed by the `.cem`'s workspace-relative path.
+- Owner additions during the build: toolbar buttons for Isometric, Perspective, Orthographic and the six
+  plan views (Material icons; the plan views draw `Viewer3DViewGlyph`, a cube with the viewed face
+  filled, since no Material icon says it), and the lower-left axis indicator with its own toggle.
+  The owner asked for, then withdrew, a "3D EM" results folder — run directories are unchanged.
+- Not done: route B (no platform has been shown unable to present — step 0's Windows and Linux-GPU runs
+  are the owner's, findings §7/§8); a run directory opens the view of the `.cem` whose run it is, found
+  by `Em3dRunService.RunDirectory`, since the directory holds the lowering, not the problem.

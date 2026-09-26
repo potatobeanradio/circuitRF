@@ -1,0 +1,160 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:v3="using:CircuitRF.Ui.Viewer3D"
+             xmlns:s3="using:CircuitRF.Render.Scene3D"
+             xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="CircuitRF.Ui.Views.Viewer3D.Viewer3DView"
+             x:DataType="v3:Viewer3DDocument"
+             Background="{DynamicResource SystemChromeLowColor}">
+
+    <!-- brief-em3d-28 — the 3D view. Read only (F4 is the editor). Toolbar glyphs are Material icons,
+         as in the Layout Editor, except the six plan views, which no Material icon says: those are
+         Viewer3DViewGlyph, an isometric cube with the viewed face filled. -->
+    <UserControl.Styles>
+        <Style Selector="ToggleButton, Button">
+            <Setter Property="Padding" Value="6,3"/>
+        </Style>
+    </UserControl.Styles>
+
+    <DockPanel>
+        <!-- ── Toolbar ─────────────────────────────────────────────────────────── -->
+        <Border DockPanel.Dock="Top" Padding="4,2" BorderThickness="0,0,0,1"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
+            <WrapPanel Orientation="Horizontal" ItemSpacing="4" LineSpacing="4">
+                <Button Command="{Binding ViewModel.FitCommand}" ToolTip.Tip="Fit  (F)">
+                    <mi:MaterialIcon Kind="FitToPage" Width="16" Height="16"/>
+                </Button>
+
+                <Border Width="1" Margin="2,3" Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                <Button Command="{Binding ViewModel.StandardViewCommand}" CommandParameter="{x:Static s3:StandardView3D.Iso}"
+                        ToolTip.Tip="Isometric view  (1)">
+                    <mi:MaterialIcon Kind="CubeOutline" Width="16" Height="16"/>
+                </Button>
+                <ToggleButton IsChecked="{Binding ViewModel.IsPerspective}" ToolTip.Tip="Perspective view  (P)">
+                    <mi:MaterialIcon Kind="PerspectiveMore" Width="16" Height="16"/>
+                </ToggleButton>
+                <ToggleButton IsChecked="{Binding ViewModel.IsOrthographic}" ToolTip.Tip="Orthographic view  (O)">
+                    <mi:MaterialIcon Kind="PerspectiveLess" Width="16" Height="16"/>
+                </ToggleButton>
+
+                <Border Width="1" Margin="2,3" Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                <Button Command="{Binding ViewModel.StandardViewCommand}" CommandParameter="{x:Static s3:StandardView3D.Top}" ToolTip.Tip="Top view, orthographic  (2)">
+                    <v3:Viewer3DViewGlyph Face="Top"/>
+                </Button>
+                <Button Command="{Binding ViewModel.StandardViewCommand}" CommandParameter="{x:Static s3:StandardView3D.Front}" ToolTip.Tip="Front view, orthographic  (3)">
+                    <v3:Viewer3DViewGlyph Face="Front"/>
+                </Button>
+                <Button Command="{Binding ViewModel.StandardViewCommand}" CommandParameter="{x:Static s3:StandardView3D.Right}" ToolTip.Tip="Right view, orthographic  (4)">
+                    <v3:Viewer3DViewGlyph Face="Right"/>
+                </Button>
+                <Button Command="{Binding ViewModel.StandardViewCommand}" CommandParameter="{x:Static s3:StandardView3D.Back}" ToolTip.Tip="Back view, orthographic  (5)">
+                    <v3:Viewer3DViewGlyph Face="Back"/>
+                </Button>
+                <Button Command="{Binding ViewModel.StandardViewCommand}" CommandParameter="{x:Static s3:StandardView3D.Left}" ToolTip.Tip="Left view, orthographic  (6)">
+                    <v3:Viewer3DViewGlyph Face="Left"/>
+                </Button>
+                <Button Command="{Binding ViewModel.StandardViewCommand}" CommandParameter="{x:Static s3:StandardView3D.Bottom}" ToolTip.Tip="Bottom view, orthographic  (7)">
+                    <v3:Viewer3DViewGlyph Face="Bottom"/>
+                </Button>
+
+                <Border Width="1" Margin="2,3" Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                <ToggleButton IsChecked="{Binding ViewModel.ShowAxisIndicator}" ToolTip.Tip="Axis indicator  (A)">
+                    <mi:MaterialIcon Kind="AxisArrow" Width="16" Height="16"/>
+                </ToggleButton>
+                <ToggleButton IsChecked="{Binding ViewModel.ShowDielectrics}" ToolTip.Tip="Dielectrics">
+                    <mi:MaterialIcon Kind="LayersOutline" Width="16" Height="16"/>
+                </ToggleButton>
+                <ToggleButton IsChecked="{Binding ViewModel.ShowAir}" ToolTip.Tip="Air">
+                    <mi:MaterialIcon Kind="CubeScan" Width="16" Height="16"/>
+                </ToggleButton>
+                <ToggleButton IsChecked="{Binding ViewModel.ShowBoundaryFaces}" ToolTip.Tip="Air-box faces, coloured by boundary kind (grey PEC, blue absorbing, orange PMC, violet symmetry)">
+                    <mi:MaterialIcon Kind="TextureBox" Width="16" Height="16"/>
+                </ToggleButton>
+
+                <Border Width="1" Margin="2,3" Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                <ToggleButton IsChecked="{Binding ViewModel.ClipEnabled}" ToolTip.Tip="Clip plane  (C)">
+                    <mi:MaterialIcon Kind="ContentCut" Width="16" Height="16"/>
+                </ToggleButton>
+                <ComboBox ItemsSource="{Binding ViewModel.ClipAxes}" SelectedItem="{Binding ViewModel.ClipAxis}"
+                          IsEnabled="{Binding ViewModel.ClipEnabled}" MinWidth="70" VerticalAlignment="Center"
+                          ToolTip.Tip="The plane's normal: an axis, or the current view direction"/>
+                <Slider Width="140" Minimum="0" Maximum="1" Value="{Binding ViewModel.ClipPosition}"
+                        IsEnabled="{Binding ViewModel.ClipEnabled}" VerticalAlignment="Center"
+                        ToolTip.Tip="Drag the clip plane through the model"/>
+                <ToggleButton IsChecked="{Binding ViewModel.ClipFlip}" IsEnabled="{Binding ViewModel.ClipEnabled}"
+                              ToolTip.Tip="Keep the other side of the plane">
+                    <mi:MaterialIcon Kind="SetSplit" Width="16" Height="16"/>
+                </ToggleButton>
+
+                <Border Width="1" Margin="2,3" Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                <!-- Disabled until Gmsh has run, with the tooltip saying so (R-em3d28-3b). A disabled
+                     control shows no tooltip unless asked to. -->
+                <ToggleButton IsChecked="{Binding ViewModel.ShowMesh}" IsEnabled="{Binding ViewModel.MeshAvailable}"
+                              ToolTip.Tip="{Binding ViewModel.MeshTip}" ToolTip.ShowOnDisabled="True">
+                    <mi:MaterialIcon Kind="VectorTriangle" Width="16" Height="16"/>
+                </ToggleButton>
+                <ToggleButton IsChecked="{Binding ViewModel.ShowGrid}" IsEnabled="{Binding ViewModel.GridAvailable}"
+                              ToolTip.Tip="{Binding ViewModel.GridTip}" ToolTip.ShowOnDisabled="True">
+                    <mi:MaterialIcon Kind="GridLarge" Width="16" Height="16"/>
+                </ToggleButton>
+
+                <Border Width="1" Margin="2,3" Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                <ToggleButton IsChecked="{Binding ViewModel.ShowTree}" ToolTip.Tip="Object tree">
+                    <mi:MaterialIcon Kind="FileTreeOutline" Width="16" Height="16"/>
+                </ToggleButton>
+            </WrapPanel>
+        </Border>
+
+        <!-- ── Status ──────────────────────────────────────────────────────────── -->
+        <Border DockPanel.Dock="Bottom" Padding="6,2" BorderThickness="0,1,0,0"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
+            <!-- Selectable (owner, 2026-09-25): a refusal or a note is something a user copies to share
+                 with someone else — select it, or right-click ▸ Copy. -->
+            <StackPanel Spacing="1">
+                <DockPanel>
+                    <SelectableTextBlock DockPanel.Dock="Right" FontSize="11" Text="{Binding ViewModel.CursorText}"/>
+                    <SelectableTextBlock FontSize="11" Text="{Binding ViewModel.Status}" TextWrapping="Wrap"/>
+                </DockPanel>
+                <SelectableTextBlock FontSize="11" Text="{Binding ViewModel.MeshText}" IsVisible="{Binding ViewModel.MeshText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                <SelectableTextBlock FontSize="11" Text="{Binding ViewModel.Notes}" TextWrapping="Wrap" Opacity="0.85"
+                                     IsVisible="{Binding ViewModel.Notes, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+            </StackPanel>
+        </Border>
+
+        <Grid ColumnDefinitions="Auto,*">
+            <!-- ── The object tree (R-em3d28-4c) ───────────────────────────────── -->
+            <Border Grid.Column="0" Width="230" IsVisible="{Binding ViewModel.ShowTree}" BorderThickness="0,0,1,0"
+                    BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
+                <TreeView x:Name="ObjectTree" ItemsSource="{Binding ViewModel.Tree}"
+                          SelectedItem="{Binding ViewModel.SelectedItem, Mode=TwoWay}">
+                    <TreeView.DataTemplates>
+                        <TreeDataTemplate DataType="v3:Viewer3DTreeGroup" ItemsSource="{Binding Items}">
+                            <TextBlock Text="{Binding Header}" FontWeight="SemiBold"/>
+                        </TreeDataTemplate>
+                        <DataTemplate DataType="v3:Viewer3DTreeItem">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <CheckBox IsChecked="{Binding IsVisible}" MinWidth="0" Padding="0" ToolTip.Tip="Visible"/>
+                                <TextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
+                                <TextBlock Text="{Binding Detail}" Opacity="0.6" FontSize="11" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </TreeView.DataTemplates>
+                </TreeView>
+            </Border>
+
+            <!-- ── The pane, and its 2D chrome ─────────────────────────────────── -->
+            <Panel Grid.Column="1">
+                <v3:Viewer3DPane x:Name="Pane" DataContext="{Binding ViewModel}"/>
+                <v3:Viewer3DOverlay x:Name="Overlay" DataContext="{Binding ViewModel}"/>
+                <SelectableTextBlock x:Name="FaultText" IsVisible="False" TextWrapping="Wrap" Margin="24"
+                                     HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Panel>
+        </Grid>
+    </DockPanel>
+</UserControl>

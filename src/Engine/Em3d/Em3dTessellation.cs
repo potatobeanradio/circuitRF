@@ -14,9 +14,11 @@
 // ring k + 1 using the ring's own Point3 values, which is what makes two consecutive prisms share
 // their joint face exactly: the same numbers, not two computations of them (R-em3d5-1b).
 //
-// NOT HERE: an extruded polygon. Its caps need a polygon triangulation with holes, and nothing in this
-// brief needs one — its section is cut analytically and its outline is its rings. F2 adds the cap
-// triangulation when its viewer needs it; until then Of() says so rather than returning half a solid.
+// AN EXTRUDED POLYGON (brief-em3d-28 R-em3d28-2a): its side walls join each ring's bottom vertex to its
+// top one, and its two caps come from Em3dPolygonTriangulation over the SAME ring vertices, so walls and
+// caps share their corners. A collinear point the triangulator drops stays on the wall, which leaves a
+// T-junction on the cap's edge — still a closed surface, and the one the viewer draws. A sheet
+// (Em3dSheet) is its cap alone, at its height (OfSheet).
 
 namespace CircuitRF.Engine.Em3d;
 
@@ -44,8 +46,6 @@ public static class Em3dTessellation
     public const int SphereBands = 16;
 
     /// <summary>The triangles of <paramref name="solid"/>, every one tagged with its name.</summary>
-    /// <exception cref="NotSupportedException">An <see cref="Em3dExtrudedPolygon"/>: see the file's
-    /// header.</exception>
     public static Em3dTriangleMesh Of(Em3dSolid solid)
     {
         ArgumentNullException.ThrowIfNull(solid);
@@ -60,10 +60,7 @@ public static class Em3dTessellation
                 b.Sphere(t.Center, t.Radius,
                          Math.Max(t.ZMin - t.Center.Z, -t.Radius), Math.Min(t.ZMax - t.Center.Z, t.Radius));
                 break;
-            case Em3dExtrudedPolygon:
-                throw new NotSupportedException(
-                    $"Solid '{solid.Name}' is an extruded polygon, whose caps need a polygon triangulation " +
-                    "this build does not have. Its sections and outline are exact without one.");
+            case Em3dExtrudedPolygon e:    b.Extrusion(e.Outline, e.Holes, e.ZBottom, e.ZTop); break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(solid), solid.Primitive.GetType().Name,
                                                       "unknown primitive");
@@ -71,8 +68,19 @@ public static class Em3dTessellation
         return new Em3dTriangleMesh(b.Vertices, b.Triangles);
     }
 
-    /// <summary>Whether <see cref="Of"/> accepts this primitive.</summary>
-    public static bool CanTessellate(Em3dPrimitive p) => p is not Em3dExtrudedPolygon;
+    /// <summary>Whether <see cref="Of"/> accepts this primitive — every primitive, since brief 28 gave
+    /// the extruded polygon its caps.</summary>
+    public static bool CanTessellate(Em3dPrimitive p) => p is not null;
+
+    /// <summary>A sheet's triangles: its polygon at its height, CCW seen from +z, tagged with its
+    /// name. Its thickness is a number the solver reads, not geometry (§6.1), so it is not drawn.</summary>
+    public static Em3dTriangleMesh OfSheet(Em3dSheet sheet)
+    {
+        ArgumentNullException.ThrowIfNull(sheet);
+        var b = new Builder(sheet.Name);
+        b.Flat(sheet.Outline, sheet.Holes, sheet.Z);
+        return new Em3dTriangleMesh(b.Vertices, b.Triangles);
+    }
 
     private sealed class Builder(string name)
     {
@@ -184,6 +192,56 @@ public static class Em3dTessellation
             }
             if (!southPole) Cap(rings[0], new Point3(c.X, c.Y, c.Z + zLo), reverse: true);
             if (!northPole) Cap(rings[^1], new Point3(c.X, c.Y, c.Z + zHi), reverse: false);
+        }
+
+        public void Extrusion(IReadOnlyList<Point2> outline, IReadOnlyList<IReadOnlyList<Point2>> holes,
+                              double zBottom, double zTop)
+        {
+            var rings = new List<IReadOnlyList<Point2>>(1 + holes.Count) { outline };
+            rings.AddRange(holes);
+            int total = 0;
+            foreach (var r in rings) total += r.Count;
+            int[] bottom = new int[total], top = new int[total];
+            int k = 0;
+            foreach (var r in rings)
+                foreach (var p in r)
+                {
+                    bottom[k] = V(new Point3(p.X, p.Y, zBottom));
+                    top[k]    = V(new Point3(p.X, p.Y, zTop));
+                    k++;
+                }
+
+            foreach (var t in Em3dPolygonTriangulation.Triangulate(outline, holes))
+            {
+                T(top[t.A], top[t.B], top[t.C]);
+                T(bottom[t.A], bottom[t.C], bottom[t.B]);
+            }
+
+            // Walls: outward, so the outline is walked counter-clockwise and a hole clockwise.
+            int start = 0;
+            for (int r = 0; r < rings.Count; r++)
+            {
+                var ring = rings[r];
+                int n = ring.Count;
+                bool forward = (Em3dPolygonTriangulation.SignedArea2(ring) > 0) == (r == 0);
+                for (int i = 0; i < n; i++)
+                {
+                    int j = (i + 1) % n;
+                    if (ring[i] == ring[j]) continue;
+                    var (a, c) = forward ? (start + i, start + j) : (start + j, start + i);
+                    Quad(bottom[a], bottom[c], top[c], top[a]);
+                }
+                start += n;
+            }
+        }
+
+        public void Flat(IReadOnlyList<Point2> outline, IReadOnlyList<IReadOnlyList<Point2>> holes, double z)
+        {
+            int first = Vertices.Count;
+            foreach (var p in outline) V(new Point3(p.X, p.Y, z));
+            foreach (var h in holes) foreach (var p in h) V(new Point3(p.X, p.Y, z));
+            foreach (var t in Em3dPolygonTriangulation.Triangulate(outline, holes))
+                T(first + t.A, first + t.B, first + t.C);
         }
 
         /// <summary>A fan from <paramref name="centre"/> over a convex ring.</summary>

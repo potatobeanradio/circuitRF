@@ -8,6 +8,10 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <!-- brief-em3d-28: the 3D view's GPU backends call the OS's graphics APIs directly (Metal through
+         the Objective-C runtime; D3D11 and Vulkan through Vortice's managed bindings and raw
+         pointers), which is what keeps route A free of any native package (R-em3d28-1c). -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <!--
@@ -227,6 +231,10 @@
        framework-free). Embedding is also what makes them present in a compiled/published build —
        a loose folder beside the executable would not survive `dotnet publish`. -->
   <ItemGroup>
+    <!-- brief-em3d-28 R-em3d28-1c: the 3D view's shaders, generated from Viewer3D/Shaders/scene.wgsl by
+         tools/ShaderGen and committed. The WGSL itself is embedded too, so a test can prove each
+         generated file came from THIS source. -->
+    <EmbeddedResource Include="Viewer3D\Shaders\scene.*" LogicalName="CircuitRF.Ui.Viewer3D.Shaders.%(Filename)%(Extension)" />
     <EmbeddedResource Include="resources\schematic-templates\*.csch" />
 
     <!-- Documentation schematics. Real, authored .csch files read through the SAME reader as
@@ -425,6 +433,17 @@
          no native dependency, clears the root CLAUDE.md bar on native deps. README acknowledgment
          already in place. -->
     <PackageReference Include="Clipper2" Version="1.5.4" />
+
+    <!-- brief-em3d-28 R-em3d28-1c — route A's D3D11 (Windows) and Vulkan (Linux) backends of the 3D
+         view. MANAGED bindings only, MIT: each .nupkg (and every dependency it pulls — Vortice.DirectX,
+         Vortice.Mathematics, SharpGen.Runtime(.COM) 2.4.2-beta, the pin Vortice 3.8.3 itself requires)
+         was unpacked and carries lib/ assemblies only, no runtimes/*/native payload. The DLLs they call
+         (d3d11, dxgi, d3dcompiler_47) are Windows'; libvulkan.so.1 is the system's or the driver's.
+         So this adds no native dependency (docs/design/em-3d-f2-spike-findings.md §3). -->
+    <PackageReference Include="Vortice.Direct3D11" Version="3.8.3" />
+    <PackageReference Include="Vortice.DXGI" Version="3.8.3" />
+    <PackageReference Include="Vortice.D3DCompiler" Version="3.8.3" />
+    <PackageReference Include="Vortice.Vulkan" Version="3.2.3" />
   </ItemGroup>
 
   <!--

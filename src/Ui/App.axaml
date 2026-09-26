@@ -28,6 +28,8 @@
              xmlns:wb="using:CircuitRF.Ui.WBond"
              xmlns:wbv="using:CircuitRF.Ui.Views.WBond"
              xmlns:ddv="using:CircuitRF.Ui.Views.DataDisplay"
+             xmlns:v3d="using:CircuitRF.Ui.Viewer3D"
+             xmlns:v3dv="using:CircuitRF.Ui.Views.Viewer3D"
              xmlns:lay="using:CircuitRF.Ui.Layout"
              xmlns:em="using:CircuitRF.Ui.Layout.Em"
              xmlns:layv="using:CircuitRF.Ui.Views.Layout"
@@ -125,6 +127,9 @@
             <layv:TechEditorView/>
         </DataTemplate>
 
+        <DataTemplate DataType="{x:Type v3d:Viewer3DDocument}">
+            <v3dv:Viewer3DView/>
+        </DataTemplate>
         <DataTemplate DataType="{x:Type em:EmSetupDocument}">
             <layv:EmSetupEditorView/>
         </DataTemplate>

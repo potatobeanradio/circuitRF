@@ -40,6 +40,8 @@ sealed class App : Application
             d.MainWindow = new MainWindow(session);
             d.ShutdownRequested += (_, _) => { if (session.FirstPrint()) MainWindow.PrintSummary(session); };
             d.Exit += (_, _) => { if (session.FirstPrint()) MainWindow.PrintSummary(session); };
+            if (Program.ExitAfter > 0)
+                DispatcherTimer.RunOnce(() => d.Shutdown(), TimeSpan.FromSeconds(Program.ExitAfter));
         }
         base.OnFrameworkInitializationCompleted();
     }
@@ -120,7 +122,8 @@ sealed class MainWindow : Window
         timer.Start();
     }
 
-    static string RouteName(string r) => r switch { "gl" => "C: OpenGlControlBase", "metal" => "A: composition interop + Metal", "wgpu" => "B: composition interop + WebGPU/wgpu", _ => r };
+    static string RouteName(string r) => r switch { "gl" => "C: OpenGlControlBase", "metal" => "A: composition interop + Metal", "wgpu" => "B: composition interop + WebGPU/wgpu",
+        "d3d11" => "A: composition interop + D3D11", "vulkan" => "A: composition interop + Vulkan", _ => r };
 
     void Kick()
     {

@@ -53,6 +53,22 @@ public sealed class CwsHistoryFilter
 }
 
 /// <summary>
+/// brief-em3d-28 R-em3d28-5 — where one 3D view's camera was, so reopening the view puts it back. It is
+/// view state, not design: it lives with the dock layout in the <c>.cwsuser</c>, never in the
+/// <c>.cem</c>. Scene-local metres and radians, as <c>Camera3D</c> holds them.
+/// </summary>
+public sealed class CwsCamera3D
+{
+    public double TargetX { get; set; }
+    public double TargetY { get; set; }
+    public double TargetZ { get; set; }
+    public double Yaw { get; set; }
+    public double Pitch { get; set; }
+    public double Distance { get; set; }
+    public bool Orthographic { get; set; }
+}
+
+/// <summary>
 /// The per-user half of a workspace — everything that is a property of one person's session rather
 /// than of the project. Written beside the <c>.cws</c> as <c>.cwsuser</c>, the same no-stem
 /// convention the <c>.cws</c> already uses.
@@ -135,10 +151,16 @@ public sealed class CwsUserFile
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public CwsHistoryFilter? HistoryFilter { get; set; }
 
+    /// <summary>brief-em3d-28 R-em3d28-5 — each 3D view's camera, by its <c>.cem</c>'s path relative to
+    /// the workspace root (forward slashes). Null when no 3D view has been opened.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Dictionary<string, CwsCamera3D>? Viewer3DCameras { get; set; }
+
     /// <summary>True when this carries nothing worth a file — the state in which no sidecar is written.</summary>
     internal bool IsEmpty =>
         DockLayout is null && TreeViewState is null && OpenDocuments is null &&
-        ActiveDocumentPath is null && ColorSchemeName is null && HistoryFilter is null;
+        ActiveDocumentPath is null && ColorSchemeName is null && HistoryFilter is null &&
+        Viewer3DCameras is null;
 }
 
 /// <summary>
@@ -177,6 +199,7 @@ public static class WorkspaceUserPersistence
         nameof(CwsFile.OpenDocuments),
         nameof(CwsFile.ActiveDocumentPath),
         nameof(CwsFile.ColorSchemeName),
+        nameof(CwsFile.Viewer3DCameras),
     ];
 
     /// <summary>The per-user half of <paramref name="ws"/>, lifted out for the sidecar.</summary>
@@ -188,13 +211,14 @@ public static class WorkspaceUserPersistence
         OpenDocuments      = ws.OpenDocuments,
         ActiveDocumentPath = ws.ActiveDocumentPath,
         ColorSchemeName    = ws.ColorSchemeName,
+        Viewer3DCameras    = ws.Viewer3DCameras,
     };
 
     /// <summary>
     /// Overlays a loaded sidecar onto the <c>.cws</c> half, giving callers the one merged
     /// <see cref="CwsFile"/> shape they already hold.
     ///
-    /// <para><b>The sidecar is authoritative for all six, including the ones it leaves null.</b>
+    /// <para><b>The sidecar is authoritative for all seven, including the ones it leaves null.</b>
     /// Anything else would resurrect a stale copy left in an older <c>.cws</c> after the user had
     /// closed the tab it names.</para>
     /// </summary>
@@ -206,6 +230,7 @@ public static class WorkspaceUserPersistence
         ws.OpenDocuments      = user.OpenDocuments;
         ws.ActiveDocumentPath = user.ActiveDocumentPath;
         ws.ColorSchemeName    = user.ColorSchemeName;
+        ws.Viewer3DCameras    = user.Viewer3DCameras;
     }
 
     /// <summary>The sidecar beside a given <c>.cws</c> path.</summary>

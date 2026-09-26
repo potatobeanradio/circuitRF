@@ -1,5 +1,7 @@
+using Viewer3dSpike.Render.Direct3D;
 using Viewer3dSpike.Render.Gl;
 using Viewer3dSpike.Render.Metal;
+using Viewer3dSpike.Render.Vk;
 using Viewer3dSpike.Render.Wgpu;
 using Viewer3dSpike.Scene;
 
@@ -125,4 +127,54 @@ sealed unsafe class WgpuBridgeBackend : IHarnessBackend
     public int DrawCalls => _r.DrawCallsLastFrame;
     public byte[] Screenshot() => _reader.ReadBgra(_target, _w, _h);
     public void Dispose() => _r?.Dispose();
+}
+
+/// <summary>Route A, Windows half (brief em3d-28 step 0): D3D11 into a plain R8G8B8A8 texture. The HLSL is
+/// the committed ShaderGen output, compiled here by the OS's d3dcompiler_47.</summary>
+sealed class D3D11Backend : IHarnessBackend
+{
+    D3D11Renderer _r = null!;
+    Vortice.Direct3D11.ID3D11Texture2D _tex = null!;
+    Vortice.Direct3D11.ID3D11RenderTargetView _rtv = null!;
+    int _w, _h;
+    public string Info => _r.Info + " (offscreen R8G8B8A8 texture; HLSL from the WGSL by tools/ShaderGen)";
+    public void Init(SceneModel scene, FrameCounters counters, int w, int h)
+    {
+        if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("route A's D3D11 half runs on Windows only");
+        _w = w; _h = h;
+        _r = new D3D11Renderer(counters);
+        _r.Init(scene, File.ReadAllText(ShaderFiles.Find("scene.hlsl")));
+        _tex = _r.NewTarget(w, h, shared: false);
+        _rtv = _r.TargetView(_tex);
+    }
+    public void Frame(in FrameInput input) => _r.Render(_rtv, input);
+    public void EndOfFrame() { }
+    public uint Hovered => _r.HoveredId;
+    public bool PickPending => _r.PickPending;
+    public int DrawCalls => _r.DrawCallsLastFrame;
+    public byte[] Screenshot() => _r.ReadRgba(_tex, _w, _h);
+    public void Dispose() { _rtv?.Dispose(); _tex?.Dispose(); _r?.Dispose(); }
+}
+
+/// <summary>Route A, Linux half (brief em3d-28 step 0): Vulkan into a plain R8G8B8A8 image, left in
+/// TRANSFER_SRC_OPTIMAL each frame exactly as the pane leaves its exported one. The SPIR-V is the
+/// committed ShaderGen output. Runs on any OS with a Vulkan loader and driver.</summary>
+sealed class VulkanBackend : IHarnessBackend
+{
+    VulkanRenderer _r = null!;
+    VulkanTarget _t = null!;
+    public string Info => _r.Info + " (offscreen R8G8B8A8 image; SPIR-V from the WGSL by tools/ShaderGen)";
+    public void Init(SceneModel scene, FrameCounters counters, int w, int h)
+    {
+        _r = new VulkanRenderer(counters);
+        _r.Init(scene, File.ReadAllBytes(ShaderFiles.Find("scene.spv")));
+        _t = _r.NewTarget(w, h, exportable: false);
+    }
+    public void Frame(in FrameInput input) => _r.Render(_t, input);
+    public void EndOfFrame() { }
+    public uint Hovered => _r.HoveredId;
+    public bool PickPending => _r.PickPending;
+    public int DrawCalls => _r.DrawCallsLastFrame;
+    public byte[] Screenshot() => _r.ReadRgba(_t);
+    public void Dispose() { if (_t != null) _r.DestroyTarget(_t); _r?.Dispose(); }
 }

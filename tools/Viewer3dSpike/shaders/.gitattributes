@@ -1,0 +1,5 @@
+# ShaderGen hashes the WGSL's exact bytes (tools/ShaderGen/README.md): never let a checkout rewrite them.
+*.wgsl -text
+*.metal -text
+*.hlsl -text
+*.spv binary

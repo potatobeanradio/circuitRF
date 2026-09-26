@@ -5,6 +5,9 @@
 **Area:** `src/Render/Scene3D/` (new: no GPU, no Avalonia), `src/Engine/Em3d/Em3dTessellation.cs`
 (extruded-polygon caps), `src/Ui/Viewer3D/` (new: the GPU backends and surface only), the `.cem` panel
 (*Show 3D*), the Dock document factory, `tools/Viewer3dSpike/` (step 0 only)
+**Status:** BUILT 2026-09-25, uncommitted. Owner checks (§7) and step 0's Windows / Linux-GPU runs
+pending; D3D11 never run; pixels seen only offscreen (Metal, and Vulkan on a software driver).
+Findings: `src/Ui/RESOLVED.md` §"The 3D view — brief-em3d-28"; step 0: `em-3d-f2-spike-findings.md` §8.
 **Depends on:** 27; **D3 decided 2026-09-25 — route A primary, route B secondary** (§1c) · **Blocks:** 29
 
 ---

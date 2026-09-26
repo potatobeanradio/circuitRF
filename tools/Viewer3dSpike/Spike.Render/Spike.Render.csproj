@@ -5,6 +5,10 @@
     headless harness and the Avalonia pane drive the same code. No NuGet package: GL is loaded by
     GetProcAddress, Metal through the Objective-C runtime, wgpu-native through NativeLibrary from
     tools/Viewer3dSpike/native/ (fetched by fetch-wgpu.sh / fetch-wgpu.ps1, never committed).
+
+    Brief em3d-28 step 0 adds route A's other two halves, through MANAGED bindings only (each .nupkg
+    checked: lib/ assemblies, no runtimes/*/native payload). D3D11/DXGI/d3dcompiler_47 are the OS's;
+    libvulkan.so.1 / vulkan-1.dll is the OS or driver loader. Nothing native is shipped.
   -->
 
   <PropertyGroup>
@@ -14,6 +18,13 @@
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Vortice.Direct3D11" Version="3.8.3" />
+    <PackageReference Include="Vortice.DXGI" Version="3.8.3" />
+    <PackageReference Include="Vortice.D3DCompiler" Version="3.8.3" />
+    <PackageReference Include="Vortice.Vulkan" Version="3.2.3" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="../Spike.Scene/Spike.Scene.csproj" />

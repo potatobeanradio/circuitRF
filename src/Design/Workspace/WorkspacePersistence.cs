@@ -145,6 +145,14 @@ public sealed class CwsFile
     public CwsHistoryFilter? HistoryFilter { get; set; }
 
     /// <summary>
+    /// brief-em3d-28 R-em3d28-5 — each 3D view's camera, keyed by its <c>.cem</c>'s workspace-relative
+    /// path. View state, so it is <b>persisted in the sibling <c>.cwsuser</c></b> with the dock layout,
+    /// never in the <c>.cem</c> — the camera is not part of the design.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Dictionary<string, CwsCamera3D>? Viewer3DCameras { get; set; }
+
+    /// <summary>
     /// Documents open in the main DocumentDock when the workspace was last saved.
     /// Null or empty means no documents to restore (welcome stub is shown).
     /// Scratch documents are never persisted here.

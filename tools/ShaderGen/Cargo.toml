@@ -1,0 +1,18 @@
+[package]
+name = "shadergen"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "circuitRF build tool: one WGSL source -> committed MSL, HLSL and SPIR-V, each recording the WGSL's SHA-256"
+license = "MIT"
+
+# Build-time only. Nothing here is shipped, and nothing in circuitrf.slnx references it.
+# naga is pinned EXACTLY: a different naga may emit different (still valid) text, and the committed
+# outputs are compared byte for byte by `--check`'s callers only through the recorded hash, so an
+# unpinned upgrade would silently churn every generated file on the next regeneration.
+[dependencies]
+naga = { version = "=30.0.1", features = ["wgsl-in", "msl-out", "hlsl-out", "spv-out", "spv-in"] }
+sha2 = "=0.10.9"
+
+[profile.release]
+opt-level = 2

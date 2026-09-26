@@ -1,5 +1,7 @@
 using System.Numerics;
+using Viewer3dSpike.Render.Direct3D;
 using Viewer3dSpike.Render.Metal;
+using Viewer3dSpike.Render.Vk;
 using Viewer3dSpike.Render.Wgpu;
 using Viewer3dSpike.Scene;
 
@@ -22,6 +24,8 @@ public sealed class Session
     public readonly FrameCounters Render = new("render-thread");
     public MetalRenderer? Metal;
     public WgpuRenderer? Wgpu;
+    public D3D11Renderer? D3D11;          // route A, Windows (brief em3d-28 step 0)
+    public VulkanRenderer? Vulkan;        // route A, Linux
     public string DeviceInfo = "(not initialised)";
     public string HostInfo = "";
     public int Inits, GlRenderCalls;

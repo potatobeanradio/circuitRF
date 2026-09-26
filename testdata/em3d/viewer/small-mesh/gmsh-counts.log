@@ -1,0 +1,12 @@
+Info    : Running 'gmsh count.geo -' [Gmsh 4.15.2-git, 1 node, max. 1 thread]
+Info    : Started on Fri Sep 25 22:27:16 2026
+Info    : Reading 'count.geo'...
+Info    : Reading 'small-binary.msh'...
+Info    : 4962 nodes
+Info    : 3311 elements
+Info    : Done reading 'small-binary.msh'
+nodes 4962
+triangles 348
+tetrahedra 2963
+Info    : Done reading 'count.geo'
+Info    : Stopped on Fri Sep 25 22:27:16 2026 (From start: Wall 0.00404267s, CPU 0.078579s)

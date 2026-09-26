@@ -7,7 +7,7 @@ using Viewer3dSpike.Scene;
 // Brief em3d-27 §3: the counter harness. Drives one route's renderer OFFSCREEN (no window, no
 // Avalonia) through an orbit, with a moving pick every frame, paced at a display rate, and asserts
 // the counters. Usage:
-//   dotnet run -c Release --project Spike.Harness -- --route gl|metal|wgpu [--msh case.msh]
+//   dotnet run -c Release --project Spike.Harness -- --route gl|metal|wgpu|d3d11|vulkan [--msh case.msh]
 //          [--frames 300] [--size 1600x1000] [--tris 1000000] [--hz 60] [--png out.png]
 var opt = Args.Parse(args);
 var sw = Stopwatch.StartNew();
@@ -39,7 +39,9 @@ using IHarnessBackend backend = opt.Route switch
     "metal" => new MetalBackend(),
     "wgpu" => new WgpuBackend(),
     "wgpu-bridge" => new WgpuBridgeBackend(),
-    _ => throw new ArgumentException("--route gl|metal|wgpu")
+    "d3d11" => new D3D11Backend(),
+    "vulkan" => new VulkanBackend(),
+    _ => throw new ArgumentException("--route gl|metal|wgpu|wgpu-bridge|d3d11|vulkan")
 };
 sw.Restart();
 backend.Init(scene, counters, opt.W, opt.H);

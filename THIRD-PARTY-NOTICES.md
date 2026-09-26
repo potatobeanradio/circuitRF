@@ -77,6 +77,8 @@ None of these impose obligations beyond retaining their notices.
 | CommunityToolkit.Mvvm | MIT | https://github.com/CommunityToolkit/dotnet |
 | Dock.Avalonia (+ `Model.Mvvm`, `Themes.Fluent`) | MIT | https://github.com/wieslawsoltes/Dock |
 | Material.Icons.Avalonia | MIT | https://github.com/SKProCH/Material.Icons |
+| Vortice.Direct3D11, `.DXGI`, `.D3DCompiler`, `.DirectX`, `.Mathematics`, Vortice.Vulkan — the 3D view's managed Windows and Linux GPU bindings (no native code; the OS supplies the drivers) | MIT | https://github.com/amerkoleci/Vortice.Windows |
+| SharpGen.Runtime, `.COM` (pulled in by Vortice) | MIT | https://github.com/SharpGenTools/SharpGenTools |
 | NumFlat | MIT | https://github.com/sinshu/numflat |
 | FftFlat | MIT | https://github.com/sinshu/FftFlat |
 | PureHDF | MIT | https://github.com/Apollo3zehn/PureHDF |
@@ -85,6 +87,10 @@ None of these impose obligations beyond retaining their notices.
 | Markdig | BSD-2-Clause | https://github.com/xoofx/markdig |
 | Svg (svg-net) | Microsoft Public License (MS-PL) | https://github.com/svg-net/SVG |
 | xunit, Microsoft.NET.Test.Sdk, coverlet.collector | MIT / Apache-2.0 | *(test-time only; not shipped)* |
+
+`naga` (MIT OR Apache-2.0, https://github.com/gfx-rs/wgpu) is used by `tools/ShaderGen` at build time
+only, to cross-compile the 3D view's one WGSL shader to MSL, HLSL and SPIR-V; the generated files
+are committed and naga itself does not ship.
 
 `Svg` (MS-PL) and `Svg.Skia` are used by `tools/IconGen`, which rasterises the committed brand SVGs
 into the `.icns`/`.ico`/`.png` containers at packaging time. `IconGen` is not part of

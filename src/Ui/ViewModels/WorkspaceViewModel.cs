@@ -1991,6 +1991,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             // state, and both go to the `.cwsuser` through this one write.
             ws.HistoryFilter = HistoryFilterToPersist();
 
+            // brief-em3d-28 R-em3d28-5 — each 3D view's camera, per-user view state like the rest.
+            ws.Viewer3DCameras = Viewer3DCamerasToPersist();
+
             if (_factory.ProjectTreeTool?.FilterState is { } fs)
             {
                 ws.TreeViewState = new CwsTreeViewState
@@ -7708,6 +7711,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             };
             vm.SaveError        += m => Messages.Error(m);
             vm.EmSetupSaved     += p => Messages.Success("Saved", p);
+            // brief-em3d-28 R-em3d28-5: Show 3D opens the view beside the setup, and an edit to the
+            // setup regenerates any 3D view of it (R-em3d28-2d).
+            vm.Show3DRequested  = () => OpenOrActivate3DView(vm.FilePath);
+            vm.SetupChanged     += () => Invalidate3DViews(vm.FilePath);
             // R-em-15/17: the mesh "renders automatically in the layout view" (D2), and is dropped
             // there the moment the setup's own state says it is no longer current.
             vm.AnalysisRefreshed += () => PushEmMeshToLayout(vm);
@@ -8464,6 +8471,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 vm.InvalidateMesh();
                 vm.Refresh();
             }
+
+            // brief-em3d-28 R-em3d28-2d: a 3D view of a setup over this layout regenerates too.
+            foreach (var view in _openDocsByPath.Values.OfType<Viewer3D.Viewer3DDocument>().ToList())
+                if (EmSetupLayoutPathOf(view.CemPath) is { } target &&
+                    string.Equals(target, key, StringComparison.OrdinalIgnoreCase))
+                    view.ViewModel.Invalidate();
         }, DispatcherPriority.Background);
     }
 
@@ -8712,6 +8725,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 vm.CancelRequested = null;
                 vm.StopRequested   = null;
                 vm.StopIsCancel    = false;
+                // brief-em3d-28 R-em3d28-3b: a Palace run leaves a mesh; an open 3D view offers it now.
+                if (setup.Is3D) Refresh3DViewOverlays(vm.FilePath);
             }
         }
 
@@ -10977,6 +10992,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // bookmarked path is normally outside the workspace and foreignness is decided by the file's
         // own path (brief-foreign-documents.md §1.1), not by the surface it was opened from.
         var kind = node.Kind;
+        // brief-em3d-28 R-em3d28-5 — a Palace or openEMS run directory opens the 3D view of the
+        // setup that made it, with its mesh.
+        if ((kind == NodeKind.UserFolder || (kind == NodeKind.KnownFile && node.IsDirectory))
+            && TryOpenRunDirectory3D(node.AbsolutePath))
+            return;
         if (kind == NodeKind.KnownFile)
         {
             if (node.IsDirectory) return;                       // a folder bookmark opens nothing
@@ -16315,6 +16335,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // clean or already-saved document has none), so this is safe to call unconditionally.
         if (dockable is TechDocument closedTechDoc)
             _techCache.ClearLive(closedTechDoc.FilePath);
+
+        // brief-em3d-28 R-em3d28-5: keep where its camera was, then free its GPU session.
+        if (dockable is Viewer3D.Viewer3DDocument closed3D) Closed3DView(closed3D);
 
         // Unsubscribe from cell edit model events to prevent memory leaks.
         if (dockable is CellParameterEditorDocument cellDoc)
