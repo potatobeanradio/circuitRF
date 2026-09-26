@@ -190,6 +190,37 @@ public class RadiationPatternUiTests
         Directory.Delete(dir, true);
     }
 
+    /// <summary>
+    /// <b>brief-em3d-31 — a 3D solver shows the group again</b>, through its own <c>ShowRadiationPattern</c>
+    /// rather than a widened <c>ShowCircuitRfSolverControls</c> (which still hides what no 3D run reads), and
+    /// disables it only on a problem that radiates nothing in a driven sense. The planar-only reasons do not
+    /// follow it: a 3D run reads neither the analysis kind nor the boundary-cell model.
+    /// </summary>
+    [Fact]
+    public void AThreeDSolver_ShowsTheGroup_AndDisablesItOnlyOnAStaticOrEigenmodeProblem()
+    {
+        string dir = TempDir();
+        var vm = Editor(dir, new EmSetup
+        {
+            Name = "panel", LayoutRef = "a.clay", AnalysisKind = EmAnalysisKind.CrossSection,
+            Solver3D = Em3dSolver.OpenEms,
+        });
+        Assert.True(vm.Is3DSetup);
+        Assert.False(vm.ShowCircuitRfSolverControls);
+        Assert.True(vm.ShowRadiationPattern);
+        Assert.Null(vm.RadiationPatternDisabledReason);
+
+        vm.Problem3DChoice = EmSetupEditorViewModel.Problem3DChoices.First(c => c.Value == CircuitRF.Engine.Em3d.Em3dProblemType.Eigenmode);
+        Assert.NotNull(vm.RadiationPatternDisabledReason);
+        Assert.Contains("Driven", vm.RadiationPatternDisabledReason!, StringComparison.Ordinal);
+        Directory.Delete(dir, true);
+
+        string xaml = File.ReadAllText(Path.Combine(RepoRoot(), "src/Ui/Views/Layout/EmSetupEditorView.axaml"));
+        int group = xaml.IndexOf("Text=\"Radiation pattern\"", StringComparison.Ordinal);
+        int border = xaml.LastIndexOf("<Border", group, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.ShowRadiationPattern", xaml[border..group], StringComparison.Ordinal);
+    }
+
     [Fact]
     public void OnAnOrdinaryPlanarLayout_ItIsAVAILABLE_AndOffByDefault()
     {

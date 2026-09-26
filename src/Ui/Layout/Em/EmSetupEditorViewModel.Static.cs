@@ -80,6 +80,8 @@ public sealed partial class EmSetupEditorViewModel
         OnPropertyChanged(nameof(IsStaticSetup));
         OnPropertyChanged(nameof(IsMagnetostaticSetup));
         OnPropertyChanged(nameof(Problem3DDescription));
+        OnPropertyChanged(nameof(RadiationPatternDisabledReason));
+        OnPropertyChanged(nameof(ReferenceInputPowerEnabled));
         RaiseEigenVisibility();
     }
 

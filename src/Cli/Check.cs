@@ -686,6 +686,10 @@ internal static class Check
                 $"field{(drivenOnly.Count == 1 ? "" : "s")} {string.Join(", ", drivenOnly)} " +
                 $"{(drivenOnly.Count == 1 ? "is" : "are")} kept but not read."));
 
+        // brief-em3d-31 — a radiation pattern on a problem that radiates nothing in a driven sense.
+        if (CircuitRF.Design.Em3d.Em3dRunService.RadiationPatternIgnored(setup) is { } noPattern)
+            f.Add(CliDiagnostics.CheckEmNote(path, noPattern));
+
         if (source.Technology is not { } tech)
         {
             f.Add(CliDiagnostics.CheckEmRefused(path, EmDiagnostics.NoTechnology(setup.LayoutRef).Render()));
@@ -709,6 +713,24 @@ internal static class Check
         if (problems.Count == 0 && problem.IsStatic &&
             CircuitRF.Design.Em3d.PalaceConfigWriter.StaticRefusal(problem) is { } floating)
             problems.Add(floating);
+        // brief-em3d-31 — the radiation pattern's surface, placed exactly as the run places it: openEMS refuses a
+        // box too tight for it (so check does), Palace goes on without a pattern and says why.
+        if (problems.Count == 0 && setup.RadiationPattern && problem.Type == CircuitRF.Engine.Em3d.Em3dProblemType.Driven)
+        {
+            if (setup.Solver3D is Em3dSolver.OpenEms or Em3dSolver.Both)
+            {
+                var gridSettings = CemOpenEms.ResolveGrid(setup.OpenEms);
+                if (gridSettings.Problems().Count == 0)
+                {
+                    var grid = CircuitRF.Engine.Em3d.FdtdGrid.Build(problem, gridSettings);
+                    if (CircuitRF.Design.Em3d.OpenEmsFarField.Place(problem, grid, [problem.Frequency.StartHz]).Refusal is { } tight)
+                        problems.Add(tight);
+                }
+            }
+            if (setup.Solver3D is Em3dSolver.Palace or Em3dSolver.Both &&
+                CircuitRF.Design.Em3d.PalaceConfigWriter.FarFieldRefusal(problem) is { } noPalacePattern)
+                f.Add(CliDiagnostics.CheckEmNote(path, noPalacePattern));
+        }
         foreach (string p in problems) f.Add(CliDiagnostics.CheckEmRefused(path, p));
         if (problems.Count == 0)
             f.Add(CliDiagnostics.CheckEmWouldRun(path,

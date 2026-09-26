@@ -4191,14 +4191,14 @@ public static class PlanarSolve
                 slices.Add((f, pats, farResMetrics[f], farResPol[f]));
             slices = slices.OrderBy(x => x.F).ToList();
 
-            var farF = slices.Select(x => x.F).ToArray();
-            var flat = new List<PlanarFarFieldPattern>(slices.Count * ports.Count);
-            foreach (var x in slices) flat.AddRange(x.P);
-            farSet = new PlanarFarFieldSet(
+            // brief-em3d-31 — the sets are assembled by the solver-agnostic stage the 3D solvers share.
+            var assembled = FarFieldStage.Assemble(
                 farSettings!.EffectiveGrid,
-                farF,
                 ports.Select(pp => pp.Number).ToArray(),
-                flat);
+                [.. slices.Select(x => new FarFieldSlice(x.F, x.P, x.M, x.L))]);
+            farSet    = assembled.FarField;
+            metricSet = assembled.Metrics;
+            polSet    = assembled.Polarization;
 
             var first = farSet.At(0, 0);
             notes.Add(first.ScaleCaption);
@@ -4209,13 +4209,6 @@ public static class PlanarSolve
 
             // ── ANT-5 — the metrics. Every refusal is said ONCE, in the registry's own wording, and
             //    the sweep is never thrown away for one of them (present and refused).
-            var flatMetrics = new List<PlanarMetricReport>(slices.Count * ports.Count);
-            foreach (var x in slices) flatMetrics.AddRange(x.M);
-            metricSet = PlanarMetricSet.From(
-                farF,
-                ports.Select(pp => pp.Number).ToArray(),
-                flatMetrics);
-
             var firstMetrics = metricSet.At(0, 0);
             notes.Add(firstMetrics.Budget.Caption);
             if (firstMetrics.Budget.SurfaceWave is { } guided) notes.Add(guided.Caption);
@@ -4225,13 +4218,6 @@ public static class PlanarSolve
             // ── ANT-6 — polarization. The reference angle is REPORTED whether it was named or
             //    derived (R-ant-9), and the mesh-limited cross-pol floor is said wherever a cross-pol
             //    number is (R-ant-11) rather than left for a user to discover.
-            var flatPol = new List<PlanarPolarizationPattern>(slices.Count * ports.Count);
-            foreach (var x in slices) flatPol.AddRange(x.L);
-            polSet = PlanarPolarizationSet.From(
-                farF,
-                ports.Select(pp => pp.Number).ToArray(),
-                flatPol);
-
             var firstPol = polSet.At(0, 0);
             notes.Add(firstPol.ScaleCaption);
             if (firstPol.Reference is { } reference) notes.Add(reference.Note);
@@ -4366,8 +4352,7 @@ public static class PlanarSolve
                 settings.EffectiveMetrics, cap,
                 deembeddedS is { } sm ? sm[j, j] : null,
                 conductorLoss);
-            metrics[j] = PlanarMetrics.Evaluate(context);
-            pol[j]     = PlanarPolarization.For(context);
+            (metrics[j], pol[j]) = FarFieldStage.Evaluate(context);
             if (ownStage) control?.TickStage();
         }
         return (made, metrics, pol);

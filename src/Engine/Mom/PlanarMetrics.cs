@@ -227,10 +227,24 @@ public sealed record PlanarBeamCuts(EmSuitability Verdict, IReadOnlyList<PlanarB
 /// </summary>
 public sealed class PlanarMetricContext
 {
-    public PlanarProblem         Problem       { get; }
-    public PlanarMesh            Mesh          { get; }
+    /// <summary>The planar problem, or null for a pattern another solver produced (brief-em3d-31) —
+    /// see <see cref="External"/>.</summary>
+    public PlanarProblem?        Problem       { get; }
+    /// <summary>The mesh the currents live on, or null for another solver's pattern.</summary>
+    public PlanarMesh?           Mesh          { get; }
+    /// <summary>The basis currents, or the empty default for another solver's pattern.</summary>
     public Vec<Complex>          BasisCurrents { get; }
     public PlanarFarFieldPattern Pattern       { get; }
+
+    /// <summary>
+    /// <b>brief-em3d-31 — what a solver OTHER than kernel B supplies beside its pattern, or null for
+    /// kernel B.</b> Every metric in the registry is a function of the pattern, the accepted power and the
+    /// port's reflection, except three things kernel B derives from its own currents and medium: the
+    /// surface-wave and conductor terms of the budget, the dominant current axis (read instead off the
+    /// far field's own polarization at the peak, <see cref="PlanarBeamwidth.AxisFromPattern"/>), and the
+    /// sentence that refuses front-to-back on a hemisphere. Those come from here.
+    /// </summary>
+    public FarFieldExternalTerms? External { get; }
 
     /// <summary><c>Y[j, j]</c> of the RAW port admittance — R-ant-5's denominator and R-ant-6's one
     /// mismatch factor both come from this number and no other.</summary>
@@ -311,6 +325,36 @@ public sealed class PlanarMetricContext
         _budget = new Lazy<PlanarPowerBudget>(() => PlanarPowerBudget.For(
             problem, mesh, basisCurrents, pattern, rawSelfAdmittance, conductorLoss,
             Settings.AzimuthSamples, maxDegreeOfParallelism));
+        _peak = new Lazy<PlanarPatternPeak>(() => PlanarPatternPeak.Of(pattern));
+        _cuts = new Lazy<PlanarBeamCuts>(() => PlanarBeamwidth.Cuts(this));
+    }
+
+    /// <summary>
+    /// brief-em3d-31 R-em3d31-1 — a context for a pattern ANOTHER solver produced: no problem, no mesh,
+    /// no currents. <paramref name="terms"/> carries the accepted power (the same excitation the pattern
+    /// was normalised to) and what that solver says about the three things only kernel B can derive.
+    /// <paramref name="portReflection"/> is the driven port's own published S_jj, R-ant-6's one mismatch
+    /// factor exactly as the planar sweep hands it over.
+    /// </summary>
+    public PlanarMetricContext(PlanarFarFieldPattern pattern, FarFieldExternalTerms terms,
+                               Complex? portReflection, PlanarMetricSettings? settings = null)
+    {
+        ArgumentNullException.ThrowIfNull(pattern);
+        ArgumentNullException.ThrowIfNull(terms);
+
+        Pattern        = pattern;
+        External       = terms;
+        PortReflection = portReflection;
+        Settings       = settings ?? PlanarMetricSettings.Default;
+        // A 1 V-referred admittance whose half-real-part IS the accepted power, so nothing that reads
+        // RawSelfAdmittance can disagree with the budget.
+        RawSelfAdmittance = new Complex(2.0 * terms.AcceptedW, 0.0);
+
+        double radiated = pattern.RadiatedPowerW;
+        _budget = new Lazy<PlanarPowerBudget>(() => new PlanarPowerBudget(
+            terms.AcceptedW, radiated, 0.0, terms.AcceptedW - radiated, 0.0,
+            terms.SurfaceWaveVerdict, null, pattern.DrivenPort, pattern.FrequencyHz,
+            ConductorModelled: false, Conductor: null, ConductorVerdict: terms.ConductorVerdict));
         _peak = new Lazy<PlanarPatternPeak>(() => PlanarPatternPeak.Of(pattern));
         _cuts = new Lazy<PlanarBeamCuts>(() => PlanarBeamwidth.Cuts(this));
     }
@@ -439,11 +483,13 @@ public static class PlanarMetrics
     /// ANT-5 staged is still one predicate.</para>
     /// </summary>
     internal static string FrontToBackRefusalFor(PlanarMetricContext c) =>
-        (c.Problem.EffectiveStack.Bottom.Kind == TerminationKind.SurfaceImpedance
-            ? FrontToBackLossyFloorPreamble
-            : FrontToBackPreamble) +
-        PlanarFiniteGround.CanCorrect(c.Problem, c.Pattern.FrequencyHz,
-                                      c.Problem.MetalBounds()).Reason;
+        c.External is { } x
+            ? x.HemisphereFrontToBackRefusal
+            : (c.Problem!.EffectiveStack.Bottom.Kind == TerminationKind.SurfaceImpedance
+                ? FrontToBackLossyFloorPreamble
+                : FrontToBackPreamble) +
+              PlanarFiniteGround.CanCorrect(c.Problem, c.Pattern.FrequencyHz,
+                                            c.Problem.MetalBounds()).Reason;
 
     private static EmSuitability PositivePower(double w, string what) =>
         w > 0 ? EmSuitability.Yes
@@ -516,7 +562,8 @@ public static class PlanarMetrics
 
         new(PlanarMetric.PowerConductor, "PowerConductor", "W", PlanarMetricAxis.PerPoint,
             PlanarPowerBudget.ConductorNote,
-            _ => EmSuitability.Yes,
+            // brief-em3d-31 — a 3D solver's budget refuses it by name; kernel B's carries no verdict.
+            c => c.Budget.ConductorVerdict ?? EmSuitability.Yes,
             c => [c.Budget.ConductorW]),
 
         new(PlanarMetric.RadiationEfficiency, "RadiationEfficiency", "%", PlanarMetricAxis.PerPoint,
@@ -759,11 +806,14 @@ public static class PlanarMetrics
         var ok = PositivePower(c.Budget.AcceptedW, "The power accepted at the port");
         if (!ok.Ok) return ok;
         double e = c.Budget.RadiationEfficiency;
-        return e <= 1.0 + PlanarMetricSettings.EfficiencyTolerance
+        // brief-em3d-31 — a 3D solver states its own tolerance: its two powers come from a surface
+        // transform and a port DFT, not from one matrix, and their measured balance is looser.
+        double tol = c.External?.EfficiencyTolerance ?? PlanarMetricSettings.EfficiencyTolerance;
+        return e <= 1.0 + tol
             ? EmSuitability.Yes
             : EmSuitability.No(
                 $"The radiation efficiency came out as {e:F6} — above 1, by more than the " +
-                $"{PlanarMetricSettings.EfficiencyTolerance:E0} quadrature tolerance. " +
+                $"{tol:E0} quadrature tolerance. " +
                 $"{SurfaceMesher.Eng(c.Budget.RadiatedW)}W is reported as radiated out of " +
                 $"{SurfaceMesher.Eng(c.Budget.AcceptedW)}W accepted, which no passive " +
                 $"structure can do. It is REFUSED rather than clamped, because a clamped " +

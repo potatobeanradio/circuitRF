@@ -659,6 +659,95 @@ public static class PalaceRun
         return null;
     }
 
+    /// <summary>brief-em3d-31 — Palace's far field, r·E in Cartesian components per (frequency, excitation, θ, φ).</summary>
+    public const string FarFieldFile = "farfield-rE.csv";
+
+    /// <summary>brief-em3d-31 — the ports' incident and total voltages per excitation.</summary>
+    public const string PortVFile = "port-V.csv";
+
+    /// <summary>
+    /// <b>brief-em3d-31 — Palace's far field, by column NAME.</b> The pinned 0.18.1 writes <c>f (GHz)</c>,
+    /// <c>exc</c>, <c>theta (deg.)</c>, <c>phi (deg.)</c> and <c>r*Re{E_x} (V)</c> / <c>r*Im{E_x} (V)</c> for
+    /// x, y, z (read off a real run and its postoperatorcsv.cpp). It writes each pole ONCE, whatever azimuths
+    /// were asked for there — a Cartesian vector is well defined at a pole where θ̂ and φ̂ are not — so the
+    /// map is keyed by rounded (θ, φ) and a pole is looked up at θ alone. Keys: (frequency GHz as printed,
+    /// excitation) → (θ, φ) → (E_x, E_y, E_z).
+    /// </summary>
+    public static Dictionary<(double FGHz, int Exc), Dictionary<(int Theta, int Phi), (Complex X, Complex Y, Complex Z)>>?
+        ReadFarField(string csvPath, out string? error)
+    {
+        if (ReadTable(csvPath, out error) is not { } t) return null;
+        var (h, rows) = t;
+        string[] names = ["f (GHz)", "exc", "theta (deg.)", "phi (deg.)",
+                          "r*Re{E_x} (V)", "r*Im{E_x} (V)", "r*Re{E_y} (V)", "r*Im{E_y} (V)", "r*Re{E_z} (V)", "r*Im{E_z} (V)"];
+        var col = names.Select(n => h.IndexOf(n)).ToArray();
+        if (Array.IndexOf(col, -1) is int miss and >= 0)
+        {
+            error = $"Palace's {FarFieldFile} has no column '{names[miss]}' ({csvPath}).";
+            return null;
+        }
+        var map = new Dictionary<(double, int), Dictionary<(int, int), (Complex, Complex, Complex)>>();
+        for (int r = 0; r < rows.Count; r++)
+        {
+            var c = rows[r];
+            var v = new double[names.Length];
+            for (int k = 0; k < names.Length; k++)
+                if (col[k] >= c.Length || !double.TryParse(c[col[k]].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out v[k]))
+                {
+                    error = $"Row {r + 2} of Palace's {FarFieldFile} is not all numbers ({csvPath}).";
+                    return null;
+                }
+            var key = (v[0], (int)Math.Round(v[1]));
+            if (!map.TryGetValue(key, out var dirs)) map[key] = dirs = [];
+            dirs[((int)Math.Round(v[2] * 1000), (int)Math.Round(v[3] * 1000))] =
+                (new Complex(v[4], v[5]), new Complex(v[6], v[7]), new Complex(v[8], v[9]));
+        }
+        return map;
+    }
+
+    /// <summary>
+    /// <b>brief-em3d-31 — each excitation's own port voltage, by column NAME</b>: <c>V_inc[k][k] (V)</c> and
+    /// <c>Re{V[k][k]} (V)</c> / <c>Im{V[k][k]} (V)</c> for port k driven — the incident and the TOTAL voltage at
+    /// the driven port (their difference over V_inc is S_kk exactly, checked against port-S.csv on a real run).
+    /// With a single excitation the columns carry one index (<c>V_inc[k] (V)</c>). Rows in file order with
+    /// their frequencies, GHz as printed.
+    /// </summary>
+    public static (double[] FrequenciesGHz, double[][] Incident, Complex[][] Total)? ReadPortV(string csvPath, IReadOnlyList<int> ports,
+                                                                                                out string? error)
+    {
+        if (ReadTable(csvPath, out error) is not { } t) return null;
+        var (h, rows) = t;
+        int fc = h.IndexOf("f (GHz)");
+        // With ONE excitation Palace drops the excitation index from every column (its ex_label is empty):
+        // "V_inc[1] (V)", "Re{V[1]} (V)". With several it writes "V_inc[1][1] (V)".
+        int Col(string two, string one) => h.IndexOf(two) is int k and >= 0 ? k : ports.Count == 1 ? h.IndexOf(one) : -1;
+        var inc = ports.Select(k => Col($"V_inc[{k}][{k}] (V)", $"V_inc[{k}] (V)")).ToArray();
+        var re = ports.Select(k => Col($"Re{{V[{k}][{k}]}} (V)", $"Re{{V[{k}]}} (V)")).ToArray();
+        var im = ports.Select(k => Col($"Im{{V[{k}][{k}]}} (V)", $"Im{{V[{k}]}} (V)")).ToArray();
+        if (fc < 0 || inc.Contains(-1) || re.Contains(-1) || im.Contains(-1))
+        {
+            error = $"Palace's {PortVFile} does not carry every driven port's incident and total voltage ({csvPath}).";
+            return null;
+        }
+        var f = new double[rows.Count];
+        var vi = new double[rows.Count][];
+        var vt = new Complex[rows.Count][];
+        for (int r = 0; r < rows.Count; r++)
+        {
+            double Cell(int k) => k < rows[r].Length && double.TryParse(rows[r][k].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double v)
+                ? v : double.NaN;
+            f[r] = Cell(fc);
+            vi[r] = [.. inc.Select(Cell)];
+            vt[r] = [.. Enumerable.Range(0, ports.Count).Select(k => new Complex(Cell(re[k]), Cell(im[k])))];
+            if (double.IsNaN(f[r]) || vi[r].Any(double.IsNaN) || vt[r].Any(z => double.IsNaN(z.Real) || double.IsNaN(z.Imaginary)))
+            {
+                error = $"Row {r + 2} of Palace's {PortVFile} is not all numbers ({csvPath}).";
+                return null;
+            }
+        }
+        return (f, vi, vt);
+    }
+
     /// <summary>Counts one Palace start made outside this class (the Linux subsystem route).</summary>
     internal static void CountPalace() => Interlocked.Increment(ref _palace);
 

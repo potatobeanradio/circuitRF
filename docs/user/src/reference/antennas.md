@@ -72,6 +72,41 @@ fiction. The run's note says which of the two it is in.
 > absorbs can only arrive as a remainder. **A Data Display or script that names the old cube will
 > find nothing**; point it at the new name.
 
+## From a 3D solver {#3d}
+
+The same checkbox works on a **driven** 3D setup — **FDTD 3D (openEMS)**, **FEM 3D (Palace)** or **FEM &
+FDTD - Compare** — and produces the same `farfield` cubes, so the Data Display, the metrics and `circuitrf em`
+read them exactly as they read a planar run's. It is disabled on a static or eigenmode problem, which drives
+no port at a frequency. What is different:
+
+- **The domain follows the air box.** With an absorber on every face the pattern is the **whole sphere**
+  (θ 0…180°) and `FrontToBackDb` is computed. When the box's floor is a conducting plane — circuitRF makes
+  an undrawn ground plane the floor — the pattern is the **upper hemisphere**, as the planar kernel's is,
+  and front-to-back is refused for the same reason.
+- **A pattern at every frequency of the sweep**, each port's from the run that drove that port, normalised to
+  **1 V across the driven port** with every other port terminated in its own Z₀.
+- **Three power terms are refused by name**: `PowerSurfaceWave`, `PowerDielectricAndGround` and
+  `PowerConductor`. A 3D model has no infinite substrate to lose a guided wave into and neither solver
+  itemises its loss; `PowerAccepted − PowerRadiated` is every loss together, and both are published.
+- **FDTD 3D (openEMS)** transforms the tangential fields on a box that sits **3 cells inside the absorber and
+  1 cell clear of every conductor**, by circuitRF's own surface integral. A setup whose air box leaves no
+  room for that is refused, naming the face and the padding to raise; with the pattern on, the default
+  padding is a quarter of the longest wavelength rather than an eighth for this reason. If the substrate runs
+  through that box, what it guides is counted as radiation — the run says so, and on an unbounded substrate
+  the directivity reads lower than the planar kernel's by the planar kernel's own surface-wave share.
+- **FEM 3D (Palace)** uses Palace's own far-field integral, which needs **every air-box face absorbing and
+  every port lumped**. Otherwise the S-parameters are still computed and the run says why there is no
+  pattern; on *Compare* the openEMS half still produces one. Palace's absorbing faces are first order, so
+  keep the box well away from the radiator. Its far-field file is about 16 MB per frequency per port.
+
+**Measured** (circuitRF against closed forms and against itself, 2026-09-26): a short dipole reads
+1.78 dBi through openEMS and 1.77–1.79 dBi through Palace, against 1.76; a half-wave dipole through openEMS
+follows the sinusoidal-current directivity across the band at one electrical length, with radiation
+efficiency 98.7–99.0 % for lossless metal. The shipped patch with its ground made the box's floor agrees with
+the planar solve at 5.85 GHz to 0.3° in the H-plane beamwidth and 0.09 dB in directivity once the planar
+kernel's surface-wave power is counted as radiated; drawn with its real 40 × 40 mm ground it reads 7.19 dBi
+with an 82.6° E-plane — the finite plane's own effect.
+
 ## Which feeds work {#feeds}
 
 | Feed | Pattern? | Why |

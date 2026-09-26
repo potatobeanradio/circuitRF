@@ -39,6 +39,7 @@ using CircuitRF.Design.Results;
 using CircuitRF.Diagnostics;
 using CircuitRF.Engine;
 using CircuitRF.Engine.Em3d;
+using CircuitRF.Engine.Mom;
 using NumFlat;
 using RfCore;
 using RfCore.Data;
@@ -121,6 +122,23 @@ public static class Em3dRunService
 
     /// <summary>The Touchstone's path without its <c>.sNp</c> suffix: the override when the setup has
     /// one (<c>-o</c> moves the Touchstone only, as for planar), the solver-named stem otherwise.</summary>
+    /// <summary>
+    /// brief-em3d-31 R-em3d31-4 — why a 3D setup's radiation pattern is not computed, or null when it is (or
+    /// was not asked for): a static or eigenmode problem drives no port at a frequency, so nothing radiates in
+    /// the sense a pattern describes. The run carries it as a note and the panel disables the checkbox with it.
+    /// </summary>
+    public static string? RadiationPatternIgnored(EmSetup setup)
+        => setup.RadiationPattern && setup.Solver3D != Em3dSolver.None && setup.Problem3D != Em3dProblemType.Driven
+            ? $"No radiation pattern: this setup is {(setup.Problem3D == Em3dProblemType.Eigenmode ? "an eigenmode" : "a static")} " +
+              "problem, which drives no port at a frequency, so nothing radiates in the sense a pattern describes. It is " +
+              "computed from a Driven 3D run (the setup's Problem3D)."
+            : null;
+
+    /// <summary>brief-em3d-31 — the frequencies a driven 3D run's pattern is produced at (every sweep point, as
+    /// the planar path does), or null when no pattern was asked for or the problem is not driven.</summary>
+    internal static double[]? FarFieldFrequencies(EmSetup setup, Em3dProblem problem)
+        => setup.RadiationPattern && problem.Type == Em3dProblemType.Driven ? FrequenciesHz(problem.Frequency) : null;
+
     public static string SnpBasePath(string resultsRoot, EmSetup setup, Em3dSolver solver)
         => setup.SnpOutputPathOverride is { Length: > 0 }
             ? EmRunService.ResolveSnpBasePath(resultsRoot, setup)
@@ -283,7 +301,8 @@ public static class Em3dRunService
         PalacePlan? palacePlan = null;
         OpenEmsPlan? openEmsPlan = null;
         if (palace && palaceStop is null)
-            palacePlan = PreparePalace(problem, palaceSettings!, readiness, palaceRunner, palaceMemory, log, out palaceStop);
+            palacePlan = PreparePalace(problem, palaceSettings!, readiness, palaceRunner, palaceMemory, log, out palaceStop,
+                                       setup.RadiationPattern);
         // brief-em3d-21 R-em3d21-2 — will it fit? A warning, and past 150 % a confirmation; still no process.
         if (palacePlan is not null && palaceStop is null &&
             memory.Admit(PalaceMemoryVerdict(problem, setup, source, palaceSettings!, palaceMemory?.Bytes ?? MachineMemory.PhysicalBytes,
@@ -292,8 +311,10 @@ public static class Em3dRunService
             palaceStop = new(EmRunStatus.Refused, EmDiagnostics.Forwarded(MemoryRefusalSource, tooBig));
             palacePlan = null;
         }
+        if (RadiationPatternIgnored(setup) is { } noPattern) log.Notes.Add(noPattern);
         if (openEms && openEmsStop is null)
-            openEmsPlan = PrepareOpenEms(problem, gridSettings!, runSettings!, readiness, control, log, out openEmsStop);
+            openEmsPlan = PrepareOpenEms(problem, gridSettings!, runSettings!, readiness, control, log, out openEmsStop,
+                                         FarFieldFrequencies(setup, problem));
         if ((palaceStop ?? openEmsStop) is { } refused)
             return both ? BothRefused(palaceStop, openEmsStop, log) : log.Result(refused.Status, refused.Diagnostic);
 
@@ -448,15 +469,24 @@ public static class Em3dRunService
 
     private sealed record PalacePlan(PalaceSettings Settings, GmshLowering Lowering, string ConfigJson,
                                      SolverInstallation Palace, SolverInstallation Gmsh, IPalaceRunner Runner,
-                                     Em3dMemoryScope? Memory);
+                                     Em3dMemoryScope? Memory, bool FarField = false);
 
     private static PalacePlan? PreparePalace(Em3dProblem problem, PalaceSettings settings, IReadOnlyList<SolverReadiness> readiness,
-                                             IPalaceRunner runner, Em3dMemoryScope? memoryScope, RunLog log, out Stop? stop)
+                                             IPalaceRunner runner, Em3dMemoryScope? memoryScope, RunLog log, out Stop? stop,
+                                             bool radiationPattern = false)
     {
         stop = null;
         var lowering = GmshGeoWriter.Write(problem, settings);
         if (!lowering.Ok) { stop = new(EmRunStatus.Refused, EmDiagnostics.Forwarded("palace-lowering", lowering.Refusal)); return null; }
-        var config = PalaceConfigWriter.Write(problem, lowering.Groups, settings);
+        // brief-em3d-31 R-em3d31-3 — the far field when asked for and Palace can give one; otherwise the run says
+        // why and goes on (a floor or a wave port changes nothing about S).
+        bool farField = radiationPattern && problem.Type == Em3dProblemType.Driven;
+        if (farField && PalaceConfigWriter.FarFieldRefusal(problem) is { } noFarField)
+        {
+            log.Notes.Add(noFarField);
+            farField = false;
+        }
+        var config = PalaceConfigWriter.Write(problem, lowering.Groups, settings, farField);
         if (!config.Ok) { stop = new(EmRunStatus.Refused, EmDiagnostics.Forwarded("palace-lowering", config.Refusal)); return null; }
 
         // F0 Q6 — the void model is the flat-surface impedance: low by up to 10 % on a conductor whose
@@ -469,7 +499,7 @@ public static class Em3dRunService
 
         return new PalacePlan(settings, lowering, config.Json!,
                               readiness.Single(r => r.Tool == SolverTool.Palace).Installation!,
-                              readiness.Single(r => r.Tool == SolverTool.Gmsh).Installation!, runner, memoryScope);
+                              readiness.Single(r => r.Tool == SolverTool.Gmsh).Installation!, runner, memoryScope, farField);
     }
 
     private static Leg ExecutePalace(PalacePlan plan, Em3dProblem problem, EmSetup setup, string resultsRoot, string snpBase,
@@ -593,6 +623,7 @@ public static class Em3dRunService
 
         // ── The DataSet: S and Z0 in the house convention, plus Palace's own record ─────────────
         var data = BuildDataSet(s, ports, facts);
+        if (plan.FarField && PalacePattern(post, s, ports, setup, data, log.Notes) is { } patternError) return Failed(patternError);
         if (modeZ is not null)
         {
             var wave = ports.Where(p => p.Kind == Em3dPortKind.Wave).ToList();
@@ -682,6 +713,65 @@ public static class Em3dRunService
         string? npyPath = WriteNpy(resultsRoot, NpyKey(setup, Me), data, log);
         log.Notes.Add(CompletionSummary(tracker.Summary, setup.Palace?.Quality ?? PalaceQuality.Standard, wall, FieldFilesBytes(post)));
         return new Leg(Me, EmRunStatus.Ok, null, data, npyPath, null, "Palace " + palace.DescribeVersion());
+    }
+
+    /// <summary>
+    /// brief-em3d-31 R-em3d31-3 — Palace's far field through the stage. Each excitation's r·E (Cartesian, poles
+    /// written once) is divided by the driven port's own TOTAL voltage, so the pattern is a 1 V port voltage's;
+    /// the accepted power at that voltage is (|V_inc|² − |V − V_inc|²)/(2·R·|V|²), the incident-minus-reflected
+    /// power of port-V.csv's own waves; and the mismatch factor reads the published S_kk. Only the sweep's own
+    /// rows are read, so a save-only Point sample (brief 29) adds no pattern. Null on success.
+    /// </summary>
+    internal static string? PalacePattern(string post, PalacePortS s, IReadOnlyList<Em3dPort> ports, EmSetup setup, DataSet data,
+                                         List<string> notes)
+    {
+        var numbers = ports.Select(p => p.Number).ToList();
+        var ff = PalaceRun.ReadFarField(Path.Combine(post, PalaceRun.FarFieldFile), out string? error);
+        if (ff is null) return error;
+        var pv = PalaceRun.ReadPortV(Path.Combine(post, PalaceRun.PortVFile), numbers, out error);
+        if (pv is null) return error;
+        var (vf, vinc, vtot) = pv.Value;
+
+        var grid = FarFieldStage.Sphere();
+        int n = ports.Count, nt = grid.ThetaDeg.Count, np = grid.PhiDeg.Count;
+        var points = new Em3dPatternPoint[s.FrequenciesHz.Length * n];
+        for (int i = 0; i < s.FrequenciesHz.Length; i++)
+        {
+            double fHz = s.FrequenciesHz[i];
+            int row = Array.FindIndex(vf, g => Math.Abs(g * 1e9 - fHz) <= 1e-8 * fHz);
+            var key = ff.Keys.Where(k => Math.Abs(k.FGHz * 1e9 - fHz) <= 1e-8 * fHz).Select(k => k.FGHz).DefaultIfEmpty(double.NaN).First();
+            if (row < 0 || double.IsNaN(key))
+                return $"Palace wrote no far field or port voltage at {Fmt(fHz / 1e9)} GHz, a frequency of the sweep.";
+            for (int k = 0; k < n; k++)
+            {
+                if (!ff.TryGetValue((key, numbers[k]), out var dirs))
+                    return $"Palace's {PalaceRun.FarFieldFile} has no rows for port {numbers[k]}'s excitation at {Fmt(fHz / 1e9)} GHz.";
+                Complex v = vtot[row][k];
+                double vi = vinc[row][k], r = ports[k].Z0.Real;
+                if (!(v.Magnitude > 0)) return $"Port {numbers[k]}'s own voltage is zero at {Fmt(fHz / 1e9)} GHz in Palace's run.";
+                var eth = new Complex[nt * np];
+                var eph = new Complex[nt * np];
+                for (int it = 0; it < nt; it++)
+                    for (int ip = 0; ip < np; ip++)
+                    {
+                        int th = (int)Math.Round(grid.ThetaDeg[it] * 1000), phi = th is 0 or 180000 ? 0 : (int)Math.Round(grid.PhiDeg[ip] * 1000);
+                        if (!dirs.TryGetValue((th, phi), out var e))
+                            return $"Palace's {PalaceRun.FarFieldFile} has no row at θ = {grid.ThetaDeg[it]}°, φ = {grid.PhiDeg[ip]}° for port " +
+                                   $"{numbers[k]} at {Fmt(fHz / 1e9)} GHz.";
+                        (eth[grid.IndexOf(it, ip)], eph[grid.IndexOf(it, ip)]) =
+                            NearToFarField.ToSpherical(e.X / v, e.Y / v, e.Z / v, grid.ThetaDeg[it], grid.PhiDeg[ip]);
+                    }
+                double reflected = (v - vi).Magnitude;
+                double accepted = (vi * vi - reflected * reflected) / (2 * r * v.Magnitude * v.Magnitude);
+                points[i * n + k] = new Em3dPatternPoint(FarFieldStage.Pattern(grid, eth, eph, numbers[k], fHz), accepted, s.S[i][k, k]);
+            }
+        }
+        notes.AddRange(Em3dRadiation.Publish(data, "Palace (FEM)", grid, numbers, s.FrequenciesHz, points,
+                                             setup.ReferenceInputPowerDbm, hemisphere: false));
+        notes.Add("Palace's far field is its own Stratton–Chu integral over the air box's absorbing faces, which are first order: " +
+                  "the pattern is only as good as the field those faces leave unreflected, so a box close to the radiator reads " +
+                  $"its nulls and its back radiation high. {PalaceRun.FarFieldFile} is about 16 MB per frequency per port at the 1° sphere.");
+        return null;
     }
 
     /// <summary>The Palace group's cube holding each wave port's mode impedance Z_PV, [f, Port], ohms.</summary>
@@ -881,7 +971,8 @@ public static class Em3dRunService
                                       CsxcadLowering Lowering, SolverInstallation OpenEms);
 
     private static OpenEmsPlan? PrepareOpenEms(Em3dProblem problem, OpenEmsGridSettings gridSettings, OpenEmsRunSettings runSettings,
-                                               IReadOnlyList<SolverReadiness> readiness, RunControl? control, RunLog log, out Stop? stop)
+                                               IReadOnlyList<SolverReadiness> readiness, RunControl? control, RunLog log, out Stop? stop,
+                                               IReadOnlyList<double>? farFieldHz = null)
     {
         stop = null;
 
@@ -898,7 +989,7 @@ public static class Em3dRunService
         log.Warnings.AddRange(grid.Warnings);
         log.Notes.AddRange(grid.Merges.Select(m => m.Sentence));
 
-        var lowering = CsxcadWriter.Write(problem, grid, gridSettings, runSettings);
+        var lowering = CsxcadWriter.Write(problem, grid, gridSettings, runSettings, farFieldHz);
         if (!lowering.Ok) { stop = new(EmRunStatus.Refused, EmDiagnostics.Forwarded("openems-lowering", lowering.Refusal)); return null; }
         log.Notes.AddRange(lowering.Notes);
         int n = lowering.Ports.Count;
@@ -994,6 +1085,16 @@ public static class Em3dRunService
 
         var data = BuildOpenEmsDataSet(result, ports, grid, runs, runSettings);
 
+        // ── brief-em3d-31 R-em3d31-2 — the radiation pattern, from the surface each port's run dumped ─────
+        if (lowering.FarField is { } surface)
+        {
+            if (OpenEmsPattern(surface, result, lowering, runDir, setup, maxCores, control, ct, log.Notes, data) is { } patternError)
+            {
+                if (ct.IsCancellationRequested) return Leg.Failed(Me, EmRunStatus.Cancelled, EmDiagnostics.Cancelled());
+                return Failed(patternError);
+            }
+        }
+
         string? snpPath = snpBase + $".s{ports.Count}p";
         string? npyPath = WriteNpy(resultsRoot, NpyKey(setup, Me), data, log);
 
@@ -1009,6 +1110,50 @@ public static class Em3dRunService
         var comparisonFacts = new Em3dComparisonFacts(lowering.DielectricFitHz, lowering.PecSolids, lowering.SubCellWires,
                                                       [.. runs.Where(r => !r.Converged).Select(r => r.Port)]);
         return new Leg(Me, EmRunStatus.Ok, null, data, npyPath, snpPath, "openEMS " + openEms.DescribeVersion(), comparisonFacts);
+    }
+
+    /// <summary>
+    /// brief-em3d-31 — the openEMS pattern: for each port's run and each frequency, the surface's dumps scaled
+    /// into the port DFT's convention and divided by the driven port's own voltage (OpenEmsFarField's header),
+    /// transformed (NearToFarField) and handed to the stage with ½·Re(V·I*) at that port and its published S_kk.
+    /// Null on success; otherwise the error the leg fails with.
+    /// </summary>
+    internal static string? OpenEmsPattern(Nf2ffSurface surface, FdtdPortResult result, CsxcadLowering lowering, string runDir,
+                                          EmSetup setup, int? maxCores, RunControl? control, CancellationToken ct, List<string> notes, DataSet data)
+    {
+        var grid = surface.Hemisphere ? PlanarFarFieldGrid.Hemisphere() : FarFieldStage.Sphere();
+        var freqs = result.FrequenciesHz;
+        int n = lowering.Ports.Count;
+        control?.BeginStage("far field (openEMS surface transform)", freqs.Length * n, "patterns");
+        var points = new Em3dPatternPoint[freqs.Length * n];
+        long freed = 0;
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        for (int k = 0; k < n; k++)
+        {
+            string dir = Path.Combine(runDir, OpenEmsRun.PortDirectory(lowering.Ports[k]));
+            for (int i = 0; i < freqs.Length; i++)
+            {
+                ct.ThrowIfCancellationRequested();
+                Complex u = result.U[i][k, k], c = result.I[i][k, k];
+                if (!(u.Magnitude > 0))
+                    return $"Port {lowering.Ports[k]}'s own voltage is zero at {Fmt(freqs[i] / 1e9)} GHz in the run that excited it, so " +
+                           "its radiation pattern has nothing to be referred to.";
+                var samples = OpenEmsFarField.ReadSamples(dir, surface, freqs[i], 0.5 / u, out string? readError);
+                if (samples is null) return readError;
+                var pattern = NearToFarField.Transform(samples, freqs[i], grid, lowering.Ports[k], surface.Floor, surface.FloorZ,
+                                                       maxCores, ct);
+                double accepted = 0.5 * (c / u).Real;       // ½·Re(V·I*) at |V| = 1 V
+                points[i * n + k] = new Em3dPatternPoint(pattern, accepted, result.S[i][k, k]);
+                control?.TickStage();
+            }
+            freed += OpenEmsFarField.DeletePhaseSnapshots(dir);
+        }
+        notes.AddRange(Em3dRadiation.Publish(data, "openEMS (FDTD)", grid, lowering.Ports, freqs, points,
+                                             setup.ReferenceInputPowerDbm, surface.Hemisphere));
+        notes.Add($"The radiation pattern's surface transform took {watch.Elapsed.TotalSeconds:F1} s for {points.Length} pattern(s). " +
+                      $"openEMS's 21 fixed-phase snapshots of each surface dump were removed afterwards ({freed / 1e6:F1} MB); the " +
+                      "magnitude and phase files that carry the field exactly are kept in each port's run directory.");
+        return null;
     }
 
     /// <summary>The sweep's frequencies, as Palace's <c>NSample</c> spaces them: both ends included.</summary>

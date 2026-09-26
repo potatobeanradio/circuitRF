@@ -1399,15 +1399,16 @@
                      only control in this panel that asks for a second kind of result. The far field,
                      the metrics, the polarization and the plots all shipped between ANT-4 and ANT-11
                      with no way to ask for them; this checkbox is that way, and the `em` CLI verb
-                     picks it up from the .cem with no flag of its own. -->
-                <Border Classes="group" IsVisible="{Binding ViewModel.ShowCircuitRfSolverControls}">
+                     picks it up from the .cem with no flag of its own.
+                     brief-em3d-31: shown for the 3D solvers too (ShowRadiationPattern), which drive the same cubes. -->
+                <Border Classes="group" IsVisible="{Binding ViewModel.ShowRadiationPattern}">
                   <StackPanel Spacing="2">
                 <TextBlock Classes="grouphdr" Text="Radiation pattern"/>
                 <CheckBox Name="RadiationPatternCheck" FontSize="11"
                           Content="Compute the radiation pattern (gain, directivity, efficiency)"
                           IsChecked="{Binding ViewModel.RadiationPattern}"
                           IsEnabled="{Binding ViewModel.RadiationPatternDisabledReason, Converter={x:Static ObjectConverters.IsNull}}"
-                          ToolTip.Tip="Adds the far field to the run: E_theta, E_phi and the radiation intensity over the upper hemisphere on a 1 degree grid, plus directivity, the two gains, radiation efficiency, the itemised power budget, beamwidth per plane and the polarization cubes. They land in the farfield group of the same result the s-parameters do, and the Data Display plots them as polar dB cuts or a 3D surface. It is a post-process of currents the solve has already paid for, so it changes no s-parameter and no cell - but it needs the currents, so a pattern is produced only at points that were actually SOLVED, which with adaptive sampling on is a subset of your grid. Off by default because it is only meaningful on a radiator."/>
+                          ToolTip.Tip="Adds the far field to the run: E_theta, E_phi and the radiation intensity over the upper hemisphere on a 1 degree grid, plus directivity, the two gains, radiation efficiency, the itemised power budget, beamwidth per plane and the polarization cubes. They land in the farfield group of the same result the s-parameters do, and the Data Display plots them as polar dB cuts or a 3D surface. It is a post-process of currents the solve has already paid for, so it changes no s-parameter and no cell - but it needs the currents, so a pattern is produced only at points that were actually SOLVED, which with adaptive sampling on is a subset of your grid. On a 3D solver it is produced at every sweep frequency, over the whole sphere when every air-box face absorbs and over the upper hemisphere above a conducting floor: FDTD 3D (openEMS) transforms the fields on a box inside the absorber and needs an air box roomy enough for it; Palace uses its own far-field integral, which needs every face absorbing and lumped ports. Off by default because it is only meaningful on a radiator."/>
                 <TextBlock Classes="colhdr" TextWrapping="Wrap"
                            Text="{Binding ViewModel.RadiationPatternDisabledReason}"
                            IsVisible="{Binding ViewModel.RadiationPatternDisabledReason, Converter={x:Static ObjectConverters.IsNotNull}}"/>

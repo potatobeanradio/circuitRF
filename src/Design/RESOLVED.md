@@ -13253,3 +13253,80 @@ agree with a run. Gate: `EmPortExtractionTests.MetalOnTwoLevelsUnderOnePort_Reso
 
 **Left:** the 3D view still shows nothing at all when the generator refuses. Drawing the geometry with the
 refusal as a note (as a wave-port refusal already is) would let a user see the port they are asked to move.
+
+## The radiation pattern from a 3D run — brief-em3d-31 (2026-09-26)
+
+**Palace can.** The brief made support a question for the installed schema, not an assumption. The pinned 0.18.1
+schema carries `Boundaries.Postprocessing.FarField` (`Attributes`, `NSample`, `ThetaPhis`): a Stratton–Chu
+integral over boundary attributes that "must enclose the system and be on an external boundary". Its dry run
+(`palace -dry-run`) accepted the block both on the five absorbing faces of the microstrip golden (open at a PEC
+floor) and on six — the dry run parses and checks nothing about enclosure. A real run (order 1, one frequency)
+wrote `farfield-rE.csv`: `f (GHz), exc, theta (deg.), phi (deg.)` and r·Re/Im of E_x, E_y, E_z — CARTESIAN, one
+row per (frequency, excitation, direction) — and **each pole once** whatever azimuths are asked there (65,160
+pairs asked, 64,442 rows per excitation). A full 1° sphere cost 19 s of Palace's 33 s on 8 ranks for two
+excitations at one frequency, and 32 MB of CSV. So Palace maps the checkbox onto that block with the 1° grid as
+`ThetaPhis` (poles once), only when every face is absorbing and every port lumped (`FarFieldRefusal`); otherwise
+the S-parameters run and the note says why there is no pattern.
+
+**Normalising Palace's pattern: port-V.csv, and its one-excitation spelling.** `V_inc[k][k]` and `Re/Im{V[k][k]}`
+are the incident and TOTAL voltage at the driven port: `(V − V_inc)/V_inc` reproduced port-S.csv's S₁₁ to all
+printed digits. With a SINGLE excitation Palace drops the excitation index from every column (`V_inc[1] (V)`,
+`Re{V[1]} (V)` — its `ex_label` is empty), which the first reader missed. Accepted power at 1 V is
+`(|V_inc|² − |V − V_inc|²)/(2R|V|²)`. **On a badly mismatched port that is a difference of two nearly equal
+powers**: the short dipole (1 − |S₁₁|² = 0.0015–0.0049) read efficiencies of 83 %, 98 % and 106 % across the
+band, and the >103 % one is refused by the registry. Palace's directivity there was right (below).
+
+**openEMS: a C# surface transform, not its nf2ff program.** Six planar faces, each an FD E (DumpType 10) and H
+(11) dump, node-interpolated (DumpMode 1), VTK. `OpenEmsFarField` places them 3 cells inside every absorbing face
+and 1 cell clear of metal and ports; a box too tight is refused naming the face and the padding to raise; a
+conducting ZMin floor drops that face and the transform closes the surface by image (upper hemisphere); any
+other reflecting face is refused. Measured both routes on identical dipole models (a scratch harness reading
+nf2ff's HDF5 through PureHDF — nothing added to the product): C# 1.45 s for five 1° spheres (Release) against
+nf2ff's 1.9 s; directivity 0.016 dB (short) and 0.031–0.035 dB (half-wave) apart, because nf2ff divides by the
+Poynting flux through the surface and circuitRF (and kernel B) by ∫U dΩ of the published pattern. Recommendation
+taken: the C# route — no second executable to discover, no HDF5 dumps, the surface already VTK, the same
+definition of radiated power as the planar kernel. `VtrFile` (the VTK decoder) moved here from src/Render for
+it; Render's `VtrReader.Read` wraps it.
+
+**The trap that cost a run: openEMS accumulates an FD dump at the PLAIN Nyquist rate.** Two samples a period at
+the pulse's top frequency, while the port probes are 4× oversampled. The rectangle-rule DFT then cannot separate
+a frequency from its negative image near the top: the half-wave dipole's directivity drifted 2.10 → 2.37 → and
+the top point read **6.7 % efficiency**. The surface dumps now carry `OverSampling="4"` (the probes' own; the
+pinned build reads a per-dump `OverSampling`, and older CSXCAD ignores an unknown attribute — on such a build
+the top of the band degrades exactly this way). After: efficiency 98.7–99.0 % at every frequency.
+
+**The level is pinned by efficiency, not directivity.** openEMS's FD dump is Σ 2·x·e^{−jωt}·Δt
+(processfields_fd.cpp, "*2 for single-sided spectrum"); `FdtdPortTransform.Dft` has no 2. The field is halved
+and divided by the driven port's own voltage phasor, so the pattern is a 1 V port voltage's; accepted power is
+½·Re(I/V). Lossless PEC in free space then reads ~99 %, which a wrong factor of two would have made 25 % or 400 %.
+
+**Gates, measured.** Short dipole (L = 0.1 λ, closed form 1.761 dBi): openEMS 1.780 / 1.787 / 1.796 dBi,
+η 98.7–99.7 %; Palace 1.773 / 1.780 / 1.791 dBi. Half-wave dipole, openEMS: 2.099 / 2.180 / 2.271 / 2.375 /
+2.491 dBi at 2.5–3.5 GHz, each matching the sinusoidal-current closed form at ONE electrical length,
+56.1–56.6 mm against 49.97 mm drawn — the arm tips end on 4.2 mm cells, so the FDTD dipole is long, and the
+half-wave point reads 2.27 dBi (0.12 dB high; gated at 0.15 dB with that reason). The shipped patch at 5.85 GHz,
+planar vs FDTD with the ground undrawn (so it is the box's PEC floor and the substrate is unbounded — the planar
+model's physics): D 6.697 vs 6.323 dBi, H-plane 78.3° vs 78.0°, and the FDTD E-plane has no −3 dB point inside
+±90°. **Both gaps are the substrate running through the equivalence surface**: the planar kernel books the guided
+wave as PowerSurfaceWave (11.22 % of its radiated power here), the FDTD transform counts it as radiation near the
+horizon, mostly along the E-plane — and planar D with that share added is 6.235 dBi, 0.09 dB from FDTD. The gate
+is those three numbers plus the E-plane's shape within ±60° (≤ 0.4 dB). As shipped, with its drawn 40 × 40 mm
+ground: D 7.188 dBi, H-plane 77.6°, E-plane 82.6° — the finite plane's own effect, recorded (opt-in,
+CRF_RECORD_FINITE_GROUND=1, 5.5 min).
+
+**The default air box was too small for a pattern.** λ/8 of the lowest frequency leaves ~7 mm on the shipped
+patch where openEMS's surface needs ~10, so every default setup would have been refused. With the pattern on and
+a driven problem the generator's DEFAULT padding is λ/4 (`PatternPaddingFractionOfLongestWavelength`), and says
+so; a stated padding is used as stated and still refused if too tight.
+
+**Deviations from the brief.** (1) The panel disables the checkbox only for a static or eigenmode 3D problem.
+"An air box too small for §2's surface" and Palace's floor/wave-port case are known only once the problem is
+generated and gridded, which the panel does not do on an edit; the run refuses (openEMS) or notes (Palace) it,
+and `circuitrf check` places the surface exactly as the run does and reports the same sentence. (2) With Palace
+supported, *Compare* produces a pattern from BOTH halves, each in its own `.npy`; the brief's "openEMS half only"
+applied to the no-support case. (3) `RadiationPattern` left `PlanarOnlyFieldsSet` (a 3D run reads it now);
+static/eigen say so through `Em3dRunService.RadiationPatternIgnored`, in the run and in `check`.
+
+**Not measured.** A large board's cost: the FD surface dumps accumulate every sweep point during the run and
+write 23 files per face per frequency (21 phase snapshots, deleted after reading — 8.7 MB on the half-wave dipole).
+The PML margin of 3 cells is not a convergence study; the dipoles are the evidence it is enough.

@@ -12024,3 +12024,28 @@ note prints the label's coordinates; the resolution note prints the metal edge i
   old rule with the field report's exact "0 m away" signature.
 - `PlanarFeedClearance` now carries WHERE the nearest neighbour is (`NearestXM/NearestYM`) and the
   refusal prints it. "0 µm away" with no location sent the reviewer looking outside the solve region.
+
+## The far-field metrics stage, factored away from the transform — brief-em3d-31 (2026-09-26)
+
+**What moved.** `PlanarKernel`'s three publishers (`AddFarField` → `AddPattern`, `AddMetrics`, `AddPolarization`)
+moved unchanged into `FarFieldStage`, which also assembles the three sets (`Assemble`) and evaluates one
+(frequency, port) (`Evaluate`). `PlanarSolve` calls it; so do the 3D backends (src/Design/Em3d/Em3dRadiation.cs).
+
+**How a pattern with no currents reaches the registry.** `PlanarMetricContext` has a second constructor taking a
+pattern and `FarFieldExternalTerms` (accepted power, and a solver's own verdicts). `Problem`/`Mesh` are null then,
+and exactly three things change behaviour, each keyed on that: the budget (surface-wave and conductor terms
+refused by name through `PlanarPowerBudget.ConductorVerdict`, new and null for kernel B), the dominant axis
+(`PlanarBeamwidth.AxisFromPattern` — the far field's own polarization at the peak: the (E_x, E_y) ellipse when
+the field is mostly lateral, the peak's own azimuth when it is mostly vertical, which is a dipole along z), and
+the hemisphere front-to-back sentence. The efficiency ceiling reads `FarFieldExternalTerms.EfficiencyTolerance`
+when set, because a 3D solver's two powers come from different integrals.
+
+**Byte identity was dumped FIRST.** `testdata/em3d/farfield/planar-line-golden.npy` was written from the pre-split
+code before a line of the split existed (a de-embedded two-port FR-4 line, two frequencies, 22 cubes);
+`FarFieldStageTests` holds every cube of it to exact equality, and it held.
+
+**A trap for whoever widens this.** The beamwidth cut and the Ludwig-3 reference are derived per pattern and must
+AGREE across the sweep. A pattern that is azimuthally symmetric at its peak (a z-directed dipole: the whole
+horizon is the peak) derives its axis from whichever azimuth the peak search lands on, which moves with
+frequency, so both are refused for the set with the existing "do not agree" sentence. That is correct — naming
+the cut is the remedy — but it will read as a bug on the first vertical radiator anyone runs.

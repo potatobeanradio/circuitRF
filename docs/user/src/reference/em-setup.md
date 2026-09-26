@@ -429,10 +429,12 @@ folder are in [The Command Line](cli.html#em).
 The **Solver** group at the top of the panel picks who solves the setup: circuitRF's own planar and
 cross-section kernels (the default), **FEM 3D (Palace)**, **FDTD 3D (openEMS)**, or **FEM & FDTD -
 Compare**. A 3D setup builds a 3D model from the layout, its technology and any bond wires. The
-settings a 3D run does not read — the surface mesh, adaptive sampling, the port type, the planar
-solver options and the radiation pattern — are hidden while a 3D solver is chosen; they stay in the
+settings a 3D run does not read — the surface mesh, adaptive sampling, the port type and the planar
+solver options — are hidden while a 3D solver is chosen; they stay in the
 `.cem` and come back when you switch to Planar. What a 3D run does read stays: the frequency sweep,
-each port's Z₀ (set in the Solver group's port table), the return plane, the solve region and the core count. Palace and openEMS each have their own section below, and a setup keeps
+each port's Z₀ (set in the Solver group's port table), the return plane, the solve region, the core count
+and the **radiation pattern**, which a driven 3D run produces too — see
+[Antennas ▸ From a 3D solver](antennas.html#3d). Palace and openEMS each have their own section below, and a setup keeps
 both, so switching solver never loses the other's settings.
 
 With Palace chosen the panel shows Palace's own settings. **A blank box is the default shown in it**, and

@@ -116,10 +116,45 @@ public static class PlanarBeamwidth
         PlanarMetricContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
+        if (context.Mesh is null) return AxisFromPattern(context.Pattern, context.Peak);
         double kRho = 2.0 * Math.PI * context.Pattern.FrequencyHz / EmConstants.C0
                       * Math.Sin(context.Peak.ThetaDeg * Math.PI / 180.0);
         var (sinP, cosP) = Math.SinCos(context.Peak.PhiDeg * Math.PI / 180.0);
         return DominantAxis(context.Mesh, context.BasisCurrents, kRho * cosP, kRho * sinP);
+    }
+
+    /// <summary>
+    /// <b>brief-em3d-31 — the dominant axis of a pattern that came with NO currents</b> (a 3D solver's):
+    /// the far field's own polarization at the peak, in Cartesian. Where the field there is mostly
+    /// LATERAL (|E_x|² + |E_y|² ≥ |E_z|²) the axis is the major axis of the (E_x, E_y) ellipse, by the
+    /// same principal-moment formula <see cref="DominantAxis"/> applies to a current moment — at a
+    /// broadside peak the two are the same quantity, since a lateral current radiates a parallel field
+    /// there, and at a peak in a principal plane they name the same plane. Where the field is mostly
+    /// VERTICAL (a monopole, a dipole along z, whose peak is on the horizon) the E-plane is the vertical
+    /// plane through the peak, and the axis is the peak's own azimuth with no minor part.
+    /// </summary>
+    public static (double AxisDeg, double Major, double Minor) AxisFromPattern(
+        PlanarFarFieldPattern pattern, PlanarPatternPeak peak)
+    {
+        ArgumentNullException.ThrowIfNull(pattern);
+        ArgumentNullException.ThrowIfNull(peak);
+        var g = pattern.Grid;
+        int it = PlanarMetrics.Nearest(g.ThetaDeg, peak.ThetaDeg);
+        int ip = PlanarMetrics.NearestAzimuth(g.PhiDeg, peak.PhiDeg);
+        int k = g.IndexOf(it, ip);
+        var (st, ct) = Math.SinCos(g.ThetaDeg[it] * Math.PI / 180.0);
+        var (sp, cp) = Math.SinCos(g.PhiDeg[ip] * Math.PI / 180.0);
+        Complex eth = pattern.ETheta[k], eph = pattern.EPhi[k];
+        Complex ex = eth * ct * cp - eph * sp, ey = eth * ct * sp + eph * cp, ez = -eth * st;
+        double ax = ex.Magnitude * ex.Magnitude, ay = ey.Magnitude * ey.Magnitude, az = ez.Magnitude * ez.Magnitude;
+        if (az > ax + ay)
+            return ((((g.PhiDeg[ip] % 180.0) + 180.0) % 180.0), az, 0.0);
+        double cross = 2.0 * (ex * Complex.Conjugate(ey)).Real;
+        double root = Math.Sqrt((ax - ay) * (ax - ay) + cross * cross);
+        double major = 0.5 * (ax + ay + root), minor = 0.5 * (ax + ay - root);
+        double axis = 0.5 * Math.Atan2(cross, ax - ay) * 180.0 / Math.PI;
+        if (axis < 0) axis += 180.0;
+        return (axis, major, Math.Max(minor, 0));
     }
 
     /// <summary>
@@ -199,7 +234,9 @@ public static class PlanarBeamwidth
                 folded = (axis + 180.0) % 360.0;
 
             wanted = [folded];
-            note = $"The beamwidth cut was DERIVED, not named: the current transform at the pattern's " +
+            note = $"The beamwidth cut was DERIVED, not named: " +
+                   (context.Mesh is null ? "the far field's own polarization" : "the current transform") +
+                   $" at the pattern's " +
                    $"peak (θ = {context.Peak.ThetaDeg:G6}°, φ = {context.Peak.PhiDeg:G6}°) has its " +
                    $"dominant axis at φ = {folded:F2}° (minor/major = {ratio:E2}), and the cut is the " +
                    $"plane containing that axis.";

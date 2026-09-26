@@ -289,6 +289,16 @@ This is the guidance the setup panel gives, not a restriction — a user may run
 | Package RLC extraction (capacitance, inductance matrices) | **FEM only** | Electrostatic and magnetostatic solvers; FDTD's time step is badly matched to near-DC physics |
 | Fine features in a large volume | FEM | Adaptive refinement puts elements where the error is; one fine feature sets FDTD's cell size and, through the stability limit, its time step |
 
+**The radiation pattern (brief-em3d-31, built 2026-09-26).** Both backends drive the planar kernel's own
+`farfield` cubes through one solver-agnostic stage (`src/Engine/Mom/FarFieldStage.cs`), so nothing downstream
+knows which solver made a pattern. openEMS: frequency-domain E/H dumps on a box 3 cells inside the PML and 1 cell
+clear of metal, transformed by circuitRF's own surface integral (`src/Engine/Em3d/NearToFarField.cs`, a
+conducting floor closed by image) — openEMS's `nf2ff` program was measured and not adopted (same answer to a
+definition of radiated power, no faster, and a second program on HDF5 dumps). Palace: its own
+`Boundaries.Postprocessing.FarField` (present in 0.18.1), which needs a closed absorbing box and lumped ports,
+so a conducting floor or a wave port leaves a Palace run without a pattern and says so. Measured findings and
+gates are in `src/Design/RESOLVED.md` §brief-em3d-31.
+
 ### 4.4 Running both — what agreement proves
 
 Two discretizations that share nothing numerically — tetrahedra in frequency, a grid in time — agreeing

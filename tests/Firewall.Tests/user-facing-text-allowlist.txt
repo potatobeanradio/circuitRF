@@ -919,3 +919,24 @@ src/Engine/Em3d/FdtdPortTransform.cs|There must be one run per port, each carryi
 # a removal of a path too short to be one circuitRF made); no user reaches either.
 src/Design/Em3d/Wsl/WslPaths.cs|'{linuxPath}' is not an absolute Linux path.
 src/Design/Em3d/Wsl/WslSession.cs|refusing to remove '{linuxPath}': not a path circuitRF made.
+
+# ── brief-em3d-31 (2026-09-26) ─────────────────────────────────────────────────────
+# Moved, not authored: openEMS's VTK file decoder moved from src/Render (not scanned) to src/Design, so the
+# radiation pattern could read openEMS's surface dumps there. Format invariants of a file openEMS writes;
+# src/Render's VtrReader still rethrows them as its own FieldReadException for the 3D view.
+src/Design/Em3d/VtrFile.cs|'{path}' does not hold three coordinate arrays and a field.
+src/Design/Em3d/VtrFile.cs|'{path}' has no point data or no coordinates.
+src/Design/Em3d/VtrFile.cs|'{path}' holds {values.Length:N0} values for a {x.Length} × {y.Length} × {z.Length} grid of {comps}.
+src/Design/Em3d/VtrFile.cs|'{path}' is a VTK {TagAttr(vtk, 
+src/Design/Em3d/VtrFile.cs|'{path}' is compressed with {compressor}; circuitRF reads zlib, the pinned openEMS's.
+src/Design/Em3d/VtrFile.cs|'{path}' is not a VTK XML file.
+src/Design/Em3d/VtrFile.cs|'{path}' is {bo}; circuitRF reads little-endian files.
+src/Design/Em3d/VtrFile.cs|'{path}' stores an array as {Attr(m, 
+src/Design/Em3d/VtrFile.cs|'{path}' stores coordinates as {type}.
+src/Design/Em3d/VtrFile.cs|'{path}' stores its field as {t}.
+src/Design/Em3d/VtrFile.cs|'{path}': an array could not be decoded.
+src/Design/Em3d/VtrFile.cs|'{path}': an array's compressed blocks are shorter than its header says.
+src/Design/Em3d/VtrFile.cs|'{path}': an array's compressed blocks could not be decoded.
+# Authored: caller-invariant argument checks on the far-field stage and transform (no user reaches them).
+src/Engine/Em3d/NearToFarField.cs|With a conducting floor the pattern is the upper hemisphere: θ must not pass 90°.
+src/Engine/Mom/FarFieldStage.cs|A pattern on this grid has {grid.DirectionCount} directions.

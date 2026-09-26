@@ -544,7 +544,8 @@ public sealed class EmSetup
         if (ResonanceSearch)                                     set.Add("ResonanceSearch");
         if (DirectVerticalKernel)                                set.Add("DirectVerticalKernel");
         if (AcceleratedSolve)                                    set.Add("AcceleratedSolve");
-        if (RadiationPattern)                                    set.Add("RadiationPattern");
+        // brief-em3d-31 — RadiationPattern is read by a driven 3D run too, so it is not planar-only;
+        // a static or eigenmode 3D setup says so through Em3dRunService.RadiationPatternIgnored.
         if (DeembedOutsideCalibrationValidity)                   set.Add("DeembedOutsideCalibrationValidity");
         return set;
     }

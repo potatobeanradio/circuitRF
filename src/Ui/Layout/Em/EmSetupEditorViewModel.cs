@@ -15,6 +15,7 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Numerics;
 using CircuitRF.Engine;
+using CircuitRF.Engine.Em3d;
 using CircuitRF.Engine.Mom;
 using CircuitRF.Ui.Commands;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -1690,7 +1691,18 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     /// second-guessed here: re-deriving it would be a copy of a judgement that can drift.
     /// </summary>
     public string? RadiationPatternDisabledReason =>
-        Working.AnalysisKind == EmAnalysisKind.CrossSection
+        // brief-em3d-31 R-em3d31-4 — a 3D setup reads the checkbox too: disabled only where nothing radiates in a
+        // driven sense. The AnalysisKind and boundary-cell reasons below are the planar kernel's and a 3D run
+        // reads neither. What a 3D run can refuse only once the problem exists — an air box too tight for the
+        // equivalence surface (openEMS), a conducting floor or a wave port (Palace) — is said by the run and by
+        // `circuitrf check`, in the same words, rather than re-derived here.
+        Is3DSetup
+            ? (Working.Problem3D != Em3dProblemType.Driven
+                ? $"The radiation pattern needs a Driven 3D problem: this setup is " +
+                  $"{(Working.Problem3D == Em3dProblemType.Eigenmode ? "an eigenmode" : "a static")} one, which drives no port at a " +
+                  "frequency, so nothing radiates in the sense a pattern describes."
+                : null)
+            : Working.AnalysisKind == EmAnalysisKind.CrossSection
             ? "The radiation pattern is part of the planar (full-wave) analysis; a cross-section solve " +
               "returns a uniform line's RLGC and has no radiating artwork to transform."
             : Working.PlanarMesh.BoundaryCells == PlanarBoundaryCells.Conformal

@@ -56,6 +56,7 @@ namespace CircuitRF.Design.Em3d;
 /// <param name="PecSolids">Solid conductors written as perfect conductors.</param>
 /// <param name="SubCellWires">Wires thinner than their grid cell, written as openEMS's thin conductor.</param>
 /// <param name="Notes">The sentences the run carries about all of the above.</param>
+/// <param name="FarField">brief-em3d-31 — the radiation pattern's equivalence surface, when one was asked for.</param>
 public sealed record CsxcadLowering(
     string?               Model,
     IReadOnlyList<string> PortFiles,
@@ -67,7 +68,8 @@ public sealed record CsxcadLowering(
     IReadOnlyList<string> PecSolids,
     IReadOnlyList<string> SubCellWires,
     IReadOnlyList<string> Notes,
-    string?               Refusal)
+    string?               Refusal,
+    Nf2ffSurface?         FarField = null)
 {
     public bool Ok => Refusal is null;
 }
@@ -108,8 +110,11 @@ public static class CsxcadWriter
     public const int TimeStepMethod = 3;
 
     /// <summary>The lowering of <paramref name="problem"/> on <paramref name="grid"/>.</summary>
+    /// <param name="farFieldHz">brief-em3d-31 — the frequencies to dump the radiation pattern's equivalence surface
+    /// at (<see cref="OpenEmsFarField"/>), or null for no pattern: a null request writes exactly the bytes it
+    /// wrote before the pattern existed.</param>
     public static CsxcadLowering Write(Em3dProblem problem, FdtdGridResult grid, OpenEmsGridSettings gridSettings,
-                                      OpenEmsRunSettings run)
+                                      OpenEmsRunSettings run, IReadOnlyList<double>? farFieldHz = null)
     {
         ArgumentNullException.ThrowIfNull(problem);
         ArgumentNullException.ThrowIfNull(grid);
@@ -258,6 +263,40 @@ public static class CsxcadWriter
             props.Append("            </DumpBox>\n");
         }
 
+        // ── brief-em3d-31 R-em3d31-2 — the radiation pattern's equivalence surface ──────────────────
+        // One E and one H frequency-domain dump per face (DumpType 10/11), node-interpolated (DumpMode 1) so E
+        // and H share the grid's own nodes, as VTK. Where it sits, and why, is OpenEmsFarField's header.
+        // OverSampling: openEMS accumulates a frequency-domain dump at the PLAIN Nyquist rate of the pulse's top
+        // frequency unless told otherwise — two samples a period at the top of the sweep, where the rectangle-rule
+        // DFT cannot separate a frequency from its own negative image. Measured on the half-wave dipole: the
+        // directivity drifted up the band (2.10 → 2.37 dBi) and the top point read 6.7 % efficiency. The dumps take
+        // the probes' own oversampling, so field and port are summed on equally fine samples.
+        Nf2ffSurface? surface = null;
+        if (farFieldHz is { Count: > 0 })
+        {
+            var (placed, why) = OpenEmsFarField.Place(problem, grid, farFieldHz);
+            if (placed is null) return No(why!);
+            surface = placed;
+            string fd = string.Join(",", farFieldHz.Select(R));
+            var c = Colors.Probe;
+            foreach (var face in placed.Faces)
+                foreach (var (name, type) in new[] { (face.EDump, 10), (face.HDump, 11) })
+                {
+                    props.Append($"            <DumpBox ID=\"{id++}\" Name=\"{name}\" Visible=\"0\" Number=\"0\" Type=\"0\" Weight=\"1\" " +
+                                 $"NormDir=\"-1\" StartTime=\"0\" StopTime=\"0\" DumpType=\"{type}\" DumpMode=\"1\" FileType=\"0\" MultiGridLevel=\"0\" OverSampling=\"{OverSampling}\">\n");
+                    props.Append($"                <FillColor R=\"{c.R}\" G=\"{c.G}\" B=\"{c.B}\" a=\"{c.A}\" />\n");
+                    props.Append($"                <EdgeColor R=\"{c.R}\" G=\"{c.G}\" B=\"{c.B}\" a=\"{c.A}\" />\n");
+                    props.Append($"                <FD_Samples>{fd}</FD_Samples>\n");
+                    var lo = placed.Min;
+                    var hi = placed.Max;
+                    lo = With(lo, face.Axis, face.Side == 0 ? Get(placed.Min, face.Axis) : Get(placed.Max, face.Axis));
+                    hi = With(hi, face.Axis, face.Side == 0 ? Get(placed.Min, face.Axis) : Get(placed.Max, face.Axis));
+                    AppendPrimitives(props, Box(0, lo, hi));
+                    props.Append("            </DumpBox>\n");
+                }
+            notes.AddRange(placed.Notes);
+        }
+
         // ── Notes ────────────────────────────────────────────────────────────────────────────────
         notes.Add("openEMS boundaries: " + string.Join(", ", Enumerable.Range(0, 6).Select(k =>
             $"{FaceKeys[k]} {BoundaryName(faceKinds[k], ctx.Pml)}")) + ".");
@@ -293,7 +332,7 @@ public static class CsxcadWriter
             head + body + e.Replace("{ID}", (id).ToString(CultureInfo.InvariantCulture)) + tail).ToList();
 
         return new CsxcadLowering(model, files, [.. ports.Select(p => p.Number)], fitHz, f0, fc, maxSteps,
-                                  pec, thin, notes, null);
+                                  pec, thin, notes, null, surface);
     }
 
     // ── The file's head: the run, the boundaries, the grid, the background ───────────────────────

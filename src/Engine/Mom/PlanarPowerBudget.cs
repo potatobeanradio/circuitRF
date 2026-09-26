@@ -480,6 +480,8 @@ public static class PlanarSurfaceWaveLaunch
 /// <param name="Conductor">The conductor term split into its sheet and barrel halves, or null when
 /// nothing was modelled. Carried because a run whose metal loss is mostly BARRELS rests on the via
 /// model rather than on the strip model, and nothing else would say so.</param>
+/// <param name="ConductorVerdict">brief-em3d-31 — null for kernel B, whose conductor term is always
+/// published; a 3D solver's budget, which does not itemise its loss, refuses the term here by name.</param>
 public sealed record PlanarPowerBudget(
     double                   AcceptedW,
     double                   RadiatedW,
@@ -491,7 +493,8 @@ public sealed record PlanarPowerBudget(
     int                      DrivenPort,
     double                   FrequencyHz,
     bool                     ConductorModelled = false,
-    PlanarConductorPower?    Conductor         = null)
+    PlanarConductorPower?    Conductor         = null,
+    EmSuitability?           ConductorVerdict  = null)
 {
     /// <summary>P_radiated / P_accepted — a FRACTION, not dB, and deliberately not clamped.</summary>
     public double RadiationEfficiency => AcceptedW > 0 ? RadiatedW / AcceptedW : double.NaN;

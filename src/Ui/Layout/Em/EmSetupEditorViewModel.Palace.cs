@@ -59,12 +59,24 @@ public sealed partial class EmSetupEditorViewModel
     /// solver options, the radiation pattern).</summary>
     public bool ShowCircuitRfSolverControls => !Is3DSetup;
 
+    /// <summary>
+    /// brief-em3d-31 R-em3d31-4 — the Radiation pattern group: the planar kernel, and every 3D solver, since each
+    /// now produces the farfield group (openEMS by its own surface transform, Palace by its far-field integral).
+    /// Its own property rather than a widening of <see cref="ShowCircuitRfSolverControls"/>, which still hides
+    /// what no 3D run reads.
+    /// </summary>
+    public bool ShowRadiationPattern =>
+        !Is3DSetup || Solver3DChoice.Value is Em3dSolver.OpenEms or Em3dSolver.Palace or Em3dSolver.Both;
+
     private void RaiseSolverKindVisibility()
     {
         OnPropertyChanged(nameof(ShowPlanarControls));
         OnPropertyChanged(nameof(ShowCrossSectionControls));
         OnPropertyChanged(nameof(ShowReturnPlane));
         OnPropertyChanged(nameof(ShowCircuitRfSolverControls));
+        OnPropertyChanged(nameof(ShowRadiationPattern));
+        OnPropertyChanged(nameof(RadiationPatternDisabledReason));
+        OnPropertyChanged(nameof(ReferenceInputPowerEnabled));
         OnPropertyChanged(nameof(ShowNotesGroup));
     }
 

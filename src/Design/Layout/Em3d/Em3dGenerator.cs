@@ -94,6 +94,16 @@ public static class Em3dGenerator
     public const double DefaultPaddingFractionOfLongestWavelength = 1.0 / 8.0;
 
     /// <summary>
+    /// <b>brief-em3d-31 — the default padding when a driven setup asks for a radiation pattern: a QUARTER.</b>
+    /// The pattern is transformed from a closed surface that must sit a few cells inside the absorber and a cell
+    /// clear of every conductor (OpenEmsFarField), and Palace's far-field integral runs over first-order
+    /// absorbing faces that want distance from the radiator. At an eighth the shipped 5.8 GHz patch leaves
+    /// ~7 mm where openEMS's surface needs ~10, and every such setup would be refused out of the box. A padding
+    /// the <c>.cem</c> states still wins, and is still refused, naming the face, if it is too tight.
+    /// </summary>
+    public const double PatternPaddingFractionOfLongestWavelength = 1.0 / 4.0;
+
+    /// <summary>
     /// brief-em3d-23 R-em3d23-2b — the default wave-port region, in multiples of the line's width w and its
     /// height h above its return. <b>The rule is the microstrip one repeated across full-wave tools'
     /// documentation and application notes</b> (their names are not written in this repository): a port
@@ -576,9 +586,14 @@ public static class Em3dGenerator
             // brief-em3d-22 — a static solve has no wavelength, so its default padding is the structure's
             // own largest extent: far enough that the box's faces barely touch the field, and a length a
             // package-sized problem can mesh.
+            bool radiating = setup.RadiationPattern && setup.Problem3D == Em3dProblemType.Driven;
             double pad = setup.IsStatic3D
                 ? Math.Max(Math.Max(cx1 - cx0, cy1 - cy0), Math.Max(zHigh - zLow, 1e-6))
-                : DefaultPaddingFractionOfLongestWavelength * C0 / fMin;
+                : (radiating ? PatternPaddingFractionOfLongestWavelength : DefaultPaddingFractionOfLongestWavelength) * C0 / fMin;
+            if (radiating)
+                _notes.Add($"The air box's default padding is a quarter of the longest wavelength ({Fmt(pad * 1e3)} mm) rather than " +
+                           "an eighth, because a radiation pattern was asked for: its equivalence surface sits inside the absorber " +
+                           "with room to spare around the structure. A padding the setup's AirBox states is used as stated.");
             var box = setup.AirBox ?? new EmAirBox();
             // brief-em3d-23 R-em3d23-2a — a wave port lies on the box, so its side has no padding and its
             // line must run to the structure's edge there.

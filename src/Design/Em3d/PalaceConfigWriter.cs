@@ -36,7 +36,10 @@ public static class PalaceConfigWriter
     /// <summary>
     /// The configuration for <paramref name="problem"/> meshed as <paramref name="groups"/> describes.
     /// </summary>
-    public static PalaceConfig Write(Em3dProblem problem, IReadOnlyList<Em3dGroup> groups, PalaceSettings settings)
+    /// <param name="farField">brief-em3d-31 — ask Palace for the far field (<see cref="FarFieldRefusal"/> says when
+    /// it cannot be); false writes exactly the bytes written before the pattern existed.</param>
+    public static PalaceConfig Write(Em3dProblem problem, IReadOnlyList<Em3dGroup> groups, PalaceSettings settings,
+                                     bool farField = false)
     {
         ArgumentNullException.ThrowIfNull(problem);
         ArgumentNullException.ThrowIfNull(groups);
@@ -152,7 +155,7 @@ public static class PalaceConfigWriter
             w.WriteEndObject();
 
             if (problem.IsStatic) WriteStatic(w, problem, groups, settings);
-            else WriteDriven(w, problem, groups, settings, materials);
+            else WriteDriven(w, problem, groups, settings, materials, farField);
 
             w.WriteEndObject();
         }
@@ -161,7 +164,7 @@ public static class PalaceConfigWriter
 
     /// <summary>The Boundaries and Solver of a driven problem: brief-em3d-7's, unchanged.</summary>
     private static void WriteDriven(Utf8JsonWriter w, Em3dProblem problem, IReadOnlyList<Em3dGroup> groups,
-                                    PalaceSettings settings, Dictionary<string, Em3dMaterial> materials)
+                                    PalaceSettings settings, Dictionary<string, Em3dMaterial> materials, bool farField = false)
     {
         // ── Boundaries ─────────────────────────────────────────────────────────────────────
         var pec        = new List<int>();
@@ -277,6 +280,27 @@ public static class PalaceConfigWriter
             }
             w.WriteEndArray();
         }
+        // brief-em3d-31 R-em3d31-3 — the far field: Palace's own Stratton–Chu integral over the absorbing faces,
+        // which must enclose the whole problem (FarFieldRefusal), at the 1° sphere circuitRF's cubes carry. The
+        // poles are asked once: Palace writes a pole once whatever azimuths it is given there.
+        if (farField && !eigen && absorbing.Count > 0 && FarFieldRefusal(problem) is null)
+        {
+            w.WriteStartObject("Postprocessing");
+            w.WriteStartObject("FarField");
+            Attributes(w, absorbing);
+            w.WriteStartArray("ThetaPhis");
+            for (int t = 0; t <= 180; t++)
+                for (int ph = 0; ph < (t is 0 or 180 ? 1 : 360); ph++)
+                {
+                    w.WriteStartArray();
+                    w.WriteNumberValue(t);
+                    w.WriteNumberValue(ph);
+                    w.WriteEndArray();
+                }
+            w.WriteEndArray();
+            w.WriteEndObject();
+            w.WriteEndObject();
+        }
         w.WriteEndObject();
 
         // ── Solver ─────────────────────────────────────────────────────────────────────────
@@ -337,6 +361,30 @@ public static class PalaceConfigWriter
         WriteLinear(w);
         w.WriteEndObject();
 
+    }
+
+    /// <summary>
+    /// <b>brief-em3d-31 R-em3d31-3 — why Palace cannot give this problem a far field, or null when it can.</b>
+    /// The installed Palace's schema (0.18.1) carries <c>Boundaries.Postprocessing.FarField</c>, a Stratton–Chu
+    /// integral over boundary attributes that "must enclose the system and be on an external boundary"
+    /// (its own words; the dry run accepts any attribute list and does not check). It applies no image, so a
+    /// conducting floor leaves its surface open, and a wave port is part of the box that is not absorbing.
+    /// Neither refuses the RUN: the S-parameters are unaffected, and on FEM &amp; FDTD - Compare the openEMS
+    /// half still produces the pattern (it closes a floor by image).
+    /// </summary>
+    public static string? FarFieldRefusal(Em3dProblem problem)
+    {
+        var f = problem.Boundary.Faces;
+        var kinds = new[] { ("xmin", f.XMin), ("xmax", f.XMax), ("ymin", f.YMin), ("ymax", f.YMax), ("zmin", f.ZMin), ("zmax", f.ZMax) };
+        if (kinds.FirstOrDefault(k => k.Item2 != Em3dBoundaryKind.Absorbing) is { Item1: not null } wall)
+            return $"No radiation pattern from Palace: the air box's {wall.Item1} face is {wall.Item2}, and Palace's far-field " +
+                   "integral runs over absorbing faces that must enclose the whole problem — it applies no image, so a " +
+                   "conducting face leaves its surface open. FDTD 3D (openEMS) closes a conducting floor by its image and " +
+                   "produces the pattern; or set every AirBox face to Absorbing (drawing the ground plane, if there is one).";
+        if (problem.HasWavePorts)
+            return "No radiation pattern from Palace: a wave port lies on the air box, so the box is not absorbing all round " +
+                   "and Palace's far-field integral has no closed surface to run over. Make every port a lumped port for a pattern.";
+        return null;
     }
 
     /// <summary>Whether the setup saves fields at all: only <c>SaveFieldsGHz: []</c> says no.</summary>
