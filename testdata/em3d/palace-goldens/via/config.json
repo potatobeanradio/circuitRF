@@ -2,7 +2,10 @@
   "Problem": {
     "Type": "Driven",
     "Verbose": 2,
-    "Output": "postpro"
+    "Output": "postpro",
+    "OutputFormats": {
+      "Paraview": true
+    }
   },
   "Model": {
     "Mesh": "model.msh",
@@ -129,6 +132,13 @@
           "MinFreq": 0.1,
           "MaxFreq": 20,
           "NSample": 200
+        },
+        {
+          "Type": "Point",
+          "Freq": [
+            10.05
+          ],
+          "SaveStep": 1
         }
       ],
       "AdaptiveTol": 0.0001

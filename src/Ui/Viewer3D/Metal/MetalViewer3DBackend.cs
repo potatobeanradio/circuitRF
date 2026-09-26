@@ -17,6 +17,7 @@ using Avalonia;
 using Avalonia.Platform;
 using Avalonia.Rendering.Composition;
 using CircuitRF.Render.Scene3D;
+using CircuitRF.Render.Scene3D.Fields;
 using static CircuitRF.Ui.Viewer3D.Metal.ObjC;
 
 namespace CircuitRF.Ui.Viewer3D.Metal;
@@ -36,7 +37,9 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
     [DllImport("/System/Library/Frameworks/Metal.framework/Metal")] private static extern nint MTLCreateSystemDefaultDevice();
 
     private readonly nint _device, _queue;
-    private nint _pOpaque, _pTrans, _pLines, _pPick, _dsWrite, _dsNoWrite, _depth, _pickId, _pickPos, _pickDepth;
+    private nint _pOpaque, _pTrans, _pLines, _pPick, _pField, _dsWrite, _dsNoWrite, _depth, _pickId, _pickPos, _pickDepth;
+    private nint _field;
+    private int _fieldCount;
     private int _depthW, _depthH;
     private nint _vb, _ib, _lines;
     private readonly nint[] _overlays = new nint[3];
@@ -80,6 +83,7 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
             return f != 0 ? f : throw new Viewer3DPresentFault($"The 3D view's Metal shader has no function '{name}'.");
         }
         nint vs = Fn("vs"), fsc = Fn("fs_color"), fsl = Fn("fs_line"), fsp = Fn("fs_pick");
+        nint vsf = Fn("vs_field"), fsf = Fn("fs_field");
 
         nint vd = Send(Class("MTLVertexDescriptor"), Sel("vertexDescriptor"));
         nint attrs = Send(vd, Sel("attributes"));
@@ -91,12 +95,22 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
         Attr(0, VtxFloat3, 0); Attr(1, VtxUInt, 12); Attr(2, VtxUChar4Normalized, 16);
         SendV(Idx(Send(vd, Sel("layouts")), 0), Sel("setStride:"), (nuint)Scene3DVertex.Stride);
 
-        nint Pipe(nint fs, bool blend, bool pick, nuint topologyClass)
+        // brief-em3d-29 — the field vertex: position, the value's real part, its imaginary part.
+        nint fvd = Send(Class("MTLVertexDescriptor"), Sel("vertexDescriptor"));
+        nint fattrs = Send(fvd, Sel("attributes"));
+        for (nuint k = 0; k < 3; k++)
+        {
+            nint a = Idx(fattrs, k);
+            SendV(a, Sel("setFormat:"), VtxFloat3); SendV(a, Sel("setOffset:"), 12 * k); SendV(a, Sel("setBufferIndex:"), (nuint)0);
+        }
+        SendV(Idx(Send(fvd, Sel("layouts")), 0), Sel("setStride:"), (nuint)FieldVertex.Stride);
+
+        nint Pipe(nint fs, bool blend, bool pick, nuint topologyClass, nint vfn = 0, nint vdesc = 0)
         {
             nint d = Send(Send(Class("MTLRenderPipelineDescriptor"), S.alloc), S.init);
-            SendV(d, Sel("setVertexFunction:"), vs);
+            SendV(d, Sel("setVertexFunction:"), vfn != 0 ? vfn : vs);
             SendV(d, Sel("setFragmentFunction:"), fs);
-            SendV(d, Sel("setVertexDescriptor:"), vd);
+            SendV(d, Sel("setVertexDescriptor:"), vdesc != 0 ? vdesc : vd);
             SendV(d, Sel("setDepthAttachmentPixelFormat:"), FmtDepth32F);
             SendV(d, Sel("setInputPrimitiveTopology:"), topologyClass);
             nint cas = Send(d, Sel("colorAttachments"));
@@ -128,6 +142,7 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
         _pTrans = Pipe(fsc, true, false, TopoTriangle);
         _pLines = Pipe(fsl, false, false, TopoLine);
         _pPick = Pipe(fsp, false, true, TopoTriangle);
+        _pField = Pipe(fsf, false, false, TopoTriangle, vsf, fvd);
 
         nint Depth(bool write)
         {
@@ -148,7 +163,7 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
 
         // The pipelines hold what they need; the library and its functions were ours (new…), the
         // vertex descriptor was not (a class factory's autoreleased object).
-        foreach (nint f in new[] { vs, fsc, fsl, fsp }) Send(f, S.release);
+        foreach (nint f in new[] { vs, fsc, fsl, fsp, vsf, fsf }) Send(f, S.release);
         Send(lib, S.release);
     }
 
@@ -167,6 +182,13 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
         int i = slot - Scene3DBuffer.Overlay0;
         Release(ref _overlays[i]);
         fixed (Scene3DVertex* p = lines) _overlays[i] = NewBuffer(p, lines.Length * Scene3DVertex.Stride);
+    }
+
+    public override void UploadField(FieldVertex[] vertices)
+    {
+        Release(ref _field);
+        fixed (FieldVertex* p = vertices) _field = NewBuffer(p, vertices.Length * FieldVertex.Stride);
+        _fieldCount = vertices.Length;
     }
 
     private nint NewBuffer(void* data, int length)
@@ -247,15 +269,17 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
     private int _offW, _offH;
 
     /// <summary>Tests: an offscreen image's pixels, RGBA8 rows top to bottom.</summary>
-    internal byte[] ReadImage(int image)
+    internal byte[] ReadImage(int image) => Read(_images[image].Texture, _offW, _offH);
+
+    /// <summary>A BGRA8 texture's pixels as RGBA8, rows top to bottom.</summary>
+    private byte[] Read(nint texture, int w, int h)
     {
-        int w = _offW, h = _offH;
         nint buf = ((delegate* unmanaged<nint, nint, nuint, nuint, nint>)MsgSend)(_device, Sel("newBufferWithLength:options:"), (nuint)(w * h * 4), 0);
         nint pool = PoolPush();
         nint cb = Send(_queue, S.commandBuffer);
         nint blit = Send(cb, S.blitCommandEncoder);
         ((delegate* unmanaged<nint, nint, nint, nuint, nuint, MtlOrigin, MtlSize, nint, nuint, nuint, nuint, void>)MsgSend)(
-            blit, S.copyFromTextureToBuffer, _images[image].Texture, 0, 0, default, new MtlSize { W = (nuint)w, H = (nuint)h, D = 1 }, buf, 0, (nuint)(w * 4), (nuint)(w * h * 4));
+            blit, S.copyFromTextureToBuffer, texture, 0, 0, default, new MtlSize { W = (nuint)w, H = (nuint)h, D = 1 }, buf, 0, (nuint)(w * 4), (nuint)(w * h * 4));
         Send(blit, S.endEncoding);
         Send(cb, S.commit);
         Send(cb, S.waitUntilCompleted);
@@ -320,6 +344,25 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
     {
         var target = _images[image].Texture;
         if (target == 0) throw new Viewer3DPresentFault("The 3D view's image has no texture.");
+        RenderInto(target, plan, frame, signal: true, wait: false);
+    }
+
+    /// <summary>brief-em3d-29 R-em3d29-5 — the plan drawn into a texture of its own, read back. The same
+    /// pipelines and buffers as the view; the swapchain is untouched.</summary>
+    public override byte[] RenderPixels(Scene3DFramePlan plan)
+    {
+        int w = plan.Width, h = plan.Height;
+        nint tex = NewTexture(w, h, FmtBGRA8, 4 | 1, 0);
+        try
+        {
+            RenderInto(tex, plan, 0, signal: false, wait: true);
+            return Read(tex, w, h);
+        }
+        finally { Send(tex, S.release); }
+    }
+
+    private void RenderInto(nint target, Scene3DFramePlan plan, ulong frame, bool signal, bool wait)
+    {
         nint pool = PoolPush();
         try
         {
@@ -359,24 +402,27 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
                     ref var d = ref plan.Draws[i];
                     nint buf = d.Buffer switch
                     {
-                        Scene3DBuffer.Scene => _vb, Scene3DBuffer.SceneLines => _lines,
+                        Scene3DBuffer.Scene => _vb, Scene3DBuffer.SceneLines => _lines, Scene3DBuffer.Field => _field,
                         Scene3DBuffer.Overlay0 => _overlays[0], Scene3DBuffer.Overlay1 => _overlays[1], _ => _overlays[2],
                     };
                     if (buf == 0 || (d.Pipeline is Scene3DPipeline.Opaque or Scene3DPipeline.Translucent && _ib == 0)) continue;
+                    if (d.Pipeline == Scene3DPipeline.Field && d.First + d.Count > _fieldCount) continue;
                     SendV(e, S.setRenderPipelineState, d.Pipeline switch
                     {
-                        Scene3DPipeline.Translucent => _pTrans, Scene3DPipeline.Lines => _pLines, _ => _pOpaque,
+                        Scene3DPipeline.Translucent => _pTrans, Scene3DPipeline.Lines => _pLines,
+                        Scene3DPipeline.Field => _pField, _ => _pOpaque,
                     });
                     SendV(e, S.setDepthStencilState, d.Pipeline == Scene3DPipeline.Translucent ? _dsNoWrite : _dsWrite);
                     ((delegate* unmanaged<nint, nint, nint, nuint, nuint, void>)MsgSend)(e, S.setVertexBuffer, buf, 0, 0);
-                    if (d.Pipeline == Scene3DPipeline.Lines)
-                        ((delegate* unmanaged<nint, nint, nuint, nuint, nuint, void>)MsgSend)(e, Sel_drawPrimitives, PrimLine, (nuint)d.First, (nuint)d.Count);
+                    if (d.Pipeline is Scene3DPipeline.Lines or Scene3DPipeline.Field)
+                        ((delegate* unmanaged<nint, nint, nuint, nuint, nuint, void>)MsgSend)(e, Sel_drawPrimitives,
+                            d.Pipeline == Scene3DPipeline.Lines ? PrimLine : PrimTriangle, (nuint)d.First, (nuint)d.Count);
                     else DrawIndexed(e, d);
                     draws++;
                 }
                 Send(e, S.endEncoding);
 
-                if (_timeline)
+                if (_timeline && signal)
                     ((delegate* unmanaged<nint, nint, nint, ulong, void>)MsgSend)(cb, S.encodeSignalEvent, _readyEvt, frame);
                 Send(cb, S.commit);
                 if (slot >= 0)
@@ -385,7 +431,7 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
                     _rbFrame[slot] = Counters.FrameIndex;
                     _rbHead++;
                 }
-                if (!_timeline) Send(cb, S.waitUntilCompleted);
+                if (!_timeline || wait) Send(cb, S.waitUntilCompleted);
             }
             DrawCallsLastFrame = draws;
         }
@@ -473,11 +519,11 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
             Release(ref _rbCmd[i]);
         }
         ReleaseImages();
-        Release(ref _vb); Release(ref _ib); Release(ref _lines);
+        Release(ref _vb); Release(ref _ib); Release(ref _lines); Release(ref _field);
         for (int i = 0; i < 3; i++) Release(ref _overlays[i]);
         for (int i = 0; i < Ring; i++) Release(ref _rb[i]);
         Release(ref _depth); Release(ref _pickId); Release(ref _pickPos); Release(ref _pickDepth);
-        Release(ref _pOpaque); Release(ref _pTrans); Release(ref _pLines); Release(ref _pPick);
+        Release(ref _pOpaque); Release(ref _pTrans); Release(ref _pLines); Release(ref _pPick); Release(ref _pField);
         Release(ref _dsWrite); Release(ref _dsNoWrite);
         if (_queue != 0) Send(_queue, S.release);
         if (_device != 0) Send(_device, S.release);

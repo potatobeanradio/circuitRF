@@ -1,0 +1,95 @@
+{
+  "Generator": "circuitRF brief-em3d-7: the mapping from named objects to Palace attributes",
+  "LengthUnitM": 1E-06,
+  "Groups": [
+    {
+      "Attribute": 1,
+      "Name": "below",
+      "Dimension": 3,
+      "Kind": "Volume",
+      "Expected": 1,
+      "Material": "fill"
+    },
+    {
+      "Attribute": 2,
+      "Name": "above",
+      "Dimension": 3,
+      "Kind": "Volume",
+      "Expected": 1,
+      "Material": "fill"
+    },
+    {
+      "Attribute": 3,
+      "Name": "plate",
+      "Dimension": 2,
+      "Kind": "Conductor",
+      "Expected": 1,
+      "AtLeast": true,
+      "Material": "metal",
+      "Terminal": "plate"
+    },
+    {
+      "Attribute": 4,
+      "Name": "background",
+      "Dimension": 3,
+      "Kind": "Background",
+      "Expected": 0,
+      "AtLeast": true,
+      "Material": "(free space)"
+    },
+    {
+      "Attribute": 5,
+      "Name": "airbox/xmin",
+      "Dimension": 2,
+      "Kind": "Face",
+      "Expected": 1,
+      "AtLeast": true,
+      "Boundary": "Pmc"
+    },
+    {
+      "Attribute": 6,
+      "Name": "airbox/xmax",
+      "Dimension": 2,
+      "Kind": "Face",
+      "Expected": 1,
+      "AtLeast": true,
+      "Boundary": "Pmc"
+    },
+    {
+      "Attribute": 7,
+      "Name": "airbox/ymin",
+      "Dimension": 2,
+      "Kind": "Face",
+      "Expected": 1,
+      "AtLeast": true,
+      "Boundary": "Pmc"
+    },
+    {
+      "Attribute": 8,
+      "Name": "airbox/ymax",
+      "Dimension": 2,
+      "Kind": "Face",
+      "Expected": 1,
+      "AtLeast": true,
+      "Boundary": "Pmc"
+    },
+    {
+      "Attribute": 9,
+      "Name": "airbox/zmin",
+      "Dimension": 2,
+      "Kind": "Face",
+      "Expected": 1,
+      "AtLeast": true,
+      "Boundary": "Pec"
+    },
+    {
+      "Attribute": 10,
+      "Name": "airbox/zmax",
+      "Dimension": 2,
+      "Kind": "Face",
+      "Expected": 1,
+      "AtLeast": true,
+      "Boundary": "Pmc"
+    }
+  ]
+}

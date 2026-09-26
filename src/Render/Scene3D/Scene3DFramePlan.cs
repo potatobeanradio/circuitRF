@@ -27,10 +27,13 @@ public enum Scene3DPipeline
     Lines,
     /// <summary>The ID pass: triangles into the R32Uint + position targets.</summary>
     Pick,
+    /// <summary>brief-em3d-29 — a field's triangles (FieldVertex, not indexed), depth write, no blend,
+    /// coloured by the field uniforms.</summary>
+    Field,
 }
 
-/// <summary>Which buffer a draw reads: the scene's, or one of the overlay slots.</summary>
-public enum Scene3DBuffer { Scene, SceneLines, Overlay0, Overlay1, Overlay2 }
+/// <summary>Which buffer a draw reads: the scene's, one of the overlay slots, or the field's.</summary>
+public enum Scene3DBuffer { Scene, SceneLines, Overlay0, Overlay1, Overlay2, Field }
 
 /// <summary>One draw: <see cref="Count"/> indices (triangles) or vertices (lines) from <see cref="First"/>.</summary>
 [StructLayout(LayoutKind.Sequential)]
@@ -67,6 +70,14 @@ public sealed class Viewer3DViewState
     /// <summary>The cursor, device pixels from the top-left; negative when it is not over the view.</summary>
     public float CursorX = -1, CursorY = -1;
     public bool ShowMesh, ShowMeshSection, ShowGrid;
+    /// <summary>brief-em3d-29 — draw the field geometry.</summary>
+    public bool ShowField;
+    /// <summary>Objects a field surface is drawn ON (a conductor, a solid's faces): their own triangles
+    /// are left out while the field is shown, since the two would lie in one plane and fight.</summary>
+    public bool[] FieldCovered = [];
+    /// <summary>The field uniform block (FieldUniforms.Floats): the phase, the range, the mode and the
+    /// colour map — what an animation changes, per frame, instead of any geometry.</summary>
+    public readonly float[] Field = new float[Fields.FieldUniforms.Floats];
     public bool ShowAxisIndicator = true;
     /// <summary>A camera gesture moved the camera since the last frame.</summary>
     public bool Orbiting;
@@ -88,14 +99,18 @@ public sealed class Viewer3DViewState
     }
 
     public bool IsVisible(uint id) => id >= 1 && id <= Visible.Length && Visible[id - 1];
+
+    /// <summary>Drawn in the colour pass: visible, and not under a field surface being shown.</summary>
+    public bool IsDrawn(uint id) => IsVisible(id) && !(ShowField && id <= FieldCovered.Length && FieldCovered[id - 1]);
 }
 
 /// <summary>One frame's uniform blocks and draw lists. Reused from frame to frame.</summary>
 public sealed class Scene3DFramePlan
 {
     /// <summary>Floats in the uniform block — the WGSL <c>U</c>: vp (16), eye (4), clip (4), hover,
-    /// selection, flags, pad. 112 bytes.</summary>
-    public const int UniformFloats = 28;
+    /// selection, flags, pad (112 bytes), then brief 29's field block (<see cref="Fields.FieldUniforms"/>,
+    /// 288 bytes). 400 bytes.</summary>
+    public const int UniformFloats = 28 + Fields.FieldUniforms.Floats;
     public const int UniformBytes = UniformFloats * 4;
 
     /// <summary>Flag bits in the uniform block's <c>flags</c>.</summary>
@@ -124,7 +139,7 @@ public sealed class Scene3DFramePlan
     /// for an ID pass at the cursor. Allocates only when the scene changed.
     /// </summary>
     public void Plan(Scene3DModel scene, Viewer3DViewState view, int width, int height, bool flipY, bool pick,
-                     Scene3DOverlay mesh, Scene3DOverlay section, Scene3DOverlay grid)
+                     Scene3DOverlay mesh, Scene3DOverlay section, Scene3DOverlay grid, Fields.Scene3DFieldGeometry? field = null)
     {
         if (!ReferenceEquals(_sized, scene)) Size(scene);
         Width = width; Height = height;
@@ -135,8 +150,11 @@ public sealed class Scene3DFramePlan
 
         DrawCount = 0;
         foreach (var b in scene.Batches)
-            if (!b.Translucent && view.IsVisible(b.ObjectId))
+            if (!b.Translucent && view.IsDrawn(b.ObjectId))
                 Add(ref Draws, ref DrawCount, Scene3DPipeline.Opaque, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount);
+        // brief-em3d-29 — the field's slice and surfaces, one draw, opaque, before anything translucent.
+        if (view.ShowField && field is { Vertices.Length: > 0 } f)
+            Add(ref Draws, ref DrawCount, Scene3DPipeline.Field, Scene3DBuffer.Field, 0, f.Vertices.Length);
         foreach (var lb in scene.LineBatches)
             if (view.IsVisible(lb.ObjectId))
                 Add(ref Draws, ref DrawCount, Scene3DPipeline.Lines, Scene3DBuffer.SceneLines, lb.FirstVertex, lb.VertexCount);
@@ -157,7 +175,7 @@ public sealed class Scene3DFramePlan
         var batches = scene.Batches;
         for (int i = 0; i < batches.Length; i++)
         {
-            if (!batches[i].Translucent || !view.IsVisible(batches[i].ObjectId)) continue;
+            if (!batches[i].Translucent || !view.IsDrawn(batches[i].ObjectId)) continue;
             _order[n] = i;
             _keys[n] = -Vector3.Dot(scene.Objects[batches[i].ObjectId - 1].Centroid - eye, forward);
             n++;
@@ -183,7 +201,7 @@ public sealed class Scene3DFramePlan
 
     private void Size(Scene3DModel scene)
     {
-        int need = scene.Batches.Length + scene.LineBatches.Length + 4;
+        int need = scene.Batches.Length + scene.LineBatches.Length + 5;
         if (Draws.Length < need) Draws = new Scene3DDraw[need];
         if (PickDraws.Length < need) PickDraws = new Scene3DDraw[need];
         _keys = new float[scene.Batches.Length];
@@ -215,5 +233,6 @@ public sealed class Scene3DFramePlan
         bits[25] = view.Selected;
         bits[26] = flags;
         bits[27] = 0;
+        view.Field.AsSpan().CopyTo(u.AsSpan(28));
     }
 }

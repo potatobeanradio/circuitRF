@@ -12,6 +12,9 @@ public sealed class ColorMap3D
 
     private ColorMap3D(string name, params (float, byte, byte, byte)[] stops) { Name = name; _stops = stops; }
 
+    /// <summary>The stops, for a shader that interpolates them itself (brief-em3d-29's field pass).</summary>
+    public IReadOnlyList<(float T, byte R, byte G, byte B)> Stops => _stops;
+
     /// <summary>Perceptually uniform, dark to bright: magnitudes (|E|, surface current).</summary>
     public static ColorMap3D Viridis { get; } = new("viridis",
         (0.0f, 0x44, 0x01, 0x54), (0.1f, 0x48, 0x24, 0x75), (0.2f, 0x41, 0x44, 0x87), (0.3f, 0x35, 0x5f, 0x8d),

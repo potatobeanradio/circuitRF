@@ -1,0 +1,4 @@
+# brief-em3d-29: Palace's own ParaView output, read back byte for byte — its appended data is raw
+# binary inside an XML file, so no end-of-line conversion may ever touch it.
+* -text
+*.vtu binary

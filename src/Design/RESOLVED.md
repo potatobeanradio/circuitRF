@@ -13188,3 +13188,43 @@ Deviations, each deliberate:
 - **Headless has no location preference**, so `circuitrf` always acts as *Automatic*.
 - **`testdata/em3d/wsl/wsl-l-v.utf16le.bin` is constructed, not captured.** Its README says so, and
   replacing it with a capture is on the owner's list.
+
+## Palace field output — brief-em3d-29 (2026-09-26)
+
+**The pinned Palace refuses a save frequency it did not sample.** `Solver.Driven.Save` (a Driven-level
+list; the brief's "the driven samples' `Save` array" does not exist in the 0.18.1 schema) failed a real
+run with `Entry 1.05e+01 in "Save" must be an explicitly sampled frequency!` (MFEM_VERIFY, every rank).
+D7's default, the sweep's centre, is not a sample of any sweep with an even number of points. So the
+save frequencies go in as a **Point sample of their own with `SaveStep: 1`**, not in `Save`. Measured:
+Palace merges a Point sample that duplicates a sweep point (11 GHz on a 9–12 GHz, 4-point sweep: one
+row, one saved field), and the adaptive sweep evaluates the extra point like any other. Its row is in
+`port-S.csv`, so `Em3dRunService.WithoutSaveOnlyRows` drops it (and the matching `port-Z.csv` row for
+wave ports) before anything reads S — the `.sNp` holds the sweep asked for. A save frequency OUTSIDE the
+sweep is refused at config time (`PalaceConfigWriter.SaveRefusal`): Palace would sample it too, and
+that changes the sweep's own answer everywhere.
+
+**What Palace writes** (read off real runs; the reader's side is in `src/Render/RESOLVED.md`):
+`postpro/paraview/<problem>/…` and `<problem>_boundary/…`, one `excitation_<k>/` folder per excited port
+when there are several, and NONE when there is one (F0 case A's hand config excites one port and writes
+`driven/Cycle000001` directly). Each step's `timestep` is the frequency in GHz (driven), the 0-based
+mode (eigenmode) or terminal (static), plus one error-indicator step (999 driven, 99 otherwise). An
+electrostatic run writes E, V, U_e (and Q_s on the boundary), and no B.
+
+**Size, measured on F0 case A at order 2** (146,769 tetrahedra, 8 ranks, a 20.5 GHz Point save, 134 s,
+Palace 7.6 GB peak as before): 127 MB volume + 9.8 MB boundary per saved frequency per excitation, and
+33 MB once for the error indicator — 170 MB for the one-excitation run. circuitRF excites every port, so
+a two-port setup costs ~274 MB per saved frequency. Stated in the `SaveFieldsGHz` reference text; the
+completion summary line now ends with the run's own `field files …` total (`Em3dRunService.FieldFilesBytes`).
+
+**The re-golden** (one run of the golden gates under `CRF_WRITE_PALACE_GOLDENS=1`) changed four configs
+and only in output lines: `Problem.OutputFormats.Paraview: true` everywhere, a `{Type: Point, Freq: [c],
+SaveStep: 1}` sample in the two driven ones (microstrip 5.5 GHz, via 10.05 GHz), and `Save: 2` in the two
+static ones — the diff scanned by hand, and held by `FieldTests.Gate1` (each golden with those lines
+stripped equals the writer's output with fields off).
+
+**openEMS (§6).** `CsxcadWriter` adds one `DumpBox` per saved frequency (`OpenEms.SaveFieldsGHz`, same
+default and `[]` as Palace's; outside the sweep refused — the pulse carries no energy there) over the air
+box, at the cell centres (`DumpMode 2`, why in `src/Render/RESOLVED.md`). The two openEMS goldens gained
+exactly that box. The F0 structural comparison (`OpenEmsBackendTests.Gate5`) now lowers with fields off,
+since F0's hand-written case dumps none. **Not measured: what the dump costs a large run** — the DFT runs
+over the whole box during the run, and on the stripline (a 9 × 25 × 2-cell dump) nothing was visible.

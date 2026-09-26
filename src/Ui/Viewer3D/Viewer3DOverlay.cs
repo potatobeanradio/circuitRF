@@ -14,6 +14,7 @@ using Avalonia.Controls.Documents;
 using Avalonia.Media;
 using CircuitRF.Render;
 using CircuitRF.Render.Scene3D;
+using CircuitRF.Render.Scene3D.Fields;
 
 namespace CircuitRF.Ui.Viewer3D;
 
@@ -53,8 +54,43 @@ public sealed class Viewer3DOverlay : Control
             Text(ctx, label.Text, new Point(x + 6, y - 18), ink, 11, dark);
         }
 
+        if (vm.FieldLegendVisible) Legend(ctx, vm, w, ink, dark);
+
         if (vm.HoverText.Length > 0 && vm.View.CursorX >= 0)
             Text(ctx, vm.HoverText, new Point(vm.View.CursorX + 14, vm.View.CursorY + 14), ink, 12, dark);
+    }
+
+    /// <summary>brief-em3d-29 R-em3d29-3c — the field's legend, top right: the quantity, a colour bar with the
+    /// range at its ends, the range's percentile, the solution, and the phase when animated.</summary>
+    private static void Legend(DrawingContext ctx, Viewer3DViewModel vm, double w, IBrush ink, bool dark)
+    {
+        var lines = vm.FieldLegendLines();
+        if (lines.Count == 0 || vm.FieldScale is not { } range) return;
+        const double barW = 220, barH = 12, pad = 8, line = 16;
+        var texts = lines.Select(l => new FormattedText(l, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, Typeface.Default, 12, ink)).ToList();
+        double bw = Math.Max(barW, texts.Max(t => t.Width)) + 2 * pad;
+        double bh = 2 * pad + barH + line * (lines.Count + 1);
+        double x0 = w - bw - 12, y0 = 12;
+        ctx.FillRectangle(new SolidColorBrush(dark ? Color.FromArgb(215, 28, 30, 34) : Color.FromArgb(225, 250, 250, 252)),
+                          new Rect(x0, y0, bw, bh), 4);
+        double y = y0 + pad;
+        ctx.DrawText(texts[0], new Point(x0 + pad, y));
+        y += line + 2;
+        var stops = new GradientStops();
+        foreach (var (t, r, g, b) in vm.FieldMap.Stops) stops.Add(new GradientStop(Color.FromRgb(r, g, b), t));
+        var bar = new LinearGradientBrush
+        {
+            StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative), EndPoint = new RelativePoint(1, 0, RelativeUnit.Relative),
+            GradientStops = stops,
+        };
+        ctx.FillRectangle(bar, new Rect(x0 + pad, y, barW, barH));
+        y += barH + 2;
+        var lo = new FormattedText(FieldColorScale.G(range.Lo), CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface.Default, 11, ink);
+        var hi = new FormattedText(FieldColorScale.G(range.Hi), CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface.Default, 11, ink);
+        ctx.DrawText(lo, new Point(x0 + pad, y));
+        ctx.DrawText(hi, new Point(x0 + pad + barW - hi.Width, y));
+        y += line;
+        for (int i = 1; i < texts.Count; i++, y += line) ctx.DrawText(texts[i], new Point(x0 + pad, y));
     }
 
     private static void AxisIndicator(DrawingContext ctx, in Camera3D cam, Point o, IBrush ink)

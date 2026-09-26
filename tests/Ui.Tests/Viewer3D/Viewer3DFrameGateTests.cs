@@ -40,6 +40,16 @@ internal sealed class RecordingBackend : Viewer3DBackend
         Counters.CountUpload((long)lines.Length * Scene3DVertex.Stride);
     }
 
+    public int FieldUploads;
+
+    public override void UploadField(CircuitRF.Render.Scene3D.Fields.FieldVertex[] vertices)
+    {
+        FieldUploads++;
+        Counters.CountUpload((long)vertices.Length * CircuitRF.Render.Scene3D.Fields.FieldVertex.Stride);
+    }
+
+    public override byte[] RenderPixels(Scene3DFramePlan plan) => new byte[plan.Width * plan.Height * 4];
+
     public override string? CheckInterop(ICompositionGpuInterop interop) => null;
     public override void CreateImages(ICompositionGpuInterop interop, int width, int height, int count) { }
     public override void ReleaseImages() { }

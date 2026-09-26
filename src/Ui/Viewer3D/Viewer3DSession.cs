@@ -8,6 +8,7 @@
 // than of care in the caller.
 
 using CircuitRF.Render.Scene3D;
+using CircuitRF.Render.Scene3D.Fields;
 
 namespace CircuitRF.Ui.Viewer3D;
 
@@ -15,6 +16,7 @@ public sealed class Viewer3DSession(Func<Viewer3DBackend> create) : IDisposable
 {
     private long _uploadedGeneration = -1;
     private readonly long[] _overlayVersions = [-1, -1, -1];
+    private long _fieldVersion = -1;
     private Scene3DModel? _uploadedScene;
     private bool _disposed;
 
@@ -48,24 +50,57 @@ public sealed class Viewer3DSession(Func<Viewer3DBackend> create) : IDisposable
     /// thread (the tab closed mid-frame) draws nothing and creates nothing: false.
     /// </summary>
     public bool Frame(int image, Scene3DFramePlan plan, ulong frame, Scene3DModel scene,
-                      Scene3DOverlay mesh, Scene3DOverlay section, Scene3DOverlay grid, bool orbiting)
+                      Scene3DOverlay mesh, Scene3DOverlay section, Scene3DOverlay grid, bool orbiting,
+                      Scene3DFieldGeometry? field = null)
     {
         lock (RenderLock)
         {
             if (Backend is not { } b) return false;
             b.Counters.BeginFrame(orbiting);
-            if (!ReferenceEquals(scene, _uploadedScene) || scene.Generation != _uploadedGeneration)
-            {
-                b.UploadScene(scene);
-                _uploadedScene = scene;
-                _uploadedGeneration = scene.Generation;
-            }
-            Sync(b, Scene3DBuffer.Overlay0, 0, mesh);
-            Sync(b, Scene3DBuffer.Overlay1, 1, section);
-            Sync(b, Scene3DBuffer.Overlay2, 2, grid);
+            Upload(b, scene, mesh, section, grid, field);
             b.Render(image, plan, frame);
             b.Counters.EndFrame();
             return true;
+        }
+    }
+
+    /// <summary>Whatever the frame needs that the backend does not already hold — compared by number, so a
+    /// frame whose camera or phase alone changed uploads nothing.</summary>
+    private void Upload(Viewer3DBackend b, Scene3DModel scene, Scene3DOverlay mesh, Scene3DOverlay section, Scene3DOverlay grid,
+                        Scene3DFieldGeometry? field)
+    {
+        if (!ReferenceEquals(scene, _uploadedScene) || scene.Generation != _uploadedGeneration)
+        {
+            b.UploadScene(scene);
+            _uploadedScene = scene;
+            _uploadedGeneration = scene.Generation;
+        }
+        Sync(b, Scene3DBuffer.Overlay0, 0, mesh);
+        Sync(b, Scene3DBuffer.Overlay1, 1, section);
+        Sync(b, Scene3DBuffer.Overlay2, 2, grid);
+        // brief-em3d-29 — the field's geometry, by version: a phase step changes a uniform and uploads
+        // nothing (gate 5).
+        field ??= Scene3DFieldGeometry.None;
+        if (_fieldVersion != field.Version)
+        {
+            b.UploadField(field.Vertices);
+            _fieldVersion = field.Version;
+        }
+    }
+
+    /// <summary>
+    /// brief-em3d-29 R-em3d29-5 — <paramref name="plan"/> (planned at the export's size) drawn offscreen by
+    /// the same backend, with the same buffers, and read back as RGBA8 rows, top first. Holds the render
+    /// lock, so the render thread is never mid-frame on the device meanwhile. Null when the session is gone.
+    /// </summary>
+    public byte[]? RenderPixels(Scene3DFramePlan plan, Scene3DModel scene, Scene3DOverlay mesh, Scene3DOverlay section,
+                                Scene3DOverlay grid, Scene3DFieldGeometry? field)
+    {
+        lock (RenderLock)
+        {
+            if (_disposed || Backend is not { } b) return null;
+            Upload(b, scene, mesh, section, grid, field);
+            return b.RenderPixels(plan);
         }
     }
 

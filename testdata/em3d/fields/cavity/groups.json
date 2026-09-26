@@ -1,0 +1,77 @@
+{
+  "Generator": "circuitRF brief-em3d-7: the mapping from named objects to Palace attributes",
+  "LengthUnitM": 1E-06,
+  "Groups": [
+    {
+      "Attribute": 1,
+      "Name": "cavity",
+      "Dimension": 3,
+      "Kind": "Volume",
+      "Expected": 1,
+      "Material": "Air"
+    },
+    {
+      "Attribute": 2,
+      "Name": "background",
+      "Dimension": 3,
+      "Kind": "Background",
+      "Expected": 0,
+      "AtLeast": true,
+      "Material": "Air"
+    },
+    {
+      "Attribute": 3,
+      "Name": "airbox/xmin",
+      "Dimension": 2,
+      "Kind": "Face",
+      "Expected": 1,
+      "AtLeast": true,
+      "Boundary": "Pec"
+    },
+    {
+      "Attribute": 4,
+      "Name": "airbox/xmax",
+      "Dimension": 2,
+      "Kind": "Face",
+      "Expected": 1,
+      "AtLeast": true,
+      "Boundary": "Pec"
+    },
+    {
+      "Attribute": 5,
+      "Name": "airbox/ymin",
+      "Dimension": 2,
+      "Kind": "Face",
+      "Expected": 1,
+      "AtLeast": true,
+      "Boundary": "Pec"
+    },
+    {
+      "Attribute": 6,
+      "Name": "airbox/ymax",
+      "Dimension": 2,
+      "Kind": "Face",
+      "Expected": 1,
+      "AtLeast": true,
+      "Boundary": "Pec"
+    },
+    {
+      "Attribute": 7,
+      "Name": "airbox/zmin",
+      "Dimension": 2,
+      "Kind": "Face",
+      "Expected": 1,
+      "AtLeast": true,
+      "Boundary": "Pec"
+    },
+    {
+      "Attribute": 8,
+      "Name": "airbox/zmax",
+      "Dimension": 2,
+      "Kind": "Face",
+      "Expected": 1,
+      "AtLeast": true,
+      "Boundary": "Pec"
+    }
+  ]
+}

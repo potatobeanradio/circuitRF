@@ -3,8 +3,10 @@
 // generated file records this file's SHA-256, and Viewer3DFrameGateTests.Gate1b fails when they disagree.
 // Edit this file, then regenerate:  tools/ShaderGen  ->  shadergen src/Ui/Viewer3D/Shaders/scene.wgsl src/Ui/Viewer3D/Shaders
 //
-// The uniform block is Scene3DFramePlan's: vp, eye, clip, hover, selection, flags (112 bytes).
-// A vertex is Scene3DVertex: position, object id, RGBA8 colour (20 bytes).
+// The uniform block is Scene3DFramePlan's: vp, eye, clip, hover, selection, flags, then brief 29's field
+// block (FieldUniforms: phase, range, mode, dB, the colour map's stops) — 400 bytes.
+// A vertex is Scene3DVertex: position, object id, RGBA8 colour (20 bytes); a FIELD vertex is FieldVertex:
+// position, the value's real part, its imaginary part (36 bytes).
 
 struct U {
     vp: mat4x4f,
@@ -14,6 +16,13 @@ struct U {
     sel: u32,
     flags: u32,
     pad: u32,
+    // x cos φ, y sin φ, z range lo, w range hi
+    fphase: vec4f,
+    // x mode (0 |v| of a vector, 1 |Re{v e^jφ}|, 2 a real scalar, 3 Re{v e^jφ} of a scalar, 4 |v| of a
+    // scalar), y dB, z the colour map's stop count
+    fmode: vec4f,
+    // (t, r, g, b) per stop
+    stops: array<vec4f, 16>,
 };
 @group(0) @binding(0) var<uniform> u: U;
 
@@ -75,4 +84,65 @@ struct PickOut {
     o.id = i.id;
     o.world = vec4f(i.world, 1.0);
     return o;
+}
+
+// ── brief-em3d-29: the field pass ──────────────────────────────────────────────────────────────────
+// The value is computed HERE from the vertex's real and imaginary parts and the phase uniform, so an
+// animated frame changes one uniform and uploads nothing. Unshaded: the colour is the datum. A value
+// outside the range is drawn in the end colour (the clamp), never transparent.
+
+struct FVI {
+    @location(0) p: vec3f,
+    @location(1) re: vec3f,
+    @location(2) im: vec3f,
+};
+
+struct FVO {
+    @builtin(position) pos: vec4f,
+    @location(0) world: vec3f,
+    @location(1) re: vec3f,
+    @location(2) im: vec3f,
+};
+
+@vertex fn vs_field(v: FVI) -> FVO {
+    var o: FVO;
+    o.pos = u.vp * vec4f(v.p, 1.0);
+    o.world = v.p;
+    o.re = v.re;
+    o.im = v.im;
+    return o;
+}
+
+fn field_value(re: vec3f, im: vec3f) -> f32 {
+    let c = u.fphase.x;
+    let s = u.fphase.y;
+    let mode = u32(u.fmode.x + 0.5);
+    if (mode == 0u) { return sqrt(dot(re, re) + dot(im, im)); }
+    if (mode == 1u) { return length(re * c - im * s); }
+    if (mode == 2u) { return re.x; }
+    if (mode == 3u) { return re.x * c - im.x * s; }
+    return sqrt(re.x * re.x + im.x * im.x);
+}
+
+fn colour_map(t: f32) -> vec3f {
+    let n = u32(u.fmode.z + 0.5);
+    var rgb = u.stops[0].yzw;
+    for (var k = 1u; k < n; k = k + 1u) {
+        let a = u.stops[k - 1u];
+        let b = u.stops[k];
+        if (t <= b.x || k == n - 1u) {
+            let w = clamp((t - a.x) / max(b.x - a.x, 1e-6), 0.0, 1.0);
+            rgb = mix(a.yzw, b.yzw, w);
+            break;
+        }
+    }
+    return rgb;
+}
+
+@fragment fn fs_field(i: FVO) -> @location(0) vec4f {
+    if (clipped(i.world)) { discard; }
+    var v = field_value(i.re, i.im);
+    if (u.fmode.y > 0.5) { v = 20.0 * 0.30102999566 * log2(max(abs(v), 1e-30)); }
+    let t = clamp((v - u.fphase.z) / max(u.fphase.w - u.fphase.z, 1e-30), 0.0, 1.0);
+    return vec4f(colour_map(t), 1.0);
 }

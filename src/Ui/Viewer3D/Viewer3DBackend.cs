@@ -18,6 +18,7 @@
 using System.Numerics;
 using Avalonia.Rendering.Composition;
 using CircuitRF.Render.Scene3D;
+using CircuitRF.Render.Scene3D.Fields;
 
 namespace CircuitRF.Ui.Viewer3D;
 
@@ -43,6 +44,19 @@ public abstract class Viewer3DBackend : IDisposable
 
     /// <summary>Replaces one overlay slot's line buffer (<see cref="Scene3DBuffer.Overlay0"/>…2).</summary>
     public abstract void UploadOverlay(Scene3DBuffer slot, Scene3DVertex[] lines);
+
+    /// <summary>brief-em3d-29 — replaces the field's vertex buffer (a triangle list, not indexed). Counts
+    /// the bytes. Called when the field GEOMETRY changes — never for a phase step.</summary>
+    public abstract void UploadField(FieldVertex[] vertices);
+
+    // ── export (brief-em3d-29 R-em3d29-5) ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Draws <paramref name="plan"/> (planned at the export's size, no pick) into an offscreen image of
+    /// its own and reads the pixels back: RGBA8, rows top to bottom. The live swapchain is not touched, so
+    /// the file is the same picture the view shows, at the size asked for.
+    /// </summary>
+    public abstract byte[] RenderPixels(Scene3DFramePlan plan);
 
     // ── presentation ────────────────────────────────────────────────────────────────────────
 

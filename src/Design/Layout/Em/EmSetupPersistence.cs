@@ -6,6 +6,7 @@ using System.Numerics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using CircuitRF.Core.Design;
+using CircuitRF.Engine.Em3d;
 using CircuitRF.Engine.Mom;
 using CircuitRF.Design.Cells;
 
@@ -242,13 +243,27 @@ public sealed class CemPalace
     /// and interpolates the rest. Default 0.0001.</summary>
     public double? SweepAdaptiveTol { get; set; }
 
+    /// <summary>
+    /// brief-em3d-29 R-em3d29-1b — the frequencies, GHz, whose fields Palace saves for the 3D view. Omitted
+    /// saves the sweep's CENTRE frequency only (owner decision D7); <c>[]</c> saves no field at all; a list
+    /// saves those. An eigenmode run saves every mode it computes and a static run every terminal's
+    /// solution unless this is <c>[]</c> (their fields are not per frequency, so the list's values are not
+    /// read). Fields are large — see the reference page for the measured size per frequency.
+    /// </summary>
+    public List<double>? SaveFieldsGHz { get; set; }
+
     /// <summary>A copy, so an editor can change one without touching a setup that shares it.</summary>
-    public CemPalace Clone() => (CemPalace)MemberwiseClone();
+    public CemPalace Clone()
+    {
+        var c = (CemPalace)MemberwiseClone();
+        c.SaveFieldsGHz = SaveFieldsGHz is { } f ? [.. f] : null;
+        return c;
+    }
 
     /// <summary>True when no field is set: the same run as an omitted section.</summary>
     public bool IsEmpty =>
         Quality is null && MaxElementWavelengths is null && EdgeRefinement is null && Grading is null && ElementOrder is null &&
-        AdaptiveTol is null && AdaptiveMaxIterations is null && SweepAdaptiveTol is null;
+        AdaptiveTol is null && AdaptiveMaxIterations is null && SweepAdaptiveTol is null && SaveFieldsGHz is null;
 }
 
 /// <summary>
@@ -273,6 +288,15 @@ public sealed record PalaceSettings(
     /// one every F0 reference ran at.
     /// </summary>
     public static PalaceSettings Default { get; } = new(0.1, 0.2, 1.3, 2, 0.01, 2, 1e-4);
+
+    /// <summary>brief-em3d-29 R-em3d29-1b — the field-save frequencies, GHz: null is the sweep's centre
+    /// (D7), empty saves none. Not a preset's concern: every preset saves the same fields.</summary>
+    public IReadOnlyList<double>? SaveFieldsGHz { get; init; }
+
+    /// <summary>brief-em3d-29 R-em3d29-4 — points, metres, at which Palace writes E and B itself
+    /// (<c>probe-E.csv</c>, <c>probe-B.csv</c>): the check on the field reader that does not go through it.
+    /// Never set from a .cem; a gate sets it.</summary>
+    public IReadOnlyList<Point3> ProbesM { get; init; } = [];
 
     /// <summary>
     /// brief-em3d-21 R-em3d21-4 — a preset's values. <b>Standard is <see cref="Default"/></b>, so no
@@ -301,7 +325,7 @@ public sealed record PalaceSettings(
             section.ElementOrder          ?? p.ElementOrder,
             section.AdaptiveTol           ?? p.AdaptiveTol,
             section.AdaptiveMaxIterations ?? p.AdaptiveMaxIterations,
-            section.SweepAdaptiveTol      ?? p.SweepAdaptiveTol);
+            section.SweepAdaptiveTol      ?? p.SweepAdaptiveTol) { SaveFieldsGHz = section.SaveFieldsGHz };
     }
 
     /// <summary>Every value that cannot be run, as sentences naming the field — empty when all can.</summary>
@@ -322,6 +346,12 @@ public sealed record PalaceSettings(
             p.Add($"Palace.AdaptiveMaxIterations is {AdaptiveMaxIterations}; it must be 0 or more.");
         if (!(SweepAdaptiveTol >= 0))
             p.Add($"Palace.SweepAdaptiveTol is {SweepAdaptiveTol}; it must be 0 or more.");
+        foreach (double f in SaveFieldsGHz ?? [])
+            if (!(f > 0) || double.IsInfinity(f))
+            {
+                p.Add($"Palace.SaveFieldsGHz holds {f}; every save frequency must be a positive number of GHz.");
+                break;
+            }
         return p;
     }
 }
@@ -362,13 +392,25 @@ public sealed class CemOpenEms
     /// Default: ten times the steps the grid estimates for the pulse and its ring-down.</summary>
     public long? MaxTimeSteps { get; set; }
 
+    /// <summary>
+    /// brief-em3d-29 R-em3d29-6a — the frequencies, GHz, at which openEMS dumps the electric field over the
+    /// problem's extent for the 3D view. Omitted dumps the sweep's CENTRE frequency; <c>[]</c> dumps none;
+    /// a list dumps those, each within the sweep (outside it, the pulse carries no energy to show).
+    /// </summary>
+    public List<double>? SaveFieldsGHz { get; set; }
+
     /// <summary>A copy, so an editor can change one without touching a setup that shares it.</summary>
-    public CemOpenEms Clone() => (CemOpenEms)MemberwiseClone();
+    public CemOpenEms Clone()
+    {
+        var c = (CemOpenEms)MemberwiseClone();
+        c.SaveFieldsGHz = SaveFieldsGHz is { } f ? [.. f] : null;
+        return c;
+    }
 
     /// <summary>True when no field is set: the same run as an omitted section.</summary>
     public bool IsEmpty =>
         CellsPerWavelength is null && GradingRatio is null && ThirdsRule is null && MinCellUm is null && PmlCells is null &&
-        EndCriterionDb is null && MaxTimeSteps is null;
+        EndCriterionDb is null && MaxTimeSteps is null && SaveFieldsGHz is null;
 
     /// <summary>
     /// brief-em3d-8 R-em3d8-6 — the section's grid fields RESOLVED, each omitted one taking
@@ -391,7 +433,10 @@ public sealed class CemOpenEms
     public static OpenEmsRunSettings ResolveRun(CemOpenEms? section)
     {
         var d = OpenEmsRunSettings.Default;
-        return section is null ? d : new(section.EndCriterionDb ?? d.EndCriterionDb, section.MaxTimeSteps ?? d.MaxTimeSteps);
+        return section is null ? d : new(section.EndCriterionDb ?? d.EndCriterionDb, section.MaxTimeSteps ?? d.MaxTimeSteps)
+        {
+            SaveFieldsGHz = section.SaveFieldsGHz,
+        };
     }
 }
 
@@ -411,6 +456,10 @@ public sealed record OpenEmsRunSettings(double EndCriterionDb, long? MaxTimeStep
     /// </summary>
     public static OpenEmsRunSettings Default { get; } = new(-50, null);
 
+    /// <summary>brief-em3d-29 R-em3d29-6a — the field-dump frequencies, GHz: null is the sweep's centre,
+    /// empty dumps none.</summary>
+    public IReadOnlyList<double>? SaveFieldsGHz { get; init; }
+
     /// <summary>The default ceiling as a multiple of the grid's step estimate.</summary>
     public const int DefaultStepsFactor = 10;
 
@@ -426,6 +475,12 @@ public sealed record OpenEmsRunSettings(double EndCriterionDb, long? MaxTimeStep
                   "it must be a decay below 0 dB, and at least −200.");
         if (MaxTimeSteps is { } m && m < 1)
             p.Add($"OpenEms.MaxTimeSteps is {m}; it must be at least 1.");
+        foreach (double f in SaveFieldsGHz ?? [])
+            if (!(f > 0) || double.IsInfinity(f))
+            {
+                p.Add($"OpenEms.SaveFieldsGHz holds {f}; every save frequency must be a positive number of GHz.");
+                break;
+            }
         return p;
     }
 }

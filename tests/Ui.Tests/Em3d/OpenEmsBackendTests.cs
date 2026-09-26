@@ -73,6 +73,8 @@ public sealed class OpenEmsBackendTests(ITestOutputHelper output) : IDisposable
         var (setup, source) = Em3dGeneratorTests.CaseB(plated: false);
         setup.AirBox = PalaceBackendTests.Padded(1500);
         setup.Solver3D = Em3dSolver.OpenEms;
+        // F0's hand-written case dumps no field; brief 29's DumpBox is compared with fields off.
+        setup.OpenEms = new CemOpenEms { SaveFieldsGHz = [] };
         var ours = XDocument.Parse(Lower(setup, source).PortFiles[0]);
         var f0 = XDocument.Load(Path.Combine(PalaceBackendTests.RepoRoot(), "testdata", "em3d", "f0", "B-via", "openems", "dw25-lossy", "case.xml"));
 

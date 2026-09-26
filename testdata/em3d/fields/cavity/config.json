@@ -1,0 +1,108 @@
+{
+  "Problem": {
+    "Type": "Eigenmode",
+    "Verbose": 2,
+    "Output": "postpro",
+    "OutputFormats": {
+      "Paraview": true
+    }
+  },
+  "Model": {
+    "Mesh": "model.msh",
+    "L0": 1E-06,
+    "Refinement": {
+      "Tol": 0.01,
+      "MaxIts": 0
+    }
+  },
+  "Domains": {
+    "Materials": [
+      {
+        "Attributes": [
+          1
+        ],
+        "Permeability": 1,
+        "Permittivity": 1,
+        "LossTan": 0
+      },
+      {
+        "Attributes": [
+          2
+        ],
+        "Permeability": 1,
+        "Permittivity": 1,
+        "LossTan": 0
+      }
+    ],
+    "Postprocessing": {
+      "Energy": [
+        {
+          "Index": 1,
+          "Attributes": [
+            1
+          ]
+        },
+        {
+          "Index": 2,
+          "Attributes": [
+            2
+          ]
+        }
+      ],
+      "Probe": [
+        {
+          "Index": 1,
+          "Center": [
+            11430,
+            5080,
+            12500
+          ]
+        },
+        {
+          "Index": 2,
+          "Center": [
+            6858,
+            4064,
+            17500
+          ]
+        },
+        {
+          "Index": 3,
+          "Center": [
+            18288,
+            2540,
+            5000
+          ]
+        }
+      ]
+    }
+  },
+  "Boundaries": {
+    "PEC": {
+      "Attributes": [
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ]
+    },
+    "LumpedPort": []
+  },
+  "Solver": {
+    "Order": 2,
+    "Device": "CPU",
+    "Eigenmode": {
+      "N": 3,
+      "Target": 5,
+      "Save": 3
+    },
+    "Linear": {
+      "Type": "Default",
+      "KSPType": "GMRES",
+      "Tol": 1E-08,
+      "MaxIts": 400
+    }
+  }
+}

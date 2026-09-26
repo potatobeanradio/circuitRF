@@ -29,7 +29,7 @@
 // therefore FALSE here, and a triangle keeps the on-screen winding it has on the other two APIs, so
 // the front face is COUNTER-CLOCKWISE as it is there (the shader's front_facing draws the clip caps).
 //
-// Per frame the 112-byte uniform block is copied into a persistently-mapped, host-coherent ring and
+// Per frame the 400-byte uniform block (brief 29 added the field block) is copied into a persistently-mapped, host-coherent ring and
 // bound as a dynamic uniform buffer — counted as uniform bytes, never geometry. Three frames in flight,
 // each with its own command buffer, fence and 1×1 pick readback buffer, read when its fence has
 // signalled, never waited for.
@@ -39,6 +39,7 @@ using System.Runtime.InteropServices;
 using Avalonia.Platform;
 using Avalonia.Rendering.Composition;
 using CircuitRF.Render.Scene3D;
+using CircuitRF.Render.Scene3D.Fields;
 using Vortice.Vulkan;
 using static Vortice.Vulkan.Vulkan;
 
@@ -51,7 +52,7 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
     /// <summary>How long a frame's fence may take before the GPU is declared stuck (a fault, never an
     /// endless wait: the render thread holds the render lock, and the UI thread takes it on detach).</summary>
     private const ulong FenceTimeoutNs = 2_000_000_000;
-    private const int UniformStride = 256;    // ≥ 112 and a multiple of every minUniformBufferOffsetAlignment (≤ 256)
+    private const int UniformStride = 512;    // ≥ 400 (brief 29's field block) and a multiple of every minUniformBufferOffsetAlignment (≤ 256)
     private const VkFormat ColorFormat = VkFormat.R8G8B8A8Unorm;
     private const VkFormat DepthFormat = VkFormat.D32Sfloat;
     private const VkImageUsageFlags TargetUsage =
@@ -77,7 +78,7 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
     private VkDescriptorPool _pool;
     private VkDescriptorSet _set;
     private VkShaderModule _module;
-    private VkPipeline _pOpaque, _pTrans, _pLines, _pPick;
+    private VkPipeline _pOpaque, _pTrans, _pLines, _pPick, _pField;
     private VkCommandPool _cmdPool;
     private (VkBuffer Buf, VkDeviceMemory Mem) _ub;
     private byte* _uMapped;
@@ -91,7 +92,8 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
     private Target _pickId = null!, _pickPos = null!, _pickDepth = null!;
     private VkFramebuffer _pickFb;
     private long _frame;
-    private (VkBuffer Buf, VkDeviceMemory Mem) _vb, _ib, _lines;
+    private (VkBuffer Buf, VkDeviceMemory Mem) _vb, _ib, _lines, _field;
+    private int _fieldCount;
     private readonly (VkBuffer Buf, VkDeviceMemory Mem)[] _overlays = new (VkBuffer, VkDeviceMemory)[3];
 
     /// <summary>An image with its memory and view.</summary>
@@ -255,6 +257,7 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         _pTrans = Pipeline(api, _rpColor, "fs_color"u8, VkPrimitiveTopology.TriangleList, blend: true, depthWrite: false, targets: 1);
         _pLines = Pipeline(api, _rpColor, "fs_line"u8, VkPrimitiveTopology.LineList, blend: false, depthWrite: true, targets: 1);
         _pPick = Pipeline(api, _rpPick, "fs_pick"u8, VkPrimitiveTopology.TriangleList, blend: false, depthWrite: true, targets: 2);
+        _pField = Pipeline(api, _rpColor, "fs_field"u8, VkPrimitiveTopology.TriangleList, blend: false, depthWrite: true, targets: 1, field: true);
 
         // two uniform blocks (pick, colour) per frame slot — host-coherent, mapped once
         _ub = NewBuffer(api, Ring * 2 * UniformStride, VkBufferUsageFlags.UniformBuffer, VkMemoryPropertyFlags.HostVisible | VkMemoryPropertyFlags.HostCoherent);
@@ -350,19 +353,31 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
     }
 
     private VkPipeline Pipeline(VkDeviceApi api, VkRenderPass rp, ReadOnlySpan<byte> fragmentEntry, VkPrimitiveTopology topology,
-                                bool blend, bool depthWrite, int targets)
+                                bool blend, bool depthWrite, int targets, bool field = false)
     {
-        fixed (byte* vsName = "vs"u8)
+        fixed (byte* vsName = field ? "vs_field"u8 : "vs"u8)
         fixed (byte* fsName = fragmentEntry)
         {
             var stages = stackalloc VkPipelineShaderStageCreateInfo[2];
             stages[0] = new VkPipelineShaderStageCreateInfo { stage = VkShaderStageFlags.Vertex, module = _module, pName = vsName };
             stages[1] = new VkPipelineShaderStageCreateInfo { stage = VkShaderStageFlags.Fragment, module = _module, pName = fsName };
-            var vbd = new VkVertexInputBindingDescription { binding = 0, stride = Scene3DVertex.Stride, inputRate = VkVertexInputRate.Vertex };
+            var vbd = new VkVertexInputBindingDescription
+            {
+                binding = 0, stride = field ? (uint)FieldVertex.Stride : Scene3DVertex.Stride, inputRate = VkVertexInputRate.Vertex,
+            };
             var attrs = stackalloc VkVertexInputAttributeDescription[3];
-            attrs[0] = new VkVertexInputAttributeDescription { location = 0, binding = 0, format = VkFormat.R32G32B32Sfloat, offset = 0 };
-            attrs[1] = new VkVertexInputAttributeDescription { location = 1, binding = 0, format = VkFormat.R32Uint, offset = 12 };
-            attrs[2] = new VkVertexInputAttributeDescription { location = 2, binding = 0, format = VkFormat.R8G8B8A8Unorm, offset = 16 };
+            if (field)
+            {
+                // brief-em3d-29 — FieldVertex: position, the value's real part, its imaginary part.
+                for (uint k = 0; k < 3; k++)
+                    attrs[k] = new VkVertexInputAttributeDescription { location = k, binding = 0, format = VkFormat.R32G32B32Sfloat, offset = 12 * k };
+            }
+            else
+            {
+                attrs[0] = new VkVertexInputAttributeDescription { location = 0, binding = 0, format = VkFormat.R32G32B32Sfloat, offset = 0 };
+                attrs[1] = new VkVertexInputAttributeDescription { location = 1, binding = 0, format = VkFormat.R32Uint, offset = 12 };
+                attrs[2] = new VkVertexInputAttributeDescription { location = 2, binding = 0, format = VkFormat.R8G8B8A8Unorm, offset = 16 };
+            }
             var vin = new VkPipelineVertexInputStateCreateInfo
             {
                 vertexBindingDescriptionCount = 1, pVertexBindingDescriptions = &vbd,
@@ -491,6 +506,14 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         int i = slot - Scene3DBuffer.Overlay0;
         Free(api, ref _overlays[i]);
         fixed (Scene3DVertex* p = lines) _overlays[i] = Upload(api, p, lines.Length * Scene3DVertex.Stride, VkBufferUsageFlags.VertexBuffer);
+    }
+
+    public override void UploadField(FieldVertex[] vertices)
+    {
+        var api = Api;
+        Free(api, ref _field);
+        fixed (FieldVertex* p = vertices) _field = Upload(api, p, vertices.Length * FieldVertex.Stride, VkBufferUsageFlags.VertexBuffer);
+        _fieldCount = vertices.Length;
     }
 
     /// <summary>A buffer may still be read by a frame in flight, so replacing one waits for the GPU —
@@ -675,10 +698,31 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
 
     // ── the frame ───────────────────────────────────────────────────────────────────────────
 
-    public override void Render(int image, Scene3DFramePlan plan, ulong frame)
+    public override void Render(int image, Scene3DFramePlan plan, ulong frame) => RenderTo(_images[image], plan, image);
+
+    /// <summary>brief-em3d-29 R-em3d29-5 — the plan drawn into an image of its own (no semaphores, never
+    /// imported) and read back: the same pipelines and buffers as the view, the swapchain untouched.</summary>
+    public override byte[] RenderPixels(Scene3DFramePlan plan)
     {
         var api = Api;
-        var im = _images[image];
+        var im = NewSwapImage(api, plan.Width, plan.Height, export: false);
+        try
+        {
+            RenderTo(im, plan, -1);
+            Check(api.vkDeviceWaitIdle(), "vkDeviceWaitIdle");
+            return ReadRgba(im);
+        }
+        finally
+        {
+            api.vkDeviceWaitIdle();
+            api.vkDestroyFramebuffer(im.Framebuffer, null);
+            Destroy(api, im.Color); Destroy(api, im.Depth);
+        }
+    }
+
+    private void RenderTo(Image im, Scene3DFramePlan plan, int image)
+    {
+        var api = Api;
         VkSemaphore wait = default, signal = default;
         if (im.ReleaseOwed)
         {
@@ -772,26 +816,28 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
                 ref var d = ref plan.Draws[i];
                 var buf = d.Buffer switch
                 {
-                    Scene3DBuffer.Scene => _vb.Buf, Scene3DBuffer.SceneLines => _lines.Buf,
+                    Scene3DBuffer.Scene => _vb.Buf, Scene3DBuffer.SceneLines => _lines.Buf, Scene3DBuffer.Field => _field.Buf,
                     Scene3DBuffer.Overlay0 => _overlays[0].Buf, Scene3DBuffer.Overlay1 => _overlays[1].Buf, _ => _overlays[2].Buf,
                 };
-                bool lines = d.Pipeline == Scene3DPipeline.Lines;
-                if (buf.Handle == 0 || (!lines && _ib.Buf.Handle == 0)) continue;
+                bool lines = d.Pipeline == Scene3DPipeline.Lines, field = d.Pipeline == Scene3DPipeline.Field;
+                if (buf.Handle == 0 || (!lines && !field && _ib.Buf.Handle == 0)) continue;
+                if (field && d.First + d.Count > _fieldCount) continue;
                 if (d.Pipeline != state)
                 {
                     state = d.Pipeline;
                     api.vkCmdBindPipeline(cb, VkPipelineBindPoint.Graphics, state switch
                     {
-                        Scene3DPipeline.Translucent => _pTrans, Scene3DPipeline.Lines => _pLines, _ => _pOpaque,
+                        Scene3DPipeline.Translucent => _pTrans, Scene3DPipeline.Lines => _pLines,
+                        Scene3DPipeline.Field => _pField, _ => _pOpaque,
                     });
                 }
                 if (d.Buffer != bound)
                 {
                     bound = d.Buffer;
                     api.vkCmdBindVertexBuffers(cb, 0, 1, &buf, &zero);
-                    if (!lines) api.vkCmdBindIndexBuffer(cb, _ib.Buf, 0, VkIndexType.Uint32);
+                    if (!lines && !field) api.vkCmdBindIndexBuffer(cb, _ib.Buf, 0, VkIndexType.Uint32);
                 }
-                if (lines) api.vkCmdDraw(cb, (uint)d.Count, 1, (uint)d.First, 0);
+                if (lines || field) api.vkCmdDraw(cb, (uint)d.Count, 1, (uint)d.First, 0);
                 else api.vkCmdDrawIndexed(cb, (uint)d.Count, 1, (uint)d.First, 0, 0);
                 draws++;
             }
@@ -858,10 +904,11 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
 
     /// <summary>The headless path: waits for the GPU and reads image <paramref name="image"/> (left in
     /// TRANSFER_SRC_OPTIMAL by its frame) as RGBA rows, top row first.</summary>
-    internal byte[] ReadRgba(int image)
+    internal byte[] ReadRgba(int image) => ReadRgba(_images[image]);
+
+    private byte[] ReadRgba(Image im)
     {
         var api = Api;
-        var im = _images[image];
         Check(api.vkDeviceWaitIdle(), "vkDeviceWaitIdle");
         for (int s = 0; s < Ring; s++) ReadPick(s);
         long size = (long)im.Width * im.Height * 4;
@@ -894,7 +941,7 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         }
         api.vkDeviceWaitIdle();
         ReleaseImages();
-        Free(api, _vb); Free(api, _ib); Free(api, _lines);
+        Free(api, _vb); Free(api, _ib); Free(api, _lines); Free(api, _field);
         foreach (var o in _overlays) Free(api, o);
         foreach (var b in _pickBuf) Free(api, b);
         Free(api, _ub);
@@ -902,7 +949,7 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         if (_pickFb.Handle != 0) api.vkDestroyFramebuffer(_pickFb, null);
         foreach (var f in _fence) if (f.Handle != 0) api.vkDestroyFence(f, null);
         api.vkDestroyPipeline(_pOpaque, null); api.vkDestroyPipeline(_pTrans, null);
-        api.vkDestroyPipeline(_pLines, null); api.vkDestroyPipeline(_pPick, null);
+        api.vkDestroyPipeline(_pLines, null); api.vkDestroyPipeline(_pPick, null); api.vkDestroyPipeline(_pField, null);
         api.vkDestroyPipelineLayout(_layout, null); api.vkDestroyDescriptorPool(_pool, null);
         api.vkDestroyDescriptorSetLayout(_setLayout, null); api.vkDestroyShaderModule(_module, null);
         api.vkDestroyRenderPass(_rpColor, null); api.vkDestroyRenderPass(_rpPick, null);

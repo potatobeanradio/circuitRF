@@ -295,6 +295,17 @@
                     </Box>
                 </Primitives>
             </ProbeBox>
+            <DumpBox ID="14" Name="efield1" Visible="0" Number="0" Type="0" Weight="1" NormDir="-1" StartTime="0" StopTime="0" DumpType="10" DumpMode="2" FileType="0" MultiGridLevel="0">
+                <FillColor R="152" G="84" B="47" a="255" />
+                <EdgeColor R="152" G="84" B="47" a="255" />
+                <FD_Samples>10050000000</FD_Samples>
+                <Primitives>
+                    <Box Priority="0">
+                        <P1 X="-0.006500000000000001" Y="-0.004" Z="-0.0015" />
+                        <P2 X="0.006500000000000001" Y="0.004" Z="0.002005" />
+                    </Box>
+                </Primitives>
+            </DumpBox>
         </Properties>
     </ContinuousStructure>
 </openEMS>

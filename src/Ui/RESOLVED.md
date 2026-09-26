@@ -35727,3 +35727,37 @@ built that field.
   elaborator), and at f = F_ref a 90° line sweeps exactly 180° of Γ (100 Ω → 25 Ω). A full circle is
   f = 2·F_ref — e.g. a TLIN pasted from a schematic keeps the registry's `F = 1 GHz`, or the generator
   table moved after placement. Reproduced with `circuitrf smith` on the same line at F_ref 2 vs 1 GHz.
+
+## The 3D view's fields — brief-em3d-29 (2026-09-26)
+
+**One uniform block, not two.** The field's parameters (phase, range, mode, dB, sixteen colour-map stops)
+extend the scene's uniform block from 112 to 400 bytes rather than adding a second binding, so no backend
+gained a descriptor, a slot or a constant buffer; Vulkan's per-frame stride went from 256 to 512. A phase
+step rewrites that block and nothing else: `FieldTests.Gate5` (recording fake) and the Metal test both
+count 0 bytes uploaded across phase steps.
+
+**Z-fighting, avoided twice.** A field drawn ON a conductor or a picked solid would lie in the object's own
+faces, so those objects are left out of the colour pass while the field shows (`Viewer3DViewState.FieldCovered`;
+still in the pick pass, which is what finds the conductor under the cursor for J_s). The clip plane's slice
+lies ON the plane, which the fragment shader's clip test would half-discard, so it is moved 1e-4 of the
+scene's size to the kept side.
+
+**Seen, and not seen.** Metal was driven offscreen by a test: the cavity's TE101 slice drawn in the colour
+map's colours, a 90° phase step changing more than a tenth of the pixels with no upload, and the export's read-back
+written as PNG and looked at. D3D11 compiles and has never run; Vulkan's field pipeline has not been run
+(no lavapipe run this time). No pixel of the live pane was seen: the GUI cannot be launched from an agent
+session.
+
+**A test trap.** `Viewer3DSession.Dispose` disposes its backend. A test that also `using`s the backend
+releases every Metal object twice and the test host dies with SIGSEGV (exit 139) and no message — the
+existing Metal test never disposed its session for that reason.
+
+**Copy Picture (owner request, 2026-09-26).** A right-CLICK in the 3D view (a right-drag still pans) opens
+a menu: *Copy Picture (4× the window)* and *Export Picture…*. Copy is Export's own path — the GPU's
+offscreen read-back (`CapturePicture`), the legend and caption as the export options say — put on the
+clipboard as an image only (`ImageClipboard`; on Windows, `WindowsClipboard` now takes a null text slot so
+no receiver prefers empty text over the picture). Two things about 4×: the side is capped at 16,384 pixels,
+every backend's largest 2D texture, and the status line says when the cap reduced the multiple; and the
+Avalonia bitmap is built from the composed pixels directly — the PNG-encode-then-decode every other copy
+here uses costs hundreds of megabytes each way at that size. That constructor copies the pixels and keeps
+RGBA order (checked in a headless Avalonia 12.0.3 scratch app; the test project has no Avalonia platform).

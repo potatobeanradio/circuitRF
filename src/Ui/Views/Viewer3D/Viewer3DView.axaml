@@ -108,6 +108,87 @@
                 <ToggleButton IsChecked="{Binding ViewModel.ShowTree}" ToolTip.Tip="Object tree">
                     <mi:MaterialIcon Kind="FileTreeOutline" Width="16" Height="16"/>
                 </ToggleButton>
+
+                <Border Width="1" Margin="2,3" Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                <!-- brief-em3d-29 R-em3d29-5 — the GPU's own pixels, read back at up to 4x the window. -->
+                <Button ToolTip.Tip="Export picture… (PNG of this view, read back from the GPU)">
+                    <mi:MaterialIcon Kind="CameraOutline" Width="16" Height="16"/>
+                    <Button.Flyout>
+                        <Flyout Placement="BottomEdgeAlignedLeft">
+                            <StackPanel Spacing="6" MinWidth="200">
+                                <TextBlock Text="Export picture" FontWeight="SemiBold"/>
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <TextBlock Text="Size" VerticalAlignment="Center"/>
+                                    <ComboBox ItemsSource="{Binding ViewModel.ExportScales}" SelectedItem="{Binding ViewModel.ExportScale}">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate><TextBlock Text="{Binding StringFormat='{}{0}× the window'}"/></DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                </StackPanel>
+                                <CheckBox IsChecked="{Binding ViewModel.ExportLegend}" Content="Legend"/>
+                                <CheckBox IsChecked="{Binding ViewModel.ExportCaption}" Content="Frequency or mode caption"/>
+                                <Button Content="Save PNG…" Click="OnExportPicture" HorizontalAlignment="Right"/>
+                            </StackPanel>
+                        </Flyout>
+                    </Button.Flyout>
+                </Button>
+            </WrapPanel>
+        </Border>
+
+        <!-- ── Fields (brief-em3d-29): shown once the run has saved some ─────────── -->
+        <Border DockPanel.Dock="Top" Padding="4,2" BorderThickness="0,0,0,1" IsVisible="{Binding ViewModel.FieldsAvailable}"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
+            <WrapPanel Orientation="Horizontal" ItemSpacing="4" LineSpacing="4">
+                <ToggleButton IsChecked="{Binding ViewModel.ShowField}" ToolTip.Tip="{Binding ViewModel.FieldsTip}">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <mi:MaterialIcon Kind="Waves" Width="16" Height="16"/>
+                        <TextBlock Text="Field" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </ToggleButton>
+                <ComboBox ItemsSource="{Binding ViewModel.FieldSolutions}" SelectedItem="{Binding ViewModel.SelectedFieldSolution}"
+                          IsEnabled="{Binding ViewModel.ShowField}" MinWidth="150" VerticalAlignment="Center"
+                          ToolTip.Tip="The saved frequency (driven), the mode (eigenmode) or the terminal (static)"/>
+                <ComboBox ItemsSource="{Binding ViewModel.FieldQuantities}" SelectedItem="{Binding ViewModel.SelectedFieldQuantity}"
+                          IsEnabled="{Binding ViewModel.ShowField}" MinWidth="170" VerticalAlignment="Center"
+                          ToolTip.Tip="What is drawn — only what the solver's files hold is offered">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate><TextBlock Text="{Binding Label}"/></DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <ToggleButton IsChecked="{Binding ViewModel.FieldOnClipPlane}" IsEnabled="{Binding ViewModel.ShowField}"
+                              ToolTip.Tip="On the clip plane (turn the plane on with C)">
+                    <mi:MaterialIcon Kind="ContentCut" Width="16" Height="16"/>
+                </ToggleButton>
+                <ToggleButton IsChecked="{Binding ViewModel.FieldOnSurfaces}" IsEnabled="{Binding ViewModel.ShowField}"
+                              ToolTip.Tip="On surfaces: the selected solid's faces, or the conductors for a surface quantity (J_s)">
+                    <mi:MaterialIcon Kind="CubeOutline" Width="16" Height="16"/>
+                </ToggleButton>
+
+                <Border Width="1" Margin="2,3" Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                <ToggleButton IsChecked="{Binding ViewModel.FieldDb}" IsEnabled="{Binding ViewModel.ShowField}" Content="dB"
+                              ToolTip.Tip="Decibels (20·log10 of the amplitude), 40 dB below the top of the range"/>
+                <ComboBox ItemsSource="{Binding ViewModel.FieldPercentiles}" SelectedItem="{Binding ViewModel.FieldPercentile}"
+                          IsEnabled="{Binding ViewModel.ShowField}" VerticalAlignment="Center"
+                          ToolTip.Tip="The top of the colour range: this percentile of the values drawn, so one singular edge does not wash out the picture. Beyond it, the end colour.">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate><TextBlock Text="{Binding StringFormat='{}{0} %'}"/></DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+
+                <Border Width="1" Margin="2,3" Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                <ToggleButton IsChecked="{Binding ViewModel.FieldPlaying}" IsEnabled="{Binding ViewModel.FieldCanAnimate}"
+                              ToolTip.Tip="Play the phase: Re{v·e^jφ} through one cycle (choose an animated quantity)" ToolTip.ShowOnDisabled="True">
+                    <mi:MaterialIcon Kind="PlayPause" Width="16" Height="16"/>
+                </ToggleButton>
+                <Slider Width="120" Minimum="0" Maximum="360" Value="{Binding ViewModel.FieldPhaseDegrees}"
+                        IsEnabled="{Binding ViewModel.FieldCanAnimate}" VerticalAlignment="Center" ToolTip.Tip="Phase φ, degrees"/>
+                <NumericUpDown Value="{Binding ViewModel.FieldLoopSeconds}" Minimum="0.2" Maximum="30" Increment="0.5" FormatString="0.#"
+                               IsEnabled="{Binding ViewModel.FieldCanAnimate}" Width="100" VerticalAlignment="Center"
+                               ToolTip.Tip="Seconds per cycle on screen — a display choice; the frequency is the legend's"/>
+                <TextBlock Text="s / cycle" VerticalAlignment="Center" Opacity="0.7"/>
             </WrapPanel>
         </Border>
 
@@ -122,6 +203,8 @@
                     <SelectableTextBlock FontSize="11" Text="{Binding ViewModel.Status}" TextWrapping="Wrap"/>
                 </DockPanel>
                 <SelectableTextBlock FontSize="11" Text="{Binding ViewModel.MeshText}" IsVisible="{Binding ViewModel.MeshText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                <SelectableTextBlock FontSize="11" Text="{Binding ViewModel.FieldText}" IsVisible="{Binding ViewModel.FieldText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                <SelectableTextBlock FontSize="11" Text="{Binding ViewModel.PictureText}" IsVisible="{Binding ViewModel.PictureText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                 <SelectableTextBlock FontSize="11" Text="{Binding ViewModel.Notes}" TextWrapping="Wrap" Opacity="0.85"
                                      IsVisible="{Binding ViewModel.Notes, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
             </StackPanel>

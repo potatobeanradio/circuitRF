@@ -541,6 +541,8 @@ public static class Em3dRunService
         var ports = problem.Ports.OrderBy(p => p.Number).ToList();
         var s = PalaceRun.ReadPortS(Path.Combine(post, PalaceRun.PortSFile), [.. ports.Select(p => p.Number)], out string? readError);
         if (readError is not null) return Failed(readError);
+        var requestedHz = FrequenciesHz(problem.Frequency);
+        s = WithoutSaveOnlyRows(s, requestedHz);
         // brief-em3d-23 R-em3d23-2d — a wave port's S is referred to its mode's own impedance: renormalised to
         // the port's stated Z0 before anything else reads it.
         Complex[][]? modeZ = null;
@@ -550,6 +552,11 @@ public static class Em3dRunService
             modeZ = PalaceRun.ReadPortZ(Path.Combine(post, PalaceRun.PortZFile), [.. wave.Select(p => p.Number)],
                                         out double[] zf, out string? zError);
             if (modeZ is null) return Failed(zError!);
+            if (zf.Length > s.FrequenciesHz.Length && SweepRows(zf, requestedHz) is { } zRows)
+            {
+                modeZ = [.. zRows.Select(k => modeZ[k])];
+                zf = [.. zRows.Select(k => zf[k])];
+            }
             if (zf.Length != s.FrequenciesHz.Length ||
                 zf.Where((f, k) => Math.Abs(f - s.FrequenciesHz[k]) > 1e-6 * Math.Abs(f)).Any())
                 return Failed($"Palace's {PalaceRun.PortZFile} and {PalaceRun.PortSFile} do not list the same frequencies, so the " +
@@ -578,7 +585,7 @@ public static class Em3dRunService
                 log.Notes.Add($"Whether a wave port's second mode propagates was not checked ({e.Message}).");
             }
         }
-        s = AtRequestedFrequencies(s, FrequenciesHz(problem.Frequency));
+        s = AtRequestedFrequencies(s, requestedHz);
         var facts = PalaceRun.ReadFacts(post);
         log.Notes.Add($"Palace solved {s.FrequenciesHz.Length} frequencies on {Count(facts.FinalElements)} elements " +
                       $"({Count(facts.InitialElements)} initially, {facts.AdaptiveIterations ?? 0} adaptive pass(es)), " +
@@ -611,7 +618,7 @@ public static class Em3dRunService
         }
 
         // R-em3d21-5a — the one line that says what the run cost, the last thing the run says.
-        log.Notes.Add(CompletionSummary(summary, quality, wall.Elapsed));
+        log.Notes.Add(CompletionSummary(summary, quality, wall.Elapsed, FieldFilesBytes(post)));
         return new Leg(Me, EmRunStatus.Ok, null, data, npyPath, snpPath, "Palace " + palace.DescribeVersion());
     }
 
@@ -673,7 +680,7 @@ public static class Em3dRunService
                       $"{Count(facts.DegreesOfFreedom)} unknowns, {processes} process(es).");
 
         string? npyPath = WriteNpy(resultsRoot, NpyKey(setup, Me), data, log);
-        log.Notes.Add(CompletionSummary(tracker.Summary, setup.Palace?.Quality ?? PalaceQuality.Standard, wall));
+        log.Notes.Add(CompletionSummary(tracker.Summary, setup.Palace?.Quality ?? PalaceQuality.Standard, wall, FieldFilesBytes(post)));
         return new Leg(Me, EmRunStatus.Ok, null, data, npyPath, null, "Palace " + palace.DescribeVersion());
     }
 
@@ -776,7 +783,7 @@ public static class Em3dRunService
                       $"{Count(facts.DegreesOfFreedom)} unknowns, {processes} process(es).");
 
         string? npyPath = WriteNpy(resultsRoot, NpyKey(setup, Me), data, log);
-        log.Notes.Add(CompletionSummary(tracker.Summary, setup.Palace?.Quality ?? PalaceQuality.Standard, wall));
+        log.Notes.Add(CompletionSummary(tracker.Summary, setup.Palace?.Quality ?? PalaceQuality.Standard, wall, FieldFilesBytes(post)));
         return new Leg(Me, EmRunStatus.Ok, null, data, npyPath, null, "Palace " + palace.DescribeVersion());
     }
 
@@ -809,6 +816,36 @@ public static class Em3dRunService
             if (!(Math.Abs(s.FrequenciesHz[k] - requested[k]) <= PrintedPrecision * Math.Abs(requested[k])))
                 return s;
         return s with { FrequenciesHz = (double[])requested.Clone() };
+    }
+
+    /// <summary>
+    /// brief-em3d-29 R-em3d29-1b — a field saved at a frequency that is not a sweep point is a Point sample
+    /// Palace evaluates like any other, so its row is in <c>port-S.csv</c> too. Those rows are dropped here:
+    /// the <c>.sNp</c> holds the sweep the setup asked for, and nothing else.
+    /// </summary>
+    internal static PalacePortS WithoutSaveOnlyRows(PalacePortS s, double[] requested)
+    {
+        if (s.FrequenciesHz.Length <= requested.Length || SweepRows(s.FrequenciesHz, requested) is not { } rows) return s;
+        return s with { FrequenciesHz = [.. rows.Select(k => s.FrequenciesHz[k])], S = [.. rows.Select(k => s.S[k])] };
+    }
+
+    /// <summary>The row matching each requested frequency to the printed precision, in order; null when one
+    /// has no row.</summary>
+    internal static int[]? SweepRows(double[] have, double[] requested)
+    {
+        const double PrintedPrecision = 1e-8;
+        var rows = new int[requested.Length];
+        int from = 0;
+        for (int k = 0; k < requested.Length; k++)
+        {
+            int at = -1;
+            for (int j = from; j < have.Length; j++)
+                if (Math.Abs(have[j] - requested[k]) <= PrintedPrecision * Math.Abs(requested[k])) { at = j; break; }
+            if (at < 0) return null;
+            rows[k] = at;
+            from = at + 1;
+        }
+        return rows;
     }
 
     /// <summary>A solver's grouped <c>.npy</c> in <c>results/</c>; null, with an error, when it could not be written.</summary>
@@ -1337,7 +1374,7 @@ public static class Em3dRunService
 
     /// <summary>R-em3d21-5a — "Palace done in 2 min 27 s · peak memory 7.4 GB · …", every figure the
     /// parser read from Palace's log, and a field Palace did not print left out rather than guessed.</summary>
-    public static string CompletionSummary(PalaceRunSummary s, PalaceQuality quality, TimeSpan wall)
+    public static string CompletionSummary(PalaceRunSummary s, PalaceQuality quality, TimeSpan wall, long? fieldBytes = null)
     {
         var parts = new List<string> { $"Palace done in {Duration(wall)}" };
         if (s.PeakMemoryBytes is { } m) parts.Add($"peak memory {MachineMemory.Format(m)} (Palace's own)");
@@ -1347,8 +1384,25 @@ public static class Em3dRunService
         if (s.RefinementPasses is { } r) parts.Add($"{r} refinement pass{(r == 1 ? "" : "es")}");
         if (s.SweepSamples is { } n) parts.Add($"{n} frequency sample{(n == 1 ? "" : "s")}");
         parts.Add($"preset {quality}");
+        // R-em3d29-1d — what the saved fields cost on disk, so a user saving twenty frequencies sees it.
+        if (fieldBytes is > 0 and var f) parts.Add($"field files {MachineMemory.Format(f)}");
         if (!s.LogRecognised) parts.Add("Palace's log format was not recognised, so some figures are missing");
         return string.Join(" · ", parts) + ".";
+    }
+
+    /// <summary>The total size of the field files Palace wrote under <paramref name="post"/>, or null
+    /// when it wrote none.</summary>
+    public static long? FieldFilesBytes(string post)
+    {
+        string dir = Path.Combine(post, "paraview");
+        try
+        {
+            if (!Directory.Exists(dir)) return null;
+            long n = 0;
+            foreach (var f in new DirectoryInfo(dir).EnumerateFiles("*", SearchOption.AllDirectories)) n += f.Length;
+            return n;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return null; }
     }
 
     private static string RunProvenance(PalaceRunSummary s, PalaceQuality quality)

@@ -60,6 +60,9 @@ public static class PalaceConfigWriter
                       "is referenced to a positive resistance; a reactive or non-positive reference is " +
                       "not supported in this version. Set the port's Z0 to a real, positive value.");
 
+        if (!problem.IsStatic && problem.Type == Em3dProblemType.Driven && SaveRefusal(problem.Frequency, settings) is { } saveRefusal)
+            return new(null, saveRefusal);
+
         using var ms = new MemoryStream();
         using (var w = new Utf8JsonWriter(ms, new JsonWriterOptions { Indented = true, NewLine = "\n" }))
         {
@@ -69,6 +72,11 @@ public static class PalaceConfigWriter
             w.WriteString("Type", problem.Type.ToString());
             w.WriteNumber("Verbose", 2);
             w.WriteString("Output", OutputDirectory);
+            // brief-em3d-29 R-em3d29-1a — stated although it is the schema's default: a default is not a
+            // contract, and the 3D view reads these files.
+            w.WriteStartObject("OutputFormats");
+            w.WriteBoolean("Paraview", true);
+            w.WriteEndObject();
             w.WriteEndObject();
 
             w.WriteStartObject("Model");
@@ -104,19 +112,41 @@ public static class PalaceConfigWriter
             // brief-em3d-23 R-em3d23-4c — an eigenmode problem's energy by domain, one index per meshed
             // volume group in attribute order: Palace's domain-E.csv then carries each mode's
             // participation p_elec[k], which is what says where a mode lives.
-            if (problem.Type == Em3dProblemType.Eigenmode)
+            bool energy = problem.Type == Em3dProblemType.Eigenmode;
+            if (energy || settings.ProbesM.Count > 0)
             {
                 w.WriteStartObject("Postprocessing");
-                w.WriteStartArray("Energy");
-                int index = 0;
-                foreach (var g in groups.Where(g => g.Dimension == 3))
+                if (energy)
                 {
-                    w.WriteStartObject();
-                    w.WriteNumber("Index", ++index);
-                    Attributes(w, [g.Attribute]);
-                    w.WriteEndObject();
+                    w.WriteStartArray("Energy");
+                    int index = 0;
+                    foreach (var g in groups.Where(g => g.Dimension == 3))
+                    {
+                        w.WriteStartObject();
+                        w.WriteNumber("Index", ++index);
+                        Attributes(w, [g.Attribute]);
+                        w.WriteEndObject();
+                    }
+                    w.WriteEndArray();
                 }
-                w.WriteEndArray();
+                // brief-em3d-29 R-em3d29-4 — Palace's own field at a point, written by Palace (probe-E.csv).
+                if (settings.ProbesM.Count > 0)
+                {
+                    w.WriteStartArray("Probe");
+                    for (int k = 0; k < settings.ProbesM.Count; k++)
+                    {
+                        var q = settings.ProbesM[k];
+                        w.WriteStartObject();
+                        w.WriteNumber("Index", k + 1);
+                        w.WriteStartArray("Center");
+                        w.WriteNumberValue(Math.Round(q.X / GmshGeoWriter.LengthUnitM, 9));
+                        w.WriteNumberValue(Math.Round(q.Y / GmshGeoWriter.LengthUnitM, 9));
+                        w.WriteNumberValue(Math.Round(q.Z / GmshGeoWriter.LengthUnitM, 9));
+                        w.WriteEndArray();
+                        w.WriteEndObject();
+                    }
+                    w.WriteEndArray();
+                }
                 w.WriteEndObject();
             }
             w.WriteEndObject();
@@ -260,6 +290,7 @@ public static class PalaceConfigWriter
             w.WriteStartObject("Eigenmode");
             w.WriteNumber("N", problem.EigenmodeCount);
             w.WriteNumber("Target", problem.EigenmodeTargetHz / 1e9);
+            if (SavesFields(settings)) w.WriteNumber("Save", problem.EigenmodeCount);     // R-em3d29-1a: every mode
             w.WriteEndObject();
             WriteLinear(w);
             w.WriteEndObject();
@@ -283,12 +314,62 @@ public static class PalaceConfigWriter
             w.WriteNumber("NSample", f.Points);
         }
         w.WriteEndObject();
+        // R-em3d29-1a/1b — the fields the 3D view shows: the sweep's centre (D7) unless the setup says.
+        // AS A SAMPLE OF THEIR OWN, not in Driven's "Save" list: the pinned Palace REFUSES a Save entry
+        // that is not an explicitly sampled frequency (MFEM_VERIFY "must be an explicitly sampled
+        // frequency!", measured on 0.18.1), and the default — the sweep's centre — is not a sample of any
+        // sweep with an even number of points. A Point sample saving every step is one Palace evaluates
+        // like any other (a duplicate of a sweep point is merged, measured), and PalaceRunService drops
+        // the rows it adds to port-S.csv, so the .sNp holds the sweep's frequencies only.
+        if (SaveFrequenciesGHz(problem.Frequency, settings) is { Count: > 0 } save)
+        {
+            w.WriteStartObject();
+            w.WriteString("Type", "Point");
+            w.WriteStartArray("Freq");
+            foreach (double g in save) w.WriteNumberValue(g);
+            w.WriteEndArray();
+            w.WriteNumber("SaveStep", 1);
+            w.WriteEndObject();
+        }
         w.WriteEndArray();
         w.WriteNumber("AdaptiveTol", settings.SweepAdaptiveTol);
         w.WriteEndObject();
         WriteLinear(w);
         w.WriteEndObject();
 
+    }
+
+    /// <summary>Whether the setup saves fields at all: only <c>SaveFieldsGHz: []</c> says no.</summary>
+    public static bool SavesFields(PalaceSettings settings) => settings.SaveFieldsGHz is not { Count: 0 };
+
+    /// <summary>
+    /// brief-em3d-29 R-em3d29-1b — the driven sweep's field-save frequencies, GHz: the setup's list, or the
+    /// sweep's centre when it names none (D7) — the arithmetic middle of a linear sweep, the geometric
+    /// middle of a logarithmic one, the point of a one-point sweep. Empty saves nothing.
+    /// </summary>
+    public static IReadOnlyList<double> SaveFrequenciesGHz(Em3dFrequency f, PalaceSettings settings)
+    {
+        if (settings.SaveFieldsGHz is { } list) return list;
+        double centre = f.Points == 1 || f.StopHz == f.StartHz ? f.StartHz
+                      : f.Kind == Em3dSweepKind.Log ? Math.Sqrt(f.StartHz * f.StopHz)
+                      : 0.5 * (f.StartHz + f.StopHz);
+        return [centre / 1e9];
+    }
+
+    /// <summary>
+    /// A save frequency outside the sweep. Palace would add it to the samples its adaptive sweep is built
+    /// over, which moves the sweep's own answer at every other frequency — so a field asked for outside the
+    /// band is refused rather than allowed to change the S-parameters it was not asked about.
+    /// </summary>
+    public static string? SaveRefusal(Em3dFrequency f, PalaceSettings settings)
+    {
+        double lo = Math.Min(f.StartHz, f.StopHz) / 1e9, hi = Math.Max(f.StartHz, f.StopHz) / 1e9, tol = 1e-9 * Math.Max(1, hi);
+        foreach (double g in settings.SaveFieldsGHz ?? [])
+            if (g < lo - tol || g > hi + tol)
+                return $"Palace.SaveFieldsGHz asks for the field at {GmshGeoWriter.Num(g)} GHz, outside the sweep " +
+                       $"({GmshGeoWriter.Num(lo)} to {GmshGeoWriter.Num(hi)} GHz). Palace would sample it as part of the sweep, " +
+                       "which changes the S-parameters at every other frequency. Choose a frequency inside the sweep, or widen it.";
+        return null;
     }
 
     /// <summary>F0's linear solver, which every reference ran with.</summary>
@@ -399,6 +480,7 @@ public static class PalaceConfigWriter
         w.WriteNumber("Order", settings.ElementOrder);
         w.WriteString("Device", "CPU");
         w.WriteStartObject(es ? "Electrostatic" : "Magnetostatic");
+        if (SavesFields(settings)) w.WriteNumber("Save", problem.Terminals.Count);     // R-em3d29-1a: every terminal
         w.WriteEndObject();
         // Palace's own choice of solver for each problem (CG, with AMG or AMS). The magnetostatic
         // tolerance is looser, and measured: curl-curl is singular, and a coaxial source's 1/r current

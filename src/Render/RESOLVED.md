@@ -3748,3 +3748,71 @@ an `Em3dProblem` for `render --section` / `--iso`. Findings:
   nothing in this repo triangulates a polygon with holes, and `Em3dTessellation.Of` says so for that
   primitive rather than returning half a solid.
 
+
+## Fields in the 3D view: the ParaView reader — brief-em3d-29 (2026-09-26)
+
+`src/Render/Scene3D/Fields/`. The brief's expectations, each checked against Palace 0.18.1's own output:
+
+- **`.pvd` → per-step `.pvtu` → one `.vtu` per MPI rank: confirmed.** But **no node is shared, even
+  inside one piece**: every cell carries its own nodes (1,180 points for 118 order-2 tets), because a
+  Nédélec field is not continuous across a face. There is no global ID. So the merge is concatenation
+  with an offset, and the only de-duplication is TOPOLOGICAL — matching a face's corners by exact float
+  coordinates (every cell writes a shared mesh vertex identically), used only to find a solid's boundary
+  faces. Values are never merged: each side of a material face keeps its own.
+- **High-order Lagrange cells: confirmed**, VTK types 71 (tet) and 69 (triangle), 10/6 nodes at order 2
+  and 4/3 at order 1 (Draft). Node order verified against the points: corners, then edges
+  (0,1),(1,2),(0,2),(0,3),(1,3),(2,3) — (0,1),(1,2),(2,0) for a triangle. Order 3+ is refused by name
+  rather than drawn through its corners. The geometry is CURVED (Gmsh order 2), so edge nodes are not
+  midpoints.
+- **Appended binary, possibly zlib: half right.** The GEOMETRY is inline base64 (`format="binary"`, a
+  UInt32 byte count base64-encoded on its own, then the data's own base64 — two streams, not one); the
+  FIELD arrays are appended RAW. Nothing is compressed. A compressed file is refused by name.
+- Complex fields are `X_real`/`X_imag` pairs (E, B, J_s, Q_s, and `E0_<k>` port modes on a wave port).
+
+**Drawing vs. reading a value.** The display splits each order-2 cell into linear sub-cells through its
+own nodes (8 tets / 4 triangles) and slices those exactly. The value under the cursor is the element's
+own P2 interpolant, with the curved geometry inverted by Newton. Against Palace's own `probe-E.csv`
+(3 probes × 3 modes of the committed cavity): **sampled 2–5e-8 relative** (Float32 storage), **drawn up
+to 5.70 %** on that deliberately coarse fixture (118 tets, ~λ/3). The drawn tolerance in the gate is that
+measurement; the linear interpolant's error falls with h².
+
+**Memory.** Every array read through a `FileStream` allocated its 64 KB buffer: 1.0 MB for a 48 KB step,
+21× what it kept. `RandomAccess` on a `SafeFileHandle` reads straight into the destination: 1.85× on the
+fixture (the pooled header dominates at that size) and **1.022× on F0 case A** (146,769 cells, 1.47 M
+nodes: 60.6 MB allocated for 59.3 MB kept).
+
+**The brief's TE101 claim needed a qualifier.** "|E| is zero on the PEC walls" holds only on the four
+walls E is tangential to (x and z); on the y-walls TE101's E_y is NORMAL and is not zero. On the tangential
+walls the tangential E is 2e-16 of the peak (Palace zeroes those DOFs), and the normal part the coarse
+mesh carries is 5.2 %, inside the display tolerance above.
+
+**J_s.** Palace writes `J_s` on every boundary face whenever it writes B; an electrostatic run writes
+neither, so |J_s| is not offered there (gate 7). The n × H fallback the brief allowed was not built: the
+pinned Palace never reaches it.
+
+**Fixtures** (`testdata/em3d/fields/`, 784 KB): the PEC cavity of `PalaceEigenTests.Cavity` at
+MaxElementWavelengths 0.3, no refinement, on TWO ranks, with three `Domains.Postprocessing.Probe` points;
+and the parallel plate of `PalaceStaticTests` (electrostatic) at EdgeRefinement 1. Both are Palace's
+output as written, lowered by circuitRF's own writers.
+
+### openEMS's field dump (brief-em3d-29 §6)
+
+Read off a real run of the pinned openEMS and its own source, not assumed: a DumpBox with `DumpType 10`
+(frequency-domain E) and `FileType 0` writes VTK, not HDF5 — so no native reader and no stop (the brief's
+condition). Per frequency: `<name>_f=<Hz>_abs.vtr` and `_arg.vtr`, each component's MAGNITUDE and PHASE,
+which is the complex field exactly (`VtrReader`, Re = |E|cos∠E), plus 21 real snapshots at fixed phases,
+which carry nothing more and are not read. XML RectilinearGrid, INLINE binary, zlib-compressed
+(`vtkZLibDataCompressor`, UInt32 header `[blocks, block size, last size, compressed sizes…]` base64 on its
+own, then the blocks' base64; each block its own zlib stream → `ZLibStream`).
+
+**Cell centres, not nodes (`DumpMode 2`).** The first run used node interpolation, and the stripline's
+grid has a z-line ON the ground and ON the strip: a node there averages E across the metal, so the ground's
+nodes read about half the gap's field and the strip's read its upper and lower fields cancelling. At the
+cell centres the gap's cell holds the gap's field. Each grid cell is six tetrahedra sharing the grid's
+nodes, so the same slicer, sampler and GPU pass draw it — no special case.
+
+**Gate 9's reference needed both ports.** The stripline (Z0 ≈ 51 Ω on 50 Ω ports, plus the lumped ports'
+parasitics) carries a small standing wave: |V1|/h and |V2|/h differ by 13 %, and the field at the centre
+(1.842e-9) sat between them. The voltage at the centre is taken from both ends by the TEM line's own
+equation, V(ℓ/2) = (V1 + V2)/(2 cos βℓ/2), β = ω√εr/c: **0.96 %** from the dumped |E|. The port voltages
+are the port probes transformed with openEMS's own normalisation (2·Δt·Σ u e^{−jωt}), the one its dump uses.

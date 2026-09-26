@@ -123,7 +123,7 @@ internal static class WindowsClipboard
         IntPtr          hwnd,
         byte[]?         pdf,
         string?         svg,
-        string          json,
+        string?         json,
         AvaloniaBitmap? bitmap,
         float           pageW,
         float           pageH)
@@ -178,8 +178,10 @@ internal static class WindowsClipboard
                 SetBytesOnClipboard(RegisterClipboardFormat("image/svg+xml"),
                     Encoding.UTF8.GetBytes(svg!));
 
-            // Plain-text JSON last — Paste reads this; visible to any text-only receiver.
-            SetUnicodeTextOnClipboard(json);
+            // Plain-text JSON last — Paste reads this; visible to any text-only receiver. A picture with
+            // nothing to paste back as text (the 3D view's Copy) passes null and gets no text at all, so
+            // no receiver prefers an empty string over the image.
+            if (json is not null) SetUnicodeTextOnClipboard(json);
         }
         finally
         {

@@ -412,6 +412,9 @@ public sealed class PalaceBackendTests(ITestOutputHelper output) : IDisposable
     /// <summary>The problems the writer gates lower. <c>microstrip</c> is brief 3 gate 1's, as it
     /// stands; <c>via</c> is gate 3's plated via transition with F0's 1500 µm of air on every side;
     /// <c>small-microstrip</c> is the microstrip in a 2 mm box at order 1, for the Gmsh gates.</summary>
+    /// <summary>brief-em3d-29 gate 1 — a golden's problem and settings, for the field-off comparison.</summary>
+    internal static (Em3dProblem Problem, PalaceSettings Settings) LowerableFor(string name) => Lowerable(name);
+
     private static (Em3dProblem, PalaceSettings) Lowerable(string name)
     {
         var (setup, source) = name == "via" ? Em3dGeneratorTests.CaseB(plated: true) : Em3dGeneratorTests.Microstrip();

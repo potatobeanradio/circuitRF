@@ -10,7 +10,8 @@
 // problem still regenerating leaves the previous image up: the rest of the window cannot be starved by
 // it (the lesson of "the whole UI crawled", src/Ui/RESOLVED.md).
 //
-// INPUT (R-em3d28-4a): orbit = left drag; pan = middle drag or Shift + left drag; zoom to the cursor =
+// INPUT (R-em3d28-4a): orbit = left drag; pan = middle drag, right drag or Shift + left drag; a right-CLICK
+// (no drag) opens the view's context menu; zoom to the cursor =
 // wheel or pinch; F fits; 1–7 are the standard views; P / O switch projection; C toggles the clip
 // plane; A the axis indicator. A trackpad's two-finger scroll zooms and its pinch zooms (macOS). No
 // modal dialog opens mid-gesture (§8.2 point 5): nothing here opens a dialog at all.
@@ -57,6 +58,7 @@ public sealed class Viewer3DPane : Control
     private readonly Scene3DFramePlan _plan = new();
     private Scene3DModel _planScene = Scene3DModel.Empty();
     private Scene3DOverlay _pMesh = Scene3DOverlay.None, _pSection = Scene3DOverlay.None, _pGrid = Scene3DOverlay.None;
+    private CircuitRF.Render.Scene3D.Fields.Scene3DFieldGeometry _pField = CircuitRF.Render.Scene3D.Fields.Scene3DFieldGeometry.None;
     private bool _pOrbit;
     private int _nextImage, _doneImage;
     private ulong _frame, _doneValue;
@@ -67,6 +69,9 @@ public sealed class Viewer3DPane : Control
 
     /// <summary>Raised on the UI thread after each presented frame — the overlay redraws its axes.</summary>
     public event Action? FramePresented;
+
+    /// <summary>A right-click that did not move — the view's context menu. A right DRAG still pans.</summary>
+    public event Action? ContextMenuRequested;
 
     /// <summary>Raised when the pane faults or recovers, for the view to show the reason.</summary>
     public event Action<string?>? FaultChanged;
@@ -230,7 +235,8 @@ public sealed class Viewer3DPane : Control
                 float cx = view.CursorX, cy = view.CursorY;
                 if (cx >= 0) { view.CursorX = (float)(cx * scale); view.CursorY = (float)(cy * scale); }
                 _plan.Plan(_vm.Scene, view, w, h, backend.FlipY, pick: view.CursorX >= 0,
-                           _vm.MeshOverlay, _vm.SectionOverlay, _vm.GridOverlay);
+                           _vm.MeshOverlay, _vm.SectionOverlay, _vm.GridOverlay, _vm.FieldGeometry);
+                _pField = _vm.FieldGeometry;
                 view.CursorX = cx; view.CursorY = cy;
                 _planScene = _vm.Scene;
                 (_pMesh, _pSection, _pGrid) = (_vm.MeshOverlay, _vm.SectionOverlay, _vm.GridOverlay);
@@ -277,7 +283,7 @@ public sealed class Viewer3DPane : Control
                         Avalonia.Threading.Dispatcher.UIThread.Post(RequestFrame, Avalonia.Threading.DispatcherPriority.Background);
                         continue;
                     }
-                    if (!s.Frame(image, _plan, value, _planScene, _pMesh, _pSection, _pGrid, _pOrbit)) return;
+                    if (!s.Frame(image, _plan, value, _planScene, _pMesh, _pSection, _pGrid, _pOrbit, _pField)) return;
                 }
                 _doneImage = image;
                 _doneValue = value;
@@ -307,12 +313,13 @@ public sealed class Viewer3DPane : Control
         _panning = p.Properties.IsMiddleButtonPressed || (p.Properties.IsLeftButtonPressed && e.KeyModifiers.HasFlag(KeyModifiers.Shift))
                    || p.Properties.IsRightButtonPressed;
         _orbiting = !_panning && p.Properties.IsLeftButtonPressed;
+        _rightPressed = p.Properties.IsRightButtonPressed;
         _moved = false;
         e.Pointer.Capture(this);
         e.Handled = true;
     }
 
-    private bool _moved;
+    private bool _moved, _rightPressed;
 
     protected override void OnPointerMoved(PointerEventArgs e)
     {
@@ -333,9 +340,11 @@ public sealed class Viewer3DPane : Control
     {
         base.OnPointerReleased(e);
         if (_orbiting && !_moved) _vm?.Click();
-        _orbiting = _panning = false;
+        bool menu = _rightPressed && !_moved && e.InitialPressMouseButton == MouseButton.Right;
+        _orbiting = _panning = _rightPressed = false;
         _last = _pressedAt = null;
         e.Pointer.Capture(null);
+        if (menu) ContextMenuRequested?.Invoke();
     }
 
     /// <summary>Alt-Tab or a focus steal mid-drag loses the capture and the release never arrives:
@@ -343,7 +352,7 @@ public sealed class Viewer3DPane : Control
     protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)
     {
         base.OnPointerCaptureLost(e);
-        _orbiting = _panning = false;
+        _orbiting = _panning = _rightPressed = false;
         _last = _pressedAt = null;
     }
 

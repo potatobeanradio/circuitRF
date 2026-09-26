@@ -324,6 +324,8 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
     partial void OnSelectedItemChanged(Viewer3DTreeItem? value)
     {
         View.Selected = value?.Id ?? 0;
+        // brief-em3d-29 — a selected solid is where a volume field's surface is drawn.
+        if (ShowField && FieldOnSurfaces && SelectedFieldQuantity is { OnBoundary: false }) ScheduleFieldGeometry();
         FrameRequested?.Invoke();
     }
 
@@ -346,11 +348,15 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
     /// under the cursor. Touches no geometry.</summary>
     internal void OnPicked(uint id, Vector3 point, bool hit)
     {
-        if (View.Hovered != id)
+        // brief-em3d-29 R-em3d29-3e — the field under the cursor, read from the field data.
+        string field = FieldValueUnderCursor(id, point, hit);
+        if (View.Hovered != id || field != _hoverField)
         {
+            if (View.Hovered != id) FrameRequested?.Invoke();
             View.Hovered = id;
-            HoverText = Describe(Scene.Object(id));
-            FrameRequested?.Invoke();
+            _hoverField = field;
+            string about = Describe(Scene.Object(id));
+            HoverText = field.Length == 0 ? about : about.Length == 0 ? field : about + "\n" + field;
         }
         if (hit)
         {
@@ -378,8 +384,13 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
     // ── input (the UI thread's whole job) ───────────────────────────────────────────────────
 
     private float _aspect = 1.6f;
+    private string _hoverField = "";
 
-    public void Resized(float width, float height) { if (height > 0) _aspect = width / height; }
+    public void Resized(float width, float height)
+    {
+        if (height > 0) _aspect = width / height;
+        if (width > 0 && height > 0) { _viewW = width; _viewH = height; }
+    }
 
     public void Hover(float x, float y)
     {
@@ -481,6 +492,7 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
         View.ShowMeshSection = ShowMesh && ClipEnabled;
         FrameRequested?.Invoke();
         ScheduleClipOverlays();
+        ScheduleFieldGeometry();
     }
 
     // Overlays (R-em3d28-3).
@@ -539,6 +551,7 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
         GridAvailable = _lastSetup?.Solver3D is Em3dSolver.OpenEms or Em3dSolver.Both && Scene.Problem is not null;
         if (!GridAvailable && ShowGrid) ShowGrid = false;
         ScheduleClipOverlays();
+        RefreshFields();
     }
 
     /// <summary>The mesh is in GmshGeoWriter's units (Palace's L0).</summary>
@@ -696,6 +709,9 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
         _disposed = true;
         _debounce?.Dispose();
         _overlayCts?.Cancel();
+        _animation?.Dispose();
+        _fieldCts?.Cancel();
+        _fieldLoadCts?.Cancel();
         Source.Dispose();
         Session.Dispose();
     }

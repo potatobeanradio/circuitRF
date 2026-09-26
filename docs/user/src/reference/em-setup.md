@@ -463,6 +463,7 @@ Accurate has not been measured.
 | Refinement tolerance | `AdaptiveTol` | 0.01 | The error at which Palace stops refining the mesh |
 | Refinement passes | `AdaptiveMaxIterations` | 2 | The most refinement passes; 0 solves the starting mesh only. Each pass costs a solve and memory |
 | Sweep tolerance | `SweepAdaptiveTol` | 0.0001 | The tolerance of Palace's adaptive frequency sweep; 0 solves every frequency |
+| — (written in the `.cem`) | `SaveFieldsGHz` | the sweep's centre | The frequencies, GHz, whose fields Palace saves for the 3D view; `[]` saves none. See [Fields for the 3D view](#palace-fields) — they are large |
 
 The settings above size only the **starting** mesh; Palace's adaptive refinement adds elements where its
 error estimate says the answer needs them. Simulate then runs Gmsh on the model and Palace on the mesh,
@@ -535,12 +536,13 @@ relax it.
 ### Running openEMS {#openems-run}
 
 With openEMS chosen the panel shows the grid settings above and two of its own, each a field of the
-`.cem`'s `OpenEms` section; a blank box is the default.
+`.cem`'s `OpenEms` section; a blank box is the default. `SaveFieldsGHz` is written in the `.cem` itself.
 
 | `.cem` field (in `OpenEms`) | Default | What it does |
 |---|---|---|
 | `EndCriterionDb` | −50 | A run stops when every port's voltage and current has fallen this far below its peak |
 | `MaxTimeSteps` | ten times the grid's own estimate | The most time steps one run may take |
+| `SaveFieldsGHz` | the sweep's centre | The frequencies, GHz, whose electric field openEMS records over the air box for the 3D view; `[]` records none |
 
 **openEMS excites one port per simulation, so an N-port setup is N runs**, one after another, each
 using every core — a 4-port takes about four times as long as a 2-port, and the progress line says
@@ -571,6 +573,13 @@ Absorbing faces are PML (`PmlCells`; 0 gives a first-order Mur boundary instead)
 one is continued through it. The result lands beside a Palace one without replacing it —
 `results/<name>.openems.sNp` and `<name>.openems_em.npy` — and `results/<name>.openems/` keeps the model
 and, per port, openEMS's log and probe files, so a run can be repeated by hand.
+
+**Fields.** For the 3D view, each run also records the electric field over the air box at the
+`SaveFieldsGHz` frequencies (the sweep's centre by default; a frequency outside the sweep is refused,
+because the pulse carries no energy there). openEMS computes it during the run itself, at every grid
+cell's centre, and writes it in each port's folder as `efield<k>_f=<Hz>_abs.vtr` and `…_arg.vtr` — the
+magnitude and phase of each component, which is the complex field exactly — plus 21 snapshots at fixed
+phases that the view does not need. The 3D view shows it for each excited port at each frequency.
 
 ### Running both, and the difference {#run-both}
 
@@ -688,6 +697,32 @@ resonance inside my band?". `Eigenmode` sets how many modes (`Count`, default 3)
 
 The result is `results/<name>.palace_eig.npy` and no Touchstone file; `circuitrf em` prints the mode
 table and the panel shows it after a run. Palace's own files stay in the run folder.
+
+### Fields for the 3D view {#palace-fields}
+
+A Palace run also saves the solved **fields**, which the 3D view draws on its clip plane and on surfaces.
+`SaveFieldsGHz` in the Palace section says which frequencies:
+
+```
+"Palace": { "SaveFieldsGHz": [2.4, 5.8] }
+```
+
+- **Omitted**, it saves the sweep's **centre** frequency only: the middle of a linear sweep, the geometric
+  middle of a logarithmic one.
+- **`[]`** saves no field at all.
+- **A frequency that is not one of the sweep's points is solved as an extra point.** Palace 0.18.1 refuses
+  to save a field at a frequency it did not sample (checked on a real run), so circuitRF adds each save
+  frequency to Palace's samples. Its S-parameters are left out of the `.sNp`, which holds the sweep's
+  frequencies and nothing else. A save frequency outside the sweep is refused before anything runs,
+  because sampling it would change the sweep's answer at every other frequency.
+- An **eigenmode** run saves every mode it computes and a **static** run every terminal's solution,
+  unless `SaveFieldsGHz` is `[]` (their fields are not per frequency, so the list's values are not used).
+
+**Fields are large.** Measured on the bond-wire test case (146,769 tetrahedra, element order 2): **137 MB
+per saved frequency per driven port** (127 MB inside the volume, 9.8 MB on the surfaces), plus 33 MB
+once for Palace's error map. Palace runs one excitation per port, so a two-port setup saving twenty
+frequencies writes about **5.5 GB**. The size grows with the mesh, so a larger model or more refinement
+passes costs more. When a run finishes, its summary line states what its field files took.
 
 ## Letting circuitRF install the 3D solvers {#install-assistant}
 

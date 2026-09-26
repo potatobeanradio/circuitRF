@@ -77,6 +77,20 @@ public static class CsxcadWriter
     /// <summary>The model file's name, in the run directory and in each port's.</summary>
     public const string ModelFile = "model.xml";
 
+    /// <summary>brief-em3d-29 — the <paramref name="k"/>-th field dump's name, and so the stem of its files.</summary>
+    public static string FieldDump(int k) => $"efield{k + 1}";
+
+    /// <summary>
+    /// brief-em3d-29 R-em3d29-6a — the frequencies, Hz, the field is dumped at: the setup's list, or the sweep's
+    /// centre (the arithmetic middle of a linear sweep, the geometric of a logarithmic one); empty for none.
+    /// </summary>
+    public static IReadOnlyList<double> SaveFrequenciesHz(Em3dFrequency f, OpenEmsRunSettings run)
+    {
+        if (run.SaveFieldsGHz is { } list) return [.. list.Select(g => g * 1e9)];
+        return [f.Points == 1 || f.StopHz == f.StartHz ? f.StartHz
+                : f.Kind == Em3dSweepKind.Log ? Math.Sqrt(f.StartHz * f.StopHz) : 0.5 * (f.StartHz + f.StopHz)];
+    }
+
     /// <summary>The voltage and current probes' names — and so openEMS's output files.</summary>
     public static string VoltageProbe(int port) => $"port{port}_u";
     public static string CurrentProbe(int port) => $"port{port}_i";
@@ -220,6 +234,28 @@ public static class CsxcadWriter
             props.Append("            </ProbeBox>\n");
 
             excitations.Add(ExcitationProperty(p, start, stop, axis, sign, portPriority));
+        }
+
+        // ── brief-em3d-29 R-em3d29-6a — the field dumps: one per saved frequency, over the air box ───────
+        // openEMS's frequency-domain E dump (DumpType 10) at the CELL CENTRES (DumpMode 2), as VTK (FileType 0):
+        // the pinned openEMS writes each component's magnitude and phase, which is the complex field
+        // exactly, plus 21 phase snapshots the view does not need. Cell centres, not nodes: the grid puts a
+        // line ON every metal face, and a node there averages E across the metal (measured on a stripline:
+        // half the gap's field on the ground, and the strip's upper and lower fields cancelling on it).
+        var saves = SaveFrequenciesHz(problem.Frequency, run);
+        if (saves.FirstOrDefault(s => s < fMin * (1 - 1e-9) || s > fMax * (1 + 1e-9)) is var outside && outside > 0)
+            return No($"OpenEms.SaveFieldsGHz asks for the field at {G(outside / 1e9)} GHz, outside the sweep ({G(fMin / 1e9)} to " +
+                      $"{G(fMax / 1e9)} GHz): the excitation carries no energy there to show. Choose a frequency inside the sweep.");
+        for (int k = 0; k < saves.Count; k++)
+        {
+            props.Append($"            <DumpBox ID=\"{id++}\" Name=\"{FieldDump(k)}\" Visible=\"0\" Number=\"0\" Type=\"0\" Weight=\"1\" " +
+                         "NormDir=\"-1\" StartTime=\"0\" StopTime=\"0\" DumpType=\"10\" DumpMode=\"2\" FileType=\"0\" MultiGridLevel=\"0\">\n");
+            var c = Colors.Probe;
+            props.Append($"                <FillColor R=\"{c.R}\" G=\"{c.G}\" B=\"{c.B}\" a=\"{c.A}\" />\n");
+            props.Append($"                <EdgeColor R=\"{c.R}\" G=\"{c.G}\" B=\"{c.B}\" a=\"{c.A}\" />\n");
+            props.Append($"                <FD_Samples>{R(saves[k])}</FD_Samples>\n");
+            AppendPrimitives(props, Box(0, problem.Boundary.Min, problem.Boundary.Max));
+            props.Append("            </DumpBox>\n");
         }
 
         // ── Notes ────────────────────────────────────────────────────────────────────────────────
