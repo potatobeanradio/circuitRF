@@ -67,7 +67,7 @@ public sealed class SourceImpedanceEntryTests
             Rail = rail,
             Parts = new RailPartResolver(SeriesElementTests.Library()).ResolveAll(rail.Parts, railVoltageV: 3.6),
             Sources = [new RailSourceModel(0, "BT1", RailSourceBasis.Rl, ohms, henries, 3.6)],
-            Series = [RailSeriesModel.Of(rail.SeriesElements[0])],
+            Series = [RailSeriesModel.Of(rail.SeriesElements[0])!],
             Partition = RailSeriesPartition.Typed(rail),
             RankRemovals = false,
         };

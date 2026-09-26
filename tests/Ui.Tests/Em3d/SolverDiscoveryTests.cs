@@ -231,7 +231,7 @@ public sealed class SolverDiscoveryTests : IDisposable
         Directory.CreateDirectory(Path.Combine(mpiPrefix, "bin"));
         Directory.CreateDirectory(Path.Combine(Prefix("openmpi-4.1.0-cccc"), "bin"));
         File.Copy(Fake("scratch", "palace-version.txt"), Path.Combine(palacePrefix, "bin", Command));
-        if (!Windows) File.SetUnixFileMode(Path.Combine(palacePrefix, "bin", Command), UnixFileMode.UserRead | UnixFileMode.UserExecute);
+        if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(Path.Combine(palacePrefix, "bin", Command), UnixFileMode.UserRead | UnixFileMode.UserExecute);
         File.WriteAllText(Path.Combine(mpiPrefix, "bin", "mpirun"), "");
         File.WriteAllText(Path.Combine(Prefix("openmpi-4.1.0-cccc"), "bin", "mpirun"), "");
 
@@ -370,7 +370,7 @@ public sealed class SolverDiscoveryTests : IDisposable
     private static string WriteScript(string path, string script)
     {
         File.WriteAllText(path, Windows ? script.Replace("\r\n", "\n").Replace("\n", "\r\n") : script.Replace("\r\n", "\n"));
-        if (!Windows)
+        if (!OperatingSystem.IsWindows())
             File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         return path;
     }

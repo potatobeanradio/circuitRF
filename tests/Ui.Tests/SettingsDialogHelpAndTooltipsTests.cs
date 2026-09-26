@@ -85,6 +85,21 @@ public class SettingsDialogHelpAndTooltipsTests
     }
 
     /// <summary>
+    /// Settings ▸ 3D EM: every visible string is selectable, so a path, version or refusal can be
+    /// copied and shared. Only a tooltip's text may stay a plain TextBlock.
+    /// </summary>
+    [Fact]
+    public void Em3dTab_EveryVisibleStringIsSelectable()
+    {
+        string axaml = Dialog("Em3dSolverSettingsView.axaml");
+        foreach (var tip in Between(axaml, "<ToolTip.Tip>", "</ToolTip.Tip>"))
+            axaml = axaml.Replace(tip, "");
+        axaml = System.Text.RegularExpressions.Regex.Replace(axaml, "<!--.*?-->", "",
+                    System.Text.RegularExpressions.RegexOptions.Singleline);
+        Assert.DoesNotContain("<TextBlock", axaml);
+    }
+
+    /// <summary>
     /// Help at the leading edge, everything that ACTS on the dialog at the trailing one. Revert moved
     /// across to join Cancel and Close: it throws the colour edits away, and the bottom-left corner is
     /// where a reader looks for documentation rather than for a destructive button.
@@ -231,4 +246,15 @@ public class SettingsDialogHelpAndTooltipsTests
 
     private static int Occurrences(string text, string needle)
         => text.Split(needle).Length - 1;
+
+    /// <summary>Settings ▸ 3D EM: Spack's path padding (a chain of <c>__spack_path_placeholder__</c>
+    /// directories, the last one truncated) folds to one "…", so a status line stays one path long.</summary>
+    [Fact]
+    public void TheSolverStatusLine_FoldsSpackPathPadding()
+    {
+        string pad = string.Concat(Enumerable.Repeat("__spack_path_placeholder__/", 9)) + "__spack_pa/";
+        string text = $"Found at /Users/x/opt/spack/{pad}darwin-m3/palace-0.14-abc/bin/palace.";
+        Assert.Equal("Found at /Users/x/opt/spack/…/darwin-m3/palace-0.14-abc/bin/palace.",
+                     CircuitRF.Ui.Views.Dialogs.Em3dSolverSettingsView.FoldSpackPadding(text));
+    }
 }

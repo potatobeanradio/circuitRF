@@ -269,7 +269,7 @@ public sealed class SolverInstallTests : IDisposable
         Assert.Equal("This is not a failure circuitRF has seen.", KnownFailures.Explain(null));
         Assert.Contains("Retrying often clears this", KnownFailures.Explain(KnownFailures.Match(["==> Error: ChecksumError: sha256 checksum failed for /x"])));
 
-        if (Windows) return;   // the failing step is a shell script
+        if (OperatingSystem.IsWindows()) return;   // the failing step is a shell script
         string script = Path.Combine(_tmp, "fails.sh");
         File.WriteAllText(script, "#!/bin/sh\necho 'checking whether build environment is sane...'\n" +
                                   "echo \"configure: error: unsafe srcdir value: '/a b/src'\" >&2\nexit 2\n");
@@ -501,7 +501,7 @@ public sealed class SolverInstallTests : IDisposable
             ? "@echo off\r\n" + string.Join("\r\n", text.Replace("\r", "").Split('\n').Where(l => l.Length > 0).Select(l => "echo " + l)) + "\r\n"
             : "#!/bin/sh\n" + string.Join("\n", text.Replace("\r", "").Split('\n').Where(l => l.Length > 0).Select(l => $"echo '{l}'")) + "\n";
         File.WriteAllText(path, body);
-        if (!Windows) File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         return path;
     }
 

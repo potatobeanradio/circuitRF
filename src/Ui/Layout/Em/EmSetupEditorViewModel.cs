@@ -587,6 +587,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         // port controls on screen — RebuildPortRows is the only other place they are published.
         OnPropertyChanged(nameof(ShowPortList));
         OnPropertyChanged(nameof(ShowNearFarPortZ0));
+        RaiseSolverKindVisibility();
     }
 
     [ObservableProperty] private string _selectedKernelName = "";
@@ -2041,7 +2042,9 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
                         _ => $"Port {ports[i].Number} — {SideLabel(port.Side)} end",
                     },
                 Text       = FormatComplexOhms(Working.ResolvePortZ0(slot)),
-                ShowKind   = true,
+                // A 3D run builds lumped edge ports only (and has its own Lumped/Wave kind above),
+                // so the planar port type is not offered there.
+                ShowKind   = !Is3DSetup,
                 Kind       = kind,
                 Problem    = ports[i].Problem,
             };

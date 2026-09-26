@@ -794,8 +794,10 @@
                 <Border Classes="group">
                   <StackPanel Spacing="2">
                 <TextBlock Classes="grouphdr" Text="Conductors"/>
-                <TextBlock Classes="colhdr" Text="Signal conductor"/>
+                <TextBlock Classes="colhdr" Text="Signal conductor"
+                           IsVisible="{Binding ViewModel.ShowCircuitRfSolverControls}"/>
                 <ComboBox Classes="cell" HorizontalAlignment="Stretch"
+                          IsVisible="{Binding ViewModel.ShowCircuitRfSolverControls}"
                           ItemsSource="{Binding ViewModel.ConductorLayerChoices}"
                           SelectedItem="{Binding ViewModel.SignalLayerChoice}"/>
 
@@ -804,9 +806,9 @@
                      designate as a ground reference, and a list that hid the legal choices would
                      teach the wrong rule. The designated ones are MARKED in the row text instead. -->
                 <TextBlock Classes="colhdr" Margin="0,8,0,0" Text="Return plane"
-                           IsVisible="{Binding ViewModel.IsPlanarAnalysis}"/>
+                           IsVisible="{Binding ViewModel.ShowReturnPlane}"/>
                 <ComboBox Classes="cell" HorizontalAlignment="Stretch"
-                          IsVisible="{Binding ViewModel.IsPlanarAnalysis}"
+                          IsVisible="{Binding ViewModel.ShowReturnPlane}"
                           ItemsSource="{Binding ViewModel.ReturnPlaneChoices}"
                           SelectedItem="{Binding ViewModel.ReturnPlaneChoice}">
                     <ComboBox.ItemTemplate>
@@ -836,7 +838,7 @@
                      a collapsed Expander renders none of its content. See AnalysisLevelsExpanded. -->
                 <Expander Margin="0,8,0,0"
                           IsExpanded="{Binding ViewModel.AnalysisLevelsExpanded, Mode=TwoWay}"
-                          IsVisible="{Binding ViewModel.IsPlanarAnalysis}"
+                          IsVisible="{Binding ViewModel.ShowPlanarControls}"
                           HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                     <Expander.Header>
                         <TextBlock Classes="colhdr" Text="{Binding ViewModel.AnalysisLevelsSummary}"/>
@@ -945,6 +947,9 @@
                     <!-- Owner request, 2026-08-09: adaptive sampling belongs beside the sweep it
                          samples — it decides how many of THESE points are actually solved, so the
                          user has to see it while editing the range, not four sections away. -->
+                    <!-- The planar kernel's own sampler; a 3D run samples with its solver's own
+                         (Palace's adaptive sweep), so these are hidden there. -->
+                    <StackPanel IsVisible="{Binding ViewModel.ShowCircuitRfSolverControls}" Spacing="2">
                     <CheckBox Name="AdaptiveSamplingCheck" FontSize="11" Margin="0,8,0,0"
                               Content="Adaptive sampling (solve fewer points, model the rest)"
                               IsChecked="{Binding ViewModel.AdaptiveSampling}"
@@ -966,6 +971,7 @@
                     <TextBlock Classes="colhdr" TextWrapping="Wrap" Margin="16,0,0,0"
                                Text="{Binding ViewModel.ResonanceSearchDisabledReason}"
                                IsVisible="{Binding ViewModel.ResonanceSearchDisabledReason, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+                    </StackPanel>
                   </StackPanel>
                 </Border>
 
@@ -1085,7 +1091,7 @@
                 </Border>
 
                 <!-- ── Mesh settings (all six — R-em-11) ───────────────────── -->
-                <Border Classes="group" IsVisible="{Binding !ViewModel.IsPlanarAnalysis}">
+                <Border Classes="group" IsVisible="{Binding ViewModel.ShowCrossSectionControls}">
                   <StackPanel Spacing="2">
                 <TextBlock Classes="grouphdr" Text="Mesh"/>
                 <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto"
@@ -1147,7 +1153,7 @@
                      the mesh settings on their own rather than a 2,000 px panel, and the crop is
                      taken from the live visual tree by this name (FigureCrop.Around). Renaming it
                      fails the docs build rather than silently photographing the wrong rows. -->
-                <Border Classes="group" Name="SurfaceMeshGroup" IsVisible="{Binding ViewModel.IsPlanarAnalysis}">
+                <Border Classes="group" Name="SurfaceMeshGroup" IsVisible="{Binding ViewModel.ShowPlanarControls}">
                   <StackPanel Spacing="2">
                 <TextBlock Classes="grouphdr" Text="Surface mesh"/>
                 <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
@@ -1273,6 +1279,9 @@
                 <Border Classes="group">
                   <StackPanel Spacing="2">
                 <TextBlock Classes="grouphdr" Text="Solver options"/>
+                <!-- Everything above Cores is the planar/cross-section kernels' own; a 3D run reads only
+                     the core cap (Palace's MPI ranks, openEMS's threads). -->
+                <StackPanel IsVisible="{Binding ViewModel.ShowCircuitRfSolverControls}" Spacing="2">
 
                 <!-- ── Vertical (via) kernel — M2, disabled with a stated reason ───────────── -->
                 <TextBlock Classes="colhdr" Text="Vertical (via) kernel"/>
@@ -1340,6 +1349,7 @@
                 <TextBlock Classes="colhdr" TextWrapping="Wrap"
                            Text="{Binding ViewModel.DispersionDisabledReason}"
                            IsVisible="{Binding ViewModel.DispersionDisabledReason, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+                </StackPanel>
 
                 <!-- ── M1's core cap — the ONE control here that is not part of the design ────
                      R-emp-6: stored in AppPreferences, shown here because this is where the user
@@ -1364,7 +1374,7 @@
                      the metrics, the polarization and the plots all shipped between ANT-4 and ANT-11
                      with no way to ask for them; this checkbox is that way, and the `em` CLI verb
                      picks it up from the .cem with no flag of its own. -->
-                <Border Classes="group">
+                <Border Classes="group" IsVisible="{Binding ViewModel.ShowCircuitRfSolverControls}">
                   <StackPanel Spacing="2">
                 <TextBlock Classes="grouphdr" Text="Radiation pattern"/>
                 <CheckBox Name="RadiationPatternCheck" FontSize="11"

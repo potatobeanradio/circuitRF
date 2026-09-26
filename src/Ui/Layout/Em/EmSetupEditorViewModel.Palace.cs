@@ -28,10 +28,10 @@ public sealed partial class EmSetupEditorViewModel
     public static IReadOnlyList<Em3dSolverChoice> Solver3DChoices { get; } =
     [
         new(Em3dSolver.None,    "Planar (circuitRF)"),
-        new(Em3dSolver.Palace,  "3D — Palace (FEM)"),
-        new(Em3dSolver.OpenEms, "3D — openEMS (FDTD)"),
+        new(Em3dSolver.Palace,  "FEM 3D (Palace)"),
+        new(Em3dSolver.OpenEms, "FDTD 3D (openEMS)"),
         // brief-em3d-10 — both on one generated problem, and the comparison beside them.
-        new(Em3dSolver.Both,    "3D — both, and compare"),
+        new(Em3dSolver.Both,    "FEM & FDTD - Compare"),
     ];
 
     [ObservableProperty] private Em3dSolverChoice _solver3DChoice = Solver3DChoices[0];
@@ -39,26 +39,53 @@ public sealed partial class EmSetupEditorViewModel
     /// <summary>True when this setup is a 3D one: the planar controls below are kept but not read.</summary>
     public bool Is3DSetup => Solver3DChoice.Value != Em3dSolver.None;
 
+    // What a 3D run does NOT read is hidden while one is chosen, rather than shown and ignored. What
+    // it DOES read stays: the frequency sweep, each port's Z0 (EmSetup.ResolvePortZ0), the return
+    // plane (GroundStackupLayerName), the solve region and the core cap. The hidden fields stay in the
+    // .cem untouched, so switching back to Planar finds them as they were.
+
+    /// <summary>The planar kernel's own controls — surface mesh, analysis levels, adaptive sampling,
+    /// the port-type combo — shown only when the planar kernel is what runs.</summary>
+    public bool ShowPlanarControls => IsPlanarAnalysis && !Is3DSetup;
+
+    /// <summary>The cross-section kernel's mesh group, likewise.</summary>
+    public bool ShowCrossSectionControls => !IsPlanarAnalysis && !Is3DSetup;
+
+    /// <summary>The return plane: read by the planar kernel and by the 3D generator's ports.</summary>
+    public bool ShowReturnPlane => IsPlanarAnalysis || Is3DSetup;
+
+    /// <summary>Controls every circuitRF-kernel run reads and no 3D run does (the signal conductor,
+    /// the planar/cross-section solver options, the radiation pattern).</summary>
+    public bool ShowCircuitRfSolverControls => !Is3DSetup;
+
+    private void RaiseSolverKindVisibility()
+    {
+        OnPropertyChanged(nameof(ShowPlanarControls));
+        OnPropertyChanged(nameof(ShowCrossSectionControls));
+        OnPropertyChanged(nameof(ShowReturnPlane));
+        OnPropertyChanged(nameof(ShowCircuitRfSolverControls));
+    }
+
     /// <summary>True when Palace's section is shown.</summary>
     public bool IsPalaceSetup => Solver3DChoice.Value is Em3dSolver.Palace or Em3dSolver.Both;
 
     /// <summary>True when openEMS's section is shown (brief-em3d-9 R-em3d9-6).</summary>
     public bool IsOpenEmsSetup => Solver3DChoice.Value is Em3dSolver.OpenEms or Em3dSolver.Both;
 
+    private const string PlanarHiddenNote =
+        "The planar-only settings are hidden; they are kept, and come back if you switch to Planar.";
+
     public string Solver3DDescription => Solver3DChoice.Value switch
     {
         Em3dSolver.Palace =>
             "Generates a 3D model from the layout, its technology and any bond wires, meshes it with Gmsh and " +
-            "solves it with Palace, both installed separately (Settings ▸ 3D EM). The planar settings below are " +
-            "kept but not used.",
+            "solves it with Palace, both installed separately (Settings ▸ 3D EM). " + PlanarHiddenNote,
         Em3dSolver.OpenEms =>
             "Generates a 3D model from the layout, its technology and any bond wires, places circuitRF's own FDTD " +
-            "grid on it and solves it with openEMS, installed separately (Settings ▸ 3D EM) — once per port. The " +
-            "planar settings below are kept but not used.",
+            "grid on it and solves it with openEMS, installed separately (Settings ▸ 3D EM) — once per port. " + PlanarHiddenNote,
         Em3dSolver.Both =>
             "Generates one 3D model from the layout, its technology and any bond wires and solves it with Palace, " +
-            "then with openEMS (Settings ▸ 3D EM), writing each solver's result and a comparison of the two. The " +
-            "planar settings below are kept but not used.",
+            "then with openEMS (Settings ▸ 3D EM), writing each solver's result and a comparison of the two. " + PlanarHiddenNote,
         _ => "circuitRF's own planar and cross-section solvers, chosen under Analysis.",
     };
 
@@ -68,6 +95,7 @@ public sealed partial class EmSetupEditorViewModel
         OnPropertyChanged(nameof(IsPalaceSetup));
         OnPropertyChanged(nameof(IsOpenEmsSetup));
         OnPropertyChanged(nameof(Solver3DDescription));
+        RaiseSolverKindVisibility();
         RaiseStaticVisibility();
         if (_suppressCommit) return;
         if (value.Value == Working.Solver3D) return;

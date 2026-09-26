@@ -110,7 +110,7 @@
                     <TextBlock Grid.Column="0" Text="Foot" VerticalAlignment="Center" FontSize="11"
                                Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
                     <TextBox Grid.Column="1" Text="{Binding FootLengthText}" Tag="FootLength"
-                             Watermark="array / process default"
+                             PlaceholderText="array / process default"
                              Classes.error="{Binding HasFootLengthError}" ToolTip.Tip="{Binding FootLengthError}"
                              GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
                              FontSize="11" Padding="4,2"/>

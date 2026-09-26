@@ -138,7 +138,7 @@ public sealed class RailRfFieldReport3Tests
     /// whose source is invisible is the defaulted-number failure in another column.</para>
     /// </remarks>
     [Fact]
-    public void APartPlacedInTheArtworkIsNotReportedAsNotPlaced()
+    public async Task APartPlacedInTheArtworkIsNotReportedAsNotPlaced()
     {
         var vm = Example();
         var rail = vm.SelectedRail;
@@ -171,7 +171,7 @@ public sealed class RailRfFieldReport3Tests
 
         // An added instance also schedules the debounced pad re-read (brief 28). Waited for HERE, so
         // it cannot land on another thread while the assertions below read the parts table.
-        vm.PadRead?.GetAwaiter().GetResult();
+        if (vm.PadRead is { } padRead) await padRead;
 
         Assert.Contains(vm.AddablePlacedParts, o => string.Equals(o.Refdes, refdes, StringComparison.OrdinalIgnoreCase));
         Assert.Equal(1, vm.AddParts([refdes]));

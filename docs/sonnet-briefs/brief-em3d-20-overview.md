@@ -180,6 +180,7 @@ None of these affects what this series shows. They are listed again in §4 so th
 | 28 | [the viewer: model, mesh and grid](brief-em3d-28-viewer-model-mesh-grid.md) | the scene model below the firewall, the 3D pane, Tier A geometry, Gmsh mesh, FDTD grid, picking, clip plane | F2 | 27 + owner's GPU decision |
 | 29 | [the viewer: fields](brief-em3d-29-viewer-fields.md) | Palace field output, a VTU reader, \|E\| and surface current, phase animation, PNG export; openEMS fields | F2 | 28 (22/23 for their fields) |
 | 30 | [the showcase](brief-em3d-30-showcase.md) | the `3D EM` example workspace, the user page, the newcomer walk-through | — | all |
+| 31 | [the radiation pattern, from a 3D run](brief-em3d-31-radiation-pattern.md) | the planar far-field metrics factored out; openEMS NF2FF box; Palace spike; the panel's Radiation pattern group for 3D | — | 7, 9 |
 
 **Three tracks, in parallel.**
 - **Solver track:** 21 → 22, 23.

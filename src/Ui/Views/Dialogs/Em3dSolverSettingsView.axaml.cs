@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
@@ -89,7 +90,7 @@ public partial class Em3dSolverSettingsView : UserControl
                     : $"Not found: {launcher.How}. Palace will run on one core.";
             }
             catch (Exception ex) { text = ex.Message; }
-            Dispatcher.UIThread.Post(() => MpiStatus.Text = text);
+            Dispatcher.UIThread.Post(() => ShowStatus(MpiStatus, text));
         });
     }
 
@@ -112,7 +113,7 @@ public partial class Em3dSolverSettingsView : UserControl
             catch (Exception ex) { text = ex.Message; }
             Dispatcher.UIThread.Post(() =>
             {
-                status.Text = text;
+                ShowStatus(status, text);
                 bool running = CircuitRF.Ui.Layout.Em.SolverInstallRunner.IsRunning(discovery.Tool);
                 install.IsVisible = offer || running;
                 install.IsEnabled = !running;
@@ -120,6 +121,60 @@ public partial class Em3dSolverSettingsView : UserControl
             });
         });
     }
+
+    /// <summary>
+    /// A status line, with Spack's path padding folded to one "…". A Spack install tree pads every
+    /// prefix with a chain of <c>__spack_path_placeholder__</c> directories (<c>padded_length</c>),
+    /// which printed in full wrapped a single path over ten rows; the chain carries nothing a reader
+    /// can use, and the full text stays on the tooltip for anyone who needs to copy it.
+    /// </summary>
+    private static void ShowStatus(TextBlock status, string text)
+    {
+        status.Text = FoldSpackPadding(text);
+        status.Tag  = text;   // the unfolded line, which Copy puts on the clipboard
+        ToolTip.SetTip(status, status.Text == text ? null : text);
+    }
+
+    /// <summary>Right-click ▸ Copy on a status line: the selection when there is one, otherwise the
+    /// whole line UNFOLDED — the folded "…" is not a path anyone can paste into a terminal.</summary>
+    private void OnCopyStatusClick(object? sender, RoutedEventArgs e)
+    {
+        if (OwningStatus(sender) is not { } status) return;
+        string selected = status.SelectedText;
+        CopyToClipboard(selected.Length > 0 ? selected : StatusText(status));
+    }
+
+    /// <summary>Right-click ▸ Copy All: every row, labelled, unfolded — what someone asking "what did it
+    /// find?" needs in one paste.</summary>
+    private void OnCopyAllStatusClick(object? sender, RoutedEventArgs e)
+        => CopyToClipboard(string.Join(Environment.NewLine,
+               $"Palace: {StatusText(PalaceStatus)}",
+               $"MPI launcher: {StatusText(MpiStatus)}",
+               $"Gmsh: {StatusText(GmshStatus)}",
+               $"openEMS: {StatusText(OpenEmsStatus)}"));
+
+    private static string StatusText(TextBlock status) => status.Tag as string ?? status.Text ?? "";
+
+    /// <summary>A ContextMenu lives in its own popup tree, so the owning line is the menu's Parent,
+    /// not an ancestor of the MenuItem (the walk <c>MessagesView</c> uses).</summary>
+    private static SelectableTextBlock? OwningStatus(object? sender)
+    {
+        for (var current = sender as Avalonia.LogicalTree.ILogical; current is not null; current = current.LogicalParent)
+            if (current is ContextMenu menu) return menu.Parent as SelectableTextBlock;
+        return null;
+    }
+
+    private void CopyToClipboard(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return;
+        if (TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard) _ = clipboard.SetTextAsync(text);
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex SpackPadding =
+        new(@"(?:__spack_p[^/\\]*[/\\])+", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    internal static string FoldSpackPadding(string text)
+        => SpackPadding.Replace(text, m => "…" + m.Value[^1]);
 
     /// <summary>brief-em3d-24 — the row's Install …: consent, then the install in the background.</summary>
     private async void OnInstall(object? sender, RoutedEventArgs e)
@@ -133,7 +188,7 @@ public partial class Em3dSolverSettingsView : UserControl
             Refresh(discovery, status, btn);
             await install;
         }
-        catch (Exception ex) { Row(tool).Item2.Text = ex.Message; }
+        catch (Exception ex) { ShowStatus(Row(tool).Item2, ex.Message); }
     }
 
     /// <summary>

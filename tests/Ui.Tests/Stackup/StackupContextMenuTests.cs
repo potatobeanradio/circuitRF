@@ -352,7 +352,7 @@ public class StackupContextMenuTests
 
     /// <summary>
     /// R-stk6-4's identity claim: a via added from the drawing and one added with the "＋ Via" button
-    /// are THE SAME ENTRY but for its name and its span. Both go through one constructor, which is
+    /// are THE SAME ENTRY but for its name and (when nothing is selected) its span. Both go through one constructor, which is
     /// what makes this true of fields nobody has added yet.
     /// </summary>
     [Fact]
@@ -361,6 +361,7 @@ public class StackupContextMenuTests
         var vm = Editor();
         var canvas = Canvas(vm);
 
+        vm.ClearStackupSelection();
         vm.AddViaLayerCommand.Execute(null);
         var fromButton = vm.Working.Stackup.Layers[^1];
 
@@ -377,9 +378,31 @@ public class StackupContextMenuTests
         Assert.Equal(fromButton.SigmaSm,          fromMenu.SigmaSm);
 
         // …and the two fields that DO differ are the two the menu exists to set.
-        Assert.Null(fromButton.SpanFromLayer);
+        // With nothing selected the button spans top to bottom; the menu spans the dielectric.
+        var conductors = vm.Working.Stackup.Layers.Where(l => l.Kind == StackupKind.Conductor).ToList();
+        Assert.Equal(conductors[0].Name,  fromButton.SpanFromLayer);
+        Assert.Equal(conductors[^1].Name, fromButton.SpanToLayer);
         Assert.Equal("Inner 1 (Ground Plane)", fromMenu.SpanFromLayer);
         Assert.Equal("Inner 2",                fromMenu.SpanToLayer);
+    }
+
+    /// <summary>"＋ Via" with fewer than two conductors still adds the via, and the drawing says
+    /// what to do about it rather than reporting two unset ends.</summary>
+    [Fact]
+    public void AButtonViaWithNothingToSpan_SaysToAddConductors()
+    {
+        var tech = ShippedTechnologies.Load(FourLayerId);
+        tech.Stackup.Layers.RemoveAll(l => l.Kind != StackupKind.Dielectric);
+        var vm = Editor(tech);
+
+        vm.AddViaLayerCommand.Execute(null);
+        var via = vm.Working.Stackup.Layers[^1];
+        Assert.Equal(StackupKind.Via, via.Kind);
+        Assert.Null(via.SpanFromLayer);
+
+        var labels = StackupScene.Build(vm.Working, 900f).Labels;
+        Assert.Contains(labels, l => l.Text.StartsWith("first add conductors", StringComparison.Ordinal));
+        Assert.DoesNotContain(labels, l => l.Text.Contains("(unset)", StringComparison.Ordinal));
     }
 
     // ── R-stk6-5 — Plated and Fill: two fields, two items, never merged ─────────────────────────

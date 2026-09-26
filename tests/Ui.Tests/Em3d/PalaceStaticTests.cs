@@ -176,8 +176,8 @@ public sealed class PalaceStaticTests(ITestOutputHelper output) : IDisposable
         Assert.Equal(Path.Combine(results, "two.palace_es"), Em3dRunService.RunDirectory(results, setup, Em3dSolver.Palace));
         Assert.Equal("two.palace_es", Em3dRunService.NpyKey(setup, Em3dSolver.Palace));
         Assert.EndsWith("two.palace_es.npy", result.NpyPath);
-        Assert.Empty(Directory.EnumerateFiles(_root, "*.s*p", SearchOption.AllDirectories)
-                              .Where(f => System.Text.RegularExpressions.Regex.IsMatch(Path.GetFileName(f), @"\.s\d+p$")));
+        Assert.DoesNotContain(Directory.EnumerateFiles(_root, "*.s*p", SearchOption.AllDirectories),
+                              f => System.Text.RegularExpressions.Regex.IsMatch(Path.GetFileName(f), @"\.s\d+p$"));
     }
 
     // ── 6. Refusals before work ─────────────────────────────────────────────────────────────────

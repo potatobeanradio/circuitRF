@@ -102,7 +102,7 @@ public class EmSolveRegionTests
         {
             var run = EmRunService.Run(boxed, PlanarRunTests.Source(view), Path.Combine(dir, "results"));
             Assert.Equal(EmRunStatus.Ok, run.Status);
-            Assert.Contains(run.Notes, n => n.StartsWith("Solve region", StringComparison.Ordinal));
+            Assert.Contains(run.Notes!, n => n.StartsWith("Solve region", StringComparison.Ordinal));
         }
         finally
         {

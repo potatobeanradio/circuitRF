@@ -1006,8 +1006,48 @@ public sealed partial class TechEditorViewModel : ObservableObject
     [RelayCommand]
     private void AddConductorLayer() => AddStackupLayer(StackupKind.Conductor);
 
+    /// <summary>
+    /// "＋ Via" adds a via that SPANS something, so the drawing shows a barrel the moment it is
+    /// clicked rather than a refusal the user has to go and fix. An unset span is what used to land
+    /// here, and it drew as "span does not resolve: (unset) → (unset)" — an error the editor had
+    /// inflicted on itself. The span is <see cref="DefaultViaSpan"/>'s; with fewer than two
+    /// conductors there is nothing to span, the via is still added (the button always does
+    /// something visible), and the drawing's marker says to add conductors first.
+    /// </summary>
     [RelayCommand]
-    private void AddViaLayer() => AddStackupLayer(StackupKind.Via);
+    private void AddViaLayer()
+    {
+        var (from, to) = DefaultViaSpan();
+        var before = SnapshotJson();
+        var via = NewStackupLayer(StackupKind.Via);
+        via.SpanFromLayer = from;
+        via.SpanToLayer   = to;
+        Working.Stackup.Layers.Add(via);
+        CommitEdit(before, from is null ? "Add Via stackup layer" : $"Add via spanning {from} to {to}");
+
+        // By NAME, after the commit — the commit rebuilt every row VM (R-stk3-1).
+        SelectedStackupLayerName = via.Name;
+    }
+
+    /// <summary>
+    /// The span a button-added via gets: the two conductors around the SELECTED dielectric when one
+    /// is selected and has metal on both sides (the same span the drawing's "Add Via" gives it),
+    /// otherwise the top-most conductor to the bottom-most — a through via, the one via every
+    /// stackup with two conductors can have. Null ends when the stackup has fewer than two.
+    /// </summary>
+    internal (string? From, string? To) DefaultViaSpan()
+    {
+        var layers = Working.Stackup.Layers;
+        var selected = SelectedStackupLayerName is { Length: > 0 } name
+            ? layers.FirstOrDefault(l => string.Equals(l.Name, name, System.StringComparison.Ordinal))
+            : null;
+        if (selected is { Kind: StackupKind.Dielectric }
+            && ConductorsAround(selected) is ({ } above, { } below))
+            return (above, below);
+
+        var conductors = layers.Where(l => l.Kind == StackupKind.Conductor).ToList();
+        return conductors.Count >= 2 ? (conductors[0].Name, conductors[^1].Name) : (null, null);
+    }
 
     private void AddStackupLayer(StackupKind kind)
     {

@@ -426,7 +426,7 @@ public sealed class PalaceEigenTests(ITestOutputHelper output) : IDisposable
         var modes = PalaceRun.ReadModes(Path.Combine(EigenDir("cavity-pec"), PalaceRun.EigFile), out string? e1);
         Assert.Null(e1);
         Assert.Equal([1, 2, 3], modes!.Take(3).Select(m => m.Index));     // Palace may report more converged modes than N
-        Assert.InRange(modes[0].FrequencyHz, 8.8e9, 9.0e9);   // TE101, 8.885 GHz
+        Assert.InRange(modes![0].FrequencyHz, 8.8e9, 9.0e9);   // TE101, 8.885 GHz
         var part = PalaceRun.ReadModeColumns(Path.Combine(EigenDir("cavity-pec"), PalaceRun.DomainEnergyFile), ["p_elec[1]"], [1, 2, 3], out string? e2);
         Assert.Null(e2);
         Assert.InRange(part![0, 0], 0.99, 1.01);        // one meshed region holds all of it
@@ -628,7 +628,8 @@ public sealed class PalaceEigenTests(ITestOutputHelper output) : IDisposable
             """;
         string path = Path.Combine(dir, "palace");
         File.WriteAllText(path, script.Replace("\r\n", "\n"));
-        File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        if (!OperatingSystem.IsWindows())
+            File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         var d = SolverDiscovery.Create(SolverTool.Palace);
         d.PreferredCommand = () => path;
         d.CacheDirectory = Path.Combine(dir, "cache");

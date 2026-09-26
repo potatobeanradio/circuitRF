@@ -580,6 +580,22 @@ public class StackupSceneTests
             => scene.Labels.Single(l => l.LayerName == layer && l.Field == field).Text;
     }
 
+    /// <summary>In mil a conductor also reads in ounces; 18 µm is the half-ounce every data sheet
+    /// calls it, not 0.51. In µm there is no ounce.</summary>
+    [Fact]
+    public void InMil_AConductorShowsItsCopperWeight()
+    {
+        var tech = Shipped("pcb-2layer_RO4350B_20mil_1oz");
+        Assert.Equal(LayoutUnit.Mil, tech.DefaultDisplayUnit);
+        var metal = tech.Stackup.Layers.First(l => l.Kind == StackupKind.Conductor);
+        metal.ThicknessDbu = LayoutUnits.ToDbu(18m, LayoutUnit.Um, LayoutUnits.DefaultDbuPerMicron);
+
+        Assert.Contains(StackupScene.Build(tech, Wide).Labels, l => l.LayerName == metal.Name && l.Text == "(0.5 oz)");
+
+        tech.DefaultDisplayUnit = LayoutUnit.Um;
+        Assert.DoesNotContain(StackupScene.Build(tech, Wide).Labels, l => l.Style == StackupLabelStyle.Spec && l.Text.Contains("oz)", StringComparison.Ordinal));
+    }
+
     // ── §2 — the width, and how it degrades ──────────────────────────────────────────────────────
 
     [Fact]

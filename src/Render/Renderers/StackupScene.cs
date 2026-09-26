@@ -786,7 +786,7 @@ public sealed class StackupScene
             bool isHole = via.Plated == false;
             run.Add(via.Name, StackupField.Name,
                     isHole ? StackupLabelStyle.ViaName : StackupLabelStyle.Refusal, specFont, 0f);
-            run.Add(isHole ? "unplated hole — no span" : UnresolvedSpanText(via),
+            run.Add(isHole ? "unplated hole — no span" : UnresolvedSpanText(via, tech),
                     StackupField.Span,
                     isHole ? StackupLabelStyle.Spec : StackupLabelStyle.Refusal, specFont, QuantityGap);
             run.Place(footerY, via.Name, labels, hits);
@@ -856,6 +856,11 @@ public sealed class StackupScene
 
         if (layer.Kind == StackupKind.Conductor)
         {
+            // In mil — the unit a board is spoken of in — a copper thickness is also read in ounces,
+            // so the weight rides beside the length rather than making the reader convert.
+            if (CopperWeightText(layer.ThicknessDbu, tech) is { } oz)
+                g.Add(oz, StackupField.None, StackupLabelStyle.Spec, font, QuantityGap);
+
             g.Add("σ =", StackupField.None,  StackupLabelStyle.Spec, font, QuantityGap);
             g.Add(layer.SigmaSm.ToString("0.###e+0", Inv), StackupField.Sigma, StackupLabelStyle.Spec, font, PieceGap);
             g.Add("S/m",      StackupField.None,  StackupLabelStyle.Spec, font, PieceGap);
@@ -923,8 +928,13 @@ public sealed class StackupScene
         g.Add(UnitText(tech), StackupField.None, StackupLabelStyle.Spec, font, PieceGap);
     }
 
-    private static string UnresolvedSpanText(StackupLayer via)
+    private static string UnresolvedSpanText(StackupLayer via, Technology tech)
     {
+        // With fewer than two conductors no span COULD resolve, so naming the unset ends would
+        // report a symptom; what the user can act on is the missing metal.
+        if (tech.Stackup.Layers.Count(l => l.Kind == StackupKind.Conductor) < 2)
+            return "first add conductors to the stackup for this via to span";
+
         string from = via.SpanFromLayer is { Length: > 0 } f ? $"\"{f}\"" : "(unset)";
         string to   = via.SpanToLayer   is { Length: > 0 } t ? $"\"{t}\"" : "(unset)";
         return $"span does not resolve: {from} → {to}";
@@ -934,6 +944,30 @@ public sealed class StackupScene
         => LayoutUnits.Format(dbu, tech.DefaultDisplayUnit, LayoutUnits.DefaultDbuPerMicron);
 
     internal static string UnitText(Technology tech) => LayoutUnits.Suffix(tech.DefaultDisplayUnit);
+
+    /// <summary>The copper thickness of one ounce per square foot, as the trade rounds it (34.79 µm
+    /// exactly; every fabricator's table says 35).</summary>
+    internal const double MicronsPerOunce = 35.0;
+
+    // The weights a fabricator actually sells. A thickness within a few percent of one is that
+    // weight — 18 µm is "½ oz" on every data sheet, though 18/35 is 0.514.
+    private static readonly double[] StandardOunces = [0.25, 1.0 / 3, 0.5, 0.75, 1, 1.5, 2, 2.5, 3, 4, 5, 6];
+
+    /// <summary>
+    /// "(1 oz)" for a conductor band, shown only when the display unit is mil; null otherwise or for
+    /// a zero thickness. A standard weight within 8 % prints as that weight; anything else prints
+    /// "≈" and its ratio to <see cref="MicronsPerOunce"/>.
+    /// </summary>
+    internal static string? CopperWeightText(long thicknessDbu, Technology tech)
+    {
+        if (tech.DefaultDisplayUnit != LayoutUnit.Mil || thicknessDbu <= 0) return null;
+        double oz = (double)LayoutUnits.FromDbu(thicknessDbu, LayoutUnit.Um, LayoutUnits.DefaultDbuPerMicron)
+                    / MicronsPerOunce;
+        foreach (var w in StandardOunces)
+            if (Math.Abs(oz - w) <= 0.08 * w)
+                return $"({w.ToString("0.##", Inv)} oz)";
+        return $"(≈{oz.ToString("0.##", Inv)} oz)";
+    }
 
     // ── Colour, span and lane resolution ──────────────────────────────────────────────────────────
 
@@ -1120,6 +1154,8 @@ public sealed class StackupScene
             Token(layer.Name, specFont);
             Token(ThicknessText(layer.ThicknessDbu, tech), specFont);
             Token(UnitText(tech), specFont);
+            if (layer.Kind == StackupKind.Conductor && CopperWeightText(layer.ThicknessDbu, tech) is { } oz)
+                Token(oz, specFont);
             Token(layer.SigmaSm.ToString("0.###e+0", Inv), specFont);
             Token(layer.Epsr.ToString("0.####",   Inv), specFont);
             Token(layer.TanD.ToString("0.######", Inv), specFont);

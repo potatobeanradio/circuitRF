@@ -1,3 +1,4 @@
+using System.Linq;
 // Conformal boundary cells — §5's UI gates: the FOURTH mesh control, end to end.
 //
 // D3 says PlanarMeshSettings carries "exactly three user controls, and no more"; this phase adds a
@@ -204,6 +205,31 @@ public class ConformalBoundaryCellsUiTests
         int row   = axaml.IndexOf("PlanarBoundaryCellsCombo", StringComparison.Ordinal);
         Assert.True(group >= 0, "the Surface mesh group is gone");
         Assert.True(row > group, "the Boundary cells row is not inside the Surface mesh group");
+
+        Directory.Delete(dir, true);
+    }
+
+    /// <summary>
+    /// Choosing a 3D solver hides what a 3D run does not read (surface mesh, the planar solver
+    /// options, the radiation pattern, the planar port type) and keeps what it does (the return
+    /// plane, which the 3D generator's ports return through).
+    /// </summary>
+    [Fact]
+    public void A3DSolver_HidesThePlanarOnlyControls_AndKeepsTheReturnPlane()
+    {
+        string dir = TempDir();
+        var vm = Editor(dir, ChamferedLayout());
+        Assert.True(vm.ShowPlanarControls);
+        Assert.True(vm.ShowCircuitRfSolverControls);
+
+        vm.Solver3DChoice = EmSetupEditorViewModel.Solver3DChoices.Single(c => c.Value == Em3dSolver.Palace);
+
+        Assert.Equal("FEM 3D (Palace)", vm.Solver3DChoice.Label);
+        Assert.False(vm.ShowPlanarControls);
+        Assert.False(vm.ShowCrossSectionControls);
+        Assert.False(vm.ShowCircuitRfSolverControls);
+        Assert.True(vm.ShowReturnPlane);
+        Assert.All(vm.PortRows, r => Assert.False(r.ShowKind));
 
         Directory.Delete(dir, true);
     }

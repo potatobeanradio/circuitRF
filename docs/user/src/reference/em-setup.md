@@ -425,9 +425,12 @@ folder are in [The Command Line](cli.html#em).
 ## Solver — planar or 3D {#solver-3d}
 
 The **Solver** group at the top of the panel picks who solves the setup: circuitRF's own planar and
-cross-section kernels (the default), or a 3D solver — **Palace** (finite elements) or openEMS. A 3D
-setup builds a 3D model from the layout, its technology and any bond wires, and the planar settings
-below are kept but not read. Palace and openEMS each have their own section below, and a setup keeps
+cross-section kernels (the default), **FEM 3D (Palace)**, **FDTD 3D (openEMS)**, or **FEM & FDTD -
+Compare**. A 3D setup builds a 3D model from the layout, its technology and any bond wires. The
+settings a 3D run does not read — the surface mesh, adaptive sampling, the port type, the planar
+solver options and the radiation pattern — are hidden while a 3D solver is chosen; they stay in the
+`.cem` and come back when you switch to Planar. What a 3D run does read stays: the frequency sweep,
+each port's Z₀, the return plane, the solve region and the core count. Palace and openEMS each have their own section below, and a setup keeps
 both, so switching solver never loses the other's settings.
 
 With Palace chosen the panel shows Palace's own settings. **A blank box is the default shown in it**, and
@@ -569,7 +572,7 @@ and, per port, openEMS's log and probe files, so a run can be repeated by hand.
 
 ### Running both, and the difference {#run-both}
 
-**3D — both, and compare** (`Solver3D: Both`, or `circuitrf em x.cem --solver both`) builds the 3D model
+**FEM & FDTD - Compare** (`Solver3D: Both`, or `circuitrf em x.cem --solver both`) builds the 3D model
 once and runs Palace and then openEMS on it, one after the other. Each result lands where it would
 alone, and a third file, `results/<name>.compare_em.npy`, holds the difference: both S matrices,
 `dMag_dB`, `dPhase_deg` and `dVec` (the magnitude of S_Palace − S_openEMS, which stays meaningful where

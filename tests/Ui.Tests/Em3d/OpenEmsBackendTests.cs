@@ -46,7 +46,7 @@ public sealed class OpenEmsBackendTests(ITestOutputHelper output) : IDisposable
     {
         var low = Lowered(name);
         Assert.Equal(low.Model, Lowered(name).Model);        // determinism in-process as well
-        Assert.DoesNotContain('\r', low.Model);
+        Assert.DoesNotContain('\r', low.Model!);
 
         string file = Path.Combine(PalaceBackendTests.RepoRoot(), "testdata", "em3d", "openems-goldens", name, CsxcadWriter.ModelFile);
         if (Environment.GetEnvironmentVariable("CRF_WRITE_OPENEMS_GOLDENS") == "1")
@@ -188,7 +188,7 @@ public sealed class OpenEmsBackendTests(ITestOutputHelper output) : IDisposable
             setup.Palace = null;
             var result = EmRunService.Run(setup, source, Path.Combine(_root, $"results-{len * 1e3:F0}mm"));
             Assert.True(result.Status == EmRunStatus.Ok, result.Error);
-            Assert.Empty(result.Warnings.Where(x => x.Contains("NOT converged", StringComparison.Ordinal)));
+            Assert.DoesNotContain(result.Warnings, x => x.Contains("NOT converged", StringComparison.Ordinal));
             foreach (string n in result.Notes ?? []) output.WriteLine($"{len * 1e3} mm: {n}");
             foreach (string l in File.ReadLines(result.SnpPath!).Where(l => l.Contains("openEMS run port", StringComparison.Ordinal)))
                 output.WriteLine(l);

@@ -67,7 +67,7 @@ public sealed class PalaceBackendTests(ITestOutputHelper output) : IDisposable
         }
         foreach (var (file, text) in files)
             Assert.Equal(File.ReadAllBytes(Path.Combine(dir, file)), System.Text.Encoding.UTF8.GetBytes(text));
-        Assert.DoesNotContain('\r', low.Geo);
+        Assert.DoesNotContain('\r', low.Geo!);
     }
 
     // ── 2. Schema ───────────────────────────────────────────────────────────────────────────────

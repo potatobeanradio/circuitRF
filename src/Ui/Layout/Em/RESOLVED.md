@@ -1058,3 +1058,17 @@ for the same reason; this one is now too.
 **An owner message was re-quoted verbatim in a new code comment.** The repo's rule is paraphrase, not
 quote — the pre-existing quote a few lines up in the same file is grandfathered, a new copy of it is
 not. Rewritten as a paraphrase.
+
+## EM Setup panel: what a 3D run reads, and what the panel hides for it (2026-09-25)
+
+With a 3D solver chosen, the panel used to show every planar group with a line saying the planar
+settings were "kept but not used". Traced through `Em3dGenerator` / `Em3dRunService`, a 3D run reads:
+the frequency sweep, each port's Z₀ (`ResolvePortZ0`), the return plane (`GroundStackupLayerName`),
+the solve region (via `EmGeometry.ForSetup`, so *Draw on layout…* stays), and the core cap (Palace's
+MPI ranks, openEMS's threads). It does NOT read: the analysis kind, the signal conductor, analysis
+levels, adaptive sampling / resonance search, the planar port type (it builds lumped edge ports and
+refuses internal ones), the cross-section Mesh group, Surface mesh, the planar Solver options, or the
+radiation pattern. Those are now hidden (`ShowPlanarControls`, `ShowCrossSectionControls`,
+`ShowReturnPlane`, `ShowCircuitRfSolverControls`); their fields stay in the `.cem`.
+The radiation pattern cannot simply be re-pointed at 3D — neither backend asks for a far field and
+the planar transform works on MoM rooftop currents — so it is `brief-em3d-31-radiation-pattern.md`.

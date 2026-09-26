@@ -38,6 +38,6 @@ public sealed class ClayVertexPerLineTests
         string[] before = text.Split('\n');
         string[] after  = LayoutPersistence.Serialize(view).Split('\n');
         Assert.Equal(before.Length, after.Length);
-        Assert.Single(Enumerable.Range(0, before.Length).Where(i => before[i] != after[i]));
+        Assert.Single(Enumerable.Range(0, before.Length), i => before[i] != after[i]);
     }
 }

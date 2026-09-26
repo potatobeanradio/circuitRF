@@ -23,14 +23,19 @@
     charging every user for a feature most never use.
   -->
 
+  <!-- Every visible string here is selectable (owner request, 2026-09-25): a solver's path, version or
+       refusal is exactly what gets pasted into a message to someone else. Tooltip text stays a plain
+       TextBlock — a tooltip closes before anything in it can be selected. The status lines show Spack's
+       padding folded to "…", so their Copy puts the FULL line on the clipboard when nothing is selected,
+       and Copy All gives every row at once. -->
   <StackPanel Spacing="0">
-    <TextBlock Text="3D EM Solvers" FontSize="11" FontWeight="SemiBold"
+    <SelectableTextBlock Text="3D EM Solvers" FontSize="11" FontWeight="SemiBold"
                Opacity="0.55" Margin="0,0,0,6"/>
-    <TextBlock FontSize="11" Opacity="0.75" TextWrapping="Wrap" Margin="0,0,0,12"
+    <SelectableTextBlock FontSize="11" Opacity="0.75" TextWrapping="Wrap" Margin="0,0,0,12"
                Text="circuitRF includes none of these programs. It can install each from its own upstream (Install … below), or you can install them yourself and check each row. Leave a path blank to search for it."/>
 
     <!-- ── Palace ─────────────────────────────────────────────────────── -->
-    <TextBlock Text="Palace (FEM)" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,4"/>
+    <SelectableTextBlock Text="Palace (FEM)" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,4"/>
     <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto">
       <TextBox Grid.Row="0" Grid.Column="0" Name="PalaceBox" FontSize="12"
                PlaceholderText="Leave blank to search (CIRCUITRF_PALACE, PATH, then Spack)"
@@ -42,10 +47,18 @@
       </TextBox>
       <Button Grid.Row="0" Grid.Column="1" Content="Browse…" FontSize="11" Padding="8,3" Margin="6,0,0,0"
               Tag="PalaceBox" Click="OnBrowse" ToolTip.Tip="Pick the Palace launcher from disk"/>
-      <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Name="PalaceStatus" FontSize="11" Opacity="0.75"
-                 TextWrapping="Wrap" Margin="0,4,0,0" Text="Not checked yet."/>
+      <SelectableTextBlock Grid.Row="1" Grid.ColumnSpan="2" Name="PalaceStatus" FontSize="11" Opacity="0.75"
+                 TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis"
+                 Margin="0,4,0,0" Text="Not checked yet.">
+        <SelectableTextBlock.ContextMenu>
+          <ContextMenu>
+            <MenuItem Header="Copy" Click="OnCopyStatusClick"/>
+            <MenuItem Header="Copy All" Click="OnCopyAllStatusClick"/>
+          </ContextMenu>
+        </SelectableTextBlock.ContextMenu>
+      </SelectableTextBlock>
       <!-- R-em3d6-4b: the ParMETIS sentence, once, in the row, in plain words. Not a dialog. -->
-      <TextBlock Grid.Row="2" Grid.ColumnSpan="2" Name="ParmetisNote" FontSize="11" Opacity="0.6"
+      <SelectableTextBlock Grid.Row="2" Grid.ColumnSpan="2" Name="ParmetisNote" FontSize="11" Opacity="0.6"
                  TextWrapping="Wrap" Margin="0,4,0,0"
                  Text="A default Palace build includes ParMETIS, whose licence allows commercial use for evaluation only. If you build Palace, you accept those terms."/>
       <Button Grid.Row="3" Grid.ColumnSpan="2" Name="PalaceInstall" Content="Install Palace…" FontSize="11" Padding="8,3"
@@ -54,7 +67,7 @@
     </Grid>
 
     <!-- ── MPI launcher: how Palace uses more than one core ─────────────── -->
-    <TextBlock Text="MPI launcher (runs Palace on several cores)" FontSize="12" FontWeight="SemiBold" Margin="0,16,0,4"/>
+    <SelectableTextBlock Text="MPI launcher (runs Palace on several cores)" FontSize="12" FontWeight="SemiBold" Margin="0,16,0,4"/>
     <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
       <TextBox Grid.Row="0" Grid.Column="0" Name="MpiBox" FontSize="12"
                PlaceholderText="Leave blank to search (CIRCUITRF_MPIRUN, Palace's own MPI, then PATH)"
@@ -66,35 +79,59 @@
       </TextBox>
       <Button Grid.Row="0" Grid.Column="1" Content="Browse…" FontSize="11" Padding="8,3" Margin="6,0,0,0"
               Tag="MpiBox" Click="OnBrowse" ToolTip.Tip="Pick mpirun from disk"/>
-      <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Name="MpiStatus" FontSize="11" Opacity="0.75"
-                 TextWrapping="Wrap" Margin="0,4,0,0" Text="Not checked yet."/>
+      <SelectableTextBlock Grid.Row="1" Grid.ColumnSpan="2" Name="MpiStatus" FontSize="11" Opacity="0.75"
+                 TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis"
+                 Margin="0,4,0,0" Text="Not checked yet.">
+        <SelectableTextBlock.ContextMenu>
+          <ContextMenu>
+            <MenuItem Header="Copy" Click="OnCopyStatusClick"/>
+            <MenuItem Header="Copy All" Click="OnCopyAllStatusClick"/>
+          </ContextMenu>
+        </SelectableTextBlock.ContextMenu>
+      </SelectableTextBlock>
     </Grid>
 
     <!-- ── Gmsh ───────────────────────────────────────────────────────── -->
-    <TextBlock Text="Gmsh (meshes Palace's problems)" FontSize="12" FontWeight="SemiBold" Margin="0,16,0,4"/>
+    <SelectableTextBlock Text="Gmsh (meshes Palace's problems)" FontSize="12" FontWeight="SemiBold" Margin="0,16,0,4"/>
     <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto">
       <TextBox Grid.Row="0" Grid.Column="0" Name="GmshBox" FontSize="12"
                PlaceholderText="Leave blank to search (CIRCUITRF_GMSH, PATH, then Spack)"
                LostFocus="OnPathCommitted"/>
       <Button Grid.Row="0" Grid.Column="1" Content="Browse…" FontSize="11" Padding="8,3" Margin="6,0,0,0"
               Tag="GmshBox" Click="OnBrowse" ToolTip.Tip="Pick the Gmsh executable from disk"/>
-      <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Name="GmshStatus" FontSize="11" Opacity="0.75"
-                 TextWrapping="Wrap" Margin="0,4,0,0" Text="Not checked yet."/>
+      <SelectableTextBlock Grid.Row="1" Grid.ColumnSpan="2" Name="GmshStatus" FontSize="11" Opacity="0.75"
+                 TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis"
+                 Margin="0,4,0,0" Text="Not checked yet.">
+        <SelectableTextBlock.ContextMenu>
+          <ContextMenu>
+            <MenuItem Header="Copy" Click="OnCopyStatusClick"/>
+            <MenuItem Header="Copy All" Click="OnCopyAllStatusClick"/>
+          </ContextMenu>
+        </SelectableTextBlock.ContextMenu>
+      </SelectableTextBlock>
       <Button Grid.Row="2" Grid.ColumnSpan="2" Name="GmshInstall" Content="Install Gmsh…" FontSize="11" Padding="8,3"
               Margin="0,6,0,0" HorizontalAlignment="Left" IsVisible="False" Tag="Gmsh" Click="OnInstall"
               ToolTip.Tip="Download Gmsh's own published archive for this computer. Shows what it will fetch and where it will go before anything is downloaded."/>
     </Grid>
 
     <!-- ── openEMS ────────────────────────────────────────────────────── -->
-    <TextBlock Text="openEMS (FDTD)" FontSize="12" FontWeight="SemiBold" Margin="0,16,0,4"/>
+    <SelectableTextBlock Text="openEMS (FDTD)" FontSize="12" FontWeight="SemiBold" Margin="0,16,0,4"/>
     <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto">
       <TextBox Grid.Row="0" Grid.Column="0" Name="OpenEmsBox" FontSize="12"
                PlaceholderText="Leave blank to search (CIRCUITRF_OPENEMS, PATH, then Spack)"
                LostFocus="OnPathCommitted"/>
       <Button Grid.Row="0" Grid.Column="1" Content="Browse…" FontSize="11" Padding="8,3" Margin="6,0,0,0"
               Tag="OpenEmsBox" Click="OnBrowse" ToolTip.Tip="Pick the openEMS executable from disk"/>
-      <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Name="OpenEmsStatus" FontSize="11" Opacity="0.75"
-                 TextWrapping="Wrap" Margin="0,4,0,0" Text="Not checked yet."/>
+      <SelectableTextBlock Grid.Row="1" Grid.ColumnSpan="2" Name="OpenEmsStatus" FontSize="11" Opacity="0.75"
+                 TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis"
+                 Margin="0,4,0,0" Text="Not checked yet.">
+        <SelectableTextBlock.ContextMenu>
+          <ContextMenu>
+            <MenuItem Header="Copy" Click="OnCopyStatusClick"/>
+            <MenuItem Header="Copy All" Click="OnCopyAllStatusClick"/>
+          </ContextMenu>
+        </SelectableTextBlock.ContextMenu>
+      </SelectableTextBlock>
       <Button Grid.Row="2" Grid.ColumnSpan="2" Name="OpenEmsInstall" Content="Install openEMS…" FontSize="11" Padding="8,3"
               Margin="0,6,0,0" HorizontalAlignment="Left" IsVisible="False" Tag="OpenEms" Click="OnInstall"
               ToolTip.Tip="Download openEMS from its own upstream and install it for this computer. Shows what it will fetch and where it will go before anything is downloaded."/>
