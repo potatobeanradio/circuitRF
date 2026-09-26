@@ -1,0 +1,42 @@
+{
+  "FormatVersion": 1,
+  "Name": "Package C",
+  "LayoutRef": "Package/layout/Package.clay",
+  "Solver3D": "Palace",
+  "Problem3D": "Electrostatic",
+  "AirBox": {
+    "XMin": {
+      "PaddingUm": 100,
+      "Boundary": "Pec"
+    },
+    "XMax": {
+      "PaddingUm": 100,
+      "Boundary": "Pec"
+    },
+    "YMin": {
+      "PaddingUm": 3900,
+      "Boundary": "Pec"
+    },
+    "YMax": {
+      "PaddingUm": 3900,
+      "Boundary": "Pec"
+    },
+    "ZMax": {
+      "PaddingUm": 700,
+      "Boundary": "Pec"
+    }
+  },
+  "Terminals3D": [
+    {
+      "Name": "RF_IN",
+      "Net": "RF_IN"
+    },
+    {
+      "Name": "RF_OUT",
+      "Net": "RF_OUT"
+    }
+  ],
+  "Palace": {
+    "Quality": "Standard"
+  }
+}

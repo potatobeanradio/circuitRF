@@ -1,0 +1,48 @@
+{
+  "FormatVersion": 1,
+  "Name": "Package lid modes",
+  "LayoutRef": "Package/layout/Package.clay",
+  "Frequency": {
+    "StartExpr": "1",
+    "StopExpr": "20",
+    "StepExpr": "",
+    "NumPoints": 20,
+    "Mode": "PointCount",
+    "Kind": "Linear",
+    "StartUnit": "GHz",
+    "StopUnit": "GHz",
+    "StepUnit": "Hz"
+  },
+  "Solver3D": "Palace",
+  "Problem3D": "Eigenmode",
+  "AirBox": {
+    "XMin": {
+      "PaddingUm": 100,
+      "Boundary": "Pec"
+    },
+    "XMax": {
+      "PaddingUm": 100,
+      "Boundary": "Pec"
+    },
+    "YMin": {
+      "PaddingUm": 3900,
+      "Boundary": "Pec"
+    },
+    "YMax": {
+      "PaddingUm": 3900,
+      "Boundary": "Pec"
+    },
+    "ZMax": {
+      "PaddingUm": 700,
+      "Boundary": "Pec"
+    }
+  },
+  "Eigenmode": {
+    "Count": 3,
+    "TargetGHz": 5
+  },
+  "Palace": {
+    "Quality": "Draft",
+    "ElementOrder": 2
+  }
+}

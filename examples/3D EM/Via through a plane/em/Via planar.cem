@@ -1,0 +1,24 @@
+{
+  "FormatVersion": 1,
+  "Name": "Via planar",
+  "LayoutRef": "Via through a plane/layout/Via through a plane.clay",
+  "SignalStackupLayerName": "Top Copper",
+  "GroundStackupLayerName": "Ground Plane",
+  "AnalysisLevelNames": [
+    "Top Copper",
+    "Bottom Copper"
+  ],
+  "Frequency": {
+    "StartExpr": "0.1",
+    "StopExpr": "20",
+    "StepExpr": "",
+    "NumPoints": 200,
+    "Mode": "PointCount",
+    "Kind": "Linear",
+    "StartUnit": "GHz",
+    "StopUnit": "GHz",
+    "StepUnit": "Hz"
+  },
+  "DispersionCorrection": true,
+  "AnalysisKind": "Planar"
+}

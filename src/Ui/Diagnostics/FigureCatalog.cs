@@ -551,6 +551,26 @@ public static class FigureCatalog
             "Settings, 3D EM: one row per program a 3D EM run can need - Palace, Gmsh and openEMS - "
           + "with a path to name it and a line saying what circuitRF found. Blank means search."),
 
+        // ── The 3D EM guide: one section through each cell of examples/3D EM/ ─────────────
+        // Drawn by Em3dSectionRenderer from the example's own .cem, exactly as `render --section
+        // xz@y=0um` draws it. The 3D VIEW's pictures are not here: they need a GPU and a window, so
+        // the page names placeholders for them instead (brief-em3d-30 R-em3d30-2b).
+
+        new("em3d-bond-wire-section", DocEm3dFixtures.BondWireSide, 960, 540, null,
+            "The bond-wire cell cut along the wire: two gold pads on 100 um of alumina, the 1 mil "
+          + "wire's loop between them, and a port sheet from each pad's outer edge down to the "
+          + "ground. The box around it is the closed metal box the setup states."),
+
+        new("em3d-via-section", DocEm3dFixtures.ViaSide, 960, 540, null,
+            "The via cell cut along the lines: a microstrip on top, the via through a clearance in "
+          + "the ground plane, and an inverted microstrip underneath leaving the other way. The "
+          + "plane is the return for both lines, which is what the planar solver cannot state."),
+
+        new("em3d-package-section", DocEm3dFixtures.PackageSide, 960, 540, null,
+            "The package cell cut along its leads: a lead on each side, a bond wire from each lead "
+          + "to a die pad, the alumina base, and the lid - the top face of the closed box - above "
+          + "them."),
+
         new("cv-editor", DocCvFixtures.Editor, 620, 500,
             WindowFrame.Titled("C-V Editor - C1"),
             "The C-V Editor: a measured C(V) table, the fit order, and the polynomial it fits."),

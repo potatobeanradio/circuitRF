@@ -403,3 +403,62 @@ per technology (brief 10 R-lvs10-3), and every report prints the tolerance it ap
 default is visible rather than latent. `ProvingDesignTests.TheMeasuredSpreadStaysUnderTheProvisional
 Tolerance` re-measures the spread on every run and fails if a generator change widens it past
 0.5 %, which is what stops the floor and the default drifting past each other in silence.
+
+
+## 3D EM: what building the example measured (2026-09-26)
+
+brief-em3d-30. Three cells (a bond wire, a via through a plane, a lidded package) and seven setups,
+every one run on the F0 Mac (Apple M4, 10 cores, 16 GB, Palace 0.18.1 on 10 ranks, Gmsh 4.15.2). The
+key numbers live in `examples/3D EM/expected-numbers.json`, which `Em3dExampleTests` re-runs and which
+the README and `docs/user/src/reference/em-3d.md` must quote verbatim.
+
+**No one preset is right for all of them, and the one that is right is decided by the metal, not by
+the frequency.** Measured, per cell:
+
+- *Bond wire* (a 25 µm wire in a 3 × 2 × 1.1 mm box): Draft takes 5 s but reads 813 pH and −0.514 dB
+  at 10 GHz, 10 % short on inductance. Standard: 179 s, 3.1 GB, 906.1 pH, −0.765 dB — within 0.2 pH
+  and 0.002 dB of F0's independent hand-built hex-foot model. Accurate: 512 s, 7.0 GB, 907.9 pH. The
+  starting mesh around small metal is what refinement exists to fix.
+- *Via* (10 × 5 mm board, 1.5 mm of air): Draft 62 s, 4.8 GB, |S21| within 0.1 dB of F0's order-2
+  model but phase 12° off at 10 GHz and 23° at 20 GHz. Element order 2 on Draft's mesh: 392 s,
+  9.2 GB, within 0.02 dB and 5°. Standard was already measured by brief 21 at 35 min. Draft ships;
+  the README states both alternatives.
+- *Package statics*: Draft is 2–3 s and badly wrong — C 831 fF against Standard's 586 fF (+42 %), L
+  1.66 nH against 1.98 nH (−16 %). A static solve has no wavelength to size elements by, so the
+  first mesh is coarse. Standard costs 8 s and 22 s.
+- *Lid eigenmode*: Draft 13 s puts the cavity mode at 23.39 GHz with Q 176. **Standard was stopped
+  after 28 minutes in its last refinement pass**: the time is Palace's quasi-Newton refinement of each
+  eigenvalue (the gold's surface impedance makes the problem nonlinear in frequency), and it slows as
+  the refined mesh grows — at 222k unknowns the linear solve inside it fell about 1 % per iteration.
+  Draft with `ElementOrder: 2` and no refinement: 166 s, 1.7 GB, 23.655 GHz — 0.2 % from the
+  thin-cavity closed form (23.68 GHz, base and air in series) — and Q 1,662, so **Draft's Q was ten
+  times low**. That setting ships.
+
+**The planar via's refusal is a `check` ERROR, not only a run refusal.** The brief expected it to be a
+run refusal only. `check` on `Via planar.cem` runs the planar extraction and reports the refusal
+sentence as its one error, and `em` refuses with the same sentence. Both are gated
+(`Em3dExampleTests` gate 2 and gate 6). The README says the error is there on purpose.
+
+**A workspace `check` never opens a `.cem`.** `check <workspace>` walks cells and their three view
+folders and counts 11 documents here; none of the seven setups under the cells' `em/` folders is among
+them, so the planar via's error does not appear in a workspace check at all. Gate 2 checks each `.cem`
+by name. Not fixed here (this brief adds no capability); worth a `check` follow-up, since a user
+running `check` on a workspace reasonably expects its EM setups to be in it.
+
+**`explain`'s size estimate cannot see these problems.** It prices each region's volume at its largest
+element, and says so; for the via it prints 0.07 GB against a measured 4.8 GB, for the bond wire
+about 0 GB against 3.1 GB. Brief 21 already found that refinement IS the mesh on small metal, and the
+after-Gmsh check is the real one. So gate 3 asserts the pre-run verdict against 16 GB as the brief asks,
+and ALSO that every peak the README states is under 75 % of 16 GB, and gate 5 asserts that the run's
+own after-meshing check raised no warning.
+
+**F0's zero-thickness pads became 3 µm.** A zero-thickness conductor makes `check` warn that the
+stackup "still needs a thickness", so the bond-wire and package technologies state 3 µm of gold on the
+pads and ground. Both are sheets in the 3D model (thinner than a few skin depths) either way.
+
+**Every document is ordinary.** The workspace and cells were made with `circuitrf new`; the
+technologies, layouts, `.wBond` files and setups are hand-written JSON in the formats' own spelling,
+checked with `check` and `explain`. The two package layouts differ only by a via from each die pad to
+the floor: magnetostatics needs a closed current loop, and the same via would short an electrostatic
+terminal to ground, so the inductance runs on `Package shorted.clay` (with its own stem-paired
+`.wBond`).

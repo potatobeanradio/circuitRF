@@ -1,0 +1,41 @@
+{
+  "FormatVersion": 1,
+  "GroundPlaneEnabled": true,
+  "IncludeCapacitance": true,
+  "OvermoldEr": 1,
+  "OperatingTempC": 20,
+  "Arrays": [
+    {
+      "Name": "G1",
+      "Wires": [
+        {
+          "DiameterNm": 25400,
+          "Material": "Gold",
+          "FootLengthNm": 50800,
+          "Points": [
+            [
+              -475000,
+              0,
+              112700
+            ],
+            [
+              -325000,
+              0,
+              262700
+            ],
+            [
+              325000,
+              0,
+              262700
+            ],
+            [
+              475000,
+              0,
+              112700
+            ]
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,103 @@
+{
+  "FormatVersion": 1,
+  "Name": "Bond wire on alumina",
+  "DefaultDisplayUnit": "Um",
+  "DefaultSnapDbu": 1000,
+  "DefaultFlattenTolDbu": 1000,
+  "DefaultLabelHeightDbu": 100000,
+  "DefaultViaPadDbu": 100000,
+  "DefaultViaDrillDbu": 50000,
+  "Layers": [
+    {
+      "Key": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "Name": "Pad",
+      "Color": {
+        "r": 212,
+        "g": 175,
+        "b": 55,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 2,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drawing"
+    }
+  ],
+  "Stackup": {
+    "Top": "Open",
+    "Bottom": "Ground",
+    "Layers": [
+      {
+        "Kind": "Conductor",
+        "Name": "Pads",
+        "ThicknessDbu": 3000,
+        "Material": "Gold",
+        "Epsr": 1.0,
+        "TanD": 0.0,
+        "Mur": 1.0,
+        "SigmaSm": 41000000,
+        "DrawingLayers": [
+          {
+            "Layer": 1,
+            "Datatype": 0
+          }
+        ],
+        "IsGroundReference": false
+      },
+      {
+        "Kind": "Dielectric",
+        "Name": "Substrate",
+        "ThicknessDbu": 100000,
+        "Material": "Alumina",
+        "Epsr": 9.8,
+        "TanD": 0,
+        "Mur": 1.0,
+        "SigmaSm": 0.0,
+        "DrawingLayers": [],
+        "IsGroundReference": false
+      },
+      {
+        "Kind": "Conductor",
+        "Name": "Ground",
+        "ThicknessDbu": 3000,
+        "Material": "Gold",
+        "Epsr": 1.0,
+        "TanD": 0.0,
+        "Mur": 1.0,
+        "SigmaSm": 41000000,
+        "DrawingLayers": [],
+        "IsGroundReference": true
+      }
+    ]
+  },
+  "DrcRules": [
+    {
+      "Name": "Pad Min Width",
+      "Kind": "MinWidth",
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "ValueDbu": 25000,
+      "Severity": "Error"
+    }
+  ],
+  "Materials": [
+    {
+      "Name": "Gold",
+      "Sigma20": 41000000,
+      "Alpha20": 0.0034,
+      "DensityKgM3": 19300
+    },
+    {
+      "Name": "Alumina",
+      "Epsr": 9.8,
+      "TanD": 0,
+      "Mur": 1
+    }
+  ]
+}

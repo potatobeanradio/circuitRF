@@ -1,0 +1,73 @@
+{
+  "FormatVersion": 1,
+  "GroundPlaneEnabled": true,
+  "IncludeCapacitance": true,
+  "OvermoldEr": 1,
+  "OperatingTempC": 20,
+  "Arrays": [
+    {
+      "Name": "RF_IN",
+      "Wires": [
+        {
+          "DiameterNm": 25400,
+          "Material": "Gold",
+          "FootLengthNm": 50800,
+          "Points": [
+            [
+              -850000,
+              0,
+              270000
+            ],
+            [
+              -750000,
+              0,
+              420000
+            ],
+            [
+              -400000,
+              0,
+              420000
+            ],
+            [
+              -300000,
+              0,
+              270000
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "Name": "RF_OUT",
+      "Wires": [
+        {
+          "DiameterNm": 25400,
+          "Material": "Gold",
+          "FootLengthNm": 50800,
+          "Points": [
+            [
+              850000,
+              0,
+              270000
+            ],
+            [
+              750000,
+              0,
+              420000
+            ],
+            [
+              400000,
+              0,
+              420000
+            ],
+            [
+              300000,
+              0,
+              270000
+            ]
+          ]
+        }
+      ]
+    }
+  ]
+}

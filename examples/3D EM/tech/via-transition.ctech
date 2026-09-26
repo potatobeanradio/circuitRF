@@ -1,0 +1,221 @@
+{
+  "FormatVersion": 1,
+  "Name": "Via transition, 4-layer laminate",
+  "DefaultDisplayUnit": "Um",
+  "DefaultSnapDbu": 1000,
+  "DefaultFlattenTolDbu": 1000,
+  "DefaultLabelHeightDbu": 100000,
+  "DefaultViaPadDbu": 600000,
+  "DefaultViaDrillDbu": 300000,
+  "Layers": [
+    {
+      "Key": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "Name": "Top Copper",
+      "Color": {
+        "r": 200,
+        "g": 122,
+        "b": 62,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 4,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drawing"
+    },
+    {
+      "Key": {
+        "Layer": 2,
+        "Datatype": 0
+      },
+      "Name": "Ground Plane",
+      "Color": {
+        "r": 155,
+        "g": 138,
+        "b": 70,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 3,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drawing"
+    },
+    {
+      "Key": {
+        "Layer": 4,
+        "Datatype": 0
+      },
+      "Name": "Bottom Copper",
+      "Color": {
+        "r": 138,
+        "g": 80,
+        "b": 40,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 2,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drawing"
+    },
+    {
+      "Key": {
+        "Layer": 9,
+        "Datatype": 0
+      },
+      "Name": "Drill",
+      "Color": {
+        "r": 32,
+        "g": 32,
+        "b": 32,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 1,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drawing"
+    }
+  ],
+  "Stackup": {
+    "Top": "Open",
+    "Bottom": "Open",
+    "Layers": [
+      {
+        "Kind": "Conductor",
+        "Name": "Top Copper",
+        "ThicknessDbu": 35000,
+        "Material": "Copper",
+        "Epsr": 1.0,
+        "TanD": 0.0,
+        "Mur": 1.0,
+        "SigmaSm": 58000000,
+        "DrawingLayers": [
+          {
+            "Layer": 1,
+            "Datatype": 0
+          }
+        ],
+        "IsGroundReference": false
+      },
+      {
+        "Kind": "Dielectric",
+        "Name": "Dielectric 1",
+        "ThicknessDbu": 200000,
+        "Material": "Laminate",
+        "Epsr": 3.66,
+        "TanD": 0.004,
+        "Mur": 1.0,
+        "SigmaSm": 0.0,
+        "DrawingLayers": [],
+        "IsGroundReference": false
+      },
+      {
+        "Kind": "Conductor",
+        "Name": "Ground Plane",
+        "ThicknessDbu": 35000,
+        "Material": "Copper",
+        "Epsr": 1.0,
+        "TanD": 0.0,
+        "Mur": 1.0,
+        "SigmaSm": 58000000,
+        "DrawingLayers": [
+          {
+            "Layer": 2,
+            "Datatype": 0
+          }
+        ],
+        "IsGroundReference": true
+      },
+      {
+        "Kind": "Dielectric",
+        "Name": "Dielectric 2",
+        "ThicknessDbu": 200000,
+        "Material": "Laminate",
+        "Epsr": 3.66,
+        "TanD": 0.004,
+        "Mur": 1.0,
+        "SigmaSm": 0.0,
+        "DrawingLayers": [],
+        "IsGroundReference": false
+      },
+      {
+        "Kind": "Conductor",
+        "Name": "Bottom Copper",
+        "ThicknessDbu": 35000,
+        "Material": "Copper",
+        "Epsr": 1.0,
+        "TanD": 0.0,
+        "Mur": 1.0,
+        "SigmaSm": 58000000,
+        "DrawingLayers": [
+          {
+            "Layer": 4,
+            "Datatype": 0
+          }
+        ],
+        "IsGroundReference": false
+      },
+      {
+        "Kind": "Via",
+        "Name": "Signal Via",
+        "ThicknessDbu": 0,
+        "Material": "Copper",
+        "Epsr": 1.0,
+        "TanD": 0.0,
+        "Mur": 1.0,
+        "SigmaSm": 58000000,
+        "DrawingLayers": [
+          {
+            "Layer": 9,
+            "Datatype": 0
+          }
+        ],
+        "IsGroundReference": false,
+        "Fill": "Solid",
+        "SpanFromLayer": "Top Copper",
+        "SpanToLayer": "Bottom Copper"
+      }
+    ]
+  },
+  "DrcRules": [
+    {
+      "Name": "Top Copper Min Width",
+      "Kind": "MinWidth",
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "ValueDbu": 100000,
+      "Severity": "Error"
+    },
+    {
+      "Name": "Bottom Copper Min Width",
+      "Kind": "MinWidth",
+      "Layer": {
+        "Layer": 4,
+        "Datatype": 0
+      },
+      "ValueDbu": 100000,
+      "Severity": "Error"
+    }
+  ],
+  "Materials": [
+    {
+      "Name": "Copper",
+      "Sigma20": 58000000,
+      "Alpha20": 0.0039,
+      "DensityKgM3": 8960
+    },
+    {
+      "Name": "Laminate",
+      "Epsr": 3.66,
+      "TanD": 0.004,
+      "Mur": 1
+    }
+  ]
+}

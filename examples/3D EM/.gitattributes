@@ -1,0 +1,15 @@
+# circuitRF — what is kept, and what is not
+#
+# circuitRF ADDS lines to this file and never rewrites it.
+#
+# -merge : these are never merged line by line. A three-way merge of a vertex list can
+#          produce geometry that is valid and WRONG while staying well-formed JSON. A
+#          conflict is worse to look at and better to have; resolution is whole-file.
+# -text  : the bytes on disk are the bytes circuitRF wrote, on every platform. Line-ending
+#          conversion would make a design document differ from itself across machines.
+*.clay -merge -text
+*.csch -merge -text
+*.csym -merge -text
+*.cws -merge -text
+*.ctech -merge -text
+

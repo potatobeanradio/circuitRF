@@ -1,0 +1,59 @@
+{
+  "FormatVersion": 1,
+  "DbuPerMicron": 1000,
+  "DisplayUnit": "Um",
+  "SnapDbu": 1000,
+  "AngleMode": "AnyAngle",
+  "TechRef": "../../tech/bond-wire-on-alumina.ctech",
+  "Shapes": [
+    {
+      "$type": "Rect",
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "X1": -550000,
+      "Y1": -50000,
+      "X2": -450000,
+      "Y2": 50000
+    },
+    {
+      "$type": "Rect",
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "X1": 450000,
+      "Y1": -50000,
+      "X2": 550000,
+      "Y2": 50000
+    },
+    {
+      "$type": "Label",
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "X": -550000,
+      "Y": 0,
+      "Text": "1",
+      "Height": 20000,
+      "IsPort": true,
+      "PortDirection": "R0"
+    },
+    {
+      "$type": "Label",
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "X": 550000,
+      "Y": 0,
+      "Text": "2",
+      "Height": 20000,
+      "IsPort": true,
+      "PortDirection": "R180"
+    }
+  ],
+  "Instances": []
+}

@@ -426,6 +426,9 @@ folder are in [The Command Line](cli.html#em).
 
 ## Solver — planar or 3D {#solver-3d}
 
+*When 3D is the right tool, how to get the solvers, the 3D view, and a worked example to open are in
+[3D EM](em-3d.html). This section is the panel's 3D controls, one by one.*
+
 The **Solver** group at the top of the panel picks who solves the setup: circuitRF's own planar and
 cross-section kernels (the default), **FEM 3D (Palace)**, **FDTD 3D (openEMS)**, or **FEM & FDTD -
 Compare**. A 3D setup builds a 3D model from the layout, its technology and any bond wires. The

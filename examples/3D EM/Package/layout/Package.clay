@@ -1,0 +1,85 @@
+{
+  "FormatVersion": 1,
+  "DbuPerMicron": 1000,
+  "DisplayUnit": "Um",
+  "SnapDbu": 1000,
+  "AngleMode": "AnyAngle",
+  "TechRef": "../../tech/ceramic-package.ctech",
+  "Shapes": [
+    {
+      "$type": "Rect",
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "Net": "RF_IN",
+      "X1": -3900000,
+      "Y1": -100000,
+      "X2": -800000,
+      "Y2": 100000
+    },
+    {
+      "$type": "Rect",
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "Net": "RF_IN",
+      "X1": -375000,
+      "Y1": -75000,
+      "X2": -225000,
+      "Y2": 75000
+    },
+    {
+      "$type": "Rect",
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "Net": "RF_OUT",
+      "X1": 225000,
+      "Y1": -75000,
+      "X2": 375000,
+      "Y2": 75000
+    },
+    {
+      "$type": "Rect",
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "Net": "RF_OUT",
+      "X1": 800000,
+      "Y1": -100000,
+      "X2": 3900000,
+      "Y2": 100000
+    },
+    {
+      "$type": "Label",
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "X": -3900000,
+      "Y": 0,
+      "Text": "1",
+      "Height": 100000,
+      "IsPort": true,
+      "PortDirection": "R0"
+    },
+    {
+      "$type": "Label",
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "X": 3900000,
+      "Y": 0,
+      "Text": "2",
+      "Height": 100000,
+      "IsPort": true,
+      "PortDirection": "R180"
+    }
+  ],
+  "Instances": []
+}

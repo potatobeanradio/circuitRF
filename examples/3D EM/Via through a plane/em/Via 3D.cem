@@ -1,0 +1,40 @@
+{
+  "FormatVersion": 1,
+  "Name": "Via 3D",
+  "LayoutRef": "Via through a plane/layout/Via through a plane.clay",
+  "Frequency": {
+    "StartExpr": "0.1",
+    "StopExpr": "20",
+    "StepExpr": "",
+    "NumPoints": 200,
+    "Mode": "PointCount",
+    "Kind": "Linear",
+    "StartUnit": "GHz",
+    "StopUnit": "GHz",
+    "StepUnit": "Hz"
+  },
+  "Solver3D": "Palace",
+  "AirBox": {
+    "XMin": {
+      "PaddingUm": 1500
+    },
+    "XMax": {
+      "PaddingUm": 1500
+    },
+    "YMin": {
+      "PaddingUm": 1500
+    },
+    "YMax": {
+      "PaddingUm": 1500
+    },
+    "ZMin": {
+      "PaddingUm": 1500
+    },
+    "ZMax": {
+      "PaddingUm": 1500
+    }
+  },
+  "Palace": {
+    "Quality": "Draft"
+  }
+}

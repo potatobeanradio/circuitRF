@@ -1,0 +1,43 @@
+{
+  "FormatVersion": 1,
+  "Name": "Bond wire 3D",
+  "LayoutRef": "Bond wire/layout/Bond wire.clay",
+  "Frequency": {
+    "StartExpr": "1",
+    "StopExpr": "40",
+    "StepExpr": "",
+    "NumPoints": 40,
+    "Mode": "PointCount",
+    "Kind": "Linear",
+    "StartUnit": "GHz",
+    "StopUnit": "GHz",
+    "StepUnit": "Hz"
+  },
+  "Solver3D": "Palace",
+  "OperatingTempC": 20,
+  "AirBox": {
+    "XMin": {
+      "PaddingUm": 950,
+      "Boundary": "Pec"
+    },
+    "XMax": {
+      "PaddingUm": 950,
+      "Boundary": "Pec"
+    },
+    "YMin": {
+      "PaddingUm": 950,
+      "Boundary": "Pec"
+    },
+    "YMax": {
+      "PaddingUm": 950,
+      "Boundary": "Pec"
+    },
+    "ZMax": {
+      "PaddingUm": 825.8,
+      "Boundary": "Pec"
+    }
+  },
+  "Palace": {
+    "Quality": "Standard"
+  }
+}
