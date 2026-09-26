@@ -74,6 +74,7 @@
 <li><a href="#elab"><code>elab</code> — the elaborated netlist</a></li>
 <li><a href="#json"><code>--json</code> — one machine-readable document</a></li>
 <li><a href="#serve"><code>serve</code> — the MCP server</a></li>
+<li><a href="#agent-install">Installing for an agent</a></li>
 <li><a href="#exit">Exit codes</a></li>
 <li><a href="#scripting">Scripting patterns</a></li>
 </ol>
@@ -83,7 +84,62 @@
 reads the same files, elaborates them with the same elaborator, runs the same engines, and evaluates
 the test bench's <code>measure</code> lines with the same evaluator.</p>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf &lt;verb&gt; &lt;file&gt; [options]</code></pre>
-<p>From a source checkout there is no <code>circuitrf</code> on your path yet, so put <code>dotnet run --project src/Cli --</code>
+<p><strong>The installed circuitRF executable is the command line.</strong> There is no second program to install:
+when its first argument is a verb, circuitRF runs that verb and exits without opening a window; with
+no arguments, or with a document to open, it starts the application as it always has. Where that
+executable is depends on the platform — and the verb must be the FIRST argument, since that is how
+circuitRF tells a command line from a document to open:</p>
+<table>
+<thead>
+<tr>
+<th>Platform</th>
+<th>Installed as</th>
+<th>On your <code>PATH</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Windows, per-user installer (<code>…-win-x64-user.msi</code>)</td>
+<td><code>%LOCALAPPDATA%\Programs\circuitRF\circuitRF.exe</code></td>
+<td>yes — type <code>circuitrf</code></td>
+</tr>
+<tr>
+<td>Windows, per-machine installer (<code>…-x64.msi</code>)</td>
+<td><code>C:\Program Files\circuitRF\circuitRF.exe</code></td>
+<td>yes — type <code>circuitrf</code></td>
+</tr>
+<tr>
+<td>macOS</td>
+<td><code>/Applications/circuitRF.app/Contents/MacOS/circuitRF</code></td>
+<td>no — see below</td>
+</tr>
+<tr>
+<td>Linux, <code>.deb</code></td>
+<td><code>/opt/circuitrf/circuitRF</code>, linked as <code>/usr/bin/circuitrf</code></td>
+<td>yes</td>
+</tr>
+<tr>
+<td>Linux, <code>.tar.gz</code> + <code>install.sh</code></td>
+<td>linked as <code>~/.local/bin/circuitrf</code></td>
+<td>yes, if <code>~/.local/bin</code> is</td>
+</tr>
+</tbody>
+</table>
+<div class="callout note">
+<span class="label">Windows: <code>circuitRF.com</code> is what you are typing</span>
+<p>Beside <code>circuitRF.exe</code> the installer puts a small <code>circuitRF.com</code>, and both
+installers add that folder to <code>PATH</code> (the user's for per-user, the system's for
+per-machine; a terminal opened <em>before</em> the install does not see it yet). Windows tries
+<code>.com</code> before <code>.exe</code>, so a <code>circuitrf</code> typed in cmd or PowerShell
+reaches the console-subsystem <code>.com</code>, which gives the command a console and makes the shell
+wait for it. Shortcuts and double-clicked documents still open <code>circuitRF.exe</code>. A program
+that starts circuitRF with its own pipes — an MCP client, a script, CI — can use either.</p>
+</div>
+<p>On macOS, run the full path, or link it onto your <code>PATH</code> once:</p>
+<pre><code class="cmd"><span class="prompt">$ </span>sudo ln -s /Applications/circuitRF.app/Contents/MacOS/circuitRF /usr/local/bin/circuitrf</code></pre>
+<p><code>circuitrf --version</code> prints the version of the build that answered, and nothing else — the quickest
+way to confirm which one is on your <code>PATH</code>.</p>
+<p><strong>From a source checkout</strong> there is no installed executable, so put <code>dotnet run --project src/Cli --</code>
 wherever <code>circuitrf</code> appears:</p>
 <pre><code class="cmd"><span class="prompt">$ </span>dotnet run --project src/Cli -- sparam mycircuit.cnl --freq 1GHz:3GHz:50MHz</code></pre>
 <p>Run it with no arguments for the built-in help.</p>
@@ -159,6 +215,12 @@ convention behind both.</p>
 <td>a cell folder, a workspace, a <code>.clay</code> or a <code>.csch</code></td>
 <td>The same comparison the <a href="lvs.html">LVS panel</a>'s <strong>Compare</strong> button calls</td>
 <td><strong>Nothing</strong> — the report to stdout; <code>-o report.txt</code></td>
+</tr>
+<tr>
+<td><code>impedance</code></td>
+<td>a <code>.clay</code> or a cell folder</td>
+<td>The same analysis the layout editor's <a href="layout-editor.html#impedance-analysis">Impedance Analysis</a> runs</td>
+<td>The per-trace report to stdout; <code>-o report.pdf</code></td>
 </tr>
 <tr>
 <td><code>convert</code></td>
@@ -1016,6 +1078,53 @@ slow is a <code>check</code> people stop running. What <code>check</code> does c
 <a href="lvs.html#terminals">terminal-map</a> validation, which is cheap and static.</p>
 <p>See <a href="lvs.html">the LVS chapter</a> for what the findings mean and a worked example on the shipped
 example workspace.</p>
+<h2 id="impedance"><code>impedance</code> — every trace against a target Z0</h2>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf impedance &lt;layout&gt; [--target 50] [--tol 10] [--layers "Top Copper,Inner 2"]
+<span class="prompt">  </span>[--max-width &lt;um&gt;] [-o report.pdf]</code></pre>
+<p><code>impedance</code> is the layout editor's <a href="layout-editor.html#impedance-analysis">Impedance Analysis</a>: it finds
+every trace on the chosen copper layers, cuts it along its length with the same quasi-static
+cross-section solve the canvas's <strong>Trace Impedance</strong> uses, and reports per trace Z0 min, max and
+average, the share of its length inside target ± tolerance, its line type, and every finding — Z0
+out of band, a return path that breaks, copper only partly under it, a reference that steps to another
+layer. <code>-o</code> writes the <strong>same PDF</strong> the dialog exports.</p>
+<p>The path is a <strong><code>.clay</code></strong> or a <strong>cell folder</strong> holding one. The technology resolves exactly as the editor
+resolves it, and placed cells are flattened as a design-rule check flattens them.</p>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--target &lt;ohms&gt;</code></td>
+<td>The target Z0. Default <code>50</code>. <code>50</code>, <code>50ohm</code> and <code>50R</code> all read as 50 Ω.</td>
+</tr>
+<tr>
+<td><code>--tol &lt;percent&gt;</code></td>
+<td>± this many percent passes. Default <code>10</code>.</td>
+</tr>
+<tr>
+<td><code>--layers &quot;A,B&quot;</code></td>
+<td>The copper layers, by the technology's layer names. Default every copper layer. A name that is not a copper layer is refused with the names that are.</td>
+</tr>
+<tr>
+<td><code>--max-width &lt;um&gt;</code></td>
+<td>The widest copper read as a trace. Default ten times the distance to the nearest other copper layer, between 1 and 8 mm.</td>
+</tr>
+<tr>
+<td><code>-o report.pdf</code></td>
+<td>The PDF report. With no <code>-o</code> it writes nothing.</td>
+</tr>
+</tbody>
+</table>
+<p>stdout is one line per trace, its findings under it; stderr says which layer is being analysed. Lengths
+and coordinates are in <strong>the layout's own unit</strong>. With <code>--json</code> the result carries every layer, trace and
+finding, with coordinates and lengths in <strong>µm</strong> whatever the layout's unit, so a script reads one unit.</p>
+<p><strong>Exit 0</strong> when every trace passes, <strong>1</strong> when one fails (or cannot be solved) or the run is refused,
+<strong>130</strong> on a cancellation. A cancelled run still writes the report for the layers that <strong>finished</strong>,
+and says on its first page that it was cancelled.</p>
 <h2 id="smith"><code>smith</code> — a matching network, headless</h2>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf smith &lt;match.csmith&gt; [--at &lt;freq&gt;] [-o out.{s1p,svg,pdf,png}]</code></pre>
 <p><code>smith</code> evaluates a <strong><code>.csmith</code></strong> — the document the Smith Chart window edits. It
@@ -2387,13 +2496,31 @@ simulation, check a design, create a workspace or import a part without a human 
 started by that program, not by you, and it ends when that program disconnects.</p>
 <div class="callout note">
 <span class="label">Point an MCP client at it</span>
-<p>A client is configured with a command and its arguments. The command is the circuitRF executable,
-the arguments are <code>serve --root &lt;dir&gt;</code>, and <code>--root</code> is the only directory
-tree the server will read or write, and a path escaping it is refused rather than clamped (see
-<em>What it will not do</em> below). Nothing else about the host matters, because the transport is
-the process's own stdin and stdout.</p>
+<p>A client is configured with a command and its arguments. The command is the installed circuitRF
+executable (<a href="#invoking">where it is</a>), the arguments are <code>serve --root &lt;dir&gt;</code>,
+and <code>--root</code> is the only directory tree the server will read or write, and a path escaping
+it is refused rather than clamped (see <em>What it will not do</em> below). Nothing else about the
+host matters, because the transport is the process's own stdin and stdout.</p>
 </div>
-<p><strong>Thirteen tools, and each is a verb you already have:</strong></p>
+<p>Most clients take the same shape of configuration — a server name, a command and its arguments:</p>
+<pre><code class="language-json">{
+  &quot;mcpServers&quot;: {
+    &quot;circuitrf&quot;: {
+      &quot;command&quot;: &quot;/Applications/circuitRF.app/Contents/MacOS/circuitRF&quot;,
+      &quot;args&quot;: [&quot;serve&quot;, &quot;--root&quot;, &quot;/Users/you/designs&quot;]
+    }
+  }
+}
+</code></pre>
+<p>Use the full path to the executable rather than relying on the client's <code>PATH</code>, which is often not
+your shell's. On Windows it is <code>%LOCALAPPDATA%\Programs\circuitRF\circuitRF.exe</code> or
+<code>C:\Program Files\circuitRF\circuitRF.exe</code>; on Linux, <code>/usr/bin/circuitrf</code> or
+<code>~/.local/bin/circuitrf</code>. With Claude Code it is one line:</p>
+<pre><code class="cmd"><span class="prompt">$ </span>claude mcp add circuitrf -- /Applications/circuitRF.app/Contents/MacOS/circuitRF serve --root ~/designs</code></pre>
+<p><strong>Most clients load a server when a session starts</strong>, so one registered mid-session appears in the
+next one. Nothing is lost meanwhile: every tool is a verb, and the same verbs answer from a shell with
+the same documents.</p>
+<p><strong>Fifteen tools, and each is a verb you already have:</strong></p>
 <table>
 <thead>
 <tr>
@@ -2441,6 +2568,14 @@ the process's own stdin and stdout.</p>
 <tr>
 <td><code>find</code></td>
 <td><code>find</code> — the workspaces, cells, views and analyses under a directory</td>
+</tr>
+<tr>
+<td><code>lvs</code></td>
+<td><a href="#lvs"><code>lvs</code></a> — does a cell's artwork implement its schematic</td>
+</tr>
+<tr>
+<td><code>impedance</code></td>
+<td><a href="#impedance"><code>impedance</code></a> — every trace on a layout against a target Z0, and its return path</td>
 </tr>
 <tr>
 <td><code>history</code></td>
@@ -2505,11 +2640,71 @@ bytes.</p>
 <p><strong>A long run reports progress and can be cancelled</strong> — a client that asks for progress is sent it as
 the run moves, and a cancellation stops the run at a work boundary and returns exit code 130 having
 written nothing.</p>
+<p><strong>A server outlives an update, and says so when it cannot.</strong> A <code>serve</code> that is still running when
+the application updates itself is running out of an installation that has changed underneath it —
+and a running program cannot load code it had not already loaded from files that have since been
+replaced. So before each call the server checks that its own executable is still the one it started
+from. If not, that call is answered with a JSON-RPC error, code <code>-32001</code>, saying so, and the server
+exits. Start it again with the same command and it runs the updated version.</p>
 <p><code>serve</code> is the one verb whose stdout is not the result: it carries the protocol, so everything else —
 progress, notes, warnings, device-worker logs — goes to stderr, where the program that started it
 picks it up. For that reason it takes no <code>--json</code> of its own; every call through it already returns
 one.</p>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf serve --root ~/designs 2&gt; serve.log</code></pre>
+<h2 id="agent-install">Installing for an agent</h2>
+<p>An agent — or any unattended script — can install circuitRF and start driving it with no person at
+the keyboard. Five steps:</p>
+<p><strong>1. Find the release and pick the asset.</strong> Asset names carry the version, and every circuitRF
+release so far is a <em>pre</em>release, which GitHub's &quot;latest release&quot; link and a tagless
+<code>gh release download</code> both skip. <strong>There is no fixed download URL</strong>, so look the newest tag up
+first:</p>
+<pre><code class="cmd"><span class="prompt">$ </span>TAG=$(gh release list --repo potatobeanradio/circuitRF --limit 1 --json tagName -q '.[0].tagName')
+<span class="prompt">$ </span>gh release download "$TAG" --repo potatobeanradio/circuitRF --pattern 'circuitRF-*-arm64.dmg'</code></pre>
+<p>Without <code>gh</code>, the same list is <code>https://api.github.com/repos/potatobeanradio/circuitRF/releases</code>,
+newest first. A release that carries <code>update-manifest.json</code> lists every asset in it with its name,
+download URL, size and SHA-256, which is the one file to read to choose and to verify a download.</p>
+<table>
+<thead>
+<tr>
+<th>Platform</th>
+<th>Asset</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Windows</td>
+<td><code>circuitRF-&lt;version&gt;-win-x64-user.msi</code> — per-user, no administrator (also <code>arm64</code>, <code>x86</code>)</td>
+</tr>
+<tr>
+<td>macOS</td>
+<td><code>circuitRF-&lt;version&gt;-arm64.dmg</code> (Apple Silicon) or <code>circuitRF-&lt;version&gt;-x64.dmg</code> (Intel)</td>
+</tr>
+<tr>
+<td>Linux</td>
+<td><code>circuitRF-&lt;version&gt;-linux-x64.tar.gz</code> or <code>…-linux-arm64.tar.gz</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>2. Install it without a prompt.</strong></p>
+<pre><code class="cmd"><span class="prompt">&gt; </span>msiexec /i circuitRF-&lt;version&gt;-win-x64-user.msi /qn</code></pre>
+<pre><code class="cmd"><span class="prompt">$ </span>hdiutil attach -nobrowse -mountpoint /tmp/circuitrf-dmg circuitRF-&lt;version&gt;-arm64.dmg
+<span class="prompt">$ </span>cp -R /tmp/circuitrf-dmg/circuitRF.app /Applications/
+<span class="prompt">$ </span>hdiutil detach /tmp/circuitrf-dmg</code></pre>
+<pre><code class="cmd"><span class="prompt">$ </span>tar -xzf circuitRF-&lt;version&gt;-linux-x64.tar.gz
+<span class="prompt">$ </span>./circuitRF-&lt;version&gt;/install.sh</code></pre>
+<p>The Windows install adds circuitRF to the user's <code>PATH</code>, but only processes started afterwards see
+it — so in the session that installed it, use the full path,
+<code>%LOCALAPPDATA%\Programs\circuitRF\circuitRF.exe</code>. The Linux one links <code>~/.local/bin/circuitrf</code>.</p>
+<p><strong>3. Check that it answers:</strong></p>
+<pre><code class="cmd"><span class="prompt">$ </span>/Applications/circuitRF.app/Contents/MacOS/circuitRF --version</code></pre>
+<p>It prints the release's version — the tag from step 1 — and exits <code>0</code>, opening no window. Anything else means the path is wrong.</p>
+<p><strong>4. Register the server</strong> with the client: the command is that same executable, the arguments are
+<code>serve --root &lt;dir&gt;</code> (<a href="#serve">above</a>).</p>
+<p><strong>5. Keep working in the meantime.</strong> Most clients load a newly registered server only when their
+next session starts, so the tools will not appear in the session that did the install. Nothing is
+lost: every MCP tool is a verb returning the same JSON document, so the same work can be driven from
+the shell right away — <code>circuitrf check &lt;path&gt; --json</code> returns byte for byte what the <code>check</code> tool
+would.</p>
 <hr />
 <h2 id="exit">Exit codes</h2>
 <table>

@@ -286,7 +286,7 @@
       "Index": 28,
       "Slot": 39,
       "Id": "",
-      "Tooltip": "EM Setup for this layout \u2014 opens it, creating it the first time",
+      "Tooltip": "Impedance Analysis\u2026 \u2014 every trace against a target Z0 and its return path, exported as a PDF report",
       "Icon": "none",
       "Command": null,
       "Kind": "button"
@@ -295,14 +295,23 @@
       "Index": 29,
       "Slot": 40,
       "Id": "",
+      "Tooltip": "EM Setup for this layout \u2014 opens it, creating it the first time",
+      "Icon": "none",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 30,
+      "Slot": 41,
+      "Id": "",
       "Tooltip": "Show EM cross-section mesh",
       "Icon": "GridLarge",
       "Command": null,
       "Kind": "toggle"
     },
     {
-      "Index": 30,
-      "Slot": 41,
+      "Index": 31,
+      "Slot": 42,
       "Id": "",
       "Tooltip": "Show full-wave surface mesh",
       "Icon": "Grid",
@@ -311,7 +320,7 @@
     },
     {
       "Index": 0,
-      "Slot": 42,
+      "Slot": 43,
       "Id": "",
       "Tooltip": "",
       "Icon": "separator",
@@ -319,8 +328,8 @@
       "Kind": "separator"
     },
     {
-      "Index": 31,
-      "Slot": 43,
+      "Index": 32,
+      "Slot": 44,
       "Id": "",
       "Tooltip": "Export GDSII\u2026",
       "Icon": "IosShare",
@@ -328,8 +337,8 @@
       "Kind": "button"
     },
     {
-      "Index": 32,
-      "Slot": 44,
+      "Index": 33,
+      "Slot": 45,
       "Id": "",
       "Tooltip": "Export DXF\u2026",
       "Icon": "FileExportOutline",
@@ -337,8 +346,8 @@
       "Kind": "button"
     },
     {
-      "Index": 33,
-      "Slot": 45,
+      "Index": 34,
+      "Slot": 46,
       "Id": "",
       "Tooltip": "Export Gerber\u2026",
       "Icon": "FileChartOutline",
@@ -347,7 +356,7 @@
     },
     {
       "Index": 0,
-      "Slot": 46,
+      "Slot": 47,
       "Id": "",
       "Tooltip": "",
       "Icon": "separator",
@@ -355,8 +364,8 @@
       "Kind": "separator"
     },
     {
-      "Index": 34,
-      "Slot": 47,
+      "Index": 35,
+      "Slot": 48,
       "Id": "",
       "Tooltip": "Layer:",
       "Icon": "text",
@@ -364,8 +373,8 @@
       "Kind": "text"
     },
     {
-      "Index": 35,
-      "Slot": 48,
+      "Index": 36,
+      "Slot": 49,
       "Id": "",
       "Tooltip": "",
       "Icon": "combo",
@@ -374,7 +383,7 @@
     },
     {
       "Index": 0,
-      "Slot": 49,
+      "Slot": 50,
       "Id": "",
       "Tooltip": "",
       "Icon": "separator",
