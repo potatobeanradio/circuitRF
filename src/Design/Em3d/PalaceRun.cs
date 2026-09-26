@@ -199,19 +199,7 @@ public static class PalaceRun
                 note = $"Palace ran as one process: {processes} were asked for, and {launcher.How}.";
         }
 
-        bool bareBinary = palace.EndsWith(".bin", StringComparison.Ordinal);
-        string exe = palace;
-        var args = new List<string>();
-        if (mpirun is not null && bareBinary)
-        {
-            exe = mpirun;
-            args.AddRange(["-n", processes.ToString(CultureInfo.InvariantCulture), palace]);
-        }
-        else if (mpirun is not null)
-            args.AddRange(["-np", processes.ToString(CultureInfo.InvariantCulture), "--launcher", mpirun]);
-        else if (!bareBinary)
-            args.Add("--serial");
-        args.Add(PalaceConfigWriter.ConfigFile);
+        var (exe, args) = PalaceCommand(palace, processes, mpirun);
 
         if (tracker is not null) tracker.Begin();
         else control?.BeginStage("solving (Palace)", 0, "lines");
@@ -226,6 +214,30 @@ public static class PalaceRun
                 $"Palace failed (exit code {run.ExitCode}). Its own words: {Quote(run.Tail, "rror")} " +
                 $"The full log is {Path.Combine(runDir, PalaceLogFile)}.");
         return PalaceStep.Done() with { PeakResidentBytes = run.PeakResident, MemoryNote = run.MemoryNote };
+    }
+
+    /// <summary>
+    /// The program and arguments that run Palace on <paramref name="processes"/> ranks: the <c>palace</c>
+    /// wrapper takes <c>-np</c> and <c>--launcher</c>; a bare <c>palace-&lt;arch&gt;.bin</c> is started by
+    /// <c>mpirun -n</c>; with no launcher, the wrapper runs <c>--serial</c>. Shared with the Linux subsystem
+    /// route (brief-em3d-26), which runs the same command inside a distribution.
+    /// </summary>
+    internal static (string Exe, List<string> Args) PalaceCommand(string palace, int processes, string? mpirun)
+    {
+        bool bareBinary = palace.EndsWith(".bin", StringComparison.Ordinal);
+        string exe = palace;
+        var args = new List<string>();
+        if (mpirun is not null && bareBinary)
+        {
+            exe = mpirun;
+            args.AddRange(["-n", processes.ToString(CultureInfo.InvariantCulture), palace]);
+        }
+        else if (mpirun is not null)
+            args.AddRange(["-np", processes.ToString(CultureInfo.InvariantCulture), "--launcher", mpirun]);
+        else if (!bareBinary)
+            args.Add("--serial");
+        args.Add(PalaceConfigWriter.ConfigFile);
+        return (exe, args);
     }
 
     /// <summary>The <c>mpirun</c> named in Settings ▸ 3D EM, or null. Installed by <c>src/Ui</c>
@@ -587,15 +599,35 @@ public static class PalaceRun
     /// </summary>
     public static IReadOnlyList<PalaceWaveMode>? SecondModes(string runDir, string configJson, string palace, double topHz,
                                                             IReadOnlyList<int> wavePorts, CancellationToken ct, out string? note)
+        => SecondModes(runDir, configJson, topHz, wavePorts, out note, (dir, watch) =>
+        {
+            bool bareBinary = palace.EndsWith(".bin", StringComparison.Ordinal);
+            Interlocked.Increment(ref _palace);
+            return RunProcess(palace, bareBinary ? [PalaceConfigWriter.ConfigFile] : ["--serial", PalaceConfigWriter.ConfigFile],
+                              dir, Path.Combine(dir, PalaceLogFile), Em3dProcessKind.Solver,
+                              env: new Dictionary<string, string> { ["OMP_NUM_THREADS"] = "1" }, null, ct, watch);
+        });
+
+    /// <summary>The directory, under the run directory, the second-mode check runs in.</summary>
+    public const string SecondModeDirectory = "mode2";
+
+    /// <summary>
+    /// The check itself, with the process run supplied: <paramref name="run"/> is given the Windows-side
+    /// <c>mode2</c> directory (the configuration is already written there) and the watcher that stops it.
+    /// brief-em3d-26 runs the same check inside a Linux subsystem distribution through this.
+    /// </summary>
+    internal static IReadOnlyList<PalaceWaveMode>? SecondModes(string runDir, string configJson, double topHz,
+                                                              IReadOnlyList<int> wavePorts, out string? note,
+                                                              Func<string, ProcessWatch, ProcessRun> run)
     {
         note = null;
-        string dir = Path.Combine(runDir, "mode2");
+        string dir = Path.Combine(runDir, SecondModeDirectory);
         try
         {
             Directory.CreateDirectory(dir);
             var root = System.Text.Json.Nodes.JsonNode.Parse(configJson)!.AsObject();
             root["Problem"]!["Output"] = "postpro";
-            root["Model"]!["Mesh"] = Path.Combine("..", GmshGeoWriter.MeshFile);
+            root["Model"]!["Mesh"] = "../" + GmshGeoWriter.MeshFile;
             root["Model"]!.AsObject().Remove("Refinement");
             foreach (var wp in root["Boundaries"]!["WavePort"]!.AsArray()) wp!["Mode"] = 2;
             var driven = root["Solver"]!["Driven"]!.AsObject();
@@ -619,17 +651,16 @@ public static class PalaceRun
             if (ParseWaveMode(line) is { Mode: 2 } m) seen[m.Port] = m;
             if (wavePorts.All(seen.ContainsKey)) throw new OperationCanceledException();
         }
-        bool bareBinary = palace.EndsWith(".bin", StringComparison.Ordinal);
-        Interlocked.Increment(ref _palace);
-        var run = RunProcess(palace, bareBinary ? [PalaceConfigWriter.ConfigFile] : ["--serial", PalaceConfigWriter.ConfigFile],
-                             dir, Path.Combine(dir, PalaceLogFile), Em3dProcessKind.Solver,
-                             env: new Dictionary<string, string> { ["OMP_NUM_THREADS"] = "1" }, null, ct, new ProcessWatch(OnLine, 0));
+        var result = run(dir, new ProcessWatch(OnLine, 0));
         if (wavePorts.All(seen.ContainsKey)) return [.. wavePorts.Select(p => seen[p])];
-        note = run.Cancelled ? "the second-mode check was cancelled"
-             : run.StartFailure is { } why ? $"the second-mode check could not start Palace ({why})"
-             : $"Palace printed no mode-2 line for every wave port (exit {run.ExitCode}; its log is {Path.Combine(dir, PalaceLogFile)})";
+        note = result.Cancelled ? "the second-mode check was cancelled"
+             : result.StartFailure is { } why ? $"the second-mode check could not start Palace ({why})"
+             : $"Palace printed no mode-2 line for every wave port (exit {result.ExitCode}; its log is {Path.Combine(dir, PalaceLogFile)})";
         return null;
     }
+
+    /// <summary>Counts one Palace start made outside this class (the Linux subsystem route).</summary>
+    internal static void CountPalace() => Interlocked.Increment(ref _palace);
 
     /// <summary>A CSV's trimmed header and its non-empty rows' cells, or null with an error naming the file.</summary>
     private static (List<string> Header, List<string[]> Rows)? ReadTable(string csvPath, out string? error)
@@ -680,15 +711,13 @@ public static class PalaceRun
 
     // ── one child process ────────────────────────────────────────────────────────────────────
 
-    private sealed record ProcessRun(int ExitCode, bool Cancelled, string? StartFailure, IReadOnlyList<string> Tail,
-                                     long? PeakResident = null, string? MemoryNote = null);
+    internal sealed record ProcessRun(int ExitCode, bool Cancelled, string? StartFailure, IReadOnlyList<string> Tail,
+                                      long? PeakResident = null, string? MemoryNote = null);
 
     private static ProcessRun RunProcess(string exe, IReadOnlyList<string> args, string cwd, string logPath,
                                          Em3dProcessKind kind, IReadOnlyDictionary<string, string>? env,
                                          RunControl? control, CancellationToken ct, ProcessWatch? watch = null)
     {
-        if (ct.IsCancellationRequested) return new(-1, true, null, []);
-
         var psi = new ProcessStartInfo(exe)
         {
             WorkingDirectory       = cwd,
@@ -699,6 +728,27 @@ public static class PalaceRun
         };
         foreach (string a in args) psi.ArgumentList.Add(a);
         foreach (var (k, v) in env ?? new Dictionary<string, string>()) psi.Environment[k] = v;
+        return RunProcess(psi, logPath, kind, control, ct, watch);
+    }
+
+    /// <summary>
+    /// Starts <paramref name="psi"/>, logs and relays its lines, and stops it on cancellation.
+    /// <paramref name="kill"/> replaces the tree kill — brief-em3d-26: killing <c>wsl.exe</c> does not kill
+    /// the Linux processes it started, so a subsystem run stops its own process group first.
+    /// <paramref name="sampleMemory"/> false skips the resident-memory sample, which on a subsystem run would
+    /// read <c>wsl.exe</c>'s own few megabytes, not Palace's.
+    /// </summary>
+    internal static ProcessRun RunProcess(ProcessStartInfo psi, string logPath, Em3dProcessKind kind, RunControl? control,
+                                          CancellationToken ct, ProcessWatch? watch, Action<Process>? kill = null,
+                                          bool sampleMemory = true)
+    {
+        if (ct.IsCancellationRequested) return new(-1, true, null, []);
+        string exe = psi.FileName;
+        void Stop(Process p)
+        {
+            if (kill is not null) kill(p);
+            Kill(p);
+        }
 
         var gate = new Lock();
         var tail = new Queue<string>();
@@ -726,6 +776,7 @@ public static class PalaceRun
         using (p)
         {
             ProcessStarted?.Invoke(p);
+            if (psi.RedirectStandardInput) p.StandardInput.Close();
             p.OutputDataReceived += (_, e) => Line(e.Data);
             p.ErrorDataReceived  += (_, e) => Line(e.Data);
             p.BeginOutputReadLine();
@@ -760,7 +811,7 @@ public static class PalaceRun
             // R-em3d21-2c — the whole tree's resident memory, once a second, beside the stage.
             void Sample()
             {
-                if (watch is null || sampled.ElapsedMilliseconds < 1000) return;
+                if (watch is null || !sampleMemory || sampled.ElapsedMilliseconds < 1000) return;
                 sampled.Restart();
                 if (ProcessTreeMemory.ResidentBytes(p.Id) is not { } rss || rss <= 0) return;
                 peak = Math.Max(peak ?? 0, rss);
@@ -777,11 +828,11 @@ public static class PalaceRun
             {
                 if (ct.IsCancellationRequested)
                 {
-                    Kill(p);
+                    Stop(p);
                     return new(-1, true, null, []);
                 }
                 try { Drain(); }
-                catch (OperationCanceledException) { Kill(p); return new(-1, true, null, []); }
+                catch (OperationCanceledException) { Stop(p); return new(-1, true, null, []); }
                 Sample();
             }
             p.WaitForExit();                  // drains the asynchronous readers

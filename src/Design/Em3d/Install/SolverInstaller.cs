@@ -106,7 +106,23 @@ public sealed class SolverInstaller
     /// check. What a caller gives <see cref="RunControl.Total"/>.</summary>
     public static long WorkUnits(SolverRecipe recipe) => recipe.Steps.Count + 1;
 
-    public string HomeFor(SolverRecipe recipe) => SolverHomes.Home(Root, recipe.Tool, recipe.Version);
+    public string HomeFor(SolverRecipe recipe) => Target.Distribution is null
+        ? SolverHomes.Home(Root, recipe.Tool, recipe.Version)
+        : Target.Combine(Target.Combine(Root, SolverHomes.ToolId(recipe.Tool)), recipe.Version);
+
+    /// <summary>brief-em3d-26 — where the steps act: this machine, or a Linux subsystem distribution.</summary>
+    internal InstallTarget Target { get; init; } = InstallTarget.Native;
+
+    /// <summary>brief-em3d-26 — this machine's side of a subsystem install: the lock, the logs and the
+    /// mirrored record live under it. Null: <see cref="Root"/>, which natively is both.</summary>
+    internal string? LocalRoot { get; init; }
+
+    /// <summary>brief-em3d-26 — called with the record once the home is published (the subsystem install
+    /// mirrors it onto this machine's side).</summary>
+    internal Action<InstallRecord>? Published { get; init; }
+
+    /// <summary>brief-em3d-26 R-em3d26-3c — what the consent adds about where the build takes place.</summary>
+    internal string? ConsentNote { get; init; }
 
     /// <summary>
     /// The tool id a refusal may offer <i>Install …</i> for, or null (brief-em3d-24 §0): offered when this
@@ -118,7 +134,7 @@ public sealed class SolverInstaller
     /// </summary>
     public static string? OfferFor(SolverReadiness readiness)
         => !readiness.Proceeds && WouldHelp(SolverDiscovery.For(readiness.Tool), readiness.Installation)
-           && SolverRecipes.For(readiness.Tool) is not null
+           && SolverInstallPlan.HasRoute(readiness.Tool)
             ? SolverHomes.ToolId(readiness.Tool)
             : null;
 
@@ -157,6 +173,7 @@ public sealed class SolverInstaller
         }
         sb.AppendLine();
         sb.AppendLine($"It installs into {HomeFor(recipe)}, and changes nothing outside it.");
+        if (ConsentNote is { } where) sb.AppendLine(where);
         sb.AppendLine(DescribeMeasured(recipe.Measured));
         if (recipe.Tool == SolverTool.Palace) sb.AppendLine(ParmetisNote);
         sb.AppendLine("It runs in the background and can be cancelled at any point. Cancelling leaves nothing " +
@@ -185,7 +202,7 @@ public sealed class SolverInstaller
         var missing   = new List<string>();
         var commands  = new List<string>();
         var variables = new Dictionary<string, string>(StringComparer.Ordinal);
-        var env       = InheritedEnvironment();
+        var env       = Target.Environment(this);
 
         foreach (var p in recipe.Prerequisites)
         {
@@ -195,23 +212,23 @@ public sealed class SolverInstaller
             {
                 case "file" when p.Path is { } exactPath:
                     string path = ExpandStatic(exactPath, env);
-                    if (File.Exists(path) || Directory.Exists(path)) found = path;
+                    if (Target.Exists(path)) found = path;
                     else why = $"{p.Name} ({path}) is not there";
                     break;
 
                 case "file":
-                    found = p.Search.Select(d => ExpandStatic(d, env)).Where(Directory.Exists)
-                                    .SelectMany(d => SafeEntries(d, p.Name)).FirstOrDefault();
+                    found = p.Search.Select(d => ExpandStatic(d, env))
+                                    .SelectMany(d => Target.Entries(d, p.Name)).FirstOrDefault();
                     if (found is null) why = $"{p.Name} is not installed (looked in {string.Join(", ", p.Search.Select(s => ExpandStatic(s, env)))})";
                     break;
 
                 case "program":
-                    found = p.Search.SelectMany(d => ExpandStatic(d, env).Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
-                                    .Select(d => ProgramIn(d, p.Name)).FirstOrDefault(c => c is not null);
+                    found = p.Search.SelectMany(d => ExpandStatic(d, env).Split(Target.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+                                    .Select(d => Target.ProgramIn(d, p.Name)).FirstOrDefault(c => c is not null);
                     if (found is null) why = $"{p.Name} is not installed (looked in {string.Join(", ", p.Search.Select(s => ExpandStatic(s, env)))})";
                     else if (p.MinVersion is { } min)
                     {
-                        var run = RunQuick(found, p.Arguments.Count > 0 ? p.Arguments : ["--version"]);
+                        var run = Target.Quick(found, p.Arguments.Count > 0 ? p.Arguments : ["--version"]);
                         var v   = Regex.Match(run.Output, @"\d+(?:\.\d+)+");
                         if (!v.Success || CompareVersions(v.Value, min) < 0)
                         {
@@ -223,10 +240,10 @@ public sealed class SolverInstaller
 
                 case "command":
                     string target = p.Path is { } exact ? ExpandStatic(exact, env)
-                        : p.Search.Select(d => ProgramIn(ExpandStatic(d, env), p.Name)).FirstOrDefault(c => c is not null) ?? p.Name;
-                    var r = File.Exists(target) ? RunQuick(target, p.Arguments) : new QuickRun(-1, "");
+                        : p.Search.Select(d => Target.ProgramIn(ExpandStatic(d, env), p.Name)).FirstOrDefault(c => c is not null) ?? p.Name;
+                    var r = Target.FileExists(target) ? Target.Quick(target, p.Arguments) : (ExitCode: -1, Output: "");
                     if (r.ExitCode == 0) found = target;
-                    else why = File.Exists(target)
+                    else why = Target.FileExists(target)
                         ? $"{p.Name} ({target}) did not pass its check (exit {r.ExitCode}{(FirstLine(r.Output) is { Length: > 0 } l ? ": " + l : "")})"
                         : $"{p.Name} ({target}) is not there";
                     break;
@@ -259,26 +276,23 @@ public sealed class SolverInstaller
 
     private string RemedyFor(RecipePrerequisite p)
     {
-        foreach (string id in Distribution ?? ReadOsRelease())
+        foreach (string id in Distribution ?? Target.OsRelease())
             if (p.Remedy.TryGetValue(id, out var r)) return r;
         return p.Remedy.TryGetValue("default", out var d) ? d : p.Remedy.Values.First();
     }
 
-    private static IReadOnlyList<string> ReadOsRelease()
+    /// <summary>The <c>ID</c> then <c>ID_LIKE</c> words of an <c>/etc/os-release</c>.</summary>
+    internal static IReadOnlyList<string> ParseOsRelease(string text)
     {
-        if (!OperatingSystem.IsLinux()) return [];
-        try
+        var ids = new List<string>();
+        foreach (string line in text.Split('\n'))
         {
-            var ids = new List<string>();
-            foreach (string line in File.ReadAllLines("/etc/os-release"))
-            {
-                if (line.StartsWith("ID=", StringComparison.Ordinal)) ids.Insert(0, line[3..].Trim('"', ' '));
-                else if (line.StartsWith("ID_LIKE=", StringComparison.Ordinal))
-                    ids.AddRange(line[8..].Trim('"', ' ').Split(' ', StringSplitOptions.RemoveEmptyEntries));
-            }
-            return ids;
+            string l = line.Trim();
+            if (l.StartsWith("ID=", StringComparison.Ordinal)) ids.Insert(0, l[3..].Trim('"', ' '));
+            else if (l.StartsWith("ID_LIKE=", StringComparison.Ordinal))
+                ids.AddRange(l[8..].Trim('"', ' ').Split(' ', StringSplitOptions.RemoveEmptyEntries));
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return []; }
+        return ids;
     }
 
     // ── the install ──────────────────────────────────────────────────────────────────────────────
@@ -295,9 +309,10 @@ public sealed class SolverInstaller
         var discovery = Discovery(recipe.Tool);
         string name   = discovery.Name;
         string home   = HomeFor(recipe);
-        string toolDir = SolverHomes.ToolDirectory(Root, recipe.Tool);
+        string localRoot = LocalRoot ?? Root;
+        string toolDir = SolverHomes.ToolDirectory(localRoot, recipe.Tool);
 
-        if (!Path.IsPathRooted(Root))
+        if (!Target.IsRooted(Root) || !Path.IsPathRooted(localRoot))
             return new(InstallStatus.Refused,
                        $"{name} was not installed: circuitRF could not work out an absolute per-user folder to install into " +
                        $"(it got '{Root}'). Set {UserStateDirectory.EnvironmentVariable} to a folder of your own and try again.", null, null);
@@ -320,7 +335,7 @@ public sealed class SolverInstaller
 
         using (gate)
         {
-            if (InstallRecord.TryRead(Path.Combine(home, SolverHomes.RecordFile)) is { } existing)
+            if (Target.ReadRecord(Target.Combine(home, SolverHomes.RecordFile)) is { } existing)
                 return new(InstallStatus.AlreadyInstalled,
                            $"{name} {recipe.Version} is already installed by circuitRF at {existing.Home} ({existing.Program}).",
                            existing, null);
@@ -331,24 +346,31 @@ public sealed class SolverInstaller
                            $"('configure: error: unsafe srcdir value'). This install would go into {home}. " +
                            KnownFailures.Explain(KnownFailures.All.First(k => k.Id == "autotools-path-has-space")), null, null);
 
+            // brief-em3d-26 — inside a distribution, only a recipe of steps that act THERE can run: circuitRF
+            // downloads onto this machine, so a download or extract step has no subsystem form.
+            if (Target.Distribution is not null && recipe.Steps.Any(st => st.Kind is RecipeStepKind.Download or RecipeStepKind.Extract))
+                return new(InstallStatus.Refused, $"{name}'s recipe {recipe.Id} downloads archives onto this machine, which an install " +
+                                                  "inside the Linux subsystem cannot use.", null, null);
+
             var prereqs = CheckPrerequisites(recipe);
             if (!prereqs.Ok) return new(InstallStatus.Refused, DescribePrerequisites(recipe, prereqs), null, null);
 
             // R-em3d24-2d — whatever an earlier attempt left goes now: a .partial, or a home with no record.
             string partial = SolverHomes.Partial(home);
-            DeleteTree(partial);
-            DeleteTree(home);
+            Target.DeleteTree(partial);
+            Target.DeleteTree(home);
 
             string build = recipe.Relocatable ? partial : home;
-            Directory.CreateDirectory(build);
-            Directory.CreateDirectory(SolverHomes.LogDirectory(Root, recipe.Tool));
-            string logPath = Path.Combine(SolverHomes.LogDirectory(Root, recipe.Tool),
+            Target.CreateDirectory(build);
+            Directory.CreateDirectory(SolverHomes.LogDirectory(localRoot, recipe.Tool));
+            string logPath = Path.Combine(SolverHomes.LogDirectory(localRoot, recipe.Tool),
                                           $"{recipe.Version}-{DateTime.Now:yyyyMMdd-HHmmss}.log");
             var clock = Stopwatch.StartNew();
 
             using var log = new StreamWriter(logPath, append: false, new UTF8Encoding(false)) { AutoFlush = true };
             log.WriteLine($"circuitRF solver install — {recipe.Id} — {DateTimeOffset.Now:O}");
-            log.WriteLine($"home: {home}{(recipe.Relocatable ? $" (built in {partial})" : " (built in place)")}");
+            log.WriteLine($"home: {home}{(recipe.Relocatable ? $" (built in {partial})" : " (built in place)")}" +
+                          (Target.Distribution is { } distro ? $", inside the Linux subsystem distribution '{distro}'" : ""));
 
             var run = new Execution(this, recipe, build, prereqs.Variables, log, control);
             var sources = new List<InstallSource>();
@@ -370,7 +392,7 @@ public sealed class SolverInstaller
                 log.WriteLine();
                 log.WriteLine("── Checking the installed program ──");
                 string program = run.Expand(recipe.Program);
-                if (!discovery.TryProbe(program, SolverHowFound.Installed, "installed by circuitRF", out var installed, out string? why))
+                if (!Target.TryProbe(discovery, program, out var installed, out string? why))
                     return Fail(recipe, name, "Checking the installed program", [], $"the installed program at {program} did not answer: {why}.", logPath);
                 log.WriteLine($"identified: {installed!.DescribeVersion()}");
                 if (!installed.Validated)
@@ -389,7 +411,7 @@ public sealed class SolverInstaller
 
                 // A downloaded archive has done its job once it is unpacked and its checksum is on the record;
                 // keeping it would count its size twice in what the user is told the install costs.
-                DeleteTree(Path.Combine(build, "downloads"));
+                Target.DeleteTree(Target.Combine(build, "downloads"));
 
                 // Every source the recipe names is on the record, checked or not — a source a step fetched
                 // (git, Spack) carries the recipe's own note on how it is pinned.
@@ -409,12 +431,14 @@ public sealed class SolverInstaller
                     SpackInstallTree = recipe.SpackInstallTree is { } tree ? run.Expand(tree, home) : null,
                     Identified       = installed.DescribeVersion(),
                     InstalledAt      = DateTimeOffset.Now,
-                    SizeBytes        = MeasureBytes(build),
+                    SizeBytes        = Target.MeasureBytes(build),
                     ElapsedSeconds   = Math.Round(clock.Elapsed.TotalSeconds),
                     Sources          = sources,
+                    Distribution     = Target.Distribution,
                 };
-                record.Write(Path.Combine(build, SolverHomes.RecordFile));
-                if (recipe.Relocatable) Directory.Move(partial, home);
+                Target.WriteRecord(record, Target.Combine(build, SolverHomes.RecordFile));
+                if (recipe.Relocatable) Target.Move(partial, home);
+                Published?.Invoke(record);
                 log.WriteLine($"published: {home} ({record.SizeBytes:N0} bytes, {clock.Elapsed:hh\\:mm\\:ss})");
 
                 return new(InstallStatus.Installed, DescribeSuccess(recipe, record, discovery, clock.Elapsed), record, logPath);
@@ -447,10 +471,11 @@ public sealed class SolverInstaller
                   $"({record.SizeBytes / 1e9:0.00} GB). It passed the version check");
         sb.Append(recipe.Tool == SolverTool.Palace ? " and every capability probe." : ".");
         var found = discovery.Find(out _);
-        if (found is { HowFound: SolverHowFound.Installed } && PathsEqual(found.Path, record.Program))
+        if (found is { HowFound: SolverHowFound.Installed } && found.Distribution == record.Distribution
+            && (record.Distribution is null ? PathsEqual(found.Path, record.Program) : found.Path == record.Program))
             sb.Append(" A 3D run now finds it (installed by circuitRF).");
         else if (found is not null)
-            sb.Append($" A 3D run still uses the {discovery.Name} {found.HowFoundText} ({found.Path}), which comes first; " +
+            sb.Append($" A 3D run still uses the {discovery.Name} {found.HowFoundText} ({found.Where}), which comes first; " +
                       "clear that in Settings ▸ 3D EM to use this one.");
         sb.Append(DescribeSuperseded(recipe));
         return sb.ToString();
@@ -462,6 +487,7 @@ public sealed class SolverInstaller
     /// </summary>
     internal string DescribeSuperseded(SolverRecipe recipe)
     {
+        if (Target.Distribution is not null) return "";   // a subsystem's homes are listed by SolverUninstaller's mirror
         var older = new SolverUninstaller([Root]) { Discovery = Discovery }.Superseded(recipe.Tool, recipe.Version);
         if (older.Count == 0) return "";
         string name = Discovery(recipe.Tool).Name;
@@ -517,12 +543,13 @@ public sealed class SolverInstaller
         {
             ["home"]      = build,
             ["recipeId"]  = recipe.Id,
-            ["downloads"] = Path.Combine(build, "downloads"),
-            ["cores"]     = Math.Max(1, CircuitRF.Engine.Em3d.PhysicalCores.Count).ToString(System.Globalization.CultureInfo.InvariantCulture),
-            ["jobs"]      = BuildJobs().ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["downloads"] = owner.Target.Combine(build, "downloads"),
+            ["cores"]     = owner.Target.Cores().ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["jobs"]      = owner.Target.Jobs().ToString(System.Globalization.CultureInfo.InvariantCulture),
         };
         private readonly Lock _gate = new();
         private Process? _running;
+        private Action? _stop;
 
         public string? CurrentStep { get; private set; }
 
@@ -531,7 +558,7 @@ public sealed class SolverInstaller
             if (homeOverride is null) return owner.Expand(text, _vars);
             var vars = new Dictionary<string, string>(_vars, StringComparer.Ordinal)
             {
-                ["home"] = homeOverride, ["downloads"] = Path.Combine(homeOverride, "downloads"),
+                ["home"] = homeOverride, ["downloads"] = owner.Target.Combine(homeOverride, "downloads"),
             };
             return owner.Expand(text, vars);
         }
@@ -540,6 +567,9 @@ public sealed class SolverInstaller
         {
             lock (_gate)
             {
+                // brief-em3d-26 — inside a distribution, the step's own process group first: killing wsl.exe
+                // leaves every Linux process it started running.
+                try { _stop?.Invoke(); } catch (Exception e) when (e is IOException or InvalidOperationException or ArgumentException) { }
                 try { _running?.Kill(entireProcessTree: true); } catch { /* already gone */ }
             }
         }
@@ -669,9 +699,7 @@ public sealed class SolverInstaller
             string link = Expand(step.Link!), target = Expand(step.Target!);
             control.BeginStage(step.Name);
             log.WriteLine($"symlink {link} -> {target}");
-            if (File.Exists(link) || Directory.Exists(link) || new FileInfo(link).LinkTarget is not null) File.Delete(link);
-            if (Directory.Exists(target)) Directory.CreateSymbolicLink(link, target);
-            else File.CreateSymbolicLink(link, target);
+            owner.Target.Symlink(link, target);
             return null;
         }
 
@@ -679,9 +707,8 @@ public sealed class SolverInstaller
         {
             string path = Expand(step.Path!);
             control.BeginStage(step.Name);
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             string text = string.Join("\n", step.Lines.Select(l => Expand(l))) + "\n";
-            File.WriteAllText(path, text, new UTF8Encoding(false));
+            owner.Target.WriteText(path, text);
             log.WriteLine($"wrote {path}:");
             log.Write(text);
             return null;
@@ -691,25 +718,14 @@ public sealed class SolverInstaller
         {
             var env = owner.StepEnvironment(recipe, _vars);
             string command = Expand(step.Command!);
-            if (!Path.IsPathRooted(command))
-                command = (env.TryGetValue("PATH", out var searchPath) ? searchPath : "").Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
-                              .Select(d => ProgramIn(d, command)).FirstOrDefault(c => c is not null) ?? command;
+            if (!owner.Target.IsRooted(command))
+                command = (env.TryGetValue("PATH", out var searchPath) ? searchPath : "").Split(owner.Target.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
+                              .Select(d => owner.Target.ProgramIn(d, command)).FirstOrDefault(c => c is not null) ?? command;
             var args = step.Arguments.Select(a => Expand(a)).ToList();
             string cwd = step.WorkingDirectory is { } w ? Expand(w) : build;
-            Directory.CreateDirectory(cwd);
+            owner.Target.CreateDirectory(cwd);
 
-            var psi = new ProcessStartInfo(command)
-            {
-                RedirectStandardOutput = true,
-                RedirectStandardError  = true,
-                RedirectStandardInput  = true,
-                UseShellExecute        = false,
-                CreateNoWindow         = true,
-                WorkingDirectory       = cwd,
-            };
-            foreach (string a in args) psi.ArgumentList.Add(a);
-            psi.Environment.Clear();
-            foreach (var (k, v) in env) psi.Environment[k] = v;
+            var psi = owner.Target.StartInfo(command, args, cwd, env, out var stop);
 
             log.WriteLine("$ " + string.Join(' ', new[] { command }.Concat(args).Select(Quote)));
             var lines    = new List<string>();
@@ -749,7 +765,7 @@ public sealed class SolverInstaller
 
             using (p)
             {
-                lock (_gate) _running = p;
+                lock (_gate) { _running = p; _stop = stop; }
                 p.OutputDataReceived += (_, e) => OnLine(e.Data, stdout: true);
                 p.ErrorDataReceived  += (_, e) => OnLine(e.Data, stdout: false);
                 p.BeginOutputReadLine();
@@ -765,12 +781,12 @@ public sealed class SolverInstaller
                     }
                 }
                 p.WaitForExit();
-                lock (_gate) _running = null;
+                lock (_gate) { _running = null; _stop = null; }
 
                 List<string> snapshot;
                 lock (lines) snapshot = [.. lines];
                 if (p.ExitCode != 0)
-                    return new($"'{Path.GetFileName(command)}' exited with code {p.ExitCode}.", snapshot);
+                    return new($"'{command[(command.LastIndexOfAny(['/', '\\']) + 1)..]}' exited with code {p.ExitCode}.", snapshot);
 
                 if (step.Progress == RecipeProgress.SpackConcretize)
                 {
@@ -847,8 +863,9 @@ public sealed class SolverInstaller
     /// </summary>
     public IReadOnlyDictionary<string, string> StepEnvironment(SolverRecipe recipe, IReadOnlyDictionary<string, string> variables)
     {
-        var inherited = InheritedEnvironment();
-        var env = new Dictionary<string, string>(inherited, OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+        var inherited = Target.Environment(this);
+        var env = new Dictionary<string, string>(inherited, OperatingSystem.IsWindows() && Target.Distribution is null
+                                                                ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
         foreach (string pattern in recipe.ClearEnvironment)
             foreach (string key in env.Keys.ToList())
                 if (pattern.EndsWith('*') ? key.StartsWith(pattern[..^1], StringComparison.Ordinal) : key == pattern)
@@ -867,7 +884,7 @@ public sealed class SolverInstaller
     {
         var vars = new Dictionary<string, string>(prerequisites, StringComparer.Ordinal)
         {
-            ["home"] = home, ["recipeId"] = recipe.Id, ["downloads"] = Path.Combine(home, "downloads"), ["cores"] = "1", ["jobs"] = "1",
+            ["home"] = home, ["recipeId"] = recipe.Id, ["downloads"] = Target.Combine(home, "downloads"), ["cores"] = "1", ["jobs"] = "1",
         };
         foreach (var s in recipe.Steps) if (s.CaptureAs is { } c) vars.TryAdd(c, "${" + c + "}");
         string X(string t) => Expand(t, vars);
@@ -900,7 +917,7 @@ public sealed class SolverInstaller
     private static readonly Regex Reference = new(@"\$\{(env:)?([A-Za-z0-9_]+)\}", RegexOptions.Compiled);
 
     private string Expand(string text, IReadOnlyDictionary<string, string> vars)
-        => Expand(text, vars, InheritedEnvironment());
+        => Expand(text, vars, Target.Environment(this));
 
     /// <summary>Replaces <c>${name}</c> and <c>${env:NAME}</c>. An unknown name is left as written, which
     /// then fails visibly in the step that used it rather than silently becoming an empty argument.</summary>
@@ -936,10 +953,8 @@ public sealed class SolverInstaller
         return Math.Min(cores, byMemory);
     }
 
-    private sealed record QuickRun(int ExitCode, string Output);
-
     /// <summary>A prerequisite's own question — seconds at most, counted as a probe.</summary>
-    private static QuickRun RunQuick(string program, IReadOnlyList<string> arguments)
+    internal static (int ExitCode, string Output) RunQuick(string program, IReadOnlyList<string> arguments)
     {
         try
         {
@@ -950,42 +965,22 @@ public sealed class SolverInstaller
             };
             foreach (string a in arguments) psi.ArgumentList.Add(a);
             using var p = Em3dProcessLauncher.Start(psi, Em3dProcessKind.Probe);
-            if (p is null) return new(-1, "");
+            if (p is null) return (-1, "");
             p.StandardInput.Close();
             var o = p.StandardOutput.ReadToEndAsync();
             var e = p.StandardError.ReadToEndAsync();
             if (!p.WaitForExit(TimeSpan.FromSeconds(30)))
             {
                 try { p.Kill(entireProcessTree: true); } catch { /* gone */ }
-                return new(-1, "it did not answer within 30 s");
+                return (-1, "it did not answer within 30 s");
             }
             p.WaitForExit();
-            return new(p.ExitCode, o.GetAwaiter().GetResult() + e.GetAwaiter().GetResult());
+            return (p.ExitCode, o.GetAwaiter().GetResult() + e.GetAwaiter().GetResult());
         }
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException or IOException)
         {
-            return new(-1, ex.Message);
+            return (-1, ex.Message);
         }
-    }
-
-    private static IEnumerable<string> SafeEntries(string directory, string pattern)
-    {
-        try { return Directory.EnumerateFileSystemEntries(directory, pattern).Order(StringComparer.Ordinal).ToList(); }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException) { return []; }
-    }
-
-    private static string? ProgramIn(string directory, string name)
-    {
-        foreach (string ext in OperatingSystem.IsWindows() ? new[] { ".exe", ".cmd", ".bat", "" } : [""])
-        {
-            try
-            {
-                string c = Path.Combine(directory.Trim(), name + ext);
-                if (File.Exists(c)) return c;
-            }
-            catch (ArgumentException) { }
-        }
-        return null;
     }
 
     private static int CompareVersions(string a, string b)

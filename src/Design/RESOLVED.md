@@ -13109,3 +13109,73 @@ across processes, and an install in progress refuses a removal by name.
 a run found to its published home by walking up to `install.json` (`SolverHomes.HomeOf`); a program
 under no home holds nothing. `Em3dRunService.Run` holds every home it found for its whole length. A lock
 whose pid has exited — or carries this process's pid with no holder here — is stale and deleted.
+
+## Palace on Windows, in the Linux subsystem — brief-em3d-26 (2026-09-25)
+
+`src/Design/Em3d/Wsl/` (new: `IWsl` + `WslExe`, the one door to `wsl.exe`; `WslDistributions`, the listing
+and the preconditions; `WslSession`; `WslPaths`; `WslProcessGroup`; `WslPalaceRunner`; `WslPalace`;
+`WslInstallTarget`; `WslSolverHomes`; `WslPalaceInstall`; `SolverDiscovery.Subsystem.cs`), plus
+`PalaceLocation`, `PalaceRunner` (`IPalaceRunner`), `Install/InstallTarget.cs` and
+`Install/SolverInstallPlan.cs`. Changed: `SolverDiscovery` (location, subsystem route, the probe split so
+one body serves both places), `PalaceRun` (`PalaceCommand`, a `ProcessStartInfo` overload of
+`RunProcess` with a kill hook, a pluggable second-mode check), `SolverInstaller` (every file and process
+operation through its target), `SolverUninstaller` (mirrored homes), `Em3dRunService`, `Em3dMemory`,
+`SpackInstalls` (Linux-path overloads), `InstallRecord.Distribution`. UI: the Location row in Settings ▸
+3D EM, `em3d_palace_location`. CLI: `solver install`/`list` through `SolverInstallPlan`. Gate:
+`tests/Ui.Tests/Em3d/WslLocationTests.cs` (gates 1-8 and the subsystem removal) against a fake that maps
+each distribution onto a local directory. **Nothing ran on Windows and no pixel was seen**; §6's owner
+runs are all outstanding, so the brief does not close (D5). They are listed in
+`testdata/em3d/f0/README.md` §Install.
+
+**A culture-aware string comparison ignores NUL.** Gate 1's control, "the listing read as UTF-8 does not
+contain `Ubuntu`", FAILED on its first run: xUnit's `Assert.DoesNotContain(string, string)` is
+culture-sensitive, and `U\0b\0u\0n\0t\0u\0` contains `Ubuntu` to it. The control is ordinal now. Every
+comparison the parser makes is ordinal (`Regex`, `string.Replace`, `OrdinalIgnoreCase`); one that is not
+would find a distribution in bytes that no ordinal reader can.
+
+**`Path.Combine` joins a Linux path with a backslash on Windows**, so `SolverHomes.Home(root, …)` with a
+Linux root gives `/home/u\.circuitrf\…`, a single file name. Everything that composes a path inside a
+distribution goes through `WslPaths.Combine` or the install target's `Combine`. `SolverHomes` itself
+stays native-only.
+
+**The mirror cannot live where native homes live.** `SolverHomes.Published` reads every
+`<root>/<tool>/*/install.json`; a mirrored record there would be taken for a native install and probed at
+a Linux path. Mirrors go to `<root>/wsl/<distro>/<tool>/<version>/`, which is itself laid out as a solver
+root. That is also where a subsystem install's lock and logs live, so the uninstaller's lock and in-use
+checks work unchanged on this machine's side. A run holds a subsystem install through its mirror
+directory (`WslSolverHomes.Hold`).
+
+**`setsid` without `-w` returns at once when its caller leads a process group**, which a `wsl --exec`
+child does: it forks, and `wsl.exe` would end with Palace still running. The wrapper is
+`setsid -w sh -c 'echo $$ > "$0"; exec "$@"' <pid file> <program> …`: constant script, pid file as `$0`,
+program as `"$@"`. The kill is `kill -TERM -- -<pgid>`. The `--` is there so that either Linux `kill`
+reads the negative number as a group, not an option.
+
+**The second-mode check wrote `..\model.msh` on Windows** (`Path.Combine("..", …)`), which Palace in
+Linux cannot open. It writes `../model.msh` everywhere now. That is the same string as before on macOS
+and Linux.
+
+**`WSL_UTF8=1` in the user's environment switches wsl.exe's own messages to UTF-8.** `WslExe` removes
+it, so the decoder always sees the UTF-16LE it was written for.
+
+Deviations, each deliberate:
+- **Copy-out includes every `palace.json`**, as well as the CSVs and requested field directories.
+  `ReadFacts` reads the element counts and adaptive passes the completion summary prints from them.
+  Refinement-pass mesh archives stay behind.
+- **`wslpath -u` is built, cached per session and gated, but no run needs it.** Every copy happens on
+  the Windows side through the share, and a Windows path handed to Linux would be a `/mnt/` path. That
+  is exactly what §2a rules out.
+- **A subsystem run takes no resident-memory sample.** The sample would read `wsl.exe`'s own few
+  megabytes. So brief 21's "reached 90 % of memory" note is not given there.
+- **The panel's pre-Simulate memory check still uses this computer's memory.** Answering with the
+  subsystem's would mean starting it before the user pressed Simulate. The run's own check (before and
+  after meshing) uses `free -b` inside, and it is the one that warns or asks.
+- **A subsystem home's size in a removal plan is the one recorded at install**, and the confirmation
+  says so. Brief 25 measures homes at plan time, but measuring here would start the distribution, and
+  R-em3d26-3a asks Settings to show installs without starting it. *Missing* is decided without starting
+  it too: the distribution is gone from `wsl -l`, or it is running and its share shows no home.
+- **The MPI launcher named in Settings is not used for a subsystem run.** It is a Windows path. The
+  MPI row says so.
+- **Headless has no location preference**, so `circuitrf` always acts as *Automatic*.
+- **`testdata/em3d/wsl/wsl-l-v.utf16le.bin` is constructed, not captured.** Its README says so, and
+  replacing it with a capture is on the owner's list.

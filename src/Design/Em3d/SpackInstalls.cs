@@ -76,6 +76,55 @@ public static class SpackInstalls
         return null;
     }
 
+    // ── brief-em3d-26: a Spack tree inside a Linux subsystem distribution ─────────────────────
+
+    /// <summary>
+    /// <see cref="Find(string, IReadOnlyList{string}?)"/> for a tree in ANOTHER filesystem — a Linux
+    /// subsystem distribution's, read through its <c>\\wsl.localhost\</c> share. <paramref name="linuxRoots"/>
+    /// and every prefix the database records are Linux paths; <paramref name="local"/> maps one to the path
+    /// this process opens. Prefixes are returned as Linux paths, because that is where they run.
+    /// </summary>
+    internal static IReadOnlyList<Install> Find(string package, IReadOnlyList<string> linuxRoots, Func<string, string> local)
+        => ForeignDatabases(linuxRoots, local).SelectMany(d => d.Values)
+                      .Where(i => string.Equals(i.Name, package, StringComparison.Ordinal) && DirectoryExists(local(i.Prefix)))
+                      .OrderByDescending(i => i.InstalledAt)
+                      .ThenBy(i => i.Prefix, StringComparer.Ordinal)
+                      .ToList();
+
+    /// <summary><see cref="MpiLauncherFor(string, IReadOnlyList{string}?)"/> for a Linux <paramref name="program"/>
+    /// in another filesystem; the launcher is returned as a Linux path.</summary>
+    internal static string? MpiLauncherFor(string program, IReadOnlyList<string> linuxRoots, Func<string, string> local)
+    {
+        foreach (var db in ForeignDatabases(linuxRoots, local))
+        {
+            var owner = db.Values.FirstOrDefault(i => program.StartsWith(i.Prefix.TrimEnd('/') + "/", StringComparison.Ordinal));
+            if (owner is null) continue;
+            var mpi = owner.Dependencies.FirstOrDefault(d => d.Virtuals.Contains("mpi", StringComparer.Ordinal));
+            if (mpi is null || !db.TryGetValue(mpi.Hash, out var provider)) return null;
+            string launcher = provider.Prefix.TrimEnd('/') + "/bin/mpirun";
+            return FileExists(local(launcher)) ? launcher : null;
+        }
+        return null;
+    }
+
+    private static IEnumerable<Dictionary<string, Install>> ForeignDatabases(IReadOnlyList<string> linuxRoots, Func<string, string> local)
+    {
+        foreach (string root in linuxRoots)
+        {
+            string mapped;
+            try { mapped = local(root); }
+            catch (ArgumentException) { continue; }
+            foreach (string file in DatabaseFiles(mapped))
+                if (Load(file) is { } installs) yield return installs;
+        }
+    }
+
+    private static bool DirectoryExists(string path)
+    {
+        try { return Directory.Exists(path); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return false; }
+    }
+
     // ── reading the databases ────────────────────────────────────────────────────────────────
 
     private static readonly Lock Gate = new();

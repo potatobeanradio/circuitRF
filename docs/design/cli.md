@@ -2793,3 +2793,15 @@ what each Settings row's *Uninstall …*, *Remove all 3D solvers* and *Uninstall
   sight (renamed `<home>.removing`), the files are listed by path, and the next `remove` finishes it.
 - **There is no `circuitrf uninstall`** (R-em3d25-4c): a build machine runs `solver remove --all --yes`
   and then the platform's own uninstall.
+
+**Palace on Windows (brief-em3d-26).** Both nouns reach the Linux subsystem through the same functions
+the Settings row calls, so the verb gained no code of its own beyond one call:
+`SolverInstallPlan.For` picks the recipe and the installer — natively everywhere else, and for Palace on
+Windows brief 24's LINUX recipe run inside a WSL 2 distribution (the location setting's, else the
+default one). A subsystem precondition — the feature not enabled, virtualization off, no distribution,
+a WSL 1 one, a distribution that does not start — is `solver.install.refused` carrying the one step that
+fixes it; nothing starts. `list` names the distribution a Palace was found in, offers `install` "inside
+the Linux subsystem", and lists a home installed there by its mirrored record, which it reads without
+starting the subsystem. `remove` of such a home renames and deletes it inside the distribution and then
+the mirror; it is `solver.remove.refused` while the distribution cannot start. Headless there is no
+location preference, so the verb always acts as *Automatic*.

@@ -186,7 +186,11 @@ wall clock on 2026-09-24; disk is `du` of what the step added.
 | 15 | Ubuntu 24.04 arm64, same image | Palace | 0.18.1 | same, from clean | 18:53:56 – 19:23:31 | 2.05 GB | **worked** | — | — |
 | — | Debian 12 arm64 | Palace | 0.18.1 | same | 19:23:55 – stopped at package 36 of 73 | — | **not completed**: stopped by the owner's time limit, no failure seen | — | — |
 | — | Debian 12 ×2, Fedora ×3, openEMS once, Gmsh x64 once | | | | | | **not run** (owner's time limit) | | |
-| — | Windows 11 x64 | openEMS, Gmsh native; Palace in the Linux subsystem | — | three clean installs each | — | — | **not done** — the owner's | — | — |
+| — | Windows 11 x64, a FRESH Ubuntu distribution (WSL 2) | Palace | 0.18.1 | *Install Palace…* (brief-em3d-26: recipe `palace-0.18.1-linux-x64`, run inside the distribution), three clean runs | — | — | **not done** — the owner's (brief-em3d-26 §6, D5). Each new failure becomes a `KnownFailures` entry | — | — |
+| — | Windows 11 x64 | Gmsh, openEMS | 4.15.2, 0.37.0-rc3 | *Install Gmsh…* / *Install openEMS…* natively (brief 24's Windows recipes), three clean runs each | — | — | **not done** — the owner's (brief-em3d-26 §6) | — | — |
+| — | Windows 11 x64, Ubuntu (WSL 2) | Palace | 0.18.1 | Simulate F0 case B through the subsystem; its `.s2p` against the macOS one, \|ΔS21\| < 0.01 dB | — | — | **not done** — the owner's (brief-em3d-26 §6) | — | — |
+| — | Windows 11 x64, Ubuntu (WSL 2) | Palace | 0.18.1 | Cancel mid-run, then `wsl -d Ubuntu -- ps -ef \| grep palace` shows nothing | — | — | **not done** — the owner's (brief-em3d-26 §6) | — | — |
+| — | Windows 11 x64 | — | — | `wsl.exe -l -v > testdata/em3d/wsl/wsl-l-v.utf16le.bin` — replace the constructed fixture with a capture | — | — | **not done** — the owner's (see `testdata/em3d/wsl/README.md`) | — | — |
 | — | Linux x64 | Palace, openEMS, Gmsh | — | three clean installs each | — | — | **not done** — the owner's | — | — |
 
 **Removing the failed attempt's 443 MB** took more than `spack gc`, which in a directory environment sees

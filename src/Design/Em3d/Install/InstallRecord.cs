@@ -57,6 +57,11 @@ public sealed record InstallRecord
 
     public IReadOnlyList<InstallSource> Sources { get; init; } = [];
 
+    /// <summary>brief-em3d-26 — the Linux subsystem distribution the home is in, or null for one on this
+    /// machine. When set, <see cref="Home"/>, <see cref="Program"/> and <see cref="SpackInstallTree"/> are
+    /// Linux paths inside it. Omitted from a native record, so no existing record changes.</summary>
+    public string? Distribution { get; init; }
+
     private static readonly JsonSerializerOptions Json = new()
     {
         WriteIndented          = true,

@@ -919,3 +919,7 @@ src/Engine/Em3d/FdtdPortTransform.cs|There must be one run per port, each carryi
 # CSXCAD writer, the size estimate) handles an extruded polygon exactly before falling through to the
 # tessellation, and CanTessellate states the rule — no document reaches it.
 src/Engine/Em3d/Em3dTessellation.cs|Solid '{solid.Name}' is an extruded polygon, whose caps need a polygon triangulation 
+# brief-em3d-26 — argument guards on a programmer's error (a relative path where a Linux one is needed,
+# a removal of a path too short to be one circuitRF made); no user reaches either.
+src/Design/Em3d/Wsl/WslPaths.cs|'{linuxPath}' is not an absolute Linux path.
+src/Design/Em3d/Wsl/WslSession.cs|refusing to remove '{linuxPath}': not a path circuitRF made.

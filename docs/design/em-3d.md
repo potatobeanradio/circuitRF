@@ -828,6 +828,10 @@ action for an upgrade to trip. On Linux the tarball's install root IS the per-us
 Every location runs the same input files, so a result does not depend on where it was computed.
 **Automatic** is the default setting: it uses the first location that is available, in the table's
 order, and when none is, the refusal names the one action that would make one available.
+*Built in brief-em3d-26:* the setting is Palace's alone and shown on Windows only — *Automatic*,
+*Native*, or *Linux subsystem: &lt;distribution&gt;* (`PalaceLocation`, stored as `em3d_palace_location`).
+A path named in Settings or in `CIRCUITRF_PALACE` still outranks every location. The container and
+remote rows are not built.
 
 **openEMS and Gmsh pose no location problem** — both publish native builds for Windows, macOS and
 Linux, so on every platform installing them is downloading an archive and, at most, naming it in
@@ -851,6 +855,25 @@ location:
   gets a fraction of host memory by default — and a refusal names the setting that raises it;
 - compute inside the subsystem runs at close to native speed, so the cost is the file transfer the
   staging above keeps to inputs and results.
+
+*Built in brief-em3d-26* (`src/Design/Em3d/Wsl/`; every gate runs against a fake `wsl.exe`, and the
+runs on real Windows are the owner's, logged in `testdata/em3d/f0/README.md` §Install):
+- **One door.** Every question goes through `wsl.exe -d <name> [--cd <dir>] --exec <program> <args>`,
+  an argument list; the two shell strings are constants (the login-shell `command -v`, and the
+  process-group wrapper). `wsl -l -v` is UTF-16LE when redirected and is decoded as such.
+- **Discovery inside** each WSL 2 distribution, in `wsl -l` order: circuitRF's own home
+  (`~/.circuitrf/solvers`), Spack trees, conda, then a login shell's `PATH`. The first distribution with a
+  VALIDATED Palace wins. Version and capability probes run inside; the capability cache key carries the
+  distribution. A WSL 1 distribution is refused, naming `wsl --set-version <name> 2`.
+- **A run** stages `model.msh` and `config.json` into `~/.circuitrf/runs/<run key>/` through the
+  `\\wsl.localhost\` share, runs Palace there under the Spack-linked `mpirun` beside it on the
+  SUBSYSTEM's physical cores, and copies back every CSV, every `palace.json` and any requested field
+  directory. Its memory check uses `free -b` inside and names `.wslconfig`'s `memory=`.
+- **Cancelling** signals the process group a constant `setsid -w` wrapper leads (TERM, then KILL after
+  5 s), because killing `wsl.exe` leaves every Linux process it started running.
+- **The install** runs brief 24's Linux recipe inside the distribution through an install TARGET, the
+  same installer code natively and inside, and mirrors its record on the Windows side under
+  `<state>/solvers/wsl/<distro>/`.
 
 When the subsystem is missing, the refusal says which of its two preconditions is missing
 (virtualization in firmware, or the Windows feature, which needs administrator rights once) and what

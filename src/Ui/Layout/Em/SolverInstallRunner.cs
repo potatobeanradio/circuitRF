@@ -40,12 +40,17 @@ internal static class SolverInstallRunner
         messages ??= (App.LastActiveWorkspace?.DataContext as ViewModels.WorkspaceViewModel)?.Messages;
         string name = SolverDiscovery.For(tool).Name;
 
-        if (SolverRecipes.For(tool) is not { } recipe)
+        // brief-em3d-26 — on Windows, Palace's plan runs inside the Linux subsystem; asking for it lists the
+        // distributions and reads one's home, so off the UI thread.
+        string? refusal = null;
+        var plan = await Task.Run(() => SolverInstallPlan.For(tool, null, out refusal));
+        if (plan is null)
         {
-            messages?.Error($"circuitRF has no install recipe for {name} on this computer. Recipes exist for: " +
-                            $"{SolverRecipes.PlatformsFor(tool)}.");
+            messages?.Error(refusal ?? $"circuitRF has no install recipe for {name} on this computer. Recipes exist for: " +
+                                       $"{SolverRecipes.PlatformsFor(tool)}.");
             return;
         }
+        var (recipe, installer) = (plan.Recipe, plan.Installer);
         if (!Running.Add(tool))
         {
             messages?.Info($"{name} is already being installed — its progress is in the Messages panel.");
@@ -54,7 +59,6 @@ internal static class SolverInstallRunner
 
         try
         {
-            var installer = new SolverInstaller();
             owner ??= App.DialogOwner();
             if (owner is null || !await Views.Dialogs.SolverInstallConsentDialog.AskAsync(owner, name, recipe.Version, installer.Consent(recipe)))
                 return;

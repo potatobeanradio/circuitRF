@@ -58,10 +58,15 @@ public sealed record SolverValidatedVersion(string Release, string Identity, str
 /// <param name="Banner">What it printed, trimmed to the lines that carried the version.</param>
 /// <param name="HowFoundText">The same answer in words — "set in Settings", "found at /opt/…".</param>
 /// <param name="Release">The validated release this identifies, or null when it is not one.</param>
+/// <param name="Distribution">brief-em3d-26 — the Linux subsystem distribution the program is in, or null
+/// for one on this machine. When set, <paramref name="Path"/> is a Linux path inside it.</param>
 public sealed record SolverInstallation(
     SolverTool Tool, string Path, string Version, string? Companion, string Banner,
-    SolverHowFound HowFound, string HowFoundText, string? Release)
+    SolverHowFound HowFound, string HowFoundText, string? Release, string? Distribution = null)
 {
+    /// <summary>The path as a person reads it: with the distribution named when it is in the Linux subsystem.</summary>
+    public string Where => Distribution is null ? Path : $"{Path} in the Linux subsystem distribution '{Distribution}'";
+
     /// <summary>Whether this is a version circuitRF has validated (em-3d.md §5.3).</summary>
     public bool Validated => Release is not null;
 
@@ -138,7 +143,7 @@ public sealed record SolverReadiness(
 /// on past it to a validated copy elsewhere would run a different program from the one the user's own
 /// shell runs, with nothing on screen saying so.</para>
 /// </summary>
-public sealed class SolverDiscovery
+public sealed partial class SolverDiscovery
 {
     // ── the three instances ──────────────────────────────────────────────────────────────────
 
@@ -272,6 +277,8 @@ public sealed class SolverDiscovery
         ValidatedVersions   = validated;
         SearchDirectories   = DefaultSearchDirectories(extraDirectories);
         SpackPackage        = spackPackage;
+        // brief-em3d-26 — on Windows, Palace is also looked for inside the Linux subsystem.
+        Subsystem           = tool == SolverTool.Palace && OperatingSystem.IsWindows() ? new Wsl.WslExe() : null;
     }
 
     public SolverTool Tool { get; }
@@ -328,6 +335,14 @@ public sealed class SolverDiscovery
     /// (<c>Em3dSolverPathInstaller</c>); read at the moment it is needed, so a changed setting is seen.</summary>
     public Func<string?>? PreferredCommand { get; set; }
 
+    /// <summary>brief-em3d-26 R-em3d26-1d — the location setting, installed by <c>src/Ui</c> as
+    /// <see cref="PreferredCommand"/> is. Null is <see cref="PalaceLocation.Automatic"/>.</summary>
+    public Func<PalaceLocation>? PreferredLocation { get; set; }
+
+    /// <summary>The Linux subsystem this tool is also looked for in, or null — the real <c>wsl.exe</c> for
+    /// Palace on Windows, and nothing anywhere else. Settable so a test drives a fake on any platform.</summary>
+    public Wsl.IWsl? Subsystem { get; set; }
+
     /// <summary>Reads an environment variable — <see cref="EnvironmentVariable"/>, <c>PATH</c>,
     /// <c>PATHEXT</c>. A seam so a test can give one instance its own environment without touching the
     /// process's, which every other test shares.</summary>
@@ -378,6 +393,19 @@ public sealed class SolverDiscovery
             return null;
         }
 
+        // brief-em3d-26 R-em3d26-1d — Automatic takes a native program first, then the subsystem.
+        var location = PreferredLocation?.Invoke() ?? PalaceLocation.Automatic;
+        bool subsystem = Subsystem is not null && location.Kind != PalaceLocationKind.Native;
+        if (subsystem && location.Kind == PalaceLocationKind.Subsystem)
+            return FindInSubsystem(location.Distribution, notes);
+        if (FindNative(notes) is { } native) return native;
+        return subsystem ? FindInSubsystem(null, notes) : null;
+    }
+
+    /// <summary>The unnamed native routes, in order: installed by circuitRF, <c>PATH</c>, the default
+    /// directories, Spack, conda.</summary>
+    private SolverInstallation? FindNative(List<string> notes)
+    {
         foreach (var record in InstalledByCircuitRf())
         {
             if (TryProbe(record.Program, SolverHowFound.Installed, $"installed by circuitRF at {record.Home}", out var chosen, out string? why))
@@ -500,19 +528,29 @@ public sealed class SolverDiscovery
         if (Tool != SolverTool.Palace)
             return new SolverCapabilityVerdict(capability, true, $"{Name} has no build options circuitRF depends on", false);
 
-        string? stamp = Stamp(installation.Path);
-        if (stamp is not null && CapabilityCache.Read(CacheFile, installation.Path, stamp, capability) is { } hit)
+        // brief-em3d-26 R-em3d26-1c — a program in the Linux subsystem is probed INSIDE it, exactly as a
+        // native one is here; its cache key adds the distribution, so the same path in two distributions,
+        // or in a distribution and on this machine, is never one entry.
+        bool inSubsystem = installation.Distribution is not null;
+        if (inSubsystem && Subsystem is null)
+            return new SolverCapabilityVerdict(capability, false, "the Linux subsystem is not available on this machine.", false);
+        var session = inSubsystem ? new Wsl.WslSession(Subsystem!, installation.Distribution!) : null;
+        string key = inSubsystem ? $"wsl:{installation.Distribution}:{installation.Path}" : installation.Path;
+        string? stamp = session is null ? Stamp(installation.Path) : SubsystemStamp(session, installation.Path);
+        if (stamp is not null && CapabilityCache.Read(CacheFile, key, stamp, capability) is { } hit)
             return hit with { FromCache = true };
 
         Interlocked.Increment(ref _capabilityProbes);
-        var (verdict, definitive) = RunPalaceProbe(installation.Path, capability);
+        var (verdict, definitive) = session is null
+            ? RunPalaceProbe(installation.Path, capability)
+            : RunPalaceProbeInSubsystem(session, installation.Path, capability);
 
         // Only a definite YES is kept. A probe that timed out or could not start says nothing about the
         // build, and neither does every failed dry run: exit 134 is also what an MPI, environment or
         // temp-directory problem ends in, and a cached "no" would go on telling the user to rebuild
         // Palace after they had fixed the real cause. A failing probe costs 0.15 s to ask again.
         if (definitive && verdict.Available && stamp is not null)
-            CapabilityCache.Write(CacheFile, installation.Path, stamp, verdict);
+            CapabilityCache.Write(CacheFile, key, stamp, verdict);
         return verdict;
     }
 
@@ -538,15 +576,17 @@ public sealed class SolverDiscovery
         sb.Append($"To use a {Name} that is already installed, name it in Settings ▸ 3D EM, or set the " +
                   $"environment variable {EnvironmentVariable} to its full path. ");
         sb.Append($"To install it, follow “{ManualInstallSection}” in the EM Setup reference ({ManualInstallPage}).");
-        // brief-em3d-24 — the assistant, where this machine has a recipe. Palace on Windows has none until the
-        // Linux subsystem route (brief-em3d-26), and the Windows sentence below already says what does run.
-        if (!(windows && Tool == SolverTool.Palace) && Install.SolverRecipes.For(Tool) is not null)
+        // brief-em3d-24 — the assistant, where this machine has a recipe; brief-em3d-26 — on Windows, Palace's
+        // recipe runs inside the Linux subsystem.
+        if (windows && Tool == SolverTool.Palace)
+            sb.Append(" Palace does not run natively on Windows; circuitRF runs it inside the Linux subsystem (WSL 2), and " +
+                      "looked for it in every WSL 2 distribution. circuitRF can build it there for you, from its own upstream: " +
+                      $"Install {Name}… on this message or in Settings ▸ 3D EM, or 'circuitrf solver install " +
+                      $"{Install.SolverHomes.ToolId(Tool)}'. openEMS runs natively on Windows, with nothing to build: set the " +
+                      "setup's Solver3D to OpenEms.");
+        else if (Install.SolverRecipes.For(Tool) is not null)
             sb.Append($" circuitRF can also install it for you, from its own upstream: Install {Name}… on this message or " +
                       $"in Settings ▸ 3D EM, or 'circuitrf solver install {Install.SolverHomes.ToolId(Tool)}'.");
-        if (windows && Tool == SolverTool.Palace)
-            sb.Append(" Palace does not run natively on Windows, and running it through the Linux subsystem is " +
-                      "not part of this version of circuitRF. openEMS runs natively on Windows and is the 3D " +
-                      "solver this machine can use: set the setup's Solver3D to OpenEms.");
         if (rejected.Count > 0)
             sb.Append(" Tried: ").Append(string.Join("; ", rejected)).Append('.');
         return sb.ToString();
@@ -571,7 +611,7 @@ public sealed class SolverDiscovery
         // brief-em3d-24 R-em3d24-5a — the row says which KIND each tool is: one circuitRF installed (and can
         // later remove, brief 25), or one it merely found, which it never offers to remove.
         if (found.HowFound == SolverHowFound.Installed)
-            return $"Installed by circuitRF, {found.Path}, {found.DescribeVersion()}, {validity}.";
+            return $"Installed by circuitRF, {found.Where}, {found.DescribeVersion()}, {validity}.";
 
         string how = found.HowFound switch
         {
@@ -582,7 +622,8 @@ public sealed class SolverDiscovery
             SolverHowFound.Conda       => "in a conda environment",
             _                          => "in a default directory",
         };
-        return $"{found.DescribeVersion()}, {validity}. Found at {found.Path} ({how}).";
+        if (found.Distribution is not null) how += ", inside the Linux subsystem";
+        return $"{found.DescribeVersion()}, {validity}. Found at {found.Where} ({how}).";
     }
 
     /// <summary>The refusal for a program found at a version circuitRF has not validated (R-em3d6-2b).</summary>
@@ -597,7 +638,7 @@ public sealed class SolverDiscovery
             _                 => "circuitRF writes openEMS's XML and reads its probe files as that version does, " +
                                  "and has verified no other.",
         };
-        return $"{Name} at '{installation.Path}' ({installation.HowFoundText}) reports version " +
+        return $"{Name} at '{installation.Where}' ({installation.HowFoundText}) reports version " +
                $"{installation.DescribeVersion()}, which circuitRF has not validated, so this 3D setup will not run. " +
                $"Validated: {list}. {why} Point circuitRF at a validated {Name} in Settings ▸ 3D EM or with " +
                $"{EnvironmentVariable}; “{ManualInstallSection}” in the EM Setup reference ({ManualInstallPage}) " +
@@ -608,7 +649,7 @@ public sealed class SolverDiscovery
     public string DescribeMissingCapability(SolverInstallation installation, SolverCapabilityVerdict verdict)
     {
         var (what, option) = Describe(verdict.Capability);
-        return $"{Name} at '{installation.Path}' cannot run {what}, which this 3D setup needs: {verdict.Detail} " +
+        return $"{Name} at '{installation.Where}' cannot run {what}, which this 3D setup needs: {verdict.Detail} " +
                $"{option}";
     }
 
@@ -673,38 +714,10 @@ public sealed class SolverDiscovery
         try
         {
             Directory.CreateDirectory(dir);
-            File.WriteAllText(Path.Combine(dir, "probe.json"), ProbeConfig(capability));
-            File.WriteAllText(Path.Combine(dir, "probe.msh"), ProbeMesh);
-
-            var run = RunProbe(palace, ["--serial", "--dry-run", "probe.json"], dir, CapabilityTimeout);
-            if (run.Failure is { } failure)
-                return (new SolverCapabilityVerdict(capability, false, $"the probe did not complete ({failure}).", false), false);
-
-            string what = capability switch
-            {
-                SolverCapability.WavePorts => "a driven setup with a wave port",
-                SolverCapability.Eigenmode => "an eigenmode setup",
-                _                          => "a driven setup with a lumped port",
-            };
-            bool ok = run.ExitCode == 0 && run.Output.Contains("Dry-run: No errors detected", StringComparison.Ordinal);
-            if (!ok)
-                return (new SolverCapabilityVerdict(capability, false,
-                    $"a dry run of {what} failed (exit {run.ExitCode}): {TellingLine(run.Output)}.", false), true);
-            if (capability != SolverCapability.WavePorts)
-                return (new SolverCapabilityVerdict(capability, true, $"a dry run of {what} found no errors.", false), true);
-
-            // R-em3d23-1b — GSLIB is reached only by running: a one-element electrostatic solve with a field
-            // probe, which a ~gslib build refuses as it starts (interpolator.cpp: "InterpolationOperator class
-            // requires MFEM_USE_GSLIB!"). 0.17 s on the F0 install.
-            File.WriteAllText(Path.Combine(dir, "gslib.json"), GslibProbeConfig);
-            var solve = RunProbe(palace, ["--serial", "gslib.json"], dir, CapabilityTimeout);
-            if (solve.Failure is { } solveFailure)
-                return (new SolverCapabilityVerdict(capability, false, $"the one-element solve did not complete ({solveFailure}).", false), false);
-            bool gslib = solve.ExitCode == 0 && File.Exists(Path.Combine(dir, "postpro", "probe-E.csv"));
-            return (new SolverCapabilityVerdict(capability, gslib, gslib
-                ? $"a dry run of {what} found no errors, and a one-element solve with a field probe ran (GSLIB is present)."
-                : $"a dry run of {what} passed, but a one-element solve with a field probe failed (exit {solve.ExitCode}): " +
-                  $"{TellingLine(solve.Output)}.", false), true);
+            return PalaceProbe(capability,
+                               write: (name, text) => File.WriteAllText(Path.Combine(dir, name), text),
+                               run: args => RunProbe(palace, args, dir, CapabilityTimeout),
+                               exists: relative => File.Exists(Path.Combine(dir, relative)));
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
@@ -715,6 +728,49 @@ public sealed class SolverDiscovery
             try { if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true); }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
         }
+    }
+
+    /// <summary>
+    /// The probe itself, with its three dependencies on WHERE it runs supplied: writing a file into the
+    /// probe directory, running Palace there, and asking whether a file exists there afterwards. Written
+    /// once, for this machine and for the Linux subsystem alike.
+    /// </summary>
+    private static (SolverCapabilityVerdict Verdict, bool Definitive) PalaceProbe(
+        SolverCapability capability, Action<string, string> write, Func<IReadOnlyList<string>, ProbeRun> run,
+        Func<string, bool> exists)
+    {
+        write("probe.json", ProbeConfig(capability));
+        write("probe.msh", ProbeMesh);
+
+        var dry = run(["--serial", "--dry-run", "probe.json"]);
+        if (dry.Failure is { } failure)
+            return (new SolverCapabilityVerdict(capability, false, $"the probe did not complete ({failure}).", false), false);
+
+        string what = capability switch
+        {
+            SolverCapability.WavePorts => "a driven setup with a wave port",
+            SolverCapability.Eigenmode => "an eigenmode setup",
+            _                          => "a driven setup with a lumped port",
+        };
+        bool ok = dry.ExitCode == 0 && dry.Output.Contains("Dry-run: No errors detected", StringComparison.Ordinal);
+        if (!ok)
+            return (new SolverCapabilityVerdict(capability, false,
+                $"a dry run of {what} failed (exit {dry.ExitCode}): {TellingLine(dry.Output)}.", false), true);
+        if (capability != SolverCapability.WavePorts)
+            return (new SolverCapabilityVerdict(capability, true, $"a dry run of {what} found no errors.", false), true);
+
+        // R-em3d23-1b — GSLIB is reached only by running: a one-element electrostatic solve with a field
+        // probe, which a ~gslib build refuses as it starts (interpolator.cpp: "InterpolationOperator class
+        // requires MFEM_USE_GSLIB!"). 0.17 s on the F0 install.
+        write("gslib.json", GslibProbeConfig);
+        var solve = run(["--serial", "gslib.json"]);
+        if (solve.Failure is { } solveFailure)
+            return (new SolverCapabilityVerdict(capability, false, $"the one-element solve did not complete ({solveFailure}).", false), false);
+        bool gslib = solve.ExitCode == 0 && exists("postpro/probe-E.csv");
+        return (new SolverCapabilityVerdict(capability, gslib, gslib
+            ? $"a dry run of {what} found no errors, and a one-element solve with a field probe ran (GSLIB is present)."
+            : $"a dry run of {what} passed, but a one-element solve with a field probe failed (exit {solve.ExitCode}): " +
+              $"{TellingLine(solve.Output)}.", false), true);
     }
 
     private static string ProbeConfig(SolverCapability capability) => capability switch
@@ -840,7 +896,7 @@ public sealed class SolverDiscovery
 
     // ── process, PATH, directories ───────────────────────────────────────────────────────────
 
-    private sealed record ProbeRun(int ExitCode, string Output, string? Failure);
+    internal sealed record ProbeRun(int ExitCode, string Output, string? Failure);
 
     /// <summary>Runs one probe through <see cref="Em3dProcessLauncher"/>, as a PROBE, reading both streams
     /// concurrently so a chatty program cannot fill a pipe and hang.</summary>

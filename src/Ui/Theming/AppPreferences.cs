@@ -421,6 +421,12 @@ public sealed class AppPreferences
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Em3dMpiLauncherPath { get; set; }
 
+    /// <summary>brief-em3d-26 R-em3d26-1d — where Palace is looked for: null (Automatic), <c>native</c>, or
+    /// <c>wsl:&lt;distribution&gt;</c> (<see cref="CircuitRF.Design.Em3d.PalaceLocation"/>). Only Windows shows it.</summary>
+    [JsonPropertyName("em3d_palace_location")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Em3dPalaceLocation { get; set; }
+
     // ── Revision control (RC-4, docs/design/revision-control.md §10A) ─────────────────────────────
     //
     // NINE application-wide preferences, all nullable and all absent-means-the-documented-default, in

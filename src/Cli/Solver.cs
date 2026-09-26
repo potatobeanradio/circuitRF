@@ -82,11 +82,13 @@ internal static class Solver
                 Console.WriteLine($"  {Describe(c.Capability)}: {(c.Available ? "yes" : "no")} — {c.Detail}");
             // brief-em3d-25 — only what circuitRF installed has a remove command; the rest is the user's.
             foreach (var home in new SolverUninstaller().Installed(tool))
-                Console.WriteLine($"  installed by circuitRF: {home.Version} at {home.Home}; " +
+                Console.WriteLine($"  installed by circuitRF: {home.Version} at {home.Home}" +
+                                  (home.Distribution is { } d ? $" in the Linux subsystem distribution '{d}'" : "") + "; " +
                                   $"remove: circuitrf solver remove {SolverHomes.ToolId(tool)} --version {home.Version}");
             if (s.OfferInstall)
-                Console.WriteLine($"  install: circuitrf solver install {SolverHomes.ToolId(tool)}   (recipe {s.Recipe!.Id})");
-            else if (s.Recipe is null && s.Found is not { Validated: true })
+                Console.WriteLine($"  install: circuitrf solver install {SolverHomes.ToolId(tool)}" +
+                                  (s.Recipe is { } r ? $"   (recipe {r.Id})" : "   (inside the Linux subsystem)"));
+            else if (s.Recipe is null && !SolverInstallPlan.HasRoute(tool) && s.Found is not { Validated: true })
                 Console.WriteLine($"  no install recipe for this machine; recipes exist for {SolverRecipes.PlatformsFor(tool)}");
         }
         return 0;
@@ -132,10 +134,13 @@ internal static class Solver
         if (SolverHomes.ToolFromId(name) is not { } tool) return JsonRun.Fail(CliDiagnostics.SolverUnknownTool(name));
 
         string display = SolverDiscovery.For(tool).Name;
-        if (SolverRecipes.For(tool, version) is not { } recipe)
-            return JsonRun.Fail(CliDiagnostics.SolverNoRecipe(display, version, Here(), SolverRecipes.PlatformsFor(tool)));
-
-        var installer = new SolverInstaller();
+        // brief-em3d-26 — on Windows, Palace's plan is the Linux recipe inside a subsystem distribution, and a
+        // precondition that stops it (no subsystem, no distribution, WSL 1, …) is refused with its one step.
+        if (SolverInstallPlan.For(tool, version, out string? refusal) is not { } plan)
+            return JsonRun.Fail(refusal is not null
+                ? CliDiagnostics.SolverInstallRefused(refusal)
+                : CliDiagnostics.SolverNoRecipe(display, version, Here(), SolverRecipes.PlatformsFor(tool)));
+        var (recipe, installer) = (plan.Recipe, plan.Installer);
         Console.Error.WriteLine(installer.Consent(recipe));
         Console.Error.WriteLine();
         if (!yes) return JsonRun.Fail(CliDiagnostics.SolverConsentRequired(SolverHomes.ToolId(tool)));

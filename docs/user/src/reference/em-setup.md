@@ -707,7 +707,7 @@ There are three ways to start an install, and they all do the same thing:
 
 | Program | macOS (Apple silicon) | Linux | Windows |
 |---|---|---|---|
-| Palace 0.18.1 | yes. It is built from source, which takes about an hour. | yes (arm64 and x64). It is built from source. | not yet |
+| Palace 0.18.1 | yes. It is built from source, which takes about an hour. | yes (arm64 and x64). It is built from source. | yes, inside the Linux subsystem (WSL 2), built from source there (see {{anchor: #palace-windows|Palace on Windows}}). *Not yet verified on a Windows machine.* |
 | Gmsh 4.15.2 | yes, from Gmsh's own archive, in under a minute | x64 only. Gmsh publishes no Linux arm64 build. | yes, from Gmsh's own archive |
 | openEMS 0.37.0-rc3 | yes. It is built by openEMS's own script. | yes. It is built by openEMS's own script. | yes, from openEMS's own archive |
 
@@ -746,6 +746,57 @@ installing, or patches anything.
 **A Palace from conda is found too.** A Palace installed in a conda environment is found without any
 Settings entry. circuitRF looks in `$CONDA_PREFIX` and in the environments of `~/miniforge3`,
 `~/mambaforge`, `~/miniconda3`, `~/anaconda3` and `/opt/conda`. The same version check applies to it.
+
+### Palace on Windows: the Linux subsystem {#palace-windows}
+
+Palace does not run natively on Windows. circuitRF runs it inside your own **Windows Subsystem for
+Linux** (WSL 2) distribution instead, and treats it like a Palace on this computer: Simulate, the
+progress, the `.sNp` and the refusals are the same. Gmsh still runs natively on Windows; only Palace runs
+in the subsystem.
+
+**What you need first.** circuitRF does none of these for you. If one is missing, **Install Palace …** and
+a 3D run tell you which one, with the step that fixes it:
+
+| What is missing | What fixes it |
+|---|---|
+| The Linux subsystem is not enabled | In a terminal opened as administrator, run `wsl --install` once, then restart Windows. |
+| Virtualization is turned off | This is a firmware (BIOS/UEFI) setting, not a Windows one. Turn on the processor's virtualization there (Intel VT-x, or AMD-V/SVM). |
+| No Linux distribution is installed | `wsl --install -d Ubuntu`, then start it once so it can create your Linux user. |
+| The distribution is WSL 1 | `wsl --set-version <name> 2`. Everything in it is kept. |
+| The distribution lacks build tools | The one `sudo apt-get install …` line the install names. You run it yourself inside the distribution. |
+
+**Finding it.** circuitRF looks in every WSL 2 distribution, in the order `wsl -l` lists them. Inside
+each it looks in circuitRF's own install folder, then Spack's install trees, then conda environments,
+then the distribution's `PATH`. The first distribution with a validated Palace is used, and the Settings
+row names it. A Palace you built there yourself is found with no setup.
+
+**Installing it.** **Install Palace …** runs the Linux build recipe *inside* the distribution, into
+`~/.circuitrf/solvers/palace/0.18.1/` in its own Linux filesystem. The build is from source, as on Linux.
+It is reported in Palace's issue tracker as taking most of a day inside the subsystem. circuitRF also
+keeps a copy of the install record on the Windows side, so Settings can show the install without
+starting the subsystem.
+
+**How a run works.** circuitRF copies the mesh and the configuration into
+`~/.circuitrf/runs/` inside the distribution, runs Palace there, and copies Palace's result files back
+into the run folder on Windows. It never runs Palace on a Windows drive the subsystem mounts
+(`/mnt/c/…`), because file access across that boundary is slow. The run folder on Windows holds
+everything, just as on any other computer. Palace uses the distribution's own cores and its own MPI.
+**Cancel** stops Palace and every process it started inside the distribution, not only the Windows side.
+
+**Memory.** The subsystem runs in a virtual machine that gets only part of your computer's memory by
+default. circuitRF checks a run against the subsystem's memory, not the computer's. When a run may not
+fit, the warning names the setting that raises it: `memory=` under `[wsl2]` in `.wslconfig` in your
+Windows user folder. Run `wsl --shutdown` after changing it.
+
+**Choosing where Palace runs.** {{anchor: settings.html#em3d|Settings ▸ 3D EM}} has a **Location** row
+under Palace, on Windows only. **Automatic** (the default) uses a native Palace if there ever is one,
+then the subsystem. You can also choose **Native**, or one distribution by name.
+
+**Removing it.** **Uninstall Palace …** removes the folder circuitRF installed inside the distribution.
+The distribution itself, and any packages you installed in it on circuitRF's advice, are yours and
+stay. If the distribution cannot start, nothing is removed and the message says why. If the
+distribution was unregistered, the button reads **Clean up … (missing)** and removes only circuitRF's
+record.
 
 ## Removing the 3D solvers {#uninstall-solvers}
 
@@ -859,7 +910,8 @@ name Palace (and `mpirun`, if you want more than one core) in Settings ▸ 3D EM
 `which mpirun`, run with the environment loaded, print the two paths. Without an `mpirun`, Palace runs
 as a single process and the run's notes say so. Other platforms: *not yet verified* — see Palace's own
 documentation.
-**Palace does not run natively on Windows**; openEMS does.
+**Palace does not run natively on Windows.** circuitRF runs it inside the Linux subsystem instead (see
+{{anchor: #palace-windows|Palace on Windows}}); openEMS runs natively.
 
 <div class="callout note">
 <span class="label">Palace's licence note</span>

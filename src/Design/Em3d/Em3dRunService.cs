@@ -209,25 +209,49 @@ public static class Em3dRunService
         // brief-em3d-25 R-em3d25-1c — every circuitRF-installed program this run found is held until it
         // returns, here and (by a lock file in its home) in every other process, so Uninstall refuses
         // rather than deleting a solver from under the run. A program circuitRF did not install holds nothing.
-        using var inUse = Install.SolverInUse.HoldPrograms(readiness.Select(r => r.Installation?.Path),
-            $"the 3D EM run of '{(setup.Name is { Length: > 0 } n ? n : EmRunService.ResolveResultKey(setup))}'");
+        string holder = $"the 3D EM run of '{(setup.Name is { Length: > 0 } n ? n : EmRunService.ResolveResultKey(setup))}'";
+        using var inUse = Install.SolverInUse.HoldPrograms(readiness.Where(r => r.Installation?.Distribution is null)
+                                                                   .Select(r => r.Installation?.Path), holder);
+        // brief-em3d-26 — one installed inside a Linux subsystem distribution is held by its Windows-side mirror.
+        using var inUseInSubsystem = readiness.Select(r => r.Installation).OfType<SolverInstallation>()
+            .Select(i => Wsl.WslSolverHomes.Hold(Install.SolverHomes.DefaultRoots, i, holder)).OfType<IDisposable>()
+            .ToList() is { Count: > 0 } holds ? new Holds(holds) : null;
 
         // ── each backend's settings ───────────────────────────────────────────────────────────
         Stop? palaceStop = null, openEmsStop = null;
         PalaceSettings? palaceSettings = null;
+        // brief-em3d-26 — where Palace runs: here, or inside a Linux subsystem distribution, with that
+        // distribution's cores and memory.
+        IPalaceRunner palaceRunner = NativePalaceRunner.Instance;
+        Em3dMemoryScope? palaceMemory = null;
         OpenEmsGridSettings? gridSettings = null;
         OpenEmsRunSettings? runSettings = null;
         if (palace)
         {
             var p = readiness.Single(r => r.Tool == SolverTool.Palace).Installation!;
             var g = readiness.Single(r => r.Tool == SolverTool.Gmsh).Installation!;
-            log.Notes.Add($"Solver: Palace {p.DescribeVersion()} at {p.Path}; mesher: Gmsh {g.DescribeVersion()} at {g.Path}.");
+            log.Notes.Add($"Solver: Palace {p.DescribeVersion()} at {p.Where}; mesher: Gmsh {g.DescribeVersion()} at {g.Path}.");
             palaceSettings = PalaceSettings.Resolve(setup.Palace);
-            if (palaceSettings.Problems() is { Count: > 0 } bad)
+            if (p.Distribution is not null)
+            {
+                if (SolverDiscovery.For(SolverTool.Palace).Subsystem is not { } wsl)
+                    palaceStop = new(EmRunStatus.Refused, EmDiagnostics.Forwarded("palace-subsystem",
+                        $"Palace was found in the Linux subsystem distribution '{p.Distribution}', which this machine cannot reach."));
+                else if (Wsl.WslPalace.Runner(wsl, p, out string? subsystemRefusal) is { } runner)
+                {
+                    palaceRunner = runner;
+                    palaceMemory = Wsl.WslPalace.MemoryScope(new Wsl.WslSession(wsl, p.Distribution));
+                    log.Notes.Add($"Palace runs in the Linux subsystem distribution '{p.Distribution}', staged in its own Linux " +
+                                  $"filesystem; the mesh, configuration and results stay in the run directory here. MPI: " +
+                                  $"{runner.MpiLauncher ?? "none"} ({(runner.MpiLauncher is null ? "Palace runs on one process" : "inside the distribution")}).");
+                }
+                else palaceStop = new(EmRunStatus.Refused, EmDiagnostics.Forwarded("palace-subsystem", subsystemRefusal));
+            }
+            if (palaceStop is null && palaceSettings.Problems() is { Count: > 0 } bad)
                 palaceStop = new(EmRunStatus.Refused, EmDiagnostics.Forwarded("palace-settings", string.Join(" ", bad)));
             // brief-em3d-21 R-em3d21-3b — an explicit core count past the physical one is refused, never
-            // oversubscribed.
-            else if (RankRefusal(maxCores, PhysicalCores.Current) is { } ranks)
+            // oversubscribed. brief-em3d-26 R-em3d26-2b — the SUBSYSTEM's cores, where Palace runs there.
+            else if (palaceStop is null && RankRefusal(maxCores, palaceRunner.Cores) is { } ranks)
                 palaceStop = new(EmRunStatus.Refused, EmDiagnostics.Forwarded("palace-ranks", ranks));
         }
         if (openEms)
@@ -259,10 +283,11 @@ public static class Em3dRunService
         PalacePlan? palacePlan = null;
         OpenEmsPlan? openEmsPlan = null;
         if (palace && palaceStop is null)
-            palacePlan = PreparePalace(problem, palaceSettings!, readiness, log, out palaceStop);
+            palacePlan = PreparePalace(problem, palaceSettings!, readiness, palaceRunner, palaceMemory, log, out palaceStop);
         // brief-em3d-21 R-em3d21-2 — will it fit? A warning, and past 150 % a confirmation; still no process.
         if (palacePlan is not null && palaceStop is null &&
-            memory.Admit(PalaceMemoryVerdict(problem, setup, source, palaceSettings!, MachineMemory.PhysicalBytes), log) is { } tooBig)
+            memory.Admit(PalaceMemoryVerdict(problem, setup, source, palaceSettings!, palaceMemory?.Bytes ?? MachineMemory.PhysicalBytes,
+                                             palaceMemory), log) is { } tooBig)
         {
             palaceStop = new(EmRunStatus.Refused, EmDiagnostics.Forwarded(MemoryRefusalSource, tooBig));
             palacePlan = null;
@@ -413,13 +438,20 @@ public static class Em3dRunService
                    Notes: Notes, Errors: Errors, Diagnostic: d, Outputs: outputs is { Count: > 0 } ? outputs : null);
     }
 
+    /// <summary>Several holds released together.</summary>
+    private sealed class Holds(IReadOnlyList<IDisposable> holds) : IDisposable
+    {
+        public void Dispose() { foreach (var h in holds) h.Dispose(); }
+    }
+
     // ── Palace (brief-em3d-7) ─────────────────────────────────────────────────────────────────
 
     private sealed record PalacePlan(PalaceSettings Settings, GmshLowering Lowering, string ConfigJson,
-                                     SolverInstallation Palace, SolverInstallation Gmsh);
+                                     SolverInstallation Palace, SolverInstallation Gmsh, IPalaceRunner Runner,
+                                     Em3dMemoryScope? Memory);
 
     private static PalacePlan? PreparePalace(Em3dProblem problem, PalaceSettings settings, IReadOnlyList<SolverReadiness> readiness,
-                                             RunLog log, out Stop? stop)
+                                             IPalaceRunner runner, Em3dMemoryScope? memoryScope, RunLog log, out Stop? stop)
     {
         stop = null;
         var lowering = GmshGeoWriter.Write(problem, settings);
@@ -437,7 +469,7 @@ public static class Em3dRunService
 
         return new PalacePlan(settings, lowering, config.Json!,
                               readiness.Single(r => r.Tool == SolverTool.Palace).Installation!,
-                              readiness.Single(r => r.Tool == SolverTool.Gmsh).Installation!);
+                              readiness.Single(r => r.Tool == SolverTool.Gmsh).Installation!, runner, memoryScope);
     }
 
     private static Leg ExecutePalace(PalacePlan plan, Em3dProblem problem, EmSetup setup, string resultsRoot, string snpBase,
@@ -448,7 +480,8 @@ public static class Em3dRunService
         Leg Cancelled() => Leg.Failed(Me, EmRunStatus.Cancelled, EmDiagnostics.Cancelled());
         var (settings, lowering, palace) = (plan.Settings, plan.Lowering, plan.Palace);
         var wall = System.Diagnostics.Stopwatch.StartNew();
-        long physical = MachineMemory.PhysicalBytes;
+        long physical = plan.Memory?.Bytes ?? MachineMemory.PhysicalBytes;
+        using var runner = plan.Runner;
 
         string runDir = RunDirectory(resultsRoot, setup, Me);
         try { Directory.CreateDirectory(runDir); }
@@ -474,20 +507,20 @@ public static class Em3dRunService
         // brief-em3d-21 R-em3d21-2 — the mesh's size is known now, and on a problem whose mesh is mostly
         // refinement (a bond wire) it is the first figure that can say the run will not fit.
         if (meshed.Tetrahedra is { } tets &&
-            memory.Admit(MeshMemoryVerdict(tets, settings, physical), log) is { } tooBig)
+            memory.Admit(MeshMemoryVerdict(tets, settings, physical, plan.Memory), log) is { } tooBig)
             return Leg.Failed(Me, EmRunStatus.Refused, EmDiagnostics.Forwarded(MemoryRefusalSource,
                 tooBig + $" The mesh is kept in {runDir}, so a run started anyway reuses it."));
 
         // ── Palace ────────────────────────────────────────────────────────────────────────────
         // brief-em3d-21 R-em3d21-3a — one MPI rank per PHYSICAL core by default (Open MPI's slot count).
-        var cores = PhysicalCores.Current;
+        var cores = runner.Cores;
         int processes = maxCores ?? cores.Count;
         if (maxCores is null && !cores.Measured) log.Notes.Add($"Palace ran on {processes} process(es): {cores.How}.");
         var tracker = new PalaceStageTracker(settings.AdaptiveMaxIterations, settings.SweepAdaptiveTol, control,
                                              electrostatic: problem.Type == Em3dProblemType.Electrostatic);
         PalaceStep solved;
         string? mpiNote;
-        try { solved = PalaceRun.Solve(runDir, plan.ConfigJson, palace.Path, processes, control, ct, out mpiNote, tracker, physical); }
+        try { solved = runner.Solve(runDir, plan.ConfigJson, palace.Path, processes, control, ct, out mpiNote, tracker, physical); }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             return Failed($"Palace could not be staged in '{runDir}' ({e.Message}).");
@@ -526,7 +559,7 @@ public static class Em3dRunService
             // R-em3d23-3 — a port face that supports a second propagating mode gives an S that means something else.
             try
             {
-                var second = PalaceRun.SecondModes(runDir, plan.ConfigJson, palace.Path, problem.Frequency.StopHz,
+                var second = runner.SecondModes(runDir, plan.ConfigJson, palace.Path, problem.Frequency.StopHz,
                                                    [.. wave.Select(p => p.Number)], ct, out string? secondNote);
                 if (second is null) log.Notes.Add($"Whether a wave port's second mode propagates was not checked: {secondNote}.");
                 else if (second.Any(m => m.Propagating))
@@ -1216,14 +1249,14 @@ public static class Em3dRunService
     /// an air box with half the padding (regenerated, so its figure is the smaller problem's).
     /// </summary>
     public static Em3dMemoryVerdict PalaceMemoryVerdict(Em3dProblem problem, EmSetup setup, EmLayoutSource source,
-                                                        PalaceSettings settings, long physicalBytes)
+                                                        PalaceSettings settings, long physicalBytes, Em3dMemoryScope? scope = null)
     {
         // brief-em3d-22 — the volume estimate prices elements per WAVELENGTH, which a static solve does
         // not have; its check is the one after meshing, on Gmsh's own count.
         if (problem.IsStatic) return Em3dMemoryVerdict.Unknown;
         long? estimate = EstimatePalace(problem, settings)?.MemoryBytes;
         if (estimate is not { } e || physicalBytes <= 0 || e <= Em3dMemoryVerdict.WarnFraction * physicalBytes)
-            return Em3dMemoryVerdict.Evaluate(estimate, physicalBytes, []);
+            return Em3dMemoryVerdict.Evaluate(estimate, physicalBytes, [], scope: scope);
 
         var remedies = new List<Em3dMemoryRemedy>();
         var draft = PalaceSettings.Preset(PalaceQuality.Draft);
@@ -1251,7 +1284,7 @@ public static class Em3dRunService
                 remedies.Add(new("an air box with half the padding on every side (AirBox)", EstimatePalace(q, settings)?.MemoryBytes));
         }
         return Em3dMemoryVerdict.Evaluate(e, physicalBytes, [.. remedies.OrderBy(r => r.EstimateBytes ?? long.MaxValue)],
-            basis: "Before meshing, from the 3D model's volumes:");
+            basis: "Before meshing, from the 3D model's volumes:", scope: scope);
     }
 
     /// <summary>
@@ -1259,7 +1292,8 @@ public static class Em3dRunService
     /// reported creating them, through the measured unknowns and bytes per unknown. The remedies are the
     /// ones a mesh this size can be priced for without meshing again.
     /// </summary>
-    public static Em3dMemoryVerdict MeshMemoryVerdict(long tetrahedra, PalaceSettings settings, long physicalBytes)
+    public static Em3dMemoryVerdict MeshMemoryVerdict(long tetrahedra, PalaceSettings settings, long physicalBytes,
+                                                      Em3dMemoryScope? scope = null)
     {
         if (settings.ElementOrder is not (1 or 2)) return Em3dMemoryVerdict.Unknown;
         long e = Em3dSizeEstimate.PalaceMemoryBytesForMesh(tetrahedra, settings.ElementOrder, settings.AdaptiveMaxIterations);
@@ -1270,7 +1304,7 @@ public static class Em3dRunService
             remedies.Add(new("no refinement passes (Palace.AdaptiveMaxIterations: 0)",
                              Em3dSizeEstimate.PalaceMemoryBytesForMesh(tetrahedra, settings.ElementOrder, 0)));
         return Em3dMemoryVerdict.Evaluate(e, physicalBytes, [.. remedies.OrderBy(r => r.EstimateBytes)],
-            basis: $"Gmsh made {tetrahedra.ToString("N0", CultureInfo.InvariantCulture)} tetrahedra.");
+            basis: $"Gmsh made {tetrahedra.ToString("N0", CultureInfo.InvariantCulture)} tetrahedra.", scope: scope);
     }
 
     /// <summary>

@@ -28,7 +28,8 @@ public sealed record SolverStatus(
             ? SolverInstaller.CapabilitiesToCheck(tool).Select(c => d.Probe(found, c)).ToList()
             : [];
         var recipe = SolverRecipes.For(tool);
-        bool offer = recipe is not null && SolverInstaller.WouldHelp(d, found);
+        // brief-em3d-26 — Palace on Windows has no recipe HERE; it installs into the Linux subsystem.
+        bool offer = (recipe is not null || SolverInstallPlan.HasRoute(tool)) && SolverInstaller.WouldHelp(d, found);
         return new SolverStatus(tool, d.Name, found, rejected, d.DescribeForSettings(found, rejected), capabilities, recipe, offer);
     }
 }

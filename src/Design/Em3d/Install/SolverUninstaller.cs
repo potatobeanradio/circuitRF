@@ -1,9 +1,17 @@
 using System.Text;
+using CircuitRF.Design.Em3d.Wsl;
 
 namespace CircuitRF.Design.Em3d.Install;
 
 /// <summary>One home a removal would delete, measured when the plan was made.</summary>
-public sealed record PlannedRemoval(InstallRecord Record, long Bytes);
+/// <param name="Missing">brief-em3d-26 — a home inside a Linux subsystem distribution that has VANISHED (the
+/// distribution was unregistered, or the home deleted there): only circuitRF's mirrored record is left, and
+/// removing it is a clean-up.</param>
+public sealed record PlannedRemoval(InstallRecord Record, long Bytes, bool Missing = false)
+{
+    /// <summary>Where the home is, as a person reads it.</summary>
+    public string Where => Record.Distribution is { } d ? $"{Record.Home} in the Linux subsystem distribution '{d}'" : Record.Home;
+}
 
 /// <summary>
 /// What a removal would do, before it does it (brief-em3d-25 R-em3d25-1b): the homes, their size measured
@@ -75,8 +83,35 @@ public sealed class SolverUninstaller
     /// <summary>Deletes one file. A seam, so a test can make a delete fail part way on any platform.</summary>
     internal Action<string> DeleteFile { get; init; } = File.Delete;
 
-    /// <summary>Every circuitRF-installed home of <paramref name="tool"/>, newest first.</summary>
-    public IReadOnlyList<InstallRecord> Installed(SolverTool tool) => SolverHomes.Published(tool, Roots);
+    /// <summary>brief-em3d-26 — the Linux subsystem a mirrored home is removed through. Null reads Palace's
+    /// discovery's (the real <c>wsl.exe</c> on Windows); a test hands in a fake.</summary>
+    internal IWsl? Subsystem { get; init; }
+
+    private IWsl? ResolvedSubsystem => Subsystem ?? Discovery(SolverTool.Palace).Subsystem;
+
+    /// <summary>Every circuitRF-installed home of <paramref name="tool"/>, newest first — on this machine, and
+    /// (brief-em3d-26) inside a Linux subsystem distribution, read from its Windows-side mirror.</summary>
+    public IReadOnlyList<InstallRecord> Installed(SolverTool tool)
+        => SolverHomes.Published(tool, Roots).Concat(WslSolverHomes.Mirrors(Roots, tool))
+                      .OrderByDescending(r => r.InstalledAt).ToList();
+
+    /// <summary>
+    /// One home as a plan lists it. A native home is measured now. A home in the Linux subsystem is listed at
+    /// the size its record measured at install and checked for having vanished, WITHOUT starting the
+    /// distribution (R-em3d26-3a: Settings sees it without starting the subsystem).
+    /// </summary>
+    private PlannedRemoval Planned(InstallRecord r)
+        => r.Distribution is null
+            ? new(r, SolverInstaller.MeasureBytes(r.Home))
+            : new(r, r.SizeBytes, WslSolverHomes.Missing(ResolvedSubsystem, r));
+
+    /// <summary>The Windows-side mirror directory of a subsystem home, under whichever root holds it.</summary>
+    private string MirrorOf(InstallRecord r)
+        => Roots.Select(root => WslSolverHomes.MirrorDirectory(root, r)).FirstOrDefault(Directory.Exists)
+           ?? WslSolverHomes.MirrorDirectory(Roots[0], r);
+
+    /// <summary>The directory an install of this home holds its lock in: the tool directory, on this machine's side.</summary>
+    private string LockDirectory(InstallRecord r) => Path.GetDirectoryName(r.Distribution is null ? r.Home : MirrorOf(r))!;
 
     /// <summary>Every circuitRF-installed home of every tool.</summary>
     public IReadOnlyList<InstallRecord> InstalledAll()
@@ -87,7 +122,7 @@ public sealed class SolverUninstaller
     /// version, measured — what R-em3d25-3 lists after a newer version is installed.
     /// </summary>
     public IReadOnlyList<PlannedRemoval> Superseded(SolverTool tool, string current)
-        => Installed(tool).Where(r => r.Version != current).Select(r => new PlannedRemoval(r, SolverInstaller.MeasureBytes(r.Home))).ToList();
+        => Installed(tool).Where(r => r.Version != current).Select(Planned).ToList();
 
     // ── plans ────────────────────────────────────────────────────────────────────────────────────
 
@@ -117,7 +152,7 @@ public sealed class SolverUninstaller
             return Refuse($"circuitRF has installed {homes.Count} versions of {name}: {Versions(homes)}. Name the one to remove.");
         else chosen = homes[0];
 
-        var planned = new[] { new PlannedRemoval(chosen, SolverInstaller.MeasureBytes(chosen.Home)) };
+        var planned = new[] { Planned(chosen) };
         return new(planned, leftovers, null, Confirm(planned, leftovers, all: false));
     }
 
@@ -129,7 +164,7 @@ public sealed class SolverUninstaller
         if (homes.Count == 0 && leftovers.Count == 0)
             return Refuse("circuitRF has installed no 3D solvers for this account, so there is nothing to remove. " +
                           "A solver you installed yourself is yours to remove.");
-        var planned = homes.Select(r => new PlannedRemoval(r, SolverInstaller.MeasureBytes(r.Home))).ToList();
+        var planned = homes.Select(Planned).ToList();
         return new(planned, leftovers, null, Confirm(planned, leftovers, all: true));
     }
 
@@ -177,7 +212,11 @@ public sealed class SolverUninstaller
         var sb = new StringBuilder();
         if (all && planned.Count > 0) sb.AppendLine("This removes every 3D solver circuitRF installed for this account:");
         foreach (var p in planned)
-            sb.AppendLine($"{(all ? "  • " : "Remove ")}{Discovery(p.Record.Tool).Name} {p.Record.Version} — {Size(p.Bytes)}, at {p.Record.Home}");
+            sb.AppendLine(p.Missing
+                ? $"{(all ? "  • " : "Clean up ")}{Discovery(p.Record.Tool).Name} {p.Record.Version} — MISSING: its home in the Linux subsystem " +
+                  $"distribution '{p.Record.Distribution}' is gone, so this removes only circuitRF's record of it"
+                : $"{(all ? "  • " : "Remove ")}{Discovery(p.Record.Tool).Name} {p.Record.Version} — {Size(p.Bytes)}" +
+                  $"{(p.Record.Distribution is null ? "" : " (as measured when it was installed)")}, at {p.Where}");
         if (leftovers.Count > 0)
         {
             sb.AppendLine((planned.Count > 0 ? "It also finishes" : "This finishes") + " an earlier removal that stopped part way:");
@@ -192,6 +231,10 @@ public sealed class SolverUninstaller
         sb.AppendLine();
         sb.Append("Your documents are not touched: setups, meshes, results and run directories live in your workspaces, " +
                   "and every one of them stays. Solvers you installed yourself stay too. Afterwards a 3D run offers Install … again.");
+        // brief-em3d-26 R-em3d26-3c — the distribution, and what the user installed on circuitRF's advice, stay theirs.
+        foreach (string d in planned.Where(p => p.Record.Distribution is not null).Select(p => p.Record.Distribution!).Distinct(StringComparer.OrdinalIgnoreCase))
+            sb.Append($" The Linux subsystem distribution '{d}' stays, and so do any packages you installed in it on circuitRF's " +
+                      "advice (the build tools): they are yours, and yours to remove.");
         return sb.ToString();
     }
 
@@ -238,10 +281,11 @@ public sealed class SolverUninstaller
             {
                 string name = Discovery(tool).Name;
                 foreach (string toolDir in plan.Homes.Where(h => h.Record.Tool == tool)
-                                                     .Select(h => Path.GetDirectoryName(h.Record.Home)!).Distinct())
+                                                     .Select(h => LockDirectory(h.Record)).Distinct())
                 {
                     try
                     {
+                        Directory.CreateDirectory(toolDir);
                         gates.Add(new FileStream(Path.Combine(toolDir, SolverHomes.InstallLockFile), FileMode.OpenOrCreate,
                                                  FileAccess.ReadWrite, FileShare.None, 1, FileOptions.DeleteOnClose));
                     }
@@ -257,7 +301,7 @@ public sealed class SolverUninstaller
                 }
             }
 
-            var busy = plan.Homes.Select(h => (h, Holders: SolverInUse.HoldersOf(h.Record.Home)))
+            var busy = plan.Homes.Select(h => (h, Holders: SolverInUse.HoldersOf(h.Record.Distribution is null ? h.Record.Home : MirrorOf(h.Record))))
                                  .Where(x => x.Holders.Count > 0).ToList();
             if (busy.Count > 0)
             {
@@ -268,10 +312,27 @@ public sealed class SolverUninstaller
                 return new(RemovalStatus.Refused, sb.ToString(), [], []);
             }
 
+            // brief-em3d-26 R-em3d26-3d — a home inside a distribution is removed THROUGH it, so a distribution
+            // that cannot start refuses the whole removal, naming why, before anything is touched.
+            foreach (string d in plan.Homes.Where(h => h.Record.Distribution is not null && !h.Missing)
+                                           .Select(h => h.Record.Distribution!).Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                string? stuck = ResolvedSubsystem is { } wsl ? new WslSession(wsl, d).CannotStart() : "the Linux subsystem is not available here";
+                if (stuck is not null)
+                    return new(RemovalStatus.Refused,
+                               $"Nothing was removed: circuitRF installed Palace inside the Linux subsystem distribution '{d}', and {stuck}. " +
+                               "Make it start, then remove again.", [], []);
+            }
+
             var removed = new List<string>();
             var left    = new List<string>();
             foreach (var h in plan.Homes)
             {
+                if (h.Record.Distribution is not null)
+                {
+                    RemoveInSubsystem(h, removed, left);
+                    continue;
+                }
                 string home = h.Record.Home;
                 if (!Directory.Exists(home)) { removed.Add(home); continue; }
                 string removing = home + SolverHomes.RemovingSuffix;
@@ -294,7 +355,7 @@ public sealed class SolverUninstaller
                 DeleteQuietly(removing, left);
                 removed.Add(home);
             }
-            foreach (string toolDir in plan.Homes.Select(h => Path.GetDirectoryName(h.Record.Home)!)
+            foreach (string toolDir in plan.Homes.Where(h => h.Record.Distribution is null).Select(h => Path.GetDirectoryName(h.Record.Home)!)
                                                  .Concat(plan.Leftovers.Select(l => Path.GetDirectoryName(l.Path)!)).Distinct())
                 FinishInterrupted(toolDir, left);
             removed.AddRange(plan.Leftovers.Select(l => l.Path).Where(p => !Directory.Exists(p)));
@@ -305,6 +366,39 @@ public sealed class SolverUninstaller
         {
             foreach (var g in gates) g.Dispose();
         }
+    }
+
+    /// <summary>
+    /// brief-em3d-26 R-em3d26-3d — a home inside a distribution: renamed out of discovery's sight
+    /// (<c>mv</c>, as natively), deleted (<c>rm -rf</c>), then its Windows-side mirror. A vanished home has
+    /// only the mirror left to remove. Where the rename fails, the record inside is removed first, which is
+    /// what unpublishes it.
+    /// </summary>
+    private void RemoveInSubsystem(PlannedRemoval h, List<string> removed, List<string> left)
+    {
+        var r = h.Record;
+        if (!h.Missing && ResolvedSubsystem is { } wsl)
+        {
+            var session = new WslSession(wsl, r.Distribution!);
+            string removing = r.Home + SolverHomes.RemovingSuffix;
+            session.RemoveTree(removing);   // an earlier attempt's remains, under the same name
+            if (!session.Exec(["mv", "-T", "--", r.Home, removing]).Ok)
+            {
+                if (!session.Exec(["rm", "-f", "--", WslPaths.Combine(r.Home, SolverHomes.RecordFile)]).Ok)
+                {
+                    left.Add(h.Where);
+                    return;
+                }
+                removing = r.Home;
+            }
+            if (!session.RemoveTree(removing).Ok)
+            {
+                left.Add($"{removing} in the Linux subsystem distribution '{r.Distribution}'");
+                return;
+            }
+        }
+        DeleteQuietly(MirrorOf(r), left);
+        removed.Add(h.Where);
     }
 
     /// <summary>Deletes every <c>*.removing</c> directory an interrupted removal left in <paramref name="toolDir"/>.</summary>

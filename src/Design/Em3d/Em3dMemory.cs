@@ -192,8 +192,10 @@ public sealed record Em3dMemoryVerdict(Em3dMemoryLevel Level, long? EstimateByte
     /// <paramref name="remedies"/> are listed in the order given — the order of their effect.
     /// </summary>
     /// <param name="basis">A sentence put first, saying what the estimate rests on.</param>
+    /// <param name="scope">Whose memory <paramref name="physical"/> is — brief-em3d-26: the Linux subsystem's,
+    /// with the setting that raises it. Null is this machine's.</param>
     public static Em3dMemoryVerdict Evaluate(long? estimate, long physical, IReadOnlyList<Em3dMemoryRemedy> remedies,
-                                             string? basis = null)
+                                             string? basis = null, Em3dMemoryScope? scope = null)
     {
         if (estimate is not { } e || physical <= 0) return new(Em3dMemoryLevel.Fits, estimate, physical, null);
         double share = (double)e / physical;
@@ -201,8 +203,8 @@ public sealed record Em3dMemoryVerdict(Em3dMemoryLevel Level, long? EstimateByte
 
         var level = share > SevereFraction ? Em3dMemoryLevel.Severe : Em3dMemoryLevel.Warning;
         string pct = (share * 100).ToString("0", CultureInfo.InvariantCulture);
-        string head = (basis is null ? "" : basis + " ") + $"Palace's memory for this run is estimated at about {MachineMemory.Format(e)}, {pct} % of this " +
-                      $"machine's {MachineMemory.Format(physical)}. " +
+        string head = (basis is null ? "" : basis + " ") + $"Palace's memory for this run is estimated at about {MachineMemory.Format(e)}, {pct} % of " +
+                      $"{scope?.Owner ?? "this machine's"} {MachineMemory.Format(physical)}. " +
                       (level == Em3dMemoryLevel.Severe
                           ? "At that size the run will very likely swap or be killed by the operating system. "
                           : "The estimate errs high by construction (it uses the highest memory per unknown circuitRF has " +
@@ -211,6 +213,18 @@ public sealed record Em3dMemoryVerdict(Em3dMemoryLevel Level, long? EstimateByte
         string tail = useful.Count == 0 ? ""
             : "In order of effect: " + string.Join("; ", useful.Select(r =>
                   $"{r.What} — about {MachineMemory.Format(r.EstimateBytes!.Value)}")) + ".";
-        return new(level, e, physical, (head + tail).TrimEnd());
+        string raise = scope?.Remedy is { } r ? " " + r : "";
+        return new(level, e, physical, (head + tail).TrimEnd() + raise);
     }
 }
+
+/// <summary>
+/// brief-em3d-26 R-em3d26-2c — whose memory a run is checked against, when it is not this machine's: a
+/// Palace in the Linux subsystem runs in a virtual machine that gets a FRACTION of the host's memory by
+/// default, so its check uses that VM's figure (<c>free -b</c> inside it) and names the setting that
+/// raises it.
+/// </summary>
+/// <param name="Bytes">The memory the run can use.</param>
+/// <param name="Owner">Possessive, as the verdict reads it: "the Linux subsystem's".</param>
+/// <param name="Remedy">The sentence naming the setting that raises it.</param>
+public sealed record Em3dMemoryScope(long Bytes, string Owner, string? Remedy);

@@ -31,7 +31,7 @@ public partial class Em3dSolverSettingsView : UserControl
         Load();
         // Loaded fires when the tab is first SHOWN, not when the dialog is built: asking three programs
         // their version is not a cost every opening of Settings should pay.
-        Loaded += (_, _) => RefreshAll();
+        Loaded += (_, _) => { RefreshAll(); RefreshLocations(); };
         // brief-em3d-24 — an install that ends (however it ends) changes what discovery finds.
         CircuitRF.Ui.Layout.Em.SolverInstallRunner.Finished += OnInstallFinished;
         CircuitRF.Ui.Layout.Em.SolverRemovalRunner.Finished += OnRemovalFinished;
@@ -87,7 +87,7 @@ public partial class Em3dSolverSettingsView : UserControl
             // Remove all offers to finish.
             var plan  = new SolverUninstaller().PlanAll();
             var homes = Enum.GetValues<SolverTool>().ToDictionary(t => t, t => plan.Homes.Where(h => h.Record.Tool == t)
-                .Select(h => (h.Record, h.Bytes)).ToList());
+                .Select(h => (h.Record, h.Bytes, h.Missing)).ToList());
             Dispatcher.UIThread.Post(() =>
             {
                 foreach (var (discovery, _, _, panel) in Rows)
@@ -96,17 +96,24 @@ public partial class Em3dSolverSettingsView : UserControl
                     var list = homes[discovery.Tool];
                     for (int i = 0; i < list.Count; i++)
                     {
-                        var (record, bytes) = list[i];
-                        string label = i == 0
-                            ? $"Uninstall {discovery.Name} {record.Version} ({SolverUninstaller.Size(bytes)})…"
-                            : $"Remove older {discovery.Name} {record.Version} ({SolverUninstaller.Size(bytes)})…";
+                        var (record, bytes, missing) = list[i];
+                        // brief-em3d-26 — a home inside a Linux subsystem distribution says so; one that has
+                        // vanished there is offered as the clean-up of circuitRF's record, not as an uninstall.
+                        string where = record.Distribution is { } d ? $" in '{d}'" : "";
+                        string label = missing
+                            ? $"Clean up {discovery.Name} {record.Version}{where} (missing)…"
+                            : i == 0
+                            ? $"Uninstall {discovery.Name} {record.Version}{where} ({SolverUninstaller.Size(bytes)})…"
+                            : $"Remove older {discovery.Name} {record.Version}{where} ({SolverUninstaller.Size(bytes)})…";
                         var button = new Button
                         {
                             Content = label, FontSize = 11, Padding = new Avalonia.Thickness(8, 3),
                             Margin = new Avalonia.Thickness(0, i == 0 ? 6 : 0, 0, 0),
                             HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left,
                         };
-                        ToolTip.SetTip(button, $"Installed by circuitRF at {record.Home}. Shows the space it frees before anything is removed; your documents are not touched.");
+                        ToolTip.SetTip(button, missing
+                            ? $"circuitRF installed this at {record.Home} in the Linux subsystem distribution '{record.Distribution}', and it is no longer there. This removes circuitRF's record of it."
+                            : $"Installed by circuitRF at {record.Home}{(record.Distribution is { } dist ? $" in the Linux subsystem distribution '{dist}'" : "")}. Shows the space it frees before anything is removed; your documents are not touched.");
                         var tool = discovery.Tool;
                         string version = record.Version;
                         button.Click += async (_, _) =>
@@ -154,15 +161,76 @@ public partial class Em3dSolverSettingsView : UserControl
             string text;
             try
             {
-                string palace = SolverDiscovery.Palace.Find(out _)?.Path ?? "";
-                var launcher = PalaceRun.FindMpiLauncher(palace);
-                text = launcher.Path is { } path
-                    ? $"{path} ({launcher.How})."
-                    : $"Not found: {launcher.How}. Palace will run on one core.";
+                var found = SolverDiscovery.Palace.Find(out _);
+                if (found is { Distribution: { } distro } && SolverDiscovery.Palace.Subsystem is { } wsl)
+                {
+                    // brief-em3d-26 R-em3d26-2b — the MPI beside a subsystem Palace, found inside it.
+                    var session = new CircuitRF.Design.Em3d.Wsl.WslSession(wsl, distro);
+                    var (path, how) = session.Home(out string? why) is { } home
+                        ? CircuitRF.Design.Em3d.Wsl.WslPalace.FindMpiLauncher(session, home, found.Path)
+                        : (null, why ?? "the distribution did not answer");
+                    text = path is not null
+                        ? $"{path} in the Linux subsystem distribution '{distro}' ({how}). The path above is not used for it."
+                        : $"Not found: {how}. Palace will run on one core.";
+                }
+                else
+                {
+                    var launcher = PalaceRun.FindMpiLauncher(found?.Path ?? "");
+                    text = launcher.Path is { } path
+                        ? $"{path} ({launcher.How})."
+                        : $"Not found: {launcher.How}. Palace will run on one core.";
+                }
             }
             catch (Exception ex) { text = ex.Message; }
             Dispatcher.UIThread.Post(() => ShowStatus(MpiStatus, text));
         });
+    }
+
+    /// <summary>
+    /// brief-em3d-26 R-em3d26-1d — the location row: Automatic, Native, and one entry per Linux subsystem
+    /// distribution, listed off the UI thread (listing starts no distribution). Windows only; elsewhere the
+    /// row stays hidden, because there is only one location.
+    /// </summary>
+    private void RefreshLocations()
+    {
+        if (SolverDiscovery.Palace.Subsystem is not { } wsl) return;
+        _ = Task.Run(() =>
+        {
+            var state = CircuitRF.Design.Em3d.Wsl.WslDistributions.Read(wsl);
+            Dispatcher.UIThread.Post(() =>
+            {
+                _loading = true;
+                try
+                {
+                    var saved = PalaceLocation.Parse(AppPreferencesIo.Load().Em3dPalaceLocation);
+                    var items = new List<ComboBoxItem>
+                    {
+                        new() { Content = "Automatic", Tag = PalaceLocation.Automatic },
+                        new() { Content = "Native (this computer only)", Tag = PalaceLocation.Native },
+                    };
+                    foreach (var d in state.Distributions)
+                        items.Add(new() { Content = $"Linux subsystem: {d.Name}{(d.Version < 2 ? " (WSL 1 — not usable)" : "")}",
+                                          Tag = PalaceLocation.Subsystem(d.Name) });
+                    if (saved.Kind == PalaceLocationKind.Subsystem && !state.Distributions.Any(d =>
+                            string.Equals(d.Name, saved.Distribution, StringComparison.OrdinalIgnoreCase)))
+                        items.Add(new() { Content = $"Linux subsystem: {saved.Distribution} (not installed)", Tag = saved });
+                    PalaceLocationBox.ItemsSource = items;
+                    PalaceLocationBox.SelectedItem = items.FirstOrDefault(i => i.Tag is PalaceLocation l && l.Kind == saved.Kind &&
+                        string.Equals(l.Distribution, saved.Distribution, StringComparison.OrdinalIgnoreCase)) ?? items[0];
+                    PalaceLocationRow.IsVisible = true;
+                    if (!state.Ready) ToolTip.SetTip(PalaceLocationRow, state.Refusal);
+                }
+                finally { _loading = false; }
+            });
+        });
+    }
+
+    private void OnLocationChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (_loading || PalaceLocationBox.SelectedItem is not ComboBoxItem { Tag: PalaceLocation location }) return;
+        AppPreferencesIo.Update(p => p.Em3dPalaceLocation = location.ToSetting());
+        Refresh(SolverDiscovery.Palace, PalaceStatus, PalaceInstall);
+        RefreshMpi();
     }
 
     /// <summary>Runs discovery for one row off the UI thread and writes its answer back —
