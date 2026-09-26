@@ -52,9 +52,13 @@ public static class PalaceConfigWriter
         // than fitted at a frequency nobody chose.
         foreach (var p in problem.Ports)
             if (p.Z0.Imaginary != 0 || !(p.Z0.Real > 0))
-                return new(null, $"Port {p.Number}'s reference impedance is {Ohms(p.Z0)}. A Palace lumped port " +
-                                 "is referenced to a positive resistance; a reactive or non-positive reference is " +
-                                 "not supported in this version. Set the port's Z0 to a real, positive value.");
+                return new(null, p.Kind == Em3dPortKind.Wave
+                    ? $"Port {p.Number}'s reference impedance is {Ohms(p.Z0)}. A wave port's S-parameters are stated " +
+                      "against one real reference impedance per port, so a reactive or non-positive reference is not " +
+                      "supported. Set the port's Z0 to a real, positive value."
+                    : $"Port {p.Number}'s reference impedance is {Ohms(p.Z0)}. A Palace lumped port " +
+                      "is referenced to a positive resistance; a reactive or non-positive reference is " +
+                      "not supported in this version. Set the port's Z0 to a real, positive value.");
 
         using var ms = new MemoryStream();
         using (var w = new Utf8JsonWriter(ms, new JsonWriterOptions { Indented = true, NewLine = "\n" }))
@@ -97,6 +101,24 @@ public static class PalaceConfigWriter
                 w.WriteEndObject();
             }
             w.WriteEndArray();
+            // brief-em3d-23 R-em3d23-4c — an eigenmode problem's energy by domain, one index per meshed
+            // volume group in attribute order: Palace's domain-E.csv then carries each mode's
+            // participation p_elec[k], which is what says where a mode lives.
+            if (problem.Type == Em3dProblemType.Eigenmode)
+            {
+                w.WriteStartObject("Postprocessing");
+                w.WriteStartArray("Energy");
+                int index = 0;
+                foreach (var g in groups.Where(g => g.Dimension == 3))
+                {
+                    w.WriteStartObject();
+                    w.WriteNumber("Index", ++index);
+                    Attributes(w, [g.Attribute]);
+                    w.WriteEndObject();
+                }
+                w.WriteEndArray();
+                w.WriteEndObject();
+            }
             w.WriteEndObject();
 
             if (problem.IsStatic) WriteStatic(w, problem, groups, settings);
@@ -120,6 +142,8 @@ public static class PalaceConfigWriter
         {
             switch (g.Kind)
             {
+                // brief-em3d-23 — a face a wave port or a conductor covers whole has no surface to name.
+                case Em3dGroupKind.Face when g.Expected == 0 && !g.AtLeast: break;
                 case Em3dGroupKind.Face when g.Boundary == Em3dBoundaryKind.Pec: pec.Add(g.Attribute); break;
                 case Em3dGroupKind.Face when g.Boundary == Em3dBoundaryKind.Pmc: pmc.Add(g.Attribute); break;
                 case Em3dGroupKind.Face:                                          absorbing.Add(g.Attribute); break;
@@ -172,20 +196,57 @@ public static class PalaceConfigWriter
         }
 
         // One lumped port per port, each its own excitation, so Palace solves every column of S
-        // and writes it to port-S.csv under the port's own number.
-        w.WriteStartArray("LumpedPort");
-        foreach (var g in groups.Where(g => g.Kind == Em3dGroupKind.Port))
+        // and writes it to port-S.csv under the port's own number. In an eigenmode problem there is no
+        // excitation: a lumped port is its resistance, a load (R-em3d23-4b).
+        bool eigen = problem.Type == Em3dProblemType.Eigenmode;
+        var portGroups = groups.Where(g => g.Kind == Em3dGroupKind.Port)
+                               .Select(g => (Group: g, Port: problem.Ports.Single(q => q.Number == g.PortNumber))).ToList();
+        if (portGroups.Any(x => x.Port.Kind == Em3dPortKind.Lumped) || !problem.HasWavePorts)
         {
-            var p = problem.Ports.Single(q => q.Number == g.PortNumber);
-            w.WriteStartObject();
-            w.WriteNumber("Index", p.Number);
-            Attributes(w, [g.Attribute]);
-            WriteDirection(w, p);
-            w.WriteNumber("R", p.Z0.Real);
-            w.WriteNumber("Excitation", p.Number);
-            w.WriteEndObject();
+            w.WriteStartArray("LumpedPort");
+            foreach (var (g, p) in portGroups.Where(x => x.Port.Kind == Em3dPortKind.Lumped))
+            {
+                w.WriteStartObject();
+                w.WriteNumber("Index", p.Number);
+                Attributes(w, [g.Attribute]);
+                WriteDirection(w, p);
+                w.WriteNumber("R", p.Z0.Real);
+                if (!eigen) w.WriteNumber("Excitation", p.Number);
+                w.WriteEndObject();
+            }
+            w.WriteEndArray();
         }
-        w.WriteEndArray();
+        // brief-em3d-23 R-em3d23-2 — a wave port: its first mode (R-em3d23-3), its de-embedding distance in
+        // Palace's own field (§4.4), and a voltage path across its face so Palace reports the mode's
+        // impedance (port-Z.csv's Z_PV), which the S-parameters are renormalised from. The path runs
+        // from the negative object to the positive one, the sense a lumped port's Direction has here,
+        // so the two kinds share one polarity.
+        if (problem.HasWavePorts)
+        {
+            w.WriteStartArray("WavePort");
+            foreach (var (g, p) in portGroups.Where(x => x.Port.Kind == Em3dPortKind.Wave))
+            {
+                var v = p.VoltagePath!.Value;
+                w.WriteStartObject();
+                w.WriteNumber("Index", p.Number);
+                Attributes(w, [g.Attribute]);
+                w.WriteNumber("Mode", 1);
+                w.WriteNumber("Offset", Math.Round(p.ReferencePlane.ShiftM / GmshGeoWriter.LengthUnitM, 9));
+                if (!eigen) w.WriteNumber("Excitation", p.Number);
+                w.WriteStartArray("VoltagePath");
+                foreach (var q in new[] { v.From, v.To })
+                {
+                    w.WriteStartArray();
+                    w.WriteNumberValue(Math.Round(q.X / GmshGeoWriter.LengthUnitM, 9));
+                    w.WriteNumberValue(Math.Round(q.Y / GmshGeoWriter.LengthUnitM, 9));
+                    w.WriteNumberValue(Math.Round(q.Z / GmshGeoWriter.LengthUnitM, 9));
+                    w.WriteEndArray();
+                }
+                w.WriteEndArray();
+                w.WriteEndObject();
+            }
+            w.WriteEndArray();
+        }
         w.WriteEndObject();
 
         // ── Solver ─────────────────────────────────────────────────────────────────────────
@@ -193,6 +254,17 @@ public static class PalaceConfigWriter
         w.WriteStartObject("Solver");
         w.WriteNumber("Order", settings.ElementOrder);
         w.WriteString("Device", "CPU");
+        if (eigen)
+        {
+            // R-em3d23-4a — N modes above the target, and nothing else the schema does not require.
+            w.WriteStartObject("Eigenmode");
+            w.WriteNumber("N", problem.EigenmodeCount);
+            w.WriteNumber("Target", problem.EigenmodeTargetHz / 1e9);
+            w.WriteEndObject();
+            WriteLinear(w);
+            w.WriteEndObject();
+            return;
+        }
         w.WriteStartObject("Driven");
         w.WriteStartArray("Samples");
         w.WriteStartObject();
@@ -214,15 +286,20 @@ public static class PalaceConfigWriter
         w.WriteEndArray();
         w.WriteNumber("AdaptiveTol", settings.SweepAdaptiveTol);
         w.WriteEndObject();
-        // F0's linear solver, which every reference ran with.
+        WriteLinear(w);
+        w.WriteEndObject();
+
+    }
+
+    /// <summary>F0's linear solver, which every reference ran with.</summary>
+    private static void WriteLinear(Utf8JsonWriter w)
+    {
         w.WriteStartObject("Linear");
         w.WriteString("Type", "Default");
         w.WriteString("KSPType", "GMRES");
         w.WriteNumber("Tol", 1e-8);
         w.WriteNumber("MaxIts", 400);
         w.WriteEndObject();
-        w.WriteEndObject();
-
     }
 
     // ── brief-em3d-22 — the electrostatic and magnetostatic problems ─────────────────────────────

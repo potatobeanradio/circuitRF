@@ -39,9 +39,20 @@ public enum Em3dSection { Hexagon, Circle }
 
 /// <summary>
 /// brief-em3d-22 R-em3d22-1a — what a 3D problem asks: S over a sweep (<see cref="Driven"/>), or a
-/// capacitance or inductance matrix over named terminals. Brief 23 adds <c>Eigenmode</c>.
+/// capacitance or inductance matrix over named terminals; brief-em3d-23 R-em3d23-4a — or the resonant
+/// frequencies and Q of the structure (<see cref="Eigenmode"/>).
 /// </summary>
-public enum Em3dProblemType { Driven, Electrostatic, Magnetostatic }
+public enum Em3dProblemType { Driven, Electrostatic, Magnetostatic, Eigenmode }
+
+/// <summary>
+/// brief-em3d-23 R-em3d23-2a — how a port is fed. <see cref="Lumped"/> is a sheet between two conductors
+/// with a resistance across it; <see cref="Wave"/> is a region of an air-box face, excited and measured by
+/// the line's own first 2D mode.
+/// </summary>
+public enum Em3dPortKind { Lumped, Wave }
+
+/// <summary>A straight path between two points, metres.</summary>
+public readonly record struct Em3dSegment(Point3 From, Point3 To);
 
 // ── Construction primitives ──────────────────────────────────────────────────────────────────
 //
@@ -161,6 +172,20 @@ public sealed record Em3dPort(
     /// Tier A generator builds — is the rectangle. Only a z-normal annulus is supported.
     /// </summary>
     public Em3dAnnulus? Annulus { get; init; }
+
+    /// <summary>
+    /// brief-em3d-23 R-em3d23-2a — <see cref="Em3dPortKind.Wave"/>: the rectangle is a region of one
+    /// air-box face (the port's face), and <see cref="Direction"/> is not read. The de-embedding
+    /// distance is <see cref="Em3dReferencePlane.ShiftM"/>.
+    /// </summary>
+    public Em3dPortKind Kind { get; init; } = Em3dPortKind.Lumped;
+
+    /// <summary>
+    /// A wave port's voltage path, across its face from the negative object to the positive one — the
+    /// sense <see cref="Direction"/> has for a lumped port, so the two kinds of port share one polarity.
+    /// The mode's impedance (Palace's Z_PV) is measured along it. Null on a lumped port.
+    /// </summary>
+    public Em3dSegment? VoltagePath { get; init; }
 }
 
 /// <summary>
@@ -234,6 +259,34 @@ public sealed record Em3dProblem(
 
     /// <summary>True for an electrostatic or magnetostatic problem.</summary>
     public bool IsStatic => Type is Em3dProblemType.Electrostatic or Em3dProblemType.Magnetostatic;
+
+    /// <summary>brief-em3d-23 R-em3d23-4a — how many modes an eigenmode problem finds.</summary>
+    public int EigenmodeCount { get; init; } = 1;
+
+    /// <summary>brief-em3d-23 R-em3d23-4a — the frequency above which an eigenmode problem looks for
+    /// modes, Hz.</summary>
+    public double EigenmodeTargetHz { get; init; }
+
+    /// <summary>True when any port is a wave port.</summary>
+    public bool HasWavePorts => Ports.Any(p => p.Kind == Em3dPortKind.Wave);
+
+    /// <summary>
+    /// brief-em3d-23 — the air-box face a rectangle lies in (<c>xmin</c> … <c>zmax</c>), or null when it
+    /// lies in none. A wave port must lie in one.
+    /// </summary>
+    public string? FaceOf(Point3 min, Point3 max)
+    {
+        var b = Boundary;
+        double tol = 1e-9 * Math.Max(1.0, Math.Max(b.Max.X - b.Min.X, Math.Max(b.Max.Y - b.Min.Y, b.Max.Z - b.Min.Z)));
+        bool On(double lo, double hi, double at) => Math.Abs(lo - at) <= tol && Math.Abs(hi - at) <= tol;
+        if (On(min.X, max.X, b.Min.X)) return "xmin";
+        if (On(min.X, max.X, b.Max.X)) return "xmax";
+        if (On(min.Y, max.Y, b.Min.Y)) return "ymin";
+        if (On(min.Y, max.Y, b.Max.Y)) return "ymax";
+        if (On(min.Z, max.Z, b.Min.Z)) return "zmin";
+        if (On(min.Z, max.Z, b.Max.Z)) return "zmax";
+        return null;
+    }
 
     /// <summary>
     /// R-em3d22-2b — the conductors (solids and sheets) in no terminal and not ground, in problem
@@ -348,9 +401,37 @@ public sealed record Em3dProblem(
                     problems.Add($"Port {p.Number}'s annulus needs 0 < inner radius < outer radius, and an outer " +
                                  "diameter equal to its square's side.");
             }
+
+            if (p.Kind != Em3dPortKind.Wave) continue;
+            if (IsStatic)
+                problems.Add($"Port {p.Number} is a wave port, and a static problem has no wave: its source is a sheet.");
+            else if (FaceOf(p.Min, p.Max) is null)
+                problems.Add($"Port {p.Number} is a wave port, and its rectangle does not lie in a face of the air box. " +
+                             "A wave port is a region of the problem's outer boundary, never inside it.");
+            else if (p.Annulus is not null)
+                problems.Add($"Port {p.Number} is a wave port with an annulus; a wave port's region is its rectangle.");
+            if (p.VoltagePath is not { } v)
+                problems.Add($"Port {p.Number} is a wave port with no voltage path, so its mode's impedance cannot be " +
+                             "measured and its S-parameters could not be stated against a reference impedance.");
+            else if (!InRect(v.From) || !InRect(v.To) || v.From == v.To)
+                problems.Add($"Port {p.Number}'s voltage path does not run across its own face between two distinct points.");
+
+            bool InRect(Point3 q)
+            {
+                double tol = 1e-9 * Math.Max(1.0, Math.Max(p.Max.X - p.Min.X, Math.Max(p.Max.Y - p.Min.Y, p.Max.Z - p.Min.Z)));
+                return q.X >= p.Min.X - tol && q.X <= p.Max.X + tol && q.Y >= p.Min.Y - tol && q.Y <= p.Max.Y + tol &&
+                       q.Z >= p.Min.Z - tol && q.Z <= p.Max.Z + tol;
+            }
         }
 
         if (IsStatic) ValidateTerminals(problems);
+        else if (Type == Em3dProblemType.Eigenmode)
+        {
+            if (EigenmodeCount < 1)
+                problems.Add($"The eigenmode problem asks for {EigenmodeCount} modes; it needs at least one.");
+            if (!(EigenmodeTargetHz > 0) || double.IsInfinity(EigenmodeTargetHz))
+                problems.Add("The eigenmode problem's target frequency is not a positive frequency: modes are found above it.");
+        }
         else if (!(Frequency.StartHz > 0) || !(Frequency.StopHz >= Frequency.StartHz) || Frequency.Points < 1)
             problems.Add($"The sweep {Frequency.StartHz.ToString("R", CultureInfo.InvariantCulture)} to " +
                          $"{Frequency.StopHz.ToString("R", CultureInfo.InvariantCulture)} Hz at " +

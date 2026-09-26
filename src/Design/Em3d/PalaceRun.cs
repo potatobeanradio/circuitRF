@@ -58,6 +58,29 @@ public sealed record PalaceRunFacts(long? InitialElements, long? FinalElements, 
 /// port numbers asked for.</summary>
 public sealed record PalacePortS(double[] FrequenciesHz, Complex[][,] S);
 
+/// <summary>
+/// brief-em3d-23 R-em3d23-4c — one mode of an eigenmode solve, from <c>eig.csv</c>: its complex frequency
+/// (Hz), Palace's Q, and the eigensolver's backward and absolute errors.
+/// </summary>
+public sealed record PalaceMode(int Index, double FrequencyHz, double ImagFrequencyHz, double Q, double BackwardError,
+                                double AbsoluteError);
+
+/// <summary>brief-em3d-23 — a wave port's mode as Palace reported it in its log: <c>Port k, mode m: kₙ = a+bi m⁻¹</c>.</summary>
+public sealed record PalaceWaveMode(int Port, int Mode, Complex Kn)
+{
+    /// <summary>
+    /// Propagating: kₙ's decay is under a tenth of its phase, so the mode loses under 5.5 dB per wavelength —
+    /// a guided mode, whose only decay is its materials' loss (a tanδ/2 of it). An evanescent mode's kₙ is
+    /// almost purely imaginary. Between the two is a LEAKY mode of a port face with open (absorbing) edges:
+    /// on the 50 Ω microstrip at 10 GHz with an 8-height region Palace's mode 2 was 188.8 − 173.6i m⁻¹,
+    /// decay nearly equal to phase — gone within a few millimetres, and not a mode the port can launch.
+    /// </summary>
+    public bool Propagating => Kn.Real > 0 && Math.Abs(Kn.Imaginary) <= 0.1 * Kn.Real;
+
+    /// <summary>The distance over which the mode's amplitude falls by 1/e, metres (∞ for a lossless one).</summary>
+    public double DecayLengthM => Kn.Imaginary == 0 ? double.PositiveInfinity : 1 / Math.Abs(Kn.Imaginary);
+}
+
 public static class PalaceRun
 {
     public const string MeshHashFile = "model.geo.sha256";
@@ -400,6 +423,207 @@ public static class PalaceRun
             }
         }
         return m;
+    }
+
+    // ── brief-em3d-23: wave ports and eigenmodes ───────────────────────────────────────────────
+
+    /// <summary>A wave port's mode impedance, Z_PV, per frequency (written because each port states a voltage path).</summary>
+    public const string PortZFile = "port-Z.csv";
+
+    /// <summary>An eigenmode solve's modes.</summary>
+    public const string EigFile = "eig.csv";
+
+    /// <summary>An eigenmode solve's external Q per lumped port (a port with a resistance).</summary>
+    public const string PortQFile = "port-Q.csv";
+
+    /// <summary>An eigenmode solve's energy per postprocessing domain, and each domain's participation.</summary>
+    public const string DomainEnergyFile = "domain-E.csv";
+
+    /// <summary>
+    /// <b>R-em3d23-2d — a wave port's mode impedance, by column NAME.</b> Palace 0.18.1 writes
+    /// <c>f (GHz)</c>, <c>Re{Z_PV[i]} (Ohm)</c> and <c>Im{Z_PV[i]} (Ohm)</c> per wave port that states a voltage
+    /// path (postoperatorcsv.cpp, InitializePortZ; its own regression reference coaxial/lumped_wave/port-Z.csv).
+    /// Z_PV = |V|²/P over the unit-power mode — the impedance the power-normalised modal S is referred to.
+    /// Returns Z[f][k] in <paramref name="ports"/>' order.
+    /// </summary>
+    public static Complex[][]? ReadPortZ(string csvPath, IReadOnlyList<int> ports, out double[] frequenciesHz, out string? error)
+    {
+        frequenciesHz = [];
+        var table = ReadTable(csvPath, out error);
+        if (table is null) return null;
+        var (header, rows) = table.Value;
+        int fCol = header.IndexOf("f (GHz)");
+        if (fCol < 0) { error = $"Palace's {PortZFile} has no column 'f (GHz)' ({csvPath})."; return null; }
+        var re = new int[ports.Count];
+        var im = new int[ports.Count];
+        for (int k = 0; k < ports.Count; k++)
+        {
+            re[k] = header.IndexOf($"Re{{Z_PV[{ports[k]}]}} (Ohm)");
+            im[k] = header.IndexOf($"Im{{Z_PV[{ports[k]}]}} (Ohm)");
+            if (re[k] < 0 || im[k] < 0)
+            {
+                error = $"Palace's {PortZFile} has no column 'Re{{Z_PV[{ports[k]}]}} (Ohm)' ({csvPath}).";
+                return null;
+            }
+        }
+        var f = new List<double>();
+        var z = new List<Complex[]>();
+        foreach (var cells in rows)
+        {
+            double Cell(int c) => c < cells.Length && double.TryParse(cells[c].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double v) ? v : double.NaN;
+            var row = new Complex[ports.Count];
+            for (int k = 0; k < ports.Count; k++) row[k] = new Complex(Cell(re[k]), Cell(im[k]));
+            if (double.IsNaN(Cell(fCol)) || row.Any(c => double.IsNaN(c.Real) || double.IsNaN(c.Imaginary)))
+            {
+                error = $"A row of Palace's {PortZFile} is not all numbers ({csvPath}).";
+                return null;
+            }
+            f.Add(Cell(fCol) * 1e9);
+            z.Add(row);
+        }
+        frequenciesHz = [.. f];
+        return [.. z];
+    }
+
+    /// <summary>
+    /// <b>R-em3d23-4c — the modes, by column NAME.</b> Palace 0.18.1 writes <c>m</c>, <c>Re{f} (GHz)</c>,
+    /// <c>Im{f} (GHz)</c>, <c>Q</c>, <c>Error (Bkwd.)</c>, <c>Error (Abs.)</c> (postoperatorcsv.cpp,
+    /// InitializeEig; the run committed under testdata/em3d/eigen/).
+    /// </summary>
+    public static IReadOnlyList<PalaceMode>? ReadModes(string csvPath, out string? error)
+    {
+        var table = ReadTable(csvPath, out error);
+        if (table is null) return null;
+        var (header, rows) = table.Value;
+        string[] names = ["m", "Re{f} (GHz)", "Im{f} (GHz)", "Q", "Error (Bkwd.)", "Error (Abs.)"];
+        var cols = names.Select(n => header.IndexOf(n)).ToArray();
+        for (int k = 0; k < names.Length; k++)
+            if (cols[k] < 0) { error = $"Palace's {EigFile} has no column '{names[k]}' ({csvPath})."; return null; }
+        var modes = new List<PalaceMode>();
+        foreach (var cells in rows)
+        {
+            var v = cols.Select(c => c < cells.Length &&
+                double.TryParse(cells[c].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double x) ? x : double.NaN).ToArray();
+            if (v.Take(3).Any(double.IsNaN)) { error = $"A row of Palace's {EigFile} is not all numbers ({csvPath})."; return null; }
+            modes.Add(new PalaceMode((int)Math.Round(v[0]), v[1] * 1e9, v[2] * 1e9, v[3], v[4], v[5]));
+        }
+        return modes;
+    }
+
+    /// <summary>
+    /// Columns of a per-mode table (<c>port-Q.csv</c>'s <c>Q_ext[i]</c>, <c>domain-E.csv</c>'s <c>p_elec[k]</c>)
+    /// by NAME, rows matched to modes by their <c>m</c> value. Null (with no error) when the file is absent —
+    /// Palace writes neither when there is nothing to report.
+    /// </summary>
+    public static double[,]? ReadModeColumns(string csvPath, IReadOnlyList<string> columns, IReadOnlyList<int> modes, out string? error)
+    {
+        error = null;
+        if (!File.Exists(csvPath)) return null;
+        var table = ReadTable(csvPath, out error);
+        if (table is null) return null;
+        var (header, rows) = table.Value;
+        int mCol = header.IndexOf("m");
+        var cols = columns.Select(c => header.IndexOf(c)).ToArray();
+        if (mCol < 0 || cols.Any(c => c < 0))
+        {
+            error = $"Palace's {Path.GetFileName(csvPath)} has no column '{(mCol < 0 ? "m" : columns[Array.IndexOf(cols, -1)])}' ({csvPath}).";
+            return null;
+        }
+        var byMode = new Dictionary<int, string[]>();
+        foreach (var cells in rows)
+            if (mCol < cells.Length && double.TryParse(cells[mCol].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double m))
+                byMode[(int)Math.Round(m)] = cells;
+        var result = new double[modes.Count, columns.Count];
+        for (int i = 0; i < modes.Count; i++)
+            for (int j = 0; j < columns.Count; j++)
+                result[i, j] = byMode.TryGetValue(modes[i], out var cells) && cols[j] < cells.Length &&
+                               double.TryParse(cells[cols[j]].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double v)
+                    ? v : double.NaN;
+        return result;
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex WaveModeLine = new(
+        @"^\s*Port (\d+), mode (\d+): k\S* = ([-+]?\d+(?:\.\d+)?(?:e[-+]\d+)?)([-+]\d+(?:\.\d+)?(?:e[-+]\d+)?)i m", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// brief-em3d-23 — a wave port's mode line (waveportoperator.cpp, 0.18.1):
+    /// <c> Port 1, mode 1: kₙ = 1.234e+02+5.000e-03i m⁻¹</c>, with <c>, Z_PV = …</c> after it when the port
+    /// states a voltage path. Null for any other line.
+    /// </summary>
+    public static PalaceWaveMode? ParseWaveMode(string line)
+    {
+        var m = WaveModeLine.Match(line);
+        if (!m.Success) return null;
+        static double D(string s) => double.Parse(s, NumberStyles.Float, CultureInfo.InvariantCulture);
+        return new PalaceWaveMode(int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture),
+                                  int.Parse(m.Groups[2].Value, CultureInfo.InvariantCulture),
+                                  new Complex(D(m.Groups[3].Value), D(m.Groups[4].Value)));
+    }
+
+    /// <summary>
+    /// <b>R-em3d23-3 — is each wave port's SECOND mode propagating at the top of the band?</b> Palace 0.18.1
+    /// reports only the mode a port is set to (its log's <c>Port k, mode m: kₙ</c> line; the mode solver's
+    /// own print level is fixed at 0), so the only way to hear about mode 2 from Palace itself is to ask for
+    /// it: this runs Palace on the same mesh with every wave port set to mode 2 at the sweep's top frequency,
+    /// and stops it — killing the tree — as soon as every port has printed that line, which Palace does
+    /// while it sets up the ports, before the 3D solve. Null when it could not be asked (the reason is in
+    /// <paramref name="note"/>); nothing here fails the run.
+    /// </summary>
+    public static IReadOnlyList<PalaceWaveMode>? SecondModes(string runDir, string configJson, string palace, double topHz,
+                                                            IReadOnlyList<int> wavePorts, CancellationToken ct, out string? note)
+    {
+        note = null;
+        string dir = Path.Combine(runDir, "mode2");
+        try
+        {
+            Directory.CreateDirectory(dir);
+            var root = System.Text.Json.Nodes.JsonNode.Parse(configJson)!.AsObject();
+            root["Problem"]!["Output"] = "postpro";
+            root["Model"]!["Mesh"] = Path.Combine("..", GmshGeoWriter.MeshFile);
+            root["Model"]!.AsObject().Remove("Refinement");
+            foreach (var wp in root["Boundaries"]!["WavePort"]!.AsArray()) wp!["Mode"] = 2;
+            var driven = root["Solver"]!["Driven"]!.AsObject();
+            driven["Samples"] = new System.Text.Json.Nodes.JsonArray(new System.Text.Json.Nodes.JsonObject
+            {
+                ["Type"] = "Point",
+                ["Freq"] = new System.Text.Json.Nodes.JsonArray(topHz / 1e9),
+            });
+            driven.Remove("AdaptiveTol");
+            WriteText(Path.Combine(dir, PalaceConfigWriter.ConfigFile), root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidOperationException or NullReferenceException)
+        {
+            note = $"the second-mode check could not be staged ({e.Message})";
+            return null;
+        }
+
+        var seen = new Dictionary<int, PalaceWaveMode>();
+        void OnLine(string line)
+        {
+            if (ParseWaveMode(line) is { Mode: 2 } m) seen[m.Port] = m;
+            if (wavePorts.All(seen.ContainsKey)) throw new OperationCanceledException();
+        }
+        bool bareBinary = palace.EndsWith(".bin", StringComparison.Ordinal);
+        Interlocked.Increment(ref _palace);
+        var run = RunProcess(palace, bareBinary ? [PalaceConfigWriter.ConfigFile] : ["--serial", PalaceConfigWriter.ConfigFile],
+                             dir, Path.Combine(dir, PalaceLogFile), Em3dProcessKind.Solver,
+                             env: new Dictionary<string, string> { ["OMP_NUM_THREADS"] = "1" }, null, ct, new ProcessWatch(OnLine, 0));
+        if (wavePorts.All(seen.ContainsKey)) return [.. wavePorts.Select(p => seen[p])];
+        note = run.Cancelled ? "the second-mode check was cancelled"
+             : run.StartFailure is { } why ? $"the second-mode check could not start Palace ({why})"
+             : $"Palace printed no mode-2 line for every wave port (exit {run.ExitCode}; its log is {Path.Combine(dir, PalaceLogFile)})";
+        return null;
+    }
+
+    /// <summary>A CSV's trimmed header and its non-empty rows' cells, or null with an error naming the file.</summary>
+    private static (List<string> Header, List<string[]> Rows)? ReadTable(string csvPath, out string? error)
+    {
+        error = null;
+        string file = Path.GetFileName(csvPath);
+        if (!File.Exists(csvPath)) { error = $"Palace finished but wrote no {file} ({csvPath})."; return null; }
+        var lines = File.ReadAllLines(csvPath).Where(l => l.Trim().Length > 0).ToList();
+        if (lines.Count < 2) { error = $"Palace's {file} holds no row ({csvPath})."; return null; }
+        return (lines[0].Split(',').Select(h => h.Trim()).ToList(), lines.Skip(1).Select(l => l.Split(',')).ToList());
     }
 
     /// <summary>What <c>postpro/palace.json</c> records about the mesh and the adaptive passes. The

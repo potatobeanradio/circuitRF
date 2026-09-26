@@ -1489,6 +1489,9 @@ static int RunEm(string[] args)
 
     // brief-em3d-22 R-em3d22-3c/4c — a static run's result is a matrix, printed; --json carries the cube.
     if (setup.IsStatic3D && result.Data is { } matrixSet) PrintStaticMatrix(matrixSet, setup);
+    // brief-em3d-23 R-em3d23-4c — an eigenmode run's modes, printed; --json carries the cubes.
+    if (setup.Is3D && setup.Problem3D == CircuitRF.Engine.Em3d.Em3dProblemType.Eigenmode && result.Data is { } modeSet)
+        PrintModes(modeSet);
 
     if (result.Data is { } ds)
     {
@@ -1540,6 +1543,37 @@ static void PrintStaticMatrix(RfCore.Data.DataSet data, EmSetup setup)
     for (int i = 0; i < n; i++)
         Console.WriteLine(("  " + names[i]).PadRight(width) + string.Concat(Enumerable.Range(0, n).Select(j =>
             (v[i * n + j] * scale).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture).PadLeft(width))));
+}
+
+/// <summary>
+/// brief-em3d-23 R-em3d23-4c — the modes on stdout: mode, f, Q (and Q with the ports' loading removed when
+/// there are ports), and where Palace wrote it, each mode's largest energy participation by region — which is
+/// what says where a mode lives.
+/// </summary>
+static void PrintModes(RfCore.Data.DataSet data)
+{
+    var inv = System.Globalization.CultureInfo.InvariantCulture;
+    if (!data.Cubes.TryGetValue(CircuitRF.Engine.Em3d.Em3dEigenResult.FrequencyCube, out var f) ||
+        !data.Cubes.TryGetValue(CircuitRF.Engine.Em3d.Em3dEigenResult.QCube, out var q)) return;
+    data.Cubes.TryGetValue(CircuitRF.Engine.Em3d.Em3dEigenResult.UnloadedQCube, out var qu);
+    data.Cubes.TryGetValue(CircuitRF.Engine.Em3d.Em3dEigenResult.ParticipationCube, out var part);
+    var modes = f.Axes[0].Values;
+    string[]? domains = part?.Axes[1].Labels;
+    Console.WriteLine("Mode         f (GHz)           Q" + (qu is null ? "" : "   Q unloaded") + (domains is null ? "" : "   Most energy in"));
+    for (int i = 0; i < modes.Length; i++)
+    {
+        string line = $"{((int)modes[i]).ToString(inv),4}  {(f.RealValues[i] / 1e9).ToString("0.000000", inv),14}  {Q(q.RealValues[i]),10}";
+        if (qu is not null) line += $"  {Q(qu.RealValues[i]),11}";
+        if (part is not null && domains is not null)
+        {
+            int n = domains.Length, best = 0;
+            for (int k = 1; k < n; k++) if (part.RealValues[i * n + k] > part.RealValues[i * n + best]) best = k;
+            line += $"   {domains[best]} ({(100 * part.RealValues[i * n + best]).ToString("0", inv)} %)";
+        }
+        Console.WriteLine(line);
+    }
+
+    string Q(double v) => double.IsPositiveInfinity(v) ? "lossless" : double.IsNaN(v) ? "—" : v.ToString("0.0", inv);
 }
 
 /// <summary>The run's own progress, on stderr — §3.1's split, so `circuitrf em x.cem > summary.txt`

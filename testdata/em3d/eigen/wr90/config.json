@@ -1,0 +1,110 @@
+{
+  "Problem": {
+    "Type": "Driven",
+    "Verbose": 2,
+    "Output": "postpro"
+  },
+  "Model": {
+    "Mesh": "model.msh",
+    "L0": 1E-06,
+    "Refinement": {
+      "Tol": 0.01,
+      "MaxIts": 0
+    }
+  },
+  "Domains": {
+    "Materials": [
+      {
+        "Attributes": [
+          1
+        ],
+        "Permeability": 1,
+        "Permittivity": 1,
+        "LossTan": 0
+      },
+      {
+        "Attributes": [
+          2
+        ],
+        "Permeability": 1,
+        "Permittivity": 1,
+        "LossTan": 0
+      }
+    ]
+  },
+  "Boundaries": {
+    "PEC": {
+      "Attributes": [
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    "WavePort": [
+      {
+        "Index": 1,
+        "Attributes": [
+          3
+        ],
+        "Mode": 1,
+        "Offset": 0,
+        "Excitation": 1,
+        "VoltagePath": [
+          [
+            0,
+            11430,
+            0
+          ],
+          [
+            0,
+            11430,
+            10160
+          ]
+        ]
+      },
+      {
+        "Index": 2,
+        "Attributes": [
+          4
+        ],
+        "Mode": 1,
+        "Offset": 0,
+        "Excitation": 2,
+        "VoltagePath": [
+          [
+            20000,
+            11430,
+            0
+          ],
+          [
+            20000,
+            11430,
+            10160
+          ]
+        ]
+      }
+    ]
+  },
+  "Solver": {
+    "Order": 2,
+    "Device": "CPU",
+    "Driven": {
+      "Samples": [
+        {
+          "Type": "Linear",
+          "MinFreq": 9,
+          "MaxFreq": 12,
+          "NSample": 7
+        }
+      ],
+      "AdaptiveTol": 0.0001
+    },
+    "Linear": {
+      "Type": "Default",
+      "KSPType": "GMRES",
+      "Tol": 1E-08,
+      "MaxIts": 400
+    }
+  }
+}

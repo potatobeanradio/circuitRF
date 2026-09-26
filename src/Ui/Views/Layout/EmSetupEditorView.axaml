@@ -513,6 +513,83 @@
                                      ToolTip.Tip="The net that is the matrix's reference. Blank: the technology's ground-reference conductors, and the floor when it is a ground plane."/>
                         </StackPanel>
                     </StackPanel>
+                    <!-- brief-em3d-23: each port's kind (lumped or wave, mixable), a wave port's extent and offset
+                         (Ports3D); an eigenmode setup's count and target (Eigenmode); and the modes of its last run. -->
+                    <StackPanel IsVisible="{Binding ViewModel.IsPortKindSetup}" Spacing="2" Margin="0,6,0,0">
+                        <Grid ColumnDefinitions="50,90,70,70,80,Auto" ColumnSpacing="6">
+                            <TextBlock Grid.Column="0" Classes="colhdr" Text="Port"/>
+                            <TextBlock Grid.Column="1" Classes="colhdr" Text="Kind" ToolTip.Tip="{x:Static em:EmSetupEditorViewModel.Port3DKindTip}"/>
+                            <TextBlock Grid.Column="2" Classes="colhdr" Text="Width (× w)"/>
+                            <TextBlock Grid.Column="3" Classes="colhdr" Text="Height (× h)"/>
+                            <TextBlock Grid.Column="4" Classes="colhdr" Text="Offset (µm)"/>
+                        </Grid>
+                        <ItemsControl ItemsSource="{Binding ViewModel.Port3DRows}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="em:Em3dPortRow">
+                                    <Grid ColumnDefinitions="50,90,70,70,80,Auto" ColumnSpacing="6" Margin="0,1">
+                                        <TextBox Grid.Column="0" Classes="cell" Tag="Ports3D" Text="{Binding Port}"
+                                                 LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                                 ToolTip.Tip="The port's number, as its label states it. A port with no row is lumped."/>
+                                        <ComboBox Grid.Column="1" Classes="cell"
+                                                  ItemsSource="{x:Static em:EmSetupEditorViewModel.Port3DKindChoices}"
+                                                  SelectedItem="{Binding Kind}"
+                                                  ToolTip.Tip="{x:Static em:EmSetupEditorViewModel.Port3DKindTip}"/>
+                                        <TextBox Grid.Column="2" Classes="cell" Tag="Ports3D" Text="{Binding Width}" IsEnabled="{Binding IsWave}"
+                                                 PlaceholderText="rule" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                                 ToolTip.Tip="The wave port's width in line widths. Blank: the sizing rule, 10 line widths (10 substrate heights for a line narrower than its substrate)."/>
+                                        <TextBox Grid.Column="3" Classes="cell" Tag="Ports3D" Text="{Binding Height}" IsEnabled="{Binding IsWave}"
+                                                 PlaceholderText="rule" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                                 ToolTip.Tip="The wave port's height in multiples of the line's height above its return. Blank: 8."/>
+                                        <TextBox Grid.Column="4" Classes="cell" Tag="Ports3D" Text="{Binding OffsetUm}" IsEnabled="{Binding IsWave}"
+                                                 PlaceholderText="0" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                                 ToolTip.Tip="How far into the structure the wave port's reference plane lies. Palace de-embeds the line between."/>
+                                        <Button Grid.Column="5" Content="✕" Padding="6,0"
+                                                Command="{Binding $parent[ItemsControl].((em:EmSetupDocument)DataContext).ViewModel.RemovePort3DCommand}"
+                                                CommandParameter="{Binding}"
+                                                ToolTip.Tip="Remove this row: the port is lumped again."/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <Button Content="Add port row" Command="{Binding ViewModel.AddPort3DCommand}"/>
+                    </StackPanel>
+                    <StackPanel IsVisible="{Binding ViewModel.IsEigenmodeSetup}" Spacing="2" Margin="0,6,0,0">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock Classes="colhdr" Text="Modes" VerticalAlignment="Center"/>
+                            <TextBox Classes="cell" MinWidth="50" Tag="Eigenmode" Text="{Binding ViewModel.EigenCountText}"
+                                     PlaceholderText="{x:Static em:EmSetupEditorViewModel.EigenDefaultCount}"
+                                     LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                     ToolTip.Tip="How many modes to find."/>
+                            <TextBlock Classes="colhdr" Text="above (GHz)" VerticalAlignment="Center"/>
+                            <TextBox Classes="cell" MinWidth="70" Tag="Eigenmode" Text="{Binding ViewModel.EigenTargetText}"
+                                     PlaceholderText="sweep start" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                     ToolTip.Tip="Modes are found above this frequency. Blank: the sweep's start."/>
+                        </StackPanel>
+                        <Grid ColumnDefinitions="40,100,70,80,*" ColumnSpacing="6" Margin="0,4,0,0"
+                              IsVisible="{Binding ViewModel.HasEigenmodeRows}">
+                            <TextBlock Grid.Column="0" Classes="colhdr" Text="Mode"/>
+                            <TextBlock Grid.Column="1" Classes="colhdr" Text="f (GHz)"/>
+                            <TextBlock Grid.Column="2" Classes="colhdr" Text="Q"/>
+                            <TextBlock Grid.Column="3" Classes="colhdr" Text="Q unloaded"/>
+                            <TextBlock Grid.Column="4" Classes="colhdr" Text="Most energy in"/>
+                        </Grid>
+                        <ItemsControl ItemsSource="{Binding ViewModel.EigenmodeRows}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="em:Em3dModeRow">
+                                    <Grid ColumnDefinitions="40,100,70,80,*" ColumnSpacing="6">
+                                        <TextBlock Grid.Column="0" Text="{Binding Mode}"/>
+                                        <TextBlock Grid.Column="1" Text="{Binding FrequencyGHz}"/>
+                                        <TextBlock Grid.Column="2" Text="{Binding Q}"/>
+                                        <TextBlock Grid.Column="3" Text="{Binding QUnloaded}"/>
+                                        <TextBlock Grid.Column="4" Text="{Binding Where}" TextTrimming="CharacterEllipsis"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                    <SelectableTextBlock FontSize="10" TextWrapping="Wrap" Foreground="{DynamicResource CrfWarningBrush}"
+                               Text="{Binding ViewModel.EigenFieldError}"
+                               IsVisible="{Binding ViewModel.EigenFieldError, Converter={x:Static ObjectConverters.IsNotNull}}"/>
                     <!-- brief-em3d-21 R-em3d21-4: the preset. Its tooltip is the measured trade; the boxes
                          below show the chosen preset's values as their placeholders, and a box that is
                          filled in overrides the preset for that field only. -->

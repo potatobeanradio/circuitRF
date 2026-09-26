@@ -34,6 +34,7 @@ public sealed partial class EmSetupEditorViewModel
         new(Em3dProblemType.Driven,        "Driven (S-parameters)"),
         new(Em3dProblemType.Electrostatic, "Electrostatic (C matrix)"),
         new(Em3dProblemType.Magnetostatic, "Magnetostatic (L matrix)"),
+        new(Em3dProblemType.Eigenmode,     "Eigenmode (resonances and Q)"),
     ];
 
     [ObservableProperty] private Em3dProblemChoice _problem3DChoice = Problem3DChoices[0];
@@ -44,7 +45,7 @@ public sealed partial class EmSetupEditorViewModel
     [ObservableProperty] private string _ground3DText = "";
 
     /// <summary>True when the terminal table is shown: a static problem on a 3D setup.</summary>
-    public bool IsStaticSetup => Is3DSetup && Problem3DChoice.Value != Em3dProblemType.Driven;
+    public bool IsStaticSetup => Is3DSetup && Problem3DChoice.Value is Em3dProblemType.Electrostatic or Em3dProblemType.Magnetostatic;
 
     /// <summary>True when the table's Source column is read (magnetostatic only).</summary>
     public bool IsMagnetostaticSetup => Is3DSetup && Problem3DChoice.Value == Em3dProblemType.Magnetostatic;
@@ -57,7 +58,10 @@ public sealed partial class EmSetupEditorViewModel
         Em3dProblemType.Magnetostatic =>
             "The inductance matrix between the terminals below, each driven through the port named as its source. " +
             "Palace only; conductors are surfaces, so this is the external (RF) inductance, without the internal term.",
-        _ => "S-parameters over the sweep, with a lumped port at each port label.",
+        Em3dProblemType.Eigenmode =>
+            "The structure's resonant frequencies and Q: the number of modes asked for, above the target. Palace only; " +
+            "a lumped port is its resistance, a load, so Q is loaded (the table also takes the ports' share out).",
+        _ => "S-parameters over the sweep, with a port at each port label — lumped unless the table below makes it a wave port.",
     };
 
     partial void OnProblem3DChoiceChanged(Em3dProblemChoice value)
@@ -76,6 +80,7 @@ public sealed partial class EmSetupEditorViewModel
         OnPropertyChanged(nameof(IsStaticSetup));
         OnPropertyChanged(nameof(IsMagnetostaticSetup));
         OnPropertyChanged(nameof(Problem3DDescription));
+        RaiseEigenVisibility();
     }
 
     private void SyncStaticFields()
@@ -85,6 +90,7 @@ public sealed partial class EmSetupEditorViewModel
         foreach (var t in Working.Terminals3D)
             TerminalRows.Add(new Em3dTerminalRow { Name = t.Name, Net = t.Net, Source = t.Source ?? "" });
         Ground3DText = Working.Ground3D;
+        SyncEigenFields();
         RaiseStaticVisibility();
     }
 

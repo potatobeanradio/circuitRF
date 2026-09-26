@@ -8806,6 +8806,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         sweepLive.Finish(MessageLevel.Success, EmRunSummary(result, adaptive, pointCount), keepBar: false);
 
         if (result.MeshReport is { } meshReport) vm.AdoptMeshReport(meshReport);
+        // brief-em3d-23 — an eigenmode run's modes, in the panel's table.
+        if (setup.Problem3D == CircuitRF.Engine.Em3d.Em3dProblemType.Eigenmode && setup.Is3D && result.Data is { } modes)
+            vm.AdoptEigenmodes(modes);
         if (result.PlanarMesh is { } planarMesh)
         {
             vm.AdoptPlanarResult(planarMesh, result.PlanarSolve);

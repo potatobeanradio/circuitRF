@@ -94,6 +94,20 @@ public static class Em3dGenerator
     public const double DefaultPaddingFractionOfLongestWavelength = 1.0 / 8.0;
 
     /// <summary>
+    /// brief-em3d-23 R-em3d23-2b — the default wave-port region, in multiples of the line's width w and its
+    /// height h above its return. <b>The rule is the microstrip one repeated across full-wave tools'
+    /// documentation and application notes</b> (their names are not written in this repository): a port
+    /// about ten line widths wide — ten substrate heights when the line is narrower than its substrate,
+    /// where the field spreads by h rather than by w — and six to ten substrate heights tall. The middle
+    /// of the height range is taken: at 6, a region 20 % smaller (4.8 h) moved a 50 Ω microstrip's |S21| by
+    /// 0.023 dB, outside gate 5's 0.02 dB; the top of the range is the first to support a second
+    /// propagating mode (R-em3d23-3 warns when it does). Gate 5 checks the answer does not depend on it.
+    /// Stripline and coax cannot be built from a layout's edge port in this version, so only this rule
+    /// is needed. A <c>.cem</c> Ports3D entry's Width and Height override it per port.
+    /// </summary>
+    public const double DefaultWaveWidthFactor = 10, DefaultWaveHeightFactor = 8;
+
+    /// <summary>
     /// <b>R-em3d3-5f — a conductor is a sheet when its thickness is below this many skin depths at
     /// the top frequency…</b> Three skin depths carries ~95 % of the current, so metal thinner than
     /// that is not "thick" in the sense a volume mesh resolves. <b>Provisional</b>: F0's Q6
@@ -506,6 +520,22 @@ public static class Em3dGenerator
                 if (wireBuild.Refusal is { } wireRefusal) return No(wireRefusal);
             }
 
+            // ── Ports (R-em3d3-2) ─────────────────────────────────────────────────────────────
+            // Built BEFORE the air box (brief-em3d-23): a wave port's side of the box has no padding.
+            var ports = new List<Em3dPort>();
+            var waves = new List<WaveSpec>();
+            // brief-em3d-22 R-em3d22-1c — an electrostatic solve has no ports; a magnetostatic one keeps
+            // only the ports its terminals are driven through, each a source sheet. brief-em3d-23 — an
+            // eigenmode solve needs none: a closed cavity has no port, and a port it has is a load.
+            bool anyPortLabel = source.View.Shapes.Any(sh => sh is LabelShape { IsPort: true });
+            if (setup.Problem3D != Em3dProblemType.Electrostatic &&
+                (setup.Problem3D != Em3dProblemType.Eigenmode || anyPortLabel) &&
+                BuildPorts(bands, pieces, pecFloor ? ground : null, floorZ, ports, waves) is { } portRefusal)
+                return No(portRefusal);
+            foreach (int n in setup.Ports3D.Where(q => q.Kind == Em3dPortKind.Wave).Select(q => q.Port).Distinct())
+                if (ports.All(q => q.Number != n))
+                    return No($"The setup makes port {n} a wave port, and this layout has no port {n}.");
+
             // ── Content bounds, then the air box (R-em3d3-6) ─────────────────────────────────
             double cx0 = double.PositiveInfinity, cy0 = cx0, cx1 = double.NegativeInfinity, cy1 = cx1;
             void Grow(PlanarPolygon p)
@@ -550,6 +580,28 @@ public static class Em3dGenerator
                 ? Math.Max(Math.Max(cx1 - cx0, cy1 - cy0), Math.Max(zHigh - zLow, 1e-6))
                 : DefaultPaddingFractionOfLongestWavelength * C0 / fMin;
             var box = setup.AirBox ?? new EmAirBox();
+            // brief-em3d-23 R-em3d23-2a — a wave port lies on the box, so its side has no padding and its
+            // line must run to the structure's edge there.
+            var waveFaces = waves.Select(w => w.Face).ToHashSet(StringComparer.Ordinal);
+            box = box with
+            {
+                XMin = waveFaces.Contains("xmin") ? new EmAirBoxFace(0, box.XMin?.Boundary) : box.XMin,
+                XMax = waveFaces.Contains("xmax") ? new EmAirBoxFace(0, box.XMax?.Boundary) : box.XMax,
+                YMin = waveFaces.Contains("ymin") ? new EmAirBoxFace(0, box.YMin?.Boundary) : box.YMin,
+                YMax = waveFaces.Contains("ymax") ? new EmAirBoxFace(0, box.YMax?.Boundary) : box.YMax,
+            };
+            foreach (var w in waves)
+            {
+                double extent = w.Face switch { "xmin" => cx0, "xmax" => cx1, "ymin" => cy0, _ => cy1 };
+                if (Math.Abs(w.EdgeAt - extent) > 1e-9 * Math.Max(1e-3, Math.Abs(extent)))
+                    return No($"Port {w.Port.Number} is a wave port, and a wave port lies on the air box — but its line ends at " +
+                              $"{w.Face[0]} = {Fmt(w.EdgeAt * 1e6)} µm, short of the box's {w.Face} face at {Fmt(extent * 1e6)} µm, " +
+                              "where other geometry (the board outline, a plane, another conductor) reaches. Run the line to " +
+                              $"the {w.Face} edge of the layout, or make port {w.Port.Number} a lumped port.");
+                if (setup.AirBox is { } stated && FaceOf(stated, w.Face) is { PaddingUm: > 0 } padded)
+                    _notes.Add($"Port {w.Port.Number} is a wave port, so the air box's {w.Face} face lies on its line's end: the " +
+                               $"setup's {Fmt(padded.PaddingUm!.Value)} µm padding there is not used.");
+            }
             double Pad(EmAirBoxFace? f) => f?.PaddingUm is { } um ? um * 1e-6 : pad;
             Em3dBoundaryKind Kind(EmAirBoxFace? f) => f?.Boundary ?? Em3dBoundaryKind.Absorbing;
 
@@ -558,6 +610,12 @@ public static class Em3dGenerator
             var faces = new Em3dFaces(Kind(box.XMin), Kind(box.XMax), Kind(box.YMin), Kind(box.YMax),
                                       pecFloor ? Em3dBoundaryKind.Pec : Kind(box.ZMin), Kind(box.ZMax));
             var airBox = new Em3dAirBox(boxMin, boxMax, faces);
+            foreach (var w in waves)
+            {
+                var (wave, why) = WavePort(w, airBox);
+                if (wave is null) return No(why!);
+                ports[ports.FindIndex(q => q.Number == w.Port.Number)] = wave;
+            }
 
             // ── Solids, in construction order (R-em3d3-1d) ───────────────────────────────────
             //
@@ -688,14 +746,6 @@ public static class Em3dGenerator
                 }
             }
 
-            // ── Ports (R-em3d3-2) ─────────────────────────────────────────────────────────────
-            var ports = new List<Em3dPort>();
-            // brief-em3d-22 R-em3d22-1c — an electrostatic solve has no ports; a magnetostatic one keeps
-            // only the ports its terminals are driven through, each a source sheet.
-            if (setup.Problem3D != Em3dProblemType.Electrostatic &&
-                BuildPorts(bands, pieces, pecFloor ? ground : null, floorZ, ports) is { } portRefusal)
-                return No(portRefusal);
-
             // ── Terminals and ground (R-em3d22-2), by net ─────────────────────────────────────
             List<Em3dTerminal> terminals = [];
             List<string> groundObjects = [];
@@ -738,6 +788,8 @@ public static class Em3dGenerator
                 Type = setup.Problem3D,
                 Terminals = terminals,
                 GroundObjects = groundObjects,
+                EigenmodeCount = setup.Eigenmode?.Count ?? EmEigenmode3D.DefaultCount,
+                EigenmodeTargetHz = setup.Eigenmode?.TargetGHz is { } target ? target * 1e9 : fMin,
             };
             return new Em3dGenerationResult(problem, null, _notes)
             {
@@ -840,7 +892,8 @@ public static class Em3dGenerator
         /// </summary>
         private string? BuildPorts(IReadOnlyList<PlanarExtractor.StackBand> bands,
                                    Dictionary<int, List<Piece>> pieces,
-                                   PlanarExtractor.StackBand? floorPlane, double floorZ, List<Em3dPort> ports)
+                                   PlanarExtractor.StackBand? floorPlane, double floorZ, List<Em3dPort> ports,
+                                   List<WaveSpec> waves)
         {
             var signal = bands.Where(b => pieces.ContainsKey(b.Index) && !b.Layer.IsGroundReference).ToList();
             if (signal.Count == 0)
@@ -929,13 +982,80 @@ public static class Em3dGenerator
                     _                   => new Point3(0, -1, 0),
                 };
                 var centre = new Point3((min.X + max.X) / 2, (min.Y + max.Y) / 2, (min.Z + max.Z) / 2);
-                ports.Add(new Em3dPort(p.Number, $"port/{p.Number}", piece.Name, negative, min, max,
-                                       new Point3(0, 0, above ? -1 : 1), p.Z0,
-                                       // R-em3d3-2c — a Tier A port's reference plane IS its sheet.
-                                       new Em3dReferencePlane(centre, normal, 0)));
+                var lumped = new Em3dPort(p.Number, $"port/{p.Number}", piece.Name, negative, min, max,
+                                          new Point3(0, 0, above ? -1 : 1), p.Z0,
+                                          // R-em3d3-2c — a Tier A port's reference plane IS its sheet.
+                                          new Em3dReferencePlane(centre, normal, 0));
+                ports.Add(lumped);
+                // brief-em3d-23 — a wave port starts as the lumped sheet (its centre line is the voltage path)
+                // and becomes a region of the box face once the box exists.
+                if (setup.PortKind3D(p.Number) == Em3dPortKind.Wave)
+                    waves.Add(new WaveSpec(lumped, p.Side switch
+                    {
+                        PlanarPortSide.MinX => "xmin", PlanarPortSide.MaxX => "xmax",
+                        PlanarPortSide.MinY => "ymin", _ => "ymax",
+                    }, edgeAt, hi - lo, zHi - zLo, above));
             }
             return null;
         }
+
+        /// <summary>brief-em3d-23 — a wave port before the air box exists: the lumped sheet it grows from,
+        /// the box face its line ends on, where the line ends, and the line's width and height above its
+        /// return.</summary>
+        private sealed record WaveSpec(Em3dPort Port, string Face, double EdgeAt, double WidthM, double HeightM, bool ReturnAbove);
+
+        /// <summary>The wave port's region on its face, clipped to the face; or why it cannot be one.</summary>
+        private (Em3dPort? Port, string? Refusal) WavePort(WaveSpec w, Em3dAirBox box)
+        {
+            var stated = setup.Ports3D.LastOrDefault(q => q.Port == w.Port.Number);
+            double wf = stated?.WidthFactor ?? DefaultWaveWidthFactor * Math.Max(1, w.HeightM / w.WidthM);
+            double hf = stated?.HeightFactor ?? DefaultWaveHeightFactor;
+            if (!(wf > 1) || !(hf > 1))
+                return (null, $"Port {w.Port.Number}'s wave-port region must be wider than its line and taller than the line's " +
+                              $"height (Width and Height above 1); the setup states {Fmt(wf)} × {Fmt(hf)}.");
+            double offset = (stated?.OffsetUm ?? 0) * 1e-6;
+            if (!(offset >= 0))
+                return (null, $"Port {w.Port.Number}'s wave-port offset is {Fmt(offset * 1e6)} µm; it is a distance into the " +
+                              "structure, so it is zero or positive.");
+
+            var p = w.Port;
+            bool alongX = w.Face is "xmin" or "xmax";
+            double at = w.Face switch { "xmin" => box.Min.X, "xmax" => box.Max.X, "ymin" => box.Min.Y, _ => box.Max.Y };
+            double across = alongX ? (p.Min.Y + p.Max.Y) / 2 : (p.Min.X + p.Max.X) / 2;
+            double half = wf * w.WidthM / 2;
+            double lo = Math.Max(across - half, alongX ? box.Min.Y : box.Min.X);
+            double hi = Math.Min(across + half, alongX ? box.Max.Y : box.Max.X);
+            // The line's return face is the sheet's low end when the return is below, its high end above.
+            double retZ = w.ReturnAbove ? p.Max.Z : p.Min.Z, sigZ = w.ReturnAbove ? p.Min.Z : p.Max.Z;
+            double z0 = w.ReturnAbove ? Math.Max(retZ - hf * w.HeightM, box.Min.Z) : retZ;
+            double z1 = w.ReturnAbove ? retZ : Math.Min(retZ + hf * w.HeightM, box.Max.Z);
+            if (lo > across - half + 1e-12 || hi < across + half - 1e-12 ||
+                (w.ReturnAbove ? z0 > retZ - hf * w.HeightM + 1e-12 : z1 < retZ + hf * w.HeightM - 1e-12))
+                _notes.Add($"Port {p.Number}'s wave-port region is clipped to the air box's {w.Face} face; the box is " +
+                           "smaller than the sizing rule asks for there.");
+            var min = alongX ? new Point3(at, lo, z0) : new Point3(lo, at, z0);
+            var max = alongX ? new Point3(at, hi, z1) : new Point3(hi, at, z1);
+            var from = alongX ? new Point3(at, across, retZ) : new Point3(across, at, retZ);
+            var to   = alongX ? new Point3(at, across, sigZ) : new Point3(across, at, sigZ);
+            var n = p.ReferencePlane.Normal;
+            var origin = new Point3((min.X + max.X) / 2, (min.Y + max.Y) / 2, (min.Z + max.Z) / 2);
+            _notes.Add($"Port {p.Number} is a wave port on the air box's {w.Face} face: {Fmt((hi - lo) * 1e6)} × " +
+                       $"{Fmt((z1 - z0) * 1e6)} µm ({Fmt(wf)} line widths × {Fmt(hf)} heights" +
+                       $"{(stated?.WidthFactor is null && stated?.HeightFactor is null ? ", the sizing rule's" : "")}), its reference " +
+                       $"plane {(offset > 0 ? $"{Fmt(offset * 1e6)} µm into the structure" : "on the face")}.");
+            return (p with
+            {
+                Min = min, Max = max,
+                ReferencePlane = new Em3dReferencePlane(origin, n, offset),
+                Kind = Em3dPortKind.Wave,
+                VoltagePath = new Em3dSegment(from, to),
+            }, null);
+        }
+
+        private static EmAirBoxFace? FaceOf(EmAirBox b, string face) => face switch
+        {
+            "xmin" => b.XMin, "xmax" => b.XMax, "ymin" => b.YMin, "ymax" => b.YMax, "zmin" => b.ZMin, _ => b.ZMax,
+        };
 
         /// <summary>The piece whose metal the port sits on, and the end it names: the edge's
         /// coordinate along the port's normal axis, and the metal's extent across it there.</summary>

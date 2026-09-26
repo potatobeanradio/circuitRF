@@ -23,6 +23,15 @@ public enum SolverCapability
 {
     /// <summary>A driven (frequency-domain) solve with lumped ports — everything F1 asks of Palace.</summary>
     DrivenLumpedPorts,
+
+    /// <summary>
+    /// brief-em3d-23 R-em3d23-1a — wave ports: the eigensolver for each port's 2D mode, and GSLIB, which
+    /// Palace needs to integrate a voltage path and report the mode's impedance.
+    /// </summary>
+    WavePorts,
+
+    /// <summary>brief-em3d-23 R-em3d23-1a — an eigenmode solve: the eigensolver (SLEPc or ARPACK).</summary>
+    Eigenmode,
 }
 
 /// <summary>
@@ -210,16 +219,32 @@ public sealed class SolverDiscovery
     };
 
     /// <summary>What a 3D run in this build needs <paramref name="tool"/> to be able to do.</summary>
-    public static IReadOnlySet<SolverCapability> CapabilitiesFor(SolverTool tool)
-        => tool == SolverTool.Palace ? new HashSet<SolverCapability> { SolverCapability.DrivenLumpedPorts }
-                                     : new HashSet<SolverCapability>();
+    public static IReadOnlySet<SolverCapability> CapabilitiesFor(SolverTool tool) => CapabilitiesFor(tool, null);
+
+    /// <summary>
+    /// What <paramref name="setup"/> needs <paramref name="tool"/> to be able to do: a driven solve always;
+    /// brief-em3d-23 — wave ports when a port is one, the eigensolver for an eigenmode problem
+    /// (R-em3d23-1c: asked here, so a build without it is refused before Gmsh starts).
+    /// </summary>
+    public static IReadOnlySet<SolverCapability> CapabilitiesFor(SolverTool tool, EmSetup? setup)
+    {
+        var set = new HashSet<SolverCapability>();
+        if (tool != SolverTool.Palace) return set;
+        set.Add(SolverCapability.DrivenLumpedPorts);
+        if (setup is { HasWavePorts3D: true } && !setup.IsStatic3D) set.Add(SolverCapability.WavePorts);
+        if (setup?.Problem3D == Engine.Em3d.Em3dProblemType.Eigenmode) set.Add(SolverCapability.Eigenmode);
+        return set;
+    }
 
     /// <summary>
     /// Every program <paramref name="solver"/> needs, checked the way a run checks it. The run, the
     /// Settings page and <c>explain</c> all call this, which is what makes them answer alike.
     /// </summary>
-    public static IReadOnlyList<SolverReadiness> ReadinessFor(Em3dSolver solver)
-        => ToolsFor(solver).Select(t => For(t).Check(CapabilitiesFor(t))).ToList();
+    public static IReadOnlyList<SolverReadiness> ReadinessFor(Em3dSolver solver) => ReadinessFor(solver, null);
+
+    /// <inheritdoc cref="ReadinessFor(Em3dSolver)"/>
+    public static IReadOnlyList<SolverReadiness> ReadinessFor(Em3dSolver solver, EmSetup? setup)
+        => ToolsFor(solver).Select(t => For(t).Check(CapabilitiesFor(t, setup))).ToList();
 
     // ── per-instance data ────────────────────────────────────────────────────────────────────
 
@@ -540,11 +565,42 @@ public sealed class SolverDiscovery
     /// <summary>What a capability is, in words, and the build option that provides it.</summary>
     internal static (string What, string BuildOption) Describe(SolverCapability capability) => capability switch
     {
+        SolverCapability.Eigenmode => ("eigenmode solves",
+            EigensolverBuildOption),
+        SolverCapability.WavePorts => ("wave ports",
+            "A wave port's mode comes from Palace's eigensolver, and its impedance — which the S-parameters are " +
+            "renormalised from — needs GSLIB. " + EigensolverBuildOption + " GSLIB is the +gslib variant, also on by " +
+            "default; a build configured ~gslib cannot report a wave port's impedance."),
         // Every Palace build can do a driven solve with lumped ports — no build option turns it on, so a
         // build that fails this probe is broken or incomplete rather than configured without it.
         _ => ("driven solves with lumped ports",
               "Every Palace build provides this — no build option enables it — so this build is incomplete or " +
               "broken. Rebuild Palace; its default build is enough."),
+    };
+
+    /// <summary>
+    /// brief-em3d-23 R-em3d23-1c — the build variant that provides the eigensolver, and the route to a build
+    /// that has it. At the pinned version (0.18.1) EVERY build has one: Palace's CMake refuses to configure
+    /// without SLEPc or ARPACK (src/Design/RESOLVED.md §brief-em3d-23), so this refusal names a build that is
+    /// broken or incomplete rather than one configured without the feature.
+    /// </summary>
+    public const string EigensolverBuildOption =
+        "Palace's eigensolver is SLEPc (the +slepc variant, on by default) or ARPACK (+arpack); rebuild Palace with " +
+        "either, as “" + ManualInstallSection + "” in the EM Setup reference (" + ManualInstallPage + ") describes.";
+
+    /// <summary>
+    /// R-em3d23-1b — how each capability is asked, in words, for <c>explain</c>: a dry run where the schema
+    /// check can answer, a one-element solve where only running can.
+    /// </summary>
+    public static string ProbeKind(SolverCapability capability) => capability switch
+    {
+        SolverCapability.WavePorts =>
+            "a dry run of a driven setup with a wave port, then a one-element electrostatic solve with a field probe " +
+            "(GSLIB is only reached by running; a dry run of a voltage path passes without it)",
+        SolverCapability.Eigenmode =>
+            "a dry run of an eigenmode setup (at 0.18.1 no Palace build lacks an eigensolver, so the dry run's " +
+            "schema check is the whole question)",
+        _ => "a dry run of a driven setup with a lumped port",
     };
 
     /// <summary>The manual-install section's title and page, as the refusals cite them.</summary>
@@ -574,11 +630,31 @@ public sealed class SolverDiscovery
             if (run.Failure is { } failure)
                 return (new SolverCapabilityVerdict(capability, false, $"the probe did not complete ({failure}).", false), false);
 
+            string what = capability switch
+            {
+                SolverCapability.WavePorts => "a driven setup with a wave port",
+                SolverCapability.Eigenmode => "an eigenmode setup",
+                _                          => "a driven setup with a lumped port",
+            };
             bool ok = run.ExitCode == 0 && run.Output.Contains("Dry-run: No errors detected", StringComparison.Ordinal);
-            string detail = ok
-                ? "a dry run of a driven setup with a lumped port found no errors."
-                : $"a dry run of a driven setup with a lumped port failed (exit {run.ExitCode}): {TellingLine(run.Output)}.";
-            return (new SolverCapabilityVerdict(capability, ok, detail, false), true);
+            if (!ok)
+                return (new SolverCapabilityVerdict(capability, false,
+                    $"a dry run of {what} failed (exit {run.ExitCode}): {TellingLine(run.Output)}.", false), true);
+            if (capability != SolverCapability.WavePorts)
+                return (new SolverCapabilityVerdict(capability, true, $"a dry run of {what} found no errors.", false), true);
+
+            // R-em3d23-1b — GSLIB is reached only by running: a one-element electrostatic solve with a field
+            // probe, which a ~gslib build refuses as it starts (interpolator.cpp: "InterpolationOperator class
+            // requires MFEM_USE_GSLIB!"). 0.17 s on the F0 install.
+            File.WriteAllText(Path.Combine(dir, "gslib.json"), GslibProbeConfig);
+            var solve = RunProbe(palace, ["--serial", "gslib.json"], dir, CapabilityTimeout);
+            if (solve.Failure is { } solveFailure)
+                return (new SolverCapabilityVerdict(capability, false, $"the one-element solve did not complete ({solveFailure}).", false), false);
+            bool gslib = solve.ExitCode == 0 && File.Exists(Path.Combine(dir, "postpro", "probe-E.csv"));
+            return (new SolverCapabilityVerdict(capability, gslib, gslib
+                ? $"a dry run of {what} found no errors, and a one-element solve with a field probe ran (GSLIB is present)."
+                : $"a dry run of {what} passed, but a one-element solve with a field probe failed (exit {solve.ExitCode}): " +
+                  $"{TellingLine(solve.Output)}.", false), true);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
@@ -593,6 +669,28 @@ public sealed class SolverDiscovery
 
     private static string ProbeConfig(SolverCapability capability) => capability switch
     {
+        SolverCapability.WavePorts => """
+             {
+               "Problem": { "Type": "Driven", "Output": "postpro" },
+               "Model": { "Mesh": "probe.msh", "L0": 1.0e-3 },
+               "Domains": { "Materials": [ { "Attributes": [1], "Permeability": 1.0, "Permittivity": 1.0 } ] },
+               "Boundaries": {
+                 "PEC": { "Attributes": [3] },
+                 "WavePort": [ { "Index": 1, "Attributes": [2], "Mode": 1, "Offset": 0.0, "Excitation": 1,
+                                 "VoltagePath": [ [0.1, 0.1, 0.0], [0.2, 0.2, 0.0] ] } ]
+               },
+               "Solver": { "Order": 1, "Driven": { "Samples": [ { "Type": "Point", "Freq": [1.0] } ] } }
+             }
+             """,
+        SolverCapability.Eigenmode => """
+             {
+               "Problem": { "Type": "Eigenmode", "Output": "postpro" },
+               "Model": { "Mesh": "probe.msh", "L0": 1.0e-3 },
+               "Domains": { "Materials": [ { "Attributes": [1], "Permeability": 1.0, "Permittivity": 1.0 } ] },
+               "Boundaries": { "PEC": { "Attributes": [2, 3] } },
+               "Solver": { "Order": 1, "Eigenmode": { "N": 1, "Target": 1.0 } }
+             }
+             """,
         _ => """
              {
                "Problem": { "Type": "Driven", "Output": "postpro" },
@@ -606,6 +704,22 @@ public sealed class SolverDiscovery
              }
              """,
     };
+
+    /// <summary>
+    /// R-em3d23-1b — the one-element solve that reaches GSLIB: the probe tetrahedron as an electrostatic
+    /// problem (face 2 a terminal, the rest the natural boundary, so one unknown is free) with a field probe
+    /// inside it. A probe is interpolated through GSLIB, and Palace builds its interpolator before it solves.
+    /// </summary>
+    private const string GslibProbeConfig = """
+        {
+          "Problem": { "Type": "Electrostatic", "Output": "postpro" },
+          "Model": { "Mesh": "probe.msh", "L0": 1.0e-3 },
+          "Domains": { "Materials": [ { "Attributes": [1], "Permeability": 1.0, "Permittivity": 1.0 } ],
+                       "Postprocessing": { "Probe": [ { "Index": 1, "Center": [0.2, 0.2, 0.2] } ] } },
+          "Boundaries": { "Terminal": [ { "Index": 1, "Attributes": [2] } ] },
+          "Solver": { "Order": 2, "Electrostatic": {} }
+        }
+        """;
 
     /// <summary>One tetrahedron, Gmsh MSH 2.2 ASCII: volume 1, one face as the port (2), three as PEC (3).</summary>
     private const string ProbeMesh =

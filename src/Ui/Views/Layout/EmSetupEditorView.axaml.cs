@@ -190,6 +190,8 @@ public partial class EmSetupEditorView : UserControl
                 vm.CommitPalaceField(palace);
                 break;
             case "Terminals3D": vm.CommitTerminals(); break;
+            case "Ports3D":     vm.CommitPorts3D(); break;
+            case "Eigenmode":   vm.CommitEigenmode(); break;
             case { } openEms when openEms.StartsWith("OpenEms.", StringComparison.Ordinal):
                 vm.CommitOpenEmsField(openEms);
                 break;

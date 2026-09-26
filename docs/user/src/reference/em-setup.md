@@ -622,6 +622,64 @@ static setup's default padding is the structure's own size rather than a wavelen
 `results/<name>.palace_es.npy` (or `_ms`) and **no Touchstone file**; `circuitrf em` prints the matrix
 in engineering units, and `circuitrf explain` lists which conductors are in which terminal.
 
+### Wave ports {#wave-ports}
+
+A 3D port is **lumped** by default: a sheet from the line down (or up) to its return, with the port's
+Z0 across it. A lumped sheet has a small series inductance of its own, and on a tall sheet it shows as
+a step in S11 at the top of the band. A **wave port** has none: it is a region of the air box's face,
+fed by the line's own mode, which Palace computes on that face at every frequency. Palace only; a setup
+naming openEMS or both solvers is refused, and so is its `check`.
+
+The **Ports** table (`Ports3D`) sets each port's kind by its number. Lumped and wave ports may be
+**mixed** in one setup.
+
+```
+"Ports3D": [ { "Port": 1, "Kind": "Wave" }, { "Port": 2, "Kind": "Wave", "OffsetUm": 500 } ]
+```
+
+- **The line must run to the edge of the layout** on the port's side: the air box's padding on that
+  side becomes zero and its face lies on the line's end. A line that stops short — because a plane, the
+  board outline or another conductor reaches further — is refused, naming the port and the face.
+- **Width** and **Height** size the region on the face, in line widths and in multiples of the line's
+  height above its return. Blank takes the sizing rule: 10 line widths (10 substrate heights for a line
+  narrower than its substrate) by 8 heights. The answer does not depend on them: ±20 % of the region
+  moved |S21| on a 50 Ω microstrip by under 0.02 dB.
+- **OffsetUm** moves the reference plane that far into the structure; Palace de-embeds the line between.
+  `circuitrf explain` says where each port's reference plane is.
+- **What the numbers are referred to.** Palace refers a wave port's S-parameters to the port's own mode
+  at unit power — that is, to the mode's impedance, which changes with frequency (it is Palace's
+  *Z_PV*, measured along a line from the return up to the strip). The Touchstone file states one real
+  reference impedance per port, so circuitRF renormalises each wave port to its **Z0** and the file's
+  header says so. On a 50 Ω microstrip the mode impedance is within a few ohms of 50; on a waveguide it
+  is several hundred ohms, so set Z0 to the mode impedance the run reports if you want a matched file.
+- **One mode.** A wave port excites and measures its first mode. If the port's region is large enough
+  for a second mode to propagate at the top of the sweep, the run warns — its S-parameters then leave
+  out the power that mode carries. Make the region smaller, or lower the sweep's top.
+
+A wave port needs Palace's eigensolver (every Palace build has one) and GSLIB (the `+gslib` variant, on
+by default). A build without either is refused before anything meshes, naming the variant.
+
+### Eigenmodes {#eigenmodes}
+
+**Problem** *Eigenmode* finds the structure's resonant frequencies and their Q — "is there a lid
+resonance inside my band?". `Eigenmode` sets how many modes (`Count`, default 3) above which frequency
+(`TargetGHz`, default the sweep's start). Palace only.
+
+```
+"Problem3D": "Eigenmode",
+"Eigenmode": { "Count": 5, "TargetGHz": 8 }
+```
+
+- **f** is each mode's frequency and **Q** Palace's Q: the *loaded* Q, with every loss the problem has —
+  finite-conductivity metal, lossy dielectrics, open (absorbing) faces, and each lumped port, which an
+  eigenmode solve treats as its resistance, a load. With lumped ports, **Q_ext** is each port's own Q and
+  **Q_unloaded** takes the ports' share out (1/Q_u = 1/Q − Σ 1/Q_ext).
+- **Participation** is the fraction of each mode's electric energy in each meshed region: it is what
+  says where a mode lives.
+
+The result is `results/<name>.palace_eig.npy` and no Touchstone file; `circuitrf em` prints the mode
+table and the panel shows it after a run. Palace's own files stay in the run folder.
+
 ## Installing the 3D solvers by hand {#install-3d-solvers}
 
 A 3D setup (one whose `Solver3D` names Palace or openEMS) runs a solver circuitRF does not include. You

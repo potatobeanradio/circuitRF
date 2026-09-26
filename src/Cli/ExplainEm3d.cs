@@ -35,7 +35,7 @@ internal static class ExplainEm3d
         };
         var notes    = src.Generated?.Notes ?? [];
         var warnings = src.Generated?.Warnings ?? [];
-        var solvers  = Solvers(setup.Solver3D);
+        var solvers  = Solvers(setup.Solver3D, setup);
 
         if (src.Generated?.Problem is not { } p)
             return new ExplainEm3dJson(solver, "m", 1.0, [], null, [], [], [], [], null, Size(null, setup, default), solvers, notes, warnings,
@@ -94,7 +94,15 @@ internal static class ExplainEm3d
 
         var ports = p.Ports.Select(q => new Em3dPortJson(
             q.Number, q.Name, q.PositiveObject, q.NegativeObject, q.Z0.Real, q.Z0.Imaginary,
-            V(q.Min), V(q.Max), V(q.ReferencePlane.Origin), V(q.ReferencePlane.Normal), q.ReferencePlane.ShiftM)).ToList();
+            V(q.Min), V(q.Max), V(q.ReferencePlane.Origin), V(q.ReferencePlane.Normal), q.ReferencePlane.ShiftM)
+        {
+            // brief-em3d-23 R-em3d23-2c — a wave port says where its reference plane is.
+            Kind = q.Kind == Em3dPortKind.Wave ? "wave" : null,
+            ReferencePlane = q.Kind != Em3dPortKind.Wave ? null
+                : $"on the air box's {p.FaceOf(q.Min, q.Max)} face" + (q.ReferencePlane.ShiftM > 0
+                    ? $", moved {(q.ReferencePlane.ShiftM * 1e6).ToString("G6", CultureInfo.InvariantCulture)} µm into the structure by the port's Offset (Palace de-embeds it)"
+                    : " (Offset 0: the S-parameters are referred to the face itself)"),
+        }).ToList();
 
         var grid = Grid(p, setup);
         var box = p.Boundary;
@@ -115,6 +123,9 @@ internal static class ExplainEm3d
                                    Size(p, setup, grid), solvers, notes, warnings, null)
         {
             Static = Static(p, setup),
+            Eigenmode = p.Type != Em3dProblemType.Eigenmode ? null
+                : new Em3dEigenmodeJson(p.EigenmodeCount, setup.Eigenmode?.Count is null ? "default" : "field",
+                                        p.EigenmodeTargetHz, setup.Eigenmode?.TargetGHz is null ? "default (the sweep's start)" : "field"),
         };
     }
 
@@ -137,8 +148,8 @@ internal static class ExplainEm3d
     /// the rule. It starts version probes and, for an uncached Palace, one dry run; it never starts a
     /// mesher or a solver (gate 6 counts that).
     /// </summary>
-    private static IReadOnlyList<Em3dSolverJson> Solvers(Em3dSolver solver)
-        => SolverDiscovery.ReadinessFor(solver).Select(r => new Em3dSolverJson(
+    private static IReadOnlyList<Em3dSolverJson> Solvers(Em3dSolver solver, EmSetup setup)
+        => SolverDiscovery.ReadinessFor(solver, setup).Select(r => new Em3dSolverJson(
                r.Name, r.Installation is not null, r.Installation?.Path, r.Installation?.Version,
                r.Installation?.Release, r.Installation?.Validated ?? false,
                r.Installation?.HowFound switch
@@ -152,7 +163,7 @@ internal static class ExplainEm3d
                },
                r.Capabilities.Select(c => new Em3dCapabilityJson(
                    c.Capability == SolverCapability.DrivenLumpedPorts ? "driven-lumped-ports" : c.Capability.ToString(),
-                   c.Available, c.Detail, c.FromCache)).ToList(),
+                   c.Available, c.Detail, c.FromCache) { Probe = SolverDiscovery.ProbeKind(c.Capability) }).ToList(),
                r.Rejected, r.Proceeds, r.Refusal)).ToList();
 
     /// <summary>
@@ -311,7 +322,10 @@ internal static class ExplainEm3d
                               (q.Z0Im != 0 ? $"{(q.Z0Im < 0 ? "-" : "+")}j{G(Math.Abs(q.Z0Im))}" : "") + " Ω, " +
                               $"reference plane at ({L(q.ReferenceOrigin[0])}, {L(q.ReferenceOrigin[1])}, {L(q.ReferenceOrigin[2])}), " +
                               $"normal ({G(q.ReferenceNormal[0])}, {G(q.ReferenceNormal[1])}, {G(q.ReferenceNormal[2])}), " +
-                              $"shift {L(q.ReferenceShiftM)}");
+                              $"shift {L(q.ReferenceShiftM)}" +
+                              (q.Kind is { } kind ? $"; {kind} port, reference plane {q.ReferencePlane}" : ""));
+        if (r.Eigenmode is { } eig)
+            Console.WriteLine($"  eigenmode    {eig.Count} mode(s) ({eig.CountFrom}) above {G(eig.TargetHz / 1e9)} GHz ({eig.TargetFrom})");
 
         if (r.Static is { } st)
         {
@@ -363,7 +377,8 @@ internal static class ExplainEm3d
                                   $" — {s.Path} ({s.HowFound})");
             foreach (var c in s.Capabilities)
                 Console.WriteLine($"    {"",-10} {c.Capability}: {(c.Available ? "yes" : "no")}" +
-                                  $"{(c.FromCache ? " (cached for this binary)" : "")} — {c.Detail}");
+                                  $"{(c.FromCache ? " (cached for this binary)" : "")} — {c.Detail}" +
+                                  (c.Probe is { } probe ? $" Asked by {probe}." : ""));
             Console.WriteLine($"    {"",-10} " + (s.Proceeds ? "a run would proceed past this program" : $"a run would stop here: {s.Refusal}"));
         }
     }

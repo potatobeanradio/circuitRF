@@ -654,9 +654,11 @@ misuse**:
   a refusal naming the versions that are validated — for Palace this matters, because its
   configuration changes meaning across versions.
 - **A capability probe, not just a version string.** Palace built without an eigensolver cannot solve
-  wave ports; circuitRF finds that out at setup time — from what the build reports about itself, or a
-  seconds-long probe run, decided with F1 — and refuses a wave-port setup by saying so, rather than
-  letting the solver fail minutes into a run. A user-built Palace can be configured in ways a shipped
+  wave ports; circuitRF finds that out at setup time and refuses a wave-port setup by saying so, rather
+  than letting the solver fail minutes into a run. *Decided in brief-em3d-23:* at 0.18.1 no build lacks
+  an eigensolver (CMake refuses to configure without SLEPc or ARPACK), so the eigenmode probe is a dry
+  run; what a build CAN lack is **GSLIB**, which a wave port's voltage path — and so its impedance —
+  needs and which only a run reaches, so the wave-port probe adds a one-element solve (0.2 s). A user-built Palace can be configured in ways a shipped
   one never would be, so this check earns its place.
 - **An install assistant** that downloads each program from its own upstream source and runs its
   installer on the user's request (§7.2) — and an installation page per platform for anyone who
@@ -861,7 +863,8 @@ driven S-parameters with lumped and wave ports, electrostatic, magnetostatic, ei
 |---|---|---|
 | MFEM, hypre, libCEED, METIS, SuperLU_DIST, ARPACK-NG, BLAS/LAPACK, the header-only JSON, formatting and Eigen libraries | SLEPc and PETSc, STRUMPACK, MUMPS, libxsmm, MAGMA, SUNDIALS, GPU backends | SLEPc/PETSc: the historical Windows blocker, replaced by ARPACK. STRUMPACK/MUMPS: further direct solvers, and Fortran. libxsmm/MAGMA: optional accelerators. SUNDIALS: Palace's time-domain solver, which circuitRF does not use. |
 
-Fortran is then needed for ARPACK-NG alone, and two open-source toolchains build native Windows
+GSLIB belongs in the Keep column too since brief-em3d-23: a wave port's impedance, which its S-parameters are
+renormalised from, is only reported through it. Fortran is then needed for ARPACK-NG alone, and two open-source toolchains build native Windows
 binaries with one (LLVM with Flang; MinGW-w64 with gfortran). Windows has a freely redistributable
 MPI runtime; whether it covers every call the stack makes is untested. This is recorded as what a
 Windows port **would need**, offered upstream as a finding — not as work circuitRF commits to, and not

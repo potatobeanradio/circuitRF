@@ -12892,3 +12892,93 @@ directory layout. The fixture writer keeps only the file name (`>> palace-arm64.
 
 **Not seen from this session:** the panel's Problem picker and terminal table, and the Data Display
 table (pixels).
+
+## Wave ports and eigenmodes — brief-em3d-23 (2026-09-25)
+
+`src/Engine/Em3d/Em3dProblem.cs` (`Em3dPortKind`, `Em3dPort.Kind`/`VoltagePath`, `Em3dProblemType.Eigenmode`,
+`EigenmodeCount`/`EigenmodeTargetHz`, `FaceOf`), `src/Engine/Em3d/Em3dEigenResult.cs` (new); `EmSetupModel`/
+`EmSetupPersistence` (`Ports3D`, `Eigenmode`, both omitted at default); `Em3dGenerator` (ports built before the
+air box, `WavePort`), `GmshGeoWriter` (wave ports claimed before the faces, covered faces), `PalaceConfigWriter`
+(`WavePort`, the `Eigenmode` solver section, energy domains), `PalaceRun` (`ReadPortZ`, `ReadModes`,
+`ReadModeColumns`, `ParseWaveMode`, `SecondModes`), `SolverDiscovery` (`WavePorts`, `Eigenmode`),
+`Em3dRunService` (`PalaceOnlyRefusal`, `RenormaliseWavePorts`, `FinishEigen`); `em`, `explain`, `check`; the
+panel's port-kind table, eigenmode boxes and mode table. Gate `tests/Ui.Tests/Em3d/PalaceEigenTests.cs`; Palace's
+own output `testdata/em3d/eigen/{wr90,cavity-pec,cavity-cu}/`.
+
+**Against the closed forms (each gate one fixed mesh, order 2, no refinement, no conductor grading):** WR-90,
+20 mm, 9–12 GHz, wave ports across both ends, 1,100 tetrahedra: ∠S21 = −βℓ to **0.015°** worst (gate 0.5°),
+|S11| below **−68 dB**. Rectangular cavity 22.86 × 10.16 × 25 mm, 520 tetrahedra: TE101 **+0.0067 %**, TE102
++0.0060 %, TE201 +0.015 %. With copper walls (the conductor shell IS the box): TE101's Q **7,806 against the
+conductor-loss closed form's 7,816 (−0.13 %)** (Pozar eq. 6.46). Every gate 2-5 s. Grading the flat walls had
+put 12,000-24,000 tetrahedra and 70-96 s into the same answers — the gates run with `EdgeRefinement` 1.
+
+**R-em3d23-1b — what "has an eigensolver" means at 0.18.1: every build has one.** Palace's CMakeLists refuses to
+configure without SLEPc or ARPACK (`FATAL_ERROR "Build requires at least one of ARPACK or SLEPc dependencies"`),
+and `drivers/eigensolver.cpp` / `models/modeeigensolver.cpp` `#error` without either. A config that names no
+backend resolves to whichever was built (`labels.hpp`), so no validated build can fail an eigenmode or wave-port
+dry run for want of an eigensolver; a build naming a backend it lacks fails `IoData`'s MFEM_VERIFY, which the dry
+run does reach. So the `Eigenmode` probe is a dry run. **What CAN be missing is GSLIB** (`~gslib`, a real Spack
+variant, on by default): a wave port's `VoltagePath` — which is what makes Palace report the mode's impedance —
+aborts at run time without it (`waveportoperator.cpp`), and a dry run passes. So the `WavePorts` probe is a dry run
+plus a one-element electrostatic solve with a field probe (`interpolator.cpp` refuses a probe without GSLIB as the
+solver starts): 0.17 s on the F0 install. `explain` names each probe's kind. The refusal names `+slepc`/`+arpack`
+and `+gslib` and the manual-install section; *Install Palace…* is brief 24's and is not built, so it is not named.
+
+**R-em3d23-2d — Palace's wave-port S is the MODAL S**: the field projected onto the mode normalised to unit power
+(`waveportoperator.cpp`, `Normalize` / `GetSParameter`), so it is referred to the mode's own impedance, which
+Palace reports only when the port states a `VoltagePath` (`port-Z.csv`, `Re{Z_PV[i]} (Ohm)`). Measured on WR-90:
+**Palace's Z_PV is exactly the power–voltage impedance (2b/a)·Z_TE** (488.9 Ω at 9 GHz against 488.88), NOT the
+TE10 wave impedance Z_TE (550 Ω) the brief named — so gate 4 renormalises to the Z_PV Palace reported at band
+centre, where the renormalised S11 is −88 dB, and at 50 Ω it is −2.2 dB; the two files convert into one another
+to 1.1e-15. On the 50 Ω microstrip Z_PV reads 48.6–50.4 Ω across 2–10 GHz. The `.sNp` states each port's Z0 and
+its header line says the wave port was renormalised from Z_PV. The voltage path runs from the negative object to
+the positive one, the sense our lumped ports' `Direction` has, so a mixed setup keeps one polarity (Palace's own
+note: without a path, cross-type S can come out 180° off). Lumped and wave ports **can be mixed** — Palace's own
+regression case `coaxial/lumped_wave` does.
+
+**R-em3d23-3 — Palace 0.18.1 says nothing about a wave port's second mode.** It prints only the mode a port is
+set to (`Port k, mode m: kₙ = …`), and the mode solver's own print level is fixed at 0 (`ModeEigenSolver::
+SetUpEigenSolver`, `constexpr int print = 0`), so no log or CSV line carries mode 2. The only way to hear it from
+Palace is to ASK: `PalaceRun.SecondModes` runs Palace on the same mesh with every wave port set to mode 2 at the
+sweep's top, and kills the tree once each port has printed its line — which Palace does while it sets the ports
+up, before any 3D solve. **A mode is propagating when |Im kₙ| ≤ 0.1·Re kₙ** (under 5.5 dB lost per wavelength).
+The first criterion, Re kₙ > |Im kₙ|, fired on gate 5's 8-height region: Palace's mode 2 there was 188.8 − 173.6i m⁻¹,
+a LEAKY mode of a face with open (absorbing) edges that is gone within a few millimetres — a false warning on every
+default run. It is now a note giving each mode 2's 1/e decay length. The check never fails a run: an unanswered
+one is a note.
+
+**A wave port's rectangle crosses the line's own end, and the line is a void.** The piece over the trace's
+cross-section bounds no volume, and a boundary element that is no element's face is MFEM's `STable3D` abort as
+the mesh loads. Keeping only single-sided faces for the port was not enough: the air-box face's own query, next,
+claimed the piece instead (8 orphan triangles per face, found by matching every boundary triangle to a tet face).
+The piece is now marked claimed and lands in no group, so it is not saved.
+
+**A face nothing is left of expects no surface.** A waveguide fed across its whole cross-section, or a cavity whose
+conductor shell IS the box, leaves the covered air-box faces with no surface; those groups expect 0 and name no
+attribute in the configuration (`GmshGeoWriter.Covered`). Every existing golden is unchanged: no lumped problem's
+script or configuration gains a byte (gate 9 and the goldens' own gates).
+
+**The brief's gate 5 premise was measured on a different line.** Its "~0.3 nH lumped-port parasitic" is brief 7's
+stripline sheet (0.5 mm tall, between two planes). On the shipped 50 Ω microstrip (1.1 mm wide over 20 mil
+RO4350B, a 0.508 mm sheet over one plane) the lumped port's reflection at 10 GHz is −31.8 dB, a ~40 pH series step,
+and the wave port's is −56 dB. A fixed 0.3 nH figure predicts −14.6 dB and cannot hold across geometries — a
+port's inductance goes with its height and against its width and surroundings — so gate 5 measures the step's
+signature on the line instead: the wave port ≥ 10 dB under the lumped at the band top, and the lumped excess
+growing with frequency. It is Benchmark-tier (five full runs through the run service, ~2 min each at 10 ranks).
+
+**The wave-port sizing rule** (`Em3dGenerator.DefaultWaveWidthFactor`/`HeightFactor`): 10 line widths (10
+substrate heights when the line is narrower than its substrate) by **8** heights. It is the microstrip rule repeated
+across full-wave tools' documentation (6–10 heights), whose names are not written here; stripline and coax cannot be
+built from a layout's edge port in this version. **6 heights was tried first and failed gate 5:** a region 20 %
+smaller (4.8 h, below the rule's own range) moved the microstrip's |S21| by 0.0229 dB against the 0.02 dB bound, so
+the default moved to the middle of the range, where ±20 % stays inside it: at 8 h, ×0.8 moved |S21| by 0.0193 dB
+and ×1.2 by 0.0082 dB, and a mixed setup (port 1 wave, port 2 lumped) tracked the all-wave phase with no 180° flip. The region is clipped to the box face and a note says so. Gate 5's ±20 % check
+is on the microstrip, not the WR-90 of the brief's gate 3: a waveguide port must be its whole cross-section, so its
+extent cannot be varied.
+
+**An eigenmode problem sizes its mesh at twice its target** (`GmshGeoWriter.SizingFrequencyHz`), since it has no
+sweep; the memory estimate uses the same frequency. Q is Palace's (loaded — lumped ports are loads); with lumped
+ports `Q_ext` is Palace's `port-Q.csv` and `Q_unloaded = 1/(1/Q − Σ 1/Q_ext)` is circuitRF's arithmetic on the
+two, labelled so. Participation is `domain-E.csv`'s `p_elec[k]`, one energy domain per meshed volume group.
+
+**Not seen from this session:** the port-kind table, the eigenmode boxes and the mode table (pixels).

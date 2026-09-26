@@ -546,6 +546,14 @@ prints the matrix in one engineering unit chosen so the largest entry reads 1–
 (fF), ground = GND`, then a labelled square), and `--json`'s `data` is the DataSet. Progress on stderr
 reads `Solving: pass 1 of 1 (no refinement) · terminal k of N`.
 
+**An eigenmode 3D setup prints a MODE TABLE** (brief-em3d-23). `Problem3D: Eigenmode` runs Palace only
+(openEMS/Both are refused before discovery, and by `check`, as is a wave port on either), writes
+`results/<key>.palace_eig.npy` with cubes `f` (Hz) and `Q` along `Mode`, plus `Q_ext`/`Q_unloaded` when
+the problem has lumped ports and `Participation` [Mode × Domain], and **no `.sNp`**. Stdout prints one row
+per mode: its number, f in GHz, Q, Q unloaded (when there are ports) and the region holding most of its
+electric energy. A driven setup with wave ports writes its `.sNp` renormalised from each wave port's mode
+impedance to its Z0, and the header's port line says so.
+
 ### 8.3 What goes where, and the three lists
 
 §3.1's split, applied: the summary and the written file paths are **stdout**; progress, the resolved

@@ -156,6 +156,41 @@ public sealed class CemTerminal3D
 }
 
 /// <summary>
+/// brief-em3d-23 R-em3d23-2 — one port's 3D settings, by its number. Every field but the number may be
+/// omitted; an entry that states nothing but <c>Lumped</c> is not written at all.
+/// </summary>
+public sealed class CemPort3D
+{
+    /// <summary>The port's number, as its label states it.</summary>
+    public int Port { get; set; }
+
+    /// <summary>Lumped (a sheet with a resistance across it) or Wave (a region of an air-box face, fed by
+    /// the line's own mode). <b>Omitted means Lumped.</b></summary>
+    public CircuitRF.Engine.Em3d.Em3dPortKind? Kind { get; set; }
+
+    /// <summary>A wave port's width, in multiples of the line's width. Omitted takes the sizing rule's.</summary>
+    public double? Width { get; set; }
+
+    /// <summary>A wave port's height, in multiples of the line's height above its return plane. Omitted
+    /// takes the sizing rule's.</summary>
+    public double? Height { get; set; }
+
+    /// <summary>A wave port's de-embedding distance into the structure, micrometres. Omitted is 0: the
+    /// reference plane is the port's face.</summary>
+    public double? OffsetUm { get; set; }
+}
+
+/// <summary>brief-em3d-23 R-em3d23-4a — what an eigenmode solve finds.</summary>
+public sealed class CemEigenmode
+{
+    /// <summary>How many modes. Omitted is 3.</summary>
+    public int? Count { get; set; }
+
+    /// <summary>The frequency above which modes are found, GHz. Omitted is the sweep's start.</summary>
+    public double? TargetGHz { get; set; }
+}
+
+/// <summary>
 /// brief-em3d-21 R-em3d21-4 — a Palace quality preset: a named set of the section's cost-deciding
 /// fields. Each is a claim about cost and accuracy, so each was MEASURED on F0's cases A and B
 /// (src/Design/RESOLVED.md §brief-em3d-21 holds the table); <see cref="Standard"/> is exactly the
@@ -562,6 +597,13 @@ public sealed class CemFile
     /// <summary>The net that is a static solve's reference. Null is the ground-reference conductors
     /// (and the PEC floor when there is one).</summary>
     public string? Ground3D { get; set; }
+
+    /// <summary>brief-em3d-23 — per-port 3D settings (the port's kind, a wave port's extent and offset).
+    /// Null when every port is lumped with nothing stated.</summary>
+    public List<CemPort3D>? Ports3D { get; set; }
+
+    /// <summary>brief-em3d-23 — an eigenmode solve's mode count and target. Null takes both defaults.</summary>
+    public CemEigenmode? Eigenmode { get; set; }
 }
 
 /// <summary>Reads and writes <c>.cem</c> files. Framework-free (no Avalonia / Skia).</summary>
@@ -687,6 +729,18 @@ public static class EmSetupPersistence
             : [.. s.Terminals3D.Select(t => new CemTerminal3D { Name = t.Name, Net = t.Net,
                                                                  Source = t.Source is { Length: > 0 } src ? src : null })],
         Ground3D       = s.Ground3D is { Length: > 0 } g3 ? g3 : null,
+        // R-em3d23-2a — a port with nothing but the default kind writes nothing, so every lumped-port
+        // file keeps its bytes (gate 9).
+        Ports3D        = s.Ports3D.Where(p => !p.IsDefault).ToList() is { Count: > 0 } p3
+            ? [.. p3.Select(p => new CemPort3D
+              {
+                  Port = p.Port,
+                  Kind = p.Kind == CircuitRF.Engine.Em3d.Em3dPortKind.Lumped ? null : p.Kind,
+                  Width = p.WidthFactor, Height = p.HeightFactor, OffsetUm = p.OffsetUm,
+              })]
+            : null,
+        Eigenmode      = s.Eigenmode is { } e && (e.Count is not null || e.TargetGHz is not null)
+            ? new CemEigenmode { Count = e.Count, TargetGHz = e.TargetGHz } : null,
     };
 
     private static CemAirBoxFace? ToFace(EmAirBoxFace? f)
@@ -751,6 +805,10 @@ public static class EmSetupPersistence
         Problem3D             = f.Problem3D ?? CircuitRF.Engine.Em3d.Em3dProblemType.Driven,
         Terminals3D           = f.Terminals3D is { } ts ? [.. ts.Select(t => new EmTerminal3D(t.Name ?? "", t.Net ?? "", t.Source))] : [],
         Ground3D              = f.Ground3D ?? "",
+        Ports3D               = f.Ports3D is { } ps
+            ? [.. ps.Select(p => new EmPort3D(p.Port, p.Kind ?? CircuitRF.Engine.Em3d.Em3dPortKind.Lumped, p.Width, p.Height, p.OffsetUm))]
+            : [],
+        Eigenmode             = f.Eigenmode is { } em ? new EmEigenmode3D(em.Count, em.TargetGHz) : null,
     };
 
     /// <summary>

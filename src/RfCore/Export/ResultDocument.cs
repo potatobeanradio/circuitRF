@@ -1089,7 +1089,15 @@ namespace RfCore.Export
         /// null for a driven setup, so a driven report is unchanged.</summary>
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public Em3dStaticJson? Static { get; init; }
+
+        /// <summary>brief-em3d-23 R-em3d23-4a — an eigenmode problem's mode count and target; null otherwise.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public Em3dEigenmodeJson? Eigenmode { get; init; }
     }
+
+    /// <summary>brief-em3d-23 — how many modes an eigenmode run finds, above which frequency, and where each
+    /// setting came from ("field" or "default").</summary>
+    public sealed record Em3dEigenmodeJson(int Count, string CountFrom, double TargetHz, string TargetFrom);
 
     /// <summary>brief-em3d-22 R-em3d22-2b — which conductors are in which terminal, which are the ground,
     /// and which float, with what floating means for this problem.</summary>
@@ -1156,7 +1164,17 @@ namespace RfCore.Export
     public sealed record Em3dPortJson(
         int Number, string Name, string Positive, string Negative, double Z0Re, double Z0Im,
         IReadOnlyList<double> Min, IReadOnlyList<double> Max,
-        IReadOnlyList<double> ReferenceOrigin, IReadOnlyList<double> ReferenceNormal, double ReferenceShiftM);
+        IReadOnlyList<double> ReferenceOrigin, IReadOnlyList<double> ReferenceNormal, double ReferenceShiftM)
+    {
+        /// <summary>brief-em3d-23 — "wave" for a wave port; null (omitted) for a lumped one.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? Kind { get; init; }
+
+        /// <summary>brief-em3d-23 R-em3d23-2c — where a wave port's reference plane is, in words; null for a
+        /// lumped port, whose plane is its sheet.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? ReferencePlane { get; init; }
+    }
 
     /// <param name="Enlargements">What a backend asks to add outside a face, as sentences — openEMS's
     /// PML on each absorbing face (brief-em3d-8 R-em3d8-4c).</param>
@@ -1243,7 +1261,12 @@ namespace RfCore.Export
         string? Refusal);
 
     /// <param name="FromCache">True when the answer was the cached one for this binary, so no probe ran.</param>
-    public sealed record Em3dCapabilityJson(string Capability, bool Available, string Detail, bool FromCache);
+    public sealed record Em3dCapabilityJson(string Capability, bool Available, string Detail, bool FromCache)
+    {
+        /// <summary>brief-em3d-23 R-em3d23-1b — how the capability is asked: a dry run, or a one-element solve.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? Probe { get; init; }
+    }
 
     // ── reference, on the wire (brief-automation-6-reference-and-components.md) ──
 

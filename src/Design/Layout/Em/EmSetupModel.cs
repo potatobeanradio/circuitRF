@@ -64,6 +64,29 @@ public sealed record EmAirBox(
 public sealed record EmTerminal3D(string Name, string Net, string? Source = null);
 
 /// <summary>
+/// brief-em3d-23 R-em3d23-2 — one port's 3D settings, as the <c>.cem</c> states them.
+/// </summary>
+/// <param name="Port">The port's number.</param>
+/// <param name="Kind">Lumped (the default) or Wave.</param>
+/// <param name="WidthFactor">A wave port's width in multiples of the line's width; null takes the rule's.</param>
+/// <param name="HeightFactor">A wave port's height in multiples of the line's height above its return;
+/// null takes the rule's.</param>
+/// <param name="OffsetUm">A wave port's de-embedding distance, µm; null is 0.</param>
+public sealed record EmPort3D(int Port, Em3dPortKind Kind = Em3dPortKind.Lumped, double? WidthFactor = null,
+                              double? HeightFactor = null, double? OffsetUm = null)
+{
+    /// <summary>States nothing a lumped port with no overrides would not: written as nothing.</summary>
+    public bool IsDefault => Kind == Em3dPortKind.Lumped && WidthFactor is null && HeightFactor is null && OffsetUm is null;
+}
+
+/// <summary>brief-em3d-23 R-em3d23-4a — an eigenmode solve's settings; a null field takes its default.</summary>
+public sealed record EmEigenmode3D(int? Count = null, double? TargetGHz = null)
+{
+    /// <summary>How many modes when the setup does not say.</summary>
+    public const int DefaultCount = 3;
+}
+
+/// <summary>
 /// The mutable working model behind an open <c>.cem</c>. Framework-free — the editor view model
 /// wraps this, the same split <c>TechEditorViewModel</c>/<c>Technology</c> already uses.
 /// </summary>
@@ -470,6 +493,20 @@ public sealed class EmSetup
     /// generator already uses: the ground-reference conductors, and the PEC floor when there is one.</summary>
     public string Ground3D { get; set; } = "";
 
+    /// <summary>brief-em3d-23 R-em3d23-2a — per-port 3D settings. A port with no entry is lumped.</summary>
+    public List<EmPort3D> Ports3D { get; set; } = [];
+
+    /// <summary>brief-em3d-23 R-em3d23-4a — an eigenmode solve's count and target. Null takes both
+    /// defaults: <see cref="EmEigenmode3D.DefaultCount"/> modes above the sweep's start.</summary>
+    public EmEigenmode3D? Eigenmode { get; set; }
+
+    /// <summary>The kind the setup states for port <paramref name="number"/>.</summary>
+    public Em3dPortKind PortKind3D(int number)
+        => Ports3D.LastOrDefault(p => p.Port == number)?.Kind ?? Em3dPortKind.Lumped;
+
+    /// <summary>True when any port is stated as a wave port.</summary>
+    public bool HasWavePorts3D => Ports3D.Any(p => p.Kind == Em3dPortKind.Wave);
+
     /// <summary>
     /// R-em3d22-1c — what a static setup keeps but does not read, by <c>.cem</c> key: the sweep when it
     /// is not the default, and the port impedances.
@@ -546,6 +583,8 @@ public sealed class EmSetup
         Problem3D              = Problem3D,
         Terminals3D            = [.. Terminals3D],   // records, immutable
         Ground3D               = Ground3D,
+        Ports3D                = [.. Ports3D],       // records, immutable
+        Eigenmode              = Eigenmode,
     };
 
     /// <summary>The extraction settings this setup implies — the one place the two are married,

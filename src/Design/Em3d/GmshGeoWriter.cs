@@ -131,7 +131,7 @@ public static class GmshGeoWriter
                 return No($"The air box's {FaceKeys[k]} face is a Symmetry face, which does not say whether the " +
                           "field's electric or magnetic wall lies there. Set it to Pec (an electric wall) or Pmc " +
                           "(a magnetic one) in the setup's AirBox.");
-        if (problem.Ports.Count == 0 && !problem.IsStatic)
+        if (problem.Ports.Count == 0 && problem.Type == Em3dProblemType.Driven)
             return No("The 3D problem has no ports, so there is nothing for Palace to excite.");
 
         var materials = problem.Materials.ToDictionary(m => m.Name, StringComparer.Ordinal);
@@ -178,9 +178,11 @@ public static class GmshGeoWriter
             new Em3dGroup(p.Name, ++attr, 2, Em3dGroupKind.Port, 1, AtLeast: true, PortNumber: p.Number)).ToList();
         groups.AddRange(portGroups);
 
+        // brief-em3d-23 — a face that a wave port or a conductor covers whole keeps no surface of its own:
+        // it expects none, and the configuration names no attribute for it.
         var faceGroups = FaceKeys.Select((key, k) =>
-            new Em3dGroup(Em3dAirBox.FaceName(key), ++attr, 2, Em3dGroupKind.Face, 1, AtLeast: true,
-                          Boundary: faceKinds[k])).ToList();
+            new Em3dGroup(Em3dAirBox.FaceName(key), ++attr, 2, Em3dGroupKind.Face, Covered(problem, key) ? 0 : 1,
+                          AtLeast: !Covered(problem, key), Boundary: faceKinds[k])).ToList();
         groups.AddRange(faceGroups);
 
         // ── The script ───────────────────────────────────────────────────────────────────────
@@ -279,25 +281,42 @@ public static class GmshGeoWriter
             (box.Min.X, box.Min.Y, box.Min.Z, box.Max.X, box.Max.Y, box.Min.Z),
             (box.Min.X, box.Min.Y, box.Max.Z, box.Max.X, box.Max.Y, box.Max.Z),
         };
-        void ClaimPorts()
+        void ClaimPorts(bool wave)
         {
             for (int k = 0; k < problem.Ports.Count; k++)
             {
                 var p = problem.Ports[k];
+                if (!problem.IsStatic && (p.Kind == Em3dPortKind.Wave) != wave) continue;
                 L($"// {Comment(p.Name)}");
-                Claim(g, $"q{k}", [Query((p.Min.X, p.Min.Y, p.Min.Z, p.Max.X, p.Max.Y, p.Max.Z), 0)], []);
+                if (p.Kind == Em3dPortKind.Wave)
+                {
+                    // brief-em3d-23 — a wave port's rectangle crosses the line's own end, and the line is a void:
+                    // the piece over it bounds no volume, and a boundary element that is no element's face is
+                    // an MFEM abort (STable3D). So a wave port keeps only faces bounding the meshed space, and the
+                    // piece it leaves is marked claimed too, or the face's own query (next) would take it instead.
+                    L($"q{k}[] = {Query((p.Min.X, p.Min.Y, p.Min.Z, p.Max.X, p.Max.Y, p.Max.Z), 0)};");
+                    L($"x[] = q{k}[];");
+                    L("x[] -= single[];");
+                    L($"q{k}[] -= x[];");
+                    L($"q{k}[] -= claimed[];");
+                    L($"claimed[] += q{k}[];");
+                    L("claimed[] += x[];");
+                }
+                else Claim(g, $"q{k}", [Query((p.Min.X, p.Min.Y, p.Min.Z, p.Max.X, p.Max.Y, p.Max.Z), 0)], []);
             }
         }
         // brief-em3d-22 — a static problem's source sheets are claimed BEFORE the air-box faces, so a
         // coaxial source can lie on the face its line ends at (Palace's own way to feed a coax). A driven
-        // problem keeps its order, and its script its bytes.
-        if (problem.IsStatic) ClaimPorts();
+        // problem keeps its order, and its script its bytes. brief-em3d-23 — a WAVE port lies on an air-box
+        // face by definition, so it is claimed before the faces too.
+        if (problem.IsStatic) ClaimPorts(wave: false);
+        else if (problem.HasWavePorts) ClaimPorts(wave: true);
         for (int k = 0; k < 6; k++)
         {
             L($"// air box {FaceKeys[k]}");
             Claim(g, $"f{k}", [Query(faceQuery[k], 0)], []);
         }
-        if (!problem.IsStatic) ClaimPorts();
+        if (!problem.IsStatic) ClaimPorts(wave: false);
         for (int k = 0; k < problem.Sheets.Count; k++)
         {
             var sh = problem.Sheets[k];
@@ -383,7 +402,7 @@ public static class GmshGeoWriter
         L();
 
         // ── Mesh size (R-em3d7-2e): an initial mesh only ─────────────────────────────────────
-        double fMax = problem.Frequency.StopHz;
+        double fMax = SizingFrequencyHz(problem);
         // brief-em3d-22 — a static solve has no wavelength: its largest element is the same fraction of
         // the air box's largest side, in every material.
         double boxSide = Math.Max(box.Max.X - box.Min.X, Math.Max(box.Max.Y - box.Min.Y, box.Max.Z - box.Min.Z));
@@ -408,7 +427,8 @@ public static class GmshGeoWriter
         L("// ---- the initial mesh: Palace's adaptive refinement converges the answer ------------------");
         L(problem.IsStatic
             ? $"// Largest element: {Num(settings.MaxElementWavelengths)} of the air box's largest side (a static solve has no wavelength);"
-            : $"// Largest element per material: {Num(settings.MaxElementWavelengths)} of its wavelength at {Num(fMax / 1e9)} GHz;");
+            : $"// Largest element per material: {Num(settings.MaxElementWavelengths)} of its wavelength at {Num(fMax / 1e9)} GHz" +
+              (problem.Type == Em3dProblemType.Eigenmode ? " (twice the eigenmode target);" : ";"));
         L($"// {Num(settings.EdgeRefinement)} of the smallest at conductors and sheets; at most 1/{PortCellsAcross} of each port");
         L($"// sheet's smaller side at the ports; growing by {Num(settings.Grading)}.");
         L($"Mesh.MeshSizeMax = {Num(Round(sizeMax))};");
@@ -446,6 +466,48 @@ public static class GmshGeoWriter
         L("Mesh.Binary = 1;");
 
         return new GmshLowering(g.ToString(), groups, GroupsJson(groups), null);
+    }
+
+    /// <summary>
+    /// The frequency a problem's initial mesh is sized at: the sweep's top — or, for an eigenmode problem,
+    /// which has no sweep, <b>twice its target</b>: the modes it finds lie above the target, and the first
+    /// few of a cavity lie within an octave of the fundamental.
+    /// </summary>
+    public static double SizingFrequencyHz(Em3dProblem problem)
+        => problem.Type == Em3dProblemType.Eigenmode ? 2 * problem.EigenmodeTargetHz : problem.Frequency.StopHz;
+
+    /// <summary>
+    /// brief-em3d-23 — true when nothing of face <paramref name="key"/> is left to be a boundary of the
+    /// meshed space: a wave port's rectangle covers it whole (a waveguide fed across its full cross-section),
+    /// or a conductor's bound reaches it and covers it whole (a cavity whose metal walls ARE the box), in which
+    /// case the face is the conductor's outside and is deleted with it.
+    /// </summary>
+    public static bool Covered(Em3dProblem problem, string key)
+    {
+        var b = problem.Boundary;
+        int axis = key[0] - 'x';
+        bool high = key.EndsWith("max", StringComparison.Ordinal);
+        double at = high ? Get(b.Max, axis) : Get(b.Min, axis);
+        double tol = 1e-9 * Math.Max(1.0, Math.Max(b.Max.X - b.Min.X, Math.Max(b.Max.Y - b.Min.Y, b.Max.Z - b.Min.Z)));
+        bool Spans(double x0, double y0, double z0, double x1, double y1, double z1)
+        {
+            double[] lo = [x0, y0, z0], hi = [x1, y1, z1];
+            if (high ? hi[axis] < at - tol : lo[axis] > at + tol) return false;
+            for (int a = 0; a < 3; a++)
+                if (a != axis && (lo[a] > Get(b.Min, a) + tol || hi[a] < Get(b.Max, a) - tol)) return false;
+            return true;
+        }
+        foreach (var p in problem.Ports)
+            if (p.Kind == Em3dPortKind.Wave && problem.FaceOf(p.Min, p.Max) == key &&
+                Spans(p.Min.X, p.Min.Y, p.Min.Z, p.Max.X, p.Max.Y, p.Max.Z))
+                return true;
+        foreach (var s in problem.Solids)
+            if (s.Role == Em3dRole.Conductor && s.Primitive is Em3dBox &&
+                Em3dProblem.Bounds(s.Primitive) is var (x0, y0, z0, x1, y1, z1) && Spans(x0, y0, z0, x1, y1, z1))
+                return true;
+        return false;
+
+        static double Get(Point3 q, int a) => a == 0 ? q.X : a == 1 ? q.Y : q.Z;
     }
 
     /// <summary>brief-em3d-22 — a static problem's largest initial element, metres: the Palace section's

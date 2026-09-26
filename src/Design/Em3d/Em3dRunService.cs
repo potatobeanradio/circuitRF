@@ -30,6 +30,7 @@
 // viewer can read its fields. A planar result's path does not move by one byte.
 
 using System.Globalization;
+using System.Numerics;
 using System.Text;
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.Em;
@@ -73,11 +74,12 @@ public static class Em3dRunService
     public static string RunDirectory(string resultsRoot, EmSetup setup, Em3dSolver solver)
         => Path.Combine(resultsRoot, ResultKey(setup, solver) + StaticSuffix(setup));
 
-    /// <summary>brief-em3d-22 — <c>_es</c>, <c>_ms</c>, or empty for a driven setup.</summary>
+    /// <summary>brief-em3d-22 — <c>_es</c>, <c>_ms</c>; brief-em3d-23 — <c>_eig</c>; empty for a driven setup.</summary>
     public static string StaticSuffix(EmSetup setup) => setup.Problem3D switch
     {
         Em3dProblemType.Electrostatic => "_es",
         Em3dProblemType.Magnetostatic => "_ms",
+        Em3dProblemType.Eigenmode     => "_eig",
         _ => "",
     };
 
@@ -92,6 +94,30 @@ public static class Em3dRunService
               "problems: openEMS is a time-domain solver and has no static one. Set the setup's Solver3D to Palace, or run it " +
               "with `circuitrf em --solver palace`."
             : null;
+
+    /// <summary>
+    /// brief-em3d-23 R-em3d23-2e / §7 — what only Palace does: the static problems (brief 22), an eigenmode
+    /// solve (FDTD has no eigensolver) and a wave port (openEMS's own waveguide and microstrip ports are a
+    /// later brief). On openEMS or Both it is refused naming Palace, before anything is looked for.
+    /// </summary>
+    public static string? PalaceOnlyRefusal(EmSetup setup)
+    {
+        if (StaticSolverRefusal(setup) is { } staticOnly) return staticOnly;
+        if (setup.Solver3D is not (Em3dSolver.OpenEms or Em3dSolver.Both)) return null;
+        string on = setup.Solver3D == Em3dSolver.Both ? "both solvers" : "openEMS";
+        const string remedy = "Set the setup's Solver3D to Palace, or run it with `circuitrf em --solver palace`.";
+        if (setup.Problem3D == Em3dProblemType.Eigenmode)
+            return $"This setup asks for an eigenmode solve on {on}, and only Palace finds eigenmodes: openEMS is a " +
+                   "time-domain (FDTD) solver and has no eigensolver. " + remedy;
+        if (setup.HasWavePorts3D && !setup.IsStatic3D)
+        {
+            var wave = setup.Ports3D.Where(p => p.Kind == Em3dPortKind.Wave).Select(p => p.Port).Distinct().Order().ToList();
+            return $"Port{(wave.Count == 1 ? "" : "s")} {string.Join(", ", wave)} {(wave.Count == 1 ? "is a wave port" : "are wave ports")}, " +
+                   $"and only Palace builds wave ports in this version (openEMS's waveguide and microstrip ports are a later " +
+                   $"addition), so this setup cannot run on {on}. {remedy} Or make the port{(wave.Count == 1 ? "" : "s")} lumped.";
+        }
+        return null;
+    }
 
     /// <summary>The Touchstone's path without its <c>.sNp</c> suffix: the override when the setup has
     /// one (<c>-o</c> moves the Touchstone only, as for planar), the solver-named stem otherwise.</summary>
@@ -159,9 +185,13 @@ public static class Em3dRunService
 
         if (StaticSolverRefusal(setup) is { } staticOnly)
             return log.Result(EmRunStatus.Refused, EmDiagnostics.Forwarded("em3d-static", staticOnly));
+        if (PalaceOnlyRefusal(setup) is { } palaceOnly)
+            return log.Result(EmRunStatus.Refused, EmDiagnostics.Forwarded("em3d-palace-only", palaceOnly));
 
         // ── brief 6: every program found, validated and probed, before anything else ─────────
-        var readiness = SolverDiscovery.ReadinessFor(solver);
+        // brief-em3d-23 R-em3d23-1c — probed for what THIS setup needs, so a build without an eigensolver
+        // is refused here, before Gmsh.
+        var readiness = SolverDiscovery.ReadinessFor(solver, setup);
         if (readiness.FirstOrDefault(r => !r.Proceeds) is { } blocked)
         {
             var unavailable = EmDiagnostics.SolverUnavailable(blocked.Name, blocked.Refusal!);
@@ -467,9 +497,48 @@ public static class Em3dRunService
         string post = Path.Combine(runDir, PalaceConfigWriter.OutputDirectory);
         if (problem.IsStatic)
             return FinishStatic(problem, setup, resultsRoot, post, tracker, processes, log, palace, wall.Elapsed);
+        if (problem.Type == Em3dProblemType.Eigenmode)
+            return FinishEigen(problem, setup, resultsRoot, post, lowering, tracker, processes, log, palace, wall.Elapsed);
         var ports = problem.Ports.OrderBy(p => p.Number).ToList();
         var s = PalaceRun.ReadPortS(Path.Combine(post, PalaceRun.PortSFile), [.. ports.Select(p => p.Number)], out string? readError);
         if (readError is not null) return Failed(readError);
+        // brief-em3d-23 R-em3d23-2d — a wave port's S is referred to its mode's own impedance: renormalised to
+        // the port's stated Z0 before anything else reads it.
+        Complex[][]? modeZ = null;
+        if (problem.HasWavePorts)
+        {
+            var wave = ports.Where(p => p.Kind == Em3dPortKind.Wave).ToList();
+            modeZ = PalaceRun.ReadPortZ(Path.Combine(post, PalaceRun.PortZFile), [.. wave.Select(p => p.Number)],
+                                        out double[] zf, out string? zError);
+            if (modeZ is null) return Failed(zError!);
+            if (zf.Length != s.FrequenciesHz.Length ||
+                zf.Where((f, k) => Math.Abs(f - s.FrequenciesHz[k]) > 1e-6 * Math.Abs(f)).Any())
+                return Failed($"Palace's {PalaceRun.PortZFile} and {PalaceRun.PortSFile} do not list the same frequencies, so the " +
+                              "wave ports' S-parameters cannot be renormalised.");
+            s = RenormaliseWavePorts(s, ports, wave, modeZ);
+            log.Notes.Add(WaveNote(ports, wave, modeZ, s.FrequenciesHz));
+            // R-em3d23-3 — a port face that supports a second propagating mode gives an S that means something else.
+            try
+            {
+                var second = PalaceRun.SecondModes(runDir, plan.ConfigJson, palace.Path, problem.Frequency.StopHz,
+                                                   [.. wave.Select(p => p.Number)], ct, out string? secondNote);
+                if (second is null) log.Notes.Add($"Whether a wave port's second mode propagates was not checked: {secondNote}.");
+                else if (second.Any(m => m.Propagating))
+                    foreach (var m in second.Where(m => m.Propagating))
+                        log.Warnings.Add($"Port {m.Port}'s wave-port face supports a SECOND propagating mode at " +
+                                     $"{Fmt(problem.Frequency.StopHz / 1e9)} GHz (Palace's kₙ = {Fmt(m.Kn.Real)}{(m.Kn.Imaginary < 0 ? "−" : "+")}" +
+                                     $"{Fmt(Math.Abs(m.Kn.Imaginary))}i m⁻¹), so its S-parameters are those of the first mode alone and " +
+                                     "power the second carries is not in them. Make the port region smaller (the Ports3D Width and " +
+                                     "Height), or lower the sweep's top.");
+                else log.Notes.Add($"No wave port's second mode propagates at {Fmt(problem.Frequency.StopHz / 1e9)} GHz, the top of " +
+                                   "the sweep (Palace, asked for mode 2): " + string.Join("; ", second.Select(m =>
+                                       $"port {m.Port}'s decays by 1/e in {Fmt(m.DecayLengthM * 1e3)} mm")) + ".");
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                log.Notes.Add($"Whether a wave port's second mode propagates was not checked ({e.Message}).");
+            }
+        }
         s = AtRequestedFrequencies(s, FrequenciesHz(problem.Frequency));
         var facts = PalaceRun.ReadFacts(post);
         log.Notes.Add($"Palace solved {s.FrequenciesHz.Length} frequencies on {Count(facts.FinalElements)} elements " +
@@ -478,6 +547,15 @@ public static class Em3dRunService
 
         // ── The DataSet: S and Z0 in the house convention, plus Palace's own record ─────────────
         var data = BuildDataSet(s, ports, facts);
+        if (modeZ is not null)
+        {
+            var wave = ports.Where(p => p.Kind == Em3dPortKind.Wave).ToList();
+            var values = new System.Numerics.Complex[modeZ.Length * wave.Count];
+            for (int k = 0; k < modeZ.Length; k++)
+                for (int i = 0; i < wave.Count; i++) values[k * wave.Count + i] = modeZ[k][i];
+            data.AddToGroup(PalaceGroup, WaveModeImpedanceCube, new DataCube(
+                [new Axis("f", s.FrequenciesHz, "Hz"), new Axis("Port", [.. wave.Select(p => (double)p.Number)], "")], values) { Unit = "Ohm" });
+        }
         var summary = tracker.Summary;
         var quality = setup.Palace?.Quality ?? PalaceQuality.Standard;
 
@@ -553,6 +631,109 @@ public static class Em3dRunService
         Scalar("AdaptiveIterations",  facts.AdaptiveIterations);
         log.Notes.Add($"Palace solved {problem.Terminals.Count} terminal(s) on {Count(facts.FinalElements)} elements " +
                       $"({Count(facts.InitialElements)} initially, {facts.AdaptiveIterations ?? 0} adaptive pass(es)), " +
+                      $"{Count(facts.DegreesOfFreedom)} unknowns, {processes} process(es).");
+
+        string? npyPath = WriteNpy(resultsRoot, NpyKey(setup, Me), data, log);
+        log.Notes.Add(CompletionSummary(tracker.Summary, setup.Palace?.Quality ?? PalaceQuality.Standard, wall));
+        return new Leg(Me, EmRunStatus.Ok, null, data, npyPath, null, "Palace " + palace.DescribeVersion());
+    }
+
+    /// <summary>The Palace group's cube holding each wave port's mode impedance Z_PV, [f, Port], ohms.</summary>
+    public const string WaveModeImpedanceCube = "WavePortZmode";
+
+    /// <summary>
+    /// R-em3d23-2d — Palace's S with every wave port moved from its mode's impedance to its stated Z0: the
+    /// whole matrix per frequency (RfCore's <see cref="RFNetwork.SToS"/>), never an element at a time. A lumped
+    /// port is already at its Z0 (its resistance), so its reference is unchanged.
+    /// </summary>
+    internal static PalacePortS RenormaliseWavePorts(PalacePortS s, IReadOnlyList<Em3dPort> ports, IReadOnlyList<Em3dPort> wave,
+                                                     Complex[][] modeZ)
+    {
+        int n = ports.Count;
+        var target = ports.Select(p => p.Z0).ToArray();
+        var mats = new Complex[s.S.Length][,];
+        for (int k = 0; k < s.S.Length; k++)
+        {
+            var from = (Complex[])target.Clone();
+            for (int w = 0; w < wave.Count; w++) from[ports.ToList().IndexOf(wave[w])] = modeZ[k][w];
+            var m = new Mat<Complex>(n, n);
+            for (int i = 0; i < n; i++) for (int j = 0; j < n; j++) m[i, j] = s.S[k][i, j];
+            var r = RFNetwork.SToS(m, from, target);
+            mats[k] = new Complex[n, n];
+            for (int i = 0; i < n; i++) for (int j = 0; j < n; j++) mats[k][i, j] = r[i, j];
+        }
+        return s with { S = mats };
+    }
+
+    /// <summary>What each wave port's S was referred to, and what it is now.</summary>
+    private static string WaveNote(IReadOnlyList<Em3dPort> ports, IReadOnlyList<Em3dPort> wave, Complex[][] modeZ, double[] f)
+    {
+        var parts = wave.Select((p, w) =>
+        {
+            var re = modeZ.Select(z => z[w].Real).ToList();
+            string range = re.Min() == re.Max() ? $"{Fmt(re[0])} Ω" : $"{Fmt(re.Min())} to {Fmt(re.Max())} Ω";
+            return $"port {p.Number}'s mode impedance is {range} over the sweep, renormalised to {Fmt(p.Z0.Real)} Ω";
+        });
+        return "Palace refers a wave port's S-parameters to the port's own mode, normalised to unit power — that is, to the " +
+               "mode's impedance Z_PV (port-Z.csv), which varies with frequency. The .sNp states one real reference per port, " +
+               $"so the wave ports were renormalised: {string.Join("; ", parts)}.";
+    }
+
+    /// <summary>
+    /// brief-em3d-23 R-em3d23-4c — an eigenmode solve's modes, read by column name, as a DataSet in
+    /// <c>results/</c> under <c>&lt;key&gt;.palace_eig</c>. No Touchstone: a mode is not S. The run directory keeps
+    /// whatever Palace wrote (R-em3d23-4d).
+    /// </summary>
+    private static Leg FinishEigen(Em3dProblem problem, EmSetup setup, string resultsRoot, string post, GmshLowering lowering,
+                                   PalaceStageTracker tracker, int processes, RunLog log, SolverInstallation palace, TimeSpan wall)
+    {
+        const Em3dSolver Me = Em3dSolver.Palace;
+        var modes = PalaceRun.ReadModes(Path.Combine(post, PalaceRun.EigFile), out string? error);
+        if (modes is null) return Leg.Failed(Me, EmRunStatus.EngineError, EmDiagnostics.SolveFailed(error!));
+        if (modes.Count < problem.EigenmodeCount)
+            log.Warnings.Add($"Palace found {modes.Count} converged mode(s) above {Fmt(problem.EigenmodeTargetHz / 1e9)} GHz where " +
+                             $"{problem.EigenmodeCount} were asked for.");
+        int[] index = [.. modes.Select(m => m.Index)];
+
+        var lumped = problem.Ports.Where(p => p.Kind == Em3dPortKind.Lumped).OrderBy(p => p.Number).Select(p => p.Number).ToList();
+        double[,]? qExt = null;
+        if (lumped.Count > 0)
+        {
+            qExt = PalaceRun.ReadModeColumns(Path.Combine(post, PalaceRun.PortQFile), [.. lumped.Select(n => $"Q_ext[{n}]")], index, out string? qError);
+            if (qError is not null) log.Notes.Add($"The ports' external Q was not read: {qError}");
+        }
+        var volumes = lowering.Groups.Where(g => g.Dimension == 3).ToList();
+        var participation = PalaceRun.ReadModeColumns(Path.Combine(post, PalaceRun.DomainEnergyFile),
+                                                      [.. volumes.Select((_, k) => $"p_elec[{k + 1}]")], index, out string? pError);
+        if (pError is not null) log.Notes.Add($"The energy participation was not read: {pError}");
+
+        var notes = new List<string>
+        {
+            "f is each mode's resonant frequency (the real part of Palace's complex eigenfrequency). Q is Palace's Q, " +
+            "Re f / 2 Im f: the LOADED Q, with every loss in the problem — finite-conductivity walls, lossy dielectrics, " +
+            "open (absorbing) faces, and each lumped port's resistance, which an eigenmode solve treats as a load.",
+        };
+        if (qExt is not null)
+            notes.Add("Q_ext is each lumped port's external Q, as Palace writes it. Q_unloaded = 1/(1/Q − Σ 1/Q_ext) is the Q " +
+                      "with the ports' loading taken out, computed by circuitRF from those two figures of Palace's.");
+        if (participation is not null)
+            notes.Add("Participation is the fraction of each mode's electric energy in each meshed region (Palace's p_elec): " +
+                      "where the mode lives.");
+        log.Notes.AddRange(notes);
+
+        var data = Em3dEigenResult.Build([.. modes.Select(m => new Em3dMode(m.Index, m.FrequencyHz, m.Q))], lumped, qExt,
+                                         [.. volumes.Select(g => g.Name)], participation, notes);
+        var facts = PalaceRun.ReadFacts(post);
+        void Scalar(string name, double? v)
+        {
+            if (v is { } x) data.AddToGroup(PalaceGroup, name, DataCube.Scalar(x));
+        }
+        Scalar("MeshElementsInitial", facts.InitialElements);
+        Scalar("MeshElementsFinal",   facts.FinalElements);
+        Scalar("DegreesOfFreedom",    facts.DegreesOfFreedom);
+        Scalar("AdaptiveIterations",  facts.AdaptiveIterations);
+        log.Notes.Add($"Palace found {modes.Count} mode(s) above {Fmt(problem.EigenmodeTargetHz / 1e9)} GHz on {Count(facts.FinalElements)} " +
+                      $"elements ({Count(facts.InitialElements)} initially, {facts.AdaptiveIterations ?? 0} adaptive pass(es)), " +
                       $"{Count(facts.DegreesOfFreedom)} unknowns, {processes} process(es).");
 
         string? npyPath = WriteNpy(resultsRoot, NpyKey(setup, Me), data, log);
@@ -925,7 +1106,12 @@ public static class Em3dRunService
         var lines = new List<string>();
         foreach (var p in problem.Ports.OrderBy(p => p.Number))
             lines.Add($"{EmProvenanceStamp.PortPrefixNumbered}{p.Number}: '{Ascii(p.Name)}' from '{Ascii(p.NegativeObject)}' " +
-                      $"to '{Ascii(p.PositiveObject)}', lumped, {R(p.Z0.Real)} Ohm");
+                      $"to '{Ascii(p.PositiveObject)}', " + (p.Kind == Em3dPortKind.Wave
+                          // R-em3d23-2d — the file states the one reference its numbers are in, and where they came from.
+                          ? $"wave (mode 1), {R(p.Z0.Real)} Ohm: Palace's S is referred to the mode's own impedance Z_PV, " +
+                            $"renormalised here to {R(p.Z0.Real)} Ohm; reference plane {R(p.ReferencePlane.ShiftM * 1e6)} um " +
+                            "into the structure from the port face"
+                          : $"lumped, {R(p.Z0.Real)} Ohm"));
         lines.Add($"circuitRF-EM 3D mesh: {Count(facts.InitialElements)} elements initially, {Count(facts.FinalElements)} " +
                   $"finally, {facts.AdaptiveIterations ?? 0} adaptive pass(es), element order {settings.ElementOrder}");
         lines.Add($"circuitRF-EM 3D operating temperature: {R(problem.OperatingTempC)} C");
@@ -1001,8 +1187,8 @@ public static class Em3dRunService
         var background = p.Solids.FirstOrDefault(s => s.Role == Em3dRole.Air) is { } air
             ? byName[air.Material] : new Em3dMaterial("(free space)", 1, null, 0, 1, 0);
         return Em3dSizeEstimate.Palace(
-            p, s => GmshGeoWriter.MaxElementSizeM(byName[s.Material], p.Frequency.StopHz, settings), settings.ElementOrder,
-            GmshGeoWriter.MaxElementSizeM(background, p.Frequency.StopHz, settings), settings.AdaptiveMaxIterations);
+            p, s => GmshGeoWriter.MaxElementSizeM(byName[s.Material], GmshGeoWriter.SizingFrequencyHz(p), settings), settings.ElementOrder,
+            GmshGeoWriter.MaxElementSizeM(background, GmshGeoWriter.SizingFrequencyHz(p), settings), settings.AdaptiveMaxIterations);
     }
 
     /// <summary>The fit check for a setup as the panel is about to run it: generates the problem and

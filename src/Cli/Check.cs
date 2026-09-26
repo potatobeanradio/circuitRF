@@ -674,9 +674,10 @@ internal static class Check
                 $"planar finds {(planarOnly.Count == 1 ? "it where it was" : "them where they were")}."));
 
         // brief-em3d-22 R-em3d22-1b/c — a static problem on Palace only, and what it keeps but does not read.
-        if (CircuitRF.Design.Em3d.Em3dRunService.StaticSolverRefusal(setup) is { } staticOnly)
+        // brief-em3d-23 — likewise an eigenmode solve and a wave port: the run's own sentence.
+        if (CircuitRF.Design.Em3d.Em3dRunService.PalaceOnlyRefusal(setup) is { } palaceOnly)
         {
-            f.Add(CliDiagnostics.CheckEmRefused(path, staticOnly));
+            f.Add(CliDiagnostics.CheckEmRefused(path, palaceOnly));
             return;
         }
         if (setup.IsStatic3D && setup.DrivenOnlyFieldsSet() is { Count: > 0 } drivenOnly)
