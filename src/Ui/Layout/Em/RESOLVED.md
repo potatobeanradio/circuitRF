@@ -1072,3 +1072,10 @@ radiation pattern. Those are now hidden (`ShowPlanarControls`, `ShowCrossSection
 `ShowReturnPlane`, `ShowCircuitRfSolverControls`); their fields stay in the `.cem`.
 The radiation pattern cannot simply be re-pointed at 3D — neither backend asks for a far field and
 the planar transform works on MoM rooftop currents — so it is `brief-em3d-31-radiation-pattern.md`.
+
+**Follow-up, same day:** the *Analysis* group (kind combo, kernel reason, extraction notes and
+warnings) was listed above as not read by a 3D run but was never BOUND to a flag, so it stayed on
+screen — the tallest group in the panel. It is now gated on `ShowCircuitRfSolverControls`; its notes
+are the planar/cross-section extraction's, not the 3D generator's. The earlier test asserted only the
+view-model flags, which were right while the markup ignored them; it now also checks the group's
+`Border` in the `.axaml` carries the binding.

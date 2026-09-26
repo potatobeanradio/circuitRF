@@ -231,6 +231,15 @@ public class ConformalBoundaryCellsUiTests
         Assert.True(vm.ShowReturnPlane);
         Assert.All(vm.PortRows, r => Assert.False(r.ShowKind));
 
+        // The flags alone proved nothing once: the Analysis group was never BOUND to one, so it
+        // stayed on screen for a 3D setup while this test passed. Assert the markup's gate too.
+        string axaml = File.ReadAllText(RepoFile("src/Ui/Views/Layout/EmSetupEditorView.axaml"));
+        int header = axaml.IndexOf("Classes=\"grouphdr\" Text=\"Analysis\"", StringComparison.Ordinal);
+        Assert.True(header >= 0, "the Analysis group header is gone");
+        int border = axaml.LastIndexOf("<Border Classes=\"group\"", header, StringComparison.Ordinal);
+        string borderTag = axaml[border..axaml.IndexOf('>', border)];
+        Assert.Contains("ViewModel.ShowCircuitRfSolverControls", borderTag);
+
         Directory.Delete(dir, true);
     }
 

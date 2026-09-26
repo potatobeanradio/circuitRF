@@ -703,7 +703,10 @@
                   </StackPanel>
                 </Border>
 
-                <Border Classes="group">
+                <!-- Hidden for a 3D setup: a 3D run reads neither the analysis kind nor the kernel
+                     it names, and every note and warning below is the PLANAR / cross-section
+                     extraction's, not the 3D generator's. -->
+                <Border Classes="group" IsVisible="{Binding ViewModel.ShowCircuitRfSolverControls}">
                   <StackPanel Spacing="2">
                 <TextBlock Classes="grouphdr" Text="Analysis"/>
                 <Grid ColumnDefinitions="*,*" ColumnSpacing="16">
