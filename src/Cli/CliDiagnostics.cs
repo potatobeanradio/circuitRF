@@ -1159,6 +1159,28 @@ internal static class CliDiagnostics
         + "(a motion-capture program uses the same extension). There is nothing here to check.",
         ("path", path));
 
+    /// <summary>brief-img-2 R-im2-6 — a picture, named by the kind of drawing it reads as. Info: a picture is not a
+    /// circuitRF document and nothing in it can be wrong; Create Schematic/Layout from Image is what reads it.</summary>
+    public static Diagnostic CheckPictureKind(string path, string format, int width, int height, string kind,
+                                              double confidence) => Diagnostic.Create(
+        "check.picture.kind", DiagnosticSeverity.Info,
+        "'{path}' is a picture ({format}, {width} × {height} px) that reads as a {kind} (confidence {confidence}). "
+        + "Create Schematic from Image reads it; `circuitrf explain` gives the evidence.",
+        ("path", path), ("format", format), ("width", Inv(width)), ("height", Inv(height)), ("kind", kind),
+        ("confidence", confidence.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)));
+
+    /// <summary>brief-img-2 R-im2-6, D16 — a picture holding no drawing, with the phrase saying what was seen. Still
+    /// Info: the kind is a suggestion, and a forced read is not refused for it (R-im2-3).</summary>
+    public static Diagnostic CheckPictureNoDrawing(string path, string format, int width, int height, string reason,
+                                                   double confidence) => Diagnostic.Create(
+        "check.picture.no-drawing", DiagnosticSeverity.Info,
+        "'{path}' is a picture ({format}, {width} × {height} px) with no drawing in it: {reason} "
+        + "(confidence {confidence}). It can still be read as a schematic or a layout by choosing the kind.",
+        ("path", path), ("format", format), ("width", Inv(width)), ("height", Inv(height)), ("reason", reason),
+        ("confidence", confidence.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)));
+
+    private static string Inv(int v) => v.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
     public static Diagnostic CheckNoTechnology(string path) => Diagnostic.Create(
         "check.technology.none", DiagnosticSeverity.Warning,
         "{path}: no technology resolves for this layout — its own reference names none and the "
@@ -1658,6 +1680,12 @@ internal static class CliDiagnostics
         "read: '{path}' is a {kind} module, which is compiled binary rather than text. read returns " +
         "a document's own bytes as text, and there is no text here to return.",
         ("path", path), ("kind", kind));
+
+    /// <summary>brief-img-2 R-im2-6 — a picture is pixels, not a document's text; `explain` is what says what is in one.</summary>
+    public static Diagnostic ReadPicture(string path) => Diagnostic.Create(
+        "read.file.picture", DiagnosticSeverity.Error,
+        "read: '{path}' is a picture, and read returns a document's text. `circuitrf explain` says what kind of "
+        + "drawing it reads as.", ("path", path));
 
     // ── reference (brief-automation-6-reference-and-components.md) ───────────
 

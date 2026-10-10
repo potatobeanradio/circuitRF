@@ -132,6 +132,10 @@ internal static class Find
                 foreach (var v in c.Views.Where(v => v.Solved is not null))
                     Console.WriteLine($"    {"",-24} solved: {string.Join(", ", v.Solved!.Select(x => $"{x.Setup} {x.Solver} {x.State}{(x.Partial ? " (partial)" : "")}"))}");
             }
+            foreach (var pic in ws.Pictures ?? [])
+                Console.WriteLine($"    picture {pic.Path}" + (pic.Kind is { } k
+                    ? $"  {k}{(pic.Reason is { } r ? $" ({r})" : "")}, confidence {pic.Confidence!.Value.ToString("0.00", CultureInfo.InvariantCulture)}"
+                    : pic.Reason is { } why ? $"  unreadable: {why}" : ""));
             foreach (var lib in ws.MaterialLibraries ?? [])
                 Console.WriteLine($"    material library {lib.Path}" + (lib.NamedBy.Count == 0
                     ? "  (named by no technology)"
@@ -236,10 +240,40 @@ internal static class Find
             libraries.Add(new FoundMaterialLibraryJson(cmat,
                 [.. techs.Where(t => MaterialLibraries.ReferencesOf(t).Contains(cmat, StringComparer.OrdinalIgnoreCase))]));
 
+        // brief-img-2 R-im2-6 — each picture and what kind of drawing it reads as: a picture is what Create Schematic
+        // from Image starts from, and "which of these is a schematic" is the question. Read through IM-2 alone.
+        var pictures = new List<FoundPictureJson>();
+        foreach (string file in PictureFiles(workspaceDir))
+        {
+            if (!analyses) { pictures.Add(new FoundPictureJson(file, null, null, null)); continue; }
+            pictures.Add(PictureKinds.Read(file, out string? refusal) is { } p
+                ? new FoundPictureJson(file, p.Kind.Name, p.Kind.Confidence, p.Kind.Reason)
+                : new FoundPictureJson(file, null, null, refusal));
+        }
+
         return new FoundWorkspaceJson(
             workspaceDir,
             Path.GetFileName(Path.TrimEndingDirectorySeparator(workspaceDir)),
-            tech, cells, libraries.Count > 0 ? libraries : null);
+            tech, cells, libraries.Count > 0 ? libraries : null, pictures.Count > 0 ? pictures : null);
+    }
+
+    /// <summary>Every picture under a workspace, by extension, sorted; a symlinked directory is not followed.</summary>
+    private static List<string> PictureFiles(string workspaceDir)
+    {
+        var list = new List<string>();
+        try
+        {
+            var options = new EnumerationOptions
+            {
+                RecurseSubdirectories = true, IgnoreInaccessible = true, AttributesToSkip = FileAttributes.ReparsePoint,
+            };
+            list.AddRange(Directory.EnumerateFiles(workspaceDir, "*", options)
+                                   .Where(f => CircuitRF.Design.Imaging.RasterImage.Extensions.Contains(Path.GetExtension(f).ToLowerInvariant()))
+                                   .Select(Path.GetFullPath));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+        list.Sort(StringComparer.Ordinal);
+        return list;
     }
 
     /// <summary>Every <c>.cmat</c> under a workspace, sorted; a symlinked directory is not followed.</summary>

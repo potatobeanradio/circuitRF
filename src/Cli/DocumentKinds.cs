@@ -1,4 +1,5 @@
 using CircuitRF.Design.Cells;
+using CircuitRF.Design.Imaging;
 using CircuitRF.Design.ThreeD;
 using CircuitRF.Design.Workspace;
 using RfCore;
@@ -27,6 +28,9 @@ internal enum DocumentKind
     DataDisplay,
     Touchstone,
     Interchange,
+    /// <summary>A bitmapped picture — PNG, JPEG, BMP, GIF or WebP (brief-img-2 R-im2-6). Named by its kind of drawing,
+    /// never called unreadable.</summary>
+    Picture,
     /// <summary>A file with one of circuitRF's extensions whose CONTENT is another program's — the
     /// motion-capture format that also uses <c>.c3d</c> (overview §1c). Named, never reported as a
     /// broken circuitRF document.</summary>
@@ -67,6 +71,7 @@ internal static class DocumentKinds
         DocumentKind.DataDisplay   => "data-display",
         DocumentKind.Touchstone    => "touchstone",
         DocumentKind.Interchange   => "interchange",
+        DocumentKind.Picture       => "picture",
         DocumentKind.Foreign       => "foreign",
         _                          => "unknown",
     };
@@ -131,6 +136,10 @@ internal static class DocumentKinds
 
         if (byExtension != DocumentKind.Unknown) return byExtension;
 
+        // A picture by its extension (brief-img-2 R-im2-6) — whatever the bytes turn out to be: a `.png` that does not
+        // decode is a broken picture, which is check's finding, not an unknown file.
+        if (RasterImage.Extensions.Contains(Path.GetExtension(path).ToLowerInvariant())) return DocumentKind.Picture;
+
         // Touchstone is `.sNp` for any N, so it cannot be a row in the table above. The port count
         // in the extension IS the classification — a file named `.s2p` claims to be a 2-port and is
         // checked against that claim, which is one of the findings.
@@ -140,6 +149,9 @@ internal static class DocumentKinds
         // its table here — including its content sniff, which is the only thing that can name a
         // Gerber or an Excellon file (a toolchain names those however it likes).
         if (!contentSniff) return DocumentKind.Unknown;
+        // A picture whose extension is missing or wrong is named by its signature — before convert's classifier, which
+        // reads text formats and has no business guessing at a PNG's bytes.
+        if (RasterImage.DetectFormat(path) is not null) return DocumentKind.Picture;
         return LayoutConvert.DetectSource(path) is not null ? DocumentKind.Interchange : DocumentKind.Unknown;
     }
 

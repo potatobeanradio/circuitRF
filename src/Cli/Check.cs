@@ -232,6 +232,8 @@ internal static class Check
                 f.Add(CliDiagnostics.CheckForeignFile(path));
                 break;
 
+            case DocumentKind.Picture:    Scoped(path, kind, f, () => CheckPicture(path, f)); break;
+
             // brief-oasis-gdstk.md §10b — OASIS is the one interchange format read here, because it is binary and
             // compressed and its own extension check (CRC-32 or checksum) is the worker's to run.
             case DocumentKind.Interchange when LayoutConvert.DetectSource(path) == LayoutConvert.Fmt.Oasis:
@@ -316,8 +318,10 @@ internal static class Check
             // kit directory holds hundreds of `.sNp` files, and measuring passivity and causality
             // across all of them would bury a workspace's real findings under data-file notes about
             // parts the user did not author. A file is checked when it is NAMED.
+            // A picture likewise (brief-img-2 R-im2-6): a workspace's screenshots and figures are not documents, and
+            // classifying each would decode every one of them. `find` lists them with their kinds.
             if (kind is DocumentKind.Unknown or DocumentKind.Interchange or DocumentKind.Workspace
-                     or DocumentKind.Touchstone or DocumentKind.Foreign) continue;
+                     or DocumentKind.Touchstone or DocumentKind.Foreign or DocumentKind.Picture) continue;
             CheckPath(file, kind, f, cache, recursive);
         }
 
@@ -1212,6 +1216,24 @@ internal static class Check
             h.Cells.Sum(c => c.Polygons), h.Cells.Sum(c => c.Paths), h.Cells.Sum(c => c.Labels),
             h.Cells.Sum(c => c.References), h.SourceDbuPerMicron.ToString("G", System.Globalization.CultureInfo.InvariantCulture),
             names.Count == 0 ? "no named layers" : $"named layers {string.Join(", ", names)}"));
+    }
+
+    /// <summary>
+    /// brief-img-2 R-im2-6 — a picture: its kind and confidence as an INFO, exit 0. A picture that does not decode is
+    /// the decoder's own refusal (it names the formats read and says to export as PNG), as an error.
+    /// </summary>
+    private static void CheckPicture(string path, Findings f)
+    {
+        if (PictureKinds.Read(path, out string? refusal) is not { } p)
+        {
+            f.Add(CliDiagnostics.CheckUnreadable(path, refusal ?? "not a picture"));
+            return;
+        }
+        var raster = p.Source.Raster;
+        string format = p.Source.Format.ToUpperInvariant();
+        f.Add(p.Kind.Kind == CircuitRF.Design.Imaging.DrawingKind.None
+            ? CliDiagnostics.CheckPictureNoDrawing(path, format, raster.Width, raster.Height, p.Kind.Reason!, p.Kind.Confidence)
+            : CliDiagnostics.CheckPictureKind(path, format, raster.Width, raster.Height, p.Kind.Name, p.Kind.Confidence));
     }
 
     private static void CheckTouchstone(string path, Findings f)

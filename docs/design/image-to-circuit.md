@@ -217,3 +217,88 @@ in sorted key order. The CIELAB table is computed with `Math.Pow`/`Math.Cbrt` on
 libm disagreed in the last place would disagree in a table entry, never in an order. `RasterDeterminismTests` runs
 clustering, coverage, contours, the threshold, the transform, the skeleton graph and the segments on 1 and 4 threads
 and twice, and compares the bytes.
+
+## 5. IM-2 — the picture: where it came from, what kind it is, where it is kept
+
+`src/Design/Imaging/ImageSource.cs`, `ImageKind.cs`, `ImageKeep.cs`, `ImageProvenance.cs`; `src/Cli/DocumentKinds.cs`,
+`PictureKinds.cs`. Gates: `tests/Ui.Tests/Imaging/{ImageKind,ImageSource,ImageKeep}Tests.cs` and two cases in
+`CheckAndExplainCliVerbTests`.
+
+### 5.1 One record for three origins (R-im2-1) — `ImageSource`
+
+- **File** — the bytes read once. **Bytes** — a clipboard picture (the GUI encodes the clipboard bitmap as PNG) with a
+  suggested name, `pasted_image.png` when none. **Placed bitmap** — a `BitmapShape` (its `.clay`, DBU rect and layer) or
+  an `EditableBitmap` (its `.csch`, rect and rotation).
+- A placed bitmap's path resolves as the primitive's own does: `RefPath.Resolve(documentDir, ref)`, a rooted reference
+  winning. (Both loaders already make the path absolute on load; an in-memory shape with a relative reference resolves
+  the same way.) A missing file, or an empty reference, is refused with the sentence naming **Resolve Path…** — the
+  command that answers it.
+- The record keeps the **original bytes** beside the decoded raster: `ImageKeep` copies what the user gave, not a
+  re-encoding, and the SHA-256 is of those bytes so a re-run on the same file compares equal. The original file
+  **name** is kept, never its path. `Format` is what the bytes announce (`RasterImage.DetectFormat`, signatures only),
+  so a PNG named `.dat` is kept as `.png`.
+
+### 5.2 What kind of drawing it is (R-im2-2, R-im2-3) — `ImageKind`
+
+Measured features, in the order they are taken; every threshold is a named constant in `ImageKind.cs`.
+
+| Feature | Measured how | Threshold and why |
+|---|---|---|
+| Size | the decoded raster | under **64 px** a side: *too small to read (w × h px)* — below it a stroke and a letter are a few pixels (D16) |
+| Flat share | pixels within **3 sRGB levels** of their right and lower neighbours on every channel | rendered drawings measure above 0.85 (the gate's layout 0.986, schematic 0.980); a Gaussian-noise gradient 0.0001. Below **0.6** the picture is graded like a photograph |
+| Colours | `ColourClusters.Find` (IM-1) | one cluster: *a blank picture* |
+| Ink | pixels whose cluster is not the background (the border-majority cluster) | under **0.05 %** of the picture: *a blank picture* — 120 pixels of a 600 × 400 picture is dust, not a drawing. The colour mask rather than a grey threshold, so a light copper colour is ink |
+| Filled share | ink pixels deeper than **max(3 px, 0.6 % of the shorter side)** from the background | a schematic's strokes are 1/150–1/400 of its side and never that deep (the gate's: 0); a layout's pads and pours mostly are (0.85) |
+| One-width share | skeleton length (pixels) on edges whose mean width is within **±30 %** of the dominant width | one pen draws a schematic (1.0); a layout's pads and traces spread |
+| Straight-run share | `Segments.FromSkeleton` runs longer than **10 stroke widths**, over the skeleton length | below **0.3**, no line work — a letter's stem is short; a wire is long |
+| Text share | ink in components **5 px to max(14 px, 5 % of the height)** tall, no wider than 3 heights, with a like-height neighbour on the same row within 1.2 heights | above **0.6** with no line work: *a page of text*. The first pass of IM-9's grouping |
+| Chromatic ink | ink clusters with CIELAB chroma above **20** | two or more lean layout — a weak vote, because a schematic tool may draw wires and symbols in two colours |
+
+**None**, in order: too small; blank; **photograph-like** when the flat share is below **0.2** whatever else it reads,
+or below 0.6 with no line work; a page of text. The 0.2 floor exists because below it nothing is flat, the ink mask is
+the noise itself, and the skeleton of noise is a mesh whose merged junction nodes join into long, perfectly straight
+two-point edges — the Gaussian-noise gradient measured a straight-run share of 0.34 and would otherwise have passed as
+line work.
+
+**Schematic or layout** is a weighted vote, each feature linear across a span about its centre: ink share (centre 0.11,
+span 0.05, weight 1), filled share (0.3, 0.2, weight **1.5** — the strongest single tell), one-width share (0.6, 0.2,
+weight 1, schematic-positive), chromatic ink (weight 0.5). The sign picks the kind; confidence is
+`0.5 + 0.5·|score|`. The gate's layout reads 0.78, its schematic 0.94.
+
+**The override** (R-im2-3): `ImageKindResult.Force(kind)` sets Schematic or Layout, keeps the reading it overrode in
+`Suggested` and its evidence, and is recorded as `KindForced` in the provenance. A forced read of a None picture is not
+refused for its kind; D16 refuses it later only if nothing at all is recognised. `ImageKind.TryParseOverride` reads
+`--image-kind auto|schematic|layout`.
+
+### 5.3 Where the picture is kept (R-im2-4, D4) — `ImageKeep`
+
+`ImageKeep.Into(cellDir, cellName, source)` writes the original bytes to `<cell>.source.<format>` at the cell folder's
+top (a sibling temporary renamed into place). The same name holding the **same hash** is reused and nothing is written;
+a different hash moves to `<cell>.source-2.<format>`, `-3`, … each checked the same way, and no existing file is ever
+overwritten. `KeptPicture.RefFrom(documentDir)` is the stored relative reference a document uses —
+`../amp.source.png` from `amp/schematic/`. Nothing before the user's Create calls it, so a cancelled dialog leaves
+nothing behind; reading and classifying write nothing (the gate checks the folder stays empty).
+
+### 5.4 Provenance (R-im2-5) — `ImageProvenance`
+
+The kept copy's reference, the original name, the hash, the pixel size, any reduction factor, the kind and whether it
+was forced, the scale and its evidence (IM-3), the layer map (IM-3), the reading options, the circuitRF version (AS-6's
+reading of it) and the time. Stored as an **`ImageSource` block** beside AS-6's `ArtworkSource` in the `.csch`, and the
+same block at the top of a `.clay` (`ClayFile.ImageSource` ↔ `LayoutView.ImageSource`). Optional and null by default,
+so no `FormatVersion` bump and every existing file re-serialises byte for byte. Its presence is what marks a result as
+this command's to replace (AS D4's rule).
+
+### 5.5 The CLI names a picture (R-im2-6)
+
+`DocumentKinds` gains **`picture`**: by extension (`.png`, `.jpg`/`.jpeg`, `.bmp`, `.gif`, `.webp`), and by signature
+when a NAMED path's extension is missing or wrong — checked before `convert`'s classifier, which reads text formats.
+A BMP's two-byte signature is confirmed by its info-header size, or every file starting "BM" would be a picture.
+`check x.png` reports `check.picture.kind` (or `check.picture.no-drawing` with the phrase) as an INFO and exits 0; an
+undecodable picture is `check.file.unreadable` carrying the decoder's own refusal. A folder walk skips pictures, as it
+skips Touchstone: a workspace's screenshots are not documents. `find` lists every picture in a workspace with its kind
+(`--no-analyses` lists the paths alone, since each kind is a decode). `explain x.png` prints the format, the size (and
+any stated resolution, never used as a scale), each measurement with the way it leans, and the kind; on a schematic it
+also prints the `ImageSource` block. None of them reads past IM-2. Every other verb that switches on the kind refuses a
+picture by name (`render`, `recognize`, `lvs`, the run verbs); `read`, whose catch-all reads a document's text, gets an
+arm of its own (`read.file.picture`) — without it a picture that used to be refused as an unknown extension would have
+been returned as its bytes decoded as text.

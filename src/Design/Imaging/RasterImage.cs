@@ -310,6 +310,45 @@ public sealed class RasterImage
         int px = BinaryPrimitives.ReadInt32LittleEndian(b.AsSpan(38)), py = BinaryPrimitives.ReadInt32LittleEndian(b.AsSpan(42));
         return px > 0 && py > 0 ? new ImageResolution(px * 0.0254, py * 0.0254, "BMP header") : null;
     }
+
+    // ── What a file IS, by its first bytes (brief-img-2 R-im2-6) ─────────────────────────────────────────────────────
+
+    /// <summary>The extensions a picture is recognised by, lower case with the dot: the five formats
+    /// <see cref="Decode"/> reads, JPEG under both of its spellings.</summary>
+    public static readonly IReadOnlyList<string> Extensions = [".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp"];
+
+    /// <summary>How many leading bytes <see cref="DetectFormat(ReadOnlySpan{byte})"/> needs.</summary>
+    public const int SniffLength = 18;
+
+    /// <summary>The format a file's first bytes announce — <c>png</c>, <c>jpg</c>, <c>bmp</c>, <c>gif</c> or <c>webp</c>,
+    /// the extension a kept copy is written with — or null. The signatures only, never a decode: this is what names a
+    /// picture whose extension is missing or wrong. A BMP is a two-byte signature, so its info-header size is checked as
+    /// well, or every file that happens to start with "BM" would be called a picture.</summary>
+    public static string? DetectFormat(ReadOnlySpan<byte> head)
+    {
+        if (head.Length >= 8 && head[..8].SequenceEqual((ReadOnlySpan<byte>)[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]))
+            return "png";
+        if (head.Length >= 3 && head[0] == 0xFF && head[1] == 0xD8 && head[2] == 0xFF) return "jpg";
+        if (head.Length >= 6 && (head[..6].SequenceEqual("GIF87a"u8) || head[..6].SequenceEqual("GIF89a"u8))) return "gif";
+        if (head.Length >= 12 && head[..4].SequenceEqual("RIFF"u8) && head[8..12].SequenceEqual("WEBP"u8)) return "webp";
+        if (head.Length >= 18 && head[0] == (byte)'B' && head[1] == (byte)'M'
+            && BinaryPrimitives.ReadInt32LittleEndian(head[14..]) is 12 or 40 or 52 or 56 or 64 or 108 or 124)
+            return "bmp";
+        return null;
+    }
+
+    /// <summary><see cref="DetectFormat(ReadOnlySpan{byte})"/> on a file's first bytes; null when it cannot be read.</summary>
+    public static string? DetectFormat(string path)
+    {
+        try
+        {
+            using var stream = File.OpenRead(path);
+            Span<byte> head = stackalloc byte[SniffLength];
+            int n = stream.ReadAtLeast(head, SniffLength, throwOnEndOfStream: false);
+            return DetectFormat(head[..n]);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return null; }
+    }
 }
 
 /// <summary>A decoded picture, or the sentence saying why there is none.</summary>

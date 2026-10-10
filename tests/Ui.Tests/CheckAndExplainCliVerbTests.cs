@@ -489,6 +489,22 @@ public sealed class CheckAndExplainCliVerbTests(ITestOutputHelper output) : IDis
         Assert.Equal(0, run.ExitCode);                       // Info only — nothing is wrong with it
     }
 
+    /// <summary>brief-img-2 R-im2-6: a picture is named as a picture with the kind of drawing it reads as, an INFO and
+    /// exit 0 — by its extension, and by its content when the extension is wrong.</summary>
+    [Theory]
+    [InlineData("sketch.png")]
+    [InlineData("sketch.dat")]
+    public void Check_APicture_ClassifiesAsAPicture(string name)
+    {
+        string png = Path.Combine(Dir("pictures"), name);
+        File.WriteAllBytes(png, Imaging.Pictures.Png(Imaging.Pictures.Schematic()));
+
+        var run = RunCli("check", png, "--json");
+        var doc = AssertHasDiagnostic(run, "check.picture.kind");
+        Assert.Equal("schematic", Argument(doc, "check.picture.kind", "kind"));
+        Assert.Equal(0, run.ExitCode);
+    }
+
     /// <summary>brief-oasis-gdstk.md §10b: an OASIS file is read, not only named — its header through the gdstk
     /// worker, giving its cells and the layers it names.</summary>
     [GdstkFact]

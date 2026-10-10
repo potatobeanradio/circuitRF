@@ -83,6 +83,8 @@ internal static class ReadBack
             // (R-aut10-5).
             DocumentKind.AssemblyRules => JsonRun.Fail(
                 CliDiagnostics.ReadBinaryDocument(path, DocumentKinds.Name(kind))),
+            // brief-img-2 R-im2-6 — named a picture since IM-2, where it used to fall to Unknown's refusal.
+            DocumentKind.Picture     => JsonRun.Fail(CliDiagnostics.ReadPicture(path)),
             _                        => ReadDocument(path, kind),
         };
     }

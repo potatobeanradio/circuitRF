@@ -105,6 +105,10 @@ public sealed class ClayFile
     /// byte-for-byte and needs no <see cref="FormatVersion"/> bump.</summary>
     public List<RulerAnnotation>? Rulers { get; set; }
 
+    /// <summary>See <see cref="LayoutView.ImageSource"/> (brief-img-2 R-im2-5). Additive — omitted when null, so every
+    /// existing <c>.clay</c> re-serializes byte-for-byte and needs no <see cref="FormatVersion"/> bump.</summary>
+    public Imaging.ImageProvenance? ImageSource { get; set; }
+
     public List<LayoutShape> Shapes { get; set; } = [];
     public List<LayoutInstance> Instances { get; set; } = [];
 }
@@ -436,6 +440,7 @@ public static class LayoutPersistence
         ImpedanceReview = view.ImpedanceReview,
         ImpedanceAcceptances = view.ImpedanceAcceptances.Count > 0 ? [.. view.ImpedanceAcceptances] : null,
         Rulers        = view.Rulers.Count > 0 ? [.. view.Rulers] : null,
+        ImageSource   = view.ImageSource,
         Shapes        = [.. view.Shapes],
         Instances     = [.. view.Instances],
     };
@@ -497,6 +502,7 @@ public static class LayoutPersistence
         view.ImpedanceReview = file.ImpedanceReview;
         if (file.ImpedanceAcceptances is not null) view.ImpedanceAcceptances.AddRange(file.ImpedanceAcceptances);
         if (file.Rulers is not null) view.Rulers.AddRange(file.Rulers);
+        view.ImageSource = file.ImageSource;
         view.LoadFindings = [.. degenerate.Findings()];
 
         return view;

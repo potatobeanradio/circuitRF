@@ -882,6 +882,12 @@ extent`, `floor`, or `default: 18.74 mm, λ/8 at 2 GHz, the sweep's lowest frequ
 only its boundary used to read `setup` and hide that its padding was the default's.
 Gate: `tests/Ui.Tests/Cli/ExplainSetupCliTests.cs`.
 
+**A picture is a kind: `picture`** (brief-img-2 R-im2-6) — `.png`, `.jpg`/`.jpeg`, `.bmp`, `.gif`, `.webp`, and a
+named file with a wrong or missing extension by its signature. `check` reports what kind of drawing it reads as
+(`check.picture.kind`, or `check.picture.no-drawing` with what was seen) as an INFO and exits 0; `explain` prints the
+measurements behind that reading; `find` lists a workspace's pictures with their kinds. All three read through
+`ImageSource` and `ImageKind` and nothing past them — `docs/design/image-to-circuit.md` §5.5.
+
 ### 10.1 Neither runs an analysis, and neither writes
 
 **R-aut4-1.** `check` on a large design has to be cheap enough to call after every edit, so it stops

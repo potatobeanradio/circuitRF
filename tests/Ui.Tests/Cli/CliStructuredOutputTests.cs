@@ -460,6 +460,9 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "check.path.interchange",
         "check.path.not-found",
         "check.path.unknown-kind",
+        // brief-img-2 R-im2-6 — a picture named by the kind of drawing it reads as.
+        "check.picture.kind",
+        "check.picture.no-drawing",
         "check.rail.no-reference-layer",
         "check.rail.order",
         "check.rail.summary",
@@ -921,6 +924,7 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         // back as whatever its bytes decoded to, with nothing saying so.
         "read.file.binary",
         "read.file.interchange",
+        "read.file.picture",
         "read.file.unreadable",
         "read.file.unsupported",
         "read.path.is-a-folder",

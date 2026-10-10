@@ -1216,6 +1216,10 @@ public sealed class LayoutView
     /// </summary>
     public List<RulerAnnotation> Rulers { get; } = [];
 
+    /// <summary>Where a layout traced from a picture came from (brief-img-2 R-im2-5); null for every other layout. Its
+    /// presence is what marks the layout as Create Layout from Image's to replace (AS D4's rule).</summary>
+    public Imaging.ImageProvenance? ImageSource { get; set; }
+
     /// <summary>The R-tree spatial index (L2b, docs/design/layout-view.md §5.2 R11) over
     /// <see cref="Shapes"/> — every query self-heals lazily (see its own doc comment), so it is always
     /// safe to read even for a <see cref="LayoutView"/> whose <see cref="Shapes"/> were populated by

@@ -60,6 +60,9 @@ public sealed class CschFile
 
     /// <summary>The provenance block of a schematic created from artwork (R-as6-5); absent otherwise.</summary>
     public ArtworkProvenance? ArtworkSource { get; set; }
+
+    /// <summary>The provenance block of a schematic created from a picture (brief-img-2 R-im2-5); absent otherwise.</summary>
+    public Imaging.ImageProvenance? ImageSource { get; set; }
 }
 
 /// <summary>
@@ -628,6 +631,7 @@ public static class SchematicPersistence
         file.Tuning = CschTuning.From(m.Tuning);
         file.TechRef = string.IsNullOrEmpty(m.TechRef) ? null : m.TechRef;
         file.ArtworkSource = m.ArtworkSource;
+        file.ImageSource = m.ImageSource;
 
         return file;
     }
@@ -735,6 +739,7 @@ public static class SchematicPersistence
 
         m.TechRef = string.IsNullOrWhiteSpace(file.TechRef) ? null : file.TechRef;
         m.ArtworkSource = file.ArtworkSource;
+        m.ImageSource = file.ImageSource;
 
         return m;
     }

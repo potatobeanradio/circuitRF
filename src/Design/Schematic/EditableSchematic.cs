@@ -1421,6 +1421,10 @@ public sealed class SchematicEditModel
     /// schematic. Its presence is what lets a re-run replace this schematic (D4).</summary>
     public ArtworkProvenance? ArtworkSource { get; set; }
 
+    /// <summary>Where a schematic Create Schematic from Image wrote came from (brief-img-2 R-im2-5); null for every
+    /// other schematic. Its presence is what lets a re-run replace this schematic (AS D4's rule).</summary>
+    public Imaging.ImageProvenance? ImageSource { get; set; }
+
     /// <summary>
     /// User-specified results file name (schematic-level — a run writes ONE grouped file for the
     /// whole testbench, so this is not per-analysis). Null/blank means the default,

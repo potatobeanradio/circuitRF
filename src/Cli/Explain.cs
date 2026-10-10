@@ -215,6 +215,7 @@ internal static class Explain
                 if (kind is DocumentKind.Netlist or DocumentKind.Schematic) CircuitTechnology(path, kind, walks);
                 if (kind is DocumentKind.Netlist or DocumentKind.Schematic) PhysicalLines(path, kind, walks);
                 if (kind is DocumentKind.Schematic) ArtworkSource(path, walks);
+                if (kind is DocumentKind.Schematic) ImageSourceBlock(path, walks);
                 break;
             case DocumentKind.Interchange:
                 walks.Add(new ResolutionStepJson(
@@ -223,6 +224,9 @@ internal static class Explain
                 break;
             case DocumentKind.Touchstone:
                 exit |= ExplainTouchstone(path, walks);
+                break;
+            case DocumentKind.Picture:
+                exit |= ExplainPicture(path, walks);
                 break;
             default:
                 return JsonRun.Fail(CliDiagnostics.ExplainUnknownKind(path));
@@ -484,6 +488,54 @@ internal static class Explain
         var res = SchematicTechnology.Resolve(dir, techRef);
         walks.Add(new ResolutionStepJson("technology", techRef ?? DocumentKinds.AncestorCws(full), res.Path, res.Walk));
         if (res.Error is { } error) JsonRun.Report(CliDiagnostics.CheckResolverNote(path, error));
+    }
+
+    /// <summary>
+    /// brief-img-2 R-im2-6 — a picture: its format and size, the kind of drawing it reads as, and every measurement the
+    /// reading weighed, in the order <see cref="CircuitRF.Design.Imaging.ImageKind.Classify"/> took them. Nothing past IM-2 is read.
+    /// </summary>
+    private static int ExplainPicture(string path, List<ResolutionStepJson> walks)
+    {
+        string full = Path.GetFullPath(path);
+        if (PictureKinds.Read(full, out string? refusal) is not { } p)
+            return JsonRun.Fail(CliDiagnostics.ExplainUnreadable(path, refusal ?? "not a picture"));
+
+        var r = p.Source.Raster;
+        walks.Add(new ResolutionStepJson("picture format", full, p.Source.Format,
+            "the file's signature, whatever its extension says"));
+        walks.Add(new ResolutionStepJson("picture size", full,
+            $"{r.Width} × {r.Height} px" + (r.ReductionFactor < 1 ? $", reduced by {Inv(r.ReductionFactor, "0.###")} to 50 MP" : ""),
+            r.StatedResolution is { } dpi
+                ? $"the decoded picture, turned upright; the file states {Inv(dpi.XDpi, "0.#")} × {Inv(dpi.YDpi, "0.#")} dpi ({dpi.Source}), never used as a scale"
+                : "the decoded picture, turned upright"));
+        foreach (var e in p.Kind.Evidence)
+            walks.Add(new ResolutionStepJson("picture " + e.Name, full,
+                Inv(e.Value, "0.####"), "the kind reading; it leans " + e.Reads));
+        walks.Add(new ResolutionStepJson("picture kind", full,
+            $"{p.Kind.Name}, confidence {Inv(p.Kind.Confidence, "0.00")}"
+                + (p.Kind.Reason is { } why ? $": {why}" : ""),
+            "the measurements above — a suggestion, which Create from Image and --image-kind can override"));
+        return 0;
+
+        static string Inv(double v, string format) => v.ToString(format, System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>brief-img-2 R-im2-5 — a schematic created from a picture: its <c>ImageSource</c> block in plain lines.</summary>
+    private static void ImageSourceBlock(string path, List<ResolutionStepJson> walks)
+    {
+        string full = Path.GetFullPath(path);
+        CircuitRF.Design.Imaging.ImageProvenance? source;
+        try { source = SchematicPersistence.LoadFromFile(full).model.ImageSource; }
+        catch (Exception) { return; }   // a document that does not read is reported elsewhere
+        if (source is null) return;
+
+        string kept = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(full)!, source.Picture));
+        walks.Add(new ResolutionStepJson("image source", source.Picture, File.Exists(kept) ? kept : null,
+            File.Exists(kept) ? $"the kept copy of '{source.OriginalName}', relative to the schematic"
+                              : $"the kept copy of '{source.OriginalName}' is not there any more"));
+        walks.Add(new ResolutionStepJson("image read as", full,
+            source.Kind + (source.KindForced == true ? " (chosen)" : " (read)") + $", {source.PixelWidth} × {source.PixelHeight} px, sha256 {source.Sha256}",
+            "a re-run may replace this schematic; one without this block is never replaced"));
     }
 
     /// <summary>

@@ -423,6 +423,8 @@ namespace RfCore.Export
     /// <param name="Technology">The `.cws`'s own default technology reference, or null for none.</param>
     /// <param name="MaterialLibraries">brief-em3d-53 R-em3d53-7 — every <c>.cmat</c> in the workspace and
     /// the <c>.ctech</c> files that name each; absent when there are none.</param>
+    /// <param name="Pictures">brief-img-2 R-im2-6 — every picture in the workspace with the kind of drawing it reads
+    /// as; absent when there are none.</param>
     public sealed record FoundWorkspaceJson(
         string                        Path,
         string                        Name,
@@ -430,7 +432,22 @@ namespace RfCore.Export
         string?                       Technology,
         IReadOnlyList<FoundCellJson>  Cells,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        IReadOnlyList<FoundMaterialLibraryJson>? MaterialLibraries = null);
+        IReadOnlyList<FoundMaterialLibraryJson>? MaterialLibraries = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<FoundPictureJson>? Pictures = null);
+
+    /// <summary>brief-img-2 R-im2-6 — one picture, as <c>find</c> lists it.</summary>
+    /// <param name="Kind"><c>schematic</c>, <c>layout</c> or <c>none</c>; absent when it was not read
+    /// (<c>--no-analyses</c>, or a picture that does not decode — then <see cref="Reason"/> is the decoder's refusal).</param>
+    /// <param name="Reason">For <c>none</c>, what was seen (<c>a blank picture</c>, …).</param>
+    public sealed record FoundPictureJson(
+        string  Path,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Kind,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double? Confidence,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Reason);
 
     /// <param name="Path">The <c>.cmat</c>.</param>
     /// <param name="NamedBy">The <c>.ctech</c> files in the workspace whose <c>MaterialLibraries</c> name it —
