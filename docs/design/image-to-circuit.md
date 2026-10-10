@@ -505,3 +505,75 @@ gained `WithRole`, which fills a Drill/Outline/Silkscreen row's layer as Auto do
 Two rules of the dialog that are easy to break: an edited layer row is held as an edited map and REBOUND by the next
 trace, never replaced; and Make follows the kind only while the kind forces it — a misread Auto that forced Make to
 Schematic must hand the user's Make back when they set the kind to Layout.
+
+## 9. IM-7 — a schematic picture: wires, words and symbol regions
+
+`src/Design/Schematic/Recognition/` splits a schematic picture into the three things it is made of and says which wire
+ends reach which symbol. Nothing here names a part (IM-8) or reads a word (IM-9). The entry point is
+`SchematicImageReading.Read(ImageSource, SchematicImageOptions, RunControl?)`; it is pure, and on a refusal it still
+returns everything it read, so the overlay can show what was seen. Every tolerance is in units of the stroke width w.
+
+### 9.1 Normalise (R-im7-2) — `SchematicImageReading.cs`
+
+A coloured picture keeps its **darkest** colours — those at least half as far from the ground's lightness as the
+darkest is — so a pale highlight or a tinted grid drops out and a coloured wire layer stays. A lean between 0.3° and
+5° is straightened by turning the picture onto a larger white canvas; `ToSource` takes a point back. Then the border
+(a component reaching over 60 % of the picture each way and inking 90 % of each side of its box) is removed **with
+everything drawn on it** — a title block and zone marks are connected to the frame, and a wire never is — and a dot
+grid (25 or more dot-sized components, most on one lattice).
+
+Two traps, both measured on a 2 px picture:
+- **w is the mode of the shorter ink run through each skeleton pixel**, not IM-1's 2·DT − 1. The distance transform
+  reads only odd widths on an orthogonal stroke: a 2 px wire is one pixel from the background on both sides and reads
+  1, which halves every tolerance.
+- **The lean is measured on runs cut where the skeleton leaves a line by 1.5 px.** A wire at 1.2° binarises as a
+  staircase of level steps; the skeleton's own 0.5 px polyline keeps every step, and each step reads exactly level —
+  the first version measured a lean of 0 on a 1.2° picture.
+
+### 9.2 Words (R-im7-3) — `TextRegions.cs`
+
+The candidates are the small pieces left when every horizontal and vertical run longer than the tallest glyph
+(`MaxTextHeight` w) is set aside — so a label touching a wire is still a piece of its own. They are grouped by AS-10's
+own `StrokeGlyphs.Groups`, fed boxes instead of pen strokes, horizontal first and then vertical on what is left; a
+group is offered whole and split at its widest gap. A group touching the set-aside line work along more than 2 w, or at
+**two separate places** (a capacitor's plates on their leads, an inductor's humps, a hop's arc), stays as symbol
+detail and is reported — unless, without its touching pieces, two glyph-height pieces remain, which is a supply's name
+beside the two halves of its bar. A word's pixels are removed before the wires are traced, and its skeleton strokes are
+kept for IM-9. A single glyph is never a word: `Groups` needs two.
+
+### 9.3 Wires (R-im7-4, R-im7-5) — `WireGraph.cs`
+
+Straight runs of the skeleton are cut where the chain leaves a line by more than a pixel and turns by more than 8°. A
+run is a wire candidate when its RMS residual is under 0.25 w (never under 0.6 px — one pixel step is 0.5) and it is
+orthogonal and over 3 w, or diagonal and over 8 w.
+
+**The brief's criteria alone read a capacitor's plates, a ground's bars and a resistor's box as wire** — each is a
+straight orthogonal run longer than 3 w. Two shapes are therefore set aside as symbol strokes before the graph is made:
+- a straight line (runs paired straight through nodes) of at most 16 w whose **both** ends stop in bare paper — a
+  plate, a bar. A wire ends on a symbol, a junction or at most one net label;
+- every candidate on a **cycle** of candidates (bridge-finding, with a four-way crossing's two straight pairs kept
+  apart). A loop made only of wire shorts two nodes and nobody draws one; a box or a triangle outline is exactly that.
+
+Ends cluster into nodes within 1.5 w, or within one junction dot (a filled blob 2–6 w across, found as a component of
+distance-transform peaks); an end on another wire's interior splits it (a T). A degree-2 node with two collinear wires is
+dissolved — and two wires both read horizontal (or both vertical) are collinear whatever their ends' rounding says. A
+degree-3 node connects; a degree-4 node connects per `CrossingRule` (*Never* / *With a dot* / *Always*); each is in
+`Crossings` with its reading. Nets are counted with a not-connected crossing's two straight pairs kept apart.
+
+### 9.4 Symbols (R-im7-5 … R-im7-7) — `SymbolRegions.cs`
+
+The residue is the wire mask with every wire painted out (a capsule w/2 + 1 px wide, flat at an end that meets
+something, round at a bare end so the stroke's cap is not left behind as a speck) and the junction dots on nodes of
+three or more. Its pieces are grown by 1 w and joined, then merged when they face each other across a gap shorter than
+the larger one's extent along the faces — **unless a wire runs through the gap**, which is a lead between two parts (a
+shunt capacitor and the ground under it face each other across their lead). An end within 1.5 w of a region is its
+attachment, with the direction its wire arrives in.
+
+A **hop** is two attachments facing each other 2–10 w apart on one line with another wire between them. The wire hopped
+passes under the arc's apex and cuts it in two, and the rule above keeps the halves apart, so a hop is one region with
+both ends or two small regions with one each. Its two halves become one wire crossing the other at a `Hop` crossing,
+whatever the rule. A region with one attachment that is a short bar across the end, or an arrow whose apex the wire
+reaches, is a **supply mark** named by the word beside it; a word within 2 w of a dangling end and in line with its wire
+is that wire's **net label**; a region with no attachment is a **decoration**, reported and dropped.
+
+The refusals are the brief's two: no wire at all, and wires with no symbol region.
