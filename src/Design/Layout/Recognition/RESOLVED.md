@@ -434,3 +434,20 @@ the pad and the trace two nets.
 
 Still not modelled: the ~0.4 mm taper between L1's pad and the 0.2 mm trace. The recognised CPWG is the 0.5 mm of
 uniform trace; the taper is read as part of the land.
+
+## Create Layout from Image, IM-3 (2026-10-10)
+
+Two traps found while tracing a two-layer picture drawn with a translucent top layer (detail in
+`docs/design/image-to-circuit.md` §6.4):
+
+- **A colour junction leaves a blip on a straight edge.** Where a bottom layer's corner lands on a top layer's edge,
+  that pixel mixes three or four colours, and the two-colour mix model gives it a wrong coverage. The top layer's edge
+  came back with a 0.37 px excursion splitting it into two edges snapped a hair apart, so the rectangle was a
+  seven-vertex polygon. Removing vertices near the line through their neighbours did nothing, because the neighbours
+  were not on one line. `ImageTrace.Deblip` merges the two parallel snapped edges onto their common line instead.
+- **Rounding each vertex to DBU breaks a 45° edge.** x and y rounded separately put the two ends of a 45° jog a DBU off
+  45°. `ImageTrace.Quantise` rounds each edge's invariant once (y, x, or x ∓ y) and solves each vertex from its two
+  edges.
+
+The overlap test is compositing, not mixing: a colour on the segment between two layer colours is the wrong test,
+because the translucent top layer's observed colour already carries the background (`P + β(Q − W)`).

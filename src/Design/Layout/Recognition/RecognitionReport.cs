@@ -190,6 +190,53 @@ public enum RecognitionFindingClass
 
     /// <summary>Where the schematic was written, and the history checkpoint taken before a replace.</summary>
     SchematicWritten,
+
+    // ── IM-3: a traced layout picture (R-im3-9) ─────────────────────────────────────────────────
+
+    /// <summary>The colours found and what each was read as.</summary>
+    ImageColoursMapped,
+
+    /// <summary>Colours not traced: ignored, or mapped to a layer the technology does not have.</summary>
+    ImageIgnored,
+
+    /// <summary>The stackup is the technology's; none was read from the picture (D8). Said once.</summary>
+    ImageStackupNotRead,
+
+    /// <summary>The scale and the evidence it came from (D6).</summary>
+    ImageScaleChosen,
+
+    /// <summary>R-im3-3's resolution line.</summary>
+    ImageResolution,
+
+    /// <summary>Shapes traced, per layer.</summary>
+    ImageShapesTraced,
+
+    /// <summary>Specks below the minimum feature, removed.</summary>
+    ImageSpecksRemoved,
+
+    /// <summary>Edges lying on 0°, 45° or 90°.</summary>
+    ImageEdgesSnapped,
+
+    /// <summary>Regions fitted as circles.</summary>
+    ImageCirclesFitted,
+
+    /// <summary>Drill circles written as vias.</summary>
+    ImageViasPlaced,
+
+    /// <summary>Drill circles with no via layer in the technology, written on no layer.</summary>
+    ImageDrillNoViaLayer,
+
+    /// <summary>Silkscreen strokes kept as centre lines for reading text (IM-4).</summary>
+    ImageSilkscreenStrokes,
+
+    /// <summary>The underlay lies on a copper layer: the technology has no documentation layer.</summary>
+    ImageUnderlayOnCopper,
+
+    /// <summary>The placed bitmap is stretched: its two axes disagree.</summary>
+    ImageBitmapStretched,
+
+    /// <summary>Where the traced layout went.</summary>
+    ImageLayoutWritten,
 }
 
 /// <summary>A place a finding is about, DBU, with the drawing layer when one is known.</summary>

@@ -302,3 +302,100 @@ also prints the `ImageSource` block. None of them reads past IM-2. Every other v
 picture by name (`render`, `recognize`, `lvs`, the run verbs); `read`, whose catch-all reads a document's text, gets an
 arm of its own (`read.file.picture`) — without it a picture that used to be refused as an unknown extension would have
 been returned as its bytes decoded as text.
+
+## 6. IM-3 — a layout picture traced to layout shapes
+
+`src/Design/Layout/Recognition/Image/`: `ImageTrace.cs` (input, options, result, `Trace`), `ImageTraceTarget.cs`
+(`Run` and its three targets), `ImageScale.cs`, `ImageLayerMap.cs`, `ImageTracePresets.cs`; the scale search is
+`LandPatternMatch.ScaleSearch`. The GUI's half is one helper, `src/Ui/Recognition/ImageTraceEditCommand.cs`. Gates:
+`tests/Ui.Tests/Imaging/{ImageTraceGeometry,ImageScale,ImageLayerMap,ImageTraceTarget}Tests.cs`, every picture drawn in
+memory from a known layout.
+
+### 6.1 The split (R-im3-1)
+
+`ImageTrace.Trace(input)` is pure — it posts nothing and writes nothing — and `ImageTrace.Run(input, target)` traces and
+then writes, the split `ArtworkRecognition.Recognize`/`Run` already has. Two stages:
+
+1. **Pixels** (`Prepare`): IM-1's clusters; the layer map (Auto, or the user's edited one rebound by colour); per mapped
+   layer the clusters' coverage maps **summed** (an overlap colour counts towards both of its layers, so a pixel half
+   top-only and half overlap is fully top), traced by IM-1's contours, despeckled, de-blipped (§6.4); the drill
+   circles; the rectangles on each copper layer, as pads for the scale search. Everything the dialog's overlay needs,
+   and everything the scale needs.
+2. **DBU** (`Build`), only once there is a scale: one `PixelFrame`, the shapes, the vias, the outline paths, the
+   silkscreen centre lines, the underlay, the resolution line.
+
+A trace is refused for no technology or **no shape on any copper layer** (*the picture has no copper-coloured regions
+at the mapped colours*). With no scale it is not refused — the result has the clusters, the map, the candidates and the
+pixel regions, and no shapes — which is the dialog's waiting state; `Run` refuses it, listing what evidence it found.
+
+### 6.2 Scale (R-im3-2, R-im3-3, D6)
+
+`ImageScale.Candidates` lists every piece of evidence; `Choose` takes the placed bitmap's rect when the target is its
+layout, else what the user stated (a number, two points and a distance, or a trace of stated Z0), else land patterns
+with support ≥ 3, else nothing. Resolution metadata is listed with support 0 and never chosen.
+
+- **Placement**: the rect over the pixel size, along each axis separately, so the trace lies on the bitmap even when it
+  was stretched (which is reported when the axes disagree by more than 1 %). The layout's own DBU per micron is read
+  from its file (`LayoutPersistence.TryReadUnits`).
+- **Two points**: a distance whose text does not end in a unit is refused, naming the three plausible spellings.
+- **Parts**: `LandPatternMatch.ScaleSearch` runs `Find` — the artwork matcher's own fit, not a second one — over a 1 %
+  log-spaced sweep of 0.5–500 µm/px; a scale's support is the pairs whose RMS error there is within 3 %. Each peak is
+  refined to the mean, in log scale, of the scales its pairs fit exactly (every dimension of a pair against its case,
+  least squares), then counted again. Peaks within 3 % are one scale. Density aliases do not compete: the densities
+  differ by fillet *offsets*, not a factor, so no other scale fits every dimension of a pair within 3 %.
+- **Impedance**: `LineCalculator` gives W for the stated Z0 on the layer; the picture's width at the picked point is
+  `h·v / √(h² + v²)` from the coverage summed along its row and column — exact for a straight strip at any angle.
+- **Resolution line**: `1 px = 10 µm; a 160 µm trace is read to ± 3 %` — half a pixel over the narrowest line, whose
+  width is the strip `L·W = area, L + W = half the perimeter` solved for W (a disc has no real root and is not a line).
+
+### 6.3 Layers (R-im3-4, R-im3-8, D7)
+
+Auto, in order: the background (most border contact, ties to the lightest — not the largest share); Drill (≥ 80 % of
+the components round and ringed by other non-background colour); Silkscreen (nothing deeper than a few pixels, and
+IM-2's text share ≥ 0.3); **overlaps**; the rest by area onto the stackup's conductors, top first, any extra ignored.
+
+An overlap is tested with the compositing a viewer actually does. A top layer of colour T and opacity α over a
+background W shows `P = αT + (1−α)W`; over a bottom layer showing Q it shows `αT + (1−α)Q = P + β(Q − W)` with
+`β = 1 − α`. So a colour within ΔE 12 of `P + β(Q − W)` for some β is the overlap of P over Q — the same formula holds
+when both layers are translucent. A plain mix of P and Q (the segment between them) is the wrong test: it misses the
+`−βW` term. An overlap is never larger than both of its parents.
+
+An edited map is never replaced: the input's map, when `Edited`, is rebound to the re-run's clusters (nearest colour
+within ΔE 8), and an unmatched cluster is ignored. Presets are the same rebinding from a file in
+`<UserStateDirectory>/image-presets/`; one is offered when every preset colour has a cluster within ΔE 8 and every
+cluster a preset colour.
+
+### 6.4 Shapes (R-im3-5, R-im3-6)
+
+- **Rectangles** (four vertices, axis-aligned, no holes) become `RectShape`, **circles** (≥ 8 vertices on one fit,
+  area within 6 % of the disc) `CircleShape`, everything else `PolygonShape` with its holes.
+- **Drill circles become vias**: the technology's via barrel layer (a plated via entry first), landing on the topmost
+  copper region holding the centre; when that region is a ring around it, its outer diameter is the pad and the ring
+  is consumed — the via owns that copper, as `DrillViaPairing` makes a paired flash the via's. Otherwise the pad is
+  the technology's default via pad (or twice the drill). A hole a drill sits in is dropped from the copper polygon. A
+  drill cluster with no via layer is reported and written on no layer.
+- **Outline** is the skeleton's edges as paths at the measured stroke width; **silkscreen** is filled shapes *and* its
+  centre lines, kept in the result for IM-4.
+- **The underlay** (D5): the picture as a locked `BitmapShape` at 35 % at exactly `frame.ToTarget(0,0)`…
+  `frame.ToTarget(w,h)`, on the first documentation layer, else on the layer with the most copper (reported). Not
+  written into the layout the bitmap already sits in. `Trace` points it at the source file; `Run` at the kept copy.
+
+**Junction blips.** Where three or four colours meet in one pixel — a bottom layer's corner landing on a top layer's
+edge — the pixel is no two-colour mix (IM-1's model, §4.2), and the top layer's edge picks up a third-of-a-pixel
+excursion that splits one snapped edge into two, each snapped about its own centroid a hair apart. A vertex-only test
+does not see it: the neighbours are not on one line. `Deblip` merges two edges on one snap direction whose lines are
+within ½ px, joined by at most four edges totalling ≤ 4 px that stay within ½ px, onto their length-weighted common
+line, sliding the outer ends along the edges before and after so those keep their directions.
+
+**Rounding that keeps a snap.** Pixel coordinates leave through one `PixelFrame` and are rounded per EDGE, not per
+vertex: an axis edge's one coordinate and a 45° edge's `x ∓ y` are rounded once, and each vertex is solved from the two
+edges meeting at it. Rounding each vertex's x and y alone leaves a 45° jog a DBU off 45° as often as not.
+
+### 6.5 Targets (R-im3-7, D14)
+
+*New cell* creates the folder, keeps the picture (`ImageKeep`), and writes the layout view with the technology
+reference, the shapes, the underlay pointing at the kept copy and the `ImageSource` provenance (scale and its evidence,
+the layer map, the options). *Replace* rewrites a cell whose primary layout carries that block, after a history
+checkpoint, and refuses any other. *Into the layout* returns an `ImageTraceEdit` — the shapes and the `.clay` — and
+writes nothing; `ImageTraceEditCommand.For` chains the editor's `AddShapeCommand`s into one `CompositeCommand`, so one
+Undo takes the trace off the picture.

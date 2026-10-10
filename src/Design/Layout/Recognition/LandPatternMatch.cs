@@ -57,6 +57,21 @@ public sealed record LandPatternFit(SmtCase Case, DensityLevel Density, double E
 public sealed record LandPatternCandidate(
     int A, int B, bool Vertical, LandPatternFit Best, IReadOnlyList<LandPatternFit> RunnersUp);
 
+/// <summary>A pad read off a picture: its rectangle in pixels (y down) and the group — the layer — it was read on.
+/// Pads in different groups never pair.</summary>
+public sealed record PixelPad(double Left, double Top, double Right, double Bottom, int Group);
+
+/// <summary>A scale at which a picture's pads are chip land patterns (brief-img-3 R-im3-2).</summary>
+/// <param name="UmPerPixel">The scale.</param>
+/// <param name="Support">How many pairs fit a case within <see cref="LandPatternMatch.ScaleFitTolerance"/> there.</param>
+/// <param name="MeanError">Their mean RMS error.</param>
+/// <param name="Cases">The cases found, most first.</param>
+public sealed record LandPatternScale(double UmPerPixel, int Support, double MeanError, IReadOnlyList<(string Code, int Count)> Cases)
+{
+    /// <summary><c>4 × 0603, 2 × 0402</c>.</summary>
+    public string CasesText => string.Join(", ", Cases.Select(c => $"{c.Count} × {c.Code}"));
+}
+
 /// <summary>Chip land patterns among a set of pad outlines.</summary>
 public static class LandPatternMatch
 {
@@ -186,6 +201,87 @@ public static class LandPatternMatch
     private static bool Like(PadOutline a, PadOutline b) =>
         Math.Abs((double)a.Width / Math.Max(1, b.Width) - 1) <= RowTolerance &&
         Math.Abs((double)a.Height / Math.Max(1, b.Height) - 1) <= RowTolerance;
+
+    // ── a scale search over a picture (brief-img-3 R-im3-2) ─────────────────────────────────────────
+
+    /// <summary>A pair fits a case at a scale when its RMS error there is within this.</summary>
+    public const double ScaleFitTolerance = 0.03;
+
+    /// <summary>
+    /// Every scale at which the pads of a PICTURE fit chip land patterns, strongest first. The pads are in
+    /// pixels and the scale is unknown, so <see cref="Find"/> — this file's own fit, not a second one — is run
+    /// over a log-spaced sweep of µm per pixel; at each step a candidate's support is the number of pairs it fits
+    /// within <see cref="ScaleFitTolerance"/>. Each peak is refined to the support-weighted mean of the scales its
+    /// pairs fit exactly (every dimension of a pair against its case, least squares in log scale), then counted
+    /// again there. Peaks within 3 % of a stronger one are the same scale.
+    /// </summary>
+    public static IReadOnlyList<LandPatternScale> ScaleSearch(
+        IReadOnlyList<PixelPad> pads, double minUmPerPixel = 0.5, double maxUmPerPixel = 500, double step = 1.01)
+    {
+        ArgumentNullException.ThrowIfNull(pads);
+        if (pads.Count < 2 || !(minUmPerPixel > 0) || !(maxUmPerPixel > minUmPerPixel) || !(step > 1)) return [];
+
+        var sweep = new List<(double Scale, int Support, double Error)>();
+        for (double s = minUmPerPixel; s <= maxUmPerPixel; s *= step)
+        {
+            var (support, error, _) = FitAt(pads, s);
+            if (support > 0) sweep.Add((s, support, error));
+        }
+
+        var found = new List<LandPatternScale>();
+        foreach (var peak in sweep.OrderByDescending(p => p.Support).ThenBy(p => p.Error).ThenBy(p => p.Scale))
+        {
+            if (found.Any(f => SameScale(f.UmPerPixel, peak.Scale))) continue;
+            double s = peak.Scale;
+            for (int pass = 0; pass < 2; pass++)
+            {
+                var (_, _, fits) = FitAt(pads, s);
+                if (fits.Count == 0) break;
+                s = Math.Exp(fits.Average(f => Math.Log(BestScale(pads, f))));
+            }
+            var (support, error, kept) = FitAt(pads, s);
+            if (support == 0) continue;
+            if (found.Any(f => SameScale(f.UmPerPixel, s))) continue;
+            var cases = kept.GroupBy(f => f.Best.Case.Code)
+                            .Select(g => (Code: g.Key, Count: g.Count()))
+                            .OrderByDescending(c => c.Count).ThenBy(c => c.Code, StringComparer.Ordinal).ToList();
+            found.Add(new LandPatternScale(s, support, error, cases));
+        }
+        found.Sort((a, b) => a.Support != b.Support ? b.Support.CompareTo(a.Support) : a.MeanError.CompareTo(b.MeanError));
+        return found;
+    }
+
+    private static bool SameScale(double a, double b) => Math.Abs(a / b - 1) <= 0.03;
+
+    /// <summary>The pairs <see cref="Find"/> reads at <paramref name="umPerPixel"/>, those within
+    /// <see cref="ScaleFitTolerance"/> kept: how many, and their mean error.</summary>
+    private static (int Support, double MeanError, List<LandPatternCandidate> Fits) FitAt(IReadOnlyList<PixelPad> pads, double umPerPixel)
+    {
+        double k = umPerPixel * LayoutUnits.DefaultDbuPerMicron;
+        var outlines = new List<PadOutline>(pads.Count);
+        foreach (var p in pads)
+            outlines.Add(new PadOutline(
+                new Bbox((long)Math.Round(p.Left * k), (long)Math.Round(p.Top * k), (long)Math.Round(p.Right * k), (long)Math.Round(p.Bottom * k)),
+                new LayerKey(p.Group, 0), PadOutlineSource.Copper));
+        var fits = Find(outlines, LayoutUnits.DefaultDbuPerMicron).Where(c => c.Best.Error <= ScaleFitTolerance).ToList();
+        return (fits.Count, fits.Count == 0 ? 0 : fits.Average(f => f.Best.Error), fits);
+    }
+
+    /// <summary>The µm per pixel at which one pair fits its case best: every dimension of the pair against the
+    /// reference's, least squares in log scale.</summary>
+    private static double BestScale(IReadOnlyList<PixelPad> pads, LandPatternCandidate c)
+    {
+        var r = References.All.First(x => x.Case == c.Best.Case && x.Density == c.Best.Density);
+        var p = pads[c.A];
+        var q = pads[c.B];
+        double Along(PixelPad o) => c.Vertical ? o.Bottom - o.Top : o.Right - o.Left;
+        double Across(PixelPad o) => c.Vertical ? o.Right - o.Left : o.Bottom - o.Top;
+        double centres = c.Vertical ? Math.Abs((q.Top + q.Bottom) - (p.Top + p.Bottom)) / 2 : Math.Abs((q.Left + q.Right) - (p.Left + p.Right)) / 2;
+        double gap = centres - 0.5 * (Along(p) + Along(q));
+        double sum = Math.Log(r.AlongUm / Along(p)) + Math.Log(r.AcrossUm / Across(p)) + Math.Log(r.AlongUm / Along(q))
+                     + Math.Log(r.AcrossUm / Across(q)) + Math.Log(r.GapUm / gap);
+        return Math.Exp(sum / 5);
+    }
 
     // ── the references ──────────────────────────────────────────────────────────────────────────────
 
