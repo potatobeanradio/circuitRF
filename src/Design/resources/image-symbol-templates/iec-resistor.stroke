@@ -1,0 +1,8 @@
+# A plain rectangle between two leads.
+kind resistor
+convention The IEC resistor: a hollow rectangle, two and a half times as long as it is wide.
+pin 1 0 -100
+pin 2 0 100
+line 0 -100 0 -60
+line 0 60 0 100
+rect -24 -60 24 60

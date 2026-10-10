@@ -1,0 +1,10 @@
+# A flat plate and a deeply curved plate bowing toward it.
+kind capacitor
+convention A capacitor of one flat plate and one curved plate, its curve deeper than circuitRF's own.
+check capacitor
+pin 1 0 -100
+pin 2 0 100
+line 0 -100 0 -10
+line 0 100 0 10
+line -40 -10 40 -10
+arc 0 70 60 228 84

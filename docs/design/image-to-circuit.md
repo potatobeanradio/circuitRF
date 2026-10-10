@@ -554,6 +554,17 @@ straight orthogonal run longer than 3 w. Two shapes are therefore set aside as s
 - every candidate on a **cycle** of candidates (bridge-finding, with a four-way crossing's two straight pairs kept
   apart). A loop made only of wire shorts two nodes and nobody draws one; a box or a triangle outline is exactly that.
 
+**Two further shapes are symbol, found by IM-8's gates on drawings IM-7's own did not try:**
+- **A filled area** — what survives an opening by a disc 1.5 w in radius, larger than a dot or far from round, with its
+  anti-aliased rim — is taken out of the wire mask before the skeleton is made and put back into the residue. The
+  skeleton runs straight through a filled rectangle between two collinear leads: without this an IEC inductor read as
+  one wire with a junction dot on it, and the picture was refused for having no symbol.
+- **A small box's sides.** A run within 12° of an axis whose both ends meet runs near the other axis is snapped to its
+  axis. A 3 w side of a box leans 6.5° on the pixel steps of its two corners, and a half side beside its lead's T 3–5°;
+  read as diagonals they were no wire candidates, the box's cycle stayed open, and its other sides went to the wire
+  graph as wire. A circle's flat bottom leans as little but never meets a square corner, which is why the rule asks
+  for both ends — snapping every run that rises less than a pixel turned a terminal circle's bottom into a wire.
+
 Ends cluster into nodes within 1.5 w, or within one junction dot (a filled blob 2–6 w across, found as a component of
 distance-transform peaks); an end on another wire's interior splits it (a T). A degree-2 node with two collinear wires is
 dissolved — and two wires both read horizontal (or both vertical) are collinear whatever their ends' rounding says. A
@@ -577,3 +588,77 @@ reaches, is a **supply mark** named by the word beside it; a word within 2 w of 
 is that wire's **net label**; a region with no attachment is a **decoration**, reported and dropped.
 
 The refusals are the brief's two: no wire at all, and wires with no symbol region.
+
+## 10. IM-8 — symbols: what each region is, which way it faces, where its pins are
+
+`SchematicSymbols.Read(SchematicImageRead, IImageSymbolClassifier?)` names every symbol region IM-7 found. It asks the
+classifier and nothing else (R-im8-6); the template matcher, `TemplateSymbolClassifier`, is the one implementation, and
+D9 is applied to its answer the same whichever classifier gave it. Pure.
+
+### 10.1 Templates (R-im8-1, R-im8-2) — `SymbolTemplates.cs`
+
+**Built-in** templates are sampled from `BuiltInSymbols.Primitives` — the one source of the geometry every renderer
+draws — for the resistor, inductor, capacitor, ground, Term and Pin, TLIN, MLIN, CPWG and SLIN, the diode, the two FET
+and the two BJT glyphs. The brief asks for them to be drawn "with the renderer"; `src/Render` references `src/Design`,
+never the reverse, so the templates read the primitives the renderer strokes instead — the same single drawing, and if
+a symbol's look changes its template follows. The **stubs** have no symbol of their own and are composed of the TLIN
+drawing as TermG is of Term and Ground: one lead left off (open), and a ground's bars set against its far end (short).
+
+**Alternates** are stroke files in `src/Design/resources/image-symbol-templates/`, one drawing each, embedded by a glob,
+so adding a drawing is adding a file: the IEC resistor and inductor, zig-zags of four, five, seven and eight vertices
+(circuitRF's own has six, and a zig-zag with a different count is 0.9–1.4 w from it — most of the error budget), coils
+of four and three humps, the flat, curved and polarised capacitors, the triangle and chassis grounds, the terminal
+circle, the coaxial and box transmission lines, the amplifier and the IC box. **Each is drawn in the frame of its
+kind's built-in symbol** (two-terminal parts upright, pin 1 on top; lines and amplifiers across), so an orientation
+means the same thing whichever drawing matched — IM-10 places the built-in with it.
+
+A drawing becomes a template in one step whatever its source: each pin's **lead** — the straight run from its tip to
+the first turn — is cut off, because on a picture it is wire and IM-7 took it away. A pin is where its lead met the body,
+with the direction the lead left in; the body is scaled to unit pin span. Text and filled dots (the inductor's polarity
+mark) are left out. A template drawn with no filled shape is **hollow** and is never tried on a filled region — a
+hollow rectangle is the IEC resistor and a filled one the IEC inductor, and without the rule a diode's filled triangle
+lost to the transmission-line boxes.
+
+### 10.2 Matching (R-im8-3) — `SymbolMatch.cs`
+
+The region's ink is **hollowed** — a filled area reduced to the one-pixel ring at its edge — and skeletonised into
+centre lines. Every template with as many pins as the region has attachments is tried in the eight orientations (mirror
+in x, then four turns — `SchematicGeometry.LocalToWorld`'s order) and every assignment of its pins to the attachments
+whose wires arrive within ± 20° of the pin's lead; it is scaled and moved so its pins lie on the attachments (least
+squares; one pin: the body's size against the region's), and scored by **AS-10's own `Glyph.Distance`**, the
+modified-Hausdorff distance, on the stroke set — `Glyph` gained a sample count (128 here, 48 for a glyph), nothing else.
+In units of w. Accepted at ≤ 1.0 w and at most 85 % of the best template of a **different** kind; drawings of one kind
+never compete. A later orientation must win by more than 0.05 w, so a symmetric drawing settles on the first in
+order (unmirrored, R0 first) rather than on pixel noise.
+
+**A pin is fitted where its wire meets the ink**, not where the wire ends: the first ink within 3 w straight ahead of
+the attachment. A wire cut away from a filled body ends about 2 w short of it, and fitted at the wire end a template
+was scaled 15–25 % too long.
+
+Two real ambiguities, both reported rather than resolved: MLIN's plain box against the IEC resistor (a rectangle a
+third as wide as it is long is either), and a hollow rectangle drawn as an inductor (it reads as the resistor).
+
+### 10.3 Structure checks (R-im8-4)
+
+In the frame from the first pin's contact to the second's (a ground's: its one attachment, inward):
+- **capacitor** — a band of bare paper across the axis between the contacts, with ink at least 2.5 w long on each side.
+  Two bars joined at their ends (a drawn rectangle) have none.
+- **zig-zag** — the centre line's mean offset, binned by w, swings past a third of its amplitude to alternate sides at
+  least three times.
+- **coil** — the centre line's *nearest* approach to the axis on the bulge side, binned by a pixel, comes within w/2 of
+  its peak and drops a whole w below it three times, and the other side is reached by under a third of the peak (a
+  zig-zag reaches both). A stroke width, not a fraction: where two humps meet their strokes run together, and the
+  skeleton of a 6 px hump drawn 2 px wide comes no nearer the axis than 4 px.
+- **ground** — the ink's extent across, row by row going in, never grows by more than w and ends 2 w shorter than it
+  starts. The chassis ground's tines do not shrink, so it has no check.
+
+The best template failing its check is set aside (a `SymbolDemotion`) and the next taken.
+
+### 10.4 D9, the record and the report (R-im8-5, R-im8-7, R-im8-8) — `RecognisedSymbol.cs`
+
+Three or more attachments, or a transistor, amplifier or IC match whatever the count, is **cut out**; two attachments
+and no match is kind `?`; one and no match is an **unread terminal**, left open. `RecognisedSymbol` carries the region,
+kind, disposition, template (its convention), orientation, pins in template order with their wire nodes, score,
+runner-up, confidence (`PartConfidence`: High within half the threshold and twice the margin with nothing demoted) and
+demotions; `SymbolReport` counts symbols by kind, unknowns, cut-out devices with their pin counts, demotions by check and
+unread terminals.

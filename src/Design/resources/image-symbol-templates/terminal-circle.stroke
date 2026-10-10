@@ -1,0 +1,6 @@
+# A terminal: an open circle at the end of a wire.
+kind port
+convention A terminal: an open circle on the end of its lead.
+pin 1 40 0
+line 40 0 15 0
+circle 0 0 15

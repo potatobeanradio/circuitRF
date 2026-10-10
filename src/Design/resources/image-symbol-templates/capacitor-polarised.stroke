@@ -1,0 +1,10 @@
+# A polarised capacitor: the positive plate a hollow box, the negative a flat bar.
+kind capacitor
+convention A polarised capacitor: a hollow box for the positive plate (pin 1) and a flat bar for the negative.
+check capacitor
+pin + 0 -100
+pin - 0 100
+line 0 -100 0 -20
+line 0 100 0 10
+rect -40 -20 40 -10
+line -40 10 40 10

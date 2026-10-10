@@ -1,0 +1,12 @@
+# Four semicircular humps on one side, with short leads into the first and out of the last.
+kind inductor
+convention A coil of four humps, shorter than its leads' span.
+check coil
+pin 1 0 -100
+pin 2 0 100
+line 0 -100 0 -80
+arc 0 -60 20 -90 180
+arc 0 -20 20 -90 180
+arc 0 20 20 -90 180
+arc 0 60 20 -90 180
+line 0 80 0 100

@@ -1,0 +1,11 @@
+# A coaxial line: a cylinder seen from the side, the leads meeting its two ends.
+kind transmissionline
+convention A coaxial transmission line: a cylinder, one end seen whole and the other as its near half.
+pin 1 -100 0
+pin 2 100 0
+line -100 0 -60 0
+line 60 0 100 0
+ellipse -50 0 10 25
+ellipse 50 0 10 25 -90 180
+line -50 -25 50 -25
+line -50 25 50 25

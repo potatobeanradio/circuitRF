@@ -1,0 +1,9 @@
+# A filled rectangle between two leads. Drawn hollow it is the IEC resistor, and reads as one.
+kind inductor
+convention The IEC inductor: a filled rectangle, three times as long as it is wide.
+fill solid
+pin 1 0 -100
+pin 2 0 100
+line 0 -100 0 -60
+line 0 60 0 100
+rect -20 -60 20 60

@@ -1,0 +1,9 @@
+# A zig-zag resistor with eight vertices — circuitRF's own has six; other drawings use more or fewer.
+kind resistor
+convention A zig-zag resistor of eight vertices.
+check zigzag
+pin 1 0 -100
+pin 2 0 100
+line 0 -100 0 -60
+line 0 -60 20 -52.5 -20 -37.5 20 -22.5 -20 -7.5 20 7.5 -20 22.5 20 37.5 -20 52.5 0 60
+line 0 60 0 100

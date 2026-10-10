@@ -19163,3 +19163,15 @@ file) offered no four-conductor technology. Three causes, in order of discovery:
   now skips a drill file that only routes or declares itself non-plated (`NotVias`) — mapping either onto a plated via
   layer would build a conductive barrel where there is none.
 Gate: `DesignerRound17Tests`.
+
+## A schematic picture's boxes and filled shapes were read as wire (2026-10-10, brief-img-8)
+
+Found by IM-8's symbol gates, in IM-7 code (`docs/design/image-to-circuit.md` §9.3 has the rules):
+- **A filled rectangle between two leads was one wire with a junction dot on it.** The skeleton runs straight through
+  it, and its distance-transform peak was taken for a dot. Filled areas (`SchematicImageReading.Fills`: an opening by
+  1.5 w, larger than a dot or not round) now leave the wire mask before tracing and rejoin the residue after.
+- **A small box's sides read as diagonals**, on the pixel steps at its corners, so its cycle never closed and its other
+  sides became wire. `WireGraph.Square` snaps a near-axis run whose both ends meet perpendicular runs. A first attempt —
+  snap any run rising under a pixel — turned a terminal circle's flat bottom into wire; the square-corner condition is
+  what separates the two.
+

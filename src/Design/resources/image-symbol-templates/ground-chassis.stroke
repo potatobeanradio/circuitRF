@@ -1,0 +1,9 @@
+# A chassis ground: one bar with three slanted tines. Its tines do not shrink, so it has no structure check.
+kind ground
+convention A chassis ground: a bar with three slanted tines.
+pin 1 0 -40
+line 0 -40 0 0
+line -30 0 30 0
+line -30 0 -40 15
+line 0 0 -10 15
+line 30 0 20 15

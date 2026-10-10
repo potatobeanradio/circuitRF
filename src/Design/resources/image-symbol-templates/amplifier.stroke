@@ -1,0 +1,8 @@
+# An amplifier: a triangle, input on its base, output at its apex.
+kind amplifier
+convention An amplifier: a triangle pointing from its input to its output.
+pin IN -100 0
+pin OUT 100 0
+line -100 0 -50 0
+line 50 0 100 0
+loop -50 -50 -50 50 50 0

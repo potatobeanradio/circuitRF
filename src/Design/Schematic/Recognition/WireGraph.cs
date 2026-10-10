@@ -168,7 +168,48 @@ public sealed class WireGraph
                 r.Add(p);
             }
         }
+        Square(r, w, o, maxResidual);
         return r;
+    }
+
+    /// <summary>Snaps a short straight run within 12° of an axis to it when BOTH its ends meet a run near the other
+    /// axis — a side of a small box. Its fit leans on the pixel steps of the corners at its ends (a 3 w side of a box
+    /// read 6.5°, a half side beside its lead's T 3–5°), and read as a diagonal it was no wire candidate and left the
+    /// box's cycle open, so the box's other sides were taken for wire. A circle's flat bottom leans as little, but
+    /// meets runs at 30° or more, never a square corner.</summary>
+    private static void Square(List<WirePiece> pieces, double w, SchematicImageOptions o, double maxResidual)
+    {
+        double tol = 12 * Math.PI / 180, reach = 1.5 * w + 0.5;
+        int Near(WirePiece p) => p.Orientation switch
+        {
+            WireOrientation.Horizontal => 0,
+            WireOrientation.Vertical => 1,
+            _ => Math.Min(p.Angle, Math.PI - p.Angle) <= tol ? 0 : Math.Abs(p.Angle - Math.PI / 2) <= tol ? 1 : -1,
+        };
+        var snap = new List<(WirePiece P, int Axis)>();
+        foreach (var p in pieces)
+        {
+            if (p.Orientation != WireOrientation.Diagonal || p.Residual > maxResidual || p.Length > o.MaxSymbolStroke * w) continue;
+            int axis = Near(p);
+            if (axis < 0) continue;
+            bool Corner(PointD end) =>
+                pieces.Any(q => q != p && Near(q) == 1 - axis && (Dist(q.A, end) <= reach || Dist(q.B, end) <= reach));
+            if (Corner(p.A) && Corner(p.B)) snap.Add((p, axis));
+        }
+        foreach (var (p, axis) in snap)
+        {
+            if (axis == 0)
+            {
+                double y = (p.A.y + p.B.y) / 2;
+                (p.A, p.B, p.Orientation) = (new PointD(p.A.x, y), new PointD(p.B.x, y), WireOrientation.Horizontal);
+            }
+            else
+            {
+                double x = (p.A.x + p.B.x) / 2;
+                (p.A, p.B, p.Orientation) = (new PointD(x, p.A.y), new PointD(x, p.B.y), WireOrientation.Vertical);
+            }
+            p.IsWire = p.Length >= o.MinWireLength * w;
+        }
     }
 
     /// <summary>The indices of the wire candidates that are strokes of symbols — short lines with two bare ends, and

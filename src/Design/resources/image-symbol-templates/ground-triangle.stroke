@@ -1,0 +1,7 @@
+# A ground drawn as a triangle pointing away from its lead.
+kind ground
+convention A ground: a triangle pointing away from the lead.
+check ground
+pin 1 0 -40
+line 0 -40 0 0
+loop -30 0 30 0 0 30

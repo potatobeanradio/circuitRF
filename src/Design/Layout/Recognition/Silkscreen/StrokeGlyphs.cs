@@ -30,7 +30,9 @@ public sealed class Glyph
     /// <summary>Points resampled along the centre lines (R-as10-3's fixed count).</summary>
     public const int SampleCount = 48;
 
-    public Glyph(IReadOnlyList<double[]> strokes)
+    /// <param name="sampleCount">How many points to resample the centre lines to: <see cref="SampleCount"/> for a glyph;
+    /// a symbol (IM-8), with several times a glyph's ink, takes more.</param>
+    public Glyph(IReadOnlyList<double[]> strokes, int sampleCount = SampleCount)
     {
         Strokes = strokes;
         var segs = new List<double>();
@@ -40,7 +42,7 @@ public sealed class Glyph
             foreach (var s in strokes)
                 if (s.Length >= 2) segs.AddRange([s[0], s[1], s[0], s[1]]);   // a dot is a segment of no length
         Segments = [.. segs];
-        Samples = Resample(strokes, SampleCount);
+        Samples = Resample(strokes, sampleCount);
         if (strokes.SelectMany(s => s).Any())
         {
             Width = strokes.SelectMany(s => Xs(s)).Max() - strokes.SelectMany(s => Xs(s)).Min();

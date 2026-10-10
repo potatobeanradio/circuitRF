@@ -1,0 +1,9 @@
+# A transmission line drawn as a long square-cornered box with a line along its middle.
+kind transmissionline
+convention A transmission line: a long square-cornered box with a line along it.
+pin 1 -100 0
+pin 2 100 0
+line -100 0 -80 0
+line 80 0 100 0
+rect -80 -20 80 20
+line -65 0 65 0

@@ -1,0 +1,11 @@
+# Three semicircular humps on one side.
+kind inductor
+convention A coil of three humps.
+check coil
+pin 1 0 -100
+pin 2 0 100
+line 0 -100 0 -75
+arc 0 -50 25 -90 180
+arc 0 0 25 -90 180
+arc 0 50 25 -90 180
+line 0 75 0 100

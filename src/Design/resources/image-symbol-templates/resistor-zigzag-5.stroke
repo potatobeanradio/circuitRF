@@ -1,0 +1,9 @@
+# A zig-zag resistor with five vertices — circuitRF's own has six; other drawings use more or fewer.
+kind resistor
+convention A zig-zag resistor of five vertices.
+check zigzag
+pin 1 0 -100
+pin 2 0 100
+line 0 -100 0 -60
+line 0 -60 20 -48 -20 -24 20 0 -20 24 20 48 0 60
+line 0 60 0 100

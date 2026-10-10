@@ -1,0 +1,12 @@
+# A generic IC: a box with two leads on each side.
+kind ic
+convention A generic IC: a box with leads on two sides.
+pin 1 -100 -30
+pin 2 -100 30
+pin 3 100 30
+pin 4 100 -30
+line -100 -30 -50 -30
+line -100 30 -50 30
+line 100 30 50 30
+line 100 -30 50 -30
+rect -50 -60 50 60

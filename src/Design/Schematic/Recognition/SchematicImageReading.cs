@@ -155,6 +155,8 @@ public static class SchematicImageReading
 
         // ── Wires (R-im7-4, R-im7-5) ──
         control?.BeginStage("Tracing wires");
+        var fills = Fills(wireMask, w, o);
+        for (int i = 0; i < wireMask.Pixels.Length; i++) if (fills.Pixels[i] != 0) wireMask.Pixels[i] = 0;
         var dt = DistanceTransform.Compute(wireMask, o.MaxThreads);
         var blobs = WireGraph.Blobs(wireMask, dt, w, o);
         var skel = SkeletonGraph.Build(wireMask, new SkeletonGraphOptions { StrokeWidth = w, MaxThreads = o.MaxThreads });
@@ -170,6 +172,7 @@ public static class SchematicImageReading
         // ── Symbols (R-im7-6, R-im7-7) ──
         control?.BeginStage("Finding symbols");
         var residue = SymbolRegions.Residue(wireMask, first, blobs, w);
+        for (int i = 0; i < residue.Pixels.Length; i++) if (fills.Pixels[i] != 0) residue.Pixels[i] = 1;
         var raw = SymbolRegions.Group(residue, first, w, o);
         var (hops, hopRegions) = SymbolRegions.Hops(raw, mask.Width, first, w, o);
         var graph = hops.Count > 0 ? WireGraph.Build(wires, hops, blobs, w, o) : first;
@@ -206,6 +209,30 @@ public static class SchematicImageReading
         SupplyMarks = r.SupplyMarks.Count,
         DanglingEnds = r.Dangling.Count,
     };
+
+    /// <summary>The filled areas of the drawing that are not junction dots — a filled rectangle, a diode's triangle,
+    /// a supply's arrowhead: what survives an opening by a disc 1.5 w in radius, larger than a dot or far from round,
+    /// with its anti-aliased rim. They are symbol, never wire: the skeleton runs straight through a filled rectangle
+    /// between two collinear leads, and without this the whole symbol read as one wire with a dot on it.</summary>
+    internal static BinaryImage Fills(BinaryImage mask, double w, SchematicImageOptions o)
+    {
+        var open = Morphology.Open(mask, 1.5 * w, o.MaxThreads);
+        var lab = Components.Label(open);
+        double dot = 1.15 * o.MaxDot * w;
+        var keep = new HashSet<int>();
+        foreach (var c in lab.Components)
+        {
+            int cw = c.Right - c.Left + 1, ch = c.Bottom - c.Top + 1;
+            bool dotLike = cw <= dot && ch <= dot && Math.Max(cw, ch) <= 1.5 * Math.Min(cw, ch);
+            if (!dotLike) keep.Add(c.Label);
+        }
+        var core = new BinaryImage(mask.Width, mask.Height);
+        if (keep.Count == 0) return core;
+        for (int i = 0; i < core.Pixels.Length; i++) if (keep.Contains(lab.Labels[i])) core.Pixels[i] = 1;
+        var near = Morphology.Dilate(core, 1.0, o.MaxThreads);
+        for (int i = 0; i < near.Pixels.Length; i++) near.Pixels[i] &= mask.Pixels[i];
+        return near;
+    }
 
     // ── Normalise ───────────────────────────────────────────────────────────────────────────────────────────────
 

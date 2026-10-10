@@ -1,0 +1,10 @@
+# Two equal flat plates across the leads.
+kind capacitor
+convention A capacitor of two flat plates.
+check capacitor
+pin 1 0 -100
+pin 2 0 100
+line 0 -100 0 -10
+line 0 10 0 100
+line -40 -10 40 -10
+line -40 10 40 10
