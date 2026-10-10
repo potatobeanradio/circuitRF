@@ -19144,3 +19144,22 @@ rename and delete, fragments and copy/paste, the thermal reader, `Find` — hand
 Gate: `PointExpressionsCoreTests` (round trip, both polyline forms, the ignored-Points refusal, the loop height following
 `h_loop`, the two writers, the quarter turn and its inverse, the 30° refusal, Flatten, and `check`/`explain` as a
 process). `RenumberPointExpressions` moved to `C3dPointExpressions`, generalised over the property, with its test.
+
+## Gerber import into a four-layer technology: every entry disabled (designer report, round 17, 2026-10-10)
+
+A four-copper set named `MET-1.PHO` … `MET-4.PHO` (with `SLK-NS`, `SM-NS`, an Excellon drill file and an Excellon ROUTE
+file) offered no four-conductor technology. Three causes, in order of discovery:
+
+- **The names identified nothing as copper**, so `GerberMappingRequest.CopperCount` was 0 and D4 disabled every
+  technology. Rung 3 now has two numbered-metal rows (`met <n>`, `metal <n>`), numbering the whole stack from the top
+  with `OneIsTop`; `NameBottomConductor` renames the last one. `MET-1..4` → Top Copper, Inner 1, Inner 2, Bottom Copper.
+- **Answering the files copper in the table never re-enabled anything**: the combo's enabled entries were fixed when
+  the dialog opened. `GerberTechnologyChoice.EnabledFor(count)` and the dialog's `RegateTechnologies` re-evaluate D4
+  against identified + answered copper, and `ShowChoice` keeps the answers (by file) across a re-proposal — otherwise
+  choosing the entry the answers enabled would reset them and disable the selection. Several files answered at one
+  position now stack by the number in their names (`PromoteAnsweredCopper`), not by the table's shape-count order.
+- **The ROUTE file was refused into the technology** ("map it to a via layer"): it is an Excellon rout program, the
+  board outline, no holes. The minted path already gave a rout-only file a NON-plated entry (GI1 R-gi1-3); `UseRefusal`
+  now skips a drill file that only routes or declares itself non-plated (`NotVias`) — mapping either onto a plated via
+  layer would build a conductive barrel where there is none.
+Gate: `DesignerRound17Tests`.

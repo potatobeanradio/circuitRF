@@ -411,3 +411,26 @@ at the far end the nearest was the port at the near end, 0.5 mm back along the l
 takes both ends of a trace: the nearer end keeps it, the other takes its next nearest or is loose (an open end,
 reported as one). On the designer's board that changed this one element and the open-end count, nothing else. The
 end reach was already this size before round 15 widened the TAP reaches to match it.
+
+## Designer report, round 17 (2026-10-10)
+
+### A trace one rounding step short of its pad
+
+The P3 stub, after the round-16 fix, read `CPWG L=0.5 mm n3 p3` with `n3` open and `L1.2` open beside it. The copper
+LOOKS continuous: L1's pad, a taper, the 0.2 mm trace. It is not: the pad rectangle ends at x = 13 512.343 µm and the
+taper polygon starts at 13 512.800 — a 0.375 mm (metric) pad centred on an inch grid against a vertex rounded onto the
+file's 0.1 mil grid. 0.46 µm, so the partition made them two pieces, two islands, and an attachment must share the
+line's island. The same board had a second one, 0.75 µm, between the 7.2 mm output line and the RFout launch, which
+had left P2 disconnected from the amplifier without anyone noticing.
+
+`LayerRegions.JoinHairlineGaps` closes gaps under 1 µm (grow by half, shrink back) in the ELECTRICAL reading only, and
+returns the region unchanged — not an equivalent region — when it joins nothing, so no board drawn in the app moves a
+vertex. Outer rings before and after are the join count (a close never separates). It is in `LayerRegions` because that
+union is what the partition, railRF's mesh and LVS all start from; the trace review unions its own band copper and
+calls the same function, or the joined island would still be two RUNS whose facing ends never meet (that was the
+synthetic test's first failure: the far run took P1 as its open end's attachment). Reported as
+`HairlineGapsJoined`. Not done as a recognition-only tolerance on attachment reach: LVS and DRC would then still call
+the pad and the trace two nets.
+
+Still not modelled: the ~0.4 mm taper between L1's pad and the 0.2 mm trace. The recognised CPWG is the 0.5 mm of
+uniform trace; the taper is read as part of the land.

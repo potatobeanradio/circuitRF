@@ -351,9 +351,11 @@ public static class GerberLayerCascade
     /// <param name="IndexOffset">Added to that number to get the inner-layer index, because the two
     /// conventions differ by exactly this: "inner 2" is already the second INNER layer, while "layer 2"
     /// counts the whole copper stack from the top and is therefore the FIRST inner layer.</param>
+    /// <param name="OneIsTop">The stated number 1 is the TOP copper — a set that numbers every copper
+    /// layer from the top, outer ones included, so no file of it says "top" or "bottom".</param>
     private sealed record NamePattern(
         string[][] WordGroups, string LayerName, string Purpose, string? Side,
-        string? IndexAfter = null, int IndexOffset = 0, int MinIndex = 1);
+        string? IndexAfter = null, int IndexOffset = 0, int MinIndex = 1, bool OneIsTop = false);
 
     // The side words, once. Grouping them is not tidying: they were written out row by row and "bot"
     // was missing from every row while "bottom", "back", "top" and "front" were present, so a set
@@ -432,6 +434,14 @@ public static class GerberLayerCascade
         // way names its outer ones "top layer" / "bottom layer" — both matched above — so "layer 2" is
         // the second layer of the whole stack and hence the FIRST inner one, which is the -1.
         new([["layer"]], "Inner Copper", ConductorPurpose, "Inr", IndexAfter: "layer", IndexOffset: -1, MinIndex: 2),
+
+        // A NUMBERED METAL — "MET-1" … "MET-4", "Metal2" — numbers the WHOLE copper stack from the top
+        // and has no other word for the outer layers, so 1 is the top copper and the rest are inner
+        // until NameBottomConductor renames the last one. Unread, a four-layer set of these named
+        // nothing as copper and its Technology list offered no four-conductor stackup (designer
+        // report, round 17). Two rows because the number is read after one exact word.
+        new([["met"]], "Inner Copper", ConductorPurpose, "Inr", IndexAfter: "met", IndexOffset: -1, OneIsTop: true),
+        new([["metal"]], "Inner Copper", ConductorPurpose, "Inr", IndexAfter: "metal", IndexOffset: -1, OneIsTop: true),
     ];
 
     private static GerberLayerIdentity? Heuristic(string filePath)
@@ -449,6 +459,10 @@ public static class GerberLayerCascade
             if (pattern.IndexAfter is not null)
             {
                 if (index is not { } stated || stated < pattern.MinIndex) continue;
+                if (pattern.OneIsTop && stated == 1)
+                    return new GerberLayerIdentity(
+                        filePath, extension, GerberLayerRung.Heuristic, "Top Copper", null,
+                        pattern.Purpose, "Top", null, null);
                 index = stated + pattern.IndexOffset;
             }
 

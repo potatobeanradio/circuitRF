@@ -40,6 +40,10 @@ public enum RecognitionFindingClass
     /// <summary>One piece of copper carrying two different net names; it took neither.</summary>
     ConflictingNetNames,
 
+    /// <summary>Copper separated by a gap narrower than any process draws, read as joined — a pad and
+    /// the trace that meets it rounded apart onto a file's coordinate grid.</summary>
+    HairlineGapsJoined,
+
     /// <summary>Ports from the layout's EM setup (R-as3-6, priority 1).</summary>
     PortsFromEmSetup,
 

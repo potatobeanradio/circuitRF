@@ -39,8 +39,15 @@ public static class LayerRegions
     /// </param>
     public static Dictionary<LayerKey, Paths64> Build(
         IReadOnlyList<LayoutShape> shapes, Technology tech, List<string>? diagnostics = null,
-        bool electricalOnly = true)
+        bool electricalOnly = true) => Build(shapes, tech, diagnostics, electricalOnly, out _);
+
+    /// <inheritdoc cref="Build(IReadOnlyList{LayoutShape}, Technology, List{string}?, bool)"/>
+    /// <param name="hairlineJoins">How many joins <see cref="JoinHairlineGaps"/> made, every layer together.</param>
+    internal static Dictionary<LayerKey, Paths64> Build(
+        IReadOnlyList<LayoutShape> shapes, Technology tech, List<string>? diagnostics,
+        bool electricalOnly, out int hairlineJoins)
     {
+        hairlineJoins = 0;
         var byLayer = new Dictionary<LayerKey, Paths64>();
         var order = new List<LayerKey>();
 
@@ -82,6 +89,7 @@ public static class LayerRegions
 
         var unioned = new Dictionary<LayerKey, Paths64>();
         var dropped = new List<string>();
+        var joined = new List<string>();
         foreach (var layer in order)
         {
             if (electricalOnly && !claimed.Contains(layer) && declared.TryGetValue(layer, out string? name))
@@ -90,7 +98,19 @@ public static class LayerRegions
                 continue;
             }
             unioned[layer] = DrcRegions.Union(byLayer[layer]);
+            if (electricalOnly && JoinHairlineGaps(unioned[layer]) is { Joins: > 0 } closed)
+            {
+                unioned[layer] = closed.Region;
+                hairlineJoins += closed.Joins;
+                joined.Add($"{closed.Joins} on {(declared.TryGetValue(layer, out string? n) ? $"'{n}'" : $"{layer.Layer}/{layer.Datatype}")}");
+            }
         }
+
+        if (joined.Count > 0)
+            diagnostics?.Add(
+                $"Copper less than {HairlineGapDbu / 1000.0:0.###} µm apart was read as joined ({string.Join(", ", joined)}): " +
+                "no process draws a gap that narrow, and it is what rounding two shapes that meet (a pad and " +
+                "the trace leaving it) onto a file's coordinate grid leaves between them.");
 
         // ONE sentence, not one per layer: every board carries a soldermask and a silkscreen, and
         // three notes saying so on every run is noise a reader learns to skip past.
@@ -102,6 +122,55 @@ public static class LayerRegions
                 "them is copper, add it to the stackup.");
 
         return unioned;
+    }
+
+    /// <summary>Two pieces of copper on one layer closer than this are one piece in the electrical
+    /// reading — 1 µm at the default 1 nm DBU.</summary>
+    internal const long HairlineGapDbu = LayoutUnits.DefaultDbuPerMicron;
+
+    /// <summary>
+    /// Joins pieces of one layer's copper that a gap narrower than <see cref="HairlineGapDbu"/>
+    /// separates, by a morphological close (grow by half the gap, shrink back) — and returns the
+    /// region UNCHANGED, not merely equivalent, when the close joins nothing, which is every board
+    /// drawn in this application.
+    /// </summary>
+    /// <remarks>
+    /// <b>A Gerber set is where the gap comes from</b> (designer report, round 17): a 0.375 mm pad
+    /// centred on a 0.1 mil grid ends 0.46 µm short of the taper vertex the file rounded onto that
+    /// grid, so the trace and the pad it leaves were two islands and the line to the part read as
+    /// open. The CAD tool that wrote the file had them joined; every reader of this partition — the
+    /// recognition, LVS, railRF — has to agree with it, so the join is made here, once.
+    ///
+    /// <para><b>Only the electrical reading.</b> The geometric one (<c>electricalOnly: false</c>)
+    /// is what a DRC rule measures with, and a spacing check should still see the gap.</para>
+    ///
+    /// <para>The count is outer rings before and after: a close never separates copper, so fewer
+    /// outer rings means exactly that many joins. A notch or a hole narrower than the gap is filled
+    /// too, on a layer that had a join — harmless, and never on a layer that did not.</para>
+    /// </remarks>
+    internal static (Paths64 Region, int Joins) JoinHairlineGaps(Paths64 region, long gapDbu = HairlineGapDbu)
+    {
+        if (region.Count < 2) return (region, 0);
+
+        double half = gapDbu / 2.0;
+        var grown = Clipper.InflatePaths(region, half, JoinType.Miter, EndType.Polygon, 2.0);
+        var closed = Clipper.InflatePaths(grown, -half, JoinType.Miter, EndType.Polygon, 2.0);
+
+        int joins = OuterRings(region) - OuterRings(closed);
+        if (joins <= 0) return (region, 0);
+
+        // The original copper is kept whole: a shrink back can shave an acute corner by a fraction of
+        // the gap, and that is not a change anyone asked for.
+        var both = new Paths64(region);
+        both.AddRange(closed);
+        return (DrcRegions.Union(both), joins);
+    }
+
+    private static int OuterRings(Paths64 paths)
+    {
+        int n = 0;
+        foreach (var p in paths) if (Clipper.Area(p) > 0) n++;
+        return n;
     }
 
     /// <summary>

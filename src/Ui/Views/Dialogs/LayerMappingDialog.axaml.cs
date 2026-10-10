@@ -173,6 +173,7 @@ public partial class LayerMappingDialog : Window
     // The Gerber import's Technology row (R-gt-8). Null for every other caller.
     private GerberMappingRequest? _request;
     private IReadOnlyList<GerberTechnologyChoice> _choices = [];
+    private List<ComboBoxItem> _choiceItems = [];
     private Technology? _workspaceTech;
     private string? _workspaceRoot;
 
@@ -223,6 +224,7 @@ public partial class LayerMappingDialog : Window
             ToolTip.SetTip(item, choice.ToolTip);
             items.Add(item);
         }
+        _choiceItems = items;
         TechnologyCombo.ItemsSource = items;
         TechnologyCombo.SelectedIndex = selected;
         ShowChoice(choices[selected]);
@@ -236,17 +238,50 @@ public partial class LayerMappingDialog : Window
         TechnologyCombo.SelectedIndex is >= 0 and var i && i < _choices.Count ? _choices[i] : null;
 
     /// <summary>The rows as the import would propose them for <paramref name="choice"/>, in the table.</summary>
+    /// <remarks>The "in the stackup as" answers already given are KEPT, by file: they are what made the
+    /// technology just chosen enabled at all (<see cref="GerberTechnologyChoice.EnabledFor"/>), and a
+    /// re-proposal that reset them would disable the very entry that is selected.</remarks>
     private void ShowChoice(GerberTechnologyChoice choice)
     {
         var request = _request!;
         var rows = choice.Kind == GerberTechnologyChoiceKind.New
             ? (request.Target.IsUse ? request.Repropose(null) : request.Rows)
             : request.Repropose(choice.Technology);
-        ShowTable("Gerber", choice.Technology ?? _workspaceTech, rows, choice.AllowsAddToTechnology);
+        var answered = _rowVms
+            .Where(r => r.ShowStackupCombo && r.SelectedStackup is { Choice.AsCopper: true })
+            .GroupBy(StackupKey)
+            .ToDictionary(g => g.Key, g => g.First().SelectedStackup!.Choice);
+        ShowTable("Gerber", choice.Technology ?? _workspaceTech, rows, choice.AllowsAddToTechnology, answered);
+    }
+
+    private static string StackupKey(LayerMappingRowViewModel row) => row.Row.SourceDetail ?? row.Row.SourceName ?? "";
+
+    /// <summary>The copper the set holds as the table now stands: the files the cascade identified, and
+    /// the ones answered "copper" in the "in the stackup as" column.</summary>
+    private int CopperAsAnswered() =>
+        (_request?.CopperCount ?? 0) +
+        _rowVms.Count(r => r.ShowStackupCombo && r.SelectedStackup is { Choice.AsCopper: true });
+
+    /// <summary>D4 again, against <see cref="CopperAsAnswered"/>. A selected technology that no longer
+    /// matches falls back to New rather than staying selected while disabled.</summary>
+    private void RegateTechnologies()
+    {
+        if (_request is null) return;
+        int copper = CopperAsAnswered();
+        for (int i = 0; i < _choices.Count && i < _choiceItems.Count; i++)
+            _choiceItems[i].IsEnabled = _choices[i].EnabledFor(copper);
+        // Posted: this runs inside one of the table's own rows' change notifications, and falling back
+        // re-proposes — rebuilds — the table that row belongs to.
+        if (SelectedChoice is { } selected && !selected.EnabledFor(copper))
+            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                if (SelectedChoice is { } still && !still.EnabledFor(CopperAsAnswered())) TechnologyCombo.SelectedIndex = 0;
+            });
     }
 
     private void ShowTable(string? sourceTechName, Technology? destTech, IReadOnlyList<LayerMappingRow> rows,
-                           bool allowAddToTechnology)
+                           bool allowAddToTechnology,
+                           IReadOnlyDictionary<string, LayerStackupChoice>? answered = null)
     {
         foreach (var old in _rowVms) old.PropertyChanged -= OnRowChanged;
 
@@ -280,6 +315,9 @@ public partial class LayerMappingDialog : Window
         foreach (var rvm in _rowVms)
         {
             rvm.ShowReconciliation = reconciling;
+            if (answered is not null && answered.TryGetValue(StackupKey(rvm), out var kept) &&
+                rvm.StackupOptions.FirstOrDefault(o => o.Choice == kept) is { } option)
+                rvm.SelectedStackup = option;
             rvm.PropertyChanged += OnRowChanged;
         }
         RowsControl.ItemsSource = _rowVms;
@@ -287,7 +325,11 @@ public partial class LayerMappingDialog : Window
         UpdateSummary();
     }
 
-    private void OnRowChanged(object? sender, PropertyChangedEventArgs e) => UpdateSummary();
+    private void OnRowChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        UpdateSummary();
+        if (e.PropertyName == nameof(LayerMappingRowViewModel.SelectedStackup)) RegateTechnologies();
+    }
 
     private void UpdateSummary()
     {

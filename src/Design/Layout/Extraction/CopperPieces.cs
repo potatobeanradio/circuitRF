@@ -111,6 +111,10 @@ public sealed class CopperPieces
     /// </summary>
     internal IReadOnlyList<BarrelTouch> Barrels { get; private init; } = [];
 
+    /// <summary>How many gaps narrower than <see cref="LayerRegions.HairlineGapDbu"/> the partition
+    /// read as joined (<see cref="LayerRegions.JoinHairlineGaps"/>) — said by the readers that report.</summary>
+    internal int HairlineJoins { get; private init; }
+
     /// <summary>How many galvanically-joined pieces the partition holds.</summary>
     public int Count { get; }
 
@@ -182,7 +186,7 @@ public sealed class CopperPieces
         ArgumentNullException.ThrowIfNull(copper);
         if (tech is null || copper.Count == 0) return Empty;
 
-        var layerRegions = LayerRegions.Build(copper, tech);
+        var layerRegions = LayerRegions.Build(copper, tech, null, electricalOnly: true, out int hairlineJoins);
 
         // AA-2: copper a recognised device IS (a line, a via barrel) leaves the partition, so the
         // copper either side of it is two nets — what LayoutReadBodies does for a PLACED line.
@@ -254,7 +258,7 @@ public sealed class CopperPieces
         return new CopperPieces(
             index, pieces, pieceOfShape, nameOfPiece, refusals,
             new GroundReading(reach.ReferenceName, reach.ReferenceDraws, reach.Nets, reach.ViasReached),
-            joins) { Barrels = partition.Barrels };
+            joins) { Barrels = partition.Barrels, HairlineJoins = hairlineJoins };
     }
 
     /// <summary>

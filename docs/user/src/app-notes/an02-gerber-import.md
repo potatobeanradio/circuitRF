@@ -74,7 +74,8 @@ Each artwork file's identity comes from the strongest source the set offers, in 
    carry the stackup;
 2. the file's own **X2 attributes** (`%TF.FileFunction`), which also give a copper layer's position in the stack;
 3. a **Gerber suffix** in your workspace technology that matches the file's extension;
-4. a **name heuristic** — copper top, bottom or inner, mask, silk, paste, outline, drill;
+4. a **name heuristic** — copper top, bottom, inner or numbered from the top (`MET-1` … `MET-4`), mask, silk,
+   paste, outline, drill;
 5. the **layer-mapping dialog**, for anything still unnamed.
 
 This board's job file names all three Gerber files, so the first rung settles every one of them. The files carry
@@ -107,8 +108,9 @@ board lands in, and the table under it shows where each file goes in that techno
   written. A built-in technology is copied into `tech/` when you press **Continue**.
 
 Changing the row re-proposes the table for that technology at once, without reading the files again. A
-technology is offered only when its stackup has as many conductors as the set has copper files. The others are
-listed with their copper count and cannot be chosen. The dialog opens on the workspace's default technology when
+technology is offered only when its stackup has as many conductors as the set has copper files, counting the
+files you mark as copper in the **In the stackup as** column described below. The others are listed with
+their copper count and cannot be chosen until the count matches. The dialog opens on the workspace's default technology when
 its count matches, and on **New technology from the files** otherwise. This workspace's default,
 `tech/board.ctech`, has two conductors, as the set has two copper files, so the dialog opens on it, and all three
 files are matched by name.
@@ -129,7 +131,8 @@ The same row on a six-copper set, and its choices:
 - a copper file lands on a conductor of a different rank — the file that says it is layer 2 on the technology's
   third conductor;
 - two copper files land on one conductor;
-- the drill data lands on a layer no via in that stackup binds.
+- plated drill data lands on a layer no via in that stackup binds. A drill file that only routes — the board
+  outline and its cutouts — or that says it is non-plated is not a via, and is kept as an unknown layer instead.
 
 **A file nothing could identify is asked where it goes in the stackup.** Only a conductor enters the stackup, so
 an unnamed file that is really a plane has to be told so, or it will be imported as drawing-only artwork and

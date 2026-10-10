@@ -744,7 +744,7 @@ public static class GerberImport
         // with it — count, binding, one file per conductor and rank — and its drill data must land on
         // a via layer. Checked before anything is built or written, so a refusal creates nothing.
         if (useTech is not null &&
-            UseRefusal(useTech, copperTopToBottom, allIdentities, finalKeyByFile, sourceLayers) is { } useRefusal)
+            UseRefusal(useTech, copperTopToBottom, allIdentities, finalKeyByFile, sourceLayers, NotVias(drills)) is { } useRefusal)
             return Refused(messages, useRefusal, drillCandidates, archivePaths);
 
         var reconciled = LayoutFragment.ApplyReconciliation(allShapes, sourceLayers, choices);
@@ -1480,7 +1480,8 @@ public static class GerberImport
         IReadOnlyList<GerberLayerIdentity> copperTopToBottom,
         IReadOnlyList<GerberLayerIdentity> allIdentities,
         IReadOnlyDictionary<string, LayerKey> finalKeyByFile,
-        IReadOnlyList<LayerDef> sourceLayers)
+        IReadOnlyList<LayerDef> sourceLayers,
+        IReadOnlySet<string> notVias)
     {
         string techName = tech.Name is { Length: > 0 } n ? n : "the chosen technology";
         var conductors = tech.Stackup.Layers.Where(l => l.Kind == StackupKind.Conductor).ToList();
@@ -1530,7 +1531,8 @@ public static class GerberImport
             .SelectMany(l => l.DrawingLayers)
             .ToHashSet();
         foreach (var drill in allIdentities.Where(i =>
-                     string.Equals(i.Purpose, GerberLayerCascade.DrillPurpose, StringComparison.Ordinal)))
+                     string.Equals(i.Purpose, GerberLayerCascade.DrillPurpose, StringComparison.Ordinal) &&
+                     !notVias.Contains(i.FilePath)))
         {
             var key = finalKeyByFile[drill.FilePath];
             if (!viaBound.Contains(key))
@@ -1542,6 +1544,26 @@ public static class GerberImport
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// The drill files that are not interconnect: one that drilled nothing and only routed (the board
+    /// outline and its cutouts — GI1 R-gi1-3's rule, which mints them a NON-plated entry), and one that
+    /// declares itself non-plated. Into a technology an import uses, neither has to land on a via layer:
+    /// mapping a profile route onto a plated via layer would build a conductive wall round the board
+    /// (designer report, round 17: an outline route refused with "map it to a via layer").
+    /// </summary>
+    private static HashSet<string> NotVias(
+        IEnumerable<(GerberFileClass File, ExcellonReadResult Read, GerberLayerIdentity Identity)> drills)
+    {
+        var not = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var (file, read, _) in drills)
+        {
+            bool? plated = read.Plated ?? ExcellonReader.PlatingFromFileName(file.Path);
+            bool routedOnly = read.Hits.Count == 0 && read.Slots.Count > 0;
+            if (plated == false || routedOnly && plated != true) not.Add(file.Path);
+        }
+        return not;
     }
 
     /// <summary>
@@ -2258,6 +2280,14 @@ public static class GerberImport
         }
 
         if (promoted.Count == 0) return;
+
+        // Several files answered at ONE position — a set none of whose copper the cascade could name, all
+        // answered "above the top" — are ordered by the number in their names, then by name: the table
+        // lists rows by shape count, and that is no order for a stack.
+        promoted = [.. promoted
+            .OrderBy(p => p.After)
+            .ThenBy(p => FirstDigitRun(Path.GetFileNameWithoutExtension(p.Identity.FileName))?.Value ?? int.MaxValue)
+            .ThenBy(p => p.Identity.FileName, StringComparer.OrdinalIgnoreCase)];
 
         foreach (var (_, identity) in promoted)
         {

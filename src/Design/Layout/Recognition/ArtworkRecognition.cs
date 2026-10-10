@@ -166,6 +166,11 @@ public static partial class ArtworkRecognition
                    ground.Anchor is { } ga ? [ga] : []);
         if (wholePieces.Refusals.Count > 0)
             report.Add(RecognitionFindingClass.ConflictingNetNames, wholePieces.Refusals.Count, string.Join(" ", wholePieces.Refusals));
+        if (wholePieces.HairlineJoins is var hairline and > 0)
+            report.Add(RecognitionFindingClass.HairlineGapsJoined, hairline,
+                $"{hairline} gap{(hairline == 1 ? "" : "s")} under {LayerRegions.HairlineGapDbu / 1000.0:0.###} µm between " +
+                $"pieces of copper {(hairline == 1 ? "was" : "were")} read as joined — shapes that meet, rounded apart onto the file's coordinate " +
+                "grid (a pad and the trace leaving it).");
 
         // ── the scope ──────────────────────────────────────────────────────────────────────────────
         Paths64? scope = input.Scope.IsWhole ? null : input.Scope.Paths();

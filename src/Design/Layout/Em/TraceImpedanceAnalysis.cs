@@ -1213,8 +1213,12 @@ public static partial class TraceImpedanceAnalysis
                 copper[index] = new TraceCopper(Clipper.Union(list, LayoutClipper.Rule), indexed: true);
                 continue;
             }
+            // The partition's own hairline join (LayerRegions.JoinHairlineGaps): a trace and the trace it
+            // continues, rounded 0.75 µm apart by a file's grid, are one run here as they are one net there.
+            var joined = CircuitRF.Design.Layout.Extraction.LayerRegions.JoinHairlineGaps(
+                Clipper.Union(list, LayoutClipper.Rule), dbuPerMicron).Region;
             var tree = new PolyTree64();
-            Clipper.BooleanOp(ClipType.Union, list, new Paths64(), tree, LayoutClipper.Rule);
+            Clipper.BooleanOp(ClipType.Union, joined, new Paths64(), tree, LayoutClipper.Rule);
             var rings = new Paths64();
             var ringIsland = new List<int>();
             var areas = new List<double>();

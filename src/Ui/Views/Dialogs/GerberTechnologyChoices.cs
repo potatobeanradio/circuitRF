@@ -39,6 +39,19 @@ public sealed record GerberTechnologyChoice(
     /// <summary>R-gt-4: only a technology the import MINTS can have a layer added to it.</summary>
     public bool AllowsAddToTechnology => Kind == GerberTechnologyChoiceKind.New;
 
+    /// <summary>Readable, and not an edited copy of a catalog technology — what D4 leaves to the count.</summary>
+    public bool Usable { get; init; } = true;
+
+    /// <summary>
+    /// D4 against a copper count that has CHANGED since <see cref="GerberTechnologyChoices.Build"/>:
+    /// the table's "in the stackup as" answers add copper the file names did not, and a set whose
+    /// copper is only known once those are answered must be able to reach the stackup they make
+    /// (designer report, round 17 — every four-conductor entry stayed disabled after the four
+    /// files were marked copper).
+    /// </summary>
+    public bool EnabledFor(int copperCount) =>
+        Kind == GerberTechnologyChoiceKind.New || Usable && ConductorCount == copperCount;
+
     public override string ToString() => Label;
 }
 
@@ -88,7 +101,7 @@ public static class GerberTechnologyChoices
                 tech is null ? $"{choice.Label}  —  unreadable" : $"{choice.Label}  —  {conductors} copper",
                 choice.AbsolutePath, null, conductors,
                 tech is not null && conductors == copperCount,
-                choice.AbsolutePath, tech));
+                choice.AbsolutePath, tech) { Usable = tech is not null });
         }
 
         if (workspaceRoot is null) return choices;
@@ -110,7 +123,7 @@ public static class GerberTechnologyChoices
                     + "differs from the built-in technology; it is offered above as the workspace's own."
                     : $"Built into circuitRF: a copy is written to {System.IO.Path.Combine("tech", entry.Id + ".ctech")} "
                     + "and used from there.",
-                tech));
+                tech) { Usable = !editedCopy });
         }
 
         return choices;
