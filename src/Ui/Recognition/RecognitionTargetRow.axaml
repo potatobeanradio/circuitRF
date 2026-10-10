@@ -1,0 +1,18 @@
+<!-- Where the result goes (brief-artsch-8 R-as8-2, D4; brief-img-5 R-im5-1, D14) — one row, whichever the source. -->
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:rec="using:CircuitRF.Ui.Recognition"
+             x:Class="CircuitRF.Ui.Recognition.RecognitionTargetRow"
+             x:DataType="rec:RecognitionSessionViewModel">
+    <StackPanel Classes="row" Orientation="Horizontal" Spacing="10">
+        <TextBlock Classes="label" Text="Target" Width="70"/>
+        <RadioButton GroupName="target" Content="New cell" IsChecked="{Binding TargetNewCell}"
+                     ToolTip.Tip="{Binding NewCellTip}"/>
+        <TextBox Text="{Binding NewCellName}" Width="220" IsEnabled="{Binding TargetNewCell}"
+                 Classes.invalid="{Binding NameError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+        <TextBlock Text="{Binding NameError}" Classes="error" MaxWidth="360"/>
+        <RadioButton GroupName="target" Content="{Binding OwnTargetLabel}" IsChecked="{Binding TargetOwn}"
+                     IsVisible="{Binding OwnTargetOffered}"
+                     ToolTip.Tip="{Binding OwnTargetTip}"/>
+    </StackPanel>
+</UserControl>

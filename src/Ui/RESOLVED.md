@@ -39282,3 +39282,22 @@ the drawing-plane gesture.
   entered.
 Gate: `C3dGroupsTests.HoveringAMember_ShowsTheWholeGroup_AndADoubleClickSelectsTheMemberAlone`. Shaders regenerated with
 `tools/ShaderGen`.
+
+## Create Schematic / Layout from Image, IM-5: the dialog (2026-10-10)
+
+The AS-8 dialog was split into a shared body (`RecognitionSessionViewModel` + four row controls) and two sources;
+`docs/design/image-to-circuit.md` §8 has the structure. Findings from looking at the rendered window:
+
+- **A `Grid`'s `RowSpacing` is still paid for a collapsed row.** The picture dialog hides its target, options and
+  report rows until it has a picture, and with `RowSpacing="8"` the empty state opened with a blank band above the drop
+  zone. The shell carries a top margin on each row instead.
+- **Make must not be lost to a misread kind.** Auto read a sparse single-width board as a schematic drawing, which
+  forced Make to Schematic (Layout is disabled for a schematic picture); setting *It is* to Layout left Make on
+  Schematic. The wanted Make is now kept apart from the one shown, and comes back as soon as the kind allows it.
+- **An outline in the layer's own colour is invisible on a picture drawn in that colour** — which is the usual case,
+  since the technology's copper colour and a viewer's are both copper. Copper and part outlines carry a white halo.
+- **Auto (IM-2) reads the shipped Artwork to Schematic board, drawn as top copper on a board green, as a schematic**
+  (ink share 4.6 %, one stroke width, straight runs). Not changed in IM-5 — the classifier is IM-2's; the dialog's one
+  click on *It is ▸ Layout* answers it, and the user page says so. Worth a look before the series ships.
+- Avalonia 12: `Gestures.PinchEvent` is internal — the routed event is `InputElement.PinchEvent`. A style whose selector
+  ends in a class only (`.placement`) cannot carry a setter; `:is(Control).placement` can.

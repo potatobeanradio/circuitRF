@@ -484,3 +484,24 @@ The report is the trace's findings, then what the picture did not state (the imp
 the recognition's — with two of its sentences reworded where what they say of the technology is the picture's doing:
 the ground point nobody clicked, and the mask the picture did not draw.
 
+
+## 8. IM-5 — the dialog
+
+One window for every source (`src/Ui/Recognition/CreateSchematicFromArtworkDialog`). The body every source shares —
+target, the recognition's options, the parts table, the report, Create — is `RecognitionSessionViewModel`, with the
+edits-as-CSV-overlay and the debounced, cancellable re-run AS-8 already had; the two sources subclass it:
+`CreateSchematicFromArtworkViewModel` (a layout on disk) and `ImageSourceViewModel` (a picture). Each row is its own
+control (`RecognitionTargetRow`, `RecognitionOptionsRow`, `PartsTablePanel`, `RecognitionReportStrip`), so none exists
+twice; the window picks the source pane and the body by a `DataTemplate` on the view model's type.
+
+The picture source decides nothing. Its preview is `ImageTrace.Trace` (Make Layout) or `ImageRecognition.Circuit`
+(Make Schematic), its write `ImageTrace.Run` or `ImageRecognition.Run` — behind `IImageRecognitionRunner`, so a test
+records what crosses. Every control is a field of `ImageTraceInput`/`ImageTraceOptions`/`ImageScaleStatement`/
+`ImageLayerMap`. The overlay (`ImageOverlay`) is built from the reading only, carried into pixels through the trace's
+`PixelFrame`; the canvas draws it. For that the trace result gained `Drills` (the circles in pixels, before any scale),
+`ImageTraceOptions` gained `MergeDeltaE` (written to the provenance only when not the default), and `ImageLayerMap`
+gained `WithRole`, which fills a Drill/Outline/Silkscreen row's layer as Auto does.
+
+Two rules of the dialog that are easy to break: an edited layer row is held as an edited map and REBOUND by the next
+trace, never replaced; and Make follows the kind only while the kind forces it — a misread Auto that forced Make to
+Schematic must hand the user's Make back when they set the kind to Layout.

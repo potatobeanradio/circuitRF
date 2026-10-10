@@ -1,0 +1,36 @@
+<!-- The report strip (brief-artsch-8 R-as8-2; brief-img-5 R-im5-1, R-im5-3): one line per class; a class with anchors
+     expands to them, and choosing an anchor shows it — on the picture, for a picture source. Its height is pinned when
+     a line is expanded, so the expansion scrolls inside the strip rather than growing it upward over the table. -->
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:rec="using:CircuitRF.Ui.Recognition"
+             x:Class="CircuitRF.Ui.Recognition.RecognitionReportStrip"
+             x:DataType="rec:RecognitionSessionViewModel">
+    <ScrollViewer x:Name="Strip" MaxHeight="150" VerticalScrollBarVisibility="Auto">
+        <ItemsControl ItemsSource="{Binding ReportLines}">
+            <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="rec:RecognitionReportLineViewModel">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <!-- A fixed column, so a line with nothing to expand still starts where the others do. -->
+                            <Panel Width="18">
+                                <ToggleButton IsChecked="{Binding IsExpanded}" IsVisible="{Binding HasAnchors}"
+                                              Click="OnExpandClick"
+                                              Content="▸" Padding="3,0" MinHeight="0" FontSize="10"/>
+                            </Panel>
+                            <TextBlock Text="{Binding Text}" FontSize="11" TextWrapping="Wrap" MaxWidth="1240"/>
+                        </StackPanel>
+                        <ItemsControl ItemsSource="{Binding Anchors}" IsVisible="{Binding IsExpanded}" Margin="22,0,0,2">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="rec:RecognitionReportAnchorViewModel">
+                                    <TextBlock Text="{Binding Text}" FontSize="11" Opacity="0.8" Cursor="Hand"
+                                               PointerPressed="OnAnchorPressed"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+    </ScrollViewer>
+</UserControl>

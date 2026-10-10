@@ -86,6 +86,31 @@ public sealed record ImageLayerMap(IReadOnlyList<ImageLayerRow> Rows, bool Edite
     public ImageLayerMap With(int cluster, ImageLayerRole role, params string[] layers) =>
         new([.. Rows.Select(r => r.Cluster == cluster ? r with { Role = role, Layers = layers, Overlap = false } : r)], Edited: true);
 
+    /// <summary>
+    /// The map with one row read as <paramref name="role"/> — an edit. A Layer row takes <paramref name="layers"/>; Drill,
+    /// Board outline and Silkscreen take the technology's layer for that role, as Auto fills them, so a row the user
+    /// re-reads is traced exactly as an Auto row of that role would be.
+    /// </summary>
+    public ImageLayerMap WithRole(Technology technology, int cluster, ImageLayerRole role, params string[] layers)
+    {
+        ArgumentNullException.ThrowIfNull(technology);
+        LayerKey? key = role switch
+        {
+            ImageLayerRole.Drill => ViaBarrelLayer(technology),
+            ImageLayerRole.Silkscreen => SilkscreenText.Layers(technology).FirstOrDefault() is { Layer: var silk }
+                                         && technology.Layers.Any(l => l.Key == silk) ? silk : null,
+            ImageLayerRole.BoardOutline => OutlineLayer(technology),
+            _ => null,
+        };
+        string[] names = role switch
+        {
+            ImageLayerRole.Layer => layers,
+            ImageLayerRole.Drill or ImageLayerRole.Silkscreen or ImageLayerRole.BoardOutline => key is { } k ? [NameOf(technology, k)] : [],
+            _ => [],
+        };
+        return With(cluster, role, names);
+    }
+
     /// <summary>The provenance block: <c>#rrggbb</c> → layer name(s) or role.</summary>
     public SortedDictionary<string, string> ToProvenance()
     {

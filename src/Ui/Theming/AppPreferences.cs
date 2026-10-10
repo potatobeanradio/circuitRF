@@ -158,6 +158,17 @@ public sealed class AppPreferences
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? CheckLvsOnExport { get; set; }
 
+    // brief-img-5 R-im5-7 (overview D5): whether Create … from Image keeps the source picture under the result, locked
+    // and faded. Null means ON. The dialog's Advanced checkbox starts from it, per run. And whether that dialog's
+    // Advanced expander opens expanded — remembered per user, null is collapsed.
+    [JsonPropertyName("keep_source_picture_under_result")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? KeepSourcePictureUnderResult { get; set; }
+
+    [JsonPropertyName("image_dialog_advanced_expanded")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? ImageDialogAdvancedExpanded { get; set; }
+
     // Designer report (round 15): whether a symbol's facing and its footprint's placement angle follow each other.
     // Null means ON, the behaviour until now: Update Layout from Schematic turns a footprint when its symbol was turned
     // since the last sync, and Create Schematic from Artwork draws a shunt part above or below its line by the side of

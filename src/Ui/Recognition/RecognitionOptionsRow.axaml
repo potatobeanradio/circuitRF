@@ -1,0 +1,69 @@
+<!-- The recognition's options (brief-artsch-8 R-as8-2; brief-img-5 R-im5-1): ground, vias, coplanar lines, the sweep
+     and the digits — the CLI's flags, one control each. Shown wherever a schematic is recognised: from artwork, and
+     from a layout picture. -->
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:rec="using:CircuitRF.Ui.Recognition"
+             xmlns:tun="using:CircuitRF.Ui.Tuning"
+             xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="CircuitRF.Ui.Recognition.RecognitionOptionsRow"
+             x:DataType="rec:RecognitionSessionViewModel">
+
+    <UserControl.Resources>
+        <!-- The digits menu: one radio item per choice (TuningDigitsChoice), as the Optimizer's header has. -->
+        <ControlTheme x:Key="DigitsMenuItem" TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}"
+                      x:DataType="tun:TuningDigitsChoice">
+            <Setter Property="Header" Value="{Binding Label}"/>
+            <Setter Property="ToggleType" Value="Radio"/>
+            <Setter Property="IsChecked" Value="{Binding IsChecked, Mode=OneWay}"/>
+            <Setter Property="Command" Value="{Binding Command}"/>
+            <Setter Property="CommandParameter" Value="{Binding Digits}"/>
+        </ControlTheme>
+    </UserControl.Resources>
+
+    <StackPanel Spacing="8">
+        <WrapPanel Classes="row" Orientation="Horizontal">
+            <TextBlock Classes="label" Text="Ground" Width="70" Margin="0,0,10,0"/>
+            <ComboBox ItemsSource="{x:Static rec:RecognitionSessionViewModel.GroundOptions}"
+                      SelectedIndex="{Binding GroundIndex}" MinWidth="130" Margin="0,0,6,0"
+                      ToolTip.Tip="Auto reads the largest copper on the stackup's reference conductor as ground. Pick on layout: click the copper that is ground."/>
+            <TextBlock Text="{Binding GroundPointText}" FontSize="11" Margin="0,0,6,0"/>
+            <Button Content="Pick…" Command="{Binding PickGroundCommand}" Margin="0,0,16,0"
+                    ToolTip.Tip="Click the ground copper. Escape cancels."/>
+
+            <TextBlock Classes="label" Text="Ground vias" Margin="0,0,6,0"/>
+            <ComboBox ItemsSource="{x:Static rec:RecognitionSessionViewModel.ViaOptions}"
+                      SelectedIndex="{Binding ViaIndex}" MinWidth="150" Margin="0,0,16,0"
+                      ToolTip.Tip="A via that grounds a part's own pad or a line end: a stackup-bound VIAGND, or a plain ground. Stitching vias are always dropped."/>
+
+            <TextBlock Classes="label" Text="Coplanar lines" Margin="0,0,6,0"/>
+            <ComboBox ItemsSource="{x:Static rec:RecognitionSessionViewModel.CoplanarOptions}"
+                      SelectedIndex="{Binding CoplanarIndex}" MinWidth="110" Margin="0,0,10,0"
+                      ToolTip.Tip="How a line with ground close beside it is read. Auto: grounded coplanar when both gaps are within the factor's substrate heights."/>
+            <TextBlock Classes="label" Text="Factor" Margin="0,0,6,0" IsEnabled="{Binding CoplanarFactorApplies}"/>
+            <TextBox Text="{Binding CoplanarFactorText}" Width="50" IsEnabled="{Binding CoplanarFactorApplies}"
+                     ToolTip.Tip="Under Auto, a side gap at most this many substrate heights is coplanar ground."/>
+            <TextBlock Classes="label" Text="× H" Margin="4,0,0,0" IsEnabled="{Binding CoplanarFactorApplies}"/>
+        </WrapPanel>
+
+        <StackPanel Classes="row" Orientation="Horizontal">
+            <TextBlock Classes="label" Text="Frequency" Width="70" Margin="0,0,10,0"/>
+            <TextBox Text="{Binding StartText}" Width="90" ToolTip.Tip="Start, with its unit."/>
+            <TextBlock Classes="label" Text="to" Margin="6,0"/>
+            <TextBox Text="{Binding StopText}" Width="90" ToolTip.Tip="Stop, with its unit. Also the frequency a TLIN's F and coupled lines are judged at."/>
+            <TextBox Text="{Binding PointsText}" Width="60" Margin="10,0,0,0" ToolTip.Tip="Points."/>
+            <TextBlock Classes="label" Text="pts" Margin="6,0,0,0"/>
+
+            <TextBlock Classes="label" Text="Values" Margin="24,0,6,0"/>
+            <Button Padding="6,2" ToolTip.Tip="Significant digits for every value the schematic is created with">
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                    <mi:MaterialIcon Kind="DecimalDecrease" Width="14" Height="14"/>
+                    <TextBlock Text="{Binding DigitsLabel}" FontSize="12" VerticalAlignment="Center"/>
+                </StackPanel>
+                <Button.Flyout>
+                    <MenuFlyout ItemsSource="{Binding DigitsChoices}" ItemContainerTheme="{StaticResource DigitsMenuItem}"/>
+                </Button.Flyout>
+            </Button>
+        </StackPanel>
+    </StackPanel>
+</UserControl>

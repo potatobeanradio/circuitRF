@@ -1,0 +1,101 @@
+<!-- The Create … from … dialog's styles (brief-img-5-dialog.md R-im5-1), shared by the window and the controls it is
+     built from — RecognitionTargetRow, RecognitionOptionsRow, PartsTablePanel, RecognitionReportStrip, ImageSourcePane
+     and ImageReadingPanel — so a row looks the same whichever source sits above it. -->
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <Style Selector="TextBox.invalid">
+        <Setter Property="BorderBrush" Value="#C8463A"/>
+    </Style>
+    <Style Selector="TextBlock.label">
+        <Setter Property="VerticalAlignment" Value="Center"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="Opacity" Value="0.8"/>
+    </Style>
+    <Style Selector="TextBlock.error">
+        <Setter Property="Foreground" Value="#C8463A"/>
+        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+        <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
+    <!-- A row of mixed controls centres every one of them on the row: left to stretch, a text box grows to the
+         tallest neighbour and a combo sits on the top edge, so no two baselines agree. -->
+    <Style Selector="WrapPanel.row > :is(Control), StackPanel.row > :is(Control)">
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+    <!-- The parts table's editors: one height, their text centred in it. -->
+    <Style Selector="Grid.cells > TextBox, Grid.cells > Panel > TextBox">
+        <Setter Property="Height" Value="24"/>
+        <Setter Property="MinHeight" Value="0"/>
+        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="Padding" Value="4,0"/>
+        <Setter Property="Margin" Value="0,0,4,0"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+    </Style>
+    <Style Selector="Grid.cells > ComboBox">
+        <Setter Property="Height" Value="24"/>
+        <Setter Property="MinHeight" Value="0"/>
+        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="Padding" Value="6,0,0,0"/>
+        <Setter Property="Margin" Value="0,0,4,0"/>
+        <Setter Property="HorizontalAlignment" Value="Stretch"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+    </Style>
+    <Style Selector="Button.header">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Padding" Value="2,1"/>
+        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="HorizontalAlignment" Value="Stretch"/>
+        <Setter Property="HorizontalContentAlignment" Value="Left"/>
+    </Style>
+
+    <!-- A segmented choice: radio buttons drawn as one strip of toggle buttons, joined at the seams. -->
+    <Style Selector="RadioButton.seg">
+        <Setter Property="Padding" Value="10,3"/>
+        <Setter Property="MinHeight" Value="26"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="CornerRadius" Value="0"/>
+        <Setter Property="Margin" Value="-1,0,0,0"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+    </Style>
+    <Style Selector="RadioButton.seg.first">
+        <Setter Property="CornerRadius" Value="4,0,0,4"/>
+        <Setter Property="Margin" Value="0"/>
+    </Style>
+    <Style Selector="RadioButton.seg.last">
+        <Setter Property="CornerRadius" Value="0,4,4,0"/>
+    </Style>
+
+    <!-- A slot around a control that may be the one the reading is waiting for (R-im5-4, R-im5-8): its border is
+         always there, transparent, so highlighting it moves nothing. -->
+    <Style Selector="Border.slot">
+        <Setter Property="BorderBrush" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="4"/>
+        <Setter Property="Padding" Value="4,2"/>
+    </Style>
+    <Style Selector="Border.slot.wants">
+        <Setter Property="BorderBrush" Value="#D9A21B"/>
+        <Setter Property="Background" Value="#22D9A21B"/>
+    </Style>
+
+    <!-- A link that is a button. -->
+    <Style Selector="Button.link">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Padding" Value="2,0"/>
+        <Setter Property="MinHeight" Value="0"/>
+        <Setter Property="Foreground" Value="{DynamicResource SystemAccentColor}"/>
+        <Setter Property="Cursor" Value="Hand"/>
+    </Style>
+    <Style Selector="Button.link /template/ ContentPresenter">
+        <Setter Property="TextBlock.TextDecorations" Value="Underline"/>
+    </Style>
+    <Style Selector="Button.link:pointerover /template/ ContentPresenter">
+        <Setter Property="Background" Value="Transparent"/>
+    </Style>
+</Styles>

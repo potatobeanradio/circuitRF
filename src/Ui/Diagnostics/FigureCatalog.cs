@@ -845,6 +845,28 @@ public static class FigureCatalog
           + "placement file and bill of materials given: the options across the top, the parts table "
           + "with every part the recognition read, and the report strip under it."),
 
+        // ── Create Schematic / Layout from Image ────────────────────────────────
+        // 1320x846 is the picture dialog's own declared 1320x880 less the synthetic title bar.
+        new("image-dialog-empty", DocImageRecognitionFixtures.Empty, 1320, 846,
+            WindowFrame.Titled("Create Schematic from Image"),
+            "Create Schematic from Image, opened with no picture: the dialog is one drop zone."),
+
+        new("image-dialog-layout-picture", DocImageRecognitionFixtures.LayoutPicture, 1320, 846,
+            WindowFrame.Titled("Create Schematic from Image — board.png"),
+            "A picture of a board's top copper made into a schematic: what was read is drawn over the picture, "
+          + "the colours are mapped to layers on the right, and the parts table lists what was recognised. "
+          + "The selected row's part is boxed on the picture."),
+
+        new("image-dialog-needs-scale", DocImageRecognitionFixtures.NeedsScale, 1320, 846,
+            WindowFrame.Titled("Create Layout from Image — board.png"),
+            "The same picture with no scale stated and none found in it: the scale row is highlighted, the "
+          + "picture asks for two points, and Create waits. Advanced is open on the right."),
+
+        new("image-dialog-no-drawing", DocImageRecognitionFixtures.NoDrawing, 1320, 846,
+            WindowFrame.Titled("Create Schematic from Image — photo.png"),
+            "A picture with no drawing in it: shown dimmed, with the one sentence that says why and the two "
+          + "links that read it anyway."),
+
         // ── The Smith Chart document ────────────────────────────────────────────
         // 1400x920 rather than the shell's 1200x800. The chart pane takes 65% of the height by the
         // document's own splitter, so the generator column beside it gets that same 65% to fit six

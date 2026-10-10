@@ -1,0 +1,271 @@
+<!-- The picture dialog's body (brief-img-5-dialog.md R-im5-2, R-im5-3, R-im5-5, R-im5-7, R-im5-8).
+
+     Empty: the whole body is a drop zone. With a picture: the canvas takes the left two-thirds — the picture with what
+     was read drawn over it, a legend that toggles each class, and the one prompt or the one failure sentence — and the
+     right column holds the colour → layer rows, the advanced options and the parts table. A splitter between them lets
+     the table have more room. -->
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:rec="using:CircuitRF.Ui.Recognition"
+             xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="CircuitRF.Ui.Recognition.ImageReadingPanel"
+             x:DataType="rec:ImageSourceViewModel"
+             DragDrop.AllowDrop="True">
+
+    <UserControl.Styles>
+        <Style Selector="ToggleButton.legend">
+            <Setter Property="Padding" Value="6,1"/>
+            <Setter Property="MinHeight" Value="0"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Margin" Value="0,0,2,0"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+        </Style>
+        <Style Selector="ToggleButton.legend:unchecked">
+            <Setter Property="Opacity" Value="0.45"/>
+        </Style>
+        <Style Selector="ToggleButton.legend:checked /template/ ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseHighBrush}"/>
+        </Style>
+        <Style Selector="Border.pill">
+            <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundAltHighBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="Padding" Value="6,3"/>
+            <Setter Property="Opacity" Value="0.95"/>
+        </Style>
+        <Style Selector="Grid.advanced > TextBlock">
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Opacity" Value="0.8"/>
+        </Style>
+        <Style Selector="Grid.advanced > TextBox">
+            <Setter Property="Width" Value="64"/>
+            <Setter Property="HorizontalAlignment" Value="Left"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <!-- The expander's header at a row's height, not Fluent's 48. -->
+        <Style Selector="Expander.compact">
+            <Setter Property="MinHeight" Value="0"/>
+        </Style>
+        <Style Selector="Expander.compact /template/ ToggleButton">
+            <Setter Property="MinHeight" Value="30"/>
+            <Setter Property="Padding" Value="8,0"/>
+        </Style>
+        <Style Selector="Grid.layers > TextBlock">
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="FontSize" Value="12"/>
+        </Style>
+    </UserControl.Styles>
+
+    <Panel>
+        <!-- ── Empty: a drop zone (R-im5-2) ─────────────────────────────────────────────── -->
+        <Panel IsVisible="{Binding IsEmpty}" Background="#0A808080">
+            <Rectangle RadiusX="8" RadiusY="8" StrokeThickness="2" StrokeDashArray="5,4"
+                       Stroke="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"/>
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12">
+                <mi:MaterialIcon Kind="ImageOutline" Width="56" Height="56" Opacity="0.55" HorizontalAlignment="Center"/>
+                <TextBlock Text="{x:Static rec:ImageSourceViewModel.DropPrompt}" FontSize="15" HorizontalAlignment="Center"/>
+                <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
+                    <Button Content="Browse…" Command="{Binding BrowseCommand}" MinWidth="90" Classes="accent"/>
+                    <Button Content="Paste" Command="{Binding PasteCommand}" MinWidth="90"/>
+                </StackPanel>
+                <TextBlock Text="{x:Static rec:ImageSourceViewModel.FormatsLine}" FontSize="11" Opacity="0.65"
+                           HorizontalAlignment="Center"/>
+            </StackPanel>
+        </Panel>
+
+        <!-- ── A picture: canvas | right column ─────────────────────────────────────────── -->
+        <Grid IsVisible="{Binding HasPicture}" ColumnDefinitions="2*,8,*">
+            <!-- The canvas and what floats over it. -->
+            <Border Grid.Column="0" Grid.ColumnSpan="{Binding CanvasSpan}" BorderThickness="1" ClipToBounds="True"
+                    BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                    Background="{DynamicResource SystemControlBackgroundBaseLowBrush}">
+                <Panel>
+                    <rec:ImageOverlayCanvas x:Name="Canvas"/>
+
+                    <!-- Legend: each class toggled. -->
+                    <Border Classes="pill" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="8"
+                            IsVisible="{Binding !HasFailure}">
+                        <StackPanel Orientation="Horizontal">
+                            <ToggleButton Classes="legend" IsChecked="{Binding ShowCopper}" ToolTip.Tip="Traced copper, outlined in each layer's colour.">
+                                <StackPanel Orientation="Horizontal" Spacing="4"><Rectangle Width="10" Height="10" Fill="#B87333" VerticalAlignment="Center"/><TextBlock Text="Copper"/></StackPanel>
+                            </ToggleButton>
+                            <ToggleButton Classes="legend" IsChecked="{Binding ShowDrills}" ToolTip.Tip="Drill holes, as the circles read.">
+                                <StackPanel Orientation="Horizontal" Spacing="4"><Ellipse Width="10" Height="10" Stroke="#37474F" StrokeThickness="1.5" VerticalAlignment="Center"/><TextBlock Text="Drills"/></StackPanel>
+                            </ToggleButton>
+                            <ToggleButton Classes="legend" IsChecked="{Binding ShowParts}" IsVisible="{Binding PartsApply}" ToolTip.Tip="Recognised parts, boxed with their designators.">
+                                <StackPanel Orientation="Horizontal" Spacing="4"><Rectangle Width="10" Height="10" Stroke="#7B1FA2" StrokeThickness="1.5" VerticalAlignment="Center"/><TextBlock Text="Parts"/></StackPanel>
+                            </ToggleButton>
+                            <ToggleButton Classes="legend" IsChecked="{Binding ShowLines}" IsVisible="{Binding PartsApply}" ToolTip.Tip="Lines, as their centre lines, labelled with their component.">
+                                <StackPanel Orientation="Horizontal" Spacing="4"><Rectangle Width="10" Height="2" Fill="#00897B" VerticalAlignment="Center"/><TextBlock Text="Lines"/></StackPanel>
+                            </ToggleButton>
+                            <ToggleButton Classes="legend" IsChecked="{Binding ShowPorts}" IsVisible="{Binding PartsApply}" ToolTip.Tip="Ports.">
+                                <StackPanel Orientation="Horizontal" Spacing="4"><Ellipse Width="10" Height="10" Stroke="#C62828" StrokeThickness="1.5" VerticalAlignment="Center"/><TextBlock Text="Ports"/></StackPanel>
+                            </ToggleButton>
+                            <ToggleButton Classes="legend" IsChecked="{Binding ShowIgnored}" ToolTip.Tip="Colours read as Ignore, hatched.">
+                                <StackPanel Orientation="Horizontal" Spacing="4"><Rectangle Width="10" Height="10" Fill="#707070" Opacity="0.6" VerticalAlignment="Center"/><TextBlock Text="Ignored"/></StackPanel>
+                            </ToggleButton>
+                            <ToggleButton Classes="legend" IsChecked="{Binding ShowUnknowns}" ToolTip.Tip="Whatever was not read: an unread value, a part of unknown kind, a colour mapped to no layer.">
+                                <StackPanel Orientation="Horizontal" Spacing="4"><Rectangle Width="10" Height="10" Fill="#E0A010" VerticalAlignment="Center"/><TextBlock Text="Unknown"/></StackPanel>
+                            </ToggleButton>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- The one prompt: a tool's instruction, or the scale the reading is waiting for. -->
+                    <Border Classes="pill" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="8,8,8,12"
+                            IsVisible="{Binding CanvasPrompt, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock Text="{Binding CanvasPrompt}" FontSize="12" VerticalAlignment="Center"/>
+                            <Button Classes="link" Content="Cancel" Command="{Binding Scale.CancelToolCommand}"
+                                    IsVisible="{Binding Scale.HasTool}"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Failure on the picture (R-im5-8): the picture dimmed, one sentence, the links that answer it. -->
+                    <Border Classes="pill" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="600" Padding="14,10"
+                            IsVisible="{Binding HasFailure}">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="{Binding FailureText}" TextWrapping="Wrap" FontSize="13" TextAlignment="Center"/>
+                            <StackPanel Orientation="Horizontal" Spacing="16" HorizontalAlignment="Center"
+                                        IsVisible="{Binding FailureOffersKind}">
+                                <Button Classes="link" Content="Read it as a schematic" Command="{Binding ReadAsSchematicCommand}"/>
+                                <Button Classes="link" Content="Read it as a layout" Command="{Binding ReadAsLayoutCommand}"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Whole picture: clears a dragged scope. -->
+                    <Button Content="Whole picture" Command="{Binding WholePictureCommand}" IsVisible="{Binding HasScope}"
+                            HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="8"
+                            ToolTip.Tip="Read the whole picture again, not only the rectangle dragged on it."/>
+
+                    <!-- The measure tools' inline boxes, placed at the point clicked (R-im5-4). -->
+                    <Canvas x:Name="Inline" IsHitTestVisible="True">
+                        <Border x:Name="DistanceBox" Classes="pill" IsVisible="{Binding Scale.AskingDistance}" Padding="8,6">
+                            <StackPanel Spacing="4">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <TextBlock Text="Distance" FontSize="12" VerticalAlignment="Center"/>
+                                    <TextBox x:Name="DistanceInput" Text="{Binding Scale.DistanceText}" Width="110"
+                                             PlaceholderText="1.6 mm" KeyDown="OnDistanceKey"
+                                             Classes.invalid="{Binding Scale.DistanceError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                                    <Button Content="Set" Command="{Binding Scale.ApplyDistanceCommand}"/>
+                                </StackPanel>
+                                <TextBlock Text="{Binding Scale.DistanceError}" Classes="error" MaxWidth="300"
+                                           IsVisible="{Binding Scale.DistanceError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                            </StackPanel>
+                        </Border>
+                        <Border x:Name="Z0Box" Classes="pill" IsVisible="{Binding Scale.AskingZ0}" Padding="8,6">
+                            <StackPanel Spacing="4">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <TextBlock Text="Z0" FontSize="12" VerticalAlignment="Center"/>
+                                    <TextBox x:Name="Z0Input" Text="{Binding Scale.Z0Text}" Width="90" KeyDown="OnZ0Key"
+                                             Classes.invalid="{Binding Scale.Z0Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                                    <Button Content="Set" Command="{Binding Scale.ApplyZ0Command}"/>
+                                </StackPanel>
+                                <TextBlock Text="{Binding Scale.Z0Error}" Classes="error" MaxWidth="300"
+                                           IsVisible="{Binding Scale.Z0Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                            </StackPanel>
+                        </Border>
+                    </Canvas>
+                </Panel>
+            </Border>
+
+            <GridSplitter Grid.Column="1" Background="Transparent" ResizeDirection="Columns" IsVisible="{Binding HasSideColumn}"/>
+
+            <!-- The right column: layers, advanced, parts. -->
+            <Grid Grid.Column="2" RowDefinitions="Auto,Auto,Auto,*" RowSpacing="8" IsVisible="{Binding HasSideColumn}">
+                <!-- Layers (R-im5-5): swatch, share, layer. -->
+                <Border Grid.Row="0" Classes="slot" Classes.wants="{Binding HighlightLayers}" Padding="0"
+                        IsVisible="{Binding IsLayoutPicture}">
+                    <StackPanel Spacing="4">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Text="Layers" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center" Margin="2,0,0,0"/>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4">
+                                <ComboBox ItemsSource="{Binding Presets}" SelectedItem="{Binding SelectedPreset}" MinWidth="120"
+                                          PlaceholderText="Preset" FontSize="12"
+                                          ToolTip.Tip="Apply a saved colour → layer map and its options."/>
+                                <Button Content="Save Preset…" FontSize="12"
+                                        ToolTip.Tip="Keep this colour → layer map and the options under a name, to apply to pictures from the same source.">
+                                    <Button.Flyout>
+                                        <Flyout Placement="BottomEdgeAlignedRight">
+                                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                                <TextBox Text="{Binding SavePresetName}" Width="180" PlaceholderText="Preset name"/>
+                                                <Button Content="Save" Command="{Binding SavePresetCommand}"/>
+                                            </StackPanel>
+                                        </Flyout>
+                                    </Button.Flyout>
+                                </Button>
+                            </StackPanel>
+                        </Grid>
+                        <ItemsControl ItemsSource="{Binding LayerRows}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="rec:ImageLayerRowViewModel">
+                                    <Grid Classes="layers" ColumnDefinitions="22,48,*,14" Margin="2,1" Background="Transparent"
+                                          PointerEntered="OnLayerEnter" PointerExited="OnLayerExit" ToolTip.Tip="{Binding Tip}">
+                                        <Border Grid.Column="0" Width="16" Height="16" CornerRadius="2" Background="{Binding Swatch}"
+                                                BorderBrush="#80808080" BorderThickness="1" VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="1" Text="{Binding ShareText}" Opacity="0.75" HorizontalAlignment="Right" Margin="0,0,8,0"/>
+                                        <ComboBox Grid.Column="2" ItemsSource="{Binding Options}" SelectedItem="{Binding LayerText}"
+                                                  HorizontalAlignment="Stretch" Height="26" MinHeight="0" FontSize="12" Padding="6,0,0,0"
+                                                  VerticalContentAlignment="Center"/>
+                                        <Ellipse Grid.Column="3" Width="6" Height="6" Fill="{DynamicResource SystemAccentColor}"
+                                                 IsVisible="{Binding Edited}" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                                 ToolTip.Tip="Chosen by you: a re-read keeps it."/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+
+                <!-- Advanced (R-im5-7): collapsed, remembered per user. -->
+                <Expander Grid.Row="1" Classes="compact" Header="Advanced" IsExpanded="{Binding AdvancedExpanded}"
+                          HorizontalAlignment="Stretch" IsVisible="{Binding HasPicture}">
+                    <StackPanel Spacing="8">
+                        <Grid Classes="advanced" ColumnDefinitions="Auto,Auto,16,Auto,Auto" RowDefinitions="Auto,Auto,Auto,Auto"
+                              RowSpacing="6" ColumnSpacing="6" IsVisible="{Binding IsLayoutPicture}">
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Minimum feature, px²"/>
+                            <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding MinFeatureText}"
+                                     ToolTip.Tip="Regions and holes smaller than this many square pixels are specks, and are removed."/>
+                            <TextBlock Grid.Row="0" Grid.Column="3" Text="Simplify, px"/>
+                            <TextBox Grid.Row="0" Grid.Column="4" Text="{Binding SimplifyText}"
+                                     ToolTip.Tip="How far, in pixels, a traced outline may move to lose a vertex."/>
+                            <CheckBox Grid.Row="1" Grid.Column="0" Content="Snap edges" IsChecked="{Binding Snap}"
+                                      ToolTip.Tip="Edges near 0° and 90° are made exactly horizontal or vertical."/>
+                            <CheckBox Grid.Row="1" Grid.Column="1" Content="and 45°" IsChecked="{Binding Snap45}" IsEnabled="{Binding Snap}"/>
+                            <TextBlock Grid.Row="1" Grid.Column="3" Text="Snap within, °"/>
+                            <TextBox Grid.Row="1" Grid.Column="4" Text="{Binding SnapAngleText}" IsEnabled="{Binding Snap}"
+                                     ToolTip.Tip="An edge within this many degrees of a snap angle is snapped."/>
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Colours, at most"/>
+                            <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding MaxColoursText}"
+                                     ToolTip.Tip="The most colours the picture is separated into."/>
+                            <TextBlock Grid.Row="2" Grid.Column="3" Text="Merge within ΔE"/>
+                            <TextBox Grid.Row="2" Grid.Column="4" Text="{Binding MergeText}"
+                                     ToolTip.Tip="Colours closer than this are one colour."/>
+                        </Grid>
+                        <Grid Classes="advanced" ColumnDefinitions="Auto,Auto,16,Auto,Auto" RowDefinitions="Auto,Auto"
+                              RowSpacing="6" ColumnSpacing="6" IsVisible="{Binding IsSchematicPicture}">
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Threshold"/>
+                            <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding ThresholdText}"
+                                     ToolTip.Tip="How dark, against its neighbourhood, a pixel must be to be ink."/>
+                            <TextBlock Grid.Row="0" Grid.Column="3" Text="Window, px"/>
+                            <TextBox Grid.Row="0" Grid.Column="4" Text="{Binding WindowText}"
+                                     ToolTip.Tip="The neighbourhood the threshold is judged over, pixels."/>
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Crossings connect"/>
+                            <ComboBox Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="4" MinWidth="120"
+                                      ItemsSource="{x:Static rec:ImageSourceViewModel.CrossingOptions}" SelectedIndex="{Binding CrossingIndex}"
+                                      ToolTip.Tip="Where two wires cross: never connected, connected where there is a dot, or always connected."/>
+                        </Grid>
+                        <CheckBox Content="Keep the source picture under the result" IsChecked="{Binding KeepUnderlay}"
+                                  ToolTip.Tip="The written layout and schematic carry the picture behind them, locked and faded, so each shape lies on what it was read from."/>
+                    </StackPanel>
+                </Expander>
+
+                <rec:PartsTablePanel Grid.Row="3" IsVisible="{Binding PartsApply}"/>
+            </Grid>
+        </Grid>
+    </Panel>
+</UserControl>

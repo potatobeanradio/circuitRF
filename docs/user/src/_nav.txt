@@ -64,6 +64,7 @@ reference/layout-editor.html   | The layout view: technology, drawing, snapping,
 reference/footprints.html      | SMT land patterns: case sizes, density levels, and how a part gets its artwork.
 reference/lvs.html             | Layout versus schematic: does the artwork implement the drawing, and what the report names.
 reference/artwork-to-schematic.html | A board's copper read as a schematic of native lines, vias and parts, reviewed first in a parts table.
+reference/create-from-image.html | A picture of a layout traced into a layout, or read as a schematic, checked on the picture itself.
 reference/pcells.html          | Parameterised cells — placing one, driving it, and its parameter handles.
 reference/pdk-integration.html | Importing a kit and simulating the parts it supplies.
 reference/pdk-authoring.html   | Authoring a kit: the OpenPDK layout, Python PCells, models and artwork.

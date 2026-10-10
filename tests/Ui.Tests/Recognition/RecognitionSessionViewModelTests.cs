@@ -1,7 +1,9 @@
-// brief-artsch-8-gui-command.md §4 — the dialog's view model, headless: the artwork-cell option only where that cell
-// has no schematic; a replace target relabels the button; a table edit survives a re-run an option change caused; an
-// unstated placement origin holds recognition until it is chosen, with nothing pre-selected; and Create hands the
-// CLI's entry point the CLI's options (a recording runner stands in for the recognition).
+// brief-artsch-8-gui-command.md §4, brief-img-5-dialog.md §4 — the dialog's shared session, headless. The AS-8 cases,
+// moved here unchanged when the body was extracted (RecognitionSessionViewModel): the artwork-cell option only where
+// that cell has no schematic; a replace target relabels the button; a table edit survives a re-run an option change
+// caused; an unstated placement origin holds recognition until it is chosen, with nothing pre-selected; and Create
+// hands the CLI's entry point the CLI's options (a recording runner stands in for the recognition). Then the same for
+// a picture source: Create calls the CLI's entry point with the CLI's options.
 
 using System;
 using System.Collections.Generic;
@@ -16,11 +18,11 @@ using Xunit;
 
 namespace CircuitRF.Ui.Tests.Recognition;
 
-public sealed class CreateSchematicFromArtworkViewModelTests : IDisposable
+public sealed class RecognitionSessionViewModelTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), $"crf-as8-{Guid.NewGuid():N}");
 
-    public CreateSchematicFromArtworkViewModelTests() => Directory.CreateDirectory(_root);
+    public RecognitionSessionViewModelTests() => Directory.CreateDirectory(_root);
 
     public void Dispose()
     {
@@ -213,6 +215,41 @@ public sealed class CreateSchematicFromArtworkViewModelTests : IDisposable
         Assert.Equal((expected.StartExpr, expected.StartUnit, expected.StopExpr, expected.StopUnit, expected.NumPoints),
                      (sweep.StartExpr, sweep.StartUnit, sweep.StopExpr, sweep.StopUnit, sweep.NumPoints));
         Assert.Null(options.Checkpoint);   // the real checkpoint — history checkpoint --intent's function
+        Assert.NotNull(created);
+    }
+
+    [Fact]
+    public async Task CreateFromAPicture_HandsTheCliEntryPointTheOptionsTheCliWouldBuild()
+    {
+        // The dialog's state, and what the same options are as the trace's own records:
+        //   Make Layout, a new cell board_v2, simplify 0.5 px, no 45° snapping, at most 6 colours, a stated scale.
+        var runner = new RecordingImageRunner(CircuitRF.Design.Imaging.DrawingKind.Layout)
+        {
+            TraceAs = input => new CircuitRF.Design.Layout.Recognition.Image.ImageTraceResult
+            {
+                Report = new RecognitionReport(),
+                Scale = new CircuitRF.Design.Layout.Recognition.Image.ImageScaleCandidate(
+                    CircuitRF.Design.Layout.Recognition.Image.ImageScaleKind.Stated, 20e-6, 1, "stated"),
+            },
+        };
+        var vm = ImageDialog.Open(_root, runner, ImageDialog.Board(), makeSchematic: false);
+        await vm.Recognition;
+        CircuitRF.Design.Layout.Recognition.Image.ImageTraceRun? created = null;
+        vm.LayoutCreated += run => created = run;
+
+        vm.NewCellName = "board_v2";
+        vm.SimplifyText = "0.5";
+        vm.Snap45 = false;
+        vm.MaxColoursText = "6";
+        await vm.Recognition;
+        await vm.CreateCommand.ExecuteAsync(null);
+
+        var (input, target) = Assert.Single(runner.TraceRuns);
+        Assert.Equal(CircuitRF.Design.Layout.Recognition.Image.ImageTraceTarget.NewCell(Path.GetFullPath(_root), "board_v2"), target);
+        Assert.Equal(new CircuitRF.Design.Layout.Recognition.Image.ImageTraceOptions { SimplifyPx = 0.5, Snap45 = false, MaxColours = 6 },
+                     input.Options);
+        Assert.Same(runner.Technology, input.Technology);
+        Assert.Equal(Path.Combine(_root, "board.ctech"), input.TechnologyPath);
         Assert.NotNull(created);
     }
 }

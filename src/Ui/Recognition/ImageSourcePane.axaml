@@ -1,0 +1,79 @@
+<!-- The picture source (brief-img-5-dialog.md R-im5-2, R-im5-4, R-im5-6): the picture, what kind of drawing it is, what
+     to make of it, and — for a layout picture — the technology and the scale. Values only; each control says what it
+     does in its tooltip. The highlighted slot is the one control the reading is waiting for. -->
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:rec="using:CircuitRF.Ui.Recognition"
+             x:Class="CircuitRF.Ui.Recognition.ImageSourcePane"
+             x:DataType="rec:ImageSourceViewModel">
+    <StackPanel Spacing="6">
+        <!-- ── Source row · It is · Make ─────────────────────────────────────────────────── -->
+        <WrapPanel Classes="row" Orientation="Horizontal">
+            <Border Width="44" Height="44" Margin="0,0,10,0" BorderThickness="1" CornerRadius="3" ClipToBounds="True"
+                    BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" Background="White">
+                <Image x:Name="Thumbnail" Stretch="Uniform"/>
+            </Border>
+            <StackPanel Margin="0,0,10,0" VerticalAlignment="Center" MinWidth="140" MaxWidth="260">
+                <TextBlock Text="{Binding SourceName}" FontWeight="SemiBold" FontSize="12" TextTrimming="CharacterEllipsis"
+                           ToolTip.Tip="{Binding SourceName}"/>
+                <TextBlock Text="{Binding SizeText}" FontSize="11" Opacity="0.7"/>
+            </StackPanel>
+            <Button Content="Replace…" Command="{Binding BrowseCommand}" Margin="0,0,6,0"
+                    ToolTip.Tip="Read another picture instead. Dropping one on the dialog does the same."/>
+            <Button Content="Paste" Command="{Binding PasteCommand}" Margin="0,0,24,0"
+                    ToolTip.Tip="Read the picture on the clipboard instead (Cmd/Ctrl+V)."/>
+
+            <TextBlock Classes="label" Text="It is" Margin="0,0,8,0"/>
+            <StackPanel Orientation="Horizontal" Margin="0,0,24,0">
+                <RadioButton Classes="seg first" Theme="{StaticResource {x:Type ToggleButton}}" GroupName="kind"
+                             IsChecked="{Binding IsAutoKind}" ToolTip.Tip="{Binding AutoTip}">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Ellipse Width="8" Height="8" Fill="{Binding AutoConfidenceBrush}" IsVisible="{Binding HasReadKind}"
+                                 VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding AutoLabel}" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </RadioButton>
+                <RadioButton Classes="seg" Theme="{StaticResource {x:Type ToggleButton}}" GroupName="kind"
+                             Content="Schematic" IsChecked="{Binding IsSchematicKind}"
+                             ToolTip.Tip="Read the picture as a schematic drawing, whatever it looks like."/>
+                <RadioButton Classes="seg last" Theme="{StaticResource {x:Type ToggleButton}}" GroupName="kind"
+                             Content="Layout" IsChecked="{Binding IsLayoutKind}"
+                             ToolTip.Tip="Read the picture as a layout: coloured copper, pads and holes."/>
+            </StackPanel>
+
+            <TextBlock Classes="label" Text="Make" Margin="0,0,8,0"/>
+            <StackPanel Orientation="Horizontal">
+                <RadioButton Classes="seg first" Theme="{StaticResource {x:Type ToggleButton}}" GroupName="make"
+                             Content="Schematic" IsChecked="{Binding IsMakeSchematic}"
+                             ToolTip.Tip="A new cell with the schematic recognised from the picture."/>
+                <RadioButton Classes="seg last" Theme="{StaticResource {x:Type ToggleButton}}" GroupName="make"
+                             Content="Layout" IsChecked="{Binding IsMakeLayout}" IsEnabled="{Binding MakeLayoutEnabled}"
+                             ToolTip.Tip="{Binding MakeLayoutTip}" ToolTip.ShowOnDisabled="True"/>
+            </StackPanel>
+        </WrapPanel>
+
+        <!-- ── Technology · Scale (a layout picture) ─────────────────────────────────────── -->
+        <WrapPanel Classes="row" Orientation="Horizontal" IsVisible="{Binding IsLayoutPicture}">
+            <TextBlock Classes="label" Text="Technology" Width="70" Margin="0,0,6,0"/>
+            <Border Classes="slot" Classes.wants="{Binding HighlightTechnology}" Margin="0,0,18,0">
+                <ComboBox ItemsSource="{Binding TechnologyChoices}" SelectedIndex="{Binding TechnologyIndex}" MinWidth="200"
+                          PlaceholderText="No technology"
+                          ToolTip.Tip="The layers the picture is traced onto and the stackup the circuit is read with. A picture says nothing about the stackup."/>
+            </Border>
+
+            <TextBlock Classes="label" Text="Scale" Margin="0,0,6,0"/>
+            <Border Classes="slot" Classes.wants="{Binding Scale.NeedsScale}">
+                <StackPanel Classes="row" Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="{Binding Scale.ValueText}" FontWeight="SemiBold" FontSize="12" MinWidth="70"
+                               VerticalAlignment="Center" ToolTip.Tip="How long one pixel of the picture is."/>
+                    <ComboBox ItemsSource="{Binding Scale.Choices}" SelectedItem="{Binding Scale.SelectedChoice}" MinWidth="250"
+                              PlaceholderText="Choose the evidence…"
+                              ToolTip.Tip="What the scale is taken from. Two points…: click two points and type the distance between them. Line impedance…: click a trace and type its Z0."/>
+                    <TextBlock Text="{Binding Scale.ResolutionLine}" FontSize="11" Opacity="0.75" VerticalAlignment="Center"/>
+                    <TextBlock Text="{Binding Scale.Error}" Classes="error" MaxWidth="420"
+                               IsVisible="{Binding Scale.Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                </StackPanel>
+            </Border>
+        </WrapPanel>
+    </StackPanel>
+</UserControl>

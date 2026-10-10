@@ -46,8 +46,14 @@ public sealed record ImageTraceOptions
     /// <summary>At most this many colours are separated (D7).</summary>
     public int MaxColours { get; init; } = 8;
 
-    /// <summary>The provenance's options block.</summary>
-    public SortedDictionary<string, string> ToProvenance() => new(StringComparer.Ordinal)
+    /// <summary>Colours closer than this ΔE are one colour (D7).</summary>
+    public double MergeDeltaE { get; init; } = DefaultMergeDeltaE;
+
+    public const double DefaultMergeDeltaE = 10.0;
+
+    /// <summary>The provenance's options block. The merge distance is written only when it is not the default, so a
+    /// document traced with every default reads as it always has.</summary>
+    public SortedDictionary<string, string> ToProvenance() => new SortedDictionary<string, string>(StringComparer.Ordinal)
     {
         ["simplify"] = SimplifyPx.ToString("0.###", CultureInfo.InvariantCulture) + " px",
         ["snap"] = Snap ? (Snap45 ? "0/45/90" : "0/90") : "off",
@@ -55,7 +61,16 @@ public sealed record ImageTraceOptions
         ["minFeature"] = MinFeaturePx2.ToString("0.###", CultureInfo.InvariantCulture) + " px2",
         ["colours"] = MaxColours.ToString(CultureInfo.InvariantCulture),
         ["underlay"] = KeepUnderlay ? "on" : "off",
-    };
+    }.WithMerge(MergeDeltaE);
+}
+
+internal static class ImageTraceOptionsProvenance
+{
+    public static SortedDictionary<string, string> WithMerge(this SortedDictionary<string, string> d, double merge)
+    {
+        if (merge != ImageTraceOptions.DefaultMergeDeltaE) d["merge"] = merge.ToString("0.###", CultureInfo.InvariantCulture) + " dE";
+        return d;
+    }
 }
 
 /// <summary>A rectangle in the picture, pixels (y down) — a trace scope.</summary>
@@ -126,6 +141,9 @@ public sealed record ImageTraceResult
 
     public IReadOnlyList<ImageTracedLayer> Layers { get; init; } = [];
 
+    /// <summary>The drill holes read, pixels — what the dialog's overlay draws before there is a scale.</summary>
+    public IReadOnlyList<CircleFit> Drills { get; init; } = [];
+
     /// <summary>Every traced shape, in DBU — vias and outline paths included, the underlay not.</summary>
     public IReadOnlyList<LayoutShape> Shapes { get; init; } = [];
 
@@ -188,6 +206,7 @@ public static partial class ImageTrace
         var result = new ImageTraceResult
         {
             Report = report, Clusters = prep.Clusters, LayerMap = prep.Map, ScaleCandidates = candidates, Scale = chosen,
+            Drills = prep.Drills,
             Kind = input.Kind, SilkscreenStrokeWidthPx = silk?.StrokeWidth ?? 0, SilkscreenLayer = silk?.Key,
             Traced = input.Scope ?? new PixelRect(0, 0, input.Source.Raster.Width, input.Source.Raster.Height),
             Layers = [.. prep.Layers.Select(l => new ImageTracedLayer(l.Name, l.Key, l.Role, l.Regions, []))],
@@ -229,7 +248,7 @@ public static partial class ImageTrace
     {
         var tech = input.Technology!;
         var o = input.Options;
-        var clusters = ColourClusters.Find(input.Source.Raster, Math.Max(1, o.MaxColours));
+        var clusters = ColourClusters.Find(input.Source.Raster, Math.Max(1, o.MaxColours), new ColourClusterOptions { MergeDeltaE = o.MergeDeltaE });
         var map = input.LayerMap is { Edited: true } edited ? edited.Rebind(clusters) : ImageLayerMap.Auto(clusters, tech);
         var contour = new ContourOptions
         {

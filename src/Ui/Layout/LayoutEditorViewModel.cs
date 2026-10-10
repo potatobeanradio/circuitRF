@@ -1279,6 +1279,14 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     public IRelayCommand SelectAllCommand { get; private set; } = null!;
     public IRelayCommand DeselectAllCommand { get; private set; } = null!;
 
+    /// <summary>Selects exactly <paramref name="shapes"/> (by reference) — what a command that added them selects after
+    /// it (Create Layout from Image into this layout, brief-img-5 R-im5-9).</summary>
+    public void SelectShapes(IEnumerable<LayoutShape> shapes)
+    {
+        var wanted = new HashSet<LayoutShape>(shapes, ReferenceEqualityComparer.Instance);
+        SetSelection(Enumerable.Range(0, Model.Shapes.Count).Where(i => wanted.Contains(Model.Shapes[i])));
+    }
+
     /// <summary>brief-L3a-followups.md §2/R-fix-2: shapes and instances may now be selected together.
     /// <paramref name="clearOtherKind"/> distinguishes the two kinds of caller — a REPLACE (plain
     /// click, SelectAll/DeselectAll, marquee with no modifier: "this is the whole new selection," so

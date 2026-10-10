@@ -1,0 +1,74 @@
+<!-- The parts table (brief-artsch-8 R-as8-3; brief-img-5 R-im5-1), its filter above it — one control, whichever the
+     source. A row's edits are held as the parts CSV's overrides by the session (RecognitionSessionViewModel). The
+     Part number, X and Y columns are left out for a picture, whose parts sit where its pixels do. -->
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:rec="using:CircuitRF.Ui.Recognition"
+             x:Class="CircuitRF.Ui.Recognition.PartsTablePanel"
+             x:DataType="rec:RecognitionSessionViewModel">
+
+    <UserControl.Styles>
+        <Style Selector="Grid.compact :is(Control).placement">
+            <Setter Property="IsVisible" Value="False"/>
+        </Style>
+    </UserControl.Styles>
+
+    <Grid RowDefinitions="Auto,*" RowSpacing="8" Classes.compact="{Binding !ShowPlacementColumns}">
+        <TextBox Grid.Row="0" Text="{Binding FilterText}" PlaceholderText="Filter parts" Width="260" HorizontalAlignment="Left"/>
+
+        <Border Grid.Row="1" BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="1">
+            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                <Grid RowDefinitions="Auto,*">
+                    <Grid Grid.Row="0" ColumnDefinitions="18,72,84,72,62,120,170,Auto,Auto,Auto" Margin="4,2">
+                        <Button Grid.Column="0" Classes="header" Content="●" Command="{Binding SortCommand}" CommandParameter="Confidence"
+                                ToolTip.Tip="Confidence — sort"/>
+                        <Button Grid.Column="1" Classes="header" Content="Refdes" Command="{Binding SortCommand}" CommandParameter="Refdes"/>
+                        <Button Grid.Column="2" Classes="header" Content="Kind" Command="{Binding SortCommand}" CommandParameter="Kind"/>
+                        <Button Grid.Column="3" Classes="header" Content="Connection" Command="{Binding SortCommand}" CommandParameter="Connection"/>
+                        <Button Grid.Column="4" Classes="header" Content="Case" Command="{Binding SortCommand}" CommandParameter="Case"/>
+                        <Button Grid.Column="5" Classes="header" Content="Value" Command="{Binding SortCommand}" CommandParameter="Value"/>
+                        <Button Grid.Column="6" Classes="header" Content="Model" Command="{Binding SortCommand}" CommandParameter="Model"/>
+                        <Button Grid.Column="7" Classes="header placement" Width="130" Content="Part number" Command="{Binding SortCommand}" CommandParameter="PartNumber"/>
+                        <Button Grid.Column="8" Classes="header placement" Width="76" Content="X" Command="{Binding SortCommand}" CommandParameter="X"/>
+                        <Button Grid.Column="9" Classes="header placement" Width="76" Content="Y" Command="{Binding SortCommand}" CommandParameter="Y"/>
+                    </Grid>
+                    <ListBox Grid.Row="1" ItemsSource="{Binding Rows}" SelectedItem="{Binding SelectedRow}"
+                             Background="Transparent" SelectionMode="Single"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                        <ListBox.ItemContainerTheme>
+                            <ControlTheme TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+                                <Setter Property="Padding" Value="4,1"/>
+                            </ControlTheme>
+                        </ListBox.ItemContainerTheme>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="rec:PartsTableRowViewModel">
+                                <Grid Classes="cells" ColumnDefinitions="18,72,84,72,62,120,170,Auto,Auto,Auto">
+                                    <Ellipse Grid.Column="0" Width="9" Height="9" Fill="{Binding ConfidenceBrush}"
+                                             HorizontalAlignment="Left" VerticalAlignment="Center"
+                                             ToolTip.Tip="{Binding EvidenceTip}"/>
+                                    <Panel Grid.Column="1">
+                                        <TextBlock Text="{Binding Refdes}" VerticalAlignment="Center" FontSize="12"
+                                                   IsVisible="{Binding !CanRename}"/>
+                                        <TextBox Text="{Binding RefdesText, UpdateSourceTrigger=LostFocus}" IsVisible="{Binding CanRename}"
+                                                 ToolTip.Tip="Read off the silkscreen or generated: correct it if it is wrong."/>
+                                    </Panel>
+                                    <ComboBox Grid.Column="2" ItemsSource="{x:Static rec:PartsTableRowViewModel.KindOptions}"
+                                              SelectedItem="{Binding KindText}"/>
+                                    <TextBlock Grid.Column="3" Text="{Binding Connection}" VerticalAlignment="Center" FontSize="12"/>
+                                    <TextBlock Grid.Column="4" Text="{Binding Case}" VerticalAlignment="Center" FontSize="12"/>
+                                    <TextBox Grid.Column="5" Text="{Binding ValueText}" PlaceholderText="{Binding ValueWatermark}"
+                                             Classes.invalid="{Binding ValueError}"/>
+                                    <ComboBox Grid.Column="6" ItemsSource="{Binding ModelOptions}" SelectedItem="{Binding ModelText}"/>
+                                    <TextBlock Grid.Column="7" Classes="placement" Width="130" Text="{Binding PartNumber}"
+                                               VerticalAlignment="Center" FontSize="12" TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock Grid.Column="8" Classes="placement" Width="76" Text="{Binding X}" VerticalAlignment="Center" FontSize="12"/>
+                                    <TextBlock Grid.Column="9" Classes="placement" Width="76" Text="{Binding Y}" VerticalAlignment="Center" FontSize="12"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Grid>
+            </ScrollViewer>
+        </Border>
+    </Grid>
+</UserControl>
