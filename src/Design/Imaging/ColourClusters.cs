@@ -46,6 +46,14 @@ public sealed record ColourClusterOptions
     /// <summary>Mean squared ΔE at or below which a clustering is taken as complete (noise level).</summary>
     public double NoiseFloor2 { get; init; } = 4.0;
 
+    /// <summary>A further cluster this far (ΔE) from every chosen one is a colour of its own however little of the
+    /// picture it covers — a lone drill hole — when <see cref="MinDistinctSamples"/> flat samples carry it.</summary>
+    public double DistinctDeltaE { get; init; } = 30.0;
+
+    /// <summary>The flat (non-edge) samples a small distinct colour needs, and they must be most of its members: an
+    /// anti-aliased edge's mix is never a colour of its own.</summary>
+    public int MinDistinctSamples { get; init; } = 8;
+
     /// <summary>0 = the runtime's choice; the result does not depend on it.</summary>
     public int MaxThreads { get; init; }
 }
@@ -121,7 +129,7 @@ public static class ColourClusters
             err.Add(Error(samples, c));
         }
         int chosen = Elbow(err, options.NoiseFloor2);
-        var centres = RefineOnFlat(samples, fits[chosen - 1]);
+        var centres = RefineOnFlat(samples, WithDistinctColours(samples, fits[chosen - 1], maxK, options));
         centres = Merge(centres, options.MergeDeltaE);
         return Assign(image, centres, options.MaxThreads);
     }
@@ -342,6 +350,41 @@ public static class ColourClusters
         double len2 = dl * dl + da * da + db * db;
         double t = len2 <= 0 ? 0 : Math.Clamp(((p.L - a.L) * dl + (p.A - a.A) * da + (p.B - a.B) * db) / len2, 0, 1);
         return p.DeltaE2(new Lab(a.L + t * dl, a.A + t * da, a.B + t * db));
+    }
+
+    /// <summary>
+    /// <paramref name="chosen"/> with every colour of its own it missed: a group of flat samples
+    /// <see cref="ColourClusterOptions.DistinctDeltaE"/> from every centre, carried by at least
+    /// <see cref="ColourClusterOptions.MinDistinctSamples"/> of them. A single drill hole on a board is a few hundred
+    /// pixels of a million — far below the noise floor of the mean error the elbow reads, and too light for k-means to
+    /// seed on reliably — and is still a layer of its own. Greedy and deterministic: the heaviest far sample seeds each
+    /// group, which takes every far flat sample within half the distance of it.
+    /// </summary>
+    private static Centre[] WithDistinctColours(SampleSet s, Centre[] chosen, int maxK, ColourClusterOptions o)
+    {
+        var picked = chosen.ToList();
+        double far2 = o.DistinctDeltaE * o.DistinctDeltaE, group2 = far2 / 4;
+        while (picked.Count < maxK)
+        {
+            int seed = -1;
+            for (int i = 0; i < s.Count; i++)
+            {
+                if (s.Edge[i] || picked.Min(c => s.Lab[i].DeltaE2(c.Lab)) <= far2) continue;
+                if (seed < 0 || s.Weight[i] > s.Weight[seed]) seed = i;
+            }
+            if (seed < 0) break;
+            var members = new int[s.Count];
+            double weight = 0;
+            for (int i = 0; i < s.Count; i++)
+            {
+                bool take = !s.Edge[i] && s.Lab[i].DeltaE2(s.Lab[seed]) <= group2;
+                members[i] = take ? 0 : 1;
+                if (take) weight += s.Weight[i];
+            }
+            if (weight < o.MinDistinctSamples) break;
+            picked.Add(Means(s, members, 2, i => members[i] == 0)[0]);
+        }
+        return [.. picked];
     }
 
     /// <summary>The smallest k whose error is down to the noise floor; failing that, the first k after which one more

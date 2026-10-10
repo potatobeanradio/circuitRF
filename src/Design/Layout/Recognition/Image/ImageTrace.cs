@@ -136,6 +136,15 @@ public sealed record ImageTraceResult
     /// <summary>The silkscreen's centre lines, DBU, flat x,y — what IM-4's stroke reader takes.</summary>
     public IReadOnlyList<long[]> SilkscreenStrokes { get; init; } = [];
 
+    /// <summary>The silkscreen's median stroke width, pixels (IM-1's skeleton estimate); 0 without silkscreen.</summary>
+    public double SilkscreenStrokeWidthPx { get; init; }
+
+    /// <summary>The technology layer the silkscreen was mapped to, or null.</summary>
+    public LayerKey? SilkscreenLayer { get; init; }
+
+    /// <summary>The part of the picture traced, pixels: the scope, else the whole picture.</summary>
+    public PixelRect Traced { get; init; }
+
     /// <summary>R-im3-3's one line, or null without a scale.</summary>
     public string? ResolutionLine { get; init; }
 
@@ -175,10 +184,12 @@ public static partial class ImageTrace
         var chosen = scaleRefusal is null ? ImageScale.Choose(candidates, input.TargetIsPlacedLayout) : null;
         token.ThrowIfCancellationRequested();
 
+        var silk = prep.Layers.FirstOrDefault(l => l.Role == ImageLayerRole.Silkscreen);
         var result = new ImageTraceResult
         {
             Report = report, Clusters = prep.Clusters, LayerMap = prep.Map, ScaleCandidates = candidates, Scale = chosen,
-            Kind = input.Kind,
+            Kind = input.Kind, SilkscreenStrokeWidthPx = silk?.StrokeWidth ?? 0, SilkscreenLayer = silk?.Key,
+            Traced = input.Scope ?? new PixelRect(0, 0, input.Source.Raster.Width, input.Source.Raster.Height),
             Layers = [.. prep.Layers.Select(l => new ImageTracedLayer(l.Name, l.Key, l.Role, l.Regions, []))],
         };
         ReportColours(prep, report);

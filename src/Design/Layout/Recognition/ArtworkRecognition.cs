@@ -83,6 +83,42 @@ public sealed record RecognitionInput
     };
 
     /// <summary>
+    /// A traced layout picture (brief-img-4 R-im4-1): the traced shapes as the flattened artwork, on the layout view they
+    /// make, read with <paramref name="technology"/> — the user's (overview D8). No EM setup; a placement file, a bill of
+    /// materials or a parts table only as the caller adds them. Where the picture draws nothing on the stackup's
+    /// reference plane, the plane is implied, a layer it draws nothing on is not read, and
+    /// the traced frame is the board's edge unless the picture draws one (<see cref="Image.PictureTechnology"/>). The silkscreen arrives as an evidence
+    /// source read from its strokes, so its filled shapes are left out of the artwork.
+    /// </summary>
+    public static RecognitionInput FromTrace(Image.ImageTraceResult trace, Technology? technology, RecognitionOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(trace);
+        options ??= new RecognitionOptions();
+        var silkFills = trace.Layers.Where(l => l.Role == Image.ImageLayerRole.Silkscreen).SelectMany(l => l.Shapes)
+                             .ToHashSet(ReferenceEqualityComparer.Instance);
+        var shapes = trace.Shapes.Where(s => !silkFills.Contains(s)).ToList();
+        var view = new LayoutView { DbuPerMicron = trace.DbuPerMicron };
+        view.Shapes.AddRange(shapes);
+        string? refusal = trace.Refusal ?? (trace.Scale is null ? Image.ImageTrace.NoScaleRefusal(trace.ScaleCandidates) : null);
+        if (technology is null || refusal is not null)
+            return new RecognitionInput { View = view, Technology = technology, Shapes = shapes, Options = options, Refusal = refusal };
+
+        var f = trace.Frame!.Value;
+        var (x0, y0) = f.ToTarget(trace.Traced.Left, trace.Traced.Top);
+        var (x1, y1) = f.ToTarget(trace.Traced.Right, trace.Traced.Bottom);
+        var frame = new Bbox((long)Math.Round(Math.Min(x0, x1)), (long)Math.Round(Math.Min(y0, y1)),
+                             (long)Math.Round(Math.Max(x0, x1)), (long)Math.Round(Math.Max(y0, y1)));
+        bool outlineDrawn = trace.Layers.Any(l => l.Role == Image.ImageLayerRole.BoardOutline && l.Shapes.Count > 0);
+        var read = Image.PictureTechnology.Of(shapes, technology, trace.DbuPerMicron, options, frame, outlineDrawn);
+        return new RecognitionInput
+        {
+            View = view, Technology = read.Technology, Shapes = read.Shapes,
+            Options = read.PourAt is { } at ? options with { GroundAt = at } : options,
+            EvidenceSources = Silkscreen.RasterSilkscreenEvidence.From(trace, technology) is { } silk ? [silk] : [],
+        };
+    }
+
+    /// <summary>
     /// A <c>.clay</c> on disk, with its EM setup: <paramref name="cemPath"/> when given, else the first
     /// <c>.cem</c> in its workspace that analyses it (<see cref="EmSetupResolver.FindSetupsForLayout"/>).
     /// </summary>

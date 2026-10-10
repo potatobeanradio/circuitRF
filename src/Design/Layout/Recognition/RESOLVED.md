@@ -451,3 +451,23 @@ Two traps found while tracing a two-layer picture drawn with a translucent top l
 
 The overlap test is compositing, not mixing: a colour on the segment between two layer colours is the wrong test,
 because the translucent top layer's observed colour already carries the background (`P + β(Q − W)`).
+
+## Create Schematic from Image, IM-4 (2026-10-10)
+
+The traced layout goes through the artwork recognition unchanged; four things a picture does not state had to be
+answered on the way in, each recorded in `docs/design/image-to-circuit.md` §7:
+
+- **A technology declares layers a picture never draws, and the recognition reads them from the technology.** The
+  reference plane (answered as AS-3's undrawn reference), the solder mask — with a mask layer declared, AS-4 reads land
+  patterns ONLY from mask openings, so a picture with no mask drawn found no part at all — and the board outline (with
+  none, the copper's extent is the edge, and a line lying along it got an edge port in its middle). `PictureTechnology`
+  hands the recognition a copy that states only what the picture draws, plus the traced frame as the outline.
+- **A part standing on its line is visible only in the mask.** L1 of the AS-9 round-trip board has its first pad centred
+  on the trace; in copper it is a pad inside a line. Read from copper alone — a picture, or the artwork without its mask
+  — it is not found, and its ground via is a stray. Not fixed here (it is AS-4's copper reading); the IM-4 gate compares
+  like with like.
+- **One drill hole is below the colour clustering's noise floor.** IM-1's elbow stopped at two colours and the hole was
+  folded into the copper; `ColourClusters` now adds a far, flat-carried colour of its own (§4.2 step 5).
+- **A skeleton cuts sharp corners**, enough to split "C12" at the matcher's letter-gap limit; `RasterSilkscreenEvidence`
+  restores them before matching (§7.3).
+

@@ -237,6 +237,20 @@ public enum RecognitionFindingClass
 
     /// <summary>Where the traced layout went.</summary>
     ImageLayoutWritten,
+
+    // ── IM-4: a layout picture made into a schematic ──────────────────────────────────────────────
+
+    /// <summary>The stackup's reference plane is drawn nowhere in the picture and was implied (R-im4-3). Said once.</summary>
+    ImageReferenceImplied,
+
+    /// <summary>The picture draws no board outline, so its traced frame was read as the board's edge. Said once.</summary>
+    ImageFrameIsBoardEdge,
+
+    /// <summary>Text read from the picture's silkscreen strokes (R-im4-4).</summary>
+    ImageSilkscreenRead,
+
+    /// <summary>The picture's silkscreen strokes are too thin to read; nothing was read from them.</summary>
+    ImageSilkscreenTooThin,
 }
 
 /// <summary>A place a finding is about, DBU, with the drawing layer when one is known.</summary>

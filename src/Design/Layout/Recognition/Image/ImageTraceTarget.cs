@@ -110,6 +110,8 @@ public static partial class ImageTrace
                (offered.Count == 0 ? "" : " Found: " + string.Join("; ", offered.Select(c => $"{c.Display} ({c.Evidence})")) + ".");
     }
 
+    private const string IntoLayoutRefusal = "Only a picture placed in a layout can be traced into it; choose a new cell.";
+
     /// <summary>R-im3-1/R-im3-7 — trace, then write (or, into the open layout, return the edit). A refusal at any step
     /// writes nothing.</summary>
     public static ImageTraceRun Run(ImageTraceInput input, ImageTraceTarget target, ImageTraceRunOptions? options = null,
@@ -121,11 +123,20 @@ public static partial class ImageTrace
         bool into = target.Kind == ImageTraceTargetKind.IntoLayout;
         var placed = input.Source.Placement as LayoutBitmapPlacement;
         if (into && placed is null)
-            return new ImageTraceRun(new ImageTraceResult { Report = new RecognitionReport() }, null, null, null,
-                "Only a picture placed in a layout can be traced into it; choose a new cell.");
+            return new ImageTraceRun(new ImageTraceResult { Report = new RecognitionReport() }, null, null, null, IntoLayoutRefusal);
 
-        var result = Trace(input with { TargetIsPlacedLayout = into }, control);
+        return Write(input, Trace(input with { TargetIsPlacedLayout = into }, control), target, options);
+    }
+
+    /// <summary>The write half of <see cref="Run"/>, for a trace already made — IM-4 traces once and writes the layout
+    /// beside the schematic it recognises from the same result.</summary>
+    internal static ImageTraceRun Write(ImageTraceInput input, ImageTraceResult result, ImageTraceTarget target,
+                                        ImageTraceRunOptions options)
+    {
+        bool into = target.Kind == ImageTraceTargetKind.IntoLayout;
+        var placed = input.Source.Placement as LayoutBitmapPlacement;
         ImageTraceRun Refused(string why) => new(result, null, null, null, why);
+        if (into && placed is null) return Refused(IntoLayoutRefusal);
         if (!result.Ok) return Refused(result.Refusal!);
         if (result.Scale is null) return Refused(NoScaleRefusal(result.ScaleCandidates));
 
@@ -208,6 +219,14 @@ public static partial class ImageTrace
             view.Shapes.Insert(0, u);
         }
 
+        view.ImageSource = ProvenanceOf(input, result, pictureRef, now);
+        return view;
+    }
+
+    /// <summary>The <c>ImageSource</c> block of a document made from this trace, its picture kept at
+    /// <paramref name="pictureRef"/> — the traced layout's, and IM-4's schematic's beside it.</summary>
+    internal static ImageProvenance ProvenanceOf(ImageTraceInput input, ImageTraceResult result, string pictureRef, DateTime now)
+    {
         var kind = input.Kind ?? ImageKind.Classify(input.Source.Raster);
         if (kind.Kind != DrawingKind.Layout) kind = kind.Force(DrawingKind.Layout);
         var provenance = ImageProvenance.For(input.Source, kind, pictureRef, now);
@@ -215,7 +234,6 @@ public static partial class ImageTrace
         provenance.ScaleEvidence = result.Scale.Evidence;
         provenance.LayerMap = result.LayerMap!.ToProvenance();
         provenance.Options = input.Options.ToProvenance();
-        view.ImageSource = provenance;
-        return view;
+        return provenance;
     }
 }

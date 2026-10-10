@@ -123,8 +123,14 @@ sRGB → CIELAB (D65, table-driven per channel byte). `ColourClusters.Find(raste
    everything clustering removed.
 4. **Refine** each centre to the mean of its flat members alone, so anti-aliasing does not pull a colour toward the
    background (the gate checks a red and a blue come back as their exact bytes).
-5. **Merge** clusters closer than ΔE 10, closest pair first.
-6. **Every pixel as a two-colour mix**: its nearest cluster, and the cluster whose segment with it passes closest to the
+5. **A small colour of its own** (IM-4): a group of flat samples ΔE 30 or more from every chosen centre, carried by at
+   least 8 of them, is added as a centre of its own. A single drill hole is a few hundred pixels of a million — its
+   contribution to the mean error is far under the noise floor, so the elbow stops before it and the hole is folded into
+   the copper around it; and it is too light for k-means++ to seed on reliably at a larger k. The heaviest far sample
+   seeds each group, which takes every far flat sample within ΔE 15 of it — greedy and deterministic. An anti-aliased
+   edge's mix never qualifies: edge samples are not flat.
+6. **Merge** clusters closer than ΔE 10, closest pair first.
+7. **Every pixel as a two-colour mix**: its nearest cluster, and the cluster whose segment with it passes closest to the
    pixel; the mix fraction is measured **in the sRGB bytes**, the space Skia and most tools blend in, so a coverage of
    0.5 sits on the drawn edge. Stored as three bytes a pixel (a, b, fraction in 1/255ths) rather than eight float maps;
    `Coverage(k)` materialises one map on demand. Clusters are ordered largest share first; `BorderShare` names the
@@ -399,3 +405,82 @@ the layer map, the options). *Replace* rewrites a cell whose primary layout carr
 checkpoint, and refuses any other. *Into the layout* returns an `ImageTraceEdit` — the shapes and the `.clay` — and
 writes nothing; `ImageTraceEditCommand.For` chains the editor's `AddShapeCommand`s into one `CompositeCommand`, so one
 Undo takes the trace off the picture.
+
+---
+
+## 7. IM-4 — a layout picture made into a schematic
+
+**Code:** `src/Design/Layout/Recognition/Image/ImageRecognition.cs`, `PictureTechnology.cs`,
+`RecognitionInput.FromTrace` (in `ArtworkRecognition.cs`), `Silkscreen/RasterSilkscreenEvidence.cs`.
+
+This phase is glue, and the measure of it is how little of the artwork pipeline it touches: **nothing in AS-3 … AS-6
+names a picture**, and a comment-stripped source scan (`RasterSilkscreenEvidenceTests.NoArtworkStage_NamesThePicture`)
+holds it: no file under `Recognition/` names `ImageSource` but `Image/`, the raster evidence source and the file holding
+`FromTrace`.
+
+### 7.1 The one conversion (R-im4-1, R-im4-2)
+
+`RecognitionInput.FromTrace(trace, technology, options)` hands the recognition the traced shapes as the flattened
+artwork, on a `LayoutView` holding them, with the user's technology (D8), no `.cem` and no placement or BOM unless the
+caller adds them. The silkscreen's filled shapes are left out of the artwork — the silkscreen arrives as an evidence
+source read from its strokes (§7.3), and its fills would otherwise be counted as filled text the reader does not read.
+
+`ImageRecognition.Circuit` is the no-write form (the CLI's read-only default, the dialog's preview). `Run` traces
+**once**, recognises, emits, draws with `NetlistSchematic.Build` and the artwork hints, and only then writes: the new
+cell (D14) holding **both** views — the traced `.clay` (through IM-3's own write, `ImageTrace.Write`, so the layout is
+byte for byte the one Create Layout from Image would write) and the `.csch` — each with the kept picture under it. A
+refusal at any step before the write writes nothing.
+
+### 7.2 What a picture does not state — `PictureTechnology` (R-im4-3)
+
+The stackup is the user's, but a picture states only what it draws, and the recognition reads three things from the
+**technology** that almost no picture draws. Each is answered through that one seam: the recognition reads a copy of the
+technology (an ordinary one — nothing is told it came from a picture), and the report says once what was implied.
+
+| The technology declares | A picture | So the copy |
+|---|---|---|
+| a reference conductor (the plane) | shows the top copper only | draws that conductor on no layer — AS-3's *undrawn reference*: the plane is metal at ground, every via carried down to it reaches ground, and the trace review reads a microstrip over it. Ground is the largest top-side pour (AS-3's own `IsWide`, handed in as the ground point a user would have clicked) when there is one, else the plane alone, reached through drill circles — AS D7's VIAGND |
+| solder mask and paste | shows no mask | leaves out every layer the picture draws nothing on (the stackup's own excepted), so AS-4 reads pads from the copper as it does for a technology with no mask |
+| nothing about the board's edge (no outline drawn) | stops where the board stops | adds the traced frame — the scope, else the whole picture — as a rectangle on the Outline layer. Without it AS-3 takes the copper's extent, and a line lying along that extent (the first line of a board, beside its bottom edge) became an edge port in its middle |
+
+The frame outline is in the recognition's input only, never in the written layout. A picture that maps a colour to the
+board outline keeps its own.
+
+**What a copper picture cannot state.** AS-4 reads a land pattern from the mask's openings where the technology has a
+mask, and from the copper where it has none; a part standing **on** its line — a shunt part whose first pad is centred on
+the trace — is a pad inside a line, which only an opening shows. A picture of the copper alone does not find it, exactly
+as the artwork read without its mask does not; the via to ground under it is then reported as a stray. The gate compares
+like with like for that reason (`ImageRecognitionTests`' header).
+
+### 7.3 Silkscreen from pixels (R-im4-4) — `RasterSilkscreenEvidence`
+
+An `IPartEvidenceSource`: the skeleton strokes IM-3 kept for a *Silkscreen* cluster, already in DBU through the frame, are
+the centre-line form `StrokeGlyphs` reads a Gerber pen's strokes in, so the AS-10 matcher, its designator rule, the
+association and Learn These Glyphs (through `PartClaim.Line`) apply unchanged. Strokes under 1.5 px are reported too
+thin and contribute nothing.
+
+One repair on the way in: **a skeleton cuts a sharp corner.** The "2"'s foot came back 1.7 px inside the font's apex at a
+3 px pen, and the built-in font sets "1" and "2" 0.57 cap heights apart against the matcher's 0.6 letter-gap limit, so
+"C12" read as "C1" and a stray "2". `RestoreCorners` simplifies each stroke to half a pen and moves every corner sharper
+than 120° — a vertex, or a chamfer under 1.5 pens — to where its two legs meet, each leg fitted to the resampled original
+centre line clear of the corner by 1.5 pens. The restored apex landed on the font's own to 0.1 px, and every glyph's
+match distance fell (the "C" 0.043 → 0.016).
+
+Auto (IM-3) maps a colour to Silkscreen only when its strokes read as rows of text; one short designator does not, so a
+picture with a single word of legend needs the colour mapped by the user.
+
+### 7.4 Provenance, the underlay and a re-run (R-im4-2, R-im4-5, R-im4-6)
+
+The schematic's `ArtworkSource` names the traced `.clay` (so Show in Artwork opens it); both views carry the
+`ImageSource` block, with the picture referenced relative to each. The schematic's underlay is placed by the drawing's own
+artwork hints: the similarity — one scale, the y axis flipped, no rotation, so the picture keeps its aspect — that best
+carries each component's copper onto where the drawing put it; with fewer than two usable hints, the picture spans the
+drawing's width. Locked, 35 %, behind everything (D5), and off with the same setting as the layout's.
+
+A re-run onto a cell this command made (its layout carries `ImageSource`, and its schematic, when it has one, both
+blocks) replaces both views after **one** history checkpoint, intent *Create Schematic from Image*.
+
+The report is the trace's findings, then what the picture did not state (the implied plane, the silkscreen read), then
+the recognition's — with two of its sentences reworded where what they say of the technology is the picture's doing:
+the ground point nobody clicked, and the mask the picture did not draw.
+
