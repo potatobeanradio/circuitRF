@@ -546,6 +546,41 @@ public partial class SchematicView : UserControl
         }
     }
 
+    // ── brief-img-6 R-im6-3: a placed picture's Create … from Image rows ────────────────────────────
+
+    private bool IsImageRow(object? entry) =>
+        ReferenceEquals(entry, CtxImageSep) || ReferenceEquals(entry, CtxImageSchematic) || ReferenceEquals(entry, CtxImageLayout);
+
+    /// <summary>The rows the bitmap under the right-click offers — none on a bitmap whose picture does not resolve,
+    /// or where nothing hosts the dialog.</summary>
+    private IReadOnlyList<Recognition.ImageContextRow> ImageRowsAtContextMenu() =>
+        ContextMenuBitmap() is { } bitmap && (DataContext as SchematicDocument)?.Hierarchy is Recognition.IImageDialogHost
+            ? Recognition.ImageEntryPoints.SchematicBitmapRows((DataContext as SchematicDocument)?.FilePath, bitmap)
+            : [];
+
+    private EditableBitmap? ContextMenuBitmap() =>
+        SchematicCanvasCtrl.ContextMenuBitmapId is { } id ? Vm?.EditModel.FindCanvasObject(id) as EditableBitmap : null;
+
+    private void ShowImageRows(IReadOnlyList<Recognition.ImageContextRow> rows)
+    {
+        CtxImageSchematic.IsVisible = rows.Any(r => r.MakeSchematic);
+        CtxImageLayout.IsVisible = rows.Any(r => !r.MakeSchematic);
+        CtxImageSep.IsVisible = rows.Count > 0;
+        if (rows.FirstOrDefault(r => r.MakeSchematic) is { } s) ToolTip.SetTip(CtxImageSchematic, s.Tip);
+        if (rows.FirstOrDefault(r => !r.MakeSchematic) is { } l) ToolTip.SetTip(CtxImageLayout, l.Tip);
+    }
+
+    private void OnCtxImageSchematic(object? sender, RoutedEventArgs e) => OpenImageDialogOnBitmap(makeSchematic: true);
+    private void OnCtxImageLayout(object? sender, RoutedEventArgs e) => OpenImageDialogOnBitmap(makeSchematic: false);
+
+    private void OpenImageDialogOnBitmap(bool makeSchematic)
+    {
+        if (DataContext is not SchematicDocument { Hierarchy: Recognition.IImageDialogHost host } doc || ContextMenuBitmap() is not { } bitmap)
+            return;
+        host.ShowImageDialogFor(Recognition.ImageEntryPoints.SourceOf(doc.FilePath, bitmap), makeSchematic,
+                                TopLevel.GetTopLevel(this) as Window);
+    }
+
     private void OnContextMenuOpening(object? sender, System.ComponentModel.CancelEventArgs e)
     {
         bool hasTarget = !string.IsNullOrEmpty(SchematicCanvasCtrl.ContextMenuTargetId);
@@ -556,10 +591,11 @@ public partial class SchematicView : UserControl
         // later cannot leak onto the canvas menu by being forgotten here; Pop Out is the inverse.
         foreach (var entry in ComponentContextMenu.Items)
         {
-            if (ReferenceEquals(entry, CtxPopOut)) continue;
+            if (ReferenceEquals(entry, CtxPopOut) || IsImageRow(entry)) continue;
             if (entry is Control control) control.IsVisible = hasTarget;
         }
         CtxPopOut.IsVisible = !hasTarget;
+        ShowImageRows(hasTarget ? [] : ImageRowsAtContextMenu());
 
         if (!hasTarget)
         {

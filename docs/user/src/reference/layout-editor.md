@@ -352,6 +352,8 @@ component's length-dimensioned parameters take the <strong>technology's own defa
 | **Update Layout from Schematic** (<kbd>⌘U</kbd>) | Places and updates the layout's instances from the schematic's components. |
 | **Update Schematic from Layout** (<kbd>⇧⌘U</kbd>) | Places and updates the schematic's components from the layout's linked instances. |
 | **Create Schematic from Artwork…** | Reads artwork that has **no** links &mdash; an imported board's copper &mdash; as a new schematic of lines, vias and parts, reviewed first in a parts table. See [Create Schematic from Artwork](artwork-to-schematic.html). |
+| **Create Schematic from Image…** | Reads a picture of a layout &mdash; dropped, pasted or browsed to &mdash; and writes it as a schematic in a new cell. See [Create from Image](create-from-image.html#ways-in). |
+| **Create Layout from Image…** | Traces a picture of a layout into the copper, vias and outline of a new layout cell. See [Create from Image](create-from-image.html#ways-in). |
 
 ## Geometry snap {#geometry-snap}
 

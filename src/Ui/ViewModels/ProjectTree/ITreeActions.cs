@@ -75,6 +75,12 @@ public interface ITreeActions
     Task CopyKnownFileToWorkspaceAsCellAsync(ProjectTreeNodeViewModel node);
 
     /// <summary>
+    /// Create Schematic / Layout from Image… on a picture file (brief-img-6-entry-points.md R-im6-4): the dialog opens
+    /// already reading it, with Make preset. A file that is not a picture after all is refused in Messages, in its sentence.
+    /// </summary>
+    void CreateFromImageFile(ProjectTreeNodeViewModel node, bool makeSchematic);
+
+    /// <summary>
     /// Build a NEW cell around one SPICE <c>.model</c> card in this file — the native circuitRF
     /// component carrying the card's parameters, its pins already wired, and an editable copy of
     /// that component's symbol. Reads the file FIRST and creates nothing when it holds no card

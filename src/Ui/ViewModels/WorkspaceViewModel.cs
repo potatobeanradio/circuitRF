@@ -406,6 +406,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         NewCellInWorkspaceCommand.NotifyCanExecuteChanged();
         NewThreeDDesignCommand.NotifyCanExecuteChanged();
+        RaiseImageCommandsChanged();   // brief-img-6 R-im6-1/2: enabled whenever a workspace is open
         NewFolderInWorkspaceCommand.NotifyCanExecuteChanged();
         ExportDataCommand.NotifyCanExecuteChanged();
         CloseWorkspaceCommand.NotifyCanExecuteChanged();
@@ -4579,6 +4580,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         vm.WireSidecarRemoved += OnWireSidecarRemoved;
         vm.OpenSiblingSchematicNames = OpenSchematicNamesFor;
         vm.OpenSiblingSchematic = OpenSchematicFor;
+        vm.ImageDialogHost = this;
         WireRetargetSeam(vm);
         var doc = new LayoutDocument(title, vm) { Hierarchy = this };  // filePath = null → scratch
         _scratchLayouts.Add(doc);
@@ -12128,6 +12130,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         vm.WireSidecarRemoved += OnWireSidecarRemoved;
         vm.OpenSiblingSchematicNames = OpenSchematicNamesFor;
         vm.OpenSiblingSchematic = OpenSchematicFor;
+        vm.ImageDialogHost = this;
         WireRetargetSeam(vm);
 
         // WB40 — a wirebond cell holds a `.wBond` beside its `.clay`, and its wires ride over the

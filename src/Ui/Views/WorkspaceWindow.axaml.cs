@@ -125,6 +125,9 @@ public partial class WorkspaceWindow : Window
             // git was named, or that "keep a history" was switched. Cheap by construction — see
             // WorkspaceHistoryService.KeepingHistoryHere, which runs no git.
             _vm?.RefreshRevisionButtonAvailability();
+            // The clipboard changes while the user is in another application, so coming back is one of the two moments
+            // Edit ▸ Paste Image as … asks it again (the other is the Edit menu opening). Never polled.
+            _ = _vm?.RefreshPasteImage();
 
             Diagnostics.MenuBarProbe.Note(
                 $"Activated: {sinceRepaint.Elapsed.TotalMilliseconds:F1} ms of handler ran AFTER the menu repaint");
@@ -261,6 +264,8 @@ public partial class WorkspaceWindow : Window
             // generate one needs a Window, which the view model has none of. Same prompt the schematic
             // canvas already shows for a palette drop of the same symbol-less cell.
             _vm.AutoGenSymbolPrompt = ShowAutoGenSymbolPromptAsync;
+            // Edit ▸ Paste Image as … reads this window's clipboard (brief-img-6 R-im6-2).
+            _vm.PictureClipboard = () => new CircuitRF.Ui.Clipboard.TopLevelPictureClipboard(this);
             _vm.RecentWorkspacesChanged += RebuildNativeRecentMenu;
             // Declared for exactly this and previously left unsubscribed, which is why the macOS
             // Window menu never updated after the one build in OnOpened.
@@ -363,6 +368,7 @@ public partial class WorkspaceWindow : Window
 
         // Locate the native Window item and hook NeedsUpdate now that AppKit has built the menu.
         EnsureWindowNativeItem();
+        EnsureEditNativeItem();
 
         // Seed the Window menu now. SubmenuOpened alone is not enough: an empty ItemsSource makes
         // the parent a leaf with no submenu, so that event would never fire and the menu would stay
@@ -814,6 +820,33 @@ public partial class WorkspaceWindow : Window
                 break;
             }
         }
+    }
+
+    // XAML-declared "Edit" native menu item, located once by header walk.
+    private NativeMenuItem? _editNativeItem;
+
+    /// <summary>
+    /// Hooks the native Edit menu's just-in-time refresh: Paste Image as … is enabled only when the clipboard holds a
+    /// picture (brief-img-6 R-im6-2), asked right before the menu shows. NeedsUpdate is the macOS counterpart of the
+    /// in-window menu's SubmenuOpened, which never fires there — the pair <see cref="EnsureWindowNativeItem"/> documents.
+    /// </summary>
+    private void EnsureEditNativeItem()
+    {
+        if (_editNativeItem is not null || NativeMenu.GetMenu(this) is not { } rootMenu) return;
+        foreach (var top in rootMenu.Items)
+            if (top is NativeMenuItem { Header: "Edit", Menu: { } menu } ni)
+            {
+                _editNativeItem = ni;
+                menu.NeedsUpdate += (_, _) => _ = _vm?.RefreshPasteImage();
+                break;
+            }
+    }
+
+    /// <summary>The in-window Edit menu opening: Paste Image as … asks the clipboard (brief-img-6 R-im6-2). Only the
+    /// Edit item's own opening — a submenu inside it bubbles the same event.</summary>
+    private void OnEditMenuOpened(object? sender, RoutedEventArgs e)
+    {
+        if (ReferenceEquals(e.Source, sender)) _ = _vm?.RefreshPasteImage();
     }
 
     private void RebuildNativeRecentMenu()

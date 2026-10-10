@@ -2,8 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Threading;
+using CommunityToolkit.Mvvm.Input;
 using CircuitRF.Design.Imaging;
 using CircuitRF.Design.Layout.Recognition;
 using CircuitRF.Design.Layout.Recognition.Image;
@@ -11,6 +13,7 @@ using CircuitRF.Design.Workspace;
 using CircuitRF.Ui.Messages;
 using CircuitRF.Ui.Recognition;
 using CircuitRF.Ui.Theming;
+using CircuitRF.Ui.ViewModels.ProjectTree;
 
 namespace CircuitRF.Ui.ViewModels;
 
@@ -20,15 +23,90 @@ namespace CircuitRF.Ui.ViewModels;
 /// into the workspace's surfaces — the result opened focused, the report in Messages, a trace into the open layout as
 /// one undo step with what it added selected.
 ///
-/// <para><b>It never runs except from the user's invocation</b> (the L5 rule). The menu rows, paste and context rows
-/// that call <see cref="ShowImageDialog"/> are IM-6's. What is written is written by <see cref="ImageTrace.Run"/> and
-/// <see cref="ImageRecognition.Run"/> — the functions the CLI calls (overview D2).</para>
+/// <para><b>It never runs except from the user's invocation</b> (the L5 rule). Every way in
+/// (brief-img-6-entry-points.md) — the Design-menu rows, Edit ▸ Paste Image as …, a placed picture's right-click and
+/// the Project Tree's picture rows — calls <see cref="ShowImageDialog"/>. What is written is written by
+/// <see cref="ImageTrace.Run"/> and <see cref="ImageRecognition.Run"/> — the functions the CLI calls (overview D2).</para>
 /// </summary>
-public partial class WorkspaceViewModel
+public partial class WorkspaceViewModel : IImageDialogHost
 {
     private CreateSchematicFromArtworkDialog? _imageDialog;
+    private PasteImageAvailability? _pasteImage;
 
-    /// <summary>Opens the picture dialog — empty, or already reading <paramref name="source"/> — with Make preset.</summary>
+    // ── the Design menu (R-im6-1): enabled whenever a workspace is open ──────────────────────────────
+
+    private bool IsWorkspaceOpenForImage() => CurrentWorkspaceRoot is not null;
+
+    [RelayCommand(CanExecute = nameof(IsWorkspaceOpenForImage))]
+    private void CreateSchematicFromImage(Window? owner) => ShowImageDialog(null, makeSchematic: true, owner);
+
+    [RelayCommand(CanExecute = nameof(IsWorkspaceOpenForImage))]
+    private void CreateLayoutFromImage(Window? owner) => ShowImageDialog(null, makeSchematic: false, owner);
+
+    // ── Edit ▸ Paste Image as … (R-im6-2): enabled only when the clipboard holds a picture ────────────
+
+    /// <summary>The clipboard the paste rows read — the window's, installed by it; null until a window has one.</summary>
+    public Func<IPictureClipboard?> PictureClipboard { get; set; } = () => null;
+
+    /// <summary>Whether the clipboard holds a picture, as last asked by <see cref="RefreshPasteImage"/>.</summary>
+    public PasteImageAvailability PasteImage => _pasteImage ??= NewPasteImage();
+
+    private PasteImageAvailability NewPasteImage()
+    {
+        var p = new PasteImageAvailability(() => PictureClipboard());
+        p.Changed += RaiseImageCommandsChanged;
+        return p;
+    }
+
+    /// <summary>
+    /// Asks the clipboard again — called just before the Edit menu shows (NeedsUpdate on macOS, SubmenuOpened
+    /// elsewhere) and when the window is activated, because the clipboard changes while the user is in another
+    /// application. Nothing else calls it: the clipboard is never polled.
+    /// </summary>
+    public Task RefreshPasteImage() => PasteImage.RefreshAsync();
+
+    private bool CanPasteImage() => CurrentWorkspaceRoot is not null && PasteImage.Available;
+
+    [RelayCommand(CanExecute = nameof(CanPasteImage))]
+    private Task PasteImageAsSchematic(Window? owner) => PasteImageAs(makeSchematic: true, owner);
+
+    [RelayCommand(CanExecute = nameof(CanPasteImage))]
+    private Task PasteImageAsLayout(Window? owner) => PasteImageAs(makeSchematic: false, owner);
+
+    private async Task PasteImageAs(bool makeSchematic, Window? owner)
+    {
+        string command = makeSchematic ? "Paste Image as Schematic" : "Paste Image as Layout";
+        var read = await PasteImage.ReadAsync();
+        if (read is null) Messages.Error($"{command}: the clipboard holds no picture.");
+        else if (!read.Ok) Messages.Error($"{command}: {read.Refusal}");
+        else ShowImageDialog(read.Source, makeSchematic, owner);
+    }
+
+    private void RaiseImageCommandsChanged()
+    {
+        CreateSchematicFromImageCommand.NotifyCanExecuteChanged();
+        CreateLayoutFromImageCommand.NotifyCanExecuteChanged();
+        PasteImageAsSchematicCommand.NotifyCanExecuteChanged();
+        PasteImageAsLayoutCommand.NotifyCanExecuteChanged();
+    }
+
+    // ── a placed picture (R-im6-3) and the Project Tree (R-im6-4) ────────────────────────────────────
+
+    /// <summary>The dialog on a placed bitmap's picture or a tree file; a picture that cannot be read is said in
+    /// Messages, in its own sentence.</summary>
+    public void ShowImageDialogFor(ImageSourceResult read, bool makeSchematic, Window? owner)
+    {
+        if (read.Ok) ShowImageDialog(read.Source, makeSchematic, owner);
+        else Messages.Error($"{(makeSchematic ? "Create Schematic from Image" : "Create Layout from Image")}: {read.Refusal}");
+    }
+
+    public void CreateFromImageFile(ProjectTreeNodeViewModel node, bool makeSchematic) =>
+        ShowImageDialogFor(ImageSource.FromFile(node.AbsolutePath), makeSchematic, null);
+
+    /// <summary>
+    /// Opens the picture dialog — empty, or already reading <paramref name="source"/> — with Make preset. One dialog per
+    /// window: when it is already open, a picture handed in is read there and the dialog comes forward.
+    /// </summary>
     public void ShowImageDialog(ImageSource? source, bool makeSchematic, Window? owner)
     {
         if (CurrentWorkspaceRoot is not { } root)
@@ -36,7 +114,12 @@ public partial class WorkspaceViewModel
             Messages.Error("Create from Image: open a workspace first — the result is a new cell in it.");
             return;
         }
-        if (_imageDialog is { } open) { open.Activate(); return; }
+        if (_imageDialog is { } open)
+        {
+            if (source is not null && open.DataContext is ImageSourceViewModel reading) reading.Read(source, makeSchematic);
+            open.Activate();
+            return;
+        }
 
         var (technologies, preferred) = ImageTechnologies(root, source);
         var prefs = AppPreferencesIo.Load();
@@ -76,7 +159,7 @@ public partial class WorkspaceViewModel
     /// R-im5-6: the workspace's technologies, and the one chosen first — the technology of the layout a placed picture
     /// sits in, else the workspace default, else the first.
     /// </summary>
-    private (IReadOnlyList<ImageTechnologyChoice> Choices, int Preferred) ImageTechnologies(string root, ImageSource? source)
+    internal (IReadOnlyList<ImageTechnologyChoice> Choices, int Preferred) ImageTechnologies(string root, ImageSource? source)
     {
         var paths = new List<string>();
         try

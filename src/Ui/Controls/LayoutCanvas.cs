@@ -1353,6 +1353,22 @@ public sealed class LayoutCanvas : Control
             var refreshCache = new MenuItem { Header = "Refresh Cache" };
             refreshCache.Click += (_, _) => { _viewModel.RefreshBitmapCache(bmp.ShapeIndex); InvalidateVisual(); };
             items.Add(refreshCache);
+
+            // brief-img-6 R-im6-3: the picture, read. Absent (not disabled) when it does not resolve — Resolve Path… is
+            // the row that is there — and offered on a locked bitmap, since locking stops dragging, not reading.
+            if (_viewModel.ImageDialogHost is { } host && _viewModel.Model.Shapes[bmp.ShapeIndex] is BitmapShape shape)
+            {
+                string? clay = _viewModel.CurrentLayoutPath;
+                foreach (var row in Recognition.ImageEntryPoints.LayoutBitmapRows(clay, shape))
+                {
+                    var item = new MenuItem { Header = row.Header };
+                    ToolTip.SetTip(item, row.Tip);
+                    bool make = row.MakeSchematic;
+                    item.Click += (_, _) => host.ShowImageDialogFor(Recognition.ImageEntryPoints.SourceOf(clay, shape), make,
+                                                                   TopLevel.GetTopLevel(this) as Window);
+                    items.Add(item);
+                }
+            }
         }
 
         // ── Name Net… (R-ab2-3a) ───────────────────────────────────────────────────────────────

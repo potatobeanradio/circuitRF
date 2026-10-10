@@ -82,24 +82,12 @@ public partial class CreateSchematicFromArtworkDialog : Window
 
     // ── a picture: the clipboard and a drop (R-im5-2) ───────────────────────────────────────────────
 
-    /// <summary>The clipboard's picture: a bitmap, encoded to PNG, or a copied picture file read as itself. Null when it
-    /// holds neither; a failed read is the same as none, never an exception.</summary>
+    /// <summary>The clipboard's picture, read as Edit ▸ Paste Image as … reads it (<see cref="CircuitRF.Ui.Clipboard.ImageClipboard.TryReadAsync"/>).
+    /// A failed read is the same as none, never an exception.</summary>
     private async Task<ImageSourceResult?> ReadClipboardPicture()
     {
-        if (Clipboard is not { } clipboard) return null;
-        try
-        {
-            if (await clipboard.TryGetFileAsync() is { } file && file.TryGetLocalPath() is { } path && File.Exists(path))
-                return ImageSource.FromFile(path);
-            if (await clipboard.TryGetBitmapAsync() is { } bitmap)
-            {
-                using var png = new MemoryStream();
-                bitmap.Save(png);
-                return ImageSource.FromBytes(png.ToArray(), null);
-            }
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException) { }
-        return null;
+        try { return await CircuitRF.Ui.Clipboard.ImageClipboard.TryReadAsync(this); }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { return null; }
     }
 
     /// <summary>Cmd/Ctrl+V reads the clipboard's picture — unless a text box has the keyboard, where it pastes text.</summary>

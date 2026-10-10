@@ -304,6 +304,18 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
         && CellViewFileValidator.ViewTypeFor(AbsolutePath) is not null;
 
     /// <summary>
+    /// True for a picture file IM-1 reads — a Known File, or a file inside the workspace folder — which drives
+    /// <i>Create Schematic from Image…</i> and <i>Create Layout from Image…</i> (brief-img-6-entry-points.md R-im6-4).
+    /// Extension only, exactly as <see cref="IsKnownFileCopyableAsCell"/> is, so building the menu never decodes a
+    /// file; a broken Known File gets no row.
+    /// </summary>
+    public bool IsImageFile =>
+        !IsDirectory
+        && !IsWarning
+        && (Kind == NodeKind.KnownFile || (Kind == NodeKind.OtherFile && IsInsideWorkspace))
+        && CircuitRF.Ui.Recognition.PasteImageAvailability.IsPictureFile(AbsolutePath);
+
+    /// <summary>
     /// True for a Known File that is a SPICE <c>.model</c> card file — drives "Copy to Workspace as
     /// Cell…" for model cards.
     ///
@@ -517,6 +529,8 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
 
     /// <summary>Copy a Known File view into a NEW cell in the workspace (validated first).</summary>
     public IAsyncRelayCommand CopyToWorkspaceAsCellCommand { get; }
+    public IRelayCommand CreateSchematicFromImageCommand { get; }
+    public IRelayCommand CreateLayoutFromImageCommand { get; }
     /// <summary>Builds a cell from a SPICE <c>.model</c> card in this file (Known File nodes only).</summary>
     public IAsyncRelayCommand CreateCellFromModelCardCommand { get; }
 
@@ -818,6 +832,14 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
         CopyToWorkspaceAsCellCommand = new AsyncRelayCommand(
             () => _actions?.CopyKnownFileToWorkspaceAsCellAsync(this) ?? Task.CompletedTask,
             () => _actions is not null && IsKnownFileCopyableAsCell);
+
+        CreateSchematicFromImageCommand = new RelayCommand(
+            () => _actions?.CreateFromImageFile(this, makeSchematic: true),
+            () => _actions is not null && IsImageFile);
+
+        CreateLayoutFromImageCommand = new RelayCommand(
+            () => _actions?.CreateFromImageFile(this, makeSchematic: false),
+            () => _actions is not null && IsImageFile);
 
         CreateCellFromModelCardCommand = new AsyncRelayCommand(
             () => _actions?.CreateCellFromModelCardAsync(this) ?? Task.CompletedTask,

@@ -11,6 +11,7 @@ keywords: image, picture, screenshot, PNG, JPEG, paste, trace, bitmap, scale, tw
 <h2>On this page</h2>
 <ol>
 <li><a href="#what">What it does</a></li>
+<li><a href="#ways-in">Ways in</a></li>
 <li><a href="#dialog">The dialog</a></li>
 <li><a href="#kind">What kind of picture it is</a></li>
 <li><a href="#make">What to make of it</a></li>
@@ -38,6 +39,25 @@ the circuit, but not in a form a simulator can use. **Create from Image** reads 
 
 Like reading artwork, it is a best attempt that you then check. Everything it guessed is shown on the picture and
 said in the report.
+
+## Ways in {#ways-in}
+
+Wherever there is a picture, the command is one gesture away &mdash; and it is only offered where it can work.
+
+| Where | Rows | What opens |
+|---|---|---|
+| **Design** menu | **Create Schematic from Image…**, **Create Layout from Image…** | The dialog, empty, ready for a drop, a paste or **Browse…**. Enabled whenever a workspace is open; no document needs to be in front. |
+| **Edit** menu | **Paste Image as Schematic…**, **Paste Image as Layout…** | The dialog, already reading the clipboard's picture. Enabled only when the clipboard holds a picture &mdash; a copied image, or one picture file copied in a file manager (two files, or a file that is not a picture, leave them greyed). The clipboard is looked at when the Edit menu opens and when you come back to the window. |
+| Right-click a picture placed in a **layout** | **Trace Image into This Layout…**, **Create Schematic from Image…** | Tracing into this layout puts the copper in this layout, over the picture, at the size the picture is placed (scale **As placed**), in this layout's technology &mdash; one undo step. **Create Schematic from Image…** makes a new cell and offers **As placed** as its scale. |
+| Right-click a picture placed in a **schematic** | **Create Schematic from Image…**, **Create Layout from Image…** | A new cell each. A schematic has no physical size, so **As placed** is not offered; set the scale in the dialog. |
+| Right-click a picture file in the **Project** panel | **Create Schematic from Image…**, **Create Layout from Image…** | The dialog, already reading that file. Offered on a Known File and on a file inside the workspace folder whose extension is one circuitRF reads. |
+
+A placed picture whose file cannot be found offers none of these rows &mdash; point it at its file first (on a layout,
+**Resolve Path…** on the same menu). A locked picture is offered like any other: locking stops it moving, not being
+read.
+
+Dropping a picture onto a canvas still places it as a bitmap, and dropping one onto the Project panel still adds it
+as a Known File; the right-click rows above are the next step. Dropping one onto the dialog reads it.
 
 ## The dialog {#dialog}
 

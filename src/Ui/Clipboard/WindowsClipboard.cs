@@ -59,6 +59,16 @@ internal static class WindowsClipboard
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern uint RegisterClipboardFormat(string lpszFormat);
 
+    [DllImport("user32.dll")]
+    private static extern bool IsClipboardFormatAvailable(uint format);
+
+    // The clipboard keeps ownership of the returned handle — never free it.
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetClipboardData(uint uFormat);
+
+    [DllImport("kernel32.dll")]
+    private static extern UIntPtr GlobalSize(IntPtr hMem);
+
     [DllImport("kernel32.dll")]
     private static extern IntPtr GlobalAlloc(uint uFlags, UIntPtr dwBytes);
 
@@ -187,6 +197,37 @@ internal static class WindowsClipboard
         {
             CloseClipboard();
         }
+    }
+
+    /// <summary>True when the clipboard holds the registered <c>PNG</c> format — the one <see cref="SetClipboard"/>
+    /// writes, and the one browsers and screenshot tools put beside the device-independent bitmap. Opens nothing.</summary>
+    [SupportedOSPlatform("windows")]
+    internal static bool HasPng() => IsClipboardFormatAvailable(RegisterClipboardFormat("PNG"));
+
+    /// <summary>The clipboard's <c>PNG</c> bytes, or null when it holds none or cannot be opened. One session, opened and
+    /// closed here; the data handle stays the clipboard's.</summary>
+    [SupportedOSPlatform("windows")]
+    internal static byte[]? TryGetPng(IntPtr hwnd)
+    {
+        uint format = RegisterClipboardFormat("PNG");
+        if (!IsClipboardFormatAvailable(format) || !OpenClipboard(hwnd)) return null;
+        try
+        {
+            IntPtr h = GetClipboardData(format);
+            if (h == IntPtr.Zero) return null;
+            long size = (long)(ulong)GlobalSize(h);
+            if (size <= 0 || size > int.MaxValue) return null;
+            IntPtr ptr = GlobalLock(h);
+            if (ptr == IntPtr.Zero) return null;
+            try
+            {
+                var bytes = new byte[size];
+                Marshal.Copy(ptr, bytes, 0, (int)size);
+                return bytes;
+            }
+            finally { GlobalUnlock(h); }
+        }
+        finally { CloseClipboard(); }
     }
 
     [SupportedOSPlatform("windows")]

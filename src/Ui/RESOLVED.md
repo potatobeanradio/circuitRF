@@ -39301,3 +39301,33 @@ The AS-8 dialog was split into a shared body (`RecognitionSessionViewModel` + fo
   click on *It is ▸ Layout* answers it, and the user page says so. Worth a look before the series ships.
 - Avalonia 12: `Gestures.PinchEvent` is internal — the routed event is `InputElement.PinchEvent`. A style whose selector
   ends in a class only (`.placement`) cannot carry a setter; `:is(Control).placement` can.
+
+## Create Schematic / Layout from Image, IM-6: every way in (2026-10-10)
+
+Design ▸ Create Schematic / Layout from Image…, Edit ▸ Paste Image as Schematic / Layout…, a placed bitmap's
+right-click (layout and schematic) and the Project Tree's picture rows — all of them `ShowImageDialog`
+(`WorkspaceViewModel.ImageRecognition.cs`). Which rows a bitmap or a tree file gets is `Recognition/ImageEntryPoints`;
+whether paste is enabled is `Recognition/PasteImageAvailability`, over an `IPictureClipboard` the window installs.
+
+- **Files decide when the clipboard holds any.** A file manager puts the copied files' icons on the clipboard as a
+  bitmap beside them, so "a bitmap, or a single picture file" read literally enables Paste Image for two copied
+  files, or for one text file, and reads a folder icon. `PasteImageAvailability.Offers` looks at the bitmap only when
+  there are no files; `ImageClipboard.TryReadAsync` reads in the same order.
+- **The clipboard is asked at three call sites and nowhere else**: the window's Activated handler, the native Edit
+  menu's NeedsUpdate (found by header walk, as the Window menu is) and the in-window Edit item's SubmenuOpened
+  (filtered to its own opening — a submenu's bubbles the same event). `PasteImageCommandTests` holds the count by a
+  comment-stripped source scan. A peek that throws or takes longer than 500 ms leaves the rows disabled. On macOS
+  the NeedsUpdate read is async, so the menu can show before it answers; the activation read is what normally has
+  the answer ready.
+- **Inside a `Window`, `Clipboard.X` is the `TopLevel.Clipboard` property, not the `CircuitRF.Ui.Clipboard`
+  namespace** — the dialog and the workspace window spell `CircuitRF.Ui.Clipboard.ImageClipboard` in full.
+- **The schematic canvas's selection hit test passes over a locked canvas object**, and a locked picture must still
+  offer the rows (locking stops dragging, not reading), so `SchematicCanvas.ContextMenuBitmapId` comes from its own
+  walk over the bitmaps, and only when the right-click hit no component.
+- **A dialog already open takes the new picture** (`ImageSourceViewModel.Read`) rather than ignoring it behind
+  `Activate()`, and a placed layout picture re-targets its own layout there exactly as on a fresh open.
+- The schematic target *this schematic, over the picture* (D14) is IM-10's; until then a schematic bitmap's rows both
+  make a new cell. The schematic canvas has no Resolve Path… row, so an unresolved schematic bitmap shows no image
+  rows at all.
+- Two of the gate classes build a `WorkspaceViewModel`, which builds `MenuItem`s, and that type's static
+  registration is not thread-safe (see the StackupDeleteKeyTests note): they share one xUnit collection.

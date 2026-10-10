@@ -540,6 +540,20 @@
                                                   ToolTip.Tip="Build a new cell from a SPICE .model card or .subckt definition in this file. A card becomes the native circuitRF component carrying its parameters with an editable copy of that component's symbol; a subcircuit becomes its own netlist, wired as the file wires it, with a generic box for a symbol. Either way the pins are already wired. The file is read first; anything circuitRF has no model for is refused by name.">
                                             <MenuItem.Icon><mi:MaterialIcon Kind="IntegratedCircuitChip" Width="14" Height="14"/></MenuItem.Icon>
                                         </MenuItem>
+                                        <!-- brief-img-6 R-im6-4: a picture file, bookmarked or inside the workspace
+                                             folder, by extension only. -->
+                                        <MenuItem Header="Create Schematic from Image…"
+                                                  Command="{Binding CreateSchematicFromImageCommand}"
+                                                  IsVisible="{Binding IsImageFile}"
+                                                  ToolTip.Tip="Read this picture of a layout and write it as a schematic of native components in a new cell, reviewed first in a parts table.">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="ImageSearchOutline" Width="14" Height="14"/></MenuItem.Icon>
+                                        </MenuItem>
+                                        <MenuItem Header="Create Layout from Image…"
+                                                  Command="{Binding CreateLayoutFromImageCommand}"
+                                                  IsVisible="{Binding IsImageFile}"
+                                                  ToolTip.Tip="Trace this picture of a layout into the copper, vias and outline of a new layout cell.">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="ImageEditOutline" Width="14" Height="14"/></MenuItem.Icon>
+                                        </MenuItem>
                                         <MenuItem Header="Remove Reference"
                                                   Command="{Binding RemoveKnownFileCommand}"
                                                   IsVisible="{Binding IsKnownFile}">

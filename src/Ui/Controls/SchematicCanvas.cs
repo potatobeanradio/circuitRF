@@ -213,6 +213,24 @@ public sealed class SchematicCanvas : Control
     /// right-click landed on, or null — what the context menu's Tune acts on (brief-tuneopt-4).</summary>
     public int? ContextMenuParamIndex { get; private set; }
 
+    /// <summary>The placed picture a right-click landed on when it hit no component, or null — what the canvas menu's
+    /// Create … from Image rows read (brief-img-6-entry-points.md R-im6-3). A LOCKED bitmap counts: locking stops
+    /// dragging, not reading, so this is not the selection hit test, which passes over a locked object.</summary>
+    public string? ContextMenuBitmapId { get; private set; }
+
+    /// <summary>The topmost bitmap under (<paramref name="wx"/>, <paramref name="wy"/>), locked or not — the hit test's
+    /// own canvas-object order.</summary>
+    private static EditableBitmap? BitmapUnder(SchematicEditModel model, double wx, double wy)
+    {
+        for (int i = model.CanvasObjects.Count - 1; i >= 0; i--)
+        {
+            if (model.CanvasObjects[i] is not EditableBitmap b) continue;
+            var bb = b.GetBoundingBox();
+            if (wx >= bb.MinX && wx <= bb.MaxX && wy >= bb.MinY && wy <= bb.MaxY) return b;
+        }
+        return null;
+    }
+
     // ── Internal state ────────────────────────────────────────────────────────
 
     private SchematicSpatialIndex? _index;
@@ -542,6 +560,7 @@ public sealed class SchematicCanvas : Control
         {
             ContextMenuTargetId = null;
             ContextMenuParamIndex = null;
+            ContextMenuBitmapId = null;
             if (_editContext is not null && _model is not null && _index is not null)
             {
                 var hit = SchematicHitTest.Test(_editContext.EditModel, _model, _index, wx, wy, zoom: _zoom);
@@ -556,6 +575,8 @@ public sealed class SchematicCanvas : Control
                     // Also select the right-clicked component if not already selected
                     _editContext.SelectIfUnselected(hit.Id);
                 }
+                else if (BitmapUnder(_editContext.EditModel, wx, wy) is { } bitmap)
+                    ContextMenuBitmapId = bitmap.Id;
             }
             return;
         }

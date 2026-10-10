@@ -433,6 +433,26 @@
                             </MenuItem.Icon>
                         </MenuItem>
 
+                        <!-- brief-img-6 R-im6-3: a canvas right-click that landed on a placed picture.
+                             Shown only on a bitmap whose picture resolves; each row is a new cell. -->
+                        <Separator x:Name="CtxImageSep" IsVisible="False"/>
+                        <MenuItem x:Name="CtxImageSchematic"
+                                  Header="Create Schematic from Image…"
+                                  IsVisible="False"
+                                  Click="OnCtxImageSchematic">
+                            <MenuItem.Icon>
+                                <mi:MaterialIcon Kind="ImageSearchOutline" Width="14" Height="14"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
+                        <MenuItem x:Name="CtxImageLayout"
+                                  Header="Create Layout from Image…"
+                                  IsVisible="False"
+                                  Click="OnCtxImageLayout">
+                            <MenuItem.Icon>
+                                <mi:MaterialIcon Kind="ImageEditOutline" Width="14" Height="14"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
+
                         <MenuItem x:Name="CtxEditParameters"
                                   Header="Edit Parameters"
                                   Click="OnCtxEditParameters">

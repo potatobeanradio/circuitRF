@@ -192,6 +192,18 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
         return true;
     }
 
+    /// <summary>
+    /// A picture handed in from outside an already-open dialog — a menu, a placed bitmap, the Project Tree
+    /// (brief-img-6-entry-points.md) — with Make preset. A placed layout picture targets its own layout, as it does
+    /// when the dialog opens on it (D14).
+    /// </summary>
+    public void Read(ImageSource source, bool makeSchematic)
+    {
+        MakeIndex = makeSchematic ? 0 : 1;
+        Accept(source);
+        TargetOwn = OwnTargetOffered;
+    }
+
     private void Accept(ImageSource source)
     {
         CancelRecognition();

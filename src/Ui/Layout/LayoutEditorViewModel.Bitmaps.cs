@@ -101,6 +101,10 @@ public sealed partial class LayoutEditorViewModel
         Model.NotifyChanged();
     }
 
+    /// <summary>Opens Create … from Image on a right-clicked bitmap (brief-img-6-entry-points.md R-im6-3) — the
+    /// workspace, installed where the session is built; null where there is none, and the rows are absent.</summary>
+    public Recognition.IImageDialogHost? ImageDialogHost { get; set; }
+
     // ── R-bmp: Locked blocks move and scale, never selection ─────────────────────────────────────
 
     private static bool IsLockedBitmap(LayoutShape s) => s is BitmapShape { Locked: true };

@@ -163,6 +163,8 @@
                         <NativeMenuItem Header="Cut"        Command="{Binding CutCommand}"/>
                         <NativeMenuItem Header="Copy"       Command="{Binding CopyCommand}"/>
                         <NativeMenuItem Header="Paste"      Command="{Binding PasteCommand}"/>
+                        <NativeMenuItem Header="Paste Image as Schematic…" Command="{Binding PasteImageAsSchematicCommand}" ToolTip="Read the picture on the clipboard and write it as a schematic in a new cell. Enabled when the clipboard holds a picture."/>
+                        <NativeMenuItem Header="Paste Image as Layout…"    Command="{Binding PasteImageAsLayoutCommand}" ToolTip="Trace the picture on the clipboard into a new layout cell. Enabled when the clipboard holds a picture."/>
                     </NativeMenu>
                 </NativeMenuItem.Menu>
             </NativeMenuItem>
@@ -177,6 +179,8 @@
                         <NativeMenuItem Header="Update Layout from Schematic"   Command="{Binding UpdateLayoutFromSchematicCommand}" Gesture="Meta+U"/>
                         <NativeMenuItem Header="Update Schematic from Layout"   Command="{Binding UpdateSchematicFromLayoutCommand}" Gesture="Meta+Shift+U"/>
                         <NativeMenuItem Header="Create Schematic from Artwork…" Command="{Binding CreateSchematicFromArtworkCommand}" ToolTip="Recognise the layout's copper — ground, vias, ports, parts and lines — and write it as a schematic of native components, reviewed first in a parts table. Requires an active layout document saved to a cell."/>
+                        <NativeMenuItem Header="Create Schematic from Image…"   Command="{Binding CreateSchematicFromImageCommand}" ToolTip="Read a picture of a layout — dropped, pasted or browsed to — and write it as a schematic of native components in a new cell, reviewed first in a parts table. Requires an open workspace."/>
+                        <NativeMenuItem Header="Create Layout from Image…"      Command="{Binding CreateLayoutFromImageCommand}" ToolTip="Trace a picture of a layout — dropped, pasted or browsed to — into the copper, vias and outline of a new layout cell. Requires an open workspace."/>
                         <NativeMenuItem Header="Draw Ground Pour"               Command="{Binding DrawGroundPourCommand}" ToolTip="Redraws the ground artwork Update Layout from Schematic draws, from where the parts are now: the ground pour under the microstrip lines and ground vias, with a clearance round every via passing through it, and the ground vias following their pads. Copper you drew or edited yourself is left alone. Requires an active layout document."/>
                         <NativeMenuItemSeparator/>
                         <NativeMenuItem Header="Check Design Rules"             Command="{Binding CheckDesignRulesCommand}" Gesture="Meta+Shift+K"/>
@@ -1028,7 +1032,7 @@
                 </MenuItem>
             </MenuItem>
 
-            <MenuItem Header="_Edit" Padding="8,4">
+            <MenuItem Header="_Edit" Padding="8,4" SubmenuOpened="OnEditMenuOpened">
                 <MenuItem Header="_Undo"
                           Command="{Binding UndoCommand}"
                           InputGesture="Ctrl+Z">
@@ -1054,6 +1058,18 @@
                           Command="{Binding PasteCommand}"
                           InputGesture="Ctrl+V">
                     <MenuItem.Icon><mi:MaterialIcon Kind="ContentPaste" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <!-- brief-img-6 R-im6-2: enabled only when the clipboard holds a picture, asked when this menu opens
+                     (SubmenuOpened on the Edit item) and when the window is activated — never polled. -->
+                <MenuItem Header="Paste _Image as Schematic…"
+                          Command="{Binding PasteImageAsSchematicCommand}"
+                          ToolTip.Tip="Read the picture on the clipboard and write it as a schematic in a new cell. Enabled when the clipboard holds a picture.">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="ImageSearchOutline" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Paste Image as _Layout…"
+                          Command="{Binding PasteImageAsLayoutCommand}"
+                          ToolTip.Tip="Trace the picture on the clipboard into a new layout cell. Enabled when the clipboard holds a picture.">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="ImageEditOutline" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
             </MenuItem>
 
@@ -1094,6 +1110,18 @@
                           Command="{Binding CreateSchematicFromArtworkCommand}"
                           ToolTip.Tip="Recognise the layout's copper — ground, vias, ports, parts and lines — and write it as a schematic of native components, reviewed first in a parts table. Requires an active layout document saved to a cell.">
                     <MenuItem.Icon><mi:MaterialIcon Kind="FileChart" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <!-- brief-img-6 R-im6-1: below Create Schematic from Artwork…, enabled whenever a workspace is open
+                     (no document needs to be focused), no gesture by default. -->
+                <MenuItem Header="Create Schematic from _Image…"
+                          Command="{Binding CreateSchematicFromImageCommand}"
+                          ToolTip.Tip="Read a picture of a layout — dropped, pasted or browsed to — and write it as a schematic of native components in a new cell, reviewed first in a parts table. Requires an open workspace.">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="ImageSearchOutline" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Create La_yout from Image…"
+                          Command="{Binding CreateLayoutFromImageCommand}"
+                          ToolTip.Tip="Trace a picture of a layout — dropped, pasted or browsed to — into the copper, vias and outline of a new layout cell. Requires an open workspace.">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="ImageEditOutline" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
                 <MenuItem Header="Draw _Ground Pour"
                           Command="{Binding DrawGroundPourCommand}"
