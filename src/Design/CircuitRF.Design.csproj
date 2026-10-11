@@ -87,6 +87,13 @@
                       LogicalName="CircuitRF.Design.SilkscreenGlyphs.hershey-variants.txt" />
   </ItemGroup>
 
+  <!-- brief-img-9 R-im9-2: the value glyphs the stroke font lacks, for reading a schematic picture's words — a class
+       of its own that the silkscreen reader never consults. -->
+  <ItemGroup>
+    <EmbeddedResource Include="resources\silkscreen-glyphs\hershey-value-variants.txt"
+                      LogicalName="CircuitRF.Design.SilkscreenGlyphs.hershey-value-variants.txt" />
+  </ItemGroup>
+
   <!-- brief-img-8 R-im8-2: the drawings other conventions use for a schematic symbol, one stroke file each, read by
        SymbolTemplates under the prefix below. Adding a drawing is adding a file: the glob takes it. -->
   <ItemGroup>

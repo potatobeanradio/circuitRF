@@ -27,7 +27,12 @@ public sealed record TextRegionSplit(PixelBox Box, IReadOnlyList<int> Glyphs);
 /// <param name="Strokes">The word's skeleton, as polylines in picture pixels — what IM-9 reads.</param>
 /// <param name="Splits">The word split at its widest gap, and those halves split again — the other readings offered.</param>
 public sealed record TextRegion(int Id, PixelBox Box, bool Vertical, IReadOnlyList<PixelBox> Glyphs,
-    IReadOnlyList<PathD> Strokes, IReadOnlyList<TextRegionSplit> Splits);
+    IReadOnlyList<PathD> Strokes, IReadOnlyList<TextRegionSplit> Splits)
+{
+    /// <summary>The word's own stroke width, pixels — the mode of the shorter ink run through each skeleton pixel, as the
+    /// picture's w is measured (brief-img-9: type too heavy for its size is not read). 0 when unmeasured.</summary>
+    public double InkWidth { get; init; }
+}
 
 /// <summary>A word-shaped group kept as part of a symbol because it touches line work.</summary>
 /// <param name="Contact">The longest contact, in w.</param>
@@ -72,7 +77,7 @@ internal static class TextRegions
                 u.Add(k, [c.Left, c.Top, c.Right + 1, c.Bottom + 1]);
                 units.Add(u);
             }
-            var groups = StrokeGlyphs.Groups(units, vertical)
+            var groups = StrokeGlyphs.Groups(units, vertical, typeset: true)
                 .Select(g => g.Select(i => pool[i]).ToList())
                 .ToList();
             var sets = groups.Select(g => g.ToHashSet()).ToList();
@@ -110,6 +115,9 @@ internal static class TextRegions
                     box = BoxOf(clear.Select(k => cands[k]));
                 }
 
+                ordered = Grow(ordered, cands, used, vertical, k => Contact(pixels[cands[k].Label], line, width).Places == 0);
+                box = BoxOf(ordered.Select(k => cands[k]));
+
                 foreach (int k in ordered)
                     foreach (int i in pixels[cands[k].Label]) removed.Pixels[i] = 1;
                 var mine = ordered.ToHashSet();
@@ -123,8 +131,11 @@ internal static class TextRegions
                     foreach (int n in idx) sb = sb.Union(glyphs[n]);
                     splits.Add(new TextRegionSplit(sb, idx));
                 }
-                words.Add(new TextRegion(0, box, vertical, glyphs,
-                    Strokes(ordered.SelectMany(k => pixels[cands[k].Label]), box, width), splits));
+                var ink = ordered.SelectMany(k => pixels[cands[k].Label]).ToList();
+                words.Add(new TextRegion(0, box, vertical, glyphs, Strokes(ink, box, width), splits)
+                {
+                    InkWidth = SchematicImageReading.RunWidth(Crop(ink, box, width)),
+                });
             }
         }
 
@@ -135,6 +146,44 @@ internal static class TextRegions
     }
 
     private static PixelBox Box(Component c) => new(c.Left, c.Top, c.Right, c.Bottom);
+
+    /// <summary>
+    /// The word <paramref name="ordered"/> with the pieces the line grouping left beside it (brief-img-9 R-im9-1): a
+    /// <c>°</c>, a comma, the <c>Z</c> of <c>Z=50</c> whose <c>=</c> the rest of the word took. A piece no word has
+    /// joins while it lies in the word's band — across, within a third of the word's height of it and no taller than
+    /// 1.35 of it — within a letter gap along, no wider than 1.6 heights, and touching no line work. The word's height
+    /// is its tallest glyph's. Reading order.
+    /// </summary>
+    private static List<int> Grow(List<int> ordered, List<Component> cands, HashSet<int> used, bool vertical, Func<int, bool> clear)
+    {
+        var word = ordered.ToList();
+        double h = word.Max(k => Across(cands[k], vertical));   // the tallest glyph: marks and lower case are shorter
+        bool grew = true;
+        while (grew)
+        {
+            grew = false;
+            var box = BoxOf(word.Select(k => cands[k]));
+            (double aLo, double aHi, double pLo, double pHi) = vertical
+                ? (box.Top, box.Bottom + 1.0, box.Left, box.Right + 1.0)
+                : (box.Left, box.Right + 1.0, box.Top, box.Bottom + 1.0);
+            for (int k = 0; k < cands.Count; k++)
+            {
+                if (used.Contains(k)) continue;
+                var c = cands[k];
+                (double a0, double a1, double p0, double p1) = vertical
+                    ? (c.Top, c.Bottom + 1.0, c.Left, c.Right + 1.0)
+                    : (c.Left, c.Right + 1.0, c.Top, c.Bottom + 1.0);
+                if (p1 - p0 > 1.35 * h || a1 - a0 > 1.6 * h) continue;
+                if (p0 < pLo - h / 3 || p1 > pHi + h / 3 || p1 <= pLo || p0 >= pHi) continue;
+                if (a0 > aHi + StrokeGlyphs.MaxLetterGap * h || a1 < aLo - StrokeGlyphs.MaxLetterGap * h) continue;
+                if (!clear(k)) continue;
+                word.Add(k);
+                used.Add(k);
+                grew = true;
+            }
+        }
+        return [.. word.OrderBy(k => vertical ? cands[k].Top : cands[k].Left).ThenBy(k => k)];
+    }
 
     private static PixelBox BoxOf(IEnumerable<Component> cs)
     {
@@ -204,12 +253,20 @@ internal static class TextRegions
         return (longest, places);
     }
 
-    /// <summary>The skeleton of a word's pixels, as polylines in picture pixels.</summary>
-    private static List<PathD> Strokes(IEnumerable<int> pixels, PixelBox box, int width)
+    /// <summary>A word's pixels on a canvas of its box and a pixel's margin.</summary>
+    private static BinaryImage Crop(IEnumerable<int> pixels, PixelBox box, int width)
     {
         int ox = box.Left - 1, oy = box.Top - 1;
         var crop = new BinaryImage(box.Width + 2, box.Height + 2);
         foreach (int i in pixels) crop.Pixels[(i / width - oy) * crop.Width + (i % width - ox)] = 1;
+        return crop;
+    }
+
+    /// <summary>The skeleton of a word's pixels, as polylines in picture pixels.</summary>
+    private static List<PathD> Strokes(IEnumerable<int> pixels, PixelBox box, int width)
+    {
+        int ox = box.Left - 1, oy = box.Top - 1;
+        var crop = Crop(pixels, box, width);
         var g = SkeletonGraph.Build(crop, new SkeletonGraphOptions { MaxThreads = 1 });
         var r = new List<PathD>(g.Edges.Count);
         foreach (var e in g.Edges)

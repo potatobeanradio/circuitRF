@@ -662,3 +662,108 @@ kind, disposition, template (its convention), orientation, pins in template orde
 runner-up, confidence (`PartConfidence`: High within half the threshold and twice the margin with nothing demoted) and
 demotions; `SymbolReport` counts symbols by kind, unknowns, cut-out devices with their pin counts, demotions by check and
 unread terminals.
+
+## 11. IM-9 — words: designators, values, net and port names
+
+`ImageText.Read(SchematicImageRead, IImageTextReader?)` reads every word region IM-7 found; `LabelAssociation.Associate`
+attaches what was read to IM-8's symbols and IM-7's wire ends. Both pure.
+
+### 11.1 The reader is AS-10's (R-im9-1) — `ImageText.cs`, `IImageTextReader.cs`
+
+A word region's skeleton is a set of centre lines — what `StrokeGlyphs` reads a silkscreen pen's strokes as — so a word
+is read by `StrokeGlyphs.ReadWord`: AS-10's split into glyphs, its normalisation to the line's cap height and its
+modified-Hausdorff distance, with no distance limit and no designator rule (the grammar decides). The skeleton is taken
+into y-up coordinates; a level word is read at 0° only and a turned one at 90° or 270° — a schematic is never upside
+down or seen from behind. `IImageTextReader` is the seam (D1): `StrokeTextReader` is the one that ships, and an operating
+system's recognition would replace it and nothing else.
+
+Four things the silkscreen path never met, each found by the gate words:
+- **Corner repair is not used.** `RasterSilkscreenEvidence.RestoreCorners` puts back corners a pen-drawn stroke font's
+  skeleton cuts; on a typeset F it moved the top-left corner outside the glyph, and the F read as a T.
+- **End kinks are trimmed.** Thinning curls a pixel or two at a square stroke end; small as it is it widens the
+  glyph's box, and a glyph is centred on its box — IBM Plex Sans's I stood 0.08 cap heights off centre and read as a t,
+  so `IN` was the name `tN`. A FREE end's final run of at most min(pen, 2 px) is dropped when it turns more than 35°
+  off the next four times that, which must be straight. Each limit was found the hard way: trimming junction ends cut
+  an N in two, and trimming against a pen's length (4 px in a bold face) turned a bold 2 into a 7 — a wrong reading,
+  where the untrimmed one had been right.
+- **A full stop has no skeleton** (a 2 × 3 px dot thins to an isolated pixel with no edge). A glyph box with no skeleton
+  point in it becomes a dot stroke at its centre.
+- **Touching glyphs are cut.** A typeset k and Ω touch at 14 px and are one component, which reads as a poor m. A glyph
+  reading worse than 0.1 cap heights and at least 0.7 wide is cut across the line at each twentieth from 30 % to 70 %,
+  strokes stopped a pen short each side; the best cut is kept when both halves read better than the whole, and the cut
+  line stands only when it leaves fewer words unread — or as few, nearer the templates. A W cut in two is a t and a V,
+  which say nothing; `1kΩ` uncut is the grammatical `1m`, read worse.
+- **Spaces.** A skeleton stops short of its ink and a typeset digit is narrower than its advance, so letters of one word
+  stand up to ~0.6 cap heights apart and a space is ~0.9: `SpaceGap` is 0.75. A line is read whole first (with its
+  spaces, as a line set or a value with its unit apart — `0.5 pF`) and otherwise word by word, each word its own
+  `ImageWord` with its own box. Two line sets on one line within their height of each other (`Z=50Ω, E=90°`, split at
+  its comma-space by IM-7) are joined when together they still are one.
+
+**Words are found for typeset text** (`TextRegions`, IM-7 code): AS-10's `Groups` takes `typeset: true`, under which two
+tall units of a line may differ in height by 1.6 times (an `n` beside a `2`; a stroke font's capitals need 1.35), and a
+word then **grows** by the pieces grouping left beside it — a `°`, a comma, the `Z` of `Z=50` whose `=` the rest of the
+word took — while they sit in its band, within a letter gap, and touch no line work. The word's height there is its
+tallest glyph's: a median over its members counted the `=` bars and the full stop, and a W was then too wide to join.
+
+### 11.2 The glyphs (R-im9-2) — `GlyphTemplates.cs`
+
+Two **classes**. Designator glyphs are all the silkscreen reader consults — `BuiltIn` and `ForUser` hold nothing else, and
+`StrokeGlyphTests` holds that. Value glyphs — the font's own lower case and `. / = ° µ Ω ( ) ,` (one copy of the font:
+`resources/stroke-font/`), plus `resources/silkscreen-glyphs/hershey-value-variants.txt`'s θ (the Simplex 0 with a bar)
+and a typeset Ω (the Simplex Ω 1.4 times as wide: a sans-serif Ω's skeleton loses its feet and read as O at 0.078
+against 0.096) — are added only by `GlyphTemplates.Text` / `ForUserText`. A taught glyph carries its class in
+`taught.json` (`"class": "value"`; a designator glyph is written with none, as AS-10 wrote it).
+
+### 11.3 The grammar (R-im9-3) — `ValueGrammar.cs`
+
+A word is one of: a **designator** (`^[A-Z]{1,3}[1-9][0-9]{0,3}$` — AS-10's no-leading-zero rule); a **value**, read by
+`BomTablePaste.TryReadValueOfAnyKind` — `TryReadValue` for no kind, then for each kind that could supply a unit left
+off, returning every dimension that did (`10p` is a capacitance or an inductance; the part decides) — or `DNP`/`NC`
+through `IsNotFittedMarker`; a **line set** (`Z`, `Z0`, `E`, `θ`, `L`, `W`, `F`, comma or space separated, each key
+once; `Z=50G` is refused — an impedance never leaves its Ω off); or a **name**, `[A-Za-z][A-Za-z0-9_+-]{1,15}`, flagged
+when it is a port word. **A name is at least two characters**: one glyph gives the grammar nothing to check, and a
+stray mark is always near some letter.
+
+Each glyph offers the characters within AS-10's runner-up margin of its best (`best / 0.8`) or within 0.02 of it,
+whichever is wider, at most four — a clean typeset glyph at 0.03 would otherwise offer nothing past 0.0375, and IBM Plex
+Sans's 5 and S, 0 and O, θ and 8 stand 0.01–0.02 apart; a beam of
+512 combinations, cheapest first, is parsed; the best **rank** wins — designator, port word, value, line set, other name
+— then a known designator prefix, then the total distance. The rank is why `IN` reads as the port word and not as
+`1N`, a 1 nF value: an I and a flagless 1 are one bar. A designator keeps AS-10's rule: no letter where a digit fits
+better, and a digit where a letter fits better only after a known prefix.
+
+**Unread** is a word with no grammatical reading, a glyph farther than 0.2 cap heights from every template, or a mean
+over 0.09. The mean is the line between text and scrawl: typeset DejaVu glyphs read at 0.02–0.07 (a W at 0.13), the
+pieces of a random scrawl at 0.07–0.2, each near some letter — a ⊠ is a fair B at 0.055 and a filled scratch a t, which
+is why the gate's scribble is a seeded random scrawl.
+
+### 11.4 Association, teaching, the report (R-im9-4 … R-im9-7) — `LabelAssociation.cs`
+
+Names first: a word IM-7 put at a wire end (`NetLabel`, `SupplyMark`) names that node, whatever else it reads as. Then
+AS-10's `RefdesAssociation.Assign` (pixels carried in sixteenths), once per class: designators to every symbol but a
+ground; values to R, L, C and `?`, then checked — a value whose dimensions do not include the symbol's is a
+`KindMismatch`, reported and not attached (`?` takes any value: the value is evidence of what it is); line sets to lines
+and stubs. A designator whose prefix plainly names another of R, L, C, D, Q than the drawing is kept, flagged, and the
+drawing's confidence drops a step. A symbol with no designator gets the next free one of its kind's prefix (`?` → C, as
+the artwork series generates it). `ImageText.Lesson(word, corrected)` is what a corrected picture row teaches: a
+designator teaches designator glyphs, anything else value glyphs; IM-10's parts table calls it with
+`GlyphTemplates.Learn`'s class-carrying overload. `ImageTextReport` counts words by class, unread (with boxes), kind
+mismatches, contradictions, unattached words and generated designators.
+
+### 11.5 A second face: IBM Plex Sans (shipped), the hard cases
+
+Checked once by hand (not a gate) at the 14 px cap height of the gate words — `l0pF`, `1kΩ`, `2n2`, `Z=50Ω, E=90°`,
+`0.5 pF`, `L=3.2mm W=0.3mm`, `θ=45°`, `IN`, `RFIN`, `C12`, `4R7`, `DNP`. **Regular** reads all twelve. **Condensed**
+reads eight and leaves four unread (its Ω reads as O), none wrong. **Bold** at this size is past the matcher: its
+strokes are 4 px, 0.29 of the cap height, so a `=` closes up and an `N`'s diagonal collapses — seven read, two unread,
+and three are WRONG (`IN` → the value `1H`, `RFIN` → `RF1H`, `DNP` → `QmP`), each under the 0.09 mean.
+
+**So heavy type is refused** (owner, 2026-10-10). `TextRegions` measures each word's own stroke width the way the
+picture's w is measured (`InkWidth`: the mode of the shorter ink run through each skeleton pixel), and the reader
+divides it by the word's cap height (the median of its glyph heights at least half the tallest, so `=` bars and full
+stops do not count). Over `StrokeTextReader.MaxWeight` = 0.22 the word is unread with `TooHeavy`, and the report says
+how many. Measured across DejaVu Sans and Plex at 14 and 24 px caps: regular faces 0.12–0.20, Bold 0.23–0.29. The run
+width is whole pixels, so at a 14 px cap the steps are 0.14 / 0.21 / 0.29 — Plex Medium and SemiBold mostly land on
+0.21 and are read; that is where the remaining wrong readings are (SemiBold `0.6 pF`, `1H`; Medium at 24 px `Z=60Ω`;
+Condensed at 24 px `fN` for `IN`), and the next thing to look at if a field picture shows it. The same survey caught
+`Z=5GΩ`: an impedance is now refused past a kΩ.

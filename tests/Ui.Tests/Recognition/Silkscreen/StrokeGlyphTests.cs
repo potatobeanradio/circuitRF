@@ -4,6 +4,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using CircuitRF.Design.Layout.Recognition.Silkscreen;
 using Xunit;
@@ -74,5 +75,31 @@ public sealed class StrokeGlyphTests
 
         Assert.Equal(["C6"], lines.Select(l => l.Refdes));
         Assert.Equal(logo.Count, unread);
+    }
+
+    /// <summary>brief-img-9 R-im9-2: the value glyphs are a class of their own. The silkscreen reader's set holds
+    /// the designator characters and AS-10's three variants and nothing else, and a value glyph taught from a picture
+    /// comes back in the value class, which <see cref="GlyphTemplates.ForUser"/> leaves out.</summary>
+    [Fact]
+    public void TheSilkscreenSet_IsUnchangedByTheValueGlyphs()
+    {
+        var silk = GlyphTemplates.BuiltIn.All;
+        Assert.All(silk, t => Assert.Equal(GlyphClass.Designator, t.Class));
+        Assert.Equal(GlyphTemplates.DesignatorCharacters.Length + 3, silk.Count);
+        Assert.Equal(GlyphTemplates.DesignatorCharacters.Order(), silk.Select(t => t.Char).Distinct().Order());
+
+        var text = GlyphTemplates.Text.All;
+        Assert.Equal(silk, text.Take(silk.Count));
+        Assert.All(text.Skip(silk.Count), t => Assert.Equal(GlyphClass.Value, t.Class));
+        Assert.Contains(text, t => t.Char == 'θ');
+
+        string dir = Path.Combine(Path.GetTempPath(), "crf-glyphs-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var glyph = text.First(t => t.Char == 'p').Glyph;
+            Assert.Equal(1, GlyphTemplates.Learn(dir, [('p', glyph, GlyphClass.Value)]));
+            Assert.Equal(GlyphClass.Value, Assert.Single(GlyphTemplates.ReadTaught(dir)).Class);
+        }
+        finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
     }
 }

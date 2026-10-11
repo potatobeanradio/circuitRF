@@ -19175,3 +19175,27 @@ Found by IM-8's symbol gates, in IM-7 code (`docs/design/image-to-circuit.md` §
   snap any run rising under a pixel — turned a terminal circle's flat bottom into wire; the square-corner condition is
   what separates the two.
 
+
+## Reading a schematic picture's typeset words with the silkscreen matcher (2026-10-10, brief-img-9)
+
+AS-10's stroke-glyph reader was built for a pen-drawn stroke font; typeset sans-serif text skeletonised from pixels
+broke five of its assumptions, each found by IM-9's gate words (`docs/design/image-to-circuit.md` §11 has the rules):
+- **`RestoreCorners` misfires on typeset glyphs.** It moved a typeset F's top-left corner outside the glyph, and the F
+  read as a T at 0.08. Picture words skip it.
+- **`Groups` refused mixed case.** Its 1.35 height ratio left the `n` of `2n2` joined to nothing; `typeset: true` uses
+  1.6. And a `=` between `Z` and `50` stretched the tall-to-tall gap past the letter gap, so `Z` was dropped —
+  `TextRegions.Grow` now joins leftover pieces in a word's band. Its height must be the tallest glyph's: a median over
+  members counted the `=` bars and a full stop, and W was then "too wide" to join.
+- **A full stop has no skeleton edge**, so `3.2` read as `32`; a glyph box with no skeleton gets a dot stroke.
+- **Touching glyphs** (`kΩ` at 14 px) are one component; the reader tries cutting a poor wide glyph and keeps the cut
+  only when the line reads better for it.
+- **The mean distance is lenient by design** — it is what lets a 3 sit on an 8 — so on pictures random scrawl reads as
+  letters at 0.07–0.2 and a ⊠ as B at 0.055. A word's mean must be ≤ 0.09 and a name at least two characters.
+- **Found later the same day with a second shipped face, IBM Plex Sans:** a relative runner-up margin offers nothing
+  near a very clean glyph (0.03 → 0.0375), so 5/S, 0/O, θ/8 never reached the grammar — the reach is now at least
+  +0.02. And a one-pixel thinning kink at the foot of Plex's I moved the centred glyph 0.08 off centre (read as t);
+  free-end kinks are trimmed, under limits each set by a regression (junction ends split an N; a pen-scaled trim made a
+  bold 2 a 7). Bold at a 14 px cap height still yields three wrong readings — design note §11.5.
+- **Heavy type is refused, not misread:** a word whose own stroke width exceeds 0.22 of its cap height is unread and
+  counted as too heavy (`StrokeTextReader.MaxWeight`). Medium/SemiBold weights at 0.21 still slip through with
+  occasional wrong readings — §11.5 lists them.

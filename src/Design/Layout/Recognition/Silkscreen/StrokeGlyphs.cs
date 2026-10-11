@@ -355,9 +355,14 @@ public static class StrokeGlyphs
     /// within <see cref="MaxLetterGap"/> along it are one line. A short unit — a <c>-</c>, a <c>_</c> — joins a
     /// line whose band it sits in. Each line is offered whole and split at its widest gap, so two designators
     /// printed side by side are read as two.
+    ///
+    /// <para><paramref name="typeset"/> is a picture's typeset text (brief-img-9-text-and-values.md R-im9-1), whose
+    /// lower case stands between x-height and ascender: tall units of one line may then differ in height by 1.6 times
+    /// (an <c>n</c> beside a <c>2</c>, a <c>p</c> beside an <c>n</c>) rather than a stroke font's 1.35.</para>
     /// </summary>
-    internal static List<List<int>> Groups(List<Unit> units, bool vertical)
+    internal static List<List<int>> Groups(List<Unit> units, bool vertical, bool typeset = false)
     {
+        double ratio = typeset ? 1.6 : 1.35;
         var f = units.Select(u => u.Frame(vertical)).ToArray();
         double H(int i) => f[i].PMax - f[i].PMin;
         double A(int i) => f[i].AMax - f[i].AMin;
@@ -376,7 +381,7 @@ public static class StrokeGlyphs
             {
                 int j = tall[b];
                 double hi = Math.Max(H(i), H(j)), lo = Math.Min(H(i), H(j));
-                if (hi > 1.35 * lo) continue;
+                if (hi > ratio * lo) continue;
                 double overlap = Math.Min(f[i].PMax, f[j].PMax) - Math.Max(f[i].PMin, f[j].PMin);
                 if (overlap < 0.7 * lo) continue;
                 double gap = f[j].AMin - f[i].AMax;
@@ -499,10 +504,51 @@ public static class StrokeGlyphs
             chosen.Orientation, [.. members.SelectMany(u => units[u].Strokes).Order()]) { Uncertain = uncertain };
     }
 
+    /// <summary>
+    /// One word of a schematic picture (brief-img-9-text-and-values.md R-im9-1): <paramref name="strokes"/> are all of
+    /// it, already grouped, so they are split into glyphs, normalised and matched exactly as a silkscreen line's are.
+    /// No distance limit and no designator rule: the caller's grammar decides what the glyphs say. Never mirrored — a
+    /// picture is not seen from behind — and a level word is read at 0° only: a schematic is never drawn upside down,
+    /// and its turned words read up the page (90°) or down it (270°). Null when no glyph stands full height.
+    /// </summary>
+    /// <returns>The glyphs in reading order, each one's extent along the line (cap heights, from the word's start), the
+    /// orientation read and the cap height, in the strokes' units.</returns>
+    internal static (IReadOnlyList<GlyphReading> Glyphs, IReadOnlyList<(double Left, double Right)> Extents,
+                     TextOrientation Orientation, double Height)?
+        ReadWord(IReadOnlyList<SilkStroke> strokes, GlyphTemplates templates, bool vertical)
+    {
+        var units = Units(strokes);
+        if (units.Count == 0) return null;
+        var members = Enumerable.Range(0, units.Count).ToList();
+        var f = members.Select(i => units[i].Frame(vertical)).ToList();
+        var heights = f.Select(x => x.PMax - x.PMin).Where(h => h > 0).OrderBy(h => h).ToList();
+        if (heights.Count == 0) return null;
+        double height = heights[heights.Count / 2];
+
+        (List<GlyphReading> Glyphs, List<(double, double)> Extents, double Score, TextOrientation Orientation)? best = null;
+        foreach (var (map, orientation) in Frames(vertical))
+        {
+            if (orientation.Mirrored || (!vertical && orientation.Rotation != 0)) continue;
+            var glyphs = Glyphs(strokes, units, members, map, height, out var extents);
+            if (glyphs.Count == 0) continue;
+            var read = glyphs.Select(g => new GlyphReading(g, templates.Match(g))).ToList();
+            double score = read.Sum(r => r.Best.Distance);
+            if (best is null || score < best.Value.Score) best = (read, extents, score, orientation);
+        }
+        return best is { } b ? (b.Glyphs, b.Extents, b.Orientation, height) : null;
+    }
+
     /// <summary>The members' strokes in one frame, split into glyphs along the line and normalised to it.</summary>
     private static List<Glyph> Glyphs(IReadOnlyList<SilkStroke> strokes, List<Unit> units, List<int> members,
-                                      Func<double, double, (double, double)> map, double height)
+                                      Func<double, double, (double, double)> map, double height) =>
+        Glyphs(strokes, units, members, map, height, out _);
+
+    /// <param name="extents">Each glyph's extent along the line, in cap heights from the first glyph's start.</param>
+    private static List<Glyph> Glyphs(IReadOnlyList<SilkStroke> strokes, List<Unit> units, List<int> members,
+                                      Func<double, double, (double, double)> map, double height,
+                                      out List<(double Left, double Right)> extents)
     {
+        extents = [];
         var mapped = members.Select(u => units[u].Strokes.Select(s =>
         {
             var xy = strokes[s].Xy;
@@ -531,9 +577,11 @@ public static class StrokeGlyphs
         double baseline = Median(full.Select(c => c.Min(i => boxes[i].MinY)));
 
         var glyphs = new List<Glyph>(clusters.Count);
+        double start = boxes[order[0]].MinX;
         foreach (var c in clusters)
         {
             double cx = (c.Min(i => boxes[i].MinX) + c.Max(i => boxes[i].MaxX)) / 2;
+            extents.Add(((c.Min(i => boxes[i].MinX) - start) / height, (c.Max(i => boxes[i].MaxX) - start) / height));
             var norm = c.SelectMany(i => mapped[i]).Select(s =>
             {
                 var n = new double[s.Length];

@@ -637,6 +637,34 @@ public static class BomTablePaste
         return double.IsFinite(si);
     }
 
+    /// <summary>
+    /// A value read before anyone knows what part it belongs to — a word on a schematic picture
+    /// (brief-img-9-text-and-values.md R-im9-3). Where the cell states its unit (<c>10pF</c>, <c>4R7</c>,
+    /// <c>1kΩ</c>) that is its one dimension. Where it leaves it off (<c>10p</c>, <c>2n2</c>, <c>1k</c>) it is read as
+    /// <see cref="TryReadValue"/> reads it for each kind that could supply the unit, and <paramref name="dims"/> lists
+    /// every dimension one did — the same number each time, since only the unit's letter differs.
+    /// </summary>
+    internal static bool TryReadValueOfAnyKind(string? cell, out double si, out IReadOnlyList<UnitDimension> dims)
+    {
+        dims = [];
+        if (TryReadValue(cell, null, false, out si, out var dim))
+        {
+            dims = [dim];
+            return true;
+        }
+        var found = new List<UnitDimension>();
+        double first = 0;
+        foreach (var kind in new[] { SymbolKind.Resistor, SymbolKind.Capacitor, SymbolKind.Inductor })
+            if (TryReadValue(cell, kind, false, out double v, out var d))
+            {
+                if (found.Count == 0) first = v;
+                found.Add(d);
+            }
+        si = first;
+        dims = found;
+        return found.Count > 0;
+    }
+
     /// <summary>The SI multiplier of a unit's prefix, as <see cref="ParseUnit"/> spells them.</summary>
     private static double PrefixScale(string prefix) => prefix switch
     {

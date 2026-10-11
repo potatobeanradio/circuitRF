@@ -1,0 +1,10 @@
+# Value glyphs the Hershey Roman Simplex set lacks, for reading a schematic picture's words
+# (brief-img-9-text-and-values.md R-im9-2). Each is built from the strokes of the Hershey fonts themselves, so the
+# licence and acknowledgements in ../stroke-font/LICENSE-hershey.txt apply to it as well. Same format as
+# ../stroke-font/hershey-roman-simplex.txt. Matching templates only: nothing is drawn with them, and the silkscreen
+# reader never consults them.
+#
+# θ  the Simplex 0's oval, crossed at its middle by a bar the width of the oval.
+# Ω  the Simplex Ω drawn 1.4 times as wide, as a typeset face draws it (its skeleton is nearer an O than the Simplex Ω).
+U+03B8 -10 10 -1,-12 -4,-11 -6,-8 -7,-3 -7,0 -6,5 -4,8 -1,9 1,9 4,8 6,5 7,0 7,-3 6,-8 4,-11 1,-12 -1,-12 | -7,-2 7,-2
+U+03A9 -12 12 -10,9 -6,9 -9,3 -10,-1 -10,-5 -9,-8 -6,-11 -2,-12 2,-12 6,-11 9,-8 10,-5 10,-1 9,3 6,9 10,9
