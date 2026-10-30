@@ -83,8 +83,9 @@ every plot and the terms on show take the palette's first colours. Past six term
 draws no legend: sixteen entries cover the curves they name, and the tick boxes carry the colours.
 
 The window opens on the Smith chart and magnitude. Polar and phase are off until clicked. Every
-toolbar button can be off, and then the pane is empty. One plot fills the pane. Two of the same
-shape sit side by side; two of different shapes stack, the round chart on top. All four are Smith
+toolbar button can be off, and then the pane is empty. One plot fills the pane. Smith and polar
+sit side by side. Magnitude and phase stack, magnitude on top. Two of different shapes stack, the
+round chart on top. All four are Smith
 and polar across the top, magnitude and phase across the bottom. The polar chart draws transmissions
 only.
 Strokes, grid lines and axis figures are held at one weight, so a plot that fills the pane is not

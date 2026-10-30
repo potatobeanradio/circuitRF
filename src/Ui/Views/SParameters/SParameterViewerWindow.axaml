@@ -275,8 +275,9 @@
                         </StackPanel>
                     </Button>
                     <Grid IsVisible="{Binding HasFile}" RowDefinitions="Auto,*">
-                        <!-- One plot is centred. Smith with one rectangular plot stacks them. All three put the
-                             Smith chart on top and magnitude and phase side by side below. None on leaves the pane empty. -->
+                        <!-- One plot is centred. Magnitude and phase alone stack. A round chart with one
+                             rectangular plot stacks them. All three put the round chart on top and magnitude
+                             and phase side by side below. None on leaves the pane empty. -->
                         <StackPanel Orientation="Horizontal" Margin="2,0,0,4">
                             <ToggleButton Classes="plotpick" IsChecked="{Binding ShowSmith, Mode=TwoWay}" ToolTip.Tip="Smith chart — the reflections">
                                 <ddc:PlotTypeGlyphControl Kind="Smith" Width="16" Height="16"

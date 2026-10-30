@@ -6,10 +6,10 @@ using CircuitRF.Ui.Controls;
 namespace CircuitRF.Ui.Views.SParameters;
 
 /// <summary>
-/// Lays the viewer's four plots out for whichever are on. One plot fills the pane. Two of the same
-/// shape — both round (Smith and polar) or both rectangular (magnitude and phase) — sit side by side.
-/// Two of different shapes stack, the round chart on top. All four are
-/// Smith and polar across the top, magnitude and phase across the bottom.
+/// Lays the viewer's four plots out for whichever are on. One plot fills the pane. Smith and polar
+/// sit side by side. Magnitude and phase, with neither round chart, stack, magnitude on top. Two of
+/// different shapes stack, the round chart on top. All four are Smith and polar across the top,
+/// magnitude and phase across the bottom.
 /// </summary>
 public sealed class SParameterPlotLayout : Panel
 {
@@ -53,6 +53,8 @@ public sealed class SParameterPlotLayout : Panel
         int rect  = (magnitude ? 1 : 0) + (phase ? 1 : 0);
         if (round + rect == 0) return default;
         if (round + rect == 1) return Alone(smith, polar, magnitude, phase, w, h);
+        // Magnitude and phase alone are one column. Beside a round chart they stay one row.
+        if (round == 0 && magnitude && phase) return StackedRects(w, h);
 
         double row = Math.Max(0, (h - (round > 0 && rect > 0 ? Gap : 0)) / (round > 0 && rect > 0 ? 2 : 1));
         double yRect = round > 0 && rect > 0 ? row + Gap : 0;
@@ -79,6 +81,13 @@ public sealed class SParameterPlotLayout : Panel
         var size = AspectRatioPanel.Fit(new Size(w, h), LoneRectRatio);
         var box = new Rect((w - size.Width) / 2, (h - size.Height) / 2, size.Width, size.Height);
         return magnitude ? new Slots(default, default, box, default) : new Slots(default, default, default, box);
+    }
+
+    /// <summary>Magnitude above phase, each the full width of the pane.</summary>
+    private static Slots StackedRects(double w, double h)
+    {
+        double row = Math.Max(0, (h - Gap) / 2);
+        return new Slots(default, default, new Rect(0, 0, w, row), new Rect(0, row + Gap, w, row));
     }
 
     /// <summary>One or two plots of one shape across a row. A single one takes the whole row.</summary>

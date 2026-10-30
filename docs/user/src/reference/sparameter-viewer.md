@@ -69,7 +69,8 @@ or off, and with none of them on the pane is empty.
 | On | The pane shows |
 |---|---|
 | One | That plot, filling the pane. |
-| Two of the same shape | Side by side: Smith with polar, or magnitude with phase. |
+| Smith and polar | Side by side. |
+| Magnitude and phase | Stacked, magnitude above phase. |
 | Two of different shapes | Stacked, the round chart on top and the rectangular plot below. |
 | All four | Smith and polar across the top, magnitude and phase across the bottom. |
 

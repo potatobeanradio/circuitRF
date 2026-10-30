@@ -253,9 +253,12 @@ public sealed class SParameterViewerTests : IDisposable
 
         var pair = SParameterPlotLayout.SlotsFor(smith: false, polar: false, magnitude: true, phase: true, 800, 500);
         Assert.Equal(0, pair.Smith.Width);
-        Assert.Equal(pair.Magnitude.Top, pair.Phase.Top);
-        Assert.Equal(500, pair.Magnitude.Height);
-        Assert.True(pair.Phase.Left >= pair.Magnitude.Right + SParameterPlotLayout.Gap - 0.1);
+        Assert.Equal(0, pair.Polar.Width);
+        Assert.Equal(0, pair.Magnitude.Left);
+        Assert.Equal(800, pair.Magnitude.Width);
+        Assert.Equal(800, pair.Phase.Width);
+        Assert.True(pair.Phase.Top >= pair.Magnitude.Bottom + SParameterPlotLayout.Gap - 0.1);
+        Assert.Equal(pair.Magnitude.Height, pair.Phase.Height);
 
         var rounds = SParameterPlotLayout.SlotsFor(smith: true, polar: true, magnitude: false, phase: false, 800, 500);
         Assert.Equal(rounds.Smith.Top, rounds.Polar.Top);
