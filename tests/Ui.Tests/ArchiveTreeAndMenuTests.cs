@@ -170,12 +170,27 @@ public sealed class ArchiveTreeAndMenuTests
     {
         // "No workspace open" is the only thing on the panel to right-click at that point, so the
         // menu must not be hidden wholesale on !HasWorkspace the way it used to be.
+        // Since 2026-10-31 the header and the empty tree area offer ONE menu with nothing open, built
+        // once in code: the header swaps it in for its own items when it opens.
         var xaml = ReadSource("src/Ui/Views/ProjectTree/ProjectTreeView.axaml");
+        var code = ReadSource("src/Ui/Views/ProjectTree/ProjectTreeView.BlankMenu.cs");
 
         Assert.DoesNotContain("<ContextMenu IsVisible=\"{Binding HasWorkspace}\">", xaml);
-        Assert.Contains("Header=\"Open…\" Command=\"{Binding OpenWorkspaceCommand}\"", xaml);
-        Assert.Contains("Header=\"Unarchive Workspace…\" Command=\"{Binding UnarchiveWorkspaceCommand}\"", xaml);
-        Assert.Contains("IsVisible=\"{Binding !HasWorkspace}\"", xaml);
+        Assert.Contains("<ContextMenu x:Name=\"HeaderMenu\" Opening=\"OnHeaderMenuOpening\">", xaml);
+        Assert.Contains("? NoWorkspaceMenuItems(tool, ws)", code);
+        Assert.Contains("menu.ItemsSource = NoWorkspaceMenuItems(tool, ws);", code);
+
+        var list = code[code.IndexOf("internal List<object> NoWorkspaceMenuItems", StringComparison.Ordinal)..];
+        list = list[..list.IndexOf("\n    }", StringComparison.Ordinal)];
+        string[] order = ["\"New _Workspace…\"", "new Separator()", "\"Open _Workspace…\"",
+                          "\"Open Workspace in _New Window…\"", "\"_Unarchive Workspace…\""];
+        int at = -1;
+        foreach (var item in order)
+        {
+            int next = list.IndexOf(item, StringComparison.Ordinal);
+            Assert.True(next > at, $"{item} is missing or out of order");
+            at = next;
+        }
     }
 
     [Fact]

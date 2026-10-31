@@ -568,7 +568,7 @@ public sealed class SParameterViewerTests : IDisposable
 
         string? revealed = null, previewed = null;
         editor.RevealFileAsync = p => { revealed = p; return System.Threading.Tasks.Task.CompletedTask; };
-        editor.OpenSnpViewerRequested += p => previewed = p;
+        editor.OpenSnpViewerRequested += (p, _) => previewed = p;
 
         await editor.ShowSnpFileCommand.ExecuteAsync(null);
         Assert.Equal(Path.GetFullPath(file), revealed);
@@ -576,5 +576,50 @@ public sealed class SParameterViewerTests : IDisposable
 
         editor.PreviewSnpFileCommand.Execute(null);
         Assert.Equal(Path.GetFullPath(file), previewed);
+    }
+    /// <summary>
+    /// A Touchstone file dropped on a placed SnP's Preview viewer becomes that component's File and NumPorts —
+    /// one edit on the SCHEMATIC's undo stack, so it is still undone to the old reference after the viewer is
+    /// gone. A file that does not read changes nothing, and a drop on a viewer opened any other way only shows it.
+    /// </summary>
+    [Fact]
+    public async System.Threading.Tasks.Task AFileDroppedOnAPreview_BecomesTheComponentsFile_AndUndoRestoresTheOldOne()
+    {
+        string oldFile = Write(2, Uniform(1e9, 0.1e9, 3));
+        string newFile = Write(3, Uniform(1e9, 0.1e9, 3), "other.s3p");
+        var comp = new EditableComponent { InstanceName = "S1", Symbol = SymbolKind.Snp };
+        foreach (var dp in ComponentTypeRegistry.DefaultParameters(SymbolKind.Snp, 2))
+            comp.Parameters.Add(new EditableParameter { Name = dp.Name, Expression = dp.Expression });
+        comp.Parameters.First(p => p.Name == "File").Expression = oldFile;
+        var model = new SchematicEditModel();
+        model.Components.Add(comp);
+        var schematic = new CircuitRF.Ui.ViewModels.SchematicViewModel(model);
+        var editor = new CircuitRF.Ui.ViewModels.ParameterEditorViewModel();
+        editor.SetTargetDirect(schematic, comp, showClose: false);
+
+        Func<string, string?>? link = null;
+        editor.OpenSnpViewerRequested += (_, set) => link = set;
+        editor.PreviewSnpFileCommand.Execute(null);
+        Assert.NotNull(link);
+
+        string broken = Path.Combine(_dir, "broken.s2p");
+        File.WriteAllText(broken, "not touchstone");
+        var viewer = new SParameterViewerViewModel { SetComponentFile = link };
+        await viewer.DropFileAsync(broken);
+        Assert.Equal(oldFile, comp.Parameters.First(p => p.Name == "File").Expression);
+
+        await viewer.DropFileAsync(newFile);
+        Assert.Equal(Path.GetFullPath(newFile), viewer.FilePath);
+        Assert.Equal(newFile, comp.Parameters.First(p => p.Name == "File").Expression);
+        Assert.Equal("3", comp.Parameters.First(p => p.Name == "NumPorts").Expression);
+        Assert.Contains("S1 now uses other.s3p", viewer.Status, StringComparison.Ordinal);
+
+        schematic.UndoRedo.Undo();
+        Assert.Equal(oldFile, comp.Parameters.First(p => p.Name == "File").Expression);
+
+        var standalone = new SParameterViewerViewModel();
+        await standalone.DropFileAsync(newFile);
+        Assert.Equal(Path.GetFullPath(newFile), standalone.FilePath);
+        Assert.Equal(oldFile, comp.Parameters.First(p => p.Name == "File").Expression);
     }
 }

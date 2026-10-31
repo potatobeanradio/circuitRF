@@ -17,6 +17,7 @@
 // handler cancels on that — so this menu opens only over genuinely empty space.
 
 using System.Collections.Generic;
+using System.Linq;
 using System.Windows.Input;
 using Avalonia;
 using Avalonia.Controls;
@@ -121,11 +122,22 @@ public partial class ProjectTreeView
             e.Cancel = true;
             return;
         }
+        menu.ItemsSource = NoWorkspaceMenuItems(tool, ws);
+    }
 
-        // File ▸'s own commands, handed THIS panel's window as the dialog owner (see the header).
+    /// <summary>
+    /// The menu offered wherever the panel is right-clicked with NO workspace open — the empty tree
+    /// area and the "No workspace open" header alike. ONE list, built here, so the two cannot drift
+    /// apart: they used to be two hand-written menus offering different things (the header lacked New
+    /// Workspace… and Open Workspace in New Window…, the area lacked Unarchive).
+    /// </summary>
+    /// <remarks>File ▸'s own commands, handed THIS panel's window as the dialog owner (see the header).
+    /// Built fresh on each open: a MenuItem can have only one parent, and two menus share the list.</remarks>
+    internal List<object> NoWorkspaceMenuItems(ProjectTreeTool tool, WorkspaceViewModel ws)
+    {
         var owner = TopLevel.GetTopLevel(this) as Window;
-        menu.ItemsSource = new List<object>
-        {
+        return
+        [
             new MenuItem
             {
                 Header = "New _Workspace…", Command = ws.NewWorkspaceCommand, CommandParameter = owner,
@@ -142,7 +154,30 @@ public partial class ProjectTreeView
                 Header = "Open Workspace in _New Window…", Command = ws.OpenWorkspaceInNewWindowCommand, CommandParameter = owner,
                 Icon   = new MaterialIcon { Kind = MaterialIconKind.FolderOpenOutline, Width = 14, Height = 14 },
             },
-        };
+            new MenuItem
+            {
+                Header = "_Unarchive Workspace…", Command = tool.UnarchiveWorkspaceCommand,
+                Icon   = new MaterialIcon { Kind = MaterialIconKind.ZipBoxOutline, Width = 14, Height = 14 },
+            },
+        ];
+    }
+
+    /// <summary>The header's XAML items — the open-workspace set — captured the first time the menu opens.</summary>
+    private List<object>? _headerWorkspaceItems;
+
+    /// <summary>
+    /// The workspace-name header's menu: its own XAML items with a workspace open, and
+    /// <see cref="NoWorkspaceMenuItems"/> — the empty area's menu, exactly — with none.
+    /// </summary>
+    private void OnHeaderMenuOpening(object? sender, System.ComponentModel.CancelEventArgs e)
+    {
+        if (sender is not ContextMenu menu || DataContext is not ProjectTreeTool tool) return;
+        _headerWorkspaceItems ??= [.. menu.Items.OfType<object>()];
+        menu.Items.Clear();
+        IEnumerable<object> items = !tool.HasWorkspace && tool.Actions is WorkspaceViewModel ws
+            ? NoWorkspaceMenuItems(tool, ws)
+            : _headerWorkspaceItems;
+        foreach (var item in items) menu.Items.Add(item);
     }
 
     private void OnBlankMenuOpening(object? sender, System.ComponentModel.CancelEventArgs e)

@@ -148,6 +148,24 @@
                                  FontWeight="SemiBold"
                                  Foreground="{DynamicResource SystemBaseMediumColor}"/>
 
+                            <!-- ── EVERY ROW IS ONE TEXT LINE TALL, WHATEVER IT HOSTS ────────────────
+                                 An InlineUIContainer's control is laid out with its whole height
+                                 (margin included) ABOVE the text baseline, and BaselineAlignment
+                                 does not change that — so any control taller than the font's
+                                 ascent (~11.6 px at 12 px) made its own row taller than a plain
+                                 one: the file link by 3 px, the bar's counter by 3, the expand
+                                 toggle by 4 and the Relaunch button by 8, with the row's text
+                                 pushed down below the button's centre. Measured headlessly with
+                                 UiSnapshot's messages mode, which prints every row's height.
+
+                                 The fix is a SYMMETRIC margin of (4.35 - H/2) on each hosted
+                                 control of height H: its layout height becomes ~9 px, under the
+                                 ascent, so the line keeps its plain height; and its visible centre
+                                 lands 4.35 px above the baseline, which is the middle of the cap
+                                 height — the text's own centre line. The controls are also held
+                                 to 16 px so they fit inside a 17 px row instead of overlapping
+                                 the rows either side. A control added here needs the same pair:
+                                 a fixed Height and the margin that goes with it. -->
                             <!-- Progress bar for a LIVE message (a running simulation). Absent — not
                                  merely empty — on every ordinary message, so the log is unchanged
                                  when nothing is running. Indeterminate while the work has no honest
@@ -164,7 +182,7 @@
                             <InlineUIContainer BaselineAlignment="Center">
                                 <ProgressBar Width="100"
                                              Height="6"
-                                             Margin="2,0,2,0"
+                                             Margin="2,1.5,2,1.5"
                                              Minimum="0" Maximum="100"
                                              Value="{Binding ProgressValue}"
                                              IsIndeterminate="{Binding ProgressIndeterminate}"
@@ -179,6 +197,8 @@
                             <InlineUIContainer BaselineAlignment="Center">
                                 <TextBlock Text="{Binding ProgressText}"
                                            IsVisible="{Binding HasProgressText}"
+                                           Height="15"
+                                           Margin="0,-3,0,-3"
                                            MinWidth="118"
                                            TextAlignment="Right"
                                            FontSize="12"
@@ -208,9 +228,11 @@
                                 <Button Content="{Binding ActionLabel}"
                                         IsVisible="{Binding HasAction}"
                                         Click="OnActionButtonClick"
-                                        Padding="8,2"
-                                        Margin="4,0,2,0"
+                                        Padding="8,0"
+                                        Margin="4,-3.5,2,-3.5"
                                         MinHeight="0"
+                                        Height="16"
+                                        VerticalContentAlignment="Center"
                                         FontSize="11"
                                         Cursor="Arrow"
                                         VerticalAlignment="Center"/>
@@ -223,16 +245,20 @@
                                               IsChecked="{Binding IsExpanded}"
                                               IsVisible="{Binding HasItems}"
                                               Padding="4,0"
-                                              Margin="2,0"
+                                              Margin="2,-3.5,2,-3.5"
                                               MinHeight="0"
+                                              Height="16"
+                                              VerticalContentAlignment="Center"
                                               FontSize="11"
                                               Cursor="Arrow"
                                               ToolTip.Tip="Show the places this line is about; double-click one to go there."/>
                             </InlineUIContainer>
 
-                            <InlineUIContainer BaselineAlignment="TextBottom">
+                            <InlineUIContainer BaselineAlignment="Center">
                                 <SelectableTextBlock Text="{Binding FilePath}"
                                                      IsVisible="{Binding FilePath, Converter={StaticResource IsNotNull}}"
+                                                     Height="15"
+                                                     Margin="0,-3,0,-3"
                                                      FontSize="12"
                                                      Foreground="{DynamicResource SystemAccentColor}"
                                                      TextDecorations="Underline"

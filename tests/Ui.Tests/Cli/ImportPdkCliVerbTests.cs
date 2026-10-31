@@ -121,7 +121,7 @@ public sealed class ImportPdkCliVerbTests : IDisposable
     /// declaration as <c>circuitrf import pdk</c> run as a process — compared against what the GUI DOES, not
     /// against the function it is supposed to call.</summary>
     [Fact]
-    public void TheGuisCommandPathWritesWhatTheVerbWrites()
+    public async System.Threading.Tasks.Task TheGuisCommandPathWritesWhatTheVerbWrites()
     {
         string kit = Kit();
         string viaCli = Workspace("ws_cli2"), viaGui = Workspace("ws_gui");
@@ -133,7 +133,7 @@ public sealed class ImportPdkCliVerbTests : IDisposable
         {
             CurrentWorkspacePath = Path.Combine(viaGui, WorkspacePersistence.FileName),
         };
-        var imported = vm.ImportPdkPathAsync(kit).GetAwaiter().GetResult();
+        var imported = await vm.ImportPdkPathAsync(kit);
         Assert.NotNull(imported?.Result.Outcome);
 
         Assert.Equal(RefsOf(viaCli), RefsOf(viaGui));

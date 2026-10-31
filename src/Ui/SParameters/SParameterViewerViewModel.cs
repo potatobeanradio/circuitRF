@@ -458,6 +458,25 @@ public sealed partial class SParameterViewerViewModel : ObservableObject
         await LoadAsync(path);
     }
 
+    /// <summary>
+    /// Set when the viewer was opened as a placed SnP component's Preview: makes a file dropped on the window
+    /// that component's File, as one undoable schematic edit, and returns the sentence saying so (null when
+    /// nothing changed). Null on a viewer opened any other way, where a drop only shows the file.
+    /// </summary>
+    public Func<string, string?>? SetComponentFile { get; set; }
+
+    /// <summary>
+    /// A Touchstone file dropped on the window: shown as Open… would show it, and — on a component's Preview —
+    /// made that component's File. Only a file that READ is handed on: a refused one stays on show with its
+    /// reason, and the component keeps the file it had.
+    /// </summary>
+    public async Task DropFileAsync(string path)
+    {
+        if (IsLoading) return;
+        await LoadAsync(path);
+        if (HasFile && SetComponentFile is { } set && FilePath is { } full && set(full) is { } said) Status = said;
+    }
+
     /// <summary>The file-manager wording for the path link.</summary>
     public string RevealTip => FileReveal.Label;
 

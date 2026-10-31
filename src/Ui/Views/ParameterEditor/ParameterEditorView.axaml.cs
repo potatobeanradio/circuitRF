@@ -168,8 +168,8 @@ public partial class ParameterEditorView : UserControl
     }
 
     /// <summary>Opens the S-Parameter Viewer on the selected SnP component's Touchstone file.</summary>
-    private void OnOpenSnpViewer(string path)
-        => Views.SParameters.SParameterViewerWindow.ShowForFile(path, TopLevel.GetTopLevel(this) as Window);
+    private void OnOpenSnpViewer(string path, Func<string, string?> setComponentFile)
+        => Views.SParameters.SParameterViewerWindow.ShowForFile(path, TopLevel.GetTopLevel(this) as Window, setComponentFile);
 
     private async Task OpenCvEditorDialogAsync()
     {

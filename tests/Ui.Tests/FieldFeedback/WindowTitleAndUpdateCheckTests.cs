@@ -51,7 +51,7 @@ public sealed class WindowTitleAndUpdateCheckTests : IDisposable
     }
 
     [Fact]
-    public void AManualCheckAnswersInADialog_ExceptForTheUsersOwnCancel()
+    public void AManualCheckAnswersInADialog_ExceptForCancelAndAFinishedDownload()
     {
         var upToDate = WorkspaceViewModel.DescribeManualUpdateCheck(
             new CircuitRF.Ui.Updates.CheckResult(CircuitRF.Ui.Updates.CheckOutcome.UpToDate), null);
@@ -61,5 +61,7 @@ public sealed class WindowTitleAndUpdateCheckTests : IDisposable
         Assert.NotNull(WorkspaceViewModel.DescribeManualUpdateCheck(null, "no route to host"));
         Assert.Null(WorkspaceViewModel.DescribeManualUpdateCheck(
             new CircuitRF.Ui.Updates.CheckResult(CircuitRF.Ui.Updates.CheckOutcome.Cancelled), null));
+        Assert.Null(WorkspaceViewModel.DescribeManualUpdateCheck(
+            new CircuitRF.Ui.Updates.CheckResult(CircuitRF.Ui.Updates.CheckOutcome.Staged), null));
     }
 }

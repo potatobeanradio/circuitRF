@@ -128,7 +128,9 @@ public sealed class FieldTests(ITestOutputHelper output)
         var (problem, settings) = PalaceBackendTests.LowerableFor("via");
         problem = problem with { Frequency = new Em3dFrequency(0.4e9, 5e9, 101, Em3dSweepKind.Linear) };
         var low = GmshGeoWriter.Write(problem, settings);
-        string json = PalaceConfigWriter.Write(problem, low.Groups, settings).Json;
+        var config = PalaceConfigWriter.Write(problem, low.Groups, settings);
+        Assert.True(config.Json is not null, config.Refusal);
+        string json = config.Json;
         Assert.DoesNotContain("SaveStep", json);
         var driven = System.Text.Json.Nodes.JsonNode.Parse(json)!["Solver"]!["Driven"]!;
         Assert.Equal(2.7, driven["Save"]!.AsArray().Single()!.GetValue<double>(), 12);

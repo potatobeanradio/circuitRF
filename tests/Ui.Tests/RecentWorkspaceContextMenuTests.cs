@@ -231,4 +231,28 @@ public class RecentWorkspaceContextMenuTests
         Assert.DoesNotContain("SwitchToWorkspace", body, StringComparison.Ordinal);
         Assert.DoesNotContain("PromptSaveBeforeClose", body, StringComparison.Ordinal);
     }
+    /// <summary>
+    /// <b>Copy Path</b> (owner, 2026-10-31): the entry carries the command, the menu binds the entry's
+    /// own one, and what lands on the clipboard is the workspace FOLDER — Copy Path's meaning everywhere
+    /// else, and the folder Reveal shows — not the fixed-name <c>.cws</c> inside it.
+    /// </summary>
+    [Fact]
+    public void TheCopyPathItem_BindsTheEntrysOwnCommand_AndCopiesTheWorkspaceFolder()
+    {
+        var xaml = Read("src", "Ui", "Views", "ProjectTree", "ProjectTreeView.axaml");
+        int at = xaml.IndexOf("Header=\"Copy Path\"", StringComparison.Ordinal);
+        Assert.True(at >= 0);
+        var item = xaml[at..xaml.IndexOf("/>", at, StringComparison.Ordinal)];
+        Assert.Contains("Command=\"{Binding CopyPathCommand}\"", item, StringComparison.Ordinal);
+        Assert.Contains("CommandParameter=\"{Binding Path}\"", item, StringComparison.Ordinal);
+
+        var code = Read("src", "Ui", "ViewModels", "Dock", "ProjectTreeTool.cs");
+        int start = code.IndexOf("private void RefreshRecent()", StringComparison.Ordinal);
+        int stop  = code.IndexOf("private void OpenRecent(", StringComparison.Ordinal);
+        Assert.Contains("CopyPathCommand = CopyRecentPathCommand,", code[start..stop], StringComparison.Ordinal);
+        Assert.Contains("PathClipboard.CopyAsync(cwsPath, full: false)", code, StringComparison.Ordinal);
+
+        string folder = Path.Combine(Path.GetTempPath(), "demo");
+        Assert.Equal(folder, PathClipboard.EnclosingFolder(Path.Combine(folder, ".cws")));
+    }
 }

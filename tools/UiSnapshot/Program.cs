@@ -196,6 +196,7 @@ for (int i = 0; i < args.Length; i++)
         case "--csym" when i + 1 < args.Length: csym = Path.GetFullPath(args[++i]); break;
         case "--pick" when i + 1 < args.Length: csymPick = args[++i]; break;
         case "--dark": dark = true; break;
+        case "--messages": break;
         case "--category" when i + 1 < args.Length: paletteCategory = args[++i]; break;
         case "--search" when i + 1 < args.Length: paletteSearch = args[++i]; break;
         case "--schematic" when i + 1 < args.Length: schematic = Path.GetFullPath(args[++i]); break;
@@ -223,6 +224,13 @@ for (int i = 0; i < args.Length; i++)
             break;
         default: cdd = args[i]; break;
     }
+}
+if (args.Contains("--messages") && output is not null)
+{
+    AppBuilder.Configure<SnapshotApp>().UseSkia()
+        .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
+    if (dark && Application.Current is { } darkApp) darkApp.RequestedThemeVariant = Avalonia.Styling.ThemeVariant.Dark;
+    return ShowMessagesPanel(output, sizeGiven ? width : 700, sizeGiven ? height : 260);
 }
 if (reviewPanel is not null && output is not null)
 {
@@ -596,18 +604,18 @@ var window   = document.Window;
 // A relative source reference resolves against a workspace's results/ folder, which in the application the
 // workspace supplies. Here it is --results, or the .cdd's own folder — where `circuitrf plot --write-cdd` puts
 // a document beside its result.
-string resultsRoot = Path.GetFullPath(results ?? Path.GetDirectoryName(Path.GetFullPath(cdd))!);
+string resultsRoot = Path.GetFullPath(results ?? Path.GetDirectoryName(Path.GetFullPath(cdd!))!);
 window.DataSourceLibrary.ResultsRootProvider = () => resultsRoot;
 window.DataSourceLibrary.RefreshAvailableDataSources();
 // Never block on a Task here: its continuations are posted to this same dispatcher, so GetResult() deadlocks.
-Await(window.LoadAllAsync(Path.GetFullPath(cdd)));
+Await(window.LoadAllAsync(Path.GetFullPath(cdd!)));
 
 var tab = window.ActiveTab ?? throw new InvalidOperationException("the display opened no tab");
 Control content;
 if (view == "canvas")
     content = new PlotCanvasView { DataContext = tab };
 else if (view == "display")
-    content = new DataDisplayView { DataContext = new DataDisplayDocument(Path.GetFileName(cdd), document, cdd) };
+    content = new DataDisplayView { DataContext = new DataDisplayDocument(Path.GetFileName(cdd!), document, cdd) };
 else
 {
     var plots = tab.DataDisplay.Plots;
@@ -798,7 +806,7 @@ foreach (var (kind, arg) in steps)
     }
 }
 
-Capture(output);
+Capture(output!);
 return 0;
 
 // brief-dfr30-3 gate 1 — the layout tool strip's geometry in every state: no tool armed, each tool armed in turn by a real
@@ -1557,6 +1565,44 @@ static void ShowImpedancePanel(LayoutEditorViewModel vm, string path)
     for (int k = 0; k < 4; k++) { Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); window.UpdateLayout(); }
     window.CaptureRenderedFrame()!.Save(path);
     Console.WriteLine($"wrote {path}");
+}
+
+// --messages: the real Messages panel holding one row of each kind — plain text, a file link, a live progress bar, the
+// Relaunch button and an expandable row. Prints each row's height and where its text and its inline control sit, so a
+// row that draws taller than the others, or a control off the text's centre line, is read rather than eyeballed.
+static int ShowMessagesPanel(string path, double w, double h)
+{
+    var tool = new MessagesTool();
+    tool.Post(MessageLevel.Info, "Plain message before");
+    tool.Post(MessageLevel.Info, "Wrote results to", "/tmp/demo/results/SP1.s2p");
+    tool.Post(MessageLevel.Info, "Plain message between");
+    tool.PostAction(MessageLevel.Info, "circuitRF 1.6.3 installed", "Relaunch", () => Task.CompletedTask);
+    tool.Post(MessageLevel.Info, "Plain message after");
+    tool.PostItems(MessageLevel.Warning, "Three places need attention", [new("one"), new("two"), new("three")]);
+    var live = tool.BeginProgress("S-parameter analysis SP1");
+    live.Update("S-parameter analysis SP1", "12 / 51", 24);
+    var window = new Window { Width = w, Height = h, Content = new CircuitRF.Ui.Views.Messages.MessagesView { DataContext = tool } };
+    window.Show();
+    for (int k = 0; k < 6; k++) { Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); window.UpdateLayout(); }
+    foreach (var item in window.GetVisualDescendants().OfType<ListBoxItem>())
+    {
+        var entry = (MessageEntry)item.DataContext!;
+        var row = item.TranslatePoint(default, window) ?? default;
+        var text = item.GetVisualDescendants().OfType<SelectableTextBlock>().First();
+        var textAt = text.TranslatePoint(default, window) ?? default;
+        string inline = "";
+        foreach (var c in item.GetVisualDescendants().OfType<Control>()
+                     .Where(c => c is Button or ProgressBar or (SelectableTextBlock and { Name: null }) && c != text && c.IsEffectivelyVisible))
+        {
+            var at = c.TranslatePoint(default, window) ?? default;
+            inline += $"; {c.GetType().Name} y {at.Y:0.0}..{at.Y + c.Bounds.Height:0.0} (centre {at.Y + c.Bounds.Height / 2:0.0})";
+        }
+        Console.WriteLine($"row '{entry.Text}': y {row.Y:0.0}, height {item.Bounds.Height:0.0}; text y {textAt.Y:0.0} height {text.Bounds.Height:0.0} "
+                        + $"(centre {textAt.Y + text.Bounds.Height / 2:0.0}){inline}");
+    }
+    window.CaptureRenderedFrame()!.Save(path);
+    Console.WriteLine($"wrote {path}");
+    return 0;
 }
 
 // --review-panel: the real Review panel on a seeded layout — no artwork is reviewed, the result is handed in.

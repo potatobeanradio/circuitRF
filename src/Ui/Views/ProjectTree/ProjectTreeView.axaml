@@ -63,11 +63,13 @@
                        Margin="0,0,4,0"
                        TextTrimming="CharacterEllipsis">
                 <!-- The menu itself is always available now: with a workspace open it acts on that
-                     workspace, and with none open it is how one gets opened — the "No workspace
-                     open" text is the only thing on this panel to right-click at that point. Each
-                     item's own IsVisible is what switches between the two sets. -->
+                     workspace (the items below), and with none open it is how one gets opened. That
+                     second set is NOT written here: it is the empty tree area's no-workspace menu,
+                     built once in ProjectTreeView.BlankMenu.cs (NoWorkspaceMenuItems) and put in
+                     place of these by OnHeaderMenuOpening, so the two places a user right-clicks with
+                     nothing open offer the same menu. -->
                 <TextBlock.ContextMenu>
-                    <ContextMenu>
+                    <ContextMenu x:Name="HeaderMenu" Opening="OnHeaderMenuOpening">
                         <MenuItem Header="{Binding RevealLabel}" Command="{Binding RevealWorkspaceCommand}"
                                   IsVisible="{Binding HasWorkspace}">
                             <MenuItem.Icon><mi:MaterialIcon Kind="FolderSearchOutline" Width="14" Height="14"/></MenuItem.Icon>
@@ -89,14 +91,6 @@
                             <MenuItem.Icon><mi:MaterialIcon Kind="FolderRemoveOutline" Width="14" Height="14"/></MenuItem.Icon>
                         </MenuItem>
 
-                        <MenuItem Header="Open…" Command="{Binding OpenWorkspaceCommand}"
-                                  IsVisible="{Binding !HasWorkspace}">
-                            <MenuItem.Icon><mi:MaterialIcon Kind="FolderOpenOutline" Width="14" Height="14"/></MenuItem.Icon>
-                        </MenuItem>
-                        <MenuItem Header="Unarchive Workspace…" Command="{Binding UnarchiveWorkspaceCommand}"
-                                  IsVisible="{Binding !HasWorkspace}">
-                            <MenuItem.Icon><mi:MaterialIcon Kind="ZipBoxOutline" Width="14" Height="14"/></MenuItem.Icon>
-                        </MenuItem>
                     </ContextMenu>
                 </TextBlock.ContextMenu>
             </TextBlock>
@@ -238,6 +232,10 @@
                                                   CommandParameter="{Binding Path}"/>
                                         <MenuItem Header="{Binding RevealLabel}"
                                                   Command="{Binding RevealCommand}"
+                                                  CommandParameter="{Binding Path}"/>
+                                        <!-- The workspace's folder, the one Reveal shows. -->
+                                        <MenuItem Header="Copy Path"
+                                                  Command="{Binding CopyPathCommand}"
                                                   CommandParameter="{Binding Path}"/>
                                         <!-- Separated because this one alone changes something. The two
                                              above act ON the workspace; this forgets the path and the

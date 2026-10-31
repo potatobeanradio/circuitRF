@@ -313,7 +313,7 @@ public sealed class ImageTraceGeometryTests
         var r = ImageTrace.Trace(OutlinedPour());
         Assert.True(r.Ok, r.Refusal);
         Assert.True(r.LineArt);
-        Assert.Empty(r.Shapes.Where(s => s is not BitmapShape));
+        Assert.DoesNotContain(r.Shapes, s => s is not BitmapShape);
     }
 
     /// <summary>Only the copper inside the board outline drawn is read (owner, 2026-10-28), and the scale says how big that

@@ -53,6 +53,17 @@ dotnet run --project tools/UiSnapshot --no-build -- --snp <file.sNp> -o out.png 
 
 The status line prints after the file is read and drawn.
 
+**The Messages panel** opens on one row of each kind — plain text, a file link, the Relaunch button, an
+expandable row and a live progress bar:
+
+```
+dotnet run --project tools/UiSnapshot --no-build -- --messages -o out.png [--dark] [--size WxH]
+```
+
+It prints every row's height, its text's top and centre line, and the same for each control hosted inline in it.
+A row taller than a plain one, or a control whose centre is off its text's, reads straight off that output.
+Default size 700x260.
+
 **The Tuning window** opens on a schematic's ticked Tune rows, the way the shell hosts it:
 
 ```

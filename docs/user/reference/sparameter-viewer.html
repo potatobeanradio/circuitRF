@@ -59,6 +59,8 @@
 own, like the Match Designer and the Signal Designer, and it opens offset a little down and to the
 right of the workspace window. Several may be open; asking for a file that is already on show brings
 that window forward.</p>
+<p>You can also drag a Touchstone file from your file manager onto the viewer. It opens the file in
+that window, just as <strong>Open Touchstone file…</strong> does.</p>
 <p>A Touchstone file in the Workspace opens the same way. <strong>Open in S-Parameter Viewer</strong> is on its
 right-click menu, and double-clicking the file does it too — for a file you imported and for a
 loose <code>.sNp</code> sitting in the workspace folder.</p>
@@ -66,6 +68,10 @@ loose <code>.sNp</code> sitting in the workspace folder.</p>
 and <strong>SnP</strong> are all this one component — has three buttons on its <strong>File</strong> row. <strong>Browse…</strong>
 chooses the file, the folder button shows it in your file manager, and the eye button opens the viewer
 on it. The eye is available once the file is chosen and is there.</p>
+<p>In a viewer opened from the eye button, a Touchstone file dropped on the window also becomes the
+component's <strong>File</strong>, and its port count is set from the file. A file that cannot be read changes
+nothing. The change is an ordinary schematic edit: <strong>Edit › Undo</strong> in the schematic gives
+the component its previous file back, even after the viewer is closed.</p>
 <p>A Data Display's dataset list offers the same <strong>View</strong> on any row whose file is a Touchstone file.</p>
 <h2 id="file">File information</h2>
 <p>The left pane reads the file back to you, which is most of the point of opening it. The path under

@@ -618,8 +618,11 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
     public IRelayCommand PreviewSnpFileCommand      { get; private set; } = null!;
 
     /// <summary>Raised by <see cref="PreviewSnpFileCommand"/> with the file's absolute path; the view opens the
-    /// S-Parameter Viewer, since only it knows the window that owns this panel.</summary>
-    public event Action<string>? OpenSnpViewerRequested;
+    /// S-Parameter Viewer, since only it knows the window that owns this panel. The second argument makes a
+    /// Touchstone file dropped on that viewer the previewed component's File (see <see cref="SetSnpFile"/>):
+    /// it is bound to THIS component and schematic when Preview is pressed, so a later change of selection
+    /// cannot redirect it to a different part.</summary>
+    public event Action<string, Func<string, string?>>? OpenSnpViewerRequested;
 
     [ObservableProperty] private string _snpFilePath         = "";
     [ObservableProperty] private bool   _snpRefNode          = false;
@@ -646,7 +649,8 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
     /// <summary>Preview: the S-Parameter Viewer on the chosen file.</summary>
     private void PreviewSnpFile()
     {
-        if (ResolvedSnpFile() is { } path) OpenSnpViewerRequested?.Invoke(path);
+        if (ResolvedSnpFile() is not { } path || _schematicVm is not { } schematic || _target is not { } target) return;
+        OpenSnpViewerRequested?.Invoke(path, file => SetSnpFile(schematic, target, file));
     }
 
     private async Task RevealSnpFileAsync()
@@ -699,20 +703,36 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         if (_target is null || _schematicVm is null || PickSnpFileAsync is null) return;
         string? path = await PickSnpFileAsync();
         if (path is null) return;
+        SetSnpFile(_schematicVm, _target, path);
+    }
 
-        var newParams = _target.Parameters.Select(p => p.Clone()).ToList();
+    /// <summary>
+    /// Points a placed SnP at <paramref name="path"/> — its File, stored workspace-relative when it can be, and
+    /// its NumPorts from the file — as ONE undoable edit on the schematic's own stack. Browse… and a file
+    /// dropped on the component's Preview viewer both come here, so either is undone the same way, and the
+    /// viewer's edit stays undoable after that window has closed.
+    /// </summary>
+    /// <returns>The sentence saying what changed, or null when nothing did: the component is no longer on
+    /// the schematic, or already names that file.</returns>
+    internal static string? SetSnpFile(SchematicViewModel schematic, EditableComponent target, string path)
+    {
+        if (!schematic.EditModel.Components.Contains(target)) return null;
+        var newParams = target.Parameters.Select(p => p.Clone()).ToList();
         // Prefer a workspace-relative path (portable); falls back to absolute per SnpPathPolicy.
-        string stored = SnpPathPolicy.ToStored(path, _schematicVm.WorkspaceRoot);
+        string stored = SnpPathPolicy.ToStored(path, schematic.WorkspaceRoot);
         var fileParam = newParams.FirstOrDefault(p => p.Name == "File");
-        if (fileParam is not null) fileParam.Expression = stored;
+        if (fileParam is null) return null;
+        fileParam.Expression = stored;
 
         if (TouchstoneIO.TryGetPortCount(path, out int n, out _))
         {
             var numPorts = newParams.FirstOrDefault(p => p.Name == "NumPorts");
             if (numPorts is not null) numPorts.Expression = n.ToString();
         }
+        if (newParams.Zip(target.Parameters).All(pair => pair.First.Expression == pair.Second.Expression)) return null;
 
-        _schematicVm.Execute(new SetParametersCommand(_schematicVm.EditModel, _target, newParams));
+        schematic.Execute(new SetParametersCommand(schematic.EditModel, target, newParams));
+        return $"{target.InstanceName} now uses {System.IO.Path.GetFileName(path)}. Undo in the schematic restores the previous file.";
     }
 
     private void ApplySnpParam(string name, string value)

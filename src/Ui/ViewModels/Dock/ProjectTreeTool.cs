@@ -141,6 +141,10 @@ public partial class ProjectTreeTool : Tool, IActivatableTool
         /// </summary>
         public IRelayCommand<string>? OpenInNewWindowCommand { get; init; }
 
+        /// <summary>Copy Path — the workspace's folder onto the clipboard; carried on the entry for the
+        /// same popup-tree reason as the others.</summary>
+        public IAsyncRelayCommand<string>? CopyPathCommand { get; init; }
+
         /// <summary>
         /// Forgets this entry — same popup-tree constraint as the two above, so it is carried here
         /// rather than reached for. The workspace is not touched.
@@ -162,6 +166,7 @@ public partial class ProjectTreeTool : Tool, IActivatableTool
                     RevealCommand = RevealRecentCommand,
                     OpenCommand   = OpenRecentCommand,
                     OpenInNewWindowCommand = OpenRecentInNewWindowCommand,
+                    CopyPathCommand = CopyRecentPathCommand,
                     RemoveCommand = RemoveRecentCommand,
                 });
         OnPropertyChanged(nameof(HasRecentWorkspaces));
@@ -191,6 +196,15 @@ public partial class ProjectTreeTool : Tool, IActivatableTool
         string dir = Path.GetDirectoryName(cwsPath) ?? cwsPath;
         _actions?.RevealPath(dir);
     }
+
+    /// <summary>
+    /// Copy Path on a recent row: the workspace FOLDER, the same thing Reveal shows — a workspace IS its
+    /// folder, and the entry's <c>.cws</c> is a fixed filename inside it. It is
+    /// <see cref="PathClipboard"/>'s Copy Path (the enclosing folder of the path it is given), so it means
+    /// what Copy Path means on a tree row or a document tab.
+    /// </summary>
+    [RelayCommand]
+    private Task CopyRecentPath(string? cwsPath) => PathClipboard.CopyAsync(cwsPath, full: false);
 
     /// <summary>
     /// Drops one row from the recent list. The workspace folder is left exactly as it is — this is a

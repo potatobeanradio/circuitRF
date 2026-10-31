@@ -19409,7 +19409,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
     /// <summary>
     /// What a MANUAL check says in a dialog, or null when it says nothing (a Cancel the user just
-    /// pressed). The Message Panel lines above stay, but a panel that is closed or behind another tab
+    /// pressed, or a download that finished — its Messages row carries the Relaunch button). The Message Panel lines above stay, but a panel that is closed or behind another tab
     /// turned "is up to date" into no answer at all — field feedback, 2026-10-15: the user picked the
     /// menu item and could not tell whether it had done anything. The background check never comes
     /// here, so its silence on an offline machine is unchanged.
@@ -19428,9 +19428,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         {
             Updates.CheckOutcome.UpToDate =>
                 ($"{app} is up to date", $"{app} {AppVersion.Display} is the latest version."),
-            Updates.CheckOutcome.Staged =>
-                ($"{app} {result.Version} has been downloaded",
-                 $"It will be used the next time {app} is relaunched."),
+            // No dialog for a finished download: the Messages row already turns into the Relaunch
+            // button, and a modal on top of it only has to be dismissed before that button is used.
+            Updates.CheckOutcome.Staged => null,
             Updates.CheckOutcome.NotifyOnly =>
                 ($"{app} {result.Version} is available",
                  $"{result.Detail} You can download it from {Updates.UpdateService.ReleasesPageUrl}".TrimStart()),

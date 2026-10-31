@@ -1,8 +1,7 @@
 # circuitRF
 
 Lightweight cross-platform RF circuit simulator (DC, S-parameters, harmonic balance,
-loadpull/sourcepull). **NOT a SPICE simulator.** See `docs/PRD.md` for scope, the five
-hero circuits, and non-goals. This file is standing project memory — keep it current.
+loadpull/sourcepull). See `docs/PRD.md` for scope - may not be update to date.
 
 ## Searching this repo
 
@@ -23,33 +22,16 @@ Instead, briefly paraphrase owner/user messages. Pre-existing quotes are ok.
 - .NET 10 (LTS), C# 14
 - Avalonia 12 (UI), SkiaSharp (canvas rendering), CommunityToolkit.MVVM (MVVM)
 - CSparse.NET (sparse complex LU for large MNA), NumFlat (dense linear algebra)
-- `RfCore` (Touchstone I/O, network params, the `DataSet`/`DataCube` result types, interpolation,
-  renormalization, plotting) is **a first-class project of this repository, exactly like `Core`,
-  `Engine`, and `Ui`** — `src/RfCore/` with its tests at `tests/RfCore.Tests/`, both listed in
-  `circuitrf.slnx`, referenced via ordinary `ProjectReference`.
-
-  **It is NOT a subtree, and there is nothing left to "un-subtree" (2026-07-30).** It arrived via
-  `git subtree add` on 2026-07-29 purely to preserve history
-  (brief-housekeeping-tearoff-palette-repo.md §6 — splotRF, the other consumer of the standalone
-  RfCore repo, was being retired). **"Being a subtree" is not a persistent state in git**: there is
-  no `.gitmodules`, no config, no live link to anything. RfCore's 24 original commits are a
-  permanent *second parent* of merge `0bd04db`, and `git blame` on any file under `src/RfCore/`
-  still resolves to its original author and date. The only residue is a three-line
-  `git-subtree-dir/-mainline/-split` trailer in that one old commit message, which is inert unless
-  someone runs `git subtree pull` — **so don't.** Treat `src/RfCore/` as ordinary first-party code.
-
-  *Known git wrinkle, not a history loss:* `git log --follow <path>` does not cross the merge (a
-  documented `--follow`-vs-merges limitation). `git blame` does. To read the pre-merge history
-  directly: `git log 0bd04db^2 -- src/Data/DataCube.cs` (the *old* path, on the pre-merge parent).
 
   **The architectural boundary is unchanged and does not depend on directory placement** — it is
-  enforced by assembly-reference checks in `tests/Firewall.Tests`, which is why moving RfCore under
-  `src/` cost nothing. RfCore still references no UI framework, and nothing in it may.
+  enforced by assembly-reference checks in `tests/Firewall.Tests`.
 
 ## Build / test / run
 - Build:   `dotnet build`
 - Test:    `dotnet test`
 - Run CLI: `dotnet run --project src/Cli -- <args>`
+- For faster simulations, run the Release build: `dotnet run --project src/Ui -c Release`
+
   **The installed `circuitRF` executable IS the CLI** (AUT-13): `src/Ui/Program.Main`'s first statement
   hands a verb to `CliEntry.Run` (`IsVerb` comes from `Run`'s own switch; the verb must be `args[0]`).
   The verbs build as the library `src/Cli.Verbs`, which compiles `src/Cli/*.cs` in place; `src/Cli`'s
@@ -512,7 +494,7 @@ to `ColorTheme.BuiltIn`. Both are ordinary embedded resources in `src/Render` no
 rather than keeping a second copy, so its `avares://CircuitRF.Ui/Assets/{Fonts,Color}/…` URIs are
 unchanged. Detail and the rest of the findings in `src/Render/RESOLVED.md`.
 
-**UI firewall:** `RfCore`, `src/Core`, `src/Engine`, `src/Design`, `src/Render`, `src/Cli` must reference **no UI framework**
+**UI firewall:** `src/RfCore`, `src/Core`, `src/Engine`, `src/Design`, `src/Render`, `src/Cli` must reference **no UI framework**
 (no Avalonia) — all UI-framework code lives in `src/Ui`, so circuitRF can be re-skinned by replacing
 `src/Ui` only. This is an **enforced** invariant (a CI assembly-reference check fails the build if the
 core references Avalonia). Contract across the boundary: design model down, `DataSet` up. See
@@ -563,6 +545,8 @@ loadpull contours; two-tone IM2–IM5). References are **externally generated** 
 independently of circuitRF, then committed as fixed data — with the **identical SDD FET definition
 on both sides**, so HB comparisons test our math, not a different transistor. CI runs the
 suite on Windows, macOS, and Linux.
+
+UI changes require visual verification.  Use tools/UiSnapshot/Program.cs to create scratch visuals for your inspection.
 
 ## Ask before
 - Adding native (non-managed) dependencies (cross-platform risk).

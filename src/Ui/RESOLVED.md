@@ -1,5 +1,23 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Messages rows with a link, a bar or a button drew taller than plain ones (2026-10-31)
+
+A row carrying the file-path link, the progress counter, the expand toggle or the Relaunch button was 3, 3, 4
+and 8 px taller than a plain row, and the Relaunch row's text sat below the button's centre. An earlier
+attempt at this failed; this time `UiSnapshot --messages` measured each row instead of judging pixels.
+
+**The cause: an `InlineUIContainer`'s control is laid out with its whole height (margin included) ABOVE the
+text baseline, whatever its `BaselineAlignment` says.** Every alignment value was tried on every row and none
+changed a row's height by a pixel. Any control taller than the font's ascent (~11.6 px at 12 px) therefore
+grows its line by the difference — 15 px link: +3.4, 20 px button: +8.4 — which is exactly what was measured.
+
+**The fix is a symmetric margin of (4.35 − H/2) on each hosted control of height H** (`MessagesView.axaml`).
+The layout height drops to ~9 px, under the ascent, so the line keeps its plain height, and the visible centre
+lands 4.35 px above the baseline — the middle of the cap height, the text's own centre line. The Relaunch
+button and the expand toggle were also held to 16 px so they fit in a 17 px row rather than overlapping the
+rows either side. After it every row measures 17 px and each control's centre is within 0.5 px of its text's.
+A control added inline there needs the same pair: a fixed `Height` and its margin.
+
 ## Designer round 26 — plots and tuning: a legend, arrow keys, a curve that changed on its own (brief DFR26-6, 2026-10-24)
 
 **The cross-circuit redraw was not reproduced, and the path offers no way for it to happen.** Gate:

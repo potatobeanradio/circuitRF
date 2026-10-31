@@ -26,7 +26,7 @@
            recorded, finding one kit by scrolling is not a way to find it. Matches the name or the path. -->
       <TextBox Grid.Column="1" Name="FilterBox" Width="200" FontSize="11" Margin="0,0,8,0"
                Padding="6,2" MinHeight="22" VerticalContentAlignment="Center"
-               Watermark="Filter kits" TextChanged="OnFilterChanged"/>
+               PlaceholderText="Filter kits" TextChanged="OnFilterChanged"/>
       <Button Grid.Column="2" Name="ClearAllButton" Content="Clear All" FontSize="11"
               Padding="8,2" HorizontalContentAlignment="Center" Click="OnClearAllClick"
               ToolTip.Tip="Clear every kit's answer, so each one asks again the next time a workspace using it opens."/>

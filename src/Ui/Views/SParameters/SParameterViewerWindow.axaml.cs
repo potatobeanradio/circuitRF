@@ -63,6 +63,53 @@ public partial class SParameterViewerWindow : Window, ICrfMenuWindow
         // A press anywhere but on an info box clears the marker selection, as the Data Display's canvas does.
         AddHandler(PointerPressedEvent, OnWindowPointerPressed, RoutingStrategies.Tunnel);
         Closed += (_, _) => Register(null);
+
+        // A Touchstone file dropped anywhere on the window opens it — and, on a placed SnP's Preview, becomes
+        // that component's File (SParameterViewerViewModel.DropFileAsync).
+        DragDrop.SetAllowDrop(this, true);
+        AddHandler(DragDrop.DragOverEvent, OnTouchstoneDragOver);
+        AddHandler(DragDrop.DropEvent, OnTouchstoneDrop);
+    }
+
+    /// <summary>Whether <paramref name="path"/> names a Touchstone file by its extension: <c>.s1p</c>…<c>.s99p</c>,
+    /// <c>.snp</c> or <c>.ts</c> — the picker's own filter plus the version-2 spelling.</summary>
+    internal static bool IsTouchstonePath(string path)
+    {
+        string ext = Path.GetExtension(path);
+        return string.Equals(ext, ".snp", StringComparison.OrdinalIgnoreCase)
+            || Archive.WorkspaceArchiveScanner.IsTouchstone(ext);
+    }
+
+    /// <summary>The first existing Touchstone file a drag carries — a file from the file manager, or a path dragged as text.</summary>
+    private static string? DroppedTouchstone(DragEventArgs e)
+    {
+        foreach (var item in e.DataTransfer.Items)
+        {
+            object? raw = item.TryGetRaw(DataFormat.File) ?? item.TryGetRaw(DataFormat.Text);
+            IEnumerable<string?> paths = raw switch
+            {
+                IStorageItem single             => [single.Path?.LocalPath],
+                IEnumerable<IStorageItem> files => files.Select(f => f.Path?.LocalPath),
+                string text                     => [text.Trim().Trim('"')],
+                _                               => [],
+            };
+            foreach (string? p in paths)
+                if (p is not null && IsTouchstonePath(p) && File.Exists(p)) return p;
+        }
+        return null;
+    }
+
+    private void OnTouchstoneDragOver(object? sender, DragEventArgs e)
+    {
+        e.DragEffects = Vm is { IsLoading: false } && DroppedTouchstone(e) is not null ? DragDropEffects.Copy : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private async void OnTouchstoneDrop(object? sender, DragEventArgs e)
+    {
+        if (Vm is not { } vm || DroppedTouchstone(e) is not { } path) return;
+        e.Handled = true;
+        await vm.DropFileAsync(path);
     }
 
     private SParameterViewerViewModel? Vm => DataContext as SParameterViewerViewModel;
@@ -81,16 +128,21 @@ public partial class SParameterViewerWindow : Window, ICrfMenuWindow
     }
 
     /// <summary>The viewer on <paramref name="path"/>: the window already showing it, or a new one reading it.</summary>
-    public static SParameterViewerWindow ShowForFile(string path, Window? owner)
+    /// <param name="setComponentFile">A placed SnP's Preview passes this: a Touchstone file dropped on the window then
+    /// becomes that component's File (<see cref="SParameterViewerViewModel.SetComponentFile"/>). The window already
+    /// showing the file takes it too, so the latest Preview is the component a drop changes.</param>
+    public static SParameterViewerWindow ShowForFile(string path, Window? owner, Func<string, string?>? setComponentFile = null)
     {
         string full = Path.GetFullPath(path);
         if (OpenByPath.TryGetValue(full, out var existing))
         {
+            if (setComponentFile is not null && existing.Vm is { } shown) shown.SetComponentFile = setComponentFile;
             if (existing.WindowState == WindowState.Minimized) existing.WindowState = WindowState.Normal;
             existing.Activate();
             return existing;
         }
         var window = Create(owner);
+        window.Vm!.SetComponentFile = setComponentFile;
         window.Register(full);
         Present(window, owner);
         _ = window.Vm!.LoadAsync(full);
