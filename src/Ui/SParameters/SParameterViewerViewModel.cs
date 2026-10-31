@@ -244,6 +244,7 @@ public sealed partial class SParameterViewerViewModel : ObservableObject
     {
         var keep = _source is not null && string.Equals(_source.Path, full, StringComparison.OrdinalIgnoreCase)
                  ? Selection() : null;
+        if (keep is null) _colorSlots.Clear();
 
         _source = source;
         FilePath = full;
@@ -335,12 +336,13 @@ public sealed partial class SParameterViewerViewModel : ObservableObject
     {
         if (_source is null) return;
         var selection = Selection();
+        var colorOf = ColorIndexes(selection);
         foreach (var row in Terms)
             row.Color = row.IsChecked
-                ? TraceProperties.ColorLUT[SParameterViewerPreset.ColorIndexOf(row.Term, selection)]
+                ? TraceProperties.ColorLUT[colorOf(row.Term)]
                 : SKColors.Transparent;
 
-        foreach (var composed in SParameterViewerPreset.Compose(_source, selection))
+        foreach (var composed in SParameterViewerPreset.Compose(_source, selection, colorOf))
             Refill(ContainerOf(composed.Kind), composed.Config, _source);
         FillLegend(SmithLegend, SmithPlot);
         FillLegend(PolarLegend, PolarPlot);
@@ -353,6 +355,38 @@ public sealed partial class SParameterViewerViewModel : ObservableObject
             : $"{_source.Facts.FrequencyCount} points, {SParameterViewerPreset.Hz(_source.Facts.FirstFrequencyHz)} to {SParameterViewerPreset.Hz(_source.Facts.LastFrequencyHz)}"
               + $" · {traces} of {Terms.Count} term(s) drawn" + (Findings.Count > 0 ? $" · {Findings.Count} finding(s)" : " · no defects found");
         PlotsUpdated?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>The palette slot (an index into <see cref="TraceProperties.LineColorOrder"/>) each term was given
+    /// the first time it was drawn from this file. Kept while it is unticked, so ticking it again brings back its
+    /// colour; cleared when a different file is opened.</summary>
+    private readonly Dictionary<SParameterViewerPreset.Term, int> _colorSlots = [];
+
+    /// <summary>
+    /// The palette index of every term in <paramref name="selection"/>, <b>stable across ticking and unticking</b>:
+    /// unticking S11 used to recolour every term after it, because a colour was a term's place in the selection.
+    /// A term keeps the slot it was first given; a term drawn for the first time takes the first slot no term has
+    /// held yet, then the first slot not on show; and two terms on show never share a slot while the palette has
+    /// one free. The selection the viewer opens on is coloured exactly as before — in selection order.
+    /// </summary>
+    internal Func<SParameterViewerPreset.Term, int> ColorIndexes(IReadOnlyList<SParameterViewerPreset.Term> selection)
+    {
+        var order = TraceProperties.LineColorOrder;
+        var slots = new Dictionary<SParameterViewerPreset.Term, int>();
+        var onShow = new HashSet<int>();
+        foreach (var t in selection)
+            if (_colorSlots.TryGetValue(t, out int s) && onShow.Add(s)) slots[t] = s;
+        foreach (var t in selection)
+        {
+            if (slots.ContainsKey(t)) continue;
+            int s = Enumerable.Range(0, order.Length).FirstOrDefault(k => !onShow.Contains(k) && !_colorSlots.ContainsValue(k), -1);
+            if (s < 0) s = Enumerable.Range(0, order.Length).FirstOrDefault(k => !onShow.Contains(k), -1);
+            if (s < 0) s = slots.Count % order.Length;
+            _colorSlots[t] = s;
+            onShow.Add(s);
+            slots[t] = s;
+        }
+        return t => order[slots.TryGetValue(t, out int s) ? s : 0];
     }
 
     private PlotContainerViewModel ContainerOf(SParameterViewerPreset.PlotKind kind) => kind switch
@@ -510,7 +544,8 @@ public sealed partial class SParameterViewerViewModel : ObservableObject
     {
         if (_source is null || PickDisplayPathAsync is null) return;
         if (await PickDisplayPathAsync(Path.GetFileNameWithoutExtension(_source.Path) + ".cdd") is not { } target) return;
-        var config = SParameterViewerPreset.Build(_source, Selection());
+        var selection = Selection();
+        var config = SParameterViewerPreset.Build(_source, selection, ColorIndexes(selection));
         try
         {
             await File.WriteAllTextAsync(target, JsonSerializer.Serialize(config, DataDisplayJson.Options),

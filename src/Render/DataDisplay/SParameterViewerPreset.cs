@@ -303,8 +303,13 @@ public static class SParameterViewerPreset
     /// strips to the left of the disc, outside the canvas. Those extents are measured here by the functions
     /// the Data Display and <c>circuitrf render</c> place them by, so two plots cannot be written overlapping.
     /// </remarks>
-    public static IReadOnlyList<ComposedPlot> Compose(TouchstoneSource source, IReadOnlyList<Term> selection)
+    /// <param name="colorIndexOf">The palette index each term is drawn in. Null takes
+    /// <see cref="ColorIndexOf"/> — its place in the selection, which suits a one-shot picture; the viewer
+    /// passes its own, so a term keeps its colour while others are ticked and unticked.</param>
+    public static IReadOnlyList<ComposedPlot> Compose(TouchstoneSource source, IReadOnlyList<Term> selection,
+                                                      Func<Term, int>? colorIndexOf = null)
     {
+        colorIndexOf ??= t => ColorIndexOf(t, selection);
         var unit  = DisplayUnit(source.Facts);
         string sourceRef = source.Path;
         string freqLabel = FrequencyLabel(source, unit);
@@ -313,15 +318,15 @@ public static class SParameterViewerPreset
         var transmissions = selection.Where(t => !t.IsReflection).ToList();
 
         var smith = Round(PlotType.Smith, "Reflection", unit, freqLabel, reflections,
-            [.. reflections.Select(t => Network(t, ColorIndexOf(t, selection), sourceRef, DependentVarFormat.Complex))]);
+            [.. reflections.Select(t => Network(t, colorIndexOf(t), sourceRef, DependentVarFormat.Complex))]);
         var polar = Round(PlotType.Polar, "Transmission", unit, freqLabel, transmissions,
-            [.. transmissions.Select(t => Network(t, ColorIndexOf(t, selection), sourceRef, DependentVarFormat.Complex))]);
+            [.. transmissions.Select(t => Network(t, colorIndexOf(t), sourceRef, DependentVarFormat.Complex))]);
 
         var magnitude = Rect("Magnitude", "Magnitude (dB)", unit,
-            [.. selection.Select(t => Network(t, ColorIndexOf(t, selection), sourceRef, DependentVarFormat.Db))],
+            [.. selection.Select(t => Network(t, colorIndexOf(t), sourceRef, DependentVarFormat.Db))],
             FrequencyAxis(source, unit, phase: false));
         var phase = Rect("Phase", "Phase (deg)", unit,
-            [.. selection.Select(t => Network(t, ColorIndexOf(t, selection), sourceRef, DependentVarFormat.Phase))],
+            [.. selection.Select(t => Network(t, colorIndexOf(t), sourceRef, DependentVarFormat.Phase))],
             FrequencyAxis(source, unit, phase: true));
 
         // ── the page ──
@@ -412,11 +417,12 @@ public static class SParameterViewerPreset
     }
 
     /// <summary>The plots as a Data Display document: one tab, its source the file itself.</summary>
-    public static DataDisplayConfig Build(TouchstoneSource source, IReadOnlyList<Term> selection) => new()
+    public static DataDisplayConfig Build(TouchstoneSource source, IReadOnlyList<Term> selection,
+                                          Func<Term, int>? colorIndexOf = null) => new()
     {
         FormatVersion      = DataDisplayConfig.CurrentFormatVersion,
         SelectedDataSource = source.Path,
-        Tabs = [new TabConfig { Name = TabName, Plots = [.. Compose(source, selection).Select(p => p.Config)] }],
+        Tabs = [new TabConfig { Name = TabName, Plots = [.. Compose(source, selection, colorIndexOf).Select(p => p.Config)] }],
     };
 
     /// <summary>

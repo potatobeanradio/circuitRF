@@ -118,7 +118,7 @@ public partial class SParameterViewerWindow : Window, ICrfMenuWindow
 
     /// <summary>
     /// Tools ▸ S-Parameter Viewer: an empty viewer, waiting for a file. Not deduplicated — several may be
-    /// open — and shown as the standalone Signal Designer is: unowned, cascaded off the workspace, closed with it.
+    /// open — and shown unowned, centred on the opening window's screen, and closed with that window.
     /// </summary>
     public static SParameterViewerWindow ShowStandalone(Window? owner)
     {
@@ -169,15 +169,43 @@ public partial class SParameterViewerWindow : Window, ICrfMenuWindow
             window.Show();
             return;
         }
-        window.WindowStartupLocation = WindowStartupLocation.Manual;
         void CloseWithOwner(object? _, EventArgs __) => window.Close();
         owner.Closed += CloseWithOwner;
         window.Closed += (_, _) => owner.Closed -= CloseWithOwner;
-        var at = Match.MatchWindowPlacement.Cascade(owner.Position, owner.RenderScaling, owner.Screens?.ScreenFromWindow(owner)?.WorkingArea);
+        // Centred on the screen the opening window is on — not cascaded off that window's corner, which put
+        // the viewer wherever a floating panel or a small owner happened to sit.
+        if (owner.Screens?.ScreenFromWindow(owner) is not { } screen)
+        {
+            window.WindowStartupLocation = WindowStartupLocation.CenterScreen;
+            window.Show();
+            NewWindowFront.Keep(window, owner);
+            return;
+        }
+        window.WindowStartupLocation = WindowStartupLocation.Manual;
+        var at = CenteredIn(screen.WorkingArea, new Size(window.Width, window.Height), owner.DesktopScaling);
         window.Position = at;
         window.Show();
         window.Position = at;
         NewWindowFront.Keep(window, owner);
+    }
+
+    /// <summary>
+    /// The position that centres a window of <paramref name="size"/> DIPs in <paramref name="workingArea"/>.
+    /// </summary>
+    /// <remarks>
+    /// <b>The size converts with DESKTOP scaling, never render scaling</b> — the factor between DIPs and the
+    /// units <see cref="Window.Position"/> and <see cref="Avalonia.Platform.Screen.WorkingArea"/> are in, which is
+    /// what Avalonia's own CenterScreen uses. On macOS those units are points and the factor is 1; converting with
+    /// render scaling there doubles the width and pins the window to the corner (MatchWindowPlacement's note). A
+    /// window larger than the area keeps its top-left corner inside it.
+    /// </remarks>
+    internal static PixelPoint CenteredIn(PixelRect workingArea, Size size, double desktopScaling)
+    {
+        double k = desktopScaling > 0 ? desktopScaling : 1.0;
+        int w = double.IsNaN(size.Width) ? 0 : (int)Math.Round(size.Width * k);
+        int h = double.IsNaN(size.Height) ? 0 : (int)Math.Round(size.Height * k);
+        return new PixelPoint(workingArea.X + Math.Max(0, (workingArea.Width - w) / 2),
+                              workingArea.Y + Math.Max(0, (workingArea.Height - h) / 2));
     }
 
     /// <summary>Keeps <see cref="OpenByPath"/> naming the file this window shows — which changes when Open picks another.</summary>

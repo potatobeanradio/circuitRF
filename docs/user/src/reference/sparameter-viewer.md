@@ -26,8 +26,8 @@ keywords: S-Parameter Viewer, Touchstone, s2p, sNp, SNP, SnP, S-parameters, Smit
 
 **Tools &rsaquo; S-Parameter Viewer** opens an empty viewer, with or without a workspace, and its
 **Open Touchstone file&hellip;** button reads a `.s1p`, `.s2p`, &hellip; `.sNp`. It is a window of its
-own, like the Match Designer and the Signal Designer, and it opens offset a little down and to the
-right of the workspace window. Several may be open; asking for a file that is already on show brings
+own, like the Match Designer and the Signal Designer, and it opens centred on the screen that holds
+the window you opened it from. Several may be open; asking for a file that is already on show brings
 that window forward.
 
 You can also drag a Touchstone file from your file manager onto the viewer. It opens the file in

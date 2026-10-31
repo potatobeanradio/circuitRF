@@ -10411,8 +10411,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     private void NewSignalDesigner() => Views.Signals.SignalDesignerWindow.ShowStandalone(ResolveOwner(null));
 
     /// <summary>
-    /// Tools ▸ S-Parameter Viewer: a viewer waiting for a Touchstone file. Needs no workspace; opens unowned and
-    /// cascaded as the standalone Signal Designer does.
+    /// Tools ▸ S-Parameter Viewer: a viewer waiting for a Touchstone file. Needs no workspace; opens unowned,
+    /// centred on the screen this window is on.
     /// </summary>
     [RelayCommand]
     private void NewSParameterViewer() => Views.SParameters.SParameterViewerWindow.ShowStandalone(ResolveOwner(null));

@@ -622,4 +622,42 @@ public sealed class SParameterViewerTests : IDisposable
         Assert.Equal(Path.GetFullPath(newFile), standalone.FilePath);
         Assert.Equal(oldFile, comp.Parameters.First(p => p.Name == "File").Expression);
     }
+    /// <summary>
+    /// Unticking a term leaves every other term's colour alone, ticking it again brings its own colour back,
+    /// and the plotted trace carries the same colour as the term's swatch. The selection the viewer opens on is
+    /// coloured in selection order, as it always was.
+    /// </summary>
+    [Fact]
+    public void TogglingATerm_RecoloursNoOtherTerm()
+    {
+        string path = Write(2, Uniform(1e9, 0.1e9, 3));
+        var vm = new SParameterViewerViewModel();
+        vm.Show(path, Read(path), null);
+        var opened = vm.Terms.ToDictionary(t => t.Name, t => t.Color);
+        var selection = vm.Selection();
+        foreach (var t in vm.Terms)
+            Assert.Equal(TraceProperties.ColorLUT[SParameterViewerPreset.ColorIndexOf(t.Term, selection)], t.Color);
+
+        var s11 = vm.Terms.First(t => t.Term == new SParameterViewerPreset.Term(0, 0));
+        s11.IsChecked = false;
+        foreach (var t in vm.Terms.Where(t => t != s11)) Assert.Equal(opened[t.Name], t.Color);
+        Assert.All(vm.MagnitudePlot.Traces, tr =>
+            Assert.Equal(opened[vm.Terms.First(t => t.Term == new SParameterViewerPreset.Term(tr.Row, tr.Col)).Name],
+                         tr.Properties.LineColor));
+
+        s11.IsChecked = true;
+        foreach (var t in vm.Terms) Assert.Equal(opened[t.Name], t.Color);
+    }
+
+    /// <summary>The viewer opens centred in its screen's working area, the size converted by DESKTOP scaling, and a
+    /// window larger than the area keeps its top-left corner inside it.</summary>
+    [Fact]
+    public void TheViewerIsCentredOnItsScreen()
+    {
+        var area = new Avalonia.PixelRect(1920, 25, 1728, 1080);
+        Assert.Equal(new Avalonia.PixelPoint(1920 + (1728 - 1199) / 2, 25 + (1080 - 800) / 2),
+                     SParameterViewerWindow.CenteredIn(area, new Avalonia.Size(1199, 800), 1.0));
+        Assert.Equal(new Avalonia.PixelPoint(1920, 25),
+                     SParameterViewerWindow.CenteredIn(area, new Avalonia.Size(1199, 800), 2.0));
+    }
 }
