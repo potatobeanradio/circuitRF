@@ -154,11 +154,12 @@ public sealed class BinaryDataset(IReadOnlyList<BinaryDatasetBlock> blocks)
         return result;
     }
 
-    /// <summary>The dependent arrays as a <see cref="DataSet"/>: one group per block, each a cube on its axes.</summary>
-    public DataSet ToDataSet()
+    /// <summary>The dependent arrays as a <see cref="DataSet"/>: one group per block, each a cube on its axes. Text
+    /// variables, which are not cubes, are named in <paramref name="skipped"/>.</summary>
+    public DataSet ToDataSet(List<(string Name, string Why)>? skipped = null)
     {
         var ds = new DataSet();
-        foreach (var (name, unit, axes, re, im) in Arrays(withAxes: false))
+        foreach (var (name, unit, axes, re, im) in Arrays(skipped, withAxes: false))
         {
             int dot = name.IndexOf('.');
             string group = name[..dot], cube = name[(dot + 1)..];

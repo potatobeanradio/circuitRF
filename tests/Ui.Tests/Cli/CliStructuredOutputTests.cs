@@ -1015,6 +1015,8 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         // back as whatever its bytes decoded to, with nothing saying so.
         "read.file.binary",
         "read.file.interchange",
+        // R-bds-4: what a binary simulation dataset's load did not do as plainly as a .npy's.
+        "read.file.note",
         "read.file.picture",
         "read.file.unreadable",
         "read.file.unsupported",

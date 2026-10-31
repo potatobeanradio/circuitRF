@@ -15,7 +15,7 @@ using RfCore.Data;
 namespace CircuitRF.Ui.DataDisplay.ViewModels;
 
 /// <summary>Distinguishes how this entry was loaded.</summary>
-public enum SourceKind { Touchstone, Npy, Spl, Lpcwave }
+public enum SourceKind { Touchstone, Npy, Spl, Lpcwave, BinaryDataset }
 
 public partial class DataSourceEntryViewModel : ViewModelBase
 {
@@ -151,6 +151,17 @@ public partial class DataSourceEntryViewModel : ViewModelBase
 
     /// <summary>True when the underlying file is missing (entry has no usable data).</summary>
     public bool IsBroken => _snp?.IsEmpty ?? false;
+
+    /// <summary>
+    /// What the load did not do as plainly as it does for a <c>.npy</c> — a binary simulation dataset's text
+    /// variables, a <c>PortZ</c> that varies — one sentence each (<see cref="CircuitRF.Render.DataDisplay.PlotSourceFile.LoadWithNotes"/>).
+    /// Empty for every other kind.
+    /// </summary>
+    public IReadOnlyList<string> Notes { get; internal set; } = Array.Empty<string>();
+
+    /// <summary>The reader's own sentence when the file is there but was refused; null otherwise. Such an entry is
+    /// broken, and says why instead of "not found".</summary>
+    public string? LoadError { get; internal set; }
 
     // ---- Z0 classification (Phase 7.2e) ------------------------------------
 

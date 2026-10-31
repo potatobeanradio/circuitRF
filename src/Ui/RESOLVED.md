@@ -41555,3 +41555,26 @@ Optimizer add lists never offer something `check` would refuse to tune; the Yiel
 
 Rendered headlessly (`tools/UiSnapshot --schematic <csch> --select C1`, and `--button ▾` for the picker): the panel with
 a known tolerance and the toggle on, a not-known part with the toggle greyed, and the picker list.
+
+## A binary simulation dataset (.ds) in the Data Display library (brief-binary-dataset-data-display, 2026-10-31)
+
+`SourceKind.BinaryDataset`. Every load, restore and reload of one goes through `PlotSourceFile.LoadWithNotes` — never
+a second reader call — and refreshes through `RefreshNpy`, so traces, the broken-entry placeholder and the network
+view keep their identity exactly as for a `.npy`. The entry's `Snp` stays null (its S is offered through the cube
+path; the lazily built `NetworkView` serves the derived metrics), which is the `.npy` rule for a grouped S.
+
+- **Persistence needed no new code**: a `.cdd` stores sources by path, and `LoadFileAsync`/`AddBrokenEntry` dispatch
+  on the kind. Gate `BinaryDatasetSourceTests.ACddWithADsSource_Reopens_ShowsBrokenWhenMoved_AndRestoresWhenOpenedAgain`
+  (the restored entry is the SAME object as the broken one).
+- **Notes and refusals are shown on the existing Dataset Aliases row**, in its status tooltip — no new control and no
+  text under the entry. A refused file (not a grid, unknown container version) becomes a BROKEN entry carrying the
+  reader's sentence as `LoadError`; its status reads `Unreadable` rather than `Missing`, and Reload reads it again
+  instead of asking where it went. A refused `.npy` still adds nothing (unchanged).
+- Also listed in the source picker: `results/*.ds` (an export or a run's `-o` can put one there) and Known Files
+  ending `.ds` (`GetKnownLoadpullFiles` now returns them; the provider's name is historical).
+- `WorkspaceArchiveScanner` classifies `.ds` as Analysis beside `.npy`/`.mat`; `WorkspacePolicyFiles.ResultPatterns`
+  gained `*.ds`.
+- **A file dropped on the project tree did not appear in an open display's toolbar list** (owner report, a `.ds`; a
+  Touchstone behaved the same). The list is built from Known Files when a display attaches, and only Import Data
+  refreshed open displays afterwards. `WorkspaceViewModel.AddKnownFile` now refreshes every open display's list, so the
+  tree drop, Import Data and Create Touchstone from Plot all take the one path.

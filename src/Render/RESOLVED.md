@@ -1,5 +1,30 @@
 # src/Render — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## A binary simulation dataset (.ds) as a fifth source kind at the seam (brief-binary-dataset-data-display, 2026-10-31)
+
+`PlotSourceFile.LoadWithNotes` reads a `.ds` — by its extension, or by CONTENT for an unknown one, so a renamed file
+is still one (`.npy` and Touchstone extensions are never sniffed) — through `BinaryDatasetReader`, then gives it the
+same two lines a `.npy` gets (`MaterializeNetworkParamCubes`, `NetworkViewOf`). `Load` is now `LoadWithNotes` minus the
+notes; every existing caller is unchanged.
+
+- **Axis order needed no reshaping.** A `.ds` S cube is `[Vds, Vgs, freq, i, j]`, sweeps outermost, and
+  `ParametricSweepEngine` PREPENDS its axis per nesting level, so circuitRF's own swept S cube has the same shape. The
+  trace card pins `Vds`/`Vgs` on it as on a sweep of our own (UiSnapshot: two Fix rows, freq as X).
+- **`PortZ` → `Z0` (`DataSourceView.AddZ0FromPortZ`).** A group with `S` and a `PortZ [sweep…, port]` that holds one
+  impedance per port at every point (1e-9 relative) gets `Z0 [port]`, and the `PortZ` cube is REMOVED rather than kept
+  beside it: kept, an export of the loaded source would write `PortZ[p]` twice — once from the cube, once from the
+  `Z0` the writer turns back into `PortZ` beside an `S`. That removal is also what makes a circuitRF S result
+  round-trip through `.ds` as `S` + `Z0` exactly. A `PortZ` that varies is kept, adds no `Z0` (so no `Z`/`Y`), and is a
+  note.
+- **Notes are sentences, one per kind**: all text variables in one line (`SP1.PortName[1]` …), one line per group whose
+  `PortZ` varies. `BinaryDataset.ToDataSet` gained the optional `skipped` list `Arrays` already took, so the reader is
+  called once.
+- `plot`/`render --data` needed nothing: both load through `CddSources.LoadResult` → `PlotSourceFile`. Gate:
+  `MissingVerbsCliTests.Plot_ABinaryDataset_IsTheSameBytesAsTheInProcessRenderOfTheDisplayItBuilt`.
+- **Trap for anyone writing the example:** `plot --trace …,i=2,j=1` on a SWEPT S cube leaves the sweep axes free and is
+  refused as three kept axes; a swept `.ds` is plotted with a slice (`cube=SP1.S[0,0,:,2,1],y=db20`). And `y=db` is
+  refused as ambiguous on purpose — `db20`.
+
 ## A Smith marker on a simulated trace jittered while tuning (2026-10-25)
 
 Owner report: during a tuning drag, a marker on a Smith chart jumped a few pixels up and down; a Rect

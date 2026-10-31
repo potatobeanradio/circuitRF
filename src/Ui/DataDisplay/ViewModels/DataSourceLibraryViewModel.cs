@@ -44,7 +44,7 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
     /// <summary>Returns absolute paths of workspace-tracked Touchstone known files.</summary>
     public Func<IReadOnlyList<string>>? KnownTouchstoneProvider { get; set; }
 
-    /// <summary>Returns absolute paths of workspace-tracked loadpull known files (.spl/.lpcwave).</summary>
+    /// <summary>Returns absolute paths of workspace-tracked loadpull and binary dataset known files (.spl/.lpcwave/.ds).</summary>
     public Func<IReadOnlyList<string>>? KnownLoadpullProvider { get; set; }
 
     /// <summary>Returns absolute paths of the Monte Carlo, yield, corner and DOE results the workspace's schematics
@@ -120,6 +120,11 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
                 string name = Path.GetFileNameWithoutExtension(logicalId);
                 AvailableDataSources.Add(new DataSourceItem(name, logicalId, abs, SourceKind.Npy));
             }
+
+            // Binary simulation datasets an export or a run's -o put in results/, by file name: a .ds and a .npy
+            // of one stem are two different files.
+            foreach (var ds in Directory.EnumerateFiles(root, "*.ds").OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase))
+                AvailableDataSources.Add(new DataSourceItem(Path.GetFileName(ds), Path.GetFileName(ds), ds, SourceKind.BinaryDataset));
         }
 
         // Monte Carlo, yield, corner and DOE results, beside their schematics. Referred to RELATIVE to the results
@@ -136,11 +141,14 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
         foreach (var p in touchstone.OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase))
             AvailableDataSources.Add(new DataSourceItem(Path.GetFileName(p), p, p, SourceKind.Touchstone));
 
-        // Workspace known loadpull files (.spl/.lpcwave), sorted by name.
+        // Workspace known loadpull files (.spl/.lpcwave) and binary datasets (.ds), sorted by name.
         var loadpull = KnownLoadpullProvider?.Invoke() ?? Array.Empty<string>();
         foreach (var p in loadpull.OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase))
         {
-            var kind = IsSplExtension(Path.GetExtension(p)) ? SourceKind.Spl : SourceKind.Lpcwave;
+            string ext = Path.GetExtension(p);
+            var kind = IsSplExtension(ext) ? SourceKind.Spl
+                     : IsBinaryDatasetExtension(ext) ? SourceKind.BinaryDataset
+                     : SourceKind.Lpcwave;
             AvailableDataSources.Add(new DataSourceItem(Path.GetFileName(p), p, p, kind));
         }
     }
@@ -261,6 +269,12 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
             return;
         }
 
+        if (CircuitRF.Render.DataDisplay.PlotSourceFile.IsBinaryDataset(path))
+        {
+            await LoadBinaryDatasetAsync(path);
+            return;
+        }
+
         if (!IsSnpExtension(ext)) return;
 
         // If a broken Touchstone entry matches this path, restore it.
@@ -315,6 +329,12 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
         if (IsLpcwaveExtension(ext))
         {
             await LoadLpcwaveAsync(path);
+            return;
+        }
+
+        if (CircuitRF.Render.DataDisplay.PlotSourceFile.IsBinaryDataset(path))
+        {
+            await LoadBinaryDatasetAsync(path);
             return;
         }
 
@@ -384,6 +404,11 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
             entry = new DataSourceEntryViewModel(path, data: null, snp: SNP.CreateBroken(path), this,
                                                  SourceKind.Lpcwave);
         }
+        else if (IsBinaryDatasetExtension(brokenExt))
+        {
+            entry = new DataSourceEntryViewModel(path, data: null, snp: SNP.CreateBroken(path), this,
+                                                 SourceKind.BinaryDataset);
+        }
         else
         {
             var snp = SNP.CreateBroken(path);
@@ -401,7 +426,13 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
     /// </summary>
     public async Task RestoreBrokenEntry(DataSourceEntryViewModel entry, string newPath)
     {
-        if (entry.Kind == SourceKind.Npy)
+        if (entry.Kind == SourceKind.BinaryDataset)
+        {
+            if (!await RefreshBinaryDatasetAsync(entry, newPath)) return;
+            UpdateDisplayNames();
+            LibraryChanged?.Invoke(this, EventArgs.Empty);
+        }
+        else if (entry.Kind == SourceKind.Npy)
         {
             DataSet data;
             try { data = (await Task.Run(() => DataSetImporter.Import(newPath))).DataSet; }
@@ -452,6 +483,13 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
         bool filePresent = !string.IsNullOrEmpty(entry.FilePath)
                            && File.Exists(entry.FilePath);
 
+        // A binary dataset that is there but was refused: read it again rather than ask where it went.
+        if (entry.LoadError is not null && filePresent)
+        {
+            await RestoreBrokenEntry(entry, entry.FilePath!);
+            return;
+        }
+
         if (entry.IsBroken || !filePresent)
         {
             // Missing file — ask the user to locate it.
@@ -462,7 +500,12 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
             return;
         }
 
-        if (entry.Kind == SourceKind.Npy)
+        if (entry.Kind == SourceKind.BinaryDataset)
+        {
+            if (!await RefreshBinaryDatasetAsync(entry, entry.FilePath!)) return;
+            LibraryChanged?.Invoke(this, EventArgs.Empty);
+        }
+        else if (entry.Kind == SourceKind.Npy)
         {
             DataSet data;
             try { data = (await Task.Run(() => DataSetImporter.Import(entry.FilePath!))).DataSet; }
@@ -713,6 +756,46 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
         LibraryChanged?.Invoke(this, EventArgs.Empty);
     }
 
+    /// <summary>
+    /// A binary simulation dataset, read through <see cref="CircuitRF.Render.DataDisplay.PlotSourceFile"/> — the
+    /// loader <c>circuitrf read</c>, <c>plot</c> and <c>render --data</c> use — and never a second reader call, so
+    /// the window and the CLI cannot disagree about a file. A refused file (not a grid, an unknown container
+    /// version) becomes a BROKEN entry carrying the reader's sentence, rather than nothing at all.
+    /// </summary>
+    private async Task LoadBinaryDatasetAsync(string path)
+    {
+        var existing = Entries.FirstOrDefault(e =>
+            string.Equals(e.FilePath, path, StringComparison.OrdinalIgnoreCase));
+        if (existing is { IsBroken: true, Kind: SourceKind.BinaryDataset })
+        {
+            await RestoreBrokenEntry(existing, path);
+            return;
+        }
+        if (existing is not null) return;
+
+        var (data, _, error, notes) = await Task.Run(() => CircuitRF.Render.DataDisplay.PlotSourceFile.LoadWithNotes(path));
+        var entry = data is null
+            ? new DataSourceEntryViewModel(path, data: null, snp: SNP.CreateBroken(path), this, SourceKind.BinaryDataset)
+            : new DataSourceEntryViewModel(path, data, snp: null, this, SourceKind.BinaryDataset);
+        entry.Notes     = notes;
+        entry.LoadError = data is null ? error : null;
+        Entries.Add(entry);
+        UpdateDisplayNames();
+        if (data is not null) LibraryChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>Re-reads a binary dataset entry in place — the same in-place refresh a <c>.npy</c> takes, so every
+    /// trace bound to it keeps its identity. False (with the reader's sentence on the entry) when it was refused.</summary>
+    private static async Task<bool> RefreshBinaryDatasetAsync(DataSourceEntryViewModel entry, string path)
+    {
+        var (data, _, error, notes) = await Task.Run(() => CircuitRF.Render.DataDisplay.PlotSourceFile.LoadWithNotes(path));
+        if (data is null) { entry.LoadError = error; entry.NotifyBrokenStateChanged(); return false; }
+        entry.Notes     = notes;
+        entry.LoadError = null;
+        entry.RefreshNpy(data, path);
+        return true;
+    }
+
     // ---- Test helpers (accessible to CircuitRF.Ui.Tests via InternalsVisibleTo) ----
 
     internal void FireLibraryChangedForTest() => LibraryChanged?.Invoke(this, EventArgs.Empty);
@@ -733,4 +816,6 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
         string.Equals(ext, ".spl",      StringComparison.OrdinalIgnoreCase);
     private static bool IsLpcwaveExtension(string ext)  =>
         string.Equals(ext, ".lpcwave",  StringComparison.OrdinalIgnoreCase);
+    private static bool IsBinaryDatasetExtension(string ext) =>
+        string.Equals(ext, ".ds",       StringComparison.OrdinalIgnoreCase);
 }

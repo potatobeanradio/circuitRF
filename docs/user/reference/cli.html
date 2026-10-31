@@ -3555,8 +3555,9 @@ page is wider than the box reported here.</p>
 <hr />
 <h2 id="read"><code>read</code> — a result, or a document, back</h2>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf read &lt;path&gt; [--only a,b] [--group g] [--json]</code></pre>
-<p>The inverse of a run verb. A <code>.npy</code> or a Touchstone file is loaded back into cubes — through the same
-two loaders the Data Display's source library reads a file with — and one of circuitRF's own
+<p>The inverse of a run verb. A <code>.npy</code>, a Touchstone file or a binary simulation dataset (<code>.ds</code>) is loaded
+back into cubes — through the same loaders the Data Display's source library reads a file with — and one
+of circuitRF's own
 documents comes back as <strong>its own bytes</strong>, unchanged.</p>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf read results/Amp_em.npy
 <span class="output">results/Amp_em.npy  (npy)
@@ -3565,6 +3566,9 @@ documents comes back as <strong>its own bytes</strong>, unchanged.</p>
     Z0                       Complex  port[2] port
   group planar:
     MeshCells                Real     cell[1544]</span></code></pre>
+<p>A <code>.ds</code> lists the cubes a trace can name — a uniform <code>PortZ</code> read as <code>Z0</code>, and the <code>Z</code> and <code>Y</code> it
+brings — and then a <code>note:</code> for anything not read as plainly: text variables, or a <code>PortZ</code> that varies.
+A file that is not a full grid is refused with the reader's own sentence.</p>
 <p>It writes nothing, and it takes one file at a time. For &quot;what is in this workspace&quot;, use <code>check</code> or
 <code>explain</code>; for a GDSII or a Gerber set, use <code>convert</code>.</p>
 <p>With <code>--json</code>, <code>--only</code> and <code>--group</code> narrow what comes back — which matters, because reading a

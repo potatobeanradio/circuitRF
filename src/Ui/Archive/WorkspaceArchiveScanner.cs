@@ -189,8 +189,10 @@ public static class WorkspaceArchiveScanner
         if (IsTouchstone(ext))
             return ("Touchstone", true);
 
+        // A binary simulation dataset (.ds) is data an export or a run's -o wrote, as a .npy is.
         if (string.Equals(ext, ".npy", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(ext, ".mat", StringComparison.OrdinalIgnoreCase))
+            string.Equals(ext, ".mat", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(ext, ".ds", StringComparison.OrdinalIgnoreCase))
             return ("Analysis", true);
 
         // The loadpull interchange a Data Display reads back (see the CLI's `lp` verb) — data, not

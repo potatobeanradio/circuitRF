@@ -57,17 +57,26 @@ public sealed partial class DatasetRowViewModel : ObservableObject
         _entry.FilePath is { } fp &&
         CircuitRF.Design.Workspace.WorkspaceRefs.IsExternal(fp, WorkspaceRootProvider?.Invoke());
 
-    public string StatusText => IsBroken ? "Missing" : IsExternal ? "External" : "Live";
+    public string StatusText => _entry.LoadError is not null ? "Unreadable"
+                              : IsBroken ? "Missing" : IsExternal ? "External" : "Live";
 
     /// <summary>Missing and external are both states worth visually flagging.</summary>
     public bool IsFlagged => IsBroken || IsExternal;
 
-    public string? StatusTooltip => IsBroken
+    public string? StatusTooltip => _entry.LoadError is { } refused
+        ? refused
+        : IsBroken
         ? "The file was not found on disk. Trace settings are preserved — use Locate… to point at it again."
-        : IsExternal
+        : WithNotes(IsExternal
             ? "This file lives outside the workspace, so it will NOT travel with it — on another "
             + "machine it will report as missing until it is re-pointed."
-            : null;
+            : null);
+
+    /// <summary>A live source's load notes (a binary dataset's text variables, a varying PortZ) after any status
+    /// sentence — the one place a source says something, so they are said there and nowhere else.</summary>
+    private string? WithNotes(string? status) => _entry.Notes.Count == 0
+        ? status
+        : string.Join("\n", status is null ? _entry.Notes : [status, .. _entry.Notes]);
 
     public string LocateButtonText => IsBroken ? "Locate…" : "Re-point…";
 

@@ -73,6 +73,50 @@ public static class DataSourceView
     }
 
     /// <summary>
+    /// A binary simulation dataset states each port's reference impedance as a <c>PortZ</c> cube
+    /// <c>[sweep…, port]</c> beside its <c>S</c>, a value at every point. Where every point holds the same
+    /// impedance per port, this replaces it with the <c>Z0 [port]</c> cube circuitRF's own S results
+    /// carry — without which the virtual <c>Z</c>/<c>Y</c> cubes never materialise. A group whose
+    /// <c>PortZ</c> varies keeps it, gains no <c>Z0</c>, and is named in the returned notes.
+    ///
+    /// <para>The uniform <c>PortZ</c> is REMOVED, not kept beside the new <c>Z0</c>: it says nothing the
+    /// <c>Z0</c> does not, and exporting the source again would write <c>PortZ[p]</c> twice — once from
+    /// the cube, once from the <c>Z0</c> beside the <c>S</c>.</para>
+    /// </summary>
+    public static IReadOnlyList<string> AddZ0FromPortZ(DataSet ds)
+    {
+        var notes = new List<string>();
+        foreach (var group in ds.Groups.ToList())
+        {
+            var cubes = ds.CubesIn(group);
+            if (cubes.ContainsKey(NetworkMetrics.Z0CubeName)) continue;
+            if (!cubes.TryGetValue(NetworkMetrics.SCubeName, out var s) || s.Rank < 3) continue;
+            if (!cubes.TryGetValue("PortZ", out var pz) || pz.Rank < 1) continue;
+            int n = s.Axes[s.Rank - 1].Length;
+            if (pz.Axes[pz.Rank - 1].Name != "port" || pz.Axes[pz.Rank - 1].Length != n) continue;
+
+            Complex[] all = pz.DataKind == DataKind.Complex
+                ? pz.ComplexValues
+                : [.. pz.RealValues.Select(r => new Complex(r, 0))];
+            var z0 = new Complex[n];
+            Array.Copy(all, z0, n);
+            bool uniform = true;
+            for (int k = n; k < all.Length && uniform; k++)
+            {
+                Complex a = all[k], b = z0[k % n];
+                uniform = Complex.Abs(a - b) <= 1e-9 * Math.Max(1.0, Complex.Abs(b));
+            }
+
+            string label = group == DataSet.DefaultGroup ? "PortZ" : $"{group}.PortZ";
+            if (!uniform) { notes.Add($"{label} varies over the sweep, so no Z0 was added and Z and Y are not offered."); continue; }
+
+            ds.RemoveFromGroup(group, "PortZ");
+            ds.AddToGroup(group, NetworkMetrics.Z0CubeName, DataSetBuilder.BuildZ0Cube(z0));
+        }
+        return notes;
+    }
+
+    /// <summary>
     /// The name of the virtual group holding one probe's reduced two-port — the document's
     /// "two-port network reduction" (§4.2) made visible (WSP-4 R-wsp4-8).
     /// </summary>

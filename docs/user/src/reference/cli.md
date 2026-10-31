@@ -2831,8 +2831,9 @@ page is wider than the box reported here.
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf read &lt;path&gt; [--only a,b] [--group g] [--json]</code></pre>
 
-The inverse of a run verb. A `.npy` or a Touchstone file is loaded back into cubes — through the same
-two loaders the Data Display's source library reads a file with — and one of circuitRF's own
+The inverse of a run verb. A `.npy`, a Touchstone file or a binary simulation dataset (`.ds`) is loaded
+back into cubes — through the same loaders the Data Display's source library reads a file with — and one
+of circuitRF's own
 documents comes back as **its own bytes**, unchanged.
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf read results/Amp_em.npy
@@ -2842,6 +2843,10 @@ documents comes back as **its own bytes**, unchanged.
     Z0                       Complex  port[2] port
   group planar:
     MeshCells                Real     cell[1544]</span></code></pre>
+
+A `.ds` lists the cubes a trace can name — a uniform `PortZ` read as `Z0`, and the `Z` and `Y` it
+brings — and then a `note:` for anything not read as plainly: text variables, or a `PortZ` that varies.
+A file that is not a full grid is refused with the reader's own sentence.
 
 It writes nothing, and it takes one file at a time. For "what is in this workspace", use `check` or
 `explain`; for a GDSII or a Gerber set, use `convert`.

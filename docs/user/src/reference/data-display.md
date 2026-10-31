@@ -33,7 +33,8 @@ that reopens exactly as you left it.
 <div class="callout note">
 <span class="label">The one thing to understand first</span>
 <p>A Data Display is <strong>not</strong> bound to one schematic or one run. It reads <strong>files</strong>
-— <code>.npy</code> results, Touchstone <code>.sNp</code>, measured load-pull — and it will happily hold
+— <code>.npy</code> results, Touchstone <code>.sNp</code>, measured load-pull, binary simulation datasets
+(<code>.ds</code>) — and it will happily hold
 traces from several at once. That is what lets you overlay a measurement on a simulation, or last week's
 baseline on today's, without either of them knowing about the other.</p>
 </div>
@@ -46,6 +47,16 @@ Practical consequences:
   [Where results live](npy-export.html#where) — and point a trace at it.
 - A trace remembers the file it came from, so a saved `.cdd` reopens against the same data.
 - A new Data Display starts **empty**. Nothing is auto-plotted; you author it.
+
+A **binary simulation dataset** (`.ds`) loads and plots like a `.npy`: one group per block, named after
+its analysis (`SP1`), each variable a cube on the block's sweep axes, and an `S[1,1]` … `S[n,n]` family
+one `S` cube with its port axes last — a swept S cube is `[Vds, Vgs, freq, i, j]`, so the sweep axes are
+pinned on the trace card exactly as for a parametric sweep of your own. A `PortZ` that is the same at
+every point becomes the group's `Z0`, so `Z` and `Y` are offered. Anything the load could not do as
+plainly — text variables, a `PortZ` that varies — is said on the source's row in Dataset Aliases.
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf read sweep.ds
+<span class="prompt">$ </span>circuitrf plot sweep.ds -o s21.svg --trace "cube=SP1.S[0,0,:,2,1],y=db20"</code></pre>
 
 ## Anatomy of a display {#anatomy}
 

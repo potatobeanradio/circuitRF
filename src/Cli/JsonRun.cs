@@ -428,6 +428,7 @@ internal static class JsonRun
         ".txt" or ".tsv"        => "tsv",
         ".spl"                  => "spl",
         ".lpcwave"              => "lpcwave",
+        ".ds"                   => "ds",
         ".gam"                  => "gamma-grid",
         // `render`'s three (R-rnd2-2). Named rather than left as "file" for the reason every other row
         // here exists: `outputs` is meant to say what a file IS, not leave a caller re-deriving it.

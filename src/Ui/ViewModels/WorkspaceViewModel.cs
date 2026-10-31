@@ -3093,10 +3093,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             FileTypeFilter =
             [
                 new FilePickerFileType("Loadpull / Data Files")
-                    { Patterns = ["*.spl", "*.lpcwave", "*.npy", "*.s1p", "*.s2p", "*.s3p", "*.s4p", "*.snp"] },
+                    { Patterns = ["*.spl", "*.lpcwave", "*.npy", "*.ds", "*.s1p", "*.s2p", "*.s3p", "*.s4p", "*.snp"] },
                 new FilePickerFileType("Loadpull (SPL)")  { Patterns = ["*.spl"] },
                 new FilePickerFileType("Loadpull (LPCW)") { Patterns = ["*.lpcwave"] },
                 new FilePickerFileType("NumPy Array")     { Patterns = ["*.npy"] },
+                new FilePickerFileType("Binary dataset (*.ds)") { Patterns = ["*.ds"] },
                 new FilePickerFileType("Touchstone")      { Patterns = ["*.s1p", "*.s2p", "*.s3p", "*.s4p", "*.snp"] },
                 new FilePickerFileType("All Files")       { Patterns = ["*.*"] },
             ],
@@ -3105,12 +3106,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         if (result.Count == 0) return;
 
         foreach (var item in result)
-            AddKnownFile(item.Path.LocalPath);
-
-        var displays = _openDocsByPath.Values.OfType<DataDisplayDocument>()
-            .Concat(_scratchDataDisplays);
-        foreach (var dd in displays)
-            dd.ViewModel.Window.DataSourceLibrary.RefreshAvailableDataSources();
+            AddKnownFile(item.Path.LocalPath);   // which also refreshes every open display's source list
     }
 
     // ---- Recent Workspaces commands -----------------------------------------
@@ -11489,7 +11485,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             {
                 var ext = System.IO.Path.GetExtension(p);
                 return string.Equals(ext, ".spl", StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(ext, ".lpcwave", StringComparison.OrdinalIgnoreCase);
+                    || string.Equals(ext, ".lpcwave", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(ext, ".ds", StringComparison.OrdinalIgnoreCase);   // a binary simulation dataset
             })
             .Select(p => WorkspaceRefs.ResolveExternalRef(p, lpRoot))
             .Where(p => p is not null)
@@ -14389,6 +14386,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             WorkspacePersistence.SaveToFileAtomic(CurrentWorkspacePath, cws);
         }
         _factory.ProjectTreeTool?.Refresh();
+
+        // An OPEN display's toolbar list is built from Known Files when the display attaches, so a file made known
+        // afterwards (dropped on the project tree, Import Data, a Touchstone created from a plot) was not offered until
+        // the display was reopened. Enumeration only: nothing is read until a source is picked.
+        foreach (var lib in OpenDataDisplayLibraries())
+            lib.RefreshAvailableDataSources();
     }
 
     /// <inheritdoc/>

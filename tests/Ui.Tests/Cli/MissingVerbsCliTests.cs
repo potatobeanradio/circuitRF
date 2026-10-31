@@ -461,6 +461,72 @@ public sealed class MissingVerbsCliTests(ITestOutputHelper output) : IDisposable
         Assert.Contains("CubeTraceSpecParser.TryParse(", code, StringComparison.Ordinal);
     }
 
+    // ══ brief-binary-dataset-data-display §6: a .ds read and plotted ═════════
+
+    /// <summary>A two-port S result as circuitRF writes one (group SP1, S [freq, i, j], Z0), written as a binary
+    /// simulation dataset by <see cref="RfCore.Export.BinaryDatasetWriter"/> from made-up numbers.</summary>
+    private static string BinaryDataset(string dir)
+    {
+        double[] f = [1e9, 2e9, 3e9];
+        var s = new System.Numerics.Complex[f.Length * 4];
+        for (int k = 0; k < f.Length; k++)
+        {
+            s[4 * k]     = new(0.2, -0.1 * k);
+            s[4 * k + 1] = new(0.05, 0.01);
+            s[4 * k + 2] = new(1.8 - 0.2 * k, -0.6);
+            s[4 * k + 3] = new(0.3, 0.05 * k);
+        }
+        var ds = new RfCore.Data.DataSet();
+        ds.AddToGroup("SP1", "S", new RfCore.Data.DataCube(
+            [new("freq", f, "Hz"), new("i", [1, 2], "port"), new("j", [1, 2], "port")], s));
+        ds.AddToGroup("SP1", "Z0", RfCore.Data.DataSetBuilder.BuildZ0Cube([new(50, 0), new(50, 0)]));
+        string path = Path.Combine(dir, "amp.ds");
+        RfCore.Export.BinaryDatasetWriter.Write(path, ds);
+        return path;
+    }
+
+    [Fact]
+    public void Read_ABinaryDataset_ListsItsGroupsCubesAxesAndUnits()
+    {
+        var run = RunCli("read", BinaryDataset(Dir("read-ds")));
+        Assert.True(run.ExitCode == 0, run.StdErr + run.StdOut);
+        Assert.Contains("(ds)", run.StdOut, StringComparison.Ordinal);
+        Assert.Contains("group SP1:", run.StdOut, StringComparison.Ordinal);
+        Assert.Matches(@"\bS\s+Complex\s+freq\[3\] Hz x i\[2\] port x j\[2\] port", run.StdOut);
+        Assert.Matches(@"\bZ0\s+Complex\s+port\[2\] port", run.StdOut);
+    }
+
+    /// <summary>`plot` needs nothing of its own for a .ds: the picture it writes, as a process, is the one the
+    /// in-process render of the display it built writes — both read the file through <see cref="PlotSourceFile"/>.</summary>
+    [Fact]
+    public void Plot_ABinaryDataset_IsTheSameBytesAsTheInProcessRenderOfTheDisplayItBuilt()
+    {
+        string dir = Dir("plot-ds");
+        string ds  = BinaryDataset(dir);
+        string viaPlot   = Path.Combine(Dir("plot-ds-a"), "one.svg");
+        string viaRender = Path.Combine(Dir("plot-ds-b"), "one.svg");
+        string cdd       = Path.Combine(dir, "one.cdd");
+
+        var plot = RunCli("plot", ds, "-o", viaPlot, "--write-cdd", cdd, "--trace", "cube=SP1.S,i=2,j=1,y=db20");
+        Assert.True(plot.ExitCode == 0, plot.StdErr + plot.StdOut);
+
+        var (realOut, realErr) = (Console.Out, Console.Error);
+        try
+        {
+            Console.SetOut(new StringWriter());
+            Console.SetError(new StringWriter());
+            JsonRun.Reset();
+            Assert.Equal(0, CliEntry.Run(["render", cdd, "--data", ds, "-o", viaRender]));
+        }
+        finally { Console.SetOut(realOut); Console.SetError(realErr); }
+
+        // Skia's SVG element ids come from a per-PROCESS counter, so they are the one thing normalised.
+        static string Ids(string svg) => Regex.Replace(svg, @"\b(cl|img|gr|fp)_[0-9a-z]+\b", "$1_N");
+        string a = File.ReadAllText(viaPlot);
+        Assert.Contains("<path", a);
+        Assert.Equal(Ids(a), Ids(File.ReadAllText(viaRender)));
+    }
+
     // ══ R-aut11-3: find ═════════════════════════════════════════════════════
 
     [Fact]

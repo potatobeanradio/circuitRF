@@ -1936,6 +1936,11 @@ internal static class CliDiagnostics
         "read: '{path}' is a folder. read takes one file; use check or explain for a workspace or a cell.",
         ("path", path));
 
+    /// <summary>R-bds-4 — what a binary simulation dataset's load did not do as plainly as a <c>.npy</c>'s (text
+    /// variables that are not cubes, a <c>PortZ</c> that varies), said once each.</summary>
+    public static Diagnostic ReadFileNote(string text) => Diagnostic.Create(
+        "read.file.note", DiagnosticSeverity.Info, "note: {text}", ("text", text));
+
     public static Diagnostic ReadFileUnreadable(string path, string message) => Diagnostic.Create(
         "read.file.unreadable", DiagnosticSeverity.Error,
         "Cannot read '{path}': {message}", ("path", path), ("message", message));

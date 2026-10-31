@@ -68,6 +68,7 @@ internal static class ReadBack
 
         if (ext == ".npy")                                    return ReadNpy(path);
         if (TouchstoneIO.ParsePortsFromExtension(path) is not null) return ReadTouchstone(path);
+        if (CircuitRF.Render.DataDisplay.PlotSourceFile.IsBinaryDataset(path)) return ReadBinaryDataset(path);
 
         var kind = DocumentKinds.Classify(path);
         return kind switch
@@ -111,6 +112,22 @@ internal static class ReadBack
             return Publish(DataSetBuilder.FromSnp(snp), path, "touchstone");
         }
         catch (Exception ex) { return JsonRun.Fail(CliDiagnostics.ReadFileUnreadable(path, ex.Message)); }
+    }
+
+    /// <summary>
+    /// A binary simulation dataset, through <see cref="CircuitRF.Render.DataDisplay.PlotSourceFile"/> — the loader the
+    /// Data Display, <c>plot</c> and <c>render --data</c> read it through — so the cubes listed are the ones a trace
+    /// can name: a uniform <c>PortZ</c> read as <c>Z0</c>, and the <c>Z</c>/<c>Y</c> that <c>Z0</c> brings. What the
+    /// load did not do as plainly as for a <c>.npy</c> is said after the listing, once each (R-bds-4); a refusal is
+    /// the reader's own sentence.
+    /// </summary>
+    private static int ReadBinaryDataset(string path)
+    {
+        var (ds, _, error, notes) = CircuitRF.Render.DataDisplay.PlotSourceFile.LoadWithNotes(path);
+        if (ds is null) return JsonRun.Fail(CliDiagnostics.ReadFileUnreadable(path, error ?? "unreadable"));
+        int code = Publish(ds, path, "ds");
+        foreach (string note in notes) JsonRun.Report(CliDiagnostics.ReadFileNote(note));
+        return code;
     }
 
     /// <summary>

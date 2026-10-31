@@ -39,7 +39,7 @@ public static class WorkspacePolicyFiles
     /// float-valued and would delta terribly is a second reason, not the first (§3.2's rule:
     /// <i>compressed or binary content does not delta</i>).</para>
     /// </summary>
-    public static readonly string[] ResultPatterns = ["*.npy", "*.spl", "*.lpcwave", "*.mat"];
+    public static readonly string[] ResultPatterns = ["*.npy", "*.spl", "*.lpcwave", "*.mat", "*.ds"];
 
     /// <summary>
     /// The 3D solvers' run folders — <c>Em3dRunService.RunDirectory</c>'s <c>&lt;key&gt;.palace</c>,

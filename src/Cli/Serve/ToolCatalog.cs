@@ -1102,7 +1102,7 @@ internal static class ToolCatalog
             null, null,
             [
                 new("", [ "plot" ],
-                    [new("path", true, "The result to plot: a .npy or a Touchstone .sNp.")],
+                    [new("path", true, "The result to plot: a .npy, a Touchstone .sNp or a binary simulation dataset .ds.")],
                     [
                         new("output", "-o", OptKind.Path,
                             "Required. Where the picture is written; its extension picks the format: .svg, .pdf or .png."),
@@ -1469,7 +1469,7 @@ internal static class ToolCatalog
                 // accepted — a schema that under-promises costs a caller exactly what one that
                 // over-promises does, because a client believes it either way.
                 new("", [ "read" ],
-                    [new("path", true, "A .npy or Touchstone (.sNp) result, or a .cws .csch .csym "
+                    [new("path", true, "A .npy, Touchstone (.sNp) or binary simulation dataset (.ds) result, or a .cws .csch .csym "
                        + ".clay .ctech .cem .cnl .cdd document. A cell folder or a workspace is "
                        + "refused — check and explain answer what is IN one; an interchange file is "
                        + "refused and names convert; a .wasm assembly-rule module is compiled, not text.")],
