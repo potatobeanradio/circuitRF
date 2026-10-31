@@ -102,6 +102,8 @@ internal static class DocumentSchema
         NetworkSettings, and each `Steps.<Step>.Settings` the settings type of that step (Current: CurrentFitSettings,
         Charge: ChargeFitSettings, Thermal: ThermalFitSettings, Traps: TrapFitSettings, Validate: ValidationSettings,
         Report: ReportOptions, Passive: PassiveStepSettings); every field and its default follows the manual's table.
+        The data a data set is imported from — what a model needs, what to run in another simulator, and every file
+        format with an example — is `reference model-data`; `model import --dry-run` checks a file and writes nothing.
         """;
 
     /// <summary>A preamble whose field table is the file-formats page's section <c>{#anchor}</c>, up to the next

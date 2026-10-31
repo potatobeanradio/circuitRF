@@ -301,6 +301,14 @@ internal sealed class McpServer
                 "Steps.<Step>.Settings first to change a step; 'reference cmc'). 5. model noun=check-charge -> exit 3 above " +
                 "threshold. 6. model noun=export output=<f.cmodel>. 7. model noun=validate -> exit 3 when a tolerance is " +
                 "missed. Place it as ComposedFET:X1 g d s File=<f.cmodel> in a .cnl and run analysis=hb.\n" +
+                // A model sampled from another simulator's design kit: the data is produced there, then checked here before
+                // anything is written.
+                "Model from another simulator's data: 1. reference topic=model-data -> the runs to make there (DC I-V, " +
+                "small-signal Y at each bias, self-heating off), the plane, and the array file to write (.mat or .npz, " +
+                "with shapes). 2. model noun=import path=<f.cmc> source=<file> as=SimulatedTables dryRun=true -> what " +
+                "the file holds, the map taken from its array names, how each array is read, every warning; nothing " +
+                "written, and the .cmc need not exist. Fix the export until it is clean. 3. model noun=new, then the same " +
+                "import without dryRun and with condition=[ReferencePlane=intrinsic]; continue at step 3 above.\n" +
                 // The same file written with no .cmc: equations, a table or a network trained elsewhere.
                 "A FET model of your own (equations, a table, an ANN): reference topic=cmodel gives the format and complete " +
                 "Python and MATLAB scripts; write and run your script with your own tools, then check path=<f.cmodel>, " +

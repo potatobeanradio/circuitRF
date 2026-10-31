@@ -1340,15 +1340,8 @@ src/Design/Schematic/Import/Cfb/CompoundFile.cs|The stream '{entry.Path}' is lar
 src/Design/Schematic/Import/Cfb/CompoundFile.cs|The stream '{what}' is truncated: it runs past the mini stream.
 src/Design/Schematic/Import/Cfb/CompoundFile.cs|The stream '{what}' is truncated: its mini chain ends early.
 src/Design/Schematic/Import/Cfb/CompoundFile.cs|The stream '{what}' loops: its mini chain returns to a sector it has read.
-src/RfCore/Export/MatReader.cs|'{name}' holds object references (a cell array or an object); only numeric arrays are read.
 src/RfCore/Export/MatReader.cs|'{name}' holds {real.Length} values for its shape ({string.Join(
-src/RfCore/Export/MatReader.cs|'{name}' is a cell array; only numeric arrays and structs of them are read.
 src/RfCore/Export/MatReader.cs|'{name}' is a character array, not a numeric one.
-src/RfCore/Export/MatReader.cs|'{name}' is a compound type that is not a complex number {{real, imag}}.
-src/RfCore/Export/MatReader.cs|'{name}' is a sparse matrix; only full numeric arrays are read.
-src/RfCore/Export/MatReader.cs|'{name}' is a struct array of {count} elements; only a 1 × 1 struct is read.
-src/RfCore/Export/MatReader.cs|'{name}' is an object of class {cls}; only numeric arrays and structs of them are read.
-src/RfCore/Export/MatReader.cs|'{name}' is an object; only numeric arrays and structs of them are read.
 src/RfCore/Export/MatReader.cs|'{name}' is not a numeric array.
 src/RfCore/Export/MatReader.cs|'{name}' stores its data as type {type}, which is not a numeric type.
 src/RfCore/Export/MatReader.cs|A compressed element is empty.
@@ -1362,6 +1355,15 @@ src/RfCore/Export/MatReader.cs|The MAT-file header has no endian indicator; it i
 src/RfCore/Export/MatReader.cs|The MAT-file header is truncated.
 src/RfCore/Export/MatReader.cs|{Path.GetFileName(path)} is not a MAT-file: it begins with neither a MATLAB header nor an HDF5 signature.
 src/RfCore/Export/MatReader.cs|{Path.GetFileName(path)} is not a MAT-file: it is {n} bytes long.
+src/RfCore/Export/NpzReader.cs|has a {b.Length}-byte '{kind}' type this reader does not know.
+src/RfCore/Export/NpzReader.cs|has dtype '{d}', which is not a number type.
+src/RfCore/Export/NpzReader.cs|holds fewer values than its shape ({string.Join(
+src/RfCore/Export/NpzReader.cs|is a structured array, not a numeric one.
+src/RfCore/Export/NpzReader.cs|{Path.GetFileName(path)} is not an .npz archive.
+src/RfCore/Export/NpzReader.cs|{where} is not an NPY array.
+src/RfCore/Export/NpzReader.cs|{where}: its NPY header has no '{key}'.
+src/RfCore/Export/NpzReader.cs|{where}: its NPY header's '{key}' is malformed.
+src/RfCore/Export/NpzReader.cs|{where}: its header is truncated.
 
 # ── Model Composer MC-6: the ANN trainer (2026-10-19) ──────────────────────────────
 # AnnTrainer's argument checks. Its callers (MC-7 … MC-10) build the problem from a .cmc's data

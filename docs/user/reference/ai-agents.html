@@ -211,6 +211,16 @@ usually needs them:</p>
 <td>solver, mesh, ports and sweep</td>
 </tr>
 <tr>
+<td><code>cmc</code></td>
+<td>before building a model with the Model Composer</td>
+<td>the <code>.cmc</code> document: its data sets, conditions and every step's settings</td>
+</tr>
+<tr>
+<td><code>model-data</code></td>
+<td>before producing or importing a model's data</td>
+<td>what a model needs, what to run in another simulator, and every file format with an example</td>
+</tr>
+<tr>
 <td><code>cmodel</code></td>
 <td>before writing a FET model without the Model Composer</td>
 <td>every field of a <code>.cmodel</code>, the arrays' layout, and complete Python and MATLAB scripts</td>
@@ -278,13 +288,18 @@ model's best point with a simulation.</li>
 <p>The <code>model</code> tool is the <a href="model-composer.html">Model Composer</a> without the window. Each <code>noun</code> is one of the window's
 runs and calls the same function, so a document an agent builds opens in the window exactly as it left it.</p>
 <ol>
-<li><code>reference</code> with topic <code>cmc</code> gives the document's format, including every step's settings. Read it first.</li>
+<li><code>reference</code> with topic <code>cmc</code> gives the document's format, including every step's settings, and <code>model-data</code> the data:
+what a model needs, what to run when it comes from another simulator, and every file format with an example. Read
+both first.</li>
 <li><code>model</code> with <code>noun=new</code>, <code>kind=active</code>, a stock <code>network</code> (<code>gan-two-shell</code>) or a six-pin <code>.csch</code>, and <code>fingers</code> and
 <code>unitWidth</code> for the measured device's periphery, creates the <code>.cmc</code>.</li>
 <li><code>model</code> with <code>noun=import</code> adds one data set per call. Give the kind with <code>as</code>, the bias pattern of a Touchstone
 folder with <code>pattern</code>, and what each CSV column holds with <code>map</code> (<code>Vgs=vgs:V</code>). State every condition the data was
 measured under with <code>condition</code>: <code>ReferencePlane</code>, <code>AmbientC</code>, and for a pulsed set its <code>Quiescent</code> (and <code>PrePulse</code>)
-bias and timing. A condition left out is a guess a later step makes for you, or a refusal.</li>
+bias and timing. A condition left out is a guess a later step makes for you, or a refusal. An array file (<code>.mat</code>,
+<code>.npz</code>) needs no <code>map</code> when its arrays have the usual names. Check each file first with <code>dryRun=true</code>: it reports what
+the file holds, the map, how each array is read and every warning, and writes nothing — the <code>.cmc</code> need not exist yet.
+When the data comes from another simulator the agent also drives, fix the export there until the dry run is clean.</li>
 <li><code>model</code> with <code>noun=deembed</code> removes the pads and the network and reports each set's intrinsic range. Data that does
 not reach the voltages the circuit will see should be noted here.</li>
 <li>Write the settings the fit needs into the <code>.cmc</code> with your own file tools: which network values are free, self-heating

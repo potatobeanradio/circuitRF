@@ -39,7 +39,7 @@ internal static class Model
     internal static readonly (string Noun, string Summary)[] Nouns =
     [
         ("new",          "Creates a .cmc: --kind, optionally a --network (a stock id or a six-pin .csch) and N0/W0."),
-        ("import",       "Adds a data set from files or a folder (--as its kind), read with a --pattern or a --map."),
+        ("import",       "Adds a data set from files or a folder (--as its kind), read with a --pattern or a --map; --dry-run reads it and writes nothing."),
         ("deembed",      "Removes the pads and the network: one line per data set of intrinsic data."),
         ("fit",          "Fits one --step, or all of them, with the document's settings (--method and --seed change them)."),
         ("check-charge", "Checks charge conservation of a .cmc's fitted charges, or of a device in a .cnl; exit 3 above --threshold."),
@@ -58,7 +58,7 @@ internal static class Model
         ("--unit-width",     "W0",                        ["new", "fit"]),
         ("--as",             "kind",                      ["import"]),
         ("--name",           "name",                      ["import", "export"]),
-        ("--format",         "touchstone|csv|npy|mat|loadpull", ["import"]),
+        ("--format",         "touchstone|csv|npy|mat|npz|loadpull", ["import"]),
         ("--pattern",        "pattern",                   ["import"]),
         ("--pattern-source", "name|comment",              ["import"]),
         ("--map",            "a=b[:unit]",                ["import"]),
@@ -66,6 +66,7 @@ internal static class Model
         ("--no-header",      "",                          ["import"]),
         ("--delimiter",      "c",                         ["import"]),
         ("--z0",             "ohms",                      ["import"]),
+        ("--dry-run",        "",                          ["import"]),
         ("--step",           "step|all",                  ["fit"]),
         ("--method",         "method",                    ["fit"]),
         ("--seed",           "n",                         ["fit"]),
@@ -108,7 +109,7 @@ internal static class Model
     }
 
     private static readonly HashSet<string> Repeated = ["--map", "--condition", "--tolerance"];
-    private static readonly HashSet<string> Switches = ["--no-header", "-q"];
+    private static readonly HashSet<string> Switches = ["--no-header", "--dry-run", "-q"];
 
     public static int Run(string[] args)
     {
@@ -160,7 +161,9 @@ internal static class Model
         JsonRun.InputPath = path;
         if (noun != "import" && a.Positionals.Count > 1)
             return JsonRun.Fail(CliDiagnostics.ModelExtraPath(noun, a.Positionals[1]));
-        if (noun != "new" && !File.Exists(path)) return JsonRun.Fail(CliDiagnostics.ModelNotFound(path));
+        // A dry run reads the sources and writes nothing, so it needs no document yet: the data can be checked first.
+        bool dryRun = noun == "import" && a.Given.Contains("--dry-run");
+        if (noun != "new" && !dryRun && !File.Exists(path)) return JsonRun.Fail(CliDiagnostics.ModelNotFound(path));
 
         var rc = Control(a.Quiet);
         try
@@ -209,7 +212,8 @@ internal static class Model
         if (a["--as"] is not { } kind)
             return Missing("import", "--as", $"say what the data is: --as {string.Join("|", Enum.GetNames<DataSetKind>())}");
 
-        var doc = CmcFile.Read(path);
+        bool dryRun = a.Given.Contains("--dry-run");
+        var doc = dryRun && !File.Exists(path) ? new CmcDocument { Kind = CmcKind.Active } : CmcFile.Read(path);
         var sources = ModelCommands.Sources(path, inputs);
         string format = a["--format"] ?? ModelCommands.FormatOf(sources[0]) ?? "";
         var import = new JsonObject { ["Format"] = format };
@@ -227,11 +231,24 @@ internal static class Model
                     "a Touchstone set's bias is read from each file's name (or comments) by a pattern, e.g. --pattern \"Vgs{vgs}_Vds{vds}\"");
         }
         else if (a["--pattern"] is { } pattern) import["Pattern"] = pattern;
-        if (format is ImportSettings.Csv or ImportSettings.Npy or ImportSettings.Mat && a.All("--map").Count == 0)
-            return Missing("import", "--map", format == ImportSettings.Csv
-                ? "say what each column holds, e.g. --map Vgs=vgs:V --map Id=id:mA"
-                : "say what each array holds, e.g. --map vg=vgs --map vd=vds --map id=id");
-        foreach (string m in a.All("--map"))
+        var maps = a.All("--map").ToList();
+        var inferred = new List<ModelLine>();
+        if (format == ImportSettings.Csv && maps.Count == 0)
+            return Missing("import", "--map", "say what each column holds, e.g. --map Vgs=vgs:V --map Id=id:mA");
+        if (ImportSettings.IsArrayFormat(format) && maps.Count == 0)
+        {
+            // No map: the one the array names suggest, when it finds the bias — said on its own line, and written into the
+            // .cmc like any map, so the next import reads exactly the same arrays.
+            var suggestion = ModelCommands.SuggestArrayMap(path, sources[0], format);
+            if (!suggestion.Arrays.ContainsKey("vgs") || !suggestion.Arrays.ContainsKey("vds"))
+                return Missing("import", "--map",
+                    $"say what each array holds, e.g. --map vg=vgs --map vd=vds --map id=id; {ModelCommands.ArraysHeld(path, sources[0], format)}" +
+                    (suggestion.Doubts.Count > 0 ? "; " + string.Join(" ", suggestion.Doubts) : ""));
+            maps = [.. suggestion.Text.Split(", ")];
+            inferred.Add(new ModelLine("note", "map", $"map from the array names: {suggestion.Text}."));
+            inferred.AddRange(suggestion.Doubts.Select(d => new ModelLine("note", "map", d)));
+        }
+        foreach (string m in maps)
         {
             int eq = m.IndexOf('=');
             if (eq <= 0 || eq == m.Length - 1) return JsonRun.Fail(CliDiagnostics.ModelFlagValue("--map", m, "name=quantity[:unit]"));
@@ -244,7 +261,13 @@ internal static class Model
                 if (colon >= 0) col["Unit"] = right[(colon + 1)..];
                 (import["Columns"] ??= new JsonArray()).AsArray().Add(col);
             }
-            else (import["Arrays"] ??= new JsonObject()).AsObject()[right] = left;
+            else
+            {
+                int colon = right.IndexOf(':');
+                string quantity = colon < 0 ? right : right[..colon];
+                (import["Arrays"] ??= new JsonObject()).AsObject()[quantity] = left;
+                if (colon >= 0) (import["ArrayUnits"] ??= new JsonObject()).AsObject()[quantity] = right[(colon + 1)..];
+            }
         }
         if (a.Given.Contains("--no-header")) import["Header"] = false;
         if (a["--delimiter"] is { } delimiter) import["Delimiter"] = delimiter;
@@ -270,7 +293,9 @@ internal static class Model
         }
         if (conditions.Count > 0) set["Conditions"] = conditions;
 
-        return Report("import", path, ModelCommands.Import(path, CmcFile.ParseDataSet(set.ToJsonString()), rc), written: [path]);
+        var parsed = CmcFile.ParseDataSet(set.ToJsonString());
+        if (dryRun) return Report("import", path, [.. inferred, .. ModelCommands.DryRun(path, parsed, rc)]);
+        return Report("import", path, [.. inferred, .. ModelCommands.Import(path, parsed, rc)], written: [path]);
     }
 
     private static int Fit(string path, Args a, RunControl rc)

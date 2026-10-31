@@ -32,7 +32,7 @@
     <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › Model Composer</p>
     <nav class="page-nav-top" aria-label="Previous and next page">
       <a class="prev" href="harmonicarf.html" title="Previous: harmonicaRF"><span class="arrow">‹</span><span class="name">harmonicaRF</span></a>
-      <a class="next" href="cmodel.html" title="Next: Writing a .cmodel"><span class="name">Writing a .cmodel</span><span class="arrow">›</span></a>
+      <a class="next" href="model-data.html" title="Next: Model Data"><span class="name">Model Data</span><span class="arrow">›</span></a>
     </nav>
   </div>
 
@@ -166,12 +166,12 @@ of the network step alone still refuses.</p>
 <tr>
 <td><code>DcIv</code></td>
 <td>Terminal voltages and currents at DC</td>
-<td>CSV, <code>.npy</code>, <code>.mat</code></td>
+<td>CSV, <code>.mat</code>, <code>.npz</code>, <code>.npy</code></td>
 </tr>
 <tr>
 <td><code>PulsedIv</code></td>
 <td>The same, sampled during a pulse from a stated quiescent point</td>
-<td>CSV, <code>.npy</code>, <code>.mat</code></td>
+<td>CSV, <code>.mat</code>, <code>.npz</code>, <code>.npy</code></td>
 </tr>
 <tr>
 <td><code>SParams</code></td>
@@ -186,7 +186,7 @@ of the network step alone still refuses.</p>
 <tr>
 <td><code>SimulatedTables</code></td>
 <td>Currents, and an admittance or S table, a capacitance table, or both; optionally intrinsic voltages</td>
-<td><code>.npy</code>, <code>.mat</code></td>
+<td><code>.mat</code>, <code>.npz</code>, <code>.npy</code></td>
 </tr>
 <tr>
 <td><code>LargeSignal</code></td>
@@ -256,228 +256,11 @@ step that needs one names it when it is missing.</p>
 </tbody>
 </table>
 <h2 id="preparing">Preparing the data</h2>
-<p>The data can come from a lab bench or from another simulator. What matters is that the right data arrives; the file
-layout is secondary.</p>
-<h3 id="needs">What a model needs</h3>
-<table>
-<thead>
-<tr>
-<th>Data</th>
-<th>Needed</th>
-<th>What it gives the model</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>I–V: DC, or a simulator's DC currents; 4 points or more, varying both Vgs and Vds</td>
-<td><strong>Required</strong></td>
-<td><code>Id</code> and <code>Ig</code>. With no gate current in the data, <code>Ig</code> is zero</td>
-</tr>
-<tr>
-<td>S, Y or a capacitance table</td>
-<td>Optional</td>
-<td><code>Qg</code> and <code>Qd</code>. None: the charges are constant capacitances you type, or zero. One bias or more: fitted linear charges — constant capacitances, exact at a single bias — with the <code>Linear</code> equation; four biases or more allow ANN or Table charges. Across the I–V plane: nonlinear charges</td>
-</tr>
-<tr>
-<td>S at Vds = 0 V, pinched off and with the gate forward-biased</td>
-<td>Optional</td>
-<td>The cold-FET network fit</td>
-</tr>
-<tr>
-<td>Open and short pad dummies</td>
-<td>When measured at the probe tips</td>
-<td>Removal of the pads</td>
-</tr>
-<tr>
-<td>Any set at two or more temperatures</td>
-<td>Optional</td>
-<td><code>T</code> as an input: the model follows the run's <code>temp</code>, and self-heating becomes available</td>
-</tr>
-<tr>
-<td>Pulsed I–V at two or more chuck temperatures, from a quiescent point that dissipates nothing, plus DC I–V at the same biases</td>
-<td>Optional</td>
-<td>An extracted Rth. Without this data, type Rth</td>
-</tr>
-<tr>
-<td>S or Y down to the thermal roll-off of <code>Re Y22</code> (typically kHz to MHz)</td>
-<td>Optional</td>
-<td>A fitted τth</td>
-</tr>
-<tr>
-<td>Pulsed I–V from two or more quiescent drain voltages</td>
-<td>Optional</td>
-<td>Drain lag</td>
-</tr>
-<tr>
-<td>Pulsed I–V from two or more quiescent gate voltages</td>
-<td>Optional</td>
-<td>Gate lag</td>
-</tr>
-<tr>
-<td>A double pulse</td>
-<td>Optional</td>
-<td>The clearest trap data</td>
-</tr>
-<tr>
-<td>Pulsed I–V from one quiescent point</td>
-<td>Optional</td>
-<td>One trap level, with a warning</td>
-</tr>
-<tr>
-<td>Pulsed S</td>
-<td>Optional</td>
-<td>A trap-dependent <code>Qd</code></td>
-</tr>
-<tr>
-<td>No pulsed data; DC I–V and multi-bias S</td>
-<td>Optional</td>
-<td>Threshold-shift traps: time constants typed, strengths typed or fitted from the multi-bias S</td>
-</tr>
-<tr>
-<td>Power sweeps, two-tone sweeps, loadpull</td>
-<td>Optional</td>
-<td>Validation only</td>
-</tr>
-</tbody>
-</table>
-<p>Trained trap states need pulsed I–V. Without it a model can still have traps: the states shift the threshold of the
-trap-free current, with strengths fitted from the difference between the DC and RF conductances in the multi-bias S, or
-typed. <strong>DC/RF dispersion</strong> is the simpler alternative, with one linear time constant and no fast capture.</p>
-<h3 id="ranges">Bias ranges and steps</h3>
-<table>
-<thead>
-<tr>
-<th></th>
-<th>Measured</th>
-<th>Simulated</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Vgs</td>
-<td>From about 1 V below pinch-off to forward gate conduction</td>
-<td>Wider costs nothing: from 2 V below pinch-off to well into forward conduction</td>
-</tr>
-<tr>
-<td>Vds</td>
-<td>From 0 V to the peak drain swing (about 2.5 × the supply for class AB, more for switching classes), staying inside the safe operating area</td>
-<td>The same range, within the source model's valid range</td>
-</tr>
-<tr>
-<td>High-power corner</td>
-<td>Pulsed I–V, where DC would overheat the device</td>
-<td>DC, with self-heating off</td>
-</tr>
-<tr>
-<td>I–V step</td>
-<td>0.1 V in Vgs (0.05 V near threshold); 0.25–0.5 V in Vds below the knee, 1–2 V above it</td>
-<td>A uniform 0.05–0.1 V grid</td>
-</tr>
-<tr>
-<td>S biases</td>
-<td>100 or more: every 0.25–0.5 V in Vgs and 1–2 V in Vds, plus the two cold points</td>
-<td>The same bias grid as the I–V</td>
-</tr>
-<tr>
-<td>Frequencies</td>
-<td>20–50, from 0.1–0.5 GHz to at least three times the operating frequency</td>
-<td>One low frequency (1 GHz, say) for an intrinsic table; a span when the data includes parasitics</td>
-</tr>
-</tbody>
-</table>
-<p>The model is continued linearly beyond its data, so cover the whole swing the circuit will make. The charges are
-read between a tenth and a half of the top frequency. The default ANNs want a few hundred points or more, and a fit
-reports when its data is thin for its network.</p>
-<h3 id="from-simulator">From another simulator</h3>
-<p><a href="../app-notes/an04-model-from-a-reference-kit.html">AN-04</a> is this section as a worked flow, with the intrinsic-plane
-sampling (the negative network) drawn out.</p>
-<table>
-<thead>
-<tr>
-<th>Data</th>
-<th>Analysis to run</th>
-<th>What to save</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>I–V</td>
-<td>DC, with Vgs swept inside a Vds sweep</td>
-<td>The terminal voltages and the gate and drain currents; optionally the internal intrinsic voltages (<code>vgsi</code>, <code>vdsi</code>), which the composer checks against its own</td>
-</tr>
-<tr>
-<td>S or Y</td>
-<td>S-parameter (small-signal) analysis at every bias of the DC sweep</td>
-<td>Y or S of the two-port: gate port 1, drain port 2, source grounded; the DC currents at each bias. Or, for the charges alone, the core's operating-point capacitances at each bias</td>
-</tr>
-<tr>
-<td>Temperature</td>
-<td>Both of the above at two or more <code>temp</code> values</td>
-<td>One set per temperature, or a <code>T</code> array</td>
-</tr>
-<tr>
-<td>Pulsed I–V</td>
-<td>Transient: hold the quiescent bias until the trap and thermal states settle, step to the pulse bias, and sample the currents at the sample delay</td>
-<td>One set per quiescent point, stating <code>Quiescent</code>, <code>PulseWidth</code> and <code>SampleDelay</code></td>
-</tr>
-<tr>
-<td>Large signal</td>
-<td>Harmonic balance: power sweep, two-tone or loadpull</td>
-<td>Validation only</td>
-</tr>
-</tbody>
-</table>
-<p>In the source simulator:</p>
-<ul>
-<li><strong>Turn self-heating off</strong> (Rth = 0) for the DC and S runs. Keep the temperature dependence: the <code>temp</code> runs need
-it. To have self-heating in the model, type the source model's Rth and Cth on the Thermal step.</li>
-<li><strong>Turn traps and dispersion off</strong>, unless they are to be modelled from pulsed transients or as DC/RF dispersion. A
-DC sweep with traps on and an S analysis with the traps frozen disagree.</li>
-<li><strong>Choose the plane.</strong> Export the core alone, or its internal node voltages, as <code>ReferencePlane=intrinsic</code>, with no
-network. Or export at the terminals as <code>device</code>, with a six-pin network holding the source model's parasitic values.</li>
-<li><strong>Keep to the model's valid range.</strong> A model that clamps its inputs outside that range gives flat data there.</li>
-</ul>
-<h3 id="import-formats">File formats</h3>
-<p><strong>Measured data</strong> is read as the instruments write it:</p>
-<ul>
-<li><strong>S-parameters</strong>: Touchstone files from the network analyser (RI, MA or DB), one per bias, with the bias in the file
-name or in the comment lines. A <code>--pattern</code> reads it.</li>
-<li><strong>I–V</strong>: CSV or TSV from the source-measure unit or the pulsed I–V system. Columns are mapped by their header names;
-any common delimiter works, lines starting <code>#</code>, <code>!</code> or <code>%</code> are skipped, and units are given per column or per cell
-(<code>12 mA</code>).</li>
-</ul>
-<p><strong>Simulated data</strong> is read most easily as a MATLAB <code>.mat</code> file (v5, v7 or v7.3). It can be written by MATLAB or by
-Python (<code>scipy.io.savemat</code>, h5py). Name the arrays as you like and map them: <code>vgs</code> and <code>vds</code> (one value per point, or
-the two axes of a grid), <code>id</code>, <code>ig</code>, <code>T</code>, <code>vgsi</code>, <code>vdsi</code>, <code>freq</code>, and <code>Y</code> or <code>S</code> shaped <code>[point, freq, 2, 2]</code>
-(<code>[vgs, vds, freq, 2, 2]</code> on a grid). Currents are positive into the terminal.</p>
-<p>Capacitances are either the matrix <code>C</code> shaped <code>[point, 2, 2]</code>, with <code>Cij = ∂Qi/∂vj</code> (gate 1, drain 2, so <code>C12 = −Cgd</code>),
-or the circuit set <code>cgs</code>, <code>cgd</code>, <code>cds</code> and optionally <code>cm</code>, one value per point. A capacitance table is the core's own,
-so it is read at <code>ReferencePlane=intrinsic</code> only. On its own it feeds the charges at every point, with nothing to fit
-the network, <code>Gm</code>, <code>Gds</code>, dispersion or τth to. Beside Y or S, Y feeds the charges and the table is checked against it:
-<code>max |ΔC| 0.02 % between its capacitance table and Im Y/ω</code>.</p>
-<pre><code class="language-python">import scipy.io as sio
-# vgs (nG,), vds (nD,) in V; id, ig (nG, nD) in A; freq (nF,) in Hz; Y (nG, nD, nF, 2, 2) in S
-sio.savemat(&quot;tables.mat&quot;, {&quot;vgs&quot;: vgs, &quot;vds&quot;: vds, &quot;id&quot;: id, &quot;ig&quot;: ig, &quot;freq&quot;: freq, &quot;Y&quot;: Y})
-</code></pre>
-<pre><code>circuitrf model import fet.cmc tables.mat --as SimulatedTables --map vgs=vgs --map vds=vds --map id=id --map ig=ig --map freq=freq --map Y=Y --condition ReferencePlane=intrinsic --condition AmbientC=25
-</code></pre>
-<p>A <code>.npy</code> here means circuitRF's own structured <code>.npy</code>, as its exports write it. A single array saved with
-<code>numpy.save</code> is not read; save a <code>.mat</code> from Python instead. Touchstone files and a CSV, which most simulators can
-write, work too.</p>
-<p>If your tool writes the right data in a layout none of these read, send a sample: the importer is extended to read
-what tools actually write.</p>
-<h3 id="checklist">Checklist</h3>
-<ul>
-<li>The I–V covers the circuit's whole Vgs and Vds swing, gate forward conduction included.</li>
-<li>S, Y or capacitances, if there are any, are at one bias or more for fitted linear charges, 4 or more for ANN or Table charges, and a
-hundred or more for nonlinear ones. Without it, the capacitances are typed (a datasheet's will do) or left at zero.</li>
-<li>Currents are positive into the terminal, and every column has its unit.</li>
-<li>Every set states its reference plane and ambient temperature.</li>
-<li>Measured: the compliance limits are stated, so points at the limit are flagged.</li>
-<li>Simulated: self-heating is off, and traps are off unless they are modelled.</li>
-<li>Pulsed sets state their quiescent point (and pre-pulse), pulse width and sample delay.</li>
-<li>N0 and W0 are those of the device the data came from.</li>
-</ul>
+<p>What data a model needs, how to sample it in another simulator, and the file formats each kind is read from — each with
+an example to copy — are on their own page: <a href="model-data.html">Model Data</a>. It covers
+<a href="model-data.html#needs">what a model needs</a>, <a href="model-data.html#ranges">bias ranges and steps</a>,
+<a href="model-data.html#from-simulator">running another simulator</a>, <a href="model-data.html#import-formats">the file formats</a>,
+<a href="model-data.html#dry-run">checking a file before importing it</a> and <a href="model-data.html#import-checks">what the import checks</a>.</p>
 <h2 id="planes">Reference planes</h2>
 <p>The composer always models in <strong>intrinsic</strong> voltages, between the core's own gate, drain and source. Each data set states
 the plane its voltages were measured at:</p>
@@ -1610,7 +1393,7 @@ while it ran is kept on top of the result.</li>
 </tr>
 <tr>
 <td>Map</td>
-<td>CSV, <code>.npy</code>, <code>.mat</code>: what each column or array holds, <code>name=quantity[:unit]</code></td>
+<td>CSV, <code>.mat</code>, <code>.npz</code>, <code>.npy</code>: what each column or array holds, <code>name=quantity[:unit]</code>. For an array file it is filled in from the array names</td>
 </tr>
 <tr>
 <td>Conditions</td>
@@ -1618,15 +1401,16 @@ while it ran is kept on top of the result.</li>
 </tr>
 </tbody>
 </table>
-<p>The right side previews the first lines of the first file and the first points as they will be read; the line at the
-bottom is what the import will read, or why it cannot.</p>
+<p>The right side previews the first lines of the first file — for an array file, each array it holds with its shape —
+and the first points as they will be read; the line at the bottom is what the import will read, how it read any array
+not in the documented layout, or why it cannot.</p>
 <p>The <strong>data-set list</strong> shows each set's name, kind, ambient, reference plane, quiescent point (and pre-pulse) and point
 count, and where its charges read their capacitances: <code>Y</code>, its capacitance <code>table</code> or its <code>circuit set</code>.
 <code>circuitrf model explain</code> says the same. A capacitance table spelled as the matrix whose <code>C12</code> is positive at most of its
 points is warned about, since the matrix convention has <code>C12 = −Cgd</code>: the circuit set was probably meant. Selecting a set
 points the plots and the cursor's lists at it.</p>
 <p>Under the list, an active document shows <strong>what its data supports</strong>, one row per kind of data in
-<a href="#needs">the table above</a>: I–V, S or capacitances, cold-FET S, two or more temperatures, pulsed data and
+<a href="model-data.html#needs">the table of what a model needs</a>: I–V, S or capacitances, cold-FET S, two or more temperatures, pulsed data and
 large-signal runs. A lit row says what that data gives the model; a dim one says what would light it, in the words
 the step rail uses for a step that cannot open yet, so the two never disagree.</p>
 <table>
@@ -3194,7 +2978,9 @@ as an S-parameter component.</p>
 <h2 id="headless">From a script or an agent</h2>
 <p>Every run of this window is a <a href="cli.html#model"><code>model</code></a> verb noun — <code>model import</code>, <code>model deembed</code>, <code>model fit</code>,
 <code>model check-charge</code>, <code>model validate</code>, <code>model export</code>, <code>model report</code> — calling the same function, so a document built in
-the window runs the same way from a script or an agent.</p>
+the window runs the same way from a script or an agent. An agent producing the data in another simulator reads
+<a href="model-data.html">Model Data</a> as <code>circuitrf reference model-data</code>, and checks each file with
+<code>model import --dry-run</code> before anything is written.</p>
 <h2 id="references">References</h2>
 <p>The primary reference, followed wherever a method choice is open:</p>
 <ul>
@@ -3285,7 +3071,7 @@ line search (Algs. 7.4 and 3.5).</li>
 
 <nav class="page-nav">
   <a class="prev" href="harmonicarf.html"><span class="dir">Previous</span><span class="name">harmonicaRF</span></a>
-  <a class="next" href="cmodel.html"><span class="dir">Next</span><span class="name">Writing a .cmodel</span></a>
+  <a class="next" href="model-data.html"><span class="dir">Next</span><span class="name">Model Data</span></a>
 </nav>
 </main>
 

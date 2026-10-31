@@ -10,6 +10,11 @@
 //                that a stressed device degrades, checked by measuring a reference bias at the start and end.
 //   Sign         a capacitance table spelled as the matrix whose C12 is positive at most of its points (MC-20 R-mc20-4):
 //                the matrix convention has C12 = −Cgd, so the circuit set was probably meant. One flag for the set.
+//   Layout       what an exported table most often gets wrong, each one flag for the set (the data is read as written —
+//                these say what to check): the drain current negative where Vds > 0 (recorded flowing out), |S12| above
+//                |S21| at conducting biases (gate and drain swapped), frequencies or currents or temperatures whose values
+//                suggest a unit other than the one read (GHz read as Hz, mA as A, K as °C), and an "S" table whose |S11|
+//                never approaches 1 (a Y table mapped as S).
 //   Coverage     the convex hull of the data's (Vgs, Vds), for the plots and for extrapolation (MC-2).
 
 using System.Globalization;
@@ -17,7 +22,7 @@ using System.Numerics;
 
 namespace CircuitRF.Design.Modeling;
 
-public enum HygieneKind { Oscillation, Compliance, Drift, CapacitanceSign }
+public enum HygieneKind { Oscillation, Compliance, Drift, CapacitanceSign, CurrentSign, PortOrder, Unit, TableKind }
 
 /// <summary>One flagged point: its data set, its id, what was found, and a one-line detail. A flag about the whole set
 /// (<see cref="HygieneKind.CapacitanceSign"/>) has an empty <see cref="Point"/>.</summary>
@@ -59,6 +64,7 @@ public static class DataHygiene
             Oscillation(set, data, settings, flags);
             Compliance(set, data, settings, flags);
             CapacitanceSign(set, data, flags);
+            Layout(set, data, flags);
         }
         Drift(sets, settings, flags);
         return flags;
@@ -93,6 +99,48 @@ public static class DataHygiene
         if (2 * n > m)
             flags.Add(new HygieneFlag(set.Name, "", HygieneKind.CapacitanceSign,
                 $"C12 > 0 at {n} of {m} points; the matrix convention has C12 = −Cgd — was the circuit set (cgd) meant?"));
+    }
+
+    private static void Layout(CmcDataSet set, NormalisedData d, List<HygieneFlag> flags)
+    {
+        if (set.Kind is DataSetKind.PassiveSParams or DataSetKind.LargeSignal) return;
+        void Flag(HygieneKind k, string detail) => flags.Add(new HygieneFlag(set.Name, "", k, detail));
+        bool arrays = ImportSettings.IsArrayFormat(set.Import.Format);
+        string Fix(string q, string unit) => arrays ? $"give it its unit in the map ({q}:{unit})" : $"give its column its unit ({q}:{unit})";
+
+        var on = d.Points.Where(p => p.Vds > 0.05 && double.IsFinite(p.Id) && Math.Abs(p.Id) > 1e-9).ToList();
+        int negative = on.Count(p => p.Id < 0);
+        if (on.Count >= 3 && 2 * negative > on.Count)
+            Flag(HygieneKind.CurrentSign, $"Id < 0 at {negative} of {on.Count} points with Vds > 0. Currents are positive into the terminal: " +
+                                          "was the drain current recorded flowing out of it?");
+
+        double idMax = d.Points.Select(p => Math.Abs(p.Id)).Where(double.IsFinite).DefaultIfEmpty(0).Max();
+        if (idMax > 100)
+            Flag(HygieneKind.Unit, $"Id reaches {G(idMax)} A. If the currents are in mA, {Fix("id", "mA")}.");
+
+        var temps = d.Points.Select(p => p.AmbientC).Where(double.IsFinite).ToList();
+        if (temps.Count > 0 && temps.Min() > 200)
+            Flag(HygieneKind.Unit, $"T runs {G(temps.Min())} to {G(temps.Max())} °C. If these are kelvin, {Fix("T", "K")}.");
+
+        if (d.FrequenciesHz is { Length: > 0 } f && f.Max() is > 0 and < 1e3)
+            Flag(HygieneKind.Unit, $"the frequencies run {G(f.Min())} to {G(f.Max())} Hz. If they are GHz, {Fix("freq", "GHz")}.");
+
+        if (d.S is null || d.Ports != 2 || d.FrequenciesHz is not { Length: > 0 }) return;
+        var conducting = Enumerable.Range(0, d.Count).Where(p => d.Points[p].Vds > 0.5 && d.Points[p].Id > 1e-6).ToList();
+        int swapped = conducting.Count(p => d.SAt(p, 0, 0, 1).Magnitude > d.SAt(p, 0, 1, 0).Magnitude);
+        if (conducting.Count >= 3 && 2 * swapped > conducting.Count)
+            Flag(HygieneKind.PortOrder, $"|S12| > |S21| at {swapped} of {conducting.Count} conducting biases. The gate is port 1 and the drain " +
+                                        "port 2: were the ports swapped, or the table transposed?");
+        bool mappedS = set.Import.Arrays is { } map && (map.ContainsKey("S") || map.ContainsKey("S11"));
+        if (mappedS)
+        {
+            double s11 = 0;
+            for (int p = 0; p < d.Count; p++)
+                for (int k = 0; k < d.FrequenciesHz.Length; k++) s11 = Math.Max(s11, d.SAt(p, k, 0, 0).Magnitude);
+            if (s11 < 0.1)
+                Flag(HygieneKind.TableKind, $"|S11| never exceeds {G(s11)}; a FET's gate reflects nearly everything at low frequency. " +
+                                            "Is this table Y, in siemens? Then map it as Y.");
+        }
     }
 
     private static void Compliance(CmcDataSet set, NormalisedData d, HygieneSettings s, List<HygieneFlag> flags)

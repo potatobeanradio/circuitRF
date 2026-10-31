@@ -134,6 +134,35 @@ public static partial class ModelCommands
     /// the first <paramref name="rows"/> lines of the first source as text (a text source only), the first points, and one
     /// line. A refusal is the line, never a throw. Writes nothing and touches no cache.
     /// </summary>
+    /// <summary>
+    /// What an array source holds, one line per array — its name, shape and whether it is complex — then each variable that
+    /// cannot be read, with why: the array file's counterpart of a text file's first lines. Never throws; a file that cannot
+    /// be listed is one line saying why. Cached by path, size and time, since the preview re-runs on every keystroke.
+    /// </summary>
+    public static IReadOnlyList<string> ArrayListing(string path, string format)
+    {
+        if (!File.Exists(path)) return [];
+        var info = new FileInfo(path);
+        var key = (path, format, info.Length, info.LastWriteTimeUtc.Ticks);
+        lock (ListingLock)
+            if (_listing is { } c && c.Key == key) return c.Lines;
+        List<string> lines;
+        try
+        {
+            var (arrays, skipped) = DataImport.ListArrays(path, format);
+            int width = arrays.Select(a => a.Name.Length).DefaultIfEmpty(0).Max();
+            lines = [.. arrays.Select(a => $"{a.Name.PadRight(width)}   {a.ShapeText}{(a.IsComplex ? "   complex" : "")}")];
+            lines.AddRange(skipped.Select(x => $"{x.Name.PadRight(width)}   not read: it {x.Why}"));
+            if (lines.Count == 0) lines.Add("it holds no arrays.");
+        }
+        catch (Exception ex) when (ex is DataImportException or IOException or UnauthorizedAccessException) { lines = [ex.Message]; }
+        lock (ListingLock) _listing = (key, lines);
+        return lines;
+    }
+
+    private static readonly object ListingLock = new();
+    private static ((string, string, long, long) Key, List<string> Lines)? _listing;
+
     public static ImportPreview Preview(string cmcPath, CmcDataSet set, int rows = 6, int sources = 3)
     {
         string dir = Path.GetDirectoryName(Path.GetFullPath(cmcPath))!;
@@ -144,11 +173,14 @@ public static partial class ModelCommands
             if (File.Exists(first))
                 raw.AddRange(File.ReadLines(first).Where(l => l.Trim().Length > 0).Take(rows));
         }
+        else if (set.Sources.Count > 0 && ImportSettings.IsArrayFormat(set.Import.Format))
+            raw.AddRange(ArrayListing(DataImport.ResolveSource(dir, set.Sources[0]), set.Import.Format));
         try
         {
             var reduced = set with { Sources = [.. set.Sources.Take(sources)] };
             var r = DataImport.Import(reduced, dir);
             string line = set.Sources.Count > sources ? $"first {sources} of {set.Sources.Count} files: {r.Summary}" : r.Summary;
+            if (r.Notes.Count > 0) line += " " + string.Join(" ", r.Notes);
             return new ImportPreview(raw, [.. r.Data.Points.Take(rows)], line, false);
         }
         catch (Exception ex) when (ex is DataImportException or CmcFormatException or ModelingException or IOException)

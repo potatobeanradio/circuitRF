@@ -94,6 +94,7 @@ reference/smith-chart.html | Narrowband matching by hand: one curve per componen
 reference/sparameter-viewer.html | A Touchstone file at a glance: what it states, its reflections on a Smith chart, and every term in dB and phase.
 reference/harmonicarf.html | Interactive harmonic load-pull on one device, at the speed of a mouse drag.
 reference/model-composer.html | A nonlinear FET model, or a passive one, built from measured or simulated data.
+reference/model-data.html  | The data a model is built from: what it needs, sampling another simulator, and every file format with an example.
 reference/cmodel.html      | The .cmodel file, field by field, and scripts that write one without the Model Composer.
 reference/wbond.html       | Bondwire arrays: geometry, the 3D kernel, and S-parameters out.
 reference/railrf.html      | Power integrity on the board you drew: DC drop, Z(f) against a target, and which decaps earn their place.

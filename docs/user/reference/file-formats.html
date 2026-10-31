@@ -299,9 +299,13 @@ pattern; a family over a geometry value reads it with <code>{geometry}</code>: <
 <li><code>csv</code> — CSV or TSV. <code>Columns</code> maps a column (its header, or its number from 1 with <code>&quot;Header&quot;: false</code>)
 to <code>vgs</code>, <code>vds</code>, <code>ig</code>, <code>id</code>, <code>T</code>, <code>vgsi</code> or <code>vdsi</code>, with the <code>Unit</code> its numbers are in. A cell that
 carries its own unit (<code>12 mA</code>) uses it.</li>
-<li><code>npy</code>, <code>mat</code> — named arrays in circuitRF's <code>.npy</code> or a MATLAB <code>.mat</code> (version 5 or 7.3). <code>Arrays</code> maps
-the quantities above, <code>freq</code>, a 2-port table <code>S</code> or <code>Y</code>, and the capacitances to array names; a struct's field is
-<code>s.field</code>. The bias arrays are one value per point, or the two axes of a grid. A Y table is converted
+<li><code>npy</code>, <code>mat</code>, <code>npz</code> — named arrays in circuitRF's <code>.npy</code>, a MATLAB <code>.mat</code> (version 5 or 7.3) or a NumPy <code>.npz</code>.
+<code>Arrays</code> maps the quantities above, <code>freq</code>, a 2-port table <code>S</code> or <code>Y</code> (or its four elements <code>S11</code>…<code>S22</code> or
+<code>Y11</code>…<code>Y22</code>, all four together), and the capacitances to array names; a struct's field is <code>s.field</code>.
+<code>ArrayUnits</code> gives a quantity whose array is not in SI its unit, <code>{&quot;freq&quot;: &quot;GHz&quot;, &quot;id&quot;: &quot;mA&quot;}</code>; <code>T</code> takes <code>C</code> or
+<code>K</code>. The bias arrays are one value per point, or the axes of a grid vgs × vds or vgs × vds × T, and every other
+array's axes may come in any order that fits their lengths
+(<a href="model-data.html#format-arrays">Model Data</a>, <code>circuitrf reference model-data</code>). A Y table is converted
 to S at <code>Z0</code> (default 50 Ω); <code>FrequencyHz</code> gives a table with no frequency array its frequency.
 A <code>SimulatedTables</code> set's capacitances, in farads, are either the matrix <code>C</code> shaped <code>[point, 2, 2]</code>, with
 <code>Cij = ∂Qi/∂vj</code> (gate 1, drain 2, so <code>C12 = −Cgd</code>), or the circuit set <code>cgs</code>, <code>cgd</code> and <code>cds</code> together, and

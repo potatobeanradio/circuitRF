@@ -187,6 +187,8 @@
                       LogicalName="CircuitRF.Design.Reference.file-formats.md" />
     <EmbeddedResource Include="..\..\docs\user\src\reference\cmodel.md"
                       LogicalName="CircuitRF.Design.Reference.cmodel.md" />
+    <EmbeddedResource Include="..\..\docs\user\src\reference\model-data.md"
+                      LogicalName="CircuitRF.Design.Reference.model-data.md" />
     <EmbeddedResource Include="..\..\docs\user\src\reference\components.md"
                       LogicalName="CircuitRF.Design.Reference.components.md" />
   </ItemGroup>

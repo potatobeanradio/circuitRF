@@ -131,6 +131,8 @@ usually needs them:
 | `schematic` | before the first `.csch` | components, wires, variables and analyses, with a worked example |
 | `layout` | before the first `.clay` | shapes, layers, nets, ports |
 | `em-setup` | before the first `.cem` | solver, mesh, ports and sweep |
+| `cmc` | before building a model with the Model Composer | the `.cmc` document: its data sets, conditions and every step's settings |
+| `model-data` | before producing or importing a model's data | what a model needs, what to run in another simulator, and every file format with an example |
 | `cmodel` | before writing a FET model without the Model Composer | every field of a `.cmodel`, the arrays' layout, and complete Python and MATLAB scripts |
 
 **Start from `component-index`, then ask for one type at a time.** `reference components` with no
@@ -201,13 +203,18 @@ The *Yield, Corners and Centering* example is a working copy of each of these st
 The `model` tool is the [Model Composer](model-composer.html) without the window. Each `noun` is one of the window's
 runs and calls the same function, so a document an agent builds opens in the window exactly as it left it.
 
-1. `reference` with topic `cmc` gives the document's format, including every step's settings. Read it first.
+1. `reference` with topic `cmc` gives the document's format, including every step's settings, and `model-data` the data:
+   what a model needs, what to run when it comes from another simulator, and every file format with an example. Read
+   both first.
 2. `model` with `noun=new`, `kind=active`, a stock `network` (`gan-two-shell`) or a six-pin `.csch`, and `fingers` and
    `unitWidth` for the measured device's periphery, creates the `.cmc`.
 3. `model` with `noun=import` adds one data set per call. Give the kind with `as`, the bias pattern of a Touchstone
    folder with `pattern`, and what each CSV column holds with `map` (`Vgs=vgs:V`). State every condition the data was
    measured under with `condition`: `ReferencePlane`, `AmbientC`, and for a pulsed set its `Quiescent` (and `PrePulse`)
-   bias and timing. A condition left out is a guess a later step makes for you, or a refusal.
+   bias and timing. A condition left out is a guess a later step makes for you, or a refusal. An array file (`.mat`,
+   `.npz`) needs no `map` when its arrays have the usual names. Check each file first with `dryRun=true`: it reports what
+   the file holds, the map, how each array is read and every warning, and writes nothing — the `.cmc` need not exist yet.
+   When the data comes from another simulator the agent also drives, fix the export there until the dry run is clean.
 4. `model` with `noun=deembed` removes the pads and the network and reports each set's intrinsic range. Data that does
    not reach the voltages the circuit will see should be noted here.
 5. Write the settings the fit needs into the `.cmc` with your own file tools: which network values are free, self-heating

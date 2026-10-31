@@ -37,9 +37,14 @@ public static class CmcFile
     /// <summary>The quantities a data set's rows carry (R-mc3-2), as an importer's map names them.</summary>
     public static readonly IReadOnlyList<string> PointQuantities = ["vgs", "vds", "ig", "id", "T", "vgsi", "vdsi"];
 
+    /// <summary>A 2-port table as its four elements, one array each shaped <c>[point, freq]</c>: <c>S11</c>…<c>S22</c> or
+    /// <c>Y11</c>…<c>Y22</c>, all four together.</summary>
+    public static readonly IReadOnlyList<string> ElementQuantities = ["S11", "S12", "S21", "S22", "Y11", "Y12", "Y21", "Y22"];
+
     /// <summary>The quantities only an array import maps: a frequency axis, the 2-port tables, and the capacitances as the
     /// circuit set (MC-20) — per point <c>cgs</c>, <c>cgd</c>, <c>cds</c> and optionally <c>cm</c>, in farads.</summary>
-    public static readonly IReadOnlyList<string> TableQuantities = ["freq", "S", "Y", "C", "cgs", "cgd", "cds", "cm"];
+    public static readonly IReadOnlyList<string> TableQuantities =
+        ["freq", "S", "Y", "C", "cgs", "cgd", "cds", "cm", .. ElementQuantities];
 
     /// <summary>The circuit set's quantities, the first three of which come together (R-mc20-1).</summary>
     public static readonly IReadOnlyList<string> CircuitSetQuantities = ["cgs", "cgd", "cds", "cm"];
@@ -285,7 +290,7 @@ public static class CmcFile
 
     private static ImportSettings ParseImport(JsonElement e, string f)
     {
-        Only(e, f, ["Format", "Pattern", "PatternSource", "Columns", "Header", "Delimiter", "Arrays", "FrequencyHz", "Z0"]);
+        Only(e, f, ["Format", "Pattern", "PatternSource", "Columns", "Header", "Delimiter", "Arrays", "ArrayUnits", "FrequencyHz", "Z0"]);
 
         List<ColumnMap>? columns = null;
         if (Has(e, "Columns", out var ce))
@@ -310,6 +315,14 @@ public static class CmcFile
             foreach (var p in ae.EnumerateObject())
                 arrays[p.Name] = Str(ae, p.Name, $"{f}.Arrays.{p.Name}");
         }
+        SortedDictionary<string, string>? arrayUnits = null;
+        if (Has(e, "ArrayUnits", out var ue))
+        {
+            if (ue.ValueKind != JsonValueKind.Object) throw new CmcFormatException($"{f}.ArrayUnits", "it is not an object of quantity → unit.");
+            arrayUnits = new(StringComparer.Ordinal);
+            foreach (var p in ue.EnumerateObject())
+                arrayUnits[p.Name] = Str(ue, p.Name, $"{f}.ArrayUnits.{p.Name}");
+        }
         bool? header = null;
         if (Has(e, "Header", out var he))
         {
@@ -326,6 +339,7 @@ public static class CmcFile
             Header        = header,
             Delimiter     = Has(e, "Delimiter", out _) ? Str(e, "Delimiter", $"{f}.Delimiter") : null,
             Arrays        = arrays,
+            ArrayUnits    = arrayUnits,
             FrequencyHz   = OptNum(e, "FrequencyHz", $"{f}.FrequencyHz"),
             Z0            = OptNum(e, "Z0", $"{f}.Z0"),
         };
@@ -548,19 +562,39 @@ public static class CmcFile
                 break;
             case ImportSettings.Npy:
             case ImportSettings.Mat:
+            case ImportSettings.Npz:
                 if (im.Arrays is not { Count: > 0 }) throw new CmcFormatException($"{f}.Arrays", "an array import needs its quantity → array map.");
                 foreach (var key in im.Arrays.Keys)
                     if (!PointQuantities.Contains(key) && !TableQuantities.Contains(key))
                         throw new CmcFormatException($"{f}.Arrays.{key}", $"'{key}' is not one of {string.Join(", ", PointQuantities.Concat(TableQuantities))}.");
                 if (!im.Arrays.ContainsKey("vgs") || !im.Arrays.ContainsKey("vds"))
                     throw new CmcFormatException($"{f}.Arrays", "the map needs a vgs and a vds array.");
-                if (im.Arrays.ContainsKey("S") && im.Arrays.ContainsKey("Y"))
-                    throw new CmcFormatException($"{f}.Arrays", "map S or Y, not both.");
+                var tables = new[] { "S", "Y" }.Where(t => im.Arrays.ContainsKey(t) || im.Arrays.Keys.Any(k => k.Length == 3 && k[0] == t[0] && ElementQuantities.Contains(k))).ToList();
+                if (tables.Count > 1) throw new CmcFormatException($"{f}.Arrays", "map S or Y, not both.");
+                foreach (string t in tables)
+                {
+                    string[] elements = [$"{t}11", $"{t}12", $"{t}21", $"{t}22"];
+                    int given = elements.Count(im.Arrays.ContainsKey);
+                    if (given > 0 && im.Arrays.ContainsKey(t))
+                        throw new CmcFormatException($"{f}.Arrays", $"map the {t} table as one array or as {string.Join(", ", elements)}, not both.");
+                    if (given is > 0 and < 4)
+                        throw new CmcFormatException($"{f}.Arrays", $"{string.Join(", ", elements.Where(x => !im.Arrays.ContainsKey(x)))} missing: the elements come as all four.");
+                }
+                foreach (var (key, unit) in im.ArrayUnits ?? new Dictionary<string, string>())
+                {
+                    if (!im.Arrays.ContainsKey(key))
+                        throw new CmcFormatException($"{f}.ArrayUnits.{key}", $"'{key}' has a unit but no array.");
+                    if (key == "S" || key.StartsWith('S') && ElementQuantities.Contains(key))
+                        throw new CmcFormatException($"{f}.ArrayUnits.{key}", "S has no unit.");
+                    if (key == "T" ? unit.Trim() is not ("C" or "°C" or "degC" or "K") : UnitScale(unit) is null)
+                        throw new CmcFormatException($"{f}.ArrayUnits.{key}", key == "T"
+                            ? $"T is in °C (C, degC) or K; '{unit}' is neither." : $"'{unit}' is not a unit circuitRF knows.");
+                }
                 break;
             case ImportSettings.Loadpull:
                 throw new CmcFormatException($"{f}.Format", $"a loadpull file holds large-signal data; a {s.Kind} set is not read from one.");
             default:
-                throw new CmcFormatException($"{f}.Format", $"'{im.Format}' is not touchstone, csv, npy, mat or loadpull.");
+                throw new CmcFormatException($"{f}.Format", $"'{im.Format}' is not touchstone, csv, npy, mat, npz or loadpull.");
         }
         Positive(im.FrequencyHz, $"{f}.FrequencyHz");
         Positive(im.Z0, $"{f}.Z0");
@@ -765,6 +799,12 @@ public static class CmcFile
         {
             w.WriteStartObject("Arrays");
             foreach (var (k, v) in arrays.OrderBy(p => p.Key, StringComparer.Ordinal)) w.WriteString(k, v);
+            w.WriteEndObject();
+        }
+        if (im.ArrayUnits is { Count: > 0 } units)
+        {
+            w.WriteStartObject("ArrayUnits");
+            foreach (var (k, v) in units.OrderBy(p => p.Key, StringComparer.Ordinal)) w.WriteString(k, v);
             w.WriteEndObject();
         }
         Opt(w, "FrequencyHz", im.FrequencyHz);

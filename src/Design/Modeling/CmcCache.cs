@@ -139,6 +139,7 @@ public sealed class CmcCache
             var result = DataImport.Import(set, _dir, rc);
             stamps = [.. set.Sources.Select(src => Stamp(src))];
             status.Add(reason is { Length: > 0 } ? $"{reason}: {result.Summary}" : $"{set.Name}: {result.Summary}");
+            warnings.AddRange(result.Notes.Select(n => $"{set.Name}: {n}"));
             data[set.Name] = result.Data.WithExclusions(set.Exclusions);
             entries.Add(new SetEntry(set.Name, file, settings, stamps));
             fresh[file] = result.Data;

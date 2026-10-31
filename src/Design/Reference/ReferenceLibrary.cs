@@ -64,6 +64,7 @@ public static class ReferenceLibrary
         "sdd",
         "file-formats",
         "cmodel",
+        "model-data",
         ComponentNotesTopic,
     ];
 

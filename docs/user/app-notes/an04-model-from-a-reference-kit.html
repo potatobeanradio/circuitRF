@@ -183,7 +183,7 @@ bias and ports.</p>
 <p><strong>Ranges.</strong> Sample wider than the circuit will ever go: from 2 V below pinch-off to well into forward gate conduction,
 and from 0 V (or slightly negative) to beyond the peak drain swing. A model is continued linearly past the edge of its
 data, and that continuation is not the device. Sampled points cost nothing; the
-<a href="../reference/model-composer.html#ranges">bias table</a> gives the steps.</p>
+<a href="../reference/model-data.html#ranges">bias table</a> gives the steps.</p>
 <p><strong>Settings in the source simulator.</strong> Three matter, and each one gives a model that looks right at the operating point
 and is wrong elsewhere when it is missed:</p>
 <ul>
@@ -289,32 +289,109 @@ voltage, and the I–V grid you sweep is the intrinsic grid.</li>
 <a href="../reference/model-composer.html#network">Network step</a> fit them cold-FET and multi-bias. That needs S over a
 frequency span, and the two cold biases (<code>Vds = 0 V</code>, pinched off and with the gate forward-biased).</p>
 <h2 id="tables">Writing the tables</h2>
-<p>The composer reads a simulator's tables most easily as a MATLAB <code>.mat</code> file, written by MATLAB, or by Python with
-<code>scipy.io.savemat</code>. Name the arrays as you like; the import maps them. The bias arrays are either the two axes of a
-Vgs × Vds grid, or one value per point. With several temperatures, write one value per point, with a <code>T</code> array beside
-them:</p>
-<pre><code class="language-python">import numpy as np, scipy.io as sio
-# Swept as vgs (nG,), vds (nD,) in V and T (nT,) in degC; id, ig (nG, nD, nT) in A, positive into the terminal;
-# freq (nF,) in Hz; Y (nG, nD, nT, nF, 2, 2) in S. Flattened to one value per point, in the same order:
-G, D, TT = np.meshgrid(vgs, vds, T, indexing=&quot;ij&quot;)
-sio.savemat(&quot;kit_tables.mat&quot;, {&quot;vgs&quot;: G.ravel(), &quot;vds&quot;: D.ravel(), &quot;T&quot;: TT.ravel(),
-                               &quot;id&quot;: id.ravel(), &quot;ig&quot;: ig.ravel(), &quot;freq&quot;: freq,
-                               &quot;Y&quot;: Y.reshape(-1, len(freq), 2, 2)})
+<p>The composer reads a simulator's tables as named arrays: a MATLAB <code>.mat</code> (written by MATLAB, or by Python with
+<code>scipy.io.savemat</code>) or a NumPy <code>.npz</code> (<code>numpy.savez</code>). Name the arrays as you like. Every array, its unit and the
+layouts the import accepts are in <a href="../reference/model-data.html#format-arrays">File formats</a>.</p>
+<p><strong>What the file holds.</strong> For the runs above, swept as Vgs from −5 to 2 V in 0.1 V steps (71 values), Vds from 0 to
+40 V in 0.5 V steps (81), at 25, 85 and 150 °C, with Y at 1 GHz:</p>
+<table>
+<thead>
+<tr>
+<th>Array</th>
+<th>Shape</th>
+<th>Unit</th>
+<th>Holds</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>vgs</code></td>
+<td>71</td>
+<td>V</td>
+<td>The Vgs sweep values</td>
+</tr>
+<tr>
+<td><code>vds</code></td>
+<td>81</td>
+<td>V</td>
+<td>The Vds sweep values</td>
+</tr>
+<tr>
+<td><code>T</code></td>
+<td>3</td>
+<td>°C</td>
+<td>The temperatures</td>
+</tr>
+<tr>
+<td><code>id</code>, <code>ig</code></td>
+<td>71 × 81 × 3</td>
+<td>A</td>
+<td>The DC currents at each Vgs, Vds and T, positive into the terminal</td>
+</tr>
+<tr>
+<td><code>freq</code></td>
+<td>1</td>
+<td>Hz</td>
+<td>The small-signal frequency</td>
+</tr>
+<tr>
+<td><code>Y</code></td>
+<td>71 × 81 × 3 × 1 × 2 × 2</td>
+<td>S, complex</td>
+<td>Y at each bias and frequency: gate port 1, drain port 2</td>
+</tr>
+<tr>
+<td><code>cgs</code>, <code>cgd</code>, <code>cds</code> (optional)</td>
+<td>71 × 81 × 3</td>
+<td>F</td>
+<td>The core's operating-point capacitances</td>
+</tr>
+</tbody>
+</table>
+<p>The import lists the arrays of the file you pick in that form, before anything is mapped:</p>
+<pre><code>cds    71 × 81 × 3
+cgd    71 × 81 × 3
+cgs    71 × 81 × 3
+freq   1
+id     71 × 81 × 3
+ig     71 × 81 × 3
+T      3
+vds    81
+vgs    71
+Y      71 × 81 × 3 × 1 × 2 × 2   complex
 </code></pre>
-<p>At one temperature, <code>vgs</code> and <code>vds</code> can stay the grid's axes, with <code>id</code> shaped <code>(nG, nD)</code>, and <code>AmbientC</code> states the
-temperature. Every array, its unit and its shape are in
-<a href="../reference/model-composer.html#import-formats">File formats</a>. The things that go wrong:</p>
+<p>From Python, with the results gathered into arrays of those shapes:</p>
+<pre><code class="language-python">import numpy as np
+# vgs (71,), vds (81,), T (3,), freq (1,); id, ig (71, 81, 3) in A; Y (71, 81, 3, 1, 2, 2) complex, in S
+np.savez(&quot;kit_tables.npz&quot;, vgs=vgs, vds=vds, T=T, id=id, ig=ig, freq=freq, Y=Y)
+</code></pre>
+<p>From MATLAB, the 2 × 2 matrix may come first, as MATLAB code usually has it — <code>Y(i, j, f, g, d, t)</code>, shaped
+2 × 2 × 1 × 71 × 81 × 3:</p>
+<pre><code>save('kit_tables.mat', 'vgs', 'vds', 'T', 'id', 'ig', 'freq', 'Y')
+</code></pre>
+<p>The import works out the layout from the shapes, and says how it read any array not in the documented order. The axes
+of a grid may come in any order; a table at one frequency needs no frequency axis. A flat list with one value per point
+(as a simulator's own export often is) reads too: <code>vgs</code>, <code>vds</code>, <code>T</code>, <code>id</code> and <code>ig</code> each 71 × 81 × 3 = 17,253 long, and
+<code>Y</code> 17,253 × 1 × 2 × 2. With the names above, or any of the usual spellings (<code>Vg</code>, <code>Ids</code>, <code>Temp</code>, <code>freq_GHz</code>), the import
+maps the arrays itself.</p>
+<p>At the <strong>device plane</strong>, the file is the same with Y over a frequency span: <code>freq</code> 20 long and <code>Y</code> 71 × 81 × 3 × 20 ×
+2 × 2. A sweep that also wrote the two cold biases as separate runs can go in a second file, or a Touchstone folder.</p>
+<p><strong>Things to check</strong> before importing; the import warns about the first three when it sees them
+(<a href="../reference/model-data.html#import-checks">What the import checks</a>):</p>
 <ul>
 <li><strong>Signs.</strong> Currents are positive <strong>into</strong> the terminal. A simulator that reports the drain current flowing out gives
 a model with negative transconductance.</li>
 <li><strong>The port order.</strong> Gate is port 1, drain port 2, source grounded.</li>
+<li><strong>Units.</strong> Arrays are read in SI and °C. A frequency in GHz, currents in mA or temperatures in kelvin need their unit
+in the map: <code>freq:GHz</code>, <code>id:mA</code>, <code>T:K</code>.</li>
 <li><strong>The base size.</strong> Note the kit device's finger count and unit gate width: they become <code>N0</code> and <code>W0</code>, and every
 instance scales from them (<a href="../reference/model-composer.html#scaling">Periphery scaling</a>). Sample at a size from the
 middle of the range you will use.</li>
 </ul>
 <h2 id="composer">In Model Composer, step by step</h2>
-<p><strong>Tools ▸ Model Composer…</strong>, choose <strong>Active</strong>, and import the <code>.mat</code> on the <strong>Data</strong> step as <strong>Simulated tables</strong>. The
-steps then run in order; for kit data some of them have nothing to do.</p>
+<p><strong>Tools ▸ Model Composer…</strong>, choose <strong>Active</strong>, and import the <code>.npz</code> or <code>.mat</code> on the <strong>Data</strong> step as <strong>Simulated
+tables</strong>. The map field fills itself from the array names; check it against the arrays listed beside it. The steps then
+run in order; for kit data some of them have nothing to do.</p>
 <figure class="fig">
 <svg viewBox="0 0 540 250" role="img" aria-label="The ten steps of an active Model Composer document and what each does with kit data; Pads and Traps have nothing to do" style="width:100%;height:auto">
   <defs>
@@ -524,7 +601,7 @@ compares it with a document's data exactly as the Validate step compares a fitte
 <p>Every step is a <code>circuitrf model</code> noun, the same functions the window calls (<a href="../reference/cli.html#model">Model Composer in the
 CLI</a>):</p>
 <pre><code>circuitrf model new kit.cmc --kind active --network gan-two-shell --fingers 4 --unit-width &quot;125 um&quot;
-circuitrf model import kit.cmc kit_tables.mat --as SimulatedTables --map vgs=vgs --map vds=vds --map T=T --map id=id --map ig=ig --map freq=freq --map Y=Y --condition ReferencePlane=intrinsic
+circuitrf model import kit.cmc kit_tables.npz --as SimulatedTables --condition ReferencePlane=intrinsic
 circuitrf model fit kit.cmc --step all
 circuitrf model check-charge kit.cmc
 circuitrf model validate kit.cmc

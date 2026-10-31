@@ -83,7 +83,9 @@ public sealed partial class ModelImportViewModel : ObservableObject
     };
 
     public bool IsTouchstone => Format == ImportSettings.Touchstone;
-    public bool IsMapped => Format is ImportSettings.Csv or ImportSettings.Npy or ImportSettings.Mat;
+    /// <summary>The raw pane's title: an array file is listed by its arrays, a text file by its first lines.</summary>
+    public string RawTitle => ImportSettings.IsArrayFormat(Format) ? "Arrays in the file" : "First lines";
+    public bool IsMapped => Format == ImportSettings.Csv || ImportSettings.IsArrayFormat(Format);
 
     public ObservableCollection<string> PreviewRaw { get; } = [];
     public ObservableCollection<string> PreviewPoints { get; } = [];
@@ -101,7 +103,7 @@ public sealed partial class ModelImportViewModel : ObservableObject
             _loading = true;
             Format = ModelCommands.FormatOf(Sources[0]) ?? "";
             if (Name.Length == 0) Name = ModelCommands.DefaultName(_doc, inputs);
-            if (IsMapped && Map.Length == 0 && Format == ImportSettings.Csv) Map = GuessMap();
+            if (IsMapped && Map.Length == 0) Map = Format == ImportSettings.Csv ? GuessMap() : SuggestArrayMap();
         }
         catch (ModelingException ex)
         {
@@ -112,6 +114,7 @@ public sealed partial class ModelImportViewModel : ObservableObject
         OnPropertyChanged(nameof(SourcesText));
         OnPropertyChanged(nameof(IsTouchstone));
         OnPropertyChanged(nameof(IsMapped));
+        OnPropertyChanged(nameof(RawTitle));
         UpdatePreview();
     }
 
@@ -137,6 +140,14 @@ public sealed partial class ModelImportViewModel : ObservableObject
             if (CmcFile.PointQuantities.Contains(q) || q is "t") map.Add($"{col}={(q == "t" ? "T" : q)}");
         }
         return string.Join(", ", map);
+    }
+
+    /// <summary>An array file's map from its array names (ModelCommands.SuggestArrayMap); empty when nothing is recognised or the
+    /// file cannot be listed — the preview then says why.</summary>
+    private string SuggestArrayMap()
+    {
+        try { return ModelCommands.SuggestArrayMap(_cmcPath!, Sources[0], Format).Text; }
+        catch (Exception ex) when (ex is DataImportException or IOException) { return ""; }
     }
 
     partial void OnKindChanged(DataSetKind value) => UpdatePreview();
@@ -193,7 +204,13 @@ public sealed partial class ModelImportViewModel : ObservableObject
                     if (colon >= 0) col["Unit"] = right[(colon + 1)..];
                     (import["Columns"] ??= new JsonArray()).AsArray().Add(col);
                 }
-                else (import["Arrays"] ??= new JsonObject()).AsObject()[right] = left;
+                else
+                {
+                    int colon = right.IndexOf(':');
+                    string quantity = colon < 0 ? right : right[..colon];
+                    (import["Arrays"] ??= new JsonObject()).AsObject()[quantity] = left;
+                    if (colon >= 0) (import["ArrayUnits"] ??= new JsonObject()).AsObject()[quantity] = right[(colon + 1)..];
+                }
             }
             if (!Header && Format == ImportSettings.Csv) import["Header"] = false;
         }

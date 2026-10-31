@@ -1481,7 +1481,8 @@ internal static class ToolCatalog
         // the surface grows by one description rather than nine. Every mode is a command line like any other row.
         new("model",
             "Model Composer: build a FET model (.cmodel) or a passive cell from measured or simulated data. "
-          + "new -> import -> deembed -> fit (step=all) -> check-charge -> export -> validate. 'reference cmc' and "
+          + "new -> import -> deembed -> fit (step=all) -> check-charge -> export -> validate. 'reference model-data' is the "
+          + "data: what a model needs, what to run in another simulator, every file format with an example. 'reference cmc' and "
           + "'reference cmodel' hold the formats; a .cmodel of your own (equations, a table, an ANN) needs no .cmc, and "
           + "'reference cmodel' is how to write one. An export to a .va output writes Verilog-A source for other simulators, "
           + "from a .cmc or a .cmodel, and refuses table constituents. Exit 3: a check failed (charge conservation, a validation tolerance).",
@@ -1505,17 +1506,18 @@ internal static class ToolCatalog
                     [
                         new("as",            "--as",             OptKind.Str,        "The data's kind: DcIv, PulsedIv, SParams, PulsedSParams, SimulatedTables, LargeSignal, PassiveSParams."),
                         new("name",          "--name",           OptKind.Str,        "The data set's name. Default: the source's."),
-                        new("format",        "--format",         OptKind.Str,        "touchstone, csv, npy, mat or loadpull. Default: from the extension."),
+                        new("format",        "--format",         OptKind.Str,        "touchstone, csv, npy, mat, npz or loadpull. Default: from the extension."),
                         new("pattern",       "--pattern",        OptKind.Str,        "Touchstone: the bias pattern, fields {vgs} {vds} {T} {id} {ig} {geometry} (Vgs{vgs}_Vds{vds})."),
                         new("patternSource", "--pattern-source", OptKind.Str,        "Touchstone: name (default) or comment."),
-                        new("map",           "--map",            OptKind.StrRepeat,  "CSV: column=quantity[:unit] (Vg=vgs:V); npy/mat: array=quantity."),
+                        new("map",           "--map",            OptKind.StrRepeat,  "CSV: column=quantity[:unit] (Vg=vgs:V); npy/mat/npz: array=quantity[:unit] (f=freq:GHz). Optional for an array file: omitted, the map comes from the array names and is reported."),
                         new("condition",     "--condition",      OptKind.StrRepeat,  "A measurement condition as the .cmc names it: ReferencePlane=device, AmbientC=25, Quiescent.Vds=28."),
                         new("noHeader",      "--no-header",      OptKind.Flag,       "CSV: the first row is data."),
                         new("delimiter",     "--delimiter",      OptKind.Str,        "CSV: the delimiter. Default: inferred."),
                         new("z0",            "--z0",             OptKind.Number,     "The reference impedance a Y table converts to S at, ohms."),
-                        new("freq",          "--freq",           OptKind.Str,        "npy/mat: the frequency of a table with no frequency array (2GHz)."),
+                        new("freq",          "--freq",           OptKind.Str,        "npy/mat/npz: the frequency of a table with no frequency array (2GHz)."),
+                        new("dryRun",        "--dry-run",        OptKind.Flag,       "Read the sources and write nothing: what the file holds, the map, what would be read and how, every warning. The .cmc need not exist yet."),
                     ],
-                    "Add a data set to the .cmc and import it."),
+                    "Add a data set to the .cmc and import it (dryRun: check the data first). The formats, with examples, and what to run in another simulator: 'reference model-data'."),
                 new("deembed", ["model", "deembed"],
                     [new("path", true, "The .cmc.")], [],
                     "Remove the pads and the network: one line per data set of intrinsic data."),

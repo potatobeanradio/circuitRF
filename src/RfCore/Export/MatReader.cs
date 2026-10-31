@@ -26,6 +26,8 @@
 //  file without decoding its data, in a compressed element without inflating past its name. A cell
 //  array, an object, a sparse matrix or a struct array is REFUSED by name when it is asked for, or
 //  when everything is asked for (a null name set); an unrequested one costs nothing and says nothing.
+//  List is the one exception: it is for choosing what to read, so it names such a variable with its reason
+//  and carries on.
 // ================================================================
 
 using System;
@@ -87,6 +89,35 @@ public static class MatReader
         throw new MatFormatException($"{Path.GetFileName(path)} is not a MAT-file: it begins with neither a MATLAB header nor an HDF5 signature.");
     }
 
+    /// <summary>
+    /// Every variable <paramref name="path"/> holds, for a caller choosing what to read: each numeric array decoded, and each
+    /// variable this reader cannot read (a cell array, text, an object, a sparse matrix) by name with the reason, instead of
+    /// refusing the whole file for it. A file that is not a MAT-file at all is still refused.
+    /// </summary>
+    public static (IReadOnlyDictionary<string, MatArray> Arrays, IReadOnlyList<(string Name, string Why)> Skipped) List(string path)
+    {
+        var skipped = new List<(string, string)>();
+        byte[] head = new byte[128];
+        using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read))
+        {
+            int n = fs.ReadAtLeast(head, head.Length, throwOnEndOfStream: false);
+            if (n < 8) throw new MatFormatException($"{Path.GetFileName(path)} is not a MAT-file: it is {n} bytes long.");
+        }
+        if (IsHdf5(head) || Encoding.ASCII.GetString(head, 0, 20).StartsWith("MATLAB 7.3", StringComparison.Ordinal))
+            return (ReadHdf5(path, null, skipped), skipped);
+        if (Encoding.ASCII.GetString(head, 0, 6) == "MATLAB")
+            return (ReadV5(File.ReadAllBytes(path), null, skipped), skipped);
+        throw new MatFormatException($"{Path.GetFileName(path)} is not a MAT-file: it begins with neither a MATLAB header nor an HDF5 signature.");
+    }
+
+    /// <summary>Records <paramref name="why"/> for a listing and returns true; refuses when this is a read.</summary>
+    private static bool Skip(List<(string, string)>? skipped, string name, string why)
+    {
+        if (skipped is null) throw new MatFormatException($"'{name}' {why}", name);
+        skipped.Add((name, why));
+        return true;
+    }
+
     private static readonly byte[] Hdf5Signature = [0x89, (byte)'H', (byte)'D', (byte)'F', 0x0D, 0x0A, 0x1A, 0x0A];
 
     private static bool IsHdf5(byte[] head) => head.AsSpan(0, 8).SequenceEqual(Hdf5Signature);
@@ -122,7 +153,7 @@ public static class MatReader
     private const int ClassCell = 1, ClassStruct = 2, ClassObject = 3, ClassChar = 4, ClassSparse = 5,
                       ClassDouble = 6, ClassUInt64 = 15;
 
-    private static IReadOnlyDictionary<string, MatArray> ReadV5(byte[] bytes, IReadOnlyCollection<string>? names)
+    private static IReadOnlyDictionary<string, MatArray> ReadV5(byte[] bytes, IReadOnlyCollection<string>? names, List<(string, string)>? skipped = null)
     {
         if (bytes.Length < 128) throw new MatFormatException("The MAT-file header is truncated.");
         bool big = bytes[126] == (byte)'M' && bytes[127] == (byte)'I';
@@ -139,12 +170,12 @@ public static class MatReader
 
             if (type == MiCompressed)
             {
-                ReadCompressed(bytes.AsSpan(body, (int)size), big, names, result);
+                ReadCompressed(bytes.AsSpan(body, (int)size), big, names, result, skipped);
                 pos = body + (int)size;          // a compressed element is not padded
             }
             else
             {
-                if (type == MiMatrix) ReadMatrix(bytes.AsSpan(body, (int)size), big, "", names, result);
+                if (type == MiMatrix) ReadMatrix(bytes.AsSpan(body, (int)size), big, "", names, result, skipped);
                 pos = body + (((int)size + 7) & ~7);     // padding is relative: a compressed element before this one need not end aligned
             }
         }
@@ -155,7 +186,7 @@ public static class MatReader
         big ? BinaryPrimitives.ReadUInt32BigEndian(d[at..]) : BinaryPrimitives.ReadUInt32LittleEndian(d[at..]);
 
     private static void ReadCompressed(ReadOnlySpan<byte> z, bool big, IReadOnlyCollection<string>? names,
-                                       SortedDictionary<string, MatArray> result)
+                                       SortedDictionary<string, MatArray> result, List<(string, string)>? skipped)
     {
         using var ms = new MemoryStream(z.ToArray());
         using var zs = new ZLibStream(ms, CompressionMode.Decompress);
@@ -179,7 +210,7 @@ public static class MatReader
             int rest = zs.ReadAtLeast(payload.AsSpan(peek), (int)size - peek, throwOnEndOfStream: false);
             if (rest < size - peek) throw new MatFormatException("A compressed element is truncated.");
         }
-        ReadMatrix(payload, big, "", names, result);
+        ReadMatrix(payload, big, "", names, result, skipped);
     }
 
     private static string? TryPeekName(ReadOnlySpan<byte> m, bool big)
@@ -210,7 +241,7 @@ public static class MatReader
     }
 
     private static void ReadMatrix(ReadOnlySpan<byte> m, bool big, string prefix, IReadOnlyCollection<string>? names,
-                                   SortedDictionary<string, MatArray> result, string? nameOverride = null)
+                                   SortedDictionary<string, MatArray> result, List<(string, string)>? skipped, string? nameOverride = null)
     {
         if (m.Length == 0) return;      // an empty struct field
         int p = 0;
@@ -234,16 +265,16 @@ public static class MatReader
 
         switch (cls)
         {
-            case ClassCell:   throw new MatFormatException($"'{name}' is a cell array; only numeric arrays and structs of them are read.", name);
-            case ClassObject: throw new MatFormatException($"'{name}' is an object; only numeric arrays and structs of them are read.", name);
-            case ClassSparse: throw new MatFormatException($"'{name}' is a sparse matrix; only full numeric arrays are read.", name);
+            case ClassCell:   Skip(skipped, name, "is a cell array; only numeric arrays and structs of them are read."); return;
+            case ClassObject: Skip(skipped, name, "is an object; only numeric arrays and structs of them are read."); return;
+            case ClassSparse: Skip(skipped, name, "is a sparse matrix; only full numeric arrays are read."); return;
             case ClassChar:
                 if (names is not null && names.Contains(name))
                     throw new MatFormatException($"'{name}' is a character array, not a numeric one.", name);
                 return;
             case ClassStruct:
                 int count = shape.Aggregate(1, (a, d) => a * d);
-                if (count != 1) throw new MatFormatException($"'{name}' is a struct array of {count} elements; only a 1 × 1 struct is read.", name);
+                if (count != 1) { Skip(skipped, name, $"is a struct array of {count} elements; only a 1 × 1 struct is read."); return; }
                 e = SubElement(m, p, big); p = e.Next;
                 int len = (int)U32(m, e.Start, big);
                 e = SubElement(m, p, big); p = e.Next;
@@ -253,7 +284,7 @@ public static class MatReader
                 {
                     string field = Encoding.ASCII.GetString(fieldData.Slice(f * len, len)).TrimEnd('\0');
                     var fe = SubElement(m, p, big); p = fe.Next;
-                    if (fe.Type == MiMatrix) ReadMatrix(m.Slice(fe.Start, fe.Length), big, name, names, result, field);
+                    if (fe.Type == MiMatrix) ReadMatrix(m.Slice(fe.Start, fe.Length), big, name, names, result, skipped, field);
                 }
                 return;
         }
@@ -309,11 +340,11 @@ public static class MatReader
     [StructLayout(LayoutKind.Sequential)]
     private struct ComplexSingle { public float real; public float imag; }
 
-    private static IReadOnlyDictionary<string, MatArray> ReadHdf5(string path, IReadOnlyCollection<string>? names)
+    private static IReadOnlyDictionary<string, MatArray> ReadHdf5(string path, IReadOnlyCollection<string>? names, List<(string, string)>? skipped = null)
     {
         var result = new SortedDictionary<string, MatArray>(StringComparer.Ordinal);
         using var file = H5File.OpenRead(path);
-        Walk(file, "", names, result, structPath: false);
+        Walk(file, "", names, result, structPath: false, skipped);
         return result;
     }
 
@@ -325,7 +356,7 @@ public static class MatReader
     }
 
     private static void Walk(IH5Group group, string prefix, IReadOnlyCollection<string>? names,
-                             SortedDictionary<string, MatArray> result, bool structPath)
+                             SortedDictionary<string, MatArray> result, bool structPath, List<(string, string)>? skipped = null)
     {
         foreach (var child in group.Children())
         {
@@ -338,24 +369,25 @@ public static class MatReader
             if (child is IH5Group g)
             {
                 if (cls is not null && cls != "struct")
-                    throw new MatFormatException($"'{name}' is an object of class {cls}; only numeric arrays and structs of them are read.", name);
-                Walk(g, name, names, result, structPath: cls == "struct");
+                {
+                    Skip(skipped, name, $"is an object of class {cls}; only numeric arrays and structs of them are read.");
+                    continue;
+                }
+                Walk(g, name, names, result, structPath: cls == "struct", skipped);
                 continue;
             }
             if (child is not IH5Dataset ds) continue;
 
-            if (cls == "cell")
-                throw new MatFormatException($"'{name}' is a cell array; only numeric arrays and structs of them are read.", name);
+            if (cls == "cell" && Skip(skipped, name, "is a cell array; only numeric arrays and structs of them are read.")) continue;
             if (cls is "char" or "logical" && !(names?.Contains(name) ?? false)) continue;
             if (cls == "char")
                 throw new MatFormatException($"'{name}' is a character array, not a numeric one.", name);
-            if (ds.AttributeExists("MATLAB_sparse"))
-                throw new MatFormatException($"'{name}' is a sparse matrix; only full numeric arrays are read.", name);
+            if (ds.AttributeExists("MATLAB_sparse") && Skip(skipped, name, "is a sparse matrix; only full numeric arrays are read.")) continue;
             if (ds.AttributeExists("MATLAB_empty")) continue;
 
             var t = ds.Type;
-            if (t.Class == H5DataTypeClass.Reference)
-                throw new MatFormatException($"'{name}' holds object references (a cell array or an object); only numeric arrays are read.", name);
+            if (t.Class == H5DataTypeClass.Reference
+                && Skip(skipped, name, "holds object references (a cell array or an object); only numeric arrays are read.")) continue;
             if (t.Class is not (H5DataTypeClass.FloatingPoint or H5DataTypeClass.FixedPoint or H5DataTypeClass.Compound))
             {
                 if (names?.Contains(name) ?? false)
@@ -372,8 +404,8 @@ public static class MatReader
             if (t.Class == H5DataTypeClass.Compound)
             {
                 var members = t.Compound.Members;
-                if (members.Length != 2 || members[0].Name != "real" || members[1].Name != "imag")
-                    throw new MatFormatException($"'{name}' is a compound type that is not a complex number {{real, imag}}.", name);
+                if ((members.Length != 2 || members[0].Name != "real" || members[1].Name != "imag")
+                    && Skip(skipped, name, "is a compound type that is not a complex number {real, imag}.")) continue;
                 if (members[0].Type.Size == 8)
                 {
                     var c = ds.Read<ComplexDouble[]>();

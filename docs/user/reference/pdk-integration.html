@@ -475,7 +475,7 @@ have that library somewhere else under the same name, the message offers <strong
 parts checked, and any placed part the library no longer holds.</p>
 <h3 id="vendor-placed">A placed part</h3>
 <p>Selecting a placed vendor part shows its library and file, a <strong>Part</strong> field and the part's value,
-frequency range and description in the Parameter Editor. The editor's title is the part number.</p>
+<a href="#vendor-tolerance">tolerance</a>, frequency range and description in the Parameter Editor. The editor's title is the part number.</p>
 <ul>
 <li><p><strong>Choose another part</strong> by typing in the Part field: it searches that file's parts with the
 palette's search, and <kbd>↓</kbd>/<kbd>↑</kbd> move through the matches while you type.
@@ -536,13 +536,86 @@ one, and polishes the other variables with it. The status line shows both costs,
 components and the cost with the real parts; the gap is what the parts' own parasitics do. A part with
 no C or L glyph has no ideal stand-in and is always searched on its candidates.</p>
 <p><strong>Push</strong> writes the chosen part to the instance as choosing it in the Part field would. The footprint
-follows only when it came from the part, and the whole Push is one Undo. A part is chosen, never given a
-tolerance: a static model states none, so a Monte Carlo or yield run leaves it as placed. The
+follows only when it came from the part, and the whole Push is one Undo. The part itself is chosen, never
+drawn; to vary a real part in a Monte Carlo run, draw its value with its own tolerance (next section). The
 frequency-range warning is given once, for each chosen part whose range the analyses leave.</p>
 <p>Headless, the same line is written <code>tune C1.Part kind=same min=1 pF max=47 pF opt=1</code>, or
 <code>tune C1.Part parts=&quot;0603 C0G 50V&quot; opt=1</code>. <code>circuitrf explain --tunables</code> lists each part with its
 candidates, <code>circuitrf check</code> reports an entry with no candidate or too many, and <code>circuitrf opt</code>
 reports the chosen part for each entry.</p>
+<h3 id="vendor-tolerance">A part's tolerance</h3>
+<p>A static model states no tolerance, but the part number does. Manufacturers spell a part's value as a
+short code (<code>100</code> is 10 pF, <code>R60</code> is 0.6 pF, <code>1N3</code> is 1.3 nH) and put a tolerance letter right after it:
+<code>B</code> ±0.1 pF, <code>C</code> ±0.25 pF, <code>J</code> ±5 %, <code>K</code> ±10 % and so on. circuitRF works out the value code from the value
+the header states, finds it in the part number, and reads the letter after it. A header that states a
+tolerance itself (<code>Tolerance = ±5%</code>) is used as written and the part number is not read.</p>
+<table>
+<thead>
+<tr>
+<th>Letter</th>
+<th>Capacitor</th>
+<th>Inductor</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>W</code></td>
+<td>±0.05 pF</td>
+<td>±0.05 nH</td>
+</tr>
+<tr>
+<td><code>B</code></td>
+<td>±0.1 pF</td>
+<td>±0.1 nH</td>
+</tr>
+<tr>
+<td><code>C</code></td>
+<td>±0.25 pF</td>
+<td>±0.2 nH</td>
+</tr>
+<tr>
+<td><code>S</code></td>
+<td>—</td>
+<td>±0.3 nH</td>
+</tr>
+<tr>
+<td><code>D</code></td>
+<td>±0.5 pF</td>
+<td>±0.5 nH</td>
+</tr>
+<tr>
+<td><code>F</code> <code>G</code> <code>H</code> <code>J</code> <code>K</code> <code>M</code></td>
+<td>±1, 2, 3, 5, 10, 20 %</td>
+<td>the same</td>
+</tr>
+</tbody>
+</table>
+<p>A letter in pF or nH counts only on a part of 10 pF / 10 nH or less whose value is at least the
+tolerance. <strong>When the answer is not certain the tolerance is <em>not known</em>, never guessed:</strong> the part number
+holds no value code followed by one of these letters, it spells the value code twice with different letters
+after it, or the letters of one file sit at more than one position in their part numbers (that file is
+reported once and none of its tolerances is used). Adding a library reports how many parts have a known
+tolerance: <em>Tolerance known for 1,212 of 1,236 parts.</em></p>
+<p>The Parameter Editor shows the tolerance on its own row under the value (<code>Tolerance ±0.1 pF</code>, or
+<code>not known</code>), and the part picker shows it after each part's value (<code>10 pF ±5 %</code>).</p>
+<p><strong>Drawing a part in a Monte Carlo run.</strong> The <span class="ui">Yield</span> toggle beside Tune and
+Optimize adds the part's value to the Yield panel, as <code>C1.C</code> for a capacitor or <code>C1.L</code> for an inductor,
+drawn from the part's own tolerance. It is greyed, with the reason in its tooltip, when the tolerance is
+not known. Headless the line is:</p>
+<pre><code>tune C1.C dist=gauss tol=part sigmas=3 trunc=3
+tune L2.L dist=unif tol=part
+</code></pre>
+<p><code>tol=part</code> follows the part. Choosing another part, stepping the value or applying an optimized part
+changes the tolerance with it, with no edit to the line. An explicit <code>tol=0.05 pF</code> still works. A draw
+scales every capacitance of a capacitor's model, or every inductance of an inductor's, by the drawn value
+over the stated one. The parasitics of the other kinds stay as they are, so the self-resonance moves as a
+real part's does. The value is drawn only: <code>opt=1</code> or <code>tune=1</code> on <code>C1.C</code> is an error, because the knob a
+real part has is <code>C1.Part</code>. When the optimizer chooses among parts and the value draws with <code>tol=part</code>,
+each candidate is drawn with its own tolerance, and a candidate whose tolerance is not known is left out
+and reported.</p>
+<p><code>circuitrf check</code> reports <code>tol=part</code> on a part whose tolerance is not known, naming the part and the
+reason. <code>circuitrf find --parts</code> prints the tolerance as a column, and <code>circuitrf explain --tunables</code> shows
+what <code>tol=part</code> resolves to.</p>
 <p>Headless, <code>circuitrf import library &lt;folder&gt; --into &lt;workspace&gt;</code> adds one,
 <code>circuitrf find &lt;workspace&gt; --parts &quot;&lt;query&gt;&quot;</code> searches them, <code>circuitrf check &lt;workspace&gt;</code> reports a
 missing library or a vanished part as an error, and <code>circuitrf explain &lt;file&gt; --ref vendorlib://…</code>

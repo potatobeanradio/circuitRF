@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — Model Data</title>
+<link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: docs/user/src/reference/model-data.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../index.html"><img class="logo" src="../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="index.html">Reference Guide</a>
+  <div class="doc-search" data-crf-search data-root="../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › Model Data</p>
+    <nav class="page-nav-top" aria-label="Previous and next page">
+      <a class="prev" href="model-composer.html" title="Previous: Model Composer"><span class="arrow">‹</span><span class="name">Model Composer</span></a>
+      <a class="next" href="cmodel.html" title="Next: Writing a .cmodel"><span class="name">Writing a .cmodel</span><span class="arrow">›</span></a>
+    </nav>
+  </div>
+
+  <h1>Model Data</h1>
+  <p class="lede">The data a Model Composer model is built from — what it needs, how to sample it in another simulator, and the file formats, each with an example to copy.</p>
+
+<nav class="toc">
+<h2>On this page</h2>
+<ol>
+<li><a href="#needs">What a model needs</a></li>
+<li><a href="#ranges">Bias ranges and steps</a></li>
+<li><a href="#from-simulator">From another simulator</a></li>
+<li><a href="#import-formats">File formats</a></li>
+<li><a href="#dry-run">Checking a file before importing it</a></li>
+<li><a href="#import-checks">What the import checks</a></li>
+<li><a href="#checklist">Checklist</a></li>
+</ol>
+</nav>
+<p>The <a href="model-composer.html">Model Composer</a> builds a model from data that can come from a lab bench or from another
+simulator. This page is everything about that data: what a model needs, how to produce it, and how to write it so the
+import reads it. It is also served to scripts and agents as <code>circuitrf reference model-data</code> (the <code>reference</code> tool,
+<code>topic=model-data</code>, over MCP).</p>
+<h2 id="needs">What a model needs</h2>
+<table>
+<thead>
+<tr>
+<th>Data</th>
+<th>Needed</th>
+<th>What it gives the model</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>I–V: DC, or a simulator's DC currents; 4 points or more, varying both Vgs and Vds</td>
+<td><strong>Required</strong></td>
+<td><code>Id</code> and <code>Ig</code>. With no gate current in the data, <code>Ig</code> is zero</td>
+</tr>
+<tr>
+<td>S, Y or a capacitance table</td>
+<td>Optional</td>
+<td><code>Qg</code> and <code>Qd</code>. None: the charges are constant capacitances you type, or zero. One bias or more: fitted linear charges — constant capacitances, exact at a single bias — with the <code>Linear</code> equation; four biases or more allow ANN or Table charges. Across the I–V plane: nonlinear charges</td>
+</tr>
+<tr>
+<td>S at Vds = 0 V, pinched off and with the gate forward-biased</td>
+<td>Optional</td>
+<td>The cold-FET network fit</td>
+</tr>
+<tr>
+<td>Open and short pad dummies</td>
+<td>When measured at the probe tips</td>
+<td>Removal of the pads</td>
+</tr>
+<tr>
+<td>Any set at two or more temperatures</td>
+<td>Optional</td>
+<td><code>T</code> as an input: the model follows the run's <code>temp</code>, and self-heating becomes available</td>
+</tr>
+<tr>
+<td>Pulsed I–V at two or more chuck temperatures, from a quiescent point that dissipates nothing, plus DC I–V at the same biases</td>
+<td>Optional</td>
+<td>An extracted Rth. Without this data, type Rth</td>
+</tr>
+<tr>
+<td>S or Y down to the thermal roll-off of <code>Re Y22</code> (typically kHz to MHz)</td>
+<td>Optional</td>
+<td>A fitted τth</td>
+</tr>
+<tr>
+<td>Pulsed I–V from two or more quiescent drain voltages</td>
+<td>Optional</td>
+<td>Drain lag</td>
+</tr>
+<tr>
+<td>Pulsed I–V from two or more quiescent gate voltages</td>
+<td>Optional</td>
+<td>Gate lag</td>
+</tr>
+<tr>
+<td>A double pulse</td>
+<td>Optional</td>
+<td>The clearest trap data</td>
+</tr>
+<tr>
+<td>Pulsed I–V from one quiescent point</td>
+<td>Optional</td>
+<td>One trap level, with a warning</td>
+</tr>
+<tr>
+<td>Pulsed S</td>
+<td>Optional</td>
+<td>A trap-dependent <code>Qd</code></td>
+</tr>
+<tr>
+<td>No pulsed data; DC I–V and multi-bias S</td>
+<td>Optional</td>
+<td>Threshold-shift traps: time constants typed, strengths typed or fitted from the multi-bias S</td>
+</tr>
+<tr>
+<td>Power sweeps, two-tone sweeps, loadpull</td>
+<td>Optional</td>
+<td>Validation only</td>
+</tr>
+</tbody>
+</table>
+<p>Trained trap states need pulsed I–V. Without it a model can still have traps: the states shift the threshold of the
+trap-free current, with strengths fitted from the difference between the DC and RF conductances in the multi-bias S, or
+typed. <strong>DC/RF dispersion</strong> is the simpler alternative, with one linear time constant and no fast capture.</p>
+<h2 id="ranges">Bias ranges and steps</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Measured</th>
+<th>Simulated</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Vgs</td>
+<td>From about 1 V below pinch-off to forward gate conduction</td>
+<td>Wider costs nothing: from 2 V below pinch-off to well into forward conduction</td>
+</tr>
+<tr>
+<td>Vds</td>
+<td>From 0 V to the peak drain swing (about 2.5 × the supply for class AB, more for switching classes), staying inside the safe operating area</td>
+<td>The same range, within the source model's valid range</td>
+</tr>
+<tr>
+<td>High-power corner</td>
+<td>Pulsed I–V, where DC would overheat the device</td>
+<td>DC, with self-heating off</td>
+</tr>
+<tr>
+<td>I–V step</td>
+<td>0.1 V in Vgs (0.05 V near threshold); 0.25–0.5 V in Vds below the knee, 1–2 V above it</td>
+<td>A uniform 0.05–0.1 V grid</td>
+</tr>
+<tr>
+<td>S biases</td>
+<td>100 or more: every 0.25–0.5 V in Vgs and 1–2 V in Vds, plus the two cold points</td>
+<td>The same bias grid as the I–V</td>
+</tr>
+<tr>
+<td>Frequencies</td>
+<td>20–50, from 0.1–0.5 GHz to at least three times the operating frequency</td>
+<td>One low frequency (1 GHz, say) for an intrinsic table; a span when the data includes parasitics</td>
+</tr>
+</tbody>
+</table>
+<p>The model is continued linearly beyond its data, so cover the whole swing the circuit will make. The charges are
+read between a tenth and a half of the top frequency. The default ANNs want a few hundred points or more, and a fit
+reports when its data is thin for its network.</p>
+<h2 id="from-simulator">From another simulator</h2>
+<p>A transistor that already has a model in another simulator's design kit can be sampled there and fitted here. This
+section is what to run on that side; <a href="../app-notes/an04-model-from-a-reference-kit.html">AN-04</a> is the same flow
+worked through, with the negative network drawn out. One bench per run: the transistor at the size to be modelled, the
+bias, and the ports, nothing else.</p>
+<table>
+<thead>
+<tr>
+<th>Run</th>
+<th>Analysis</th>
+<th>Sweep</th>
+<th>What to write</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>I–V</td>
+<td>DC</td>
+<td>Vgs inside Vds, inside temperature when there are several</td>
+<td>Vgs, Vds and the gate and drain currents at every point; optionally the core's own voltages (<code>vgsi</code>, <code>vdsi</code>), which the composer checks against its own</td>
+</tr>
+<tr>
+<td>Small-signal</td>
+<td>S-parameters at every bias of the DC sweep</td>
+<td>One low frequency for the charges (a few hundred MHz to 1 GHz) at the intrinsic plane; a span (0.5–40 GHz, say) at the device plane</td>
+<td>Y (or S) of the two-port: gate port 1, drain port 2, source grounded</td>
+</tr>
+<tr>
+<td>Capacitances (optional)</td>
+<td>The core's operating-point capacitances, where the simulator reports them</td>
+<td>The same bias grid</td>
+<td><code>cgs</code>, <code>cgd</code>, <code>cds</code> and optionally <code>cm</code>, or the matrix <code>C</code></td>
+</tr>
+<tr>
+<td>Temperature</td>
+<td>Both sweeps at two or more temperatures</td>
+<td>Spanning the junction temperatures the circuit reaches: the ambient plus the heating</td>
+<td>A <code>T</code> grid axis, or one value per point</td>
+</tr>
+<tr>
+<td>Pulsed I–V (optional)</td>
+<td>Transient: hold the quiescent bias until the trap and thermal states settle, step to the pulse bias, sample the currents at the sample delay</td>
+<td>One run per quiescent point</td>
+<td>A CSV per quiescent point, stating <code>Quiescent</code>, <code>PulseWidth</code> and <code>SampleDelay</code></td>
+</tr>
+<tr>
+<td>Large signal (validation)</td>
+<td>Harmonic balance: a power sweep at the operating bias, a two-tone sweep, a loadpull</td>
+<td>Drive up into compression</td>
+<td>A power or two-tone sweep as a <a href="#format-large-signal">CSV</a>; a loadpull as <code>.spl</code> or <code>.lpcwave</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Settings on that side.</strong> Each of these, missed, gives a model that is right at the operating point and wrong
+elsewhere:</p>
+<ul>
+<li><strong>Self-heating off</strong> (Rth = 0, or the model's thermal switch off) for every fitting run. The composer fits
+isothermal currents at each run's temperature and adds the heating itself; data that already holds it is heated
+twice. Note the kit's Rth and Cth: they are typed on the Thermal step.</li>
+<li><strong>Traps and dispersion off</strong>, unless they are to be modelled from pulsed transients or as DC/RF dispersion. A DC sweep
+with traps on and a small-signal analysis with them frozen describe two different devices.</li>
+<li><strong>Stay inside the model's valid range.</strong> A model that clamps its inputs outside it samples as flat data, which the
+fit then reproduces.</li>
+<li><strong>Sample wide.</strong> From 2 V below pinch-off to well into forward gate conduction, and from 0 V to beyond the peak drain
+swing (<a href="#ranges">steps</a>). The model is continued linearly past its data.</li>
+<li><strong>Note the base size.</strong> The sampled device's finger count and unit gate width are <code>N0</code> and <code>W0</code>
+(<code>model new --fingers --unit-width</code>); every instance scales from them.</li>
+</ul>
+<p><strong>The plane.</strong> The composer fits the core inside the extrinsic network. Sample on one side of that network or the
+other, and say which with <code>ReferencePlane</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Plane</th>
+<th>On that side</th>
+<th>Here</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>intrinsic</code> (preferred)</td>
+<td>Record the core's internal node voltages, if the kit exposes them; or put the kit's extrinsic network, every value negated and read from the core outwards, between each port and the device</td>
+<td>No network is fitted: the points lie exactly on the swept grid, and the kit's network values are typed and locked</td>
+</tr>
+<tr>
+<td><code>device</code></td>
+<td>Sample at the device's terminals, as it is</td>
+<td>A six-pin network holding the kit's values, locked; the composer removes it. With the values unknown, it fits them, which needs S over a span and the two cold biases (<code>Vds = 0</code>, pinched off and forward-biased)</td>
+</tr>
+</tbody>
+</table>
+<p>The negated network is exact in DC and small-signal analyses only; the large-signal runs use the device as it is. At DC
+only its resistances matter: the <code>−R</code> cancels the kit's own drop, so the core sees the port's voltage. A value that
+depends on temperature is negated at each temperature run.</p>
+<p><strong>The order of work.</strong> Write the files, check each one with <a href="#dry-run">a dry run</a> until it reads as intended with no
+warnings, then build the model:</p>
+<pre><code>circuitrf model import kit.cmc kit_tables.npz --as SimulatedTables --dry-run
+circuitrf model new kit.cmc --kind active --network gan-two-shell --fingers 4 --unit-width &quot;125 um&quot;
+circuitrf model import kit.cmc kit_tables.npz --as SimulatedTables --condition ReferencePlane=intrinsic
+circuitrf model fit kit.cmc --step all
+circuitrf model validate kit.cmc
+circuitrf model export kit.cmc -o kit.cmodel
+</code></pre>
+<p>Over MCP these are the <code>model</code> tool's nouns, with <code>dryRun=true</code> on <code>import</code>.</p>
+<h2 id="import-formats">File formats</h2>
+<p>Each kind of data has the formats it is usually written in. The examples below are short but complete: each can be
+copied, extended with more rows or arrays, and imported as shown. The
+<a href="model-composer.html#example">example workspace</a>'s <code>synthetic-gan</code> folder holds full-size files in the first two formats.</p>
+<table>
+<thead>
+<tr>
+<th>Data</th>
+<th>Format</th>
+<th>Kinds</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>I–V from a source-measure unit, a pulsed I–V system or a simulator's DC sweep</td>
+<td><a href="#format-csv">CSV or TSV</a>, one row per bias</td>
+<td><code>DcIv</code>, <code>PulsedIv</code></td>
+</tr>
+<tr>
+<td>S-parameters from a network analyser, or a simulator's S at each bias</td>
+<td><a href="#format-touchstone">A folder of Touchstone files</a>, one per bias</td>
+<td><code>SParams</code>, <code>PulsedSParams</code></td>
+</tr>
+<tr>
+<td>A simulator's tables: currents with Y, S or capacitances, over a bias grid</td>
+<td><a href="#format-arrays">Named arrays</a>: <code>.mat</code>, <code>.npz</code> or circuitRF's <code>.npy</code></td>
+<td><code>SimulatedTables</code> (also <code>DcIv</code>)</td>
+</tr>
+<tr>
+<td>Power sweeps and two-tone sweeps</td>
+<td><a href="#format-large-signal">CSV</a></td>
+<td><code>LargeSignal</code></td>
+</tr>
+<tr>
+<td>Loadpull</td>
+<td><code>.spl</code> or <code>.lpcwave</code></td>
+<td><code>LargeSignal</code></td>
+</tr>
+</tbody>
+</table>
+<p>Currents are positive <strong>into</strong> the terminal, in every format. Gate is port 1 and drain port 2, with the source
+grounded.</p>
+<h3 id="format-csv">I–V as CSV</h3>
+<p>One row per bias point, in any order. Any common delimiter works (comma, tab, semicolon, spaces), and lines starting
+<code>#</code>, <code>!</code> or <code>%</code> are skipped. Columns are found by their header names; the map says which is which and what unit its
+numbers are in. This is the start of <code>synthetic-gan/dc/dc_25C.csv</code>, with the rows at Vgs = 0 V:</p>
+<pre><code>Vgs,Vds,Ig,Id
+0,0,0,0
+0,0.5,-1.97642744E-12,0.01990036447
+0,1,-1.997927465E-12,0.03276733857
+0,2,-1.999158983E-12,0.03755021927
+0,5,-1.999400699E-12,0.03934713576
+0,10,-1.999692969E-12,0.04289384235
+</code></pre>
+<pre><code>circuitrf model import fet.cmc dc_25C.csv --as DcIv --map Vgs=vgs:V --map Vds=vds:V --map Ig=ig:A --map Id=id:A --condition AmbientC=25 --condition ReferencePlane=device
+</code></pre>
+<p>The same data written by an instrument with its units in the header and a different delimiter reads with a different
+map. A cell that carries its own unit (<code>12 mA</code>) uses it, whatever the column's unit:</p>
+<pre><code># Vgs (V)	Vds (V)	Ig (mA)	Id (mA)
+Vgs	Vds	Ig	Id
+0	0.5	-1.98e-9	19.90
+0	1	-2.00e-9	32.77
+</code></pre>
+<p>with <code>--map Vgs=vgs:V --map Vds=vds:V --map Ig=ig:mA --map Id=id:mA</code>. A <code>T</code> column (°C) gives each row its own
+temperature; without one, <code>AmbientC</code> gives the whole file one. The intrinsic voltages a simulator reports can come in
+<code>vgsi</code> and <code>vdsi</code> columns. <strong>Pulsed I–V</strong> is the same table, one file per quiescent point: <code>pulsed_q20_25C.csv</code> beside
+<code>pulsed_q0_25C.csv</code>, each imported with its own <code>Quiescent</code>, <code>PulseWidth</code> and <code>SampleDelay</code>.</p>
+<h3 id="format-touchstone">S-parameters as Touchstone files</h3>
+<p>One <code>.s2p</code> per bias point, all in one folder and all on the same frequencies, in RI, MA or DB. The bias is read from
+each file's name by a pattern. This is part of <code>synthetic-gan/s_25C</code>:</p>
+<pre><code>s_25C/
+  Vgs-0.4_Vds0.5_Id12.969913.s2p
+  Vgs-0.4_Vds1_Id17.993038.s2p
+  Vgs-0.4_Vds10_Id21.844400.s2p
+  Vgs-0.8_Vds0.5_Id4.648155.s2p
+  …
+</code></pre>
+<pre><code>circuitrf model import fet.cmc s_25C --as SParams --pattern &quot;Vgs{vgs}_Vds{vds}_Id{id:mA}&quot; --condition AmbientC=25 --condition ReferencePlane=device
+</code></pre>
+<p>The fields are <code>{vgs}</code>, <code>{vds}</code>, <code>{T}</code>, <code>{id}</code> and <code>{ig}</code>, each with an optional unit (<code>{id:mA}</code>); the currents and
+<code>{T}</code> are optional. When the bias is in the
+comment lines instead, the pattern reads those (<code>--pattern-source comment</code>); a space in the pattern matches any run of
+spaces:</p>
+<pre><code>! Vgs = -0.4 V   Vds = 10 V   Id = 21.84 mA
+# Hz S RI R 50
+500000000 0.98989 -0.12987 -1.02909 0.10819 0.00118 0.01397 0.02200 -0.01676
+1000000000 0.96024 -0.25528 -1.00438 0.21265 0.00466 0.02741 0.01889 -0.03307
+</code></pre>
+<p>with <code>--pattern &quot;Vgs = {vgs} V Vds = {vds} V Id = {id:mA} mA&quot; --pattern-source comment</code>. The cold-FET points are files
+like any other, at <code>Vds = 0</code>.</p>
+<h3 id="format-arrays">Simulated tables as named arrays</h3>
+<p>A simulator's tables are a few arrays over a bias grid. Write them as a MATLAB <code>.mat</code> (version 5, 7 or 7.3, from
+MATLAB, <code>scipy.io.savemat</code> or h5py) or as a NumPy <code>.npz</code> (<code>numpy.savez</code>). The names are yours: the map says which
+array is which quantity.</p>
+<table>
+<thead>
+<tr>
+<th>Quantity</th>
+<th>Holds</th>
+<th>Unit</th>
+<th>Shape</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>vgs</code>, <code>vds</code></td>
+<td>The bias</td>
+<td>V</td>
+<td>One value per point, or one per grid axis</td>
+</tr>
+<tr>
+<td><code>id</code>, <code>ig</code></td>
+<td>The currents, positive into the terminal</td>
+<td>A</td>
+<td>One value per point</td>
+</tr>
+<tr>
+<td><code>T</code></td>
+<td>The temperature</td>
+<td>°C</td>
+<td>One value per point, one per grid axis, or a single value</td>
+</tr>
+<tr>
+<td><code>vgsi</code>, <code>vdsi</code></td>
+<td>The core's own voltages, when the simulator reports them; checked against the composer's</td>
+<td>V</td>
+<td>One value per point</td>
+</tr>
+<tr>
+<td><code>freq</code></td>
+<td>The frequencies of Y or S</td>
+<td>Hz</td>
+<td>One per frequency</td>
+</tr>
+<tr>
+<td><code>Y</code> or <code>S</code></td>
+<td>The two-port table</td>
+<td>S, or none</td>
+<td><code>[points…, freq, 2, 2]</code></td>
+</tr>
+<tr>
+<td><code>Y11</code> … <code>Y22</code>, or <code>S11</code> … <code>S22</code></td>
+<td>The same table as four arrays, all four together</td>
+<td>S, or none</td>
+<td><code>[points…, freq]</code></td>
+</tr>
+<tr>
+<td><code>C</code></td>
+<td>The capacitance matrix, <code>Cij = ∂Qi/∂vj</code> (so <code>C12 = −Cgd</code>)</td>
+<td>F</td>
+<td><code>[points…, 2, 2]</code></td>
+</tr>
+<tr>
+<td><code>cgs</code>, <code>cgd</code>, <code>cds</code>, and optionally <code>cm</code></td>
+<td>The circuit set, instead of <code>C</code></td>
+<td>F</td>
+<td>One value per point</td>
+</tr>
+</tbody>
+</table>
+<p>&quot;Points…&quot; is either one axis with a value per point, or the grid's own axes. A single-bias table has no point axis, and
+a table at one frequency needs no frequency axis (state <code>FrequencyHz</code> instead of mapping <code>freq</code>).</p>
+<p><strong>An example.</strong> A Vgs × Vds grid of 41 × 17 points at one temperature, with Y at 1 GHz, written from Python:</p>
+<pre><code class="language-python">import numpy as np
+vgs = np.linspace(-4, 1, 41)                     # (41,)  V
+vds = np.linspace(0, 40, 17)                     # (17,)  V
+# id, ig: (41, 17) in A, one value per vgs × vds; freq: (1,) in Hz; Y: (41, 17, 1, 2, 2) complex, in S
+np.savez(&quot;tables.npz&quot;, vgs=vgs, vds=vds, id=id, ig=ig, freq=freq, Y=Y)
+# or, the same arrays as a .mat:
+import scipy.io as sio
+sio.savemat(&quot;tables.mat&quot;, {&quot;vgs&quot;: vgs, &quot;vds&quot;: vds, &quot;id&quot;: id, &quot;ig&quot;: ig, &quot;freq&quot;: freq, &quot;Y&quot;: Y})
+</code></pre>
+<p>or from MATLAB, which keeps the 2 × 2 matrix first:</p>
+<pre><code>% Y(i, j, f, g, d): (2, 2, 1, 41, 17) complex
+save('tables.mat', 'vgs', 'vds', 'id', 'ig', 'freq', 'Y')
+</code></pre>
+<p>The importer lists what the file holds before anything is mapped — the right side of its window, and the arrays
+named in a refusal — so the file can be checked against the table above:</p>
+<pre><code>freq   1
+id     41 × 17
+ig     41 × 17
+vds    17
+vgs    41
+Y      41 × 17 × 1 × 2 × 2   complex
+</code></pre>
+<pre><code>circuitrf model import fet.cmc tables.npz --as SimulatedTables --condition ReferencePlane=intrinsic --condition AmbientC=25
+</code></pre>
+<p>With no <code>--map</code>, the map is taken from the array names, and printed: <code>map from the array names: vgs=vgs, vds=vds, ig=ig, id=id, freq=freq, Y=Y.</code> The importer's window fills its map field the same way. Any of the usual spellings are recognised — <code>Vg</code>,
+<code>VGS</code>, <code>v_gs</code> and <code>Vgate</code> for <code>vgs</code>, <code>Ids</code> and <code>I_D</code> for <code>id</code>, <code>f</code> and <code>frequency</code> for <code>freq</code>, <code>Temp</code> for <code>T</code> — and a
+unit suffix gives the array its unit: <code>Ids_mA</code>, <code>freq_GHz</code>, <code>T_K</code>. Two arrays that both look like one quantity are left
+for you to map. A map written out says the same thing explicitly:</p>
+<pre><code>--map vgs=vgs --map vds=vds --map id=id --map ig=ig --map freq=freq --map Y=Y
+</code></pre>
+<p><strong>Units.</strong> Arrays are read in SI (°C for <code>T</code>) unless the map gives a unit: <code>--map f=freq:GHz</code>, <code>--map Ids=id:mA</code>,
+<code>--map Tj=T:K</code> (kelvin is converted to °C). The window's map takes the same <code>name=quantity:unit</code>.</p>
+<p><strong>More than one temperature.</strong> Add <code>T</code> as a third grid axis, and give every per-point array that axis too. With
+<code>T = [25, 85, 125]</code>, <code>id</code> is <code>(41, 17, 3)</code> and <code>Y</code> is <code>(41, 17, 3, 1, 2, 2)</code>. One value per point works as well:
+<code>vgs</code>, <code>vds</code>, <code>T</code>, <code>id</code> and <code>ig</code> all of length 41 × 17 × 3 = 2,091, and <code>Y</code> shaped <code>(2091, 1, 2, 2)</code>.</p>
+<p><strong>Capacitances.</strong> A table of the core's capacitances is read at <code>ReferencePlane=intrinsic</code> only. On its own it feeds
+the charges at every point, with nothing to fit the network, <code>Gm</code>, <code>Gds</code>, dispersion or τth to. Beside Y or S, Y feeds
+the charges and the table is checked against it: <code>max |ΔC| 0.02 % between its capacitance table and Im Y/ω</code>.</p>
+<p><strong>The layout is worked out from the shapes.</strong> The order of the axes need not match the table above; the importer reads
+whichever order fits:</p>
+<ul>
+<li>The grid's axes in any order: <code>id</code> written <code>(17, 41)</code>, vds first, reads the same as <code>(41, 17)</code>.</li>
+<li>The table's axes in any order, with <code>i</code> before <code>j</code>: MATLAB's <code>Y(i, j, f, g, d)</code>, the 2 × 2 first, reads as written.</li>
+<li>Per-point arrays flattened, with Vgs varying slowest, then Vds, then T, as <code>numpy.ravel</code> and <code>meshgrid(…, indexing=&quot;ij&quot;)</code> give them; or two-dimensional bias arrays from a <code>meshgrid</code>, whichever way round.</li>
+<li>A frequency array written once per point, <code>(697, 1)</code> or <code>(41, 17, 1)</code>, reduced to its distinct values.</li>
+<li>Axes of length 1 ignored: <code>(41, 1)</code> is 41 values.</li>
+</ul>
+<p>When the reading is not the documented layout, the import says how it read each array. The MATLAB file above gives
+<code>'Y' (2 × 2 × 41 × 17) read as [i, j, vgs, vds]</code>: the shape without its length-1 frequency axis, then what each axis
+was read as. When two axes have the same length (a 17 × 17 grid, or
+two frequencies) more than one order fits; the import reads the most likely one and adds <code>another order of its axes fits too — check the plots</code>. When no order fits, it refuses, listing every mapped array's shape and the shapes it needed.</p>
+<p><strong>Not read.</strong> A cell array, text or an object in a <code>.mat</code> is listed with the reason and otherwise ignored, so labels and
+settings can stay in the file. A struct's fields are mapped as <code>s.field</code>. A plain <code>.npy</code> from <code>numpy.save</code> holds one
+unnamed array and is refused; save the arrays together with <code>numpy.savez</code>. A <code>.npy</code> that circuitRF wrote, with its
+own named arrays, is read like a <code>.mat</code>. Touchstone files and a CSV, which most simulators can also write, work too.</p>
+<h3 id="format-large-signal">Large-signal sweeps as CSV</h3>
+<p>One row per input power. The quantities are <code>pin</code>, <code>pout</code>, <code>im3</code> and <code>im5</code> in dBm, <code>gain</code> in dB, <code>pae</code> and <code>de</code> in %,
+and the DC currents <code>id</code> and <code>ig</code> in any unit; <code>pin</code> is required. The conditions say what was measured: the
+measurement, the frequency, the bias and the terminations.</p>
+<pre><code>Pin,Pout,Gain,PAE,Id
+-5,9.21,14.21,1.8,0.0482
+0,14.18,14.18,5.6,0.0511
+5,19.02,14.02,16.4,0.0613
+10,23.31,13.31,36.9,0.0905
+15,25.88,10.88,52.7,0.1287
+</code></pre>
+<pre><code>circuitrf model import fet.cmc psweep.csv --as LargeSignal --map Pin=pin:dBm --map Pout=pout:dBm --map Gain=gain:dB --map PAE=pae:% --map Id=id:A --condition LargeSignal.Measurement=PowerSweep --condition LargeSignal.FrequencyHz=2e9 --condition LargeSignal.Vgs=-0.6 --condition LargeSignal.Vds=6 --condition LargeSignal.LoadZ=18,12
+</code></pre>
+<p>A two-tone sweep is the same with <code>--condition LargeSignal.Measurement=TwoTone</code>, <code>LargeSignal.SpacingHz</code> and the
+<code>im3</code>/<code>im5</code> columns.</p>
+<h2 id="dry-run">Checking a file before importing it</h2>
+<p><code>model import --dry-run</code> reads the sources exactly as an import would and writes nothing: no data set is added, no
+cache is touched, and the <code>.cmc</code> need not exist yet. It prints what the first file holds, the map it used (given, or
+taken from the array names), what the import would read, how it read any array not in the documented layout, every
+warning the import would add, and how many points the data checks flag (a current plateau, an oscillating point). A file
+that would be refused is refused the same way, with the same sentence. A text source shows its first lines instead of
+its arrays.</p>
+<pre><code>$ circuitrf model import kit.cmc kit_tables.mat --as SimulatedTables --dry-run
+map from the array names: Vg=vgs, Vd=vds, Ids_mA=id:mA, freq_GHz=freq:GHz, Y=Y.
+arrays in kit_tables.mat: freq_GHz (1 × 1), Ids_mA (41 × 17), Vd (1 × 17), Vg (1 × 41), Y (2 × 2 × 1 × 41 × 17, complex).
+not read: labels — it is a cell array; only numeric arrays and structs of them are read.
+kit_tables: SimulatedTables, 697 point(s), Vgs -4 to 1 V, Vds 0 to 40 V, 1 to 1 GHz in 1 frequencies.
+kit_tables: 'Y' (2 × 2 × 41 × 17) read as [i, j, vgs, vds].
+nothing written (dry run).
+</code></pre>
+<p>Over MCP, <code>model noun=import dryRun=true</code>; <code>--json</code> gives the same lines as items. Exit 0 when it would import, 1 when it
+would be refused.</p>
+<h2 id="import-checks">What the import checks</h2>
+<p>Some mistakes still give a file that imports. The import reads the data as written and adds one warning for each of
+these, in the window's warnings and on the <code>model import</code> output:</p>
+<table>
+<thead>
+<tr>
+<th>Warning</th>
+<th>Likely cause</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Id &lt; 0 at … points with Vds &gt; 0</code></td>
+<td>The drain current was recorded flowing out of the terminal</td>
+</tr>
+<tr>
+<td><code>\|S12\| &gt; \|S21\| at … conducting biases</code></td>
+<td>The ports are swapped, or the table is transposed: gate must be port 1</td>
+</tr>
+<tr>
+<td><code>the frequencies run 1 to 10 Hz</code></td>
+<td>The frequency array is in GHz: give it its unit, <code>freq:GHz</code></td>
+</tr>
+<tr>
+<td><code>Id reaches … A</code></td>
+<td>The currents are in mA: <code>id:mA</code></td>
+</tr>
+<tr>
+<td><code>T runs 298 to 398 °C</code></td>
+<td>The temperatures are in kelvin: <code>T:K</code></td>
+</tr>
+<tr>
+<td><code>\|S11\| never exceeds …</code></td>
+<td>A Y table was mapped as S</td>
+</tr>
+<tr>
+<td><code>C12 &gt; 0 at … points</code></td>
+<td>The circuit set (<code>cgd</code>) was written as the matrix <code>C</code></td>
+</tr>
+</tbody>
+</table>
+<p>If your tool writes the right data in a layout none of these read, send a sample: the importer is extended to read
+what tools actually write.</p>
+<h2 id="checklist">Checklist</h2>
+<ul>
+<li>The I–V covers the circuit's whole Vgs and Vds swing, gate forward conduction included.</li>
+<li>S, Y or capacitances, if there are any, are at one bias or more for fitted linear charges, 4 or more for ANN or Table charges, and a
+hundred or more for nonlinear ones. Without it, the capacitances are typed (a datasheet's will do) or left at zero.</li>
+<li>Currents are positive into the terminal, and every column has its unit.</li>
+<li>Every set states its reference plane and ambient temperature.</li>
+<li>Measured: the compliance limits are stated, so points at the limit are flagged.</li>
+<li>Simulated: self-heating is off, and traps are off unless they are modelled.</li>
+<li>Pulsed sets state their quiescent point (and pre-pulse), pulse width and sample delay.</li>
+<li>N0 and W0 are those of the device the data came from.</li>
+</ul>
+
+<nav class="page-nav">
+  <a class="prev" href="model-composer.html"><span class="dir">Previous</span><span class="name">Model Composer</span></a>
+  <a class="next" href="cmodel.html"><span class="dir">Next</span><span class="name">Writing a .cmodel</span></a>
+</nav>
+</main>
+
+<footer class="doc-footer">
+  <img src="../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../index.html">Documentation home</a>
+</footer>
+
+<script src="../assets/js/search-index.js" defer></script>
+<script src="../assets/js/docs-search.js" defer></script>
+</body>
+</html>

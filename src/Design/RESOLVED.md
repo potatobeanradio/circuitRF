@@ -25409,3 +25409,22 @@ part's footprint set by hand once one is chosen. A technology is needed only to 
 from Schematic, or placing into a `.clay` — and the stored `smt:0402@N` waits for it; the Parameter Editor's Footprint
 picker shows it with no technology. A technology that IS named and is not a board (an MMIC process) still gives None.
 `FootprintDefaults.For`, the ideal R/L/C default, is unchanged: that one is a guessed 0201, not a property of the part.
+
+## Model Composer array imports read the layout from the shapes (2026-10-31)
+
+A modelling engineer asked for example data formats, and a simulator's export is easy to lay out in a way the import
+did not read: MATLAB's `Y(i, j, f, k)` with the 2 × 2 first, a grid's axes in the other order, a temperature axis, the
+four Y elements as separate arrays, frequencies in GHz. `DataImport.Arrays.cs` now works the layout out from the
+shapes and says, in the import's notes, how it read anything not in the documented layout. `.npz` (`NpzReader`, in
+`src/RfCore/Export`) is read too, and `MatReader.List` lists a file without refusing it for a cell array it holds.
+
+**The trap: when axis lengths collide, the reading closest to the documented order is the wrong one for a MATLAB
+writer.** A Y of shape `[2, 2, nF, nT, nD, nG]` with `nT = 2` and `nD = nF` fits several assignments. Ranking them by
+inversions against `[bias…, freq, i, j]` alone picked vds and freq swapped, because the correct reading is the full
+reversal and therefore has the MOST inversions. `Fit` now scores each assignment against four writer orders
+(documented; matrix first; and each with the bias axes reversed) and takes the minimum. A shape that still fits more
+than one way gets a note saying another order fits too: equal lengths cannot be told apart from shapes alone.
+
+**The importer flags what still imports wrongly**, without changing it (`DataHygiene.Layout`): Id negative at Vds > 0,
+|S12| > |S21| at conducting biases, frequencies below 1 kHz, Id above 100 A, T above 200 °C, and an S table whose |S11|
+never reaches 0.1 (Y mapped as S).

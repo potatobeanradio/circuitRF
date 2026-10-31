@@ -187,9 +187,13 @@ A data set's `Kind` is `DcIv`, `PulsedIv`, `SParams` (CW multi-bias), `PulsedSPa
 - `csv` — CSV or TSV. `Columns` maps a column (its header, or its number from 1 with `"Header": false`)
   to `vgs`, `vds`, `ig`, `id`, `T`, `vgsi` or `vdsi`, with the `Unit` its numbers are in. A cell that
   carries its own unit (`12 mA`) uses it.
-- `npy`, `mat` — named arrays in circuitRF's `.npy` or a MATLAB `.mat` (version 5 or 7.3). `Arrays` maps
-  the quantities above, `freq`, a 2-port table `S` or `Y`, and the capacitances to array names; a struct's field is
-  `s.field`. The bias arrays are one value per point, or the two axes of a grid. A Y table is converted
+- `npy`, `mat`, `npz` — named arrays in circuitRF's `.npy`, a MATLAB `.mat` (version 5 or 7.3) or a NumPy `.npz`.
+  `Arrays` maps the quantities above, `freq`, a 2-port table `S` or `Y` (or its four elements `S11`…`S22` or
+  `Y11`…`Y22`, all four together), and the capacitances to array names; a struct's field is `s.field`.
+  `ArrayUnits` gives a quantity whose array is not in SI its unit, `{"freq": "GHz", "id": "mA"}`; `T` takes `C` or
+  `K`. The bias arrays are one value per point, or the axes of a grid vgs × vds or vgs × vds × T, and every other
+  array's axes may come in any order that fits their lengths
+  ([Model Data](model-data.html#format-arrays), `circuitrf reference model-data`). A Y table is converted
   to S at `Z0` (default 50 Ω); `FrequencyHz` gives a table with no frequency array its frequency.
   A `SimulatedTables` set's capacitances, in farads, are either the matrix `C` shaped `[point, 2, 2]`, with
   `Cij = ∂Qi/∂vj` (gate 1, drain 2, so `C12 = −Cgd`), or the circuit set `cgs`, `cgd` and `cds` together, and

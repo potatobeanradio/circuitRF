@@ -5,11 +5,11 @@
 //   csv         CSV or TSV with a column map. A cell may carry its own unit ("12 mA"), read by the value+unit
 //               conventions every circuitRF field uses; otherwise the column's unit applies.
 //               Point id: "<source>:<line>".
-//   npy / mat   named arrays — circuitRF's own .npy through NpyReader (DataSetImporter), a .mat through
-//               MatReader. Bias arrays are either one value per point, or the two axes of a grid whose
-//               current and table arrays are shaped [vgs, vds] (or [vds, vgs]). A Y table converts to S at
-//               the import's Z0, which is exact and invertible. Capacitances (MC-20) are the matrix C[point, 2, 2]
-//               or the circuit set cgs, cgd, cds (and cm), which lands as the matrix. Point id: "<source>#<k>".
+//   npy / mat / npz   named arrays — circuitRF's own .npy through NpyReader (DataSetImporter), a .mat through
+//               MatReader, a NumPy .npz through NpzReader. How the arrays may be laid out, and how the layout is
+//               worked out from their shapes, is DataImport.Arrays.cs. A Y table converts to S at the import's Z0,
+//               which is exact and invertible. Capacitances (MC-20) are the matrix C[point, 2, 2] or the circuit set
+//               cgs, cgd, cds (and cm), which lands as the matrix. Point id: "<source>#<k>".
 //
 // An importer REFUSES with the source it is about and why — never a guessed bias, never a skipped row.
 // Each returns one summary line: points, bias range, frequency range.
@@ -30,9 +30,14 @@ public sealed class DataImportException(string source, string sentence) : Except
 }
 
 /// <summary>What an import produced, and its one-line report.</summary>
-public sealed record ImportResult(NormalisedData Data, string Summary);
+public sealed record ImportResult(NormalisedData Data, string Summary)
+{
+    /// <summary>How the import read a source where that was not the documented layout (an array reordered, a frequency
+    /// array reduced), one sentence each; empty when everything was as documented.</summary>
+    public IReadOnlyList<string> Notes { get; init; } = [];
+}
 
-public static class DataImport
+public static partial class DataImport
 {
     /// <summary>
     /// Imports <paramref name="set"/>, its sources resolved against <paramref name="cmcDirectory"/>. Progress
@@ -41,14 +46,15 @@ public static class DataImport
     public static ImportResult Import(CmcDataSet set, string cmcDirectory, RunControl? rc = null)
     {
         rc?.BeginStage($"Importing {set.Name}", set.Sources.Count, "file(s)");
+        var notes = new List<string>();
         var data = set.Import.Format switch
         {
             ImportSettings.Touchstone => TouchstoneSet(set, cmcDirectory, rc),
             ImportSettings.Csv        => Csv(set, cmcDirectory, rc),
-            ImportSettings.Npy or ImportSettings.Mat => Arrays(set, cmcDirectory, rc),
+            _ when ImportSettings.IsArrayFormat(set.Import.Format) => Arrays(set, cmcDirectory, rc, notes),
             _ => throw new DataImportException(set.Name, $"'{set.Import.Format}' is not an import format."),
         };
-        return new ImportResult(data, Summary(data));
+        return new ImportResult(data, Summary(data)) { Notes = [.. notes.Distinct()] };
     }
 
     public static string ResolveSource(string cmcDirectory, string source) =>
@@ -207,116 +213,6 @@ public static class DataImport
         return number * (col.Unit is { } u ? CmcFile.UnitScale(u) ?? 1 : 1);
     }
 
-    // ── .npy / .mat arrays ───────────────────────────────────────────────────
-
-    private sealed record NamedArray(int[] Shape, double[] Re, double[]? Im)
-    {
-        public int Count => Re.Length;
-        public Complex At(int i) => new(Re[i], Im is null ? 0 : Im[i]);
-    }
-
-    private static NormalisedData Arrays(CmcDataSet set, string dir, RunControl? rc)
-    {
-        var im = set.Import;
-        var map = im.Arrays!;
-        var points = new List<BiasPoint>();
-        var s = new List<Complex>();
-        var cTable = new List<double>();
-        double[]? freqs = null;
-        double z0 = im.Z0 ?? 50;
-
-        foreach (string src in set.Sources)
-        {
-            rc?.ThrowIfCancellationRequested();
-            string path = ResolveSource(dir, src);
-            if (!File.Exists(path)) throw new DataImportException(src, "the file does not exist.");
-            var arrays = Load(path, src, im.Format, map.Values.ToArray());
-            NamedArray? A(string q) => map.TryGetValue(q, out var name)
-                ? arrays.TryGetValue(name, out var a) ? a : throw new DataImportException(src, $"it holds no array '{name}' (mapped to {q}).")
-                : null;
-
-            var vgs = A("vgs")!; var vds = A("vds")!;
-            var table = A("S") ?? A("Y");
-            bool isY = !map.ContainsKey("S") && map.ContainsKey("Y");
-            var cArr = A("C");
-            var cgsArr = A("cgs");
-            var currentLike = A("id") ?? A("ig") ?? table ?? cArr ?? cgsArr;
-
-            // One value per point, or a grid of vgs × vds.
-            int n; bool grid = false, vdsSlow = false;
-            if (vgs.Count == vds.Count && (currentLike is null || LeadingCount(currentLike, vgs.Count)))
-                n = vgs.Count;
-            else if (currentLike is not null && LeadingCount(currentLike, vgs.Count * vds.Count))
-            {
-                n = vgs.Count * vds.Count; grid = true;
-                vdsSlow = currentLike.Shape.Length >= 2 && currentLike.Shape[0] == vds.Count && currentLike.Shape[1] == vgs.Count && vgs.Count != vds.Count;
-            }
-            else throw new DataImportException(src, $"vgs ({vgs.Count}) and vds ({vds.Count}) are neither one value per point nor the axes of the other arrays' grid.");
-
-            double Bias(NamedArray a, bool isVgs, int k)
-            {
-                if (!grid) return a.Re[k];
-                int slow = k / (vdsSlow ? vgs.Count : vds.Count), fast = k % (vdsSlow ? vgs.Count : vds.Count);
-                return a.Re[isVgs ^ vdsSlow ? slow : fast];
-            }
-            double[] PerPoint(string q)
-            {
-                var a = A(q);
-                if (a is null) return [.. Enumerable.Repeat(double.NaN, n)];
-                if (a.Count != n) throw new DataImportException(src, $"'{map[q]}' holds {a.Count} values for {n} points.");
-                return a.Re;
-            }
-            var ig = PerPoint("ig"); var id = PerPoint("id"); var t = PerPoint("T");
-            var vgsi = PerPoint("vgsi"); var vdsi = PerPoint("vdsi");
-
-            if (table is not null)
-            {
-                double[] f = A("freq")?.Re ?? (im.FrequencyHz is { } fh ? [fh] : throw new DataImportException(src,
-                    $"the {(isY ? "Y" : "S")} table has no frequency: map a freq array, or state FrequencyHz."));
-                if (freqs is null) freqs = f;
-                else if (!SameAxis(freqs, f)) throw new DataImportException(src, "its frequencies differ from the set's first source.");
-                if (table.Count != n * f.Length * 4)
-                    throw new DataImportException(src, $"'{map[isY ? "Y" : "S"]}' holds {table.Count} values for {n} points × {f.Length} frequencies × 2 × 2.");
-                for (int k = 0; k < n * f.Length; k++)
-                {
-                    Complex a = table.At(4 * k), b = table.At(4 * k + 1), c = table.At(4 * k + 2), d = table.At(4 * k + 3);
-                    if (isY) (a, b, c, d) = YToS(a * z0, b * z0, c * z0, d * z0);
-                    s.Add(a); s.Add(b); s.Add(c); s.Add(d);
-                }
-            }
-            if (cArr is not null)
-            {
-                if (cArr.Count != n * 4) throw new DataImportException(src, $"'{map["C"]}' holds {cArr.Count} values for {n} points × 2 × 2.");
-                cTable.AddRange(cArr.Re);
-            }
-            else if (cgsArr is not null)
-            {
-                // The circuit set as the matrix, IntrinsicQuantities' relations inverted (R-mc20-1); an absent cm is 0.
-                double[] cgs = PerPoint("cgs"), cgd = PerPoint("cgd"), cds = PerPoint("cds");
-                double[] cm = map.ContainsKey("cm") ? PerPoint("cm") : new double[n];
-                for (int k = 0; k < n; k++)
-                {
-                    cTable.Add(cgs[k] + cgd[k]); cTable.Add(-cgd[k]);
-                    cTable.Add(cm[k] - cgd[k]);  cTable.Add(cds[k] + cgd[k]);
-                }
-            }
-            for (int k = 0; k < n; k++)
-                points.Add(new BiasPoint($"{src}#{k}", Bias(vgs, true, k), Bias(vds, false, k), ig[k], id[k])
-                {
-                    AmbientC = t[k], VgsIntrinsic = vgsi[k], VdsIntrinsic = vdsi[k],
-                });
-            rc?.TickStage();
-        }
-        return new NormalisedData
-        {
-            Points = points,
-            FrequenciesHz = freqs,
-            S = s.Count > 0 ? [.. s] : null,
-            Z0 = z0,
-            C = cTable.Count > 0 ? [.. cTable] : null,
-        };
-    }
-
     /// <summary>The spelling of a set's capacitance table: <c>table</c> for the matrix <c>C</c>, <c>circuit set</c> for
     /// <c>cgs</c>, <c>cgd</c>, <c>cds</c>; null when it has none.</summary>
     public static string? CapacitanceTable(CmcDataSet set) =>
@@ -330,17 +226,8 @@ public static class DataImport
     {
         if (set.Kind is DataSetKind.PassiveSParams or DataSetKind.LargeSignal) return null;
         bool admittance = set.Import.Format == ImportSettings.Touchstone
-                       || set.Import.Arrays is { } map && (map.ContainsKey("S") || map.ContainsKey("Y"));
+                       || set.Import.Arrays is { } map && (map.ContainsKey("S") || map.ContainsKey("Y") || map.ContainsKey("S11") || map.ContainsKey("Y11"));
         return admittance ? "Y" : CapacitanceTable(set);
-    }
-
-    /// <summary>True when <paramref name="a"/> holds <paramref name="n"/> points — its whole count, or its leading dimensions' product.</summary>
-    private static bool LeadingCount(NamedArray a, int n)
-    {
-        if (a.Count == n) return true;
-        int prod = 1;
-        foreach (int d in a.Shape) { prod *= d; if (prod == n) return true; if (prod > n) break; }
-        return false;
     }
 
     /// <summary>S from normalised y = Z0·Y of a 2-port: S = (I − y)(I + y)⁻¹.</summary>
@@ -351,33 +238,6 @@ public static class DataImport
         Complex i11 = p22 / det, i12 = -p12 / det, i21 = -p21 / det, i22 = p11 / det;
         Complex m11 = 1 - y11, m12 = -y12, m21 = -y21, m22 = 1 - y22;
         return (m11 * i11 + m12 * i21, m11 * i12 + m12 * i22, m21 * i11 + m22 * i21, m21 * i12 + m22 * i22);
-    }
-
-    private static Dictionary<string, NamedArray> Load(string path, string src, string format, string[] names)
-    {
-        var result = new Dictionary<string, NamedArray>(StringComparer.Ordinal);
-        try
-        {
-            if (format == ImportSettings.Mat)
-            {
-                foreach (var (name, a) in MatReader.Read(path, names))
-                    result[name] = new NamedArray(a.Shape, a.Real, a.Imag);
-                return result;
-            }
-            var ds = DataSetImporter.Import(path).DataSet;
-            foreach (string name in names)
-            {
-                if (!ds.Contains(name)) continue;
-                var cube = ds[name];
-                int[] shape = [.. cube.Axes.Select(x => x.Length)];
-                result[name] = cube.DataKind == RfCore.Data.DataKind.Complex
-                    ? new NamedArray(shape, [.. cube.ComplexValues.Select(c => c.Real)], [.. cube.ComplexValues.Select(c => c.Imaginary)])
-                    : new NamedArray(shape, cube.RealValues, null);
-            }
-            return result;
-        }
-        catch (MatFormatException ex) { throw new DataImportException(src, ex.Message); }
-        catch (InvalidDataException ex) { throw new DataImportException(src, ex.Message); }
     }
 
     // ── The one-line report ──────────────────────────────────────────────────

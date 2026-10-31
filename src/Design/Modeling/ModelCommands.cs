@@ -90,6 +90,7 @@ public static partial class ModelCommands
             ".csv" or ".tsv" or ".txt" => ImportSettings.Csv,
             ".npy" => ImportSettings.Npy,
             ".mat" => ImportSettings.Mat,
+            ".npz" => ImportSettings.Npz,
             ".spl" or ".lpcwave" => ImportSettings.Loadpull,
             _ => null,
         };
@@ -121,6 +122,25 @@ public static partial class ModelCommands
         if (formats.Count > 1)
             throw new ModelingException("Sources", $"they mix {string.Join(" and ", formats.Select(f => f ?? "unreadable files"))}; one data set is one format.");
         return [.. files.Select(f => Path.GetRelativePath(dir, f).Replace('\\', '/'))];
+    }
+
+    /// <summary>
+    /// The map an array source's names suggest (<see cref="DataImport.SuggestArrayMap"/>), from its arrays as listed — the
+    /// window fills its empty map field with it, and <c>model import</c> uses it when no <c>--map</c> is given.
+    /// <paramref name="source"/> is relative to the <c>.cmc</c>, as <see cref="Sources"/> gives it.
+    /// </summary>
+    public static ArrayMapSuggestion SuggestArrayMap(string cmcPath, string source, string format)
+    {
+        string dir = Path.GetDirectoryName(Path.GetFullPath(cmcPath))!;
+        return DataImport.SuggestArrayMap(DataImport.ListArrays(DataImport.ResolveSource(dir, source), format).Arrays);
+    }
+
+    /// <summary>The arrays an array source holds, as one sentence for a refusal: <c>vg (41), id (41 × 9), …</c>.</summary>
+    public static string ArraysHeld(string cmcPath, string source, string format)
+    {
+        string dir = Path.GetDirectoryName(Path.GetFullPath(cmcPath))!;
+        var list = DataImport.ListArrays(DataImport.ResolveSource(dir, source), format).Arrays;
+        return list.Count == 0 ? "it holds no arrays" : string.Join(", ", list.Take(16).Select(a => $"{a.Name} ({a.ShapeText})")) + (list.Count > 16 ? ", …" : "");
     }
 
     /// <summary>A data set name for <paramref name="inputs"/> no other set in <paramref name="doc"/> has: the first input's folder
@@ -163,6 +183,61 @@ public static partial class ModelCommands
             lines.Add(new ModelLine("dataSet", set.Name, $"{set.Name}: {set.Kind}, {set.Sources.Count} source(s), validation only."));
         rc?.ThrowIfCancellationRequested();
         CmcFile.Write(cmcPath, next);
+        return lines;
+    }
+
+    /// <summary>
+    /// What <see cref="Import"/> would do with <paramref name="set"/>, writing nothing — no data set added, no cache touched;
+    /// <paramref name="cmcPath"/> need not exist, and the sources resolve against its folder either way. One line naming what
+    /// the first source holds (each array with its shape, or its first lines), then the line an import prints, how it read
+    /// any array not in the documented layout, every warning it would add, and a count of the points hygiene flags. A set
+    /// that would be refused throws exactly as <see cref="Import"/> does.
+    /// </summary>
+    public static IReadOnlyList<ModelLine> DryRun(string cmcPath, CmcDataSet set, RunControl? rc = null)
+    {
+        var doc = File.Exists(cmcPath) ? CmcFile.Read(cmcPath)
+            : new CmcDocument { Kind = set.Kind == DataSetKind.PassiveSParams ? CmcKind.Passive : CmcKind.Active };
+        if (doc.DataSets.Any(s => s.Name == set.Name))
+            throw new ModelingException(set.Name, "the document already has a data set of that name.");
+        CmcFile.ToBytes(doc with { DataSets = [.. doc.DataSets, set] });
+
+        string dir = Path.GetDirectoryName(Path.GetFullPath(cmcPath))!;
+        var lines = new List<ModelLine>();
+        if (set.Sources.Count > 0)
+        {
+            string first = DataImport.ResolveSource(dir, set.Sources[0]);
+            if (ImportSettings.IsArrayFormat(set.Import.Format))
+            {
+                var (arrays, skipped) = DataImport.ListArrays(first, set.Import.Format);
+                lines.Add(new ModelLine("source", set.Sources[0], $"arrays in {set.Sources[0]}: " +
+                    (arrays.Count == 0 ? "none" : string.Join(", ", arrays.Select(a => $"{a.Name} ({a.ShapeText}{(a.IsComplex ? ", complex" : "")})"))) + "."));
+                lines.AddRange(skipped.Select(x => new ModelLine("source", x.Name, $"not read: {x.Name} — it {x.Why}")));
+            }
+            else if (File.Exists(first))
+            {
+                lines.Add(new ModelLine("source", set.Sources[0], $"{set.Sources[0]} begins:" +
+                    (set.Sources.Count > 1 ? $" (1 of {set.Sources.Count} files)" : "")));
+                lines.AddRange(File.ReadLines(first).Where(l => l.Trim().Length > 0).Take(4).Select(l => new ModelLine("source", set.Sources[0], "  " + l)));
+            }
+        }
+
+        if (!CmcStamps.FeedsFits(set))
+        {
+            lines.Add(new ModelLine("dataSet", set.Name, $"{set.Name}: {set.Kind}, {set.Sources.Count} source(s), validation only; read when it is validated."));
+        }
+        else
+        {
+            var result = DataImport.Import(set, dir, rc);
+            lines.Add(new ModelLine("dataSet", set.Name, $"{set.Name}: {set.Kind}, {result.Summary}"));
+            lines.AddRange(result.Notes.Select(n => new ModelLine("note", set.Name, $"{set.Name}: {n}")));
+            var flags = DataHygiene.Check([(set, result.Data)]);
+            lines.AddRange(DataHygiene.SetWarnings(flags).Select(w => new ModelLine("note", set.Name, w)));
+            var perPoint = flags.Where(f => f.Point.Length > 0).GroupBy(f => f.Kind).ToList();
+            if (perPoint.Count > 0)
+                lines.Add(new ModelLine("note", set.Name, $"{set.Name}: points flagged — " +
+                    string.Join(", ", perPoint.Select(g => $"{g.Key} {g.Select(f => f.Point).Distinct().Count()}")) + "; the Data step's bias plane shows them."));
+        }
+        lines.Add(new ModelLine("dryRun", set.Name, "nothing written (dry run)."));
         return lines;
     }
 

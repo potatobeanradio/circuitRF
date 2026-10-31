@@ -394,9 +394,12 @@ its tooltip and Update Layout repeats it rather than placing the wrong artwork.<
 case in <em>both</em> schemes is reported as ambiguous with both readings named. A column that silently
 set artwork would be the same class of error as the ambiguity itself.</li>
 <li><strong>A vendor library part arrives with the footprint of its stated case size.</strong> When its library
-states the size in both systems (<code>1005M(0402)</code>) and the technology is a board, a placed part gets
+states the size in both systems (<code>1005M(0402)</code>), or states the body in millimetres
+(<code>Size(LxWxT): 1x0.5x0.5mm</code>, the nearest row whose body tolerance it falls within), a placed part gets
 <code>smt:0402@N</code>; both codes must name the same row, so the two different 0201 cases never cross. A
-part whose library states no size, a size this table lacks, or a non-board technology gets None.
+workspace with no technology yet still gets it: the land pattern is drawn once a board technology is
+chosen, with nothing to set again. A part whose library states no size, a size this table lacks, or a
+technology that is not a board gets None.
 This is circuitRF's generated pattern for the stated case size, <strong>not</strong> the manufacturer's
 recommended land.</li>
 <li><strong>A railRF part library</strong> (<code>.crlib</code>) has a footprint column that is a picker over the same case

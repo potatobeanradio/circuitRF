@@ -125,6 +125,11 @@ public sealed record ColumnMap(string Column, string Quantity, string? Unit = nu
 public sealed record ImportSettings
 {
     public const string Touchstone = "touchstone", Csv = "csv", Npy = "npy", Mat = "mat";
+    /// <summary>A NumPy <c>.npz</c> archive of named arrays (<c>numpy.savez</c>).</summary>
+    public const string Npz = "npz";
+
+    /// <summary>True for the formats whose sources are named arrays mapped by <see cref="Arrays"/>.</summary>
+    public static bool IsArrayFormat(string format) => format is Npy or Mat or Npz;
     /// <summary>A loadpull file, <c>.spl</c> or <c>.lpcwave</c> (a <see cref="LargeSignalMeasurement.Loadpull"/> set, MC-11).</summary>
     public const string Loadpull = "loadpull";
 
@@ -146,8 +151,12 @@ public sealed record ImportSettings
     /// <summary>CSV/TSV: the delimiter; inferred from the first row when absent.</summary>
     public string? Delimiter { get; init; }
 
-    /// <summary>.npy/.mat: quantity → array name.</summary>
+    /// <summary>.npy/.mat/.npz: quantity → array name.</summary>
     public IReadOnlyDictionary<string, string>? Arrays { get; init; }
+
+    /// <summary>.npy/.mat/.npz: quantity → the unit its array's numbers are in, for a quantity not in SI (<c>freq</c> in
+    /// <c>GHz</c>, <c>id</c> in <c>mA</c>). A quantity with no entry is in SI.</summary>
+    public IReadOnlyDictionary<string, string>? ArrayUnits { get; init; }
 
     /// <summary>.npy/.mat: the frequency of a Y or S table that carries no frequency array, Hz.</summary>
     public double? FrequencyHz { get; init; }

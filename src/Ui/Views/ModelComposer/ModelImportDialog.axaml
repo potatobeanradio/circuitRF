@@ -80,7 +80,7 @@
                 <Grid ColumnDefinitions="90,*" IsVisible="{Binding IsMapped}">
                     <TextBlock Classes="lbl" Text="Map" VerticalAlignment="Top" Margin="0,6,0,0"/>
                     <TextBox Grid.Column="1" Text="{Binding Map}" AcceptsReturn="True" Height="70" TextWrapping="Wrap"
-                             ToolTip.Tip="name=quantity[:unit], e.g. Id=id:mA"/>
+                             ToolTip.Tip="name=quantity[:unit], e.g. Id=id:mA or f=freq:GHz. An array file's map is filled in from its array names; check it against the arrays listed on the right."/>
                 </Grid>
                 <CheckBox IsVisible="{Binding IsMapped}" IsChecked="{Binding Header}" Content="Header row"/>
 
@@ -106,7 +106,7 @@
             </StackPanel>
 
             <Grid Grid.Column="2" RowDefinitions="Auto,*,Auto,*">
-                <TextBlock Classes="lbl" Text="First lines"/>
+                <TextBlock Classes="lbl" Text="{Binding RawTitle}"/>
                 <Border Grid.Row="1" Classes="card" Margin="0,2,0,6">
                     <ScrollViewer HorizontalScrollBarVisibility="Auto">
                         <ItemsControl ItemsSource="{Binding PreviewRaw}">
