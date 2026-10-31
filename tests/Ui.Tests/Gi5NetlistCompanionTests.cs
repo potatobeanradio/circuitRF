@@ -510,7 +510,7 @@ public class Gi5NetlistCompanionTests : IDisposable
         TechPersistence.SaveToFile(techPath, tech);
 
         var into = GerberImport.Import(FilesIn(dir), Folder("into"), "into", null, Dbu,
-                                       target: GerberTechnologyTarget.Use(techPath));
+                                       target: ImportTechnologyTarget.Use(techPath));
 
         Assert.True(into.Refusal is null, into.Refusal);
         var used = TechPersistence.LoadFromFile(techPath);

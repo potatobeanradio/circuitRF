@@ -214,7 +214,7 @@ public sealed class OptimizationVariables
             // A placed vendor part: its levels are its candidates (brief vendorlib-4 R-vl4-3a).
             if (t.VendorPart is { } part)
             {
-                if (part.OverCap || part.Candidates.Count == 0 || !part.Emitted)
+                if (part.Candidates.Count == 0 || !part.Emitted)
                 {
                     refusal = OptimizationDiagnostics.PartNoCandidates(e.Key, part.Selection, part.Summary);
                     return null;

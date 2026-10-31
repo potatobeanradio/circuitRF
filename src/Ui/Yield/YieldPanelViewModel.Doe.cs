@@ -257,7 +257,7 @@ public sealed partial class YieldPanelViewModel
         });
         if (run.Refusal is { } refusal)
         {
-            StatusText = $"Refused: {refusal.Render()}";
+            Problem($"Refused: {refusal.Render()}");
             return;
         }
 
@@ -284,12 +284,13 @@ public sealed partial class YieldPanelViewModel
     private void FinishDoe(DoeRun run, DoeResult? result, string? crash)
     {
         if (!ReferenceEquals(run, _doeRun)) return;               // abandoned meanwhile
-        if (result is null) { State = YieldRunState.Idle; StatusText = $"The run failed: {crash}"; return; }
+        if (result is null) { State = YieldRunState.Idle; Problem($"The run failed: {crash}"); return; }
         DoeResult = result;
         if (result.Outcome is DoeOutcome.Cancelled or DoeOutcome.Refused)
         {
             State = YieldRunState.Idle;
-            StatusText = result.Outcome == DoeOutcome.Cancelled ? "Cancelled" : $"Refused: {result.Refusal?.Render() ?? result.FinishReason}";
+            if (result.Outcome == DoeOutcome.Cancelled) StatusText = "Cancelled";
+            else Problem($"Refused: {result.Refusal?.Render() ?? result.FinishReason}");
             return;
         }
 
@@ -378,8 +379,8 @@ public sealed partial class YieldPanelViewModel
             {
                 IsSearchingOptimum = false;
                 if (!ReferenceEquals(run, _doeRun)) return;
-                if (o is null) { StatusText = $"The model optimum failed: {crash}"; return; }
-                if (o.Refusal is { } why) { StatusText = $"Refused: {why.Render()}"; return; }
+                if (o is null) { Problem($"The model optimum failed: {crash}"); return; }
+                if (o.Refusal is { } why) { Problem($"Refused: {why.Render()}"); return; }
                 _doeOptimum = o;
                 foreach (var g in o.Goals)
                     DoeOptimumGoals.Add(new DoeOptimumRow(g.Goal,

@@ -345,11 +345,26 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         return new Scene3DFeatureShare(key, w.Tx, w.Ty, w.Tz);
     }
 
+    private HashSet<string> _postedRefusals = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Issue #33 — what kept part of the view from being drawn goes to the Messages panel, in full: the canvas label is
+    /// only the short form ("U1: cannot be drawn in 3D"), and it does not say why. Each refusal is posted once while it
+    /// stands; one that clears and comes back is posted again.
+    /// </summary>
+    private void PostNewRefusals(C3dElaboration e)
+    {
+        var now = new HashSet<string>(e.Refusals.Where(r => !e.NotModelledRefusals.Contains(r)), StringComparer.Ordinal);
+        foreach (string r in now)
+            if (!_postedRefusals.Contains(r)) PostMessage?.Invoke(r, true);
+        _postedRefusals = now;
+    }
+
     private void OnSceneAdopted()
     {
         long gen = Viewer.Scene.Generation;
         CarryCameraAcrossOrigin(gen);
-        if (_elaborations.TryGetValue(gen, out var e)) Elaboration = e;
+        if (_elaborations.TryGetValue(gen, out var e)) { Elaboration = e; PostNewRefusals(e); }
         if (_readStamps.TryGetValue(gen, out var read)) _adoptedReadStamp = read;
         foreach (long old in _readStamps.Keys.Where(k => k <= gen).ToList()) _readStamps.TryRemove(old, out _);
         AdoptBuilt(gen);                           // brief-em3d-108 — what a display-only reload re-assembles

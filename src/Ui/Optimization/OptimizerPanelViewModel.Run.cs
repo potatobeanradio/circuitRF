@@ -181,8 +181,8 @@ public sealed partial class OptimizerPanelViewModel
     {
         if (_tuned is null || IsRunActive) return;
         var circuit = PrepareCircuit?.Invoke(_tuned);
-        if (circuit is null) { StatusText = "Refused: the schematic could not be netlisted."; return; }
-        if (circuit.ReadError is { } readError) { StatusText = $"Refused: {readError}"; return; }
+        if (circuit is null) { Problem("Refused: the schematic could not be netlisted."); return; }
+        if (circuit.ReadError is { } readError) { Problem($"Refused: {readError}"); return; }
         circuit = WithStart(circuit);
 
         var setup = Setup?.Clone() ?? new TuningSetup();
@@ -198,7 +198,7 @@ public sealed partial class OptimizerPanelViewModel
         run = OptimizationRun.Create(circuit, options);
         if (run.Refusal is { } refusal)
         {
-            StatusText = $"Refused: {refusal.Render()}";
+            Problem($"Refused: {refusal.Render()}");
             return;
         }
 
@@ -300,7 +300,7 @@ public sealed partial class OptimizerPanelViewModel
         if (result is null)
         {
             State = OptimizerRunState.Idle;
-            StatusText = $"The run failed: {crash}";
+            Problem($"The run failed: {crash}");
             _display?.Drop();
             return;
         }
@@ -310,7 +310,7 @@ public sealed partial class OptimizerPanelViewModel
         {
             case OptimizationOutcome.Refused:
                 State = OptimizerRunState.Idle;
-                StatusText = $"Refused: {result.Refusal?.Render() ?? result.FinishReason}";
+                Problem($"Refused: {result.Refusal?.Render() ?? result.FinishReason}");
                 _display?.Drop();
                 return;
             case OptimizationOutcome.Cancelled:

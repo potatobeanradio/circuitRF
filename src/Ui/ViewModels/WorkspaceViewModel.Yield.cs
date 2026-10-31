@@ -81,6 +81,7 @@ public partial class WorkspaceViewModel
         panel.OpenYieldDisplay = OpenYieldDisplayAsync;
         panel.HasYieldDisplay  = (path, data) => YieldDisplayPath(path, data) is var cdd
                                                  && (File.Exists(cdd) || _openDocsByPath.ContainsKey(cdd));
+        panel.ReportProblem     = text => Messages.Error($"Yield: {text}");   // issue #33
         panel.ReportMessages   = (summary, lines) =>
         {
             Messages.Info(summary);

@@ -255,8 +255,7 @@ public sealed partial class TuningRowViewModel : ObservableObject
         Tunable   = tunable;
         IsInteger = true;
         int k = part.Candidates.Count;
-        DisabledReason = part.OverCap ? $"{part.Found:N0} candidates — over the cap of {CircuitRF.Design.VendorLibraries.VendorPartTunable.MaxCandidates}; narrow them"
-                       : k == 0 ? "no candidate part — widen the bounds or the search"
+        DisabledReason = k == 0 ? "no candidate part — widen the bounds or the search"
                        : tunable.DisabledReason;
         Min = 0;
         Max = Math.Max(1, k - 1);

@@ -32,15 +32,28 @@ public sealed class BottomSideRoundTripTests : IDisposable
         throw new FileNotFoundException(name);
     }
 
-    private (PcbImport.ImportResult Result, LayoutView Board, string BoardLayoutDir) Import(string path, string into, Technology? tech)
+    private (PcbImport.ImportResult Result, LayoutView Board, string BoardLayoutDir) Import(
+        string path, string into, Technology? tech, ImportTechnologyTarget? target = null)
     {
         string dir = Path.Combine(_ws, into);
         Directory.CreateDirectory(dir);
         using var stream = File.OpenRead(path);
-        var r = PcbImport.Import(stream, dir, "board", tech, Dbu);
+        var r = PcbImport.Import(stream, dir, "board", tech, Dbu, target: target);
         Assert.False(r.Cancelled);
         string layoutDir = CellFolder.SubFolderPath(r.BoardCellDir!, ViewType.Layout);
         return (r, LayoutPersistence.LoadFromFile(Path.Combine(layoutDir, "board.clay")), layoutDir);
+    }
+
+    /// <summary>
+    /// The import with no technology to find bottom layers in, so every back part keeps its own baked cell — the
+    /// oracle the bottom placements are compared against. Into an existing, EMPTY technology: an import that writes
+    /// its own technology (issue #34) always has one to look the bottom layers up in.
+    /// </summary>
+    private (PcbImport.ImportResult Result, LayoutView Board, string BoardLayoutDir) Baked(string path)
+    {
+        string empty = Path.Combine(_ws, "empty.ctech");
+        TechPersistence.SaveToFile(empty, new Technology { Name = "empty" });
+        return Import(path, "old", null, ImportTechnologyTarget.Use(empty));
     }
 
     /// <summary>The technology an import leaves behind — the destination plus what it adds, as convert mints it.</summary>
@@ -95,7 +108,7 @@ public sealed class BottomSideRoundTripTests : IDisposable
     {
         // The import as it always was: with no technology to find bottom layers in, every back part keeps its
         // own baked cell — the oracle every land below is compared against, to the DBU.
-        var old = Import(Fixture("two-sided.kicad_pcb"), "old", null);
+        var old = Baked(Fixture("two-sided.kicad_pcb"));
         var dest = new Technology { Name = "board" };
         var now = Import(Fixture("two-sided.kicad_pcb"), "new", dest);
         var tech = After(dest, now.Result);
@@ -132,7 +145,7 @@ public sealed class BottomSideRoundTripTests : IDisposable
     [Fact]
     public void ABackRoleTheTechnologyHasNoFrontLayerFor_KeepsItsBakedCellOnTheTop_AndTheReportNamesTheLayer()
     {
-        var old = Import(Fixture("two-sided.kicad_pcb"), "old", null);
+        var old = Baked(Fixture("two-sided.kicad_pcb"));
         var now = Import(Fixture("two-sided.kicad_pcb"), "new", new Technology { Name = "board" });
 
         // Nothing on the board draws on a front assembly layer, so B.Fab has no front counterpart.

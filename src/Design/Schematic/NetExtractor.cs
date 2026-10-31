@@ -223,8 +223,9 @@ public static class NetExtractor
     /// alone; when the tuning setup TUNES or OPTIMIZES the part, each candidate's circuit is read from its own
     /// byte block and emitted as a cell under the part's own name, exactly as the placed part was (R-vl4-2a) —
     /// so an evaluation rebinds the instance to another cell and the elaborator sees an ordinary netlist. A
-    /// candidate that does not read is left out and reported, one line per entry naming the parts; an entry
-    /// over the cap emits nothing (the validator refuses it by count, never by truncating).
+    /// candidate that does not read is left out and reported, one line per entry naming the parts. There is no cap
+    /// on the count (issue #32): a candidate is one subcircuit of a few elements, read once per extraction, and the
+    /// search moves from an exhaustive grid to coordinate descent on its own when the list is long.
     /// </summary>
     private static IReadOnlyList<VendorLibraries.VendorPartTunable> PartTunablesOf(
         SchematicEditModel top, TuningSetup? setup, NetlistImports imports, Library lib, List<string> conflicts)
@@ -240,11 +241,11 @@ public static class NetExtractor
 
             var entry    = setup?.Variables.FirstOrDefault(e => e.Key == key);
             var selected = VendorLibraries.VendorPartCandidates.Select(entry, placed.Part, out int removed, out string selection);
-            bool emit    = entry is { } e0 && (e0.Tune || e0.Opt) && selected.Count <= VendorLibraries.VendorPartTunable.MaxCandidates;
+            bool emit    = entry is { } e0 && (e0.Tune || e0.Opt);
 
             var candidates = new List<VendorLibraries.VendorPartCandidate>();
             var unreadable = new List<string>();
-            foreach (var e in selected.Take(VendorLibraries.VendorPartTunable.MaxCandidates))
+            foreach (var e in selected)
             {
                 if (!emit) { candidates.Add(VendorLibraries.VendorPartCandidates.Candidate(e, "")); continue; }
                 if (e.Part.Equals(placed.Part.Entry.Part, StringComparison.OrdinalIgnoreCase))

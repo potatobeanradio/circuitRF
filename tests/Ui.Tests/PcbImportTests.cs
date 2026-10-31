@@ -400,7 +400,9 @@ public class PcbImportTests : IDisposable
         var boardView = LoadPrimaryLayout(boardDir);
         var boardLayoutDir = CellFolder.SubFolderPath(boardDir, ViewType.Layout);
 
-        var inst = boardView.Instances.Single(i => Math.Abs(i.RotationDegrees - degrees) < 1e-9);
+        // The top-side placement: the back one is a bottom placement of the same cell (brief-bsp-4), and its half
+        // turn can land on one of these angles too.
+        var inst = boardView.Instances.Single(i => !i.MirrorX && Math.Abs(i.RotationDegrees - degrees) < 1e-9);
         var flattened = LayoutFlatten.FlattenOneLevel(inst, boardLayoutDir)!.Shapes;
 
         // Pad "1" is a 1.2 x 0.8 mm rectangle centred at local (-1, 0) mm, i.e. (-1_000_000, 0) DBU.
@@ -625,7 +627,9 @@ public class PcbImportTests : IDisposable
         Assert.Equal(2, board.FootprintCells.Count);
 
         var result = ImportFixture("footprints.kicad_pcb");
-        Assert.Equal(3, result.CreatedCellDirs.Count);            // 2 footprint cells + the board
+        // 1 footprint cell + the board: the back placement is a bottom placement of the front cell, because the
+        // import writes a technology of its own to find the bottom layers in (issue #34).
+        Assert.Equal(2, result.CreatedCellDirs.Count);
         var summary = Assert.Single(result.Messages, m => m.StartsWith("Imported "));
         Assert.Contains("20 entities", summary);
     }

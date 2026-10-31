@@ -61,8 +61,8 @@ internal static class ExplainTunables
                 t.Part is null ? null : Design.Optimization.ComplexValue.Format(t.Whole, t.WholeUnit, t.Form),
                 t.IsVendorPart ? null : ExplainStatistics.Stat(entry, t),
                 t.VendorPart is { } vp
-                    ? new ExplainPartJson(vp.PlacedText, vp.Library, vp.Selection, vp.OverCap ? vp.Found : vp.Candidates.Count,
-                                          vp.SpanText, vp.Series, vp.OverCap, vp.Summary)
+                    ? new ExplainPartJson(vp.PlacedText, vp.Library, vp.Selection, vp.Candidates.Count,
+                                          vp.SpanText, vp.Series, vp.Summary)
                     : null);
         }).ToList();
 

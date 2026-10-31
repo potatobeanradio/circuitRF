@@ -133,16 +133,13 @@ public static class TuningValidator
     }
 
     /// <summary>
-    /// A vendor part entry (R-vl4-1c, R-vl4-3d, R-vl4-6a): it needs a candidate and at most the cap of them, an
-    /// unreadable candidate is said, and its levels are its candidates — never a series, a step or a tolerance.
+    /// A vendor part entry (R-vl4-1c, R-vl4-3d, R-vl4-6a): it needs a candidate, an unreadable candidate is said,
+    /// and its levels are its candidates — never a series, a step or a tolerance. There is no upper limit (issue #32).
     /// </summary>
     private static void PartRules(TunableEntry e, CircuitRF.Design.VendorLibraries.VendorPartTunable part, string who,
                                   List<Diagnostic> f)
     {
-        if (part.OverCap)
-            f.Add(TuningDiagnostics.PartOverCap(who, part.Selection, part.Found,
-                                                CircuitRF.Design.VendorLibraries.VendorPartTunable.MaxCandidates));
-        else if (part.Candidates.Count == 0)
+        if (part.Candidates.Count == 0)
             f.Add(TuningDiagnostics.PartNoCandidates(who, part.Selection,
                 part.RemovedForPorts > 0 ? $"; {part.RemovedForPorts} found have another port count than {part.PlacedPart}" : ""));
         if (part.Unreadable.Count > 0)

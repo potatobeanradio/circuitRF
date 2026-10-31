@@ -91,7 +91,7 @@ public static class GerberImport
     /// is exactly the one most likely to belong to a technology the workspace already has. Null
     /// cancels the whole import.
     /// </remarks>
-    public delegate GerberMappingAnswer? ResolveGerberMapping(GerberMappingRequest request);
+    public delegate ImportMappingAnswer? ResolveGerberMapping(ImportMappingRequest request);
 
     /// <summary>One artwork file's row of R-L4g-15's per-layer summary.</summary>
     public sealed record LayerReport(
@@ -184,7 +184,7 @@ public static class GerberImport
     /// against the source or chasing an import bug needs. The default is on rather than off because
     /// the coalesced document is the one that can be simulated: 29,000 scanline strokes are neither
     /// editable copper nor meshable, and the import already had to say so in words.</param>
-    /// <param name="target">R-gt-1. Null or <see cref="GerberTechnologyTarget.New"/> is the behaviour
+    /// <param name="target">R-gt-1. Null or <see cref="ImportTechnologyTarget.New"/> is the behaviour
     /// this import always had: a technology of its own beside the cell. <b>Use</b> imports against an
     /// existing technology, references it from the <c>.clay</c>, writes no <c>.ctech</c> and changes
     /// nothing in the one it uses (D5) — and refuses when the set's copper does not agree with that
@@ -203,7 +203,7 @@ public static class GerberImport
         RunControl? control = null,
         OfferArchive? offerArchive = null,
         bool coalesceRasterFill = true,
-        GerberTechnologyTarget? target = null,
+        ImportTechnologyTarget? target = null,
         ResolveGerberMapping? resolveMapping = null,
         double arcToleranceMicrons = DefaultArcToleranceMicrons)
     {
@@ -212,7 +212,7 @@ public static class GerberImport
         {
             return ImportUnobserved(filePaths, parentDir, importName, destTech, destDbuPerMicron,
                                     resolveLayerMapping, resolveDrillFormat, control, messages, offerArchive,
-                                    coalesceRasterFill, target ?? GerberTechnologyTarget.New, resolveMapping,
+                                    coalesceRasterFill, target ?? ImportTechnologyTarget.New, resolveMapping,
                                     arcToleranceMicrons);
         }
         catch (OperationCanceledException)
@@ -258,7 +258,7 @@ public static class GerberImport
         List<string> messages,
         OfferArchive? offerArchive,
         bool coalesceRasterFill,
-        GerberTechnologyTarget target,
+        ImportTechnologyTarget target,
         ResolveGerberMapping? resolveMapping,
         double arcToleranceMicrons)
     {
@@ -769,7 +769,7 @@ public static class GerberImport
             // technology the board lands in is a question about the whole set. Re-proposing runs the
             // post-read stage again against another technology and reads nothing: the reads above are
             // the expensive part (~1.8 s Release on a 20-layer set) and the stage is arithmetic.
-            var request = new GerberMappingRequest(
+            var request = new ImportMappingRequest(
                 rows, proposal.CopperTopToBottom.Count, target,
                 technology => BuildProposal(reads, drillReads, jobFunctionByName,
                                             technology ?? destTech, technology is not null).Rows);
@@ -1582,7 +1582,7 @@ public static class GerberImport
         List<string> Messages);
 
     /// <summary>The technology a Use target names, or null with the reason said.</summary>
-    private static Technology? LoadTarget(string path, List<string> messages)
+    internal static Technology? LoadTarget(string path, List<string> messages)
     {
         if (!File.Exists(path))
         {

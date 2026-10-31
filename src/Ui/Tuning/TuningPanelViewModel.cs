@@ -494,13 +494,13 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
 
         TuneSession? session;
         try { session = CreateSession(_tuned, ScopeSettings.SelectedAnalyses()); }
-        catch (Exception ex) { StatusText = ex.Message; return; }
+        catch (Exception ex) { Problem(ex.Message); return; }
         if (session is null) return;
 
         session.RunOnRelease = RunOnRelease;
         if (CornerName is { } corner && session.EvaluateAt(corner) is { } refused)
         {
-            StatusText = $"Refused: {refused}.";
+            Problem($"Refused: {refused}.");
             EvaluateAt = NominalChoice;
         }
         session.Changed               += OnSessionChanged;
@@ -608,7 +608,7 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
         if (value is null) { EvaluateAt = NominalChoice; return; }
         if (_session is { } s && s.EvaluateAt(CornerName) is { } refused)
         {
-            StatusText = $"Refused: {refused}.";
+            Problem($"Refused: {refused}.");
             EvaluateAt = NominalChoice;
             return;
         }
@@ -661,6 +661,17 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
 
     /// <summary>What the last action did — a Push's summary, a refusal.</summary>
     [ObservableProperty] private string _statusText = "";
+
+    /// <summary>Posts a refusal or a failure to the Messages panel (issue #33): a session that did not start must not
+    /// be said only in a status line that the next action overwrites.</summary>
+    public Action<string>? ReportProblem { get; set; }
+
+    /// <summary>The status line AND the Messages panel, for a session's refusal or failure.</summary>
+    private void Problem(string text)
+    {
+        StatusText = text;
+        ReportProblem?.Invoke(text);
+    }
 
     private void OnSessionChanged(object? sender, EventArgs e) => UpdateLag();
 

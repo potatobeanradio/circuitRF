@@ -1466,6 +1466,19 @@ see what circuitRF thought it was reading.</p>
 every epoch because they arrive unbidden; a writer has the opposite problem, and must pick one every
 downstream reader accepts. 20221018 is late enough to be free of design rules and net classes — those
 left the board file at the 20211014 epoch — and early enough that every later release still opens it.</p>
+<h4 id="the-technology-it-lands-in">The technology it lands in</h4>
+<p>The board comes in as a folder of cells named after the file. The layer-mapping dialog's <strong>Technology</strong> row
+chooses where its layers go, as it does for a Gerber set:</p>
+<ul>
+<li><strong>New technology from the board</strong> (the default) writes <code>&lt;board&gt;.ctech</code> into that folder, and every cell
+the import makes uses it. It starts as a copy of your workspace technology: its layers, rules and settings.
+Then it adds every layer the board draws on, under the name the board file gives it
+(<code>F.Silkscreen</code>, <code>User.Drawings</code>). The stackup is your technology's when its conductors match the board's
+copper. Otherwise it is the board's own stackup. Your workspace technology is not changed.</li>
+<li><strong>A technology you already have</strong> is used as it is. The cells reference it, and nothing is added to it.
+A board layer it has no layer for stays an unnamed layer, and the import lists those layers. A board
+whose number of copper layers differs from that technology's conductors is refused, and nothing is created.</li>
+</ul>
 <h4 id="what-comes-across">What comes across</h4>
 <p>Board-level geometry and footprint geometry are both handled; a footprint's items are in its own frame
 and compose through its placement, at an arbitrary angle.</p>
@@ -1474,8 +1487,8 @@ of the board is placed on the bottom face, using the same cell as that footprint
 footprint used on both faces is one cell. Every land, mask opening and silkscreen line lands exactly
 where the board file puts it, on the bottom layers. The import's report says how many back-side
 placements it found. Two cases keep a back part as a cell of its own, already flipped and placed on the
-top, as earlier imports did: when the technology has no front layer for something the part draws on its
-back face (the report names the part and the layer), and when the workspace has no technology at all.</p>
+top: when the technology has no front layer for something the part draws on its back face (the report
+names the part and the layer), and when the board goes into an existing technology that has no bottom copper.</p>
 <table>
 <thead>
 <tr>

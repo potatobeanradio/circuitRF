@@ -913,6 +913,20 @@ every epoch because they arrive unbidden; a writer has the opposite problem, and
 downstream reader accepts. 20221018 is late enough to be free of design rules and net classes — those
 left the board file at the 20211014 epoch — and early enough that every later release still opens it.
 
+#### The technology it lands in
+
+The board comes in as a folder of cells named after the file. The layer-mapping dialog's **Technology** row
+chooses where its layers go, as it does for a Gerber set:
+
+- **New technology from the board** (the default) writes `<board>.ctech` into that folder, and every cell
+  the import makes uses it. It starts as a copy of your workspace technology: its layers, rules and settings.
+  Then it adds every layer the board draws on, under the name the board file gives it
+  (`F.Silkscreen`, `User.Drawings`). The stackup is your technology's when its conductors match the board's
+  copper. Otherwise it is the board's own stackup. Your workspace technology is not changed.
+- **A technology you already have** is used as it is. The cells reference it, and nothing is added to it.
+  A board layer it has no layer for stays an unnamed layer, and the import lists those layers. A board
+  whose number of copper layers differs from that technology's conductors is refused, and nothing is created.
+
 #### What comes across
 
 Board-level geometry and footprint geometry are both handled; a footprint's items are in its own frame
@@ -923,8 +937,8 @@ of the board is placed on the bottom face, using the same cell as that footprint
 footprint used on both faces is one cell. Every land, mask opening and silkscreen line lands exactly
 where the board file puts it, on the bottom layers. The import's report says how many back-side
 placements it found. Two cases keep a back part as a cell of its own, already flipped and placed on the
-top, as earlier imports did: when the technology has no front layer for something the part draws on its
-back face (the report names the part and the layer), and when the workspace has no technology at all.
+top: when the technology has no front layer for something the part draws on its back face (the report
+names the part and the layer), and when the board goes into an existing technology that has no bottom copper.
 
 | In the board file | Becomes, in circuitRF |
 |---|---|

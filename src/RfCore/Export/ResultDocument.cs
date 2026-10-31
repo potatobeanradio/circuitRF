@@ -2579,7 +2579,7 @@ namespace RfCore.Export
     /// </summary>
     /// <param name="Placed">The part number, its value and its Description, as one line.</param>
     /// <param name="Selection">How the candidates are chosen, as the <c>tune</c> line spells it.</param>
-    /// <param name="Candidates">How many there are; over the cap, how many the selection found.</param>
+    /// <param name="Candidates">How many there are.</param>
     /// <param name="Span">The candidates' value span (<c>1 pF – 47 pF</c>), or empty.</param>
     /// <param name="Summary">All of it in one line, with what the selection left out.</param>
     public sealed record ExplainPartJson(
@@ -2589,7 +2589,6 @@ namespace RfCore.Export
         int     Candidates,
         string  Span,
         IReadOnlyList<string> Series,
-        bool    OverCap,
         string  Summary);
 
     /// <summary>

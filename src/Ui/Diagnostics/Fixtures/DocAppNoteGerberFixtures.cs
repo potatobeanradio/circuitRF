@@ -114,15 +114,15 @@ public static class DocAppNoteGerberFixtures
         var result = GerberImportEntry.RunFolder(copy.FabSet, copy.Ws, workspaceTech, DbuPerMicron,
             resolveMapping: request =>
             {
-                var choices = GerberTechnologyChoices.Build(copy.Ws, request.CopperCount, ShippedCatalog());
+                var choices = ImportTechnologyChoices.Build(copy.Ws, request.CopperCount, ShippedCatalog());
                 var choice = use
-                    ? choices.Single(c => c.Kind == GerberTechnologyChoiceKind.Workspace
+                    ? choices.Single(c => c.Kind == ImportTechnologyChoiceKind.Workspace
                                           && string.Equals(c.Path, copy.WorkspaceTechPath, StringComparison.Ordinal))
-                    : choices.Single(c => c.Kind == GerberTechnologyChoiceKind.New);
-                var rows = choice.Kind == GerberTechnologyChoiceKind.New
+                    : choices.Single(c => c.Kind == ImportTechnologyChoiceKind.New);
+                var rows = choice.Kind == ImportTechnologyChoiceKind.New
                     ? (request.Target.IsUse ? request.Repropose(null) : request.Rows)
                     : request.Repropose(choice.Technology);
-                return new GerberMappingAnswer(rows, GerberTechnologyChoices.Commit(choice, copy.Ws));
+                return new ImportMappingAnswer(rows, ImportTechnologyChoices.Commit(choice, copy.Ws));
             });
         if (result.Cancelled || result.CellDir is null)
             throw new InvalidOperationException(
@@ -154,13 +154,13 @@ public static class DocAppNoteGerberFixtures
     public static FigureScene LayerMapping() => OnCopy(copy =>
     {
         var workspaceTech = TechPersistence.LoadFromFile(copy.WorkspaceTechPath);
-        GerberMappingRequest? captured = null;
+        ImportMappingRequest? captured = null;
         GerberImportEntry.RunFolder(copy.FabSet, copy.Ws, workspaceTech, DbuPerMicron,
             resolveMapping: r => { captured = r; return null; });
         var request = captured ?? throw new InvalidOperationException(
             "The example's import never reached its mapping callback, so there is no dialog to photograph.");
-        var choices = GerberTechnologyChoices.Build(copy.Ws, request.CopperCount, ShippedCatalog());
-        int selected = GerberTechnologyChoices.DefaultIndex(choices, copy.WorkspaceTechPath);
+        var choices = ImportTechnologyChoices.Build(copy.Ws, request.CopperCount, ShippedCatalog());
+        int selected = ImportTechnologyChoices.DefaultIndex(choices, copy.WorkspaceTechPath);
         return Lifted(new LayerMappingDialog("Import Gerber — Layer Mapping", workspaceTech, request, choices, selected, copy.Ws));
     });
 
@@ -185,7 +185,7 @@ public static class DocAppNoteGerberFixtures
             Artwork(setDir, "board.gbl", "%TF.FileFunction,Copper,L2,Bot,Signal*%\n", trace: true);
             Artwork(setDir, "board.pl3", "", trace: false, plane: true);
 
-            GerberMappingRequest? captured = null;
+            ImportMappingRequest? captured = null;
             GerberImportEntry.RunFolder(setDir, wsDir, workspaceTech, DbuPerMicron,
                 resolveMapping: r => { captured = r; return null; });
             var request = captured ?? throw new InvalidOperationException(
@@ -194,8 +194,8 @@ public static class DocAppNoteGerberFixtures
                 throw new InvalidOperationException(
                     "Every file of the made-up set was identified, so no row asks the stackup question this figure is of.");
 
-            var choices = GerberTechnologyChoices.Build(wsDir, request.CopperCount, ShippedCatalog());
-            int selected = GerberTechnologyChoices.DefaultIndex(choices, defaultPath);
+            var choices = ImportTechnologyChoices.Build(wsDir, request.CopperCount, ShippedCatalog());
+            int selected = ImportTechnologyChoices.DefaultIndex(choices, defaultPath);
             var scene = Lifted(new LayerMappingDialog("Import Gerber — Layer Mapping", workspaceTech, request, choices, selected, wsDir));
             return new FigureScene(scene.Content)
             {

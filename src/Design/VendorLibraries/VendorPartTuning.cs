@@ -34,8 +34,7 @@ public sealed record VendorPartCandidate(
 /// <param name="Cell">The cell the instance lives in, as the netlist spells it; null at the top.</param>
 /// <param name="Selection">How the candidates were chosen, as the <c>tune</c> line spells it
 /// (<c>kind=same</c>, <c>parts="0603 C0G"</c>), with the value bounds when there are any.</param>
-/// <param name="Found">How many parts the selection found after the value bounds and the port rule — the
-/// count the cap is judged on. Larger than <see cref="Candidates"/> only when it is over the cap.</param>
+/// <param name="Found">How many parts the selection found after the value bounds and the port rule.</param>
 /// <param name="RemovedForPorts">Parts the selection found that have a different port count from the
 /// placed part (R-vl4-2c).</param>
 /// <param name="Unreadable">Candidates whose block did not read, each with why — dropped from
@@ -56,12 +55,6 @@ public sealed record VendorPartTunable(
     IReadOnlyList<string> Unreadable,
     bool    Emitted)
 {
-    /// <summary>The most candidates one entry may have (owner decision D2): each is one block read and one
-    /// cell the run holds. Over it is a <c>check</c> error naming the count, never a truncation.</summary>
-    public const int MaxCandidates = 200;
-
-    public bool OverCap => Found > MaxCandidates;
-
     public string PlacedPart => Placed.Part;
 
     public VendorPartQuantity Quantity => Placed.Header.Quantity;
@@ -145,7 +138,6 @@ public sealed record VendorPartTunable(
     {
         get
         {
-            if (OverCap) return $"{Found:N0} candidates — over the cap of {MaxCandidates}";
             var parts = new List<string> { Plural(Candidates.Count, "candidate", "candidates") };
             if (SpanText.Length > 0) parts.Add(SpanText);
             var series = Series;

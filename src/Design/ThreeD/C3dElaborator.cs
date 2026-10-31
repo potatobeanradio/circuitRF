@@ -1562,7 +1562,10 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
             if (layout.Refusal is { } refusal || layout.Solids is not { } solids)
             {
                 _unresolved.Add((instPath, inst.CellRef));
-                _unresolvedWhy[instPath] = layout.Solids?.RefusedOnWires == true ? "invalid wBond geometry" : "cannot be drawn in 3D";
+                // Issue #35 — the label is all the canvas says, so the commonest cause is named on it.
+                _unresolvedWhy[instPath] = layout.Solids?.RefusedOnWires == true ? "invalid wBond geometry"
+                                         : layout.Tech.Tech is null ? "its layout has no technology"
+                                         : "cannot be drawn in 3D";
                 _refusals.Add($"Instance '{instPath}' places layout '{viewPath}', which cannot be put in 3D: {layout.Refusal}");
                 return;
             }

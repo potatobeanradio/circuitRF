@@ -1,6 +1,6 @@
 // Gate for docs/sonnet-briefs/brief-gerber-import-target-technology.md §6 — the Layer Mapping dialog's
 // Technology row (R-gt-8, D2-D4). LayerMappingDialog is a Window and is not constructed here (this
-// suite calls no Avalonia runtime API); its rules live in GerberTechnologyChoices and LayerMappingRows,
+// suite calls no Avalonia runtime API); its rules live in ImportTechnologyChoices and LayerMappingRows,
 // which the dialog calls, and the one thing only the dialog decides — that no other caller shows the
 // row — is held by a source scan, as LayerMappingDialogSourceTests holds that dialog's other rules.
 
@@ -39,8 +39,8 @@ public sealed class LayerMappingDialogTechnologyTests : IDisposable
         int shown = code.IndexOf("TechnologyRow.IsVisible = true", StringComparison.Ordinal);
         Assert.Equal(shown, code.LastIndexOf("TechnologyRow.IsVisible = true", StringComparison.Ordinal));
 
-        int gerberCtor = code.IndexOf("GerberMappingRequest request,", StringComparison.Ordinal);
-        int nextMember = code.IndexOf("private GerberTechnologyChoice? SelectedChoice", StringComparison.Ordinal);
+        int gerberCtor = code.IndexOf("ImportMappingRequest request,", StringComparison.Ordinal);
+        int nextMember = code.IndexOf("private ImportTechnologyChoice? SelectedChoice", StringComparison.Ordinal);
         Assert.InRange(shown, gerberCtor, nextMember);
     }
 
@@ -49,23 +49,23 @@ public sealed class LayerMappingDialogTechnologyTests : IDisposable
     {
         string six = Install(DocGerberFixtures.SixLayerId);
         string four = Install(DocGerberFixtures.FourLayerId);
-        var choices = GerberTechnologyChoices.Build(_root, copperCount: 6, Shipped());
+        var choices = ImportTechnologyChoices.Build(_root, copperCount: 6, Shipped());
 
-        var matched = choices[GerberTechnologyChoices.DefaultIndex(choices, six)];
-        Assert.Equal(GerberTechnologyChoiceKind.Workspace, matched.Kind);
+        var matched = choices[ImportTechnologyChoices.DefaultIndex(choices, six)];
+        Assert.Equal(ImportTechnologyChoiceKind.Workspace, matched.Kind);
         Assert.Equal(Path.GetFullPath(six), Path.GetFullPath(matched.Path!));
 
-        Assert.Equal(0, GerberTechnologyChoices.DefaultIndex(choices, four));
-        Assert.Equal(GerberTechnologyChoiceKind.New, choices[0].Kind);
+        Assert.Equal(0, ImportTechnologyChoices.DefaultIndex(choices, four));
+        Assert.Equal(ImportTechnologyChoiceKind.New, choices[0].Kind);
     }
 
     [Fact]
     public void ATechnologyWithADifferentCopperCount_IsListedDisabled_AndSaysItsCount()
     {
         string four = Install(DocGerberFixtures.FourLayerId);
-        var choices = GerberTechnologyChoices.Build(_root, copperCount: 6, Shipped());
+        var choices = ImportTechnologyChoices.Build(_root, copperCount: 6, Shipped());
 
-        var row = choices.Single(c => c.Kind == GerberTechnologyChoiceKind.Workspace && c.Path == four);
+        var row = choices.Single(c => c.Kind == ImportTechnologyChoiceKind.Workspace && c.Path == four);
         Assert.False(row.IsEnabled);
         Assert.EndsWith("4 copper", row.Label);
     }
@@ -90,8 +90,8 @@ public sealed class LayerMappingDialogTechnologyTests : IDisposable
     public void UsingATechnology_OffersNoAddToTechnology()
     {
         Install(DocGerberFixtures.SixLayerId);
-        var choices = GerberTechnologyChoices.Build(_root, copperCount: 6, Shipped());
-        var use = choices.First(c => c.Kind == GerberTechnologyChoiceKind.Workspace);
+        var choices = ImportTechnologyChoices.Build(_root, copperCount: 6, Shipped());
+        var use = choices.First(c => c.Kind == ImportTechnologyChoiceKind.Workspace);
         var row = new LayerMappingRow(new LayerKey(900, 0), "Mystery", 3, null, LayerMatchKind.NoMatch,
             new LayoutFragment.LayerReconciliationChoice(LayoutFragment.LayerReconciliationAction.KeepUnknown));
 
@@ -103,17 +103,17 @@ public sealed class LayerMappingDialogTechnologyTests : IDisposable
     [Fact]
     public void ACatalogChoice_IsCopiedOnlyOnContinue_AndAnIdenticalCopyIsReused()
     {
-        var catalogRow = GerberTechnologyChoices.Build(_root, copperCount: 6, Shipped())
-            .Single(c => c.Kind == GerberTechnologyChoiceKind.Catalog && c.CatalogId == DocGerberFixtures.SixLayerId);
+        var catalogRow = ImportTechnologyChoices.Build(_root, copperCount: 6, Shipped())
+            .Single(c => c.Kind == ImportTechnologyChoiceKind.Catalog && c.CatalogId == DocGerberFixtures.SixLayerId);
         string copy = Path.Combine(_root, "tech", DocGerberFixtures.SixLayerId + ".ctech");
         Assert.False(File.Exists(copy));
 
-        var first = GerberTechnologyChoices.Commit(catalogRow, _root);
+        var first = ImportTechnologyChoices.Commit(catalogRow, _root);
         Assert.Equal(Path.GetFullPath(copy), first.UsePath);
         var written = File.GetLastWriteTimeUtc(copy);
         File.SetLastWriteTimeUtc(copy, written.AddMinutes(-5));
 
-        var second = GerberTechnologyChoices.Commit(catalogRow, _root);
+        var second = ImportTechnologyChoices.Commit(catalogRow, _root);
         Assert.Equal(first, second);
         Assert.Equal(written.AddMinutes(-5), File.GetLastWriteTimeUtc(copy));
     }

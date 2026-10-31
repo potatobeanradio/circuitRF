@@ -100,6 +100,17 @@ public sealed partial class OptimizerPanelViewModel : ObservableObject, ITunable
 
     partial void OnStatusTextChanged(string value) => StatusDetail = null;
 
+    /// <summary>Posts a refusal or a failure to the Messages panel (issue #33): a run that did not happen, or ended
+    /// without a result, must not be said only in a status line that the next action overwrites.</summary>
+    public Action<string>? ReportProblem { get; set; }
+
+    /// <summary>The status line AND the Messages panel, for a run's refusal or failure.</summary>
+    private void Problem(string text)
+    {
+        StatusText = text;
+        ReportProblem?.Invoke(text);
+    }
+
     public ObservableCollection<OptimizerGoalRowViewModel> Goals { get; } = [];
 
     public ObservableCollection<OptimizerVariableRowViewModel> Variables { get; } = [];

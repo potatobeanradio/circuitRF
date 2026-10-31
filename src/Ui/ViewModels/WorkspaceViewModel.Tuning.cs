@@ -65,6 +65,7 @@ public partial class WorkspaceViewModel
         // Analyses panel's pin on the session the edit landed on.
         panel.EditCommitted     += OnAnalysesEditCommitted;
         panel.CreateSession      = CreateTuneSession;
+        panel.ReportProblem      = text => Messages.Error($"Tuning: {text}");   // issue #33
         panel.Ladders            = () => CircuitRF.Ui.Smith.SmithPreferredValueStore.Ladders;
         panel.SessionForDrawing  = d => SessionForTunedDrawing(d, openTab: true);
         panel.ExistingSessionFor = d => SessionForTunedDrawing(d, openTab: false);

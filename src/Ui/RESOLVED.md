@@ -41506,3 +41506,17 @@ list appeared only after clicking another choice and back. Found rendering Impor
 headlessly — the same dialog File ▸ Import ▸ Technology asks, and both now share
 `WorkspaceViewModel.WriteImportedTechnologyAsync`. The constructor now applies the panel's visibility once
 after the handlers are attached.
+
+## Refusals said only in a panel's status line never reached Messages (issue #33, 2026-10-31)
+
+The Optimizer, Tuning and Yield panels wrote a run's refusal or failure ("Refused: …", "The run failed: …") to their
+own status line only, which the next action overwrites; `ReportMessages` posted only a finished run's summary. Each
+panel now has `ReportProblem`, and every site that refuses or fails a RUN goes through `Problem(text)`, which sets the
+status line and posts the same sentence to Messages as an error. A field-entry refusal (a mistyped spread or range)
+stays in the status line: it is feedback on the keystroke, not a run that did not happen. **Post at the action, not
+from `OnStatusTextChanged`**: CommunityToolkit raises no change for an equal value, so a second click on a refused Run
+would post nothing.
+
+The 3D editor's elaboration refusals had the same gap: they went into the scene's notes, and the canvas label carries
+only the short form ("U1: cannot be drawn in 3D"). `C3dEditorViewModel.PostNewRefusals` posts each one once while it
+stands, and the label for a layout with no technology now says so.

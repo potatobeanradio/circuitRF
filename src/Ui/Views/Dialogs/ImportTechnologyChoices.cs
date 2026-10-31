@@ -9,7 +9,7 @@ using CircuitRF.Ui.Layout;
 namespace CircuitRF.Ui.Views.Dialogs;
 
 /// <summary>What one row of the Gerber import's Technology combo stands for.</summary>
-public enum GerberTechnologyChoiceKind
+public enum ImportTechnologyChoiceKind
 {
     /// <summary>A technology of the import's own, written beside the cell.</summary>
     New,
@@ -26,8 +26,8 @@ public enum GerberTechnologyChoiceKind
 /// is the loaded model the dialog re-proposes the rows against (R-gt-2) — for a catalog row, the
 /// catalog's own copy, which is byte-identical to what Continue writes into <c>tech/</c>.
 /// </summary>
-public sealed record GerberTechnologyChoice(
-    GerberTechnologyChoiceKind Kind,
+public sealed record ImportTechnologyChoice(
+    ImportTechnologyChoiceKind Kind,
     string Label,
     string? Path,
     string? CatalogId,
@@ -37,20 +37,20 @@ public sealed record GerberTechnologyChoice(
     Technology? Technology)
 {
     /// <summary>R-gt-4: only a technology the import MINTS can have a layer added to it.</summary>
-    public bool AllowsAddToTechnology => Kind == GerberTechnologyChoiceKind.New;
+    public bool AllowsAddToTechnology => Kind == ImportTechnologyChoiceKind.New;
 
     /// <summary>Readable, and not an edited copy of a catalog technology — what D4 leaves to the count.</summary>
     public bool Usable { get; init; } = true;
 
     /// <summary>
-    /// D4 against a copper count that has CHANGED since <see cref="GerberTechnologyChoices.Build"/>:
+    /// D4 against a copper count that has CHANGED since <see cref="ImportTechnologyChoices.Build"/>:
     /// the table's "in the stackup as" answers add copper the file names did not, and a set whose
     /// copper is only known once those are answered must be able to reach the stackup they make
     /// (designer report, round 17 — every four-conductor entry stayed disabled after the four
     /// files were marked copper).
     /// </summary>
     public bool EnabledFor(int copperCount) =>
-        Kind == GerberTechnologyChoiceKind.New || Usable && ConductorCount == copperCount;
+        Kind == ImportTechnologyChoiceKind.New || Usable && ConductorCount == copperCount;
 
     public override string ToString() => Label;
 }
@@ -60,9 +60,17 @@ public sealed record GerberTechnologyChoice(
 /// which is selected — separated from <see cref="LayerMappingDialog"/> so the rules can be driven by a
 /// test without a window, as <see cref="WorkspaceTechnologyChoices"/> is for Change Technology….
 /// </summary>
-public static class GerberTechnologyChoices
+public static class ImportTechnologyChoices
 {
     public const string NewLabel = "New technology from the files";
+
+    /// <summary>The New row's label for a board-file import (issue #34), which reads one file, not a set.</summary>
+    public const string BoardNewLabel = "New technology from the board";
+
+    /// <summary>What New writes for a board-file import.</summary>
+    public const string BoardNewToolTip =
+        "A technology of this import's own is written beside the cells: the workspace technology's layers and settings, "
+      + "the board's layers, and the board's own stackup. The workspace technology is not changed.";
 
     /// <summary>
     /// D2's list, in D2's order: <b>New</b>; every <c>.ctech</c> in the workspace
@@ -81,13 +89,16 @@ public static class GerberTechnologyChoices
     /// while the label promised the built-in one. The edited file is still offered, as the workspace row
     /// above it. An identical copy is simply reused (D2).</para>
     /// </remarks>
-    public static IReadOnlyList<GerberTechnologyChoice> Build(
-        string? workspaceRoot, int copperCount, IReadOnlyList<TechnologyCatalogEntry> catalog)
+    /// <param name="newLabel">The New row's label; null is the Gerber import's.</param>
+    /// <param name="newToolTip">The New row's tooltip; null is the Gerber import's.</param>
+    public static IReadOnlyList<ImportTechnologyChoice> Build(
+        string? workspaceRoot, int copperCount, IReadOnlyList<TechnologyCatalogEntry> catalog,
+        string? newLabel = null, string? newToolTip = null)
     {
-        var choices = new List<GerberTechnologyChoice>
+        var choices = new List<ImportTechnologyChoice>
         {
-            new(GerberTechnologyChoiceKind.New, NewLabel, null, null, copperCount, true,
-                "A technology of this import's own is written beside the cell, with the layers the files "
+            new(ImportTechnologyChoiceKind.New, newLabel ?? NewLabel, null, null, copperCount, true,
+                newToolTip ?? "A technology of this import's own is written beside the cell, with the layers the files "
               + "name and a stackup read from the job file or filled in.", null),
         };
 
@@ -96,8 +107,8 @@ public static class GerberTechnologyChoices
         {
             Technology? tech = TryLoad(choice.AbsolutePath);
             int conductors = tech is null ? 0 : ConductorCount(tech);
-            choices.Add(new GerberTechnologyChoice(
-                GerberTechnologyChoiceKind.Workspace,
+            choices.Add(new ImportTechnologyChoice(
+                ImportTechnologyChoiceKind.Workspace,
                 tech is null ? $"{choice.Label}  —  unreadable" : $"{choice.Label}  —  {conductors} copper",
                 choice.AbsolutePath, null, conductors,
                 tech is not null && conductors == copperCount,
@@ -113,8 +124,8 @@ public static class GerberTechnologyChoices
             string copy = System.IO.Path.Combine(workspaceRoot, "tech", entry.Id + ".ctech");
             bool editedCopy = File.Exists(copy) && !SameText(copy, TechnologyCatalog.LoadRawJson(entry));
 
-            choices.Add(new GerberTechnologyChoice(
-                GerberTechnologyChoiceKind.Catalog,
+            choices.Add(new ImportTechnologyChoice(
+                ImportTechnologyChoiceKind.Catalog,
                 $"{entry.Name}  —  {conductors} copper  —  built in, copied into tech/",
                 null, entry.Id, conductors,
                 conductors == copperCount && !editedCopy,
@@ -133,12 +144,12 @@ public static class GerberTechnologyChoices
     /// D3: the workspace's default technology when its conductor count equals the set's copper count,
     /// otherwise <b>New</b> (index 0).
     /// </summary>
-    public static int DefaultIndex(IReadOnlyList<GerberTechnologyChoice> choices, string? workspaceDefaultPath)
+    public static int DefaultIndex(IReadOnlyList<ImportTechnologyChoice> choices, string? workspaceDefaultPath)
     {
         if (workspaceDefaultPath is not { Length: > 0 }) return 0;
         string target = System.IO.Path.GetFullPath(workspaceDefaultPath);
         for (int i = 0; i < choices.Count; i++)
-            if (choices[i] is { Kind: GerberTechnologyChoiceKind.Workspace, IsEnabled: true, Path: { } p } &&
+            if (choices[i] is { Kind: ImportTechnologyChoiceKind.Workspace, IsEnabled: true, Path: { } p } &&
                 string.Equals(System.IO.Path.GetFullPath(p), target, StringComparison.OrdinalIgnoreCase))
                 return i;
         return 0;
@@ -149,12 +160,12 @@ public static class GerberTechnologyChoices
     /// where it is, and a catalog technology is copied into <c>tech/</c> HERE — not before, so a
     /// dialog that is cancelled writes nothing — by the function New Workspace copies with.
     /// </summary>
-    public static GerberTechnologyTarget Commit(GerberTechnologyChoice choice, string? workspaceRoot) => choice.Kind switch
+    public static ImportTechnologyTarget Commit(ImportTechnologyChoice choice, string? workspaceRoot) => choice.Kind switch
     {
-        GerberTechnologyChoiceKind.Workspace => GerberTechnologyTarget.Use(choice.Path!),
-        GerberTechnologyChoiceKind.Catalog when workspaceRoot is not null =>
-            GerberTechnologyTarget.Use(WorkspaceCreate.InstallTechnology(workspaceRoot, choice.CatalogId!)),
-        _ => GerberTechnologyTarget.New,
+        ImportTechnologyChoiceKind.Workspace => ImportTechnologyTarget.Use(choice.Path!),
+        ImportTechnologyChoiceKind.Catalog when workspaceRoot is not null =>
+            ImportTechnologyTarget.Use(WorkspaceCreate.InstallTechnology(workspaceRoot, choice.CatalogId!)),
+        _ => ImportTechnologyTarget.New,
     };
 
     private static int ConductorCount(Technology tech) =>

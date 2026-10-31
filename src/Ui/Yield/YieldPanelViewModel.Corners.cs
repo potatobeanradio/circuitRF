@@ -137,7 +137,7 @@ public sealed partial class YieldPanelViewModel
         });
         if (run.Refusal is { } refusal)
         {
-            StatusText = $"Refused: {refusal.Render()}";
+            Problem($"Refused: {refusal.Render()}");
             return;
         }
 
@@ -176,9 +176,8 @@ public sealed partial class YieldPanelViewModel
         if (result is null || result.Outcome is StatisticalOutcome.Cancelled or StatisticalOutcome.Refused)
         {
             State = YieldRunState.Idle;
-            StatusText = result is null ? $"The run failed: {crash}"
-                : result.Outcome == StatisticalOutcome.Cancelled ? "Cancelled"
-                : $"Refused: {result.Refusal?.Render()}";
+            if (result?.Outcome == StatisticalOutcome.Cancelled) StatusText = "Cancelled";
+            else Problem(result is null ? $"The run failed: {crash}" : $"Refused: {result.Refusal?.Render()}");
             _display?.Drop();
             return;
         }

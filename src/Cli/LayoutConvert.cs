@@ -270,13 +270,14 @@ public static class LayoutConvert
             return JsonRun.Fail(CliDiagnostics.ConvertInputNotFound(o.Input));
 
         // R-gt-7. Refused as a PAIR with --tech rather than ordered, and refused BY FORMAT for anything that is
-        // not a Gerber set, before anything is read: every other importer already keeps the destination's
-        // stackup (MintTechnology), so the flag would have nothing to do there and a silent no-op is a lie.
+        // not a Gerber set or a board file, before anything is read: every other importer already keeps the
+        // destination's stackup (MintTechnology), so the flag would have nothing to do there and a silent no-op is a
+        // lie. A board takes the same New/Use choice as a Gerber set (issue #34).
         if (o.IntoTech is not null)
         {
             if (o.TechPath is not null) return JsonRun.Fail(CliDiagnostics.ConvertIntoTechWithTech());
             var intoFrom = o.From ?? DetectSource(o.Input);
-            if (intoFrom != Fmt.Gerber)
+            if (intoFrom is not (Fmt.Gerber or Fmt.Board))
                 return JsonRun.Fail(CliDiagnostics.ConvertIntoTechNotGerber(intoFrom is { } f ? Name(f) : "not recognised"));
             if (o.Output is null || (o.To ?? DetectTarget(o.Output)) != Fmt.Clay)
                 return JsonRun.Fail(CliDiagnostics.ConvertIntoTechNotClay());
@@ -912,16 +913,25 @@ public static class LayoutConvert
     private static Source? ImportBoard(Options o, string staging, Technology? destTech, string name)
     {
         using var stream = File.OpenRead(o.Input!);
+        // The import writes its own technology beside the cells and points them at it (issue #34) — the function
+        // the GUI's Import Board calls, so the two produce the same files — or, with --into-tech, references that one.
         var r = PcbImport.Import(stream, staging, name, destTech, o.DbuPerMicron,
-            coalesceRasterFill: !o.NoCoalesce);
+            coalesceRasterFill: !o.NoCoalesce,
+            target: o.IntoTech is { } into ? ImportTechnologyTarget.Use(into) : null,
+            destTechPath: destTech is null ? null : o.TechPath is { } tp && File.Exists(tp) ? Path.GetFullPath(tp) : null);
         Report(r.Messages);
+        if (r.Refusal is { } refusal) { JsonRun.Report(CliDiagnostics.ConvertBoardRefused(refusal)); return null; }
         if (r.Cancelled) return Refused();
 
         string? cellDir = PickCell(o.Cell, r.CreatedCellDirs, r.BoardCellDir, "footprint");
         if (cellDir is null) return null;
 
-        var tech = MintTechnology(staging, name, destTech, r.LayersToAdd, r.Stackup, r.CreatedCellDirs, r.ViaEntries);
-        return Finish(cellDir, tech, r.CreatedCellDirs);
+        if (o.IntoTech is null && r.TechPath is { } written)
+        {
+            Console.Error.WriteLine($"[circuitRF] technology: {written} ({r.Technology?.Layers.Count ?? 0} layer(s))");
+            _mintedTechPath = written;
+        }
+        return Finish(cellDir, r.Technology, r.CreatedCellDirs);
     }
 
     private static Source? ImportGerber(Options o, string staging, Technology? destTech)
@@ -941,7 +951,7 @@ public static class LayoutConvert
             offerArchive: archives => OfferArchive(o, archives),
             coalesceRasterFill: !o.NoCoalesce,
             arcToleranceMicrons: o.ArcToleranceMicrons,
-            target: o.IntoTech is { } into ? GerberTechnologyTarget.Use(into) : null);
+            target: o.IntoTech is { } into ? ImportTechnologyTarget.Use(into) : null);
         Report(r.Messages);
         // R-gt-3/R-gt-5: the import's own sentence, as the error it is — not "nothing was converted".
         if (r.Refusal is { } refusal) { JsonRun.Report(CliDiagnostics.ConvertGerberDiagnostic(refusal)); return null; }
@@ -1436,7 +1446,7 @@ public static class LayoutConvert
         Console.Error.WriteLine("       gltf target (-o <file>.glb; from a .c3d):  --gltf-assembly  --gltf-field <plot>  --region <name>");
         Console.Error.WriteLine("       --no-coalesce  keep a painted pour's individual strokes");
         Console.Error.WriteLine("       --arc-tolerance <len>  a gerber source's arc flattening, with its unit (default 1um)");
-        Console.Error.WriteLine("       gerber source, clay target:  --into-tech <path.ctech>  import into that technology and write none");
+        Console.Error.WriteLine("       gerber or board source, clay target:  --into-tech <path.ctech>  import into that technology and write none");
         Console.Error.WriteLine("       picture source (png, jpeg, bmp, gif, webp; --from image):  --scale <len>/px | --dpi <n> |");
         Console.Error.WriteLine("              --scale-points x0,y0,x1,y1=<len> | --scale auto   --tech <id|path.ctech>");
         Console.Error.WriteLine("              --layer-map \"#rrggbb=<layer>|drill|outline|silk|ignore,...\"  --preset <name>");

@@ -83,7 +83,7 @@ public sealed class DesignerRound20Tests : IDisposable
         File.WriteAllText(Path.Combine(dir, "plated.art"), Flashes(0.3));
 
         var result = GerberImport.Import(FilesIn(dir), _root, "answered", null, 1000,
-            resolveMapping: request => new GerberMappingAnswer(
+            resolveMapping: request => new ImportMappingAnswer(
                 [.. request.Rows.Select(r => r.StackupConductors is null ? r : r with { Stackup = LayerStackupChoice.Vias })],
                 request.Target));
 

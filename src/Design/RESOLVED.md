@@ -25293,3 +25293,47 @@ render). Test: `EditorRound1TreeTests.AFacesPadding_ReadsAsALengthBesideItsPerce
 **Reproduction.** The scripts that wrote the three structures and every `.cem` (each face stated), ran them and built
 the tables are outside the repo. They used only circuitRF's CLI (`em`) and Palace's own `port-S.csv`. Measured on the
 reference machine (10 cores, 16 GB) while other runs shared it, so the times above are not benchmarks.
+
+## A board import's layers lived only in the session; New 3D View from Layout refused the board (issues #34, #35, 2026-10-31)
+
+**What happened.** Import Board mapped the board's layers onto the workspace technology and added the ones it lacked
+(F.Fab, Dwgs.User, User.n, inner copper) with synthetic negative keys, but added them only to a LIVE override of that
+technology (`TechnologyCache.SetLive`), never to a file. The `.clay` files were written naming those keys. The next
+session, and anything that read the technology from disk, drew every such layer as an unnamed `L-n/0`. With no
+workspace technology the override step returned at its first line, so nothing was kept at all — not a layer, not the
+board's stackup — and nothing said so. New 3D View from Layout then refused the board with "its technology does not
+resolve", which the canvas showed only as "U1: cannot be drawn in 3D".
+
+**The fix takes the Gerber import's shape** (`ImportTechnologyTarget`, renamed from `GerberTechnologyTarget` now that two
+importers use it, with `ImportMappingRequest`/`Answer` and the dialog's `ImportTechnologyChoices`). `PcbImport.Import`
+writes a technology of the board's own beside the cells (`<parentDir>/<board>.ctech`, New, the default) or references an
+existing one and writes nothing to it (Use), and every `.clay` it writes carries a `TechRef` to it. The CLI's `convert`
+had already minted a `.ctech` for a board in `src/Cli`; that logic now lives in `PcbImport` and both callers use it, so
+the GUI and `convert` write the same files. `--into-tech` accepts a board.
+
+**Rules that are easy to get wrong here:**
+- **The donor is COPIED, so its material-library references must be re-pointed** from the new file's folder, or the
+  written technology refuses to load ("Material library … cannot be read"). The caller passes where the donor was read
+  from; failing that, the loader's `ResolvedLibraryPaths` say where each library actually was.
+- **The donor's stackup is kept when its conductor count is the board's copper count**, and the board's own is taken
+  only otherwise. Replacing a matching donor stackup with the board's dropped the donor's plated-through-hole entry, which
+  is what binds the footprint drill layer.
+- **A New import defines every layer its cells draw on**, whatever the mapping said: a layer "kept unknown" in a
+  technology the import itself writes is the same nameless layer the change exists to end. Matching still sees the
+  board's geometry token (`F.SilkS`); only a layer the import ADDS takes the layer table's user name (`F.Silkscreen`).
+- **A no-technology import now has a technology to find bottom layers in**, so a back-side part becomes a bottom
+  placement of its front cell there too. Tests that used "no technology" as the oracle for a baked back cell use Use
+  with an empty technology instead.
+- **The board dialog opens on New, not on the workspace technology** (the Gerber import's D3 default). A board brings
+  named layers a shared technology rarely has, and Use keeps every one of those as an unnamed layer.
+
+Gate: `tests/Ui.Tests/PcbImportTechnologyTests.cs`.
+
+## A vendor part's 200-candidate cap removed (issue #32, 2026-10-31)
+
+`VendorPartTunable.MaxCandidates` (brief vendorlib-4 D2) refused an entry whose selection found more than 200 parts,
+on the grounds that each is a cell the run holds. Measured with the test library generator scaled to 2,200 candidates:
+extraction emitting all of them takes 204 ms cold (index build and first block reads) and ~30 ms warm. A candidate is a
+small subcircuit read once per extraction, and Discrete already moves from an exhaustive grid to coordinate descent on
+a long list. The cap, its `tuning.part.over-cap` check error, the over-cap row text and `explain --tunables`' `overCap`
+field are gone.

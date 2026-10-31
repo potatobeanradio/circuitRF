@@ -622,10 +622,11 @@ internal static class CliDiagnostics
         "--into-tech and --tech cannot be given together: --into-tech imports into that technology and writes none, " +
         "--tech donates layer names to a technology the import writes. Give one.");
 
-    /// <summary>R-gt-7 — every other importer already keeps the destination's stackup, so the flag has nothing to do.</summary>
+    /// <summary>R-gt-7 — every other importer already keeps the destination's stackup, so the flag has nothing to do. The id
+    /// predates the board import taking the same choice (issue #34) and is kept: it is a stable diagnostic code.</summary>
     public static Diagnostic ConvertIntoTechNotGerber(string format) => Diagnostic.Create(
         "convert.into-tech.not-gerber", DiagnosticSeverity.Error,
-        "--into-tech applies to a gerber source, and this one is {format}. Its importer already keeps the stackup of " +
+        "--into-tech applies to a gerber or board source, and this one is {format}. Its importer already keeps the stackup of " +
         "the technology given with --tech.", ("format", format));
 
     /// <summary>R-gt-7 — a technology is referenced by the cells an import leaves behind; an export target keeps none.</summary>

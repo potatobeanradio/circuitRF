@@ -2467,7 +2467,7 @@ otherwise.</li>
 </tr>
 <tr>
 <td><code>--into-tech &lt;file.ctech&gt;</code></td>
-<td>A Gerber set into a <code>clay</code> folder <strong>using</strong> this technology: the cells reference it, nothing is added to it, and no <code>.ctech</code> is written. Refused together with <code>--tech</code>, and for any source that is not Gerber. See <a href="#convert-tech">below</a>.</td>
+<td>A Gerber set or a board file into a <code>clay</code> folder <strong>using</strong> this technology: the cells reference it, nothing is added to it, and no <code>.ctech</code> is written. Refused together with <code>--tech</code>, and for any other source. See <a href="#convert-tech">below</a>.</td>
 </tr>
 <tr>
 <td><code>--workspace &lt;file.cws&gt;</code></td>
@@ -2550,13 +2550,15 @@ a bare number.</p>
 source's layers reconcile against it — matched layers keep your names and your Gerber suffixes,
 unmatched ones are added. Without it, an intermediate technology is invented from the file alone,
 and a Gerber export then names its files from synthetic suffixes.</li>
-<li><strong><code>--into-tech</code> imports a Gerber set into a technology you already have</strong>, the way the Technology
-row of <strong>File ▸ Import ▸ Gerber</strong>'s layer-mapping dialog does. Each file lands on that technology's
-own layer, the cells reference the file you named, and no <code>.ctech</code> is written. It is refused, and
-nothing is created, when the set's copper does not fit that technology's stackup: a different number
-of copper files than conductors, a copper file on a conductor of a different rank, two on one
-conductor, or drill data on a layer no via binds. It takes a <code>clay</code> target only. The other importers
-already keep the stackup of the technology <code>--tech</code> names, so the flag is refused for them.</li>
+<li><strong><code>--into-tech</code> imports a Gerber set or a board file into a technology you already have</strong>, the way
+the Technology row of the <strong>File ▸ Import ▸ Gerber</strong> and <strong>Board</strong> layer-mapping dialogs does. Each
+layer lands on that technology's own layer, the cells reference the file you named, and no <code>.ctech</code>
+is written. A Gerber set is refused, and nothing is created, when its copper does not fit that
+technology's stackup: a different number of copper files than conductors, a copper file on a
+conductor of a different rank, two on one conductor, or drill data on a layer no via binds. A board
+is refused when its number of copper layers is not the stackup's number of conductors. It takes a
+<code>clay</code> target only. The other importers already keep the stackup of the technology <code>--tech</code> names,
+so the flag is refused for them.</li>
 <li><strong><code>--keep-cells &lt;dir&gt;</code> leaves a design you can open.</strong> Cells plus the technology they point at —
 the honest way to see what a conversion actually understood before you send the result anywhere.</li>
 </ul>

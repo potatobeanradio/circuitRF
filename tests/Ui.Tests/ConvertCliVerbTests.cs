@@ -121,7 +121,7 @@ public sealed class ConvertCliVerbTests(ITestOutputHelper output) : IDisposable
 
         string viaApp = Path.Combine(_root, "app");
         var app = GerberImport.Import(GerberImportEntry.FilesIn(set), viaApp, "set", null, Dbu,
-                                      target: GerberTechnologyTarget.Use(tech));
+                                      target: ImportTechnologyTarget.Use(tech));
         Assert.False(app.Cancelled, string.Join("\n", app.Messages));
 
         string cliClay = Directory.EnumerateFiles(stdout.Trim(), "*.clay", SearchOption.AllDirectories).Single();
@@ -209,7 +209,7 @@ public sealed class ConvertCliVerbTests(ITestOutputHelper output) : IDisposable
         var (code, _, stderr) = RunCli("convert", dxf, "-o", target, "--into-tech", "a.ctech");
 
         Assert.Equal(1, code);
-        Assert.Contains("--into-tech applies to a gerber source, and this one is", stderr);
+        Assert.Contains("--into-tech applies to a gerber or board source, and this one is", stderr);
         Assert.False(Directory.Exists(target));
     }
 

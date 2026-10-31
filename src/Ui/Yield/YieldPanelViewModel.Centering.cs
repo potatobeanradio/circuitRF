@@ -277,7 +277,7 @@ public sealed partial class YieldPanelViewModel
         });
         if (run.Refusal is { } refusal)
         {
-            StatusText = $"Refused: {refusal.Render()}";
+            Problem($"Refused: {refusal.Render()}");
             return;
         }
 
@@ -325,7 +325,7 @@ public sealed partial class YieldPanelViewModel
         if (result is null)
         {
             State = YieldRunState.Idle;
-            StatusText = $"The run failed: {crash}";
+            Problem($"The run failed: {crash}");
             _display?.Drop();
             return;
         }
@@ -339,7 +339,7 @@ public sealed partial class YieldPanelViewModel
                 return;
             case CenteringOutcome.Refused:
                 State = YieldRunState.Idle;
-                StatusText = $"Refused: {result.Refusal?.Render() ?? result.FinishReason}";
+                Problem($"Refused: {result.Refusal?.Render() ?? result.FinishReason}");
                 _display?.Drop();
                 return;
         }

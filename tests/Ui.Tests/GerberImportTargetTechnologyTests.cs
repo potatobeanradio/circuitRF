@@ -41,7 +41,7 @@ public sealed class GerberImportTargetTechnologyTests : IDisposable
 
     private GerberImport.ImportResult ImportInto(string techPath, IReadOnlyList<string>? files = null) =>
         GerberImport.Import(files ?? SixCopperSet(), Workspace(), "board", null, 1000,
-                            target: GerberTechnologyTarget.Use(techPath));
+                            target: ImportTechnologyTarget.Use(techPath));
 
     [Fact]
     public void UsingTheShippedSixLayerTechnology_LandsEveryShapeOnItsKeys_WritesNoTechnology_AndChangesNothing()
@@ -158,18 +158,18 @@ public sealed class GerberImportTargetTechnologyTests : IDisposable
         var files = SixCopperSet();
 
         IReadOnlyList<LayerMappingRow>? fresh = null;
-        GerberImport.Import(files, Workspace(), "fresh", null, 1000, target: GerberTechnologyTarget.Use(b),
+        GerberImport.Import(files, Workspace(), "fresh", null, 1000, target: ImportTechnologyTarget.Use(b),
             resolveMapping: r => { fresh = r.Rows; return null; });
 
         var labels = new List<string>();
         var control = new RunControl { MinReportIntervalMs = 0, Progress = new SyncProgress(p => labels.Add(p.Stage)) };
         IReadOnlyList<LayerMappingRow>? reproposed = null;
         var result = GerberImport.Import(files, Workspace(), "board", null, 1000, control: control,
-            target: GerberTechnologyTarget.Use(a),
+            target: ImportTechnologyTarget.Use(a),
             resolveMapping: r =>
             {
                 reproposed = r.Repropose(TechPersistence.LoadFromFile(b));
-                return new GerberMappingAnswer(reproposed, GerberTechnologyTarget.Use(b));
+                return new ImportMappingAnswer(reproposed, ImportTechnologyTarget.Use(b));
             });
 
         Assert.False(result.Cancelled, string.Join("\n", result.Messages));

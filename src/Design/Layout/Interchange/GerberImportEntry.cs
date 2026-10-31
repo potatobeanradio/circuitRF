@@ -164,7 +164,7 @@ public static class GerberImportEntry
         RunControl? control = null,
         GerberImport.OfferArchive? offerArchive = null,
         bool coalesceRasterFill = true,
-        GerberTechnologyTarget? target = null,
+        ImportTechnologyTarget? target = null,
         GerberImport.ResolveGerberMapping? resolveMapping = null,
         double arcToleranceMicrons = GerberImport.DefaultArcToleranceMicrons)
     {
@@ -219,7 +219,7 @@ public static class GerberImportEntry
         RunControl? control = null,
         GerberImport.OfferArchive? offerArchive = null,
         bool coalesceRasterFill = true,
-        GerberTechnologyTarget? target = null,
+        ImportTechnologyTarget? target = null,
         GerberImport.ResolveGerberMapping? resolveMapping = null,
         double arcToleranceMicrons = GerberImport.DefaultArcToleranceMicrons)
     {

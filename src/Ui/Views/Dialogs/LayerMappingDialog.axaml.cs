@@ -136,7 +136,7 @@ public sealed record LayerStackupItem(LayerStackupChoice Choice, string Label)
 /// <para><see cref="Target"/> is the Gerber import's Technology choice (R-gt-8), already committed — a
 /// catalog technology has been copied into <c>tech/</c> by the time this is returned. Null for every
 /// other caller.</para></summary>
-public sealed record LayerMappingDialogResult(IReadOnlyList<LayerMappingRow> Rows, GerberTechnologyTarget? Target = null);
+public sealed record LayerMappingDialogResult(IReadOnlyList<LayerMappingRow> Rows, ImportTechnologyTarget? Target = null);
 
 /// <summary>
 /// The table's row view models for one destination technology — framework-free, so what a Technology
@@ -171,8 +171,9 @@ public partial class LayerMappingDialog : Window
     private List<LayerMappingRowViewModel> _rowVms = [];
 
     // The Gerber import's Technology row (R-gt-8). Null for every other caller.
-    private GerberMappingRequest? _request;
-    private IReadOnlyList<GerberTechnologyChoice> _choices = [];
+    private ImportMappingRequest? _request;
+    private string _format = "Gerber";
+    private IReadOnlyList<ImportTechnologyChoice> _choices = [];
     private List<ComboBoxItem> _choiceItems = [];
     private Technology? _workspaceTech;
     private string? _workspaceRoot;
@@ -203,14 +204,17 @@ public partial class LayerMappingDialog : Window
     /// stage, run again with nothing read twice (R-gt-2).
     /// </summary>
     /// <param name="workspaceTech">The workspace's own technology: what New donates layer names from.</param>
-    /// <param name="choices"><see cref="GerberTechnologyChoices.Build"/>'s list.</param>
-    /// <param name="selected"><see cref="GerberTechnologyChoices.DefaultIndex"/> (D3).</param>
+    /// <param name="choices"><see cref="ImportTechnologyChoices.Build"/>'s list.</param>
+    /// <param name="selected"><see cref="ImportTechnologyChoices.DefaultIndex"/> (D3).</param>
+    /// <param name="format">What is being imported, as the table names its source: "Gerber" or "Board".</param>
     public LayerMappingDialog(
-        string titleText, Technology? workspaceTech, GerberMappingRequest request,
-        IReadOnlyList<GerberTechnologyChoice> choices, int selected, string? workspaceRoot) : this()
+        string titleText, Technology? workspaceTech, ImportMappingRequest request,
+        IReadOnlyList<ImportTechnologyChoice> choices, int selected, string? workspaceRoot,
+        string format = "Gerber") : this()
     {
         Title = titleText;
         TitleText.Text = titleText;
+        _format = format;
         _request = request;
         _choices = choices;
         _workspaceTech = workspaceTech;
@@ -234,24 +238,24 @@ public partial class LayerMappingDialog : Window
         };
     }
 
-    private GerberTechnologyChoice? SelectedChoice =>
+    private ImportTechnologyChoice? SelectedChoice =>
         TechnologyCombo.SelectedIndex is >= 0 and var i && i < _choices.Count ? _choices[i] : null;
 
     /// <summary>The rows as the import would propose them for <paramref name="choice"/>, in the table.</summary>
     /// <remarks>The "in the stackup as" answers already given are KEPT, by file: they are what made the
-    /// technology just chosen enabled at all (<see cref="GerberTechnologyChoice.EnabledFor"/>), and a
+    /// technology just chosen enabled at all (<see cref="ImportTechnologyChoice.EnabledFor"/>), and a
     /// re-proposal that reset them would disable the very entry that is selected.</remarks>
-    private void ShowChoice(GerberTechnologyChoice choice)
+    private void ShowChoice(ImportTechnologyChoice choice)
     {
         var request = _request!;
-        var rows = choice.Kind == GerberTechnologyChoiceKind.New
+        var rows = choice.Kind == ImportTechnologyChoiceKind.New
             ? (request.Target.IsUse ? request.Repropose(null) : request.Rows)
             : request.Repropose(choice.Technology);
         var answered = _rowVms
             .Where(r => r.ShowStackupCombo && r.SelectedStackup is { Choice.AsCopper: true } or { Choice.AsVias: true })
             .GroupBy(StackupKey)
             .ToDictionary(g => g.Key, g => g.First().SelectedStackup!.Choice);
-        ShowTable("Gerber", choice.Technology ?? _workspaceTech, rows, choice.AllowsAddToTechnology, answered);
+        ShowTable(_format, choice.Technology ?? _workspaceTech, rows, choice.AllowsAddToTechnology, answered);
     }
 
     private static string StackupKey(LayerMappingRowViewModel row) => row.Row.SourceDetail ?? row.Row.SourceName ?? "";
@@ -285,7 +289,10 @@ public partial class LayerMappingDialog : Window
     {
         foreach (var old in _rowVms) old.PropertyChanged -= OnRowChanged;
 
-        HeaderText.Text = destTech is null
+        HeaderText.Text = destTech is null && _format == "Board"
+            ? "This import creates its own technology from the board's layers and stackup, so there is nothing to map "
+            + "these layers onto. Choose an existing technology above to import into it instead."
+            : destTech is null
             ? "This import creates its own technology, so there is nothing to map these layers onto. "
             + "What it cannot work out for itself is which of these files is COPPER — only a conductor "
             + "enters the stackup, and nothing on it is priced, extracted or usable as a reference "
@@ -367,12 +374,12 @@ public partial class LayerMappingDialog : Window
             .Select(r => r.Row with { Choice = r.CurrentChoice, Stackup = r.CurrentStackup })
             .ToList();
 
-        GerberTechnologyTarget? target = null;
+        ImportTechnologyTarget? target = null;
         if (_request is not null && SelectedChoice is { } choice)
         {
             // D2: a catalog technology is copied into tech/ NOW, on Continue — never on selection, so
             // a dialog that is cancelled has written nothing.
-            try { target = GerberTechnologyChoices.Commit(choice, _workspaceRoot); }
+            try { target = ImportTechnologyChoices.Commit(choice, _workspaceRoot); }
             catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException or ArgumentException)
             {
                 SummaryText.Text = $"The technology could not be copied into tech/: {ex.Message}";

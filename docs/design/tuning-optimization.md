@@ -665,8 +665,9 @@ A placed vendor part offers one tunable, `<Instance>.Part` (`TunableKey.PartPara
 PART. Its candidates are chosen by the `tune` line: `kind=same` (the default, D1) is
 `VendorPartChange.SameKind`; `parts="<query>"` is `VendorLibrarySearch` over the part's own library;
 `min=`/`max=` bound the stated value in the part's unit. `VendorPartCandidates.Select` is that one rule,
-from the index alone; a candidate of another port count is removed and counted, and more than
-`VendorPartTunable.MaxCandidates` (200, D2) is a `check` error, never a truncation.
+from the index alone; a candidate of another port count is removed and counted. There is no cap on the count
+(issue #32 retired D2's 200): a candidate is one small subcircuit read once per extraction, and Discrete moves from
+an exhaustive grid to coordinate descent on its own when the list is long.
 
 **A part change is a change of the instance's CELL.** `NetExtractor.PartTunablesOf` describes every placed
 part, and when the setup tunes or optimizes one, emits a cell per candidate from its own byte block

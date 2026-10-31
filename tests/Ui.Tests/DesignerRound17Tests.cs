@@ -105,7 +105,7 @@ public sealed class DesignerRound17Tests : IDisposable
             "G01X5.000000Y0.000000\nX5.000000Y5.000000\nX0.000000Y5.000000\nX0.000000Y0.000000\nM16\nM30\n");
         files.Add(route);
 
-        var result = GerberImport.Import(files, _root, "board", null, 1000, target: GerberTechnologyTarget.Use(tech));
+        var result = GerberImport.Import(files, _root, "board", null, 1000, target: ImportTechnologyTarget.Use(tech));
 
         Assert.Null(result.Refusal);
         Assert.False(result.Cancelled);
@@ -115,8 +115,8 @@ public sealed class DesignerRound17Tests : IDisposable
     public void ACopperCountAnsweredInTheTable_EnablesTheStackupItMakesUp()
     {
         string four = WorkspaceCreate.InstallTechnology(_root, DocGerberFixtures.FourLayerId);
-        var row = GerberTechnologyChoices.Build(_root, copperCount: 0, [])
-                                         .Single(c => c.Kind == GerberTechnologyChoiceKind.Workspace && c.Path == four);
+        var row = ImportTechnologyChoices.Build(_root, copperCount: 0, [])
+                                         .Single(c => c.Kind == ImportTechnologyChoiceKind.Workspace && c.Path == four);
 
         Assert.False(row.IsEnabled);
         Assert.True(row.EnabledFor(4));
@@ -131,7 +131,7 @@ public sealed class DesignerRound17Tests : IDisposable
         for (int n = 1; n <= 4; n++) File.WriteAllText(Path.Combine(dir, $"foil-{n}.art"), Artwork(n, flashes[n - 1]));
 
         var result = GerberImport.Import(FilesIn(dir), _root, "foil", null, 1000,
-            resolveMapping: request => new GerberMappingAnswer(
+            resolveMapping: request => new ImportMappingAnswer(
                 [.. request.Rows.Select(r => r.StackupConductors is null ? r
                     : r with { Stackup = new LayerStackupChoice(true, LayerStackupChoice.AboveTheTop) })],
                 request.Target));

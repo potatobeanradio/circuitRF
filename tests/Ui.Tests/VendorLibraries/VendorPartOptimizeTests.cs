@@ -260,9 +260,9 @@ public sealed class VendorPartOptimizeTests : IDisposable
         Assert.Throws<CnlReadException>(() => new CnlReader().Read("R:R1 a 0 R=50\ntune C1.Part kind=same parts=C0G\n", "tb", null));
     }
 
-    // 5 — check: an empty candidate list and a list over the cap are errors, each through TuningValidator.
+    // 5 — check: an empty candidate list is an error; a long one is not (issue #32 removed the 200-part cap).
     [Fact]
-    public void Check_ReportsAnEmptyListAndACapOverrun_AsErrors()
+    public void Check_ReportsAnEmptyList_AndEmitsALongOne()
     {
         var model = new SchematicEditModel { SchematicDirectory = _schDir };
         model.Components.Add(VendorPart("C1", "TSTC0402A0001", 0));
@@ -282,11 +282,11 @@ public sealed class VendorPartOptimizeTests : IDisposable
         var empty = Assert.Single(findings, d => d.Id == "tuning.part.no-candidates");
         Assert.Equal(CircuitRF.Diagnostics.DiagnosticSeverity.Error, empty.Severity);
         Assert.Contains("C1.Part", empty.Render());
-        var cap = Assert.Single(findings, d => d.Id == "tuning.part.over-cap");
-        Assert.Equal(CircuitRF.Diagnostics.DiagnosticSeverity.Error, cap.Severity);
-        Assert.Contains("220", cap.Render());
 
-        // Over the cap nothing is emitted: the run reads no candidate block for it.
-        Assert.False(extracted.PartTunables.Single(p => p.Key == "C2.Part").Emitted);
+        // 220 candidates — over the old cap — are all emitted and nothing refuses them.
+        Assert.DoesNotContain(findings, d => d.Id.StartsWith("tuning.part.", StringComparison.Ordinal) && d.Render().Contains("C2.Part"));
+        var c2 = extracted.PartTunables.Single(p => p.Key == "C2.Part");
+        Assert.True(c2.Emitted);
+        Assert.Equal(220, c2.Candidates.Count);
     }
 }

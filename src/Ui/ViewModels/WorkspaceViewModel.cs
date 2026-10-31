@@ -5073,9 +5073,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// workspace's own when its conductor count matches the set's copper (D3). A catalog choice is
     /// copied into <c>tech/</c> by the dialog's Continue, so the answer's target is already a file.
     /// </summary>
-    private async Task<CircuitRF.Design.Layout.Interchange.GerberMappingAnswer?> ResolveImportLayerMappingAsync(
+    private async Task<CircuitRF.Design.Layout.Interchange.ImportMappingAnswer?> ResolveImportLayerMappingAsync(
         Window owner, string format, TechResolution workspaceTech,
-        CircuitRF.Design.Layout.Interchange.GerberMappingRequest request)
+        CircuitRF.Design.Layout.Interchange.ImportMappingRequest request)
     {
         string? root = CurrentWorkspacePath is { } cws ? Path.GetDirectoryName(cws) : null;
         if (root is null)
@@ -5083,18 +5083,25 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             // D3's last case: no workspace, no choice — New, with the row hidden.
             var rows = await ResolveImportLayerMappingAsync(owner, format, workspaceTech.Tech, request.Rows, alwaysAsk: true);
             return rows is null ? null
-                : new CircuitRF.Design.Layout.Interchange.GerberMappingAnswer(
-                    rows, CircuitRF.Design.Layout.Interchange.GerberTechnologyTarget.New);
+                : new CircuitRF.Design.Layout.Interchange.ImportMappingAnswer(
+                    rows, CircuitRF.Design.Layout.Interchange.ImportTechnologyTarget.New);
         }
 
-        var choices = GerberTechnologyChoices.Build(root, request.CopperCount, TechnologyCatalog.All);
-        int selected = GerberTechnologyChoices.DefaultIndex(choices, workspaceTech.ResolvedPath);
+        // A board opens on New (issue #34), not on the workspace's own technology: it brings named layers — fab,
+        // courtyard, user drawings — that a shared technology rarely has, and a technology an import USES keeps every
+        // one of those as an unnamed unknown layer. A Gerber set keeps D3's default.
+        bool board = format == "Board";
+        var choices = board
+            ? ImportTechnologyChoices.Build(root, request.CopperCount, TechnologyCatalog.All,
+                                            ImportTechnologyChoices.BoardNewLabel, ImportTechnologyChoices.BoardNewToolTip)
+            : ImportTechnologyChoices.Build(root, request.CopperCount, TechnologyCatalog.All);
+        int selected = board ? 0 : ImportTechnologyChoices.DefaultIndex(choices, workspaceTech.ResolvedPath);
         var dialog = new LayerMappingDialog(
-            $"Import {format} — Layer Mapping", workspaceTech.Tech, request, choices, selected, root);
+            $"Import {format} — Layer Mapping", workspaceTech.Tech, request, choices, selected, root, format);
         var result = await dialog.ShowDialog<LayerMappingDialogResult?>(owner);
         return result is null ? null
-            : new CircuitRF.Design.Layout.Interchange.GerberMappingAnswer(
-                result.Rows, result.Target ?? CircuitRF.Design.Layout.Interchange.GerberTechnologyTarget.New);
+            : new CircuitRF.Design.Layout.Interchange.ImportMappingAnswer(
+                result.Rows, result.Target ?? CircuitRF.Design.Layout.Interchange.ImportTechnologyTarget.New);
     }
 
     // ── Import DXF Library (docs/sonnet-briefs/brief-L4b-dxf-interchange.md §2) ───────────────────
@@ -5219,16 +5226,15 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 using var stream = File.OpenRead(files[0].Path.LocalPath);
                 return CircuitRF.Design.Layout.Interchange.PcbImport.Import(
                     stream, importDir, boardName, techRes.Tech, LayoutUnits.DefaultDbuPerMicron,
-                    resolveLayerMapping: rows =>
-                    {
-                        var settled = Dispatcher.UIThread
-                            .InvokeAsync(() => ResolveImportLayerMappingAsync(window, "Board", techRes.Tech, rows))
-                            .GetAwaiter().GetResult();
-                        return settled is null ? null : LayoutLayerMapping.BuildChoices(settled);
-                    },
                     // R-rf3-7. The user's own preference, read at the moment of the import rather than
                     // cached, so changing it in Settings applies to the very next import.
-                    coalesceRasterFill: AppPreferencesIo.Load().CoalesceRasterFillOnImport ?? true);
+                    coalesceRasterFill: AppPreferencesIo.Load().CoalesceRasterFillOnImport ?? true,
+                    // Issue #34 — the Gerber import's question, asked the same way: which technology the board
+                    // lands in. New writes one beside the cells; nothing is grafted onto a shared one in memory.
+                    resolveMapping: request => Dispatcher.UIThread
+                        .InvokeAsync(() => ResolveImportLayerMappingAsync(window, "Board", techRes, request))
+                        .GetAwaiter().GetResult(),
+                    destTechPath: techRes.ResolvedPath);
             });
         }
         catch (Exception ex)
@@ -5242,14 +5248,18 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         foreach (var msg in result.Messages) Messages.Info(msg);
 
+        if (result.Refusal is { } refusal)
+        {
+            CircuitRF.Design.Layout.Interchange.ImportFolder.RemoveIfEmpty(importDir);
+            Messages.Error($"Import Board: {refusal}");
+            return;
+        }
         if (result.Cancelled)
         {
             CircuitRF.Design.Layout.Interchange.ImportFolder.RemoveIfEmpty(importDir);
             Messages.Info("Import Board cancelled — nothing was created.");
             return;
         }
-
-        ApplyBoardImportToTechnology(techRes, result);
 
         _factory.ProjectTreeTool?.Refresh();
         Messages.Success(
@@ -5695,7 +5705,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     }
 
     /// <summary>
-    /// Installs the board's own layers and stackup on the resolved technology as a LIVE (unsaved)
+    /// Installs an import's layers (and any stackup) on the resolved technology as a LIVE (unsaved)
     /// override — the same <c>TechnologyCache.SetLive</c> seam a cross-technology paste's "Add to
     /// technology" already uses (<c>LayoutEditorViewModel.ApplyFragmentReconciliation</c>).
     ///
@@ -5709,14 +5719,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     ///
     /// <para>An existing stackup is never replaced — R-L4d-6's rule that nothing be silently overwritten
     /// runs in this direction too. What was recovered is reported either way, so the user can compare.</para>
+    /// <para>A board import no longer comes here (issue #34): it writes a technology of its own beside its cells,
+    /// as a Gerber import does, because layers held only in a session's copy were drawn as unnamed "L-n/0" layers
+    /// by the next session. What still comes here recovers layers but — like a COMPONENT file — no stackup at all
+    /// (R-PL1-27); nothing is invented in its place.</para>
     /// </summary>
-    private void ApplyBoardImportToTechnology(
-        TechResolution techRes, CircuitRF.Design.Layout.Interchange.PcbImport.ImportResult result)
-        => ApplyImportToTechnology(techRes, result.LayersToAdd, result.Stackup, result.ViaEntries);
-
-    /// <summary>The same, for an import that recovers layers but — like a COMPONENT file — no stackup
-    /// at all (R-PL1-27). Nothing is invented in its place: <paramref name="stackup"/> is null and the
-    /// technology's own is left exactly as it was.</summary>
     /// <param name="viaEntries">Via entries the import needs, applied even when the whole-stackup
     /// import above was refused — a via entry is ADDITIVE (it declares a drill, it cannot invalidate a
     /// substrate), so the rule that protects a declared stackup does not reach it. Without this an

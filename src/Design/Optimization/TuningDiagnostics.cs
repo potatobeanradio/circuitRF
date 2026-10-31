@@ -98,11 +98,6 @@ public static class TuningDiagnostics
 
     // ── Vendor parts (brief vendorlib-4) ────────────────────────────────────
 
-    public static Diagnostic PartOverCap(string who, string selection, int found, int cap) => Diagnostic.Create(
-        "tuning.part.over-cap", DiagnosticSeverity.Error,
-        "{who}: {selection} finds {found} parts, and an entry chooses among at most {cap}. Narrow it with min=/max= or a longer parts= search.",
-        ("who", who), ("selection", selection), ("found", found), ("cap", cap));
-
     public static Diagnostic PartNoCandidates(string who, string selection, string ports) => Diagnostic.Create(
         "tuning.part.no-candidates", DiagnosticSeverity.Error,
         "{who}: {selection} finds no part to choose among{ports}.",

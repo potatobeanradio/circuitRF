@@ -54,8 +54,8 @@ public sealed class DesignerRound18Tests : IDisposable
         File.WriteAllText(Path.Combine(dir, "artB.art"), Artwork(2, flashes: 2));
 
         var result = GerberImport.Import(FilesIn(dir), _root, "foils", null, 1000,
-            target: GerberTechnologyTarget.Use(techPath),
-            resolveMapping: request => new GerberMappingAnswer(
+            target: ImportTechnologyTarget.Use(techPath),
+            resolveMapping: request => new ImportMappingAnswer(
                 [.. request.Rows.Select(r => r.SourceName switch
                 {
                     "artA" => r with { Choice = new(LayoutFragment.LayerReconciliationAction.MapToExisting, KeyOf("Bottom Copper")) },

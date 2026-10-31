@@ -84,8 +84,7 @@ public sealed partial class OptimizerVariableRowViewModel : ObservableObject
     /// <summary>What values the run may give it, when not any: <c>E24</c>, <c>step 1 nH</c>, <c>integer</c>.
     /// Empty for a continuous value — the Discrete algorithm's refusal names the rows without this.</summary>
     public string DiscreteText => VendorPart is { } vp
-        ? vp.OverCap ? $"{vp.Found:N0} parts — over {CircuitRF.Design.VendorLibraries.VendorPartTunable.MaxCandidates}"
-                     : vp.Candidates.Count == 1 ? "1 part" : $"{vp.Candidates.Count} parts"
+        ? vp.Candidates.Count == 1 ? "1 part" : $"{vp.Candidates.Count:N0} parts"
         : Discrete switch
     {
         TuneDiscrete.None when StepText is { } st => $"step {st}",

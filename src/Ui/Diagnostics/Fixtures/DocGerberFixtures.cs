@@ -63,7 +63,7 @@ public static class DocGerberFixtures
     /// <paramref name="root"/> that holds the six- and four-layer technologies, the six-layer one its
     /// default. <paramref name="request"/> is the import's own request, captured at its mapping callback.
     /// </summary>
-    public static LayerMappingDialog BuildDialog(string root, out GerberMappingRequest request)
+    public static LayerMappingDialog BuildDialog(string root, out ImportMappingRequest request)
     {
         var ws = WorkspaceCreate.Create(root, "Board", SixLayerId);
         string wsDir = Path.GetDirectoryName(ws.CwsPath)!;
@@ -74,7 +74,7 @@ public static class DocGerberFixtures
         string setDir = Path.Combine(root, "board-gerbers");
         var files = WriteSixCopperSet(setDir);
 
-        GerberMappingRequest? captured = null;
+        ImportMappingRequest? captured = null;
         GerberImport.Import(files, wsDir, "board", workspaceTech, LayoutUnits.DefaultDbuPerMicron,
             resolveMapping: r => { captured = r; return null; });
         request = captured ?? throw new InvalidOperationException(
@@ -87,8 +87,8 @@ public static class DocGerberFixtures
                 e.Id, ShippedTechnologies.Load(e).Name, TechnologyOrigin.Shipped, e.ResourceName, null))
             .OrderBy(e => e.Id, StringComparer.Ordinal)
             .ToList();
-        var choices = GerberTechnologyChoices.Build(wsDir, request.CopperCount, catalog);
-        int selected = GerberTechnologyChoices.DefaultIndex(choices, defaultPath);
+        var choices = ImportTechnologyChoices.Build(wsDir, request.CopperCount, catalog);
+        int selected = ImportTechnologyChoices.DefaultIndex(choices, defaultPath);
 
         return new LayerMappingDialog("Import Gerber — Layer Mapping", workspaceTech, request, choices, selected, wsDir);
     }

@@ -74,12 +74,16 @@ public sealed class OptimizerPanelRunTests
     }
 
     [Fact]
-    public void Run_RefusesASetupWithNoGoals_InTheStatusLine()
+    public void Run_RefusesASetupWithNoGoals_InTheStatusLine_AndInMessages()
     {
         var f = OptimizerPanelFixture.OneVariable("0", "100", "simplex", 10);
+        var posted = new List<string>();
+        f.Panel.ReportProblem = posted.Add;
         f.Panel.RunCommand.Execute(null);
 
         Assert.Equal("Refused: Nothing to optimize: the design has no enabled goal.", f.Panel.StatusText);
+        // Issue #33: the refusal reaches the Messages panel too, in the same words.
+        Assert.Equal([f.Panel.StatusText], posted);
         Assert.Equal(OptimizerRunState.Idle, f.Panel.State);
         Assert.Null(f.Panel.RunTask);
     }

@@ -349,8 +349,6 @@ the part. It appears in those panels as `C1.Part`, showing its part number and v
   there are, their value span and the series they come from.
 - **The Tuning slider** steps through the candidates in value order. The box takes a part number, or a
   value, which picks the nearest candidate.
-- **An entry chooses among at most 200 parts.** More is an error naming the count. Narrow it with
-  min/max or a longer search.
 
 When every optimized value is a vendor part, **Auto** searches the candidates directly with
 **Discrete**, and the methods that move values continuously are greyed in the algorithm menu. With other
