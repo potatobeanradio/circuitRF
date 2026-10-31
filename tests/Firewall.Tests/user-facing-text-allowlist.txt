@@ -1539,3 +1539,10 @@ src/Engine/Mom/PlanarSystem.cs|Rooftop merging is built for a single conductor l
 src/Core/Expressions/Evaluator.Reductions.cs|unwrap(): give it a phase in degrees, or a complex quantity to take the phase of.
 src/Core/Expressions/Evaluator.Reductions.cs|unwrap(): no axis named '{axisName}'. Its axes are: {axes}.
 src/Core/Expressions/Evaluator.Reductions.cs|unwrap(): this value has no 'freq' axis; name the axis to unwrap along as the last argument. Its axes are: {axes}.
+# BinaryDatasetWriter: argument checks on a BinaryDataset built in code (the exporter builds only full grids),
+# internal invariants rather than refusals a user meets.
+src/RfCore/Export/BinaryDatasetWriter.cs|'{v.Name}' of block '{block.Name}' holds {v.Count} values where its grid has {points}.
+src/RfCore/Export/BinaryDatasetWriter.cs|An object is larger than one page list can address.
+src/RfCore/Export/BinaryDatasetWriter.cs|Block '{block.Name}' has no axis.
+src/RfCore/Export/BinaryDatasetWriter.cs|Block '{block.Name}' sweeps '{a.Name}' over text.
+src/RfCore/Export/BinaryDatasetWriter.cs|The dataset has more objects than one directory list holds.

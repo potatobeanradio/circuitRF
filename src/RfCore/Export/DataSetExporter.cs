@@ -84,6 +84,10 @@ public static class DataSetExporter
                 TsvWriter.Write(path, workingDs, opts);
                 break;
 
+            case ExportFormat.Ds:
+                BinaryDatasetWriter.Write(path, workingDs);
+                break;
+
             default:
                 throw new ArgumentOutOfRangeException(nameof(format), format, "Unknown export format.");
         }

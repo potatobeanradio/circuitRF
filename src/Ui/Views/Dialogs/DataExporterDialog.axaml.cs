@@ -79,6 +79,7 @@ public partial class DataExporterDialog : Window
         // Segmented button clicks
         NpyBtn.Click += (_, _) => vm.ExportMode = ExportMode.Npy;
         MatBtn.Click += (_, _) => vm.ExportMode = ExportMode.Mat;
+        DsBtn.Click  += (_, _) => vm.ExportMode = ExportMode.Ds;
         TsvBtn.Click += (_, _) => vm.ExportMode = ExportMode.Tsv;
         TsBtn.Click  += (_, _) => vm.ExportMode = ExportMode.Touchstone;
         SplBtn.Click     += (_, _) => vm.ExportMode = ExportMode.Spl;
@@ -151,6 +152,7 @@ public partial class DataExporterDialog : Window
     {
         NpyBtn.IsChecked = mode == ExportMode.Npy;
         MatBtn.IsChecked = mode == ExportMode.Mat;
+        DsBtn.IsChecked  = mode == ExportMode.Ds;
         TsvBtn.IsChecked = mode == ExportMode.Tsv;
         TsBtn.IsChecked  = mode == ExportMode.Touchstone;
         SplBtn.IsChecked     = mode == ExportMode.Spl;
@@ -189,7 +191,7 @@ public partial class DataExporterDialog : Window
         IncludeLabel.IsVisible = !isTs;
         IncludeLabel.Text      = isLp ? "LOADPULL ANALYSIS" : "INCLUDE";
 
-        // Measurements checkbox only applies to the dataset (npy/mat/tsv) formats.
+        // Measurements checkbox only applies to the dataset (npy/mat/tsv/ds) formats.
         MeasurementsCheck.IsVisible = !isTs && !isLp && Vm.MeasurementsAvailable;
 
         TsOptionsPanel.IsVisible = isTs;
@@ -248,6 +250,7 @@ public partial class DataExporterDialog : Window
             ExportMode.Npy => "npy",
             ExportMode.Mat => "mat",
             ExportMode.Tsv => "txt",
+            ExportMode.Ds  => "ds",
             _              => "npy"
         };
         string? name = vm.ExportMode switch
@@ -255,6 +258,7 @@ public partial class DataExporterDialog : Window
             ExportMode.Npy => "NumPy Files",
             ExportMode.Mat => "MATLAB Files",
             ExportMode.Tsv => "Tab-Delimited Text",
+            ExportMode.Ds  => "Binary Dataset",
             _              => "NumPy Files"
         };
 

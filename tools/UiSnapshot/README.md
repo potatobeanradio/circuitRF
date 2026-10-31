@@ -100,6 +100,13 @@ dotnet run --project tools/UiSnapshot --no-build -- --cmc <file.cmc|new:Passive|
 
 Without `--size` it takes the window's own size; `--size 1400x866` shows the whole window.
 
+**The Export Data dialog** opens over a results folder, whose `.npy` files are its datasources, as the Data
+Display opens it; `--button <label>` presses a format button (`.ds`, `Touchstone`, …) first:
+
+```
+dotnet run --project tools/UiSnapshot --no-build -- --export-data <results dir> -o out.png [--button .ds] [--size WxH]
+```
+
 **The EM Setup editor** opens on a `.cem`, as the workspace opens one, and prints every visible named check box's state,
 position and tooltip, so a setting is read as well as seen:
 

@@ -58,7 +58,7 @@ internal static class Model
         ("--unit-width",     "W0",                        ["new", "fit"]),
         ("--as",             "kind",                      ["import"]),
         ("--name",           "name",                      ["import", "export"]),
-        ("--format",         "touchstone|csv|npy|mat|npz|loadpull", ["import"]),
+        ("--format",         "touchstone|csv|npy|mat|npz|ds|loadpull", ["import"]),
         ("--pattern",        "pattern",                   ["import"]),
         ("--pattern-source", "name|comment",              ["import"]),
         ("--map",            "a=b[:unit]",                ["import"]),

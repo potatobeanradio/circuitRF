@@ -5,8 +5,9 @@
 //   csv         CSV or TSV with a column map. A cell may carry its own unit ("12 mA"), read by the value+unit
 //               conventions every circuitRF field uses; otherwise the column's unit applies.
 //               Point id: "<source>:<line>".
-//   npy / mat / npz   named arrays — circuitRF's own .npy through NpyReader (DataSetImporter), a .mat through
-//               MatReader, a NumPy .npz through NpzReader. How the arrays may be laid out, and how the layout is
+//   npy / mat / npz / ds   named arrays — circuitRF's own .npy through NpyReader (DataSetImporter), a .mat through
+//               MatReader, a NumPy .npz through NpzReader, a binary simulation dataset (.ds) through BinaryDatasetReader
+//               (arrays named Group.Variable). How the arrays may be laid out, and how the layout is
 //               worked out from their shapes, is DataImport.Arrays.cs. A Y table converts to S at the import's Z0,
 //               which is exact and invertible. Capacitances (MC-20) are the matrix C[point, 2, 2] or the circuit set
 //               cgs, cgd, cds (and cm), which lands as the matrix. Point id: "<source>#<k>".

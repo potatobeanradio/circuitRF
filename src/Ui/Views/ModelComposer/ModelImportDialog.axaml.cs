@@ -37,7 +37,7 @@ public partial class ModelImportDialog : Window
                     new FilePickerFileType("Data")
                     {
                         Patterns = [.. Enumerable.Range(1, 12).Select(n => $"*.s{n}p"), "*.snp",
-                                    "*.csv", "*.tsv", "*.txt", "*.npy", "*.npz", "*.mat", "*.spl", "*.lpcwave"],
+                                    "*.csv", "*.tsv", "*.txt", "*.npy", "*.npz", "*.mat", "*.ds", "*.spl", "*.lpcwave"],
                     },
                     new FilePickerFileType("All Files") { Patterns = ["*.*"] },
                 ],

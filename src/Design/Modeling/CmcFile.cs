@@ -563,6 +563,7 @@ public static class CmcFile
             case ImportSettings.Npy:
             case ImportSettings.Mat:
             case ImportSettings.Npz:
+            case ImportSettings.Ds:
                 if (im.Arrays is not { Count: > 0 }) throw new CmcFormatException($"{f}.Arrays", "an array import needs its quantity → array map.");
                 foreach (var key in im.Arrays.Keys)
                     if (!PointQuantities.Contains(key) && !TableQuantities.Contains(key))

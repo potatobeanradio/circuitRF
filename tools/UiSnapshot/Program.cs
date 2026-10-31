@@ -131,6 +131,8 @@ string? optimizer = null;
 string? ctech = null;
 bool optimize = false;
 string? cmc = null, cmcImport = null, cmcStep = null, cmcRun = null;
+// File ▸ Export Data… over a results folder (its .npy files are the datasources); --button picks a format.
+string? exportData = null;
 string? image = null, imageTech = null;
 bool digitise = false, makeSchematic = false, stripGeometry = false;
 string? imageScalePoints = null;
@@ -176,6 +178,7 @@ for (int i = 0; i < args.Length; i++)
         case "--strip-geometry": stripGeometry = true; break;
         case "--scale-points" when i + 1 < args.Length: imageScalePoints = args[++i]; break;
         case "--import" when i + 1 < args.Length: cmcImport = Path.GetFullPath(args[++i]); break;
+        case "--export-data" when i + 1 < args.Length: exportData = Path.GetFullPath(args[++i]); break;
         case "--step" when i + 1 < args.Length: cmcStep = args[++i]; break;
         case "--run" when i + 1 < args.Length: cmcRun = args[++i]; break;
         case "--marker": cmcMarkers++; break;
@@ -239,7 +242,7 @@ if (reviewPanel is not null && output is not null)
     return ShowReviewPanel(reviewPanel, output, sizeGiven ? width : 420, sizeGiven ? height : 760);
 }
 bool vendorMode = palette is not null || schematic is not null || archive is not null || manageLibraries is not null || addVendorLibrary is not null || gdsfactory is not null || csym is not null;
-if ((cdd is null && c3dSetups is null && signal.Count == 0 && snp is null && !standalone && tuning is null && optimizer is null && clay is null && cem is null && ctech is null && cmc is null && image is null && !vendorMode) || output is null || view is not ("canvas" or "inspector" or "display"))
+if ((cdd is null && c3dSetups is null && signal.Count == 0 && snp is null && !standalone && tuning is null && optimizer is null && clay is null && cem is null && ctech is null && cmc is null && image is null && exportData is null && !vendorMode) || output is null || view is not ("canvas" or "inspector" or "display"))
 {
     Console.Error.WriteLine("usage: UiSnapshot <file.cdd> -o <out.png> [--view canvas|inspector|display] [--plot n] [--size WxH] "
                           + "[--results <dir>] [--click x,y] [--drag x0,y0:x1,y1] [--key <Key>] [--shot <png>] ...\n"
@@ -252,6 +255,7 @@ if ((cdd is null && c3dSetups is null && signal.Count == 0 && snp is null && !st
                           + "       UiSnapshot --cem <file.cem> -o <out.png> [--size WxH] [steps]\n"
                           + "       UiSnapshot --ctech <file.ctech> -o <out.png> [--tab n] [--unit <unit>] [--rename-stackup old=new] [--rename-tech <name>] [--size WxH] [steps]\n"
                           + "       UiSnapshot --cmc <file.cmc|new:Passive|new:Active> -o <out.png> [--import <data>] [--step <name>] [--run <key>] [--size WxH] [steps]\n"
+                          + "       UiSnapshot --export-data <results dir> -o <out.png> [--button <format label>] [--size WxH] [steps]\n"
                           + "       UiSnapshot --image <picture> -o <out.png> [--tech <file.ctech>] [--digitise] [--make-schematic] [--scale-points x0,y0,x1,y1=<len>] [--strip-geometry] [--size WxH] [steps]");
     return 2;
 }
@@ -505,6 +509,13 @@ else if (cmc is not null)
         if (composer.ProposalNote.Length > 0) Console.WriteLine($"proposal note: {composer.ProposalNote}");
         Console.WriteLine($"proposals: {string.Join(" | ", composer.Proposals.Select(r => r.Title))}");
     }
+}
+else if (exportData is not null)
+{
+    // The Export Data dialog as the Data Display opens it, over a results folder.
+    host = new CircuitRF.Ui.Views.Dialogs.DataExporterDialog(new CircuitRF.Ui.DataDisplay.ViewModels.DataExporterViewModel(exportData));
+    if (sizeGiven) { host.Width = width; host.Height = height; }
+    host.Show();
 }
 else if (tuning is not null)
 {
@@ -767,7 +778,7 @@ foreach (var (kind, arg) in steps)
         case "--button":
         {
             // A real press and release on the button's centre, in the dialog's own window.
-            var dialog = TopDialog() ?? (imageVm is not null || vendorMode || cem is not null || snp is not null ? host : throw new InvalidOperationException("--button: no dialog is open"));
+            var dialog = TopDialog() ?? (imageVm is not null || vendorMode || cem is not null || snp is not null || exportData is not null ? host : throw new InvalidOperationException("--button: no dialog is open"));
             var buttons = dialog.GetVisualDescendants().OfType<Button>().Where(b => b.IsEffectivelyVisible).ToList();
             // A toolbar button's content is an icon beside a TextBlock, so its label is matched too.
             var button = buttons.FirstOrDefault(b => b.Content is string c && c == arg)

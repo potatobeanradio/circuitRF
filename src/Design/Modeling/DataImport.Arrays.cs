@@ -1,4 +1,5 @@
-// Array imports — a .mat, a .npz, or circuitRF's own .npy — and the work of reading them as their writer meant.
+// Array imports — a .mat, a .npz, a binary simulation dataset (.ds), or circuitRF's own .npy — and the work of reading
+// them as their writer meant.
 //
 // The map names which array is which quantity. What it does not have to say is how the arrays are laid out, because
 // a writer can lay out the same data several ways and only one reading fits the shapes:
@@ -11,6 +12,8 @@
 //              reads as written. Or as four arrays S11…S22 / Y11…Y22, each [points…, freq]. C as [points…, i, j].
 //   Singleton  axes of length 1 are dropped first, so [n, 1] and [1, n] are both n values.
 //   Units      a quantity not in SI carries its unit in ArrayUnits (freq: GHz, id: mA; T: K is converted to °C).
+//   Sign       an array name written with a leading '-' (-VD.i=id) is read negated: a voltage source's current is
+//              recorded flowing into the source, which is out of the device.
 //
 // When the reading is not the one the documentation spells (a reordered or flattened array, a reduced frequency
 // array), the import says so in a note: the user sees what was assumed and can tell a wrong guess from the plots.
@@ -109,13 +112,15 @@ public static partial class DataImport
             rc?.ThrowIfCancellationRequested();
             string path = ResolveSource(dir, src);
             if (!File.Exists(path)) throw new DataImportException(src, "the file does not exist.");
-            var arrays = Load(path, src, im.Format, [.. map.Values.Distinct()]);
+            var arrays = Load(path, src, im.Format, [.. map.Values.Select(n => Signed(n).Name).Distinct()]);
             NamedArray? A(string q)
             {
-                if (!map.TryGetValue(q, out var name)) return null;
+                if (!map.TryGetValue(q, out var mapped)) return null;
+                var (name, negated) = Signed(mapped);
                 if (!arrays.TryGetValue(name, out var a))
                     throw new DataImportException(src, $"it holds no array '{name}' (mapped to {q}){Holds(arrays)}.");
                 a = a.Squeezed();
+                if (negated) a = a.Scaled(-1);
                 if (im.ArrayUnits?.TryGetValue(q, out var unit) == true)
                     a = q == "T" ? (IsKelvin(unit) ? a.Scaled(1, -273.15) : a) : a.Scaled(CmcFile.UnitScale(unit) ?? 1);
                 return a;
@@ -390,6 +395,7 @@ public static partial class DataImport
             {
                 ImportSettings.Mat => MatReader.Read(path, names),
                 ImportSettings.Npz => NpzReader.Read(path, names),
+                ImportSettings.Ds => BinaryDatasetReader.ReadArrays(path, names),
                 _ => null,
             };
             if (raw is not null)
@@ -415,6 +421,10 @@ public static partial class DataImport
         catch (MatFormatException ex) { throw new DataImportException(src, ex.Message); }
         catch (InvalidDataException ex) { throw new DataImportException(src, ex.Message); }
     }
+
+    /// <summary>A mapped array name and whether it is read negated (written <c>-name</c>).</summary>
+    private static (string Name, bool Negated) Signed(string mapped) =>
+        mapped.Length > 1 && mapped[0] == '-' ? (mapped[1..], true) : (mapped, false);
 
     /// <summary>A plain one-array <c>.npy</c> (what <c>numpy.save</c> writes) is refused with what to write instead.</summary>
     private static void PlainNpyRefusal(string path, string src)
@@ -443,6 +453,11 @@ public static partial class DataImport
                 case ImportSettings.Npz:
                 {
                     var (arrays, skipped) = NpzReader.List(path);
+                    return ([.. arrays.Values.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase).Select(a => new ArrayEntry(a.Name, a.Shape, a.IsComplex))], skipped);
+                }
+                case ImportSettings.Ds:
+                {
+                    var (arrays, skipped) = BinaryDatasetReader.List(path);
                     return ([.. arrays.Values.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase).Select(a => new ArrayEntry(a.Name, a.Shape, a.IsComplex))], skipped);
                 }
                 default:

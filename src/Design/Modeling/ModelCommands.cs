@@ -91,6 +91,7 @@ public static partial class ModelCommands
             ".npy" => ImportSettings.Npy,
             ".mat" => ImportSettings.Mat,
             ".npz" => ImportSettings.Npz,
+            ".ds" => ImportSettings.Ds,
             ".spl" or ".lpcwave" => ImportSettings.Loadpull,
             _ => null,
         };

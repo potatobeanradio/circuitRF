@@ -127,9 +127,12 @@ public sealed record ImportSettings
     public const string Touchstone = "touchstone", Csv = "csv", Npy = "npy", Mat = "mat";
     /// <summary>A NumPy <c>.npz</c> archive of named arrays (<c>numpy.savez</c>).</summary>
     public const string Npz = "npz";
+    /// <summary>A binary simulation dataset (<c>.ds</c>): its arrays named <c>Group.Variable</c> (see
+    /// <c>RfCore.Export.BinaryDatasetReader</c>).</summary>
+    public const string Ds = "ds";
 
     /// <summary>True for the formats whose sources are named arrays mapped by <see cref="Arrays"/>.</summary>
-    public static bool IsArrayFormat(string format) => format is Npy or Mat or Npz;
+    public static bool IsArrayFormat(string format) => format is Npy or Mat or Npz or Ds;
     /// <summary>A loadpull file, <c>.spl</c> or <c>.lpcwave</c> (a <see cref="LargeSignalMeasurement.Loadpull"/> set, MC-11).</summary>
     public const string Loadpull = "loadpull";
 

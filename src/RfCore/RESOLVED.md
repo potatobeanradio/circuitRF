@@ -1072,3 +1072,29 @@ file its rate. Generator `crf-signals-5`.
 - **A chirp symbol `s` starts `s / 2^SF` of the way up the sweep**, i.e. the base up-chirp rotated EARLIER by `s` chips;
   rotated later it dechirps as `2^SF − s`. And at more than one sample per chip the FFT bin of the dechirped tone is
   already the symbol (bin spacing fs / N = BW / 2^SF); scaling it by 2^SF / N again is wrong.
+
+## Binary simulation datasets (`.ds`): what the reader keys on, and the traps (2026-10-31)
+
+`BinaryDatasetReader` / `BinaryDatasetWriter` (`src/RfCore/Export`). The container is described field by field in
+the reader's header; these are the parts that are easy to get wrong:
+
+- **Recognised by structure, never by its header text.** The first 13 bytes carry the writing program's own text and
+  are not read; the signature is CR LF 0x1A at 13, `0xCEFAEDFE` at 0x10 and `DCBA` at 0x20. The writer puts
+  `circuitRF` there.
+- **The directory's third field is pages per page-list entry**, 1 in container version 3 and 8 for version 4's value
+  objects. Reading it as a count of 1 truncates every value object of a version-4 file to its first page, with no
+  error.
+- **The key table is matched to objects by LINK id, not by order of appearance.** Key n (from 1) names the object
+  whose LINK page carries id n + 1. When one block's keys are interleaved with another's, matching by key order
+  reads the wrong values with no error.
+- **Strings resolve through the pool's own index** (25-byte entries), not by splitting the pool on NULs. A pool
+  can also hold text values (port names), so counting strings goes wrong as soon as there is one.
+- **Only a full grid is read.** Counts come from the sweep records and must agree at every level, and every outer
+  point must sweep the same inner values; otherwise the file is refused, naming the variable. Dividing the stored
+  value count by the outer count would accept an uneven sweep and lay it out wrong without a word.
+- **A voltage source's current is recorded flowing into the source**, i.e. out of the device. The array importer's
+  map therefore takes a leading `-` (`-DC1.VD.i=id`) to read an array negated, and the drain-current sign flag
+  names that spelling for an array import.
+- **Writing a `DataSet`** (`BinaryDatasetWriter.FromDataSet`, `ExportFormat.Ds`): a `Z0 [port]` has no sweep axis,
+  and written on its own it became a separate one-point block, so it read back as a different group (`SP1_2.Z0`).
+  It is written as `PortZ[p]` at every point of the S sweep instead, beside S in S's block.

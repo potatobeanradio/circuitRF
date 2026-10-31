@@ -112,7 +112,8 @@ public static class DataHygiene
         int negative = on.Count(p => p.Id < 0);
         if (on.Count >= 3 && 2 * negative > on.Count)
             Flag(HygieneKind.CurrentSign, $"Id < 0 at {negative} of {on.Count} points with Vds > 0. Currents are positive into the terminal: " +
-                                          "was the drain current recorded flowing out of it?");
+                                          "was the drain current recorded flowing out of it?" +
+                                          (arrays ? $" To read it negated, map it as -{(set.Import.Arrays?.GetValueOrDefault("id") ?? "name").TrimStart('-')}=id." : ""));
 
         double idMax = d.Points.Select(p => Math.Abs(p.Id)).Where(double.IsFinite).DefaultIfEmpty(0).Max();
         if (idMax > 100)

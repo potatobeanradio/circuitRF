@@ -2312,6 +2312,7 @@ internal static ExportFormat FormatFromExtension(string path) => Path.GetExtensi
 {
     ".npy"          => ExportFormat.Npy,
     ".txt" or ".tsv" => ExportFormat.Tsv,
+    ".ds"           => ExportFormat.Ds,
     _               => ExportFormat.Mat,
 };
 
@@ -2331,6 +2332,7 @@ static ExportFormat? SparamDataFormat(string path) => Path.GetExtension(path).To
     ".npy"           => ExportFormat.Npy,
     ".mat"           => ExportFormat.Mat,
     ".txt" or ".tsv" => ExportFormat.Tsv,
+    ".ds"            => ExportFormat.Ds,
     _                => null,
 };
 

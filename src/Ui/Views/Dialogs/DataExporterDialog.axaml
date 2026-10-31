@@ -44,6 +44,7 @@
             <StackPanel Orientation="Horizontal" Spacing="2" Margin="0,0,0,4">
                 <ToggleButton Classes="seg-btn" x:Name="NpyBtn"    Content=".npy"        />
                 <ToggleButton Classes="seg-btn" x:Name="MatBtn"    Content=".mat"        />
+                <ToggleButton Classes="seg-btn" x:Name="DsBtn"     Content=".ds"         />
                 <ToggleButton Classes="seg-btn" x:Name="TsvBtn"    Content="Tab-delimited"/>
                 <ToggleButton Classes="seg-btn" x:Name="TsBtn"     Content="Touchstone"  />
             </StackPanel>

@@ -23,7 +23,7 @@ namespace CircuitRF.Ui.DataDisplay.ViewModels;
 
 // ── Local enums ───────────────────────────────────────────────────────────────
 
-public enum ExportMode { Npy, Mat, Tsv, Touchstone, Spl, Lpcwave }
+public enum ExportMode { Npy, Mat, Tsv, Touchstone, Spl, Lpcwave, Ds }
 
 // ── Helper row types ──────────────────────────────────────────────────────────
 
@@ -342,7 +342,7 @@ public partial class DataExporterViewModel : ObservableObject
         {
             canExport = ExportMode switch
             {
-                ExportMode.Npy or ExportMode.Mat or ExportMode.Tsv =>
+                ExportMode.Npy or ExportMode.Mat or ExportMode.Tsv or ExportMode.Ds =>
                     IncludeRows.Any(r => r.IsChecked) || (MeasurementsAvailable && IncludeMeasurements),
                 ExportMode.Touchstone =>
                     SelectedTouchstoneGroup != null,
@@ -366,6 +366,7 @@ public partial class DataExporterViewModel : ObservableObject
             ExportMode.Touchstone => TouchstoneExt(),
             ExportMode.Spl        => ".spl",
             ExportMode.Lpcwave    => ".lpcwave",
+            ExportMode.Ds         => ".ds",
             _                     => ".npy",
         };
         SuggestedFileName = schematic + ext;
@@ -387,7 +388,7 @@ public partial class DataExporterViewModel : ObservableObject
     // ── Export methods ────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Export to npy / mat / tsv.  The caller supplies the full path including extension.
+    /// Export to npy / mat / tsv / ds.  The caller supplies the full path including extension.
     /// </summary>
     public void ExportDataSet(string path)
     {
@@ -403,6 +404,7 @@ public partial class DataExporterViewModel : ObservableObject
             ExportMode.Npy => ExportFormat.Npy,
             ExportMode.Mat => ExportFormat.Mat,
             ExportMode.Tsv => ExportFormat.Tsv,
+            ExportMode.Ds  => ExportFormat.Ds,
             _              => ExportFormat.Npy,
         };
         DataSetExporter.Export(subset, path, fmt);

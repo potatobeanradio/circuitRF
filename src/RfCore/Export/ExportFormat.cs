@@ -33,4 +33,9 @@ public enum ExportFormat
     /// Long format — one section per cube.  Written by <see cref="TsvWriter"/>.
     /// </summary>
     Tsv = 2,
+
+    /// <summary>
+    /// Binary simulation dataset (<c>.ds</c>): one block per group, written by <see cref="BinaryDatasetWriter"/>.
+    /// </summary>
+    Ds = 3,
 }
