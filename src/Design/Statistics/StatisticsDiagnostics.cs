@@ -22,6 +22,16 @@ public static class StatisticsDiagnostics
         "yield.spread.extra", DiagnosticSeverity.Error,
         "{who}: {key}= is not a spread of dist={dist}.", ("who", who), ("key", key), ("dist", dist));
 
+    public static Diagnostic TolPartNotAPart(string who) => Diagnostic.Create(
+        "yield.tol-part.not-a-part", DiagnosticSeverity.Error,
+        "{who}: tol=part is a vendor part's own tolerance, and this is not a vendor part's value. Write tol= as a value or a percent.",
+        ("who", who));
+
+    public static Diagnostic TolPartUnknown(string who, string part, string reason) => Diagnostic.Create(
+        "yield.tol-part.unknown", DiagnosticSeverity.Error,
+        "{who}: tol=part, and the tolerance of {part} is not known — {reason}. Write tol= explicitly.",
+        ("who", who), ("part", part), ("reason", reason));
+
     public static Diagnostic SpreadNotANumber(string who, string key, string text) => Diagnostic.Create(
         "yield.spread.not-a-number", DiagnosticSeverity.Error,
         "{who}: {key}={text} is not a number, a percent or a value with its unit.", ("who", who), ("key", key), ("text", text));

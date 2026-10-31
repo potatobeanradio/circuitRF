@@ -1177,3 +1177,40 @@ Each item names the seam it would take; none needs a format change.
 - **A distribution inside a frequency-dependent expression** stays at its nominal: the model's own evaluator has no
   trial context at stamp time (§7). Seam: `Evaluator.Statistics` would be carried into that evaluator.
 - **Design of experiments** — built as YA-14 (§17).
+
+## 19. A vendor part's value and its own tolerance (brief-vendorlib-5)
+
+A placed vendor library part is a cell emitted from its library's `.subckt`; its knob for the optimizer is
+`<Instance>.Part`, the choice of part (`brief-vendorlib-4`). This section adds the part's **value** as a statistical
+entry, drawn from the part's own tolerance.
+
+**The tunable.** `TunableCatalog` offers, beside `C1.Part`, `C1.C` for a part whose header states a capacitance and
+`C1.L` for an inductance — the spelling an ideal component's value has. Its kind is `TunableKind.PartValue`, its
+nominal the stated value **in pF or nH** (the units the tolerance letters are written in), and `PartEntry` is the
+library entry the value and tolerance are taken from. It is **statistical only**: `tune=1` or `opt=1` on it is
+`tuning.part.value-statistical-only`. The Tuning and Optimizer add lists do not offer it; the Yield panel's does, and
+its Yield toggle writes `dist=gauss tol=part sigmas=3 trunc=3` (brief D1).
+
+**`tol=part`.** A spread value meaning the part's own tolerance. The reader keeps the word (`StatSpread.TolIsPart`),
+so `CnlWriter` and the `.csch` JSON round-trip it byte for byte; it refuses it (`cnl.statistics.tol-part`, with the
+line) on a key that is not an instance's `C` or `L`. Whether that instance IS a vendor part is not in a `.cnl` — a
+netlist holds the cell an instance binds to, never the library part — so that half is `check`'s:
+`yield.tol-part.not-a-part`. `ResolvedSpread.TolText` turns it into the text an explicit spread would be (`0.1 pF`,
+`5%`) from the tunable's `PartEntry`, and every consumer of the spread goes through it, so `tol=part` FOLLOWS the
+part: change the part and the resolved tolerance changes with no edit to the line. A part whose tolerance is not known
+is `yield.tol-part.unknown`, naming the part, the reason, and the fix (write `tol=` explicitly).
+
+**How a draw moves the model.** When the part's value entry is statistical, the extractor gives the part's emitted
+cell — and every emitted candidate's — one parameter, `PartScale`, default 1, multiplied into every element of the
+part's own quantity (every `C` of a capacitor's model, every `L` of an inductor's; `SpiceModelNetlist.ScaleQuantity`).
+The other kinds' parasitics stay put, so the self-resonance moves as a real part's does. A trial's value for `C1.C`
+is the drawn capacitance, as text, like any other value; `TunableOverrides.Apply`, handed the design's placed parts,
+binds `PartScale` to drawn ÷ the stated value of whichever part the instance is bound to. A design whose part value
+is not statistical gets no parameter, and its netlist is byte-identical to one written before this existed. Only the
+part's own cell is scaled; a model that calls a further subcircuit of its own leaves that one's elements as written
+(no static library measured does this).
+
+**With the optimizer choosing the part.** The part's `Part` key is applied first, so the value key is bound against
+the candidate the instance ends up as. At a moved design (`SampleValues.Nominals`) the value tunable takes the
+candidate's stated value and `PartEntry`, so each candidate draws with its OWN tolerance. A candidate whose tolerance
+is not known is left out of the candidate list and reported (`VendorPartTunable.NoTolerance`), as an unreadable one is.

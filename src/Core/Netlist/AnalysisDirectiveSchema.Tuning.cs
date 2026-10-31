@@ -106,7 +106,7 @@ public static partial class AnalysisDirectiveSchema
                 new("stat",     Default: "1 with dist", Summary: "0 keeps the distribution but does not draw it."),
                 new("dist",     Default: "none", Summary: "gauss | unif | lognorm | discrete — the distribution a Monte Carlo trial draws from."),
                 new("sd",       Summary: "gauss, lognorm: 1 sigma, a percent of the nominal (2%) or a value in the parameter's unit."),
-                new("tol",      Summary: "gauss, lognorm: the spread at sigmas sigma. unif: the half-width around the nominal."),
+                new("tol",      Summary: "gauss, lognorm: the spread at sigmas sigma. unif: the half-width around the nominal. tol=part on a placed vendor part's value (C1.C, L2.L) is that part's own tolerance, read from its part number or header."),
                 new("sigmas",   Summary: "gauss, lognorm: how many sigma tol is (tol=5% sigmas=3 is sigma = 5/3 %). Needed with tol."),
                 new("lo",       Summary: "unif, discrete: the lower end, absolute or a percent of the nominal."),
                 new("hi",       Summary: "unif, discrete: the upper end."),

@@ -667,7 +667,17 @@ namespace RfCore.Export
         string? CaseMetric,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         string? CaseImperial,
-        IReadOnlyDictionary<string, string> Parameters);
+        IReadOnlyDictionary<string, string> Parameters,
+        // The part's tolerance (brief vendorlib-5 R-vl5-5a): null when it is not known — the note then says why — or
+        // when the part has no C or L value to have one.
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.Never)]
+        FoundPartToleranceJson? Tolerance = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? ToleranceNote = null);
+
+    /// <summary>A vendor part's tolerance: its text as a spread (<c>0.1 pF</c>, <c>5%</c>), <c>absolute</c> or
+    /// <c>percent</c>, and <c>part-number</c> or <c>header</c>.</summary>
+    public sealed record FoundPartToleranceJson(string Text, string Kind, string Source);
 
     /// <summary>brief vendorlib-1 R-vl1-5a — what <c>import library</c> added: the reference written
     /// and what indexing the folder found.</summary>
@@ -2571,7 +2581,23 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         ExplainStatJson? Stat = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        ExplainPartJson? Part = null);
+        ExplainPartJson? Part = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        ExplainPartValueJson? PartValue = null);
+
+    /// <summary>
+    /// A placed vendor part's VALUE (brief vendorlib-5 R-vl5-5b): statistical only, never tuned or optimized, and what
+    /// <c>tol=part</c> resolves to for it — or, when that is not known, why.
+    /// </summary>
+    /// <param name="Part">The part number whose value it is.</param>
+    /// <param name="Tolerance">What <c>tol=part</c> resolves to (<c>0.1 pF</c>, <c>5%</c>), or null.</param>
+    /// <param name="ToleranceNote">Why it is not known, or null.</param>
+    public sealed record ExplainPartValueJson(
+        string  Part,
+        bool    StatisticalOnly,
+        string? Tolerance,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? ToleranceNote);
 
     /// <summary>
     /// A placed vendor part's <c>Part</c> tunable (brief vendorlib-4 R-vl4-6a): the part placed, and the candidate

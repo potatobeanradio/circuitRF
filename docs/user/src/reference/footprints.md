@@ -251,9 +251,12 @@ say. A silent write-back would make an artwork edit change a simulation.
   case in *both* schemes is reported as ambiguous with both readings named. A column that silently
   set artwork would be the same class of error as the ambiguity itself.
 - **A vendor library part arrives with the footprint of its stated case size.** When its library
-  states the size in both systems (`1005M(0402)`) and the technology is a board, a placed part gets
+  states the size in both systems (`1005M(0402)`), or states the body in millimetres
+  (`Size(LxWxT): 1x0.5x0.5mm`, the nearest row whose body tolerance it falls within), a placed part gets
   `smt:0402@N`; both codes must name the same row, so the two different 0201 cases never cross. A
-  part whose library states no size, a size this table lacks, or a non-board technology gets None.
+  workspace with no technology yet still gets it: the land pattern is drawn once a board technology is
+  chosen, with nothing to set again. A part whose library states no size, a size this table lacks, or a
+  technology that is not a board gets None.
   This is circuitRF's generated pattern for the stated case size, **not** the manufacturer's
   recommended land.
 - **A railRF part library** (`.crlib`) has a footprint column that is a picker over the same case

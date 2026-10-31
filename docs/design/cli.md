@@ -2766,6 +2766,14 @@ Solved section is; the detail (when, how long, what changed) is `explain`'s. In 
                              solved: Palace fem current, openEMS fdtd outOfDate (partial)
 ```
 
+**`find <workspace> --parts "<query>"` lists vendor library parts** (brief vendorlib-1 R-vl1-5b), one tab-separated
+row per part: library, part, value, **tolerance** (brief vendorlib-5 R-vl5-5a), description, frequency range and the
+instance parameters a placement writes. The tolerance column is `±0.1 pF` / `±5 %`, `not known`, or empty for a part
+with no C or L value. `--json` carries it per part as `"tolerance": {"text": "0.1 pF", "kind": "absolute", "source":
+"part-number"}` — `text` is what `tol=part` resolves to, `kind` is `absolute` or `percent`, `source` is `part-number`
+or `header` — and `"tolerance": null` beside `"toleranceNote": "<reason>"` when it is not known. The index's own count
+(*Tolerance known for N of M parts.*, and one line per file the one-offset guard refused) goes to stderr and into the
+diagnostics as `import.note`, as `import library` prints it.
 
 ## 17. `rail` — the whole railRF window, with no display
 

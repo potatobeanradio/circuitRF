@@ -87,7 +87,8 @@ The design decision this brief rests on: **a part change is a change of the inst
 - **`R-vl4-3c`** **Auto** picks Discrete for a part-only problem and snap-and-polish for a mixed one, and its progress
   names the stage, as TO-8's Auto does.
 - **`R-vl4-3d`** Corners and yield are unchanged: a part variable is an `opt` variable, never a statistical one. A
-  vendor part's tolerance is not in its static model, and this brief does not invent one.
+  vendor part's tolerance is not in its static model; brief 5 (`brief-vendorlib-5-tolerance.md` R-vl5-3) reads it
+  from the part number and draws the part's VALUE (`C1.C`) with it.
 
 ## 4. `R-vl4-4` — writing the answer back
 

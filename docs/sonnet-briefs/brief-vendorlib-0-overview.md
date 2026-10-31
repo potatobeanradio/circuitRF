@@ -1,6 +1,6 @@
 # Vendor libraries — series overview: a manufacturer's part library in the palette
 
-**Series:** Vendor libraries · **Tag:** `R-vl{n}-m` · **Briefs:** 1–3
+**Series:** Vendor libraries · **Tag:** `R-vl{n}-m` · **Briefs:** 1–5
 **Area:** new `src/Design/VendorLibraries/`, `src/Design/Workspace/WorkspacePersistence.cs`,
 `src/Design/Schematic/SpiceModelSymbolProvider.cs`, `SpiceModelPeek.cs`, `SpiceModelNetlist.cs`,
 `NetExtractor.cs`, `src/Ui/ViewModels/Dock/PaletteTool.cs`, `src/Ui/Views/Palette/PaletteToolView.axaml`,
@@ -46,8 +46,10 @@ Every part carries a comment header in front of its `.subckt`. The fields this s
 ```
 
 Inductor headers carry no `Description` line. Any header field may be missing, and a missing field is
-never an error. **No code may decode a part NUMBER.** Every grouping and every searchable field comes
-from the folder tree, the file stem and the header text.
+never an error. **No code may decode a part number, except the tolerance letter of §1 of brief 5, which
+is found by anchoring on the value code computed from the header's own stated value — never by a
+position, a prefix or a series.** Every grouping and every searchable field comes from the folder tree,
+the file stem and the header text.
 
 The download terms forbid redistribution. **circuitRF never bundles, copies or archives a library
 by default.** The user downloads it and circuitRF references it in place.
@@ -60,6 +62,7 @@ by default.** The user downloads it and circuitRF references it in place.
 | 2 | [The palette](brief-vendorlib-2-palette.md) | the Type menu with sub-menus, a virtualized part list, value-aware search, placing a part, the footprint from the part's case size | 1 |
 | 3 | [The placed part](brief-vendorlib-3-placed-part.md) | the part picker with value stepping (the footprint following the part), one-block extraction, the frequency-range warning, archive, missing-library repair, `check` | 1, 2 |
 | 4 | [Optimizing over real parts](brief-vendorlib-4-optimize-over-parts.md) | a placed part as an optimizer variable whose levels are real candidate parts; Discrete search, snap from an ideal proxy, Apply through the part change | 1–3 |
+| 5 | [A part's tolerance](brief-vendorlib-5-tolerance.md) | the tolerance letter read from the part number by anchoring on the value code; the part's value as a statistical entry with `tol=part`; the `at <frequency>` header fix | 1–4 |
 
 Build in order.
 

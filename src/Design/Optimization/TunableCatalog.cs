@@ -8,7 +8,7 @@ namespace CircuitRF.Design.Optimization;
 
 /// <summary>What a tunable is: a component's parameter, a VAR row, a sub-circuit instance's own
 /// declared cell parameter, or a placed vendor part's choice of part (brief vendorlib-4).</summary>
-public enum TunableKind { Parameter, Variable, CellParameter, Part }
+public enum TunableKind { Parameter, Variable, CellParameter, Part, PartValue }
 
 /// <summary>
 /// One value of a design that can be tuned (overview D1/D2).
@@ -44,6 +44,10 @@ public enum TunableKind { Parameter, Variable, CellParameter, Part }
 /// <param name="VendorPart">A placed vendor part's <c>Part</c> tunable (<see cref="TunableKind.Part"/>): the part
 /// and its candidates. <paramref name="ValueText"/> is then the part number, <paramref name="Value"/> its stated
 /// value in SI and <paramref name="Unit"/> that value's unit; the bounds are the candidates' value span.</param>
+/// <param name="PartEntry">A part's value tunable (brief vendorlib-5 R-vl5-3a): the library entry the value and its
+/// tolerance are the part's — the placed part, or at a moved design the candidate the part is bound to.</param>
+/// <param name="ValueOf">A part's value tunable: the placed part it is the value of. Deliberately not
+/// <paramref name="VendorPart"/>, which marks the part's CHOICE everywhere it is read.</param>
 public sealed record Tunable(
     string      Key,
     string      Location,
@@ -67,10 +71,23 @@ public sealed record Tunable(
     Complex     Whole      = default,
     string      WholeUnit  = "",
     ComplexForm Form       = ComplexForm.Rect,
-    CircuitRF.Design.VendorLibraries.VendorPartTunable? VendorPart = null)
+    CircuitRF.Design.VendorLibraries.VendorPartTunable? VendorPart = null,
+    CircuitRF.Design.VendorLibraries.VendorLibraryEntry? PartEntry = null,
+    CircuitRF.Design.VendorLibraries.VendorPartTunable? ValueOf = null)
 {
     /// <summary>A placed vendor part's choice of part, not a number.</summary>
     public bool IsVendorPart => VendorPart is not null;
+
+    /// <summary>A placed vendor part's C or L value — statistical only (brief vendorlib-5 R-vl5-3a).</summary>
+    public bool IsPartValue => Kind == TunableKind.PartValue;
+
+    /// <summary>The part's own tolerance, for <c>tol=part</c>; null when this is not a part's value or it is not known.</summary>
+    public CircuitRF.Design.VendorLibraries.VendorPartTolerance? PartTolerance => IsPartValue ? PartEntry?.Tolerance : null;
+
+    /// <summary>Why the part's own tolerance is not known, for <c>check</c>'s error; null when it is.</summary>
+    public string? PartToleranceNote => IsPartValue && PartEntry?.Tolerance is null
+        ? PartEntry?.ToleranceNote ?? "its header states no tolerance"
+        : null;
 
     /// <summary>The key a value is written under — in a preset, a session request, a Push: the whole
     /// value's for a part, since a schematic holds a complex value whole.</summary>
@@ -317,6 +334,8 @@ public sealed class TunableCatalog
                 if (partsByKey.TryGetValue($"{prefix}{inst.InstanceName}.{TunableKey.PartParameter}", out var part))
                 {
                     tunables.Add(PartTunable(part, location, cell, count, readOnly));
+                    // Its C or L value, drawn in a Monte Carlo trial and never tuned (brief vendorlib-5 R-vl5-3a).
+                    if (PartValueTunable(part, prefix, location, cell, count, notOffered) is { } value) tunables.Add(value);
                     continue;
                 }
                 if (lib.Find(inst.Reference) is { } def)
@@ -416,6 +435,40 @@ public sealed class TunableCatalog
                            part.PlacedPart, part.Placed.Header.Value ?? 0, unit, false, false, readOnly, null,
                            min, max, false, VendorPart: part);
     }
+
+    /// <summary>
+    /// A placed vendor part's value as a statistical tunable (brief vendorlib-5 R-vl5-3a): <c>C1.C</c> for a
+    /// capacitance, <c>C1.L</c> for an inductance — the spelling an ideal component uses — with the stated value as
+    /// its nominal. Null for a part of another quantity, or one whose header states no value.
+    /// </summary>
+    private static Tunable? PartValueTunable(CircuitRF.Design.VendorLibraries.VendorPartTunable part, string prefix,
+                                             string location, string? cell, int count, Dictionary<string, string> notOffered)
+    {
+        string? letter = part.Quantity switch
+        {
+            CircuitRF.Design.VendorLibraries.VendorPartQuantity.Capacitance => "C",
+            CircuitRF.Design.VendorLibraries.VendorPartQuantity.Inductance  => "L",
+            _ => null,
+        };
+        if (letter is null) return null;
+        string key = $"{prefix}{part.Instance}.{letter}";
+        if (part.Placed.Header.Value is not { } value || value <= 0)
+        {
+            notOffered[key] = $"{part.PlacedPart}'s header states no value";
+            return null;
+        }
+        // In pF / nH — the units a part's value and its tolerance letters are written in — not base SI.
+        string unit = PartValueUnit(letter);
+        double inUnit = value / (Units.Scale(unit) ?? 1);
+        var (min, max, guessed) = TunableValue.DefaultRange(inUnit, unit);
+        return new Tunable(key, location, cell, count, part.Instance, letter, TunableKind.PartValue,
+                           TunableValue.Format(inUnit, unit, "G6"), inUnit, unit, false, false,
+                           "a vendor part's value is its part's; change the part to change it", null,
+                           min, max, guessed, PartEntry: part.Placed, ValueOf: part);
+    }
+
+    /// <summary>The unit a part's value tunable is in: <c>pF</c> for a capacitance, <c>nH</c> for an inductance.</summary>
+    public static string PartValueUnit(string letter) => letter == "L" ? "nH" : "pF";
 
     /// <summary>How many instances of each cell the flattened hierarchy holds. Cells no instance
     /// reaches are absent.</summary>

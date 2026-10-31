@@ -46,6 +46,11 @@ public static class TuningDirectiveDiagnostics
         "'{keyword}' is not written the way it reads: {shape}",
         ("keyword", keyword), ("shape", shape));
 
+    public static Diagnostic TolPartNotAPartValue(string key) => Diagnostic.Create(
+        "cnl.statistics.tol-part", DiagnosticSeverity.Error,
+        "tune {key}: tol=part is a vendor part's own tolerance and goes on the part's value — Instance.C or Instance.L. Write tol= as a value or a percent here.",
+        ("key", key));
+
     public static Diagnostic StatisticsValueInvalid(string key, string value, string expected) => Diagnostic.Create(
         "cnl.statistics.value-invalid", DiagnosticSeverity.Error,
         "{key}={value} is not {expected}.", ("key", key), ("value", value), ("expected", expected));

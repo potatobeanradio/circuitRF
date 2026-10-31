@@ -1322,7 +1322,8 @@ public sealed class OptimizationRun
         IReadOnlyDictionary<string, string> point, IStatisticalDraws? draws = null)
     {
         var tuned = TunableOverrides.Apply(_circuit.Tb!, _circuit.Lib!, point,
-                                           _options.Sets.Select(s => s.Name).ToHashSet(StringComparer.Ordinal));
+                                           _options.Sets.Select(s => s.Name).ToHashSet(StringComparer.Ordinal),
+                                           _circuit.PartTunables);
         if (tuned.Refusal is { } refusal || tuned.TestBench is not { } tb)
             return ([], [], null, OptimizationDiagnostics.EvaluationFailed(tuned.Refusal ?? ""));
         foreach (var (name, expr) in _options.Sets) HbCircuitRun.ApplySet(tb, name, expr);

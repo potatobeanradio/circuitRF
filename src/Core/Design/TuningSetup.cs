@@ -106,6 +106,11 @@ public sealed class StatSpread
     /// <summary>True when value text is a percent of the nominal (<c>2%</c>).</summary>
     public static bool IsPercent(string? text) => text is { Length: > 1 } t && t.TrimEnd().EndsWith('%');
 
+    /// <summary>True when <see cref="Tol"/> is <c>part</c> — the placed vendor part's own tolerance, resolved at check
+    /// time from the library index (brief vendorlib-5 R-vl5-3b).</summary>
+    [JsonIgnore]
+    public bool TolIsPart => string.Equals(Tol, TunableKey.PartTolerance, StringComparison.Ordinal);
+
     /// <summary>The number of a percent (<c>2%</c> → 2), or null when the text is not one.</summary>
     public static double? Percent(string? text)
         => IsPercent(text) && double.TryParse(text!.Trim()[..^1], NumberStyles.Float, CultureInfo.InvariantCulture, out double v)
@@ -444,6 +449,13 @@ public readonly record struct TunableKey(string? Cell, string? Instance, string 
 
     /// <summary>Whether <paramref name="key"/> parses as a vendor part's key.</summary>
     public static bool IsVendorPartKey(string? key) => key is not null && TryParse(key, out var k) && k.IsVendorPart;
+
+    /// <summary>The spread value meaning "this vendor part's own tolerance" (brief vendorlib-5 R-vl5-3b): <c>tol=part</c>.</summary>
+    public const string PartTolerance = "part";
+
+    /// <summary>A key a vendor part's value can be drawn under — <c>C1.C</c>, <c>DUT:L2.L</c>: an instance's <c>C</c> or
+    /// <c>L</c>. Whether the instance IS a vendor part is not in the key; the catalog knows that.</summary>
+    public bool IsPartValueShape => Instance is not null && Part is null && Name is "C" or "L";
 
     /// <summary>The key of the whole value a part key names; the key itself when it names no part.</summary>
     public TunableKey Whole => this with { Part = null };

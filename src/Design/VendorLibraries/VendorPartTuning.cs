@@ -57,6 +57,22 @@ public sealed record VendorPartTunable(
 {
     public string PlacedPart => Placed.Part;
 
+    /// <summary>Candidates left out because the part's value draws with <c>tol=part</c> and their tolerance is not known
+    /// (brief vendorlib-5 R-vl5-3d), each with why.</summary>
+    public IReadOnlyList<string> NoTolerance { get; init; } = [];
+
+    /// <summary>The key of the part's value — <c>C1.C</c>, <c>DUT:L2.L</c> — or null for a part of another quantity.</summary>
+    public string? ValueKey => Quantity switch
+    {
+        VendorPartQuantity.Capacitance => (Cell is null ? "" : Cell + ":") + Instance + ".C",
+        VendorPartQuantity.Inductance  => (Cell is null ? "" : Cell + ":") + Instance + ".L",
+        _ => null,
+    };
+
+    /// <summary>The library entry an instance bound to <paramref name="cell"/> is: the placed part, or a candidate.</summary>
+    public VendorLibraryEntry? EntryOfCell(string? cell)
+        => cell is not null && cell.Equals(PlacedCell, StringComparison.Ordinal) ? Placed : CandidateOfCell(cell)?.Entry;
+
     public VendorPartQuantity Quantity => Placed.Header.Quantity;
 
     /// <summary>The unit a value of this part is in: <c>F</c>, <c>H</c>, <c>Ohm</c>, or "" when the header
@@ -145,6 +161,7 @@ public sealed record VendorPartTunable(
                 parts.Add(series.Count <= 3 ? $"series {string.Join(", ", series)}" : $"{series.Count} series");
             if (RemovedForPorts > 0) parts.Add($"{RemovedForPorts} with another port count left out");
             if (Unreadable.Count > 0) parts.Add($"{Unreadable.Count} unreadable left out");
+            if (NoTolerance.Count > 0) parts.Add($"{NoTolerance.Count} with no known tolerance left out");
             return string.Join(", ", parts);
         }
     }

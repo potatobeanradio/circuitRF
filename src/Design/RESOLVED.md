@@ -25337,3 +25337,75 @@ extraction emitting all of them takes 204 ms cold (index build and first block r
 small subcircuit read once per extraction, and Discrete already moves from an exhaustive grid to coordinate descent on
 a long list. The cap, its `tuning.part.over-cap` check error, the over-cap row text and `explain --tunables`' `overCap`
 field are gone.
+
+## A vendor part's tolerance, read from its part number (brief vendorlib-5, 2026-10-31)
+
+`VendorPartToleranceDecoder` (`src/Design/VendorLibraries/VendorPartTolerance.cs`) gives each indexed part with a C or L
+value a tolerance, at index build, from text the scan already read — `VendorLibraryIndex.FileReads` is unchanged by it.
+
+**The decode anchors on the value, never on a position.** Every spelling of the header's stated value in each of the
+quantity's units is computed (`100`/`104` significand–multiplier at ≥ 10 units; three-character `R`-point spellings
+below 100 units — `R60`, `0R6`, `1R5`, `12R`; `N`-point for nH), each is found in the part number where it is not
+preceded by a digit and is followed by a letter, and the letter is read from the shared table. Exactly one answer, or
+a refusal with its reason: no match, a value code spelled twice with different letters (ambiguous), or a letter in the
+table that the value cannot have. **The one-offset guard** refuses every part-number decode of a FILE whose letters sit
+at more than one offset from the end, and the build reports that file once; it never fired on the real libraries.
+
+**The absolute-letter plausibility rule is "value at least the tolerance", not "exceeds".** Read strictly, "exceeds"
+refused five 0.1 pF parts marked ±0.1 pF and two 0.2 nH parts marked ±0.2 nH, which the brief's measured table had
+decoded (and, for the first library, found in agreement with the manufacturer's published list). Only "at least"
+reproduces that table. The rule's purpose is to stop
+a 0.1 pF part reading as ±0.25 pF, and "at least" still does.
+
+**A header that states a tolerance wins** (`Tolerance = ±5%`, or a Description field that names one —
+`Tol ±0.1pF`). A bare `±` in a Description is NOT taken: a dielectric's temperature characteristic is written the same
+way (`±15%`), and reading it as the part's tolerance would be a wrong answer that simulates.
+
+**Measured on two manufacturers' static SPICE editions** (scratch harness outside the repo, never committed):
+
+| Library | Parts with a C/L value | Known | Not known |
+|---|---|---|---|
+| First, SPICE edition, capacitors (its inductors were not on disk for this run) | 24,867 | 24,856 | 11 — 9 with no letter after the value code, 2 using a letter outside the shared table (brief D4) |
+| Second, SPICE edition | 633 | 609 | 24 — one series spelling its values with a leading zero (`056`) |
+
+The second reproduces the brief's §0 table exactly. The first's whole-library figure in the brief (30,116 of 30,140,
+every decode agreeing with the manufacturer's published list) includes its inductors and that list, neither of which
+was on disk; its capacitor half decodes as above, with no file at more than one offset. The second's catalogue edition
+(an XML part list beside one `.s2p` per part) is a different part-library format and is not indexed here.
+
+**The header parser dropped a value stated at a test frequency** (`* Property: L=10nH at 500MHz`): the whole value
+failed to parse, so every inductor of the library that spells it so indexed with no value and no `L` glyph — no
+palette value, no stepping, no ideal proxy. The trailing `at <frequency>` is now cut off before the value is read and
+kept on `VendorLibraryHeader.ValueFrequency`. `VendorLibraryHeader.PartNumber` is the `P/N` line's part number, which
+the decode reads in preference to the `.subckt` name because one library's subcircuit names carry an edition suffix.
+
+**The part's value as a statistical entry.** `TunableCatalog` offers `C1.C`/`C1.L` (`TunableKind.PartValue`, in pF/nH)
+beside `C1.Part`; it is NOT marked with `Tunable.VendorPart`, which the Tuning, Optimizer and Push paths read as "this
+is the part's CHOICE" in some twenty places — it carries `ValueOf` instead. `tol=part` resolves through
+`ResolvedSpread.TolText`, the one place a spread's `tol` is read. When the entry is statistical the extractor gives the
+part's emitted cell (and each emitted candidate's) a `PartScale` parameter multiplied into every element of its own
+quantity (`SpiceModelNetlist.ScaleQuantity`), and `TunableOverrides.Apply`, given the placed parts, binds it to drawn ÷
+the stated value of the part the instance is bound to — the Part key is applied first so a candidate is scaled against
+its own value. A design whose part value is not statistical writes the same netlist bytes as before. Details:
+`docs/design/yield.md` §19.
+
+Gate: `tests/Ui.Tests/VendorLibraries/VendorPartToleranceTests.cs`.
+
+## A vendor library that states its body size in millimetres got no footprint (2026-10-31)
+
+R-vl2-3d took a part's case only from a Description field shaped `1005M(0402)`. Another manufacturer's static edition
+has no such field; it states the body as `* Size(LxWxT): 1x0.5x0.5mm, 0.039x0.02x0.02inches`, so every one of its parts
+was placed with Footprint None. `VendorLibraryHeader.CaseOfSize` now reads that field when the Description gives no
+pair: the case is the two-terminal chip (or MLCC) row of `SmtCaseTable` whose body length and width both lie within its
+body tolerance, the nearest when several do — 3.2 × 2.5 mm is 1210 exactly and also inside the wide band of the square
+1111 RF chip — and none when two fit equally well. On that library every stated size resolves except a 0.52 × 1 mm
+reverse-geometry chip and a 2.5 × 2 mm inductor, which the table has no row for and which stay None rather than take
+a neighbour's land pattern. It is header text, not the part number. Gate:
+`VendorPaletteTests.ABodySizeInMillimetres_NamesTheCase`.
+
+**A workspace with NO technology now gets the case footprint too** (owner decision, 2026-10-31; R-vl2-3d had given
+None). The case is the part's, and a schematic drawn before its workspace has a technology would otherwise need every
+part's footprint set by hand once one is chosen. A technology is needed only to draw the land pattern — Update Layout
+from Schematic, or placing into a `.clay` — and the stored `smt:0402@N` waits for it; the Parameter Editor's Footprint
+picker shows it with no technology. A technology that IS named and is not a board (an MMIC process) still gives None.
+`FootprintDefaults.For`, the ideal R/L/C default, is unchanged: that one is a guessed 0201, not a property of the part.

@@ -165,6 +165,20 @@ public sealed class VendorPaletteTests : IDisposable
         Assert.Null(FootprintDefaults.ForCaseCodes("0402", "0201", pcb));   // a pair the table lacks
         Assert.Null(FootprintDefaults.ForCaseCodes(null, null, pcb));       // no pair (every inductor)
         Assert.Null(FootprintDefaults.ForCaseCodes("1005", "0402", mmic));  // not a board
+        // No technology yet: the part still carries its case, and the land pattern waits for a board technology.
+        Assert.Equal("smt:0402@N", FootprintDefaults.ForCaseCodes("1005", "0402", null));
+    }
+
+    // 7b — a header that states the body in millimetres names the case whose body it is; a size no row fits names none.
+    [Theory]
+    [InlineData("* Size(LxWxT): 1x0.5x0.5mm, 0.039x0.02x0.02inches", "1005", "0402")]
+    [InlineData("* Size(LxWxT): 3.2x2.5x2.2mm", "3225", "1210")]   // also inside a square RF chip's band; the nearer wins
+    [InlineData("* Size(LxWxT): 2.5x2x1.8mm", null, null)]          // no row of the table
+    public void ABodySizeInMillimetres_NamesTheCase(string line, string? metric, string? imperial)
+    {
+        var h = VendorLibraryHeader.Parse(["* P/N: TSTC0001", "* Property: C=680pF", line], out _);
+        Assert.Equal(metric, h.CaseMetric);
+        Assert.Equal(imperial, h.CaseImperial);
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────

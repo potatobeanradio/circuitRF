@@ -164,6 +164,49 @@ public static class SpiceModelNetlist
         return null;
     }
 
+    /// <summary>The cell parameter a statistical vendor part's cell carries (brief vendorlib-5 R-vl5-3c).</summary>
+    public const string PartScaleParameter = "PartScale";
+
+    /// <summary>
+    /// Gives the emitted cell <paramref name="cellName"/> ONE scale parameter, <see cref="PartScaleParameter"/>,
+    /// default 1, multiplied into every element of the part's own quantity — every <c>C</c> of a capacitor's model,
+    /// every <c>L</c> of an inductor's (<paramref name="primitive"/>). An evaluation binds it to drawn ÷ nominal, so
+    /// the other kinds' parasitics stay put and the self-resonance moves as a real part's does.
+    ///
+    /// <para>Called only for a part whose value is STATISTICAL, so every other netlist is byte-identical to one written
+    /// before this existed. The cell is REPLACED in the library, never mutated, and a cell that already carries the
+    /// parameter is left alone (two instances of one part).</para>
+    /// </summary>
+    /// <returns>True when the cell carries the parameter afterwards.</returns>
+    public static bool ScaleQuantity(Library library, string cellName, string primitive)
+    {
+        int at = library.Cells.FindIndex(c => c.Name.Equals(cellName, StringComparison.Ordinal));
+        if (at < 0) return false;
+        var cell = library.Cells[at];
+        if (cell.Parameters.Any(p => p.Name == PartScaleParameter)) return true;
+
+        var scaled = new Cell(cell.Name);
+        scaled.Ports.AddRange(cell.Ports);
+        scaled.Parameters.AddRange(cell.Parameters);
+        scaled.Parameters.Add(new ParameterDeclaration(PartScaleParameter, "1"));
+        scaled.Variables.AddRange(cell.Variables);
+        foreach (var inst in cell.Instances)
+        {
+            if (!inst.Reference.Equals(primitive, StringComparison.Ordinal)) { scaled.Instances.Add(inst); continue; }
+            var overrides = inst.Overrides
+                .Select(o => o.Name.Equals(primitive, StringComparison.OrdinalIgnoreCase)
+                    ? new ParameterAssignment(o.Name, $"({o.Expression})*{PartScaleParameter}", o.Unit)
+                    : o)
+                .ToList();
+            scaled.Instances.Add(new Instance(inst.InstanceName, inst.Reference, inst.NetBindings, overrides)
+            {
+                RefNetBinding = inst.RefNetBinding,
+            });
+        }
+        library.Cells[at] = scaled;
+        return true;
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     //  .model
     // ─────────────────────────────────────────────────────────────────────────

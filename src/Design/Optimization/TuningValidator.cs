@@ -31,6 +31,10 @@ public static class TuningValidator
             if (catalog.Find(e.Key) is { VendorPart: { } part }) PartRules(e, part, who, f);
             else if (e.PartKind is not null || e.Parts is not null) f.Add(TuningDiagnostics.PartSelectionNotAPart(who));
 
+            // A vendor part's value is statistical only (brief vendorlib-5 R-vl5-3a): its knob is the part.
+            if (catalog.Find(e.Key) is { ValueOf: { } valueOf } && (e.Tune || e.Opt))
+                f.Add(TuningDiagnostics.PartValueStatisticalOnly(who, valueOf.Key));
+
             // A part is continuous, and preferred needs a ladder (brief-tuneopt-8 R-to8-2/7).
             if (e.Discrete != TuneDiscrete.None && catalog.Find(e.Key) is { VendorPart: null } t
                 && !TunableValue.DiscreteChoices(t).Contains(e.Discrete))

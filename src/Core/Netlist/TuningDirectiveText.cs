@@ -101,7 +101,17 @@ public static class TuningDirectiveText
                 case "stat":     stat = Bool(key, value); break;
                 case "dist":     e.Distribution = StatEnum<StatDistribution>(key, value, AnalysisDirectiveSchema.DistTokens); break;
                 case "sd":       (e.Spread ??= new()).Sd     = SpreadValue(key, value); break;
-                case "tol":      (e.Spread ??= new()).Tol    = SpreadValue(key, value); break;
+                case "tol":
+                    // tol=part: a vendor part's own tolerance (brief vendorlib-5 R-vl5-3b), only on an instance's C or L.
+                    if (value.Equals(TunableKey.PartTolerance, StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (!TunableKey.TryParse(e.Key, out var pk) || !pk.IsPartValueShape)
+                            throw Refuse(TuningDirectiveDiagnostics.TolPartNotAPartValue(e.Key));
+                        (e.Spread ??= new()).Tol = TunableKey.PartTolerance;
+                        break;
+                    }
+                    (e.Spread ??= new()).Tol = SpreadValue(key, value);
+                    break;
                 case "lo":       (e.Spread ??= new()).Lo     = SpreadValue(key, value); break;
                 case "hi":       (e.Spread ??= new()).Hi     = SpreadValue(key, value); break;
                 case "by":       (e.Spread ??= new()).By     = SpreadValue(key, value); break;

@@ -292,7 +292,7 @@ parts checked, and any placed part the library no longer holds.
 ### A placed part {#vendor-placed}
 
 Selecting a placed vendor part shows its library and file, a **Part** field and the part's value,
-frequency range and description in the Parameter Editor. The editor's title is the part number.
+[tolerance](#vendor-tolerance), frequency range and description in the Parameter Editor. The editor's title is the part number.
 
 - **Choose another part** by typing in the Part field: it searches that file's parts with the
   palette's search, and <kbd>↓</kbd>/<kbd>↑</kbd> move through the matches while you type.
@@ -359,14 +359,64 @@ components and the cost with the real parts; the gap is what the parts' own para
 no C or L glyph has no ideal stand-in and is always searched on its candidates.
 
 **Push** writes the chosen part to the instance as choosing it in the Part field would. The footprint
-follows only when it came from the part, and the whole Push is one Undo. A part is chosen, never given a
-tolerance: a static model states none, so a Monte Carlo or yield run leaves it as placed. The
+follows only when it came from the part, and the whole Push is one Undo. The part itself is chosen, never
+drawn; to vary a real part in a Monte Carlo run, draw its value with its own tolerance (next section). The
 frequency-range warning is given once, for each chosen part whose range the analyses leave.
 
 Headless, the same line is written `tune C1.Part kind=same min=1 pF max=47 pF opt=1`, or
 `tune C1.Part parts="0603 C0G 50V" opt=1`. `circuitrf explain --tunables` lists each part with its
 candidates, `circuitrf check` reports an entry with no candidate or too many, and `circuitrf opt`
 reports the chosen part for each entry.
+
+### A part's tolerance {#vendor-tolerance}
+
+A static model states no tolerance, but the part number does. Manufacturers spell a part's value as a
+short code (`100` is 10 pF, `R60` is 0.6 pF, `1N3` is 1.3 nH) and put a tolerance letter right after it:
+`B` ±0.1 pF, `C` ±0.25 pF, `J` ±5 %, `K` ±10 % and so on. circuitRF works out the value code from the value
+the header states, finds it in the part number, and reads the letter after it. A header that states a
+tolerance itself (`Tolerance = ±5%`) is used as written and the part number is not read.
+
+| Letter | Capacitor | Inductor |
+|---|---|---|
+| `W` | ±0.05 pF | ±0.05 nH |
+| `B` | ±0.1 pF | ±0.1 nH |
+| `C` | ±0.25 pF | ±0.2 nH |
+| `S` | — | ±0.3 nH |
+| `D` | ±0.5 pF | ±0.5 nH |
+| `F` `G` `H` `J` `K` `M` | ±1, 2, 3, 5, 10, 20 % | the same |
+
+A letter in pF or nH counts only on a part of 10 pF / 10 nH or less whose value is at least the
+tolerance. **When the answer is not certain the tolerance is *not known*, never guessed:** the part number
+holds no value code followed by one of these letters, it spells the value code twice with different letters
+after it, or the letters of one file sit at more than one position in their part numbers (that file is
+reported once and none of its tolerances is used). Adding a library reports how many parts have a known
+tolerance: *Tolerance known for 1,212 of 1,236 parts.*
+
+The Parameter Editor shows the tolerance on its own row under the value (`Tolerance ±0.1 pF`, or
+`not known`), and the part picker shows it after each part's value (`10 pF ±5 %`).
+
+**Drawing a part in a Monte Carlo run.** The <span class="ui">Yield</span> toggle beside Tune and
+Optimize adds the part's value to the Yield panel, as `C1.C` for a capacitor or `C1.L` for an inductor,
+drawn from the part's own tolerance. It is greyed, with the reason in its tooltip, when the tolerance is
+not known. Headless the line is:
+
+```
+tune C1.C dist=gauss tol=part sigmas=3 trunc=3
+tune L2.L dist=unif tol=part
+```
+
+`tol=part` follows the part. Choosing another part, stepping the value or applying an optimized part
+changes the tolerance with it, with no edit to the line. An explicit `tol=0.05 pF` still works. A draw
+scales every capacitance of a capacitor's model, or every inductance of an inductor's, by the drawn value
+over the stated one. The parasitics of the other kinds stay as they are, so the self-resonance moves as a
+real part's does. The value is drawn only: `opt=1` or `tune=1` on `C1.C` is an error, because the knob a
+real part has is `C1.Part`. When the optimizer chooses among parts and the value draws with `tol=part`,
+each candidate is drawn with its own tolerance, and a candidate whose tolerance is not known is left out
+and reported.
+
+`circuitrf check` reports `tol=part` on a part whose tolerance is not known, naming the part and the
+reason. `circuitrf find --parts` prints the tolerance as a column, and `circuitrf explain --tunables` shows
+what `tol=part` resolves to.
 
 Headless, `circuitrf import library <folder> --into <workspace>` adds one,
 `circuitrf find <workspace> --parts "<query>"` searches them, `circuitrf check <workspace>` reports a

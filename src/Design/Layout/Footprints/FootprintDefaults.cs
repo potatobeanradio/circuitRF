@@ -87,11 +87,17 @@ public static class FootprintDefaults
     ///
     /// <para>No pair, a pair the table lacks, or a technology that is not a board gives None. There is
     /// no nearest size and no reading of a part number: the user picks from the ordinary picker.</para>
+    ///
+    /// <para><b>No technology at all is NOT a reason for None.</b> The case is a property of the part, and a
+    /// schematic drawn before its workspace has a technology would otherwise need every part's footprint set by hand
+    /// once one is chosen. A technology is needed only to DRAW a land pattern — Update Layout from Schematic, or
+    /// placing into a <c>.clay</c> — and the stored reference waits for it. A technology that IS named and is not a
+    /// board (an MMIC process) still gives None: there is no land pattern there to draw.</para>
     /// </summary>
     public static string? ForCaseCodes(string? metric, string? imperial, Technology? technology)
     {
         if (string.IsNullOrWhiteSpace(metric) || string.IsNullOrWhiteSpace(imperial)) return null;
-        if (!LandPatternLayers.IsBoardTechnology(technology)) return null;
+        if (technology is not null && !LandPatternLayers.IsBoardTechnology(technology)) return null;
 
         foreach (var c in SmtCaseTable.All)
             if (string.Equals(c.Code, imperial.Trim(), StringComparison.Ordinal) &&

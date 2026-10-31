@@ -115,7 +115,10 @@ public static class TuningSetupEdits
         if (on && entry.Distribution == StatDistribution.None)
         {
             entry.Distribution = ToleranceText.DefaultDistribution(tunable);
-            entry.Spread       = ToleranceText.DefaultSpread(entry.Distribution);
+            entry.Spread       = tunable.IsPartValue
+                // A vendor part's value draws with the part's own tolerance (brief vendorlib-5 D1): screened to its limit.
+                ? new StatSpread { Tol = TunableKey.PartTolerance, Sigmas = ToleranceText.DefaultSigmas, Trunc = ToleranceText.DefaultSigmas }
+                : ToleranceText.DefaultSpread(entry.Distribution);
         }
         entry.Stat = on;
         return next;

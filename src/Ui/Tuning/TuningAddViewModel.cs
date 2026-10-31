@@ -37,7 +37,8 @@ public interface ITunableAddHost
 
     /// <summary>Whether this panel offers <paramref name="t"/> at all — the Yield panel never offers a vendor part,
     /// which is chosen and never toleranced (brief vendorlib-4 R-vl4-3d).</summary>
-    bool Offers(Tunable t) => true;
+    // A vendor part's value is drawn, never tuned or optimized (brief vendorlib-5 R-vl5-3a): only Yield offers it.
+    bool Offers(Tunable t) => !t.IsPartValue;
 }
 
 public sealed partial class TuningAddViewModel(ITunableAddHost panel) : ObservableObject

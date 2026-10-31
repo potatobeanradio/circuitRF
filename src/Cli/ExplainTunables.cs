@@ -63,6 +63,10 @@ internal static class ExplainTunables
                 t.VendorPart is { } vp
                     ? new ExplainPartJson(vp.PlacedText, vp.Library, vp.Selection, vp.Candidates.Count,
                                           vp.SpanText, vp.Series, vp.Summary)
+                    : null,
+                t.IsPartValue
+                    ? new ExplainPartValueJson(t.PartEntry?.PartNumber ?? t.Owner, true,
+                                               t.PartTolerance?.SpreadText, t.PartToleranceNote)
                     : null);
         }).ToList();
 
@@ -88,12 +92,21 @@ internal static class ExplainTunables
             if (t.RangeGuessed) flags.Add("range guessed");
             if (t.Whole is { } w) flags.Add("part of " + w);
             if (t.Disabled is { } d) flags.Add(d);
-            if (t.ReadOnly is { } r) flags.Add("read-only: " + r);
+            if (t.ReadOnly is { } r && t.PartValue is null) flags.Add("read-only: " + r);
+            // A vendor part's value is drawn, never tuned, and tol=part is its own tolerance (R-vl5-5b).
+            if (t.PartValue is { } pv)
+            {
+                flags.Add("statistical only");
+                flags.Add(pv.Tolerance is { } tol ? $"tol=part is {tol}" : $"tol=part not known: {pv.ToleranceNote}");
+            }
 
             // A vendor part reads as a part — its number, value and Description — then its candidates (R-vl4-6a).
+            // A vendor part's value has no range: it is drawn, never tuned.
             string line = t.Part is { } part
                 ? $"  {t.Key.PadRight(keyWidth)}  {t.Location.PadRight(locWidth)}  {part.Placed}"
-                : $"  {t.Key.PadRight(keyWidth)}  {t.Location.PadRight(locWidth)}  {t.Value,-14}  {t.Min} .. {t.Max}";
+                : t.PartValue is not null
+                    ? $"  {t.Key.PadRight(keyWidth)}  {t.Location.PadRight(locWidth)}  {t.Value,-14}"
+                    : $"  {t.Key.PadRight(keyWidth)}  {t.Location.PadRight(locWidth)}  {t.Value,-14}  {t.Min} .. {t.Max}";
             if (flags.Count > 0) line += "  [" + string.Join("; ", flags) + "]";
             Console.WriteLine(line);
             if (t.Part is { } p)
@@ -114,6 +127,7 @@ internal static class ExplainTunables
         TunableKind.Variable      => "variable",
         TunableKind.CellParameter => "cellParameter",
         TunableKind.Part          => "part",
+        TunableKind.PartValue     => "partValue",
         _                         => "parameter",
     };
 

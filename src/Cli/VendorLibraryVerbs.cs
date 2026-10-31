@@ -142,6 +142,13 @@ internal static class VendorLibraryVerbs
                 JsonRun.Note(d);
                 continue;
             }
+            // What the index found about tolerances (R-vl5-1g), said as the build says it, on stderr beside the count.
+            foreach (string line in build.SummaryLines().Where(l => l.StartsWith("Tolerance known", StringComparison.Ordinal)
+                                                                  || build.ToleranceRefusals.Any(t => l.StartsWith(t.File + ":", StringComparison.Ordinal))))
+            {
+                Console.Error.WriteLine($"[circuitRF] {r.Name}: {line}");
+                JsonRun.Note(CliDiagnostics.ImportMessage($"{r.Name}: {line}"));
+            }
             hits.AddRange(build.Entries
                 .Where(e => VendorLibrarySearch.Match(e, q))
                 .OrderBy(e => e.Header.Value ?? double.MaxValue)
@@ -156,7 +163,7 @@ internal static class VendorLibraryVerbs
             var row = ToJson(lib, e, technology);
             rows.Add(row);
             Console.WriteLine(string.Join('\t',
-                lib, e.Part, e.Header.ValueText(), e.Header.Description ?? e.FileStem,
+                lib, e.Part, e.Header.ValueText(), ToleranceColumn(e), e.Header.Description ?? e.FileStem,
                 e.Header.FrequencyRangeText(),
                 string.Join(' ', row.Parameters.Select(p => $"{p.Key}={p.Value}"))));
         }
@@ -186,8 +193,15 @@ internal static class VendorLibraryVerbs
                    _                              => "other",
                },
                e.Header.Description, e.Header.FrequencyLowHz, e.Header.FrequencyHighHz,
-               e.Header.CaseMetric, e.Header.CaseImperial, parameters);
+               e.Header.CaseMetric, e.Header.CaseImperial, parameters,
+               e.Tolerance is { } t ? new(t.SpreadText, t.KindWord, t.SourceWord) : null,
+               e.ToleranceNote);
     }
+
+    /// <summary>The tolerance column (R-vl5-5a): <c>±0.1 pF</c>, <c>not known</c>, or empty for a part with no C or L
+    /// value.</summary>
+    private static string ToleranceColumn(VendorLibraryEntry e)
+        => e.Tolerance?.DisplayText ?? (e.ToleranceNote is not null ? "not known" : "");
 
     internal static bool TryParseLimit(string text, out int limit)
         => int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out limit) && limit > 0;

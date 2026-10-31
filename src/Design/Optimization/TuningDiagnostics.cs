@@ -110,8 +110,13 @@ public static class TuningDiagnostics
 
     public static Diagnostic PartNotStatistical(string who) => Diagnostic.Create(
         "tuning.part.not-statistical", DiagnosticSeverity.Error,
-        "{who}: a vendor part is chosen, never drawn — its static model states no tolerance. Remove dist= and its spread.",
+        "{who}: a vendor part is chosen, never drawn. Draw its value instead — Instance.C or Instance.L with tol=part — and remove dist= and its spread here.",
         ("who", who));
+
+    public static Diagnostic PartValueStatisticalOnly(string who, string partKey) => Diagnostic.Create(
+        "tuning.part.value-statistical-only", DiagnosticSeverity.Error,
+        "{who}: a vendor part's value is drawn in a Monte Carlo trial, never tuned or optimized — a real part's value is not a continuous knob. Tune or optimize {partKey} to choose among real parts, and remove tune=1/opt=1 here.",
+        ("who", who), ("partKey", partKey));
 
     public static Diagnostic PartLevelsAreCandidates(string who) => Diagnostic.Create(
         "tuning.part.levels", DiagnosticSeverity.Error,

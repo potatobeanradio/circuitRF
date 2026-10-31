@@ -136,7 +136,8 @@ public static class CircuitEvaluation
         var tuned = TunableOverrides.Apply(
             srcTb, srcLib,
             request.Tunables ?? new Dictionary<string, string>(),
-            request.Sets.Select(s => s.Name).ToHashSet(StringComparer.Ordinal));
+            request.Sets.Select(s => s.Name).ToHashSet(StringComparer.Ordinal),
+            circuit.PartTunables);
         if (tuned.Refusal is { } refusal || tuned.TestBench is not { } tb || tuned.Library is not { } lib)
             return new RunPlan(RunStatus.EngineError, tuned.Refusal ?? "Tuned values could not be applied.");
         notes.AddRange(tuned.Notes);

@@ -26,7 +26,24 @@ public sealed record VendorLibraryEntry(
     VendorLibraryHeader Header)
 {
     public int PortCount => Ports.Count;
+
+    /// <summary>The part number: the header's <c>P/N</c> line when it has one, the <c>.subckt</c> name otherwise.</summary>
+    public string PartNumber => Header.PartNumber ?? Part;
+
+    /// <summary>The part's tolerance (brief vendorlib-5 R-vl5-1), decoded at index build from text the scan already
+    /// read; null when the part has none to have (no C or L value) or it is not known — <see cref="ToleranceNote"/>
+    /// then says why.</summary>
+    public VendorPartTolerance? Tolerance { get; init; }
+
+    /// <summary>Why <see cref="Tolerance"/> is not known, or null when it is (or the part has no C or L value).</summary>
+    public string? ToleranceNote { get; init; }
+
+    /// <summary>The part has a C or L value, so a tolerance is asked of it.</summary>
+    public bool HasToleranceQuestion => Tolerance is not null || ToleranceNote is not null;
 }
+
+/// <summary>A library file whose tolerance letters were all refused by the one-offset guard (R-vl5-1d), and why.</summary>
+public sealed record VendorLibraryToleranceRefusal(string File, string Reason);
 
 /// <summary>A part name defined by more than one file: the copy indexed, and the one that was not.</summary>
 public sealed record VendorLibraryDuplicate(string Part, string IndexedFile, string SkippedFile);
@@ -47,6 +64,13 @@ public sealed record VendorLibraryBuild(
     IReadOnlyList<VendorLibraryDuplicate> Duplicates,
     string? Refusal)
 {
+    /// <summary>Files whose part-number tolerances were all refused by the one-offset guard, each said once.</summary>
+    public IReadOnlyList<VendorLibraryToleranceRefusal> ToleranceRefusals { get; init; } = [];
+
+    /// <summary>The parts with a C or L value, and of those the ones whose tolerance is known.</summary>
+    public int ToleranceAsked => Entries.Count(e => e.HasToleranceQuestion);
+    public int ToleranceKnown => Entries.Count(e => e.Tolerance is not null);
+
     /// <summary>True when the library holds at least one readable part.</summary>
     public bool IsUsable => Refusal is null;
 
@@ -96,6 +120,10 @@ public sealed record VendorLibraryBuild(
             lines.Add("Folders: " + string.Join(", ",
                 groups.Select(g => $"{(g.Folder.Length == 0 ? "(top level)" : g.Folder)} ({g.Parts:N0})")) + ".");
         if (UnreadableSentence is { } s) lines.Add(s);
+        if (ToleranceAsked > 0)
+            lines.Add($"Tolerance known for {ToleranceKnown:N0} of {Plural(ToleranceAsked, "part", "parts")}.");
+        foreach (var r in ToleranceRefusals)
+            lines.Add($"{r.File}: no tolerance read — {r.Reason}.");
         if (Duplicates.Count > 0)
             lines.Add($"{Plural(Duplicates.Count, "part name is", "part names are")} defined in more than one " +
                       $"file; the first by path is used: " +
@@ -134,7 +162,7 @@ public static class VendorLibraryIndex
     private enum FileKind { Readable, Encrypted, Empty, Unreadable }
 
     private sealed record FileScan(DateTime Mtime, long Length, FileKind Kind,
-                                   IReadOnlyList<VendorLibraryEntry> Entries, int Unparsed);
+                                   IReadOnlyList<VendorLibraryEntry> Entries, int Unparsed, string? ToleranceRefusal = null);
 
     private static readonly Dictionary<string, FileScan> _files = new(StringComparer.Ordinal);
     private static readonly Lock _gate = new();
@@ -181,6 +209,7 @@ public static class VendorLibraryIndex
 
         var entries    = new List<VendorLibraryEntry>();
         var duplicates = new List<VendorLibraryDuplicate>();
+        var tolRefused = new List<VendorLibraryToleranceRefusal>();
         var seen       = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         int read = 0, encrypted = 0, empty = 0, unreadable = 0, unparsed = 0;
 
@@ -196,6 +225,7 @@ public static class VendorLibraryIndex
                 case FileKind.Unreadable: unreadable++; continue;
             }
             unparsed += scan.Unparsed;
+            if (scan.ToleranceRefusal is { } tr) tolRefused.Add(new VendorLibraryToleranceRefusal(rel, tr));
 
             foreach (var e in scan.Entries)
             {
@@ -225,7 +255,7 @@ public static class VendorLibraryIndex
                   "cannot be read.";
 
         return new VendorLibraryBuild(full, entries, files.Count, read, encrypted, empty, unreadable,
-                                      unparsed, duplicates, refusal);
+                                      unparsed, duplicates, refusal) { ToleranceRefusals = tolRefused };
     }
 
     private static VendorLibraryBuild Refused(string root, string why)
@@ -423,7 +453,9 @@ public static class VendorLibraryIndex
             }
         }
 
-        return new FileScan(default, 0, FileKind.Readable, entries, unparsed);
+        // The tolerances, from the headers and names just read — no further read of anything (R-vl5-1f).
+        var decoded = VendorPartToleranceDecoder.DecodeFile(entries, out string? tolRefusal);
+        return new FileScan(default, 0, FileKind.Readable, decoded, unparsed, tolRefusal);
 
         static FileScan Encrypted() => new(default, 0, FileKind.Encrypted, [], 0);
     }

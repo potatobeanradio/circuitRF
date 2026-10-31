@@ -37,6 +37,7 @@ public sealed record ResolvedSpread(
         double scale = t.Unit.Length == 0 ? 1 : Units.Scale(t.Unit) ?? 1;
         double nominal = t.Value * scale;
         double? trunc = Number(sp.Trunc);
+        string? tolText = TolText(sp, t);
 
         switch (e.Distribution)
         {
@@ -44,14 +45,14 @@ public sealed record ResolvedSpread(
             case StatDistribution.LogNorm:
             {
                 double? sigma = sp.Sd is not null ? Width(sp.Sd, nominal, t.Unit)
-                              : Width(sp.Tol, nominal, t.Unit) is { } tol && Number(sp.Sigmas) is { } k && k != 0 ? tol / k
+                              : Width(tolText, nominal, t.Unit) is { } tol && Number(sp.Sigmas) is { } k && k != 0 ? tol / k
                               : null;
                 return sigma is null ? null : new(e.Distribution, nominal, t.Unit, sigma, null, null, null, trunc);
             }
             case StatDistribution.Unif:
             {
                 if (sp.Tol is not null)
-                    return Width(sp.Tol, nominal, t.Unit) is { } tol
+                    return Width(tolText, nominal, t.Unit) is { } tol
                         ? new(e.Distribution, nominal, t.Unit, null, nominal - tol, nominal + tol, null, null) : null;
                 return Point(sp.Lo, nominal, t.Unit) is { } lo && Point(sp.Hi, nominal, t.Unit) is { } hi
                     ? new(e.Distribution, nominal, t.Unit, null, lo, hi, null, null) : null;
@@ -127,6 +128,15 @@ public sealed record ResolvedSpread(
                 return null;
         }
     }
+
+    /// <summary>
+    /// The <c>tol</c> an entry draws with: as written, or for <c>tol=part</c> the vendor part's own tolerance as the
+    /// spread text an explicit one would be (<c>0.1 pF</c>, <c>5%</c>) — null when the part's is not known, which
+    /// <see cref="StatisticsValidator"/> reports. It follows the part: <paramref name="t"/> at a moved design carries
+    /// the candidate its part is bound to (brief vendorlib-5 R-vl5-3b/3d).
+    /// </summary>
+    public static string? TolText(StatSpread sp, Tunable t)
+        => sp.TolIsPart ? t.PartTolerance?.SpreadText : sp.Tol;
 
     /// <summary>A spread width (sd, tol, by) in base SI: a percent of |nominal|, or a value.</summary>
     internal static double? Width(string? text, double nominal, string unit)

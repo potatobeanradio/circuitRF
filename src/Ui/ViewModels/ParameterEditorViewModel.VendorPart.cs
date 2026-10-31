@@ -14,6 +14,9 @@ public sealed class VendorPartChoice(VendorLibraryEntry entry)
     public string Part   => Entry.Part;
     public string Value  => Entry.Header.ValueText();
 
+    /// <summary>The value with the part's tolerance after it (brief vendorlib-5 R-vl5-4c): <c>10 pF ±5 %</c>.</summary>
+    public string ValueWithTolerance => Entry.Tolerance is { } t ? $"{Value} {t.DisplayText}" : Value;
+
     /// <summary>The second line: the description and the frequency range, whichever are stated.</summary>
     public string Detail => string.Join("  ·  ",
         new[] { Entry.Header.Description, Entry.Header.FrequencyRangeText() }.Where(s => !string.IsNullOrEmpty(s)));
@@ -79,6 +82,10 @@ public sealed partial class ParameterEditorViewModel
     public bool HasVendorPartDescription => VendorPartDescription.Length > 0;
     [ObservableProperty] private string _vendorPartRange = "";
 
+    /// <summary>The Tolerance row (brief vendorlib-5 R-vl5-4a): <c>±0.1 pF</c>, or <c>not known</c> — the reason is
+    /// <c>check</c>'s and <c>find</c>'s to give, never a line under the row.</summary>
+    [ObservableProperty] private string _vendorPartTolerance = "";
+
     /// <summary>Why there is no part to show — indexing, a missing library, a vanished part — or empty.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasVendorPartStatus))]
@@ -134,9 +141,49 @@ public sealed partial class ParameterEditorViewModel
         }
     }
 
+    /// <summary>The placed part's VALUE key in the tuning setup: <c>C1.C</c> or <c>C1.L</c>; null for another quantity.</summary>
+    private string? VendorValueKey => _target is null ? null : _vendorCurrent?.Header.Quantity switch
+    {
+        VendorPartQuantity.Capacitance => $"{_target.InstanceName}.C",
+        VendorPartQuantity.Inductance  => $"{_target.InstanceName}.L",
+        _ => null,
+    };
+
+    // The Yield toggle (brief vendorlib-5 R-vl5-4b): beside Tune and Optimize, adding the part's value to the Yield panel
+    // drawn from its own tolerance. Present whenever the part has a C or L value and the session a Yield panel, so nothing
+    // shifts when the part changes; disabled, with the reason as its tooltip, when the tolerance is not known.
+
+    /// <summary>The part carries the Yield toggle.</summary>
+    public bool CanYieldVendorPart => IsVendorPart && VendorValueKey is not null && _schematicVm?.Tolerance is not null;
+
+    /// <summary>The Yield toggle can be switched on: the part's tolerance is known (or it is already on, to switch off).</summary>
+    public bool IsVendorPartYieldEnabled => _vendorCurrent?.Tolerance is not null || IsVendorPartToleranced;
+
+    /// <summary>The Yield toggle's tooltip: what it does, or why it cannot.</summary>
+    public string VendorPartYieldTip => _vendorCurrent?.Tolerance is { } t
+        ? $"Yield — adds this part's value to the Yield panel, drawn from its own tolerance ({t.DisplayText})"
+        : $"Yield — not available: the tolerance of this part is not known ({_vendorCurrent?.ToleranceNote ?? "its header states none"})";
+
+    /// <summary>The Yield toggle: the part's value entry carries a tolerance that is on.</summary>
+    public bool IsVendorPartToleranced
+    {
+        get => VendorValueKey is { } key && _schematicVm?.Tolerance?.IsToleranced(key) == true;
+        set
+        {
+            if (_isRefreshing || VendorValueKey is not { } key || value == IsVendorPartToleranced) return;
+            _schematicVm?.Tolerance?.SetToleranced(key, value);
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsVendorPartYieldEnabled));
+        }
+    }
+
     /// <summary>Re-reads both toggles — on a refresh and on every model change, since either panel can change them.</summary>
     internal void NotifyVendorPartFlags()
     {
+        OnPropertyChanged(nameof(CanYieldVendorPart));
+        OnPropertyChanged(nameof(IsVendorPartYieldEnabled));
+        OnPropertyChanged(nameof(VendorPartYieldTip));
+        OnPropertyChanged(nameof(IsVendorPartToleranced));
         OnPropertyChanged(nameof(CanTuneVendorPart));
         OnPropertyChanged(nameof(CanOptimizeVendorPart));
         OnPropertyChanged(nameof(IsVendorPartTuned));
@@ -279,6 +326,7 @@ public sealed partial class ParameterEditorViewModel
         VendorPartValue       = h?.ValueText() ?? "";
         VendorPartDescription = h?.Description ?? "";
         VendorPartRange       = h?.FrequencyRangeText() ?? "";
+        VendorPartTolerance   = _vendorCurrent?.Tolerance?.DisplayText ?? "not known";
         HasVendorPartDetail   = _vendorCurrent is not null;
 
         (VendorPartStatus, VendorPartStatusIsProblem) =

@@ -113,8 +113,9 @@ came with (each in your system's own viewer), then circuitRF's help on vendor li
 A row places a part exactly as a tile does: click to arm, or drag onto the schematic. The part is a
 [SPICE Model](components.html#spicemodel) running from the library's own file. A capacitor or inductor
 draws as the ordinary C or L symbol, is named C1, L1, …, and is labelled with its part number, its name
-and, on a line of its own, its value (`C = 10 pF`). On a board technology it arrives with the
-[footprint](footprints.html#imported) of the case size its library states.
+and, on a line of its own, its value (`C = 10 pF`). It arrives with the
+[footprint](footprints.html#imported) of the case size its library states, also in a workspace that has
+no technology yet.
 
 ## Placing a component {#placing}
 

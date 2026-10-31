@@ -20,9 +20,10 @@ public enum VendorPartQuantity
 /// What a part's comment header says about it — every field optional, none an error when absent
 /// (brief vendorlib-1 R-vl1-2a/2b).
 ///
-/// <para><b>Nothing here reads a part NUMBER.</b> Every field comes from the header TEXT; the case-code
+/// <para><b>Nothing here decodes a part NUMBER.</b> Every field comes from the header TEXT; the case-code
 /// pair is a Description FIELD that states a size in both systems, not a decoding of the part's
-/// name.</para>
+/// name. The one decode there is — the tolerance letter (brief vendorlib-5) — is
+/// <see cref="VendorPartToleranceDecoder"/>'s, and it reads <see cref="PartNumber"/> as written.</para>
 /// </summary>
 public sealed record VendorLibraryHeader
 {
@@ -39,6 +40,18 @@ public sealed record VendorLibraryHeader
     public IReadOnlyList<string> DescriptionFields { get; init; } = [];
 
     public VendorPartQuantity Quantity { get; init; }
+
+    /// <summary>The part number a <c>P/N</c> line states, or null — the <c>.subckt</c> name stands in then. One
+    /// library's subcircuit names carry an edition suffix its <c>P/N</c> line does not.</summary>
+    public string? PartNumber { get; init; }
+
+    /// <summary>The frequency a Property value is stated at (<c>L=10nH at 500MHz</c> → <c>500MHz</c>), as written,
+    /// or null.</summary>
+    public string? ValueFrequency { get; init; }
+
+    /// <summary>A tolerance the header states itself — a <c>Tolerance</c> field, or a Description field reading
+    /// <c>±5%</c> / <c>+/-0.1[pF]</c> — or null. It wins over the part number's letter (brief vendorlib-5 R-vl5-1e).</summary>
+    public VendorPartTolerance? StatedTolerance { get; init; }
 
     /// <summary>The Property value in SI (farads, henries, ohms), or null.</summary>
     public double? Value { get; init; }
@@ -108,6 +121,7 @@ public sealed record VendorLibraryHeader
     {
         unparsed = 0;
         string? description = null, property = null, range = null, temperature = null, bias = null;
+        string? partNumber = null, tolerance = null, size = null;
 
         foreach (string raw in commentLines)
         {
@@ -119,20 +133,37 @@ public sealed record VendorLibraryHeader
                 case "property":        property    = value; break;
                 case "frequency range": range       = value; break;
                 case "temperature":     temperature = value; break;
+                case "tolerance":       tolerance   = value; break;
                 default:
                     if (name.StartsWith("dc bias", StringComparison.Ordinal))
                         bias = $"{FieldName(raw)} = {value}";
+                    // "P/N", "Capacitor P/N", "Inductor P/N": the part number, as written.
+                    // "Size(LxWxT): 1x0.5x0.5mm, …": a body size stated in millimetres.
+                    else if (name.StartsWith("size", StringComparison.Ordinal))
+                        size = value;
+                    else if (name == "p/n" || name.EndsWith(" p/n", StringComparison.Ordinal))
+                        partNumber = value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)[0];
                     break;
             }
         }
 
         var quantity = VendorPartQuantity.None;
         double? partValue = null;
+        string? valueFrequency = null;
         if (property is not null)
         {
             int eq = property.IndexOf('=');
+            // A value stated at a test frequency — "L=10nH at 500MHz" (R-vl5-2a): the frequency is kept as text, and
+            // the value read without it.
+            string valueText = eq > 0 ? property[(eq + 1)..] : "";
+            var at = AtFrequency.Match(valueText);
+            if (at.Success)
+            {
+                valueFrequency = at.Groups[1].Value.Trim();
+                valueText = valueText[..at.Index];
+            }
             if (eq > 0 && TryParseQuantity(property[..eq].Trim(), out quantity)
-                       && TryParseValue(property[(eq + 1)..], out double v))
+                       && TryParseValue(valueText, out double v))
                 partValue = v;
             else
             {
@@ -163,9 +194,20 @@ public sealed record VendorLibraryHeader
             (metric, imperial) = (m.Groups[1].Value, m.Groups[2].Value);
             break;
         }
+        // No code pair in the Description: a body size the header states in millimetres names the case whose body it
+        // is, read against the case table's own dimensions (brief vendorlib-2 R-vl2-3d, for a library that states size
+        // this way).
+        if (metric is null && CaseOfSize(size) is { } bySize)
+            (metric, imperial) = (bySize.MetricTwin, bySize.Code);
+
+        var stated = VendorPartToleranceDecoder.ParseStated(tolerance, quantity)
+                     ?? VendorPartToleranceDecoder.ParseStatedInDescription(description, quantity);
 
         return new VendorLibraryHeader
         {
+            PartNumber        = partNumber,
+            ValueFrequency    = valueFrequency,
+            StatedTolerance   = stated,
             Description       = description,
             DescriptionPlain  = description?.Replace("[", "").Replace("]", ""),
             DescriptionFields = fields,
@@ -178,6 +220,37 @@ public sealed record VendorLibraryHeader
             CaseMetric        = metric,
             CaseImperial      = imperial,
         };
+    }
+
+    private static readonly Regex AtFrequency = new(@"\s+at\s+(\S.*)$", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+
+    private static readonly Regex SizeMm = new(
+        @"^\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)(?:\s*[x×]\s*\d+(?:\.\d+)?)?\s*mm\b",
+        RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+
+    /// <summary>
+    /// The two-terminal chip case whose body a stated size (<c>1x0.5x0.5mm</c>: length, width, height) is — the row of
+    /// the case table whose length and width both lie within its body tolerance, the nearest when several do. Null when
+    /// the text is not a size in millimetres, no row fits, or two fit equally well.
+    /// </summary>
+    internal static CircuitRF.Design.Layout.Footprints.SmtCase? CaseOfSize(string? text)
+    {
+        if (text is null) return null;
+        var m = SizeMm.Match(text);
+        if (!m.Success
+            || !decimal.TryParse(m.Groups[1].Value, NumberStyles.Number, CultureInfo.InvariantCulture, out decimal l)
+            || !decimal.TryParse(m.Groups[2].Value, NumberStyles.Number, CultureInfo.InvariantCulture, out decimal w))
+            return null;
+        var fits = CircuitRF.Design.Layout.Footprints.SmtCaseTable.All
+            .Where(c => c.Family is CircuitRF.Design.Layout.Footprints.SmtCaseFamily.Chip
+                                 or CircuitRF.Design.Layout.Footprints.SmtCaseFamily.Mlcc)
+            .Where(c => Math.Abs(c.BodyLengthMm - l) <= c.BodyToleranceMm && Math.Abs(c.BodyWidthMm - w) <= c.BodyToleranceMm)
+            .Select(c => (Case: c, Off: Math.Abs(c.BodyLengthMm - l) + Math.Abs(c.BodyWidthMm - w)))
+            .OrderBy(x => x.Off)
+            .ToList();
+        // The nearest body, when it is strictly nearer than the next: 3.2 x 2.5 mm is 1210 exactly, and also inside the
+        // wide tolerance band of a square RF chip.
+        return fits.Count == 0 || (fits.Count > 1 && fits[1].Off == fits[0].Off) ? null : fits[0].Case;
     }
 
     private static readonly Regex CasePair = new(@"^(\d+)M\((\d+)\)$", RegexOptions.CultureInvariant);

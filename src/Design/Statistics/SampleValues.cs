@@ -109,6 +109,15 @@ public static class SampleValues
                     continue;
                 }
             }
+            else if (t.ValueOf is { } vendor && moved.TryGetValue(vendor.Key, out var chosen)
+                     && vendor.CandidateOfCell(chosen.Trim()) is { Value: > 0 } candidate)
+            {
+                // A part moved to a candidate draws around THAT part's value with THAT part's tolerance (brief
+                // vendorlib-5 R-vl5-3d).
+                double inUnit = candidate.Value!.Value / (Units.Scale(t.Unit) ?? 1);
+                result.Add(t with { Value = inUnit, ValueText = TunableValue.Format(inUnit, t.Unit, "G6"), PartEntry = candidate.Entry });
+                continue;
+            }
             else if (moved.TryGetValue(t.Key, out var text) && TunableValue.InUnit(text, t.Unit) is { } v)
             {
                 result.Add(t with { Value = v, ValueText = text });

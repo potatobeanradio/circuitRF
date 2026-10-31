@@ -1030,7 +1030,7 @@
                                             <Grid ColumnDefinitions="*,Auto">
                                                 <TextBlock Text="{Binding Part}" FontSize="11" FontWeight="SemiBold"
                                                            TextTrimming="CharacterEllipsis"/>
-                                                <TextBlock Grid.Column="1" Text="{Binding Value}" FontSize="11"
+                                                <TextBlock Grid.Column="1" Text="{Binding ValueWithTolerance}" FontSize="11"
                                                            Margin="8,0,0,0"/>
                                             </Grid>
                                             <TextBlock Text="{Binding Detail}" FontSize="10"
@@ -1079,7 +1079,25 @@
                                           ToolTip.Tip="Optimize — adds this part to the Optimizer, which chooses the best of the parts of the same kind">
                                 <mi:MaterialIcon Kind="TargetVariant" Width="13" Height="13"/>
                             </ToggleButton>
+                            <!-- brief vendorlib-5 R-vl5-4b: the part's value drawn from its own tolerance, in the Yield panel. -->
+                            <ToggleButton IsVisible="{Binding CanYieldVendorPart}"
+                                          IsEnabled="{Binding IsVendorPartYieldEnabled}"
+                                          IsChecked="{Binding IsVendorPartToleranced}"
+                                          Padding="2" MinWidth="0" MinHeight="0"
+                                          Background="Transparent" BorderThickness="0"
+                                          VerticalAlignment="Center"
+                                          ToolTip.ShowOnDisabled="True"
+                                          ToolTip.Tip="{Binding VendorPartYieldTip}">
+                                <mi:MaterialIcon Kind="ChartBellCurve" Width="13" Height="13"/>
+                            </ToggleButton>
                         </StackPanel>
+                    </Grid>
+                    <!-- brief vendorlib-5 R-vl5-4a: always present, so nothing shifts when the part changes. -->
+                    <Grid ColumnDefinitions="60,*" IsVisible="{Binding HasVendorPartDetail}">
+                        <TextBlock Grid.Column="0" Text="Tolerance"
+                                   FontSize="11" VerticalAlignment="Center"/>
+                        <SelectableTextBlock Grid.Column="1" Text="{Binding VendorPartTolerance}"
+                                             FontSize="11" VerticalAlignment="Center"/>
                     </Grid>
                     <Grid ColumnDefinitions="60,*" IsVisible="{Binding HasVendorPartDetail}">
                         <TextBlock Grid.Column="0" Text="Range"

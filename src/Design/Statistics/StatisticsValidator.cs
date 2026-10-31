@@ -129,8 +129,22 @@ public static class StatisticsValidator
             f.Add(StatisticsDiagnostics.LogNormNotPositive(who, t.ValueText));
 
         // Each written value must be one, and the widths positive.
-        foreach (var (key, text) in Written(sp))
+        foreach (var (key, written) in Written(sp))
         {
+            string text = written;
+            // tol=part: the vendor part's own tolerance, resolved from the index (brief vendorlib-5 R-vl5-3b).
+            if (key == "tol" && sp.TolIsPart)
+            {
+                if (!t.IsPartValue) { f.Add(StatisticsDiagnostics.TolPartNotAPart(who)); shapeOk = false; continue; }
+                if (t.PartTolerance is not { } own)
+                {
+                    f.Add(StatisticsDiagnostics.TolPartUnknown(who, t.PartEntry?.PartNumber ?? t.Owner,
+                                                                t.PartToleranceNote ?? VendorLibraries.VendorPartToleranceDecoder.NotKnown));
+                    shapeOk = false;
+                    continue;
+                }
+                text = own.SpreadText;
+            }
             // A unit of another quantity converts to a number, and a meaningless one: 3 pF on a resistance is 3e-12 Ω.
             if (key is not ("sigmas" or "trunc") && ResolvedSpread.ForeignUnit(text, t.Unit))
             { f.Add(StatisticsDiagnostics.SpreadWrongUnit(who, key, text, t.Unit)); shapeOk = false; continue; }

@@ -41538,3 +41538,20 @@ would post nothing.
 The 3D editor's elaboration refusals had the same gap: they went into the scene's notes, and the canvas label carries
 only the short form ("U1: cannot be drawn in 3D"). `C3dEditorViewModel.PostNewRefusals` posts each one once while it
 stands, and the label for a layout with no technology now says so.
+
+## A vendor part's tolerance in the Parameter Editor and the part picker (brief vendorlib-5, 2026-10-31)
+
+The vendor panel gains a **Tolerance** row under Value (`±0.1 pF`, `±5 %`, or `not known`). The row is always present
+whenever the part's detail rows are, so nothing below it moves when the part changes, and there is no explanatory line
+under it: why a tolerance is not known is `check`'s and `find`'s to say. A **Yield** toggle (`ChartBellCurve`, as every
+parameter row's Tolerance toggle) sits after Tune and Optimize; it adds `C1.C`/`C1.L` to the Yield panel with
+`dist=gauss tol=part sigmas=3 trunc=3` through the same `IToleranceSurface` the parameter rows use. It is present for
+any part with a C or L value and greyed, with the reason as its tooltip, when the tolerance is not known —
+`ToolTip.ShowOnDisabled` is what lets a disabled control say why. The part picker's rows show the tolerance after the
+value (`10 pF ±5 %`); the palette's rows are unchanged.
+
+`ITunableAddHost.Offers` now defaults to leaving out a part's value (`Tunable.IsPartValue`), so the Tuning and
+Optimizer add lists never offer something `check` would refuse to tune; the Yield panel's override still offers it.
+
+Rendered headlessly (`tools/UiSnapshot --schematic <csch> --select C1`, and `--button ▾` for the picker): the panel with
+a known tolerance and the toggle on, a not-known part with the toggle greyed, and the picker list.

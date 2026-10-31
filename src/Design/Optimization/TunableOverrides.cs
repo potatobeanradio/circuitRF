@@ -39,17 +39,28 @@ public static class TunableOverrides
     /// <param name="setVariables">Variables a <c>--set</c> already replaced. <c>--set</c> applies
     /// first; a tuned value naming one of them is a refusal naming both, since one of the two would
     /// silently lose.</param>
+    /// <param name="parts">The design's placed vendor parts (<see cref="Circuit.PreparedCircuit.PartTunables"/>): a
+    /// drawn value of one (<c>C1.C</c> → <c>1.03e-11 F</c>) binds its cell's scale parameter to drawn ÷ nominal, the
+    /// nominal being the stated value of whichever part the instance is bound to (brief vendorlib-5 R-vl5-3c/3d).
+    /// Null skips that, and such a key is noted as naming no parameter.</param>
     public static TunedDesign Apply(
         TestBench tb, Library lib, IReadOnlyDictionary<string, string> values,
-        IReadOnlyCollection<string>? setVariables = null)
+        IReadOnlyCollection<string>? setVariables = null,
+        IReadOnlyList<CircuitRF.Design.VendorLibraries.VendorPartTunable>? parts = null)
     {
+        var partOfValue = (parts ?? []).Where(p => p.ValueKey is not null)
+                                       .GroupBy(p => p.ValueKey!, StringComparer.Ordinal)
+                                       .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
         var notes   = new List<string>();
         var bench   = CopyOf(tb);
         var library = new Library(lib.Name);
         library.Cells.AddRange(lib.Cells);
         var copied  = new HashSet<string>(StringComparer.Ordinal);
 
-        foreach (var (keyText, value) in WholeValues(tb, lib, values, notes))
+        // A part's value is bound against the part the instance ends up bound to, so its Part key goes first.
+        var ordered = WholeValues(tb, lib, values, notes)
+            .OrderBy(kv => partOfValue.ContainsKey(kv.Key) ? 1 : 0).ToList();
+        foreach (var (keyText, value) in ordered)
         {
             if (!TunableKey.TryParse(keyText, out var key))
             {
@@ -102,6 +113,14 @@ public static class TunableOverrides
             {
                 if (Rebind(inst, value, library) is { } rebound) instances[ii] = rebound;
                 else notes.Add($"'{keyText}': '{value}' is neither a candidate part nor a capacitance or inductance; skipped.");
+                continue;
+            }
+
+            if (partOfValue.TryGetValue(keyText, out var valueOf))
+            {
+                if (ScalePart(inst, value, valueOf, library) is { } scaled) instances[ii] = scaled;
+                else notes.Add($"'{keyText}': '{value}' cannot be drawn on {inst.Reference}, which carries no " +
+                               $"{CircuitRF.Design.Schematic.SpiceModelNetlist.PartScaleParameter} or states no value; skipped.");
                 continue;
             }
 
@@ -158,6 +177,24 @@ public static class TunableOverrides
         if (primitive is null) return null;
         var (expr, u) = TunableValue.Split(v, null);
         return new Instance(inst.InstanceName, primitive, inst.NetBindings, [new ParameterAssignment(primitive, expr, u)]);
+    }
+
+    /// <summary>
+    /// A drawn value of a vendor part (brief vendorlib-5 R-vl5-3c): the instance's cell's scale parameter bound to
+    /// drawn ÷ the stated value of the part that cell is — the placed part, or the candidate an earlier Part key bound
+    /// it to. Null when the cell carries no scale parameter or the part states no value.
+    /// </summary>
+    private static Instance? ScalePart(Instance inst, string value, CircuitRF.Design.VendorLibraries.VendorPartTunable part,
+                                       Library lib)
+    {
+        const string scale = CircuitRF.Design.Schematic.SpiceModelNetlist.PartScaleParameter;
+        if (lib.Find(inst.Reference) is not { } cell || !cell.Parameters.Any(p => p.Name == scale)) return null;
+        if (part.EntryOfCell(inst.Reference)?.Header.Value is not { } nominal || nominal <= 0) return null;
+        if (!TunableValue.TryParse(value, out _, out _, out double drawn)) return null;
+
+        string ratio = (drawn / nominal).ToString("R", System.Globalization.CultureInfo.InvariantCulture);
+        var overrides = inst.Overrides.Where(o => o.Name != scale).Append(new ParameterAssignment(scale, ratio)).ToList();
+        return new Instance(inst.InstanceName, inst.Reference, inst.NetBindings, overrides) { RefNetBinding = inst.RefNetBinding };
     }
 
     /// <summary><paramref name="values"/> with every complex part folded into its whole value.</summary>

@@ -261,9 +261,44 @@ public static class NetExtractor
                 conflicts.Add($"{key}: {unreadable.Count} candidate part{(unreadable.Count == 1 ? "" : "s")} could not be " +
                               $"read and {(unreadable.Count == 1 ? "was" : "were")} left out: {string.Join(", ", unreadable)}.");
 
+            // The part's VALUE drawn in a Monte Carlo trial (brief vendorlib-5 R-vl5-3c): its cell, and every emitted
+            // candidate's, gets the scale parameter an evaluation binds to drawn ÷ nominal. Only then — every other
+            // netlist stays byte-identical.
+            string? letter = placed.Part.Entry.Header.Quantity switch
+            {
+                VendorLibraries.VendorPartQuantity.Capacitance => "C",
+                VendorLibraries.VendorPartQuantity.Inductance  => "L",
+                _ => null,
+            };
+            string valueKey = (cell is null ? "" : cell + ":") + placed.Instance + "." + letter;
+            var valueEntry  = letter is null ? null : setup?.Variables.FirstOrDefault(v => v.Key == valueKey);
+            var noTolerance = new List<string>();
+            if (valueEntry is { IsStatistical: true })
+            {
+                // Each candidate carries its OWN tolerance under tol=part (R-vl5-3d): one whose tolerance is not known
+                // is left out and said, as an unreadable one is.
+                if (emit && valueEntry.Spread?.TolIsPart == true)
+                {
+                    foreach (var c in candidates.ToList())
+                        if (c.Entry.Tolerance is null
+                            && !c.Part.Equals(placed.Part.Entry.Part, StringComparison.OrdinalIgnoreCase))
+                        {
+                            candidates.Remove(c);
+                            noTolerance.Add($"{c.Part} ({c.Entry.ToleranceNote ?? "no tolerance"})");
+                        }
+                    if (noTolerance.Count > 0)
+                        conflicts.Add($"{key}: {noTolerance.Count} candidate part{(noTolerance.Count == 1 ? "" : "s")} with no " +
+                                      $"known tolerance {(noTolerance.Count == 1 ? "was" : "were")} left out, since {valueKey} draws " +
+                                      $"with tol=part: {string.Join(", ", noTolerance)}.");
+                }
+                SpiceModelNetlist.ScaleQuantity(lib, placed.Cell, letter!);
+                foreach (var c in candidates.Where(c => c.Cell.Length > 0))
+                    SpiceModelNetlist.ScaleQuantity(lib, c.Cell, letter!);
+            }
+
             result.Add(new VendorLibraries.VendorPartTunable(
                 key, cell, placed.Instance, placed.Part.LibraryName, placed.Part.Entry, placed.Cell, placed.Glyph,
-                selection, candidates, selected.Count, removed, unreadable, emit));
+                selection, candidates, selected.Count, removed, unreadable, emit) { NoTolerance = noTolerance });
         }
         return result;
     }
