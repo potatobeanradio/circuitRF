@@ -33,8 +33,9 @@ using CircuitRF.Ui.ViewModels;
 
 namespace CircuitRF.Ui.Yield;
 
-/// <summary>What the panel does (R-ya10-2, R-ya12-1).</summary>
-public enum YieldMode { MonteCarlo, Yield, Corners, Centering, Doe }
+/// <summary>What the panel does (R-ya10-2, R-ya12-1); <see cref="Sensitivity"/> is the Sensitivity panel's one mode
+/// (brief-sens-3 R-sens3-1).</summary>
+public enum YieldMode { MonteCarlo, Yield, Corners, Centering, Doe, Sensitivity }
 
 public sealed partial class YieldPanelViewModel : ObservableObject, ITunableAddHost, IToleranceSurface
 {
@@ -101,15 +102,42 @@ public sealed partial class YieldPanelViewModel : ObservableObject, ITunableAddH
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsMonteCarlo), nameof(IsYield), nameof(IsCorners), nameof(IsCentering), nameof(IsDoe), nameof(ShowTrials),
-                              nameof(ShowYieldReadout), nameof(ShowVariableTolerances), nameof(ShowStatisticsSettings), nameof(RunTip))]
+                              nameof(ShowYieldReadout), nameof(ShowVariableTolerances), nameof(ShowStatisticsSettings), nameof(RunTip),
+                              nameof(IsSensitivity), nameof(OpenDisplayTip))]
     private YieldMode _mode = YieldMode.Yield;
+
+    /// <summary>The Yield panel's modes, in the radio row's order.</summary>
+    public static readonly IReadOnlyList<YieldMode> YieldModes =
+        [YieldMode.MonteCarlo, YieldMode.Yield, YieldMode.Corners, YieldMode.Centering, YieldMode.Doe];
+
+    /// <summary>The Sensitivity panel's one mode (brief-sens-3 R-sens3-1).</summary>
+    public static readonly IReadOnlyList<YieldMode> SensitivityModes = [YieldMode.Sensitivity];
+
+    private IReadOnlyList<YieldMode> _availableModes = YieldModes;
+
+    /// <summary>The modes this panel offers (brief-sens-3 R-sens3-1): the Yield tool's five, or the Sensitivity tool's
+    /// one. The radio row shows only these, and is not shown at all for one. Setting it moves the mode into the set.</summary>
+    public IReadOnlyList<YieldMode> AvailableModes
+    {
+        get => _availableModes;
+        init
+        {
+            _availableModes = value.Count > 0 ? value : YieldModes;
+            if (!_availableModes.Contains(Mode)) Mode = _availableModes[0];
+        }
+    }
+
+    /// <summary>The mode radio row — only with more than one mode to choose between.</summary>
+    public bool ShowModeRow => AvailableModes.Count > 1;
+
+    public bool OffersMode(YieldMode mode) => AvailableModes.Contains(mode);
 
     public bool IsMonteCarlo { get => Mode == YieldMode.MonteCarlo; set { if (value) Mode = YieldMode.MonteCarlo; } }
     public bool IsYield      { get => Mode == YieldMode.Yield;      set { if (value) Mode = YieldMode.Yield; } }
     public bool IsCorners    { get => Mode == YieldMode.Corners;    set { if (value) Mode = YieldMode.Corners; } }
 
     /// <summary>The trial table and its readouts belong to a Monte Carlo or a yield run.</summary>
-    public bool ShowTrials => Mode is not (YieldMode.Corners or YieldMode.Doe);
+    public bool ShowTrials => Mode is not (YieldMode.Corners or YieldMode.Doe or YieldMode.Sensitivity);
 
     /// <summary>A yield readout needs yield goals; a Monte Carlo reports spread only. Centering shows its verified yield.</summary>
     public bool ShowYieldReadout => Mode is YieldMode.Yield or YieldMode.Centering;
@@ -120,13 +148,20 @@ public sealed partial class YieldPanelViewModel : ObservableObject, ITunableAddH
         YieldMode.Yield      => "Run a yield analysis",
         YieldMode.Centering  => "Centre the design — move the designable nominals to maximize yield",
         YieldMode.Doe        => "Run the design of experiments — which factors matter, and how they interact",
+        YieldMode.Sensitivity => "Run the sensitivity — each value stepped + and − about the nominal, ranked by what it moves",
         _                    => "Evaluate every enabled corner",
     };
+
+    partial void OnModeChanging(YieldMode value)
+    {
+        if (!AvailableModes.Contains(value)) throw new ArgumentOutOfRangeException(nameof(value), value, "Not one of this panel's modes.");
+    }
 
     partial void OnModeChanged(YieldMode value)
     {
         NotifyRunCommands();
         if (value == YieldMode.Doe) RefreshDoePlan();
+        if (value == YieldMode.Sensitivity) RefreshSensitivity();
     }
 
     // ---- Lists -------------------------------------------------------------------
@@ -140,7 +175,11 @@ public sealed partial class YieldPanelViewModel : ObservableObject, ITunableAddH
 
     [ObservableProperty] private YieldGoalRowViewModel? _selectedGoal;
 
-    partial void OnSelectedGoalChanged(YieldGoalRowViewModel? value) => ContributionsCommand.NotifyCanExecuteChanged();
+    partial void OnSelectedGoalChanged(YieldGoalRowViewModel? value)
+    {
+        ContributionsCommand.NotifyCanExecuteChanged();
+        FollowGoalInRanking(value);
+    }
 
     public TuningAddViewModel Add { get; }
 
@@ -186,6 +225,7 @@ public sealed partial class YieldPanelViewModel : ObservableObject, ITunableAddH
         Goals.Clear();
         Corners.Clear();
         CenterRows.Clear();
+        ClearSensitivityForNewSchematic();
         if (tuned is not null) RefreshNow();
         RefreshKit();
         OnPropertyChanged(nameof(Tuned));
@@ -253,6 +293,7 @@ public sealed partial class YieldPanelViewModel : ObservableObject, ITunableAddH
         RefreshSettings();
         RefreshCenterSettings();
         RefreshDoeSettings();
+        RefreshSensitivity();
         if (Add.IsOpen) Add.Refresh();
         NotifyRunCommands();
         Changed?.Invoke(this, EventArgs.Empty);

@@ -37,6 +37,9 @@ public static class DockSide
 /// </summary>
 public sealed class CwsDockPanel
 {
+    /// <summary>A copy with every field — renumbering a merged layout's tabs must not reach back into the input.</summary>
+    internal CwsDockPanel Clone() => (CwsDockPanel)MemberwiseClone();
+
     /// <summary>Stable compile-time panel id (e.g. "ProjectTree"). See <see cref="DockPanelIds"/>.</summary>
     public string Id { get; set; } = "";
 
@@ -446,6 +449,14 @@ public static class DockPanelIds
     public const string Yield = "Yield";
 
     /// <summary>
+    /// brief-sens-3's Sensitivity panel — the Yield panel's view with one mode: what each goal is sensitive to at the
+    /// nominal design. <b>In both shipped default layouts, tabbed between Tuning and the Optimizer</b>, the order a
+    /// designer works in; a saved layout that never heard of it gains it immediately BEFORE the Optimizer
+    /// (<see cref="DockLayoutDefaults.WithMissingPanelsFilled"/>).
+    /// </summary>
+    public const string Sensitivity = "Sensitivity";
+
+    /// <summary>
     /// <b>The two ids RC-10 retired, and they must keep resolving</b> (R-rc10-3).
     ///
     /// <para><c>RestorePoints</c> and <c>VersionHistory</c> are written into every <c>.cwsuser</c> in
@@ -464,7 +475,7 @@ public static class DockPanelIds
     public static readonly string[] All =
     [
         ProjectTree, Palette, Properties, Analyses, Messages, Drc, Lvs, WBondProfile,
-        WBondInductance, History, Instances, Impedance, Tuning, Optimizer, Yield, Review,
+        WBondInductance, History, Instances, Impedance, Tuning, Sensitivity, Optimizer, Yield, Review,
     ];
 
     /// <summary>

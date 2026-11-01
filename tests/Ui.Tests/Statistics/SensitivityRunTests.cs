@@ -100,6 +100,24 @@ public sealed class SensitivityRunTests
         Assert.Equal(SensitivityStatus.Nonlinear, c.Status);
         Assert.True(c.Asymmetry > SensitivityRun.NonlinearThreshold, $"asymmetry {c.Asymmetry}");
     }
+
+    [Fact]
+    public void AValueTheGoalDoesNotDependOn_IsNotFlaggedNonlinearByRoundOff()
+    {
+        // With 50 Ω at both ports the block's S21 is the circuit's, whatever its S11: the S11 steps move the goal by
+        // round-off only, and the two halves of nothing do not make a nonlinearity.
+        string file = SnpFiles.Write("mismatched2", 2, (i, j) => i == j ? new System.Numerics.Complex(0.3, 0.2) : new System.Numerics.Complex(0.5, 0.1));
+        string cnl = $"""
+            Port:P1 a 0 Num=1 Z=50 Ohm
+            Port:P2 b 0 Num=2 Z=50 Ohm
+            SnP:SNP1 a b NumPorts=2 File="{file}" Reciprocal=untied
+            analysis SP1 type=sparam start=1 stop=3 npts=3 Unit=GHz
+            goal Thru = dB(SP1.S(2,1)) analysis=SP1 ge -30
+            """;
+        var g = Assert.Single(SensCircuits.Create(cnl, new SensitivityOptions()).Run().Goals);
+        Assert.All(g.Contributors.Where(c => c.Factor.Snp is { I: 1, J: 1 }), c => Assert.Equal(SensitivityStatus.Ok, c.Status));
+        Assert.True(g.Contributors.Single(c => c.Factor.Key == "SNP1.SdB_2_1").Share > 0.99);
+    }
 }
 
 /// <summary>The ports' own values are not factors of factors=all unless ports=on — one note names them.</summary>

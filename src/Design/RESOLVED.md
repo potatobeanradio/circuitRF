@@ -25782,3 +25782,19 @@ helper"). DOE's own level and a sensitivity step are therefore the same value fo
 DOE gates pass unchanged on it. `SigmaLevels.One` sets a single entry and leaves every other value out of the map, so a
 step's "every other factor at nominal" is the design's own text rather than a z = 0 draw — the two differ for an
 asymmetric distribution, where z = 0 is the median, not the nominal.
+
+## Sensitivity panel (brief-sens-3) — two findings in the run and the tolerance defaults
+
+**A step that moves a response by round-off is not nonlinear.** On a 50 Ω-terminated amplifier block, dB(S21) does
+not depend on the block's S11 at all; its two steps moved the goal by ~1e-15 in opposite directions, the asymmetry
+came out 1.25 and the row was flagged `nonlinear` — a glyph on a row whose share is 0.0 %. `SensitivityRun` now reads a
+step pair as round-off when neither step moves the response by more than `RoundOff` (1e-9) of the largest move any
+factor made for that response, and leaves it `ok` with asymmetry 0. The Δ and share are untouched (they are
+already ~0); only the flag changes. Gate: `SensitivityRunTests.AValueTheGoalDoesNotDependOn_IsNotFlaggedNonlinearByRoundOff`.
+
+**A new tolerance on an SnP entry is an absolute σ, not ± 5 % of its value.** `TuningSetupEdits.WithStat` gave every
+new tolerance `ToleranceText.DefaultSpread` — ± 5 % at 3σ — and an SnP offset is 0 at nominal, so the tolerance it
+added (from the Yield panel's Add, and from the Sensitivity panel's Add tolerance) had zero spread: a Monte Carlo drew
+the nominal every trial and the next sensitivity run stepped it by nothing. An SnP entry now starts at `sd=0.1 dB` or
+`sd=1 deg` — the sensitivity line's own default steps, so σ and the step agree until either is changed. Any other value
+whose nominal is 0 (a variable at 0, say) still gets the percent default; nothing here has met one yet.

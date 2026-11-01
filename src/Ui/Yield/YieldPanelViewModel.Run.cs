@@ -174,7 +174,9 @@ public sealed partial class YieldPanelViewModel : ITrialSelectionListener
 
     /// <summary>The yield display button's tooltip: what it opens, or why there is nothing to open.</summary>
     public string OpenDisplayTip => DisplayUnavailable
-        ?? "Open yield display — trials, histograms, sensitivity and the statistics table";
+        ?? (Mode == YieldMode.Sensitivity
+            ? "Open the sensitivity display — a Pareto per goal, at the list's level (Entry, Port or Instance)"
+            : "Open yield display — trials, histograms, sensitivity and the statistics table");
 
     partial void OnDisplayUnavailableChanged(string? value) => OpenDisplayCommand.NotifyCanExecuteChanged();
 
@@ -201,6 +203,7 @@ public sealed partial class YieldPanelViewModel : ITrialSelectionListener
         CornerGoals.Clear();
         ClearCenterReadouts();
         ClearDoeReadouts();
+        ClearSensReadouts();
         State = YieldRunState.Idle;
         foreach (var g in Goals) g.ShowYield(null, TargetFraction);
         foreach (var v in Variables) v.ShowShare(null);
@@ -227,6 +230,11 @@ public sealed partial class YieldPanelViewModel : ITrialSelectionListener
         if (Mode == YieldMode.Doe)
         {
             RunDoe(circuit, source);
+            return;
+        }
+        if (Mode == YieldMode.Sensitivity)
+        {
+            RunSensitivity(circuit, source);
             return;
         }
         if (Mode == YieldMode.Corners || Settings.CornerNames is not { Count: 0 })
@@ -382,7 +390,7 @@ public sealed partial class YieldPanelViewModel : ITrialSelectionListener
 
     // ---- Pause, Resume and Stop (D14) ---------------------------------------------
 
-    private bool CanPause() => IsRunActive && (_run is not null || _centerRun is not null || _doeRun is not null);
+    private bool CanPause() => IsRunActive && (_run is not null || _centerRun is not null || _doeRun is not null || _sensRun is not null);
 
     /// <summary>Pause finishes the trials in flight and holds; Resume continues as if never paused. One button.</summary>
     [RelayCommand(CanExecute = nameof(CanPause))]
@@ -393,6 +401,7 @@ public sealed partial class YieldPanelViewModel : ITrialSelectionListener
             _run is { } run ? (run.Pause, run.Resume, run.Held, run)
             : _centerRun is { } center ? (center.Pause, center.Resume, center.Held, center)
             : _doeRun is { } doe ? (doe.Pause, doe.Resume, doe.Held, doe)
+            : _sensRun is { } sens ? (sens.Pause, sens.Resume, sens.Held, sens)
             : null;
         if (target is not { } t) return;
         if (IsPaused)
@@ -409,7 +418,7 @@ public sealed partial class YieldPanelViewModel : ITrialSelectionListener
         _ = Task.Run(() =>
         {
             WaitHandle.WaitAny([t.Held, ct.WaitHandle]);
-            PostToUi(() => { if ((ReferenceEquals(t.Run, _run) || ReferenceEquals(t.Run, _centerRun) || ReferenceEquals(t.Run, _doeRun)) && IsPaused) StatusText = "Paused"; });
+            PostToUi(() => { if ((ReferenceEquals(t.Run, _run) || ReferenceEquals(t.Run, _centerRun) || ReferenceEquals(t.Run, _doeRun) || ReferenceEquals(t.Run, _sensRun)) && IsPaused) StatusText = "Paused"; });
         });
     }
 
@@ -437,6 +446,13 @@ public sealed partial class YieldPanelViewModel : ITrialSelectionListener
             State = YieldRunState.Running;
             StatusText = "Stopping — analysing the runs done…";
         }
+        else if (_sensRun is { } sens)
+        {
+            // Stop ranks what has evaluated (brief-sens-1).
+            sens.Stop();
+            State = YieldRunState.Running;
+            StatusText = "Stopping — ranking what has evaluated…";
+        }
         else if (_cornerRun is not null)
         {
             _cts?.Cancel();
@@ -451,11 +467,13 @@ public sealed partial class YieldPanelViewModel : ITrialSelectionListener
         _run?.Stop();
         _centerRun?.Stop();
         _doeRun?.Stop();
+        _sensRun?.Stop();
         _display?.Drop();
         _run = null;
         _cornerRun = null;
         _centerRun = null;
         _doeRun = null;
+        _sensRun = null;
         State = YieldRunState.Idle;
     }
 
@@ -599,14 +617,16 @@ public sealed partial class YieldPanelViewModel : ITrialSelectionListener
 
     // ---- One-click yield display (R-ya10-8) --------------------------------------------
 
-    private bool CanOpenDisplay() => _lastData is not null && _resultPath is not null && OpenYieldDisplay is not null && !IsRunning
-                                     && DisplayUnavailable is null;
+    private bool CanOpenDisplay() => _lastData is not null && _resultPath is not null && !IsRunning && DisplayUnavailable is null
+                                     && (Mode == YieldMode.Sensitivity ? OpenSensitivityDisplay is not null : OpenYieldDisplay is not null);
 
     [RelayCommand(CanExecute = nameof(CanOpenDisplay))]
     private async Task OpenDisplay()
     {
         OfferYieldDisplay = false;
-        if (_resultPath is { } path && _lastData is { } ds && OpenYieldDisplay is not null) await OpenYieldDisplay(path, ds);
+        if (_resultPath is not { } path || _lastData is not { } ds) return;
+        if (Mode == YieldMode.Sensitivity) { if (OpenSensitivityDisplay is not null) await OpenSensitivityDisplay(path, ds, SensLevel, SensDisplayResponses); }
+        else if (OpenYieldDisplay is not null) await OpenYieldDisplay(path, ds);
     }
 
     [RelayCommand] private void DismissDisplayOffer() => OfferYieldDisplay = false;
@@ -625,6 +645,7 @@ public sealed partial class YieldPanelViewModel : ITrialSelectionListener
         NotifyTrialCommands();
         NotifyCenterCommands();
         NotifyDoeCommands();
+        NotifySensCommands();
         OnPropertyChanged(nameof(HasTarget));
         OnPropertyChanged(nameof(TargetFraction));
     }

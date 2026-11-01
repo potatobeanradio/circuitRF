@@ -129,7 +129,7 @@
     {
       "Folder": "Yield",
       "Title": "Yield, Corners and Centering",
-      "Summary": "A bandpass filter built from ±2 % parts and judged against loosened specs, an amplifier that fails one of six temperature and supply corners until it is optimized across all of them, and a bias divider whose yield is centred from about 70 % to above 95 %. Every run takes a second or two."
+      "Summary": "A bandpass filter built from ±2 % parts and judged against loosened specs, an amplifier that fails one of six temperature and supply corners until it is optimized across all of them, a bias divider whose yield is centred from about 70 % to above 95 %, and an amplifier and spiral inductor, both Touchstone blocks, ranked in the Sensitivity panel. Every run takes a second or two."
     },
     {
       "Folder": "LVS",

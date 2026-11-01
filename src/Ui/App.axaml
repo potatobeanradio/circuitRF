@@ -116,6 +116,10 @@
         <DataTemplate DataType="{x:Type dockVm:YieldTool}">
             <yldv:YieldToolView/>
         </DataTemplate>
+        <!-- brief-sens-3: the Sensitivity panel is the same view over a one-mode panel. -->
+        <DataTemplate DataType="{x:Type dockVm:SensitivityTool}">
+            <yldv:YieldToolView/>
+        </DataTemplate>
         <!-- RC-10's one history panel (§5.10). It replaced two, and the merge is why there is one row
              here: §5's argument is about two kinds of ENTRY and rev 2 spent it as an argument for two
              WINDOWS. A panel with no template at all renders as nothing but its own type name, which

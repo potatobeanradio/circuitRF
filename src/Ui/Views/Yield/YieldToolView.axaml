@@ -7,9 +7,12 @@
              xmlns:optv="using:CircuitRF.Ui.Views.Optimization"
              xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              x:Class="CircuitRF.Ui.Views.Yield.YieldToolView"
-             x:DataType="dockVm:YieldTool"
+             x:DataType="dockVm:YieldPanelTool"
              Background="{DynamicResource SystemChromeLowColor}">
 
+    <!-- One view, two dock tools (brief-sens-3 R-sens3-1): the Yield panel's five modes, or the Sensitivity panel's one.
+         A control a mode does not use is hidden by mode; with one mode the radio row is never shown and the toolbar
+         starts that row. -->
     <!-- brief-yield-10 §2. Header (schematic + run status), the mode, a toolbar of the Analyses panel's own small
          icon buttons, the live yield readout, the run settings collapsed to one line, then Variables, Specs and
          either the trial table or the corners. Readouts carry no prose: a value or a short status. -->
@@ -124,6 +127,22 @@
         <Style Selector="TextBlock.gridcell.worst">
             <Setter Property="FontWeight" Value="Bold"/>
         </Style>
+        <!-- The SnP matrix tile (brief-sens-3 R-sens3-6): the selected port's row and column, and the selected entry. -->
+        <Style Selector="Border.snpcell">
+            <Setter Property="BorderBrush" Value="{DynamicResource SystemBaseLowColor}"/>
+            <Setter Property="BorderThickness" Value="0.5"/>
+        </Style>
+        <Style Selector="Border.snpcell.port">
+            <Setter Property="BorderBrush" Value="{DynamicResource SystemAccentColor}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+        </Style>
+        <Style Selector="Border.snpcell.entry">
+            <Setter Property="BorderBrush" Value="{DynamicResource SystemAccentColor}"/>
+            <Setter Property="BorderThickness" Value="2.5"/>
+        </Style>
+        <Style Selector="Border.excludedrow">
+            <Setter Property="Opacity" Value="0.5"/>
+        </Style>
     </UserControl.Styles>
 
     <Panel>
@@ -148,6 +167,8 @@
 
             <!-- Mode and toolbar. -->
             <WrapPanel Grid.Row="1" Orientation="Horizontal" Margin="4,0,4,2">
+                <!-- Fixed per panel (the Sensitivity tool has one mode): never toggled while the panel is in use. -->
+                <StackPanel Orientation="Horizontal" IsVisible="{Binding ShowModeRow}">
                 <RadioButton Classes="mode" Content="Monte Carlo" IsChecked="{Binding IsMonteCarlo}"
                              ToolTip.Tip="The spread of every measurement — no pass/fail"/>
                 <RadioButton Classes="mode" Content="Yield" IsChecked="{Binding IsYield}"
@@ -160,6 +181,7 @@
                              ToolTip.Tip="Design of experiments — which factors matter, how they interact, and a response model"/>
 
                 <Border Classes="divider"/>
+                </StackPanel>
 
                 <Button Classes="tb" Command="{Binding RunCommand}" ToolTip.Tip="{Binding RunTip}">
                     <mi:MaterialIcon Kind="Play"/>
@@ -303,6 +325,43 @@
                         <Style Selector="Grid.sg-doe > :is(Control).r3"><Setter Property="Grid.Row" Value="8"/></Style>
                     </ContainerQuery>
                 </StackPanel.Styles>
+                <!-- Sensitivity (brief-sens-3 R-sens3-4): the sensitivity line, each box written only when it differs from
+                     its default. The dB and degree boxes are disabled with S-parameters off and keep their place. -->
+                <StackPanel IsVisible="{Binding IsSensitivity}" Margin="2,0,0,0" Spacing="1">
+                    <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,*" RowDefinitions="Auto,Auto">
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Factors" FontSize="11" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <ComboBox Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="2" Classes="cell" Width="104" Margin="0,1"
+                                  ItemsSource="{Binding SensFactorChoices}" SelectedIndex="{Binding SensFactorIndex}"
+                                  ToolTip.Tip="All: every value the design offers, each at its tolerance when it has one. Toleranced: the values with a tolerance, at ± kσ. Designable: the values the Optimizer moves (opt), at ± step."/>
+                        <TextBlock Grid.Row="0" Grid.Column="3" Text="Step" FontSize="11" VerticalAlignment="Center" Margin="10,0,6,0"/>
+                        <StackPanel Grid.Row="0" Grid.Column="4" Orientation="Horizontal" Spacing="3">
+                            <TextBox Classes="cell commit" Width="44" PlaceholderText="1" Margin="0,1"
+                                     Text="{Binding SensStepText, UpdateSourceTrigger=LostFocus}"
+                                     ToolTip.Tip="A value with no tolerance steps ± this percent of its value"/>
+                            <TextBlock Text="%" FontSize="11" VerticalAlignment="Center"/>
+                        </StackPanel>
+                        <TextBlock Grid.Row="0" Grid.Column="5" Text="σ" FontSize="11" VerticalAlignment="Center" Margin="10,0,6,0"/>
+                        <TextBox Grid.Row="0" Grid.Column="6" Classes="cell commit" Width="40" PlaceholderText="1" Margin="0,1"
+                                 Text="{Binding SensSigmaText, UpdateSourceTrigger=LostFocus}"
+                                 ToolTip.Tip="A value with a tolerance steps ± this many σ of its own distribution"/>
+
+                        <StackPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="8" Orientation="Horizontal" Spacing="3">
+                            <CheckBox Content="S-parameters" FontSize="11" IsChecked="{Binding SensSnp}" MinHeight="0" Padding="4,0,6,0"
+                                      ToolTip.Tip="Step every entry of every S-parameter block — off leaves every block out, keeping each one's own choice below"/>
+                            <TextBox Classes="cell commit" Width="44" PlaceholderText="0.1" Margin="0,1" IsEnabled="{Binding SensSnp}"
+                                     Text="{Binding SensSnpDbText, UpdateSourceTrigger=LostFocus}"
+                                     ToolTip.Tip="An S-parameter entry with no tolerance steps ± this many dB in magnitude"/>
+                            <TextBlock Text="dB" FontSize="11" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <TextBox Classes="cell commit" Width="40" PlaceholderText="1" Margin="0,1" IsEnabled="{Binding SensSnp}"
+                                     Text="{Binding SensSnpDegText, UpdateSourceTrigger=LostFocus}"
+                                     ToolTip.Tip="… and ± this many degrees in phase"/>
+                            <TextBlock Text="°" FontSize="11" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Grid>
+                    <TextBlock Text="{Binding SensPlanText}" Classes="muted" TextWrapping="Wrap" Margin="0,1,0,0"
+                               ToolTip.Tip="What Run will simulate: the nominal, then each factor + and −"/>
+                </StackPanel>
+
                 <Grid ColumnDefinitions="Auto,*" IsVisible="{Binding ShowStatisticsSettings}">
                     <Button Classes="tb" Command="{Binding ToggleSettingsCommand}" ToolTip.Tip="Run settings">
                         <Panel>
@@ -463,7 +522,7 @@
                 <StackPanel Margin="0,0,0,6">
 
                     <!-- ── Variables ───────────────────────────────────────────────── -->
-                    <Grid ColumnDefinitions="*,Auto" Margin="6,4,4,0">
+                    <Grid ColumnDefinitions="*,Auto" Margin="6,4,4,0" IsVisible="{Binding !IsSensitivity}">
                         <TextBlock Text="Variables" Classes="section"/>
                         <StackPanel Grid.Column="1" Orientation="Horizontal">
                             <Button Classes="tb" x:Name="AddButton" ToolTip.Tip="Add tolerances…">
@@ -674,6 +733,160 @@
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
 
+                    <!-- ── Sensitivity (brief-sens-3 R-sens3-4…6) ─────────────────────── -->
+                    <StackPanel IsVisible="{Binding IsSensitivity}" Grid.IsSharedSizeScope="True">
+                        <!-- S-parameter blocks: there BEFORE a run, so a fixed block can be left out before its cost is spent. -->
+                        <StackPanel IsVisible="{Binding HasSnpBlocks}" Margin="0,4,0,0">
+                            <TextBlock Text="S-parameter blocks" Classes="section" Margin="6,0,4,1"/>
+                            <ListBox Classes="rows" ItemsSource="{Binding VisibleSnpBlocks}" SelectedItem="{Binding SelectedSnpBlock}"
+                                     Background="Transparent">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate x:DataType="yld:SnpBlockRowViewModel">
+                                        <Grid ColumnDefinitions="Auto,Auto,*" ToolTip.Tip="{Binding TieReason}">
+                                            <CheckBox Grid.Column="0" IsChecked="{Binding IsIncluded}" IsEnabled="{Binding IsEnabled}"
+                                                      MinWidth="0" Padding="0" Margin="0,0,4,0"
+                                                      ToolTip.Tip="Include — step this block's entries; unticked, it is left out (snpexclude)"/>
+                                            <TextBlock Grid.Column="1" Text="{Binding Instance}" FontSize="12" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                            <TextBlock Grid.Column="2" Text="{Binding Summary}" Classes="muted" VerticalAlignment="Center"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                            <Button Content="{Binding ShowAllSnpText}" Command="{Binding ToggleShowAllSnpCommand}" IsVisible="{Binding HasMoreSnpBlocks}"
+                                    FontSize="11" Padding="6,0" MinHeight="0" Margin="6,1,0,0" Background="Transparent"
+                                    Foreground="{DynamicResource SystemAccentColor}"/>
+                        </StackPanel>
+
+                        <!-- The ranking: one row per contributor of the selected response, by entry, port or instance. -->
+                        <Grid ColumnDefinitions="Auto,*,Auto" Margin="6,6,4,1">
+                            <TextBlock Grid.Column="0" Text="Ranking" Classes="section" Margin="0,0,8,0"/>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                <RadioButton Classes="mode" GroupName="sensBy" Content="Entry" IsChecked="{Binding IsByEntry}"
+                                             ToolTip.Tip="One row per value — an S-parameter's dB and phase together"/>
+                                <RadioButton Classes="mode" GroupName="sensBy" Content="Port" IsChecked="{Binding IsByPort}"
+                                             ToolTip.Tip="An S-parameter block by port: every entry in that port's row or column (shares overlap)"/>
+                                <RadioButton Classes="mode" GroupName="sensBy" Content="Instance" IsChecked="{Binding IsByInstance}"
+                                             ToolTip.Tip="One row per part, block or variable — expand to its entries"/>
+                            </StackPanel>
+                            <Button Grid.Column="2" Content="Run Yield on these" FontSize="11" Padding="6,1" MinHeight="0"
+                                    Command="{Binding RunYieldOnTheseCommand}"
+                                    ToolTip.Tip="The Yield panel, on this schematic, in Monte Carlo mode"/>
+                        </Grid>
+                        <ComboBox Classes="cell" Margin="6,0,4,2" HorizontalAlignment="Stretch" IsVisible="{Binding HasSensResult}"
+                                  ItemsSource="{Binding SensResponses}" SelectedItem="{Binding SelectedSensResponse}"
+                                  ToolTip.Tip="The goal or measure ranked — or select a goal under Specs"/>
+                        <!-- The header's columns are the rows' (the item's 6 px padding, the expander, the shared basis). -->
+                        <Grid Margin="6,0,6,0" IsVisible="{Binding HasSensRows}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="18"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="sensBasis"/>
+                                <ColumnDefinition Width="60"/>
+                                <ColumnDefinition Width="92"/>
+                                <ColumnDefinition Width="18"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="2" Text="basis" Classes="muted" Margin="6,0,8,0"/>
+                            <TextBlock Grid.Column="3" Text="Δ" Classes="muted" TextAlignment="Right" Margin="0,0,6,0"
+                                       ToolTip.Tip="(m⁺ − m⁻)/2 — a goal's change in normalized margin, a measure's in its own unit; a group's is √ΣΔ²"/>
+                            <TextBlock Grid.Column="4" Text="{Binding ShareHeader}" Classes="muted"/>
+                        </Grid>
+                        <ListBox x:Name="SensList" Classes="rows" ItemsSource="{Binding SensRows}" SelectedItem="{Binding SelectedSensRow}"
+                                 Background="Transparent">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate x:DataType="yld:SensitivityRowViewModel">
+                                    <Border Classes.excludedrow="{Binding IsExcluded}" Background="Transparent">
+                                        <Border.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Header="Add tolerance" Command="{Binding AddToleranceCommand}" IsEnabled="{Binding CanAddTolerance}"/>
+                                                <MenuItem Header="Send to Tuning" Command="{Binding SendToTuningCommand}" IsEnabled="{Binding CanTuneOrOptimize}"/>
+                                                <MenuItem Header="Use in Optimizer" Command="{Binding UseInOptimizerCommand}" IsEnabled="{Binding CanTuneOrOptimize}"/>
+                                            </ContextMenu>
+                                        </Border.ContextMenu>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="18"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto" SharedSizeGroup="sensBasis"/>
+                                                <ColumnDefinition Width="60"/>
+                                                <ColumnDefinition Width="48"/>
+                                                <ColumnDefinition Width="44"/>
+                                                <ColumnDefinition Width="18"/>
+                                            </Grid.ColumnDefinitions>
+                                            <Border Grid.Column="0" Width="{Binding Indent}"/>
+                                            <Button Grid.Column="1" Classes="tb" IsVisible="{Binding CanExpand}" Command="{Binding ToggleExpandCommand}"
+                                                    ToolTip.Tip="Expand">
+                                                <Panel>
+                                                    <mi:MaterialIcon Kind="ChevronRight" Width="12" Height="12" IsVisible="{Binding !IsExpanded}"/>
+                                                    <mi:MaterialIcon Kind="ChevronDown" Width="12" Height="12" IsVisible="{Binding IsExpanded}"/>
+                                                </Panel>
+                                            </Button>
+                                            <CheckBox Grid.Column="1" IsVisible="{Binding IsExcluded}" IsChecked="{Binding IsIncluded}"
+                                                      MinWidth="0" Padding="0" ToolTip.Tip="Include in the next run"/>
+                                            <TextBlock Grid.Column="2" Text="{Binding Label}" FontSize="12" VerticalAlignment="Center"
+                                                       TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Label}"/>
+                                            <TextBlock Grid.Column="3" Text="{Binding Basis}" Classes="muted" VerticalAlignment="Center" Margin="6,0,8,0"/>
+                                            <TextBlock Grid.Column="4" Text="{Binding DeltaText}" FontSize="11" TextAlignment="Right"
+                                                       VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                            <yldv:FractionBar Grid.Column="5" Height="12" Upper="{Binding Share}" IsVisible="{Binding HasShare}"
+                                                              VerticalAlignment="Center" ToolTip.Tip="{Binding ShareText}"/>
+                                            <TextBlock Grid.Column="6" Text="{Binding ShareText}" FontSize="11" TextAlignment="Right"
+                                                       VerticalAlignment="Center"/>
+                                            <Panel Grid.Column="7" Background="Transparent" ToolTip.Tip="{Binding StatusTip}" VerticalAlignment="Center">
+                                                <mi:MaterialIcon Kind="SineWave" Width="13" Height="13" IsVisible="{Binding IsNonlinear}" Foreground="#FFD98C2F"/>
+                                                <mi:MaterialIcon Kind="ContrastCircle" Width="13" Height="13" IsVisible="{Binding IsOneSided}" Foreground="#FFD98C2F"/>
+                                                <mi:MaterialIcon Kind="AlertCircleOutline" Width="13" Height="13" IsVisible="{Binding IsFailed}" Foreground="#FFD94F4F"/>
+                                            </Panel>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+
+                        <!-- The SnP matrix tile (R-sens3-6). -->
+                        <Border IsVisible="{Binding HasSnpTile}" Margin="6,6,4,0" Padding="6" CornerRadius="3"
+                                BorderBrush="{DynamicResource SystemBaseLowColor}" BorderThickness="1">
+                            <StackPanel DataContext="{Binding SnpTile}" x:DataType="yld:SnpMatrixTileViewModel" Spacing="4">
+                                <WrapPanel Orientation="Horizontal">
+                                    <TextBlock Text="{Binding Instance}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                    <CheckBox Content="Include" FontSize="11" MinHeight="0" Margin="0,0,10,0"
+                                              IsChecked="{Binding IsIncluded}" IsEnabled="{Binding IsIncludeEnabled}"
+                                              ToolTip.Tip="Step this block's entries — the same setting as its row under S-parameter blocks"/>
+                                    <CheckBox Content="Tie reciprocal pairs (S21 = S12)" FontSize="11" MinHeight="0"
+                                              IsChecked="{Binding IsTied}" IsEnabled="{Binding CanTie}"
+                                              ToolTip.Tip="{Binding TieTip}" ToolTip.ShowOnDisabled="True"/>
+                                </WrapPanel>
+                                <ItemsControl ItemsSource="{Binding Cells}" HorizontalAlignment="Left">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <UniformGrid Columns="{Binding Ports}" x:DataType="yld:SnpMatrixTileViewModel"/>
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="yld:SnpMatrixCell">
+                                            <Border Classes="snpcell" Classes.port="{Binding InSelectedPort}" Classes.entry="{Binding IsSelectedEntry}"
+                                                    Width="{Binding Size}" Height="{Binding Size}" Margin="1"
+                                                    Background="{Binding Intensity, Converter={x:Static yldv:YieldToolView.ShareBrush}}"
+                                                    ToolTip.Tip="{Binding Tip}">
+                                                <TextBlock Text="{Binding Label}" FontSize="9" IsVisible="{Binding ShowLabel}"
+                                                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                           Foreground="{Binding Intensity, Converter={x:Static yldv:YieldToolView.ShareText}}"/>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding HasShares}">
+                                    <TextBlock Text="0" Classes="muted" VerticalAlignment="Center"/>
+                                    <Border Width="90" Height="8" CornerRadius="2" Background="{x:Static yldv:YieldToolView.ShareLegend}"
+                                            VerticalAlignment="Center"/>
+                                    <TextBlock Text="{Binding LegendMaxText}" Classes="muted" VerticalAlignment="Center"/>
+                                    <TextBlock Text="share" Classes="muted" VerticalAlignment="Center" Margin="4,0,0,0"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
                     <!-- ── DOE: the plan, the effects, the model optimum ─────────────────── -->
                     <StackPanel IsVisible="{Binding IsDoe}">
                         <TextBlock Text="Factors" Classes="section" Margin="6,6,4,0"/>
@@ -744,11 +957,19 @@
                         </Button>
                     </Grid>
                     <ListBox Classes="rows" ItemsSource="{Binding Goals}" SelectedItem="{Binding SelectedGoal}"
-                             Background="Transparent">
+                             Background="Transparent" Grid.IsSharedSizeScope="True">
                         <ListBox.ItemTemplate>
                             <DataTemplate x:DataType="yld:YieldGoalRowViewModel">
-                                <Grid ColumnDefinitions="Auto,*,Auto,Auto,60" ToolTip.Tip="{Binding Summary}"
+                                <!-- The readout column is shared, so every row's Use box lines up whatever its readout says. -->
+                                <Grid ToolTip.Tip="{Binding Summary}"
                                       Opacity="{Binding IsEnabled, Converter={x:Static yldv:YieldToolView.EnabledOpacity}}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto" SharedSizeGroup="goalReadout"/>
+                                        <ColumnDefinition Width="60"/>
+                                    </Grid.ColumnDefinitions>
                                     <TextBlock Grid.Column="0" Text="{Binding Name}" FontSize="12" VerticalAlignment="Center"
                                                Margin="0,0,6,0"/>
                                     <TextBlock Grid.Column="1" Text="{Binding Summary}" Classes="muted" VerticalAlignment="Center"
@@ -759,6 +980,13 @@
                                     <TextBlock Grid.Column="3" Text="{Binding YieldText}" FontSize="11" MinWidth="46"
                                                TextAlignment="Right" VerticalAlignment="Center" Margin="0,0,4,0"
                                                ToolTip.Tip="{Binding IntervalText}"/>
+                                    <!-- Sensitivity: m₀ and σ_g, and the first-order pass estimate when SENS-1 D5 allows one. -->
+                                    <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="6"
+                                                IsVisible="{Binding HasSens}" VerticalAlignment="Center" HorizontalAlignment="Left">
+                                        <TextBlock Text="{Binding SensText}" FontSize="11"
+                                                   ToolTip.Tip="The normalized margin at the nominal (m₀) and the predicted spread (σ)"/>
+                                        <TextBlock Text="{Binding EstimateText}" Classes="muted" VerticalAlignment="Center"/>
+                                    </StackPanel>
                                     <yldv:FractionBar Grid.Column="4" Height="12" IsVisible="{Binding HasYield}"
                                                       Lower="{Binding Lower}" Upper="{Binding Upper}" Value="{Binding Estimate}"
                                                       Target="{Binding Target}" IsBad="{Binding BelowTarget}"

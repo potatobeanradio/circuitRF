@@ -159,8 +159,15 @@ public sealed class SensitivityResult
 /// </summary>
 public sealed class SensitivityRun
 {
+    /// <summary>The group a run's result lives in (<c>sens</c>).</summary>
+    public const string ResultGroup = SensitivityDataSet.Group;
+
     /// <summary>Above this asymmetry a contributor is flagged nonlinear (D6).</summary>
     public const double NonlinearThreshold = 0.5;
+
+    /// <summary>A step that moves a response by no more than this fraction of the largest step's move is round-off: its
+    /// asymmetry is not read as nonlinearity (D6).</summary>
+    public const double RoundOff = 1e-9;
 
     /// <summary>The step of a phase with no tolerance, in degrees (R-sens1-1).</summary>
     public const double PhaseStepDegrees = 1;
@@ -670,6 +677,14 @@ public sealed class SensitivityRun
                 else { delta = double.NaN; status = SensitivityStatus.Failed; }
                 list.Add(new SensitivityContributor(_factors[i], delta, 0, mp, mm, asym, status, why));
             }
+            // D6 flags a step pair that disagrees — but two steps that both moved the response by round-off alone
+            // (a goal that does not depend on the value at all, its Δ ~1e-15) disagree about nothing.
+            double Moved(SensitivityContributor c) => Math.Max(double.IsFinite(c.Plus) ? Math.Abs(c.Plus - m0) : 0,
+                                                               double.IsFinite(c.Minus) ? Math.Abs(c.Minus - m0) : 0);
+            double floor = RoundOff * list.Select(Moved).DefaultIfEmpty(0).Max();
+            for (int i = 0; i < list.Count; i++)
+                if (list[i].Status == SensitivityStatus.Nonlinear && Moved(list[i]) <= floor)
+                    list[i] = list[i] with { Status = SensitivityStatus.Ok, Asymmetry = 0 };
             double sum = list.Where(c => double.IsFinite(c.Delta)).Sum(c => c.Delta * c.Delta);
             var ranked = list.Select(c => c with { Share = double.IsFinite(c.Delta) && sum > 0 ? c.Delta * c.Delta / sum : 0 })
                              .OrderBy(c => double.IsFinite(c.Delta) ? 0 : 1)

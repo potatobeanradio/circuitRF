@@ -118,6 +118,12 @@ public static class TuningSetupEdits
             entry.Spread       = tunable.IsPartValue
                 // A vendor part's value draws with the part's own tolerance (brief vendorlib-5 D1): screened to its limit.
                 ? new StatSpread { Tol = TunableKey.PartTolerance, Sigmas = ToleranceText.DefaultSigmas, Trunc = ToleranceText.DefaultSigmas }
+                // An SnP entry's offset is 0 at nominal, so a percent of it is no spread at all: σ is absolute, the
+                // sensitivity run's own default step (brief-sens-3).
+                : tunable.SnpEntry is { } se && entry.Distribution == StatDistribution.Gauss
+                    ? new StatSpread { Sd = se.Kind == RfCore.SnpOffsetKind.Db
+                        ? SensitivitySettings.DefaultSnpDb.ToString(System.Globalization.CultureInfo.InvariantCulture) + " dB"
+                        : SensitivitySettings.DefaultSnpDeg.ToString(System.Globalization.CultureInfo.InvariantCulture) + " deg" }
                 : ToleranceText.DefaultSpread(entry.Distribution);
         }
         entry.Stat = on;
@@ -184,6 +190,21 @@ public static class TuningSetupEdits
         next.Doe = settings.Clone();
         return next;
     }
+
+    /// <summary>The <c>sensitivity</c> line replaced (brief-sens-3 R-sens3-4) — absent when every value is its default,
+    /// since a default is never written (R-sens1-5).</summary>
+    public static TuningSetup WithSensitivity(TuningSetup? setup, SensitivitySettings settings)
+    {
+        var next = setup?.Clone() ?? new TuningSetup();
+        next.Sensitivity = IsDefault(settings) ? null : settings.Clone();
+        return next;
+    }
+
+    /// <summary>True when <paramref name="s"/> says nothing a default does not.</summary>
+    public static bool IsDefault(SensitivitySettings s)
+        => s.Factors is null && s.Step is null && s.Sigma is null && s.Ports is null && s.Snp is null
+           && string.IsNullOrEmpty(s.SnpExclude) && s.SnpDb is null && s.SnpDeg is null && s.Responses is null
+           && s.Parallelism is null && s.Extra is null;
 
     /// <summary>True when <paramref name="s"/> says nothing a default does not.</summary>
     public static bool IsDefault(StatisticsSettings s)

@@ -52,6 +52,7 @@ reference/measurements.html | Post-processing a run into named quantities.
 reference/netlist.html      | The .cnl elaborated-netlist format.
 reference/data-display.html | Plots, tables, trace cards and markers.
 reference/tuning.html       | Sliders on any value, with every Data Display following them as you drag.
+reference/sensitivity.html  | Which values move each goal, ranked at the design as it stands — S-parameter blocks included.
 reference/optimization.html | Goals, variables and algorithms: letting circuitRF find values that meet the specification.
 reference/yield.html        | Tolerances, Monte Carlo, yield and corners: how many builds meet the specification.
 reference/derived-metrics.html | Stability, passivity, group delay and the passive impedance readouts — with the equations.

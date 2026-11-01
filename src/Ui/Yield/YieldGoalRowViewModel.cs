@@ -85,5 +85,24 @@ public sealed partial class YieldGoalRowViewModel : ObservableObject
         BelowTarget  = target is { } t && y.Upper < t;
     }
 
+    // ---- Sensitivity (brief-sens-3 R-sens3-5) ------------------------------------
+
+    /// <summary><c>m₀ 0.42 · σ 0.13</c> — the normalized margin at the nominal and the predicted spread; empty before a run.</summary>
+    [ObservableProperty] private string _sensText = "";
+
+    /// <summary><c>97.1 % estimated</c> — only when every contributor stepped by σ (SENS-1 D5).</summary>
+    [ObservableProperty] private string _estimateText = "";
+
+    [ObservableProperty] private bool _hasSens;
+
+    internal void ShowSens(CircuitRF.Design.Statistics.SensitivityResponse? r)
+    {
+        HasSens = r is not null;
+        SensText = r is null ? "" : $"m₀ {G(r.Nominal)} · σ {G(r.Spread)}";
+        EstimateText = r?.Estimate is { } e ? $"{Percent(e)} estimated" : "";
+    }
+
+    private static string G(double v) => double.IsFinite(v) ? v.ToString("G3", CultureInfo.InvariantCulture) : "—";
+
     internal static string Percent(double fraction) => (100 * fraction).ToString("0.0", CultureInfo.InvariantCulture) + " %";
 }

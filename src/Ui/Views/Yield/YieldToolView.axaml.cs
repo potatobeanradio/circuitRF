@@ -1,4 +1,5 @@
 using System;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Data;
@@ -32,6 +33,21 @@ public partial class YieldToolView : UserControl
     public static readonly IValueConverter FailBrush =
         new FuncValueConverter<bool, IBrush?>(fail => fail ? new SolidColorBrush(Color.FromRgb(0xD9, 0x4F, 0x4F)) : null);
 
+    /// <summary>A matrix-tile cell's share on the tile's one sequential scale, 0 (clear) to its maximum (accent).</summary>
+    public static readonly IValueConverter ShareBrush = new FuncValueConverter<double, IBrush?>(t =>
+        t <= 0 ? Brushes.Transparent : new SolidColorBrush(Color.FromArgb((byte)(36 + 219 * Math.Clamp(t, 0, 1)), 0x2F, 0x7F, 0xD9)));
+
+    /// <summary>A cell's label reads white once its fill is dark.</summary>
+    public static readonly IValueConverter ShareText = new FuncValueConverter<double, object?>(t => t > 0.55 ? Brushes.White : AvaloniaProperty.UnsetValue);
+
+    /// <summary>The tile's legend: the same scale, 0 to the maximum.</summary>
+    public static readonly IBrush ShareLegend = new LinearGradientBrush
+    {
+        StartPoint = new Avalonia.RelativePoint(0, 0.5, Avalonia.RelativeUnit.Relative),
+        EndPoint   = new Avalonia.RelativePoint(1, 0.5, Avalonia.RelativeUnit.Relative),
+        GradientStops = { new GradientStop(Color.FromArgb(36, 0x2F, 0x7F, 0xD9), 0), new GradientStop(Color.FromArgb(255, 0x2F, 0x7F, 0xD9), 1) },
+    };
+
     private YieldPanelViewModel? _panel;
 
     private FlyoutBase AddFlyout => AddButton.Flyout!;
@@ -58,13 +74,26 @@ public partial class YieldToolView : UserControl
             _panel.GeneratorRequested    -= OnGeneratorRequested;
             _panel.Add.PropertyChanged   -= OnAddChanged;
         }
-        _panel = (DataContext as YieldTool)?.Panel;
+        _panel = (DataContext as YieldPanelTool)?.Panel;
         if (_panel is not null)
         {
             _panel.CorrelationsRequested += OnCorrelationsRequested;
             _panel.GeneratorRequested    += OnGeneratorRequested;
             _panel.Add.PropertyChanged   += OnAddChanged;
+            if (this.IsAttachedToVisualTree()) _panel.SetShown(true);
         }
+    }
+
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        _panel?.SetShown(true);
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnDetachedFromVisualTree(e);
+        _panel?.SetShown(false);
     }
 
     private void OnAddChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -111,5 +140,6 @@ public partial class YieldToolView : UserControl
         }
     }
 
-    private void OnHelp(object? sender, RoutedEventArgs e) => DocLauncher.Open("reference/yield.html");
+    private void OnHelp(object? sender, RoutedEventArgs e)
+        => DocLauncher.Open(_panel?.Mode == YieldMode.Sensitivity ? "reference/sensitivity.html" : "reference/yield.html");
 }

@@ -50,7 +50,7 @@ public sealed partial class YieldPanelViewModel
     public bool IsDoe { get => Mode == YieldMode.Doe; set { if (value) Mode = YieldMode.Doe; } }
 
     /// <summary>The statistics line's settings — every mode's but DOE's, which has its own line.</summary>
-    public bool ShowStatisticsSettings => Mode != YieldMode.Doe;
+    public bool ShowStatisticsSettings => Mode is not (YieldMode.Doe or YieldMode.Sensitivity);
 
     // ---- The doe line (collapsed to a summary, as the others) -------------------------
 

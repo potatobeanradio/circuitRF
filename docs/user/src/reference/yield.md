@@ -38,6 +38,10 @@ focused schematic many times — once per **trial** — with each toleranced val
 distribution, and counts how many trials meet the specs. It follows the focused schematic the same way
 [Tuning](tuning.html) and the Optimizer do.
 
+To find which values are worth a tolerance before counting anything, start with the
+[Sensitivity](sensitivity.html) panel: it ranks what moves each spec in a handful of simulations, and
+its **Run Yield on these** brings you here.
+
 Everything you set here — tolerances, correlations, which goals are specs, the run settings, the
 corners — is saved with the schematic, marks it changed and can be undone, one step per change. A run
 and its trial table are not: they belong to the session. A run never changes the schematic's values.
@@ -355,7 +359,8 @@ predicted beside what the simulation gave. **Send to Tuning** loads the point in
 page, each run taking a second or two: a bandpass filter estimated against specs loosened from its
 optimizer goals, with its one-click yield display saved; an amplifier with six generated temperature and
 supply corners and a statistical corner, failing hot at low supply until it is optimized across all of
-them; and a bias divider centred from 73 % to 99 %. Its README walks through each with the numbers a run
+them; a bias divider centred from 73 % to 99 %; and an amplifier and spiral inductor, both Touchstone
+blocks, for the [Sensitivity](sensitivity.html) panel. Its README walks through each with the numbers a run
 gives.
 
 ## From the command line, and from an agent {#headless}

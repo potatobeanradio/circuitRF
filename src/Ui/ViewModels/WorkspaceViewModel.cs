@@ -17655,9 +17655,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         if (dockable is SchematicDocument closedOptimized
             && ReferenceEquals(closedOptimized.NavFrames[0].Session, _factory.OptimizerTool?.Panel.Tuned))
             ClearOptimizerPanel();
-        if (dockable is SchematicDocument closedYield
-            && ReferenceEquals(closedYield.NavFrames[0].Session, _factory.YieldTool?.Panel.Tuned))
-            ClearYieldPanel();
+        if (dockable is SchematicDocument closedYield)
+            ClearYieldPanel(closedYield.NavFrames[0].Session);   // the Yield and Sensitivity panels on it
 
         // If the retained schematic is closed, blank the Analyses panel.
         if (ReferenceEquals(dockable, _lastActiveSchematicDoc))

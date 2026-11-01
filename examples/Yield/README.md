@@ -1,7 +1,8 @@
 # Yield, Corners and Centering
 
 Three test benches, one for each question the **Yield** panel answers (View ▸ Panels ▸ Yield, tabbed
-behind the Optimizer). Each one already has its tolerances, its specs and its run settings saved in
+behind the Optimizer), and a fourth for the question to ask before any of them — which values matter —
+in the **Sensitivity** panel (the tab between Tuning and the Optimizer). Each one already has its tolerances, its specs and its run settings saved in
 the schematic, so you can open it, pick the mode named below and press **▶** before reading anything
 else. Every run here takes a second or two.
 
@@ -148,6 +149,50 @@ With **Surrogate: quadratic** in the centering settings, each position costs 10 
 of 100, because circuitRF fits `Vout` to a smooth curve through a few runs and counts the yield on
 the curve. The whole run takes 410 simulations instead of 4,100 and verifies at 99.5 %
 [98.8 %, 99.8 %] — the final check is still simulated.
+
+## SnpSensitivity — which S-parameters move the gain
+
+An amplifier's Touchstone block (`AMP`) driving a spiral inductor's (`L1`) into a 0.5 pF shunt
+capacitor. Two specs over 2.4–3 GHz: `Gain` dB(S21) **≥ 9 dB** and `Isolation` dB(S12) **≤ −36 dB**.
+`C1.C` is ± 5 % (3σ); nothing else has a tolerance.
+
+Open the schematic and the **Sensitivity** tab. Before anything runs it lists both blocks under
+**S-parameter blocks**:
+
+| Block | | Why |
+|---|---|---|
+| `AMP` | 2 ports · **untied** · 8 factors | an amplifier: S21 is about 50 dB above S12, so each of the four entries moves on its own |
+| `L1` | 2 ports · **tied** · 6 factors | a passive spiral: S21 = S12, so one value moves both |
+
+and the cost: 15 factors, **31 simulations**. Press **▶**. For `Gain` the list reads:
+
+| Entry | basis | share |
+|---|---|---|
+| `L1 · S21` | 0.1 dB · 1° | 54 % |
+| `AMP · S21` | 0.1 dB · 1° | 33 % |
+| `L1 · S11` | 0.1 dB · 1° | 6.4 % |
+| `AMP · S22` | 0.1 dB · 1° | 5.5 % |
+| `C1.C` | σ | 1.1 % |
+
+The two S21s are almost all of it — the gain is the amplifier's gain less the spiral's loss. `AMP · S11`
+and `AMP · S12` are last with 0 %: with 50 Ω at the input the gain does not depend on them. Choose
+`Isolation` in the picker and `AMP · S12` comes second, at 42 % — the same block, ranked by a different
+spec. Under **Specs**, `Gain` reads m₀ 0.048 · σ 0.020: met at the nominal, by about two and a half times
+what all these steps together move it.
+
+Things to click:
+
+- **Port** regroups the same run by port (no simulation): `L1 · port 1` and `L1 · port 2` lead, at 60 % and
+  54 % — they overlap, because S21 belongs to both ports.
+- **Instance**, then the arrow on `L1`, opens it into its entries, and each entry into its dB and phase.
+- Select `AMP · S21`: the matrix tile opens, `S21` the darkest cell, with **Tie reciprocal pairs** unticked.
+  Select `L1 · S21` and the tile colours S21 and S12 together, ticked.
+- Untick `AMP` under S-parameter blocks: the cost drops to **15 simulations**, and after **▶** `AMP` is a
+  greyed `excluded` row at the bottom — left out, not found insensitive.
+- Right-click `C1.C` ▸ **Send to Tuning**, or `L1 · S21` ▸ **Add tolerance** — then **Run Yield on these**
+  opens the Yield panel on the same schematic in Monte Carlo mode.
+
+The command line runs the same: `circuitrf yield sens SnpSensitivity/schematic/SnpSensitivity.csch --by port`.
 
 ## Settings
 

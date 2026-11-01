@@ -11,6 +11,7 @@ using CircuitRF.Ui.DataDisplay;
 using CircuitRF.Ui.DataDisplay.ViewModels;
 using CircuitRF.Ui.Docking;
 using CircuitRF.Ui.Schematic;
+using CircuitRF.Ui.Views.Dialogs;
 using CircuitRF.Ui.Yield;
 using Avalonia.Input.Platform;
 using Dock.Model.Core;
@@ -29,6 +30,7 @@ namespace CircuitRF.Ui.ViewModels;
 public partial class WorkspaceViewModel
 {
     private YieldPanelViewModel?   _wiredYieldPanel;
+    private YieldPanelViewModel?   _wiredSensitivityPanel;
     private ToleranceSurfaceRelay? _toleranceSurface;
 
     /// <summary>What every schematic session's Inspector and canvas ask about tolerances — forwarded to the current
@@ -38,29 +40,58 @@ public partial class WorkspaceViewModel
 
     /// <summary>The Tuning panel's rule (<see cref="RouteTuningPanel"/>): a schematic sets the panel, any other document
     /// keeps the last one, and only closing it empties the panel.</summary>
+    /// <summary>The Yield and the Sensitivity panels (brief-sens-3 R-sens3-2) follow the same schematic by the same rule.</summary>
     private void RouteYieldPanel(IDockable? document)
     {
         WireYieldPanel();
-        if (_factory.YieldTool?.Panel is not { } panel) return;
-
-        if (document is SchematicDocument sd)
-            panel.SetActiveSchematic(sd.NavFrames[0].Session, InstancesRootHeaderOf(sd));
-        else if (!panel.HasSchematic && _lastActiveSchematicDoc is { } kept)
-            panel.SetActiveSchematic(kept.NavFrames[0].Session, InstancesRootHeaderOf(kept));
+        foreach (var panel in YieldPanels())
+        {
+            if (document is SchematicDocument sd)
+                panel.SetActiveSchematic(sd.NavFrames[0].Session, InstancesRootHeaderOf(sd));
+            else if (!panel.HasSchematic && _lastActiveSchematicDoc is { } kept)
+                panel.SetActiveSchematic(kept.NavFrames[0].Session, InstancesRootHeaderOf(kept));
+        }
     }
 
-    private void ClearYieldPanel()
+    /// <summary>Clears every Yield-view panel on <paramref name="closed"/> (or all of them).</summary>
+    private void ClearYieldPanel(SchematicViewModel? closed = null)
     {
         WireYieldPanel();
-        _factory.YieldTool?.Panel.SetActiveSchematic(null, null);
+        foreach (var panel in YieldPanels())
+            if (closed is null || ReferenceEquals(panel.Tuned, closed)) panel.SetActiveSchematic(null, null);
+    }
+
+    private IEnumerable<YieldPanelViewModel> YieldPanels()
+    {
+        if (_factory.YieldTool?.Panel is { } y) yield return y;
+        if (_factory.SensitivityTool?.Panel is { } s) yield return s;
     }
 
     private void WireYieldPanel()
     {
+        var sens = _factory.SensitivityTool?.Panel;
+        if (sens is not null && !ReferenceEquals(sens, _wiredSensitivityPanel))
+        {
+            _wiredSensitivityPanel = sens;
+            WireYieldViewPanel(sens);
+            sens.OpenSensitivityDisplay = OpenSensitivityDisplayAsync;
+            sens.SendKeysToTuning = keys => SendKeysToTuning(sens, keys);
+            sens.OpenYieldOnRanked = untoleranced => OpenYieldOnRanked(sens, untoleranced);
+            sens.Confirm = (heading, lines) => TextConfirmDialog.AskAsync(ResolveOwner(null), "Sensitivity", heading,
+                string.Join("\n", lines) + "\n\nBoth are one undo step.", "Remove and Tie");
+            sens.ReportProblem = text => Messages.Error($"Sensitivity: {text}");
+        }
+
         var panel = _factory.YieldTool?.Panel;
         if (ReferenceEquals(panel, _wiredYieldPanel) || panel is null) return;
         _wiredYieldPanel = panel;
+        WireYieldViewPanel(panel);
+    }
 
+    /// <summary>What both panels of the Yield view are handed (brief-sens-3 R-sens3-2): one schematic's undo stack, its
+    /// bench prepared as Simulate would netlist it, and the Tuning/Optimizer doors.</summary>
+    private void WireYieldViewPanel(YieldPanelViewModel panel)
+    {
         panel.Defer          = a => Avalonia.Threading.Dispatcher.UIThread.Post(a, Avalonia.Threading.DispatcherPriority.Background);
         panel.PostToUi       = a => Avalonia.Threading.Dispatcher.UIThread.Post(a);
         panel.EditCommitted += OnAnalysesEditCommitted;   // ⌘Z with the panel focused (Tuning's rule)
@@ -70,7 +101,7 @@ public partial class WorkspaceViewModel
         panel.KitStatisticsFor = YieldKitStatisticsFor;
         panel.KitAxesFor     = _ => AvailableCornerAxes;
         panel.OpenCornerPicker = () => ShowToolPanelCore(DockPanelIds.Analyses);
-        panel.EditGoalInOptimizer = EditGoalInOptimizer;
+        panel.EditGoalInOptimizer = goal => EditGoalInOptimizer(panel, goal);
         panel.SendToTuningTarget  = (values, label) => SendYieldTrialToTuning(panel, values, label);
         panel.SendToOptimizerTarget = (values, label) => SendDoeOptimumToOptimizer(panel, values, label);
         panel.SessionForDrawing   = d => SessionForTunedDrawing(d, openTab: true);   // Push of centred nominals
@@ -123,12 +154,12 @@ public partial class WorkspaceViewModel
 
     /// <summary>Edit goals…: goals are authored in the Optimizer (yield overview D4) — focused on the Yield panel's
     /// schematic, with the goal selected.</summary>
-    private void EditGoalInOptimizer(string? goal)
+    private void EditGoalInOptimizer(YieldPanelViewModel panel, string? goal)
     {
-        var bench = _factory.YieldTool?.Panel.Tuned;
+        var bench = panel.Tuned;
         ShowToolPanelCore(DockPanelIds.Optimizer);
         if (_factory.OptimizerTool?.Panel is not { } optimizer || bench is null) return;
-        if (!ReferenceEquals(optimizer.Tuned, bench)) optimizer.SetActiveSchematic(bench, _factory.YieldTool?.Panel.HeaderLabel);
+        if (!ReferenceEquals(optimizer.Tuned, bench)) optimizer.SetActiveSchematic(bench, panel.HeaderLabel);
         optimizer.SelectedGoal = goal is null ? optimizer.SelectedGoal : optimizer.Goals.FirstOrDefault(g => g.Name == goal);
     }
 
@@ -140,6 +171,72 @@ public partial class WorkspaceViewModel
         if (!ReferenceEquals(tuning.Tuned, bench)) tuning.SetActiveSchematic(bench, panel.HeaderLabel);
         ShowToolPanelCore(DockPanelIds.Tuning);
         tuning.LoadValues(values, label);
+    }
+
+    /// <summary>Send to Tuning from the Sensitivity panel's ranked list (brief-sens-3 R-sens3-5): the Tuning panel, on the
+    /// same schematic, adds the keys through its own door.</summary>
+    private void SendKeysToTuning(YieldPanelViewModel panel, IReadOnlyCollection<string> keys)
+    {
+        if (_factory.TuningTool?.Panel is not { } tuning || panel.Tuned is not { } bench) return;
+        if (!ReferenceEquals(tuning.Tuned, bench)) tuning.SetActiveSchematic(bench, panel.HeaderLabel);
+        ShowToolPanelCore(DockPanelIds.Tuning);
+        tuning.SetTuned(keys, on: true);
+    }
+
+    /// <summary>Run Yield on these (brief-sens-3 R-sens3-5): the Yield panel on the same schematic, in Monte Carlo mode,
+    /// saying how many ranked factors a Monte Carlo would hold at nominal.</summary>
+    private void OpenYieldOnRanked(YieldPanelViewModel from, int untoleranced)
+    {
+        WireYieldPanel();
+        ShowToolPanelCore(DockPanelIds.Yield);
+        if (_factory.YieldTool?.Panel is not { } yield || from.Tuned is not { } bench) return;
+        if (!ReferenceEquals(yield.Tuned, bench)) yield.SetActiveSchematic(bench, from.HeaderLabel);
+        yield.Mode = YieldMode.MonteCarlo;
+        yield.StatusText = untoleranced == 0
+            ? "Every ranked factor has a tolerance"
+            : $"{untoleranced} ranked factor{(untoleranced == 1 ? " has" : "s have")} no tolerance and stay{(untoleranced == 1 ? "s" : "")} at nominal — add one to draw {(untoleranced == 1 ? "it" : "them")}";
+    }
+
+    /// <summary>The Optimizer's Sensitivity button with no run (brief-sens-3 R-sens3-8): the Sensitivity panel, on the same
+    /// schematic — there is one nominal sensitivity, not two.</summary>
+    private void OpenSensitivityPanelOn(SchematicViewModel? bench, string? header)
+    {
+        WireYieldPanel();
+        ShowToolPanelCore(DockPanelIds.Sensitivity);
+        if (_factory.SensitivityTool?.Panel is { } sens && bench is not null && !ReferenceEquals(sens.Tuned, bench))
+            sens.SetActiveSchematic(bench, header);
+    }
+
+    /// <summary>
+    /// The sensitivity display (brief-sens-3 R-sens3-7): <c>&lt;design&gt;.sens.cdd</c> beside <c>&lt;design&gt;.sens.npy</c>,
+    /// a Pareto per goal at the list's level — <see cref="ContributionParetoPreset"/> over the <c>sens</c> group. Written
+    /// at the level asked; one already open is focused as it stands.
+    /// </summary>
+    private async Task OpenSensitivityDisplayAsync(string resultPath, DataSet result, SensitivityLevel level, IReadOnlyList<string> responses)
+    {
+        string cdd = Path.ChangeExtension(Path.GetFullPath(resultPath), ".cdd");
+        if (!_openDocsByPath.ContainsKey(cdd))
+        {
+            var config = ContributionParetoPreset.Document(result, Path.GetFullPath(resultPath), SensitivityRun.ResultGroup,
+                                                           level.ToString().ToLowerInvariant(), responses);
+            if (config is null)
+            {
+                Messages.Warning("This result ranks no goal or measure, so there is no sensitivity display of it.", resultPath);
+                return;
+            }
+            try
+            {
+                await File.WriteAllTextAsync(cdd, JsonSerializer.Serialize(config, DataDisplayJson.Options),
+                                             new System.Text.UTF8Encoding(false));
+            }
+            catch (Exception ex)
+            {
+                Messages.Warning($"Sensitivity display could not be written: {ex.Message}", cdd);
+                return;
+            }
+            _factory.ProjectTreeTool?.Refresh();
+        }
+        OpenOrActivateDataDisplay(cdd);
     }
 
     /// <summary>Send to Optimizer from the DOE mode (brief-yield-14 R-ya14-7): the Optimizer, on the same schematic,

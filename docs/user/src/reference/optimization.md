@@ -592,7 +592,9 @@ that side, and is not offered when the part is at the end of what the library ho
 
 **Sensitivity** (in the toolbar) simulates once more per variable around the best point and shows, on
 each row, how much of the cost that variable moves — which variables matter, and which could be left
-alone.
+alone. Before any run, the same button opens the [Sensitivity](sensitivity.html) panel, which ranks
+every value of the design against each goal at the values as they stand — a good way to choose which
+variables to optimize.
 
 ## Keeping the result {#keeping}
 

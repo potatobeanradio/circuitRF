@@ -574,10 +574,25 @@ public sealed partial class OptimizerPanelViewModel
         _task = StartBackground(() => Background(run, circuit, ct, () => run.SnapAndPolish(ct)));
     }
 
-    /// <summary>The sensitivity at the best point (TO-8 R-to8-6): each variable's share, on its row.</summary>
-    [RelayCommand(CanExecute = nameof(CanKeep))]
+    /// <summary>With no run: the Sensitivity panel on the same schematic (brief-sens-3 R-sens3-8) — one nominal
+    /// sensitivity, not two. Null leaves the button for a finished run only.</summary>
+    public Action<SchematicViewModel, string?>? OpenSensitivityPanel { get; set; }
+
+    private bool CanSensitivity() => CanKeep() || (_run is null && _tuned is not null && OpenSensitivityPanel is not null);
+
+    /// <summary>The button's tooltip: what it does now.</summary>
+    public string SensitivityTip => CanKeep() ? "Sensitivity at the best point" : "Open the Sensitivity panel";
+
+    /// <summary>The sensitivity at the best point (TO-8 R-to8-6): each variable's share, on its row. With no run, the
+    /// Sensitivity panel on this schematic.</summary>
+    [RelayCommand(CanExecute = nameof(CanSensitivity))]
     private void Sensitivity()
     {
+        if (!CanKeep())
+        {
+            if (_run is null && _tuned is { } bench) OpenSensitivityPanel?.Invoke(bench, HeaderLabel);
+            return;
+        }
         if (_run is not { } run || _cts is null) return;
         var ct = _cts.Token;
         StatusText = "Sensitivity…";
@@ -607,6 +622,7 @@ public sealed partial class OptimizerPanelViewModel
         SendToTuningCommand.NotifyCanExecuteChanged();
         SnapAndPolishCommand.NotifyCanExecuteChanged();
         SensitivityCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(SensitivityTip));
         ResetCommand.NotifyCanExecuteChanged();
     }
 }

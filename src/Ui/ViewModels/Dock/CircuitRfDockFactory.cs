@@ -102,6 +102,8 @@ public class CircuitRfDockFactory : Factory
     public OptimizerTool?    OptimizerTool    { get; private set; }
     /// <summary>brief-yield-10's Yield panel, following the focused schematic and tabbed behind the Optimizer.</summary>
     public YieldTool?        YieldTool        { get; private set; }
+    /// <summary>brief-sens-3's Sensitivity panel — the Yield panel's view, one mode — tabbed between Tuning and the Optimizer.</summary>
+    public SensitivityTool?  SensitivityTool  { get; private set; }
 
     /// <summary>
     /// RC-10's one history panel (§5.10) — the versions and the restore points in one list.
@@ -216,6 +218,7 @@ public class CircuitRfDockFactory : Factory
             TuningTool      = new TuningTool();
             OptimizerTool   = new OptimizerTool();
             YieldTool       = new YieldTool();
+            SensitivityTool = new SensitivityTool();
             HistoryTool = new HistoryTool();
             WBondProfileTool    = new WBondProfileTool();
             WBondInductanceTool = new WBondInductanceTool();
@@ -237,6 +240,7 @@ public class CircuitRfDockFactory : Factory
             TuningTool      ??= new TuningTool();
             OptimizerTool   ??= new OptimizerTool();
             YieldTool       ??= new YieldTool();
+            SensitivityTool ??= new SensitivityTool();
             HistoryTool ??= new HistoryTool();
             WBondProfileTool    ??= new WBondProfileTool();
             WBondInductanceTool ??= new WBondInductanceTool();
@@ -263,6 +267,7 @@ public class CircuitRfDockFactory : Factory
             DockPanelIds.Tuning      => TuningTool,
             DockPanelIds.Optimizer   => OptimizerTool,
             DockPanelIds.Yield       => YieldTool,
+            DockPanelIds.Sensitivity => SensitivityTool,
             DockPanelIds.History     => HistoryTool,
             DockPanelIds.WBondProfile    => WBondProfileTool,
             DockPanelIds.WBondInductance => WBondInductanceTool,
@@ -789,6 +794,7 @@ public class CircuitRfDockFactory : Factory
         DockPanelIds.Tuning      => TuningTool,
         DockPanelIds.Optimizer   => OptimizerTool,
         DockPanelIds.Yield       => YieldTool,
+        DockPanelIds.Sensitivity => SensitivityTool,
         DockPanelIds.History     => HistoryTool,
         DockPanelIds.WBondProfile    => WBondProfileTool,
         DockPanelIds.WBondInductance => WBondInductanceTool,
@@ -800,7 +806,7 @@ public class CircuitRfDockFactory : Factory
     [
         ProjectTreeTool, PaletteTool, PropertiesTool, AnalysesTool, MessagesTool, DrcTool, LvsTool,
         WBondProfileTool, WBondInductanceTool, HistoryTool, InstancesTool, ImpedanceTool, TuningTool,
-        OptimizerTool, YieldTool, ReviewTool,
+        SensitivityTool, OptimizerTool, YieldTool, ReviewTool,
     ];
 
     // ── Auto-hidden panels ────────────────────────────────────────────────────

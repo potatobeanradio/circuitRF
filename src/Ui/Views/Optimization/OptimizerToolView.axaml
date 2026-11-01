@@ -379,7 +379,7 @@
                         </Button.Flyout>
                     </Button>
                     <Button Classes="tb" Command="{Binding SensitivityCommand}"
-                            ToolTip.Tip="Sensitivity at the best point">
+                            ToolTip.Tip="{Binding SensitivityTip}">
                         <mi:MaterialIcon Kind="ChartBellCurve"/>
                     </Button>
                 </StackPanel>

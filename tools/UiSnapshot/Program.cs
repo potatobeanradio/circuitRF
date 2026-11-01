@@ -32,6 +32,8 @@ using CircuitRF.Design.Layout;
 // UiSnapshot --standalone [--iq <file>] -o <out.png> [--tab n] [--size WxH] [steps]
 // UiSnapshot --tuning <file.csch> -o <out.png> [--size WxH] [steps]
 // UiSnapshot --optimizer <file.csch> -o <out.png> [--optimize] [--size WxH] [steps]
+// UiSnapshot --yield <file.csch> -o <out.png> [--mode sensitivity|montecarlo|yield|corners|centering|doe] [--run]
+//            [--by entry|port|instance] [--select <key>] [--expand <label>] [--exclude <instance>]... [--snp-off] [--sens-display] [--size WxH] [steps]
 // UiSnapshot --clay <file.clay> -o <out.png> [--hide <layer>] [--lock <layer>] [--size WxH] [steps]
 //            [--rclick x,y] [--menu <header>] [--type <text>] [--button <label>]
 //            [--impedance <freq|none>] [--impedance-layer <name>]... [--finding <kind>] [--impedance-panel]
@@ -51,6 +53,12 @@ using CircuitRF.Design.Layout;
 // --optimizer opens the Optimizer window on a schematic as the shell hosts it, its circuit prepared as the workspace's
 // own PrepareTunedCircuit prepares it; --optimize presses Run and waits for the run to finish before the capture. It
 // prints the algorithm menu (a greyed entry with its reason), every variable row and the status line.
+//
+// --yield opens the Yield panel on a schematic as the shell hosts it — or, with --mode sensitivity, the Sensitivity
+// panel (the same view over a one-mode panel, brief-sens-3). --exclude unticks an S-parameter block and --snp-off the
+// S-parameters master, each as the panel's own edit (on the loaded copy; nothing is saved); --run presses Run and waits;
+// --by picks the ranking's level, --expand opens an Instance row, --select picks a ranked row (or a block) by label or
+// key, which shows an SnP instance's matrix tile. It prints the blocks, the cost and the ranked rows.
 //
 // --signal opens the Signal Designer window itself on a MOD_Source carrying those carriers (netlist form,
 // Carrier[i]), waits for its preview — generated through the cache a simulation reads — and photographs the
@@ -131,6 +139,9 @@ string? c3dSetups = null, c3dDeleteFields = null, c3dRow = null;
 // --c3d-pick <object>: the 3D view's click on that object (hovered at a pixel the CPU picker says shows it).
 CircuitRF.Ui.ThreeD.C3dEditorViewModel? c3dShown = null;
 string? optimizer = null;
+string? yieldCsch = null, yieldMode = null, yieldBy = null, yieldExpand = null;
+bool yieldRun = false, yieldSnpOff = false, yieldDisplay = false;
+var yieldExclude = new List<string>();
 string? ctech = null;
 bool optimize = false;
 string? cmc = null, cmcImport = null, cmcStep = null, cmcRun = null;
@@ -173,6 +184,13 @@ for (int i = 0; i < args.Length; i++)
         case "--tuning" when i + 1 < args.Length: tuning = Path.GetFullPath(args[++i]); break;
         case "--optimizer" when i + 1 < args.Length: optimizer = Path.GetFullPath(args[++i]); break;
         case "--optimize": optimize = true; break;
+        case "--yield" when i + 1 < args.Length: yieldCsch = Path.GetFullPath(args[++i]); break;
+        case "--mode" when i + 1 < args.Length: yieldMode = args[++i].ToLowerInvariant(); break;
+        case "--by" when i + 1 < args.Length: yieldBy = args[++i].ToLowerInvariant(); break;
+        case "--expand" when i + 1 < args.Length: yieldExpand = args[++i]; break;
+        case "--exclude" when i + 1 < args.Length: yieldExclude.Add(args[++i]); break;
+        case "--snp-off": yieldSnpOff = true; break;
+        case "--sens-display": yieldDisplay = true; break;
         case "--clay" when i + 1 < args.Length: clay = Path.GetFullPath(args[++i]); break;
         case "--cem" when i + 1 < args.Length: cem = Path.GetFullPath(args[++i]); break;
         case "--ctech" when i + 1 < args.Length: ctech = Path.GetFullPath(args[++i]); break;
@@ -186,6 +204,8 @@ for (int i = 0; i < args.Length; i++)
         case "--import" when i + 1 < args.Length: cmcImport = Path.GetFullPath(args[++i]); break;
         case "--export-data" when i + 1 < args.Length: exportData = Path.GetFullPath(args[++i]); break;
         case "--step" when i + 1 < args.Length: cmcStep = args[++i]; break;
+        // A bare --run (nothing after it, or another flag) is the Yield panel's Run; with a value, the composer's key.
+        case "--run" when i + 1 >= args.Length || args[i + 1].StartsWith('-'): yieldRun = true; break;
         case "--run" when i + 1 < args.Length: cmcRun = args[++i]; break;
         case "--marker": cmcMarkers++; break;
         case "--hide" when i + 1 < args.Length: layerToggles.Add((args[++i], true)); break;
@@ -258,7 +278,7 @@ if (reviewPanel is not null && output is not null)
     return ShowReviewPanel(reviewPanel, output, sizeGiven ? width : 420, sizeGiven ? height : 760);
 }
 bool vendorMode = palette is not null || schematic is not null || archive is not null || manageLibraries is not null || addVendorLibrary is not null || gdsfactory is not null || csym is not null;
-if ((cdd is null && c3dSetups is null && signal.Count == 0 && snp is null && !standalone && tuning is null && optimizer is null && clay is null && cem is null && ctech is null && cmc is null && image is null && exportData is null && !vendorMode) || output is null || view is not ("canvas" or "inspector" or "display"))
+if ((cdd is null && c3dSetups is null && signal.Count == 0 && snp is null && !standalone && tuning is null && optimizer is null && yieldCsch is null && clay is null && cem is null && ctech is null && cmc is null && image is null && exportData is null && !vendorMode) || output is null || view is not ("canvas" or "inspector" or "display"))
 {
     Console.Error.WriteLine("usage: UiSnapshot <file.cdd> -o <out.png> [--view canvas|inspector|display] [--plot n] [--size WxH] "
                           + "[--results <dir>] [--click x,y] [--drag x0,y0:x1,y1] [--key <Key>] [--shot <png>] ...\n"
@@ -267,6 +287,7 @@ if ((cdd is null && c3dSetups is null && signal.Count == 0 && snp is null && !st
                           + "       UiSnapshot --standalone [--iq <file>] -o <out.png> [--tab n] [--size WxH] [steps]\n"
                           + "       UiSnapshot --tuning <file.csch> -o <out.png> [--size WxH] [steps]\n"
                           + "       UiSnapshot --optimizer <file.csch> -o <out.png> [--optimize] [--size WxH] [steps]\n"
+                          + "       UiSnapshot --yield <file.csch> -o <out.png> [--mode sensitivity|…] [--run] [--by entry|port|instance] [--select <key>] [--expand <label>] [--exclude <instance>]... [--snp-off] [--size WxH] [steps]\n"
                           + "       UiSnapshot --clay <file.clay> -o <out.png> [--hide <layer>] [--lock <layer>] [--size WxH] [steps]\n"
                           + "       UiSnapshot --cem <file.cem> -o <out.png> [--size WxH] [steps]\n"
                           + "       UiSnapshot --ctech <file.ctech> -o <out.png> [--tab n] [--unit <unit>] [--rename-stackup old=new] [--rename-tech <name>] [--size WxH] [steps]\n"
@@ -622,6 +643,84 @@ else if (optimizer is not null)
     foreach (var r in panel.Variables)
         Console.WriteLine($"variable {r.Key}: {r.DiscreteText} | {r.MinText} .. {r.MaxText} | best {r.BestText} {r.UnitText}");
     Console.WriteLine($"status: {panel.StatusText} | {panel.RunStatusText}");
+}
+else if (yieldCsch is not null)
+{
+    // The Yield panel — or the Sensitivity panel, the same view over a one-mode panel — as the shell hosts it, its
+    // circuit prepared as the Optimizer's branch prepares it, its catalog discovered in the file's workspace.
+    var (model, _, _) = SchematicPersistence.LoadFromFile(yieldCsch);
+    var vm = new SchematicViewModel(model, messageSink: null);
+    string? ws = CircuitRF.Design.Workspace.WorkspaceRootFinder.WorkspaceDirOf(Path.GetDirectoryName(yieldCsch));
+    CircuitRF.Ui.ViewModels.Dock.YieldPanelTool tool = yieldMode == "sensitivity"
+        ? new CircuitRF.Ui.ViewModels.Dock.SensitivityTool() : new CircuitRF.Ui.ViewModels.Dock.YieldTool();
+    var panel = tool.Panel;
+    panel.PostToUi = a => Dispatcher.UIThread.Post(a);
+    panel.Discover = t => CircuitRF.Design.Optimization.TunableCatalog.Discover(t.EditModel, DiskCellResolver.Instance, ws);
+    panel.PrepareCircuit = t =>
+    {
+        string name = Path.GetFileNameWithoutExtension(yieldCsch);
+        var extracted = NetExtractor.Extract(t.EditModel, name, DiskCellResolver.Instance);
+        string text = CircuitRF.Core.Netlist.CnlWriter.Write(extracted.TestBench, extracted.Library, "yield snapshot");
+        return CircuitRF.Design.Circuit.PreparedCircuit.FromText(text, ws ?? Path.GetDirectoryName(yieldCsch), ws, name, extracted);
+    };
+    panel.SourcePathFor = _ => yieldCsch;
+    // The shell's doors that open another panel: present, so their buttons show as the shell shows them.
+    panel.OpenYieldOnRanked = n => Console.WriteLine($"Run Yield on these: {n} untoleranced");
+    // The display button writes <design>.sens.cdd as the shell does; snapshot that file with the .cdd mode.
+    panel.OpenSensitivityDisplay = (path, data, level, responses) =>
+    {
+        string cddPath = Path.ChangeExtension(Path.GetFullPath(path), ".cdd");
+        var doc = CircuitRF.Render.DataDisplay.ContributionParetoPreset.Document(data, Path.GetFullPath(path),
+            CircuitRF.Design.Statistics.SensitivityRun.ResultGroup, level.ToString().ToLowerInvariant(), responses);
+        if (doc is null) { Console.WriteLine("display: nothing ranked"); return Task.CompletedTask; }
+        File.WriteAllText(cddPath, System.Text.Json.JsonSerializer.Serialize(doc, CircuitRF.Render.DataDisplay.DataDisplayJson.Options));
+        Console.WriteLine($"display: wrote {cddPath}");
+        return Task.CompletedTask;
+    };
+    panel.SetActiveSchematic(vm, Path.GetFileName(yieldCsch));
+    if (yieldMode is not null and not "sensitivity")
+        panel.Mode = yieldMode switch
+        {
+            "montecarlo" => CircuitRF.Ui.Yield.YieldMode.MonteCarlo, "corners" => CircuitRF.Ui.Yield.YieldMode.Corners,
+            "centering" => CircuitRF.Ui.Yield.YieldMode.Centering, "doe" => CircuitRF.Ui.Yield.YieldMode.Doe,
+            _ => CircuitRF.Ui.Yield.YieldMode.Yield,
+        };
+    foreach (var inst in yieldExclude) panel.SetSnpIncluded(inst, false);
+    if (yieldSnpOff) panel.SensSnp = false;
+    host = new Window { Width = sizeGiven ? width : 460, Height = sizeGiven ? height : 720,
+                        Content = new CircuitRF.Ui.Views.Yield.YieldToolView { DataContext = tool } };
+    host.Show();
+    Pump();
+    if (yieldRun)
+    {
+        panel.RunCommand.Execute(null);
+        var until = DateTime.UtcNow.AddSeconds(300);
+        while (panel.IsRunActive && DateTime.UtcNow < until) { Dispatcher.UIThread.RunJobs(); Thread.Sleep(10); }
+        Pump();
+    }
+    if (yieldBy is not null)
+        panel.SensLevel = yieldBy switch
+        {
+            "port" => CircuitRF.Ui.Yield.SensitivityLevel.Port, "instance" => CircuitRF.Ui.Yield.SensitivityLevel.Instance,
+            _ => CircuitRF.Ui.Yield.SensitivityLevel.Entry,
+        };
+    if (yieldDisplay) panel.OpenDisplayCommand.Execute(null);
+    if (yieldExpand is not null && panel.SensRows.FirstOrDefault(r => r.Label == yieldExpand) is { CanExpand: true } open)
+        open.ToggleExpandCommand.Execute(null);
+    if (select is not null)   // --select, shared with the schematic branch
+    {
+        if (panel.SensRows.FirstOrDefault(r => r.Label == select || r.Keys.Contains(select)) is { } row) panel.SelectedSensRow = row;
+        else if (panel.SnpBlocks.FirstOrDefault(b => b.Instance == select) is { } block) panel.SelectedSnpBlock = block;
+        else Console.Error.WriteLine($"--select: nothing named '{select}'");
+    }
+    Pump();
+    foreach (var b in panel.SnpBlocks) Console.WriteLine($"block {(b.IsIncluded ? "[x]" : "[ ]")}{(b.IsEnabled ? "" : " (disabled)")} {b.Instance}: {b.Summary}");
+    Console.WriteLine($"plan: {panel.SensPlanText}");
+    foreach (var r in panel.SensRows)
+        Console.WriteLine($"row {new string(' ', 2 * r.Depth)}{r.Label} | {r.Basis} | {r.DeltaText} | {r.ShareText}{(r.IsExcluded ? " | excluded" : "")}{(r.StatusTip is { } tip ? " | " + tip.Replace('\n', ' ') : "")}");
+    foreach (var g in panel.Goals) Console.WriteLine($"goal {g.Name}: {g.SensText} {g.EstimateText}");
+    if (panel.SnpTile is { } tile) Console.WriteLine($"tile {tile.Instance}: {tile.Ports} ports, tied={tile.IsTied}, {tile.TieTip}, max {tile.LegendMaxText}");
+    Console.WriteLine($"status: {panel.StatusText}");
 }
 else if (standalone)
 {
