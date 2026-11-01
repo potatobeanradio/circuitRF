@@ -228,7 +228,7 @@ Wrote hero1.s2p
 |---|---|
 | `--freq start:stop:step` | Override the sweep. **Omit it and the netlist's own `sparam` analysis is used**, segments and all — which is almost always what you want, because it is the sweep the design was set up with. |
 | `--set <var=expr>` | Override a global variable **before elaboration**, [as `hb` does](#set). Repeatable. Everything written in terms of it re-derives, including the netlist's own sweep. |
-| `-o`, `--output <path>` | Where the result goes, and **its extension picks the format**: `.s1p`…`.s99p` for a Touchstone, or `.npy` / `.mat` / `.txt` for the cubes. Omitted, it is the input file with its extension changed to `.sNp` for the port count found. |
+| `-o`, `--output <path>` | Where the result goes, and **its extension picks the format**: `.s1p`…`.s99p` for a Touchstone, or `.npy` / `.mat` / `.ds` / `.txt` for the cubes. Omitted, it is the input file with its extension changed to `.sNp` for the port count found. |
 
 There is no stdout table. The port count in the default extension comes from the network, so a
 circuit that grew a port writes `.s3p` without you editing the command. An extension naming no format
@@ -281,7 +281,7 @@ measurement names the result by the DC analysis that declares it (`DC1.V("n_drai
 the window — and
 [exits 2](#exit) if the solve did not converge — the operating point is the one thing every nonlinear
 analysis is built on, so a non-converged DC is a failed run, not a partial one. `-o` writes the result
-cubes and the measurements as `.npy`, `.mat` or `.txt`.
+cubes and the measurements as `.npy`, `.mat`, `.ds` or `.txt`.
 
 **A `parametric_sweep` that wraps the DC analysis runs as the sweep**, as it does for `sparam`, `hb`, `lp`
 and `lpp`: an I–V family is a DC inside two sweeps, and running the DC alone would return one point. The
@@ -338,7 +338,7 @@ Analysis: HB1   (hero2.cnl)
 | `--tol t`, `--max-iter N` | Override the convergence tolerance and the iteration cap. |
 | `--rows N`, `--all` | How much of each printed table to show. Default is a truncated head. |
 | `--diag` | Engine convergence diagnostics, on stderr. |
-| `-o`, `--export <path>` | Export the results. **The extension picks the format**: `.mat`, `.npy` or `.txt`. |
+| `-o`, `--export <path>` | Export the results. **The extension picks the format**: `.mat`, `.npy`, `.ds` or `.txt`. |
 
 ### `--set` overrides the VARIABLE, not the number {#set}
 
@@ -411,7 +411,7 @@ Analysis: LP1   (hero3.cnl)
 | `--maxharm K`, `--tol t`, `--max-iter N` | Override the inner HB settings. |
 | `--rows N`, `--all` | `--all` dumps every cube instead of the summary table. |
 | `--diag` | Engine diagnostics, on stderr. |
-| `-o`, `--export <path>` | `.mat`, `.npy`, `.txt` — **or `.spl` / `.lpcwave`**, the loadpull interchange formats. |
+| `-o`, `--export <path>` | `.mat`, `.npy`, `.ds`, `.txt` — **or `.spl` / `.lpcwave`**, the loadpull interchange formats. |
 
 ### One row per Γ point, at the point that answers the question {#lp-rows}
 
@@ -994,7 +994,7 @@ what it is about), progress on stderr. The formats are in [File Formats](file-fo
 | Noun | What it does |
 |---|---|
 | `new <doc.cmc> --kind active\|passive` | Creates the document. Active: `--network` a stock network (`gan-two-shell`, `classic-shell`, `series-only`, copied beside the document) or a six-pin `.csch`; `--fingers N0 --unit-width W0` (`"125 um"`), the measured device's periphery. |
-| `import <doc.cmc> <source…> --as <kind>` | Adds a data set — `DcIv`, `PulsedIv`, `SParams`, `PulsedSParams`, `SimulatedTables`, `LargeSignal` or `PassiveSParams` — and imports it. A folder is every file in it. `--pattern` reads a Touchstone set's bias from its file names (`--pattern-source comment` from its comments), and a passive document needs one only to read a family's `{geometry}`; `--map` says what a CSV column (`Vg=vgs:V`) or an array (`vg=vgs`, `f=freq:GHz`) holds — for a `.mat`, `.npz` or `.npy` it may be left out, and the map the array names suggest is used and printed; `--condition Key=Value` sets a measurement condition (`ReferencePlane=device`, `AmbientC=25`, `Quiescent.Vds=28`); `--name`, `--format`, `--no-header`, `--delimiter`, `--z0`, `--freq`. `--dry-run` reads the sources and writes nothing, and needs no `.cmc` yet: what the file holds, the map, what would be read and how, and every warning ([Model Data](model-data.html#dry-run)). |
+| `import <doc.cmc> <source…> --as <kind>` | Adds a data set — `DcIv`, `PulsedIv`, `SParams`, `PulsedSParams`, `SimulatedTables`, `LargeSignal` or `PassiveSParams` — and imports it. A folder is every file in it. `--pattern` reads a Touchstone set's bias from its file names (`--pattern-source comment` from its comments), and a passive document needs one only to read a family's `{geometry}`; `--map` says what a CSV column (`Vg=vgs:V`) or an array (`vg=vgs`, `f=freq:GHz`; in a `.ds`, `SP1.S=S`, with a leading `-` to read it negated: `-DC1.VD.i=id`) holds — for a `.mat`, `.npz`, `.ds` or `.npy` it may be left out, and the map the array names suggest is used and printed; `--condition Key=Value` sets a measurement condition (`ReferencePlane=device`, `AmbientC=25`, `Quiescent.Vds=28`); `--name`, `--format`, `--no-header`, `--delimiter`, `--z0`, `--freq`. `--dry-run` reads the sources and writes nothing, and needs no `.cmc` yet: what the file holds, the map, what would be read and how, and every warning ([Model Data](model-data.html#dry-run)). |
 | `deembed <doc.cmc>` | Removes the pads and the network: a line for each, then a line per data set of its intrinsic bias ranges. |
 | `fit <doc.cmc> --step <step>` | `network`, `thermal`, `current`, `traps`, `charge`, `passive`, or `all` — every step the document needs, in order. The document's own settings, with `--method` (the step's method: `MultiBias`, `ANN`, `Table`, `Equation`, a trap model — with no pulsed I–V, written with the `Shift` coupling), `--seed n` and, for a passive document, `--topology` written into them first. To change anything else, edit the step's `Settings` in the `.cmc` and fit again. Only DC I–V is needed: with no S data, `all` holds the network at its values and the charge step writes the capacitances typed in its `Settings.Typed` (zero when none are). |
 | `check-charge <doc.cmc>` | Checks the fitted charges conserve charge. Also `<design.cnl> --device X1 --bias vgs,vds`, for any device in a netlist (`--region` adds the capacitance check over a rectangle). Exit **3** when the spurious DC at the gate is above `--threshold` (default 0.1 % of the fundamental gate current). |

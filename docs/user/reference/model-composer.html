@@ -166,12 +166,12 @@ of the network step alone still refuses.</p>
 <tr>
 <td><code>DcIv</code></td>
 <td>Terminal voltages and currents at DC</td>
-<td>CSV, <code>.mat</code>, <code>.npz</code>, <code>.npy</code></td>
+<td>CSV, <code>.mat</code>, <code>.npz</code>, <code>.ds</code>, <code>.npy</code></td>
 </tr>
 <tr>
 <td><code>PulsedIv</code></td>
 <td>The same, sampled during a pulse from a stated quiescent point</td>
-<td>CSV, <code>.mat</code>, <code>.npz</code>, <code>.npy</code></td>
+<td>CSV, <code>.mat</code>, <code>.npz</code>, <code>.ds</code>, <code>.npy</code></td>
 </tr>
 <tr>
 <td><code>SParams</code></td>
@@ -186,7 +186,7 @@ of the network step alone still refuses.</p>
 <tr>
 <td><code>SimulatedTables</code></td>
 <td>Currents, and an admittance or S table, a capacitance table, or both; optionally intrinsic voltages</td>
-<td><code>.mat</code>, <code>.npz</code>, <code>.npy</code></td>
+<td><code>.mat</code>, <code>.npz</code>, <code>.ds</code>, <code>.npy</code></td>
 </tr>
 <tr>
 <td><code>LargeSignal</code></td>
@@ -1393,7 +1393,7 @@ while it ran is kept on top of the result.</li>
 </tr>
 <tr>
 <td>Map</td>
-<td>CSV, <code>.mat</code>, <code>.npz</code>, <code>.npy</code>: what each column or array holds, <code>name=quantity[:unit]</code>. For an array file it is filled in from the array names</td>
+<td>CSV, <code>.mat</code>, <code>.npz</code>, <code>.ds</code>, <code>.npy</code>: what each column or array holds, <code>name=quantity[:unit]</code>; a leading <code>-</code> reads an array negated (<code>-DC1.VD.i=id</code>). For an array file it is filled in from the array names</td>
 </tr>
 <tr>
 <td>Conditions</td>

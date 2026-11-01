@@ -4,7 +4,7 @@ slug: app-notes/an04-model-from-a-reference-kit.html
 doc-kind: Application Note
 breadcrumb: Docs > App Notes > AN-04 A model from a reference kit
 lede: A transistor that already has a model in another simulator's design kit can become a ComposedFET by sampling that model and fitting what it gives. Which runs to make in the source simulator, which plane to sample at and how to get there, what each Model Composer step does with the result, and how to check the model against the kit it came from.
-keywords: Model Composer, reference kit, design kit, PDK, nonlinear model, FET model, GaN HEMT, ComposedFET, .cmodel, simulated tables, intrinsic plane, negative network, de-embedding, extrinsic network, six-pin network, DC I-V, Y-parameters, capacitance table, self-heating, isothermal, validation, loadpull, Model Validation Report, application note
+keywords: Model Composer, reference kit, design kit, PDK, nonlinear model, FET model, GaN HEMT, ComposedFET, .cmodel, simulated tables, .ds, binary simulation dataset, intrinsic plane, negative network, de-embedding, extrinsic network, six-pin network, DC I-V, Y-parameters, capacitance table, self-heating, isothermal, validation, loadpull, Model Validation Report, application note
 ---
 
 <nav class="toc">
@@ -219,6 +219,18 @@ The composer reads a simulator's tables as named arrays: a MATLAB `.mat` (writte
 `scipy.io.savemat`) or a NumPy `.npz` (`numpy.savez`). Name the arrays as you like. Every array, its unit and the
 layouts the import accepts are in [File formats](../reference/model-data.html#format-arrays).
 
+**A simulator that saves a binary simulation dataset** (`.ds`) needs none of the writing below: import that file as
+it is. Its arrays are named after the analysis that produced them, `Group.Variable` — `DC1.Vgs`, `DC1.VD.i`, `SP1.S` —
+and a DC block and an S block swept over the same biases combine into one data set. The map is written by those names
+([A binary simulation dataset](../reference/model-data.html#format-ds)):
+
+```
+circuitrf model import kit.cmc kit_sweep.ds --as SimulatedTables --map DC1.Vgs=vgs --map DC1.Vds=vds --map -DC1.VD.i=id --map -DC1.VG.i=ig --map SP1.freq=freq --map SP1.S=S --condition ReferencePlane=intrinsic
+```
+
+The `-` in front of the two currents reads them negated, because a bias source's current is recorded flowing into the
+source, out of the device.
+
 **What the file holds.** For the runs above, swept as Vgs from −5 to 2 V in 0.1 V steps (71 values), Vds from 0 to
 40 V in 0.5 V steps (81), at 25, 85 and 150 °C, with Y at 1 GHz:
 
@@ -275,7 +287,7 @@ At the **device plane**, the file is the same with Y over a frequency span: `fre
 ([What the import checks](../reference/model-data.html#import-checks)):
 
 - **Signs.** Currents are positive **into** the terminal. A simulator that reports the drain current flowing out gives
-  a model with negative transconductance.
+  a model with negative transconductance. Map such an array with a leading `-` to read it negated: `-DC1.VD.i=id`.
 - **The port order.** Gate is port 1, drain port 2, source grounded.
 - **Units.** Arrays are read in SI and °C. A frequency in GHz, currents in mA or temperatures in kelvin need their unit
   in the map: `freq:GHz`, `id:mA`, `T:K`.
@@ -285,8 +297,9 @@ At the **device plane**, the file is the same with Y over a frequency span: `fre
 
 ## In Model Composer, step by step {#composer}
 
-**Tools ▸ Model Composer…**, choose **Active**, and import the `.npz` or `.mat` on the **Data** step as **Simulated
-tables**. The map field fills itself from the array names; check it against the arrays listed beside it. The steps then
+**Tools ▸ Model Composer…**, choose **Active**, and import the `.npz`, `.mat` or `.ds` on the **Data** step as
+**Simulated tables**. The map field fills itself from the array names; check it against the arrays listed beside it.
+For a `.ds` with a DC block and an S block, complete it with each quantity's `Group.Variable` name. The steps then
 run in order; for kit data some of them have nothing to do.
 
 <figure class="fig">

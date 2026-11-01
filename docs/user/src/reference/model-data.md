@@ -4,7 +4,7 @@ slug: reference/model-data.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Model Data
 lede: The data a Model Composer model is built from — what it needs, how to sample it in another simulator, and the file formats, each with an example to copy.
-keywords: Model Composer, data formats, import, .mat, .npz, .npy, CSV, Touchstone, simulated tables, design kit, reference kit, DC I-V, Y-parameters, S-parameters, capacitance table, bias grid, array layout, dry run, MATLAB, NumPy, scipy.io.savemat, numpy.savez
+keywords: Model Composer, data formats, import, .mat, .npz, .npy, .ds, binary simulation dataset, CSV, Touchstone, simulated tables, design kit, reference kit, DC I-V, Y-parameters, S-parameters, capacitance table, bias grid, array layout, dry run, MATLAB, NumPy, scipy.io.savemat, numpy.savez
 ---
 
 <nav class="toc">
@@ -130,7 +130,7 @@ copied, extended with more rows or arrays, and imported as shown. The
 |---|---|---|
 | I–V from a source-measure unit, a pulsed I–V system or a simulator's DC sweep | [CSV or TSV](#format-csv), one row per bias | `DcIv`, `PulsedIv` |
 | S-parameters from a network analyser, or a simulator's S at each bias | [A folder of Touchstone files](#format-touchstone), one per bias | `SParams`, `PulsedSParams` |
-| A simulator's tables: currents with Y, S or capacitances, over a bias grid | [Named arrays](#format-arrays): `.mat`, `.npz` or circuitRF's `.npy` | `SimulatedTables` (also `DcIv`) |
+| A simulator's tables: currents with Y, S or capacitances, over a bias grid | [Named arrays](#format-arrays): `.mat`, `.npz`, a [binary simulation dataset](#format-ds) (`.ds`) or circuitRF's `.npy` | `SimulatedTables` (also `DcIv`) |
 | Power sweeps and two-tone sweeps | [CSV](#format-large-signal) | `LargeSignal` |
 | Loadpull | `.spl` or `.lpcwave` | `LargeSignal` |
 
@@ -209,7 +209,8 @@ like any other, at `Vds = 0`.
 
 A simulator's tables are a few arrays over a bias grid. Write them as a MATLAB `.mat` (version 5, 7 or 7.3, from
 MATLAB, `scipy.io.savemat` or h5py) or as a NumPy `.npz` (`numpy.savez`). The names are yours: the map says which
-array is which quantity.
+array is which quantity. A simulator that saves its results as a
+[binary simulation dataset](#format-ds) (`.ds`) needs no conversion: the file imports as it is.
 
 | Quantity | Holds | Unit | Shape |
 |---|---|---|---|
@@ -303,6 +304,42 @@ too — check the plots`. When no order fits, it refuses, listing every mapped a
 settings can stay in the file. A struct's fields are mapped as `s.field`. A plain `.npy` from `numpy.save` holds one
 unnamed array and is refused; save the arrays together with `numpy.savez`. A `.npy` that circuitRF wrote, with its
 own named arrays, is read like a `.mat`. Touchstone files and a CSV, which most simulators can also write, work too.
+
+### Simulated tables as a binary simulation dataset {#format-ds}
+
+A binary simulation dataset (`.ds`) holds one block per analysis, each a nested sweep. The importer reads it as named
+arrays, like a `.mat`, and names each one `Group.Variable`: the group is the analysis's name (`DC1`, `SP1`), and
+every swept variable is an array of its values (`SP1.Vgs`) beside every result over the block's grid. A complete
+family of elements `S[1,1]` … `S[2,2]` reads as one array `SP1.S` with the two port axes last, so it maps as `S`; a
+family written as `S11` … `S22` maps element by element. Text variables, such as port names, are listed with the
+reason and ignored. A DC sweep and an S-parameter sweep at the same biases, Vgs inside Vds, list as
+
+```
+DC1.VD.i   17 × 41
+DC1.Vds    17
+DC1.VG.i   17 × 41
+DC1.Vgs    41
+SP1.freq   1
+SP1.S      17 × 41 × 1 × 2 × 2   complex
+SP1.Vds    17
+SP1.Vgs    41
+```
+
+Both blocks sweep the same Vgs and Vds, so their arrays combine into one data set: the bias from either block, the
+currents from `DC1` and S from `SP1`. With `Vgs` and `Vds` in both blocks, and the currents named after their
+sources, the names alone do not give the map; write it out:
+
+```
+circuitrf model import fet.cmc sweep.ds --as SimulatedTables --map DC1.Vgs=vgs --map DC1.Vds=vds --map -DC1.VD.i=id --map -DC1.VG.i=ig --map SP1.freq=freq --map SP1.S=S --condition ReferencePlane=intrinsic --condition AmbientC=25
+```
+
+**A leading `-` reads an array negated.** A voltage source's current is usually recorded flowing into the source,
+which is out of the device, so the bias sources' currents (`VD.i`, `VG.i`) come out with the wrong sign. `-DC1.VD.i=id`
+reads the drain current as positive into the drain. Mapped without the `-`, the import flags it and names the
+spelling: `To read it negated, map it as -DC1.VD.i=id.` The window's map takes the same spelling.
+
+**Only a full grid is read.** Every outer point must sweep the same inner values. A sweep whose inner points change
+from one outer point to the next is refused, naming the variable.
 
 ### Large-signal sweeps as CSV {#format-large-signal}
 

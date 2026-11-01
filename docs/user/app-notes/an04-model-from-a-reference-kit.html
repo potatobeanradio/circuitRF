@@ -292,6 +292,14 @@ frequency span, and the two cold biases (<code>Vds = 0 V</code>, pinched off and
 <p>The composer reads a simulator's tables as named arrays: a MATLAB <code>.mat</code> (written by MATLAB, or by Python with
 <code>scipy.io.savemat</code>) or a NumPy <code>.npz</code> (<code>numpy.savez</code>). Name the arrays as you like. Every array, its unit and the
 layouts the import accepts are in <a href="../reference/model-data.html#format-arrays">File formats</a>.</p>
+<p><strong>A simulator that saves a binary simulation dataset</strong> (<code>.ds</code>) needs none of the writing below: import that file as
+it is. Its arrays are named after the analysis that produced them, <code>Group.Variable</code> — <code>DC1.Vgs</code>, <code>DC1.VD.i</code>, <code>SP1.S</code> —
+and a DC block and an S block swept over the same biases combine into one data set. The map is written by those names
+(<a href="../reference/model-data.html#format-ds">A binary simulation dataset</a>):</p>
+<pre><code>circuitrf model import kit.cmc kit_sweep.ds --as SimulatedTables --map DC1.Vgs=vgs --map DC1.Vds=vds --map -DC1.VD.i=id --map -DC1.VG.i=ig --map SP1.freq=freq --map SP1.S=S --condition ReferencePlane=intrinsic
+</code></pre>
+<p>The <code>-</code> in front of the two currents reads them negated, because a bias source's current is recorded flowing into the
+source, out of the device.</p>
 <p><strong>What the file holds.</strong> For the runs above, swept as Vgs from −5 to 2 V in 0.1 V steps (71 values), Vds from 0 to
 40 V in 0.5 V steps (81), at 25, 85 and 150 °C, with Y at 1 GHz:</p>
 <table>
@@ -380,7 +388,7 @@ maps the arrays itself.</p>
 (<a href="../reference/model-data.html#import-checks">What the import checks</a>):</p>
 <ul>
 <li><strong>Signs.</strong> Currents are positive <strong>into</strong> the terminal. A simulator that reports the drain current flowing out gives
-a model with negative transconductance.</li>
+a model with negative transconductance. Map such an array with a leading <code>-</code> to read it negated: <code>-DC1.VD.i=id</code>.</li>
 <li><strong>The port order.</strong> Gate is port 1, drain port 2, source grounded.</li>
 <li><strong>Units.</strong> Arrays are read in SI and °C. A frequency in GHz, currents in mA or temperatures in kelvin need their unit
 in the map: <code>freq:GHz</code>, <code>id:mA</code>, <code>T:K</code>.</li>
@@ -389,8 +397,9 @@ instance scales from them (<a href="../reference/model-composer.html#scaling">Pe
 middle of the range you will use.</li>
 </ul>
 <h2 id="composer">In Model Composer, step by step</h2>
-<p><strong>Tools ▸ Model Composer…</strong>, choose <strong>Active</strong>, and import the <code>.npz</code> or <code>.mat</code> on the <strong>Data</strong> step as <strong>Simulated
-tables</strong>. The map field fills itself from the array names; check it against the arrays listed beside it. The steps then
+<p><strong>Tools ▸ Model Composer…</strong>, choose <strong>Active</strong>, and import the <code>.npz</code>, <code>.mat</code> or <code>.ds</code> on the <strong>Data</strong> step as
+<strong>Simulated tables</strong>. The map field fills itself from the array names; check it against the arrays listed beside it.
+For a <code>.ds</code> with a DC block and an S block, complete it with each quantity's <code>Group.Variable</code> name. The steps then
 run in order; for kit data some of them have nothing to do.</p>
 <figure class="fig">
 <svg viewBox="0 0 540 250" role="img" aria-label="The ten steps of an active Model Composer document and what each does with kit data; Pads and Traps have nothing to do" style="width:100%;height:auto">

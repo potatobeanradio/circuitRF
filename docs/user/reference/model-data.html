@@ -314,7 +314,7 @@ copied, extended with more rows or arrays, and imported as shown. The
 </tr>
 <tr>
 <td>A simulator's tables: currents with Y, S or capacitances, over a bias grid</td>
-<td><a href="#format-arrays">Named arrays</a>: <code>.mat</code>, <code>.npz</code> or circuitRF's <code>.npy</code></td>
+<td><a href="#format-arrays">Named arrays</a>: <code>.mat</code>, <code>.npz</code>, a <a href="#format-ds">binary simulation dataset</a> (<code>.ds</code>) or circuitRF's <code>.npy</code></td>
 <td><code>SimulatedTables</code> (also <code>DcIv</code>)</td>
 </tr>
 <tr>
@@ -382,7 +382,8 @@ like any other, at <code>Vds = 0</code>.</p>
 <h3 id="format-arrays">Simulated tables as named arrays</h3>
 <p>A simulator's tables are a few arrays over a bias grid. Write them as a MATLAB <code>.mat</code> (version 5, 7 or 7.3, from
 MATLAB, <code>scipy.io.savemat</code> or h5py) or as a NumPy <code>.npz</code> (<code>numpy.savez</code>). The names are yours: the map says which
-array is which quantity.</p>
+array is which quantity. A simulator that saves its results as a
+<a href="#format-ds">binary simulation dataset</a> (<code>.ds</code>) needs no conversion: the file imports as it is.</p>
 <table>
 <thead>
 <tr>
@@ -507,6 +508,33 @@ two frequencies) more than one order fits; the import reads the most likely one 
 settings can stay in the file. A struct's fields are mapped as <code>s.field</code>. A plain <code>.npy</code> from <code>numpy.save</code> holds one
 unnamed array and is refused; save the arrays together with <code>numpy.savez</code>. A <code>.npy</code> that circuitRF wrote, with its
 own named arrays, is read like a <code>.mat</code>. Touchstone files and a CSV, which most simulators can also write, work too.</p>
+<h3 id="format-ds">Simulated tables as a binary simulation dataset</h3>
+<p>A binary simulation dataset (<code>.ds</code>) holds one block per analysis, each a nested sweep. The importer reads it as named
+arrays, like a <code>.mat</code>, and names each one <code>Group.Variable</code>: the group is the analysis's name (<code>DC1</code>, <code>SP1</code>), and
+every swept variable is an array of its values (<code>SP1.Vgs</code>) beside every result over the block's grid. A complete
+family of elements <code>S[1,1]</code> … <code>S[2,2]</code> reads as one array <code>SP1.S</code> with the two port axes last, so it maps as <code>S</code>; a
+family written as <code>S11</code> … <code>S22</code> maps element by element. Text variables, such as port names, are listed with the
+reason and ignored. A DC sweep and an S-parameter sweep at the same biases, Vgs inside Vds, list as</p>
+<pre><code>DC1.VD.i   17 × 41
+DC1.Vds    17
+DC1.VG.i   17 × 41
+DC1.Vgs    41
+SP1.freq   1
+SP1.S      17 × 41 × 1 × 2 × 2   complex
+SP1.Vds    17
+SP1.Vgs    41
+</code></pre>
+<p>Both blocks sweep the same Vgs and Vds, so their arrays combine into one data set: the bias from either block, the
+currents from <code>DC1</code> and S from <code>SP1</code>. With <code>Vgs</code> and <code>Vds</code> in both blocks, and the currents named after their
+sources, the names alone do not give the map; write it out:</p>
+<pre><code>circuitrf model import fet.cmc sweep.ds --as SimulatedTables --map DC1.Vgs=vgs --map DC1.Vds=vds --map -DC1.VD.i=id --map -DC1.VG.i=ig --map SP1.freq=freq --map SP1.S=S --condition ReferencePlane=intrinsic --condition AmbientC=25
+</code></pre>
+<p><strong>A leading <code>-</code> reads an array negated.</strong> A voltage source's current is usually recorded flowing into the source,
+which is out of the device, so the bias sources' currents (<code>VD.i</code>, <code>VG.i</code>) come out with the wrong sign. <code>-DC1.VD.i=id</code>
+reads the drain current as positive into the drain. Mapped without the <code>-</code>, the import flags it and names the
+spelling: <code>To read it negated, map it as -DC1.VD.i=id.</code> The window's map takes the same spelling.</p>
+<p><strong>Only a full grid is read.</strong> Every outer point must sweep the same inner values. A sweep whose inner points change
+from one outer point to the next is refused, naming the variable.</p>
 <h3 id="format-large-signal">Large-signal sweeps as CSV</h3>
 <p>One row per input power. The quantities are <code>pin</code>, <code>pout</code>, <code>im3</code> and <code>im5</code> in dBm, <code>gain</code> in dB, <code>pae</code> and <code>de</code> in %,
 and the DC currents <code>id</code> and <code>ig</code> in any unit; <code>pin</code> is required. The conditions say what was measured: the

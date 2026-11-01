@@ -4,7 +4,7 @@ slug: reference/model-composer.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Model Composer
 lede: A nonlinear FET model, or a passive one, built from measured or simulated data — in a document you can close and pick up again.
-keywords: model extraction, device modeling, FET model, GaN HEMT, extrinsic network, de-embedding, pad de-embedding, cold-FET, multi-bias, bias plane, intrinsic, passive model, topology, .cmc, .cmodel, Verilog-A export, .va
+keywords: model extraction, device modeling, FET model, GaN HEMT, extrinsic network, de-embedding, pad de-embedding, cold-FET, multi-bias, .ds, binary simulation dataset, bias plane, intrinsic, passive model, topology, .cmc, .cmodel, Verilog-A export, .va
 ---
 
 <nav class="toc">
@@ -97,11 +97,11 @@ of the network step alone still refuses.
 
 | Kind | Holds | Read from |
 |---|---|---|
-| `DcIv` | Terminal voltages and currents at DC | CSV, `.mat`, `.npz`, `.npy` |
-| `PulsedIv` | The same, sampled during a pulse from a stated quiescent point | CSV, `.mat`, `.npz`, `.npy` |
+| `DcIv` | Terminal voltages and currents at DC | CSV, `.mat`, `.npz`, `.ds`, `.npy` |
+| `PulsedIv` | The same, sampled during a pulse from a stated quiescent point | CSV, `.mat`, `.npz`, `.ds`, `.npy` |
 | `SParams` | Two-port S at each bias, and the bias currents when the files state them | A folder of Touchstone files |
 | `PulsedSParams` | S sampled during a pulse | A folder of Touchstone files |
-| `SimulatedTables` | Currents, and an admittance or S table, a capacitance table, or both; optionally intrinsic voltages | `.mat`, `.npz`, `.npy` |
+| `SimulatedTables` | Currents, and an admittance or S table, a capacitance table, or both; optionally intrinsic voltages | `.mat`, `.npz`, `.ds`, `.npy` |
 | `LargeSignal` | A power sweep, a two-tone sweep or a loadpull file; used for validation only | CSV, `.spl`, `.lpcwave` |
 | `PassiveSParams` | An N-port block, or a family of blocks over a geometry value | Touchstone files |
 
@@ -445,7 +445,7 @@ happens off the user interface, which stays responsive: the status strip shows t
 | Kind | DC I–V, pulsed I–V, S-parameters, pulsed S-parameters, simulated tables, large signal |
 | Source | Files, or a folder — a Touchstone set is a folder of files |
 | Pattern | Touchstone: how each file name (or its comments) states its bias, e.g. `Vgs{vgs}_Vds{vds}_Id{id:mA}` |
-| Map | CSV, `.mat`, `.npz`, `.npy`: what each column or array holds, `name=quantity[:unit]`. For an array file it is filled in from the array names |
+| Map | CSV, `.mat`, `.npz`, `.ds`, `.npy`: what each column or array holds, `name=quantity[:unit]`; a leading `-` reads an array negated (`-DC1.VD.i=id`). For an array file it is filled in from the array names |
 | Conditions | Ambient °C, the reference plane, the quiescent point, and any other condition as `Key=Value` |
 
 The right side previews the first lines of the first file — for an array file, each array it holds with its shape —

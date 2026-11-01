@@ -98,6 +98,7 @@ format:</p>
     <tbody>
       <tr><td>NumPy</td><td><code>.npy</code></td><td>The full grouped DataSet, lossless — the format this chapter documents.</td></tr>
       <tr><td>MATLAB</td><td><code>.mat</code></td><td>The same cubes as MATLAB struct fields.</td></tr>
+      <tr><td>Binary simulation dataset</td><td><code>.ds</code></td><td>One block per group, each cube over its group's sweep axes; a group's <code>Z0</code> is written beside its S as <code>PortZ</code>. The Data Display and the Model Composer read it back.</td></tr>
       <tr><td>Tab-delimited text</td><td><code>.txt</code></td><td>Columns of numbers for spreadsheets / quick inspection.</td></tr>
       <tr><td>Touchstone</td><td><code>.s<em>N</em>p</code></td><td>S-parameters for a single group — renormalized to one real reference impedance (you set <code>Z0</code>); choose magnitude-angle, dB, or real-imag.</td></tr>
       <tr><td>Loadpull SPL</td><td><code>.spl</code></td><td>A loadpull-shaped result as an SPL dataset (offered only for loadpull runs).</td></tr>
@@ -108,9 +109,9 @@ format:</p>
 or iterate sweep axes to slice out the block you want. Multi-frequency loadpull results export
 across all their frequency blocks.</p>
 <p><strong>The same formats come out of a headless run.</strong> Every run verb takes <code>-o &lt;path&gt;</code>, and the
-<strong>extension picks the format</strong> — <code>hb</code>, <code>lp</code> and <code>lpp</code> write <code>.mat</code>, <code>.npy</code> or <code>.txt</code>; <code>lp</code> also writes
-<code>.spl</code> and <code>.lpcwave</code>; <code>sparam</code> always writes Touchstone; <code>em</code> writes both a Touchstone and a grouped
-<code>.npy</code> carrying its diagnostics. See <a href="cli.html">The Command Line</a>.</p>
+<strong>extension picks the format</strong> — <code>dc</code>, <code>hb</code>, <code>lp</code> and <code>lpp</code> write <code>.mat</code>, <code>.npy</code>, <code>.ds</code> or <code>.txt</code>; <code>lp</code> also
+writes <code>.spl</code> and <code>.lpcwave</code>; <code>sparam</code> writes a Touchstone for <code>.sNp</code> and the same cube formats otherwise; <code>em</code>
+writes both a Touchstone and a grouped <code>.npy</code> carrying its diagnostics. See <a href="cli.html">The Command Line</a>.</p>
 <h2 id="groups">Grouped results</h2>
 <p>A run that has several analyses produces <strong>one grouped DataSet</strong>: a group per analysis (named for
 the analysis — <code>HB1</code>, <code>SP1</code>, <code>DC1</code>, …) plus a <code>measurements</code> group for your figures of merit. In

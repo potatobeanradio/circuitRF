@@ -4,7 +4,7 @@ slug: reference/npy-export.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Results &amp; Data Export
 lede: Every run's results are written to disk as a self-describing NumPy `.npy` file you can read from Python, MATLAB, or any tool that speaks NumPy — no re-running the simulation. This chapter covers where results live, how to export them in other formats, and how to read the `.npy` in a few lines of Python.
-keywords: Touchstone, s2p, snp, sNp, export, npy, numpy, MATLAB, mat, CSV, save results, data out, python
+keywords: Touchstone, s2p, snp, sNp, export, npy, numpy, MATLAB, mat, .ds, binary simulation dataset, CSV, save results, data out, python
 ---
 
 <nav class="toc">
@@ -81,6 +81,7 @@ format:
     <tbody>
       <tr><td>NumPy</td><td><code>.npy</code></td><td>The full grouped DataSet, lossless — the format this chapter documents.</td></tr>
       <tr><td>MATLAB</td><td><code>.mat</code></td><td>The same cubes as MATLAB struct fields.</td></tr>
+      <tr><td>Binary simulation dataset</td><td><code>.ds</code></td><td>One block per group, each cube over its group's sweep axes; a group's <code>Z0</code> is written beside its S as <code>PortZ</code>. The Data Display and the Model Composer read it back.</td></tr>
       <tr><td>Tab-delimited text</td><td><code>.txt</code></td><td>Columns of numbers for spreadsheets / quick inspection.</td></tr>
       <tr><td>Touchstone</td><td><code>.s<em>N</em>p</code></td><td>S-parameters for a single group — renormalized to one real reference impedance (you set <code>Z0</code>); choose magnitude-angle, dB, or real-imag.</td></tr>
       <tr><td>Loadpull SPL</td><td><code>.spl</code></td><td>A loadpull-shaped result as an SPL dataset (offered only for loadpull runs).</td></tr>
@@ -93,9 +94,9 @@ or iterate sweep axes to slice out the block you want. Multi-frequency loadpull 
 across all their frequency blocks.
 
 **The same formats come out of a headless run.** Every run verb takes `-o <path>`, and the
-**extension picks the format** — `hb`, `lp` and `lpp` write `.mat`, `.npy` or `.txt`; `lp` also writes
-`.spl` and `.lpcwave`; `sparam` always writes Touchstone; `em` writes both a Touchstone and a grouped
-`.npy` carrying its diagnostics. See [The Command Line](cli.html).
+**extension picks the format** — `dc`, `hb`, `lp` and `lpp` write `.mat`, `.npy`, `.ds` or `.txt`; `lp` also
+writes `.spl` and `.lpcwave`; `sparam` writes a Touchstone for `.sNp` and the same cube formats otherwise; `em`
+writes both a Touchstone and a grouped `.npy` carrying its diagnostics. See [The Command Line](cli.html).
 
 ## Grouped results {#groups}
 

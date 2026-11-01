@@ -493,7 +493,7 @@ Wrote hero1.s2p
 </tr>
 <tr>
 <td><code>-o</code>, <code>--output &lt;path&gt;</code></td>
-<td>Where the result goes, and <strong>its extension picks the format</strong>: <code>.s1p</code>…<code>.s99p</code> for a Touchstone, or <code>.npy</code> / <code>.mat</code> / <code>.txt</code> for the cubes. Omitted, it is the input file with its extension changed to <code>.sNp</code> for the port count found.</td>
+<td>Where the result goes, and <strong>its extension picks the format</strong>: <code>.s1p</code>…<code>.s99p</code> for a Touchstone, or <code>.npy</code> / <code>.mat</code> / <code>.ds</code> / <code>.txt</code> for the cubes. Omitted, it is the input file with its extension changed to <code>.sNp</code> for the port count found.</td>
 </tr>
 </tbody>
 </table>
@@ -538,7 +538,7 @@ measurement names the result by the DC analysis that declares it (<code>DC1.V(&q
 the window — and
 <a href="#exit">exits 2</a> if the solve did not converge — the operating point is the one thing every nonlinear
 analysis is built on, so a non-converged DC is a failed run, not a partial one. <code>-o</code> writes the result
-cubes and the measurements as <code>.npy</code>, <code>.mat</code> or <code>.txt</code>.</p>
+cubes and the measurements as <code>.npy</code>, <code>.mat</code>, <code>.ds</code> or <code>.txt</code>.</p>
 <p><strong>A <code>parametric_sweep</code> that wraps the DC analysis runs as the sweep</strong>, as it does for <code>sparam</code>, <code>hb</code>, <code>lp</code>
 and <code>lpp</code>: an I–V family is a DC inside two sweeps, and running the DC alone would return one point. The
 sweep's name goes to stderr with the count of points that did not converge; stdout carries the
@@ -612,7 +612,7 @@ Analysis: HB1   (hero2.cnl)
 </tr>
 <tr>
 <td><code>-o</code>, <code>--export &lt;path&gt;</code></td>
-<td>Export the results. <strong>The extension picks the format</strong>: <code>.mat</code>, <code>.npy</code> or <code>.txt</code>.</td>
+<td>Export the results. <strong>The extension picks the format</strong>: <code>.mat</code>, <code>.npy</code>, <code>.ds</code> or <code>.txt</code>.</td>
 </tr>
 </tbody>
 </table>
@@ -701,7 +701,7 @@ Analysis: LP1   (hero3.cnl)
 </tr>
 <tr>
 <td><code>-o</code>, <code>--export &lt;path&gt;</code></td>
-<td><code>.mat</code>, <code>.npy</code>, <code>.txt</code> — <strong>or <code>.spl</code> / <code>.lpcwave</code></strong>, the loadpull interchange formats.</td>
+<td><code>.mat</code>, <code>.npy</code>, <code>.ds</code>, <code>.txt</code> — <strong>or <code>.spl</code> / <code>.lpcwave</code></strong>, the loadpull interchange formats.</td>
 </tr>
 </tbody>
 </table>
@@ -1397,7 +1397,7 @@ what it is about), progress on stderr. The formats are in <a href="file-formats.
 </tr>
 <tr>
 <td><code>import &lt;doc.cmc&gt; &lt;source…&gt; --as &lt;kind&gt;</code></td>
-<td>Adds a data set — <code>DcIv</code>, <code>PulsedIv</code>, <code>SParams</code>, <code>PulsedSParams</code>, <code>SimulatedTables</code>, <code>LargeSignal</code> or <code>PassiveSParams</code> — and imports it. A folder is every file in it. <code>--pattern</code> reads a Touchstone set's bias from its file names (<code>--pattern-source comment</code> from its comments), and a passive document needs one only to read a family's <code>{geometry}</code>; <code>--map</code> says what a CSV column (<code>Vg=vgs:V</code>) or an array (<code>vg=vgs</code>, <code>f=freq:GHz</code>) holds — for a <code>.mat</code>, <code>.npz</code> or <code>.npy</code> it may be left out, and the map the array names suggest is used and printed; <code>--condition Key=Value</code> sets a measurement condition (<code>ReferencePlane=device</code>, <code>AmbientC=25</code>, <code>Quiescent.Vds=28</code>); <code>--name</code>, <code>--format</code>, <code>--no-header</code>, <code>--delimiter</code>, <code>--z0</code>, <code>--freq</code>. <code>--dry-run</code> reads the sources and writes nothing, and needs no <code>.cmc</code> yet: what the file holds, the map, what would be read and how, and every warning (<a href="model-data.html#dry-run">Model Data</a>).</td>
+<td>Adds a data set — <code>DcIv</code>, <code>PulsedIv</code>, <code>SParams</code>, <code>PulsedSParams</code>, <code>SimulatedTables</code>, <code>LargeSignal</code> or <code>PassiveSParams</code> — and imports it. A folder is every file in it. <code>--pattern</code> reads a Touchstone set's bias from its file names (<code>--pattern-source comment</code> from its comments), and a passive document needs one only to read a family's <code>{geometry}</code>; <code>--map</code> says what a CSV column (<code>Vg=vgs:V</code>) or an array (<code>vg=vgs</code>, <code>f=freq:GHz</code>; in a <code>.ds</code>, <code>SP1.S=S</code>, with a leading <code>-</code> to read it negated: <code>-DC1.VD.i=id</code>) holds — for a <code>.mat</code>, <code>.npz</code>, <code>.ds</code> or <code>.npy</code> it may be left out, and the map the array names suggest is used and printed; <code>--condition Key=Value</code> sets a measurement condition (<code>ReferencePlane=device</code>, <code>AmbientC=25</code>, <code>Quiescent.Vds=28</code>); <code>--name</code>, <code>--format</code>, <code>--no-header</code>, <code>--delimiter</code>, <code>--z0</code>, <code>--freq</code>. <code>--dry-run</code> reads the sources and writes nothing, and needs no <code>.cmc</code> yet: what the file holds, the map, what would be read and how, and every warning (<a href="model-data.html#dry-run">Model Data</a>).</td>
 </tr>
 <tr>
 <td><code>deembed &lt;doc.cmc&gt;</code></td>
