@@ -237,11 +237,11 @@ public static class SurfaceMesher
     /// </summary>
     /// <remarks>
     /// <b>A memory limit is ADVISORY.</b> Past the count it allows a mesh is a warning and the run asks
-    /// (Simulate Anyway, <c>--force</c>); nothing below the mesher refuses on it. <paramref name="source"/>
-    /// only says whose number it is, for the sentences.
+    /// (Simulate Anyway, <c>--force</c>); nothing below the mesher refuses on it. Whose number it is
+    /// (<see cref="PlanarMemoryLimitSource"/>) changes only the sentences, never the count, so it is not
+    /// asked here.
     /// </remarks>
-    public static int CeilingFor(bool accelerated, long? memoryLimitBytes, int cellCount = 0,
-                                 PlanarMemoryLimitSource source = PlanarMemoryLimitSource.MachineLimit)
+    public static int CeilingFor(bool accelerated, long? memoryLimitBytes, int cellCount = 0)
     {
         if (memoryLimitBytes is not { } bytes)
             return accelerated ? AcceleratedUnknownCeiling : UnknownCeiling;
@@ -260,8 +260,7 @@ public static class SurfaceMesher
     /// <c>n ≤ CeilingFor(…, cores, …)</c> is exactly <c>PlanarSystem.ResidentBytes(n, cores) ≤ limit</c>, and
     /// the mesh verdict, the guards and the sentences quoting a ceiling agree with the bytes they quote.
     /// </summary>
-    public static int CeilingFor(bool accelerated, long? memoryLimitBytes, PlanarCoreFootprint cores,
-                                 PlanarMemoryLimitSource source = PlanarMemoryLimitSource.MachineLimit)
+    public static int CeilingFor(bool accelerated, long? memoryLimitBytes, PlanarCoreFootprint cores)
     {
         if (memoryLimitBytes is not { } bytes)
             return accelerated ? AcceleratedUnknownCeiling : UnknownCeiling;
@@ -351,11 +350,9 @@ public static class SurfaceMesher
     /// <see cref="Mesh"/>'s own refusal would have used, minus the mesh-specific "why" clause, which
     /// this call site has no mesh geometry left to derive.
     /// </summary>
-    /// <param name="mesh">Kept for the callers' signature; the fixed ceilings below need no mesh, and a
-    /// memory limit is advisory here.</param>
-    public static void GuardCeiling(int n, bool accelerated, int cellCount = 0, long? limit = null,
-                                    PlanarMemoryLimitSource source = PlanarMemoryLimitSource.MachineLimit,
-                                    PlanarMesh? mesh = null)
+    /// <param name="limit">The run's memory limit. ADVISORY: a run that carries one was asked about its size
+    /// before it started (<see cref="LimitOwner"/>'s note), so this guard lets it through.</param>
+    public static void GuardCeiling(int n, bool accelerated, int cellCount = 0, long? limit = null)
     {
         // A memory limit is a QUESTION the run service asks, never a refusal here (LimitOwner's note).
         if (limit is not null) return;
@@ -456,7 +453,7 @@ public static class SurfaceMesher
         // A memory limit is advisory: past it the mesh is a warning, not a refusal (LimitOwner's note).
         var   limitSource = s.MemoryLimitSource;
         long? limit = s.MemoryLimitBytes;
-        int  ceiling = CeilingFor(accel, limit, 0, limitSource);
+        int  ceiling = CeilingFor(accel, limit, 0);
         var  fmt = lengthFormat ?? DefaultLengthFormat;
 
         // EM-SEV — the mesher's sentences carry their CLASS from here on. A plain string still
@@ -1481,7 +1478,7 @@ public static class SurfaceMesher
         var coreFootprint = new Lazy<PlanarCoreFootprint>(() => limit is null
             ? PlanarCoreFootprint.Estimate(n, cells.Count)
             : PlanarCoreFootprint.For(accel ? null : mesh, n, cells.Count));
-        if (limit is not null) ceiling = CeilingFor(accel, limit, coreFootprint.Value, limitSource);
+        if (limit is not null) ceiling = CeilingFor(accel, limit, coreFootprint.Value);
         bool pastMachine = n > ceiling && limit is not null;
         var verdict = pastMachine ? PlanarBudgetVerdict.Warn
                     : n > ceiling ? PlanarBudgetVerdict.Refused
@@ -1527,7 +1524,7 @@ public static class SurfaceMesher
                                    cellsAcrossRealised: across,
                                    accelerated: accel,
                                    acceleratedWouldFit: !accel && !problem.RequiresGeneralKernel
-                                                      && n <= CeilingFor(true, limit, coreFootprint.Value, limitSource),
+                                                      && n <= CeilingFor(true, limit, coreFootprint.Value),
                                    multiLevel: problem.RequiresGeneralKernel,
                                    fmt: fmt,
                                    coarsestPitch: pitch is null
@@ -1600,7 +1597,7 @@ public static class SurfaceMesher
         var fp = cores ?? PlanarCoreFootprint.Estimate(n, cellCount);
         long dut = PlanarSystem.ResidentBytes(n, fp);
         string need = accelerated
-            ? $"This mesh has {n:N0} unknowns, past the {CeilingFor(true, limitBytes, fp, source):N0} " +
+            ? $"This mesh has {n:N0} unknowns, past the {CeilingFor(true, limitBytes, fp):N0} " +
               $"the accelerated solve is judged against in {LimitOwner(limitBytes, source)}"
             : standardBytes > 0
             ? $"This mesh has {n:N0} unknowns and, with its calibration standards solved beside it, needs " +
@@ -1770,8 +1767,8 @@ public static class SurfaceMesher
         bool accelerated, bool multiLevel, double rimFraction, bool edgeMesh, long? limit = null,
         PlanarMemoryLimitSource limitSource = PlanarMemoryLimitSource.MachineLimit)
     {
-        int ceiling = limit is null ? CeilingFor(accelerated, null, cellCount, limitSource)
-                                    : CeilingFor(accelerated, limit, cores.Value, limitSource);
+        int ceiling = limit is null ? CeilingFor(accelerated, null, cellCount)
+                                    : CeilingFor(accelerated, limit, cores.Value);
 
         var sb = new System.Text.StringBuilder();
         sb.Append($"Mesh budget: {cellCount:N0} cells, {n:N0} unknowns");
@@ -1882,7 +1879,7 @@ public static class SurfaceMesher
     {
         double pitch     = Math.Min(hx, hy);
         double narrowest = Math.Min(narrowX, narrowY);
-        int    ceiling   = CeilingFor(accelerated, limit, cores, limitSource);
+        int    ceiling   = CeilingFor(accelerated, limit, cores);
         bool   field     = coarsestPitch > 0;
 
         // WHICH quantity set the cell size. This is the whole difference between a refusal a user can

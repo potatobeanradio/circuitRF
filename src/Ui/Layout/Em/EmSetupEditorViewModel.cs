@@ -1898,14 +1898,15 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
             : null;
 
     /// <summary>CAP-1 follow-up — the accelerated ceiling a single-level mesh of this setup would get on this
-    /// machine: a memory limit (the setup's, else the machine's) raises it as it raises the dense one.</summary>
+    /// machine: the machine's memory limit (Settings ▸ Solvers, else physical memory) raises it as it raises the
+    /// dense one.</summary>
     public int AcceleratedUnknownCeilingHere
     {
         get
         {
             var m = PlanarMemoryCheck.WithMachineCeiling(Working.PlanarMesh, MachineMemoryLimitBytes(),
                                                          PhysicalMemoryBytes());
-            return SurfaceMesher.CeilingFor(true, m.MemoryLimitBytes, 0, m.MemoryLimitSource);
+            return SurfaceMesher.CeilingFor(true, m.MemoryLimitBytes, 0);
         }
     }
 
@@ -2595,16 +2596,16 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     /// for the same reason as <see cref="MachineMemoryLimitBytes"/>.</summary>
     public Func<long> PhysicalMemoryBytes { get; init; } = () => CircuitRF.Design.Em3d.MachineMemory.PhysicalBytes;
 
-    /// <summary>CAP-1 — the dense unknown ceiling this setup is judged against on this machine: its own
-    /// memory limit if it states one, else the machine's (<see cref="PlanarMemoryCheck.WithMachineCeiling"/>),
-    /// through the one function the run asks.</summary>
+    /// <summary>CAP-1 — the dense unknown ceiling this setup is judged against on this machine: the machine's
+    /// memory limit (Settings ▸ Solvers, else physical memory — <see cref="PlanarMemoryCheck.WithMachineCeiling"/>),
+    /// through the one function the run asks. A setup carries no memory limit of its own.</summary>
     public int DenseUnknownCeiling
     {
         get
         {
             var m = PlanarMemoryCheck.WithMachineCeiling(Working.PlanarMesh, MachineMemoryLimitBytes(),
                                                          PhysicalMemoryBytes());
-            return SurfaceMesher.CeilingFor(false, m.MemoryLimitBytes, 0, m.MemoryLimitSource);
+            return SurfaceMesher.CeilingFor(false, m.MemoryLimitBytes, 0);
         }
     }
 

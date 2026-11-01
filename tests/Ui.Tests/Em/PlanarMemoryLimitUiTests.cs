@@ -60,11 +60,11 @@ public class PlanarMemoryLimitUiTests
         Assert.DoesNotContain("PlanarMemoryLimitText", names);
         Assert.DoesNotContain("MemoryLimitError", names);
         Assert.DoesNotContain("MemoryLimitPlaceholder", names);
-        Assert.Equal(SurfaceMesher.CeilingFor(false, Machine, 0, PlanarMemoryLimitSource.MachineLimit), vm.DenseUnknownCeiling);
+        Assert.Equal(SurfaceMesher.CeilingFor(false, Machine, 0), vm.DenseUnknownCeiling);
 
         // Bytes left on a setup's mesh from code are not a limit: the machine's replaces them.
         vm.Working.PlanarMesh = vm.Working.PlanarMesh with { MemoryLimitBytes = 1_000_000_000 };
-        Assert.Equal(SurfaceMesher.CeilingFor(false, Machine, 0, PlanarMemoryLimitSource.MachineLimit), vm.DenseUnknownCeiling);
+        Assert.Equal(SurfaceMesher.CeilingFor(false, Machine, 0), vm.DenseUnknownCeiling);
     }
 
     [Fact]

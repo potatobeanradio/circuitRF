@@ -3382,3 +3382,14 @@ PDF (the first page says it was cancelled) before exiting 130. The MCP `review` 
 - **`model export --veriloga` / `--va` / `--vams` / `--verilog-a` / `--format va`** refuse with `the extension of -o
   picks the format: -o <stem>.va` instead of "unknown option". `model explain` on an Active `.cmc` ends with two
   `export` lines giving both spellings. Both live in `Model.cs`; nothing in `ModelCommands` changed.
+
+## `em --component` is sized and forced like a `.cem` (CAP series review, 2026-10-31)
+
+- **`EmComponent.Run` called `EmRunService.Run` with neither `confirmMemory` nor `memoryCeilingBytes`.** Before
+  CAP-1 that was invisible: with no limit a planar run met the fixed dense ceiling and nothing asked anything. Once
+  the planar ceiling came from the machine's memory, a component run was sized on physical memory whatever
+  `--memory-limit` said, and a run past it was declined with a sentence telling the caller to pass `--force` — a
+  flag this spelling parsed and then dropped. Both are handed through now, on the `.cem` path's terms (the MCP
+  `run analysis=em component=…` gets them too, since it runs the verb). Gate:
+  `EmCliVerbTests.CircuitrfEmComponent_IsSizedOnTheMemoryLimit_AndForceStartsIt` — a 6 mm line at 20 GHz is
+  85 unknowns, enough to pass a 0.0001 GB limit; a 300 µm one meshes to 4 and fits under it.

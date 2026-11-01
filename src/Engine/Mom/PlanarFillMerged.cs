@@ -78,7 +78,7 @@ public static partial class PlanarFill
             "FillMerged needs a mesh carrying a rooftop merge (PlanarMesh.Merge); this one has none. " +
             "Use Fill for the elemental system.");
         int n = mesh.Bases.Count, nm = merge.Count, m = mesh.Cells.Count;
-        GuardCeiling(nm, m, cores.Settings.MemoryLimitBytes, cores.Settings.MemoryLimitSource, mesh);
+        GuardCeiling(nm, m, cores.Settings.MemoryLimitBytes);
         var st = cores.Settings;
         var bases = mesh.Bases;
 

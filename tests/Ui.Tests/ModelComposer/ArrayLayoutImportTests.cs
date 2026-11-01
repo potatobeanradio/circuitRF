@@ -311,7 +311,7 @@ public sealed class ArrayLayoutImportTests : IDisposable
         Assert.Contains(HygieneKind.CurrentSign, kinds);
         Assert.Contains(HygieneKind.Unit, kinds);
         Assert.Contains(HygieneKind.PortOrder, DataHygiene.Check([(set, mirrored)]).Select(f => f.Kind));
-        Assert.Empty(DataHygiene.Check([(set, Documented().Data)]).Where(f => f.Point == ""));
+        Assert.DoesNotContain(DataHygiene.Check([(set, Documented().Data)]), f => f.Point == "");
     }
 
     // ── A minimal NPY writer, from the published format ──

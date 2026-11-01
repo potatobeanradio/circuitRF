@@ -205,8 +205,7 @@ public sealed class PlanarSolveContext
         // PM-2 — the dense path holds the MERGED matrix when the mesh carries one; the accelerator
         // never reads a merge and solves the elemental rooftops.
         SurfaceMesher.GuardCeiling(accelerated ? mesh.Bases.Count : mesh.SolvedUnknownCount,
-                                   accelerated, mesh.Cells.Count, Settings.MemoryLimitBytes,
-                                   Settings.MemoryLimitSource, mesh);
+                                   accelerated, mesh.Cells.Count, Settings.MemoryLimitBytes);
 
         // P2/M4 — LazyThreadSafetyMode.ExecutionAndPublication (the default): a de-embedded run fans
         // the standards out across workers, so two of them can reach the same context at once and the
@@ -2672,7 +2671,6 @@ public static class PlanarSolve
                     // ceiling the DUT is not judged against is the same defect P12 fixed.
                     bool accStd = SurfaceMesher.UsesAcceleratedCeiling(fillSt.Aim is not null, general);
                     long? stdLimit = fillSt.MemoryLimitBytes;
-                    var   stdLimitSource = fillSt.MemoryLimitSource;
                     // QSC — the plan is drawn ONCE and both the standards that are BUILT and the
                     // separations that are SELECTED come from it. Evaluating SeparationPlan twice
                     // with the same arguments would agree today and is exactly the shape PCAL6's
@@ -2700,14 +2698,12 @@ public static class PlanarSolve
                     {
                         var std  = stdSet[si];
                         int nStd = std.Mesh.Bases.Count;
-                        int stdCeiling = SurfaceMesher.CeilingFor(accStd, stdLimit,
-                                                                  PlanarCoreFootprint.For(accStd ? null : std.Mesh, nStd,
-                                                                      std.Mesh.Cells.Count),
-                                                                  stdLimitSource);
-                        if (nStd <= stdCeiling) continue;
                         // A memory limit is advisory: the run priced its standards beside the structure
-                        // (PlanarRunMemory) and asked before it started.
+                        // (PlanarRunMemory) and asked before it started, so with one there is nothing to
+                        // judge here — and no standard's cores to count for a ceiling nothing reads.
                         if (stdLimit is not null) continue;
+                        int stdCeiling = SurfaceMesher.CeilingFor(accStd, null);
+                        if (nStd <= stdCeiling) continue;
 
                         // The short line (index 0) is shared by both paths, so it is "quasi-static"
                         // exactly when there is no measured ladder for it to serve as well.

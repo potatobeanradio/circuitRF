@@ -708,7 +708,7 @@ public static class PlanarDeembed
                     "An ACCELERATED static capacitance solve needs the slab height: P8's near-radius " +
                     "floor is 2h and h cannot be read off a mesh. Pass the problem's own Slab.HeightM.");
 
-            GuardCapacitanceCeiling(mesh, accelerated: true, st.MemoryLimitBytes, st.MemoryLimitSource);
+            GuardCapacitanceCeiling(mesh, accelerated: true, st.MemoryLimitBytes);
 
             // Geometry-only cores are the right shape here and are what an accelerated context holds
             // — the O(m²) pair cores are exactly the build this route exists to skip.
@@ -720,7 +720,7 @@ public static class PlanarDeembed
             return acc.ChargeComplex(potential, floating);
         }
 
-        GuardCapacitanceCeiling(mesh, accelerated: false, st.MemoryLimitBytes, st.MemoryLimitSource);
+        GuardCapacitanceCeiling(mesh, accelerated: false, st.MemoryLimitBytes);
 
         // The mesh identity is checked rather than assumed: the cores carry their own Mesh, and a
         // core built for a DIFFERENT mesh would index a packed triangle of the wrong length and give
@@ -827,7 +827,7 @@ public static class PlanarDeembed
                     "An ACCELERATED static capacitance solve needs the slab height: P8's near-radius " +
                     "floor is 2h and h cannot be read off a mesh. Pass the problem's own Slab.HeightM.");
 
-            GuardCapacitanceCeiling(mesh, accelerated: true, st.MemoryLimitBytes, st.MemoryLimitSource);
+            GuardCapacitanceCeiling(mesh, accelerated: true, st.MemoryLimitBytes);
 
             var gc = cores is not null && ReferenceEquals(cores.Mesh, mesh)
                    ? cores
@@ -838,7 +838,7 @@ public static class PlanarDeembed
             return result;
         }
 
-        GuardCapacitanceCeiling(mesh, accelerated: false, st.MemoryLimitBytes, st.MemoryLimitSource);
+        GuardCapacitanceCeiling(mesh, accelerated: false, st.MemoryLimitBytes);
 
         var c = cores is { HasPairCores: true } && ReferenceEquals(cores.Mesh, mesh)
               ? cores
@@ -922,8 +922,7 @@ public static class PlanarDeembed
     /// changed here, and a test that had to run the SOLVE to observe it would be paying minutes to
     /// read one comparison. <see cref="StaticCapacitance"/> calls it with its own route's flag.
     /// </param>
-    public static void GuardCapacitanceCeiling(PlanarMesh mesh, bool accelerated, long? limit = null,
-                                               PlanarMemoryLimitSource source = PlanarMemoryLimitSource.MachineLimit)
+    public static void GuardCapacitanceCeiling(PlanarMesh mesh, bool accelerated, long? limit = null)
     {
         int n = mesh.Bases.Count;
 

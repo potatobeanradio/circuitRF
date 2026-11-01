@@ -1650,7 +1650,8 @@ static int RunEm(string[] args)
         return JsonRun.Fail(CliDiagnostics.EmDeviceWithoutPalace("a component's drawn part, extracted by circuitRF's own planar solver"));
     if (component is not null)
         return EmComponent.Run(component, input, output, componentFreq,
-                               (result, setup, path) => ReportEmRun(result, setup, path), EmProgressToStderr());
+                               (result, setup, path) => ReportEmRun(result, setup, path), EmProgressToStderr(),
+                               force, memoryLimit);
     if (componentFreq is not null)
         return JsonRun.Fail(CliDiagnostics.EmFreqWithoutComponent());
 

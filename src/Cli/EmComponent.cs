@@ -31,8 +31,13 @@ namespace CircuitRF.Cli;
 /// </summary>
 internal static class EmComponent
 {
+    /// <param name="force">`--force`: a run past the memory it is sized on starts rather than being declined —
+    /// the planar run's own question, on the same terms as a <c>.cem</c>'s.</param>
+    /// <param name="memoryLimitBytes">`--memory-limit`: the memory the planar run is sized on in place of this
+    /// machine's physical memory, exactly as for a <c>.cem</c>.</param>
     public static int Run(string componentLine, string? path, string? output, string? freq,
-                          Func<EmRunResult, EmSetup, string, int> report, CircuitRF.Engine.RunControl? control)
+                          Func<EmRunResult, EmSetup, string, int> report, CircuitRF.Engine.RunControl? control,
+                          bool force = false, long? memoryLimitBytes = null)
     {
         if (output is null)
             return JsonRun.Fail(CliDiagnostics.EmComponentRefused(
@@ -116,7 +121,8 @@ internal static class EmComponent
             // The .npy goes where every em run's goes — the workspace's results folder — and -o moves the
             // Touchstone only, as it does for a .cem.
             string resultsRoot = ResultsRoot.For(layoutName, CircuitRF.Design.Workspace.WorkspaceRootFinder.FindAncestorCws(dir));
-            result = EmRunService.Run(prepared.Setup, prepared.Source, resultsRoot, RunHost.Cancellation, control);
+            result = EmRunService.Run(prepared.Setup, prepared.Source, resultsRoot, RunHost.Cancellation, control,
+                                      confirmMemory: force ? _ => true : null, memoryCeilingBytes: memoryLimitBytes);
         }
         catch (Exception ex)
         {

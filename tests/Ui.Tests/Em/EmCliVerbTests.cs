@@ -361,4 +361,34 @@ public sealed class EmCliVerbTests(ITestOutputHelper output) : IDisposable
             .Single(d => d.GetProperty("id").GetString() == "em.refused.memory");
         Assert.Contains("--force", refusal.GetProperty("message").GetString(), StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// <c>em --component</c> is a planar run too, and reaches the same size check: <c>--memory-limit</c> is the
+    /// memory it is sized on, so a run past it is declined headless — and the refusal's own <c>--force</c> is a
+    /// flag this spelling honours. Until the flags were handed through, a component run was sized on this
+    /// machine's physical memory whatever was passed, and a refusal naming <c>--force</c> named a flag it ignored.
+    /// </summary>
+    [Fact]
+    public void CircuitrfEmComponent_IsSizedOnTheMemoryLimit_AndForceStartsIt()
+    {
+        string repo = RepoRoot();
+        Directory.CreateDirectory(_root);
+        string ws = WorkspaceCreate.Create(_root, "mmic-GaAs_2LM_100um", "mmic-GaAs_2LM_100um").WorkspaceDir;
+        string snp = Path.Combine(_root, "c1.s2p");
+        string[] run = ["em", ws, "--component", "MLIN W=70 um L=6000 um", "--freq", "20GHz:20GHz:1GHz", "-o", snp,
+                        "--memory-limit", "0.0001", "--json"];
+
+        var (declined, stdout, stderr) = RunCli(repo, run);
+        output.WriteLine("stderr:\n" + (stderr.Length > 4000 ? stderr[..4000] + " …" : stderr));
+        Assert.Equal(1, declined);
+        var refusal = System.Text.Json.JsonDocument.Parse(stdout).RootElement.GetProperty("diagnostics")
+            .EnumerateArray().Single(d => d.GetProperty("id").GetString() == "em.refused.memory");
+        Assert.Contains("--force", refusal.GetProperty("message").GetString(), StringComparison.Ordinal);
+        Assert.False(File.Exists(snp));
+
+        var (forced, _, forcedErr) = RunCli(repo, [.. run, "--force"]);
+        output.WriteLine("forced stderr:\n" + (forcedErr.Length > 4000 ? forcedErr[..4000] + " …" : forcedErr));
+        Assert.Equal(0, forced);
+        Assert.True(File.Exists(snp));
+    }
 }

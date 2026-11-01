@@ -1099,7 +1099,7 @@ public static partial class PlanarFill
 
         int n = mesh.Bases.Count;
         int m = mesh.Cells.Count;
-        GuardCeiling(mesh.SolvedUnknownCount, m, st.MemoryLimitBytes, st.MemoryLimitSource, mesh);
+        GuardCeiling(mesh.SolvedUnknownCount, m, st.MemoryLimitBytes);
 
         var (minEdge, extent, rhoFloor) = MeshGeometry(mesh, st);
         bool wantRad = st.Order >= PlanarExtractionOrder.Linear;
@@ -1268,7 +1268,7 @@ public static partial class PlanarFill
 
         int n = mesh.Bases.Count;
         int m = mesh.Cells.Count;
-        GuardCeiling(mesh.SolvedUnknownCount, m, st.MemoryLimitBytes, st.MemoryLimitSource, mesh);
+        GuardCeiling(mesh.SolvedUnknownCount, m, st.MemoryLimitBytes);
 
         var (minEdge, extent, rhoFloor) = MeshGeometry(mesh, st);
 
@@ -1458,7 +1458,7 @@ public static partial class PlanarFill
         var st = settings ?? PlanarFillSettings.Default;
 
         int m = mesh.Cells.Count;
-        GuardCeiling(mesh.SolvedUnknownCount, m, st.MemoryLimitBytes, st.MemoryLimitSource, mesh);
+        GuardCeiling(mesh.SolvedUnknownCount, m, st.MemoryLimitBytes);
         var (minEdge, extent, rhoFloor) = MeshGeometry(mesh, st);
         bool wantRad = st.Order >= PlanarExtractionOrder.Linear;
         var topo = RampTopology.Build(mesh);
@@ -2105,7 +2105,7 @@ public static partial class PlanarFill
         RequireLayout(cores, PlanarCoreLayout.Classes, nameof(Fill));
         var mesh = cores.Mesh;
         int n = mesh.Bases.Count;
-        GuardCeiling(n, mesh.Cells.Count, cores.Settings.MemoryLimitBytes, cores.Settings.MemoryLimitSource, mesh);
+        GuardCeiling(n, mesh.Cells.Count, cores.Settings.MemoryLimitBytes);
 
         var z = new BlockLowerMatrix(n);
         var st = cores.Settings;
@@ -2193,7 +2193,7 @@ public static partial class PlanarFill
         RequireLayout(cores, PlanarCoreLayout.Triangles, nameof(FillByPairs));
         var mesh = cores.Mesh;
         int n = mesh.Bases.Count;
-        GuardCeiling(n, mesh.Cells.Count, cores.Settings.MemoryLimitBytes, cores.Settings.MemoryLimitSource, mesh);
+        GuardCeiling(n, mesh.Cells.Count, cores.Settings.MemoryLimitBytes);
 
         var z = new BlockLowerMatrix(n);
         var st = cores.Settings;
@@ -2751,7 +2751,7 @@ public static partial class PlanarFill
 
         var mesh = cores.Mesh;
         int n = mesh.Bases.Count;
-        GuardCeiling(n, mesh.Cells.Count, cores.Settings.MemoryLimitBytes, cores.Settings.MemoryLimitSource, mesh);
+        GuardCeiling(n, mesh.Cells.Count, cores.Settings.MemoryLimitBytes);
         var st = cores.Settings;
         int m = mesh.Cells.Count;
 
@@ -3710,9 +3710,7 @@ public static partial class PlanarFill
     /// <see cref="PlanarSystem.ResidentPhrase"/>, the one function all three refusals share</b>, so
     /// the three cannot drift apart again — they had all three quoted 16·N², which is about a third
     /// of what the machine holds.</summary>
-    private static void GuardCeiling(int n, int cellCount = 0, long? limit = null,
-                                     PlanarMemoryLimitSource source = PlanarMemoryLimitSource.MachineLimit,
-                                     PlanarMesh? mesh = null)
+    private static void GuardCeiling(int n, int cellCount = 0, long? limit = null)
     {
         if (limit is not null) return;   // a memory limit is asked about, never refused
         // MIM-13 — the fourth copy of PlanarSystem.GuardCeiling's own sentence, and it carried both

@@ -68,22 +68,25 @@ public static class PlanarRunMemory
             string layer = problem.Layers[Math.Clamp(port.LayerIndex, 0, problem.Layers.Count - 1)].Name;
             var set = PlanarCalibration.BuildSet(port, slab, fLo, fHi, st.Calibration, layer);
             long longest = 0, longestCores = 0;
+            int longestAt = 0;
             for (int i = 0; i < set.Length; i++)
             {
                 // CAP-3 — each standard's own counted cores and its fill's bounded transient.
                 var cores = PlanarCoreFootprint.Count(set[i].Mesh);
                 long b = PlanarSystem.ResidentBytes(set[i].Mesh.SolvedUnknownCount, cores);
                 if (i == 0) { total += b; heldCores += cores.Bytes; }
-                else if (b > longest) { longest = b; longestCores = cores.Bytes; }
+                else if (b > longest) { longest = b; longestCores = cores.Bytes; longestAt = i; }
             }
             total += longest;
             heldCores += longestCores;
 
-            // The static capacitance differences the short and the LONGEST standard, one after the other.
+            // The static capacitance differences the short and the LONGEST standard, one after the other,
+            // so the last standard's cores are held then too — counted once, not again when the largest
+            // solve above already was the last standard.
             var last = set[^1].Mesh;
             long ml = last.Cells.Count;
             capacitance = Math.Max(capacitance, 48L * ml * ml);
-            if (set.Length > 1 && !ReferenceEquals(set[^1], set[0]))
+            if (set.Length > 1 && longestAt != set.Length - 1 && !ReferenceEquals(set[^1], set[0]))
                 heldCores += PlanarCoreFootprint.Count(last).Bytes;
         }
         if (structure is null || capacitance == 0) return total;
@@ -115,9 +118,8 @@ public static class PlanarRunMemory
     /// <summary>
     /// <b>The mesh report, priced with its standards and judged again.</b> Carries
     /// <paramref name="standardBytes"/> on <see cref="PlanarMeshReport.StandardResidentBytes"/>; past the run's
-    /// memory limit with them, a SETUP's limit refuses (the setup's own number, as the mesh's own verdict does) and
-    /// the machine's warns and sets <see cref="PlanarMeshReport.PastMachineLimit"/>, so the run asks before it
-    /// starts. A report that already refuses, an accelerated run, or no limit at all, is returned priced but
+    /// memory limit with them it warns and sets <see cref="PlanarMeshReport.PastMachineLimit"/>, so the run asks
+    /// before it starts — a memory limit is advisory, whoever stated it. A report that already refuses, an accelerated run, or no limit at all, is returned priced but
     /// otherwise as it was.
     /// </summary>
     public static PlanarMeshReport WithStandards(PlanarMeshReport report, long standardBytes,

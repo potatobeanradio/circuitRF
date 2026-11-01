@@ -91,15 +91,13 @@ public sealed class PlanarMemoryLimitTests
     // ── CAP-1 — the ceiling comes from the machine's memory, handed down by the run service ──────
 
     [Fact]
-    public void AMachineDerivedLimit_SizesBothCeilings_AsASetupsOwnLimitDoes()
+    public void AMachineDerivedLimit_SizesBothCeilings()
     {
         const long Machine = 17_179_869_184;
-        foreach (bool accelerated in new[] { false, true })
-            foreach (var source in new[] { PlanarMemoryLimitSource.PhysicalMemory, PlanarMemoryLimitSource.MachineLimit })
-                Assert.Equal(SurfaceMesher.CeilingFor(accelerated, Machine),
-                             SurfaceMesher.CeilingFor(accelerated, Machine, 0, source));
-        // On a machine this size the accelerated ceiling is the memory count, past the shipped 12,000.
-        Assert.True(SurfaceMesher.CeilingFor(true, Machine, 0, PlanarMemoryLimitSource.PhysicalMemory)
+        // Both ceilings are sized on the memory: the dense one well past the shipped fallback, and
+        // on a machine this size the accelerated ceiling is the memory count, past the shipped 12,000.
+        Assert.True(SurfaceMesher.CeilingFor(false, Machine) > SurfaceMesher.UnknownCeiling);
+        Assert.True(SurfaceMesher.CeilingFor(true, Machine, 0)
                     > SurfaceMesher.AcceleratedUnknownCeiling);
     }
 
@@ -122,9 +120,9 @@ public sealed class PlanarMemoryLimitTests
                         StringComparison.Ordinal);
 
         Assert.Null(Record.Exception(() => PlanarSystem.GuardCeiling(
-            free.UnknownCount, free.CellCount, tight, PlanarMemoryLimitSource.MachineLimit)));
+            free.UnknownCount, free.CellCount, tight)));
         Assert.Null(Record.Exception(() => SurfaceMesher.GuardCeiling(
-            free.UnknownCount, false, free.CellCount, tight, PlanarMemoryLimitSource.PhysicalMemory)));
+            free.UnknownCount, false, free.CellCount, tight)));
 
         // Simulate Anyway: the run is asked, says yes, and completes de-embedded on the handed-down limit.
         PlanarRunSize? asked = null;

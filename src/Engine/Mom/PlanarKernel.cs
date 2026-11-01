@@ -442,10 +442,12 @@ public sealed class PlanarKernel
         //
         // They are solved concurrently with the structure at every point, so the memory a limit is asked
         // about is both together — the same function the pre-solve check and the panel ask.
+        // Priced only when something reads the figure — a limit to judge it against, or a size check to
+        // hand it to — since it meshes every standard and counts their cores, which no other caller wants.
         bool aimOn = st.Fill?.Aim is not null;
-        report = PlanarRunMemory.WithStandards(
-            report, PlanarRunMemory.StandardBytes(meshed, resolved, freqsHz, st, report.Mesh), meshSettings, aimOn);
-        if (!report.CanSolve) throw new PlanarMeshRefusedException(report);
+        if (meshSettings.MemoryLimitBytes is not null || st.Admit is not null)
+            report = PlanarRunMemory.WithStandards(
+                report, PlanarRunMemory.StandardBytes(meshed, resolved, freqsHz, st, report.Mesh), meshSettings, aimOn);
 
         // D5 — the heat map rides along with the sweep the panel already pays for: default to port 1
         // at the lowest swept frequency, which is where a user starts looking. Both are selectable

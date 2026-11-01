@@ -302,10 +302,7 @@ public sealed class PlanarSystem : IPlanarOperator
     /// </summary>
     /// <param name="limit">The run's memory limit. ADVISORY: a run that carries one was asked about its size
     /// before it started (<see cref="SurfaceMesher.LimitOwner"/>'s note), so this guard lets it through.</param>
-    /// <param name="mesh">Kept for the callers' signature; the fixed ceiling below needs no mesh.</param>
-    public static void GuardCeiling(int n, int cellCount = 0, long? limit = null,
-                                    PlanarMemoryLimitSource source = PlanarMemoryLimitSource.MachineLimit,
-                                    PlanarMesh? mesh = null)
+    public static void GuardCeiling(int n, int cellCount = 0, long? limit = null)
     {
         if (limit is not null) return;   // a memory limit is asked about, never refused
 
@@ -351,10 +348,10 @@ public sealed class PlanarSystem : IPlanarOperator
         // elemental matrix at all.
         if (cores.Mesh.Merge is { } merge)
         {
-            GuardCeiling(merge.Count, cores.CellCount, cores.Settings.MemoryLimitBytes, cores.Settings.MemoryLimitSource, cores.Mesh);
+            GuardCeiling(merge.Count, cores.CellCount, cores.Settings.MemoryLimitBytes);
             return new PlanarSystem(PlanarFill.FillMergedLower(cores, termsA, termsQ, omega), cores.Settings, merge);
         }
-        GuardCeiling(cores.UnknownCount, cores.CellCount, cores.Settings.MemoryLimitBytes, cores.Settings.MemoryLimitSource, cores.Mesh);
+        GuardCeiling(cores.UnknownCount, cores.CellCount, cores.Settings.MemoryLimitBytes);
         return new PlanarSystem(PlanarFill.FillLower(cores, termsA, termsQ, omega), cores.Settings);
     }
 
@@ -375,7 +372,7 @@ public sealed class PlanarSystem : IPlanarOperator
             throw new InvalidOperationException(
                 "Rooftop merging is built for a single conductor level with no vias, and the mesher " +
                 "never attaches a merge to any other mesh. This one carries one; solve it elemental.");
-        GuardCeiling(cores.UnknownCount, cores.CellCount, cores.Settings.MemoryLimitBytes, cores.Settings.MemoryLimitSource, cores.Mesh);
+        GuardCeiling(cores.UnknownCount, cores.CellCount, cores.Settings.MemoryLimitBytes);
         return new PlanarSystem(PlanarFill.FillMultiLevelLower(cores, set, levels, omega), cores.Settings);
     }
 
@@ -388,8 +385,7 @@ public sealed class PlanarSystem : IPlanarOperator
     /// </summary>
     public static PlanarSystem Wrap(Mat<Complex> matrix, PlanarFillSettings? settings = null)
     {
-        GuardCeiling(matrix.RowCount, limit: settings?.MemoryLimitBytes,
-                     source: settings?.MemoryLimitSource ?? PlanarMemoryLimitSource.MachineLimit);
+        GuardCeiling(matrix.RowCount, limit: settings?.MemoryLimitBytes);
         return new PlanarSystem(BlockLowerMatrix.FromLower(matrix), settings ?? PlanarFillSettings.Default);
     }
 
@@ -401,8 +397,7 @@ public sealed class PlanarSystem : IPlanarOperator
     public static PlanarSystem Wrap(BlockLowerMatrix matrix, PlanarFillSettings? settings = null)
     {
         ArgumentNullException.ThrowIfNull(matrix);
-        GuardCeiling(matrix.Size, limit: settings?.MemoryLimitBytes,
-                     source: settings?.MemoryLimitSource ?? PlanarMemoryLimitSource.MachineLimit);
+        GuardCeiling(matrix.Size, limit: settings?.MemoryLimitBytes);
         return new PlanarSystem(matrix, settings ?? PlanarFillSettings.Default);
     }
 
@@ -575,7 +570,7 @@ public static class PlanarSweep
         ArgumentNullException.ThrowIfNull(freqsHz);
 
         var st = settings ?? PlanarFillSettings.Default;
-        PlanarSystem.GuardCeiling(mesh.SolvedUnknownCount, mesh.Cells.Count, st.MemoryLimitBytes, st.MemoryLimitSource, mesh);
+        PlanarSystem.GuardCeiling(mesh.SolvedUnknownCount, mesh.Cells.Count, st.MemoryLimitBytes);
 
         // ── D6: ONCE, whatever the sweep's length ────────────────────────────────────────────
         var sw = Stopwatch.StartNew();
