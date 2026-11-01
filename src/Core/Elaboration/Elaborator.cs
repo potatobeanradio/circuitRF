@@ -742,6 +742,64 @@ public sealed class Elaborator
         return cellScope;
     }
 
+    /// <summary>
+    /// An override on a sub-cell instance that the cell neither declares nor reads is bound and then never looked at,
+    /// so the circuit is built as if it were not there — and nothing said so. It is a warning, not a refusal: a name
+    /// the cell does not declare is still visible to every expression below it (scope lookup walks up), so the test is
+    /// whether any expression in the cell, or in a cell it instantiates, mentions the name. A cell whose text cannot be
+    /// tokenized is not judged.
+    /// </summary>
+    private void WarnUnreadOverrides(Instance inst, Cell cell, string childPath, ElaboratedNetlist netlist)
+    {
+        if (inst.Overrides.Count == 0) return;
+        HashSet<string>? read = null;
+        foreach (var ov in inst.Overrides)
+        {
+            if (ov.Name.StartsWith("__", StringComparison.Ordinal)) continue;
+            if (cell.Parameters.Any(p => p.Name == ov.Name) || cell.Variables.Any(v => v.Name == ov.Name)) continue;
+            read ??= NamesReadIn(cell, []);
+            if (read is null || read.Contains(ov.Name)) continue;
+            netlist.AddWarningOnce($"unread-override:{childPath}.{ov.Name}",
+                $"'{childPath}' sets {ov.Name}, which cell '{cell.Name}' does not declare and nothing in it reads; " +
+                "the value has no effect.");
+        }
+    }
+
+    private readonly Dictionary<Cell, HashSet<string>?> _namesReadIn = new(ReferenceEqualityComparer.Instance);
+
+    /// <summary>Every identifier an expression in <paramref name="cell"/> or a cell below it mentions; null when one
+    /// would not tokenize.</summary>
+    private HashSet<string>? NamesReadIn(Cell cell, HashSet<string> visiting)
+    {
+        if (_namesReadIn.TryGetValue(cell, out var cached)) return cached;
+        if (!visiting.Add(cell.Name)) return [];          // a cycle is the elaborator's own error to report
+
+        HashSet<string>? names = [];
+        try
+        {
+            var texts = cell.Parameters.Select(p => p.DefaultExpression)
+                .Concat(cell.Variables.Select(v => v.Expression))
+                .Concat(cell.Instances.SelectMany(i => i.Overrides.Select(o => o.Expression)));
+            foreach (var text in texts)
+            {
+                if (string.IsNullOrWhiteSpace(text)) continue;
+                foreach (var tok in new Tokenizer(text).Tokenize())
+                    if (tok.Kind == TokenKind.Identifier) names.Add(tok.Text);
+            }
+            foreach (var sub in cell.Instances.Select(i => i.Reference).Distinct(StringComparer.Ordinal))
+            {
+                if (ComponentModelFactory.IsPrimitive(sub) || FindCell(sub) is not { } child) continue;
+                if (NamesReadIn(child, visiting) is not { } below) { names = null; break; }
+                names.UnionWith(below);
+            }
+        }
+        catch (Exception) { names = null; }
+
+        visiting.Remove(cell.Name);
+        _namesReadIn[cell] = names;
+        return names;
+    }
+
     // ── Flattening ────────────────────────────────────────────────────────────
 
     /// <summary>
@@ -1183,6 +1241,7 @@ public sealed class Elaborator
                     overrides:   inst.Overrides,
                     scopeName:   childPath,
                     instanceName: inst.InstanceName);
+                WarnUnreadOverrides(inst, subCell, childPath, netlist);
 
                 FlattenCell(subCell, childPath, subPortMap, subScope, globalScope, netlist);
             }

@@ -177,6 +177,75 @@ public sealed class VendorPartToleranceTests : IDisposable
         Assert.True(scales.Max() - scales.Min() > 0.05, "the draws do not spread over the tolerance");
     }
 
+    // 9 — the RUN, not just its pieces: a Monte Carlo over a vendor part evaluates every trial, and each trial's
+    // capacitance at 100 MHz moves with its own draw. The run's catalog once lacked the placed parts, so C1.C named
+    // no value and every trial failed — which test 8, calling TunableOverrides directly, could not see.
+    [Fact]
+    public void AMonteCarloRun_OverAVendorPart_EvaluatesEveryTrial_AndEachDrawMovesTheCapacitance()
+    {
+        var ws = Workspace();
+        var model = Design(ws, "TSTC0402A100J01", Unif("C1.C"));
+        model.Tuning!.Goals.Add(CeffGoal());
+        model.Tuning.Statistics = new StatisticsSettings { Trials = 12 };
+        var circuit = Prepare(model, ws, out _);
+
+        var run = StatisticalRun.Create(circuit, new StatisticalOptions { Mode = StatisticalMode.MonteCarlo });
+        Assert.Null(run.Refusal);
+        var result = run.Run();
+        Assert.Equal(0, result.DidNotEvaluate);
+
+        // Ceff / drawn C is one constant across the trials: the model's capacitance is scaled by the draw.
+        var ratios = result.Records.Select(r => r.Goals.Single().WorstValue * 1e-12 / r.Draws["C1.C"]).ToList();
+        Assert.Equal(12, ratios.Count);
+        Assert.True(result.Records.Select(r => r.Draws["C1.C"]).Distinct().Count() > 1);
+        Assert.All(ratios, q => Assert.Equal(ratios[0], q, 1e-3));
+    }
+
+    // 10 — check and explain ask the run constructors the same question, so they once refused tol=part on a part too.
+    [Fact]
+    public void CheckAndExplain_AcceptAVendorPartsValueDrawnWithTolPart()
+    {
+        var ws = Workspace();
+        var model = Design(ws, "TSTC0402A100J01", new TunableEntry
+        {
+            Key = "C1.C", Distribution = StatDistribution.Gauss, Stat = true,
+            Spread = new StatSpread { Tol = "part", Sigmas = "3", Trunc = "3" },
+        });
+        var goal = CeffGoal();
+        goal.Use = GoalUse.Yield;
+        model.Tuning!.Goals.Add(goal);
+        string csch = Path.Combine(model.SchematicDirectory!, "top.csch");
+        CircuitRF.Design.Schematic.SchematicPersistence.SaveToFile(csch, model, "top");
+
+        var check = RunCli("check", csch);
+        Assert.True(check.ExitCode == 0, check.StdOut + check.StdErr);
+        var explain = RunCli("explain", csch, "--analysis", "SP1");
+        Assert.True(explain.ExitCode == 0, explain.StdOut + explain.StdErr);
+        Assert.DoesNotContain("would be refused", explain.StdOut);
+    }
+
+    private static OptimizationGoal CeffGoal() => new()
+    {
+        Name = "Ceff", Analysis = "SP1", Type = GoalType.Ge, Limit = "0",
+        Expression = "-1e12/(2*pi*freq*imag(100*(1-SP1.S(2,1))/SP1.S(2,1)))",
+    };
+
+    private (int ExitCode, string StdOut, string StdErr) RunCli(params string[] args)
+    {
+        var psi = new System.Diagnostics.ProcessStartInfo("dotnet")
+            { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+        psi.ArgumentList.Add(Path.GetFullPath(Path.Combine(System.Reflection.CustomAttributeExtensions
+            .GetCustomAttributes<System.Reflection.AssemblyMetadataAttribute>(typeof(VendorPartToleranceTests).Assembly)
+            .First(a => a.Key == "CliDir").Value!, "CircuitRF.Cli.dll")));
+        foreach (string a in args) psi.ArgumentList.Add(a);
+        psi.Environment[CircuitRF.Design.UserStateDirectory.EnvironmentVariable] = Path.Combine(_dir, "state");
+        using var proc = System.Diagnostics.Process.Start(psi)!;
+        var outTask = proc.StandardOutput.ReadToEndAsync();
+        var errTask = proc.StandardError.ReadToEndAsync();
+        proc.WaitForExit();
+        return (proc.ExitCode, outTask.GetAwaiter().GetResult(), errTask.GetAwaiter().GetResult());
+    }
+
     // ── The design: P1 — C1 (a vendor part) — P2, one S-parameter point at 100 MHz ─────────
 
     private static TunableEntry Unif(string key) => new()

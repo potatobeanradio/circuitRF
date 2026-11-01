@@ -342,7 +342,7 @@ internal static class Explain
             }
             else
             {
-                var (lib, tb) = circuit.Value;
+                var (lib, tb, parts) = circuit.Value;
 
                 foreach (var (name, expression) in sets)
                 {
@@ -356,7 +356,7 @@ internal static class Explain
                     var (rows, analysisExit) = ExplainAnalyses(lib, tb, analysisName, CircuitSource.ReferenceBaseOf(path));
                     analyses = rows;
                     exit    |= analysisExit;
-                    statistics    = ExplainStatistics.Collect(lib, tb, path);
+                    statistics    = ExplainStatistics.Collect(lib, tb, path, parts);
                     distributions = ExplainStatistics.Distributions(lib, tb);
                 }
                 if (expr is not null) exit |= ExplainExpression(lib, tb, expr, out value);
@@ -1760,9 +1760,11 @@ internal static class Explain
         }
     }
 
-    private static (Library Lib, TestBench Tb)? ReadCircuit(string path, DocumentKind kind)
-        => CircuitSource.Read(path, kind,
-               message => JsonRun.Report(CliDiagnostics.ExplainUnreadable(path, message)));
+    private static (Library Lib, TestBench Tb, IReadOnlyList<CircuitRF.Design.VendorLibraries.VendorPartTunable> Parts)?
+        ReadCircuit(string path, DocumentKind kind)
+        => CircuitSource.Read(path, kind, out var parts,
+               message => JsonRun.Report(CliDiagnostics.ExplainUnreadable(path, message))) is { } c
+            ? (c.Lib, c.Tb, parts) : null;
 
     // ── the human report ─────────────────────────────────────────────────────
 

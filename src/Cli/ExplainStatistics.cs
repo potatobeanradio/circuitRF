@@ -79,7 +79,10 @@ internal static class ExplainStatistics
 
     /// <summary>The statistical report of a testbench; null when its setup has no statistical content.</summary>
     /// <param name="path">The document explained; a <c>.csch</c>'s corners report each kit axis they set or inherit.</param>
-    public static ExplainStatisticsJson? Collect(Library lib, TestBench tb, string? path = null)
+    /// <param name="parts">The schematic's placed vendor parts (<see cref="CircuitSource.Read(string, DocumentKind, out IReadOnlyList{CircuitRF.Design.VendorLibraries.VendorPartTunable}, Action{string}?)"/>):
+    /// without them a part's value (<c>C1.C</c>) is no tunable, and the run constructors asked here refuse it.</param>
+    public static ExplainStatisticsJson? Collect(Library lib, TestBench tb, string? path = null,
+                                                 IReadOnlyList<CircuitRF.Design.VendorLibraries.VendorPartTunable>? parts = null)
     {
         if (tb.Tuning is not { } setup || !HasStatistics(setup)) return null;
         var s = setup.Statistics ?? new StatisticsSettings();
@@ -106,15 +109,17 @@ internal static class ExplainStatistics
             [.. setup.Corners.Select(c => new ExplainCornerJson(
                 c.Name, c.Enabled, c.IsStatistical ? "statistical" : "value", c.Temp,
                 new Dictionary<string, string>(c.Values, StringComparer.Ordinal), c.Trial,
-                Bindings(lib, tb, c), kit?.Axes(c.Name)))],
-            correlation, StatisticsSummary.QuotedYield, halfWidth, trialsFor, YieldRun(lib, tb, setup, s), Center(lib, tb, setup));
+                Bindings(lib, tb, c, parts), kit?.Axes(c.Name)))],
+            correlation, StatisticsSummary.QuotedYield, halfWidth, trialsFor, YieldRun(lib, tb, setup, s, parts),
+            Center(lib, tb, setup, parts));
     }
 
     /// <summary>R-ya11-6: a center line's estimated total, asked of <see cref="CenteringRun"/>, which evaluates nothing.</summary>
-    private static ExplainCenterJson? Center(Library lib, TestBench tb, TuningSetup setup)
+    private static ExplainCenterJson? Center(Library lib, TestBench tb, TuningSetup setup,
+                                             IReadOnlyList<CircuitRF.Design.VendorLibraries.VendorPartTunable>? parts)
     {
         if (setup.Centering is not { } c) return null;
-        var run = CenteringRun.Create(PreparedCircuit.FromBench(lib, tb, null));
+        var run = CenteringRun.Create(PreparedCircuit.FromBench(lib, tb, null, parts));
         var e = run.Estimate();
         return new ExplainCenterJson(c.EffectiveAlgorithm, c.EffectiveTrials, c.EffectiveVerify, c.EffectiveWidth, c.EffectiveSeed,
             e?.Variables, e?.PointsPerIteration, e?.EvaluationsPerIteration, e?.Total, e?.Estimate, run.Refusal?.Render(),
@@ -126,11 +131,12 @@ internal static class ExplainStatistics
     /// (<see cref="OptimizationRun.AnalysesUnder"/> over the yield specs), and its cost in nominal evaluations at the
     /// parallelism the run would use — asked of <see cref="StatisticalRun.Create"/>, which evaluates nothing.
     /// </summary>
-    private static ExplainYieldRunJson YieldRun(Library lib, TestBench tb, TuningSetup setup, StatisticsSettings s)
+    private static ExplainYieldRunJson YieldRun(Library lib, TestBench tb, TuningSetup setup, StatisticsSettings s,
+                                                IReadOnlyList<CircuitRF.Design.VendorLibraries.VendorPartTunable>? parts)
     {
         var goals = OptimizationRun.AnalysesUnder(tb, setup, OptimizerScope.GoalAnalyses, GoalUse.Yield);
         var all   = OptimizationRun.AnalysesUnder(tb, setup, OptimizerScope.All, GoalUse.Yield);
-        var run   = StatisticalRun.Create(PreparedCircuit.FromBench(lib, tb, null), new StatisticalOptions { Mode = StatisticalMode.Yield });
+        var run   = StatisticalRun.Create(PreparedCircuit.FromBench(lib, tb, null, parts), new StatisticalOptions { Mode = StatisticalMode.Yield });
         int trials = s.EffectiveTrials, parallel = run.Parallelism;
         int batches = (trials + parallel - 1) / parallel;
         string estimate = $"about {batches + 1} times one nominal evaluation: the nominal, then {batches} batch(es) of up to " +
@@ -143,7 +149,8 @@ internal static class ExplainStatistics
     /// R-ya6-7: every binding a corner makes — its temp (°C) and each value — in base SI with its base unit. A bare
     /// number takes the unit of what it binds (the tunable's, or the variable's).
     /// </summary>
-    private static IReadOnlyList<ExplainCornerBindingJson> Bindings(Library lib, TestBench tb, CornerDefinition c)
+    private static IReadOnlyList<ExplainCornerBindingJson> Bindings(Library lib, TestBench tb, CornerDefinition c,
+                                                                    IReadOnlyList<CircuitRF.Design.VendorLibraries.VendorPartTunable>? parts)
     {
         var list = new List<ExplainCornerBindingJson>();
         if (c.Temp is { } temp)
@@ -151,7 +158,7 @@ internal static class ExplainStatistics
                 double.TryParse(temp.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double t) ? t : null, "°C"));
         if (c.Values.Count == 0) return list;
         TunableCatalog? catalog = null;
-        try { catalog = TunableCatalog.FromNetlist(tb, lib); } catch (Exception) { /* units then come from the text alone */ }
+        try { catalog = TunableCatalog.FromNetlist(tb, lib, parts: parts); } catch (Exception) { /* units then come from the text alone */ }
         foreach (var (key, text) in c.Values)
         {
             string known = catalog?.FindValue(key)?.Unit ?? tb.GlobalVariables.FirstOrDefault(v => v.Name == key)?.Unit ?? "";

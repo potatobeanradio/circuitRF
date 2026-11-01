@@ -217,7 +217,7 @@ public sealed class DoeRun
             bench.GlobalVariables.AddRange(tb.GlobalVariables);
             bench.Analyses.AddRange(tb.Analyses);
         }
-        var catalog = TunableCatalog.FromNetlist(bench, lib);
+        var catalog = TunableCatalog.FromNetlist(bench, lib, parts: circuit.PartTunables);
 
         if (source == DoeFactorSource.Opt)
         {

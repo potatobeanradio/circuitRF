@@ -4183,3 +4183,18 @@ Each one was invisible on the kits circuitRF had been tried against and silent w
   S, so the threshold only decides which of two correct forms a well-conditioned block keeps, and no golden moved.
   Gate: `SnpStampTests.SeriesMeasuredFile_OnAndBetweenItsOwnSamples_IsTheSeriesElement`, which fails with the old
   stamp at the exact sample (S21 0 + 0.566j against 0.701 + 0.458j).
+
+## An override nothing reads is warned (2026-11-01)
+
+An instance override on a SUB-CELL that the cell neither declares nor reads (`cap:CB a 0 Kx=3`, where `cap` has no `Kx`)
+is bound into the cell's scope and never looked at, so the circuit is built as if it were absent — and `check` said
+nothing. It cost a yield measurement 500 identical trials: a hand-written `PartScale=k` on a vendor cell that had been
+extracted WITHOUT its scale parameter. `Elaborator.WarnUnreadOverrides` now warns (`unread-override:<path>.<name>`).
+
+**Undeclared is not the test — unread is.** Scope lookup walks up the parent chain, so a name the cell does not declare
+is still visible to every expression below it, including in a cell it instantiates. The warning fires only when no
+expression in the cell, or in any cell under it, mentions the name (identifier tokens, cached per `Cell` object); a cell
+whose text will not tokenize is not judged. Primitive instances are deliberately not covered: their parameters are read
+by a dozen per-family resolvers, and a list of what each one reads does not exist in one place. Checked against every
+shipped example (323 documents) and every `testdata` netlist (82): no warning. Gate:
+`tests/Core.Tests/Elaboration/UnreadOverrideWarningTests.cs`.

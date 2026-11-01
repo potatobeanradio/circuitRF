@@ -91,7 +91,7 @@ public sealed class StatisticalRun
         // A corner's bindings (brief-yield-6 R-ya6-3) are the nominal every spread is drawn around: a percent
         // spread on a value the corner moves follows it, as it follows a value centering moves.
         _bindings = options.Bindings ?? _bindings;
-        _catalog  = TunableCatalog.FromNetlist(bench, lib);
+        _catalog  = TunableCatalog.FromNetlist(bench, lib, parts: circuit.PartTunables);
         _nominals = SampleValues.Nominals(_catalog, _bindings);
         foreach (var t in _nominals) _byKey.TryAdd(t.Key, t);
 

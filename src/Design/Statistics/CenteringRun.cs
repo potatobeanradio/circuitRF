@@ -239,7 +239,7 @@ public sealed class CenteringRun
             bench.GlobalVariables.AddRange(tb.GlobalVariables);
             bench.Analyses.AddRange(tb.Analyses);
         }
-        Variables = OptimizationVariables.Build(_setup, TunableCatalog.FromNetlist(bench, lib), out var notBuilt, options.Ladders);
+        Variables = OptimizationVariables.Build(_setup, TunableCatalog.FromNetlist(bench, lib, parts: circuit.PartTunables), out var notBuilt, options.Ladders);
         if (Variables is null || Variables.Coordinates.Count == 0)
         {
             Refusal = notBuilt ?? StatisticsDiagnostics.CenterNoDesignable();

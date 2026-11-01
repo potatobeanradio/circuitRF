@@ -1547,7 +1547,7 @@ internal static class Check
         bool yieldRun = setup.Statistics?.Target is not null || setup.Goals.Any(g => g.Enabled && g.Use == GoalUse.Yield);
         if (yieldRun || setup.Statistics is not null || setup.Variables.Any(e => e.Distribution != StatDistribution.None))
         {
-            var stat = Design.Statistics.StatisticalRun.Create(PreparedCircuit.FromBench(lib, tb, null),
+            var stat = Design.Statistics.StatisticalRun.Create(PreparedCircuit.FromBench(lib, tb, null, catalog.PartTunables),
                 new Design.Statistics.StatisticalOptions
                 {
                     Mode = yieldRun ? Design.Statistics.StatisticalMode.Yield : Design.Statistics.StatisticalMode.MonteCarlo,
@@ -1559,7 +1559,7 @@ internal static class Check
         // varies, an algorithm centering does not offer — in the run's own words, from its constructor.
         if (setup.Centering is not null)
         {
-            var center = Design.Statistics.CenteringRun.Create(PreparedCircuit.FromBench(lib, tb, null));
+            var center = Design.Statistics.CenteringRun.Create(PreparedCircuit.FromBench(lib, tb, null, catalog.PartTunables));
             if (center.Refusal is { } refusal) f.Add(CliDiagnostics.CheckTuningFinding(path, refusal));
         }
 
@@ -1567,7 +1567,7 @@ internal static class Check
         // fraction table does not hold for k, levels that do not go with the factors — from its constructor.
         if (setup.Doe is not null)
         {
-            var doe = Design.Statistics.DoeRun.Create(PreparedCircuit.FromBench(lib, tb, null));
+            var doe = Design.Statistics.DoeRun.Create(PreparedCircuit.FromBench(lib, tb, null, catalog.PartTunables));
             if (doe.Refusal is { } refusal) f.Add(CliDiagnostics.CheckTuningFinding(path, refusal));
         }
     }

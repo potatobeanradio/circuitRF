@@ -30,7 +30,17 @@ internal static class CircuitSource
     /// </summary>
     public static (Library Lib, TestBench Tb)? Read(
         string path, DocumentKind kind, Action<string>? onError = null)
+        => Read(path, kind, out _, onError);
+
+    /// <inheritdoc cref="Read(string, DocumentKind, Action{string}?)"/>
+    /// <param name="parts">The placed vendor parts the schematic's extraction found (<see cref="NetExtractor.ExtractionResult.PartTunables"/>),
+    /// which the <c>.cnl</c> round trip cannot carry: a run constructor asked about this bench needs them to know a
+    /// part's value (<c>C1.C</c>) is a tunable. Empty for a netlist.</param>
+    public static (Library Lib, TestBench Tb)? Read(
+        string path, DocumentKind kind, out IReadOnlyList<CircuitRF.Design.VendorLibraries.VendorPartTunable> parts,
+        Action<string>? onError = null)
     {
+        parts = [];
         try
         {
             switch (kind)
@@ -42,7 +52,7 @@ internal static class CircuitSource
                 }
 
                 case DocumentKind.Schematic:
-                    return FromSchematic(path);
+                    return FromSchematic(path, out parts);
 
                 case DocumentKind.Cell:
                 {
@@ -51,7 +61,7 @@ internal static class CircuitSource
                     var primary = CellFolder.ResolvePrimary(path, ViewType.Schematic);
                     if (primary.ResolvedName is not { } file) return null;
                     return FromSchematic(Path.Combine(
-                        CellFolder.SubFolderPath(path, ViewType.Schematic), file));
+                        CellFolder.SubFolderPath(path, ViewType.Schematic), file), out parts);
                 }
 
                 default:
@@ -68,9 +78,13 @@ internal static class CircuitSource
     /// <inheritdoc cref="SchematicCircuit.FromSchematic(string, string?)"/>
     /// <remarks>With this invocation's <c>--workspace</c> as the host, and the cells it chose reported
     /// (<see cref="ReportHostCellChoices"/>).</remarks>
-    public static (Library Lib, TestBench Tb) FromSchematic(string cschPath)
+    public static (Library Lib, TestBench Tb) FromSchematic(string cschPath) => FromSchematic(cschPath, out _);
+
+    private static (Library Lib, TestBench Tb) FromSchematic(
+        string cschPath, out IReadOnlyList<CircuitRF.Design.VendorLibraries.VendorPartTunable> parts)
     {
         var (extracted, name) = ExtractFile(cschPath);
+        parts = extracted.PartTunables;
         return SchematicCircuit.FromExtraction(extracted, name, cschPath, CliEntry.HostWorkspace);
     }
 

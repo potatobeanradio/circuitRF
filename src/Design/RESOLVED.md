@@ -25391,6 +25391,25 @@ its own value. A design whose part value is not statistical writes the same netl
 
 Gate: `tests/Ui.Tests/VendorLibraries/VendorPartToleranceTests.cs`.
 
+### Yield on a vendor part failed every trial (2026-11-01)
+
+As shipped, a Monte Carlo or yield run over a schematic with `tune C1.C dist=gauss tol=part` failed EVERY trial with
+"C1.C names no value of this design", in the GUI's Yield panel and in `yield mc` alike, and `check` refused the same
+line with `yield.dist.not-tunable` — while `explain --tunables` listed the key correctly. Every piece worked in isolation;
+the gap was the RUN. `StatisticalRun`, `DoeRun` and `CenteringRun` each build their catalog with
+`TunableCatalog.FromNetlist(bench, lib)` and never passed `circuit.PartTunables`, which `OptimizationRun` already did — so
+a part's value tunable did not exist for them. `check` and `explain` ask those same constructors whether they would
+refuse, and built the circuit with `PreparedCircuit.FromBench(lib, tb, null)`, dropping the parts the same way.
+
+**The `.cnl` round trip cannot carry which part an instance came from**, so every caller that rebuilds a circuit from a
+bench must hand the parts on explicitly — `CircuitSource.Read` now has an overload that returns the extraction's
+`PartTunables` for that reason. Test 8 above called `TunableOverrides.Apply` directly and so could not see any of this;
+tests 9 and 10 run the real `StatisticalRun` and the real `check`/`explain` processes, and fail with the omission put back.
+
+Measured afterwards on a real 0402 C0G 100 pF ±5 % capacitor and 22 nH ±5 % inductor library (scratch harness, not a
+test): at 1 MHz the extracted C and L track every trial's draw to 1.5 ppm — that residual is the capacitor's own,
+unscaled ESL — and a 500-trial L-match yield matched its draws' expected 1/√(LC) spread (σ 1.15 vs 1.16 MHz).
+
 ## A vendor library that states its body size in millimetres got no footprint (2026-10-31)
 
 R-vl2-3d took a part's case only from a Description field shaped `1005M(0402)`. Another manufacturer's static edition
