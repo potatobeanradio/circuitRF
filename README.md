@@ -32,8 +32,8 @@ circuitRF is for RF practitioners or researchers who can't justify the cost of t
 - hierarchy for all cell view types (including 3D)
 - support for PDKs
 - bondwire geometry editor and mutual inductance calculator
-- Tuning and Optimization UI
-- Monte Carlo, yield, corners, design centering and design of experiments
+- Tuning and Optimization
+- Monte Carlo, yield, corners, design centering and DOE
 - 2.5D MoM
 - 3D FEM and FDTD (using [Palace](https://github.com/awslabs/palace), [EMerge](https://github.com/FennisRobert/EMerge) and [openEMS](https://github.com/thliebig/openEMS))
 - 3D FEM thermal solver
@@ -84,28 +84,28 @@ their schematic parameters, hierarchy with arrays, and export to GDSII, DXF and 
 
 | Platform | Download |
 |---|---|
-| Windows, Intel/AMD | [circuitRF-1.6.2-win-x64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.6.2/circuitRF-1.6.2-win-x64-user.msi) |
-| Windows, ARM | [circuitRF-1.6.2-win-arm64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.6.2/circuitRF-1.6.2-win-arm64-user.msi) |
-| Windows, 32-bit | [circuitRF-1.6.2-win-x86-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.6.2/circuitRF-1.6.2-win-x86-user.msi) |
+| Windows, Intel/AMD | [circuitRF-1.6.3-win-x64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.6.3/circuitRF-1.6.3-win-x64-user.msi) |
+| Windows, ARM | [circuitRF-1.6.3-win-arm64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.6.3/circuitRF-1.6.3-win-arm64-user.msi) |
+| Windows, 32-bit | [circuitRF-1.6.3-win-x86-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.6.3/circuitRF-1.6.3-win-x86-user.msi) |
 |  |  |
-| macOS, Apple Silicon | [circuitRF-1.6.2-arm64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.6.2/circuitRF-1.6.2-arm64.dmg) |
-| macOS, Intel | [circuitRF-1.6.2-x64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.6.2/circuitRF-1.6.2-x64.dmg) |
+| macOS, Apple Silicon | [circuitRF-1.6.3-arm64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.6.3/circuitRF-1.6.3-arm64.dmg) |
+| macOS, Intel | [circuitRF-1.6.3-x64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.6.3/circuitRF-1.6.3-x64.dmg) |
 |  |  |
-| Linux, Intel/AMD | [circuitRF-1.6.2-linux-x64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.6.2/circuitRF-1.6.2-linux-x64.tar.gz) |
-| Linux, ARM | [circuitRF-1.6.2-linux-arm64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.6.2/circuitRF-1.6.2-linux-arm64.tar.gz) |
-| Linux, Intel/AMD, AppImage | [circuitRF-1.6.2-linux-x64.AppImage](https://github.com/potatobeanradio/circuitRF/releases/download/1.6.2/circuitRF-1.6.2-linux-x64.AppImage) |
-| Linux, ARM, AppImage | [circuitRF-1.6.2-linux-arm64.AppImage](https://github.com/potatobeanradio/circuitRF/releases/download/1.6.2/circuitRF-1.6.2-linux-arm64.AppImage) |
+| Linux, Intel/AMD | [circuitRF-1.6.3-linux-x64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.6.3/circuitRF-1.6.3-linux-x64.tar.gz) |
+| Linux, ARM | [circuitRF-1.6.3-linux-arm64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.6.3/circuitRF-1.6.3-linux-arm64.tar.gz) |
+| Linux, Intel/AMD, AppImage | [circuitRF-1.6.3-linux-x64.AppImage](https://github.com/potatobeanradio/circuitRF/releases/download/1.6.3/circuitRF-1.6.3-linux-x64.AppImage) |
+| Linux, ARM, AppImage | [circuitRF-1.6.3-linux-arm64.AppImage](https://github.com/potatobeanradio/circuitRF/releases/download/1.6.3/circuitRF-1.6.3-linux-arm64.AppImage) |
 
 
 **Linux** — unpack and run `install.sh`. It writes only inside `~/.local`, puts `circuitrf` on your PATH
 and registers the menu entry and file types; `--uninstall` removes it and leaves your work alone.
 
 ```sh
-tar xzf circuitRF-1.6.2-linux-x64.tar.gz
-./circuitRF-1.6.2/install.sh
+tar xzf circuitRF-1.6.3-linux-x64.tar.gz
+./circuitRF-1.6.3/install.sh
 ```
 
-**Linux AppImage**: download it, make it executable (`chmod +x circuitRF-1.6.2-linux-x64.AppImage`)
+**Linux AppImage**: download it, make it executable (`chmod +x circuitRF-1.6.3-linux-x64.AppImage`)
 and run it. Nothing is installed, so keep it wherever you like. It does not update itself: when a new
 version is out, its line in the Messages panel has a **Download** button that saves the new AppImage
 next to the one you are running. Use the tarball if you want updates installed automatically.
