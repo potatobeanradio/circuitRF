@@ -579,6 +579,18 @@ public static class SurfaceMesher
             CollectBoundaryLines(problem, x0, y0, x1, y1, rimGrading, detailFloor,
                                  reentrantFans: s.EdgeMesh && s.EdgeCells > 0);
 
+        // brief-port-width-planar-and-c3d R-pw1-1 — an edge port narrower than its edge is cut on cell boundaries: a hard
+        // gridline at each end of its span, across the port's current. A span-width feed lead (PlanarFeedExtension)
+        // already draws these as its own sides; a port whose lead could not be grown needs them here.
+        if (ports is not null)
+            foreach (var p in ports)
+                if (p.EdgeSpan is { } sp)
+                {
+                    var (lines, lo, hi) = p.Direction == PlanarBasisDirection.X ? (hardY, y0, y1) : (hardX, x0, x1);
+                    foreach (double t in new[] { sp.LoM, sp.HiM })
+                        if (t > lo && t < hi) lines.Add(t);
+                }
+
         long estX = EstimateLineCount(x0, x1, hardX, hx);
         long estY = EstimateLineCount(y0, y1, hardY, hy);
         if (estX * estY > MaxGridCells)

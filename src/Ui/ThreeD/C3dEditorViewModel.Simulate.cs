@@ -783,6 +783,42 @@ public sealed partial class C3dEditorViewModel
         return null;
     }
 
+    /// <summary>
+    /// Renumbers one port (not a wave port with terminals, whose terminals carry the numbers): a whole number from 1 that
+    /// no other port or terminal uses. A name that was the default for the old number (<c>P3</c>) follows it; a name the
+    /// user gave is kept. One undo entry. Returns why it was refused, or null.
+    /// </summary>
+    public string? SetPortNumber(C3dPort port, string text)
+    {
+        if (C3dPorts.HasTerminals(port))
+            return $"{C3dPorts.Label(port)} has terminals; each terminal has its own number.";
+        if (!int.TryParse(text.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int n) || n < 1)
+            return $"'{text.Trim()}' is not a port number: a whole number from 1.";
+        int old = port.Number;
+        if (n == old) return null;
+        if (Document.Ports.Where(q => !ReferenceEquals(q, port)).SelectMany(C3dPorts.Numbers).Contains(n))
+            return $"Port {n} is already taken; each port has its own number.";
+        ChangeRecords($"Renumber port {old} to {n}", d =>
+        {
+            if (port.Name == $"P{old}") port.Name = $"P{n}";
+            port.Number = n;
+            d.Ports = [.. d.Ports.OrderBy(q => C3dPorts.Numbers(q).DefaultIfEmpty(0).Min())];
+        });
+        if (_hiddenPorts.Remove(C3dPorts.ProblemName(old))) _hiddenPorts.Add(C3dPorts.ProblemName(n));
+        StatusMessage = $"Port {old} is now port {n}. A result saved before keeps the old numbering.";
+        return null;
+    }
+
+    /// <summary>Renames one port. Blank is refused; one undo entry. Returns why it was refused, or null.</summary>
+    public string? SetPortName(C3dPort port, string text)
+    {
+        string name = text.Trim();
+        if (name.Length == 0) return "A port needs a name.";
+        if (name == port.Name) return null;
+        ChangeRecords($"Rename {C3dPorts.Label(port)} to {name}", _ => port.Name = name);
+        return null;
+    }
+
     public void DeletePorts(IReadOnlyList<C3dPort> ports)
     {
         var set = ports.ToHashSet();
@@ -1062,6 +1098,22 @@ public sealed partial class C3dEditorViewModel
 
     // ── the context menu (R-em3d49-2, -3b, -4) ───────────────────────────────────────────────
 
+    /// <summary>One port's Z0, Number and Name, each asked for as text — the canvas menu's and the Object Tree row's.
+    /// A wave port with terminals numbers each terminal instead, so it has no single number to change.</summary>
+    internal IEnumerable<Viewer3DMenuItem> PortValueItems(C3dPort p)
+    {
+        if (!C3dPorts.HasTerminals(p))
+        {
+            yield return new Viewer3DMenuItem($"Z0… ({p.Z0} Ω)", () => TextRequested?.Invoke($"Z0 of {C3dPorts.Label(p)}",
+                "Reference impedance, Ω (a complex one as 25+j10):", p.Z0, text => SetPortZ0(p.Number, text)));
+            string number = p.Number.ToString(CultureInfo.InvariantCulture);
+            yield return new Viewer3DMenuItem($"Number… ({number})", () => TextRequested?.Invoke($"Number of {C3dPorts.Label(p)}",
+                "Port number (a whole number from 1, not used by another port):", number, text => SetPortNumber(p, text)));
+        }
+        yield return new Viewer3DMenuItem($"Name… ({C3dPorts.Label(p)})", () => TextRequested?.Invoke($"Name of {C3dPorts.Label(p)}",
+            "Port name:", p.Name, text => SetPortName(p, text)));
+    }
+
     private IEnumerable<Viewer3DMenuItem> SimulateMenuItems()
     {
         var sel = Viewer.Selection;
@@ -1084,11 +1136,7 @@ public sealed partial class C3dEditorViewModel
             ]);
             yield return PortModelItem(ports);                  // brief-em3d-93
             if (ports.Count == 1)
-            {
-                var p = ports[0];
-                yield return new Viewer3DMenuItem($"Z0… ({p.Z0} Ω)", () => TextRequested?.Invoke($"Z0 of {C3dPorts.Label(p)}",
-                    "Reference impedance, Ω (a complex one as 25+j10):", p.Z0, text => SetPortZ0(p.Number, text)));
-            }
+                foreach (var m in PortValueItems(ports[0])) yield return m;
             yield return new Viewer3DMenuItem(ports.Count == 1 ? $"Delete {C3dPorts.Label(ports[0])}" : "Delete Ports", () => DeletePorts(ports));
             yield return Viewer3DMenuItem.Separator;
         }

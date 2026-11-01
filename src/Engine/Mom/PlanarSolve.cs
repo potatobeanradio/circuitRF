@@ -2791,6 +2791,9 @@ public static class PlanarSolve
             for (int i = 0; i < ports.Count; i++)
             {
                 if (ports[i].IsDeembeddable) { deembedded++; continue; }
+                // R-pw1-2 — an edge port whose span-width feed could not be grown; the feed extension's own note
+                // names it and says why.
+                if (ports[i].DeembedDeclined) continue;
                 uncalibrated.Add(ports[i].Number);
                 (ports[i].Kind == PlanarPortKind.Internal ? groundPorts : gapPorts)
                     .Add(ports[i].Number);

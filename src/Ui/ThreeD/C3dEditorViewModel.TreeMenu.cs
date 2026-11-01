@@ -56,6 +56,7 @@ public sealed partial class C3dEditorViewModel
         {
             var port = PortOfRow(item);
             items.Add(new Viewer3DMenuItem("Duplicate", Enabled: false, Tip: "A port is drawn with the Port tool: each one joins its own pair of conductors."));
+            if (port is not null && item.Kind == "Port") items.AddRange(PortValueItems(port));   // Z0, Number, Name
             items.Add(Viewer3DMenuItem.Separator);
             items.Add(new Viewer3DMenuItem("Delete", port is null ? null : () => DeletePorts([port]), Enabled: port is not null));
             if (port is not null) items.Add(PortModelItem([port]));    // brief-em3d-93

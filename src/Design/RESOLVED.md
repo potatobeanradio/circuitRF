@@ -25517,3 +25517,46 @@ own ports (`C3dPort.Number`), which are not layout labels. Tests: `PortNumberGap
 the region before it clips anything, and refuses the run naming the port, its point and the region. `EmGeometry`
 applies the region for every caller. Test: `EmSolveRegionTests.APortOutsideTheRegion_IsRefusedByName_BeforeAnythingIsExtracted`.
 Nothing changed.
+
+## PW-1: a port's Width, honoured by the planar run and kept by a `.c3d` (2026-10-31)
+
+- **One flag, one rule, three readers.** `LabelShape.PortUseEdgeWidth` (`bool?`, omitted when null) is read only
+  through `EdgePortSheet.UsesEdgeWidth`, where null means `PortWidth is null`; `StoredUseEdgeWidth` is the value to
+  write, null wherever null already reads that way, so the Inspector never adds a key to a file whose box nobody
+  moved. `EdgePortSheet.Span(..., useEdge)` is the rule: ticked → the edge; else the stated width, else 2 × H, both
+  centred on the port and clipped. The 4 × H threshold is gone from the rule (unticked on a short edge clips to the
+  edge anyway). The canvas bar (`Bar`), the 3D sheet (`Em3dGenerator`) and the planar port
+  (`EmPortExtraction` → `PlanarPort.Span`) all call it. A width edit in the Inspector rewrites the stored flag beside
+  it, since null reads differently with and without a width.
+- **The 3D generator's first return walk used to cover the whole edge, even for a port that would be narrowed.** So a
+  port whose edge crossed partial metal (a via, a plane covering half the edge) was refused before the narrowing
+  could help, and unticking Use edge width — the remedy the refusal now names — did not clear it. An unticked port is
+  narrowed by the STACK's H before the first walk (`HeightToReturnDbu`); the second pass re-derives the span from the
+  real edge (`edgeLo`/`edgeHi`) with the walked H. A ticked port is walked exactly as before.
+- **The return walk judges cover at the sheet's MIDPOINT.** A plane covering the middle of an edge but not its ends
+  is accepted; one missing the midpoint but touching the edge is the "covers only part of it" refusal. Worth knowing
+  when building a fixture for either: the refusal test needs the whole edge's midpoint uncovered and the narrowed
+  sheet covered (`PortEdgeWidthTests`).
+- **A `.c3d` port record is LINKED to the label it came from** (`C3dPort.FromLayout`: instance name + the label's
+  own port number; omitted when null, cleared on paste). Matching by number alone failed twice: two placed instances of
+  one layout both number a port 1, so the second instance's ports were dropped without a word; and the shipped
+  *3D Package* example's P1/P2 are the package's own pins at ±4.98 mm, hand-drawn, sharing only their numbers with
+  the placed die's labels 1 and 2 — both reported stale on open. `C3dHierarchy.MatchOf` is the one match: the link
+  when there is one (so a renumbered record still finds its label), else the label of the same number on the same
+  plane at the same offset, which is how a record made before the link is still caught after a Width edit. Update
+  Ports from Layout moves matched records (and stamps the link on an old one), adds every label nothing stands for at
+  its own number or the smallest free one (`UsedNumbers`, terminals counted), and reports the renumbering. On *3D
+  Package* the match rule adds the die's two ports as 3 and 4 rather than moving the package pins onto the die (worked
+  out from the rule, not run on the example).
+  `PortsFromLayouts` applies each instance's placement to the sheet's corners (an arrayed instance is listed as left
+  out) and uses the first 3D `.cem` naming the layout, else `DefaultPortSetup` (R-pw1-6).
+- **A port's number and name are edited in the 3D editor** (`SetPortNumber`/`SetPortName`, on the canvas menu and the
+  Object Tree row through one `PortValueItems`). A taken number is refused; a default name `P<n>` follows the number,
+  a given one stays; the hidden-port state moves with it. A wave port with terminals has no single number to change.
+- **`PlanarFeedExtension.TryEndFace` takes the OUTERMOST metal on the port's own transverse line**, not the metal the
+  port is on. Metal directly behind a side port along that line becomes the "end face" and the lead grows from it.
+  Pre-existing and not changed here; the decline test puts its obstacle beside the port's line for that reason.
+- **Shipped examples, generation only.** No example port's width changes on either kernel: every 3D example port
+  is on a line end no longer than 4 × H, and no example states a `PortWidth`, so the planar spans are all null. All
+  five 3D `.cem`s generate. Of the `.c3d`s with placed layouts, only *3D Package* has ports from layouts, and none is
+  reported stale.

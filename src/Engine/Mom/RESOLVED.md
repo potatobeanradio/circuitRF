@@ -12757,3 +12757,17 @@ movement there — and the corner zones exclude it with everything else, so it i
 the saving at 5 % it is within the estimate's own slack and was not touched. (4) The scratch harness
 (`h/`: `dump`, `line`, `run`), the region-mask and corner-factor hooks, and the three drawn geometries
 live in the session scratchpad only; the hooks were removed from the engine before this landed.
+
+## PW-1: an edge port narrower than its edge (`PlanarPort.Span`, 2026-10-31)
+
+- `PlanarPort.Span` (metres on the transverse axis, null = the whole contiguous rooftop row, i.e. every port before
+  it) keeps only the rows whose transverse centres lie in the span; the metal walk behind `UndrivenMetalM` is narrowed
+  by the same test, because metal outside the span is not this port's cross-section. `SurfaceMesher.Mesh` adds a hard
+  gridline at each span end from its `ports` argument, so the cut ends on a cell boundary. A span equal to the edge
+  reproduces the port bit for bit (`PortSpanTests`).
+- **The calibration feed is a TAB.** `PlanarFeedExtension.ExtrudeTab` splices four vertices into the end face, the
+  span wide; the uniformity scan sees the whole conductor one step inward and asks for the full end run, so a side
+  port always grows one. Where it cannot (other metal behind it, a face that is not one segment), the port is in
+  `PlanarFeedExtensionResult.NotDeembedded`, `PlanarKernel.Solve` sets `PlanarPortResolution.DeembedDeclined`, and
+  `IsDeembeddable` is false: the port is reported at its cut in its declared Z0, never calibrated against a line of
+  a width the metal beyond the cut does not have. A two-cut port ignores its span.

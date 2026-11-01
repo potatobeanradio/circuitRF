@@ -490,7 +490,21 @@ public static class Em3dGenerator
                 double portAcross = sheetAlongX ? p.Location.X : p.Location.Y;
                 double? statedWidth = !wave && portLabel?.PortWidth is > 0 and var statedDbu
                     ? statedDbu / (source.DbuPerMicron * 1e6) : null;
+                // brief-port-width-planar-and-c3d R-pw1-0b — the port's "Use edge width" box means the same here as on the
+                // planar run: checked (the default for a port stating no width), the sheet is the whole edge.
+                bool useEdge = wave || portLabel is null || EdgePortSheet.UsesEdgeWidth(portLabel);
                 var sheetSpan = new EdgePortSheetSpan(lo, hi, EdgePortSheetRule.Edge);
+                // R-pw1-0b — a port narrower than its edge is walked over its own width from the first pass, H taken from
+                // the stack until the walk measures it; walking the whole edge first would refuse it for metal beside it,
+                // which is exactly what unticking Use edge width is for.
+                if (!useEdge && portLabel is not null)
+                {
+                    double hStack = EdgePortSheet.HeightToReturnDbu(source.Technology, portLabel.PortLayer ?? portLabel.Layer,
+                                                                    source.DbuPerMicron) is { } hd
+                        ? hd / (source.DbuPerMicron * 1e6) : 0;
+                    var pre = EdgePortSheet.Span(lo, hi, portAcross, hStack, statedWidth, useEdge: false);
+                    if (pre.Rule != EdgePortSheetRule.Edge) (lo, hi) = (pre.Lo, pre.Hi);
+                }
                 ReturnSide? landed;
                 Dictionary<int, (double At, double Gap)> moves;
                 double tolerance;
@@ -533,12 +547,12 @@ public static class Em3dGenerator
                     landed = walks.Where(w => w.Band is not null)
                                   .MinBy(w => w.Above ? w.Band!.BottomM - band.TopM : band.BottomM - w.Band!.TopM);
                     if (landed is null)
-                        return EndReturnRefusal(p.Number, band, stated, walks);
-                    if (pass > 0 || wave) break;
+                        return EndReturnRefusal(p.Number, band, stated, walks, useEdge && pass == 0);
+                    if (pass > 0 || wave || useEdge) break;
                     double sigZ = piece.IsSheet ? piece.SheetZ : landed.Above ? piece.ZTop : piece.ZBottom;
                     double retZ = landed.Piece is not { } rp0 ? floorZ
                                 : rp0.IsSheet ? rp0.SheetZ : landed.Above ? rp0.ZBottom : rp0.ZTop;
-                    var span = EdgePortSheet.Span(lo, hi, portAcross, Math.Abs(retZ - sigZ), statedWidth);
+                    var span = EdgePortSheet.Span(edgeLo, edgeHi, portAcross, Math.Abs(retZ - sigZ), statedWidth, useEdge);
                     if (span.Rule == EdgePortSheetRule.Edge) break;
                     sheetSpan = span;
                     (lo, hi) = (span.Lo, span.Hi);
@@ -573,16 +587,10 @@ public static class Em3dGenerator
                     return $"Port {p.Number}'s return plane '{retBand.Layer.Name}' is not separated from " +
                            $"'{band.Layer.Name}' by any height, so the port's sheet would be empty.";
 
-                // brief-dfr32-2 R-dfr32-2-2 — say why the sheet is narrower than its edge, and how to change it.
-                if (sheetSpan.Rule == EdgePortSheetRule.Bounded)
-                    _notes.Add($"Port {p.Number} is on an edge {Length(edgeHi - edgeLo)} long, more than " +
-                               $"{Fmt(EdgePortSheet.LongEdgeOverHeight)} × its height to the return ({Length(zHi - zLo)}), so its " +
-                               $"sheet is {Length(hi - lo)} wide, {Fmt(EdgePortSheet.BoundedWidthOverHeight)} × that height " +
-                               $"centred on the port{(sheetSpan.Clipped ? " and clipped to the edge" : "")}. State the port's " +
-                               "Width (its Properties) for another width.");
-                else if (sheetSpan.Rule == EdgePortSheetRule.Stated)
-                    _notes.Add($"Port {p.Number}'s sheet is {Length(hi - lo)} wide, the Width the port states" +
-                               (sheetSpan.Clipped ? $", clipped to its edge ({Length(edgeHi - edgeLo)})." : "."));
+                // brief-dfr32-2 R-dfr32-2-2, R-pw1-3 — say why the sheet is narrower than its edge, and how to change it, in
+                // the words the planar run uses for its cut (EdgePortSheet.Describe).
+                if (EdgePortSheet.Describe(p.Number, "sheet", sheetSpan, edgeHi - edgeLo, Length) is { } why)
+                    _notes.Add(why);
 
                 // brief-dfr32-2 R-dfr32-2-3 — a sheet on a curved edge meets a straight face: the metal outside the sheet's
                 // plane, across its width, is cut away. Not for a sheet moved in to where its return begins (the line runs
@@ -889,20 +897,27 @@ public static class Em3dGenerator
 
         /// <summary>Why a line-end port found no return: the level that blocks it, or every level looked at on
         /// each side and what it had under the line's end.</summary>
-        private string EndReturnRefusal(int port, PlanarExtractor.StackBand band, StatedReturn? stated, List<ReturnSide> walks)
+        private string EndReturnRefusal(int port, PlanarExtractor.StackBand band, StatedReturn? stated, List<ReturnSide> walks,
+                                        bool wholeEdge = false)
         {
+            // R-pw1-0b — a sheet across the whole edge is what most often reaches metal the port was never near (a via on
+            // a pour's edge), and the checkbox is the fix the user has in hand.
+            string edge = wholeEdge
+                ? " The port uses its whole edge (Use edge width, in its Properties): uncheck it for a sheet 2 × H wide " +
+                  "centred on the port, or a Width you state."
+                : "";
             string toward = stated is not null ? $"'{stated.Layer}' ({ReturnReason(stated)})"
                           : AnyGroundReference(_g.Bands) ? "a ground-reference plane" : "the nearest metal";
             if (walks.FirstOrDefault(w => w.Blocker is not null) is { Blocker: { } b } blocked)
                 return $"Port {port}'s sheet at its line's end, from '{band.Layer.Name}' {(blocked.Above ? "up" : "down")} toward " +
                        $"{toward}, would cross metal on '{b.Layer.Name}'{(blocked.BlockerPartial ? ", which covers only part of it" : "")}. " +
                        "A lumped port's sheet runs through dielectric from the line to the plane it returns through. " +
-                       "Clear that metal from under the line's end, or state the port's return in the 3D port table's Return column.";
+                       "Clear that metal from under the line's end, or state the port's return in the 3D port table's Return column." + edge;
             if (walks.FirstOrDefault(w => w.ShortOf is not null) is { ShortOf: { } shortOf } stopped)
                 return $"Port {port} returns through {shortOf.Split(':')[0]}, {(stopped.Above ? "above" : "below")} '{band.Layer.Name}', " +
                        $"but {shortOf[(shortOf.IndexOf(':') + 2)..]}, so the port's sheet has nothing to end on. Extend the " +
                        "plane to the line's end" +
-                       (stated is null ? ", or state the port's return in the 3D port table's Return column." : ".");
+                       (stated is null ? ", or state the port's return in the 3D port table's Return column." : ".") + edge;
             string Side(ReturnSide w) => $"{(w.Above ? "above" : "below")} it, " +
                                          (w.Looked.Count == 0 ? "no conductor" : string.Join(", ", w.Looked));
             if (stated is not null && stated.Layer == band.Layer.Name)

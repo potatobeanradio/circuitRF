@@ -218,13 +218,12 @@ preferred, and a port can state another in the port table's <strong>Return</stro
 in the line's own field at the air box's face instead, and has no sheet parasitic. Both solvers build
 one, except that openEMS cannot feed a hollow waveguide and Palace cannot give a port with several
 terminals. <a href="em-setup.html#wave-ports">Wave ports</a>.</p>
-<p><a id="port-width"></a><strong>How wide a lumped port's sheet is.</strong> On a line's end the sheet is as wide as the line.
-On a longer edge, such as the edge of a ground pour where a part's pad meets it, a sheet as wide as the edge is
-not what anyone means, so when the edge is longer than 4 × H (H, the dielectric height from the port's conductor
-to its return) the sheet is 2 × H wide, centred on the port, and cut short where the edge ends. The run's notes
-say so. To set another width, type it in the port's <strong>Width</strong> in the layout's Properties panel; a blank Width
-is the rule above. The layout draws each port's bar at the width its sheet will have, and a 3D view made from
-the layout gets the same sheet. A planar run's port still spans the whole conductor end.</p>
+<p><a id="port-width"></a><strong>How wide a lumped port's sheet is.</strong> As wide as the port's bar in the layout, which the
+port's <strong>Use edge width</strong> and <strong>Width</strong> set (<a href="layout-editor.html#ports">Ports</a>): the whole conductor edge with the
+box ticked; otherwise the Width you state, or 2 × H (H, the dielectric height from the port's conductor to its
+return) centred on the port, cut short where the edge ends. The run's notes say which, and why. A sheet across a
+whole edge can reach metal the port was never near, such as a via on a pour's edge; when that refuses the run,
+the refusal names <strong>Use edge width</strong> as the way to narrow it.</p>
 <p><strong>A port on a curved edge.</strong> A port on a round pad's arc has a flat sheet against a curved outline, which leaves
 slivers between the two that the mesher has to resolve. The run cuts the pad flat across the sheet's width, at
 the sheet, and its notes say how much metal that removed.</p>
@@ -244,6 +243,11 @@ A <a href="components.html#testpad">TESTPAD</a> with <code>Centre = Port</code> 
 port numbered <code>PortNum</code>, wherever the part is placed, turned or mirrored, and in 3D it is the pad-to-plane
 port above. A planar setup takes it as an internal port to ground. Its number is checked against the
 board's own port labels and every other component's: a number used twice is refused, naming both.</p>
+<p><a id="port-numbers"></a><strong>Port numbers run 1 to N.</strong> A Touchstone file numbers its ports by position, not by
+name, so a layout whose ports are 1, 3 and 4 would write P3 as the file's port 2, and a schematic that connects the
+file connects it by position. A run, planar or 3D, is therefore refused while the numbers skip one, and the refusal
+names what is missing (<code>Port numbers skip 2: the 3 ports are 1, 3, 4 …</code>); <code>check</code> and <code>explain</code> say the same.
+Renumber the ports 1 to N. A port outside the setup's solve region is refused too, by name.</p>
 </li>
 <li><p><strong>Terminals</strong> (<code>Terminals3D</code>, static solves): the matrix's rows and columns, each named by a net, an
 object's path or the end of one. An electrostatic terminal takes the whole piece of metal it names; a

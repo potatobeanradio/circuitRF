@@ -235,6 +235,14 @@ public enum PlanarPortReference
 /// different levels</b>; inferring them and landing on two levels is refused, because two terminals
 /// is two chances to do that silently (RP-2a's R-rp2a-3, L9d/D2's reason one level up).
 /// </param>
+/// <param name="Span">
+/// <b>brief-port-width-planar-and-c3d R-pw1-1 — an EDGE port's extent ACROSS its current, when it is narrower than the
+/// edge it stands on</b>, in metres on the transverse axis (y for an x-directed port). Null — every construction site
+/// that predates it — drives the whole contiguous row of rooftops along the edge, exactly as before. Set, only the
+/// rooftops whose transverse centres lie inside it are driven, the mesher puts a gridline at each end so the cut ends
+/// on a cell boundary, and the calibration feed is grown at this width (<c>PlanarFeedExtension</c>). Ignored by an
+/// internal port.
+/// </param>
 public sealed record PlanarPort(
     int                 Number,
     EmPoint             Location,
@@ -245,8 +253,12 @@ public sealed record PlanarPort(
     PlanarPortKind      Kind       = PlanarPortKind.Edge,
     double?             GroundPathWidthM = null,
     EmPoint?            NegativeLocation = null,
-    int?                NegativeLayerIndex = null)
+    int?                NegativeLayerIndex = null,
+    PlanarPortSpan?     Span = null)
 {
+    /// <summary>The span an edge port honours: <see cref="Span"/> on an edge port, null on any other.</summary>
+    public PlanarPortSpan? EdgeSpan => Kind == PlanarPortKind.Edge ? Span : null;
+
     /// <summary>RP-2a — whether this port's negative terminal is a drawn conductor rather than the
     /// stackup's ground plane. The two members that say so are one object here (R-rp2a-12).</summary>
     public bool IsConductorReferenced =>
@@ -284,6 +296,15 @@ public sealed record PlanarPort(
     public double IncidenceSign =>
         Kind == PlanarPortKind.Internal ? +1.0
         : Side is PlanarPortSide.MinX or PlanarPortSide.MinY ? +1.0 : -1.0;
+}
+
+/// <summary>R-pw1-1 — an edge port's transverse extent, metres, <see cref="LoM"/> &lt; <see cref="HiM"/>.</summary>
+public readonly record struct PlanarPortSpan(double LoM, double HiM)
+{
+    public double WidthM => HiM - LoM;
+
+    /// <summary>Whether a transverse coordinate is inside the span, to a part in 10⁹ of its width.</summary>
+    public bool Contains(double t) => t >= LoM - 1e-9 * WidthM && t <= HiM + 1e-9 * WidthM;
 }
 
 /// <summary>
@@ -830,7 +851,15 @@ public sealed record PlanarPortResolution(
     /// sides and neither. Asked in exactly one place (<c>PlanarSolve</c>) so the two kinds cannot
     /// drift apart, and named rather than written as an enum comparison at each site.
     /// </summary>
-    public bool IsDeembeddable => Kind == PlanarPortKind.Edge;
+    public bool IsDeembeddable => Kind == PlanarPortKind.Edge && !DeembedDeclined;
+
+    /// <summary>
+    /// brief-port-width-planar-and-c3d R-pw1-2 — an EDGE port that is nonetheless not de-embedded: it is narrower than
+    /// its edge and the feed its calibration needs could not be grown at its width
+    /// (<see cref="PlanarFeedExtensionResult.NotDeembedded"/>). Reported at its cut in its declared Z0, like an internal
+    /// port, rather than calibrated against a line of a width the metal beyond the cut does not have.
+    /// </summary>
+    public bool DeembedDeclined { get; init; }
 
     /// <summary>The bulk (largest) cell along the port's axis, which is what D4 fills a standard's
     /// middle with so the standard's line and the DUT's feed are discretised identically.</summary>
@@ -1922,13 +1951,30 @@ public static class PlanarPorts
         // declined to pair", and it carries that explanation in words. Metal that never ended here is
         // not undriven — it is not this port's cross-section at all.
         int outside = fromLow ? outer - 1 : outer + 1;
+        // R-pw1-1 — a port narrower than its edge drives only the rows whose centres lie in its span. Asked of the metal
+        // walk too: metal outside the span is not this port's cross-section, so it is not "undriven" either.
+        var span = port.EdgeSpan;
         bool EndsHere(int t) =>
-            internalGap || outside < 0 || outside >= nLong || CellAt(outside, t) < 0;
+            (span is not { } sp || sp.Contains(0.5 * (gTran[t] + gTran[t + 1]))) &&
+            (internalGap || outside < 0 || outside >= nLong || CellAt(outside, t) < 0);
 
         bool HasBasis(int t)
         {
             int a = CellAt(lowCol, t), b = CellAt(highCol, t);
             return a >= 0 && b >= 0 && byPair.ContainsKey((a, b, port.Direction)) && EndsHere(t);
+        }
+
+        if (span is { } sp0 && !EndsHere(seedT))
+        {
+            // The port's own point is outside its own span only when the span came from somewhere other than the
+            // port; take the row nearest the span's centre instead of refusing.
+            double mid = 0.5 * (sp0.LoM + sp0.HiM);
+            int best = -1;
+            for (int t = 0; t < nTran; t++)
+                if (HasBasis(t) && (best < 0 || Math.Abs(0.5 * (gTran[t] + gTran[t + 1]) - mid) <
+                                                Math.Abs(0.5 * (gTran[best] + gTran[best + 1]) - mid)))
+                    best = t;
+            if (best >= 0) seedT = best;
         }
 
         if (!HasBasis(seedT))

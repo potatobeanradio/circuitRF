@@ -672,14 +672,27 @@ public sealed class LabelShape : LayoutShape
     /// conductor edge the port sits on, centred on the port's own point and clipped to that edge. Meaningful only with
     /// <see cref="IsPort"/>.
     ///
-    /// <para><b>null means the rule</b> (<c>EdgePortSheet.Span</c>): the whole edge, unless the edge is longer than
-    /// 4 × the dielectric height to the port's return, when the sheet is 2 × that height wide. That is what every
-    /// <c>.clay</c> written before this field carries, and a port on a line end resolves exactly as it always did.</para>
+    /// <para><b>Live only when the port does not use its edge width</b> (<see cref="PortUseEdgeWidth"/>). Then null
+    /// means 2 × the dielectric height to the port's return, centred on the port and clipped to the edge
+    /// (<c>EdgePortSheet.Span</c>); with the box checked the port drives the whole edge whatever this says.</para>
     ///
     /// <para>Additive: no <c>.clay</c> <c>FormatVersion</c> bump, omitted from the file when null.</para>
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public long? PortWidth { get; set; }
+
+    /// <summary>
+    /// <b>brief-port-width-planar-and-c3d R-pw1-0 — whether an edge port drives the WHOLE conductor edge it stands
+    /// on</b> (the "Use edge width" box in its Properties). Read through <c>EdgePortSheet.UsesEdgeWidth</c>, never
+    /// directly: <b>null reads as <c>PortWidth is null</c></b>, so a port with no stated width uses its edge and one that
+    /// states a width keeps it. Every run — planar and 3D — reads the same answer, and the layout editor draws it.
+    ///
+    /// <para>The Inspector writes null whenever the value it sets is the one null would read as, so an untouched
+    /// <c>.clay</c> round-trips byte for byte. Additive: no <c>.clay</c> <c>FormatVersion</c> bump, omitted when
+    /// null.</para>
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? PortUseEdgeWidth { get; set; }
 
     /// <summary>
     /// <b>brief-dfr26-7 R-dfr26-7-3 — a port a COMPONENT declares, which an EM setup collects from inside the

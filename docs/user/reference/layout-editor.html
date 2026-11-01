@@ -359,10 +359,16 @@ beside it reads, for example, <strong>17 of 61</strong> while it is narrowing th
 <strong>Vis</strong> and <strong>Sel</strong> columns turn that column on or off for every layer <strong>listed</strong> — with a filter typed,
 only the layers it shows, so &quot;hide every pin layer&quot; is a filter and one click. <strong>Page Up</strong> and <strong>Page Down</strong>
 page through the list, whether you are in the box, in the list, or on the canvas while the list is open.</p>
+<p><strong>The Ports row</strong>, above the layers, has its own <strong>Vis</strong> and <strong>Sel</strong> boxes for every port label in the layout,
+whichever layer it sits on. A port lives on the copper it drives, so turning that layer's <strong>Sel</strong> off takes the traces
+with it; turning the Ports row's <strong>Sel</strong> off leaves the traces pickable and sets the ports aside, which is the way to
+build a selection of shapes for a boolean without picking up the ports between them. Ports are then left out of a
+click, a marquee and Select All, the Port tool still places them, and the status bar says <strong>Ports not selectable</strong>.
+<strong>Vis</strong> off draws no port at all. A picture made with <a href="cli.html#render"><code>render</code></a> is unaffected.</p>
 <p><strong>Select on the current layer only</strong> (the target button in the list's header) lets a click pick only
 shapes on the drawing layer, whatever the <strong>Sel</strong> column says. It is the quick way to work on a trace
 that lies on a ground plane: choose the trace's layer, turn it on, and the plane can no longer be
-picked. <strong>Show all</strong> makes every layer visible and selectable again.</p>
+picked. <strong>Show all</strong> makes every layer, and the Ports row, visible and selectable again.</p>
 <p><strong>Click again to select the next shape underneath.</strong> A second click at the same spot moves to the next
 overlapping shape — see <a href="#selection">Selection</a>.</p>
 <p><strong>These choices are yours, not the design's.</strong> They are not written to the <code>.clay</code> or the <code>.ctech</code>,
@@ -373,13 +379,25 @@ as you left it. A layout opened without a workspace keeps them until circuitRF c
 <p><strong>Drawing tools:</strong> Select · Rect · RoundedRect · Circle · Polygon · Curve · Path · Label · Port ·
 Instance-place · Array · Ruler.</p>
 <p><a id="ports"></a><strong>Ports.</strong> A port is drawn as a bar across the conductor edge it sits on, an arrow arriving at the
-bar in the direction current enters, and its name. The bar is as wide as the port's 3D sheet will be: the
-conductor end, or on an edge longer than 4 × the height to its return, twice that height centred on the port
-(see <a href="em-3d.html#port-width">How wide a lumped port's sheet is</a>). The port's <strong>Width</strong> in the Properties panel
-sets it; blank is that rule, which the field's grey text shows. The name is drawn at a fixed size on screen,
+bar in the direction current enters, and its name. The bar is as wide as the port is, and that width is the one
+every run uses, planar and 3D alike. Two rows in the Properties panel set it:</p>
+<ul>
+<li><strong>Use edge width</strong> (ticked for a port that states no width): the port drives the whole conductor edge it stands
+on. <strong>Width</strong> is greyed and shows that edge.</li>
+<li>Unticked, <strong>Width</strong> is live. A width you type is centred on the port and cut short where the edge ends; blank is
+twice the height to the port's return (H, from the technology's stackup), which the field's grey text shows. On a
+line's end no wider than that, the port is the line's end either way.</li>
+</ul>
+<p>Untick it for a port on the side of a wide trace or the edge of a ground pour, where a part's pad meets the metal:
+the whole edge is millimetres of port nobody meant. With several ports selected, a box showing a dash means they
+differ, and a click sets them all. See <a href="em-3d.html#port-width">How wide a lumped port's sheet is</a> and
+<a href="em-setup.html#ports">Ports</a>. The name is drawn at a fixed size on screen,
 beside the arrow on its outer side, at every zoom. Where two names would overlap, the later port's name moves
 further out along its own direction until it is clear, with a thin line back to its port when it has moved more
-than its own height. The label's stored height is unchanged and is still what a GDSII or DXF export writes.</p>
+than its own height. A name moves at most three of its own heights. If it is still not clear, the port's number
+alone is drawn instead (<strong>4</strong> for <strong>P4</strong>), and if that does not fit either, no name is drawn: the arrow stays, and
+holding the pointer over the port shows its name. Zooming in brings the full names back as room appears. The label's
+stored height is unchanged and is still what a GDSII or DXF export writes.</p>
 <p>Curves, circles and rounded rectangles are <strong>first-class primitives</strong> — they are stored as curves, not
 as pre-flattened polygons — and are flattened on demand, always with an explicit tolerance prompt, and
 automatically on GDSII export.</p>

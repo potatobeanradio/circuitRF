@@ -197,7 +197,9 @@ dotnet run --project tools/UiSnapshot --no-build -- --c3d-setups <file.c3d> -o o
 
 `--delete-fields` runs that card's Delete Saved Fields, moving the field folders into a `trash` folder beside `-o`
 (never the system Trash), and prints its sentence. `--c3d-row` selects an Object Tree row (a field plot) for the
-Properties panel, and prints why the plot draws nothing. `--rclick` on a card opens its menu.
+Properties panel, and prints why the plot draws nothing. `--rclick` on a card opens its menu. `--editor` hosts the whole
+3D editor view instead (toolbar, Object Tree and canvas; the canvas itself cannot draw headless), so `--rclick` on a tree
+row opens that row's menu. Whatever the editor posts to the Messages panel is also drawn to `<out>.messages.png`.
 
 Every run prints the camera it drew from, so a picture can be reproduced and nudged. The default size is 1200x800.
 
@@ -229,6 +231,7 @@ Messages print as they are posted. Besides the steps below:
 |---|---|
 | `--hide`, `--lock` | Untick a layer's row in the layer list (its own `Visible`/`Selectable`). Repeat for several. `Ports` names the list's Ports row. |
 | `--layer-list` | Opens the Layers list beside the canvas. |
+| `--inspector` | Docks the Properties Inspector (`LayoutShapePropertiesView`) to the canvas's right, on the editor's own selection: click a shape with a step to fill it. |
 | `@x,y` | Any step's point in the layout's micrometres instead of window DIPs, through the canvas's viewport. |
 | `--rclick x,y` | Right press and release: the canvas's context menu opens. It is drawn in the window's own frame. |
 | `--menu <header>` | Clicks the open context menu's item whose header starts with this (submenus searched), then closes it. A miss lists the headers. |

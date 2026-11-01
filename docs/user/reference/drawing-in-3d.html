@@ -80,7 +80,19 @@ a file of its own, <code>&lt;cell&gt;/3d/&lt;name&gt;.c3d</code>, a small JSON d
 panel lists it under the cell like the others. <strong>File ▸ New 3D Design…</strong> makes a cell with an empty one,
 <strong>New 3D View</strong> on a cell's menu in the Project panel adds one to an existing cell, and <strong>New 3D View from Layout</strong> makes one
 holding the cell's own layout, ready to extend — the quickest way to take a layout you have already set up
-for EM into 3D.</p>
+for EM into 3D. It brings in the layout's port labels as the 3D view's own ports, each the sheet a 3D run of the
+layout would build: with the layout's 3D setup when it has one, else with a default driven setup, which a message
+says. A port you do not want is deleted like any other.</p>
+<p>The 3D view's ports are its own from then on, each remembering which placed layout and which of its port labels it
+came from. When a placed layout's port changes afterwards (its <strong>Width</strong> or <strong>Use edge width</strong>), opening the 3D view,
+or saving the layout while it is open, posts one message per port that no longer matches, with both widths; nothing
+is rewritten. <strong>Update Ports from Layout</strong>, on a placed layout's right-click menu, replaces those ports with what the
+layouts build now and brings in any label no port stands for yet, as one step you can undo. Two placed layouts often
+both number a port 1: the later one's comes in at the next free number, and the Messages panel says which became
+which. Ports the layouts do not state are left alone.</p>
+<p>A port's <strong>Number…</strong> and <strong>Name…</strong> are on its right-click menu, in the canvas and in the Object Tree. A number another
+port already uses is refused; a default name such as <strong>P3</strong> follows the new number, and a name you gave is kept. A
+renumbered port still knows its layout label.</p>
 <ul>
 <li><strong>What it holds.</strong> Boxes, prisms, cylinders, spheres, sheets, polyhedra and bond wires, each made of a named
 material; instances of other cells' layouts or 3D views; ports; boundaries on faces; VARs; and any number

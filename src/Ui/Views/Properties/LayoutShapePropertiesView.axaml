@@ -231,15 +231,21 @@
                                       GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
                                       FontSize="11" Padding="4,2"/>
                         </Grid>
-                        <!-- brief-dfr32-2 R-dfr32-2-2: the width of the port's 3D sheet along its edge. Blank is the
-                             rule, which the watermark shows: the whole edge, or 2 × the height to the return on an
-                             edge longer than 4 × that height. The planar kernel's cut still spans the whole end. -->
+                        <!-- brief-port-width-planar-and-c3d R-pw1-0: how wide an edge port is, in every run (planar
+                             and 3D). Checked: the whole conductor edge it stands on, and Width is disabled showing
+                             that edge. Unchecked: Width is live; blank means 2 × the height to the return, centred
+                             on the port. Width is disabled, never hidden, so nothing below it moves. -->
+                        <Grid ColumnDefinitions="56,*" IsVisible="{Binding ShowPortDirection}">
+                            <CheckBox Grid.Column="1" Content="Use edge width" FontSize="11"
+                                      IsChecked="{Binding PortUseEdgeWidthValue, Mode=TwoWay}"
+                                      ToolTip.Tip="Drive the whole conductor edge the port stands on, in planar and 3D runs alike. Uncheck to give the port a Width of its own, centred on the port; blank is twice the height to the return."/>
+                        </Grid>
                         <Grid ColumnDefinitions="56,*" IsVisible="{Binding ShowPortDirection}">
                             <TextBlock Grid.Column="0" Text="Width" VerticalAlignment="Center" FontSize="11"
-                                       ToolTip.Tip="The width of the port's 3D lumped sheet along the conductor edge, centred on the port. Blank: the whole edge, or twice the height to the return when the edge is longer than four times that height. A planar run's port always spans the whole conductor end."
+                                       ToolTip.Tip="The port's width along the conductor edge, centred on the port, in planar and 3D runs alike. Live only with Use edge width unchecked. Blank: twice the height to the return, clipped to the edge."
                                        Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
                             <TextBox Grid.Column="1" Text="{Binding PortWidthStatedText}" Tag="PortWidth"
-                                      PlaceholderText="{Binding PortWidthText}"
+                                      PlaceholderText="{Binding PortWidthText}" IsEnabled="{Binding PortWidthEditable}"
                                       Classes.error="{Binding HasPortWidthError}" ToolTip.Tip="{Binding PortWidthError}"
                                       GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
                                       FontSize="11" Padding="4,2"/>

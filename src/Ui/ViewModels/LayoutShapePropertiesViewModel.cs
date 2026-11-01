@@ -920,13 +920,47 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
     [ObservableProperty] private string? _portWidthError;
     public bool HasPortWidthError => PortWidthError is not null;
 
-    /// <summary>The width the port's 3D sheet takes with nothing stated, as the field's watermark.</summary>
+    /// <summary>The Width field's watermark: the edge's width while the port uses it, else the width 2 × H gives.</summary>
     [ObservableProperty] private string _portWidthText = "";
+
+    /// <summary>
+    /// <b>brief-port-width-planar-and-c3d R-pw1-0 — "Use edge width"</b>, read through
+    /// <c>EdgePortSheet.UsesEdgeWidth</c>: null when a multi-selection disagrees (the box shows indeterminate, and a
+    /// click sets every selected port). Checked, the port drives the whole conductor edge in every run and the Width
+    /// field is disabled, showing that edge; unchecked, Width is live and blank means 2 × H centred on the port.
+    /// </summary>
+    [ObservableProperty] private bool? _portUseEdgeWidthValue;
+
+    /// <summary>Whether the Width field takes input: only when no selected port uses its edge width.</summary>
+    [ObservableProperty] private bool _portWidthEditable = true;
+
+    partial void OnPortUseEdgeWidthValueChanged(bool? oldValue, bool? newValue)
+    {
+        if (_isRefreshing || newValue is not { } use || oldValue == newValue || _vm is null || DragBlocksEdits()) return;
+        SelectPinned();
+        IUiCommand? combined = null;
+        foreach (var shape in _selected)
+        {
+            if (shape is not LabelShape { IsPort: true } port) continue;
+            bool? stored = CircuitRF.Design.Layout.Em3d.EdgePortSheet.StoredUseEdgeWidth(use, port.PortWidth);
+            if (port.PortUseEdgeWidth == stored) continue;
+            var captured = port;
+            IUiCommand cmd = new SetShapeFieldCommand<bool?>(_vm.Model, "Use edge width", port.PortUseEdgeWidth, stored,
+                                                            v => captured.PortUseEdgeWidth = v);
+            combined = combined is null ? cmd : new CompositeCommand(combined, cmd);
+        }
+        if (combined is not null) _vm.Execute(combined);
+        RefreshFromVm();
+    }
 
     private void RefreshPortWidth(System.Collections.Generic.List<LabelShape> labels)
     {
         if (_vm is null) return;
-        SetTextIfNotFocused("PortWidth", FormatSharedDbu(labels.Select(l => l.PortWidth)),
+        var uses = labels.Select(CircuitRF.Design.Layout.Em3d.EdgePortSheet.UsesEdgeWidth).Distinct().ToList();
+        PortUseEdgeWidthValue = uses.Count == 1 ? uses[0] : null;
+        PortWidthEditable = !uses.Contains(true);
+        // While the port uses its edge, the field shows nothing stated: the watermark is the edge it drives.
+        SetTextIfNotFocused("PortWidth", PortWidthEditable ? FormatSharedDbu(labels.Select(l => l.PortWidth)) : "",
                             () => PortWidthStatedText, v => PortWidthStatedText = v);
         if (labels.Count != 1) { PortWidthText = "(multiple)"; return; }
 
@@ -934,14 +968,19 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         var unit = _vm.Model.DisplayUnit;
         int dpm = _vm.Model.DbuPerMicron;
         if (LayoutPortDirection.Resolve(lookup, labels[0]) is not { } hint) { PortWidthText = "(not on a conductor)"; return; }
+        string Len(long dbu) => LayoutUnits.Format(dbu, unit, dpm) + " " + LayoutUnits.Suffix(unit);
+        if (!PortWidthEditable) { PortWidthText = $"{Len(hint.WidthDbu)} (the edge)"; return; }
+        // The width a blank field means: 2 × H, centred on the port and clipped to the edge.
         var port = new LabelShape
         {
             Layer = labels[0].Layer, PortLayer = labels[0].PortLayer, X = labels[0].X, Y = labels[0].Y, IsPort = true,
+            PortUseEdgeWidth = false,
         };
+        if (CircuitRF.Design.Layout.Em3d.EdgePortSheet.HeightToReturnDbu(_vm.DrawTechnology, port.PortLayer ?? port.Layer, dpm) is null)
+        { PortWidthText = $"{Len(hint.WidthDbu)} (the edge: no height to a return in the stack)"; return; }
         var sheet = CircuitRF.Design.Layout.Em3d.EdgePortSheet.Bar(hint, port, _vm.DrawTechnology, dpm);
-        string Len(long dbu) => LayoutUnits.Format(dbu, unit, dpm) + " " + LayoutUnits.Suffix(unit);
-        PortWidthText = sheet.WidthDbu == hint.WidthDbu
-            ? $"{Len(hint.WidthDbu)} (the edge)"
+        PortWidthText = sheet.WidthDbu >= hint.WidthDbu
+            ? $"{Len(hint.WidthDbu)} (2 × H covers the edge)"
             : $"{Len(sheet.WidthDbu)} (2 × H, of a {Len(hint.WidthDbu)} edge)";
     }
 
@@ -958,8 +997,23 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             width = dbu;
         }
         PortWidthError = null;
-        ApplyToEach<long?>("Port width", s => ((LabelShape)s).PortWidth, (s, v) => ((LabelShape)s).PortWidth = v, width,
-                           s => s is LabelShape { IsPort: true });
+        // R-pw1-0 — a width edit keeps each port's "Use edge width" as it reads now: the stored flag is rewritten
+        // alongside, because null reads differently with and without a stated width.
+        IUiCommand? combined = null;
+        foreach (var shape in _selected)
+        {
+            if (shape is not LabelShape { IsPort: true } port || port.PortWidth == width) continue;
+            bool? use = CircuitRF.Design.Layout.Em3d.EdgePortSheet.StoredUseEdgeWidth(
+                CircuitRF.Design.Layout.Em3d.EdgePortSheet.UsesEdgeWidth(port), width);
+            var captured = port;
+            IUiCommand cmd = new SetShapeFieldCommand<long?>(_vm.Model, "Port width", port.PortWidth, width,
+                                                            v => captured.PortWidth = v);
+            if (port.PortUseEdgeWidth != use)
+                cmd = new CompositeCommand(cmd, new SetShapeFieldCommand<bool?>(_vm.Model, "Port width",
+                                                    port.PortUseEdgeWidth, use, v => captured.PortUseEdgeWidth = v));
+            combined = combined is null ? cmd : new CompositeCommand(combined, cmd);
+        }
+        if (combined is not null) _vm.Execute(combined);
         RefreshFromVm();
     }
 

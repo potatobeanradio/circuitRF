@@ -959,6 +959,13 @@ public sealed class C3dInstance
 
 // ── Ports and face boundaries (brief-em3d-49) ─────────────────────────────────────────────────
 
+/// <summary>Where a port record came from: a placed layout instance and its port label's number (<see cref="C3dPort.FromLayout"/>).</summary>
+public sealed class C3dPortSource
+{
+    public string Instance { get; set; } = "";
+    public int    Port     { get; set; }
+}
+
 /// <summary>A wave port's stated voltage path, on the port's own plane: from the negative conductor to the positive one.</summary>
 public sealed class C3dVoltagePath
 {
@@ -992,6 +999,16 @@ public sealed class C3dPort
 
     /// <summary>The reference impedance, Ω — a real number or a complex one (<c>50</c>, <c>25+j10</c>), as a .cem's.</summary>
     public string Z0 { get; set; } = "50";
+
+    /// <summary>
+    /// brief-port-width-planar-and-c3d — the placed layout's port label this record was made from: the instance and the
+    /// label's own port number. Written by New 3D View from Layout and Update Ports from Layout, so the record still
+    /// finds its label when it has been renumbered here, or when two placed layouts both number a port 1. Null: drawn
+    /// here, or made before the link existed (then matched by number on the same edge). Omitted when null; a pasted port
+    /// loses it.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public C3dPortSource? FromLayout { get; set; }
 
     /// <summary>The positive conductor, by elaborated name (<c>U1/pad3</c> allowed) or an air-box face
     /// (<c>airbox/zmin</c>); null is inferred.</summary>

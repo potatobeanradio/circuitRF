@@ -142,13 +142,12 @@ full description.
   one, except that openEMS cannot feed a hollow waveguide and Palace cannot give a port with several
   terminals. [Wave ports](em-setup.html#wave-ports).
 
-  <a id="port-width"></a>**How wide a lumped port's sheet is.** On a line's end the sheet is as wide as the line.
-  On a longer edge, such as the edge of a ground pour where a part's pad meets it, a sheet as wide as the edge is
-  not what anyone means, so when the edge is longer than 4 × H (H, the dielectric height from the port's conductor
-  to its return) the sheet is 2 × H wide, centred on the port, and cut short where the edge ends. The run's notes
-  say so. To set another width, type it in the port's **Width** in the layout's Properties panel; a blank Width
-  is the rule above. The layout draws each port's bar at the width its sheet will have, and a 3D view made from
-  the layout gets the same sheet. A planar run's port still spans the whole conductor end.
+  <a id="port-width"></a>**How wide a lumped port's sheet is.** As wide as the port's bar in the layout, which the
+  port's **Use edge width** and **Width** set ([Ports](layout-editor.html#ports)): the whole conductor edge with the
+  box ticked; otherwise the Width you state, or 2 × H (H, the dielectric height from the port's conductor to its
+  return) centred on the port, cut short where the edge ends. The run's notes say which, and why. A sheet across a
+  whole edge can reach metal the port was never near, such as a via on a pour's edge; when that refuses the run,
+  the refusal names **Use edge width** as the way to narrow it.
 
   **A port on a curved edge.** A port on a round pad's arc has a flat sheet against a curved outline, which leaves
   slivers between the two that the mesher has to resolve. The run cuts the pad flat across the sheet's width, at

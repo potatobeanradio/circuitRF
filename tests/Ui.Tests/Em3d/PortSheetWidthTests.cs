@@ -30,19 +30,21 @@ public sealed class PortSheetWidthTests(ITestOutputHelper output) : IDisposable
 
     private static Technology Tech() => ShippedTechnologies.Load("pcb-2layer_RO4350B_20mil_1oz");
 
-    private static LabelShape Port(string text, double xUm, double yUm, LayoutRotation direction, double? widthUm = null) => new()
+    private static LabelShape Port(string text, double xUm, double yUm, LayoutRotation direction, double? widthUm = null,
+                                   bool? useEdge = null) => new()
     {
         Layer = Top, PortLayer = Top, X = Um(xUm), Y = Um(yUm), Text = text, Height = Um(200), IsPort = true,
         PortKind = PlanarPortKind.Edge, PortDirection = direction, PortWidth = widthUm is { } w ? Um(w) : null,
+        PortUseEdgeWidth = useEdge,
     };
 
     /// <summary>A 6 × 3 mm pour with a 0.3 mm line off its right edge (so the run has a second port); port 1 on the
     /// pour's 3 mm left edge, 0.5 mm below its centre.</summary>
-    private static List<LayoutShape> Pour(double? statedUm = null) =>
+    private static List<LayoutShape> Pour(double? statedUm = null, bool? useEdge = null) =>
     [
         new RectShape { Layer = Top, X1 = 0, Y1 = 0, X2 = Um(6000), Y2 = Um(3000) },
         new RectShape { Layer = Top, X1 = Um(6000), Y1 = Um(1350), X2 = Um(9000), Y2 = Um(1650) },
-        Port("1", 0, 1000, LayoutRotation.R0, statedUm),
+        Port("1", 0, 1000, LayoutRotation.R0, statedUm, useEdge),
         Port("2", 9000, 1500, LayoutRotation.R180),
     ];
 
@@ -73,18 +75,30 @@ public sealed class PortSheetWidthTests(ITestOutputHelper output) : IDisposable
 
     // ── R-dfr32-2-2 ─────────────────────────────────────────────────────────────────────────────
 
-    /// <summary>A port on a 3 mm edge (more than 4 × 508 µm) and no width stated: a sheet 2 × H wide, centred on the
-    /// port, and a note naming Width as the way to change it.</summary>
+    /// <summary>brief-port-width-planar-and-c3d R-pw1-0b — a port stating no width uses its edge by default: the sheet is
+    /// the whole 3 mm edge, as the planar run's port is.</summary>
     [Fact]
-    public void APortOnALongEdge_GetsASheetTwiceTheHeightWide_AndTheNoteNamesWidth()
+    public void APortUsingItsEdgeWidth_GetsTheWholeEdge()
     {
         var g = Generate(Pour());
         Assert.True(g.Ok, g.Refusal);
         var p = g.Problem!.Ports.Single(q => q.Number == 1);
+        Assert.Equal(0, p.Min.Y, 9);
+        Assert.Equal(3000e-6, p.Max.Y, 9);
+    }
+
+    /// <summary>Use edge width unchecked and no width stated: a sheet 2 × H wide, centred on the port, and a note naming
+    /// the checkbox and Width as the ways to change it.</summary>
+    [Fact]
+    public void AnUncheckedPortOnALongEdge_GetsASheetTwiceTheHeightWide_AndTheNoteNamesTheCheckbox()
+    {
+        var g = Generate(Pour(useEdge: false));
+        Assert.True(g.Ok, g.Refusal);
+        var p = g.Problem!.Ports.Single(q => q.Number == 1);
         Assert.Equal(1000e-6 - H, p.Min.Y, 9);
         Assert.Equal(1000e-6 + H, p.Max.Y, 9);
-        Assert.Contains(g.Notes, n => n.StartsWith("Port 1 is on an edge 3000 µm long", StringComparison.Ordinal) &&
-                                      n.Contains("State the port's Width", StringComparison.Ordinal));
+        Assert.Contains(g.Notes, n => n.StartsWith("Port 1's sheet is 1016 µm wide, 2 × H centred on the port, on an edge 3000 µm long", StringComparison.Ordinal) &&
+                                      n.Contains("Use edge width", StringComparison.Ordinal));
     }
 
     /// <summary>A stated Width wins over the rule.</summary>
@@ -124,7 +138,7 @@ public sealed class PortSheetWidthTests(ITestOutputHelper output) : IDisposable
     [InlineData(300.0)]
     public void TheDrawnBar_IsTheRunsSheet(double? statedUm)
     {
-        var shapes = Pour(statedUm);
+        var shapes = Pour(statedUm, useEdge: false);
         var g = Generate(shapes);
         Assert.True(g.Ok, g.Refusal);
         var sheet = g.Problem!.Ports.Single(q => q.Number == 1);
@@ -145,7 +159,7 @@ public sealed class PortSheetWidthTests(ITestOutputHelper output) : IDisposable
     [InlineData(300.0)]
     public void ThePickRegion_SpansTheDrawnBar_NotTheEdge(double? statedUm)
     {
-        var shapes = Pour(statedUm);
+        var shapes = Pour(statedUm, useEdge: false);
         var label = shapes.OfType<LabelShape>().Single(l => l.Text == "1");
         var hint = LayoutPortDirection.Resolve(LayoutPortDirection.LookupFor(shapes), label)!.Value;
         var bar = EdgePortSheet.Bar(hint, label, Tech(), Dbu);

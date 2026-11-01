@@ -328,8 +328,8 @@ public sealed class PlanarKernel
         // reference, exactly as an already-uniform feed does. See PlanarGroundPath's header.
         var (grounded, _, groundNotes) = PlanarGroundPath.Extend(problem, ports);
 
-        var (meshed, leads, feedNotes) =
-            PlanarFeedExtension.Extend(grounded, ports, st.Calibration, lengthFormat);
+        var feed = PlanarFeedExtension.ExtendDetailed(grounded, ports, st.Calibration, lengthFormat);
+        var (meshed, leads, feedNotes) = (feed.Problem, feed.Leads, feed.Notes);
 
         // Meshing is fast next to the sweep but is not instant, and it is the first thing that
         // happens after the user presses Simulate — so it gets its own named stage rather than
@@ -427,6 +427,10 @@ public sealed class PlanarKernel
                 }
             }
         }
+
+        // R-pw1-2 — a port narrower than its edge whose span-width feed could not be grown is reported at its cut.
+        if (feed.NotDeembedded.Count > 0)
+            resolved = [.. resolved.Select(r => feed.NotDeembedded.Contains(r.Number) ? r with { DeembedDeclined = true } : r)];
 
         // D5 — the heat map rides along with the sweep the panel already pays for: default to port 1
         // at the lowest swept frequency, which is where a user starts looking. Both are selectable

@@ -192,6 +192,10 @@ Hover the **Ports** header for the explanation that matches the chosen kernel, b
   conductor** — a placed part's footprint pad lying over an imported board's own pad is merged before
   meshing (the notes say so), and the Port tool snaps to the merged copper's edge, not to a face
   buried inside it. A port whose feed has other metal too close is refused with **where** that metal is.
+  An edge port drives as much of its edge as its bar in the layout shows: the whole edge with **Use edge
+  width** ticked, else its **Width** or 2 × H centred on it ([Ports](layout-editor.html#ports)). A port narrower
+  than its edge is cut on mesh lines at its two ends, and its calibration feed is grown at its own width; where
+  that feed cannot be grown, the port is reported at its cut, not de-embedded, and the notes name it.
 - **Cross-section.** There is no meshed port at all. The ports *are* the ends of the extracted
   conductors by construction: port 2k−1 is conductor k's near end and port 2k its far end, so two
   conductors give four ports. There is nothing to place, and de-embedding is a no-op.

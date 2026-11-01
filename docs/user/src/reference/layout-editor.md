@@ -162,10 +162,19 @@ as you left it. A layout opened without a workspace keeps them until circuitRF c
 Instance-place · Array · Ruler.
 
 <a id="ports"></a>**Ports.** A port is drawn as a bar across the conductor edge it sits on, an arrow arriving at the
-bar in the direction current enters, and its name. The bar is as wide as the port's 3D sheet will be: the
-conductor end, or on an edge longer than 4 × the height to its return, twice that height centred on the port
-(see [How wide a lumped port's sheet is](em-3d.html#port-width)). The port's **Width** in the Properties panel
-sets it; blank is that rule, which the field's grey text shows. The name is drawn at a fixed size on screen,
+bar in the direction current enters, and its name. The bar is as wide as the port is, and that width is the one
+every run uses, planar and 3D alike. Two rows in the Properties panel set it:
+
+- **Use edge width** (ticked for a port that states no width): the port drives the whole conductor edge it stands
+  on. **Width** is greyed and shows that edge.
+- Unticked, **Width** is live. A width you type is centred on the port and cut short where the edge ends; blank is
+  twice the height to the port's return (H, from the technology's stackup), which the field's grey text shows. On a
+  line's end no wider than that, the port is the line's end either way.
+
+Untick it for a port on the side of a wide trace or the edge of a ground pour, where a part's pad meets the metal:
+the whole edge is millimetres of port nobody meant. With several ports selected, a box showing a dash means they
+differ, and a click sets them all. See [How wide a lumped port's sheet is](em-3d.html#port-width) and
+[Ports](em-setup.html#ports). The name is drawn at a fixed size on screen,
 beside the arrow on its outer side, at every zoom. Where two names would overlap, the later port's name moves
 further out along its own direction until it is clear, with a thin line back to its port when it has moved more
 than its own height. A name moves at most three of its own heights. If it is still not clear, the port's number

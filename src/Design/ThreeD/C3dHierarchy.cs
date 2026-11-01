@@ -23,6 +23,7 @@
 using System.Globalization;
 using System.Text.Json;
 using CircuitRF.Design.Cells;
+using CircuitRF.Design.Em3d;
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.Em;
 using CircuitRF.Design.Layout.Em3d;
@@ -51,7 +52,49 @@ public sealed record C3dFlattenResult(IReadOnlyList<C3dObject> Objects, IReadOnl
 
 /// <summary>A New 3D View from Layout: the document, and the ports that could not be carried across (with why).</summary>
 public sealed record C3dFromLayout(C3dDocument? Document, string? Refusal, IReadOnlyList<string> SetupsCopied,
-                                   IReadOnlyList<string> PortsLeftOut);
+                                   IReadOnlyList<string> PortsLeftOut)
+{
+    /// <summary>brief-port-width-planar-and-c3d R-pw1-6 — set when no 3D <c>.cem</c> names the layout and its port labels
+    /// were translated with a default driven setup instead: the note that says so.</summary>
+    public string? PortsNote { get; init; }
+}
+
+/// <summary>One placed layout's port label, translated into the <c>.c3d</c>'s frame: the instance, the label's own port
+/// number, and the record it makes (its <see cref="C3dPort.Number"/> the label's number until a clash renumbers it).</summary>
+public sealed record C3dLayoutPort(string Instance, int LayoutNumber, C3dPort Port);
+
+/// <summary>
+/// brief-port-width-planar-and-c3d R-pw1-4/5 — a <c>.c3d</c>'s ports as its instanced layouts state them now: every
+/// <c>Layout</c> instance's port labels translated (<see cref="C3dHierarchy.PortsFromLayouts"/>) into the document's
+/// frame, in instance order then label number — two instances may both state a port 1; what could not be translated,
+/// by name with the reason; and the notes the translation posts.
+/// </summary>
+public sealed record C3dLayoutPorts(IReadOnlyList<C3dLayoutPort> Ports, IReadOnlyList<string> LeftOut,
+                                    IReadOnlyList<string> Notes);
+
+/// <summary>R-pw1-4 — one <c>.c3d</c> port whose rectangle differs from what its layout's port label now translates to.</summary>
+public sealed record C3dStalePort(int Number, long OldWidthDbu, long NewWidthDbu, C3dLayoutPort Translated);
+
+/// <summary>R-pw1-5 — what Update Ports from Layout did: the records it moved, and the labels it added as new records,
+/// each with the number it got (different from the label's own when that number was taken).</summary>
+public sealed record C3dPortUpdate(IReadOnlyList<int> Updated, IReadOnlyList<(C3dLayoutPort From, int Number)> Added)
+{
+    public bool Changed => Updated.Count + Added.Count > 0;
+
+    /// <summary>One sentence for the status line and the Messages panel.</summary>
+    public string Describe()
+    {
+        if (!Changed) return "Every port the placed layouts state already matches.";
+        var parts = new List<string>();
+        if (Updated.Count > 0) parts.Add($"updated port(s) {string.Join(", ", Updated)}");
+        if (Added.Count > 0)
+            parts.Add("added " + string.Join(", ", Added.Select(a => a.Number == a.From.LayoutNumber
+                ? $"{a.From.Instance}'s port {a.Number}"
+                : $"{a.From.Instance}'s port {a.From.LayoutNumber} as port {a.Number} (port {a.From.LayoutNumber} is taken)")));
+        string s = string.Join("; ", parts);
+        return char.ToUpperInvariant(s[0]) + s[1..] + ".";
+    }
+}
 
 public static class C3dHierarchy
 {
@@ -868,19 +911,189 @@ public static class C3dHierarchy
             copied.Add(setup.Name);
             TranslatePorts(setup, cem, workspaceCws, cache, view, ports, leftOut);
         }
+        // R-pw1-6 — a layout no 3D setup names still brings in its ports, translated with a default driven setup.
+        string? portsNote = null;
+        if (copied.Count == 0 && tech.Tech is { } t &&
+            view.Shapes.OfType<LabelShape>().Any(l => l.IsPort))
+        {
+            TranslateWith(DefaultPortSetup(clay), new EmLayoutSource(clay, view, t, view.DbuPerMicron), t, view, null,
+                          ports, leftOut);
+            portsNote = DefaultSetupNote(ports.Count);
+        }
+        foreach (var (n, p) in ports) p.FromLayout = new C3dPortSource { Instance = doc.Instances[0].Name, Port = n };
         doc.Ports = [.. ports.OrderBy(p => p.Key).Select(p => p.Value)];
-        return new C3dFromLayout(doc, null, copied, leftOut);
+        return new C3dFromLayout(doc, null, copied, leftOut) { PortsNote = portsNote };
+    }
+
+    /// <summary>R-pw1-6 — the setup a layout's port labels are translated with when no 3D <c>.cem</c> names it: the
+    /// default 3D solver, driven, at a new setup's frequencies, every other choice the setup's own default.</summary>
+    public static EmSetup DefaultPortSetup(string layoutPath) => new()
+    {
+        Name = "ports", LayoutRef = layoutPath, Solver3D = Em3dSolvers.Default, Frequency = EmSetup.NewSetupFrequency(),
+    };
+
+    private static string DefaultSetupNote(int count) =>
+        $"No 3D setup names this layout, so its port labels were brought in with a default driven setup ({count} " +
+        "port(s)). Each is the sheet a 3D run of the layout would build; delete any you do not want.";
+
+    /// <summary>
+    /// R-pw1-4/5 — every <c>Layout</c> instance's port labels, translated now into <paramref name="doc"/>'s frame (the
+    /// instance's placement applied) with the first 3D <c>.cem</c> naming that layout, else the default driven setup
+    /// (R-pw1-6). Every instance's labels, numbered as the labels number them: two instances may both state a port 1, and
+    /// <see cref="UpdatePorts"/> is what gives the later one a free number. Writes nothing.
+    /// </summary>
+    public static C3dLayoutPorts PortsFromLayouts(C3dDocument doc, string c3dPath, string? workspaceCws,
+                                                  TechnologyCache? cache = null)
+    {
+        cache ??= new TechnologyCache();
+        string baseDir = Path.GetDirectoryName(Path.GetFullPath(c3dPath))!;
+        var ports = new List<C3dLayoutPort>();
+        var leftOut = new List<string>();
+        var notes = new List<string>();
+        foreach (var inst in doc.Instances.Where(i => i.View == C3dInstanceView.Layout))
+        {
+            if (inst.Array is not null) { leftOut.Add($"{inst.Name}: an arrayed instance's ports are not translated"); continue; }
+            if (ExternalCellRef.ResolveCellDir(inst.CellRef, baseDir) is not { } cellDir ||
+                ViewFile(cellDir, C3dInstanceView.Layout) is not { } clay) continue;
+            LayoutView view;
+            try { view = LayoutPersistence.LoadFromFile(clay); }
+            catch (Exception e) { leftOut.Add($"{inst.Name}: '{clay}' cannot be read ({e.Message})"); continue; }
+            if (!view.Shapes.OfType<LabelShape>().Any(l => l.IsPort)) continue;
+
+            var mine = new Dictionary<int, C3dPort>();
+            var placement = inst.Placement.IsDefault ? (C3dTransform?)null : inst.Placement.ToTransform();
+            string? cem = (workspaceCws is { } cws && File.Exists(cws)
+                    ? EmSetupResolver.FindSetupsForLayout(cws, clay)
+                    : Directory.Exists(Path.Combine(cellDir, "em"))
+                        ? Directory.EnumerateFiles(Path.Combine(cellDir, "em"), "*" + EmSetupPersistence.Extension)
+                        : [])
+                .OrderBy(c => c, StringComparer.OrdinalIgnoreCase)
+                .FirstOrDefault(c => { try { var st = EmSetupPersistence.LoadFromFile(c); return st.Is3D && EmSetupResolver.ResolveLayoutPath(c, st.LayoutRef, null) is { } lp && Same(Norm(lp), Norm(clay)); } catch { return false; } });
+            if (cem is not null)
+            {
+                var setup = EmSetupPersistence.LoadFromFile(cem);
+                if (setup.Name.Length == 0) setup.Name = Path.GetFileNameWithoutExtension(cem);
+                TranslatePorts(setup, cem, workspaceCws, cache, view, mine, leftOut, placement);
+            }
+            else
+            {
+                var (tech, _) = TechnologyResolver.ResolveForDocument(view.TechRef, clay, workspaceCws, cache);
+                if (tech.Tech is not { } t) { leftOut.Add($"{inst.Name}: its layout's technology does not resolve"); continue; }
+                TranslateWith(DefaultPortSetup(clay), new EmLayoutSource(clay, view, t, view.DbuPerMicron), t, view, placement,
+                              mine, leftOut);
+                notes.Add($"{inst.Name}: " + DefaultSetupNote(mine.Count));
+            }
+            foreach (var (n, p) in mine.OrderBy(m => m.Key))
+            {
+                p.FromLayout = new C3dPortSource { Instance = inst.Name, Port = n };
+                ports.Add(new C3dLayoutPort(inst.Name, n, p));
+            }
+        }
+        return new C3dLayoutPorts(ports, leftOut, notes);
+    }
+
+    /// <summary>
+    /// The layout label a record stands for, among those not yet <paramref name="claimed"/>: by its
+    /// <see cref="C3dPort.FromLayout"/> link when it has one (so a renumbered record, or one from a second instance that
+    /// also numbers a port 1, still finds its label); otherwise the label of the same number on the same plane at the same
+    /// offset — the same edge — which is what a record made before the link existed can be matched by.
+    ///
+    /// <para><b>The plane and offset are part of the unlinked match on purpose.</b> A parent's own port may share a number
+    /// with a placed layout's label and be a different port altogether — the shipped 3D Package example's P1/P2 are the
+    /// package's pins, millimetres from the die's labels 1 and 2. A Width or Use edge width edit keeps a sheet on its edge,
+    /// so such an edit is still caught.</para>
+    /// </summary>
+    private static C3dLayoutPort? MatchOf(C3dPort record, C3dLayoutPorts translated, ISet<C3dLayoutPort>? claimed = null)
+    {
+        if (record.Cylinder is not null || record.Terminals is not null) return null;
+        bool Free(C3dLayoutPort x) => claimed is null || !claimed.Contains(x);
+        if (record.FromLayout is { } src)
+            return translated.Ports.FirstOrDefault(x => Free(x) && x.Instance == src.Instance && x.LayoutNumber == src.Port);
+        return translated.Ports.FirstOrDefault(x => Free(x) && x.LayoutNumber == record.Number &&
+                                                    x.Port.Plane == record.Plane && x.Port.Offset == record.Offset);
+    }
+
+    private static bool SamePlace(C3dPort a, C3dPort b) =>
+        a.Plane == b.Plane && a.Offset == b.Offset && a.Rect.Min == b.Rect.Min && a.Rect.Size == b.Rect.Size;
+
+    /// <summary>
+    /// R-pw1-4 — the document's ports that stand for a placed layout's port label (<see cref="MatchOf"/>) and whose sheet
+    /// differs from what that label translates to now, with both widths (the rectangle's longer side). Nothing is
+    /// rewritten.
+    /// </summary>
+    public static IReadOnlyList<C3dStalePort> StalePorts(C3dDocument doc, C3dLayoutPorts translated)
+    {
+        static long Width(C3dPort p) => Math.Max(Math.Abs(p.Rect.Size.U), Math.Abs(p.Rect.Size.V));
+        var claimed = new HashSet<C3dLayoutPort>();
+        var stale = new List<C3dStalePort>();
+        foreach (var port in doc.Ports)
+        {
+            if (MatchOf(port, translated, claimed) is not { } now) continue;
+            claimed.Add(now);
+            if (SamePlace(port, now.Port)) continue;
+            stale.Add(new C3dStalePort(port.Number, Width(port), Width(now.Port), now));
+        }
+        return stale;
+    }
+
+    /// <summary>
+    /// R-pw1-5 — Update Ports from Layout, on <paramref name="doc"/>. Every record that stands for a label
+    /// (<see cref="MatchOf"/>) takes the label's sheet and kind — its number, name, Z0, stated conductors and Model flag
+    /// are kept — and is linked to it. Every label no record stands for is added: at its own number when that is free,
+    /// else at the smallest free one (a terminal's number counts as taken), which is how a second placed layout's port 1
+    /// comes in. Records no label stands for are left alone.
+    /// </summary>
+    public static C3dPortUpdate UpdatePorts(C3dDocument doc, C3dLayoutPorts translated)
+    {
+        var claimed = new HashSet<C3dLayoutPort>();
+        var updated = new List<int>();
+        foreach (var record in doc.Ports)
+        {
+            if (MatchOf(record, translated, claimed) is not { } now) continue;
+            claimed.Add(now);
+            record.FromLayout ??= new C3dPortSource { Instance = now.Instance, Port = now.LayoutNumber };
+            if (SamePlace(record, now.Port) && record.Kind == now.Port.Kind) continue;
+            record.Plane = now.Port.Plane; record.Offset = now.Port.Offset; record.Kind = now.Port.Kind;
+            record.Rect = new C3dRect { Min = now.Port.Rect.Min, Size = now.Port.Rect.Size };
+            updated.Add(record.Number);
+        }
+
+        var used = C3dPorts.UsedNumbers(doc).ToHashSet();
+        var added = new List<(C3dLayoutPort, int)>();
+        foreach (var label in translated.Ports.Where(x => !claimed.Contains(x)))
+        {
+            int n = label.LayoutNumber;
+            if (used.Contains(n)) { n = 1; while (used.Contains(n)) n++; }
+            used.Add(n);
+            var p = label.Port;
+            doc.Ports.Add(new C3dPort
+            {
+                Number = n, Name = $"P{n}", Kind = p.Kind, Plane = p.Plane, Offset = p.Offset,
+                Rect = new C3dRect { Min = p.Rect.Min, Size = p.Rect.Size }, Z0 = p.Z0,
+                FromLayout = new C3dPortSource { Instance = label.Instance, Port = label.LayoutNumber },
+            });
+            added.Add((label, n));
+        }
+        if (updated.Count + added.Count > 0) doc.Ports = [.. doc.Ports.OrderBy(p => C3dPorts.Numbers(p).DefaultIfEmpty(0).Min())];
+        return new C3dPortUpdate(updated, added);
     }
 
     /// <summary>The setup's generated ports as brief 49's parent-level records (one per number, the first setup's wins),
-    /// in the new view's frame: the layout sits at the origin with its stack's bottom at z = 0.</summary>
+    /// in the new view's frame: the layout sits at the origin with its stack's bottom at z = 0, then
+    /// <paramref name="placement"/> when the instance states one.</summary>
     private static void TranslatePorts(EmSetup setup, string cem, string? workspaceCws, TechnologyCache cache, LayoutView view,
-                                       Dictionary<int, C3dPort> ports, List<string> leftOut)
+                                       Dictionary<int, C3dPort> ports, List<string> leftOut, C3dTransform? placement = null)
     {
         // brief-em3d-49 — a layout's ports are its port labels, whatever kind the setup states for them: Ports3D only
         // names a wave port, so gating on it left every all-lumped setup's ports behind.
         var resolved = EmSetupResolver.Resolve(cem, setup.LayoutRef, workspaceCws, cache);
         if (resolved.Source is not { Technology: { } tech } source) return;
+        TranslateWith(setup, source, tech, view, placement, ports, leftOut);
+    }
+
+    private static void TranslateWith(EmSetup setup, EmLayoutSource source, Technology tech, LayoutView view,
+                                      C3dTransform? placement, Dictionary<int, C3dPort> ports, List<string> leftOut)
+    {
         var g = Em3dGenerator.Generate(setup, source, tech);
         if (g.Problem is not { } problem)
         {
@@ -894,8 +1107,18 @@ public static class C3dHierarchy
         foreach (var p in problem.Ports)
         {
             if (ports.ContainsKey(p.Number)) continue;
-            var (a, b) = (p.Min, p.Max);
-            int flat = a.X == b.X ? 0 : a.Y == b.Y ? 1 : a.Z == b.Z ? 2 : -1;
+            // The corners in DBU, in the layout's own frame, then through the instance's placement (R-pw1-4).
+            var ca = new C3dPoint3(D(p.Min.X), D(p.Min.Y), D(p.Min.Z + dz));
+            var cb = new C3dPoint3(D(p.Max.X), D(p.Max.Y), D(p.Max.Z + dz));
+            if (placement is { } tr)
+            {
+                static long R(double v) => (long)Math.Round(v, MidpointRounding.AwayFromZero);
+                var (ax, ay, az) = tr.Apply(ca);
+                var (bx, by, bz) = tr.Apply(cb);
+                (ca, cb) = (new C3dPoint3(R(Math.Min(ax, bx)), R(Math.Min(ay, by)), R(Math.Min(az, bz))),
+                            new C3dPoint3(R(Math.Max(ax, bx)), R(Math.Max(ay, by)), R(Math.Max(az, bz))));
+            }
+            int flat = ca.X == cb.X ? 0 : ca.Y == cb.Y ? 1 : ca.Z == cb.Z ? 2 : -1;
             if (p.Annulus is not null || flat < 0)
             {
                 leftOut.Add($"{setup.Name}: port {p.Number} ({p.Name}) — " + (p.Annulus is not null ? "a coaxial annulus is not one rectangle" : "it is not flat"));
@@ -903,9 +1126,9 @@ public static class C3dHierarchy
             }
             var (plane, offset, u0, v0, u1, v1) = flat switch
             {
-                0 => (C3dPlane.YZ, a.X, a.Y, a.Z + dz, b.Y, b.Z + dz),
-                1 => (C3dPlane.XZ, a.Y, a.X, a.Z + dz, b.X, b.Z + dz),
-                _ => (C3dPlane.XY, a.Z + dz, a.X, a.Y, b.X, b.Y),
+                0 => (C3dPlane.YZ, ca.X, ca.Y, ca.Z, cb.Y, cb.Z),
+                1 => (C3dPlane.XZ, ca.Y, ca.X, ca.Z, cb.X, cb.Z),
+                _ => (C3dPlane.XY, ca.Z, ca.X, ca.Y, cb.X, cb.Y),
             };
             ports[p.Number] = new C3dPort
             {
@@ -913,8 +1136,8 @@ public static class C3dHierarchy
                 Name = $"P{p.Number}",
                 Kind = p.Kind,
                 Plane = plane,
-                Offset = D(offset),
-                Rect = new C3dRect { Min = new C3dPoint2(D(u0), D(v0)), Size = new C3dPoint2(D(u1) - D(u0), D(v1) - D(v0)) },
+                Offset = offset,
+                Rect = new C3dRect { Min = new C3dPoint2(u0, v0), Size = new C3dPoint2(u1 - u0, v1 - v0) },
                 Z0 = C3dPorts.FormatZ0(p.Z0),
             };
         }

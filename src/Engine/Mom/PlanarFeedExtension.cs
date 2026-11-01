@@ -124,6 +124,14 @@ public sealed record PlanarFeedLead(
         PeerFloorM > SectionShortfallM && PeerFloorM > NeighbourShortfallM;
 }
 
+/// <summary>R-pw1-2 — <see cref="PlanarFeedExtension.ExtendDetailed"/>'s answer: the problem the mesher sees, the leads
+/// grown, the notes, and the ports whose span-width feed could not be grown and which are therefore not de-embedded.</summary>
+public sealed record PlanarFeedExtensionResult(
+    PlanarProblem                 Problem,
+    IReadOnlyList<PlanarFeedLead> Leads,
+    IReadOnlyList<string>         Notes,
+    IReadOnlySet<int>             NotDeembedded);
+
 public static class PlanarFeedExtension
 {
     /// <summary>
@@ -166,12 +174,27 @@ public static class PlanarFeedExtension
                PlanarCalibrationSettings? calibration = null,
                SurfaceMesher.PlanarLengthFormat? lengthFormat = null)
     {
+        var r = ExtendDetailed(problem, ports, calibration, lengthFormat);
+        return (r.Problem, r.Leads, r.Notes);
+    }
+
+    /// <summary>
+    /// <see cref="Extend"/>, and the ports that must NOT be de-embedded: brief-port-width-planar-and-c3d R-pw1-2 — a
+    /// port narrower than its edge (<see cref="PlanarPort.Span"/>) whose span-width feed could not be grown. Its
+    /// standard would be a line of the span's width while the metal beyond its cut is the whole conductor, so it is
+    /// reported at its cut instead, and the notes say so by port number.
+    /// </summary>
+    public static PlanarFeedExtensionResult ExtendDetailed(PlanarProblem problem,
+                                                           IReadOnlyList<PlanarPort> ports,
+                                                           PlanarCalibrationSettings? calibration = null,
+                                                           SurfaceMesher.PlanarLengthFormat? lengthFormat = null)
+    {
         ArgumentNullException.ThrowIfNull(problem);
         ArgumentNullException.ThrowIfNull(ports);
 
         var cal       = calibration ?? PlanarCalibrationSettings.Default;
         double wanted = cal.EndRunHeights * problem.Slab.HeightM;
-        if (!(wanted > 0)) return (problem, [], []);
+        if (!(wanted > 0)) return new(problem, [], [], new HashSet<int>());
 
         // ── R-pcal7-2 — ONE FIXED-POINT STEP, AND DELIBERATELY NOT A LOOP ────────────────────────
         //
@@ -211,7 +234,7 @@ public static class PlanarFeedExtension
         var floors = CoplanarFloors(ports, pass.Leads);
         if (floors is not null) pass = Core(problem, ports, cal, wanted, keep, floors, lengthFormat);
 
-        return (pass.Problem, pass.Leads, pass.Notes);
+        return new(pass.Problem, pass.Leads, pass.Notes, pass.NotDeembedded);
     }
 
     /// <summary>
@@ -263,7 +286,8 @@ public static class PlanarFeedExtension
         IReadOnlyList<PlanarFeedLead> Leads,
         IReadOnlyList<string> Notes,
         IReadOnlyDictionary<int, double>? Neighbour,
-        IReadOnlySet<int> StillClear);
+        IReadOnlySet<int> StillClear,
+        IReadOnlySet<int> NotDeembedded);
 
     /// <summary>
     /// One pass of the extension: measure every port's two shortfalls, take the larger, and extrude.
@@ -284,9 +308,20 @@ public static class PlanarFeedExtension
 
         var neighbourAsked = new Dictionary<int, double>();
         var stillClear     = new HashSet<int>();
+        var notDeembedded  = new HashSet<int>();
 
         var leads = new List<PlanarFeedLead>();
         var notes = new List<string>();
+
+        // R-pw1-2 — never silently de-embedded at the edge's width: the port is reported at its cut, by number.
+        void DeclineSpan(int number, string why)
+        {
+            if (!notDeembedded.Add(number)) return;
+            notes.Add($"Port {number} is narrower than the edge it stands on, and the feed its calibration needs could " +
+                      $"not be grown at its width: {why}. It is NOT de-embedded: its s-parameters are reported at its " +
+                      "cut, in the reference impedance declared for it. Check Use edge width to drive the whole edge, " +
+                      "or clear the metal behind the port.");
+        }
 
         // Layers are records holding a polygon list; a layer is only rebuilt if a port grew on it.
         List<PlanarPolygon>?[] edited = new List<PlanarPolygon>?[problem.Layers.Count];
@@ -322,9 +357,14 @@ public static class PlanarFeedExtension
             // Measured first, edited afterwards: two terminals on one level must both see the
             // pre-edit polygons, and both extrusions replace their own index in place.
             var measured = new List<(int Layer, int PolyIndex, int VertexA,
-                                     double EdgeS, double TLo, double THi, double Have)>();
+                                     double EdgeS, double TLo, double THi, double Have, bool Tab)>();
             double add = 0;
             bool usable = true;
+
+            // R-pw1-2 — a port narrower than its edge has its feed grown at the span's width, centred on the span: a tab
+            // on the edge rather than the whole face pushed out. Not for a two-cut port, whose pair is one cross-section.
+            var span = terminals.Count == 1 ? port.EdgeSpan : null;
+            bool spanNarrower = false;
 
             foreach (var terminal in terminals)
             {
@@ -335,14 +375,27 @@ public static class PlanarFeedExtension
                                 out double tLo, out double tHi))
                 { usable = false; break; }
 
+                if (span is { } sp)
+                {
+                    double a = Math.Max(tLo, sp.LoM), b = Math.Min(tHi, sp.HiM);
+                    if (!(b > a)) { usable = false; break; }
+                    spanNarrower = (b - a) < (tHi - tLo) * (1 - UniformFractionOfWidth);
+                    (tLo, tHi) = (a, b);
+                }
+
                 if (!(tHi - tLo > 0)) { usable = false; break; }
 
                 double have = UniformRun(tPolys[polyIndex], alongX, fromLow, edgeS, tLo, tHi, wanted);
-                measured.Add((layer, polyIndex, vertexA, edgeS, tLo, tHi, have));
+                measured.Add((layer, polyIndex, vertexA, edgeS, tLo, tHi, have, spanNarrower));
                 add = Math.Max(add, wanted - have);
             }
 
-            if (!usable) continue;
+            if (!usable)
+            {
+                if (span is not null) DeclineSpan(port.Number,
+                    "its edge is not one straight segment containing the port's width, so there is no face to grow it from");
+                continue;
+            }
 
             // ── R-pcal7-2 — THE SECOND SHORTFALL: THE FEED'S NEIGHBOURHOOD, NOT ITS CROSS-SECTION ──
             //
@@ -397,6 +450,12 @@ public static class PlanarFeedExtension
                 if (Obstructed(PolysOn(m.Layer), alongX, m.EdgeS, m.EdgeS + outward, m.TLo, m.THi))
                 { blocked = true; break; }
 
+            if (blocked && spanNarrower)
+            {
+                DeclineSpan(port.Number, "there is other metal on this level directly behind the port");
+                continue;
+            }
+
             if (blocked)
             {
                 notes.Add(
@@ -415,7 +474,9 @@ public static class PlanarFeedExtension
             foreach (var m in measured)
             {
                 var mPolys = PolysOn(m.Layer);
-                var grown  = ExtrudeFace(mPolys[m.PolyIndex], m.VertexA, alongX, outward);
+                var grown  = m.Tab
+                    ? ExtrudeTab(mPolys[m.PolyIndex], m.VertexA, alongX, outward, m.TLo, m.THi)
+                    : ExtrudeFace(mPolys[m.PolyIndex], m.VertexA, alongX, outward);
                 var list   = edited[m.Layer] ??= [.. mPolys];
                 list[m.PolyIndex] = grown;
             }
@@ -432,7 +493,7 @@ public static class PlanarFeedExtension
 
         if (leads.Count == 0)
             return new CorePass(problem, [], notes,
-                                neighbourAsked.Count == 0 ? null : neighbourAsked, stillClear);
+                                neighbourAsked.Count == 0 ? null : neighbourAsked, stillClear, notDeembedded);
 
         var layers = new PlanarConductorLayer[problem.Layers.Count];
         for (int i = 0; i < layers.Length; i++)
@@ -472,7 +533,7 @@ public static class PlanarFeedExtension
 
         notes.Add(FeedNote(leads, wanted, fmt));
         return new CorePass(grownProblem, leads, notes,
-                            neighbourAsked.Count == 0 ? null : neighbourAsked, stillClear);
+                            neighbourAsked.Count == 0 ? null : neighbourAsked, stillClear, notDeembedded);
     }
 
     /// <summary>
@@ -947,6 +1008,38 @@ public static class PlanarFeedExtension
             if (i != vertexA) continue;
             next.Add(Push(ring[vertexA]));
             next.Add(Push(ring[b]));
+        }
+        return poly with { Outer = next };
+    }
+
+    /// <summary>
+    /// R-pw1-2 — a lead [<paramref name="tLo"/>, <paramref name="tHi"/>] wide on the end face that runs from
+    /// <paramref name="vertexA"/> to the next vertex: four vertices spliced into that edge, so the result is the same
+    /// simple polygon with a rectangular tab on its side, in the ring's own winding.
+    /// </summary>
+    private static PlanarPolygon ExtrudeTab(PlanarPolygon poly, int vertexA, bool alongX, double outward,
+                                            double tLo, double tHi)
+    {
+        var ring = poly.Outer;
+        int n = ring.Count, b = (vertexA + 1) % n;
+        double S(EmPoint p) => alongX ? p.X : p.Y;
+        double T(EmPoint p) => alongX ? p.Y : p.X;
+        EmPoint At(double sv, double tv) => alongX ? new EmPoint(sv, tv) : new EmPoint(tv, sv);
+
+        double s0 = S(ring[vertexA]);
+        bool rising = T(ring[b]) > T(ring[vertexA]);
+        var (t1, t2) = rising ? (tLo, tHi) : (tHi, tLo);
+        var tab = new List<EmPoint>(4);
+        if (t1 != T(ring[vertexA])) tab.Add(At(s0, t1));
+        tab.Add(At(s0 + outward, t1));
+        tab.Add(At(s0 + outward, t2));
+        if (t2 != T(ring[b])) tab.Add(At(s0, t2));
+
+        var next = new List<EmPoint>(n + 4);
+        for (int i = 0; i < n; i++)
+        {
+            next.Add(ring[i]);
+            if (i == vertexA) next.AddRange(tab);
         }
         return poly with { Outer = next };
     }

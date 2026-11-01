@@ -1,26 +1,26 @@
-// brief-dfr32-2 R-dfr32-2-1 / R-dfr32-2-2 — how wide an edge port's 3D sheet is.
+// brief-dfr32-2 R-dfr32-2-1 / R-dfr32-2-2, brief-port-width-planar-and-c3d R-pw1-0 — how wide an edge port is.
 //
-// ONE rule, read by the 3D generator when it builds the sheet (Em3dGenerator.BuildPorts, which the .c3d creation path
-// also goes through) and by the layout editor when it draws the port's bar (LayoutRenderer), so the extent on screen is
-// the extent the run builds. Units are the caller's: metres in the generator, DBU in the renderer.
+// ONE rule, read by every run that builds an edge port — the 3D generator's sheet (Em3dGenerator.BuildPorts, which the
+// .c3d creation path also goes through) and the planar run's rooftop row (EmPortExtraction → PlanarPort's transverse
+// span) — and by the layout editor when it draws the port's bar (LayoutRenderer), so the extent on screen is the extent
+// either run builds. Units are the caller's: metres in the runs, DBU in the renderer.
 //
-// An edge port's sheet used to be the whole conductor edge it sits on. On a line end that is the line's width, which is
-// right; on the edge of a ground pour it was millimetres of sheet nobody meant, and could reach a via the port was never
-// near. Now: a stated width wins; otherwise an edge longer than LongEdgeOverHeight × H (H = the dielectric height to
-// the port's return) gets a sheet BoundedWidthOverHeight × H wide, centred on the port's point. Either is clipped to the
-// edge.
+// The port's "Use edge width" box (LabelShape.PortUseEdgeWidth, null reading as "no width stated") decides it:
+// checked, the port drives the whole conductor edge it stands on, which is what a planar port always did; unchecked, a
+// stated width wins, and otherwise the port is 2 × H wide (H = the dielectric height to its return), centred on the
+// port's point. Either is clipped to the edge, so on a short edge 2 × H is the edge anyway.
 
 using Clipper2Lib;
 using CircuitRF.Engine.Mom;
 
 namespace CircuitRF.Design.Layout.Em3d;
 
-/// <summary>What decided an edge port's sheet width.</summary>
+/// <summary>What decided an edge port's width.</summary>
 public enum EdgePortSheetRule
 {
-    /// <summary>The whole conductor edge: a line end, or an edge no longer than 4 × H.</summary>
+    /// <summary>The whole conductor edge: the port uses its edge width, or H is not known.</summary>
     Edge,
-    /// <summary>The edge is longer than 4 × H and no width is stated: 2 × H, centred on the port.</summary>
+    /// <summary>The port does not use its edge width and states none: 2 × H, centred on the port.</summary>
     Bounded,
     /// <summary>The port states its own width.</summary>
     Stated,
@@ -37,34 +37,69 @@ public readonly record struct EdgePortSheetSpan(double Lo, double Hi, EdgePortSh
 
 public static class EdgePortSheet
 {
-    /// <summary>An edge longer than this many H is bounded.</summary>
+    /// <summary>
+    /// The edge length, in H, above which an unchecked port with no stated width is narrower than its edge (2 × H
+    /// wide, both halves clipped to the edge). Kept for the notes; <see cref="Span"/> no longer branches on it.
+    /// </summary>
     public const double LongEdgeOverHeight = 4.0;
 
-    /// <summary>A bounded sheet is this many H wide.</summary>
+    /// <summary>An unchecked port with no stated width is this many H wide.</summary>
     public const double BoundedWidthOverHeight = 2.0;
 
     /// <summary>
-    /// The sheet's extent along the edge [<paramref name="lo"/>, <paramref name="hi"/>]: centred on
-    /// <paramref name="at"/> (the port's own coordinate along the edge) when a width is stated or the edge is long,
-    /// and clipped to the edge. <paramref name="height"/> is the dielectric height to the return; zero or less (not
-    /// known) never bounds.
+    /// R-pw1-0 — whether <paramref name="label"/> drives the whole conductor edge it stands on: its
+    /// <see cref="LabelShape.PortUseEdgeWidth"/>, and when that is null, whether it states no width. So an existing
+    /// port with no width uses its edge and one that states a width keeps it.
     /// </summary>
-    public static EdgePortSheetSpan Span(double lo, double hi, double at, double height, double? stated)
+    public static bool UsesEdgeWidth(LabelShape label) => label.PortUseEdgeWidth ?? label.PortWidth is null;
+
+    /// <summary>
+    /// The value to STORE for "Use edge width" = <paramref name="use"/> on a port stating <paramref name="width"/>:
+    /// null where null already reads that way, so setting the default writes nothing and a <c>.clay</c> nobody
+    /// changed round-trips byte for byte.
+    /// </summary>
+    public static bool? StoredUseEdgeWidth(bool use, long? width) => use == (width is null) ? null : use;
+
+    /// <summary>
+    /// The port's extent along the edge [<paramref name="lo"/>, <paramref name="hi"/>]. With
+    /// <paramref name="useEdge"/> it is the whole edge. Otherwise it is centred on <paramref name="at"/> (the port's own
+    /// coordinate along the edge) and clipped to the edge: <paramref name="stated"/> wide when stated, else 2 ×
+    /// <paramref name="height"/> (the dielectric height to the return; zero or less — not known — gives the edge).
+    /// </summary>
+    public static EdgePortSheetSpan Span(double lo, double hi, double at, double height, double? stated, bool useEdge)
     {
+        if (useEdge) return new(lo, hi, EdgePortSheetRule.Edge);
         double want;
         EdgePortSheetRule rule;
         if (stated is > 0 and var w) { want = w; rule = EdgePortSheetRule.Stated; }
-        else if (height > 0 && hi - lo > LongEdgeOverHeight * height)
-        {
-            want = BoundedWidthOverHeight * height;
-            rule = EdgePortSheetRule.Bounded;
-        }
+        else if (height > 0) { want = BoundedWidthOverHeight * height; rule = EdgePortSheetRule.Bounded; }
         else return new(lo, hi, EdgePortSheetRule.Edge);
 
         double centre = Math.Clamp(at, lo, hi);
         double a = Math.Max(lo, centre - want / 2), b = Math.Min(hi, centre + want / 2);
         if (!(b > a)) return new(lo, hi, EdgePortSheetRule.Edge);
         return new(a, b, rule) { Clipped = b - a < want * (1 - 1e-9) };
+    }
+
+    /// <summary>
+    /// R-pw1-3 — the run's sentence for a port narrower than its edge, worded once for both kernels: "Port n's sheet"
+    /// in 3D, "Port n's cut" on the planar mesh. Null when the port uses its whole edge.
+    /// </summary>
+    public static string? Describe(int port, string what, EdgePortSheetSpan span, double edgeLength,
+                                   Func<double, string> length)
+    {
+        string clip = span.Clipped ? $", clipped to its edge ({length(edgeLength)})" : "";
+        // 2 × H on an edge no longer than that is the edge itself: nothing to explain.
+        if (span.Rule == EdgePortSheetRule.Bounded && span.Width >= edgeLength * (1 - 1e-9)) return null;
+        return span.Rule switch
+        {
+            EdgePortSheetRule.Stated => $"Port {port}'s {what} is {length(span.Width)} wide, the Width the port states{clip}.",
+            EdgePortSheetRule.Bounded =>
+                $"Port {port}'s {what} is {length(span.Width)} wide, {BoundedWidthOverHeight:0.#} × H centred on the port, on an " +
+                $"edge {length(edgeLength)} long{clip}. Check Use edge width (the port's Properties) to drive the whole edge, " +
+                "or state a Width.",
+            _ => null,
+        };
     }
 
     /// <summary>
@@ -101,11 +136,11 @@ public static class EdgePortSheet
     }
 
     /// <summary>
-    /// R-dfr32-2-1 — an edge port's marker hint narrowed to its sheet: the bar the layout editor draws is
+    /// R-dfr32-2-1 / R-pw1-0 — an edge port's marker hint narrowed to its width: the bar the layout editor draws is
     /// <see cref="Span"/> of the conductor end the hint measured, the port's point, H from the stack
-    /// (<see cref="HeightToReturnDbu"/>) and the port's stated <see cref="LabelShape.PortWidth"/> — so a port whose
-    /// sheet would be narrower than its edge is drawn as narrow as the run builds it. The hint unchanged when the
-    /// sheet is the whole edge.
+    /// (<see cref="HeightToReturnDbu"/>), the port's stated <see cref="LabelShape.PortWidth"/> and its
+    /// <see cref="UsesEdgeWidth"/> — so the port is drawn as wide as either run builds it. The hint unchanged when the
+    /// port is the whole edge.
     /// </summary>
     public static LayoutPortDirection.PortHint Bar(LayoutPortDirection.PortHint hint, LabelShape label, Technology? tech,
                                                    int dbuPerMicron)
@@ -115,7 +150,7 @@ public static class EdgePortSheet
         double centre = acrossX ? hint.PlaneX : hint.PlaneY;
         double lo = centre - hint.WidthDbu / 2.0, hi = centre + hint.WidthDbu / 2.0;
         double h = HeightToReturnDbu(tech, label.PortLayer ?? label.Layer, dbuPerMicron) ?? 0;
-        var span = Span(lo, hi, acrossX ? label.X : label.Y, h, label.PortWidth);
+        var span = Span(lo, hi, acrossX ? label.X : label.Y, h, label.PortWidth, UsesEdgeWidth(label));
         if (span.Rule == EdgePortSheetRule.Edge) return hint;
         long c = (long)Math.Round((span.Lo + span.Hi) / 2);
         return hint with

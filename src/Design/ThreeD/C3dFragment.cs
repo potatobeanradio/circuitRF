@@ -499,6 +499,7 @@ public static class C3dFragment
         var numbering = new List<string>();
         foreach (var p in src.Ports)
         {
+            p.FromLayout = null;   // a pasted port is a copy, not the layout label's own record
             int Renumber(int was)
             {
                 if (!usedNumbers.Contains(was)) { usedNumbers.Add(was); return was; }

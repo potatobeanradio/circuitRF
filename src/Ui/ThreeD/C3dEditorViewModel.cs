@@ -365,6 +365,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         long gen = Viewer.Scene.Generation;
         CarryCameraAcrossOrigin(gen);
         if (_elaborations.TryGetValue(gen, out var e)) { Elaboration = e; PostNewRefusals(e); }
+        CheckLayoutPorts();
         if (_readStamps.TryGetValue(gen, out var read)) _adoptedReadStamp = read;
         foreach (long old in _readStamps.Keys.Where(k => k <= gen).ToList()) _readStamps.TryRemove(old, out _);
         AdoptBuilt(gen);                           // brief-em3d-108 — what a display-only reload re-assembles

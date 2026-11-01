@@ -22,6 +22,7 @@
 
 using System.Globalization;
 using System.Numerics;
+using CircuitRF.Design.Layout.Em3d;
 using CircuitRF.Engine.Mom;
 
 namespace CircuitRF.Design.Layout.Em;
@@ -642,6 +643,35 @@ public static class EmPortExtraction
                 negLayerName = problem.Layers[nLevel].Name;
             }
 
+            // ── brief-port-width-planar-and-c3d R-pw1-1 — an edge port narrower than its edge ─────────────────
+            //
+            // The span the canvas draws as the port's bar and the 3D sheet is built from (EdgePortSheet, with H from the
+            // stack), on the conductor end the editor measured. A port using its edge width passes none, which is the
+            // planar port exactly as it always was.
+            PlanarPortSpan? portSpan = null;
+            if (kind == PlanarPortKind.Edge && negPoint is null && !EdgePortSheet.UsesEdgeWidth(label) &&
+                LayoutPortDirection.Resolve(conductorAt, label) is { Interior: false } hint)
+            {
+                var (px, _) = LayoutPortDirection.PerpendicularVector(hint.Direction);
+                bool edgeAlongX = px != 0;
+                bool portAlongX = side is PlanarPortSide.MinX or PlanarPortSide.MaxX;
+                if (edgeAlongX != portAlongX)
+                {
+                    double centre = edgeAlongX ? hint.PlaneX : hint.PlaneY;
+                    double eLo = centre - hint.WidthDbu / 2.0, eHi = centre + hint.WidthDbu / 2.0;
+                    double h = EdgePortSheet.HeightToReturnDbu(technology, label.PortLayer ?? label.Layer, dbuPerMicron) ?? 0;
+                    var sp = EdgePortSheet.Span(eLo, eHi, edgeAlongX ? label.X : label.Y, h, label.PortWidth, useEdge: false);
+                    if (sp.Rule != EdgePortSheetRule.Edge && sp.Width < hint.WidthDbu * (1 - 1e-9))
+                    {
+                        portSpan = new PlanarPortSpan(sp.Lo * perDbu, sp.Hi * perDbu);
+                        string Len(double dbu) => LayoutUnits.Format((long)Math.Round(dbu), displayUnit, dbuPerMicron) +
+                                                  " " + LayoutUnits.Suffix(displayUnit);
+                        if (!padToPlane && EdgePortSheet.Describe(number, "cut", sp, hint.WidthDbu, Len) is { } why)
+                            notes.Add(why);
+                    }
+                }
+            }
+
             var z0 = z0For?.Invoke(slot) ?? new Complex(50, 0);
             ports.Add(new PlanarPort(number, new EmPoint(x, y), side, z0,
                                      problem.Layers.Count > 1 ? viaLevel ?? level : null,
@@ -654,7 +684,8 @@ public static class EmPortExtraction
                                      // about, which is exactly the condition the positive terminal
                                      // above uses. On a one-level mesh both terminals infer, and
                                      // there is one candidate, so the answer is the same either way.
-                                     NegativeLayerIndex: problem.Layers.Count > 1 ? negLevel : null));
+                                     NegativeLayerIndex: problem.Layers.Count > 1 ? negLevel : null,
+                                     Span: portSpan));
             owners.Add(label);
             rows.Add(new EmPortRow(number, label, ports[^1], null, kind));
 

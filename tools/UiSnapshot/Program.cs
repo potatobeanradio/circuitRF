@@ -145,6 +145,8 @@ string? csym = null, csymPick = null;
 bool dark = false;
 var layerToggles = new List<(string Name, bool Hide)>();
 bool layerList = false;
+bool layoutInspector = false;
+bool c3dEditor = false;
 bool standalone = false;
 var signal = new List<string>();
 string? snp = null;
@@ -193,6 +195,8 @@ for (int i = 0; i < args.Length; i++)
         case "--place" when i + 1 < args.Length: place = args[++i]; break;
         case "--lock" when i + 1 < args.Length: layerToggles.Add((args[++i], false)); break;
         case "--layer-list": layerList = true; break;
+        case "--inspector": layoutInspector = true; break;
+        case "--editor": c3dEditor = true; break;
         case "--fc" when i + 1 < args.Length: fc = args[++i]; break;
         case "--c3d-setups" when i + 1 < args.Length: c3dSetups = Path.GetFullPath(args[++i]); break;
         case "--delete-fields" when i + 1 < args.Length: c3dDeleteFields = args[++i]; break;
@@ -295,12 +299,20 @@ else if (c3dSetups is not null)
     // The 3D view's setup list (the Analyses panel's cards) and its Properties panel on one editor view model, results read
     // from the workspace's results/ folder as WorkspaceViewModel.EmResultsRoot gives them.
     string? c3dCws = CircuitRF.Design.Workspace.WorkspaceRootFinder.FindAncestorCws(Path.GetDirectoryName(c3dSetups));
+    // What the editor posts goes to a real Messages panel as well, drawn to <out>.messages.png.
+    var c3dMessages = new MessagesTool();
     var c3dVm = new CircuitRF.Ui.ThreeD.C3dEditorViewModel(c3dSetups, CircuitRF.Design.ThreeD.C3dPersistence.LoadFromFile(c3dSetups),
         CircuitRF.Ui.Viewer3D.Viewer3DBackends.Create, () => c3dCws, a => Dispatcher.UIThread.Post(a))
     {
         ResultsRootProvider = c3dCws is null ? null : () => Path.Combine(Path.GetDirectoryName(c3dCws)!, "results"),
-        PostMessage = (text, warning) => Console.WriteLine($"{(warning ? "warning" : "info")}: {text}"),
+        PostMessage = (text, warning) =>
+        {
+            Console.WriteLine($"{(warning ? "warning" : "info")}: {text}");
+            c3dMessages.Post(warning ? MessageLevel.Warning : MessageLevel.Info, text);
+        },
     };
+    bool portsChecked = false;
+    c3dVm.LayoutPortsChecked += () => portsChecked = true;
     c3dVm.RestoreActiveSetup(null);
     c3dVm.Viewer.Resized(400, 300);
     c3dVm.Viewer.Session.EnsureBackend();
@@ -323,6 +335,19 @@ else if (c3dSetups is not null)
                                  ?? throw new InvalidOperationException($"--c3d-row: no tree row named '{c3dRow}'");
     }
     for (int k = 0; k < 100; k++) { Dispatcher.UIThread.RunJobs(); Thread.Sleep(10); }
+    // brief-port-width-planar-and-c3d R-pw1-4 — the placed layouts' ports are checked off the UI thread after adoption.
+    for (var w = System.Diagnostics.Stopwatch.StartNew(); !portsChecked && c3dVm.Document.Ports.Count > 0 &&
+                                                         w.Elapsed < TimeSpan.FromSeconds(30);)
+    { Dispatcher.UIThread.RunJobs(); Thread.Sleep(10); }
+    if (output is not null && c3dMessages.Messages.Count > 0)
+    {
+        string messagesPng = Path.ChangeExtension(output, ".messages.png");
+        var mw = new Window { Width = 900, Height = 200, Content = new CircuitRF.Ui.Views.Messages.MessagesView { DataContext = c3dMessages } };
+        mw.Show();
+        for (int k = 0; k < 6; k++) { Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); mw.UpdateLayout(); }
+        mw.CaptureRenderedFrame()!.Save(messagesPng);
+        Console.WriteLine($"wrote {messagesPng}");
+    }
     c3dVm.Properties.Reload();
     var c3dPanel = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*") };
     var cards = new CircuitRF.Ui.Views.ThreeD.C3dSetupAnalysesView { DataContext = c3dVm };
@@ -330,7 +355,11 @@ else if (c3dSetups is not null)
     Grid.SetColumn(props, 1);
     c3dPanel.Children.Add(cards);
     c3dPanel.Children.Add(props);
-    host = new Window { Width = sizeGiven ? width : 900, Height = sizeGiven ? height : 700, Content = c3dPanel };
+    // --editor: the whole 3D editor view (toolbar, Object Tree, canvas) instead of the cards and Properties panel.
+    Control c3dContent = c3dEditor
+        ? new CircuitRF.Ui.Views.ThreeD.C3dEditorView { DataContext = new CircuitRF.Ui.ThreeD.C3dEditorDocument(c3dVm) }
+        : c3dPanel;
+    host = new Window { Width = sizeGiven ? width : 900, Height = sizeGiven ? height : 700, Content = c3dContent };
     host.Show();
     Pump();
     if (c3dVm.FieldPlot(c3dRow ?? "") is { } shownPlot) Console.WriteLine($"plot {shownPlot.Name}: {c3dVm.FieldPlotProblem(shownPlot) ?? "draws"}");
@@ -361,8 +390,20 @@ else if (clay is not null)
         }
         if (hide) row.Visible = false; else row.Selectable = false;
     }
-    host = new Window { Width = width, Height = height,
-                        Content = new LayoutEditorView { DataContext = new LayoutDocument(Path.GetFileName(clay), layoutVm, clay) } };
+    Control layoutContent = new LayoutEditorView { DataContext = new LayoutDocument(Path.GetFileName(clay), layoutVm, clay) };
+    if (layoutInspector)
+    {
+        // The Properties Inspector beside the canvas, on the editor's own selection, as the shell docks it.
+        var props = new LayoutShapePropertiesViewModel();
+        props.SetContext(layoutVm);
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,300") };
+        grid.Children.Add(layoutContent);
+        var inspector = new CircuitRF.Ui.Views.Properties.LayoutShapePropertiesView { DataContext = props };
+        Grid.SetColumn(inspector, 1);
+        grid.Children.Add(inspector);
+        layoutContent = grid;
+    }
+    host = new Window { Width = width, Height = height, Content = layoutContent };
     host.Show();
     Pump();
     layoutCanvas = host.GetVisualDescendants().OfType<LayoutCanvas>().First();
