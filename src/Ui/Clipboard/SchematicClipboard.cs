@@ -14,11 +14,11 @@ namespace CircuitRF.Ui.Clipboard;
 
 /// <summary>
 /// System-clipboard helper for schematic objects.
-/// Primary format: JSON text (cross-platform, roundtrips perfectly).
+/// Primary format: JSON, in circuitRF's own <see cref="ClipboardPayload"/> format (never plain text).
 /// Rich formats: SVG vector (macOS/Linux cross-app) + PNG raster bitmap (universal fallback).
 /// On Windows, all formats — including CF_ENHMETAFILE (vector EMF for Word/PowerPoint) — are written
 /// in one P/Invoke session via WindowsClipboard, bypassing Avalonia. macOS/Linux use Avalonia's
-/// DataTransfer (PDF/SVG native UTIs + PNG + text).
+/// DataTransfer (PDF/SVG native UTIs + PNG + payload).
 /// </summary>
 public static class SchematicClipboard
 {
@@ -90,7 +90,7 @@ public static class SchematicClipboard
             item.Set(ClipboardFormats.SvgNativeFormat, Encoding.UTF8.GetBytes(sv.Svg));
         if (bmp is not null)
             item.Set(DataFormat.Bitmap, bmp);
-        item.Set(DataFormat.Text, json);
+        ClipboardPayload.Set(item, json);   // circuitRF's own; never plain text (ClipboardPayload)
 
         var transfer = new DataTransfer();
         transfer.Add(item);
@@ -116,9 +116,7 @@ public static class SchematicClipboard
         double offsetX = 100, double offsetY = 100,
         string? destinationDirectory = null)
     {
-        string? json = null;
-        try { json = await clipboard.TryGetTextAsync(); }
-        catch { return null; }
+        string? json = await ClipboardRead.TextAsync(clipboard);
 
         if (string.IsNullOrWhiteSpace(json)) return null;
 

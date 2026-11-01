@@ -365,7 +365,8 @@ namespace CircuitRF.Ui.DataDisplay
         /// PDF and SVG under their native macOS UTIs (com.adobe.pdf / public.svg-image) for
         /// cross-app paste (Keynote, Preview, Illustrator), app-scoped PDF/SVG for
         /// circuitRF-to-circuitRF fidelity, an optional raster bitmap (public.png) as a universal
-        /// fallback, and the DataDisplay config JSON as plain text for the Paste command.
+        /// fallback, and the DataDisplay config JSON in <see cref="ClipboardPayload"/> for the Paste command —
+        /// never as plain text, which a chat client would take in preference to every picture here.
         /// </summary>
         internal static DataTransfer BuildClipboardTransferCore(
             byte[] pdf, string svg, string json, Bitmap? bitmap = null)
@@ -379,7 +380,7 @@ namespace CircuitRF.Ui.DataDisplay
                 item.Set(DataFormat.Bitmap, bitmap);
             item.Set(PdfFormat, pdf);
             item.Set(SvgFormat, svg);
-            item.Set(DataFormat.Text, json);
+            ClipboardPayload.Set(item, json);   // circuitRF's own; never plain text (ClipboardPayload)
 
             var transfer = new DataTransfer();
             transfer.Add(item);

@@ -105,7 +105,7 @@ public static class SymbolClipboard
         }
         catch { /* rich formats are best-effort; JSON is always present */ }
 
-        item.Set(DataFormat.Text, json);            // JSON — primary / always
+        ClipboardPayload.Set(item, json);           // JSON — primary / always; never plain text (ClipboardPayload)
 
         var transfer = new DataTransfer();
         transfer.Add(item);
@@ -130,9 +130,7 @@ public static class SymbolClipboard
         IClipboard clipboard,
         double offsetX = 100.0, double offsetY = 100.0)
     {
-        string? json;
-        try   { json = await clipboard.TryGetTextAsync(); }
-        catch { return null; }
+        string? json = await ClipboardRead.TextAsync(clipboard);
 
         if (string.IsNullOrWhiteSpace(json)) return null;
 

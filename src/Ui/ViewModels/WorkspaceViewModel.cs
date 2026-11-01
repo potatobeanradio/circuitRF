@@ -2034,12 +2034,25 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             return;
 
         var suggested = Path.GetFileName(workspaceDir.TrimEnd(Path.DirectorySeparatorChar));
+
+        // Opens beside the workspace, not in it. Left to itself every platform's save dialog opens on the
+        // folder this application last used, which after working in a design IS the workspace — and a zip
+        // saved there is picked up by the next archive. The user can still navigate anywhere.
+        IStorageFolder? start = null;
+        try
+        {
+            if (Path.GetDirectoryName(workspaceDir.TrimEnd(Path.DirectorySeparatorChar)) is { Length: > 0 } parent)
+                start = await window.StorageProvider.TryGetFolderFromPathAsync(parent);
+        }
+        catch { /* the picker opens wherever the platform likes */ }
+
         var target = await window.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
-            Title             = "Archive Workspace",
-            SuggestedFileName = suggested,
-            DefaultExtension  = "zip",
-            FileTypeChoices   = [new FilePickerFileType("Zip Archive") { Patterns = ["*.zip"] }],
+            Title                  = "Archive Workspace",
+            SuggestedStartLocation = start,
+            SuggestedFileName      = suggested,
+            DefaultExtension       = "zip",
+            FileTypeChoices        = [new FilePickerFileType("Zip Archive") { Patterns = ["*.zip"] }],
         });
         if (target is null) return;
 

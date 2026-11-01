@@ -10,7 +10,7 @@
 //
 //  The fix: bypass Avalonia on Windows entirely. SetClipboard() performs one
 //  complete P/Invoke session — OpenClipboard → EmptyClipboard → SetClipboardData
-//  for every format (EMF, PNG, PDF, SVG, text) → CloseClipboard. This also lets
+//  for every format (EMF, PNG, PDF, SVG, payload) → CloseClipboard. This also lets
 //  us put CF_ENHMETAFILE first in the enumeration order, which benefits apps that
 //  iterate formats and take the first one they recognise (Word, PowerPoint).
 //
@@ -97,7 +97,6 @@ internal static class WindowsClipboard
     [DllImport("gdi32.dll")]
     private static extern bool RemoveFontMemResourceEx(IntPtr fh);
 
-    private const uint CF_UNICODETEXT = 13;
     private const uint CF_ENHMETAFILE = 14;
     private const uint GMEM_MOVEABLE  = 0x0002;
 
@@ -122,7 +121,7 @@ internal static class WindowsClipboard
     ];
 
     /// <summary>
-    /// Writes all clipboard formats (CF_ENHMETAFILE, PNG, PDF, SVG, plain text) in a single
+    /// Writes all clipboard formats (CF_ENHMETAFILE, PNG, PDF, SVG, circuitRF's payload) in a single
     /// P/Invoke session, bypassing Avalonia. Formats are set in descending richness so apps that
     /// iterate EnumClipboardFormats and take the first recognised format get the best one.
     /// <paramref name="pdf"/> and <paramref name="svg"/> are best-effort; null entries are skipped
@@ -188,10 +187,13 @@ internal static class WindowsClipboard
                 SetBytesOnClipboard(RegisterClipboardFormat("image/svg+xml"),
                     Encoding.UTF8.GetBytes(svg!));
 
-            // Plain-text JSON last — Paste reads this; visible to any text-only receiver. A picture with
-            // nothing to paste back as text (the 3D view's Copy) passes null and gets no text at all, so
-            // no receiver prefers an empty string over the image.
-            if (json is not null) SetUnicodeTextOnClipboard(json);
+            // circuitRF's own document last, in circuitRF's own format and NOT as CF_UNICODETEXT: a chat
+            // client's message box takes text whenever text is offered, whatever order it was written in, so a
+            // plot pasted into one arrived as its JSON. Paste reads it back through Avalonia under the name
+            // Avalonia registers for the same application format (ClipboardPayload). A picture with nothing to
+            // paste back (the 3D view's Copy) passes null.
+            if (json is not null)
+                SetBytesOnClipboard(RegisterClipboardFormat(ClipboardPayload.WindowsFormatName), ClipboardPayload.Encode(json));
         }
         finally
         {
@@ -244,13 +246,6 @@ internal static class WindowsClipboard
 
         IntPtr result = SetClipboardData(format, hMem);
         if (result == IntPtr.Zero) GlobalFree(hMem);   // refused — we still own the block
-    }
-
-    [SupportedOSPlatform("windows")]
-    private static void SetUnicodeTextOnClipboard(string text)
-    {
-        byte[] bytes = Encoding.Unicode.GetBytes(text + '\0');   // CF_UNICODETEXT: null-terminated UTF-16
-        SetBytesOnClipboard(CF_UNICODETEXT, bytes);
     }
 
     /// <summary>

@@ -182,7 +182,7 @@ public sealed class SnapQuery3D
         {
             uint id = _patch.Ids[k];
             if (id == 0) continue;
-            ulong key = ((ulong)id << 32) | _patch.Faces[k];
+            ulong key = ((ulong)id << 32) | FaceOf(id, _patch.Faces[k]);
             if (_seen.Add(key)) _pairs.Add(key);
             if (_scene.Object(id) is { Translucent: true }) translucentSeen = true;
         }
@@ -433,7 +433,7 @@ public sealed class SnapQuery3D
                 uint pid = _patch.Ids[k];
                 if (pid == 0 || depth <= _patch.Depth[k] + tol) return true;
                 if (pid != id) continue;
-                int f = (int)_patch.Faces[k];
+                int f = (int)FaceOf(id, _patch.Faces[k]);
                 bool own = on switch
                 {
                     Snap3DKind.Vertex => f >= 0 && f < t.FaceCount && t.VertexOnFace(index, f),
@@ -517,6 +517,14 @@ public sealed class SnapQuery3D
         float ddx = x - _patch.CursorX, ddy = y - _patch.CursorY;
         _best = new Snap3DResult(Snap3DKind.Grid, world, 0, -1, -1, x / _dip, y / _dip, _cam.ViewDepth(local), MathF.Sqrt(ddx * ddx + ddy * ddy));
     }
+
+    /// <summary>
+    /// The table face a patch pixel of object <paramref name="id"/> is on. An object drawn with no faces in the ID pass
+    /// (<see cref="Scene3DVertex.NoFace"/> — a port) but given a one-face table, as a sheet's, is on that face; every other
+    /// pixel's face is its own.
+    /// </summary>
+    private uint FaceOf(uint id, uint face)
+        => face == Scene3DVertex.NoFace && _scene.FeaturesOf(id).Table is { FaceCount: 1 } ? 0u : face;
 
     private static bool IsVisible(ReadOnlySpan<bool> visible, uint id)
         => visible.IsEmpty || (id - 1 < (uint)visible.Length && visible[(int)id - 1]);

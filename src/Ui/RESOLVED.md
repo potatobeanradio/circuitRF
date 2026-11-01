@@ -41620,3 +41620,28 @@ path; the lazily built `NetworkView` serves the derived metrics), which is the `
   from its own mark): at 3 px, "P5" beside "P4" read as "P5P4".
 - UiSnapshot gained `--layer-list` and `--hide Ports` / `--lock Ports` for the pictures this needed.
 - Tests: `PortsRowTests` (3), `PortNamePlacementTests.ACrowdedName_FallsBackToItsNumberThenToNothing_AndComesBackWhenZoomedIn`.
+
+## Clipboard: circuitRF's own document is never plain text; Archive opens beside the workspace (2026-11-01)
+
+- **A Data Display plot pasted into a chat client arrived as its JSON.** The plot was already offered richest
+  first and text last on both platforms; the order does not matter, because the receiver chooses by its own
+  rule, and a chat message box takes text whenever text is there. Ordering cannot fix it — only not offering
+  text can. Every copy that puts a picture on the clipboard (Data Display and everything routed through
+  `PlotExporter.SetClipboardDataAsync`, schematic, layout, symbol, wBond) now carries its document in
+  `ClipboardPayload` (`circuitRF.payload`, an Avalonia application format) instead of `DataFormat.Text`. Other
+  applications see only the pictures.
+- **Every circuitRF paste reads through `ClipboardRead.TextAsync`**, which tries the payload first and plain
+  text second, so text copied by an earlier build or written in another application still pastes. The readers
+  that called `TryGetTextAsync` directly (schematic, layout, symbol, layout editor's mixed paste, picture paste)
+  were moved onto it; readers that only ever want foreign text (BOM tables, profile coordinates) were left.
+- **The Windows bypass (`WindowsClipboard.SetClipboard`) registers `avn-app-fmt:circuitRF.payload`** — the
+  name Avalonia's Win32 clipboard gives the same application format — so Avalonia reads back what the bypass
+  wrote. macOS spells the same format `net.avaloniaui.app.uti.circuitRF.payload`. **The bytes are UTF-8 with a
+  NUL terminator and the reader cuts at the first NUL**: Avalonia's Win32 reader returns `GlobalSize` bytes,
+  which can be rounded up past what was written.
+- Text-only copies (paths, tables, readouts, an analysis list) are unchanged: they are meant to paste as text.
+- **Archive Workspace's save dialog opens in the workspace's PARENT folder** (`SuggestedStartLocation`). Left
+  unset, every platform opens on the folder the application last used, which while working is the workspace
+  itself, and a zip saved there is swept into the next archive. Avalonia's Win32 dialog calls `SetFolder`, so
+  Windows honours it over its own last-used memory too.
+- Tests: `ClipboardPayloadTests` (2).

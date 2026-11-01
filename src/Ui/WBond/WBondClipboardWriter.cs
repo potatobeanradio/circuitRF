@@ -114,7 +114,7 @@ internal static class WBondClipboardWriter
             item.Set(ClipboardFormats.SvgNativeFormat, Encoding.UTF8.GetBytes(sv.Svg));
         if (bmp is not null)
             item.Set(DataFormat.Bitmap, bmp);
-        item.Set(DataFormat.Text, json);
+        ClipboardPayload.Set(item, json);   // circuitRF's own; never plain text (ClipboardPayload)
 
         var transfer = new DataTransfer();
         transfer.Add(item);

@@ -35,9 +35,7 @@ public static class PictureClipboard
     /// <summary>The pictures in a schematic selection on the clipboard, or empty when it holds none.</summary>
     public static async Task<List<EditableBitmap>> SchematicPicturesAsync(IClipboard clipboard)
     {
-        string? text;
-        try { text = await clipboard.TryGetTextAsync(); }
-        catch { return []; }
+        string? text = await ClipboardRead.TextAsync(clipboard);
         return SchematicPicturesIn(text);
     }
 

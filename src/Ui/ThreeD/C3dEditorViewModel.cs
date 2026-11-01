@@ -901,9 +901,11 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     /// </summary>
     public C3dSnapPoint ToDocumentPoint(in Snap3DResult snap)
     {
+        // A port is declared in this document's own DBU, never through an instance's placement, so its corners are exact.
         bool chain = snap.Kind == Snap3DKind.Grid
                      || (Viewer.Scene.Object(snap.Object) is { } o &&
-                         Elaboration?.Provenance.TryGetValue(o.Name, out var p) == true && p!.Exact);
+                         (o.Kind == Scene3DKind.Port
+                          || Elaboration?.Provenance.TryGetValue(o.Name, out var p) == true && p!.Exact));
         double per = C3dLowering.Metres(1, Document.DbuPerMicron);
         (long D, bool Whole) Of(double m)
         {

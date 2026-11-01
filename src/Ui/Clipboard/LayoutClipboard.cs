@@ -120,7 +120,7 @@ public static class LayoutClipboard
             item.Set(ClipboardFormats.SvgNativeFormat, Encoding.UTF8.GetBytes(sv.Svg));
         if (bmp is not null)
             item.Set(DataFormat.Bitmap, bmp);
-        item.Set(DataFormat.Text, json);
+        ClipboardPayload.Set(item, json);   // circuitRF's own; never plain text (ClipboardPayload)
 
         var transfer = new DataTransfer();
         transfer.Add(item);
@@ -136,9 +136,7 @@ public static class LayoutClipboard
     /// </summary>
     public static async Task<LayoutFragment.Payload?> PasteAsync(IClipboard clipboard)
     {
-        string? text;
-        try { text = await clipboard.TryGetTextAsync(); }
-        catch { return null; }
+        string? text = await ClipboardRead.TextAsync(clipboard);
 
         // "Paste whatever is on the clipboard": a copy made in the wBond editor from a MIXED
         // selection arrives wrapped, and the layout half has to come back out of it here or a paste

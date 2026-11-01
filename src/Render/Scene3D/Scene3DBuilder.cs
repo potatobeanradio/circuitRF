@@ -540,22 +540,31 @@ public static class Scene3DBuilder
             {
                 Id = 0, Name = p.Name, Kind = Scene3DKind.Port, PortNumber = p.Number, Rgba = pinFill, Translucent = true,
             };
+            // A port snaps as a sheet does — its corners, its edges and their midpoints, its centre — so a measurement can
+            // start or end on one. The features come from the port's own surface, never from what is drawn on it: the
+            // checkerboard's cells and its arrow would add corners that are not the port's. Its ID-pass pixels carry no face
+            // (Scene3DVertex.NoFace, which keeps Face mode off it); the snap reads them as the table's one face.
+            static Scene3DFeatureRef Snaps(Em3dTriangleMesh m) => new(Scene3DFeatureTable.Of(m, sheet: true), 0, 0, 0, false);
             // brief-sar-8b — a gap on a cylinder: its patch, and the arrow along it from its centre on the surface.
             if (p.Cylinder is { } gap)
             {
-                b.Object(obj, gap.Patch.Tessellate(p.Name), PortArrow(p).Select(q => (q, pinLine)));
+                var patch = gap.Patch.Tessellate(p.Name);
+                b.Object(obj, patch, PortArrow(p).Select(q => (q, pinLine)), features: Snaps(patch));
                 continue;
             }
             if (p.Kind == Em3dPortKind.Lumped && p.Annulus is null && Checkerboard(p, pinFill, checkFill, checkArrow) is { } board)
             {
-                b.Object(obj, board.Mesh, Outline(p).Select(q => (q, pinLine)), vertexRgba: board.Rgba);
+                var (sv, st) = PortSheet(p);
+                b.Object(obj, board.Mesh, Outline(p).Select(q => (q, pinLine)), vertexRgba: board.Rgba,
+                         features: Snaps(new Em3dTriangleMesh(sv, st)));
                 continue;
             }
             // brief-em3d-114 R-em3d114-3c — a multi-terminal port's terminals share one rectangle: the first draws it, and each
             // other terminal a strip along its own voltage path, so each arrow (reference to conductor) has a sheet to pick it by
             var (verts, tris) = p.FaceGroup is { } g && p.VoltagePath is { } path && problem.Ports.First(q => q.FaceGroup == g) != p
                 ? TerminalStrip(p, path) : PortSheet(p);
-            b.Object(obj, new Em3dTriangleMesh(verts, tris), PortArrow(p).Select(q => (q, pinLine)));
+            var sheetMesh = new Em3dTriangleMesh(verts, tris);
+            b.Object(obj, sheetMesh, PortArrow(p).Select(q => (q, pinLine)), features: Snaps(sheetMesh));
         }
 
         // ── brief-em3d-49: face boundaries, tinted just off their faces (never z-fighting the solid) ─

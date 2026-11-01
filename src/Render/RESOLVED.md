@@ -5756,3 +5756,18 @@ whole edge `EdgeAt` found.
 `EdgePortSheet.Bar` before `MarkerBbox`. Both callers pass them: `LayoutEditorViewModel.PortMarkerRegion` (hit test,
 hover, context menu) and `LayoutRenderer.DrawSelectionOutlines` (the highlight), so the two stay one rectangle. Test:
 `PortSheetWidthTests.ThePickRegion_SpansTheDrawnBar_NotTheEdge`.
+
+## A port snaps as a sheet does (2026-11-01)
+
+- **A measurement could not start or end on a port** — hovering a lumped port's corner showed no snap marker at
+  all. A port was built with no snap features (`Scene3DFeatureRef` default), and its triangles are drawn with no
+  face (`Scene3DVertex.NoFace`), so `SnapQuery3D` skipped every port pixel in the patch.
+- **The features come from the port's own surface** (`PortSheet`, a terminal strip, or a cylinder gap's patch),
+  built as a sheet's one-face table — never from the drawn checkerboard mesh, whose cells and arrow would add
+  corners that are not the port's.
+- **The ID pass still writes NoFace for a port**, which keeps Face mode, face hover and face images off it. The
+  snap query alone reads a NoFace pixel of an object with a one-face table as face 0 (`SnapQuery3D.FaceOf`), both
+  when it collects the patch's pairs and in the visibility test.
+- **A port's corner is an EXACT document point** (`C3dEditorViewModel.ToDocumentPoint`): a port is declared in the
+  document's own DBU, never through an instance placement, and has no provenance entry to say so.
+- Test: `PortSnapTests`.

@@ -17,10 +17,16 @@ namespace CircuitRF.Ui.Clipboard;
 
 public static class ClipboardRead
 {
-    /// <summary>The clipboard's text, or null when it holds none, there is no clipboard, or the platform
+    /// <summary>The clipboard's text — a circuitRF copy's own document (<see cref="ClipboardPayload"/>) when it
+    /// holds one, else its plain text — or null when it holds neither, there is no clipboard, or the platform
     /// refused the read.</summary>
-    public static Task<string?> TextAsync(IClipboard? clipboard)
-        => clipboard is null ? Task.FromResult<string?>(null) : Try(clipboard.TryGetTextAsync, null);
+    public static async Task<string?> TextAsync(IClipboard? clipboard)
+    {
+        if (clipboard is null) return null;
+        var payload = ClipboardPayload.Decode(await Try(() => clipboard.TryGetValueAsync(ClipboardPayload.Format), null));
+        if (!string.IsNullOrEmpty(payload)) return payload;
+        return await Try(clipboard.TryGetTextAsync, null);
+    }
 
     /// <summary>Runs one clipboard read, answering <paramref name="fallback"/> when the platform throws.</summary>
     public static async Task<T> Try<T>(Func<Task<T>> read, T fallback)

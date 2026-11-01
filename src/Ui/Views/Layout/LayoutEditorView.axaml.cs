@@ -1673,9 +1673,7 @@ public partial class LayoutEditorView : UserControl
     {
         if (Vm is not { } vm) return false;
 
-        string? text;
-        try { text = await clipboard.TryGetTextAsync(); }
-        catch { return false; }
+        string? text = await ClipboardRead.TextAsync(clipboard);
 
         var (wiresJson, layoutJson) = WBondMixedClipboard.Unwrap(text);
 
