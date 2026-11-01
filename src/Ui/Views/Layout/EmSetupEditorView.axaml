@@ -566,16 +566,18 @@
                          metal (▾); Pick fills the row from a click in the 3D view. Other metal is what an electrostatic solve
                          does with metal in no terminal (UnassignedConductors3D). -->
                     <StackPanel IsVisible="{Binding ViewModel.IsStaticSetup}" Spacing="2" Margin="0,6,0,0">
-                        <Grid ColumnDefinitions="110,220,70,Auto" ColumnSpacing="6">
+                        <!-- The source-port column is Auto with a fixed-width box, so it takes no room while hidden (electrostatic):
+                             a fixed 70 there pushed each row's ✕ past the setup window's right edge. -->
+                        <Grid ColumnDefinitions="110,220,Auto,Auto" ColumnSpacing="6">
                             <TextBlock Grid.Column="0" Classes="colhdr" Text="Terminal"/>
                             <TextBlock Grid.Column="1" Classes="colhdr" Text="{Binding ViewModel.TerminalConductorHeader}"/>
-                            <TextBlock Grid.Column="2" Classes="colhdr" Text="Source port"
+                            <TextBlock Grid.Column="2" Classes="colhdr" Text="Source port" Width="70"
                                        IsVisible="{Binding ViewModel.IsMagnetostaticSetup}"/>
                         </Grid>
                         <ItemsControl Name="TerminalRowsList" ItemsSource="{Binding ViewModel.TerminalRows}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate x:DataType="em:Em3dTerminalRow">
-                                    <Grid ColumnDefinitions="110,220,70,Auto,Auto,Auto" ColumnSpacing="6" Margin="0,1">
+                                    <Grid ColumnDefinitions="110,220,Auto,Auto,Auto,Auto" ColumnSpacing="6" Margin="0,1">
                                         <TextBox Grid.Column="0" Classes="cell" Tag="Terminals3D" Text="{Binding Name}"
                                                  LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
                                                  ToolTip.Tip="The terminal's name: the label of its row and column in the matrix."/>
@@ -597,7 +599,7 @@
                                             <Button Grid.Column="1" Content="▾" Padding="5,0" Click="OnOpenPickerClick"
                                                     ToolTip.Tip="List the pieces of metal in this problem."/>
                                         </Grid>
-                                        <TextBox Grid.Column="2" Classes="cell" Tag="Terminals3D" Text="{Binding Source}"
+                                        <TextBox Grid.Column="2" Classes="cell" Tag="Terminals3D" Text="{Binding Source}" Width="70"
                                                  IsVisible="{Binding $parent[ItemsControl].((em:EmSetupDocument)DataContext).ViewModel.IsMagnetostaticSetup, FallbackValue=False}"
                                                  LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
                                                  ToolTip.Tip="The port (its number) whose sheet drives this terminal's current, in and back."/>
@@ -645,7 +647,7 @@
                                       SelectedItem="{Binding ViewModel.UnassignedChoice}"
                                       ToolTip.Tip="Metal in no terminal and not ground: Float solves it as connected to nothing (exact, one extra solve per piece); Ground makes it the reference, as plane copper and its vias are."/>
                         </StackPanel>
-                        <TextBlock Classes="colhdr" Text="{Binding ViewModel.BodiesStatus}" MinHeight="14"/>
+                        <TextBlock Classes="colhdr" Text="{Binding ViewModel.StaticStatus}" MinHeight="14"/>
                     </StackPanel>
                     <!-- brief-em3d-23: each port's kind (lumped or wave, mixable), a wave port's extent and offset
                          (Ports3D); an eigenmode setup's count and target (Eigenmode); and the modes of its last run.

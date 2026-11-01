@@ -81,10 +81,25 @@ public sealed partial class EmSetupEditorViewModel
     public ObservableCollection<Em3dBodyPick> GroundPicks { get; } = [];
 
     /// <summary>"listing conductors…" while the list is built, then how many bodies it found (or why it found none).</summary>
-    [ObservableProperty] private string _bodiesStatus = "";
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StaticStatus))]
+    private string _bodiesStatus = "";
+
+    /// <summary>Why the last pick in the 3D view filled nothing; cleared when a pick is armed or lands.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StaticStatus))]
+    private string? _pickRefusal;
+
+    /// <summary>The line under the terminal table: while a Pick is armed, what to do (and why the last click took nothing);
+    /// otherwise how many pieces of metal there are.</summary>
+    public string StaticStatus => PickingRow is { } row
+        ? (PickRefusal is { } why ? why + " " : "") + $"Click a conductor in the 3D view for \"{row.Name}\" (Pick again cancels)."
+        : BodiesStatus;
 
     /// <summary>The row a one-shot pick in the 3D view will fill; null when none is armed.</summary>
-    [ObservableProperty] private Em3dTerminalRow? _pickingRow;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StaticStatus))]
+    private Em3dTerminalRow? _pickingRow;
 
     /// <summary>The bodies of the row being edited, by member object name: what the 3D view highlights.</summary>
     public event Action<IReadOnlyList<string>>? HighlightRequested;
@@ -116,16 +131,32 @@ public sealed partial class EmSetupEditorViewModel
 
     private IReadOnlyList<Em3dBodyChoice> _bodies = [];
 
-    /// <summary>Builds the picker rows once, off the UI thread. Called when the setup window opens.</summary>
+    /// <summary>True while a view shows this panel: the host's <see cref="SetBodyLister"/> re-lists only then.</summary>
+    public bool IsShown { get; set; }
+
+    private int _listGeneration;
+
+    /// <summary>Builds the picker rows off the UI thread. Called when the setup window opens, and again by
+    /// <see cref="SetBodyLister"/>; a listing overtaken by a later one lands nothing.</summary>
     public async Task ListBodiesAsync(CancellationToken ct = default)
     {
         if ((BodyLister ?? LayoutBodyLister()) is not { } lister || !IsStaticSetup) return;
+        int generation = ++_listGeneration;
         BodiesStatus = "listing conductors…";
         IReadOnlyList<Em3dBodyChoice> bodies;
         try { bodies = await Task.Run(() => lister(ct), ct); }
         catch (OperationCanceledException) { return; }
-        catch (Exception ex) { BodiesStatus = "The conductors could not be listed: " + ex.Message; return; }
-        SetBodies(bodies);
+        catch (Exception ex) { if (generation == _listGeneration) BodiesStatus = "The conductors could not be listed: " + ex.Message; return; }
+        if (generation == _listGeneration) SetBodies(bodies);
+    }
+
+    /// <summary>The host's bodies changed (a 3D view adopted a new elaboration — the first one, or one with an object
+    /// drawn since): kept, and the rows rebuilt at once while the panel is shown. A panel built before the view's first
+    /// elaboration had no lister, so its list stayed empty and every Pick in the view matched nothing.</summary>
+    public void SetBodyLister(Func<CancellationToken, IReadOnlyList<Em3dBodyChoice>> lister)
+    {
+        BodyLister = lister;
+        if (IsShown) _ = ListBodiesAsync();
     }
 
     /// <summary>A <c>.cem</c>'s lister: its layout's solids, as the generator builds them for this setup.</summary>
@@ -173,7 +204,12 @@ public sealed partial class EmSetupEditorViewModel
     public bool PickConductor(string objectName)
     {
         if (PickingRow is not { } row) return false;
-        if (_bodies.FirstOrDefault(b => b.Members.Contains(objectName, StringComparer.Ordinal)) is not { } body) return false;
+        if (_bodies.FirstOrDefault(b => b.Members.Contains(objectName, StringComparer.Ordinal)) is not { } body)
+        {
+            // Said, not swallowed: a dielectric, or metal the problem leaves out, is what a click most often lands on.
+            PickRefusal = _bodies.Count == 0 ? "The conductors are not listed yet." : $"\"{objectName}\" is not a conductor.";
+            return false;
+        }
         PickingRow = null;
         row.Net = body.Token;
         CommitTerminals();
@@ -185,6 +221,7 @@ public sealed partial class EmSetupEditorViewModel
     {
         if (oldValue is not null) oldValue.IsPicking = false;
         if (newValue is not null) newValue.IsPicking = true;
+        PickRefusal = null;
     }
 
     [RelayCommand]

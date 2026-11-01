@@ -93,8 +93,10 @@ run takes under a minute.</li>
 <p>A board imported from Gerber files has no nets: every piece of copper is just a shape on a layer. An
 electrostatic terminal is named by <strong>picking the metal</strong>, not by typing a net.</p>
 <p>In the 3D view's <strong>Simulate ▸ Setup Analyses…</strong>, choose <strong>Electrostatic</strong> and <strong>Palace</strong>, then in the
-<strong>Terminals</strong> table press <strong>+</strong> and the row's <strong>Pick</strong> button, and click the metal in the view. The row takes
-the <strong>whole piece of metal</strong> the click touched. In Test Pad Capacitance one click on the bottom test pad takes
+<strong>Terminals</strong> table press <strong>Add terminal</strong> and the row's <strong>Pick</strong> button, and click the metal in the view. While
+a Pick waits, the line under the table names the terminal it will fill, and says so when a click lands on
+something that is not a conductor, such as the substrate. Pressing <strong>Pick</strong> again, or closing the setup window,
+cancels it. The row takes the <strong>whole piece of metal</strong> the click touched. In Test Pad Capacitance one click on the bottom test pad takes
 the pad, the via barrel, the four unused inner pads, the top via pad and the line, because they all touch: they
 are one conductor, and they are at one potential. The <strong>Conductor</strong> box's ▾ lists every piece of metal, by its
 net or, with none, by <code>body:</code> and its largest object, with its layers and object count. The

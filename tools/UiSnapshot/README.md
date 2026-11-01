@@ -208,6 +208,12 @@ Properties panel, and prints why the plot draws nothing. `--rclick` on a card op
 3D editor view instead (toolbar, Object Tree and canvas; the canvas itself cannot draw headless), so `--rclick` on a tree
 row opens that row's menu. Whatever the editor posts to the Messages panel is also drawn to `<out>.messages.png`.
 
+`--c3d-pick <object>` (a step) is the 3D view's click on that object: the canvas cannot draw headless, but picking runs
+on the CPU, so it hovers a pixel that shows the object and sends the viewer's own Click, which an armed draw tool or a
+setup's terminal Pick receives as a real click would. The pencil opens the setup window (`--click` on it), and
+`--button Pick#2` presses the second row's Pick (`Label#n` picks the n-th button with that label). After every step an
+electrostatic or magnetostatic setup's terminals, Pick state, conductor list and the view's selection are printed.
+
 Every run prints the camera it drew from, so a picture can be reproduced and nudged. The default size is 1200x800.
 
 **Input steps run in the order given**, as real pointer and key events through the window, before the final

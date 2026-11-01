@@ -451,3 +451,21 @@ for each instance that is still not drawn: "invalid wBond geometry" when the lay
   as the object; projecting onto a gesture-only plane would have left the second corner's grid snap on the old one.
   A grid snap, an edge-on view or a snap already on the plane changes nothing. Gate:
   `DrawToolGateTests.Draw1b_AFirstCornerSnappedAboveThePlane_MovesThePlaneThroughIt`.
+
+## An electrostatic setup's Pick never filled a terminal (2026-10-31)
+
+- **Cause:** the setup panel's list of metal pieces came from the elaboration the 3D view held when the panel was BUILT.
+  `WorkspaceViewModel.OpenC3dEditor` calls `RestoreActiveSetup` before `Start`, so the panel is built before the first
+  elaboration, gets no lister, and is reused afterwards (`ReloadSetupEditor` keeps a panel whose setup is unchanged).
+  The list stayed empty, so `PickConductor` matched nothing, said nothing, and left the Pick armed. Selecting another
+  setup card (which builds a panel after the elaboration) made it work, which is why the VM-level test never saw it.
+- **Fix:** every adopted elaboration hands the open panel a fresh lister (`RefreshSetupBodies` → `SetBodyLister`), which
+  re-lists while a window shows the panel, so an object drawn since is pickable too. A listing overtaken by a later one
+  lands nothing.
+- **Three more ways a click did nothing, found with UiSnapshot's `--c3d-pick`:** a click on a dielectric was silently
+  ignored (now the line under the table names it, and while armed says which terminal waits); a Pick stayed armed after
+  the window closed and took the next object selected in the view, unasked (detaching the view now disarms it); and an
+  armed draw tool or measurement takes the click before the selection sees it (arming a Pick now puts both away).
+- **Layout:** the hidden magnetostatic source-port column kept its fixed 70 px, which pushed each row's ✕ past the
+  setup window's 520 px edge; the column is Auto with a fixed-width box now.
+- Gate: `SetupTerminalPickTests` (fails before: no conductors listed).

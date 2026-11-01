@@ -128,6 +128,8 @@ string? cdd = null, output = null, view = "canvas", results = null, fc = "2", iq
 // brief-dfr32-3 — a .c3d's setup cards beside its Properties panel: --delete-fields runs a card's Delete Saved Fields (into a
 // scratch folder, never the Trash) and --c3d-row selects an Object Tree row (a field plot) for the panel.
 string? c3dSetups = null, c3dDeleteFields = null, c3dRow = null;
+// --c3d-pick <object>: the 3D view's click on that object (hovered at a pixel the CPU picker says shows it).
+CircuitRF.Ui.ThreeD.C3dEditorViewModel? c3dShown = null;
 string? optimizer = null;
 string? ctech = null;
 bool optimize = false;
@@ -229,7 +231,7 @@ for (int i = 0; i < args.Length; i++)
             sizeGiven = true;
             break;
         case "--click" or "--drag" or "--key" or "--shot" or "--rclick" or "--menu" or "--type" or "--button" or "--hover"
-            or "--unit" or "--rename-stackup" or "--rename-tech" or "--kit-row"
+            or "--unit" or "--rename-stackup" or "--rename-tech" or "--kit-row" or "--c3d-pick"
             when i + 1 < args.Length:
             steps.Add((args[i], args[++i]));
             break;
@@ -322,6 +324,7 @@ else if (c3dSetups is not null)
     bool portsChecked = false;
     c3dVm.LayoutPortsChecked += () => portsChecked = true;
     c3dVm.RestoreActiveSetup(null);
+    c3dShown = c3dVm;
     c3dVm.Viewer.Resized(400, 300);
     c3dVm.Viewer.Session.EnsureBackend();
     c3dVm.Start();
@@ -741,6 +744,31 @@ foreach (var (kind, arg) in steps)
         case "--shot":
             Capture(arg);
             break;
+        case "--c3d-pick":
+        {
+            // The canvas cannot draw headless, but picking is on the CPU: hover a pixel that shows the object, then the
+            // viewer's own Click — the path a real click takes, an armed draw tool and an armed terminal Pick included.
+            var v = (c3dShown ?? throw new InvalidOperationException("--c3d-pick needs --c3d-setups")).Viewer;
+            var obj = v.Scene.Objects.FirstOrDefault(o => o.Name == arg)
+                      ?? throw new InvalidOperationException($"--c3d-pick: no object '{arg}'; the scene has {string.Join(", ", v.Scene.Objects.Select(o => o.Name))}");
+            var (vw, vh) = v.ViewSize;
+            bool hit = false;
+            for (int y = 0; y < vh && !hit; y += 2)
+                for (int x = 0; x < vw && !hit; x += 2)
+                {
+                    var (id, face) = CircuitRF.Render.Scene3D.Scene3DPicking.PairAtPixel(v.Scene, v.View.Camera, x, y, vw, vh, v.View.Visible);
+                    if (id != obj.Id) continue;
+                    v.Hover(x, y);
+                    // OnPicked is internal (the GPU ID pass's answer); the tool has no InternalsVisibleTo, so by reflection.
+                    typeof(CircuitRF.Ui.Viewer3D.Viewer3DViewModel).GetMethods(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+                        .Single(m => m.Name == "OnPicked" && m.GetParameters().Length == 5)
+                        .Invoke(v, [id, face, System.Numerics.Vector3.Zero, true, null]);
+                    v.Click(false);
+                    hit = true;
+                }
+            if (!hit) throw new InvalidOperationException($"--c3d-pick: '{arg}' is not visible from the camera");
+            break;
+        }
         case "--hover":
             host.MouseMove(PointOf(arg), RawInputModifiers.None);
             break;
@@ -836,12 +864,17 @@ foreach (var (kind, arg) in steps)
         case "--button":
         {
             // A real press and release on the button's centre, in the dialog's own window.
-            var dialog = TopDialog() ?? (imageVm is not null || vendorMode || cem is not null || snp is not null || exportData is not null ? host : throw new InvalidOperationException("--button: no dialog is open"));
+            var dialog = TopDialog() ?? (imageVm is not null || vendorMode || cem is not null || snp is not null || exportData is not null || c3dShown is not null ? host : throw new InvalidOperationException("--button: no dialog is open"));
             var buttons = dialog.GetVisualDescendants().OfType<Button>().Where(b => b.IsEffectivelyVisible).ToList();
+            // "Label#n": the n-th button with that label (1-based), for a table with one per row.
+            string label = arg;
+            int nth = 1;
+            if (arg.LastIndexOf('#') is > 0 and var hash && int.TryParse(arg[(hash + 1)..], out int n)) { label = arg[..hash]; nth = n; }
             // A toolbar button's content is an icon beside a TextBlock, so its label is matched too.
-            var button = buttons.FirstOrDefault(b => b.Content is string c && c == arg)
-                ?? buttons.FirstOrDefault(b => b.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == arg))
-                ?? throw new InvalidOperationException($"--button '{arg}': the dialog has {string.Join(" | ", buttons.Select(b => b.Content))}");
+            var matches = buttons.Where(b => b.Content is string c && c == label).ToList();
+            if (matches.Count == 0) matches = [.. buttons.Where(b => b.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == label))];
+            var button = matches.Count >= nth ? matches[nth - 1]
+                : throw new InvalidOperationException($"--button '{arg}': the dialog has {string.Join(" | ", buttons.Select(b => b.Content))}");
             var c = button.TranslatePoint(new Point(button.Bounds.Width / 2, button.Bounds.Height / 2), dialog)!.Value;
             dialog.MouseDown(c, MouseButton.Left, RawInputModifiers.None);
             dialog.MouseUp(c, MouseButton.Left, RawInputModifiers.None);
@@ -855,6 +888,10 @@ foreach (var (kind, arg) in steps)
         Console.Write($"{kind} {arg}: ");
         PrintImage();
     }
+    if (c3dShown?.SetupEditor?.ViewModel is { IsStaticSetup: true } esVm)
+        Console.WriteLine($"{kind} {arg}: terminals [{string.Join(" | ", esVm.TerminalRows.Select(r => $"{r.Name}={r.Net}{(r.IsPicking ? " (Pick armed)" : "")}"))}], "
+                        + $"ground '{esVm.Ground3DText}', bodies '{esVm.BodiesStatus}', view selection [{string.Join(",", c3dShown.Viewer.SelectedObjects().Select(o => o.Name))}], "
+                        + $"status '{c3dShown.StatusMessage}', dialog {(TopDialog() is { } td ? "open" : "closed")}");
     if (parameterEditor is { IsVendorPart: true } pev)
         Console.WriteLine($"{kind} {arg}: vendor part tuned {pev.IsVendorPartTuned}, optimized {pev.IsVendorPartOptimized}");
     if (techVm is not null) PrintTech($"{kind} {arg}");

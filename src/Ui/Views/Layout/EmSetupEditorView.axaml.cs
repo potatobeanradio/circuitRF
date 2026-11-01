@@ -67,7 +67,11 @@ public partial class EmSetupEditorView : UserControl
         Vm?.UpdateSolverAvailability();
         _ = Em3dSolverInstallState.RefreshAsync();
         // brief-dfr31-1 R-dfr31-1-4 — the pickers' rows, built once off the UI thread when the panel opens.
-        if (Vm is { } setupVm) _ = setupVm.ListBodiesAsync();
+        if (Vm is { } setupVm)
+        {
+            setupVm.IsShown = true;
+            _ = setupVm.ListBodiesAsync();
+        }
         DetachWindowHandlers();
         if (TopLevel.GetTopLevel(this) is not Window w) return;
         _hostWindow = w;
@@ -79,6 +83,12 @@ public partial class EmSetupEditorView : UserControl
     {
         Em3dSolverInstallState.Changed -= OnSolverInstallChanged;
         DetachWindowHandlers();
+        // A Pick left armed in a closed window took the next object selected in the 3D view, long after, unasked.
+        if (Vm is { } setupVm)
+        {
+            setupVm.IsShown = false;
+            setupVm.PickingRow = null;
+        }
     }
 
     private void OnSolverInstallChanged() => Vm?.UpdateSolverAvailability();

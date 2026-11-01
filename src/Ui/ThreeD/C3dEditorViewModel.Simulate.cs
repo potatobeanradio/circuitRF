@@ -372,18 +372,41 @@ public sealed partial class C3dEditorViewModel
         // brief-dfr31-1 R-dfr31-1-4 — the terminal picker lists this view's pieces of metal (from the elaboration the view
         // already holds, grouped off the UI thread), a row's Pick takes the next object clicked in the view, and the bodies
         // a row names are selected in the view while it is edited.
-        if (Elaboration is { } elaboration)
-        {
-            var document = Document;
-            vm.BodyLister = _ => Em3dBodyList.Of(document, elaboration);
-        }
+        if (BodyListerNow() is { } lister) vm.BodyLister = lister;
         vm.CanPickInView = true;
         vm.HighlightRequested += HighlightSetupBodies;
+        // A drawing tool or a measurement takes a click in the view before the selection sees it, so arming a Pick puts them away.
+        vm.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName != nameof(EmSetupEditorViewModel.PickingRow) || vm.PickingRow is null) return;
+            if (_tool is not null) Disarm();
+            Viewer.EndMeasure();
+        };
+        // A rebuilt panel in a window already open (an undo, a setup edited elsewhere) lists at once, as the window's open did.
+        if (SetupEditor?.ViewModel is { IsShown: true })
+        {
+            vm.IsShown = true;
+            _ = vm.ListBodiesAsync();
+        }
         _editorFor = (item.Name, item.IsExternal);
         SetupEditor = new EmSetupDocument(item.Name, vm, item.IsExternal ? item.ExternalPath! : FilePath);
     }
 
     private (string Name, bool External)? _editorFor;
+
+    /// <summary>The setup panel's lister over the elaboration the view holds now (grouped off the UI thread); null before the first.</summary>
+    private Func<CancellationToken, IReadOnlyList<Em3dBodyChoice>>? BodyListerNow()
+    {
+        if (Elaboration is not { } elaboration) return null;
+        var document = Document;
+        return _ => Em3dBodyList.Of(document, elaboration);
+    }
+
+    /// <summary>A new elaboration adopted: the open setup panel's conductors follow it.</summary>
+    private void RefreshSetupBodies()
+    {
+        if (SetupEditor?.ViewModel is { IsStaticSetup: true } vm && BodyListerNow() is { } lister) vm.SetBodyLister(lister);
+    }
 
     /// <summary>brief-dfr31-1 — selects in the view every object of the bodies a terminal row names.</summary>
     private void HighlightSetupBodies(IReadOnlyList<string> members)
