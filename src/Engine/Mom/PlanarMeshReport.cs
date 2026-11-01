@@ -197,6 +197,14 @@ public sealed record PlanarMeshReport(
     /// </summary>
     public long StandardResidentBytes { get; init; }
 
+    /// <summary>EMB-4 R-emb4-2 — the accelerated solve's own estimate when it is on and this mesh is judged on the dense
+    /// ceiling anyway (more than one metal level, or a via); null otherwise.</summary>
+    public PlanarNearFieldEstimate? AcceleratedEstimate { get; init; }
+
+    /// <summary>EMB-4 R-emb4-3 — the bytes of this mesh's cores the ceiling was sized beside, when a memory limit judged
+    /// it (0 otherwise). Past the limit on their own they make the ceiling 0, and the sentences say this instead.</summary>
+    public long CoreBytes { get; init; }
+
     /// <summary>The dense structure's own <see cref="PlanarSystem.ResidentBytes"/> plus
     /// <see cref="StandardResidentBytes"/>: one frequency point of the whole run.</summary>
     /// <remarks>CAP-3 — the structure's cores are this mesh's own, counted (<see cref="PlanarCoreFootprint.For"/>).</remarks>

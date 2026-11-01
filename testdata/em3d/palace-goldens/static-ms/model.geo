@@ -53,29 +53,21 @@ s3[] = {ex[1]};
 // via/1: Conductor, Copper, order 5
 v = newv; Cylinder(v) = {2800, 750, 35, 0, 0, 543, 150};
 s4[] = {v};
-// via/1/fill: Air, Air, order 6
-v = newv; Cylinder(v) = {2800, 750, 35, 0, 0, 543, 125};
-s5[] = {v};
-// via/2: Conductor, Copper, order 7
+// via/2: Conductor, Copper, order 6
 v = newv; Cylinder(v) = {2800, -750, 35, 0, 0, 543, 150};
-s6[] = {v};
-// via/2/fill: Air, Air, order 8
-v = newv; Cylinder(v) = {2800, -750, 35, 0, 0, 543, 125};
-s7[] = {v};
+s5[] = {v};
 
 // ---- disjoint by construction order: each solid loses what a higher-order solid takes -----
-s0[] = BooleanDifference{ Volume{s0[]}; Delete; }{ Volume{s4[], s5[], s6[], s7[]}; };
-s1[] = BooleanDifference{ Volume{s1[]}; Delete; }{ Volume{s2[], s3[], s4[], s5[], s6[], s7[]}; };
-s2[] = BooleanDifference{ Volume{s2[]}; Delete; }{ Volume{s4[], s5[]}; };
-s3[] = BooleanDifference{ Volume{s3[]}; Delete; }{ Volume{s6[], s7[]}; };
-s4[] = BooleanDifference{ Volume{s4[]}; Delete; }{ Volume{s5[]}; };
-s6[] = BooleanDifference{ Volume{s6[]}; Delete; }{ Volume{s7[]}; };
+s0[] = BooleanDifference{ Volume{s0[]}; Delete; }{ Volume{s4[], s5[]}; };
+s1[] = BooleanDifference{ Volume{s1[]}; Delete; }{ Volume{s2[], s3[], s4[], s5[]}; };
+s2[] = BooleanDifference{ Volume{s2[]}; Delete; }{ Volume{s4[]}; };
+s3[] = BooleanDifference{ Volume{s3[]}; Delete; }{ Volume{s5[]}; };
 
 // ---- the air box, and the background: what no solid claims inside it --------------------
 bx = newv; Box(bx) = {-3000, -4000, 35, 9000, 8000, 3543};
-bg[] = BooleanDifference{ Volume{bx}; Delete; }{ Volume{s0[], s1[], s2[], s3[], s4[], s5[], s6[], s7[]}; };
+bg[] = BooleanDifference{ Volume{bx}; Delete; }{ Volume{s0[], s1[], s2[], s3[], s4[], s5[]}; };
 // Conductors are voids: their surfaces carry Palace's conductivity boundary.
-Recursive Delete { Volume{s2[], s3[], s4[], s6[]}; }
+Recursive Delete { Volume{s2[], s3[], s4[], s5[]}; }
 
 // ---- sheets and port sheets --------------------------------------------------------------
 // port/1: from airbox/zmin to Top Copper (1 oz)/A
@@ -106,7 +98,7 @@ c = newcl; Curve Loop(c) = {l:l + 3};
 s = news; Plane Surface(s) = {c}; p1[] = {s};
 
 // ---- one fragment: imprints the shared faces and the sheets, splits no volume -------------
-frag[] = BooleanFragments{ Volume{s0[], s1[], s5[], s7[], bg[]}; Delete; }{ Surface{p0[], p1[]}; Delete; };
+frag[] = BooleanFragments{ Volume{s0[], s1[], bg[]}; Delete; }{ Surface{p0[], p1[]}; Delete; };
 allV[] = Volume{:};
 allS[] = Surface{:};
 single[] = CombinedBoundary{ Volume{allV[]}; };
@@ -158,12 +150,12 @@ c4[] -= x[];
 c4[] -= claimed[];
 claimed[] += c4[];
 // conductor via/2
-c6[] = Surface In BoundingBox{2650 - e, -900 - e, 35 - e, 2950 + e, -600 + e, 578 + e};
-x[] = c6[];
+c5[] = Surface In BoundingBox{2650 - e, -900 - e, 35 - e, 2950 + e, -600 + e, 578 + e};
+x[] = c5[];
 x[] -= voids[];
-c6[] -= x[];
-c6[] -= claimed[];
-claimed[] += c6[];
+c5[] -= x[];
+c5[] -= claimed[];
+claimed[] += c5[];
 // conductor Top Copper (1 oz)/A
 c2[] = Surface In BoundingBox{0 - e, 500 - e, 543 - e, 3000 + e, 1000 + e, 578 + e};
 x[] = c2[];
@@ -187,18 +179,16 @@ Physical Volume("air", 2) = {s1[]};
 Physical Surface("Top Copper (1 oz)/A", 3) = {c2[]};
 Physical Surface("Top Copper (1 oz)/B", 4) = {c3[]};
 Physical Surface("via/1", 5) = {c4[]};
-Physical Volume("via/1/fill", 6) = {s5[]};
-Physical Surface("via/2", 7) = {c6[]};
-Physical Volume("via/2/fill", 8) = {s7[]};
-Physical Volume("background", 9) = {bg[]};
-Physical Surface("port/1", 10) = {q0[]};
-Physical Surface("port/2", 11) = {q1[]};
-Physical Surface("airbox/xmin", 12) = {f0[]};
-Physical Surface("airbox/xmax", 13) = {f1[]};
-Physical Surface("airbox/ymin", 14) = {f2[]};
-Physical Surface("airbox/ymax", 15) = {f3[]};
-Physical Surface("airbox/zmin", 16) = {f4[]};
-Physical Surface("airbox/zmax", 17) = {f5[]};
+Physical Surface("via/2", 6) = {c5[]};
+Physical Volume("background", 7) = {bg[]};
+Physical Surface("port/1", 8) = {q0[]};
+Physical Surface("port/2", 9) = {q1[]};
+Physical Surface("airbox/xmin", 10) = {f0[]};
+Physical Surface("airbox/xmax", 11) = {f1[]};
+Physical Surface("airbox/ymin", 12) = {f2[]};
+Physical Surface("airbox/ymax", 13) = {f3[]};
+Physical Surface("airbox/zmin", 14) = {f4[]};
+Physical Surface("airbox/zmax", 15) = {f5[]};
 
 // ---- the entity table circuitRF checks before it believes this mesh (R-em3d7-3b) ---------
 Printf("# circuitRF entity table: group <attribute> <count> <volume tags lost in the fragment>") > "entities.txt";
@@ -211,26 +201,20 @@ Printf("group 2 %g %g", #s1[], #lost[]) >> "entities.txt";
 Printf("group 3 %g 0", #c2[]) >> "entities.txt";
 Printf("group 4 %g 0", #c3[]) >> "entities.txt";
 Printf("group 5 %g 0", #c4[]) >> "entities.txt";
-lost[] = s5[];
-lost[] -= allV[];
-Printf("group 6 %g %g", #s5[], #lost[]) >> "entities.txt";
-Printf("group 7 %g 0", #c6[]) >> "entities.txt";
-lost[] = s7[];
-lost[] -= allV[];
-Printf("group 8 %g %g", #s7[], #lost[]) >> "entities.txt";
+Printf("group 6 %g 0", #c5[]) >> "entities.txt";
 lost[] = bg[];
 lost[] -= allV[];
-Printf("group 9 %g %g", #bg[], #lost[]) >> "entities.txt";
-Printf("group 10 %g 0", #q0[]) >> "entities.txt";
-Printf("group 11 %g 0", #q1[]) >> "entities.txt";
-Printf("group 12 %g 0", #f0[]) >> "entities.txt";
-Printf("group 13 %g 0", #f1[]) >> "entities.txt";
-Printf("group 14 %g 0", #f2[]) >> "entities.txt";
-Printf("group 15 %g 0", #f3[]) >> "entities.txt";
-Printf("group 16 %g 0", #f4[]) >> "entities.txt";
-Printf("group 17 %g 0", #f5[]) >> "entities.txt";
+Printf("group 7 %g %g", #bg[], #lost[]) >> "entities.txt";
+Printf("group 8 %g 0", #q0[]) >> "entities.txt";
+Printf("group 9 %g 0", #q1[]) >> "entities.txt";
+Printf("group 10 %g 0", #f0[]) >> "entities.txt";
+Printf("group 11 %g 0", #f1[]) >> "entities.txt";
+Printf("group 12 %g 0", #f2[]) >> "entities.txt";
+Printf("group 13 %g 0", #f3[]) >> "entities.txt";
+Printf("group 14 %g 0", #f4[]) >> "entities.txt";
+Printf("group 15 %g 0", #f5[]) >> "entities.txt";
 Printf("all_volumes %g", #allV[]) >> "entities.txt";
-Printf("classified_volumes %g", #s0[] + #s1[] + #s5[] + #s7[] + #bg[]) >> "entities.txt";
+Printf("classified_volumes %g", #s0[] + #s1[] + #bg[]) >> "entities.txt";
 Printf("all_surfaces %g", #allS[]) >> "entities.txt";
 Printf("single_sided %g", #single[]) >> "entities.txt";
 Printf("unclassified_single_sided %g", #rest[]) >> "entities.txt";
@@ -259,41 +243,35 @@ Call CrfFaces;
 crfl[] = {c4[]};
 crfh = "f 5";
 Call CrfFaces;
-crfl[] = Boundary{ Volume{s5[]}; };
-crfh = "v 6";
-Call CrfFaces;
-crfl[] = {c6[]};
-crfh = "f 7";
-Call CrfFaces;
-crfl[] = Boundary{ Volume{s7[]}; };
-crfh = "v 8";
+crfl[] = {c5[]};
+crfh = "f 6";
 Call CrfFaces;
 crfl[] = Boundary{ Volume{bg[]}; };
-crfh = "v 9";
+crfh = "v 7";
 Call CrfFaces;
 crfl[] = {q0[]};
-crfh = "f 10";
+crfh = "f 8";
 Call CrfFaces;
 crfl[] = {q1[]};
-crfh = "f 11";
+crfh = "f 9";
 Call CrfFaces;
 crfl[] = {f0[]};
-crfh = "f 12";
+crfh = "f 10";
 Call CrfFaces;
 crfl[] = {f1[]};
-crfh = "f 13";
+crfh = "f 11";
 Call CrfFaces;
 crfl[] = {f2[]};
-crfh = "f 14";
+crfh = "f 12";
 Call CrfFaces;
 crfl[] = {f3[]};
-crfh = "f 15";
+crfh = "f 13";
 Call CrfFaces;
 crfl[] = {f4[]};
-crfh = "f 16";
+crfh = "f 14";
 Call CrfFaces;
 crfl[] = {f5[]};
-crfh = "f 17";
+crfh = "f 15";
 Call CrfFaces;
 
 // ---- the initial mesh: Palace's adaptive refinement converges the answer ------------------
@@ -306,16 +284,14 @@ Mesh.MeshSizeExtendFromBoundary = 0;
 Mesh.MeshSizeFromCurvature = 12;
 Field[1] = Constant; Field[1].VIn = 900; Field[1].VolumesList = {s0[]};
 Field[2] = Constant; Field[2].VIn = 900; Field[2].VolumesList = {s1[]};
-Field[3] = Constant; Field[3].VIn = 900; Field[3].VolumesList = {s5[]};
-Field[4] = Constant; Field[4].VIn = 900; Field[4].VolumesList = {s7[]};
-Field[5] = Constant; Field[5].VIn = 900; Field[5].VolumesList = {bg[]};
-Field[6] = Distance; Field[6].SurfacesList = {c2[], c3[], c4[], c6[]}; Field[6].Sampling = 50;
-Field[7] = Threshold; Field[7].InField = 6; Field[7].SizeMin = 450; Field[7].SizeMax = 900; Field[7].DistMin = 450; Field[7].DistMax = 1950;
-Field[8] = Distance; Field[8].SurfacesList = {q0[], q1[]}; Field[8].Sampling = 50;
-Field[9] = Threshold; Field[9].InField = 8; Field[9].SizeMin = 125; Field[9].SizeMax = 900; Field[9].DistMin = 125; Field[9].DistMax = 2708.333333333;
-Field[10] = Min; Field[10].FieldsList = {1, 2, 3, 4, 5, 7, 9};
-Background Field = 10;
+Field[3] = Constant; Field[3].VIn = 900; Field[3].VolumesList = {bg[]};
+Field[4] = Distance; Field[4].SurfacesList = {c2[], c3[], c4[], c5[]}; Field[4].Sampling = 50;
+Field[5] = Threshold; Field[5].InField = 4; Field[5].SizeMin = 450; Field[5].SizeMax = 900; Field[5].DistMin = 450; Field[5].DistMax = 1950;
+Field[6] = Distance; Field[6].SurfacesList = {q0[], q1[]}; Field[6].Sampling = 50;
+Field[7] = Threshold; Field[7].InField = 6; Field[7].SizeMin = 125; Field[7].SizeMax = 900; Field[7].DistMin = 125; Field[7].DistMax = 2708.333333333;
+Field[8] = Min; Field[8].FieldsList = {1, 2, 3, 5, 7};
+Background Field = 8;
 Mesh.ElementOrder = 2;
-Mesh.HighOrderOptimize = 2;
+Mesh.SecondOrderLinear = 1;
 Mesh.MshFileVersion = 2.2;
 Mesh.Binary = 1;

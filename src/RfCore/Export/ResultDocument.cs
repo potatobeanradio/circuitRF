@@ -86,6 +86,11 @@ namespace RfCore.Export
     /// deliberately not inline — so "what may I ask for" is answerable without first paying for the
     /// answer to a question the caller has not chosen yet.
     /// </param>
+    /// <param name="Summarized">
+    /// What <c>--result summary</c> left out of a report that has no DataSet (optimize, the yield
+    /// family, import library) — one sentence naming the fields, so an empty list reads as "left out"
+    /// rather than as "none" (EMB-5 R-emb5-8). Absent on a full result.
+    /// </param>
     /// <param name="Narrowed">
     /// What <c>--at</c> and <c>--range</c> actually did, per axis: the value asked for, the value
     /// returned, and whether it was the nearest grid point or an interpolation (R-aut9-9). Absent
@@ -194,7 +199,9 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         ScratchJson? Scratch = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        SnpReportJson? Snp = null);
+        SnpReportJson? Snp = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Summarized = null);
 
     /// <summary>
     /// Where an <c>em</c> run put its temporary files — so a caller can tell which disk a run filled, or why it was refused.
@@ -539,7 +546,31 @@ namespace RfCore.Export
         int? Ceiling,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         string? CeilingKind,
-        string Verdict);
+        string Verdict)
+    {
+        /// <summary>EMB-5 R-emb5-2 — one frequency point's resident memory as the run's memory check judges it: the dense
+        /// structure and its calibration standards, or the accelerated solve's near-field estimate when that is what runs.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public long? MemoryBytes { get; init; }
+
+        /// <summary>The estimated factorisation time of one frequency point, s — the dense c·N³ the mesh budget quotes, or
+        /// the accelerated solve's near-field factor. The fill is not in it.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public double? FactorSecondsPerPoint { get; init; }
+
+        /// <summary>The sweep's frequency points (an adaptive sweep solves at most this many).</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public int? Points { get; init; }
+
+        /// <summary><see cref="FactorSecondsPerPoint"/> times <see cref="Points"/>: the factor time of the whole sweep.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public double? FactorSecondsTotal { get; init; }
+
+        /// <summary>The memory verdict against the machine: <c>fits</c> or <c>past-limit</c> (the limit is advisory —
+        /// a run past it asks, or takes <c>--force</c>).</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? Memory { get; init; }
+    }
 
     /// <param name="Severity">
     /// The threshold the exit code was decided at — <c>warning</c> or <c>error</c>. Carried because
@@ -634,13 +665,17 @@ namespace RfCore.Export
     /// </param>
     /// <param name="Parts">brief vendorlib-1 R-vl1-5b — <c>find --parts</c>'s matches; absent on an
     /// ordinary walk.</param>
+    /// <param name="PlacedBy">With <paramref name="Parts"/>: which documents accept each part's parameters and how
+    /// they are written there (EMB-5 R-emb5-13).</param>
     public sealed record FindReportJson(
         string                              Root,
         int                                 Depth,
         bool                                Truncated,
         IReadOnlyList<FoundWorkspaceJson>   Workspaces,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        IReadOnlyList<FoundPartJson>?       Parts = null);
+        IReadOnlyList<FoundPartJson>?       Parts = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string?                             PlacedBy = null);
 
     /// <summary>
     /// brief vendorlib-1 R-vl1-5b — one vendor-library part <c>find --parts</c> matched, with the
@@ -1971,9 +2006,17 @@ namespace RfCore.Export
     /// <param name="Refusal">Why no Touchstone could be made, and the flag that answers it; null when it could.</param>
     /// <param name="Health">The health check's verdict on the file, one line.</param>
     /// <param name="Probes">What each <c>--probe</c> read (brief-pdg-3-snap-to-curve.md R-pdg3-3); null when none was asked.</param>
+    /// <param name="TracesRead">How many traces the reading found, when <paramref name="Traces"/> lists only the longest
+    /// few: a refused or unassigned reading collapses its list unless <c>--all-traces</c> asks (EMB-5 R-emb5-9). Null when
+    /// every trace is listed.</param>
     public sealed record RecognizePlotsJson(
+        // First, so a refused reading leads with its sentence and the flag that answers it (R-emb5-9).
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        PlotRefusalJson?                  Refusal,
         IReadOnlyList<PlotPictureJson>    Pictures,
         IReadOnlyList<PlotFrameJson>      Plots,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        int?                              TracesRead,
         IReadOnlyList<PlotTraceJson>      Traces,
         IReadOnlyList<PlotMarkerJson>     Markers,
         int                               Ports,
@@ -1982,8 +2025,6 @@ namespace RfCore.Export
         string?                           Touchstone,
         string?                           Csv,
         IReadOnlyList<string>             Kept,
-        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        PlotRefusalJson?                  Refusal,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         string?                           Health,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -2655,6 +2696,8 @@ namespace RfCore.Export
     /// <param name="Instance">As a key's owner prefix spells it: <c>SNP3</c>, <c>DUT:SNP3</c>.</param>
     /// <param name="Tie"><c>tied</c> or <c>untied</c>; absent when the file did not load.</param>
     /// <param name="Reason"><c>auto: worst |S(i,j) − S(j,i)| = 0.0021</c>, or <c>stated</c>.</param>
+    /// <param name="Folded">True when its entries are not among the tunables rows: they are this line, unless
+    /// <c>--snp-entries</c> names the block (EMB-5 R-emb5-9). Absent when they are listed.</param>
     public sealed record ExplainSnpJson(
         string  Instance,
         string  Location,
@@ -2664,7 +2707,9 @@ namespace RfCore.Export
         string  Reason,
         int     Entries,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        string? LoadError);
+        string? LoadError,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        bool?   Folded = null);
 
     /// <summary>One tunable.</summary>
     /// <param name="Key">The identity a tune line, a preset and the CLI use: <c>R1.R</c>, <c>Wline</c>, <c>DUT:R3.R</c>.</param>

@@ -229,6 +229,6 @@ Field[7] = Threshold; Field[7].InField = 6; Field[7].SizeMin = 127; Field[7].Siz
 Field[8] = Min; Field[8].FieldsList = {1, 2, 3, 5, 7};
 Background Field = 8;
 Mesh.ElementOrder = 2;
-Mesh.HighOrderOptimize = 2;
+Mesh.SecondOrderLinear = 1;
 Mesh.MshFileVersion = 2.2;
 Mesh.Binary = 1;

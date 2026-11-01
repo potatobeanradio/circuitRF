@@ -3202,9 +3202,10 @@ error: Filter.clay: Metal1 Min Spacing (MinSpacing) on Metal1 (1/0) — 2um, nee
 <code>result.check.documents</code> carries <code>em</code> with the kernel, the unknown count, the ceiling it is judged
 against (<code>dense</code> or <code>accelerated</code>) and the mesher's verdict (<code>ok</code>, <code>warn</code> or <code>refused</code>). It survives
 <code>--summary</code>, so the cheap form of the call still answers whether a run is affordable. A
-<code>PlanarMesh</code> field the file states but <code>&quot;Auto&quot;: true</code> discards (cells per wavelength, edge mesh, edge
-cells) is a warning, <code>check.em.mesh-auto-override</code>, naming the field and the value the mesh uses
-instead.</p>
+<code>PlanarMesh</code> field the file states but <code>&quot;Auto&quot;: true</code> discards (cells per wavelength, edge cells) is
+a warning, <code>check.em.mesh-auto-override</code>, naming the field and the value the mesh uses instead. A
+stated edge mesh, cells across the narrowest conductor or detail floor is used as stated beside
+<code>&quot;Auto&quot;: true</code> (Auto chooses only the rest), and <code>check.em.mesh-auto-kept</code> says so.</p>
 <p>The kind of document is inferred from the path, exactly as <code>convert</code> infers a format. A GDSII or
 Gerber file is <strong>named as interchange</strong> rather than called unreadable — it is simply not validated,
 because there is nothing to validate it against.</p>

@@ -310,6 +310,8 @@ src/Design/Layout/Interchange/PlacementFile.cs|A landing check needs an origin, 
 src/Design/Layout/Em/EmSetupPersistence.cs|This .cem states its mesh current model twice and the two disagree: 
 src/Design/Layout/Em/EmSetupPersistence.cs|a name is a string
 src/Design/Layout/Em/EmSetupPersistence.cs|expected a name list or \"*\"
+src/Design/Layout/Em/EmSetupPersistence.cs|A ComponentPorts entry is a reference designator or an object with Refdes, Z0 and Reference.
+src/Design/Layout/Em/EmSetupPersistence.cs|ComponentPorts is \"*\" or a list of reference designators.
 src/Design/Thermal/ThermalFosterNetlist.cs|an empty network
 src/Design/Layout/Em/TraceImpedanceAcceptance.cs|An acceptance needs a reason.
 src/Design/Layout/Review/ReviewAcceptance.cs|An acceptance needs a reason.

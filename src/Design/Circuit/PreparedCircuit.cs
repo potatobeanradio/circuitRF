@@ -99,8 +99,9 @@ public sealed class PreparedCircuit
     {
         try
         {
-            var (lib, tb) = CnlTechnologyBinding.ReadFile(netlistPath);
-            return new PreparedCircuit(lib, tb, null, baseDirectory, [Path.GetFullPath(netlistPath)]);
+            var (lib, tb) = CnlTechnologyBinding.ReadFile(netlistPath, out var parts);
+            // A .cnl's own SpiceModel lines place vendor parts too (EMB-5 R-emb5-13), and a run offers them as C1.Part.
+            return new PreparedCircuit(lib, tb, null, baseDirectory, [Path.GetFullPath(netlistPath)]) { PartTunables = parts };
         }
         catch (Exception ex)
         {
@@ -184,8 +185,8 @@ public sealed class PreparedCircuit
         try
         {
             var (lib, tb) = new CnlReader().Read(cnlText, testBenchName, sourceDirectory);
-            CnlTechnologyBinding.Bind(lib, tb, sourceDirectory);
-            return new PreparedCircuit(lib, tb, null, baseDirectory, filesRead);
+            var parts = CnlTechnologyBinding.Bind(lib, tb, sourceDirectory);
+            return new PreparedCircuit(lib, tb, null, baseDirectory, filesRead) { PartTunables = parts };
         }
         catch (Exception ex)
         {

@@ -101,7 +101,7 @@ internal static partial class Recognize
             touchstone = Path.GetFullPath(target);
             if (!string.Equals(Path.GetExtension(touchstone), built.Extension, StringComparison.OrdinalIgnoreCase))
             {
-                JsonRun.Recognize = PlotsDocument(pictures, session, built, null, csv, kept, []);
+                JsonRun.Recognize = PlotsDocument(pictures, session, built, null, csv, kept, [], flags.AllTraces);
                 return JsonRun.Fail(CliDiagnostics.RecognizeOutputPorts(touchstone, built.Ports, built.Extension));
             }
             try
@@ -145,7 +145,7 @@ internal static partial class Recognize
         if (csv is not null) text.Append("csv: ").Append(csv).Append('\n');
         if (touchstone is not null) text.Append("touchstone: ").Append(touchstone).Append('\n');
         Console.Write(text.ToString());
-        JsonRun.Recognize = PlotsDocument(pictures, session, built, touchstone, csv, kept, probes);
+        JsonRun.Recognize = PlotsDocument(pictures, session, built, touchstone, csv, kept, probes, flags.AllTraces);
 
         // A call that asked only for the CSV, or only to probe, is not refused for a Touchstone it did not ask for.
         if (built.Refusal is { } no && !((csv is not null || flags.Probes.Count > 0) && o.Output is null))
@@ -161,7 +161,7 @@ internal static partial class Recognize
         if (pictures.Count > 1) return (null, JsonRun.Fail(CliDiagnostics.RecognizeSeveralPictures("a plot read by hand is one picture")));
         foreach (var (flag, instead) in new[] { ("--x-axis", "--x-range"), ("--y-axis", "--y-range"), ("--y2-axis", "--y2-range"),
                                                 ("--x-log", "--x-range …:log"), ("--y-log", "--y-range …:log"), ("--y2-log", "--y2-range …:log"),
-                                                ("--trace", "--curve …,is=S21:db"), ("--freq", "--x-range"), ("--smith-z0", "a rectangular box") })
+                                                ("--trace", "--curve …,is=S21:db or --follow …,is=S21:db"), ("--freq", "--x-range"), ("--smith-z0", "a rectangular box") })
             if (flags.Given.Contains(flag)) return (null, JsonRun.Fail(CliDiagnostics.RecognizeManualConflict(flag, instead)));
         var missing = new List<string>();
         if (flags.ManualBox is null) missing.Add("--manual-box");
@@ -182,27 +182,57 @@ internal static partial class Recognize
             var given = flags.Curves.LastOrDefault(c => c.Name == name);
             var points = new List<(double Px, double Py)>();
             int rgb = PlotFlags.CurveColour(k);
-            foreach (var (_, sx, sy) in flags.Follows.Where(c => c.Name == name))
+            PlotSide? followAxis = null;
+            PlotAssignment? followIs = null;
+            foreach (var (_, sx, sy, axis, assignment) in flags.Follows.Where(c => c.Name == name))
             {
+                followAxis = axis ?? followAxis;
+                followIs = assignment ?? followIs;
                 var followed = ManualCurves.Follow(raster, plot, (sx * f, sy * f));
-                if (followed.Refusal is { } nothing) { Console.Error.WriteLine($"[circuitRF] --follow {name}: {nothing}"); continue; }
+                // R-emb5-10: the colour followed, and the grey or black ink passed over when some was in reach — said
+                // whether or not the follow succeeded, so the caller can click again knowingly.
+                JsonRun.Report(CliDiagnostics.RecognizeFollowed(name, followed.Rgb, followed.Refusal, followed.Other));
+                if (followed.Refusal is not null) continue;
                 points.AddRange(followed.Fixpoints);
                 rgb = followed.Rgb;
             }
             if (given.Points is not null) points.AddRange(given.Points.Select(p => (p.X * f, p.Y * f)));
-            curves.Add(new ManualCurve(name, 1, points, given.Points is null ? PlotSide.Left : given.Axis,
-                                       given.Points is null ? PlotAssignment.None : given.Assignment, rgb));
+            // A --curve of the same name decides the scale and the quantity; else a --follow's own suffix does (R-emb5-11).
+            var side = given.Points is not null ? given.Axis : followAxis ?? PlotSide.Left;
+            var what = given.Points is not null && (given.Assignment.Assigned || followIs is null) ? given.Assignment
+                     : followIs ?? PlotAssignment.None;
+            curves.Add(new ManualCurve(name, 1, points, side, what, rgb));
         }
         return (new PlotReadingOptions { Manual = [plot], ManualCurves = curves }, null);
     }
 
     private static RecognizeReportJson PlotsDocument(IReadOnlyList<(string Path, ImageSource Source, ImageKindResult Kind)> pictures,
                                                      PlotSession session, TouchstoneAssemblyResult built, string? touchstone, string? csv,
-                                                     IReadOnlyList<string> kept, IReadOnlyList<PlotProbeJson> probes)
+                                                     IReadOnlyList<string> kept, IReadOnlyList<PlotProbeJson> probes,
+                                                     bool allTraces)
     {
-        var findings = session.Findings.Select(f => new RecognizeFindingJson(f.Class, 1, f.Sentence, []))
+        // R-emb5-9: a reading that made no Touchstone and named no trace — a picture it could not calibrate, a noisy
+        // instrument screenshot of hundreds of fragments — answers with the count and the longest few, not a record per
+        // fragment. Each trace's own findings go with it; --all-traces lists every one.
+        var listed = session.Traces;
+        int? tracesRead = null;
+        if (!allTraces && session.Traces.Count > CollapsedTraces
+            && (built.Refusal is not null || session.Traces.All(t => !t.Assignment.Assigned)))
+        {
+            listed = [.. session.Traces.OrderByDescending(t => t.Samples.Count).ThenBy(t => t.Number).Take(CollapsedTraces)
+                                       .OrderBy(t => t.Number)];
+            tracesRead = session.Traces.Count;
+        }
+        var omitted = session.Traces.Except(listed).Select(t => t.Name + " (").ToList();
+        bool Omitted(PlotFinding f) => f.Class is "trace" or "axis" or "frequency"
+                                    && omitted.Any(prefix => f.Sentence.StartsWith(prefix, StringComparison.Ordinal));
+        var findings = session.Findings.Where(f => !Omitted(f)).Select(f => new RecognizeFindingJson(f.Class, 1, f.Sentence, []))
                               .Concat(built.Report.Select(l => new RecognizeFindingJson("touchstone", 1, l, [])))
                               .ToList();
+        if (tracesRead is { } n)
+            findings.Insert(0, new RecognizeFindingJson("trace", n - listed.Count,
+                $"{n} traces were read and none could be written; the {listed.Count} longest are listed — allTraces "
+              + "(--all-traces) lists every one", []));
         static PixelBoxJson Box(PixelBox b) => new(b.Left, b.Top, b.Right, b.Bottom);
         static PlotAxisJson? Axis(AxisCalibration? a, IReadOnlyList<AxisLabel> labels) => new(
             a is null ? null : a.Scale.ToString().ToLowerInvariant(), a?.Used ?? 0, a?.Rejected ?? 0, a is null ? null : Math.Round(a.ResidualPx, 3),
@@ -216,7 +246,7 @@ internal static partial class Recognize
             p.Smith?.Z0, p.Smith?.Z0Stated, p.Smith?.Admittance,
             p.Rect is { TwoY: true } r2 ? Axis(r2.Y2, r2.Y2Labels) : null, p.Rect?.Y2Title,
             p.Rect?.YSide == PlotSide.Right ? "right" : null)).ToList();
-        var traces = session.Traces.Select(t =>
+        var traces = listed.Select(t =>
         {
             var xs = t.Samples.Select(s => s.X).Where(x => !double.IsNaN(x)).ToList();
             return new PlotTraceJson(t.Name, t.Plot, t.Curve.Hex, t.Curve.StyleName, t.Assignment.ToString(), t.Assignment.Assigned, t.Evidence,
@@ -230,9 +260,9 @@ internal static partial class Recognize
                                                                       m.Readout)).ToList();
         var matrix = built.Matrix.Select(c => new PlotMatrixCellJson($"S{c.I}{c.J}", c.Source, c.Rule, c.Phase, c.Plotted, c.Estimated)).ToList();
         var json = new RecognizePlotsJson(
-            [.. session.Pictures.Select(p => new PlotPictureJson(p.Index, p.Name, p.Sha256, p.Width, p.Height, p.Plots))],
-            plots, traces, markers, built.Ports, matrix, built.Grid?.ToString(), touchstone, csv, kept,
             built.Refusal is { } no ? new PlotRefusalJson(no.Kind, no.Sentence, no.Flag) : null,
+            [.. session.Pictures.Select(p => new PlotPictureJson(p.Index, p.Name, p.Sha256, p.Width, p.Height, p.Plots))],
+            plots, tracesRead, traces, markers, built.Ports, matrix, built.Grid?.ToString(), touchstone, csv, kept,
             built.Health is { } h ? TouchstoneAssembly.HealthLine(h) : null,
             probes.Count > 0 ? probes : null);
         return new RecognizeReportJson(Path.GetFullPath(pictures[0].Path), null, "whole", 0, findings, [], null, null, null, null, false)
@@ -241,6 +271,9 @@ internal static partial class Recognize
             Plots = json,
         };
     }
+
+    /// <summary>How many traces a refused or unassigned reading lists by default (R-emb5-9).</summary>
+    internal const int CollapsedTraces = 5;
 
     private static PlotFitJson FitJson(TraceFitResult f)
     {

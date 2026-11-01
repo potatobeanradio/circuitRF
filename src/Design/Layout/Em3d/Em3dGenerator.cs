@@ -55,6 +55,10 @@ public sealed record Em3dGenerationResult(Em3dProblem? Problem, string? Refusal,
     /// with circuitRF's conduction solve (Em3dDcSolve). Kept BESIDE the problem, so no lowering and no provenance hash sees it.</summary>
     public bool WantsDc { get; init; }
 
+    /// <summary>brief-emb-1 — the component ports a <c>.c3d</c> setup built (R-emb1-3), as the run solved them: what the
+    /// co-simulation netlist (R-emb1-7) is written from. Null when the setup names none.</summary>
+    public CircuitRF.Design.ThreeD.C3dComponentPortBuild? ComponentPorts { get; init; }
+
     /// <summary>brief-dfr28-4 R-dfr28-4-5 — each layout port's return, by port number: the layer, the side, and who
     /// decided it. Kept BESIDE the problem, as <see cref="Origins"/> is: <c>explain</c> reads it.</summary>
     public IReadOnlyDictionary<int, Em3dPortReturn> PortReturns { get; init; } = new Dictionary<int, Em3dPortReturn>();
@@ -255,6 +259,11 @@ public static class Em3dGenerator
     /// <param name="padsOptional">True for a picture, never for a solve: wires are drawn on a layout with no conductor
     /// artwork, and a wire end over no conductor lands on an undrawn pad (<see cref="Em3dLayoutSolidsOptions.PadsOptional"/>);
     /// the refusal is in <see cref="Em3dGenerationResult.PadRefusal"/>.</param>
+    /// <summary>brief-emb-1 — a <c>.cem</c> on a layout asking for component ports.</summary>
+    public const string ComponentPortsOnLayoutRefusal =
+        "This setup names ComponentPorts, which are built in a 3D view of the layout: make one with " +
+        "'new view3d <cell> --from-layout' (Design ▸ New 3D View from Layout) and run this setup there, or point the .cem's LayoutRef at that .c3d.";
+
     public static Em3dGenerationResult Generate(EmSetup setup, EmLayoutSource source, Technology tech,
                                                 Em3dWireSource? wires = null, bool displaySlabs = false,
                                                 bool portsOptional = false, bool padsOptional = false,
@@ -263,6 +272,10 @@ public static class Em3dGenerator
         ArgumentNullException.ThrowIfNull(setup);
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(tech);
+        // brief-emb-1 R-emb1-2 — component ports are built in a 3D view of the layout, where the lowered conductors they land on
+        // have names; a .cem on the layout itself places its ports from its port labels.
+        if (setup.ComponentPorts.Count > 0)
+            return new Em3dGenerationResult(null, ComponentPortsOnLayoutRefusal, []);
         return new Run(setup, source, tech, wires, displaySlabs, portsOptional, padsOptional, portsEach).Go();
     }
 
@@ -308,7 +321,8 @@ public static class Em3dGenerator
             // ── The geometry, up to the bond wires (Em3dLayoutSolids' first stage) ────────────
             var earlier = _notes;
             _g = new Em3dLayoutSolids.Builder(source, tech, wires,
-                new Em3dLayoutSolidsOptions(fMax, _tempC, Instance: false) { RegionSetup = setup, FloorAllowed = !floorStatedAway, DisplaySlabs = displaySlabs, PadsOptional = padsOptional, RobustMeshing = setup.RobustMeshing });
+                new Em3dLayoutSolidsOptions(fMax, _tempC, Instance: false) { RegionSetup = setup, FloorAllowed = !floorStatedAway, DisplaySlabs = displaySlabs, PadsOptional = padsOptional, RobustMeshing = setup.RobustMeshing,
+                  SolidVias = setup.Problem3D != Em3dProblemType.Thermal });
             _g.Notes.AddRange(earlier);
             _notes = _g.Notes;
             if (_g.Prepare() is { } geometryRefusal) return No(geometryRefusal);
@@ -403,11 +417,15 @@ public static class Em3dGenerator
                   (zMinFace?.PaddingUm is not null ? " The AirBox ZMin padding does not apply to a floor on the plane." : "")
                 : planeFloor is { } pf
                 ? $"The air box's floor is the underside of '{ground!.Layer.Name}' at {Fmt(pf * 1e6)} µm, as a PEC face: it is a " +
-                  "drawn ground plane with no hole in it, under all the drawn metal, so nothing below it carries field. State " +
-                  "the AirBox's ZMin to pad below it instead."
+                  "drawn ground plane " + (_g.PlaneFloorHoles == 0 ? "with no hole in it"
+                      : $"whose {_g.PlaneFloorHoles} hole(s) have no other metal over them") +
+                  ", under all the drawn metal, so nothing below it carries field. State the AirBox's ZMin to pad below it instead."
                 : "The air box's floor is below the geometry" +
                   (floorStatedAway ? ", as this setup's AirBox states." :
                    ground is null ? ": the technology designates no ground-reference conductor."
+                   : _g.PlaneFloorBlockedAt is var (bx, by) && ByHeightApplies(setup) && setup.AirBox?.ZMin is null
+                   ? $": '{ground.Layer.Name}' has a hole at ({Fmt(bx * 1e3)}, {Fmt(by * 1e3)}) mm with a via through it or " +
+                     "other metal over it, which a floor on the plane would close, so the plane is geometry rather than a floor."
                                   : $": '{ground.Layer.Name}' is drawn or has metal below it, so it is " +
                                     "geometry rather than a floor."));
 
@@ -420,6 +438,7 @@ public static class Em3dGenerator
                 EigenmodeTargetHz = setup.Eigenmode?.TargetGHz is { } target ? target * 1e9 : fMin,
                 PaddedContent = (new Point3(cx0, cy0, zLow), new Point3(cx1, cy1, zHigh)),
                 PaddingHeightM = paddingH,
+                ArtworkBarrels = ArtworkBarrels(solids, _g.OriginMap),
             };
             return new Em3dGenerationResult(problem, null, _notes)
             {
@@ -1571,6 +1590,78 @@ public static class Em3dGenerator
     /// <summary>Designer round 33 — how much of the footprint an unbroken bottom ground plane must cover for the air box's floor
     /// to go on its underside (<c>Em3dLayoutSolids</c> for a <c>.cem</c>, <c>C3dProblemAssembly.PlaneFloor</c> for a <c>.c3d</c>).</summary>
     public const double PlaneFloorCover = 0.95;
+
+    /// <summary>
+    /// brief-emb-2 R-emb2-5 — the first hole of a floor plane that something lies over in footprint (a centre, metres): a ring
+    /// of <paramref name="metal"/> overlapping it, or a drill of <paramref name="drills"/> reaching into it. Null when every hole
+    /// is clear, so the floor closing them shorts nothing and no field above one is cut off.
+    /// </summary>
+    public static (double X, double Y)? CoveredHole(IEnumerable<IReadOnlyList<Point2>> holes, IEnumerable<IReadOnlyList<Point2>> metal,
+                                                    IReadOnlyCollection<(double X, double Y, double R)> drills)
+    {
+        var rings = metal.Where(r => r.Count >= 3).ToList();
+        foreach (var hole in holes.Where(h => h.Count >= 3))
+        {
+            var centre = new Point2(hole.Average(q => q.X), hole.Average(q => q.Y));
+            if (rings.Any(r => RingsOverlap(hole, r))) return (centre.X, centre.Y);
+            if (drills.Any(d => Inside(hole, new Point2(d.X, d.Y)) || DistanceToRing(hole, new Point2(d.X, d.Y)) < d.R))
+                return (centre.X, centre.Y);
+        }
+        return null;
+    }
+
+    /// <summary>Whether two simple rings' interiors meet: a vertex of one inside the other, or two edges that cross.</summary>
+    internal static bool RingsOverlap(IReadOnlyList<Point2> a, IReadOnlyList<Point2> b)
+    {
+        static (double, double, double, double) Box(IReadOnlyList<Point2> r)
+            => (r.Min(q => q.X), r.Min(q => q.Y), r.Max(q => q.X), r.Max(q => q.Y));
+        var (ax0, ay0, ax1, ay1) = Box(a);
+        var (bx0, by0, bx1, by1) = Box(b);
+        if (ax1 <= bx0 || bx1 <= ax0 || ay1 <= by0 || by1 <= ay0) return false;
+        if (b.Any(q => Inside(a, q)) || a.Any(q => Inside(b, q))) return true;
+        for (int i = 0, j = a.Count - 1; i < a.Count; j = i++)
+            for (int k = 0, m = b.Count - 1; k < b.Count; m = k++)
+                if (Cross(a[j], a[i], b[m], b[k])) return true;
+        return false;
+
+        static bool Cross(Point2 p, Point2 q, Point2 r, Point2 s)
+        {
+            static double O(Point2 a, Point2 b, Point2 c) => (b.X - a.X) * (c.Y - a.Y) - (b.Y - a.Y) * (c.X - a.X);
+            double d1 = O(p, q, r), d2 = O(p, q, s), d3 = O(r, s, p), d4 = O(r, s, q);
+            return (d1 > 0 && d2 < 0 || d1 < 0 && d2 > 0) && (d3 > 0 && d4 < 0 || d3 < 0 && d4 > 0);
+        }
+    }
+
+    /// <summary>Whether <paramref name="p"/> is strictly inside ring <paramref name="r"/> (even-odd).</summary>
+    private static bool Inside(IReadOnlyList<Point2> r, Point2 p)
+    {
+        bool inside = false;
+        for (int i = 0, j = r.Count - 1; i < r.Count; j = i++)
+            if (r[i].Y > p.Y != r[j].Y > p.Y && p.X < (r[j].X - r[i].X) * (p.Y - r[i].Y) / (r[j].Y - r[i].Y) + r[i].X)
+                inside = !inside;
+        return inside;
+    }
+
+    private static double DistanceToRing(IReadOnlyList<Point2> r, Point2 p)
+    {
+        double best = double.PositiveInfinity;
+        for (int i = 0, j = r.Count - 1; i < r.Count; j = i++)
+        {
+            double dx = r[i].X - r[j].X, dy = r[i].Y - r[j].Y, l2 = dx * dx + dy * dy;
+            double t = l2 > 0 ? Math.Clamp(((p.X - r[j].X) * dx + (p.Y - r[j].Y) * dy) / l2, 0, 1) : 0;
+            double ex = r[j].X + t * dx - p.X, ey = r[j].Y + t * dy - p.Y;
+            best = Math.Min(best, Math.Sqrt(ex * ex + ey * ey));
+        }
+        return best;
+    }
+
+    /// <summary>brief-emb-2 R-emb2-1 — the round solids that are a layout's drilled barrels: a via (its barrel and its air core)
+    /// and a drilled hole, as their origins say (<see cref="Em3dProblem.ArtworkBarrels"/>). A <c>.c3d</c>'s own cylinders have no
+    /// layout origin and are never among them.</summary>
+    public static IReadOnlyCollection<string> ArtworkBarrels(IEnumerable<Em3dSolid> solids, IReadOnlyDictionary<string, Em3dObjectOrigin> origins)
+        => [.. solids.Where(s => s.Primitive is Em3dCylinder && origins.TryGetValue(s.Name, out var o) &&
+                                 (o.Kind == Em3dObjectKind.Via || o.Kind == Em3dObjectKind.Air && o.StackupEntry is not null))
+                     .Select(s => s.Name)];
 
     /// <summary>
     /// Designer round 33 — the padding each face takes when the setup states none. A driven problem that does not ask for a

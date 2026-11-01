@@ -35,7 +35,7 @@ internal static class CircuitSource
     /// <inheritdoc cref="Read(string, DocumentKind, Action{string}?)"/>
     /// <param name="parts">The placed vendor parts the schematic's extraction found (<see cref="NetExtractor.ExtractionResult.PartTunables"/>),
     /// which the <c>.cnl</c> round trip cannot carry: a run constructor asked about this bench needs them to know a
-    /// part's value (<c>C1.C</c>) is a tunable. Empty for a netlist.</param>
+    /// part's value (<c>C1.C</c>) is a tunable. For a netlist, the parts its own <c>SpiceModel</c> lines place.</param>
     public static (Library Lib, TestBench Tb)? Read(
         string path, DocumentKind kind, out IReadOnlyList<CircuitRF.Design.VendorLibraries.VendorPartTunable> parts,
         Action<string>? onError = null)
@@ -47,7 +47,7 @@ internal static class CircuitSource
             {
                 case DocumentKind.Netlist:
                 {
-                    var (lib, tb) = CnlTechnologyBinding.ReadFile(path);
+                    var (lib, tb) = CnlTechnologyBinding.ReadFile(path, out parts);
                     return (lib, tb);
                 }
 

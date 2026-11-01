@@ -874,8 +874,10 @@ public sealed class ServeProtocolAdapterTests(ITestOutputHelper output) : IDispo
         // `impedance` is the Trace Impedance Analysis — a board review an agent can run on artwork it
         // did not draw. `recognize` (brief-artsch-7) turns that artwork into a circuit. `review`
         // (brief-review-2) is the Layout Review, a reviewer's checklist over the same artwork.
+        // `job` (brief EMB-5) follows a run or check started with async=true — server state, like `batch`.
         Assert.Equal(["run", "check", "explain", "create", "import", "convert", "render", "netlist", "plot",
-                      "find", "lvs", "recognize", "impedance", "review", "read", "model", "history", "solver", "reference", "batch"],
+                      "find", "lvs", "recognize", "impedance", "review", "read", "model", "history", "solver", "reference", "batch",
+                      "job"],
                      tools);
 
         Assert.Equal(0, server.Close());
@@ -970,10 +972,12 @@ public sealed class ServeProtocolAdapterTests(ITestOutputHelper output) : IDispo
             ["run/corners"]       = ["path"],
             ["run/center"]        = ["path"],
             ["run/doe"]           = ["path"],
+            ["run/sensitivity"]   = ["path"],
             ["check/"]            = ["path"],
             ["explain/"]          = ["path"],
             ["create/workspace"]  = ["path"],
             ["create/cell"]       = ["workspace", "name"],
+            ["create/view3d"]     = ["cell"],          // brief-emb-1 R-emb1-1
             // `import` and `convert` were one tool with a `what` selector until an export was found
             // filed under "import"; `convert` stays single-mode. brief-sar-11 gave `import` its CLI nouns
             // back as modes — every one of them brings something in.
@@ -1041,6 +1045,8 @@ public sealed class ServeProtocolAdapterTests(ITestOutputHelper output) : IDispo
             // own gate is that the state and the ten rules come back in the surface's output, which
             // RestoreAndBatchTests asserts.
             if (name == "batch") continue;
+            // EMB-5's `job` likewise: it asks about calls this server is holding, and is no command line.
+            if (name == ServeJobs.ToolName) continue;
 
             var    properties = tool["inputSchema"]!["properties"]!.AsObject();
 
@@ -1070,7 +1076,8 @@ public sealed class ServeProtocolAdapterTests(ITestOutputHelper output) : IDispo
                     // counted and the count is checked below.
                     // brief-img-11 R-im11-5 adds the second, by name too: `overlay` asks for convert's and
                     // recognize's overlay picture back as image content (its gate is McpImageToolTests).
-                    if (argument is ToolCatalog.AttachImageArgument or ToolCatalog.OverlayArgument) { adapterArguments++; continue; }
+                    // EMB-5 R-emb5-1 adds the third: `async` makes a run or check a job (its gate is ServeLongWorkTests).
+                    if (argument is ToolCatalog.AttachImageArgument or ToolCatalog.OverlayArgument or ToolCatalog.AsyncArgument) { adapterArguments++; continue; }
 
                     var arguments = new JsonObject();
                     if (selector.Key is not null) arguments[selector.Key] = mode;

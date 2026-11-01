@@ -268,10 +268,11 @@ public sealed class PlanarKernel
                                 RunControl? control = null, bool accelerated = false,
                                 SurfaceMesher.PlanarLengthFormat? lengthFormat = null,
                                 IReadOnlyList<PlanarPort>? ports = null,
-                                IReadOnlyList<PlanarFeedLead>? leads = null)
+                                IReadOnlyList<PlanarFeedLead>? leads = null,
+                                bool aimOn = false)
         => SurfaceMesher.Mesh(problem, settings, PlanarEdgeReference.LocalConductorWidth, control,
                               accelerated: accelerated, lengthFormat: lengthFormat, ports: ports,
-                              leads: leads);
+                              leads: leads, aimOn: aimOn);
 
     /// <summary>
     /// Mesh → resolve ports → sweep → <see cref="DataSet"/>.
@@ -343,7 +344,8 @@ public sealed class PlanarKernel
         var report = Mesh(meshed, meshSettings, control,
                           accelerated: SurfaceMesher.UsesAcceleratedCeiling(
                               st.Fill?.Aim is not null, meshed.RequiresGeneralKernel),
-                          lengthFormat: lengthFormat, ports: ports, leads: leads);
+                          lengthFormat: lengthFormat, ports: ports, leads: leads,
+                          aimOn: st.Fill?.Aim is not null);
         if (!report.CanSolve) throw new PlanarMeshRefusedException(report);
 
         ct.ThrowIfCancellationRequested();
@@ -406,7 +408,8 @@ public sealed class PlanarKernel
                         retry = Mesh(meshed, candidate, control,
                                      accelerated: SurfaceMesher.UsesAcceleratedCeiling(
                                          st.Fill?.Aim is not null, meshed.RequiresGeneralKernel),
-                                     lengthFormat: lengthFormat, ports: ports, leads: leads);
+                                     lengthFormat: lengthFormat, ports: ports, leads: leads,
+                                     aimOn: st.Fill?.Aim is not null);
                     }
                     catch (PlanarMeshRefusedException) { continue; }
                     if (!retry.CanSolve) continue;
@@ -477,6 +480,11 @@ public sealed class PlanarKernel
                 StandardBytes       = aim ? 0 : report.StandardResidentBytes,
                 PastMachineCeiling  = report.PastMachineLimit,
                 CeilingUnknowns     = report.CeilingUnknowns,
+                // EMB-4 — an accelerated run on a multi-level or via mesh is judged on the DENSE ceiling; the
+                // sentence says so, says what the accelerator holds, and never quotes a ceiling of 0.
+                DenseCeiling             = aim && !report.AcceleratedCeiling,
+                AcceleratedResidentBytes = report.AcceleratedEstimate?.ResidentBytes,
+                CoreBytes                = report.CoreBytes,
             };
             if (admit(size) is { } declined) throw new PlanarRunDeclinedException(declined);
         }

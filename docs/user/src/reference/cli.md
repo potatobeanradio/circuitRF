@@ -2419,9 +2419,10 @@ Under `--json` the same facts are typed arguments: `layer`, `layerName`, `netA`,
 `result.check.documents` carries `em` with the kernel, the unknown count, the ceiling it is judged
 against (`dense` or `accelerated`) and the mesher's verdict (`ok`, `warn` or `refused`). It survives
 `--summary`, so the cheap form of the call still answers whether a run is affordable. A
-`PlanarMesh` field the file states but `"Auto": true` discards (cells per wavelength, edge mesh, edge
-cells) is a warning, `check.em.mesh-auto-override`, naming the field and the value the mesh uses
-instead.
+`PlanarMesh` field the file states but `"Auto": true` discards (cells per wavelength, edge cells) is
+a warning, `check.em.mesh-auto-override`, naming the field and the value the mesh uses instead. A
+stated edge mesh, cells across the narrowest conductor or detail floor is used as stated beside
+`"Auto": true` (Auto chooses only the rest), and `check.em.mesh-auto-kept` says so.
 
 The kind of document is inferred from the path, exactly as `convert` infers a format. A GDSII or
 Gerber file is **named as interchange** rather than called unreadable — it is simply not validated,

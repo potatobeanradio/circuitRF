@@ -132,6 +132,7 @@ public sealed partial class EmSetupEditorViewModel
     private void RaiseSolverKindVisibility()
     {
         OnPropertyChanged(nameof(ShowRobustMeshing));
+        OnPropertyChanged(nameof(ShowComponentPorts));
         OnPropertyChanged(nameof(ShowPlanarControls));
         OnPropertyChanged(nameof(ShowCrossSectionControls));
         OnPropertyChanged(nameof(ShowReturnPlane));

@@ -138,3 +138,188 @@ completion note).
 - Choosing part models — R-emb1-7 uses what the board's schematic resolves to and says when it has none.
 - Planar (MoM) component ports: the planar kernel's `InternalDeltaGap` already cuts a conductor; extending
   it to a pad pair is a follow-up once the 3D path ships.
+
+---
+
+## Completion note — EMB-1 (2026-11-01)
+
+### Per requirement
+
+**R-emb1-1 — a 3D view from a layout, headlessly. Done.**
+- CLI: `new view3d <cell> --from-layout [--name N]`.
+- MCP: `create what=view3d fromLayout=true`.
+- `src/Cli/Authoring.cs` calls `C3dHierarchy.NewFromLayout` and `CellCreate.WriteThreeDView`, the two calls the GUI's command
+  makes.
+- The workspace is the cell's nearest ancestor `.cws`. The name defaults to the cell's own.
+- The run reports what it copied, brought in or left out, using the GUI's own sentences.
+- Gates in `AuthoringCliVerbTests`:
+  - The `.c3d` the CLI process writes is byte-identical to the in-process call. The layout carries a port label, so the
+    ports are part of what is compared.
+  - The comment-stripped scan finds `C3dHierarchy.NewFromLayout(` in the view model and in `Authoring.cs`.
+  - The scan finds no document construction in `Authoring.cs`.
+
+**R-emb1-2 — `ComponentPorts`. Done.**
+- `EmSetup.ComponentPorts` holds `EmComponentPort(Refdes, Z0?, Reference?)` entries.
+- In the file it can be written three ways: `"*"`, `["C1", "L2"]`, or object entries with `Refdes`, `Z0` and `Reference`.
+  `ComponentPortsConverter` writes a lone `*` back as the string.
+- It is copied by `Clone`, and the `.c3d`'s embedded setups use the same schema.
+- Port numbers continue after the document's own ports, in list order.
+- Pads come from `BoardCompanions.Project`, the projection `netlist --placement` uses.
+- Refusals name the refdes:
+  - not placed (the refusal lists the placed parts)
+  - footprint unresolved
+  - a pad on no conductor of its own layer
+  - an arrayed, tilted or non-90° placement
+  - fewer than two pads
+  - a multi-pad part with no ground pad
+- A `.cem` on a layout refuses `ComponentPorts`. Component ports are built in a 3D view, where the lowered conductors have
+  names.
+
+**R-emb1-3 — the construction. Done.** It lives in `src/Design/ThreeD/C3dComponentPorts.cs` and is called from
+`C3dProblemAssembly.Assemble`, so the run, `check`, `explain` and the GUI all build it the same way.
+- **Pad outline:** the footprint shape under the pin, put through the instance transform and the frame's world transform.
+- **Width:** the overlap of the two pads across the gap axis.
+- **Facing copper:** the closest copper of each pad's conductor is scanned every 10 µm across the width, and also through
+  every facing vertex (see findings).
+- **Landing rectangle**, where that copper is not one straight face:
+  - Its face is at the closest copper, snapped to the DBU grid toward the gap.
+  - It reaches back in 10 µm steps until its back edge is in solid copper on every scan line.
+  - It is **unioned into the conductor's outline** (Clipper2), so the conductor's name and count are unchanged.
+  - It exists only in the lowered problem; the `.clay` is never touched.
+- **Sheet:** flat at mid-copper height, from face to face, with both ends stated.
+- `explain` reports each landing's size.
+
+**R-emb1-4 — verified before meshing. Done**, in `check` as well as the run. A failure refuses the run, naming the refdes,
+the edge and the conductor found. The checks:
+- A landing touching any other conductor is refused before the union, except a via standing inside its own copper.
+- The union must give one piece.
+- Each end edge touches exactly its own conductor within 1 DBU, and each side edge touches none.
+- No copper lies inside the sheet, sampled on a 2 µm grid a DBU in from its edges.
+- The two conductors are on different nets where the board states nets.
+
+EMB-2's post-mesh check then runs as before. In the Palace run below it found nothing.
+
+**R-emb1-5 — gap ports. Done.**
+- A two-terminal part gets one gap port.
+- A part with more pads gets one port per signal pad against the facing ground pad on the same copper layer, named
+  `U2.IN`, `U2.OUT`. A ground pad is one on a ground net (GND-like names, the setup's `Ground3D`, or the ground band's
+  nets), or a pin named that way, or the pin `Reference` names.
+- The paragraph explaining why is in `em-3d.md` (#part-ports) and in the `3d-view` reference (`DocumentSchema.cs`).
+
+**R-emb1-6 — a port's reference. Partly done.**
+- Done:
+  - `Reference` (a pin name, or a conductor a pad lands on) chooses the negative end.
+  - A part whose ground pads on two copper layers lie over each other gets a shell bridge: a copper block from mid-copper to
+    mid-copper, kept 25 µm inside the pads. Its port's negative end is that bridged top ground.
+  - Such a part, or a refdes starting with J, is marked as a connector.
+- **Deferred:** `check`'s warning when a port's negative conductor is not the same body as the conductor the nearest shunt
+  part returns to, and how far apart the two meet through vias. It needs a walk through the via connectivity between two
+  bodies, which nothing here has yet; I left it out rather than ship half of it.
+
+**R-emb1-7 — the co-simulation netlist. Done.**
+- `src/Design/Layout/Em/EmCoSimNetlist.cs` builds a `TestBench` and writes it with `CnlWriter`. It contains:
+  - `SnP:BOARD p1…pN` of the run's Touchstone.
+  - A `Port` line for each of the 3D view's own ports and for each connector.
+  - Each part from its port's node to ground.
+  - An S-parameter analysis over the setup's sweep.
+- Part models:
+  - Each part is the board schematic's extracted instance with its nets replaced. A two-terminal model, including a 2-port
+    SnP measured in series, is wired `[pK, 0]`.
+  - A multi-pad part's terminals are wired in pin order: a signal pin to its port's node, the ground pin to `0`, any other
+    pin to `nc_…`.
+  - A part with no model becomes a named placeholder (`C1_value = 1 pF`, `L… 1 nH`, `R… 50 Ohm`), explained in a comment.
+    `check` and `explain` warn about it.
+- Where it is written:
+  - `EmRunService` writes it after a finished driven run as `<workspace>/<setup>_cosim.cnl`, beside where the `_sim` cell
+    goes. This happens whatever `CreateSnpSchematic` says.
+  - It replaces only a file of its own, identified by its header line; any other file of that name is left alone and said.
+  - It is reported on `EmRunResult.CoSim`, as the CLI's `cosim` output and in the GUI's Messages.
+
+**R-emb1-8 — spelling. Done.**
+- CLI:
+  - `em <c3d> --component-ports "C1,C2"|"*"` applies to one run, in memory only. On a `.cem` that names a layout it is
+    refused as `em.component-ports.refused`.
+  - `explain <c3d> --component-ports ["list"]` runs `Assemble`, the run's own code, without meshing. It walks each port:
+    refdes, pads, conductors, gap, width, landings, connector, verdict. It also reports bridges, notes, warnings and the
+    co-sim file name. With a list, it builds that list instead of the setup's.
+- MCP: `run analysis=em componentPorts=[…]`, `explain componentPorts=true`, and `create what=view3d`. I added option and
+  mode entries only.
+- GUI: the 3D setup panel has a **Component ports** list, below Robust meshing, for a `.c3d`'s embedded EM setups only.
+  - It is a checklist of the placed parts with their pad counts (a picker, per the `src/Ui` rule).
+  - **Every two-terminal part** writes `*`.
+  - Each tick is one undoable commit.
+  - **Check** builds and verifies the ports through `Assemble` and shows each part's verdict. A refused verdict is drawn in
+    the warning colour.
+- UiSnapshot has a new mode, `--c3d-setup-panel <x.c3d> [--check-component-ports]`, documented in its README.
+- Picture, which I looked at: a scratch UiSnapshot of the panel (cropped and full), not committed. It shows C1 (two landings, verified), J1 (connector, gap along y)
+  and U1 (U1.IN and U1.OUT against GND), all verified, with the status line.
+
+### Findings (also in `src/Design/RESOLVED.md`)
+- **Scanning every 10 µm missed a round cap's tip**, which lies on one vertex. The sheet's edge then landed 0.2 µm inside
+  the copper, and the gate's sheet sample caught it. Every facing vertex's own coordinate is now a scan line too.
+- A tessellated cap's tip is short of the drawn radius (4849.79 µm against 4850 µm), so the face is placed where the lowered
+  copper actually is.
+- A landing is unioned into its conductor instead of being added as an overlapping solid. That keeps the stated ends valid
+  and means no two conductor solids overlap in the mesh.
+
+### Tests
+- New: `tests/Ui.Tests/Em3d/ComponentPortBuildTests.cs` (6 tests).
+  - Cap-and-arc gap: landing faces within 1 DBU of the sheet, no copper sampled in the sheet, conductor count unchanged,
+    landings across the full width reaching past the pad faces.
+  - Bridging landing refused by refdes.
+  - Three-pad part gets two ports, each against GND.
+  - Connector gets the shell bridge, and its negative end is the bridged ground.
+  - `explain` and `check` through the CLI process, including a refusal for an unknown refdes.
+  - A `[PalaceFact]`, Benchmark-tier Palace run (below).
+- New: `tests/Ui.Tests/Em3d/CoSimNetlistTests.cs` (1 test).
+  - Checks: the board SnP, `C:C1 p2 0`, an `SnP:L1 p3 0` series part file, Port lines for a 3D view port and a connector, a
+    named R placeholder, no part between two port nodes.
+  - The file is read by `CnlReader` and elaborated.
+- Updated:
+  - `AuthoringCliVerbTests`: the byte-identity test and the source scans.
+  - `CliStructuredOutputTests`: five new diagnostic ids (`new.args.view3d`, `new.view3d.note`,
+    `new.view3d.ports-left-out`, `em.component-ports.refused`, `check.c3d.component-port`).
+  - `ServeProtocolAdapterTests`: `create/view3d`. It also gains `run/sensitivity`; see below.
+  - `tests/Firewall.Tests/user-facing-text-allowlist.txt`: the converter's two `JsonException` messages, following the
+    precedent of the thermal names converter.
+- Runs, targeted classes only (Ui.Tests: 16 classes: ComponentPortBuild, CoSimNetlist, AuthoringCliVerb,
+  CliStructuredOutput, GeneratedReference, ReferenceCliVerb, ServeProtocolAdapter, EmFrameworkFree, C3dPortDirection,
+  PortEdgeWidth, MeshRobustness, RobustMeshing, HierarchyGate, CheckAndExplainCliVerb, EmCliVerb, SimulateGate):
+  - **313/315** on the first pass.
+    - `ServeProtocolAdapterTests.EveryAdvertisedArgument…` failed on `'run/sensitivity'`. That mode was added at HEAD by
+      SENS-1 without updating this gate's map. I added `run/sensitivity` and `create/view3d`, and the class then passed
+      39/39. EMB-5 may add the same line; that conflict is trivial.
+    - `MeshRobustnessTests.ACurvingStagePastItsCap…` is EMB-2's test, on a path I did not touch. It passes alone, so it is
+      load-dependent: it uses a 1 s stand-in script for Gmsh.
+  - Firewall: 78/79. The one failure is the same pre-existing `UserFacingTextGateTests` list EMB-2 and EMB-3 reported: 7
+    entries in `ComponentModelFactory.cs` and `src/Engine/Mom/*`, all outside this brief. My own two were added to the
+    allowlist.
+- **The one small Palace run** (Palace 0.18.1 and Gmsh 4.15.2 are installed here). Run once with
+  `--settings circuitrf.benchmark.runsettings`, under a watchdog that would kill Gmsh or Palace past 3 GB RSS; it did not
+  fire.
+  - Fixture: a 0.4 mm line on the 508 µm RO4350B board, broken by a 0.4 mm gap, with R1's pads either side, a drawn port at
+    each end and R1's component port across the gap.
+  - Board result: |S33| = 0.361 at 2 GHz. The expected value is 1/3: two 50 Ω half-lines in series.
+  - Co-simulation (R1 as the 50 Ω placeholder, run through `sparam` on the written `.cnl`): |S21| = 0.664 against 2/3.
+  - Size: 166,678 unknowns after two refinement passes.
+  - Time: about 50 s for the test, measured under load from the other agents' builds. It is tagged Benchmark for that
+    reason; no assertion is about time.
+
+### Docs
+- `docs/user/src/reference/em-3d.md`: new section #part-ports, plus the paragraph on gap ports against pad-to-plane pairs.
+- `docs/user/src/reference/em-setup.md`: #component-ports-list.
+- I regenerated both pages with DocGen. Like EMB-3, I reverted `docs/user/assets/js/search-index.js`, because its churn
+  comes from other pages that are not yet regenerated.
+- `docs/design/cli.md`: the `new view3d` row, a new §8.10, and the MCP table row. These are localized edits.
+- `src/Cli/DocumentSchema.cs` (the `3d-view` reference): a component-ports paragraph.
+
+### Deferred
+- R-emb1-6's shunt-return warning, for the reason given under R-emb1-6.
+- Planar (MoM) component ports, which the brief puts out of scope.
+
+### Overlap with sibling briefs
+- `src/Cli/Serve/ToolCatalog.cs`: new option entries (`run em componentPorts`, `explain componentPorts`) and the new
+  `create` mode `view3d`, plus the `create` tool's one-line description.
+- `docs/design/cli.md`: the verb table row, §8.10 inserted before §9, and the §11.3 `create` row.
+- `tests/Ui.Tests/ServeProtocolAdapterTests.cs`: two map lines.
+- I did not touch `src/Cli/JsonRun.cs` (no static fields added) or `McpServer.cs`.

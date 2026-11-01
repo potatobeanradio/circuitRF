@@ -342,7 +342,7 @@ internal static class PlotVerb
                 string? dir = Path.GetDirectoryName(Path.GetFullPath(cddPath));
                 if (dir is { Length: > 0 }) Directory.CreateDirectory(dir);
                 File.WriteAllText(cddPath,
-                    JsonSerializer.Serialize(config, DataDisplayJson.Options),
+                    JsonSerializer.Serialize(Relocated(config, o.Result, dir ?? "."), DataDisplayJson.Options),
                     new System.Text.UTF8Encoding(false));
             }
             catch (Exception ex) { return JsonRun.Fail(CliDiagnostics.PlotWriteFailed(cddPath, ex.Message)); }
@@ -1481,6 +1481,32 @@ internal static class PlotVerb
             SelectedDataSource = Path.GetFileName(o.Result!),
             Tabs               = [new TabConfig { Name = "Tab 1", Plots = [container] }],
         };
+    }
+
+    /// <summary>
+    /// The document as <c>--write-cdd</c> writes it (EMB-5 R-emb5-14): a copy whose every reference to the result —
+    /// each trace's <c>SourcePath</c> and <c>XSourcePath</c>, the selection, an alias key — is the result's path
+    /// RELATIVE TO THE <c>.cdd</c>'s OWN FOLDER. The drawn config names the bare file name, which the render resolves
+    /// beside the result; written as that, a <c>.cdd</c> put anywhere but beside its result named a file that is not
+    /// there. Both readers — <c>render</c> and the application — look beside the document first.
+    /// </summary>
+    internal static DataDisplayConfig Relocated(DataDisplayConfig config, string result, string cddDir)
+    {
+        string bare = Path.GetFileName(result);
+        string rel  = Path.GetRelativePath(cddDir, Path.GetFullPath(result)).Replace('\\', '/');
+        var copy = JsonSerializer.Deserialize<DataDisplayConfig>(JsonSerializer.Serialize(config, DataDisplayJson.Options),
+                                                                 DataDisplayJson.Options)!;
+        string? Map(string? s) => s == bare ? rel : s;
+        copy.SelectedDataSource = Map(copy.SelectedDataSource);
+        foreach (var tab in copy.Tabs)
+        foreach (var plot in tab.Plots)
+        foreach (var trace in plot.Traces)
+        {
+            trace.SourcePath  = Map(trace.SourcePath);
+            trace.XSourcePath = Map(trace.XSourcePath);
+        }
+        if (copy.SourceAliases.Remove(bare, out var alias)) copy.SourceAliases[rel] = alias;
+        return copy;
     }
 
     /// <summary>

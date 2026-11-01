@@ -114,12 +114,21 @@ internal static partial class Reference
     public static int Run(string[] args)
     {
         string? topic = null, item = null;
+        bool schemaTables = false;
 
-        foreach (string a in args)
+        for (int i = 0; i < args.Length; i++)
         {
-            // No options at all, deliberately. `--json`, `--only` and `--group` are taken before
-            // dispatch; anything else is a flag this verb does not have, and a dropped flag's value
-            // would become the topic.
+            string a = args[i];
+            // One option only, deliberately (EMB-5 R-emb5-12): which form a generated format's field tables
+            // come back in. `--json`, `--only` and `--group` are taken before dispatch; anything else is a flag
+            // this verb does not have, and a dropped flag's value would become the topic.
+            if (a == "--tables" && i + 1 < args.Length)
+            {
+                string v = args[++i].Trim().ToLowerInvariant();
+                if (v is not ("text" or "schema")) return JsonRun.Fail(CliDiagnostics.ReferenceTablesValue(args[i]));
+                schemaTables = v == "schema";
+                continue;
+            }
             if (a.StartsWith('-'))    return JsonRun.Fail(CliDiagnostics.ReferenceUnknownOption(a));
             if (topic is null)        topic = a;
             else if (item is null)    item  = a;
@@ -156,7 +165,7 @@ internal static partial class Reference
         if (DocumentSchema.Find(topic) is { } format)
         {
             if (item is not null) return JsonRun.Fail(CliDiagnostics.ReferenceItemNotForTopic(topic));
-            return Schema(format);
+            return Schema(format, schemaTables);
         }
 
         if (item is not null) return JsonRun.Fail(CliDiagnostics.ReferenceItemNotForTopic(topic));
@@ -226,14 +235,18 @@ internal static partial class Reference
     /// One JSON document format, field by field. It is a TOPIC and not an item-taking one: a format
     /// is read whole, and a caller that wanted one field of it has already paid for the page.
     /// </summary>
-    private static int Schema(DocumentSchema.Format format)
+    // The field tables travel ONCE (EMB-5 R-emb5-12): as the page's text by default, or with `--tables schema` as
+    // reference.schema beside a text holding the preamble — its example and what the tables cannot say — alone. Both
+    // at once was the whole field list twice in one result.
+    private static int Schema(DocumentSchema.Format format, bool schemaTables)
     {
         string text = DocumentSchema.Render(format);
+        string served = schemaTables ? DocumentSchema.Render(format, tables: false) : text;
 
         JsonRun.Reference = new ReferenceReportJson(
             null,
-            new ReferenceTopicJson(format.Topic, format.Title, SchemaSummary(format), ByteLength(text), text),
-            null, null, DocumentSchema.Json(format));
+            new ReferenceTopicJson(format.Topic, format.Title, SchemaSummary(format), ByteLength(served), served),
+            null, null, schemaTables ? DocumentSchema.Json(format) : null);
 
         Console.Out.Write(text);
         return 0;

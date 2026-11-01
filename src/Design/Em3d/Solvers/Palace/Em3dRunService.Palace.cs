@@ -226,7 +226,13 @@ public static partial class Em3dRunService
 
         // ── Gmsh, then the entity check ───────────────────────────────────────────────────────
         PalaceStep meshed;
-        try { meshed = PalaceRun.Mesh(runDir, lowering, plan.Gmsh.Path, control, ct, limits, physical); }
+        // brief-emb-2 R-emb2-1 — a script that curves its elements gets a straight-sided twin, made only if the cap is reached.
+        GmshLowering Straight() => GmshGeoWriter.Write(problem, settings with { StraightSided = true });
+        try
+        {
+            meshed = PalaceRun.Mesh(runDir, lowering, plan.Gmsh.Path, control, ct, limits, physical,
+                                    GmshGeoWriter.Curves(lowering) ? Straight : null, settings.MeshCurvingMinutes);
+        }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             return Failed($"the mesh could not be staged in '{runDir}' ({e.Message}).");
@@ -240,6 +246,13 @@ public static partial class Em3dRunService
         log.Notes.Add(meshed.Reused
             ? $"The geometry script is unchanged since the last run, so its mesh was reused ({runDir})."
             : $"Meshed with Gmsh in {runDir}.");
+        if (meshed.Note is { } curvingNote) log.Notes.Add(curvingNote);
+
+        // brief-emb-2 R-emb2-4 — the mesh itself, before Palace: a zero-volume or inverted element, or a surface triangle that is
+        // no element's face, is refused naming where it is, instead of a solver abort that names nothing.
+        if (Em3dMeshCheck.Check(Path.Combine(runDir, GmshGeoWriter.MeshFile), lowering.Groups) is { Refusal: { } badMesh })
+            return Leg.Failed(Me, EmRunStatus.Refused, EmDiagnostics.Forwarded(Em3dMeshCheck.Source,
+                badMesh + $" The mesh is {Path.Combine(runDir, GmshGeoWriter.MeshFile)}."));
 
         // brief-em3d-21 R-em3d21-2 — the mesh's size is known now, and on a problem whose mesh is mostly
         // refinement (a bond wire) it is the first figure that can say the run will not fit.
@@ -260,6 +273,11 @@ public static partial class Em3dRunService
         if (meshed.Tetrahedra is { } meshTets && PalaceFieldFiles.EstimateNote(problem, settings, meshTets, runDir) is { } fieldsNote)
             log.Notes.Add(fieldsNote);
         TakeIterativeIfChosen();
+        // EMB-4 R-emb4-1 — Gmsh's count against the estimate made before meshing, and the memory at Gmsh's count for the
+        // linear solver this run actually uses (after the question's answer, which can swap direct for iterative).
+        if (meshed.Tetrahedra is { } made && MeshedAgainstEstimate(made, EstimatePalace(problem, settings), settings,
+                                                                   problem.IsStatic, cpu ? processes : null) is { } counted)
+            log.Notes.Add(counted);
         if (processNote is not null) log.Notes.Add(processNote);
         var tracker = new PalaceStageTracker(settings.AdaptiveMaxIterations, settings.SweepAdaptiveTol, control,
                                              electrostatic: problem.Type == Em3dProblemType.Electrostatic);
@@ -1069,6 +1087,33 @@ public static partial class Em3dRunService
         return Em3dMemoryVerdict.Evaluate(e, physicalBytes, [.. remedies.OrderBy(r => r.EstimateBytes)],
             basis: $"Gmsh made {tetrahedra.ToString("N0", CultureInfo.InvariantCulture)} tetrahedra.", scope: scope)
             with { AskFirst = AskFirst(e, iterative, physicalBytes) };
+    }
+
+    /// <summary>
+    /// EMB-4 R-emb4-1 — once Gmsh has meshed: its count against the estimate <c>explain</c> printed before meshing, and
+    /// Palace's memory at Gmsh's count for the linear solver <paramref name="settings"/> names (the one the run uses), on
+    /// <paramref name="processes"/> MPI processes (null: the count the figures were measured on). Null at an element order
+    /// or a static order with no measured memory figure.
+    /// </summary>
+    public static string? MeshedAgainstEstimate(long tetrahedra, Em3dPalaceEstimate? before, PalaceSettings settings,
+                                                bool isStatic = false, int? processes = null)
+    {
+        if (settings.ElementOrder is not (1 or 2)) return null;
+        long? bytes = isStatic
+            ? Em3dSizeEstimate.PalaceStaticMemoryBytesForMesh(tetrahedra, settings.ElementOrder, settings.AdaptiveMaxIterations)
+            : Em3dSizeEstimate.PalaceMemoryBytesForMesh(tetrahedra, settings.ElementOrder, settings.AdaptiveMaxIterations,
+                                                        settings.LinearSolver == PalaceLinearSolver.Direct);
+        if (Scaled(bytes, processes) is not { } b) return null;
+        var c = CultureInfo.InvariantCulture;
+        string against = before is { Tetrahedra: > 0 } e
+            ? $" against the {e.Tetrahedra.ToString("N0", c)} estimated before meshing " +
+              $"({((double)tetrahedra / e.Tetrahedra).ToString("0.0", c)}×)"
+            : "";
+        string solver = isStatic ? "" : settings.LinearSolver == PalaceLinearSolver.Direct
+            ? " on the direct linear solver" : " on the iterative linear solver";
+        return $"Gmsh made {tetrahedra.ToString("N0", c)} tetrahedra{against}; at that count Palace needs about " +
+               $"{MachineMemory.Format(b)}{solver}" +
+               (settings.AdaptiveMaxIterations > 0 ? " with refinement passes allowed" : "") + ".";
     }
 
     /// <summary>The direct linear solver's way out: the iterative one, at its own estimate, when the setup asks for direct.

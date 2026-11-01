@@ -85,10 +85,7 @@ public static class PlanarMemoryCheck
         // the unknown count the machine's memory sizes.
         if (size.DenseResidentBytes is not { } e || physicalBytes <= 0)
             return size.PastMachineCeiling && physicalBytes > 0
-                ? new(Em3dMemoryLevel.Severe, null, physicalBytes,
-                      $"This run's {size.Unknowns:N0} unknowns are past the {size.CeilingUnknowns:N0} the accelerated " +
-                      $"solve is judged against in {owner} {MachineMemory.Format(physicalBytes)}. It may run out of " +
-                      "memory or take far longer than a mesh inside it.")
+                ? new(Em3dMemoryLevel.Severe, null, physicalBytes, AcceleratedPastCeiling(size, owner, physicalBytes))
                 : new(Em3dMemoryLevel.Fits, size.DenseResidentBytes, physicalBytes, null);
         double share = (double)e / physicalBytes;
         if (share <= WarnFraction && !size.PastMachineCeiling) return new(Em3dMemoryLevel.Fits, e, physicalBytes, null);
@@ -106,6 +103,29 @@ public static class PlanarMemoryCheck
                     : "A run this size may slow the machine or swap. ") +
             "The accelerated solve (Solver options) needs far less.";
         return new(severe ? Em3dMemoryLevel.Severe : Em3dMemoryLevel.Warning, e, physicalBytes, text);
+    }
+
+    /// <summary>
+    /// The sentence for an accelerated run past the count the machine's memory sizes. EMB-4: a multi-level or via mesh is
+    /// judged on the DENSE ceiling (<see cref="PlanarRunSize.DenseCeiling"/>), so the sentence says that rather than
+    /// calling it the accelerated solve's, and says what the accelerator holds (R-emb4-2); a ceiling of 0 — the mesh's
+    /// cores alone past the limit — is said in words (R-emb4-3), never as "past the 0".
+    /// </summary>
+    internal static string AcceleratedPastCeiling(PlanarRunSize size, string owner, long physicalBytes)
+    {
+        string machine = $"{owner} {MachineMemory.Format(physicalBytes)}";
+        string past = size.CeilingUnknowns > 0
+            ? $"past the {size.CeilingUnknowns:N0} {(size.DenseCeiling ? "the dense ceiling allows" : "the accelerated solve is judged against")} in {machine}"
+            : $"judged against {machine}: {SurfaceMesher.CoresAlone(size.CoreBytes, physicalBytes)}";
+        string dense = size.DenseCeiling
+            ? " A mesh with more than one metal level or a via is judged on the dense ceiling even when the accelerated " +
+              "solve is on" +
+              (size.AcceleratedResidentBytes is { } a
+                  ? $"; the accelerated solve this run uses holds about {MachineMemory.Format(a)}, estimated."
+                  : ".")
+            : "";
+        return $"This run's {size.Unknowns:N0} unknowns are {past}.{dense} It may run out of memory or take far longer " +
+               "than a mesh inside it.";
     }
 
     /// <summary>

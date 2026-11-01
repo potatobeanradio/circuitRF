@@ -218,14 +218,20 @@ public sealed class Em3dGeneratorTests
     [Fact]
     public void Gate3_CaseB_APlatedViaIsTubePlusFill_AndTheGroundPlaneKeepsItsAntipad()
     {
+        // brief-emb-2 R-emb2-2 — an EM problem builds every via solid; the tube is what the technology's wall gives a
+        // lowering that keeps it (a thermal problem's, a picture with no setup's), which is what is checked here.
         var (setup, source) = CaseB(plated: true);
         var result = Em3dGenerator.Generate(setup, source, source.Technology!);
         Assert.True(result.Ok, result.Refusal);
-        var p = result.Problem!;
+        Assert.DoesNotContain(result.Problem!.Solids, s => s.Name == "via/1/fill");
+        var walled = Em3dLayoutSolids.From(source, source.Technology!, null,
+                                           new Em3dLayoutSolidsOptions(10e9, EmSetup.DefaultOperatingTempC, Instance: false));
+        Assert.True(walled.Ok, walled.Refusal);
+        var p = result.Problem;
         Assert.Empty(p.Validate());
 
-        var plating = p.Solids.Single(s => s.Name == "via/1");
-        var fill    = p.Solids.Single(s => s.Name == "via/1/fill");
+        var plating = walled.Solids.Single(s => s.Name == "via/1");
+        var fill    = walled.Solids.Single(s => s.Name == "via/1/fill");
         var barrel  = Assert.IsType<Em3dCylinder>(plating.Primitive);
         var bore    = Assert.IsType<Em3dCylinder>(fill.Primitive);
         Assert.Equal(Em3dRole.Conductor, plating.Role);
@@ -235,8 +241,8 @@ public sealed class Em3dGeneratorTests
         Assert.Equal(0.0, barrel.AxisStart.Z, 15);              // bottom copper's bottom …
         Assert.Equal(505 * Um, barrel.AxisEnd.Z, 15);           // … to top copper's top
         Assert.Equal(plating.Order + 1, fill.Order);            // the fill wins: §1d subtracts
-        Assert.True(plating.Order > p.Solids.Where(s => !s.Name.StartsWith("via/", StringComparison.Ordinal))
-                                             .Max(s => s.Order));
+        Assert.True(plating.Order > walled.Solids.Where(s => !s.Name.StartsWith("via/", StringComparison.Ordinal))
+                                                  .Max(s => s.Order));
 
         var plane = p.Solids.Single(s => s.Name == "Ground Plane/1");
         var slab  = Assert.IsType<Em3dExtrudedPolygon>(plane.Primitive);
@@ -424,7 +430,11 @@ public sealed class Em3dGeneratorTests
 
         var r = Em3dGenerator.Generate(setup, source, source.Technology!);
         Assert.True(r.Ok, r.Refusal);
-        var p = r.Problem!;
+        // brief-emb-2 R-emb2-2 — an EM problem's barrel is solid; the core is the walled lowering's (a thermal problem's).
+        Assert.DoesNotContain(r.Problem!.Solids, sd => sd.Name == "via/1/fill");
+        var walled = Em3dLayoutSolids.From(source, source.Technology!, null,
+                                           new Em3dLayoutSolidsOptions(10e9, EmSetup.DefaultOperatingTempC, Instance: false));
+        var p = r.Problem with { Solids = walled.Solids };
         Assert.Equal(152.4e-6, Assert.IsType<Em3dCylinder>(p.Solids.Single(sd => sd.Name == "via/1").Primitive).Radius, 1e-12);
         Assert.Equal(Em3dRole.Air, p.Solids.Single(sd => sd.Name == "via/1/fill").Role);
         var bores = CircuitRF.Render.Scene3D.Scene3DBores.Of(p)!;

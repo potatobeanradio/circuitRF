@@ -94,7 +94,7 @@ public static class TuningDiagnostics
 
     public static Diagnostic TimeLimitInvalid(string limit) => Diagnostic.Create(
         "tuning.optimize.timelimit", DiagnosticSeverity.Error,
-        "optimize: timelimit={limit} is not a duration; write a number and s, ms, min or h.", ("limit", limit));
+        "optimize: timelimit={limit} is not a duration; write " + TuningValidator.TimeLimitSpelling + ".", ("limit", limit));
 
     // ── Vendor parts (brief vendorlib-4) ────────────────────────────────────
 

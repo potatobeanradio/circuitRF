@@ -363,6 +363,9 @@ public sealed partial class C3dEditorViewModel
         // brief-em3d-79: and its path and results folder, which a circuit link resolves against
         if (!item.IsExternal)
             vm.ThermalContext = new EmThermalContext(() => Document, () => Resolution, () => Elaboration, () => FilePath, () => ResultsRootProvider?.Invoke());
+        // brief-emb-1 R-emb1-8 — the Component ports list reads this document's placed layouts and builds through the run's own code.
+        if (!item.IsExternal)
+            vm.ComponentPortsContext = new EmComponentPortsContext(() => Document, () => FilePath, _workspaceCws, () => Elaboration);
         if (!item.IsExternal)
         {
             string name = item.Name;

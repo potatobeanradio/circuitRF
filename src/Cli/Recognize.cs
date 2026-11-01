@@ -134,11 +134,11 @@ internal static partial class Recognize
             "                 [--x-axis <px>=<value>,<px>=<value>[@plot]] [--y-axis ...] [--y2-axis ...] [--x-log] [--y-log] [--y2-log]\n" +
             "                 [--trace <T3|#rrggbb|dashed>[@plot]=S21:db[,axis=left|right]] [--smith-z0 50Ohm] [--freq <trace>=<start>..<stop>]\n" +
             "                 [--phase S21=min|zero|delay:<t>] [--fill S12=S21,S22=zero] [--grid <start>..<stop>/<n>[log]]\n" +
-            "                 [--prefer S11=chart|rect|T3] [--format db|ma|ri] [--ports n]\n" +
+            "                 [--prefer S11=chart|rect|T3] [--format db|ma|ri] [--ports n] [--all-traces]\n" +
             "                 [--fit <T3|#rrggbb|dashed|all>[@plot]=linear|exp|poly[:n]|spline[:rms]|none] [--probe 2.4GHz]\n" +
             "    by hand:     --manual-box <x0px,y0px,x1px,y1px>[@deg] --x-range 100MHz..10GHz[:log] --y-range -40..0[:log]\n" +
             "                 [--y2-range -180..180[:log]] [--curve \"<name>=<px>,<py>;<px>,<py>;…[,axis=right][,is=S21:db]\"]\n" +
-            "                 [--follow <name>=<px>,<py>] [--sample 101 | --sample-step 50MHz] [--method linear|smooth]\n" +
+            "                 [--follow <name>=<px>,<py>[,axis=right][,is=S11:db]] [--sample 101 | --sample-step 50MHz] [--method linear|smooth]\n" +
             "  Writes nothing unless -o, --into, --parts-out or --overlay is given. Layout coordinates carry a unit\n" +
             "  (um, mm, mil); picture coordinates are pixels and say so (px).");
         return 1;

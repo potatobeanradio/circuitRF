@@ -167,7 +167,8 @@ public static class TouchstoneAssembly
             {
                 string axis = r.X is null ? "x" : RectAxes.Name(r.AxisNamed(traces.First(t => t.Plot == p.Number && r.AxisOn(t.Axis) is null).Axis));
                 return Refuse("axis", $"plot {p.Number}'s {axis} axis is not calibrated: fewer than two of its tick labels were read",
-                              $"--{axis}-axis", $"the {axis} axis of plot {p.Number}: two clicks and two values");
+                              $"--{axis}-axis (or read the plot by hand: --manual-box with --x-range and --y-range)",
+                              $"the {axis} axis of plot {p.Number}: two clicks and two values");
             }
             if (p.Rect is { XIsFrequency: false } nf)
                 return Refuse("axis", $"plot {p.Number}'s x axis is not frequency ({nf.XTitle}): it digitises (CSV) but makes no Touchstone",

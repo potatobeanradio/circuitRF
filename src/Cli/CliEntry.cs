@@ -59,14 +59,19 @@ public static class CliEntry
     /// <summary>This invocation's <c>--kits</c> folders, as given. Read by <c>serve --print-config</c>,
     /// which has to write them into the configuration it prints and never sees them as arguments,
     /// because they are taken before dispatch.</summary>
-    internal static IReadOnlyList<string> KitFolders { get; private set; } = [];
+    internal static IReadOnlyList<string> KitFolders { get => _kitFolders.Value ?? []; private set => _kitFolders.Value = value; }
+
+    /// <summary>EMB-5 R-emb5-1 — this invocation's, per async flow: <c>serve</c> runs read-only calls at once, and one
+    /// call's --kits or --workspace must never be read by another's verb.</summary>
+    private static readonly AsyncLocal<IReadOnlyList<string>?> _kitFolders = new();
+    private static readonly AsyncLocal<string?> _hostWorkspace = new();
 
     /// <summary>
     /// This invocation's <c>--workspace</c>, as a workspace ROOT: the workspace a LOOSE schematic is
     /// run from, as a window's workspace is in the GUI (<c>SchematicEditModel.HostWorkspaceRoot</c>).
     /// Null without the flag. Reset on every Run, so a <c>serve</c> call never inherits another's.
     /// </summary>
-    internal static string? HostWorkspace { get; private set; }
+    internal static string? HostWorkspace { get => _hostWorkspace.Value; private set => _hostWorkspace.Value = value; }
 
     /// <summary>The <c>--kits</c> folder sets already given a resolver. See Run.</summary>
     private static readonly HashSet<string> _kitsAdded = [];
@@ -130,7 +135,10 @@ if (args.Length == 0)
 
 // Added ONCE per folder set. ExternalDeviceRegistry has no remove, so a server calling Run
 // repeatedly with the same --kits would stack an identical resolver per call.
-if (kitFolders.Count > 0 && _kitsAdded.Add(string.Join('\0', kitFolders)))
+// Locked: `serve` runs calls at once (EMB-5 R-emb5-1), and a HashSet written by two of them can corrupt itself.
+bool kitsNew;
+lock (_kitsAdded) kitsNew = kitFolders.Count > 0 && _kitsAdded.Add(string.Join('\0', kitFolders));
+if (kitsNew)
     ExternalDeviceRegistry.AddResolver(new DeviceWorkerProviderResolver(kitFolders));
 
 // A worker's own log, when CRF_WORKER_LOG asks for it. What a worker MEASURES — which nodes are
@@ -141,9 +149,10 @@ if (kitFolders.Count > 0 && _kitsAdded.Add(string.Join('\0', kitFolders)))
 //
 // Hooked once: this is an EVENT, and a second Run in the same process would otherwise print every
 // worker line twice — a duplicate that reads as the worker having said it twice.
-if (!_workerLogHooked)
+bool hookNow;
+lock (_kitsAdded) { hookNow = !_workerLogHooked; _workerLogHooked = true; }
+if (hookNow)
 {
-    _workerLogHooked = true;
     ProcessDeviceWorkerTransport.Logged += log => Console.Error.WriteLine(
         string.IsNullOrWhiteSpace(log.Provider) ? $"worker: {log.Line}" : $"worker '{log.Provider}': {log.Line}");
 }
@@ -494,7 +503,8 @@ static int RunSparam(string[] args)
         JsonRun.AddOutput("touchstone", outPath);
         return 0;
     }
-    catch (Exception ex)
+    // EMB-5 R-emb5-3 — a run stopped by its host is not a failed run: the cancellation goes to the host, which answers 130.
+    catch (Exception ex) when (ex is not OperationCanceledException)
     {
         return JsonRun.Fail(CliDiagnostics.RunFailed(ex.Message));
     }
@@ -655,7 +665,7 @@ static int RunDc(string[] args)
 
         return result.Converged ? 0 : 2;
     }
-    catch (Exception ex) { return JsonRun.Fail(CliDiagnostics.RunFailed(ex.Message)); }
+    catch (Exception ex) when (ex is not OperationCanceledException) { return JsonRun.Fail(CliDiagnostics.RunFailed(ex.Message)); }
 }
 
 /// <summary>
@@ -904,7 +914,7 @@ static int RunHb(string[] args)
 
         return Converged(ds) ? 0 : 2;
     }
-    catch (Exception ex) { return JsonRun.Fail(CliDiagnostics.RunFailed(ex.Message)); }
+    catch (Exception ex) when (ex is not OperationCanceledException) { return JsonRun.Fail(CliDiagnostics.RunFailed(ex.Message)); }
 }
 
 // ── Loadpull / loadpull-pursuit ───────────────────────────────────────────────
@@ -1150,7 +1160,7 @@ static int RunLoadpull(string[] args, bool pursuit)
 
         return LoadpullExitCode(ds);
     }
-    catch (Exception ex) { return JsonRun.Fail(CliDiagnostics.RunFailed(ex.Message)); }
+    catch (Exception ex) when (ex is not OperationCanceledException) { return JsonRun.Fail(CliDiagnostics.RunFailed(ex.Message)); }
 }
 
 /// <summary>
@@ -1553,6 +1563,12 @@ static int RunEm(string[] args)
     var emSets = new List<(string Name, string Expr)>();
     // AA-1 — `em --component "SPIRAL N=3 W=10 um"`: one built-in component's drawn part, extracted.
     string? component = null, componentFreq = null;
+    // EMB-5 R-emb5-2 — `em --dry-run`: what the run would cost and every refusal check would raise, meshing nothing a run
+    // would not mesh before its first point. The device and limit go to explain as typed.
+    bool dryRun = false;
+    string? deviceText = null, memoryLimitText = null;
+    // brief-emb-1 R-emb1-8 — `em x.c3d --component-ports "C1,C2"|"*"`: component ports added to the setup for this run only.
+    string? componentPorts = null;
 
     for (int i = 0; i < args.Length; i++)
     {
@@ -1560,6 +1576,9 @@ static int RunEm(string[] args)
         {
             case "--component" when i + 1 < args.Length:
                 component = args[++i];
+                break;
+            case "--component-ports" when i + 1 < args.Length:
+                componentPorts = args[++i];
                 break;
             case "--freq" when i + 1 < args.Length:
                 componentFreq = args[++i];
@@ -1581,9 +1600,13 @@ static int RunEm(string[] args)
             case "--workspace" when i + 1 < args.Length:
                 workspace = args[++i];
                 break;
+            case "--dry-run":
+                dryRun = true;
+                break;
             case "--device" when i + 1 < args.Length:
             {
                 string deviceName = args[++i];
+                deviceText = deviceName;
                 if (CircuitRF.Design.Em3d.EmergeDevices.Parse(deviceName) is not { } parsed)
                     return JsonRun.Fail(CliDiagnostics.EmUnknownDevice(deviceName));
                 // `auto` is the CPU for Palace, whose own default it is; EMerge's Automatic chooses by the problem.
@@ -1594,6 +1617,7 @@ static int RunEm(string[] args)
             case "--memory-limit" when i + 1 < args.Length:
             {
                 string text = args[++i];
+                memoryLimitText = text;
                 if (!double.TryParse(text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double gb))
                     return JsonRun.Fail(CliDiagnostics.EmMemoryLimit($"--memory-limit takes a number of GB, not '{text}'."));
                 if (CircuitRF.Design.Em3d.Em3dMemoryLimit.Refusal(gb, CircuitRF.Design.Em3d.MachineMemory.PhysicalBytes) is { } badLimit)
@@ -1633,6 +1657,17 @@ static int RunEm(string[] args)
         }
     }
 
+    if (dryRun)
+    {
+        if (component is not null) return JsonRun.Fail(CliDiagnostics.EmDryRunNeedsSetup("--component"));
+        if (bandsName is not null) return JsonRun.Fail(CliDiagnostics.EmDryRunNeedsSetup("--bands"));
+        // explain sizes the setup's own Solver3D, and the estimate must be explain's numbers, not a second sizing.
+        if (solverName is not null) return JsonRun.Fail(CliDiagnostics.EmDryRunNeedsSetup("--solver"));
+        if (input is null) return JsonRun.Fail(CliDiagnostics.InputRequired("em", ".cem"));
+        if (!File.Exists(input)) { JsonRun.InputPath = input; return JsonRun.Fail(CliDiagnostics.FileNotFound(input)); }
+        return EmDryRun.Run(input, setupName, deviceText, memoryLimitText);
+    }
+
     // The scratch folder Settings ▸ Solvers names, read now so a change there reaches the next run (an MCP server runs many
     // in one process), and said: on stdout below and in --json's scratch block, refused run or not, so a caller can tell
     // which disk a run filled.
@@ -1658,7 +1693,7 @@ static int RunEm(string[] args)
     if (input is null)
     {
         int code = JsonRun.Fail(CliDiagnostics.InputRequired("em", ".cem"));
-        Console.Error.WriteLine("Usage: circuitrf em <setup.cem | view.c3d> [--setup <name> | --bands <sweep>] [-o out.sNp] [--workspace <file.cws>] [--solver " + string.Join("|", CircuitRF.Design.Em3d.Em3dSolvers.CliWords) + "|<solver,solver,...>] [--reference <solver>] [--device auto|cpu|gpu] [--memory-limit <GB>] [--force] [--set var=expr]");
+        Console.Error.WriteLine("Usage: circuitrf em <setup.cem | view.c3d> [--setup <name> | --bands <sweep>] [--component-ports \"C1,C2\"|\"*\"] [--dry-run] [-o out.sNp] [--workspace <file.cws>] [--solver " + string.Join("|", CircuitRF.Design.Em3d.Em3dSolvers.CliWords) + "|<solver,solver,...>] [--reference <solver>] [--device auto|cpu|gpu] [--memory-limit <GB>] [--force] [--set var=expr]");
         Console.Error.WriteLine("       circuitrf em [<workspace dir | .cws | .ctech>] --component \"SPIRAL N=3 W=10 um ...\" -o out.sNp [--freq start:stop:step]");
         return code;
     }
@@ -1737,6 +1772,17 @@ static int RunEm(string[] args)
     if (solver is not null && !setup.Is3D)
         return JsonRun.Fail(CliDiagnostics.EmSolverOnPlanar(solverName!, Path.GetFileName(cemPath)));
     if (solver is { } chosen) setup.Solver3D = chosen;
+    // brief-emb-1 R-emb1-8 — the setup's component ports for this run, in memory only: nothing is written back.
+    if (componentPorts is not null)
+    {
+        var entries = CircuitRF.Design.ThreeD.C3dComponentPorts.ParseList(componentPorts);
+        if (entries.Count == 0)
+            return JsonRun.Fail(CliDiagnostics.EmComponentPorts("--component-ports takes reference designators, \"C1,C2,L2\", or \"*\" for every placed two-terminal part."));
+        if (!isC3d && !CircuitRF.Design.ThreeD.C3dSetups.IsThreeDView(EmSetupResolver.ResolveLayoutPath(cemPath, setup.LayoutRef, WorkspaceRootFinder.FindAncestorCws(Path.GetDirectoryName(cemPath)))))
+            return JsonRun.Fail(CliDiagnostics.EmComponentPorts(CircuitRF.Design.Layout.Em3d.Em3dGenerator.ComponentPortsOnLayoutRefusal));
+        setup.ComponentPorts = entries;
+        foreach (var band in bandSetups) band.ComponentPorts = [.. entries];
+    }
     if (device == CircuitRF.Design.Em3d.PalaceDevice.Gpu &&
         (setup.IsThermal || !(CircuitRF.Design.Em3d.Em3dSolvers.Any(setup.Solver3D, c => c.Gpu) ||
                                 CircuitRF.Design.Em3d.Em3dSolvers.Of(setup.Solver3D).Any(d => d.Id == CircuitRF.Design.Em3d.EmergeSolver.Id))))
@@ -1836,7 +1882,7 @@ static int RunEm(string[] args)
                                                         RunHost.Cancellation, EmProgressToStderr(), confirmMemory: force ? _ => true : null,
                                                         device: device, memoryCeilingBytes: memoryLimit, emergeDevice: emergeDevice);
             }
-            catch (Exception ex) { return JsonRun.Fail(CliDiagnostics.RunFailed(ex.Message)); }
+            catch (Exception ex) when (ex is not OperationCanceledException) { return JsonRun.Fail(CliDiagnostics.RunFailed(ex.Message)); }
             if (ReportEmRun(bandResult, bandRun, cemPath) is var code and not 0) return code;
         }
         foreach (string line in CircuitRF.Design.ThreeD.C3dBandSweeps.TableText(
@@ -1855,7 +1901,8 @@ static int RunEm(string[] args)
             : EmRunService.Run(setup, resolution.Source, resultsRoot, RunHost.Cancellation, EmProgressToStderr(),
                                confirmMemory: force ? _ => true : null, device: device, memoryCeilingBytes: memoryLimit, emergeDevice: emergeDevice);
     }
-    catch (Exception ex)
+    // EMB-5 R-emb5-3 — a run stopped by its host is not a failed run: the cancellation goes to the host, which answers 130.
+    catch (Exception ex) when (ex is not OperationCanceledException)
     {
         return JsonRun.Fail(CliDiagnostics.RunFailed(ex.Message));
     }
@@ -1966,6 +2013,20 @@ static int ReportEmRun(EmRunResult result, EmSetup setup, string cemPath)
         { Console.Error.WriteLine($"warning: {made.Sentence}"); JsonRun.Note(CliDiagnostics.EmRunWarning(made.Sentence)); }
         else
         { Console.Error.WriteLine($"note: {made.Sentence}");    JsonRun.Note(CliDiagnostics.EmRunNote(made.Sentence)); }
+    }
+
+    // brief-emb-1 R-emb1-7 — the co-simulation netlist of a run with component ports, written by the run service.
+    if (result.CoSim is { } cosim)
+    {
+        if (cosim.Outcome is EmSnpSchematicOutcome.Created && cosim.Path is { } cosimPath)
+        {
+            Console.WriteLine($"{cosim.Sentence} ({cosimPath})");
+            JsonRun.AddOutput("cosim", cosimPath);
+        }
+        else if (cosim.Outcome == EmSnpSchematicOutcome.NotCreated)
+        { Console.Error.WriteLine($"warning: {cosim.Sentence}"); JsonRun.Note(CliDiagnostics.EmRunWarning(cosim.Sentence)); }
+        else
+        { Console.Error.WriteLine($"note: {cosim.Sentence}");    JsonRun.Note(CliDiagnostics.EmRunNote(cosim.Sentence)); }
     }
 
     return 0;
@@ -2152,7 +2213,7 @@ static int RunElab(string[] args)
         }
         return 0;
     }
-    catch (Exception ex) { return JsonRun.Fail(CliDiagnostics.RunFailed(ex.Message)); }
+    catch (Exception ex) when (ex is not OperationCanceledException) { return JsonRun.Fail(CliDiagnostics.RunFailed(ex.Message)); }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

@@ -63,6 +63,7 @@ Fourteen verbs run no analysis, so none of §3-§6 applies to them and §7's exi
 | `convert` | any interchange format; a picture of a layout (§27); a STEP file; a `.c3d` or a cell folder (to STEP); a `.c3d` (to glTF) | one import, one export | the target format; documented in the repo-root `CLAUDE.md`. **A `clay` target is a DIRECTORY**; a STEP source's one target is a new `.c3d`, and a STEP target takes a `.c3d`, a `.clay`, a cell folder or any interchange source; a `.glb` target takes a `.c3d` only, and glTF is never a source — see below |
 | `new workspace` | a directory | `WorkspaceCreate.Create` | a `.cws` and, unless `--tech none`, a copied `.ctech` |
 | `new cell` | a workspace + a name | `CellCreate.Create` | a cell folder and one empty-but-valid file per `--views` |
+| `new view3d` | a cell folder + `--from-layout` [`--name`] | `C3dHierarchy.NewFromLayout` + `CellCreate.WriteThreeDView` | a `.c3d` placing the cell's layout as an instance with View Layout, its 3D setups embedded and its port labels as ports — Design ▸ New 3D View from Layout (brief-emb-1) |
 | `import part` | a component file or folder | `ComponentRead` + `ComponentImport.Import` | a cell folder holding the land patterns and the symbol |
 | `import schematic` | a schematic design file (`.kicad_sch`, EDIF 2.0.0, a binary `.DSN`) + `--into` | `SchematicImport.Read` + `SchematicImport.Import` | a cell folder with its schematic, and a `<stem>_parts/` folder of symbol cells beside it — §30 |
 | `import pdk` | a kit folder + `--into <workspace>` | `PdkWorkspaceImport.Import` | the `.cws` kit reference, and the kit's parametric-cell declaration when it ships one — §34 |
@@ -842,6 +843,44 @@ unknowns, past the planar kernel's 5,000 ceiling. The edge-mesh-off warning the 
 trade's own statement (Q reads low). Measured numbers: `src/Design/RESOLVED.md` (AA-1). MCP: the `em`
 tool's `component` and `freq` options, with `path` the workspace folder.
 
+### 8.10 `--dry-run` — what a run would cost, before it is started (EMB-5 R-emb5-2)
+
+```
+circuitrf em <setup.cem | view.c3d> --dry-run [--setup <name>] [--device auto|cpu|gpu] [--memory-limit <GB>]
+```
+
+**It is `check` and `explain` of the same file, in one document**, and computes nothing of its own:
+`result.check` carries every refusal `check` would raise and, for a planar setup, the mesh's figures
+(`check`'s `em` block: kernel, unknowns, ceiling and verdict, and since this brief `memoryBytes`,
+`factorSecondsPerPoint`, `points`, `factorSecondsTotal` and `memory` — `fits` or `past-limit`); and
+`result.explain` carries a 3D setup's size rows (Palace's estimate after EMB-4's correction, with its
+sentence about imported outlines when they make it low) and the memory limits. One diagnostic,
+`em.dry-run.estimate`, restates those numbers in a line, which is what the MCP server sends as an `em`
+run's first progress notification (§11.6). The planar factor time is the dense `c·N³` the mesh budget
+quotes, or the accelerated solve's near-field factor; the fill is not in it, and Palace has no time
+estimate to state. It solves nothing and writes nothing; a planar dry run meshes as `check` does.
+`--component`, `--bands` and `--solver` are refused beside it (`cli.em.dry-run-needs-setup`): the first
+two are not one setup file, and `explain` sizes the setup's own solver. MCP: `run analysis=em
+dryRun=true`.
+
+### 8.11 Component ports: `--component-ports` (brief-emb-1)
+
+```
+circuitrf em board.c3d [--setup <name>] --component-ports "C1,C2,L2"|"*"
+circuitrf explain board.c3d --component-ports ["C1,C2"|"*"]
+```
+
+A setup's `ComponentPorts` for one run, in memory only (nothing is written back), as `--solver` is: one lumped gap port
+across each named part's own pads on the 3D view's placed layout, numbered after the drawn ports. `"*"` is every placed
+two-terminal part. A `.cem` on a layout refuses the flag (`em.component-ports.refused`): the ports are built in a 3D view.
+**It owns no construction**: the ports are built and verified by `C3dComponentPorts` inside
+`C3dProblemAssembly.Assemble`, the function the run, `check` and the setup panel's Check all call, so the headless
+verdict is the GUI's. A finished driven run also writes `<setup>_cosim.cnl` in the workspace (reported as the `cosim`
+output), the board's N-port with each part from its port's node to ground. `explain --component-ports` builds them
+without meshing and walks each port (refdes, pads, conductors, gap, width, landings, verdict); with a list it builds that
+list instead of the setup's. MCP: the `run` tool's `componentPorts` (analysis `em`) and the `explain` tool's
+`componentPorts=true`.
+
 ## 9. Adding a verb
 
 1. Add the case to the dispatch switch and a line to `PrintHelp`.
@@ -1175,7 +1214,11 @@ deliberately (§11.3).
   if not, why. Then the keys the schematic's tuning setup names that resolve to nothing. It owns no
   discovery: a schematic's list is `TunableCatalog.Discover` through `DiskCellResolver`, the descent a
   run makes, so the keys are spelled as the netlist spells its cells. On a `.cnl` every global counts as
-  a variable and nothing is read-only, because a netlist has no drawing to push into.
+  a variable and nothing is read-only, because a netlist has no drawing to push into. **An SnP block's
+  offset rows (`SNP3.SdB_i_j`, `SNP3.Sdeg_i_j`, 2·N² of them) are folded to its one summary line**
+  (`folded: true` in `snp`) unless `--snp-entries SNP3,…|all` (MCP `snpEntries`) names the block — a
+  15-port board otherwise listed 450 rows ahead of the parts asked about (EMB-5 R-emb5-9). A `.cnl`'s
+  `SpiceModel` lines offer their vendor parts as `C1.Part` here as a schematic's do (R-emb5-13).
 
 The seven questions are **refused together rather than ordered** (R-rnd3-2) — each asks something
 different, and a precedence nobody stated would be an invention. `--all` is `--cells`' own modifier and
@@ -1433,7 +1476,7 @@ be found by its name.
 | `run` | `sparam` / `dc` / `hb` / `lp` / `lpp` / `em` / `opt` (`analysis=optimize`), selected by an argument — one tool, not seven. `em` takes a `.cem` or a `.c3d`, whose embedded setup `setup` names — every shipped eigenmode example embeds two |
 | `check` | `check` |
 | `explain` | `explain`, including RND-3's `--cells` / `--layers` / `--extents`, `--footprints` and `--tunables` |
-| `create` | `new workspace` / `new cell` |
+| `create` | `new workspace` / `new cell` / `new view3d` (`what=view3d fromLayout=true`) |
 | `import` | `import part` / `import pdk` / `import schematic` / `import voxels` / `import surfaces`, selected by `what` (brief-sar-11, brief-schimp-5, brief-gdf-1): every mode brings something in, so an export still never lands here |
 | `convert` | `convert` — one import and one export between any two formats, so an export is a `convert` |
 | `render` | `render` — **one tool over every document kind**, as the verb is (R-rnd0-4/R-rnd5-2). The kind comes from the path, so there is no selector; making the view type one would advertise three modes where there is one verb |
@@ -1564,6 +1607,13 @@ costs a URI, a title and a size until it is read, where a tool description is a 
 cost. Each entry advertises its `size` in bytes for the reason the CLI's own topic list prints one —
 a list that hides the cost makes the cheap topics and the expensive ones look alike.
 
+**A document format's field tables travel once** (EMB-5 R-emb5-12): `reference <format> --json` returns
+the page with its tables as `topic.text`, and `--tables schema` (MCP `tables`) returns them as
+`reference.schema` beside a text holding the preamble alone — both at once was the whole field list twice.
+The `schematic` page expands every type it names, `src/Core`'s tuning model included (`TunableEntry`,
+`OptimizationGoal`, `StatSpread` …, through `DocumentSchema.Format.Descend`), with a working `Tuning`
+example.
+
 **Both channels return the same bytes**, because both translate to `reference <topic> --json` and
 hand back what came out of `CliEntry.Run`. The `mimeType` is `application/json` rather than
 `text/markdown` for exactly that reason: the payload is the verb's own document with the page inside
@@ -1611,7 +1661,9 @@ place.**
   the one asked for and says nothing about it. Symlinks are resolved on both sides and at **every
   level of the path**, not just its last component — `ResolveLinkTarget` answers about the item it is
   called on, so asking it about `<root>/link/file` reports "not a link" and the escape goes straight
-  through.
+  through. **The refusal also says where the caller CAN write** (EMB-5 R-emb5-5): it names
+  `<root>/.circuitrf-scratch`, created the moment the refusal names it, so an agent with a temp
+  directory of its own has a place for a render or a result that the server will accept.
 - **No shell and no arbitrary process launch.** The device-worker and PCell paths still start their
   own; nothing new becomes launchable because a client asked.
 - **Destructive operations are refusals, not confirmations** — and by omission rather than by a
@@ -1633,13 +1685,42 @@ Claude Code `claude mcp add` line goes to stderr. `--json` beside it is refused
 printed command exactly as a client would, from an unrelated directory, and requires it to answer
 `initialize`.
 
-### 11.6 Progress, cancellation, and one call at a time
+### 11.6 Progress, cancellation, two lanes and jobs
 
-Capability calls are **serialized** — the verbs use process-wide state (`JsonRun`, `Console.Out`), so
-two cannot be in flight together — but **the reader loop never blocks on one**. That split is the
-whole reason it exists: `notifications/cancelled` and `ping` have to be answerable while a run is
-going, and a run that cannot be cancelled is one a client times out on and retries, doubling the cost
-of the run it gave up on.
+**Two lanes** (EMB-5 R-emb5-1). The tools that write nothing a design reads back — `find`, `check`,
+`explain`, `read`, `reference`, `solver`, `render`, `plot` (`ServeJobs.ReadOnlyTools`), and
+`resources/read` — run on a pool of three threads; every other tool keeps the one serial worker
+every call used to share. So a sub-second `check` of a `.cnl` is never queued behind a sixteen-minute
+`check` of a board's `.cem`, or behind a run, while two runs writing the same result files, or two
+meshers each taking most of the machine, still cannot overlap. What made one worker necessary was the
+verbs' process-wide state, and it is per call now: `JsonRun`'s collectors live in a state each call
+gets from `JsonRun.Isolate()` (an `AsyncLocal`, so a verb's own parallel work sees its call's state);
+`RunHost`, `--kits`/`--workspace` and the per-invocation kit grants are `AsyncLocal` too; `Console.Out`
+is silenced once by `serve` and never set again by a call; and the shared symbol caches a check or a
+render fills are concurrent. **The reader loop never blocks on either lane**: `notifications/cancelled`
+and `ping` have to be answerable while a run is going, and a run that cannot be cancelled is one a
+client times out on and retries, doubling the cost of the run it gave up on.
+
+**Jobs.** `run … async=true` (and `check … async=true`) answers at once with a job id on its own lane;
+`job action=status id=…` reports its state, the stage it is in (the same message a progress
+notification carries), the run's own counters, elapsed time and, where the run counts its work, an
+estimate of the time left at the rate so far; `action=cancel` stops it at its next work boundary;
+`action=result` returns **the same result the synchronous call would have returned** — the same
+object, built by the same function and stored rather than sent. `status` with no id lists every job.
+Jobs are the server's state: they last as long as it does and are not persisted. Without `async` a
+call behaves exactly as it always did. `async` is an adapter argument (`ToolSpec.Adapter`), like
+`attachImage`: it has no CLI spelling, because a command line that exits after one call has nothing to
+hold a job in.
+
+**What a progress notification says** (R-emb5-4): the stage, then the stage's own size where it has one
+(`testing 1,240 row(s) against the metal — 310 of 1,240 row(s)`), then its live figure — a solver's
+memory, Gmsh's node count, the near-field factor's columns (EMB-2 R-emb2-6, EMB-4 R-emb4-5) — so an
+agent can see which part is slow and cancel. **An `em` run's first notification is its estimate**
+(R-emb5-2): the server runs `em --dry-run` on the same argument vector first and sends its
+`em.dry-run.estimate` line, so a client that did not ask for one still sees what it committed to. It
+is made only when someone is listening (a progress token, or a job), and it costs what `check` of the
+setup costs — the planar extract and mesh, or the 3D lowering — which a run repeats; a solve is
+minutes against that.
 
 Cancellation and progress both go through **the same `RunControl` the `em` verb already uses**
 (`RunHost`), so cancellation lands at a work boundary and progress counts leaf units exactly as that
@@ -2511,7 +2592,14 @@ circuitrf plot run.npy -o pae.png --trace cube=PAE --trace cube=Pout,axis=right 
 deserializes to — and hands it to `RenderDataDisplay.Draw`, which is the same function §13.7's `.cdd`
 half calls. `--write-cdd` hands that document back, so a caller has a correct starting point to edit
 rather than a blank page, and so the claim is checkable: the gate renders the written display with
-`render` and compares the two pictures byte for byte, in all three formats.
+`render` and compares the two pictures byte for byte, in all three formats. **Every source reference in
+the written `.cdd` is the result's path relative to the `.cdd`'s own folder** (EMB-5 R-emb5-14), and both
+readers resolve a relative source the same way — beside the document first, then the workspace's
+`results/` (`CddSources.LocateFile`; the Data Display's `DataSourceLibraryViewModel.ResolveAbs`, which
+before this looked only in `results/`, so a `.cdd` written into `results/agent/` opened with every plot
+empty and no error). A Touchstone a display holds reaches its source list without a `.cws` `KnownFiles`
+entry. `tools/UiSnapshot`'s `--results` now defaults to the workspace's `results/`, as the application's
+does, rather than to the `.cdd`'s folder, which hid exactly that difference.
 
 **A trace spec is the trace card's own.** `cube=` is parsed by `CubeTraceSpecParser`, which is what
 the spec box on a trace card parses, so `S[:,1,0]`, `Pout` and `mag(V[:,"X1.drain"])` mean here
@@ -2778,7 +2866,15 @@ with no C or L value. `--json` carries it per part as `"tolerance": {"text": "0.
 "part-number"}` — `text` is what `tol=part` resolves to, `kind` is `absolute` or `percent`, `source` is `part-number`
 or `header` — and `"tolerance": null` beside `"toleranceNote": "<reason>"` when it is not known. The index's own count
 (*Tolerance known for N of M parts.*, and one line per file the one-offset guard refused) goes to stderr and into the
-diagnostics as `import.note`, as `import library` prints it.
+diagnostics as `import.note`, as `import library` prints it. `result.find.placedBy` says which documents take the
+parameters (EMB-5 R-emb5-13): a `.csch` component with `Symbol` `"SpiceModel"`, or a `.cnl` line
+`SpiceModel:C1 <net> <net> File="vendorlib://<library>/<file>" Name=<part>`. The `.cnl` line is emitted by
+`NetExtractor.ResolveNetlistSpiceModels` — the schematic's own `EmitSpiceModel`, so the library lookup through the
+`.cws`, the block read and the cells are one path — called from `CnlTechnologyBinding.Bind`, so every reader of a
+`.cnl` (run, `check`, `explain`, the optimizer) takes it; a line that cannot be emitted is a read refusal carrying the
+schematic's sentence. Its top-level parts are offered as `C1.Part`, so `tune C1.Part parts="…"` works from a
+netlist. `import library --result summary` keeps the counts per library and folder and the tolerance note, and
+collapses the per-file tolerance notes to one count (R-emb5-8).
 
 ## 17. `rail` — the whole railRF window, with no display
 
@@ -3565,7 +3661,10 @@ cost and evaluation count exactly.
 
 ### 24.2 Flags override the file for this run only
 
-`--algorithm`, `--max-iter`, `--max-evals`, `--time` (seconds, or a number and `s`/`ms`/`min`/`h`),
+`--algorithm`, `--max-iter`, `--max-evals`, `--time` (seconds, or a number and `s`/`ms`/`min`/`h`, with or
+without a space — `600`, `90s`, `10min`, `10 min` and `1.5h` alike, through `TuningValidator.TimeLimitSeconds`,
+the one reader the `optimize` line's `timelimit=`, `yield center --time` and the MCP `time` share; a refusal
+quotes those spellings, EMB-5 R-emb5-7),
 `--cost lsq|minimax`, `--analyses goals|all`, `--parallel`, `--seed` replace the `optimize` line's keys
 for this run; `--set` overrides a global as every run verb does. `--vars key,key` and `--goals name,name`
 narrow to a subset of the file's opt-enabled entries and enabled goals — a name outside that set is a
@@ -3615,7 +3714,10 @@ writing nothing (§7).
 ### 24.4 Over the protocol
 
 `run analysis=optimize` is the same verb (§11.1): every flag is an argument (`maxIter`, `savePreset`,
-`showIterations` …). It returns the final result only; with `showIterations` it returns `perIteration` too
+`showIterations` …). `result=summary` (`--result summary`) is accepted here and on `montecarlo`, `yield`,
+`corners`, `center` and `doe` (EMB-5 R-emb5-8; `JsonRun`'s `ReportSummaries`): the outcome, the values as text and
+each goal's margin and binding corner, with the per-corner, per-trial, statistics, history and inactive-effect
+records left out and `result.summarized` naming what was. It returns the final result only; with `showIterations` it returns `perIteration` too
 and sends one `notifications/progress` per iteration, carrying the line stderr prints — **a progress
 token alone does not turn them on**, because the default is the result and nothing else. Total is left out, because an Auto run's stages and a stall make the iteration count
 an upper bound rather than a denominator. Cancellation is the existing path: the token reaches
@@ -4022,6 +4124,7 @@ Flags (`@<n>` names a plot; none means plot 1):
 | `--csv out.csv` | the raw digitised traces in each plot's own units — never resampled, and **never waits** |
 | `--keep-sources on`, `off` | the source pictures beside the Touchstone as `<name>.source.png`, `.source-2.png` … (on) |
 | `--overlay out.png` | each picture with what was read drawn over it; picture n's beside it as `out-n.png` |
+| `--all-traces` | list every trace of a reading that made no Touchstone and named no trace. **By default such a reading lists the five longest and `tracesRead`, the count** — a noisy instrument screenshot read as 206 fragments returned ~150,000 characters — and each listed trace's findings with it; `refusal` leads `plots` (EMB-5 R-emb5-9). An uncalibrated axis's refusal names both answers: `--y-axis`, or reading the plot by hand (`--manual-box` with `--x-range` and `--y-range`) |
 
 `-o` must be a Touchstone (`recognize.output.not-touchstone`) whose extension is the port count the traces make
 (`recognize.output.ports` — nothing is written). The file is refused while a trace is unassigned, a chart trace has no
@@ -4072,7 +4175,7 @@ the same `PlotReading.Read` (`PlotReadingOptions.Manual`, `ManualCurves`); there
 | `--x-range <low>..<high>[:log]` | the x values at the box's left and right edges — frequencies with units, or plain numbers for an x that is not frequency |
 | `--y-range`, `--y2-range <low>..<high>[:log]` | the values at the box's bottom and top edges; the second is a right-hand scale (two y scales) |
 | `--curve "<name>=<px>,<py>;…[,axis=left\|right][,is=S21:db]"` | a curve's points in picture pixels (`px` optional — nothing else could be meant). The points **are** the curve; `is=` makes it an S-parameter quantity, otherwise it is data; repeatable |
-| `--follow <name>=<px>,<py>` | one click on a curve: `ManualCurves.Follow` — the existing tracer started from the click, inside the box, matched to the clicked ink's colour — thinned to a fixpoint every 20 px plus every turning point, ahead of any `--curve` points of the same name. A click that follows nothing says so on stderr and adds nothing |
+| `--follow <name>=<px>,<py>[,axis=left\|right][,is=S11:db]` | one click on a curve: `ManualCurves.Follow` — the existing tracer started from the click, inside the box, matched to the clicked ink's colour — thinned to a fixpoint every 20 px plus every turning point, ahead of any `--curve` points of the same name. **Coloured ink within 4 px of the click is preferred to grey or black ink** (a plot's grid and frame), whatever their contrast; a black curve is still followed when nothing coloured is in reach. Each follow is reported as `recognize.plot.followed` (the colour followed, and any grey or black ink passed over with its distance) or `recognize.plot.follow-failed`, which adds nothing. The suffixes are `--curve`'s: `is=` makes the followed curve a quantity a Touchstone takes (EMB-5 R-emb5-10/11); a `--curve` of the same name decides both when it gives them |
 | `--sample 101`, `--sample-step 50MHz` | each curve sampled at this many x values from its first to its last point, or every step |
 | `--method linear`, `smooth` | straight between points (in log coordinates on a log axis), or a monotone cubic (Fritsch–Carlson) that never overshoots between two points. Nothing is extrapolated: grid points beyond a curve's points are dropped and counted in the report |
 

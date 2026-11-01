@@ -46,7 +46,12 @@ internal static class DocumentSchema
     /// <c>.cmodel</c>'s <c>model.json</c> is such a format, and it is served whole as the AUTHORED topic <c>cmodel</c>
     /// (<see cref="CircuitRF.Design.Reference.ReferenceLibrary"/>) rather than from here, because a file a script writes
     /// from scratch needs the whole page — its arrays, its knots, its signs — and not a field table alone.</remarks>
-    internal sealed record Format(string Topic, string Title, string Extension, Type? Root, string Preamble, Type[]? More = null);
+    /// <param name="Descend">Further assemblies whose types the walk expands — for a format whose reader deserialises
+    /// straight into another project's model. A <c>.csch</c>'s tuning block is <c>src/Core</c>'s <c>TuningSetup</c>
+    /// types, and a page that named <c>TunableEntry</c> without expanding it sent an author to the source
+    /// (EMB-5 R-emb5-12).</param>
+    internal sealed record Format(string Topic, string Title, string Extension, Type? Root, string Preamble, Type[]? More = null,
+                                  System.Reflection.Assembly[]? Descend = null);
 
     // ── the formats ──────────────────────────────────────────────────────────
 
@@ -82,7 +87,8 @@ internal static class DocumentSchema
         // offset by trial — the last by measuring rendered pixels — and a wrong key made a
         // component a resistor without a word (SchematicLoadAudit now says so).
         new("schematic", "The .csch schematic format", ".csch",
-            typeof(CircuitRF.Design.Schematic.CschFile), CschPreamble),
+            typeof(CircuitRF.Design.Schematic.CschFile), CschPreamble,
+            Descend: [typeof(CircuitRF.Core.Design.TuningSetup).Assembly]),
         // The Model Composer's document (brief-modelcomposer-13 R-mc13-6). Its field table is the authored file-formats
         // page's own section, served from the embedded page rather than copied, so the reference and the manual cannot
         // disagree, and the walk of its step settings adds every default. The .cmodel it exports is the authored topic
@@ -471,7 +477,7 @@ internal static class DocumentSchema
             analysis SP1 type=sparam start="0.1" startUnit=GHz stop="6" stopUnit=GHz npts=60
             measure S21_dB = dB(SP1.S(2,1))
 
-        Eight things that are not obvious from the field list:
+        Nine things that are not obvious from the field list:
 
           * "Symbol" is the component's type, spelled as a SYMBOL KIND — Resistor, Capacitor, Mlin,
             TermG, Var, Meas — which is not always the .cnl token (TermG and Term both write Port).
@@ -502,6 +508,27 @@ internal static class DocumentSchema
             and Z. Ground is a component too: Symbol "Ground", one pin at (0, 0).
           * A design that belongs to a workspace resolves its technology, and a microstrip or via
             part takes its substrate from it at extraction — `netlist` shows the values it chose.
+          * "Tuning" is the same model as a .cnl's tune, goal and optimize lines (`reference
+            tuning`, `goals`, `optimizers`, `statistics`): Variables are tune lines, Goals goal
+            lines, Optimizer the optimize line. Enums are written by NAME — a goal's Type is Le, Ge,
+            Eq, In or Out against Limit (and UpperLimit for In/Out); a Distribution is Gauss, Unif,
+            LogNorm or Discrete. Every Spread field is a STRING ("3", "2%"), never a number. A vendor
+            part search is a Variables entry on the part's Part key with its query in Parts. This
+            block is a working one — a part search, a toleranced resistor and one goal:
+
+                "Tuning": {
+                  "Variables": [
+                    { "Key": "C1.Part", "Opt": true, "Parts": "0603 C0G 50V" },
+                    { "Key": "R1.R", "Tune": true, "Opt": true, "Min": "10 Ohm", "Max": "200 Ohm",
+                      "Stat": true, "Distribution": "Gauss", "Spread": { "Tol": "2%", "Sigmas": "3" } }
+                  ],
+                  "Goals": [
+                    { "Name": "Match", "Expression": "dB(SP1.S(1,1))", "Analysis": "SP1",
+                      "Range": { "Axis": "freq", "Lo": "1 GHz", "Hi": "2 GHz" },
+                      "Type": "Le", "Limit": "-20" }
+                  ],
+                  "Optimizer": { "Algorithm": "auto" }
+                }
 
         Every field the reader understands follows, with its default.
         """;
@@ -836,7 +863,14 @@ internal static class DocumentSchema
             Pitch with it.
           * Setups hold EM setups in the .cem schema (see the em-setup topic) without LayoutRef, each
             with a unique Name and Solver3D Palace or OpenEms. `em view.c3d` runs the one there is;
-            with several, `--setup <name>`. Its result is named "<file stem> <setup name>". A static
+            with several, `--setup <name>`. Its results go to the workspace's results/ under the key
+            "<file stem> <setup name>.<solver>" (solver palace, openems or emerge, so two solvers'
+            results never collide): a driven setup writes "<file stem> <setup name>.<solver>.s<N>p"
+            and "<file stem> <setup name>.<solver>_em.npy", and keeps its run folder
+            "<file stem> <setup name>.<solver>/"; an electrostatic, magnetostatic or eigenmode setup
+            writes "<file stem> <setup name>.<solver>_es.npy" (_ms, _eig) and keeps its run folder
+            "<file stem> <setup name>.<solver>_es/" (_ms, _eig). `-o` moves the Touchstone only.
+            `run analysis=em` lists every file it wrote in its outputs, the Touchstone first. A static
             setup's Terminals3D name their conductors with Objects (["top"], U1/... allowed) — a drawn
             object carries no net — instead of Net; stating both is refused.
           * A THERMAL setup is an embedded setup with "Problem3D": "Thermal", no Solver3D (stating one
@@ -915,6 +949,15 @@ internal static class DocumentSchema
             lumped port with Terminals. Terminals are never inferred when reading: a wave port with no
             Terminals whose region three or more conductors meet is refused, naming the fix. Model
             applies to the whole port. A .cem cannot state one.
+          * COMPONENT PORTS are not drawn: an embedded setup's "ComponentPorts" (["C1", "L2"], "*" for every
+            placed two-terminal part, or {"Refdes", "Z0", "Reference"} entries) asks for a lumped GAP port
+            across each part's own pads on a placed layout, numbered after the drawn ports. circuitRF builds
+            it on the copper facing the gap (with a landing rectangle where that copper is a cap or an arc,
+            in the solved problem only) and verifies it before meshing; `explain --component-ports` lists
+            them, and a driven run writes "<setup>_cosim.cnl" with each part from its port's node to ground.
+            A gap port, not a pad-to-plane port at each pad: a part between two pad-to-plane ports carries
+            its current down one sheet, along the plane and up the other — a loop that is not on the board —
+            so a hand-drawn pair of them is a different, approximate model of the part.
           * FaceBoundaries put a boundary on a NAMED face of a dielectric or air object:
             {"Object": "block", "Face": "zmax", "Kind": "Pec"}, or Kind "Conductive" with a
             Material. A boundary follows its face through every edit, and a fold hands it to each
@@ -1094,13 +1137,21 @@ internal static class DocumentSchema
 
     /// <summary>The topic's text. Pure — the topic list and the resource listing measure it by
     /// rendering it, exactly as they measure the component catalogue.</summary>
-    public static string Render(Format format)
+    public static string Render(Format format) => Render(format, tables: true);
+
+    /// <summary>The page with its field tables, or without them when they travel as <see cref="Json"/> instead.</summary>
+    public static string Render(Format format, bool tables)
     {
         var sb = new StringBuilder();
         sb.Append(format.Title).Append(" — ").Append(format.Extension).AppendLine();
         sb.AppendLine();
         sb.AppendLine(format.Preamble);
         sb.AppendLine();
+        if (!tables)
+        {
+            sb.AppendLine("The field tables are in reference.schema: one entry per type, each field with its JSON type and default.");
+            return sb.ToString();
+        }
 
         foreach (var (type, fields) in Walk(format))
         {
@@ -1129,7 +1180,7 @@ internal static class DocumentSchema
     private static IReadOnlyList<Block> Walk(Format format)
     {
         if (format.Root is not { } root) return [];
-        var asm     = root.Assembly;
+        var asms    = new HashSet<System.Reflection.Assembly>([root.Assembly, .. format.Descend ?? []]);
         var objects = new List<Block>();
         var enums   = new List<Block>();
         var seen    = new HashSet<Type> { root };
@@ -1162,7 +1213,7 @@ internal static class DocumentSchema
                     if (t.IsEnum) { if (seen.Add(t)) enums.Add(EnumBlock(t)); continue; }
                     if (SpellingsOf(t) is { } spellings) { if (seen.Add(t)) enums.Add(SpelledBlock(t, spellings)); continue; }
                     if (SpelledAs(t) is not null) continue;
-                    if (t.Assembly != asm || !seen.Add(t)) continue;
+                    if (!asms.Contains(t.Assembly) || !seen.Add(t)) continue;
                     queue.Enqueue(t);
                 }
             }

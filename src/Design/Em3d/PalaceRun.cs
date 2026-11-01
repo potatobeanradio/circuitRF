@@ -47,6 +47,10 @@ public sealed record PalaceStep(bool Ok, bool Cancelled, bool Refused, string? M
     /// <summary>A mesh step's tetrahedra, as Gmsh reported creating them — from this run's log, or from
     /// the log the reused mesh was made with. Null when Gmsh printed no count.</summary>
     public long? Tetrahedra { get; init; }
+
+    /// <summary>brief-emb-2 R-emb2-1 — what the run must say about the mesh step: that Gmsh's curving ran past its cap and the
+    /// mesh was made again with straight-sided second-order elements. Null otherwise.</summary>
+    public string? Note { get; init; }
 }
 
 /// <summary>
@@ -152,8 +156,12 @@ public static class PalaceRun
     /// script already has a mesh there (R-em3d7-3c), and checks the entity table against the groups
     /// (R-em3d7-3b) — on a reused mesh too, since the check is the thing that makes a mesh usable.
     /// </summary>
+    /// <param name="straight">brief-emb-2 R-emb2-1 — the same problem lowered with straight-sided second-order elements, for a
+    /// script that curves them: once Gmsh's high-order stage has run longer than <paramref name="curvingMinutes"/>, Gmsh is
+    /// stopped and the mesh made again from this one, and the step's <see cref="PalaceStep.Note"/> says so. Null: no cap.</param>
     public static PalaceStep Mesh(string runDir, GmshLowering lowering, string gmsh, RunControl? control,
-                                  CancellationToken ct, ProcessLimits? limits = null, long physicalBytes = 0)
+                                  CancellationToken ct, ProcessLimits? limits = null, long physicalBytes = 0,
+                                  Func<GmshLowering>? straight = null, double curvingMinutes = CircuitRF.Design.Layout.Em.PalaceSettings.DefaultMeshCurvingMinutes)
     {
         ArgumentNullException.ThrowIfNull(lowering);
         if (!lowering.Ok) return new(false, false, true, lowering.Refusal);
@@ -172,9 +180,18 @@ public static class PalaceRun
         foreach (var kernel in lowering.KernelFiles ?? []) kernel.WriteInto(runDir);
         string hash = Sha256(lowering.Geo!);
 
-        bool reuse = File.Exists(hashPath) && File.Exists(mshPath) && File.Exists(entPath) &&
-                     File.ReadAllText(hashPath).Trim() == hash &&
-                     File.Exists(geoPath) && File.ReadAllText(geoPath) == lowering.Geo;
+        // The script asked for may have been meshed straight-sided after its curving ran past the cap (brief-emb-2): its hash
+        // is then beside the straight script, and that mesh is the one to reuse rather than curving for another five minutes.
+        bool hashed = File.Exists(hashPath) && File.Exists(mshPath) && File.Exists(entPath) &&
+                      File.ReadAllText(hashPath).Trim() == hash && File.Exists(geoPath);
+        string? onDisk = hashed ? File.ReadAllText(geoPath) : null;
+        bool reuse = hashed && onDisk == lowering.Geo;
+        string? note = null;
+        if (hashed && !reuse && straight is not null && GmshGeoWriter.Curves(lowering) && straight() is { Ok: true } s0 && onDisk == s0.Geo)
+        {
+            reuse = true;
+            note = CurvingNote(curvingMinutes, reused: true);
+        }
         if (!reuse)
         {
             foreach (string stale in new[] { hashPath, mshPath, entPath })
@@ -197,9 +214,40 @@ public static class PalaceRun
                 // brief-em3d-21 R-em3d21-1e — Gmsh's own stage lines, not a count of them.
                 gmshLog = new GmshLogProgress(control);
                 gmshLog.Begin();
+                // brief-emb-2 R-emb2-1 — a script that curves its elements is watched: past the cap on its high-order stage
+                // Gmsh is stopped (a cancellation thrown from the tick kills the tree) and the mesh is made straight-sided.
+                bool capped = false;
+                var watch = Watch(limits, gmshLog.Line, physicalBytes, stage);
+                if (straight is not null && GmshGeoWriter.Curves(lowering))
+                {
+                    var watched = gmshLog;
+                    var tick = watch.OnTick;
+                    watch = watch with
+                    {
+                        OnTick = () =>
+                        {
+                            tick?.Invoke();
+                            if (!watched.CurvingPast(curvingMinutes)) return;
+                            capped = true;
+                            throw new OperationCanceledException();
+                        },
+                    };
+                }
                 Interlocked.Increment(ref _gmsh);
-                var run = RunProcess(gmsh, [GmshGeoWriter.GeoFile, "-3", "-o", GmshGeoWriter.MeshFile], stage, logPath,
-                                     Em3dProcessKind.Mesher, env: null, control, ct, Watch(limits, gmshLog.Line, physicalBytes, stage));
+                var run = RunProcess(gmsh, GmshArguments, stage, logPath, Em3dProcessKind.Mesher, env: null, control, ct, watch);
+                if (run.Cancelled && capped && !ct.IsCancellationRequested && straight!() is { Ok: true } flat)
+                {
+                    note = CurvingNote(curvingMinutes, reused: false);
+                    WriteText(geoPath, flat.Geo!);
+                    WriteText(Path.Combine(stage, GmshGeoWriter.GeoFile), flat.Geo!);
+                    foreach (string partial in new[] { GmshGeoWriter.MeshFile, GmshGeoWriter.EntitiesFile })
+                        if (File.Exists(Path.Combine(stage, partial))) File.Delete(Path.Combine(stage, partial));
+                    gmshLog = new GmshLogProgress(control);
+                    gmshLog.Begin();
+                    Interlocked.Increment(ref _gmsh);
+                    run = RunProcess(gmsh, GmshArguments, stage, logPath, Em3dProcessKind.Mesher, env: null, control, ct,
+                                     Watch(limits, gmshLog.Line, physicalBytes, stage));
+                }
                 if (run.Cancelled) return new(false, true, false, null);
                 if (run.Stopped is { } stopped) return new(false, false, false, null) { Stopped = stopped, PeakFootprintBytes = run.PeakFootprint };
                 if (run.StartFailure is { } why)
@@ -239,8 +287,19 @@ public static class PalaceRun
             gmshLog = new GmshLogProgress(null);
             if (File.Exists(logPath)) foreach (string line in File.ReadLines(logPath)) gmshLog.Line(line);
         }
-        return PalaceStep.Done(reuse) with { Tetrahedra = gmshLog?.Tetrahedra };
+        return PalaceStep.Done(reuse) with { Tetrahedra = gmshLog?.Tetrahedra, Note = note };
     }
+
+    /// <summary>brief-emb-2 R-emb2-6 — Gmsh's command line: at verbosity 5, which names every stage as it starts, the
+    /// high-order optimisation and its node count included.</summary>
+    internal static readonly string[] GmshArguments = [GmshGeoWriter.GeoFile, "-3", "-v", "5", "-o", GmshGeoWriter.MeshFile];
+
+    /// <summary>brief-emb-2 R-emb2-1 — what a run says when the curving cap stepped in (or its mesh is reused).</summary>
+    internal static string CurvingNote(double minutes, bool reused)
+        => (reused ? "The reused mesh is the one made when " : "") +
+           $"Gmsh's curving of the second-order elements ran past {minutes.ToString("G4", CultureInfo.InvariantCulture)} min " +
+           "(Palace.MeshCurvingMinutes), so the mesh was made again with straight-sided second-order elements. A curved " +
+           "surface is then faceted at its mesh size; raise MeshCurvingMinutes to let the curving finish.";
 
     // ── Palace ───────────────────────────────────────────────────────────────────────────────
 
@@ -1276,6 +1335,9 @@ public static class PalaceRun
                     if (diskRead.ElapsedMilliseconds >= 1000)
                     {
                         diskRead.Restart();
+                        // brief-emb-2 R-emb2-6 — the log on disk keeps up with the run (once a second), so a long stage can be
+                        // read while it runs rather than only after the program exits.
+                        lock (gate) if (!closed) log.Flush();
                         if (BelowFloor(beforeStart: false) is { } full) return Stopped(full);
                     }
                 }

@@ -31,7 +31,10 @@ internal static class ExplainEm3d
     /// <c>em --memory-limit</c>); null for this machine's memory.</param>
     public static ExplainEm3dJson Build(Em3dSetupSource src, PalaceDevice device = PalaceDevice.Cpu, long? memoryLimitBytes = null)
     {
+        // EMB-5 R-emb5-3 — sizing (an openEMS grid, a SAR plan) is the report's own long step; a cancelled call stops here.
+        if (RunHost.Control is { } control) { control.ThrowIfCancellationRequested(); control.BeginStage("sizing the 3D problem for each solver"); }
         var r = BuildCore(src, device);
+        RunHost.Control?.ThrowIfCancellationRequested();
         if (Device(src.Setup, device, r.Solvers) is { } d) r = r with { Device = d };
         if (src.Generated is { WantsDc: true }) r = r with { DcRow = DcRow() };
         if (!src.Setup.Solver3D.IsNone && !src.Setup.IsThermal)
@@ -411,8 +414,17 @@ internal static class ExplainEm3d
                     (settings.AdaptiveMaxIterations > 0 ? " with refinement passes allowed" : "") +
                     (settings.LinearSolver == PalaceLinearSolver.Direct ? " on the direct linear solver" : "") : "") +
                 ", from each meshed region's volume at its largest element and the refined shell round each " +
-                "conductor, sheet and port. A curved surface's own refinement and Palace's adaptive passes add to " +
-                "it, and the run reports the real counts. No mesher is run to get it.");
+                "conductor, sheet and port" +
+                // EMB-4 R-emb4-1 — and the outlines' edges shorter than the element at metal, each of which Gmsh meshes.
+                (est.OutlineTetrahedra > 0
+                    ? $", {est.OutlineTetrahedra:N0} of the elements for the outlines' edges shorter than the element at metal"
+                    : "") +
+                ". A curved surface's own refinement and Palace's adaptive passes add to " +
+                "it, and the run reports the real counts. No mesher is run to get it." +
+                (est.OutlineDominates
+                    ? " The estimate is low on imported outlines with many short edges, and this one has them: the " +
+                      "count Gmsh reports when the run meshes is the figure to go by."
+                    : ""));
         }
         return setup.Solver3D.Runs(EmergeSolver.Id)
             ? [palace, OpenEmsSize(grid, p?.Ports.Count ?? 0), EmergeSize(p)]

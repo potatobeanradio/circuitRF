@@ -206,19 +206,25 @@ public sealed class PlanarBorderedAimOperator : IPlanarOperator
     /// <param name="set">The kernel set at this frequency, already viewed for these cores
     /// (<c>set.For(cores)</c>) exactly as <see cref="PlanarSystem.BuildMultiLevel"/> takes it.</param>
     /// <param name="levels">The z of every conductor level, and the ground plane's own z.</param>
+    /// <param name="factorProgress">EMB-4 R-emb4-5(b) — the near-field factor's columns done and total, or null.</param>
     public static PlanarBorderedAimOperator Build(PlanarAimGeometry geometry, PlanarKernelSet set,
                                                   PlanarLevels levels, double omega,
-                                                  PlanarFillDiagnostics? diagnostics = null)
+                                                  PlanarFillDiagnostics? diagnostics = null,
+                                                  Action<long, long>? factorProgress = null)
     {
         ArgumentNullException.ThrowIfNull(geometry);
         ArgumentNullException.ThrowIfNull(set);
         ArgumentNullException.ThrowIfNull(levels);
-        return new PlanarBorderedAimOperator(geometry, set, levels, omega, diagnostics);
+        return new PlanarBorderedAimOperator(geometry, set, levels, omega, diagnostics, factorProgress);
     }
 
+    private readonly Action<long, long>? _factorProgress;
+
     private PlanarBorderedAimOperator(PlanarAimGeometry g, PlanarKernelSet set, PlanarLevels levels,
-                                      double omega, PlanarFillDiagnostics? diagnostics)
+                                      double omega, PlanarFillDiagnostics? diagnostics,
+                                      Action<long, long>? factorProgress)
     {
+        _factorProgress = factorProgress;
         var cores = g.Cores;
         var fillSt = cores.Settings;
         _g    = g;
@@ -706,22 +712,9 @@ public sealed class PlanarBorderedAimOperator : IPlanarOperator
     /// <inheritdoc cref="PlanarAimOperator"/>
     private (SparseLU? Lu, long FactorNnz) FactorNear(Complex[] exact)
     {
-        var tri = new CoordinateStorage<Complex>(_nh, _nh, Math.Max(1, _colIdx.Length));
-        for (int i = 0; i < _nh; i++)
-            for (int k = _rowPtr[i]; k < _rowPtr[i + 1]; k++)
-                tri.At(i, _colIdx[k], exact[k]);
-
-        var csc = SparseMatrix.OfIndexed(tri);
-        try
-        {
-            var perm = AMD.Generate(csc, ColumnOrdering.MinimumDegreeAtPlusA);
-            var lu = SparseLU.Create(csc, perm, 1.0);
-            return (lu, lu.NonZerosCount);
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            return (null, 0);
-        }
+        // EMB-4 — one implementation with the single-level operator's, reporting columns done.
+        var (lu, _, factorNnz) = PlanarNearFactor.Factor(_nh, _rowPtr, _colIdx, exact, _factorProgress);
+        return (lu, factorNnz);
     }
 
     /// <summary>

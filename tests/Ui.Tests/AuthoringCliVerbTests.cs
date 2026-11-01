@@ -205,6 +205,48 @@ public sealed class AuthoringCliVerbTests : IDisposable
         Assert.True(File.Exists(Path.Combine(cliWs, "Lid", "3d", "Lid.c3d")));
     }
 
+    /// <summary>
+    /// brief-emb-1 R-emb1-1 — <c>new view3d &lt;cell&gt; --from-layout</c>, byte for byte against
+    /// <see cref="CircuitRF.Design.ThreeD.C3dHierarchy.NewFromLayout"/> written with <see cref="CellCreate.WriteThreeDView"/> —
+    /// the two calls Design ▸ New 3D View from Layout makes. The layout carries a port label, so the document's ports are
+    /// part of what is compared: the layout placed as an instance with View Layout and its port label carried as a port.
+    /// </summary>
+    [Fact]
+    public void NewView3dFromLayout_WritesTheSameBytesAsTheCallTheGuiMakes()
+    {
+        string Make(string parent)
+        {
+            WorkspaceCreate.Create(parent, "Brd", ShippedTechnologies.DefaultId);
+            string ws = Path.Combine(parent, "Brd");
+            CellCreate.Create(ws, "Line", CellViews.Layout);
+            var top = new LayerKey(1, 0);
+            var view = new LayoutView();
+            view.Shapes.Add(new RectShape { Layer = top, X1 = 0, Y1 = 0, X2 = 3_000_000, Y2 = 300_000 });
+            view.Shapes.Add(new LabelShape
+            {
+                Layer = top, PortLayer = top, X = 0, Y = 150_000, Text = "1", Height = 100_000, IsPort = true,
+                PortKind = CircuitRF.Engine.Mom.PlanarPortKind.Edge, PortDirection = LayoutRotation.R0,
+            });
+            CellCreate.WriteLayoutView(Path.Combine(ws, "Line"), "Line", view);
+            return Path.Combine(ws, "Line");
+        }
+        string cliCell = Make(Dir("cli3dl")), guiCell = Make(Dir("gui3dl"));
+
+        var run = RunCli("new", "view3d", cliCell, "--from-layout");
+        Assert.True(run.ExitCode == 0, run.StdErr);
+
+        string guiPath = Path.Combine(CellFolder.SubFolderPath(guiCell, ViewType.ThreeD), "Line" + CircuitRF.Design.ThreeD.C3dPersistence.Extension);
+        var made = CircuitRF.Design.ThreeD.C3dHierarchy.NewFromLayout(guiCell, guiPath, WorkspaceRootFinder.FindAncestorCws(guiCell));
+        CellCreate.WriteThreeDView(guiCell, "Line", made.Document!);
+
+        string cliPath = Path.Combine(CellFolder.SubFolderPath(cliCell, ViewType.ThreeD), "Line" + CircuitRF.Design.ThreeD.C3dPersistence.Extension);
+        Assert.Equal(cliPath, run.StdOut.Trim());
+        AssertSameBytes(guiPath, cliPath);
+        var doc = CircuitRF.Design.ThreeD.C3dPersistence.LoadFromFile(cliPath);
+        Assert.Equal(CircuitRF.Design.ThreeD.C3dInstanceView.Layout, Assert.Single(doc.Instances).View);
+        Assert.Equal(1, Assert.Single(doc.Ports).Number);
+    }
+
     /// <summary>An imported part, byte for byte against <see cref="ComponentImport.Import"/> — the
     /// call the GUI's Import Component makes, with the same null <c>resolveLayerMapping</c> the
     /// headless path uses (R-aut3-11: the dialog's own pre-selected default).</summary>
@@ -245,10 +287,23 @@ public sealed class AuthoringCliVerbTests : IDisposable
     [InlineData("ViewModels/WorkspaceViewModel.cs", "CellCreate.NewThreeDView(")]
     [InlineData("ViewModels/WorkspaceViewModel.cs", "ComponentImport.Import(")]
     [InlineData("ViewModels/WorkspaceViewModel.ReadOnly.cs", "WorkspaceCreate.UnwritableParentRefusal(")]
+    [InlineData("ViewModels/WorkspaceViewModel.ThreeD.cs", "C3dHierarchy.NewFromLayout(")]
     public void TheGuiCallsTheExtractedCapability(string file, string call)
     {
         string code = StripComments(File.ReadAllText(Path.Combine(RepoRoot(), "src", "Ui", file)));
         Assert.Contains(call, code, StringComparison.Ordinal);
+    }
+
+    /// <summary>brief-emb-1 R-emb1-1 — <c>new view3d</c> makes its document through the one function the GUI calls and builds
+    /// none of its own.</summary>
+    [Fact]
+    public void NewView3d_HoldsNoSecondCopyOfTheDocument()
+    {
+        string code = StripComments(File.ReadAllText(Path.Combine(RepoRoot(), "src", "Cli", "Authoring.cs")));
+        Assert.Contains("C3dHierarchy.NewFromLayout(", code, StringComparison.Ordinal);
+        Assert.DoesNotContain("C3dDocument {", code, StringComparison.Ordinal);
+        Assert.DoesNotContain("new C3dInstance", code, StringComparison.Ordinal);
+        Assert.DoesNotContain("new CircuitRF.Design.ThreeD.C3d", code, StringComparison.Ordinal);
     }
 
     /// <summary>

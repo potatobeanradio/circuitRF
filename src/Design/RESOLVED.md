@@ -25811,7 +25811,158 @@ arrow comes from the same choice, which is how it was seen.
 
 Stated ends are now measured at each candidate edge's MIDPOINT with no cut-off (`Distance(…, bounded: false)`): a
 true end edge runs along its conductor's face, a side edge's midpoint is in the middle of the gap. A pair that still
-cannot be measured refuses instead of defaulting. The cylinder-port branch (`CylDistance`, same file) keeps the same
-silent default and is not changed here (`docs/sonnet-briefs/brief-emb-3-port-correctness.md`). No regression test yet —
-that brief owes one: a stated-end lumped port on an XY sheet whose gap runs along v, stopped short of its metal, must
-resolve along ±v.
+cannot be measured refuses instead of defaulting.
+
+**The cylinder branch had the same default, and both now share one decision** (brief-emb-3 R-emb3-1). A gap on a
+cylinder measured its stated ends with `CylDistance`, whose `Chords` went through the same cut-off `Distance` — so a
+copper block 1 µm off the gap scored every pair infinite and the gap kept pair 0, round the cylinder, when its ends sat
+above and below it. (A conductor that is itself a patch of the same cylinder was always measured analytically and was
+not affected.) `CylDistance`/`Chords` now take `bounded`, and both branches hand the eight edge-midpoint distances to
+`C3dPorts.StatedPair`, which is stricter than "least sum": the chosen pair must beat the other by more than a DBU, and
+each end must be nearer its own edge than the opposite one. Least sum alone would still pick SOMETHING for two
+conductors stacked over the middle of the sheet (every distance equal) or both on one side of it; those are now
+refused, naming the port, both ends and each one's distance to each edge, with "its direction is undecided".
+
+**A port's direction is now checked, not only printed** (R-emb3-2/3, `C3dPortChecks`, called by `check` and `explain`).
+Every lumped port says its direction beside its gap's length and width (info). A warning when the direction is more than
+45° off the line joining the nearest points of its two conductors to the port's centre, or — for a sheet with both ends
+stated — when the pair of edges that faces conductors at all (each midpoint against every conductor, two different ones
+per pair) is not the chosen pair. An ERROR when both ends are stated and contact inference would also succeed but picks
+the other pair: the stated branch never runs inference, so a mistyped conductor on a well-drawn port used to win
+silently. It is a `check` error only — the run itself still takes the stated ends, as the format says it does; inference
+runs here on a copy of the port with its ends cleared, in a context of the check's own, so a run's resolution still
+makes no contact query for a stated port.
+Measured over every shipped and test `.c3d` (32): no new warning or error.
+
+Gate: `tests/Ui.Tests/ThreeD/C3dPortDirectionTests.cs`.
+
+## The 3d-view reference named a 3D result without its solver token (2026-11-01)
+
+The `3d-view` topic said an embedded setup's result "is named `<file stem> <setup name>`", while every 3D run writes
+`Em3dRunService.ResultKey` — that key plus `.<solver>` — so a bench written from the reference pointed at
+`board Driven.s15p` beside the real `board Driven.palace.s15p`. The token stays (two solvers' results must not collide);
+the reference now spells the Touchstone, the `.npy`, and the run folder for a driven setup and for the static and
+eigenmode suffixes (`_es`, `_ms`, `_eig`), and `em-3d.md` says what `<setup>` is for a `.c3d`. A run through several
+solvers now lists every Touchstone before any `.npy` in its outputs, so the first output is the S-parameters whatever
+was run. `C3dPortDirectionTests.TheReference_NamesTheResultTheRunWrites` substitutes into each spelled pattern and
+compares it with what `SnpBasePath`, `NpyKey` and `RunDirectory` return.
+
+## EMB-4 — the Palace estimate on imported outlines; the via ρ/λ refusal in `check`; Auto and stated mesh knobs (2026-11-01)
+
+**The Palace element estimate read 4× low on an imported board** (R-emb4-1): 43,800 elements against Gmsh's 185,000
+(a measured ratio of 4.2) on a 35 × 20 mm two-layer board with a full pour. The estimate prices volumes and refined
+shells; Gmsh meshes every outline edge with at least one segment, so an edge much shorter than the element at metal
+seeds small triangles and tetrahedra the shells never priced. Measured with Gmsh 4.15.2 on the shipped microstrip
+beside an 8 mm pour whose top edge is a sampled sinusoid (12.9 mm of outline, conductor element 313 µm), first-order
+mesh, each run under a second:
+
+| pour edge | edges | Gmsh tetrahedra | added over straight | estimate before |
+|---|---|---|---|---|
+| straight | 4 | 20,779 | — | 19,506 |
+| ~100 µm | 120 | 23,563 | 2,784 | 19,549 |
+| ~32 µm | 400 | 27,888 | 7,109 | 19,550 |
+| ~16 µm | 800 | 31,530 | 10,751 | 19,550 |
+
+A constant per short edge does not fit (35, 20, 14 per edge); `K·√(e/h)·(1 − e/h)` does, with K = 61.7, 62.4, 63.0 —
+`Em3dSizeEstimate.OutlineTetrahedraPerShortEdge` = 63. The 800-edge pour is the committed gate
+(`PalaceOutlineEstimateTests`): 30,308 against 31,530 (0.96×), where it was 0.62× without the term. `explain` names the
+term and, when it is a third or more of the estimate, says the estimate is low on imported outlines with many short
+edges. After meshing, the run notes Gmsh's count against the estimate and the memory at Gmsh's count for the linear
+solver the run actually uses (`Em3dRunService.MeshedAgainstEstimate`, after the memory question can swap direct for
+iterative). The board itself is not in the repository, so its 4.2 is a quoted measurement, not a gate.
+
+**The via ρ/λ refusal came after minutes** (R-emb4-4). `PlanarSolve.Run` asks `VerticalRangeVerdict` (G_A^zz validated
+to ρ/λ ≤ 0.1 over the via-footprint extent) only after meshing, the core count and setup; `Preflight` already had the
+mesh and the sweep's top and did not ask. It now does, with the run's own fill switch (`DirectVerticalKernel`), and
+returns the solve's own refusal with its remedies. Gate: two backside vias 1.9 mm apart on the GaAs starter refuse at
+20 GHz (ρ/λ = 0.128) and pass at 10 GHz.
+
+**`Auto` silently overrode a stated `EdgeMesh`** (R-emb4-7, the stated-values-win option). `PlanarMeshSettings.Resolved`
+under `Auto` reset the edge mesh to on; `MinCellsAcrossConductor` and `DetailFloorDivisor` already survived. The edge
+mesh now survives too, and Auto chooses only cells per wavelength and edge cells. The panel clears Auto when the edge
+mesh is toggled, so the combination arises only in a written file. `check` notes the fields that win
+(`check.em.mesh-auto-kept`, `EmSetup.AutoKeptMeshFields`) beside the warning it already gave for the ones Auto still
+discards. One Engine fixture spelled an inert `EdgeMesh: false` beside `Auto: true` (`MultiLevelPortTests.CoarseForZz`);
+it now spells the default, so its meshes are unchanged.
+
+## EMB-2: meshing imported artwork — straight sides, solid vias, robust by default, a mesh check, a floor with holes (2026-11-01)
+
+On a two-layer imported board every failure before a solve was in the mesh. What changed, and what is worth knowing:
+
+- **Order 2 is straight-sided unless the geometry is genuinely curved** (`GmshGeoWriter.Curved`). A problem's
+  `ArtworkBarrels` (set by the generator and by `C3dProblemAssembly` from the objects' origins: a via's barrel, its air
+  core, a drilled hole) are the only curved faces that do not count; a `.c3d` cylinder, sphere, ellipsoid, round bond
+  wire or curved kernel face keeps `HighOrderOptimize = 2`, under `Palace.MeshCurvingMinutes` (default 5). The cap is
+  measured from Gmsh's first high-order line (`GmshLogProgress.CurvingPast`); past it the tick throws the cancellation
+  `RunProcess` already turns into a kill, and `PalaceRun.Mesh` meshes the straight twin. The hash file keeps the
+  REQUESTED script's hash beside the straight script, so the next run reuses that mesh instead of curving again.
+  Every layout-derived golden's script changed one line (`SecondOrderLinear = 1`).
+- **Vias are solid in every EM problem** (`Em3dLayoutSolidsOptions.SolidVias`, `C3dElaborationOptions.SolidVias`, set from
+  `Problem3D != Thermal`). The default stays the technology's wall, so a picture with no setup and the thermal run keep the
+  tube; the 3D view of an EM setup now shows a solid barrel and so no carved bore. The note listing each entry is written
+  only when a plated entry with a wall was made solid (a note on every solid-fill board was noise in 6 dumps).
+- **Robust meshing reads as on when unstated**, and only `false` is written; the model's own default is on too. Two
+  generator dumps (the taper, a portcal pair) and the two PCell spirals moved: the cleanup now removes their collinear
+  points. The spiral dumps need the example workspace's git-ignored `.generated-cells`; without it they refuse in any
+  checkout, which is environment, not a regression.
+- **`check` infers a `.c3d`'s ports on the robust outline** (`C3dPortReports.For`'s `elaborationFor`), as the run does.
+  `C3dElaboration.OutlineMoveM` carries the cleanup's largest move; `C3dPortContext` widens the contact tolerance, the box
+  cut-off and the edge inset by it, and an inferred lumped port's end edges then follow the moved outline
+  (`C3dPorts.FollowOutline`: out to a receded face, back from one that reaches in). With nothing moved, nothing changes.
+  The editor's port tool still measures the drawn outline (its elaboration is not robust).
+- **The post-mesh check** (`Em3dMeshCheck.Check(mshPath, groups)`) runs in the Palace path after Gmsh, on a reused mesh
+  too. Gmsh orients every tetrahedron positively (checked on its own output), so a negative corner volume is inverted; a
+  second-order element is also sampled for its Jacobian at the corners and centroid (Gmsh's ten-node order, as
+  `ThermalMesh` reads it). Elements are named by the surfaces their corners lie on, else their volume group, and clustered
+  by plan distance. An unreadable mesh says nothing and is left to the solver.
+- **The floor on a drawn plane allows holes** that no via passes through and no other metal overlaps (metal on the plane's
+  own net may; `Em3dGenerator.CoveredHole`). It stays on the plane's UNDERSIDE, the position designer round 33 validated,
+  not its top.
+- **Gmsh runs at `-v 5`** and every stage line sets the progress label; the run's log on disk is flushed once a second.
+
+## EMB-5 part B — Find curve's colour and a `.cnl` vendor part (2026-11-01)
+
+**Find curve locked onto a black gridline under a coloured trace.** `ManualCurves.InkAt` took the strongest-contrast
+ink within 4 px, and black on white out-contrasts any colour, so a click two pixels from a red S11 and two from the
+black 0 dB line followed the line. Ink of chroma ≥ 40 (`ColouredChroma`) is now preferred to grey or black whatever
+the contrast; a black curve is still followed when nothing coloured is in reach. The ink passed over is returned as
+`ManualFollowResult.Other` and reported by `recognize` (`recognize.plot.followed`), so the caller knows a second
+candidate was there.
+
+**A `.cnl` had no way to place a vendor part.** `NetExtractor.EmitSpiceModelInstance` mixed the pin-to-net walk with
+the emission; the emission is now `EmitSpiceModel`, taking the nets as a callback, and
+`ResolveNetlistSpiceModels` runs it for each `SpiceModel:` line with the line's own nets, from
+`CnlTechnologyBinding.Bind` — so the library lookup through the `.cws`, the block read and the claimed cells are the
+schematic's. A dummy `SchematicEditModel` carries only the directory the lookup starts from. Parts inside a `.cnl`
+cell are emitted but not offered as tunables: their key would need a drawing to name.
+
+## EMB-1: component ports on a part's own pads, verified before meshing, and the co-simulation netlist (2026-11-01)
+
+`C3dComponentPorts` (`src/Design/ThreeD`) builds a lumped gap port across each part a 3D setup's `ComponentPorts` names,
+inside `C3dProblemAssembly.Assemble` — the one place the run, `check`, `explain --component-ports` and the setup panel's
+Check all reach it, so none of them has a copy.
+
+- **The pads come from `BoardCompanions.Project`** (the projection `netlist --placement` writes), and each pad's outline is
+  its footprint shape under its pin, through `LayoutInstanceTransform`; the instance's frame (`C3dInstanceFrame.World`)
+  takes layout metres to the 3D world. A pad lands on the flat conductor of its own drawing layer
+  (`Em3dObjectOrigin.DrawingLayer`) that holds its centre.
+- **The closest copper is scanned, and a scan line must pass through every vertex that faces the gap.** Lines every
+  10 µm alone missed a round cap's tip (it lies on one vertex): the sheet's edge landed 0.2 µm inside the copper it
+  missed, and the sheet sample found copper inside it. Adding each facing vertex's own coordinate as a scan line fixed it;
+  a tessellated cap's tip is a little short of the drawn radius (4849.79 µm for a cap drawn to 4850 µm), and the face is
+  put where the lowered copper is.
+- **A landing is UNIONED into its conductor's outline** (Clipper2 at 0.1 nm), not added as a solid beside it: the conductor
+  keeps its name and its count, the port's stated ends stay valid, and no two conductor solids overlap in the mesh. Its
+  back edge reaches back in 10 µm steps until it lies in solid copper on every scan line; a landing that would touch
+  another conductor (other than a via standing in its own copper) is refused naming the part, before any union.
+- **A connector's shell** (ground pads on two copper layers over each other) is a separate conductor block from mid-copper
+  to mid-copper, kept 25 µm inside the pads so it does not touch the sheet edge landing on the top pad's face.
+- **The co-simulation netlist** (`EmCoSimNetlist`) is built as a `TestBench` and written by `CnlWriter`, so its lines are
+  the reader's own spelling; a part's model is the board schematic's extracted instance with its nets replaced. A result
+  renumbered for an off port maps back through `Em3dPort.SourceNumber`.
+- **Measured** (one small Palace run, a Benchmark-tier test; the time was taken with other builds running on the machine):
+  a 0.4 mm line on the 508 µm RO4350B board broken by a 0.4 mm gap, R1's port across it and a drawn port at each end:
+  |S33| = 0.361 at 2 GHz (the two 50 Ω half-lines in series: 1/3), and the co-simulation with R1 a 50 Ω placeholder gives
+  |S21| = 0.664 (2/3). 166,678 unknowns after two refinement passes.
+- **Not built:** `check`'s warning when a port's negative conductor and the nearest shunt part's return are different
+  bodies (it needs the via walk between them); planar (MoM) component ports.

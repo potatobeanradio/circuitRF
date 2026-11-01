@@ -709,6 +709,12 @@ public sealed record Em3dProblem(
     /// (Palace and thermal). Empty — every problem written before them — lowers byte for byte as before.</summary>
     public IReadOnlyList<Em3dMeshRegion> MeshRegions { get; init; } = [];
 
+    /// <summary>brief-emb-2 R-emb2-1 — the solids whose curved faces are a layout's drilled barrels: a via's barrel, its air
+    /// core, a drilled hole. Gmsh meshes a problem whose ONLY curved faces are these with straight-sided second-order
+    /// elements, since curving a faceted barrel buys almost nothing and its optimisation ran for 17+ minutes on an imported
+    /// board. Set by whoever builds the problem from layout artwork; empty — every other problem — keeps the curving.</summary>
+    public IReadOnlyCollection<string> ArtworkBarrels { get; init; } = [];
+
     /// <summary>brief-em3d-49 R-em3d49-4c — boundaries on named faces of dielectric and air solids. Empty — every
     /// problem written before them — lowers to exactly what it lowered before (overview §1h).</summary>
     public IReadOnlyList<Em3dFaceBoundary> FaceBoundaries { get; init; } = [];

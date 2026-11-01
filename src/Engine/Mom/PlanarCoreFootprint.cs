@@ -163,14 +163,16 @@ public static partial class PlanarFill
     {
         int m = mesh.Cells.Count;
         var ok = classifier.Classifiable;
-        // Chunks of outer cells through ForRows, so the work spends the run's one parallel budget; each
-        // chunk's keys are merged as soon as it finishes, so only the workers' own sets are ever held.
+        // Chunks of outer cells through ForRowsLocal, so the work spends the run's one parallel budget. EMB-4
+        // R-emb4-6: each WORKER accumulates into its own set for every chunk it takes and merges ONCE, when it
+        // leaves the loop. Merging per chunk (256 merges, each a UnionWith of a set as large as the class count
+        // under one lock) serialised the tail of the count — `check` sat on one core for 16+ minutes at 46k
+        // unknowns. The keys are sorted at the end, so the merge order changes nothing.
         int chunks = Math.Min(m, 256);
         var distinct = new HashSet<long>();
         var gate = new object();
-        ForRows(st, chunks, k =>
+        ForRowsLocal(st, chunks, () => new HashSet<long>(), (k, local) =>
         {
-            var local = new HashSet<long>();
             for (int a = (int)((long)m * k / chunks), end = (int)((long)m * (k + 1) / chunks); a < end; a++)
             {
                 if (!ok[a]) continue;
@@ -178,7 +180,14 @@ public static partial class PlanarFill
                 for (int c = topo.MinInner[a]; c < m; c++)
                     if (ok[c]) local.Add(classifier.Key(ca, mesh.Cells[c], st, out _));
             }
-            lock (gate) distinct.UnionWith(local);
+        }, local =>
+        {
+            lock (gate)
+            {
+                // The largest set absorbs the others, so the one merge under the lock is the smaller one.
+                if (local.Count > distinct.Count) { local.UnionWith(distinct); distinct = local; }
+                else distinct.UnionWith(local);
+            }
         });
         var keys = distinct.ToArray();
         Array.Sort(keys);

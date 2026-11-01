@@ -144,22 +144,25 @@ public static class BuiltInSymbols
     private static readonly Symbol _duplexer      = BuildDuplexer();
 
     // Per-N cache for variadic box symbols (SDD and ZPort share body geometry).
-    private static readonly Dictionary<int, Symbol> _sddCache   = new();
-    private static readonly Dictionary<int, Symbol> _zportCache = new();
+    // Concurrent (EMB-5 R-emb5-1): `circuitrf serve` checks and renders on several threads at once, and a plain
+    // Dictionary written by two of them can corrupt itself. Two threads building one variant at once is harmless —
+    // the glyph is a pure function of its key.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, Symbol> _sddCache   = new();
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, Symbol> _zportCache = new();
     // SnP cache key: (n, refNode, cfg, pitch)
-    private static readonly Dictionary<(int, bool, SnpPinConfig, SnpPitch), Symbol> _snpCache = new();
-    private static readonly Dictionary<int, Symbol> _verilogACache = new();
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<(int, bool, SnpPinConfig, SnpPitch), Symbol> _snpCache = new();
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, Symbol> _verilogACache = new();
     // Tuner-family cache key: (kind, showBias) — per-instance bias-branch variant.
-    private static readonly Dictionary<(SymbolKind, bool), Symbol> _tunerCache = new();
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<(SymbolKind, bool), Symbol> _tunerCache = new();
     // Match cache key: (form, bandCount) — per-instance glyph variant (match.md §8.4).
-    private static readonly Dictionary<(NetworkForm, int), Symbol> _matchCache = new();
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<(NetworkForm, int), Symbol> _matchCache = new();
     // The four DYNAMIC system glyphs, cached per variant exactly as Match is: a circulator shows
     // which way it turns, a switch shows the position it is set to, and a filter shows what it
     // passes. Each is small and closed, so the whole variant set is built at most once.
-    private static readonly Dictionary<CirculatorDirection, Symbol> _circulatorCache = new();
-    private static readonly Dictionary<SwitchState, Symbol>        _switchCache      = new();
-    private static readonly Dictionary<SwitchThrow, Symbol>        _switchDCache     = new();
-    private static readonly Dictionary<NetworkForm, Symbol>        _filterCache      = new();
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<CirculatorDirection, Symbol> _circulatorCache = new();
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<SwitchState, Symbol>        _switchCache      = new();
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<SwitchThrow, Symbol>        _switchDCache     = new();
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<NetworkForm, Symbol>        _filterCache      = new();
 
     /// <summary>
     /// Returns the primitive list for a built-in symbol kind.

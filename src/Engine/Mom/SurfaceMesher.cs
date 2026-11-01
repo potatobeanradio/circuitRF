@@ -278,6 +278,28 @@ public static class SurfaceMesher
         => (bytes / 1e9).ToString(bytes < 1e10 ? "0.0" : "0", System.Globalization.CultureInfo.CurrentCulture) + " GB";
 
     /// <summary>
+    /// <b>EMB-4 R-emb4-3 — what a ceiling of 0 means, in words</b>: this mesh's cores alone need
+    /// <paramref name="coreBytes"/> of the <paramref name="limitBytes"/>, so no unknown count fits beside them. Said
+    /// wherever <see cref="CeilingFor(bool, long?, PlanarCoreFootprint)"/> returns 0, in place of the count.
+    /// </summary>
+    public static string CoresAlone(long coreBytes, long limitBytes)
+        => $"this mesh's cores alone need {FormatBytes(coreBytes)} of the {FormatBytes(limitBytes)} limit, so no " +
+           "unknown count fits beside them";
+
+    /// <summary>
+    /// <b>EMB-4 R-emb4-2 — the dense figure a multi-level or via mesh is judged on, beside what the accelerated solve
+    /// that will actually run holds</b>. The ceiling decision is unchanged (<see cref="UsesAcceleratedCeiling"/>); only
+    /// the sentence says both numbers. Starts with "; " so it continues the sentence it is appended to.
+    /// </summary>
+    public static string AcceleratedClause(long denseBytes, PlanarNearFieldEstimate estimate)
+        => $"; that is judged on the dense ceiling ({FormatBytes(denseBytes)}), because this mesh has more than one " +
+           "metal level or a via, and the accelerated solve this run uses holds " +
+           (estimate.FactorNonZeros is null ? "at least " : "about ") +
+           $"{PlanarNearFieldEstimate.Size(estimate.ResidentBytes)}, estimated " +
+           $"({PlanarNearFieldEstimate.Size(estimate.FactorBytes)} of it the " +
+           "near-field factor)";
+
+    /// <summary>
     /// <b>Whose number a memory limit is, in one phrase</b> ("this machine's 17.2 GB of physical memory",
     /// "the 8.0 GB memory limit set for this machine (Settings ▸ Solvers)").
     ///
@@ -304,11 +326,15 @@ public static class SurfaceMesher
     /// </summary>
     public const double FactorSecondsPerUnknownCubed = 24.5 / (11_201.0 * 11_201.0 * 11_201.0);
 
+    /// <summary>EMB-5 R-emb5-2 — <see cref="EstimatedFactorTime"/>'s number, in seconds, for a caller that states it as
+    /// one (<c>em --dry-run</c>): <c>c·N³</c> with <see cref="FactorSecondsPerUnknownCubed"/>.</summary>
+    public static double EstimatedFactorSeconds(int n) => FactorSecondsPerUnknownCubed * n * (double)n * n;
+
     /// <summary>The estimated factorisation time of one frequency point, as the budget states it
     /// ("about 4 min"): <c>c·N³</c> with <see cref="FactorSecondsPerUnknownCubed"/>.</summary>
     public static string EstimatedFactorTime(int n)
     {
-        double s = FactorSecondsPerUnknownCubed * n * (double)n * n;
+        double s = EstimatedFactorSeconds(n);
         var c = System.Globalization.CultureInfo.CurrentCulture;
         return s < 90 ? $"{s.ToString("0", c)} s"
              : s < 90 * 60 ? $"{(s / 60).ToString("0", c)} min"
@@ -441,7 +467,8 @@ public static class SurfaceMesher
         PlanarLengthFormat? lengthFormat  = null,
         IReadOnlyList<PlanarPort>? ports  = null,
         double              edgeRefinementCap = double.NaN,
-        IReadOnlyList<PlanarFeedLead>? leads = null)
+        IReadOnlyList<PlanarFeedLead>? leads = null,
+        bool                aimOn         = false)
     {
         ArgumentNullException.ThrowIfNull(problem);
         var s = (settings ?? PlanarMeshSettings.Default).Resolved;
@@ -1486,6 +1513,15 @@ public static class SurfaceMesher
             : PlanarCoreFootprint.For(accel ? null : mesh, n, cells.Count));
         if (limit is not null) ceiling = CeilingFor(accel, limit, coreFootprint.Value);
         bool pastMachine = n > ceiling && limit is not null;
+
+        // EMB-4 R-emb4-2 — the accelerated solve is ON but this mesh is judged on the DENSE ceiling (more than one
+        // metal level, or a via: UsesAcceleratedCeiling's open owner decision, unchanged). The sentences below quote
+        // the dense bytes, so they also say what the accelerated operator this run actually builds holds — its own
+        // estimate, from the near set it will factor (PlanarNearFieldEstimate) — or a run the accelerator holds in
+        // well under a gigabyte reads as needing tens.
+        PlanarNearFieldEstimate? aimEstimate = aimOn && !accel && problem.Slab.HeightM > 0
+            ? PlanarNearFieldEstimate.For(mesh, problem.Slab.HeightM, null, control?.Token ?? default)
+            : null;
         var verdict = pastMachine ? PlanarBudgetVerdict.Warn
                     : n > ceiling ? PlanarBudgetVerdict.Refused
                     : limit is null && n >= (int)(ceiling * WarnFraction) ? PlanarBudgetVerdict.Warn
@@ -1501,7 +1537,7 @@ public static class SurfaceMesher
                                     accelerated: accel, multiLevel: problem.RequiresGeneralKernel,
                                     rimFraction: rimFraction,
                                     edgeMesh: s.EdgeMesh && s.EdgeCells > 0,
-                                    limit: limit, limitSource: limitSource);
+                                    limit: limit, limitSource: limitSource, aimEstimate: aimEstimate);
         notes.Insert(0, budget);
 
         string? refusal = null;
@@ -1524,7 +1560,8 @@ public static class SurfaceMesher
             // warning carries the refusal's own diagnosis (which quantity binds, what acts on the count),
             // since a user asked to Simulate Anyway is owed the same remedies a refused one was.
             notes.Add(EmFinding.Warn(
-                MachineLimitWarning(n, cells.Count, 0, limit!.Value, limitSource, accel, coreFootprint.Value) +
+                MachineLimitWarning(n, cells.Count, 0, limit!.Value, limitSource, accel, coreFootprint.Value,
+                                    aimEstimate) +
                 " " + BuildRefusal(n, cells.Count, coreFootprint.Value, s, narrowX, narrowY, hx, hy, hWave,
                                    x1 - x0, y1 - y0,
                                    cellsAcrossRealised: across,
@@ -1584,7 +1621,12 @@ public static class SurfaceMesher
             GridLinesY:                    gy.Length,
             BulkGridLinesX:                bulkLinesX,
             BulkGridLinesY:                bulkLinesY,
-            RimFraction:                   rimFraction) { PastMachineLimit = pastMachine };
+            RimFraction:                   rimFraction)
+        {
+            PastMachineLimit    = pastMachine,
+            AcceleratedEstimate = aimEstimate,
+            CoreBytes           = limit is null ? 0 : coreFootprint.Value.Bytes,
+        };
     }
 
     /// <summary>
@@ -1596,9 +1638,12 @@ public static class SurfaceMesher
     /// </summary>
     /// <param name="cores">CAP-3 — the mesh's own counted cores when the caller has them; null states the
     /// a-priori figure for <paramref name="cellCount"/>.</param>
+    /// <param name="aimEstimate">EMB-4 R-emb4-2 — the accelerated solve's own estimate when it is on and the mesh is
+    /// judged on the dense ceiling anyway (more than one metal level, or a via); the sentence then says both figures.</param>
     public static string MachineLimitWarning(int n, int cellCount, long standardBytes, long limitBytes,
                                              PlanarMemoryLimitSource source, bool accelerated,
-                                             PlanarCoreFootprint? cores = null)
+                                             PlanarCoreFootprint? cores = null,
+                                             PlanarNearFieldEstimate? aimEstimate = null)
     {
         var fp = cores ?? PlanarCoreFootprint.Estimate(n, cellCount);
         long dut = PlanarSystem.ResidentBytes(n, fp);
@@ -1612,6 +1657,7 @@ public static class SurfaceMesher
               LimitOwner(limitBytes, source)
             : $"This mesh has {n:N0} unknowns and needs about {FormatBytes(dut)} at each frequency point, " +
               $"past {LimitOwner(limitBytes, source)}";
+        if (!accelerated && aimEstimate is not null) need += AcceleratedClause(dut + standardBytes, aimEstimate);
         return need + ". Simulate asks before starting it (Simulate Anyway); `circuitrf em` starts it only " +
                "with --force." +
                (source == PlanarMemoryLimitSource.PhysicalMemory
@@ -1771,7 +1817,8 @@ public static class SurfaceMesher
         IReadOnlyList<string> layerNames, IReadOnlyList<int> unknownsPerLayer,
         int gxLines, int gyLines, int bulkXLines, int bulkYLines,
         bool accelerated, bool multiLevel, double rimFraction, bool edgeMesh, long? limit = null,
-        PlanarMemoryLimitSource limitSource = PlanarMemoryLimitSource.MachineLimit)
+        PlanarMemoryLimitSource limitSource = PlanarMemoryLimitSource.MachineLimit,
+        PlanarNearFieldEstimate? aimEstimate = null)
     {
         int ceiling = limit is null ? CeilingFor(accelerated, null, cellCount)
                                     : CeilingFor(accelerated, limit, cores.Value);
@@ -1798,9 +1845,14 @@ public static class SurfaceMesher
         sb.Append(". ");
 
         // THE CEILING, BOTH NUMBERS, AND WHICH ONE GOVERNS — every time, not only on a refusal.
-        sb.Append(limit is { } own
+        // EMB-4 R-emb4-3 — a ceiling of 0 is not a count to quote: it means this mesh's cores ALONE are past the
+        // limit, so no unknown count fits beside them. "Allows 0 unknowns here — ∞× OVER" said neither.
+        sb.Append(limit is { } own && ceiling == 0
             ? $"About {FormatBytes(PlanarSystem.ResidentBytes(n, cores.Value))} at each frequency point on the " +
-              $"dense path. Judged against {LimitOwner(own, limitSource)}, " +
+              $"dense path. Judged against {LimitOwner(own, limitSource)}: {CoresAlone(cores.Value.Bytes, own)}"
+            : limit is { } own2
+            ? $"About {FormatBytes(PlanarSystem.ResidentBytes(n, cores.Value))} at each frequency point on the " +
+              $"dense path. Judged against {LimitOwner(own2, limitSource)}, " +
               $"which allows {ceiling:N0} unknowns here"
             : accelerated
             ? $"Judged against the ACCELERATED ceiling, {AcceleratedUnknownCeiling:N0} unknowns " +
@@ -1810,8 +1862,14 @@ public static class SurfaceMesher
               (multiLevel
                   ? ", and it does not apply to this mesh — more than one metal level, or a via"
                   : ", reached by turning the accelerated solve on") + ")");
-        sb.Append(n > ceiling ? $" — {(double)n / ceiling:G3}× OVER. "
+        sb.Append(ceiling == 0 ? " — OVER. "
+                : n > ceiling ? $" — {(double)n / ceiling:G3}× OVER. "
                 : $" — {(double)n / ceiling:P0} of it. ");
+        if (!accelerated && aimEstimate is not null)
+        {
+            string clause = AcceleratedClause(PlanarSystem.ResidentBytes(n, cores.Value), aimEstimate)[2..];
+            sb.Append(char.ToUpperInvariant(clause[0])).Append(clause[1..]).Append(". ");
+        }
 
         // CAP-1 — past the old fixed ceiling a dense point is minutes, and growing as N³, so the cost
         // is said before the run starts. One figure, labelled as the estimate it is.

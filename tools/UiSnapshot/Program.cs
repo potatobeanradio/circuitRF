@@ -87,6 +87,9 @@ using CircuitRF.Design.Layout;
 // --review (with --clay) runs the editor's own Layout Review and draws its markers on the canvas, as the open Review
 // panel does; each finding prints.
 //
+// --c3d-setup-panel <x.c3d> opens a .c3d's first EM embedded setup in the same panel, embedded, with its Component ports list
+// over the document's placed layouts (brief-emb-1); --check-component-ports presses Check, and each row's verdict prints.
+//
 // --cem opens the EM Setup editor on a .cem, as the workspace opens one: the file's setup, its own view model, the real
 // EmSetupEditorView. Every named CheckBox's state and tooltip is printed, so a setting is read as well as seen.
 //
@@ -136,6 +139,8 @@ string? cdd = null, output = null, view = "canvas", results = null, fc = "2", iq
 // brief-dfr32-3 — a .c3d's setup cards beside its Properties panel: --delete-fields runs a card's Delete Saved Fields (into a
 // scratch folder, never the Trash) and --c3d-row selects an Object Tree row (a field plot) for the panel.
 string? c3dSetups = null, c3dDeleteFields = null, c3dRow = null;
+string? c3dSetupPanel = null;      // brief-emb-1 — a .c3d's embedded setup in the EM Setup panel, Component ports listed
+bool componentPortsCheck = false;
 // --c3d-pick <object>: the 3D view's click on that object (hovered at a pixel the CPU picker says shows it).
 CircuitRF.Ui.ThreeD.C3dEditorViewModel? c3dShown = null;
 string? optimizer = null;
@@ -223,6 +228,8 @@ for (int i = 0; i < args.Length; i++)
         case "--editor": c3dEditor = true; break;
         case "--fc" when i + 1 < args.Length: fc = args[++i]; break;
         case "--c3d-setups" when i + 1 < args.Length: c3dSetups = Path.GetFullPath(args[++i]); break;
+        case "--c3d-setup-panel" when i + 1 < args.Length: c3dSetupPanel = Path.GetFullPath(args[++i]); break;
+        case "--check-component-ports": componentPortsCheck = true; break;
         case "--delete-fields" when i + 1 < args.Length: c3dDeleteFields = args[++i]; break;
         case "--c3d-row" when i + 1 < args.Length: c3dRow = args[++i]; break;
         case "--palette" when i + 1 < args.Length: palette = Path.GetFullPath(args[++i]); break;
@@ -278,7 +285,7 @@ if (reviewPanel is not null && output is not null)
     return ShowReviewPanel(reviewPanel, output, sizeGiven ? width : 420, sizeGiven ? height : 760);
 }
 bool vendorMode = palette is not null || schematic is not null || archive is not null || manageLibraries is not null || addVendorLibrary is not null || gdsfactory is not null || csym is not null;
-if ((cdd is null && c3dSetups is null && signal.Count == 0 && snp is null && !standalone && tuning is null && optimizer is null && yieldCsch is null && clay is null && cem is null && ctech is null && cmc is null && image is null && exportData is null && !vendorMode) || output is null || view is not ("canvas" or "inspector" or "display"))
+if ((cdd is null && c3dSetups is null && c3dSetupPanel is null && signal.Count == 0 && snp is null && !standalone && tuning is null && optimizer is null && yieldCsch is null && clay is null && cem is null && ctech is null && cmc is null && image is null && exportData is null && !vendorMode) || output is null || view is not ("canvas" or "inspector" or "display"))
 {
     Console.Error.WriteLine("usage: UiSnapshot <file.cdd> -o <out.png> [--view canvas|inspector|display] [--plot n] [--size WxH] "
                           + "[--results <dir>] [--click x,y] [--drag x0,y0:x1,y1] [--key <Key>] [--shot <png>] ...\n"
@@ -290,6 +297,7 @@ if ((cdd is null && c3dSetups is null && signal.Count == 0 && snp is null && !st
                           + "       UiSnapshot --yield <file.csch> -o <out.png> [--mode sensitivity|…] [--run] [--by entry|port|instance] [--select <key>] [--expand <label>] [--exclude <instance>]... [--snp-off] [--size WxH] [steps]\n"
                           + "       UiSnapshot --clay <file.clay> -o <out.png> [--hide <layer>] [--lock <layer>] [--size WxH] [steps]\n"
                           + "       UiSnapshot --cem <file.cem> -o <out.png> [--size WxH] [steps]\n"
+                          + "       UiSnapshot --c3d-setup-panel <file.c3d> -o <out.png> [--check-component-ports] [--size WxH] [steps]\n"
                           + "       UiSnapshot --ctech <file.ctech> -o <out.png> [--tab n] [--unit <unit>] [--rename-stackup old=new] [--rename-tech <name>] [--size WxH] [steps]\n"
                           + "       UiSnapshot --cmc <file.cmc|new:Passive|new:Active> -o <out.png> [--import <data>] [--step <name>] [--run <key>] [--size WxH] [steps]\n"
                           + "       UiSnapshot --export-data <results dir> -o <out.png> [--button <format label>] [--size WxH] [steps]\n"
@@ -509,6 +517,29 @@ else if (ctech is not null)
     host.Show();
     Pump();
     PrintTech("opened");
+}
+else if (c3dSetupPanel is not null)
+{
+    // brief-emb-1 R-emb1-8 — a .c3d's (only, or first EM) embedded setup in the real EM Setup panel, as the 3D editor opens it,
+    // with its Component ports list over the document's placed layouts; --check-component-ports presses Check.
+    var c3dDoc = CircuitRF.Design.ThreeD.C3dPersistence.LoadFromFile(c3dSetupPanel);
+    string? panelCws = CircuitRF.Design.Workspace.WorkspaceRootFinder.FindAncestorCws(Path.GetDirectoryName(c3dSetupPanel));
+    var embedded = CircuitRF.Design.ThreeD.C3dSetups.Read(c3dDoc).First(s => s.Setup is { IsThermal: false });
+    var elaboration = new CircuitRF.Design.ThreeD.C3dElaborator().Elaborate(c3dDoc, c3dSetupPanel, panelCws);
+    var panelVm = new CircuitRF.Ui.Layout.Em.EmSetupEditorViewModel(c3dSetupPanel, embedded.Setup!, embedded: true)
+    {
+        ComponentPortsContext = new CircuitRF.Ui.Layout.Em.EmComponentPortsContext(() => c3dDoc, () => c3dSetupPanel, () => panelCws, () => elaboration),
+    };
+    if (componentPortsCheck) panelVm.CheckComponentPortsCommand.Execute(null);
+    foreach (var row in panelVm.ComponentPortRows)
+        Console.WriteLine($"{row.Refdes} [{(row.IsIncluded ? "x" : " ")}] {row.PadsText}: {row.Verdict}");
+    Console.WriteLine($"status: {panelVm.ComponentPortsStatus}");
+    host = new Window { Width = sizeGiven ? width : 700, Height = sizeGiven ? height : 2000,
+                        Content = new EmSetupEditorView { DataContext = new CircuitRF.Ui.Layout.Em.EmSetupDocument(embedded.Name, panelVm, c3dSetupPanel) } };
+    host.Show();
+    Pump();
+    if (host.GetVisualDescendants().OfType<Control>().FirstOrDefault(c => c.Name == "ComponentPortsSection") is { } section)
+        Console.WriteLine($"Component ports section at {section.TranslatePoint(default, host)?.Y:0} px, {section.Bounds.Height:0} px tall");
 }
 else if (cem is not null)
 {
@@ -772,10 +803,14 @@ else
 {
 var document = new DataDisplayDocumentViewModel();
 var window   = document.Window;
-// A relative source reference resolves against a workspace's results/ folder, which in the application the
-// workspace supplies. Here it is --results, or the .cdd's own folder — where `circuitrf plot --write-cdd` puts
-// a document beside its result.
-string resultsRoot = Path.GetFullPath(results ?? Path.GetDirectoryName(Path.GetFullPath(cdd!))!);
+// A relative source reference resolves beside the .cdd first and then against a workspace's results/ folder, which
+// in the application the workspace supplies (EMB-5 R-emb5-14). Here the results folder is --results, else the
+// results/ of the workspace the .cdd belongs to — exactly as the application resolves it, so a display that would
+// open empty there opens empty here too. Defaulting to the .cdd's own folder hid exactly that.
+string? resultsRoot = results is not null ? Path.GetFullPath(results)
+    : CircuitRF.Design.Workspace.WorkspaceRootFinder.FindAncestorCws(Path.GetDirectoryName(Path.GetFullPath(cdd!))!) is { } cddCws
+        ? CircuitRF.Design.Results.ResultsWriter.ResultsDirectory(Path.GetDirectoryName(cddCws)!)
+        : null;
 window.DataSourceLibrary.ResultsRootProvider = () => resultsRoot;
 window.DataSourceLibrary.RefreshAvailableDataSources();
 // Never block on a Task here: its continuations are posted to this same dispatcher, so GetResult() deadlocks.

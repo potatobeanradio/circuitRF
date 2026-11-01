@@ -236,9 +236,24 @@ public static class C3dProblemAssembly
         var plane = e.Solids.Where(s => ground.Contains(s.Name) && !e.NotModelled.Contains(s.Name) && s.Role == Em3dRole.Conductor)
                             .Select(s => s.Primitive).OfType<Em3dExtrudedPolygon>()
                             .Where(p => Math.Abs(p.ZBottom - x.Z0) <= 1e-9).ToList();
-        if (plane.Count == 0 || plane.Any(p => p.Holes.Count > 0)) return null;
+        if (plane.Count == 0) return null;
+        // brief-emb-2 R-emb2-5 — a hole is allowed where no other conductor (outside the ground set) lies over it.
+        if (plane.Any(p => p.Holes.Count > 0))
+        {
+            var others = e.Solids.Where(s => s.Role == Em3dRole.Conductor && !ground.Contains(s.Name) && !e.NotModelled.Contains(s.Name)).ToList();
+            static bool Upright(Em3dPrimitive p) => p is Em3dCylinder c &&
+                Math.Abs(c.AxisStart.X - c.AxisEnd.X) < 1e-12 && Math.Abs(c.AxisStart.Y - c.AxisEnd.Y) < 1e-12;
+            var drills = others.Select(s => s.Primitive).Where(Upright).Cast<Em3dCylinder>()
+                               .Select(c => (c.AxisStart.X, c.AxisStart.Y, c.Radius)).ToList();
+            var metal = others.Where(s => !Upright(s.Primitive))
+                              .Select(s => s.Primitive is Em3dExtrudedPolygon ep ? ep.Outline : Rect(Em3dProblem.Bounds(s.Primitive)));
+            if (Em3dGenerator.CoveredHole(plane.SelectMany(p => p.Holes), metal, drills) is not null) return null;
+        }
         double area = plane.Sum(p => Math.Abs(Area(p.Outline)));
         return area >= Em3dGenerator.PlaneFloorCover * (x.X1 - x.X0) * (x.Y1 - x.Y0) ? x.Z0 : null;
+
+        static IReadOnlyList<Point2> Rect((double X0, double Y0, double Z0, double X1, double Y1, double Z1) b)
+            => [new(b.X0, b.Y0), new(b.X1, b.Y0), new(b.X1, b.Y1), new(b.X0, b.Y1)];
 
         static double Area(IReadOnlyList<Point2> r)
         {
@@ -403,10 +418,27 @@ public static class C3dProblemAssembly
         {
             MaterialFrequencyHz = materialHz, MaterialFrequencyBasis = sar is null ? "the sweep's centre" : "the SAR frequency",
             RobustMeshing = setup.RobustMeshing,
+            SolidVias = setup.Problem3D != Em3dProblemType.Thermal,
         });
         var e = C3dModelled.Filter(document, drawn);
         notes.AddRange(e.Notes);
         if (!e.Ok) return No(string.Join(" ", e.Refusals), e.Warnings);
+        // brief-emb-1 R-emb1-3/4 — the component ports, built on the parts' own pads and verified before anything is meshed: their
+        // landing rectangles and connector shells join the lowered problem (and only it), and the ports follow the document's own.
+        var portDocument = document;
+        C3dComponentPortBuild? components = null;
+        if (setup.ComponentPorts.Count > 0 && setup.Problem3D != Em3dProblemType.Electrostatic)
+        {
+            components = C3dComponentPorts.Build(setup, document, drawn, FirstComponentPortNumber(document));
+            if (components is { Ok: false }) return No(components.FirstRefusal!, e.Warnings) with { ComponentPorts = components };
+            if (components is not null)
+            {
+                drawn = components.Elaboration;
+                e = C3dModelled.Filter(document, drawn);
+                notes.AddRange(components.Notes);
+                portDocument = WithComponentPorts(document, components);
+            }
+        }
         if (sar is not null && SarDispersiveRefusal(sar, e) is { } twoFrequencies) return No(twoFrequencies, e.Warnings);
         if (e.Extent() is not { } extent)
             return No(drawn.Extent() is not null ? EverythingOff : NothingToSolve(e), e.Warnings);
@@ -420,7 +452,7 @@ public static class C3dProblemAssembly
         if (boxRefusal is not null || box is null) return No(boxRefusal ?? "The air box could not be built.", e.Warnings);
         notes.Add(planeFloor is not null
             ? "The air box's floor is the underside of the ground plane at the bottom of the geometry, as a PEC face: the plane " +
-              "has no hole in it and lies under everything, so nothing below it carries field. State the AirBox's ZMin to pad below it instead."
+              "has no hole with other metal over it and lies under everything, so nothing below it carries field. State the AirBox's ZMin to pad below it instead."
             : "The air box's floor is below the geometry: a 3D view states no floor of its own, so every face is " +
               "the setup's (absorbing unless its AirBox says otherwise).");
 
@@ -451,6 +483,8 @@ public static class C3dProblemAssembly
         // brief-dfr31-1 R-dfr31-1-7 — said only once the problem is built: under a refusal it read as a second error.
         string? noPortsNote = setup.Problem3D == Em3dProblemType.Electrostatic && document.Ports.Count > 0
             ? $"An electrostatic solve has no ports: the 3D view's {document.Ports.Count} port(s) are not in the problem." : null;
+        if (setup.Problem3D == Em3dProblemType.Electrostatic && setup.ComponentPorts.Count > 0)
+            noPortsNote = (noPortsNote is null ? "" : noPortsNote + " ") + "Its component ports are not built either.";
         if (setup.Problem3D != Em3dProblemType.Electrostatic)
         {
             var sources = setup.Problem3D == Em3dProblemType.Magnetostatic
@@ -459,7 +493,7 @@ public static class C3dProblemAssembly
                 : null;
             var modelled = new List<(C3dPort Port, Em3dPort Resolved)>();
             var off = new List<C3dPort>();
-            foreach (var r in C3dPorts.Resolve(document, context))
+            foreach (var r in C3dPorts.Resolve(portDocument, context))
             {
                 if (sources is not null && !sources.Contains(C3dPorts.ProblemName(r.Port.Number))) continue;
                 if (!r.Port.Model)
@@ -474,11 +508,11 @@ public static class C3dProblemAssembly
                 if (r.Note is { } note) notes.Add(note);                  // brief-em3d-121 D1
                 foreach (var q in r.All) modelled.Add((r.Port, q));      // brief-em3d-114 — a terminal is a port
             }
-            if (setup.Problem3D == Em3dProblemType.Driven && document.Ports.Count > 0 && modelled.Count == 0)
+            if (setup.Problem3D == Em3dProblemType.Driven && portDocument.Ports.Count > 0 && modelled.Count == 0)
                 return No(C3dModelled.AllPortsOff, e.Warnings);
             ports.AddRange(sources is null ? C3dModelled.Renumber(modelled, off, notes) : modelled.Select(m => m.Resolved));
-            if (sources is not null && document.Ports.Count > ports.Count)
-                notes.Add($"{document.Ports.Count - ports.Count} port(s) drive no terminal and are not in the magnetostatic problem.");
+            if (sources is not null && portDocument.Ports.Count > ports.Count)
+                notes.Add($"{portDocument.Ports.Count - ports.Count} port(s) drive no terminal and are not in the magnetostatic problem.");
         }
 
         // ── brief-sar-3 R-sar3-3 — lumped elements: a port's gap, by the port's own rules, carrying R, L and C ──────
@@ -524,10 +558,12 @@ public static class C3dProblemAssembly
             LumpedElements = lumped,
             CylinderSheets = e.CylinderSheets,
             SolidDensities = sar is null ? new Dictionary<string, double>() : SolidDensities(e, solids),
+            ArtworkBarrels = Em3dGenerator.ArtworkBarrels(solids, e.Origins),
         };
         return new Em3dGenerationResult(problem, null, notes)
         {
             WantsDc = wantsDc,
+            ComponentPorts = components,
             Warnings = e.Warnings,
             Wires = e.Wires,
             Origins = e.Origins,
@@ -544,6 +580,15 @@ public static class C3dProblemAssembly
                     .Where(b => b.Item2.Count > 0))],
         };
     }
+
+    /// <summary>brief-emb-1 R-emb1-2 — component ports are numbered after every number the document's own ports use.</summary>
+    public static int FirstComponentPortNumber(C3dDocument document)
+        => C3dPorts.UsedNumbers(document).DefaultIfEmpty(0).Max() + 1;
+
+    /// <summary>brief-emb-1 — the document's ports followed by the component ports, in a document carrying nothing else: what
+    /// the port resolution reads (its ports and DBU). The document itself is never changed.</summary>
+    public static C3dDocument WithComponentPorts(C3dDocument document, C3dComponentPortBuild build)
+        => new() { DbuPerMicron = document.DbuPerMicron, Ports = [.. document.Ports, .. build.DocumentPorts] };
 
     /// <summary>
     /// brief-em3d-74 R-em3d74-4b — the document's mesh regions in world metres, as their fields resolved (elaboration resolves
@@ -678,23 +723,28 @@ public static class C3dPortReports
 {
     /// <summary>Every port under every readable embedded setup — each setup's box and ground set can change a port's
     /// polarity or, for a wave port, whether it lies on the box at all. Identical lines from two setups are said once.</summary>
-    public static IReadOnlyList<C3dPortReport> For(C3dDocument doc, C3dElaboration e)
+    /// <param name="elaborationFor">brief-emb-2 R-emb2-3 — the elaboration a setup's run measures its ports against (its Robust
+    /// meshing's outline), so <c>check</c> infers on the outline the run meshes; null measures every setup against
+    /// <paramref name="e"/>.</param>
+    public static IReadOnlyList<C3dPortReport> For(C3dDocument doc, C3dElaboration e, Func<EmSetup?, C3dElaboration>? elaborationFor = null)
     {
         var reports = new List<C3dPortReport>();
         if (doc.Ports.Count == 0 || !e.Ok) return reports;
+        C3dElaboration Of(EmSetup? setup) => elaborationFor?.Invoke(setup) is { Ok: true } own ? own : e;
         // brief-em3d-73 — a thermal setup drives no port and puts no air box round anything: it has no port to report.
         var setups = C3dSetups.Read(doc).Where(s => s.Setup is { IsThermal: false }).ToList();
         if (setups.Count == 0)
         {
-            var ctx = C3dProblemAssembly.PortContext(null, doc, e, null);
+            var ctx = C3dProblemAssembly.PortContext(null, doc, Of(null), null);
             reports.AddRange(C3dPorts.Resolve(doc, ctx).Select(r => new C3dPortReport(null, r)));
             return reports;
         }
         var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var s in setups)
         {
-            var box = C3dProblemAssembly.AirBox(s.Setup!, e, out _);
-            var ctx = C3dProblemAssembly.PortContext(s.Setup, doc, e, box);
+            var es = Of(s.Setup);
+            var box = C3dProblemAssembly.AirBox(s.Setup!, es, out _);
+            var ctx = C3dProblemAssembly.PortContext(s.Setup, doc, es, box);
             foreach (var r in C3dPorts.Resolve(doc, ctx))
                 if (seen.Add(r.Refusal ?? Describe(r))) reports.Add(new C3dPortReport(setups.Count == 1 ? null : s.Name, r));
         }

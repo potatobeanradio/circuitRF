@@ -718,7 +718,11 @@ internal static class Check
         // every embedded setup read as a run would read it. Only once the document is sound: elaborating a
         // document validation already refused would report its defects twice, in two voices.
         if (!resolution.Ok || findings.Any(d => d.Severity == DiagnosticSeverity.Error)) return;
+        // EMB-5 R-emb5-3/4 — the elaboration is this check's long step on a board's 3D view: named for a host's progress,
+        // and a cancelled call stops before and after it rather than reporting the rest.
+        if (RunHost.Control is { } control) { control.ThrowIfCancellationRequested(); control.BeginStage("elaborating the 3D view"); }
         var e = C3dElaborator.ElaborateOnce(doc, Path.GetFullPath(path), null);
+        RunHost.Control?.ThrowIfCancellationRequested();
         // Validation's own findings too: an object with no material is a validation warning AND an elaboration warning, in
         // the same words (3D editor bugs round 2), and is said once.
         var said = new HashSet<string>(resolution.Errors.Concat(resolution.Warnings).Concat(resolution.Notes).Concat(resolution.Infos)
@@ -744,8 +748,15 @@ internal static class Check
         }
         // brief-em3d-49 R-em3d49-5c — every port's inferred polarity (info) or its refusal (error), and every face
         // boundary that cannot be placed — through the resolution a run makes.
-        foreach (var port in C3dPortReports.For(doc, e))
+        // brief-emb-2 R-emb2-3 — against the outline the run meshes: a setup with Robust meshing on (the default) measures its
+        // ports on the cleaned outline, as its run does, so check and the run cannot disagree about a port.
+        C3dElaboration? robust = null;
+        C3dElaboration ElaborationFor(EmSetup? setup) => setup?.RobustMeshing == false ? e
+            : robust ??= C3dElaborator.ElaborateOnce(doc, Path.GetFullPath(path), null, new C3dElaborationOptions { RobustMeshing = true });
+        foreach (var port in C3dPortReports.For(doc, e, ElaborationFor))
             f.Add(!port.Refused ? CliDiagnostics.CheckThreeDPort(path, port.Text) : CliDiagnostics.CheckThreeDPortRefused(path, port.Text));
+        CheckPortDirections(path, doc, e, f);
+        CheckComponentPorts(path, doc, f);
         // brief-em3d-93 R-em3d93-5 — what is not modelled (info), and what refers to it: a wire on its pad, every port off under
         // a driven setup, a field plot's face (warning), and the refusals it raised itself (warnings: no run refuses for them).
         foreach (var d in C3dModelled.Findings(doc, e)) f.Add(CliDiagnostics.CheckThreeDFinding(path, d));
@@ -814,6 +825,43 @@ internal static class Check
         foreach (var row in CircuitRF.Design.Em3d.Em3dFidelityReport.For(problem, setup))
             f.Add(CliDiagnostics.CheckThreeDFidelity(path, setupName, CircuitRF.Design.Em3d.Em3dFidelityReport.SolverName(row.Solver),
                                                      row.Sentence, row.Severity == CircuitRF.Engine.Em3d.Em3dFidelitySeverity.Warning));
+    }
+
+    /// <summary>
+    /// brief-emb-1 R-emb1-4 — every embedded EM setup's component ports, built and verified as its run builds them (through
+    /// <see cref="C3dProblemAssembly.Assemble"/>, the run's own function): each port's construction (info) or the refusal that
+    /// names its refdes (error), and each part the co-simulation netlist would carry as a placeholder (warning).
+    /// </summary>
+    private static void CheckComponentPorts(string path, C3dDocument doc, Findings f)
+    {
+        string full = Path.GetFullPath(path);
+        foreach (var embedded in C3dSetups.Read(doc))
+        {
+            if (embedded is not { Refusal: null, Setup: { Is3D: true, IsThermal: false, ComponentPorts.Count: > 0 } s }) continue;
+            var run = C3dSetups.ForRun(s, full);
+            var assembled = C3dProblemAssembly.Assemble(run, doc, full, DocumentKinds.AncestorCws(full));
+            string at = $"setup '{embedded.Name}': ";
+            if (assembled.ComponentPorts is not { } build)
+            {
+                if (assembled.Refusal is { } why) f.Add(CliDiagnostics.CheckThreeDPortRefused(path, at + "its component ports were not built: " + why));
+                continue;
+            }
+            if (build.Refusal is { } refused) f.Add(CliDiagnostics.CheckThreeDPortRefused(path, at + refused));
+            foreach (var p in build.Ports)
+                f.Add(p.Ok ? CliDiagnostics.CheckThreeDPort(path, at + C3dComponentPorts.Describe(p))
+                           : CliDiagnostics.CheckThreeDPortRefused(path, at + p.Refusal));
+            foreach (string w in build.Warnings) f.Add(CliDiagnostics.CheckThreeDComponentPortWarning(path, at + w));
+        }
+    }
+
+    /// <summary>
+    /// brief-emb-3 R-emb3-2/3 — each lumped port's direction beside its gap's length and width (info), a direction that is not
+    /// along the line between its conductors or the pair of edges that faces them (warning), and stated ends that disagree with
+    /// what the port touches (error) — from <see cref="C3dPortChecks"/>, which reads the resolution a run makes.
+    /// </summary>
+    private static void CheckPortDirections(string path, C3dDocument doc, C3dElaboration e, Findings f)
+    {
+        foreach (var d in C3dPortChecks.For(doc, e)) f.Add(CliDiagnostics.CheckThreeDFinding(path, d));
     }
 
     /// <summary>
@@ -1062,12 +1110,39 @@ internal static class Check
                 string.Join(", ", overridden.Select(o => $"{o.Key} = {o.Stated}")),
                 string.Join(", ", overridden.Select(o => $"{o.Key} = {o.Used}"))));
 
+        // EMB-4 R-emb4-7 — and the fields stated beside Auto that it does NOT override: they win, which is the rule,
+        // and saying so is what tells a reader of the file that Auto chose only the rest.
+        if (pre.Kind == EmAnalysisKind.Planar && setup.AutoKeptMeshFields() is { Count: > 0 } kept)
+            f.Add(CliDiagnostics.CheckEmMeshAutoKept(
+                path,
+                string.Join(", ", kept.Select(o => o.Key)),
+                string.Join(", ", kept.Select(o => $"{o.Key} = {o.Stated}"))));
+
         if (pre.PlanarMesh is { } mesh)
+        {
+            // EMB-5 R-emb5-2 — the numbers behind the sentences above, for `em --dry-run` and any caller that would
+            // rather not parse them: the memory the run's own check judges (PlanarMemoryCheck's input), the factor time
+            // the mesh budget quotes (or the near-field estimate's when the accelerated solve runs), and the sweep's points.
+            int points = 0;
+            try { points = setup.ExpandFrequencies().Length; } catch (Exception) { /* the sweep's own refusal is above */ }
+            long memory = pre.NearField is { } nf ? nf.ResidentBytes : mesh.RunResidentBytes;
+            double? perPoint = pre.NearField is { } near ? near.FactorSeconds
+                             : setup.AcceleratedSolve ? null
+                             : SurfaceMesher.EstimatedFactorSeconds(mesh.UnknownCount);
             f.SetEm(new CheckedEmJson(
                 pre.KernelName, mesh.UnknownCount,
                 mesh.CeilingUnknowns > 0 ? mesh.CeilingUnknowns : null,
                 mesh.CeilingUnknowns > 0 ? (mesh.AcceleratedCeiling ? "accelerated" : "dense") : null,
-                mesh.Verdict.ToString().ToLowerInvariant()));
+                mesh.Verdict.ToString().ToLowerInvariant())
+            {
+                MemoryBytes           = memory,
+                FactorSecondsPerPoint = perPoint,
+                Points                = points > 0 ? points : null,
+                FactorSecondsTotal    = perPoint is { } s && points > 0 ? s * points : null,
+                Memory                = mesh.PastMachineLimit || memory > CircuitRF.Design.Em3d.MachineMemory.PhysicalBytes
+                                            ? "past-limit" : "fits",
+            });
+        }
 
         if (pre.Refusal is { } refusal) f.Add(CliDiagnostics.CheckEmRefused(path, refusal));
         // UnknownCount is what is SOLVED — the merged count under Mesh as Merged Shapes — which is the
@@ -1449,10 +1524,12 @@ internal static class Check
     {
         Library   lib;
         TestBench tb;
-        try { (lib, tb) = CnlTechnologyBinding.ReadFile(path); }
+        IReadOnlyList<CircuitRF.Design.VendorLibraries.VendorPartTunable> parts;
+        try { (lib, tb) = CnlTechnologyBinding.ReadFile(path, out parts); }
         catch (Exception ex) { f.Add(CliDiagnostics.CheckUnreadable(path, ex.Message)); return; }
 
-        Elaborate(path, tb, lib, f);
+        // A vendor part a SpiceModel line places is a tunable (C1.Part) here as in a schematic (EMB-5 R-emb5-13).
+        Elaborate(path, tb, lib, f, parts.Count > 0 ? TunableCatalog.FromNetlist(tb, lib, parts: parts) : null);
     }
 
     /// <summary>

@@ -125,7 +125,7 @@ internal static class Optimize
             // A bare number is seconds; a unit may follow, as the optimize line's timelimit= takes one.
             string text = double.TryParse(time, NumberStyles.Float, CultureInfo.InvariantCulture, out _) ? time + " s" : time;
             if (TuningValidator.TimeLimitSeconds(text) is null)
-                return JsonRun.Fail(CliDiagnostics.OptFlagValue("--time", time, "seconds, or a number and s, ms, min or h"));
+                return JsonRun.Fail(CliDiagnostics.OptFlagValue("--time", time, TuningValidator.TimeLimitSpelling));
             settings.TimeLimit = text;
         }
         if (cost is not null)

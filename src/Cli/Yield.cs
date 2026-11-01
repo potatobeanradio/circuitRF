@@ -300,7 +300,7 @@ internal static partial class Yield
         if (cornerName is not null && given.FirstOrDefault(f => f is "--vars" or "--sigma-scale" or "--process" or "--mismatch" or "--set") is { } uncarried)
             return JsonRun.Fail(CliDiagnostics.YieldSaveCornerCannotCarry(uncarried));
         if (time is not null && TuningValidator.TimeLimitSeconds(time) is null)
-            return JsonRun.Fail(CliDiagnostics.YieldFlagValue("--time", time, "seconds, or a number and s, ms, min or h"));
+            return JsonRun.Fail(CliDiagnostics.YieldFlagValue("--time", time, TuningValidator.TimeLimitSpelling));
         if (output is not null && !output.EndsWith(".npy", StringComparison.OrdinalIgnoreCase))
             return JsonRun.Fail(CliDiagnostics.YieldOutputNotNpy(output));
         int samplingIndex = -1, ncIndex = -1, scopeIndex = -1, surrogateIndex = -1;

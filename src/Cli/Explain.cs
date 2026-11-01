@@ -72,6 +72,9 @@ internal static class Explain
         string? path = null, expr = null, reference = null, analysisName = null, setupName = null, objectName = null;
         bool wantAnalyses = false, wantCells = false, wantLayers = false, wantExtents = false, all = false;
         bool wantFootprints = false, wantLook = false, wantTunables = false, wantMaterials = false;
+        IReadOnlyList<string>? snpEntries = null;
+        bool wantComponentPorts = false;      // brief-emb-1 R-emb1-8
+        string? componentPortList = null;
         ViewType? askedView = null;
         var device = CircuitRF.Design.Em3d.PalaceDevice.Cpu;
         long? memoryLimit = null;
@@ -91,6 +94,10 @@ internal static class Explain
                 case "--footprints": wantFootprints = true; continue;
                 // TO-1 R-to1-7 — every tunable value of a schematic or netlist, and the setup keys that name nothing.
                 case "--tunables": wantTunables = true; continue;
+                // EMB-5 R-emb5-9: an SnP block's offset rows are folded to its summary line unless named here (or all).
+                case "--snp-entries" when i + 1 < args.Length:
+                    snpEntries = [.. args[++i].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
+                    continue;
                 case "--all":     all         = true; continue;
                 case "--view" when i + 1 < args.Length:
                 {
@@ -132,6 +139,13 @@ internal static class Explain
                 // brief-sar-2 R-sar2-7 — a 3D setup's materials as the solver receives them, and the frequency each
                 // frequency-dependent one was evaluated at.
                 case "--materials": wantMaterials = true; continue;
+                // brief-emb-1 R-emb1-8 — a 3D view's component ports as a run would build them; optionally the list to build
+                // instead of the setup's own (a following token that is an option or an existing path is not one).
+                case "--component-ports":
+                    wantComponentPorts = true;
+                    if (i + 1 < args.Length && !args[i + 1].StartsWith('-') && !File.Exists(args[i + 1]) && !Directory.Exists(args[i + 1]))
+                        componentPortList = args[++i];
+                    continue;
                 // brief-em3d-136 R-em3d136-4c — a 3D setup's report as `em --device` would run it: which device, and
                 // (for gpu) whether this Palace can, through the run's own readiness check.
                 case "--device" when i + 1 < args.Length:
@@ -187,7 +201,7 @@ internal static class Explain
         int asked = (expr is null ? 0 : 1) + (reference is null ? 0 : 1) + (wantAnalyses ? 1 : 0)
                   + (wantCells ? 1 : 0) + (wantLayers ? 1 : 0) + (wantExtents ? 1 : 0)
                   + (wantFootprints ? 1 : 0) + (objectName is null ? 0 : 1) + (wantLook ? 1 : 0)
-                  + (wantTunables ? 1 : 0) + (wantMaterials ? 1 : 0);
+                  + (wantTunables ? 1 : 0) + (wantMaterials ? 1 : 0) + (wantComponentPorts ? 1 : 0);
         if (asked > 1) { JsonRun.Report(CliDiagnostics.ExplainOneQuestion()); return Usage(); }
         if (all && !wantCells) { JsonRun.Report(CliDiagnostics.ExplainAllNeedsCells()); return Usage(); }
 
@@ -271,6 +285,11 @@ internal static class Explain
             exit |= kind == DocumentKind.ThreeD ? ExplainLook.Walk(path, setupName, walks)
                   : JsonRun.Fail(CliDiagnostics.ExplainOptionNotApplicable("--look", DocumentKinds.Name(kind), "a 3D view's Look and appearances"));
 
+        if (wantComponentPorts)
+            exit |= kind == DocumentKind.ThreeD ? ExplainComponentPorts.Walk(path, setupName, componentPortList, walks)
+                  : JsonRun.Fail(CliDiagnostics.ExplainOptionNotApplicable("--component-ports", DocumentKinds.Name(kind),
+                                                                           "the component ports a 3D view's setup builds on its layout's parts"));
+
         if (wantMaterials && kind is not (DocumentKind.ThreeD or DocumentKind.EmSetup))
             exit |= JsonRun.Fail(CliDiagnostics.ExplainOptionNotApplicable("--materials", DocumentKinds.Name(kind),
                                                                            "a 3D setup's materials as its solver receives them"));
@@ -312,7 +331,7 @@ internal static class Explain
 
         if (wantTunables)
         {
-            var (report, tunableExit) = ExplainTunables.Collect(path, kind);
+            var (report, tunableExit) = ExplainTunables.Collect(path, kind, snpEntries);
             tunables = report;
             exit    |= tunableExit;
         }
@@ -383,7 +402,7 @@ internal static class Explain
         Console.Error.WriteLine("                            [--analysis [<name>]] [--ref <relative-ref>]");
         Console.Error.WriteLine("                            [--cells [--all]] [--layers] [--extents] [--view <name>]");
         Console.Error.WriteLine("                            [--footprints] [--setup <name>] [--object <name>] [--look] [--device cpu|gpu] [--memory-limit <GB>]");
-        Console.Error.WriteLine("                            [--tunables]");
+        Console.Error.WriteLine("                            [--tunables [--snp-entries <SNP3,...|all>]] [--component-ports [\"C1,C2\"|\"*\"]]");
         Console.Error.WriteLine("       circuitrf explain --pdk <kit> [<workspace>] [--python <interp>]");
         return 1;
     }
@@ -782,7 +801,8 @@ internal static class Explain
         NameWalk(full, sets, walks);
         Em3dSetupSource src;
         try { src = Em3dSetupSource.ForThreeDView(full, setupName); }
-        catch (Exception ex) { return JsonRun.Fail(CliDiagnostics.ExplainUnreadable(path, ex.Message)); }
+        // A cancelled call is not an unreadable file (EMB-5 R-emb5-3): it stops, and the host reports it as stopped.
+        catch (Exception ex) when (ex is not OperationCanceledException) { return JsonRun.Fail(CliDiagnostics.ExplainUnreadable(path, ex.Message)); }
         walks.Add(new ResolutionStepJson("technology", full, src.Elaboration?.TechnologyPath ?? src.Resolution.TechnologyPath,
             "the 3D view's own TechRef, else its ancestor workspace's default — resolved from the view's own path"));
         if (src.Elaboration is { } e)
@@ -794,6 +814,7 @@ internal static class Explain
             C3dResolver.Resolve(doc, C3dCell.Of(full));
             ModelWalk(doc, e, walks);
             PortWalk(doc, e, walks);
+            PortDirectionWalk(doc, e, walks);
             ResultWalk(doc, full, e, walks);
         }
         if (objectName is not null)
@@ -896,6 +917,22 @@ internal static class Explain
                 $"touches — {touches}. " + (r.Refusal ?? C3dPortReports.Describe(r)),
                 "each edge's conductors to within 1 DBU; one opposite pair, one conductor each; the negative end is the " +
                 "ground set's, else the larger surface; Flip swaps; Positive and Negative stated override it"));
+        }
+    }
+
+    /// <summary>brief-emb-3 R-emb3-2/3 — each lumped port's gap and direction, and what disagrees with it, as check says it.</summary>
+    private static void PortDirectionWalk(C3dDocument doc, C3dElaboration e, List<ResolutionStepJson> walks)
+    {
+        foreach (var d in C3dPortChecks.For(doc, e))
+        {
+            string port = d.Arguments.TryGetValue("port", out var p) ? $"port {p} " : "port ";
+            walks.Add(d.Id == C3dPortChecks.GapId
+                ? new ResolutionStepJson(port + "gap", null, C3dPortChecks.Text(d),
+                                         "the gap's length along the port's direction and its width across it, from its drawn rectangle")
+                : new ResolutionStepJson(port + $"direction ({d.Severity.ToString().ToLowerInvariant()})", null, C3dPortChecks.Text(d),
+                    "warned when the direction is more than 45 degrees off the line between the nearest points of its two " +
+                    "conductors, or, with both ends stated, when another pair of its edges faces conductors more nearly; an error " +
+                    "when stated ends and what the port touches choose different pairs of edges"));
         }
     }
 

@@ -3859,6 +3859,44 @@ public static partial class PlanarFill
         else
             System.Threading.Tasks.Parallel.For(0, count, row);
     }
+
+    /// <summary>
+    /// <b>EMB-4 R-emb4-6 — <see cref="ForRows"/> with state PER WORKER</b>: each worker that joins the loop
+    /// gets one <typeparamref name="TLocal"/> from <paramref name="init"/>, every row it takes is run against
+    /// it, and <paramref name="done"/> is called ONCE when that worker leaves — so a reduction merges once per
+    /// worker rather than once per row (or per chunk of rows). The same three shapes as <see cref="ForRows"/>
+    /// (sequential, capped, budgeted), and the budget's permit is held for exactly as long as there.
+    /// <paramref name="done"/> runs concurrently with other workers' rows and must take its own lock.
+    /// </summary>
+    internal static void ForRowsLocal<TLocal>(PlanarFillSettings st, int count, Func<TLocal> init,
+                                              Action<int, TLocal> row, Action<TLocal> done)
+    {
+        if (!st.Parallel || count <= 8)
+        {
+            var only = init();
+            for (int i = 0; i < count; i++) row(i, only);
+            done(only);
+            return;
+        }
+
+        var options = new System.Threading.Tasks.ParallelOptions();
+        if (st.Budget is { } budget)
+        {
+            options.MaxDegreeOfParallelism = budget.Cap;
+            System.Threading.Tasks.Parallel.For(
+                0, count, options,
+                () => { budget.Enter(); return init(); },
+                (i, _, local) => { row(i, local); return local; },
+                local => { try { done(local); } finally { budget.Exit(); } });
+            return;
+        }
+
+        if (st.MaxDegreeOfParallelism is { } cap) options.MaxDegreeOfParallelism = cap;
+        System.Threading.Tasks.Parallel.For(
+            0, count, options, init,
+            (i, _, local) => { row(i, local); return local; },
+            done);
+    }
 }
 
 /// <summary>

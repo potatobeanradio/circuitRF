@@ -66,10 +66,12 @@ internal sealed record Em3dSetupSource(
             if (setup.IsThermal)
                 return Drawing(full, setup, embedded.Count, elaborator.Elaborate(doc, full, cws,
                     new C3dElaborationOptions(null, setup.OperatingTempC ?? EmSetup.DefaultOperatingTempC)), thermal: true);
+            Stage("lowering the 3D view to its problem");
             var generated = C3dProblemAssembly.Assemble(setup, doc, full, cws, elaborator);
+            Stage("elaborating the 3D view at the sweep's top");
             var e = elaborator.Elaborate(doc, full, cws, new C3dElaborationOptions(generated.Problem?.Frequency.StopHz,
                                                                                    setup.OperatingTempC ?? EmSetup.DefaultOperatingTempC)
-                                                         { RobustMeshing = setup.RobustMeshing });
+                                                         { RobustMeshing = setup.RobustMeshing, SolidVias = !setup.IsThermal });
             return new Em3dSetupSource(full, setup, ResolutionOf(full, e), generated,
                 generated.Problem is null ? generated.Refusal ?? "the 3D problem could not be built." : null) { Elaboration = e };
         }
@@ -133,12 +135,26 @@ internal sealed record Em3dSetupSource(
             return new Em3dSetupSource(full, setup, new EmSetupResolution(null, c3d, null, []), null,
                                        $"this setup is a planar analysis, and {C3dSetups.PlanarRefusal}.");
         var elaborator = new C3dElaborator();
+        Stage("lowering the 3D view to its problem");
         var generated = C3dProblemAssembly.Assemble(setup, doc, c3d, DocumentKinds.AncestorCws(c3d), elaborator, fromCem: true);
+        Stage("elaborating the 3D view at the sweep's top");
         var e2 = elaborator.Elaborate(doc, c3d, DocumentKinds.AncestorCws(c3d),
                                       new C3dElaborationOptions(generated.Problem?.Frequency.StopHz, setup.OperatingTempC ?? EmSetup.DefaultOperatingTempC)
-                                      { RobustMeshing = setup.RobustMeshing });
+                                      { RobustMeshing = setup.RobustMeshing, SolidVias = !setup.IsThermal });
         return new Em3dSetupSource(full, setup, ResolutionOf(c3d, e2), generated,
             generated.Problem is null ? generated.Refusal ?? "the 3D problem could not be built." : null) { Elaboration = e2 };
+    }
+
+    /// <summary>
+    /// EMB-5 R-emb5-3/4 — a stage boundary of the lowering, for whoever hosts the call: named, so a client's progress says
+    /// what is slow, and a point where a cancelled call stops. Lowering a board's 3D view is seconds to minutes and nothing
+    /// below this takes a token, so these are its boundaries. Nothing on a command line, where no host is installed.
+    /// </summary>
+    private static void Stage(string name)
+    {
+        if (RunHost.Control is not { } control) return;
+        control.ThrowIfCancellationRequested();
+        control.BeginStage(name);
     }
 
     private static EmSetupResolution NoResolution(string c3d) => new(null, c3d, null, []);
@@ -159,7 +175,9 @@ internal sealed record Em3dSetupSource(
             return new Em3dSetupSource(full, setup, resolution, null,
                 EmDiagnostics.NoTechnology(setup.LayoutRef).Render());
 
+        Stage("generating the 3D problem from the layout");
         var generated = Em3dGenerator.Generate(setup, source, tech);
+        Stage("generated the 3D problem");
         return new Em3dSetupSource(full, setup, resolution, generated,
             generated.Problem is null ? generated.Refusal ?? "the 3D problem could not be built." : null);
     }

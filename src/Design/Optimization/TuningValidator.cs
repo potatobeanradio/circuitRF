@@ -158,19 +158,30 @@ public static class TuningValidator
             f.Add(TuningDiagnostics.PartLevelsAreCandidates(who));
     }
 
-    /// <summary>A <c>timelimit</c> in seconds — a number with an optional s, ms, min or h — or null.</summary>
+    /// <summary>The spelling a refusal of a wall-clock limit quotes — every form <see cref="TimeLimitSeconds"/> takes.</summary>
+    public const string TimeLimitSpelling = "seconds, or a number and s, ms, min or h, e.g. 600, 90s, 10min, 10 min or 1.5h";
+
+    /// <summary>
+    /// A wall-clock limit in seconds, or null. A bare number is seconds; a unit (s, ms, min, h) may follow
+    /// with or without a space — <c>10min</c>, <c>10 min</c>, <c>90s</c>, <c>1.5h</c> alike (R-emb5-7). This is
+    /// the one reader of the optimize line's <c>timelimit=</c>, the CLI's <c>--time</c> and the MCP <c>time</c>.
+    /// </summary>
     public static double? TimeLimitSeconds(string text)
     {
-        var parts = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length is 0 or > 2
-            || !double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out double n)
-            || n <= 0)
+        var m = DurationPattern.Match(text);
+        if (!m.Success
+            || !double.TryParse(m.Groups["n"].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double n)
+            || n <= 0 || double.IsInfinity(n))
             return null;
-        return (parts.Length == 1 ? "s" : parts[1]) switch
+        return m.Groups["u"].Value switch
         {
-            "s" => n, "ms" => n / 1000, "min" => n * 60, "h" => n * 3600, _ => (double?)null,
+            "" or "s" => n, "ms" => n / 1000, "min" => n * 60, "h" => n * 3600, _ => (double?)null,
         };
     }
+
+    private static readonly System.Text.RegularExpressions.Regex DurationPattern = new(
+        @"^\s*(?<n>[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)\s*(?<u>ms|min|s|h)?\s*$",
+        System.Text.RegularExpressions.RegexOptions.CultureInvariant);
 
     /// <summary>A key resolving to nothing is a warning (overview D3); one naming a value that is not
     /// offered — an expression, a port number — is an error, since it can never be tuned.</summary>

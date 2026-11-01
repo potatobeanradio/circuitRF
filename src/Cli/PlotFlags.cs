@@ -50,8 +50,13 @@ internal sealed class PlotFlags
     /// <summary>The curves: name, points (file pixels), axis, assignment — in the order given.</summary>
     public readonly List<(string Name, List<(double X, double Y)> Points, PlotSide Axis, PlotAssignment Assignment)> Curves = [];
 
-    /// <summary>Find curve from one click: the curve's name and the click, file pixels.</summary>
-    public readonly List<(string Name, double X, double Y)> Follows = [];
+    /// <summary>Find curve from one click: the curve's name, the click (file pixels), and the y scale and quantity a
+    /// <c>,axis=</c> / <c>,is=</c> suffix gave — null when none did (EMB-5 R-emb5-11).</summary>
+    public readonly List<(string Name, double X, double Y, PlotSide? Axis, PlotAssignment? Assignment)> Follows = [];
+
+    /// <summary><c>--all-traces</c>: a refused or unassigned reading lists every trace rather than the count and the
+    /// longest few (EMB-5 R-emb5-9).</summary>
+    public bool AllTraces;
     public int? SamplePoints;
     public double? SampleStep;
     public ManualSampleMethod? Method;
@@ -69,6 +74,12 @@ internal sealed class PlotFlags
     {
         string a = args[i];
         // The three bare flags first: they take no value.
+        if (a == "--all-traces")
+        {
+            AllTraces = true;
+            Given.Add(a);
+            return 0;
+        }
         if (a is "--x-log" or "--y-log" or "--y2-log")
         {
             Scales.Add((0, AxisOf(a), true));
@@ -289,11 +300,17 @@ internal sealed class PlotFlags
             }
             case "--follow":
             {
+                // <name>=<px>,<py>[,axis=left|right][,is=S11:db] — the same suffixes --curve takes, so a followed curve
+                // reaches a Touchstone as a hand-drawn one does (R-emb5-11).
                 int eq = v.IndexOf('=');
                 var xy = eq > 0 ? v[(eq + 1)..].Split(',', StringSplitOptions.TrimEntries) : [];
-                if (xy.Length != 2 || Px(xy[0]) is not { } fx || Px(xy[1]) is not { } fy || v[..eq].Trim().Length == 0)
-                    return Bad("<name>=<px>,<py>: a curve's name and one click on it, in pixels — the curve is followed from there");
-                Follows.Add((v[..eq].Trim(), fx, fy));
+                PlotSide? side = null;
+                PlotAssignment? assignment = null;
+                if (xy.Length < 2 || Px(xy[0]) is not { } fx || Px(xy[1]) is not { } fy || v[..eq].Trim().Length == 0
+                    || !Suffixes(xy.Skip(2), ref side, ref assignment))
+                    return Bad("<name>=<px>,<py>[,axis=left|right][,is=S11:db]: a curve's name and one click on it, in pixels — the curve is "
+                             + "followed from there — optionally the y scale it is read on and what it is (data by default)");
+                Follows.Add((v[..eq].Trim(), fx, fy, side, assignment));
                 break;
             }
             case "--sample":
@@ -411,29 +428,40 @@ internal sealed class PlotFlags
             var bits = part.Split(',', StringSplitOptions.TrimEntries);
             int k = 0;
             if (bits.Length >= 2 && Px(bits[0]) is { } x && Px(bits[1]) is { } y) { points.Add((x, y)); k = 2; }
-            for (; k < bits.Length; k++)
-            {
-                string b = bits[k];
-                if (b.StartsWith("axis=", StringComparison.OrdinalIgnoreCase))
-                {
-                    switch (b[5..].Trim().ToLowerInvariant())
-                    {
-                        case "left": side = PlotSide.Left; break;
-                        case "right": side = PlotSide.Right; break;
-                        default: return null;
-                    }
-                }
-                else if (b.StartsWith("is=", StringComparison.OrdinalIgnoreCase))
-                {
-                    string what = b[3..].Trim();
-                    if (what.Equals("data", StringComparison.OrdinalIgnoreCase)) assignment = PlotAssignment.None;
-                    else if (PlotQuantity.ParseAssignment(what) is { Assigned: true } got) assignment = got;
-                    else return null;
-                }
-                else return null;
-            }
+            PlotSide? s = side;
+            PlotAssignment? a = assignment;
+            if (!Suffixes(bits.Skip(k), ref s, ref a)) return null;
+            side = s ?? side;
+            assignment = a ?? assignment;
         }
         return name.Length == 0 ? null : (name, points, side, assignment);
+    }
+
+    /// <summary>A curve's <c>axis=left|right</c> and <c>is=S21:db</c> (or <c>is=data</c>) suffixes — shared by
+    /// <c>--curve</c> and <c>--follow</c>. False on anything else.</summary>
+    private static bool Suffixes(IEnumerable<string> bits, ref PlotSide? side, ref PlotAssignment? assignment)
+    {
+        foreach (string b in bits)
+        {
+            if (b.StartsWith("axis=", StringComparison.OrdinalIgnoreCase))
+            {
+                switch (b[5..].Trim().ToLowerInvariant())
+                {
+                    case "left": side = PlotSide.Left; break;
+                    case "right": side = PlotSide.Right; break;
+                    default: return false;
+                }
+            }
+            else if (b.StartsWith("is=", StringComparison.OrdinalIgnoreCase))
+            {
+                string what = b[3..].Trim();
+                if (what.Equals("data", StringComparison.OrdinalIgnoreCase)) assignment = PlotAssignment.None;
+                else if (PlotQuantity.ParseAssignment(what) is { Assigned: true } got) assignment = got;
+                else return false;
+            }
+            else return false;
+        }
+        return true;
     }
 
     /// <summary>The axis a flag names: <c>--x-…</c>, <c>--y-…</c>, <c>--y2-…</c>.</summary>

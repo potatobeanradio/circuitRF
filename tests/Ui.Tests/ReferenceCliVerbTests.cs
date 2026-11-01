@@ -625,7 +625,7 @@ public sealed class ReferenceCliVerbTests(ITestOutputHelper output)
             return string.Join("\n", text[start..end].Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0));
         }
         string json      = Block("This is a whole file:", "It extracts to:");
-        string[] netlist = Block("It extracts to:", "Eight things").Split('\n');
+        string[] netlist = Block("It extracts to:", "Nine things").Split('\n');
 
         string dir = Path.Combine(Path.GetTempPath(), "crf-ref-csch-" + Guid.NewGuid().ToString("N")[..10]);
         Directory.CreateDirectory(dir);

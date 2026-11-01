@@ -35,23 +35,7 @@
       },
       {
         "Attributes": [
-          6
-        ],
-        "Permeability": 1,
-        "Permittivity": 1,
-        "LossTan": 0
-      },
-      {
-        "Attributes": [
-          8
-        ],
-        "Permeability": 1,
-        "Permittivity": 1,
-        "LossTan": 0
-      },
-      {
-        "Attributes": [
-          9
+          7
         ],
         "Permeability": 1,
         "Permittivity": 1,
@@ -65,31 +49,31 @@
         3,
         4,
         5,
-        7,
-        16
+        6,
+        14
       ]
     },
     "PMC": {
       "Attributes": [
+        10,
+        11,
         12,
         13,
-        14,
-        15,
-        17
+        15
       ]
     },
     "SurfaceCurrent": [
       {
         "Index": 1,
         "Attributes": [
-          10
+          8
         ],
         "Direction": "\u002BZ"
       },
       {
         "Index": 2,
         "Attributes": [
-          11
+          9
         ],
         "Direction": "\u002BZ"
       }

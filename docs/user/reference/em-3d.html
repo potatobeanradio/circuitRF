@@ -243,6 +243,32 @@ A <a href="components.html#testpad">TESTPAD</a> with <code>Centre = Port</code> 
 port numbered <code>PortNum</code>, wherever the part is placed, turned or mirrored, and in 3D it is the pad-to-plane
 port above. A planar setup takes it as an internal port to ground. Its number is checked against the
 board's own port labels and every other component's: a number used twice is refused, naming both.</p>
+<p><a id="part-ports"></a><strong>A port across each part's own pads</strong> (<code>ComponentPorts</code>). To co-simulate a board with the
+parts placed on it, each part needs a port of the board's N-port at its own pads. A 3D setup of a
+<a href="drawing-in-3d.html">3D view</a> that places the board's layout names them by reference designator — <code>[&quot;C1&quot;, &quot;C2&quot;, &quot;L2&quot;]</code>,
+or <code>&quot;*&quot;</code> for every placed two-terminal part — in its <strong>Component ports</strong> list (tick the parts; <strong>Check</strong> shows what
+would be built) or with <code>em &lt;view.c3d&gt; --component-ports &quot;C1,C2&quot;</code> for one run. Each is a lumped <strong>gap</strong> port between
+the part's two pads: its ends at the closest copper facing the gap across the port's width — the pad, a trace's
+round cap, a zone's arc — and where that copper is not one straight face, a <strong>landing</strong> rectangle extends it to one,
+reaching back into solid copper across the whole width. Landings exist only in the solved problem; the layout is
+not changed. Before anything is meshed, in <code>check</code> as in the run, each port is verified: no landing touches other
+copper (it would join two nets), each end of the sheet touches its own pad's copper and nothing else, its sides touch
+nothing, no copper lies inside it, and its two pads are on different nets. A failure refuses the run naming the part
+and what was found. Port numbers follow the 3D view's own ports, in list order; an entry may state its own <code>Z0</code>, and
+its <code>Reference</code> (one of the part's pins) to say which pad is the negative end. A part with more pads, such as an
+amplifier, gets one gap port per signal pad against its own ground pad (a pad on the ground net, or named GND); a
+part whose ground pads on top and bottom copper lie over each other is a coaxial launch, and its shell is modelled
+by a copper block through the substrate joining the two. <code>explain &lt;view.c3d&gt; --component-ports</code> lists each port's
+pads, conductors, gap, width, landings and verdict without meshing. A finished driven run also writes
+<code>&lt;setup&gt;_cosim.cnl</code> beside where the <code>_sim</code> cell goes: the board's S-parameter block, a <code>Port</code> for each of the 3D
+view's own ports and each connector, and each part's model from the board's schematic from its port's node to
+ground — a part with no model there is a placeholder value, named in a comment and by <code>check</code>. A 3D view of a
+cell's layout is made by <strong>Design ▸ New 3D View from Layout</strong>, or <code>new view3d &lt;cell&gt; --from-layout</code>.</p>
+<p><strong>Why a gap port, and not a pad-to-plane port at each pad.</strong> A part between two pad-to-plane ports carries its
+current, as far as the EM is concerned, down one port's sheet, along the plane and up the other's: a loop that is
+not on the board. A gap port puts the part where it is, across its own pads, and the co-simulation connects it from
+that port's node to ground — never between two port nodes. A hand-drawn pair of pad-to-plane ports is a different,
+approximate model; its error grows with the pads' spacing against the substrate's height.</p>
 <p><a id="port-numbers"></a><strong>Port numbers run 1 to N.</strong> A Touchstone file numbers its ports by position, not by
 name, so a layout whose ports are 1, 3 and 4 would write P3 as the file's port 2, and a schematic that connects the
 file connects it by position. A run, planar or 3D, is therefore refused while the numbers skip one, and the refusal
@@ -263,16 +289,27 @@ By default, on a driven setup, each face is padded by multiples of H, the dielec
 sides and the top, 10 H below, each rounded to the nearest 5 % of its axis and never more than an eighth of the
 longest wavelength or the structure's largest extent. On a 1.6 mm board whose top dielectric is 0.2 mm that is
 about 4 mm of air on the sides and top. The floor sits on the lowest ground plane, as a PEC face, when that plane is
-undrawn, or when it is drawn with no hole in it under all the other metal: nothing below an unbroken plane carries
-field. A setup that asks for a radiation pattern keeps every face absorbing and a quarter of the longest wavelength
+undrawn, or when it is drawn under all the other metal with no hole that a via passes through or other metal lies
+over (metal on the plane's own net may): nothing below such a plane carries field. When a hole keeps the floor off,
+the notes say where it is. A setup that asks for a radiation pattern keeps every face absorbing and a quarter of the longest wavelength
 of air, and a static or eigenmode setup keeps the wavelength rule. A closed box of PEC faces is a shielded
 enclosure, and it is how the example models a package lid. Each padding box in a 3D view's Properties panel
 gives the length it stands for, and the rule that set it, as its tooltip; <code>circuitrf explain</code> prints the same
 (<em>default: 4.572 mm, 20 × H, H = 203.2 µm of dielectric under the top metal, to the nearest 5 %</em>).</p>
 </li>
 <li><p><strong>Robust meshing</strong> (<code>RobustMeshing</code>): removes outline points that sit within a fraction of a micrometre of
-their neighbours' line, which imported artwork often has and which can stop the mesher. On in a new setup; see
+their neighbours' line, which imported artwork often has and which can stop the mesher. On unless the setup says
+<code>false</code>; ports are inferred on the outline it leaves, by <code>check</code> and by the run alike. See
 <a href="em-setup.html#robust-meshing">EM Setup ▸ Robust meshing</a>.</p>
+</li>
+<li><p><strong>Vias</strong> are solid copper barrels in every EM problem, whatever their stackup entry's <strong>Fill</strong> says: a plated
+barrel's air core changes nothing an RF answer can see and makes the mesher build inverted elements. A thermal
+solve keeps the wall, which is where the heat runs. <code>circuitrf explain</code> names each entry that was built solid.</p>
+</li>
+<li><p><strong>Mesh order.</strong> A layout's geometry, whose only curved surfaces are its drilled barrels, is meshed with
+straight-sided second-order elements; on an imported board that took Gmsh 10 to 30 s where curving them ran for
+more than a quarter of an hour. Genuinely curved geometry keeps curved elements, for at most
+<code>MeshCurvingMinutes</code> (5 by default) before the mesh is made straight-sided, and the run says when it was.</p>
 </li>
 <li><p><strong>Quality</strong> (<code>Quality</code> in the <code>Palace</code> section): <em>Draft</em>, <em>Standard</em> (the default) or <em>Accurate</em>.
 These set the element order, the refinement passes and the sweep tolerance together, and any one of
@@ -306,7 +343,8 @@ reported how many tetrahedra it made, uses the real count. On a bond wire or ano
 the second is the one that counts, because the refinement its curvature asks for is nearly the whole mesh. Past 75 % of memory the run carries a warning naming the estimate and
 what would shrink it. Past 150 %, Simulate asks before going on.</p>
 <p><strong>While it runs</strong>, the progress row names the solver's own stages, read from its own log: <em>Meshing
-(Gmsh)</em>; <em>Solving: refinement pass k of N</em> with the unknown count; <em>Adaptive sweep</em>, with the model change
+(Gmsh)</em> with Gmsh's own stage (curves, surfaces, 3D, the second-order elements, and <em>high-order optimisation</em> with
+the node count it works on), and <code>gmsh.log</code> in the run folder fills as Gmsh runs; <em>Solving: refinement pass k of N</em> with the unknown count; <em>Adaptive sweep</em>, with the model change
 — how much the frequency model still changes when a new frequency is solved — and the tolerance it is done below; <em>Reading results</em>. The memory the solver is using is beside it. A 3D
 run cannot stop early and keep a partial result, so the button reads <strong>Cancel</strong>.</p>
 <p><strong>When it finishes</strong>, one line states what the run cost: the wall time, the solver's own peak memory,
@@ -358,11 +396,16 @@ the other solver's:</p>
 </tr>
 </tbody>
 </table>
+<p>For a setup embedded in a <code>.c3d</code>, <code>&lt;setup&gt;</code> is the file's stem and the setup's name with a space between: the
+setup <code>Driven</code> in <code>board.c3d</code> writes <code>results/board Driven.palace.s15p</code> for fifteen ports. <code>-o</code> moves the
+Touchstone only. <code>run analysis=em</code> lists every file it wrote in its outputs, the Touchstone first, so the path
+never has to be put together by hand.</p>
 <p><code>results/&lt;setup&gt;.palace/</code> keeps everything the run made: the Gmsh script, the mesh, the Palace
 configuration, both programs' logs, and the saved fields. The run can be repeated by hand from it. An
 unchanged model reuses its mesh. <code>results/&lt;setup&gt;.emerge/</code> is EMerge's: the model as data
 (<code>problem.json</code>), the driver script that reads it, EMerge's log, the arrays it wrote and the saved fields,
-in the layout a Palace run's fields use, so every field plot draws either.</p>
+in the layout a Palace run's fields use, so every field plot draws either. A static or eigenmode setup keeps
+its own folder beside the driven one: <code>results/&lt;setup&gt;.palace_es/</code>, <code>_ms/</code> or <code>_eig/</code>.</p>
 <p><strong>A port with two terminals on Palace</strong> (<a href="em-setup.html#wave-port-terminals-palace">On Palace</a>) also keeps
 what its terminal S was converted from, per frequency, in the <code>palace</code> group of <code>&lt;setup&gt;.palace_em.npy</code>:
 <code>modal_S</code> and <code>modal_V</code> (Palace's modal S and the voltage along each terminal's path, port by excitation),

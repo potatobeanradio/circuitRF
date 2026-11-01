@@ -171,6 +171,34 @@ full description.
   port above. A planar setup takes it as an internal port to ground. Its number is checked against the
   board's own port labels and every other component's: a number used twice is refused, naming both.
 
+  <a id="part-ports"></a>**A port across each part's own pads** (`ComponentPorts`). To co-simulate a board with the
+  parts placed on it, each part needs a port of the board's N-port at its own pads. A 3D setup of a
+  [3D view](drawing-in-3d.html) that places the board's layout names them by reference designator — `["C1", "C2", "L2"]`,
+  or `"*"` for every placed two-terminal part — in its **Component ports** list (tick the parts; **Check** shows what
+  would be built) or with `em <view.c3d> --component-ports "C1,C2"` for one run. Each is a lumped **gap** port between
+  the part's two pads: its ends at the closest copper facing the gap across the port's width — the pad, a trace's
+  round cap, a zone's arc — and where that copper is not one straight face, a **landing** rectangle extends it to one,
+  reaching back into solid copper across the whole width. Landings exist only in the solved problem; the layout is
+  not changed. Before anything is meshed, in `check` as in the run, each port is verified: no landing touches other
+  copper (it would join two nets), each end of the sheet touches its own pad's copper and nothing else, its sides touch
+  nothing, no copper lies inside it, and its two pads are on different nets. A failure refuses the run naming the part
+  and what was found. Port numbers follow the 3D view's own ports, in list order; an entry may state its own `Z0`, and
+  its `Reference` (one of the part's pins) to say which pad is the negative end. A part with more pads, such as an
+  amplifier, gets one gap port per signal pad against its own ground pad (a pad on the ground net, or named GND); a
+  part whose ground pads on top and bottom copper lie over each other is a coaxial launch, and its shell is modelled
+  by a copper block through the substrate joining the two. `explain <view.c3d> --component-ports` lists each port's
+  pads, conductors, gap, width, landings and verdict without meshing. A finished driven run also writes
+  `<setup>_cosim.cnl` beside where the `_sim` cell goes: the board's S-parameter block, a `Port` for each of the 3D
+  view's own ports and each connector, and each part's model from the board's schematic from its port's node to
+  ground — a part with no model there is a placeholder value, named in a comment and by `check`. A 3D view of a
+  cell's layout is made by **Design ▸ New 3D View from Layout**, or `new view3d <cell> --from-layout`.
+
+  **Why a gap port, and not a pad-to-plane port at each pad.** A part between two pad-to-plane ports carries its
+  current, as far as the EM is concerned, down one port's sheet, along the plane and up the other's: a loop that is
+  not on the board. A gap port puts the part where it is, across its own pads, and the co-simulation connects it from
+  that port's node to ground — never between two port nodes. A hand-drawn pair of pad-to-plane ports is a different,
+  approximate model; its error grows with the pads' spacing against the substrate's height.
+
   <a id="port-numbers"></a>**Port numbers run 1 to N.** A Touchstone file numbers its ports by position, not by
   name, so a layout whose ports are 1, 3 and 4 would write P3 as the file's port 2, and a schematic that connects the
   file connects it by position. A run, planar or 3D, is therefore refused while the numbers skip one, and the refusal
@@ -189,15 +217,24 @@ full description.
   sides and the top, 10 H below, each rounded to the nearest 5 % of its axis and never more than an eighth of the
   longest wavelength or the structure's largest extent. On a 1.6 mm board whose top dielectric is 0.2 mm that is
   about 4 mm of air on the sides and top. The floor sits on the lowest ground plane, as a PEC face, when that plane is
-  undrawn, or when it is drawn with no hole in it under all the other metal: nothing below an unbroken plane carries
-  field. A setup that asks for a radiation pattern keeps every face absorbing and a quarter of the longest wavelength
+  undrawn, or when it is drawn under all the other metal with no hole that a via passes through or other metal lies
+  over (metal on the plane's own net may): nothing below such a plane carries field. When a hole keeps the floor off,
+  the notes say where it is. A setup that asks for a radiation pattern keeps every face absorbing and a quarter of the longest wavelength
   of air, and a static or eigenmode setup keeps the wavelength rule. A closed box of PEC faces is a shielded
   enclosure, and it is how the example models a package lid. Each padding box in a 3D view's Properties panel
   gives the length it stands for, and the rule that set it, as its tooltip; `circuitrf explain` prints the same
   (*default: 4.572 mm, 20 × H, H = 203.2 µm of dielectric under the top metal, to the nearest 5 %*).
 - **Robust meshing** (`RobustMeshing`): removes outline points that sit within a fraction of a micrometre of
-  their neighbours' line, which imported artwork often has and which can stop the mesher. On in a new setup; see
+  their neighbours' line, which imported artwork often has and which can stop the mesher. On unless the setup says
+  `false`; ports are inferred on the outline it leaves, by `check` and by the run alike. See
   [EM Setup ▸ Robust meshing](em-setup.html#robust-meshing).
+- **Vias** are solid copper barrels in every EM problem, whatever their stackup entry's **Fill** says: a plated
+  barrel's air core changes nothing an RF answer can see and makes the mesher build inverted elements. A thermal
+  solve keeps the wall, which is where the heat runs. `circuitrf explain` names each entry that was built solid.
+- **Mesh order.** A layout's geometry, whose only curved surfaces are its drilled barrels, is meshed with
+  straight-sided second-order elements; on an imported board that took Gmsh 10 to 30 s where curving them ran for
+  more than a quarter of an hour. Genuinely curved geometry keeps curved elements, for at most
+  `MeshCurvingMinutes` (5 by default) before the mesh is made straight-sided, and the run says when it was.
 - **Quality** (`Quality` in the `Palace` section): *Draft*, *Standard* (the default) or *Accurate*.
   These set the element order, the refinement passes and the sweep tolerance together, and any one of
   those can be overridden on its own. The measured cost of each preset is in
@@ -232,7 +269,8 @@ the second is the one that counts, because the refinement its curvature asks for
 what would shrink it. Past 150 %, Simulate asks before going on.
 
 **While it runs**, the progress row names the solver's own stages, read from its own log: *Meshing
-(Gmsh)*; *Solving: refinement pass k of N* with the unknown count; *Adaptive sweep*, with the model change
+(Gmsh)* with Gmsh's own stage (curves, surfaces, 3D, the second-order elements, and *high-order optimisation* with
+the node count it works on), and `gmsh.log` in the run folder fills as Gmsh runs; *Solving: refinement pass k of N* with the unknown count; *Adaptive sweep*, with the model change
 — how much the frequency model still changes when a new frequency is solved — and the tolerance it is done below; *Reading results*. The memory the solver is using is beside it. A 3D
 run cannot stop early and keep a partial result, so the button reads **Cancel**.
 
@@ -260,11 +298,17 @@ the other solver's:
 | EMerge | `results/<setup>.emerge.sNp` and `<setup>.emerge_em.npy`; an eigenmode run `<setup>.emerge_eig.npy` |
 | Compare | each solver's own result, as above, and `results/<setup>.compare_em.npy` holding each one's difference from the reference |
 
+For a setup embedded in a `.c3d`, `<setup>` is the file's stem and the setup's name with a space between: the
+setup `Driven` in `board.c3d` writes `results/board Driven.palace.s15p` for fifteen ports. `-o` moves the
+Touchstone only. `run analysis=em` lists every file it wrote in its outputs, the Touchstone first, so the path
+never has to be put together by hand.
+
 `results/<setup>.palace/` keeps everything the run made: the Gmsh script, the mesh, the Palace
 configuration, both programs' logs, and the saved fields. The run can be repeated by hand from it. An
 unchanged model reuses its mesh. `results/<setup>.emerge/` is EMerge's: the model as data
 (`problem.json`), the driver script that reads it, EMerge's log, the arrays it wrote and the saved fields,
-in the layout a Palace run's fields use, so every field plot draws either.
+in the layout a Palace run's fields use, so every field plot draws either. A static or eigenmode setup keeps
+its own folder beside the driven one: `results/<setup>.palace_es/`, `_ms/` or `_eig/`.
 
 **A port with two terminals on Palace** ([On Palace](em-setup.html#wave-port-terminals-palace)) also keeps
 what its terminal S was converted from, per frequency, in the `palace` group of `<setup>.palace_em.npy`:

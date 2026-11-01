@@ -17,12 +17,16 @@ namespace CircuitRF.Cli.Serve;
 /// of the code rather than a rule to remember. The parity gate compares two documents that came out
 /// of one function.</para>
 ///
-/// <para><b>One call at a time, but the reader never blocks.</b> The verbs use process-wide state
-/// (<see cref="JsonRun"/>, <see cref="Console.Out"/>), so two capability calls cannot be in flight
-/// together; they are queued onto one worker. The reader loop keeps reading regardless, which is the
-/// whole reason for the split: <c>notifications/cancelled</c> and <c>ping</c> have to be answerable
-/// while a full-wave run is going, and a run that cannot be cancelled is one a client times out on
-/// and retries, doubling the cost of the run it gave up on.</para>
+/// <para><b>Two lanes, and the reader never blocks</b> (EMB-5 R-emb5-1). A tool that writes nothing
+/// (<see cref="ServeJobs.ReadOnlyTools"/>) runs on a small pool; everything else is queued onto one
+/// serial worker, as every call was before. What made the old single worker necessary — the verbs'
+/// process-wide state (<see cref="JsonRun"/>, <see cref="RunHost"/>, the per-invocation flags) — is
+/// per call now (<see cref="JsonRun.Isolate"/>), and <see cref="Console.Out"/> is never touched once
+/// the server has silenced it. The reader loop keeps reading regardless:
+/// <c>notifications/cancelled</c> and <c>ping</c> have to be answerable while a full-wave run is
+/// going, and a run that cannot be cancelled is one a client times out on and retries, doubling the
+/// cost of the run it gave up on. A long call may also be started as a JOB (<see cref="ServeJobs"/>)
+/// and asked about later.</para>
 ///
 /// <para><b>Destructive operations are refusals, not confirmations</b> (R-aut5-8) — and they are
 /// refusals by omission rather than by a filter: there is no tool that deletes, and no capability
@@ -41,6 +45,19 @@ internal sealed class McpServer
 
     private readonly BlockingCollection<Action> _work = new(new ConcurrentQueue<Action>());
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _inFlight = new();
+
+    /// <summary>EMB-5 R-emb5-1 — the read-only lane, served by <see cref="PoolSize"/> threads.</summary>
+    private readonly BlockingCollection<Action> _pool = new(new ConcurrentQueue<Action>());
+
+    /// <summary>How many read-only calls run at once. Small on purpose: a <c>check</c> of a board's <c>.cem</c> meshes
+    /// it, and three meshers side by side are already most of a small machine's memory.</summary>
+    internal const int PoolSize = 3;
+
+    private readonly ServeJobs _jobs = new();
+
+    /// <summary>The function a call's argument vector is handed to — <see cref="CliEntry.Run"/>, always, outside the
+    /// scheduling tests, which put a deliberately slow verb here to pin what waits for what.</summary>
+    internal Func<string[], int> Runner { get; init; } = CliEntry.Run;
 
     /// <summary>
     /// RC-5's batch, which is the one tool that is not a command line. It holds SESSION state — a
@@ -70,8 +87,14 @@ internal sealed class McpServer
     /// <summary>Reads until the client disconnects. Returns the process exit code.</summary>
     public int Serve()
     {
-        var worker = new Thread(WorkerLoop) { IsBackground = true, Name = "circuitrf-serve" };
+        var worker = new Thread(() => WorkerLoop(_work)) { IsBackground = true, Name = "circuitrf-serve" };
         worker.Start();
+        var pool = new Thread[PoolSize];
+        for (int i = 0; i < pool.Length; i++)
+        {
+            pool[i] = new Thread(() => WorkerLoop(_pool)) { IsBackground = true, Name = $"circuitrf-serve-read-{i + 1}" };
+            pool[i].Start();
+        }
 
         try
         {
@@ -94,12 +117,15 @@ internal sealed class McpServer
             // A client that disconnects mid-run: stop the run rather than leaving the process
             // holding a solve nobody is waiting for.
             foreach (var cts in _inFlight.Values) { try { cts.Cancel(); } catch { /* already done */ } }
+            _jobs.CancelAll();
             _rpc.AbandonPending();
             GeneratedCells.Asker = null;
             GeneratedCells.Serving = false;
             GeneratedCells.ForgetSessionAnswers();
             _work.CompleteAdding();
+            _pool.CompleteAdding();
             worker.Join(TimeSpan.FromSeconds(30));
+            foreach (var t in pool) t.Join(TimeSpan.FromSeconds(30));
         }
 
         return _leaving ? 1 : 0;
@@ -152,6 +178,7 @@ internal sealed class McpServer
             {
                 var tools = ToolCatalog.Advertise();
                 tools.Add(HistoryBatch.Advertise());
+                tools.Add(ServeJobs.Advertise());
                 _rpc.Result(id, new JsonObject { ["tools"] = tools });
             }
                 return;
@@ -242,6 +269,11 @@ internal sealed class McpServer
                 "problems on Palace only; 'solver' says what is installed here and what each build can do. device=gpu runs Palace on the GPUs of a GPU build " +
                 "('solver capability=gpu' says whether this one can), and EMerge on its GPU sparse solver ('solver' says whether " +
                 "GPU solving is enabled); device=auto, the default, picks for EMerge by the problem's size.\n" +
+                // EMB-5 R-emb5-1/2: the cost before committing, and a long run that does not hold the session.
+                "Before an EM run, run analysis=em dryRun=true: its unknowns, memory and time, and every refusal, " +
+                "with nothing solved. A long run or check takes async=true and returns a job id at once; " +
+                "job action=status|cancel|result id=<id> follows it. Reading tools (find, check, explain, read, " +
+                "reference, render, plot, solver) are answered while a run is going.\n" +
                 "\n" +
                 "End to end. Nothing here writes a document — use your own file tools for step 3.\n" +
                 "  1. create   what=workspace path=<root> name=demo      -> <root>/demo/.cws\n" +
@@ -396,11 +428,40 @@ internal sealed class McpServer
 
         var    arguments     = parameters?["arguments"] as JsonObject;
         var    progressToken = parameters?["_meta"]?["progressToken"];
+
+        // EMB-5 R-emb5-1 — a job is asked about on the reader thread: it runs no verb, and an agent polling a
+        // twenty-minute run must not wait behind it to learn how far it has got.
+        if (tool == ServeJobs.ToolName)
+        {
+            _rpc.Result(id, _jobs.Invoke(arguments, out var jobRefusal)
+                            ?? ToolResult(RefusalDocument(ServeJobs.ToolName, jobRefusal!), 1, false, arguments));
+            return;
+        }
+
+        var lane = ServeJobs.ReadOnlyTools.Contains(tool) ? _pool : _work;
+
+        if (ServeJobs.JobTools.Contains(tool) && ToolCatalog.AsyncAsked(arguments))
+        {
+            var job = _jobs.Create(tool, arguments?["analysis"] is JsonValue a && a.GetValueKind() == JsonValueKind.String
+                                             ? a.GetValue<string>() : null);
+            lane.Add(() =>
+            {
+                _jobs.Started(job);
+                int exit = 1;
+                JsonObject result;
+                try { result = BuildResult(tool, arguments, job.Observe, job.Cts.Token, out exit, e => { lock (job) job.Estimate = e; }); }
+                catch (Exception ex) { result = ToolResult(RefusalDocument(tool, CliDiagnostics.ServeToolFailed(tool, ex.Message)), 1, false, arguments); }
+                _jobs.Finished(job, result, exit);
+            });
+            _rpc.Result(id, ServeJobs.Accepted(job));
+            return;
+        }
+
         string key           = KeyOf(id);
         var    cts           = new CancellationTokenSource();
         _inFlight[key] = cts;
 
-        _work.Add(() =>
+        lane.Add(() =>
         {
             try     { Invoke(id, tool, arguments, progressToken, cts.Token); }
             finally { _inFlight.TryRemove(key, out _); cts.Dispose(); }
@@ -408,8 +469,8 @@ internal sealed class McpServer
     }
 
     /// <summary>
-    /// <c>resources/read</c>. Queued onto the same worker as a tool call, because it reaches the same
-    /// verb through the same process-wide state.
+    /// <c>resources/read</c>. Queued onto the read-only pool, as the <c>reference</c> tool is: it reaches the same
+    /// verb, and writes nothing.
     ///
     /// <para><b>It returns the bytes the tool returns</b> (R-aut-13, gate 2): both translate to
     /// <c>reference &lt;topic&gt; --json</c> and hand back what came out, so a resource and a tool
@@ -431,7 +492,7 @@ internal sealed class McpServer
         {
             // Not an error frame: an unknown resource is answered the way an unknown topic is
             // answered on the command line — a document naming the ones that exist (R-aut-7).
-            _work.Add(() => _rpc.Result(id, ResourceEnvelope(
+            _pool.Add(() => _rpc.Result(id, ResourceEnvelope(
                 uri, RefusalDocument("reference", CliDiagnostics.ReferenceUnknownResource(
                     uri, string.Join(", ", ReferenceResources.Uris()))))));
             return;
@@ -441,7 +502,7 @@ internal sealed class McpServer
         var    cts = new CancellationTokenSource();
         _inFlight[key] = cts;
 
-        _work.Add(() =>
+        _pool.Add(() =>
         {
             try
             {
@@ -468,7 +529,21 @@ internal sealed class McpServer
     private void Invoke(JsonNode? id, string tool, JsonObject? arguments, JsonNode? progressToken,
                         CancellationToken ct)
     {
-        int    refusedCode;
+        Action<RunProgress>? observer = progressToken is null ? null : p => Report(progressToken, p);
+        Action<string>? estimate = progressToken is null ? null
+            : line => Report(progressToken, new RunProgress("estimate: " + line, 0, 0));
+        _rpc.Result(id, BuildResult(tool, arguments, observer, ct, out _, estimate));
+    }
+
+    /// <summary>
+    /// One tool call, run to its result — what <see cref="Invoke"/> sends and what a job stores (EMB-5 R-emb5-1), so the
+    /// two cannot differ: a job's <c>result</c> IS the synchronous call's.
+    /// </summary>
+    /// <param name="estimate">Where an <c>em</c> run's estimate goes before it starts (R-emb5-2), stated once as the first
+    /// progress observation. Null when nobody is listening, and the dry run is then not made.</param>
+    private JsonObject BuildResult(string tool, JsonObject? arguments, Action<RunProgress>? observer, CancellationToken ct,
+                                   out int refusedCode, Action<string>? estimate)
+    {
         string document;
         bool   overlay = false;
         string? scratchOverlay = null;
@@ -497,11 +572,48 @@ internal sealed class McpServer
                 }
             }
 
+            // EMB-5 R-emb5-2 — an EM run states what it will cost before it starts, so a client that did not ask for a
+            // dry run still sees the estimate. It IS the dry run (em --dry-run on the same argument vector): the same
+            // numbers, from the same functions check and explain use, never a second estimate. A form the dry run
+            // refuses (an extracted part, a band sweep, a solver override) states none.
+            if (argv is not null && estimate is not null && argv[0] == "em" && !argv.Contains("--dry-run")
+             && !argv.Contains("--component") && !argv.Contains("--bands") && !argv.Contains("--solver"))
+            {
+                string dry = RunVerb([.. argv[..^1], "--dry-run", argv[^1]], null, ct, out _, tool);
+                if (EstimateOf(dry) is { } line) estimate(line);
+            }
+
             document = argv is null
                 ? RefusalDocument(tool, refusal!, out refusedCode)
-                : RunVerb(argv, progressToken, ct, out refusedCode, tool);
+                : RunVerb(argv, observer, ct, out refusedCode, tool);
         }
 
+        var result = ToolResult(document, refusedCode, overlay, arguments);
+        if (scratchOverlay is not null)
+            // A plot session of several pictures writes one overlay a picture: <stem>.png, <stem>-2.png … (brief-img-14).
+            foreach (string f in Directory.GetFiles(Path.GetDirectoryName(scratchOverlay)!, Path.GetFileNameWithoutExtension(scratchOverlay) + "*.png"))
+                try { File.Delete(f); } catch (IOException) { /* best effort */ }
+        return result;
+    }
+
+    /// <summary>The <c>em.dry-run.estimate</c> line a dry-run document carries, or null.</summary>
+    private static string? EstimateOf(string document)
+    {
+        try
+        {
+            if (JsonNode.Parse(document)?["diagnostics"] is not JsonArray ds) return null;
+            foreach (var d in ds)
+                if (d?["id"]?.GetValue<string>() == "em.dry-run.estimate" && d["arguments"]?["estimate"] is JsonValue v)
+                    return v.GetValue<string>();
+        }
+        catch (Exception e) when (e is JsonException or InvalidOperationException) { /* no estimate, then */ }
+        return null;
+    }
+
+    /// <summary>The protocol's envelope around one document: the text block, any attachment, the error flag and the
+    /// structured twin.</summary>
+    private static JsonObject ToolResult(string document, int refusedCode, bool overlay, JsonObject? arguments)
+    {
         // The document, unchanged (R-aut5-5). The text block is the protocol's own envelope, not a
         // reshaping of the payload: these bytes are the CLI's `--json` bytes.
         var content = new JsonArray(new JsonObject
@@ -511,10 +623,6 @@ internal sealed class McpServer
         });
 
         if (ToolCatalog.AttachmentAsked(arguments) || overlay) Attach(content, document);
-        if (scratchOverlay is not null)
-            // A plot session of several pictures writes one overlay a picture: <stem>.png, <stem>-2.png … (brief-img-14).
-            foreach (string f in Directory.GetFiles(Path.GetDirectoryName(scratchOverlay)!, Path.GetFileNameWithoutExtension(scratchOverlay) + "*.png"))
-                try { File.Delete(f); } catch (IOException) { /* best effort */ }
 
         var result = new JsonObject
         {
@@ -539,7 +647,7 @@ internal sealed class McpServer
         }
         catch (JsonException) { /* a document that is not an object; the text block still carries it */ }
 
-        _rpc.Result(id, result);
+        return result;
     }
 
     // ── the picture, back through the protocol ───────────────────────────────
@@ -654,20 +762,20 @@ internal sealed class McpServer
     /// that state up for itself — which is also what makes the parity gate a property of the code:
     /// the bytes a resource returns came out of the same function a tool call's did (R-aut-13).</para>
     /// </summary>
-    private string RunVerb(string[] argv, JsonNode? progressToken, CancellationToken ct,
+    private string RunVerb(string[] argv, Action<RunProgress>? observer, CancellationToken ct,
                            out int exitCode, string tool)
     {
-        // Every collector, cleared. Without this a document would carry the previous call's
-        // diagnostics and outputs — a stale success a caller cannot tell from a real one.
-        JsonRun.Reset();
+        // EMB-5 R-emb5-1 — this call's own collectors, empty, for as long as it runs: calls on the pool are in flight
+        // together, and one call's diagnostics, outputs or result section must never reach another's document.
+        using var isolated = JsonRun.Isolate();
 
         var document = new StringWriter();
         JsonRun.Sink = document;
 
         try
         {
-            using var _ = RunHost.Install(ct, progressToken is null ? null : p => Report(progressToken, p));
-            exitCode = CliEntry.Run(argv);
+            using var _ = RunHost.Install(ct, observer);
+            exitCode = Runner(argv);
         }
         catch (OperationCanceledException)
         {
@@ -696,7 +804,8 @@ internal sealed class McpServer
     /// </summary>
     private static string RefusalDocument(string tool, Diagnostic d, out int exitCode)
     {
-        JsonRun.Reset();
+        // Its own state (EMB-5 R-emb5-1): a refusal is written on the reader thread or a pool thread, beside other calls.
+        using var isolated = JsonRun.Isolate();
         var document = new StringWriter();
         JsonRun.Sink = document;
         try     { exitCode = Refuse(tool, d); }
@@ -722,13 +831,29 @@ internal sealed class McpServer
         {
             ["progressToken"] = progressToken.DeepClone(),
             ["progress"]      = p.Completed,
-            ["message"]       = p.Stage,
+            ["message"]       = ProgressMessage(p),
         };
         // Total 0 means INDETERMINATE, which RunProgress states explicitly. Sending a zero would
         // read as a finished run rather than an unknown one, so the field is left out instead.
         if (p.Total > 0) parameters["total"] = p.Total;
 
         _rpc.Notify("notifications/progress", parameters);
+    }
+
+    /// <summary>
+    /// EMB-5 R-emb5-4 — what a progress notification says: the stage, then the stage's OWN size where it has one
+    /// ("testing 1,240 row(s) against the metal — 310 of 1,240"), then its live figure (a solver's memory, Gmsh's node
+    /// count, the near-field factor's columns). The run's outer counter travels as <c>progress</c>/<c>total</c>; this is
+    /// what tells an agent WHICH part is slow, so it can cancel and change approach rather than wait.
+    /// </summary>
+    internal static string ProgressMessage(RunProgress p)
+    {
+        string s = p.Stage;
+        if (p.StageTotal > 0)
+            s += string.Create(System.Globalization.CultureInfo.InvariantCulture, $" — {p.StageCompleted:N0} of {p.StageTotal:N0}")
+               + (p.StageUnit.Length > 0 ? " " + p.StageUnit : "");
+        if (p.StageDetail.Length > 0) s += (s.Length > 0 ? "; " : "") + p.StageDetail;
+        return s;
     }
 
     private void Cancel(JsonObject? parameters)
@@ -743,9 +868,9 @@ internal sealed class McpServer
     private static string KeyOf(JsonNode? id) =>
         id is null ? "" : id.GetValue<JsonElement>().ValueKind + ":" + id.ToJsonString();
 
-    private void WorkerLoop()
+    private static void WorkerLoop(BlockingCollection<Action> lane)
     {
-        foreach (var item in _work.GetConsumingEnumerable())
+        foreach (var item in lane.GetConsumingEnumerable())
         {
             try { item(); }
             catch (Exception ex)

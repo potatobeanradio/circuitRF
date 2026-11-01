@@ -25,30 +25,117 @@ namespace CircuitRF.Cli;
 /// <para><b>Why static mutable state.</b> <c>CliEntry</c> dispatches to static functions, and
 /// threading a context object through every one of them would be the refactor R-aut0-4's spirit says
 /// not to bundle into this change. One command line is one invocation and one document. The one
-/// caller that invokes more than once per process — <c>serve</c> — calls <see cref="Reset"/> between
-/// them and runs its calls one at a time, which is what this state costs and why the adapter is
-/// serialized rather than concurrent.</para>
+/// caller that invokes more than once per process — <c>serve</c> — gives each call a state of its own
+/// (<see cref="Isolate"/>, EMB-5 R-emb5-1), which is what lets it run read-only calls at once.</para>
 /// </summary>
 internal static class JsonRun
 {
+    // ── EMB-5 R-emb5-1 — one invocation's state, so `serve` can run several at once ─────────────
+    //
+    // Every collector above is a property over ONE State. A command line has one invocation and uses the
+    // process-wide one; `serve` gives each call its own through <see cref="Isolate"/>, held in an AsyncLocal so a
+    // verb's own Parallel.For / Task.Run work sees its call's state and no other's. Before this, two calls in flight
+    // together would have written each other's diagnostics, outputs and result sections into one document.
+
+    private sealed class State
+    {
+        public bool Enabled;
+        public TextWriter? _stdout;
+        public string[]? _onlyCubes;
+        public string[]? _onlyGroups;
+        public List<AxisPick> _picks = [];
+        public List<AxisSpan> _spans = [];
+        public bool _summaryOnly;
+        public bool _diagnosticsSummary;
+        public (string Option, string Text)? Malformed;
+        public bool AllCubes;
+        public bool SummaryIsTheDefault;
+        public int? InlineCubeLimit;
+        public string  Verb = "";
+        public string? InputPath;
+        public string? Analysis;
+        public DataSet? Data;
+        public IReadOnlyList<WsProbeJson>? Wsprobes;
+        public NdfReportJson? Ndf;
+        public CheckReportJson? Check;
+        public ExplainReportJson? Explain;
+        public DocumentJson? Document;
+        public ReferenceReportJson? Reference;
+        public FindReportJson? Find;
+        public HistoryReportJson? History;
+        public RenderReportJson? Render;
+        public RailReportJson? Rail;
+        public SmithReportJson? Smith;
+        public SnpReportJson? Snp;
+        public LvsReportJson? Lvs;
+        public ImpedanceReportJson? Impedance;
+        public ReviewReportJson? Review;
+        public IReadOnlyList<ReviewCheckJson>? ReviewChecks;
+        public ImpedanceSurveyJson? ImpedanceSurvey;
+        public ImpedanceLineJson? ImpedanceLine;
+        public IReadOnlyList<RenderFieldPlotJson>? FieldPlots;
+        public IReadOnlyList<SolverJson>? Solvers;
+        public ScratchJson? Scratch;
+        public OptimizeReportJson? Optimize;
+        public YieldReportJson? Yield;
+        public CornerReportJson? Corners;
+        public CenterReportJson? Center;
+        public DoeReportJson? Doe;
+        public SensitivityReportJson? Sensitivity;
+        public RecognizeReportJson? Recognize;
+        public StepImportReportJson? StepImport;
+        public ConvertImageJson? ConvertImage;
+        public ModelReportJson? Model;
+        public VendorLibraryJson? Library;
+        public TextWriter? Sink;
+        public List<ResultOutput> Outputs = [];
+        public List<DiagnosticJson> Diagnostics = [];
+    }
+
+    private static readonly State _process = new();
+    private static readonly AsyncLocal<State?> _scoped = new();
+    private static State S => _scoped.Value ?? _process;
+
+    /// <summary>Gives the calling flow a fresh, empty state until the returned scope is disposed (EMB-5 R-emb5-1).
+    /// <c>serve</c> wraps every call in one; nothing else needs it.</summary>
+    internal static IDisposable Isolate()
+    {
+        var previous = _scoped.Value;
+        _scoped.Value = new State();
+        return new Restore(previous);
+    }
+
+    private sealed class Restore(State? previous) : IDisposable
+    {
+        public void Dispose() => _scoped.Value = previous;
+    }
+
     /// <summary>True once <c>--json</c> has been seen. Nothing else in this class does anything
     /// observable when it is false — the collectors still fill, and are then discarded.</summary>
-    public static bool Enabled { get; private set; }
+    public static bool Enabled { get => S.Enabled; private set => S.Enabled = value; }
 
     /// <summary>The real stdout, held from the moment the flag is parsed.</summary>
-    private static TextWriter? _stdout;
+    private static TextWriter? _stdout { get => S._stdout; set => S._stdout = value; }
 
-    private static string[]? _onlyCubes;
-    private static string[]? _onlyGroups;
+    private static string[]? _onlyCubes { get => S._onlyCubes; set => S._onlyCubes = value; }
+    private static string[]? _onlyGroups { get => S._onlyGroups; set => S._onlyGroups = value; }
 
     /// <summary>AUT-9 R-aut9-9's axis narrowing, as typed. Resolved against the run's own axes at
     /// <see cref="Finish"/>, because the axes do not exist until the run has produced them.</summary>
-    private static readonly List<AxisPick> _picks = [];
-    private static readonly List<AxisSpan> _spans = [];
+    private static List<AxisPick> _picks => S._picks;
+    private static List<AxisSpan> _spans => S._spans;
 
     /// <summary>True for <c>--result summary</c>: the shape, the extents and the loadpull
     /// projection, and no cube values at all (R-aut9-9). The default is the full document.</summary>
-    private static bool _summaryOnly;
+    private static bool _summaryOnly { get => S._summaryOnly; set => S._summaryOnly = value; }
+
+    /// <summary>Whether <c>--result summary</c> was given — for a verb whose notes, not its cubes, are what
+    /// grows with its input (<c>import library</c>'s per-file tolerance notes, EMB-5 R-emb5-8).</summary>
+    public static bool SummaryOnly => _summaryOnly;
+
+    /// <summary>What <c>import library --result summary</c> leaves out, said in the document.</summary>
+    internal const string LibrarySummarized =
+        "each file's own tolerance note (counted in one note instead); result=full (--result full) returns them";
 
     /// <summary>
     /// True for <c>--summary</c> (R-aut9-11): the <c>info</c> diagnostics are collapsed into counts
@@ -60,7 +147,7 @@ internal static class JsonRun
     /// inferences that all went fine. stderr is untouched either way, so the full account is still
     /// on the terminal.</para>
     /// </summary>
-    private static bool _diagnosticsSummary;
+    private static bool _diagnosticsSummary { get => S._diagnosticsSummary; set => S._diagnosticsSummary = value; }
 
     /// <summary>
     /// A narrowing flag whose SPELLING was wrong — refused before the run rather than after it,
@@ -68,153 +155,153 @@ internal static class JsonRun
     /// no reason to make them wait for a solve first. Read by <see cref="CliEntry"/> immediately
     /// after <see cref="TakeFlags"/>; null when everything parsed.
     /// </summary>
-    public static (string Option, string Text)? Malformed { get; private set; }
+    public static (string Option, string Text)? Malformed { get => S.Malformed; private set => S.Malformed = value; }
 
     /// <summary>Set by <c>lp</c>/<c>lpp</c> from their own <c>--all</c>. R-aut1-5: under
     /// <c>--json</c> a loadpull's default stays the one-row-per-grid-point summary — it is the useful
     /// projection, not a terminal compromise — and <c>--all</c> still means every cube.</summary>
-    public static bool AllCubes;
+    public static bool AllCubes { get => S.AllCubes; set => S.AllCubes = value; }
 
     /// <summary>Set by <c>lp</c>/<c>lpp</c>, the two verbs whose default document is the summary.</summary>
-    public static bool SummaryIsTheDefault;
+    public static bool SummaryIsTheDefault { get => S.SummaryIsTheDefault; set => S.SummaryIsTheDefault = value; }
 
     /// <summary>Set by <c>env</c>: with no <c>--all</c>, <c>--only</c> or <c>--group</c>, the document carries only the
     /// cubes of at most this many values. An envelope's time waveforms and spectrum run to hundreds of MB of JSON;
     /// its ACLR, AM-AM/AM-PM and scalars are the answer, and the shape still names everything else.</summary>
-    public static int? InlineCubeLimit;
+    public static int? InlineCubeLimit { get => S.InlineCubeLimit; set => S.InlineCubeLimit = value; }
 
-    public static string  Verb      = "";
-    public static string? InputPath;
+    public static string  Verb { get => S.Verb; set => S.Verb = value; }
+    public static string? InputPath { get => S.InputPath; set => S.InputPath = value; }
 
     /// <summary>The chain that ACTUALLY ran, after <c>SelectTop</c>'s promotion — see
     /// <see cref="ResultInput"/>.</summary>
-    public static string? Analysis;
+    public static string? Analysis { get => S.Analysis; set => S.Analysis = value; }
 
     /// <summary>The run's cubes, already merged with its measurements by the verb, exactly as the
     /// verb hands them to the exporter.</summary>
-    public static DataSet? Data;
+    public static DataSet? Data { get => S.Data; set => S.Data = value; }
 
     /// <summary>The WSProbes an S-parameter run carried, label and idx (R-wsp1-12(a)). Null when
     /// the run had none, so the key is absent rather than an empty list.</summary>
-    public static IReadOnlyList<WsProbeJson>? Wsprobes;
+    public static IReadOnlyList<WsProbeJson>? Wsprobes { get => S.Wsprobes; set => S.Wsprobes = value; }
 
     /// <summary>What an <c>NDF=yes</c> S-parameter run found (brief-wsprobe-6 R-wsp6-2). Null when
     /// the knob was off, so the key is absent rather than a zero count that reads as "stable".</summary>
-    public static NdfReportJson? Ndf;
+    public static NdfReportJson? Ndf { get => S.Ndf; set => S.Ndf = value; }
 
     /// <summary>What <c>check</c> found, in counts (R-aut4-10). The findings themselves travel as
     /// diagnostics; this is the tally that tells "checked nothing" from "checked everything".</summary>
-    public static CheckReportJson? Check;
+    public static CheckReportJson? Check { get => S.Check; set => S.Check = value; }
 
     /// <summary>What <c>explain</c> resolved, and the walk it performed (R-aut4-7).</summary>
-    public static ExplainReportJson? Explain;
+    public static ExplainReportJson? Explain { get => S.Explain; set => S.Explain = value; }
 
     /// <summary>The document <c>read</c> handed back, when the file was one of circuitRF's own
     /// rather than a result.</summary>
-    public static DocumentJson? Document;
+    public static DocumentJson? Document { get => S.Document; set => S.Document = value; }
 
     /// <summary>What <c>reference</c> was asked — the topic list, one topic, or the component
     /// catalogue. About no document at all, which is why it is its own payload
     /// (brief-automation-6-reference-and-components.md §5).</summary>
-    public static ReferenceReportJson? Reference;
+    public static ReferenceReportJson? Reference { get => S.Reference; set => S.Reference = value; }
 
     /// <summary>What <c>find</c> found — the workspaces under a root, their cells, each cell's views
     /// and the analyses it declares (R-aut11-3). About no document and no analysis, which is why it is
     /// its own payload.</summary>
-    public static FindReportJson? Find;
+    public static FindReportJson? Find { get => S.Find; set => S.Find = value; }
 
     /// <summary>What <c>history</c> answered — the restore-point list, or what one boundary or one
     /// restore did (R-rc5-23). About no analysis at all, which is why it is its own payload.</summary>
-    public static HistoryReportJson? History;
+    public static HistoryReportJson? History { get => S.History; set => S.History = value; }
 
     /// <summary>What <c>render</c> decided — the viewport, the theme, the layers, the detail tier and
     /// the frame's own work counters (R-rnd2-11). About no analysis either, and about a file the run
     /// WROTE rather than one it read, which is why <c>outputs</c> carries the picture and this carries
     /// everything the picture cannot say about itself.</summary>
-    public static RenderReportJson? Render;
+    public static RenderReportJson? Render { get => S.Render; set => S.Render = value; }
 
     /// <summary>What <c>rail</c> answered, and what it answered it ON (R-rail10-5). Carried BESIDE
     /// the cubes rather than instead of them: the DataSet holds the node voltages and this holds the
     /// domain shape a cube cannot — which port, which breakdown row, and the provenance every export
     /// of this run carries.</summary>
-    public static RailReportJson? Rail;
+    public static RailReportJson? Rail { get => S.Rail; set => S.Rail = value; }
 
     /// <summary>What <c>smith</c> answered (brief-smith-10-cli-verb.md R-smith10-2) — the reading at
     /// the design frequency, the walk one node at a time, and the swept band when there is one. It
     /// runs no analysis and carries no DataSet, which is why it is its own payload beside
     /// <see cref="Render"/> rather than a cube.</summary>
-    public static SmithReportJson? Smith;
+    public static SmithReportJson? Smith { get => S.Smith; set => S.Smith = value; }
 
     /// <summary>What <c>snp</c> read — the S-Parameter Viewer's file pane and the terms it plotted. It runs
     /// no analysis and carries no DataSet, which is why it is its own payload, as <see cref="Smith"/> is.</summary>
-    public static SnpReportJson? Snp;
+    public static SnpReportJson? Snp { get => S.Snp; set => S.Snp = value; }
 
     /// <summary>What <c>lvs</c> compared and what it concluded (R-lvs11-3c) — a projection of
     /// <c>LvsRunResult</c> and nothing else. The findings themselves also travel as diagnostics,
     /// which is where a caller that does not care which cell produced what reads them; this carries
     /// the per-cell structure, the counts and the reduction mode a flat array cannot.</summary>
-    public static LvsReportJson? Lvs;
+    public static LvsReportJson? Lvs { get => S.Lvs; set => S.Lvs = value; }
 
     /// <summary>What <c>impedance</c> analysed and found — a projection of the Trace Impedance
     /// Analysis report and nothing else.</summary>
-    public static ImpedanceReportJson? Impedance;
+    public static ImpedanceReportJson? Impedance { get => S.Impedance; set => S.Impedance = value; }
 
     /// <summary>What <c>review</c> found — a projection of the Layout Review's result.</summary>
-    public static ReviewReportJson? Review;
+    public static ReviewReportJson? Review { get => S.Review; set => S.Review = value; }
 
     /// <summary>What <c>review --list-checks</c> listed: every check and its thresholds.</summary>
-    public static IReadOnlyList<ReviewCheckJson>? ReviewChecks;
+    public static IReadOnlyList<ReviewCheckJson>? ReviewChecks { get => S.ReviewChecks; set => S.ReviewChecks = value; }
 
     /// <summary>What <c>impedance --survey</c> found — the width classes per layer.</summary>
-    public static ImpedanceSurveyJson? ImpedanceSurvey;
+    public static ImpedanceSurveyJson? ImpedanceSurvey { get => S.ImpedanceSurvey; set => S.ImpedanceSurvey = value; }
 
     /// <summary>What <c>impedance --tech</c> (the line calculator) answered — both columns.</summary>
-    public static ImpedanceLineJson? ImpedanceLine;
+    public static ImpedanceLineJson? ImpedanceLine { get => S.ImpedanceLine; set => S.ImpedanceLine = value; }
 
     /// <summary>What <c>render --list-fields</c> found (brief-em3d-84): a 3D view's field plots.</summary>
-    public static IReadOnlyList<RenderFieldPlotJson>? FieldPlots;
+    public static IReadOnlyList<RenderFieldPlotJson>? FieldPlots { get => S.FieldPlots; set => S.FieldPlots = value; }
 
     /// <summary>What <c>solver list</c> found — each external solver and what its build can do.</summary>
-    public static IReadOnlyList<SolverJson>? Solvers;
+    public static IReadOnlyList<SolverJson>? Solvers { get => S.Solvers; set => S.Solvers = value; }
 
     /// <summary>Where an <c>em</c> run put its temporary files (<see cref="ScratchJson"/>). Carried with the cubes, and
     /// on a refused run too — the refusal is often the reason to ask.</summary>
-    public static ScratchJson? Scratch;
+    public static ScratchJson? Scratch { get => S.Scratch; set => S.Scratch = value; }
 
     /// <summary>What <c>opt</c> found (brief-tuneopt-11 R-to11-2). Its cubes travel only in the
     /// <c>-o</c>/<c>--history</c> file: the document is the answer, not the data.</summary>
-    public static OptimizeReportJson? Optimize;
+    public static OptimizeReportJson? Optimize { get => S.Optimize; set => S.Optimize = value; }
 
     /// <summary>What <c>yield</c> found (brief-yield-5 R-ya5-2). Its cubes travel only in the written
     /// <c>.yield.npy</c>: the document is the answer, not the data.</summary>
-    public static YieldReportJson? Yield;
+    public static YieldReportJson? Yield { get => S.Yield; set => S.Yield = value; }
 
     /// <summary>What <c>yield corners</c> found (brief-yield-6 R-ya6-6).</summary>
-    public static CornerReportJson? Corners;
+    public static CornerReportJson? Corners { get => S.Corners; set => S.Corners = value; }
 
     /// <summary>What <c>yield center</c> found (brief-yield-11 R-ya11-8).</summary>
-    public static CenterReportJson? Center;
+    public static CenterReportJson? Center { get => S.Center; set => S.Center = value; }
 
     /// <summary>What <c>yield doe</c> found (brief-yield-14 R-ya14-8).</summary>
-    public static DoeReportJson? Doe;
+    public static DoeReportJson? Doe { get => S.Doe; set => S.Doe = value; }
 
     /// <summary>What <c>yield sens</c> found (brief-sens-1 R-sens1-7).</summary>
-    public static SensitivityReportJson? Sensitivity;
+    public static SensitivityReportJson? Sensitivity { get => S.Sensitivity; set => S.Sensitivity = value; }
 
     /// <summary>What <c>recognize</c> read and wrote (brief-artsch-7 R-as7-5).</summary>
-    public static RecognizeReportJson? Recognize;
+    public static RecognizeReportJson? Recognize { get => S.Recognize; set => S.Recognize = value; }
 
     /// <summary>What <c>convert x.step</c> created, or would create with <c>--list-parts</c> (brief-em3d-128 R-em3d128-3b).</summary>
-    public static StepImportReportJson? StepImport;
+    public static StepImportReportJson? StepImport { get => S.StepImport; set => S.StepImport = value; }
 
     /// <summary>What <c>convert</c> read off a picture (brief-img-11 R-im11-4).</summary>
-    public static ConvertImageJson? ConvertImage;
+    public static ConvertImageJson? ConvertImage { get => S.ConvertImage; set => S.ConvertImage = value; }
 
     /// <summary>What a <c>model</c> noun did (brief-modelcomposer-13 R-mc13-3).</summary>
-    public static ModelReportJson? Model;
+    public static ModelReportJson? Model { get => S.Model; set => S.Model = value; }
 
     /// <summary>What <c>import library</c> added (brief vendorlib-1 R-vl1-5a).</summary>
-    public static VendorLibraryJson? Library;
+    public static VendorLibraryJson? Library { get => S.Library; set => S.Library = value; }
 
     /// <summary>
     /// Where <see cref="Finish"/> writes, instead of stdout. Set by <c>serve</c> only.
@@ -223,7 +310,7 @@ internal static class JsonRun
     /// it directly would land in the middle of a JSON-RPC frame and the client would see a parse
     /// error with no indication of the cause (R-aut5-2).</para>
     /// </summary>
-    public static TextWriter? Sink;
+    public static TextWriter? Sink { get => S.Sink; set => S.Sink = value; }
 
     /// <summary>
     /// Clears every collector so the next <see cref="CliEntry.Run"/> in this process starts from
@@ -288,8 +375,8 @@ internal static class JsonRun
         Diagnostics.Clear();
     }
 
-    private static readonly List<ResultOutput>   Outputs     = [];
-    private static readonly List<DiagnosticJson> Diagnostics = [];
+    private static List<ResultOutput> Outputs => S.Outputs;
+    private static List<DiagnosticJson> Diagnostics => S.Diagnostics;
 
     // ── flags ────────────────────────────────────────────────────────────────
 
@@ -385,8 +472,11 @@ internal static class JsonRun
             // Sink is set by `serve`, which owns the real stdout for the protocol framing and must
             // never let a document reach it directly (R-aut5-2). Console.Out is redirected either
             // way, so the "nothing else on stdout" guarantee is the same one on both paths.
+            //
+            // EMB-5 R-emb5-1 — under `serve` Console.Out is already TextWriter.Null for the whole process (ServeVerb), so
+            // it is not set again: that is the one piece of process-wide state a call touched, and calls now run at once.
             _stdout = Sink ?? Console.Out;
-            Console.SetOut(TextWriter.Null);
+            if (Sink is null) Console.SetOut(TextWriter.Null);
         }
 
         return rest.ToArray();
@@ -510,14 +600,29 @@ internal static class JsonRun
          || ImpedanceLine is not null || Solvers is not null || Optimize is not null || Yield is not null || Corners is not null
          || Center is not null || Doe is not null || Sensitivity is not null || Recognize is not null || StepImport is not null || ConvertImage is not null
          || Model is not null || Library is not null || Review is not null || ReviewChecks is not null)
+        {
+            // EMB-5 R-emb5-8: `--result summary` on a report with no DataSet — the answer without its
+            // per-trial, per-corner and per-iteration records, and a sentence saying what was left out.
+            var (optimize, yieldR, corners, center, doe) = (Optimize, Yield, Corners, Center, Doe);
+            string? summarized = null;
+            if (_summaryOnly)
+            {
+                if (optimize is not null) (optimize, summarized) = ReportSummaries.Optimize(optimize);
+                if (yieldR   is not null) (yieldR,   summarized) = ReportSummaries.Yield(yieldR);
+                if (corners  is not null) (corners,  summarized) = ReportSummaries.Corners(corners);
+                if (center   is not null) (center,   summarized) = ReportSummaries.Center(center);
+                if (doe      is not null) (doe,      summarized) = ReportSummaries.Doe(doe);
+                if (Library  is not null) summarized = LibrarySummarized;
+            }
             return new ResultPayload(null, null, Check, Explain, Document, Reference, History, Render,
                                      Find: Find, Smith: Smith, Lvs: Lvs, Impedance: Impedance,
                                      ImpedanceSurvey: ImpedanceSurvey, FieldPlots: FieldPlots,
-                                     ImpedanceLine: ImpedanceLine, Solvers: Solvers, Optimize: Optimize,
-                                     Yield: Yield, Corners: Corners, Center: Center, Doe: Doe, Sensitivity: Sensitivity,
+                                     ImpedanceLine: ImpedanceLine, Solvers: Solvers, Optimize: optimize,
+                                     Yield: yieldR, Corners: corners, Center: center, Doe: doe, Sensitivity: Sensitivity,
                                      Recognize: Recognize, StepImport: StepImport, Convert: ConvertImage,
                                      Model: Model, Library: Library, Review: Review, ReviewChecks: ReviewChecks,
-                                     Snp: Snp);
+                                     Snp: Snp, Summarized: summarized);
+        }
 
         // `rail` is the one verb that carries a report AND a DataSet — the cubes are the field and
         // the report is the domain shape §2.4 asks for — so a refused run still answers with its

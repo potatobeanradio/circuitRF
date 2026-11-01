@@ -163,7 +163,10 @@ public sealed class Em3dRenderExplainTests(ITestOutputHelper output) : IDisposab
 
         Assert.Equal(src.Problem.Solids.Select(s => s.Name).Concat(src.Problem.Sheets.Select(s => s.Name)).Order(),
                      report.Solids.Select(s => s.Name).Order());
-        Assert.Contains(report.Solids, s => s.Name == "via/1/fill" && s.Role == "air" && s.Primitive == "cylinder");
+        // brief-emb-2 R-emb2-2 — an EM problem's plated via is solid, and the report says so for its entry.
+        Assert.DoesNotContain(report.Solids, s => s.Name == "via/1/fill");
+        Assert.Contains(report.Solids, s => s.Name == "via/1" && s.Primitive == "cylinder");
+        Assert.Contains(report.Notes, n => n.StartsWith("Via barrels in this EM problem are solid:", StringComparison.Ordinal));
         Assert.Equal(src.Problem.Materials.Select(m => m.Name), report.Materials.Select(m => m.Name));
         Assert.All(report.Materials, m => Assert.NotEqual("unrecorded", m.From));
         Assert.Equal(src.Problem.Ports.Select(p => p.Number), report.Ports.Select(p => p.Number));

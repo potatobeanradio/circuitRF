@@ -529,15 +529,14 @@ public static partial class Em3dRunService
         return new Em3dComparisonLeg(d.DisplayName, d.ResultToken, d.Method, leg.Data!["S"], leg.Facts);
     }
 
-    /// <summary>Each completed leg's Touchstone and <c>.npy</c>, in run order.</summary>
+    /// <summary>Each completed leg's Touchstone, in run order, then each one's <c>.npy</c> (brief-emb-3 R-emb3-4: the
+    /// Touchstone is what a caller wants first, and it should never have to put the path together itself).</summary>
     private static List<EmRunOutput> Outputs(IEnumerable<Leg> completed)
     {
+        var legs = completed.ToList();
         var outputs = new List<EmRunOutput>();
-        foreach (var leg in completed)
-        {
-            if (leg.SnpPath is { } snp) outputs.Add(new("touchstone", snp));
-            if (leg.NpyPath is { } npy) outputs.Add(new("npy", npy));
-        }
+        foreach (var leg in legs) if (leg.SnpPath is { } snp) outputs.Add(new("touchstone", snp));
+        foreach (var leg in legs) if (leg.NpyPath is { } npy) outputs.Add(new("npy", npy));
         return outputs;
     }
 

@@ -112,9 +112,12 @@ position and tooltip, so a setting is read as well as seen:
 
 ```
 dotnet run --project tools/UiSnapshot --no-build -- --cem <file.cem> -o out.png [--size WxH] [steps]
+dotnet run --project tools/UiSnapshot --no-build -- --c3d-setup-panel <file.c3d> -o out.png [--check-component-ports] [--size WxH] [steps]
 ```
 
-Default size 900x1200.
+Default size 900x1200. `--c3d-setup-panel` shows a `.c3d`'s first EM embedded setup in the same panel, embedded, with its
+Component ports list over the document's placed layouts; `--check-component-ports` presses Check and each row's verdict
+prints (default size 700x2000).
 
 **The planar memory question** Simulate asks before a planar run past this machine's memory (Simulate Anyway /
 Don't Simulate), with the verdict `PlanarMemoryCheck` gives a de-embedded 36,000-unknown run on this machine:

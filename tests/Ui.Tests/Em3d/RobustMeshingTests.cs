@@ -10,8 +10,8 @@ namespace CircuitRF.Ui.Tests.Em3d;
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 //  brief-dfr28-3 R-dfr28-3-2 — Robust meshing: a 3D run removes the outline points that lie within a fraction of a
-//  micrometre of their neighbours' line. On in a new setup, off in a file that does not say; no outline moves farther than
-//  the tolerance; a corner keeps its point; and a problem built with it off is the artwork as drawn.
+//  micrometre of their neighbours' line. On in a new setup and (brief-emb-2 R-emb2-3) in a file that does not say; no
+//  outline moves farther than the tolerance; a corner keeps its point; and a problem built with it off is the artwork as drawn.
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 
 public sealed class RobustMeshingTests
@@ -19,17 +19,25 @@ public sealed class RobustMeshingTests
     private const double Um = 1e-6;
 
     [Fact]
-    public void ANewSetup_TurnsItOn_WhileAFileThatDoesNotSayStaysOff()
+    public void ANewSetup_TurnsItOn_AndAFileThatDoesNotSayReadsOn()
     {
         var created = EmSetup.CreateNew("line", "line.clay");
         Assert.True(created.RobustMeshing);
-        Assert.Contains("\"RobustMeshing\": true", EmSetupPersistence.Serialize(created));
+        Assert.DoesNotContain("RobustMeshing", EmSetupPersistence.Serialize(created));      // on is the default, never written
         Assert.True(EmSetupPersistence.Deserialize(EmSetupPersistence.Serialize(created)).RobustMeshing);
         Assert.True(EmSetupPersistence.FromEmbedded(EmSetupPersistence.ToEmbedded(created)).RobustMeshing);
 
-        var unsaid = EmSetupPersistence.Serialize(new EmSetup { Name = "line", LayoutRef = "line.clay" });
+        created.RobustMeshing = false;
+        Assert.Contains("\"RobustMeshing\": false", EmSetupPersistence.Serialize(created));
+        Assert.False(EmSetupPersistence.Deserialize(EmSetupPersistence.Serialize(created)).RobustMeshing);
+
+        // A .cem and an embedded setup that do not state it read as on.
+        string unsaid = EmSetupPersistence.Serialize(new EmSetup { Name = "line", LayoutRef = "line.clay" });
         Assert.DoesNotContain("RobustMeshing", unsaid);
-        Assert.False(EmSetupPersistence.Deserialize(unsaid).RobustMeshing);
+        Assert.True(EmSetupPersistence.Deserialize(unsaid).RobustMeshing);
+        var embedded = EmSetupPersistence.ToEmbedded(new EmSetup { Name = "line" });
+        Assert.False(embedded.TryGetProperty("RobustMeshing", out _));
+        Assert.True(EmSetupPersistence.FromEmbedded(embedded).RobustMeshing);
     }
 
     /// <summary>The TP149 trace's corner, in its shape: a quarter arc of 6.89 µm segments ending in a 1.44 µm stub, a 0.1 µm

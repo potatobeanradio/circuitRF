@@ -28,14 +28,14 @@ landed exactly on flat copper faces and was referenced to the conductor its part
 | `brief-emb-2-3d-mesh-robustness.md` | 3D lowering and meshing of imported artwork: straight-sided order 2, solid vias for EM, robust meshing on, a post-mesh check that names bad elements, PEC floor on a solid plane, live Gmsh progress | — |
 | `brief-emb-3-port-correctness.md` | The cylinder-port twin of F5's silent axis default; port direction in `check`; the Touchstone name the docs promise | — |
 | `brief-emb-4-honest-estimates.md` | Palace element estimate on imported artwork; planar memory and AIM wording; via ρ/λ refusal in `check`; the single-threaded near-field factor | — |
-| `brief-emb-5-mcp-agent-experience.md` | Long MCP calls as cancellable jobs; an estimate before committing to a run; concurrent read-only tools; one duration parser; small results for every long run; bounded refusals; plot follow that prefers the trace and can name its quantity | EMB-4 (the estimates it surfaces) |
+| `brief-emb-5-mcp-agent-experience.md` | Long MCP calls as cancellable jobs; an estimate before committing to a run; concurrent read-only tools; one duration parser; small results for every long run; bounded refusals; plot follow that prefers the trace and can name its quantity; the schematic reference expands its tuning types; vendor parts placeable from a `.cnl` | EMB-4 (the estimates it surfaces) |
 
 EMB-2, EMB-3 and EMB-4 are independent of each other. EMB-1 is the payoff and should land last; it is
 specified now so the others are built for it.
 
-## Already done, uncommitted — owner review first
+## Already done — committed in `36ae6a845`
 
-These fixes were made while finding the above. They are in the working tree, not committed:
+These fixes were made while finding the above:
 
 | # | Fix | Files |
 |---|---|---|
@@ -46,8 +46,8 @@ These fixes were made while finding the above. They are in the working tree, not
 | F5 | A lumped port with `Positive`/`Negative` stated chose its axis with the contact query's 2-DBU box cut-off; a sheet short of its metal scored every edge pair infinite and silently kept the u axis, so a gap running along y was driven across its width. Now measured at each edge's midpoint with no cut-off, and an unmeasurable pair refuses | `src/Design/ThreeD/C3dPorts.cs` |
 
 RESOLVED entries exist for F1–F3 (`src/Engine/Mom/RESOLVED.md`, `src/Cli/RESOLVED.md`,
-`src/Core/RESOLVED.md`). **F5 still needs a regression test and a `src/Design/RESOLVED.md` entry** — EMB-3
-R-emb3-1 owns both, together with the cylinder-port branch F5 left alone.
+`src/Core/RESOLVED.md`). F5's entry is in `src/Design/RESOLVED.md`. **F5 still needs its regression test** — EMB-3 R-emb3-1 owns it,
+together with the cylinder-port branch F5 left alone.
 
 ## Rules for the whole series
 

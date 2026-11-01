@@ -1546,18 +1546,56 @@ public static class NetExtractor
         Library lib,
         NetlistImports imports,
         List<string> conflicts)
+        => EmitSpiceModel(comp.InstanceName, comp.Parameters, model, lib, imports, conflicts, (definitionName, ports) =>
+        {
+            var pinDefs = GetEffectivePortDefs(model, comp, cellRefResolutions)
+                              .OrderBy(d => d.PortIndex)
+                              .ToList();
+
+            if (pinDefs.Count != ports)
+            {
+                conflicts.Add($"Instance '{comp.InstanceName}': the symbol exposes {pinDefs.Count} " +
+                              $"pin(s) but '{definitionName}' has {ports}. The symbol is " +
+                              "generated from the same file, so this means it was drawn against an " +
+                              "older version of it — reopen the schematic; skipped.");
+                return null;
+            }
+
+            var nets = new List<string>(pinDefs.Count);
+            foreach (var def in pinDefs)
+            {
+                var (px, py) = model.PortWorldOf(comp, def);
+                nets.Add(NetForPort(comp, def.PortIndex, px, py, uf, QK, netNames, detachedKeys));
+            }
+            return nets;
+        });
+
+    /// <summary>
+    /// The SpiceModel emission itself — file or vendor part, the definition, its cells, its overrides — for one
+    /// instance whose nets <paramref name="netsFor"/> supplies once the definition's port count is known (null when
+    /// they cannot be, having said why). A drawn component's nets come from its pins; a <c>.cnl</c> line's from the
+    /// line (EMB-5 R-emb5-13, <see cref="ResolveNetlistSpiceModels"/>), so the two are one path.
+    /// </summary>
+    private static Instance? EmitSpiceModel(
+        string instanceName,
+        IReadOnlyList<EditableParameter> parameters,
+        SchematicEditModel model,
+        Library lib,
+        NetlistImports imports,
+        List<string> conflicts,
+        Func<string, int, List<string>?> netsFor)
     {
-        string file = (comp.Parameters
+        string file = (parameters
             .FirstOrDefault(p => p.Name == SpiceModelSymbolProvider.FileParameter)?.Expression ?? "").Trim();
 
         if (file.Length == 0)
         {
-            conflicts.Add($"Instance '{comp.InstanceName}': no SPICE model file is set, so there is " +
+            conflicts.Add($"Instance '{instanceName}': no SPICE model file is set, so there is " +
                           "nothing to simulate. Open its parameters and choose one.");
             return null;
         }
 
-        string wanted = (comp.Parameters
+        string wanted = (parameters
             .FirstOrDefault(p => p.Name == SpiceModelSymbolProvider.NameParameter)?.Expression ?? "").Trim();
 
         // A vendor library part reads ONE block — its own — out of a file holding thousands, through
@@ -1571,7 +1609,7 @@ public static class NetExtractor
             if (VendorLibraries.VendorPartSource.Resolve(file, wanted, model.SchematicDirectory, out string? vendorRefusal)
                 is not { } part)
             {
-                conflicts.Add($"Instance '{comp.InstanceName}': {vendorRefusal}");
+                conflicts.Add($"Instance '{instanceName}': {vendorRefusal}");
                 imports.VendorRefusals.Add(conflicts[^1]);
                 return null;
             }
@@ -1585,18 +1623,18 @@ public static class NetExtractor
             path = SpiceModelSymbolProvider.ResolvePath(file, model.SchematicDirectory, out string? unresolved);
             if (path is null && unresolved is not null)
             {
-                conflicts.Add($"Instance '{comp.InstanceName}': {unresolved}");
+                conflicts.Add($"Instance '{instanceName}': {unresolved}");
                 return null;
             }
             if (path is null)
             {
-                conflicts.Add($"Instance '{comp.InstanceName}': '{file}' is a relative path and this " +
+                conflicts.Add($"Instance '{instanceName}': '{file}' is a relative path and this " +
                               "schematic has not been saved, so there is no directory to resolve it " +
                               "against. Save the schematic, or point it at an absolute path.");
                 return null;
             }
 
-            string section = (comp.Parameters
+            string section = (parameters
                 .FirstOrDefault(p => p.Name == SpiceModelSymbolProvider.SectionParameter)?.Expression ?? "").Trim();
 
             peeked = SpiceModelPeek.Read(path, section);
@@ -1604,14 +1642,14 @@ public static class NetExtractor
 
         if (peeked.Error is { } error)
         {
-            conflicts.Add($"Instance '{comp.InstanceName}': {error}");
+            conflicts.Add($"Instance '{instanceName}': {error}");
             return null;
         }
 
         var definition = SpiceModelPeek.Select(peeked, wanted);
         if (definition is null)
         {
-            conflicts.Add($"Instance '{comp.InstanceName}': '{wanted}' is not defined in " +
+            conflicts.Add($"Instance '{instanceName}': '{wanted}' is not defined in " +
                           $"{System.IO.Path.GetFileName(path)}. It defines: " +
                           string.Join(", ", peeked.Definitions.Select(d => d.Name)) + ".");
             return null;
@@ -1620,29 +1658,11 @@ public static class NetExtractor
         var emission = SpiceModelNetlist.Build(definition, peeked.Scan, path, lib, imports.SpiceCells);
         if (emission.Refusal is { } refusal)
         {
-            conflicts.Add($"Instance '{comp.InstanceName}' ({definition.Name}): {refusal}");
+            conflicts.Add($"Instance '{instanceName}' ({definition.Name}): {refusal}");
             return null;
         }
 
-        var pinDefs = GetEffectivePortDefs(model, comp, cellRefResolutions)
-                          .OrderBy(d => d.PortIndex)
-                          .ToList();
-
-        if (pinDefs.Count != emission.Ports.Count)
-        {
-            conflicts.Add($"Instance '{comp.InstanceName}': the symbol exposes {pinDefs.Count} " +
-                          $"pin(s) but '{definition.Name}' has {emission.Ports.Count}. The symbol is " +
-                          "generated from the same file, so this means it was drawn against an " +
-                          "older version of it — reopen the schematic; skipped.");
-            return null;
-        }
-
-        var nets = new List<string>(pinDefs.Count);
-        foreach (var def in pinDefs)
-        {
-            var (px, py) = model.PortWorldOf(comp, def);
-            nets.Add(NetForPort(comp, def.PortIndex, px, py, uf, QK, netNames, detachedKeys));
-        }
+        if (netsFor(definition.Name, emission.Ports.Count) is not { } nets) return null;
 
         var overrides = new List<ParameterAssignment>(emission.Overrides);
 
@@ -1653,7 +1673,7 @@ public static class NetExtractor
             ? new HashSet<string>(cellDef.Parameters.Select(x => x.Name), StringComparer.OrdinalIgnoreCase)
             : null;
 
-        foreach (var p in comp.Parameters)
+        foreach (var p in parameters)
         {
             if (SpiceModelSymbolProvider.IsPanelParameter(p.Name)) continue;
             if (string.IsNullOrWhiteSpace(p.Name))           continue;
@@ -1672,13 +1692,87 @@ public static class NetExtractor
             if (!conflicts.Contains(note)) conflicts.Add(note);
 
         if (vendorPart is not null && emission.CellName is not null)
-            imports.PlacedVendorParts.Add(new PlacedVendorPart(model, comp.InstanceName, vendorPart,
-                (comp.Parameters.FirstOrDefault(p => p.Name == SpiceModelSymbolProvider.GlyphParameter)?.Expression ?? "").Trim(),
+            imports.PlacedVendorParts.Add(new PlacedVendorPart(model, instanceName, vendorPart,
+                (parameters.FirstOrDefault(p => p.Name == SpiceModelSymbolProvider.GlyphParameter)?.Expression ?? "").Trim(),
                 emission.CellName, emission.Ports.Count));
 
-        return new Instance(comp.InstanceName,
+        return new Instance(instanceName,
                             emission.CellName ?? emission.PrimitiveReference!,
                             nets, overrides);
+    }
+
+    /// <summary>The <c>.cnl</c> type token that places a SPICE model or a vendor part — the schematic's
+    /// <see cref="SymbolKind.SpiceModel"/> component, written as a netlist line (EMB-5 R-emb5-13).</summary>
+    public const string NetlistSpiceModelToken = "SpiceModel";
+
+    /// <summary>
+    /// A <c>.cnl</c>'s <c>SpiceModel:C1 p5 0 File="vendorlib://…" Name=…</c> lines (EMB-5 R-emb5-13), each
+    /// resolved by <see cref="EmitSpiceModel"/> — the function a drawn SpiceModel component is emitted with, the
+    /// same vendor-library lookup through the workspace's <c>.cws</c> above <paramref name="directory"/>, the same
+    /// block read, the same cells — and the line replaced by the instance of what it emitted, so the netlist
+    /// elaborates as the schematic placing the part does. A line naming a <c>File=</c> path rather than a
+    /// library reference is resolved against <paramref name="directory"/> as a schematic's is.
+    ///
+    /// <para>Returns the top level's placed vendor parts as tunables (<c>C1.Part</c>), built by the schematic's
+    /// own <see cref="PartTunablesOf"/>; a part placed inside a cell the netlist defines is emitted but not offered,
+    /// since a <c>.cnl</c> cell has no drawing for its key to name. A line that cannot be emitted is a refusal
+    /// carrying the schematic's sentence, never a silent skip; what the translation noted reaches
+    /// <see cref="TestBench.ReadNotes"/>.</para>
+    /// </summary>
+    public static IReadOnlyList<VendorLibraries.VendorPartTunable> ResolveNetlistSpiceModels(Library lib, TestBench tb, string? directory)
+    {
+        bool Placed(Instance i) => i.Reference.Equals(NetlistSpiceModelToken, StringComparison.OrdinalIgnoreCase)
+                                   && lib.Find(i.Reference) is null;
+        var cells = lib.Cells.ToList();
+        if (!tb.Instances.Any(Placed) && !cells.Any(c => c.Instances.Any(Placed))) return [];
+
+        var top     = new SchematicEditModel { SchematicDirectory = directory };
+        var imports = new NetlistImports();
+        var notes   = new List<string>();
+
+        void Resolve(List<Instance> list, SchematicEditModel model)
+        {
+            for (int i = 0; i < list.Count; i++)
+            {
+                var inst = list[i];
+                if (!Placed(inst)) continue;
+                // The line's parameters as the component's rows: the panel's own (File, Name, Section, Glyph) are
+                // text, so a quoted value is its contents; every other row is an expression, as it is in a drawing.
+                var rows = inst.Overrides.Select(o => new EditableParameter
+                {
+                    Name       = o.Name,
+                    Expression = SpiceModelSymbolProvider.IsPanelParameter(o.Name) ? Unquoted(o.Expression) : o.Expression,
+                    Unit       = o.Unit ?? "",
+                }).ToList();
+                var said = new List<string>();
+                var emitted = EmitSpiceModel(inst.InstanceName, rows, model, lib, imports, said, (definition, ports) =>
+                {
+                    if (inst.NetBindings.Count == ports) return [.. inst.NetBindings];
+                    said.Add($"Instance '{inst.InstanceName}': the line binds {inst.NetBindings.Count} net(s) but " +
+                             $"'{definition}' has {ports} port(s).");
+                    return null;
+                });
+                if (emitted is null)
+                    throw new InvalidOperationException(said.Count > 0
+                        ? string.Join(" ", said)
+                        : $"Instance '{inst.InstanceName}': its SPICE model could not be emitted.");
+                list[i] = emitted;
+                notes.AddRange(said);
+            }
+        }
+
+        Resolve(tb.Instances, top);
+        foreach (var cell in cells) Resolve(cell.Instances, new SchematicEditModel { SchematicDirectory = directory });
+
+        var parts = PartTunablesOf(top, tb.Tuning, imports, lib, notes);
+        foreach (var n in notes.Distinct(StringComparer.Ordinal)) tb.ReadNotes.Add(n);
+        return parts;
+
+        static string Unquoted(string e)
+        {
+            string t = e.Trim();
+            return t.Length >= 2 && t[0] == '"' && t[^1] == '"' ? t[1..^1] : t;
+        }
     }
 
     /// <summary>Emitted reference for a device an external provider evaluates.</summary>

@@ -575,13 +575,50 @@ public sealed class PalaceStageTracker
         => double.IsFinite(v) ? v.ToString("0.0#e+0", CultureInfo.InvariantCulture) : v.ToString(CultureInfo.InvariantCulture);
 }
 
-/// <summary>R-em3d21-1e — Gmsh's own stage lines and its final count, one line in.</summary>
+/// <summary>R-em3d21-1e — Gmsh's own stage lines and its final count, one line in.
+/// brief-emb-2 R-emb2-6 — every stage Gmsh names, not only the 3D pass: the 1D/2D/3D passes, the first-order optimiser, the
+/// conversion to second order, the high-order curving and optimisation (with the node count it works on — its one long stage
+/// on curved geometry) and the write, so a stage that takes minutes says which one it is.</summary>
 public sealed class GmshLogProgress(RunControl? control)
 {
     public const string MeshingLabel = "Meshing (Gmsh)";
 
+    /// <summary>brief-emb-2 R-emb2-6 — what the progress row calls Gmsh's high-order curving and optimisation.</summary>
+    public const string HighOrderWords = "high-order optimisation";
+
     private static readonly Regex Count = new(@"^Info\s*:\s*(\d+) nodes (\d+) elements\s*$", RegexOptions.CultureInvariant);
     private static readonly Regex Tets  = new(@"^Info\s*:\s*-\s*(\d+) tetrahedra created\b", RegexOptions.CultureInvariant);
+    private static readonly Regex HighOrderNodes = new(@"^High-order tools set up: (\d+) nodes", RegexOptions.CultureInvariant);
+
+    /// <summary>Gmsh's stage lines by how they start (Gmsh 4.15's wording, read from its own log), and what the row says for
+    /// each; null keeps Gmsh's own words up to its timing bracket. First match wins, so the high-order lines come before the
+    /// first-order optimiser's "Optimizing mesh".</summary>
+    private static readonly (string Starts, string? Says)[] Stages =
+    [
+        ("Meshing 1D", "meshing curves"), ("Meshing 2D", "meshing surfaces"), ("Meshing 3D", null), ("Done meshing 3D", null),
+        ("Optimizing mesh (HighOrder", HighOrderWords), ("Applying elastic analogy", HighOrderWords),
+        ("Optimizing high-order mesh", HighOrderWords), ("Optimizing mesh", "optimising the mesh"),
+        ("Meshing order 2", "second-order elements"), ("Writing ", "writing the mesh"),
+    ];
+
+    /// <summary>brief-emb-2 R-emb2-6 — the stage Gmsh last named, as the progress row shows it after "Meshing (Gmsh): ".</summary>
+    public string? Stage { get; private set; }
+
+    /// <summary>brief-emb-2 R-emb2-6 — the nodes the high-order optimisation works on, when Gmsh said.</summary>
+    public long? HighOrderNodeCount { get; private set; }
+
+    /// <summary>Test seam: the clock, in <see cref="System.Diagnostics.Stopwatch"/> ticks.</summary>
+    internal Func<long> Clock { get; init; } = System.Diagnostics.Stopwatch.GetTimestamp;
+
+    private long? _highOrderSince;
+
+    /// <summary>brief-emb-2 R-emb2-1 — how long the high-order curving has run, or null when it has not started (or is over:
+    /// the write that follows ends it).</summary>
+    public TimeSpan? CurvingFor => _highOrderSince is { } t
+        ? TimeSpan.FromSeconds((double)(Clock() - t) / System.Diagnostics.Stopwatch.Frequency) : null;
+
+    /// <summary>brief-emb-2 R-emb2-1 — the high-order stage has run longer than <paramref name="minutes"/>.</summary>
+    public bool CurvingPast(double minutes) => CurvingFor is { } d && d.TotalMinutes > minutes;
 
     /// <summary>Gmsh's final node and element counts, when it printed them.</summary>
     public (long Nodes, long Elements)? Final { get; private set; }
@@ -600,21 +637,46 @@ public sealed class GmshLogProgress(RunControl? control)
         string t = line.TrimEnd('\r');
         if (!t.StartsWith("Info", StringComparison.Ordinal)) return;
         string said = t[(t.IndexOf(':') + 1)..].Trim();
-        if (said.StartsWith("Meshing 3D", StringComparison.Ordinal) || said.StartsWith("Done meshing 3D", StringComparison.Ordinal))
-        {
-            int paren = said.IndexOf(" (", StringComparison.Ordinal);
-            control?.SetStageLabel($"{MeshingLabel}: {(paren > 0 ? said[..paren] : said).TrimEnd('.')}");
-            return;
-        }
         if (Tets.Match(t) is { Success: true } made)
         {
             Tetrahedra = (Tetrahedra ?? 0) + long.Parse(made.Groups[1].Value, CultureInfo.InvariantCulture);
             return;
         }
+        if (HighOrderNodes.Match(said) is { Success: true } ho)
+        {
+            HighOrderNodeCount = long.Parse(ho.Groups[1].Value, CultureInfo.InvariantCulture);
+            _highOrderSince ??= Clock();
+            Show(HighOrder());
+            return;
+        }
+        foreach (var (starts, says) in Stages)
+        {
+            if (!said.StartsWith(starts, StringComparison.Ordinal)) continue;
+            if (says == HighOrderWords)
+            {
+                _highOrderSince ??= Clock();
+                Show(HighOrder());
+                return;
+            }
+            if (starts == "Writing ") _highOrderSince = null;
+            int paren = said.IndexOf(" (", StringComparison.Ordinal);
+            Show(says ?? (paren > 0 ? said[..paren] : said).TrimEnd('.'));
+            return;
+        }
         var c = Count.Match(t);
         if (!c.Success) return;
         Final = (long.Parse(c.Groups[1].Value, CultureInfo.InvariantCulture), long.Parse(c.Groups[2].Value, CultureInfo.InvariantCulture));
-        control?.SetStageLabel($"{MeshingLabel}: {Final.Value.Nodes.ToString("N0", CultureInfo.InvariantCulture)} nodes, " +
-                               $"{Final.Value.Elements.ToString("N0", CultureInfo.InvariantCulture)} elements");
+        Show($"{Final.Value.Nodes.ToString("N0", CultureInfo.InvariantCulture)} nodes, " +
+             $"{Final.Value.Elements.ToString("N0", CultureInfo.InvariantCulture)} elements");
+    }
+
+    /// <summary>The high-order stage's words, with the node count once Gmsh has said it.</summary>
+    private string HighOrder() => HighOrderNodeCount is { } n
+        ? $"{HighOrderWords}, {n.ToString("N0", CultureInfo.InvariantCulture)} nodes" : HighOrderWords;
+
+    private void Show(string stage)
+    {
+        Stage = stage;
+        control?.SetStageLabel($"{MeshingLabel}: {stage}");
     }
 }

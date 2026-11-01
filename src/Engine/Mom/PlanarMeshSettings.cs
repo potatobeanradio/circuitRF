@@ -455,9 +455,16 @@ public sealed record PlanarMeshSettings(
     /// reset it; but the whole reason it is a control is that the user is responsible for mesh density,
     /// and a number they typed being silently discarded because a checkbox is ticked is exactly the
     /// failure the two paragraphs above exist to prevent. It carries.</para>
+    ///
+    /// <para><b><see cref="EdgeMesh"/> SURVIVES Auto too, since EMB-4 R-emb4-7</b>, on the owner's rule above: a stated
+    /// value wins and Auto fills only what is unstated. Auto chose the edge mesh ON whatever the file said, so a
+    /// hand-written <c>"EdgeMesh": false</c> beside <c>"Auto": true</c> was silently meshed with the fan — which
+    /// <c>check</c> could only warn about. The panel clears Auto when the edge mesh is toggled, so the combination
+    /// arises only in a written file, and the default (on) is unchanged. Auto still chooses
+    /// <see cref="CellsPerWavelength"/> and <see cref="EdgeCells"/>.</para>
     /// </summary>
     public PlanarMeshSettings Resolved => Auto
-        ? new PlanarMeshSettings(Auto: false, BoundaryCells: BoundaryCells,
+        ? new PlanarMeshSettings(Auto: false, EdgeMesh: EdgeMesh, BoundaryCells: BoundaryCells,
                                  MeshFrequencyHz: MeshFrequencyHz,
                                  MinCellsAcrossConductor: MinCellsAcrossConductor,
                                  CurrentModel: CurrentModel,

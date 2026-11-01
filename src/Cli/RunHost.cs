@@ -25,8 +25,15 @@ namespace CircuitRF.Cli;
 /// </summary>
 internal static class RunHost
 {
+    /// <summary>
+    /// The installed host, per async flow (EMB-5 R-emb5-1): <c>serve</c> runs read-only calls on a pool, and each
+    /// call's token and observer must reach that call's verb and no other's. An AsyncLocal rather than a thread
+    /// static because a verb's own parallel work (a sweep's Parallel.For, a mesher's tasks) reads the same control.
+    /// </summary>
+    private static readonly AsyncLocal<(RunControl Control, Action<RunProgress>? Observer)?> _host = new();
+
     /// <summary>Set by <c>serve</c> for the duration of one tool call; null on a command line.</summary>
-    public static RunControl? Control { get; private set; }
+    public static RunControl? Control => _host.Value?.Control;
 
     /// <summary>The token <see cref="Control"/> carries, or <see cref="CancellationToken.None"/>.
     /// Passed where an engine takes a bare token rather than a control (<c>EmRunService.Run</c>).</summary>
@@ -34,19 +41,19 @@ internal static class RunHost
 
     /// <summary>Where a host wants progress delivered, beside whatever the verb already writes to
     /// stderr. Null on a command line, which is what keeps <c>em</c>'s stderr byte-identical.</summary>
-    public static Action<RunProgress>? Observer { get; private set; }
+    public static Action<RunProgress>? Observer => _host.Value?.Observer;
 
     /// <summary>Installs a host for one invocation. Returns a scope that removes it again, so a
     /// cancelled call cannot leave a cancelled token behind for the next one.</summary>
     public static IDisposable Install(CancellationToken ct, Action<RunProgress>? observer)
     {
-        Observer = observer;
-        Control  = new RunControl
+        var previous = _host.Value;
+        _host.Value = (new RunControl
         {
             Token    = ct,
             Progress = observer is null ? null : new Synchronous(observer),
-        };
-        return new Scope();
+        }, observer);
+        return new Scope(previous);
     }
 
     /// <summary>
@@ -65,8 +72,8 @@ internal static class RunHost
         public void Report(RunProgress value) => observer(value);
     }
 
-    private sealed class Scope : IDisposable
+    private sealed class Scope((RunControl Control, Action<RunProgress>? Observer)? previous) : IDisposable
     {
-        public void Dispose() { Control = null; Observer = null; }
+        public void Dispose() => _host.Value = previous;
     }
 }

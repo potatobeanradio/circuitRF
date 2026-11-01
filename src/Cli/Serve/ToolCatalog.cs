@@ -159,7 +159,9 @@ internal static class ToolCatalog
     // one word meaning two things across two tools is what a caller gets wrong once and forever.
     private static readonly ToolOption Result = new("result", "--result", OptKind.Str,
         "full (default: the values) or summary (the shape, units and extents, and no values). The "
-      + "shape comes back either way.");
+      + "shape comes back either way. On optimize, montecarlo, yield, corners, center and doe, summary is the "
+      + "outcome, the values as text and each goal's margin and where it binds, without per-trial or per-corner "
+      + "records; on import library, the counts per library and folder and the tolerance note.");
 
     /// <summary>Every DataSet-returning tool's narrowing set, written once (R-aut9-9).</summary>
     private static readonly ToolOption[] Narrowing = [Json, Group, At, Range, Interp, Result];
@@ -337,8 +339,13 @@ internal static class ToolCatalog
             "Plots, by hand: a curve's points in pixels, <name>=<px>,<py>;<px>,<py>;…[,axis=left|right][,is=S21:db]. The points "
           + "ARE the curve; is= makes it an S-parameter quantity a Touchstone (output) can take, otherwise it is data."),
         new("follow",      "--follow",       OptKind.StrRepeat,
-            "Plots, by hand: <name>=<px>,<py> — one click on a curve; it is followed by colour inside the box and thinned to "
-          + "fixpoints for the curve of that name. A click on blank paper follows nothing and says so."),
+            "Plots, by hand: <name>=<px>,<py>[,axis=left|right][,is=S11:db] — one click on a curve; it is followed by colour "
+          + "inside the box and thinned to fixpoints for the curve of that name, a coloured run preferred to grey or black "
+          + "grid ink. The result names the colour followed and any grid ink passed over. is= makes it an S-parameter quantity "
+          + "a Touchstone (output) can take, as curve's does. A click on blank paper follows nothing and says so."),
+        new("allTraces",   "--all-traces",   OptKind.Flag,
+            "Plots: list every trace of a reading that made no Touchstone and named no trace. Default: the count and the "
+          + "five longest."),
         new("sample",      "--sample",       OptKind.Integer, "Plots, by hand: each curve sampled at this many x values between its first and last point (101)."),
         new("sampleStep",  "--sample-step",  OptKind.Str,    "Plots, by hand: sample every step in x instead (50MHz, or a plain number)."),
         new("method",      "--method",       OptKind.Str,
@@ -390,6 +397,18 @@ internal static class ToolCatalog
     /// <c>CliDiagnostics.ServeImageTooLarge</c>.</para>
     /// </summary>
     public const long AttachmentCapBytes = 4L * 1024 * 1024;
+
+    /// <summary>EMB-5 R-emb5-1 — the adapter argument that starts a <c>run</c> or <c>check</c> as a job
+    /// (<see cref="ServeJobs"/>). Named here so the row that advertises it and the code that reads it cannot part company.</summary>
+    public const string AsyncArgument = "async";
+
+    private static readonly ToolOption AsyncCall = new(AsyncArgument, "", OptKind.Flag,
+        "Return at once with a job id instead of waiting for the result; job action=status|cancel|result id=<id> "
+      + "then reports progress, stops it, and returns the result this call would have returned. Default false.");
+
+    /// <summary>Whether this call asked to be a job.</summary>
+    public static bool AsyncAsked(JsonObject? arguments)
+        => arguments?[AsyncArgument] is { } node && node.GetValue<JsonElement>().ValueKind == JsonValueKind.True;
 
     /// <summary>The adapter argument that asks for the rendered file back in the result. Named here
     /// so the row that advertises it and the code that reads it cannot part company.</summary>
@@ -491,7 +510,7 @@ internal static class ToolCatalog
                 // asks for each iteration too.
                 new("optimize", ["opt"],
                     [new("path", true, "The .csch or .cnl whose tune, goal and optimize lines to run.")],
-                    [Set,
+                    [Set, Result,
                      new("algorithm",  "--algorithm",  OptKind.Str,     "An algorithm id for this run (reference optimizers lists them)."),
                      MaxIter,
                      new("maxEvals",   "--max-evals",  OptKind.Integer, "Evaluation limit for this run."),
@@ -517,12 +536,12 @@ internal static class ToolCatalog
                 // object and nothing here reshapes it. `trial` re-runs one trial in place of the run.
                 new("montecarlo", ["yield", "mc"],
                     [new("path", true, "The .csch or .cnl whose tune tolerances, goals and statistics line to run.")],
-                    [Set, .. YieldOptions],
+                    [Set, Result, .. YieldOptions],
                     "Monte Carlo: the spread alone, scoring every enabled goal. Exit 0 unless it could not run; exit 2: "
                   + "no trial evaluated. A progress notification per batch."),
                 new("yield", ["yield", "estimate"],
                     [new("path", true, "The .csch or .cnl whose tune tolerances, use=yield|both goals and statistics line to run.")],
-                    [Set,
+                    [Set, Result,
                      new("target",    "--target",    OptKind.Str,  "The yield to meet, as a percent (95%). Exit 3 below it."),
                      new("autostop",  "--autostop",  OptKind.Flag, "Stop once the interval clears target either way (not with lhs)."),
                      .. YieldOptions],
@@ -531,7 +550,7 @@ internal static class ToolCatalog
                 // brief-yield-6 R-ya6-6: `yield corners`, the same verb's fourth noun.
                 new("corners", ["yield", "corners"],
                     [new("path", true, "The .csch or .cnl whose corner lines, goals and statistics line to run.")],
-                    [Set,
+                    [Set, Result,
                      new("corners",  "--corners",  OptKind.StrList, "Only these enabled corners."),
                      new("mc",       "--mc",       OptKind.Flag,    "A Monte Carlo (a yield, with a yield goal) at each corner instead of one evaluation; result.corners.yields."),
                      new("generate", "--generate", OptKind.Str,     "Return the corners a cross product makes instead of running, e.g. \"axis=tt,ss;temp=-40,25,85;Vdd=3.0,3.6\" "
@@ -545,7 +564,7 @@ internal static class ToolCatalog
                 // iteration (iteration, best yield, simulations).
                 new("center", ["yield", "center"],
                     [new("path", true, "The .csch or .cnl whose opt=1 ranges, tolerances, use=yield|both goals and center line to run.")],
-                    [Set,
+                    [Set, Result,
                      new("algorithm", "--algorithm", OptKind.Str,     "The search: " + string.Join(", ", CircuitRF.Core.Design.OptimizerAlgorithms.ForNoisyObjective) + " (default cmaes)."),
                      new("trials",    "--trials",    OptKind.Integer, "M, the common trials every candidate is scored on (default 200)."),
                      new("verify",    "--verify",    OptKind.Integer, "Fresh trials the start and the best point are each verified on (default 1000)."),
@@ -570,7 +589,7 @@ internal static class ToolCatalog
                 // brief-yield-14 R-ya14-8: `yield doe`, the same verb's sixth noun. A progress notification per batch of runs.
                 new("doe", ["yield", "doe"],
                     [new("path", true, "The .csch or .cnl whose opt=1 ranges (or stat=1 tolerances), goals, measures and doe line to run.")],
-                    [Set,
+                    [Set, Result,
                      new("design",     "--design",     OptKind.Str,     "full2 (default; at most 10 factors), frac (fractional factorial), pb (Plackett-Burman: screen many factors in 12, 20 or 24 runs) or ccf (face-centred central composite: a quadratic model)."),
                      new("resolution", "--resolution", OptKind.Integer, "frac: 4 (default) or 5."),
                      new("factors",    "--factors",    OptKind.Str,     "opt (default: the opt=1 entries over their ranges) or stat (the stat=1 entries at nominal +- k sigma)."),
@@ -617,6 +636,12 @@ internal static class ToolCatalog
                      new("setup", "--setup", OptKind.Str,
                          "Which of a .c3d's embedded setups to run, by name. Needed when it embeds several; "
                        + "explain lists them."),
+                     // brief-emb-1 R-emb1-8 — `em --component-ports`.
+                     new("componentPorts", "--component-ports", OptKind.StrList,
+                         "A .c3d's component ports for this run only: reference designators of parts placed on its layout, or [\"*\"] "
+                       + "for every two-terminal part. Each gets a lumped gap port across its own pads, built and verified before "
+                       + "meshing; a finished driven run also writes <setup>_cosim.cnl, the board's N-port with each part across its "
+                       + "port. explain componentPorts=true shows what would be built."),
                      // brief-sar-12 R-sar12-3 — a .c3d's band sweep: one setup per band from its template, run in turn.
                      new("bands", "--bands", OptKind.Str,
                          "Run a .c3d's band sweep, by name: one setup per band made from its template (each at that SAR "
@@ -656,13 +681,22 @@ internal static class ToolCatalog
                        + ".cnl instance line, e.g. \"SPIRAL N=3 W=10 um S=8 um Din=100 um\". Port n is terminal n. "
                        + "Needs output."),
                      new("freq", "--freq", OptKind.Str,
-                         "With component: the sweep, start:stop:step, e.g. 1GHz:20GHz:1GHz. Default 1-20 GHz.")],
+                         "With component: the sweep, start:stop:step, e.g. 1GHz:20GHz:1GHz. Default 1-20 GHz."),
+                     // EMB-5 R-emb5-2 — `em --dry-run`, through the CLI's own parsing: check's and explain's reports of
+                     // the same file in one document, and their numbers restated in em.dry-run.estimate.
+                     new("dryRun", "--dry-run", OptKind.Flag,
+                         "Estimate instead of running: the kernel, unknowns, memory and factor time per point and in "
+                       + "total (planar), or each 3D solver's size (Palace's element, unknown and memory estimate), the "
+                       + "verdict against this machine's memory, and every refusal check would raise — the numbers "
+                       + "check and explain report, in result.check, result.explain and the em.dry-run.estimate "
+                       + "diagnostic. Solves nothing and writes nothing; a planar setup is meshed as check meshes it.")],
                     "Electromagnetic extraction of the layout the .cem names, a .c3d's embedded setup, or one "
                   + "component's drawn part. Writes a Touchstone and a .npy; a 3D setup run with several solvers "
                   + "writes each one's and a comparison .npy; a static, eigenmode or thermal setup writes the "
                   + ".npy only. result.scratch says where the run made its temporary files (the Scratch folder Settings ▸ "
                   + "Solvers names, or the system temp folder) and whether that folder exists, refused run or not."),
-            ]),
+            ],
+            Adapter: [AsyncCall]),
 
         new("check",
             "Validate a workspace, a cell folder or one document. Runs no analysis and writes nothing.",
@@ -678,7 +712,8 @@ internal static class ToolCatalog
                         HostWorkspace,
                     ],
                     ""),
-            ]),
+            ],
+            Adapter: [AsyncCall]),
 
         new("explain",
             "Report what circuitRF resolved a document to, and the walk it took. Runs no analysis and writes nothing.",
@@ -721,7 +756,11 @@ internal static class ToolCatalog
                         new("tunables", "--tunables", OptKind.Flag,
                             "Every value of a schematic or netlist that can be tuned or optimized, at any depth, with its key "
                           + "(R1.R, Wline, DUT:R3.R), value, default range and whether Push can write it; and the keys the "
-                          + "tuning setup names that resolve to nothing."),
+                          + "tuning setup names that resolve to nothing. An SnP block's offset rows are folded to its one line in "
+                          + "snp unless snpEntries names it."),
+                        new("snpEntries", "--snp-entries", OptKind.StrList,
+                            "With tunables: the SnP instances (SNP3, DUT:SNP3) whose S-parameter offset rows to list, or all. "
+                          + "Default: none — each block is its one summary line."),
                         // brief-sar-2 R-sar2-7 — R-aut-13: reachable from the command line, so reachable here.
                         new("materials", "--materials", OptKind.Flag,
                             "A 3D setup's (.c3d's or .cem's) materials as its solver receives them; a frequency-dependent "
@@ -732,6 +771,10 @@ internal static class ToolCatalog
                             "Which view of a cell folder: schematic, symbol or layout. Spelled as render spells it."),
                         new("setup",   "--setup",   OptKind.Str,
                             "Which of a 3D view's (.c3d's) embedded setups to explain, by name. Needed when it embeds several."),
+                        // brief-emb-1 R-emb1-8 — `explain --component-ports`.
+                        new("componentPorts", "--component-ports", OptKind.Flag,
+                            "A 3D view's component ports, built as a run would build them and verified, without meshing: per port its "
+                          + "refdes, pads, conductors, gap, width, landing rectangles and verdict."),
                         new("device",  "--device",  OptKind.Str,
                             "A 3D setup's report as a run with this device would see it: auto (default), cpu or gpu."),
                         new("memoryLimitGB", "--memory-limit", OptKind.Number,
@@ -741,7 +784,7 @@ internal static class ToolCatalog
             ]),
 
         new("create",
-            "Create a correct initial document — a workspace, or a cell folder with its view files.",
+            "Create a correct initial document — a workspace, a cell folder with its view files, or a 3D view of a cell's layout.",
             "what",
             "What to create.",
             [
@@ -759,8 +802,16 @@ internal static class ToolCatalog
                         new("workspace", true,  "The workspace the cell is created in."),
                         new("name",      false, "The cell name."),
                     ],
-                    [new("views", "--views", OptKind.StrList, "Which views to create: schematic, symbol, layout, 3d (an empty .c3d whose units come from the cell's layout, else the technology; a 3D view of an existing layout places it as an instance with View Layout). Default schematic.")],
+                    [new("views", "--views", OptKind.StrList, "Which views to create: schematic, symbol, layout, 3d (an empty .c3d whose units come from the cell's layout, else the technology; a 3D view of an existing layout places it as an instance with View Layout), or none (the cell folder alone). Default schematic.")],
                     "A cell folder and one empty-but-valid file per view."),
+                // brief-emb-1 R-emb1-1 — Design ▸ New 3D View from Layout.
+                new("view3d", ["new", "view3d"],
+                    [new("cell", true, "The cell folder whose layout the 3D view places.")],
+                    [
+                        new("fromLayout", "--from-layout", OptKind.Flag, "Place the cell's own layout as an instance with View Layout, its 3D setups copied in as embedded setups and its port labels as ports. Required."),
+                        new("name", "--name", OptKind.Str, "The .c3d's name. Default: the cell's."),
+                    ],
+                    "A .c3d of the cell's layout, ready for component ports and a 3D run."),
             ]),
 
         // `import` and `convert` are two tools because they are two verbs. They were one tool with a
@@ -807,6 +858,7 @@ internal static class ToolCatalog
                     [
                         new("into", "--into", OptKind.Path, "The workspace whose .cws references the library."),
                         new("name", "--name", OptKind.Str,  "The name parts reach it by (vendorlib://<name>/…). Default: the folder's name."),
+                        Result,
                     ],
                     "A vendor part library, referenced from the workspace and indexed — never copied. "
                   + "result.library has the part count and folder groups; encrypted files are counted, and a folder with "
@@ -1689,7 +1741,12 @@ internal static class ToolCatalog
                             "With 'analyses', one type= token; with 'technologies', one technology id.",
                             Required: false),
                     ],
-                    [],
+                    [
+                        new("tables", "--tables", OptKind.Str,
+                            "A document format's topic (schematic, layout, data-display, …): text (default — the page with its "
+                          + "field tables) or schema (the tables as reference.schema, and the text without them). One or the "
+                          + "other, never both."),
+                    ],
                     ""),
             ]),
     ];

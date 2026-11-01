@@ -66,6 +66,10 @@ public sealed record C3dElaborationOptions(double? FMaxHz = null, double TempC =
     /// for the editor's picture.</summary>
     public bool RobustMeshing { get; init; }
 
+    /// <summary>brief-emb-2 R-emb2-2 — every placed layout's vias as solid barrels (<see cref="Em3dLayoutSolidsOptions.SolidVias"/>):
+    /// an EM run's. Off (the technology's wall) for the editor's picture and a thermal run.</summary>
+    public bool SolidVias { get; init; }
+
     /// <summary>brief-sar-2 R-sar2-3 — the one frequency every dispersive material (a tissue, a phantom liquid) is evaluated at
     /// before lowering, so each solver sees plain εr and σ. Null: the record's plain numbers (an editor preview, a thermal run).</summary>
     public double? MaterialFrequencyHz { get; init; }
@@ -175,6 +179,10 @@ public sealed record C3dElaboration(
 
     /// <summary>The conductors on a layout instance's ground-reference stackup entries.</summary>
     public IReadOnlyList<string> GroundBandObjects { get; init; } = [];
+
+    /// <summary>brief-emb-2 R-emb2-3 — the farthest Robust meshing moved any placed layout's outline, metres (0: nothing moved).
+    /// Port inference measures against the moved outline and lets an edge that touched the drawn one follow it.</summary>
+    public double OutlineMoveM { get; init; }
 
     /// <summary>Where each material's values resolved from, by final name.</summary>
     public IReadOnlyDictionary<string, string> MaterialSources { get; init; } = new Dictionary<string, string>();
@@ -627,7 +635,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
         // The paired .wBond is in the key: wire edits are saved to it alone, so the .clay's stamp did not move and the
         // view kept drawing the old wires. The sub-cells the flatten read are checked on a hit, for the same reason.
         string key = string.Create(CultureInfo.InvariantCulture,
-            $"layout|{path}|{Stamp(path)}|{Stamp(WBondCell.FindFor(path))}|{options.FMaxHz:R}|{options.TempC:R}|{options.RobustMeshing}|{options.PadsOptional}");
+            $"layout|{path}|{Stamp(path)}|{Stamp(WBondCell.FindFor(path))}|{options.FMaxHz:R}|{options.TempC:R}|{options.RobustMeshing}|{options.SolidVias}|{options.PadsOptional}");
         if (_children.TryGetValue(key, out var hit) && hit is ChildLayout c && Stamp(c.Tech.ResolvedPath) == TechStampOf(key)
             && Current(c.Tech) && c.FilesStamp == FilesStamp(c.Files))
             return c;
@@ -650,7 +658,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
         {
             var solids = Em3dLayoutSolids.From(new EmLayoutSource(path, view, t, view.DbuPerMicron), t, null,
                                                new Em3dLayoutSolidsOptions(options.FMaxHz, options.TempC, Instance: true)
-                                               { RobustMeshing = options.RobustMeshing, PadsOptional = options.PadsOptional });
+                                               { RobustMeshing = options.RobustMeshing, SolidVias = options.SolidVias, PadsOptional = options.PadsOptional });
             made = new ChildLayout(solids, tech, TechName(tech), solids.Refusal, view.DbuPerMicron) { Files = files };
         }
         made = made with { FilesStamp = FilesStamp(made.Files) };
@@ -752,6 +760,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
         private readonly Dictionary<string, HashSet<string>> _nets = new(StringComparer.Ordinal);
         private readonly Dictionary<string, string> _viaNetConflicts = new(StringComparer.Ordinal);
         private readonly List<string> _groundBand = [];
+        private double _outlineMove;
         private readonly Dictionary<string, Em3dObjectOrigin> _origins = new(StringComparer.Ordinal);
         private readonly List<Em3dWireReport> _wires = [];
         private readonly Dictionary<string, string> _wireRefusals = new(StringComparer.Ordinal);
@@ -883,6 +892,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                 ObjectNets = _nets,
                 ViaNetConflicts = _viaNetConflicts,
                 GroundBandObjects = _groundBand,
+                OutlineMoveM = _outlineMove,
                 MaterialSources = sources,
                 SolidMaterials = records,
                 MaterialOrigins = origins,
@@ -1659,6 +1669,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                 foreach (string n in nets) Net(prefix + obj, n);
             foreach (var (obj, conflict) in solids.ViaNetConflicts) _viaNetConflicts[prefix + obj] = conflict;
             _groundBand.AddRange(solids.GroundBandObjects.Select(o => prefix + o));
+            _outlineMove = Math.Max(_outlineMove, solids.OutlineMoveM);
             foreach (var (obj, origin) in solids.Origins) _origins[prefix + obj] = origin;
             // A pad top is a height in the layout's own stack; the thermal chain and its contact patches read it as a WORLD height,
             // so it moves with the pads. Only a placement that keeps z up has one (a tilted pad has no "top"): that one keeps it.

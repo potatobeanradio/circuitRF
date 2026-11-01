@@ -3416,3 +3416,70 @@ from more than 16 minutes (stopped by hand) to 1.2 s, same verdict.
 **`create`'s `views` documented three views and the CLI takes four** — `3d` was accepted by
 `new cell --views` and missing from the tool's description, so an agent had no way to know it could
 make a 3D view headlessly. Description only; no behaviour changed.
+
+## EMB-4 — what `check` says before a planar run (2026-11-01)
+
+`check` on a planar `.cem` gains three things, all through `EmRunService.Preflight` (so the GUI's own preflight says the
+same): the via-footprint ρ/λ refusal the solve used to raise after minutes of setup; with the accelerated solve on, the
+near-field factor's estimate (`PlanarNearFieldEstimate`, a warning past a minute a frequency point); and an info,
+`check.em.mesh-auto-kept`, naming the mesh fields a file states beside `"Auto": true` that are now used as stated. The
+existing `check.em.mesh-auto-override` warning no longer lists `EdgeMesh`, which Auto stopped discarding.
+`src/Design/RESOLVED.md` and `src/Engine/Mom/RESOLVED.md` carry the measurements.
+
+## EMB-5 part A — the MCP server under long work (2026-11-01)
+
+**What made one worker necessary, and what replaced it.** Every verb's per-invocation state was process-wide:
+`JsonRun`'s ~50 collectors, `RunHost.Control`/`Observer`, `CliEntry.KitFolders`/`HostWorkspace`, and
+`GeneratedCells`' per-call `--trust-kit`/`--python` grants. All are now per async flow: `JsonRun`'s fields are
+properties over one `State` that `serve` gives each call (`JsonRun.Isolate()`, an `AsyncLocal` so a verb's own
+`Parallel.For` sees its call's state), and the rest are `AsyncLocal` directly. A command line has one flow and sees
+exactly what it saw before. `JsonRun.TakeFlags` no longer calls `Console.SetOut` when a sink is installed —
+`serve` silences `Console.Out` once at startup, and that call was the one piece of global state every call touched.
+
+**The audit, beyond those.** Every `static` collection in `src/Cli`, `src/Design`, `src/Core`, `src/Render`,
+`src/Engine` and `src/RfCore` that is written after initialisation was listed by a scan (not from memory) and each
+checked: all are locked or concurrent except `BuiltInSymbols`' ten per-variant glyph caches, which `check` and
+`render` both fill — now `ConcurrentDictionary` (two threads building one glyph is harmless; it is a pure function
+of its key). `CliEntry._kitsAdded` and the worker-log hook flag are taken under a lock. `TechnologyCache` is a new
+instance per call everywhere `src/Cli` makes one. `PlotDocumentScope` and `AdWarnings` are already thread-static.
+Left as they are, because no pooled verb writes them: `ScratchFolder.Chosen` (`em` only, serial lane),
+`History._note`, `LayoutConvert._mintedTechPath`, `Rail._generated`, and the test-only hooks.
+
+**The pool is three threads, not one per core**, because `check` is one of the read-only verbs and a board's `.cem`
+check holds a whole mesh: three side by side are already most of a small machine's memory.
+
+**`em --dry-run` is two verbs in one invocation, not a third estimator.** `Check.Run` then `Explain.Run` on the same
+file fill `result.check` and `result.explain` exactly as alone (`BuildPayload` already let both sections coexist).
+`check`'s planar `em` block gained the numbers its sentences already quoted — `memoryBytes`
+(`PlanarMeshReport.RunResidentBytes`, or the near-field estimate's when the accelerated solve runs),
+`factorSecondsPerPoint` (`SurfaceMesher.EstimatedFactorSeconds`, the c·N³ behind `EstimatedFactorTime`, or
+`PlanarNearFieldEstimate.FactorSeconds`), `points`, `factorSecondsTotal` and a `memory` verdict.
+`EmPreflightResult.NearField` carries the estimate Preflight already made, so `check` does not make a second.
+
+**An em run's first progress notification is its dry run**, made by the server before the run when a progress
+token or a job is listening. It costs what `check` of the setup costs (the planar extract and mesh, or the 3D
+lowering), which the run then repeats; a solve is minutes against that. A Palace run has no time estimate to state —
+`explain` has none, and none was invented.
+
+**A cancelled 3D explain was reported as an unreadable file.** `ExplainThreeD` caught every exception from
+`Em3dSetupSource.ForThreeDView` as `explain.unreadable`; the new lowering boundaries throw
+`OperationCanceledException`, which now passes through to the server (130).
+
+## EMB-5 part B — what an agent reads back (2026-11-01)
+
+- **A duration was read with a space or not at all.** `TuningValidator.TimeLimitSeconds` split on spaces, so `10min`
+  was refused by a sentence that offered it. It now takes a number and an optional unit with or without a space, and
+  every wall-clock limit (the `optimize` line, `opt --time`, `yield center --time`, the MCP `time`) goes through it;
+  the refusal quotes `TuningValidator.TimeLimitSpelling`.
+- **`--result summary` on a report with no DataSet** (`optimize`, the yield family) is a projection in
+  `ReportSummaries`, applied in `JsonRun.BuildPayload`; what it left out is named in `result.summarized` so an emptied
+  list is never read as "none". The optimize report's default was already the final result only — what was missing
+  was the catalog row, so the call was refused as `serve.args.not-for-mode`.
+- **`plot --write-cdd` named its source by bare file name**, which is right only when the `.cdd` sits beside the
+  result. `PlotVerb.Relocated` writes the path relative to the `.cdd`; the GUI's `ResolveAbs` now looks beside the
+  document before `results/`, matching `CddSources.LocateFile`.
+- **`reference <format>` sent the field list twice** (text and schema). One by default; `--tables schema` for the
+  other. The walk stopped at the root type's assembly, which is why `src/Core`'s tuning types were named and never
+  expanded; `Format.Descend` adds assemblies per format.
+- **The catalog-parity test was already red at HEAD** for `run/sensitivity` (SENS-1 added the mode, not the gate's
+  positionals row); the row is added.

@@ -20,6 +20,11 @@ namespace CircuitRF.Design.Imaging.Plots;
 public sealed record ManualFollowResult(IReadOnlyList<(double Px, double Py)> Fixpoints, int Rgb, string? Refusal)
 {
     public bool Ok => Refusal is null;
+
+    /// <summary>The other ink the click could have meant (EMB-5 R-emb5-10): a grey or black run — the plot's own grid
+    /// or frame, as a rule — within reach of the click when a coloured one was followed instead. Null when there was none,
+    /// or when a colour was asked for.</summary>
+    public (int Rgb, int DistancePx)? Other { get; init; }
 }
 
 public static class ManualCurves
@@ -54,8 +59,8 @@ public static class ManualCurves
         string at = $"({PlotReading.Fmt(Math.Round(seed.X, 1))}, {PlotReading.Fmt(Math.Round(seed.Y, 1))})";
         if (!frame.Inside(sx, sy))
             return new ManualFollowResult([], 0, $"the click at {at} px is outside the plot area");
-        int? clicked = rgb ?? InkAt(boxInk, sx, sy);
-        if (clicked is not { } colour)
+        (int? picked, (int Rgb, int DistancePx)? other) = rgb is { } asked ? (asked, null) : InkAt(boxInk, sx, sy);
+        if (picked is not { } colour)
             return new ManualFollowResult([], 0, $"the click at {at} px is on blank paper: no ink within 4 px of it");
 
         var found = PlotTraces.Find(boxInk, frame, [], [], new TraceHints([(sx, sy)], []));
@@ -67,29 +72,50 @@ public static class ManualCurves
             if (d <= Math.Max(ReachPx, 2 * c.Width) && d < bestD) { bestD = d; best = c; }
         }
         if (best is null)
-            return new ManualFollowResult([], colour, $"no curve of #{colour:x6} could be followed from the click at {at} px — place its points by hand");
+            return new ManualFollowResult([], colour, $"no curve of #{colour:x6} could be followed from the click at {at} px — place its points by hand")
+                { Other = other };
         var thinned = Thin(best.Points, spacingPx);
-        return new ManualFollowResult([.. thinned.Select(p => plot.FromBox(p.X, p.Y))], best.Rgb, null);
+        return new ManualFollowResult([.. thinned.Select(p => plot.FromBox(p.X, p.Y))], best.Rgb, null) { Other = other };
     }
 
-    /// <summary>The most strongly inked pixel within 4 px of (x, y) — the colour a click on a curve meant — or null on
-    /// blank paper.</summary>
-    private static int? InkAt(PlotInk ink, double x, double y)
+    /// <summary>A pixel's chroma at or above this is coloured ink; below it is grey or black — a plot's grid and frame.</summary>
+    internal const int ColouredChroma = 40;
+
+    /// <summary>
+    /// The colour a click on a curve meant, within 4 px of (x, y), or null on blank paper — and the grey or black ink it
+    /// passed over when it chose a coloured one (R-emb5-10). A coloured run is preferred to grey or black ink whatever
+    /// their contrast: a plot's own grid and frame are drawn grey or black, and a black 0 dB gridline two pixels under a
+    /// coloured trace out-contrasts the trace. Within each class, nearer first, then the strongest. A curve drawn in
+    /// black is still followed when no coloured ink is in reach.
+    /// </summary>
+    private static (int? Picked, (int Rgb, int DistancePx)? Other) InkAt(PlotInk ink, double x, double y)
     {
         int cx = (int)Math.Floor(x), cy = (int)Math.Floor(y);
-        int? best = null;
-        int bestD = 0;
+        (int Rgb, int Score, int Reach)? coloured = null, grey = null;
         for (int dy = -4; dy <= 4; dy++)
             for (int dx = -4; dx <= 4; dx++)
             {
                 int xx = cx + dx, yy = cy + dy;
                 if (!ink.At(xx, yy)) continue;
                 int rgb = ink.Raster.Rgb(xx, yy);
-                // Nearer first, then the strongest: the click's own stroke rather than a grid line two pixels off.
-                int d = PlotInk.Distance(rgb, ink.Background) - 8 * Math.Max(Math.Abs(dx), Math.Abs(dy));
-                if (best is null || d > bestD) { best = rgb; bestD = d; }
+                int reach = Math.Max(Math.Abs(dx), Math.Abs(dy));
+                // Nearer first, then the strongest: the click's own stroke rather than a line two pixels off.
+                int score = PlotInk.Distance(rgb, ink.Background) - 8 * reach;
+                if (Chroma(rgb) >= ColouredChroma)
+                {
+                    if (coloured is null || score > coloured.Value.Score) coloured = (rgb, score, reach);
+                }
+                else if (grey is null || score > grey.Value.Score) grey = (rgb, score, reach);
             }
-        return best;
+        if (coloured is { } c)
+            return (c.Rgb, grey is { } g ? (g.Rgb, g.Reach) : null);
+        return (grey?.Rgb, null);
+    }
+
+    private static int Chroma(int rgb)
+    {
+        int r = (rgb >> 16) & 0xFF, g = (rgb >> 8) & 0xFF, b = rgb & 0xFF;
+        return Math.Max(r, Math.Max(g, b)) - Math.Min(r, Math.Min(g, b));
     }
 
     /// <summary>A followed curve's points (ascending x) thinned: the ends, one every <paramref name="spacing"/> along x,

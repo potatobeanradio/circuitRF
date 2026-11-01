@@ -97,6 +97,16 @@ public sealed record EmPort3D(int Port, Em3dPortKind Kind = Em3dPortKind.Lumped,
                              && string.IsNullOrEmpty(Return);
 }
 
+/// <summary>
+/// brief-emb-1 R-emb1-2 — one component port a 3D setup asks for: a lumped gap port built on the pads of the part placed with
+/// <paramref name="Refdes"/> on the 3D view's layout (<see cref="EmSetup.AllComponents"/> for every placed two-terminal part).
+/// </summary>
+/// <param name="Refdes">The part's reference designator, or <c>*</c>.</param>
+/// <param name="Z0">The port's reference impedance, as a <c>.c3d</c> port writes one (<c>50</c>, <c>25+j10</c>); null is 50 Ω.</param>
+/// <param name="Reference">R-emb1-6 — the port's negative end: one of the part's own pins (its ground pin), or the conductor a
+/// pad lands on. Null: the second pad of a two-terminal part, the part's ground pad otherwise.</param>
+public sealed record EmComponentPort(string Refdes, string? Z0 = null, string? Reference = null);
+
 /// <summary>brief-em3d-23 R-em3d23-4a — an eigenmode solve's settings; a null field takes its default.</summary>
 public sealed record EmEigenmode3D(int? Count = null, double? TargetGHz = null)
 {
@@ -486,11 +496,11 @@ public sealed class EmSetup
     /// TP149 board one such run made Gmsh build a flat tetrahedron whose NaN turned every frequency's S into −I. An outline
     /// moves by at most the tolerance. 3D only: the planar solvers do not read it.
     ///
-    /// <para>On in every setup <see cref="CreateNew"/> and the 3D view's Add make; OFF when a file does not say, so a setup
-    /// written before it existed reproduces its results. Part of the geometry, so a change to it makes an earlier
-    /// result stale.</para>
+    /// <para>brief-emb-2 R-emb2-3 — ON unless a setup says otherwise: a file that does not state it reads as on, which is
+    /// what every setup the GUI made already wrote, and only <c>false</c> is written. Part of the geometry, so a change to it
+    /// makes an earlier result stale.</para>
     /// </summary>
-    public bool RobustMeshing { get; set; }
+    public bool RobustMeshing { get; set; } = true;
 
     /// <summary>
     /// <b>The conducted power TRP and peak EIRP are referenced to, in dBm</b> (owner request,
@@ -646,6 +656,13 @@ public sealed class EmSetup
     /// <summary>brief-em3d-23 R-em3d23-2a — per-port 3D settings. A port with no entry is lumped.</summary>
     public List<EmPort3D> Ports3D { get; set; } = [];
 
+    /// <summary>brief-emb-1 R-emb1-2 — the component ports this setup builds on the parts placed on its 3D view's layout, numbered
+    /// after the document's own ports in list order. A <c>.c3d</c>'s setups only: a <c>.cem</c> on a layout refuses them.</summary>
+    public List<EmComponentPort> ComponentPorts { get; set; } = [];
+
+    /// <summary>The <see cref="EmComponentPort.Refdes"/> that names every placed two-terminal part.</summary>
+    public const string AllComponents = "*";
+
     /// <summary>brief-em3d-23 R-em3d23-4a — an eigenmode solve's count and target. Null takes both
     /// defaults: <see cref="EmEigenmode3D.DefaultCount"/> modes above the sweep's start.</summary>
     public EmEigenmode3D? Eigenmode { get; set; }
@@ -716,8 +733,8 @@ public sealed class EmSetup
     /// <summary>
     /// The planar-mesh fields this setup states away from their defaults that <c>Auto</c> DISCARDS,
     /// as <c>(.cem key, stated value, value used)</c>. <see cref="PlanarMeshSettings.Resolved"/> is the
-    /// contract: with <c>Auto</c> on, cells per wavelength, edge mesh and edge cells are chosen for the
-    /// user and every other field survives. A stated value that is then not read is invisible in a
+    /// contract: with <c>Auto</c> on, cells per wavelength and edge cells are chosen for the user and every
+    /// other field survives (the edge mesh too, since EMB-4). A stated value that is then not read is invisible in a
     /// hand-written file — the mesh notes report the value USED, and nothing says why it differs — so
     /// <c>check</c> names each one and the switch that makes it take effect.
     /// </summary>
@@ -733,6 +750,28 @@ public sealed class EmSetup
             list.Add(("EdgeMesh", m.EdgeMesh ? "true" : "false", used.EdgeMesh ? "true" : "false"));
         if (m.EdgeCells != used.EdgeCells)
             list.Add(("EdgeCells", Inv(m.EdgeCells), Inv(used.EdgeCells)));
+        return list;
+
+        static string Inv(int v) => v.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>
+    /// EMB-4 R-emb4-7 — the planar-mesh fields this setup STATES away from their defaults while <c>Auto</c> is on and
+    /// that win over it (<see cref="PlanarMeshSettings.Resolved"/>: the edge mesh, the cells across the narrowest
+    /// conductor, the detail floor), as <c>(.cem key, stated value)</c>. <c>check</c> notes them, so a reader of the file
+    /// knows Auto chose only the rest.
+    /// </summary>
+    public IReadOnlyList<(string Key, string Stated)> AutoKeptMeshFields()
+    {
+        var m = PlanarMesh;
+        if (!m.Auto) return [];
+        var list = new List<(string, string)>();
+        if (m.EdgeMesh != PlanarMeshSettings.DefaultEdgeMesh)
+            list.Add(("EdgeMesh", m.EdgeMesh ? "true" : "false"));
+        if (m.MinCellsAcrossConductor != PlanarMeshSettings.DefaultMinCellsAcrossConductor)
+            list.Add(("MinCellsAcrossConductor", Inv(m.MinCellsAcrossConductor)));
+        if (m.DetailFloorDivisor != PlanarMeshSettings.DefaultDetailFloorDivisor)
+            list.Add(("DetailFloorDivisor", Inv(m.DetailFloorDivisor)));
         return list;
 
         static string Inv(int v) => v.ToString(System.Globalization.CultureInfo.InvariantCulture);
@@ -780,6 +819,7 @@ public sealed class EmSetup
         Ground3D               = Ground3D,
         UnassignedConductors3D = UnassignedConductors3D,
         Ports3D                = [.. Ports3D],       // records, immutable
+        ComponentPorts         = [.. ComponentPorts], // records, immutable
         Eigenmode              = Eigenmode,
         Thermal                = Thermal?.Clone(),
         Sar                    = Sar?.Clone(),

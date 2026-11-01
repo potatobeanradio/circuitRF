@@ -369,6 +369,10 @@ internal static class CliDiagnostics
         ".cem or the panel's Solver picker.",
         ("value", value), ("setup", setup));
 
+    /// <summary>brief-emb-1 R-emb1-8 — <c>em --component-ports</c> that cannot be applied.</summary>
+    public static Diagnostic EmComponentPorts(string why) => Diagnostic.Create(
+        "em.component-ports.refused", DiagnosticSeverity.Error, "{why}", ("why", why));
+
     public static Diagnostic EmSetupWarning(string text) => Diagnostic.Create(
         "em.setup.warning", DiagnosticSeverity.Warning, "{text}", ("text", text));
 
@@ -740,7 +744,7 @@ internal static class CliDiagnostics
 
     public static Diagnostic NewUnknownNoun(string noun) => Diagnostic.Create(
         "new.args.unknown-noun", DiagnosticSeverity.Error,
-        "new: there is nothing called '{noun}' to create. Known: workspace, cell.", ("noun", noun));
+        "new: there is nothing called '{noun}' to create. Known: workspace, cell, view3d.", ("noun", noun));
 
     public static Diagnostic NewUnknownOption(string option) => Diagnostic.Create(
         "new.args.unknown-option", DiagnosticSeverity.Error,
@@ -757,6 +761,16 @@ internal static class CliDiagnostics
     public static Diagnostic NewCellArgsRequired() => new(
         "new.args.cell-args-required", DiagnosticSeverity.Error,
         "new cell: a workspace (or a folder inside one) and a cell name are required.");
+
+    /// <summary>brief-emb-1 R-emb1-1 — <c>new view3d</c> with no cell, or without saying what the view is made from.</summary>
+    public static Diagnostic NewView3dArgs(string why) => Diagnostic.Create(
+        "new.args.view3d", DiagnosticSeverity.Error, "new view3d: {why}", ("why", why));
+
+    public static Diagnostic NewView3dNote(string text) => Diagnostic.Create(
+        "new.view3d.note", DiagnosticSeverity.Info, "{text}", ("text", text));
+
+    public static Diagnostic NewView3dPortsLeftOut(string text) => Diagnostic.Create(
+        "new.view3d.ports-left-out", DiagnosticSeverity.Warning, "Ports left out: {text}.", ("text", text));
 
     public static Diagnostic NewCellExtraArgument(string arg) => Diagnostic.Create(
         "new.args.cell-extra-argument", DiagnosticSeverity.Error,
@@ -1320,6 +1334,18 @@ internal static class CliDiagnostics
         "cli.em.component-refused", DiagnosticSeverity.Error, "em --component: {reason}", ("reason", reason));
 
     /// <summary>AA-1 — <c>--freq</c> given to a <c>.cem</c> run, which states its own sweep.</summary>
+    /// <summary>EMB-5 R-emb5-2 — what <c>em --dry-run</c> would cost, in one line: the kernel, unknowns, memory and time per
+    /// point and in total (planar), or each 3D backend's size row as <c>explain</c> prints it. Info: nothing to act on.</summary>
+    public static Diagnostic EmDryRunEstimate(string estimate) => Diagnostic.Create(
+        "em.dry-run.estimate", DiagnosticSeverity.Info,
+        "estimate: {estimate}", ("estimate", estimate));
+
+    /// <summary>EMB-5 R-emb5-2 — <c>--dry-run</c> estimates one setup file; an extracted part or a band sweep is not one.</summary>
+    public static Diagnostic EmDryRunNeedsSetup(string flag) => Diagnostic.Create(
+        "cli.em.dry-run-needs-setup", DiagnosticSeverity.Error,
+        "em: --dry-run estimates one .cem or .c3d setup and does not take {flag}. Drop {flag} to estimate the setup, " +
+        "or drop --dry-run to run it.", ("flag", flag));
+
     public static Diagnostic EmFreqWithoutComponent() => Diagnostic.Create(
         "cli.em.freq-without-component", DiagnosticSeverity.Error,
         "em: --freq sets the sweep of an --component extraction; a .cem states its own frequency sweep.");
@@ -1343,6 +1369,10 @@ internal static class CliDiagnostics
     /// <summary>brief-em3d-49 — a port that cannot be built, naming what it touches.</summary>
     public static Diagnostic CheckThreeDPortRefused(string path, string text) => Diagnostic.Create(
         "check.c3d.port-refused", DiagnosticSeverity.Error, "{path}: {text}", ("path", path), ("text", text));
+
+    /// <summary>brief-emb-1 R-emb1-4/7 — a component port's own warning: a part with no model on the board's schematic.</summary>
+    public static Diagnostic CheckThreeDComponentPortWarning(string path, string text) => Diagnostic.Create(
+        "check.c3d.component-port", DiagnosticSeverity.Warning, "{path}: {text}", ("path", path), ("text", text));
 
     /// <summary>brief-em3d-49 — a face boundary that cannot be placed.</summary>
     public static Diagnostic CheckThreeDFaceBoundary(string path, string reason) => Diagnostic.Create(
@@ -1421,6 +1451,16 @@ internal static class CliDiagnostics
             "the stated {itThem} to take effect.",
             ("path", path), ("fields", fields), ("stated", stated), ("used", used),
             ("isAre", fields.Contains(',') ? "are" : "is"), ("itThem", fields.Contains(',') ? "values" : "value"));
+
+    /// <summary>EMB-4 R-emb4-7 — mesh fields the file states beside <c>"Auto": true</c> that are USED: a stated value
+    /// wins and Auto chooses only the rest.</summary>
+    public static Diagnostic CheckEmMeshAutoKept(string path, string fields, string stated) =>
+        Diagnostic.Create(
+            "check.em.mesh-auto-kept", DiagnosticSeverity.Info,
+            "{path}: PlanarMesh has \"Auto\": true and states {stated}; {itThey} {isAre} used as stated, and Auto " +
+            "chooses only cells per wavelength and edge cells.",
+            ("path", path), ("fields", fields), ("stated", stated),
+            ("itThey", fields.Contains(',') ? "they" : "it"), ("isAre", fields.Contains(',') ? "are" : "is"));
 
     /// <summary>A finding whose class says the answer would not be what was drawn.</summary>
     public static Diagnostic CheckEmWarning(string path, string text) => Diagnostic.Create(
@@ -2035,6 +2075,12 @@ internal static class CliDiagnostics
         "reference.args.unknown-option", DiagnosticSeverity.Error,
         "reference: unknown option '{option}'", ("option", option));
 
+    /// <summary>EMB-5 R-emb5-12: <c>--tables</c> takes text or schema.</summary>
+    public static Diagnostic ReferenceTablesValue(string value) => Diagnostic.Create(
+        "reference.args.tables", DiagnosticSeverity.Error,
+        "reference: --tables takes text (the page with its field tables) or schema (the tables as reference.schema), not '{value}'.",
+        ("value", value));
+
     // ── serve (brief-automation-5-protocol-adapter.md) ───────────────────────
 
     /// <summary>No <c>--root</c>. Required at startup rather than defaulted: the server runs with
@@ -2078,9 +2124,15 @@ internal static class CliDiagnostics
     /// <summary>A path that leaves the root. Names the root, because that is the fact the caller is
     /// missing — and it is a refusal rather than a silent clamp, which would run a different
     /// operation than the one asked for and say nothing about it.</summary>
-    public static Diagnostic ServePathOutsideRoot(string path, string root) => Diagnostic.Create(
+    /// <remarks>EMB-5 R-emb5-5 — and it says where the caller CAN write: an agent with a temp directory of its own needs a
+    /// place under the root for a render or a result, and <paramref name="scratch"/> is one the server made and accepts.
+    /// A relative path resolves under the root, so the sentence says that too.</remarks>
+    public static Diagnostic ServePathOutsideRoot(string path, string root, string scratch) => Diagnostic.Create(
         "serve.path.outside-root", DiagnosticSeverity.Error,
-        "'{path}' is outside the server root '{root}'.", ("path", path), ("root", root));
+        "'{path}' is outside the server root '{root}'. Every path must be under it; a relative path is taken from it. " +
+        "For a file of your own (a picture, a result, a scratch netlist) write under '{scratch}', which this server " +
+        "keeps for that.",
+        ("path", path), ("root", root), ("scratch", scratch));
 
     public static Diagnostic ServeUnknownTool(string tool, string known) => Diagnostic.Create(
         "serve.tool.unknown", DiagnosticSeverity.Error,
@@ -2120,6 +2172,18 @@ internal static class CliDiagnostics
 
     /// <summary>The client cancelled. Its own exit code is 130, the one `em` already uses for a run
     /// stopped at a work boundary (cli.md §7).</summary>
+    /// <summary>EMB-5 R-emb5-1 — a <c>job</c> id this server never issued. Names the ones it did.</summary>
+    public static Diagnostic ServeJobUnknown(string id, string known) => Diagnostic.Create(
+        "serve.job.unknown", DiagnosticSeverity.Error,
+        "job: no job '{id}'. Jobs: {known}. A job lasts as long as the server that started it.",
+        ("id", id), ("known", known.Length == 0 ? "none" : known));
+
+    /// <summary>EMB-5 R-emb5-1 — <c>result</c> asked of a job still going. Says what to ask instead.</summary>
+    public static Diagnostic ServeJobNotFinished(string id, string state) => Diagnostic.Create(
+        "serve.job.not-finished", DiagnosticSeverity.Error,
+        "job: '{id}' is {state} and has no result yet. Ask job action=status id={id} for its progress, or " +
+        "job action=cancel id={id} to stop it.", ("id", id), ("state", state));
+
     public static Diagnostic ServeCancelled(string tool) => Diagnostic.Create(
         "serve.tool.cancelled", DiagnosticSeverity.Error,
         "{tool} was cancelled.", ("tool", tool));
@@ -4178,6 +4242,22 @@ internal static class CliDiagnostics
         "recognize.plot.refused", DiagnosticSeverity.Error,
         "recognize: no Touchstone yet: {why}. {flag} answers it. Nothing was written but the overlay and the CSV asked for.",
         ("why", why), ("flag", flag));
+
+    /// <summary>EMB-5 R-emb5-10: what one <c>--follow</c> followed — the colour, or why nothing — and the grey or black
+    /// ink (a gridline or the frame, as a rule) that was also within reach of the click, so a caller can click again
+    /// knowingly rather than discover it in the overlay.</summary>
+    public static Diagnostic RecognizeFollowed(string name, int rgb, string? refusal, (int Rgb, int DistancePx)? other)
+    {
+        string also = other is { } o
+            ? $"; #{o.Rgb:x6} (grey or black: a gridline or the frame) was also {o.DistancePx} px from the click and was passed over"
+            : "";
+        return refusal is null
+            ? Diagnostic.Create("recognize.plot.followed", DiagnosticSeverity.Info,
+                "recognize: --follow {name} followed the #{colour} curve{also}.",
+                ("name", name), ("colour", $"{rgb:x6}"), ("also", also))
+            : Diagnostic.Create("recognize.plot.follow-failed", DiagnosticSeverity.Warning,
+                "recognize: --follow {name}: {why}{also}.", ("name", name), ("why", refusal), ("also", also));
+    }
 
     /// <summary>brief-pdg-4 §4: a plot read by hand needs its box and both of its scales.</summary>
     public static Diagnostic RecognizeManualNeeds(string missing) => Diagnostic.Create(

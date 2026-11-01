@@ -63,11 +63,20 @@ internal static class VendorLibraryVerbs
         string libName = added.Name;
 
         Console.WriteLine($"{libName}\t{build.Root}");
+        // EMB-5 R-emb5-8: with --result summary the document carries the counts per library and folder and the
+        // tolerance note, and the per-file tolerance refusals collapse to one count — a vendor folder can hold
+        // thousands of files. stdout still prints every line.
+        var perFile = JsonRun.SummaryOnly
+            ? build.ToleranceRefusals.Select(r => $"{r.File}: no tolerance read — {r.Reason}.").ToHashSet(StringComparer.Ordinal)
+            : [];
         foreach (string line in build.SummaryLines())
         {
             Console.WriteLine(line);
-            JsonRun.Note(CliDiagnostics.ImportMessage(line));
+            if (!perFile.Contains(line)) JsonRun.Note(CliDiagnostics.ImportMessage(line));
         }
+        if (perFile.Count > 0)
+            JsonRun.Note(CliDiagnostics.ImportMessage(
+                $"{perFile.Count:N0} {(perFile.Count == 1 ? "file" : "files")} gave no tolerance; result=full lists each."));
         JsonRun.AddOutput("cws", cwsPath);
         JsonRun.Library = new VendorLibraryJson(
             libName, added.Path, build.Entries.Count, build.FilesScanned, build.EncryptedFiles,
@@ -171,9 +180,16 @@ internal static class VendorLibraryVerbs
         Console.Error.WriteLine($"[circuitRF] {hits.Count} part(s) match in {refs.Count} librar{(refs.Count == 1 ? "y" : "ies")}");
         if (hits.Count > shown.Count) JsonRun.Note(CliDiagnostics.FindPartsLimited(shown.Count, hits.Count));
 
-        JsonRun.Find = new FindReportJson(wsRoot, 0, hits.Count > shown.Count, [], rows);
+        JsonRun.Find = new FindReportJson(wsRoot, 0, hits.Count > shown.Count, [], rows, PlacedBy);
         return 0;
     }
+
+    /// <summary>Which documents take a part's parameters, and how (EMB-5 R-emb5-13): both resolve the reference through
+    /// the workspace's vendor libraries, by the one function.</summary>
+    internal const string PlacedBy =
+        "Each part's parameters are written on a .csch component with Symbol \"SpiceModel\" (as Parameters rows), or on a "
+      + ".cnl line: SpiceModel:C1 <net> <net> File=\"vendorlib://<library>/<file>\" Name=<part>. Either way the reference "
+      + "resolves through the workspace's vendor libraries, and tune C1.Part parts=\"…\" searches it.";
 
     private static FoundPartJson ToJson(string library, VendorLibraryEntry e, CircuitRF.Design.Layout.Technology? technology)
     {

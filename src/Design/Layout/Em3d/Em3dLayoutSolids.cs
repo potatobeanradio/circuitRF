@@ -67,6 +67,13 @@ public sealed record Em3dLayoutSolidsOptions(double? FMaxHz, double TempC, bool 
     /// within <see cref="Em3dOutlineCleanup.Tolerance"/> of their neighbours' line, and one note says how many and how far.
     /// Never a via's barrel, an edge-cut drill's cut, a slab or the board outline.</summary>
     public bool RobustMeshing { get; init; }
+
+    /// <summary>brief-emb-2 R-emb2-2 — every via is a SOLID barrel, whatever its entry's <see cref="ViaFillKind"/>: what an EM
+    /// problem (driven, eigenmode, electrostatic, magnetostatic) is built with. A hollow barrel's air core, 25 µm inside the
+    /// plating, meshed into inverted elements on an imported board and is electrically the same at RF, so only a thermal
+    /// problem, where the wall carries the heat, keeps it. Off (the wall as the technology states it) for a picture with no
+    /// setup and for a thermal run.</summary>
+    public bool SolidVias { get; init; }
 }
 
 /// <summary>A layout's geometry as the 3D problem's vocabulary: solids, sheets and materials, and where
@@ -92,6 +99,10 @@ public sealed record Em3dLayoutSolidsResult(
 
     /// <summary>The conductors on ground-reference stackup entries.</summary>
     public IReadOnlyList<string> GroundBandObjects { get; init; } = [];
+
+    /// <summary>brief-emb-2 R-emb2-3 — the farthest Robust meshing moved any outline point, metres; 0 when it is off or moved
+    /// nothing. A port edge that touched the artwork as drawn is within this of the outline the run meshes.</summary>
+    public double OutlineMoveM { get; init; }
 
     public IReadOnlyList<Em3dWireReport> Wires { get; init; } = [];
     public IReadOnlyList<string> NoAlpha { get; init; } = [];
@@ -166,6 +177,13 @@ public static class Em3dLayoutSolids
         /// <summary>Designer round 33 — the underside of a drawn, unbroken lowest ground plane, where the air box's floor goes
         /// (a PEC face) when the setup states nothing for ZMin; null otherwise.</summary>
         public double? PlaneFloorZ { get; private set; }
+
+        /// <summary>brief-emb-2 R-emb2-5 — how many holes the floor plane has (none with metal over it), when it is the floor.</summary>
+        public int PlaneFloorHoles { get; private set; }
+
+        /// <summary>brief-emb-2 R-emb2-5 — where a hole of the lowest ground plane has metal over it (metres), which keeps the
+        /// floor off the plane; null otherwise.</summary>
+        public (double X, double Y)? PlaneFloorBlockedAt { get; private set; }
 
         /// <summary>The plane's area is at least <see cref="Em3dGenerator.PlaneFloorCover"/> of the box round all drawn metal.</summary>
         private static bool UnbrokenCover(IReadOnlyList<PlanarPolygon> plane, IEnumerable<PlanarPolygon> allMetal)
@@ -439,13 +457,32 @@ public static class Em3dLayoutSolids
             // floor to close) and covers the drawn metal's footprint, with nothing drawn or stacked below it, shields everything
             // under it: the air box's floor goes on its underside, as a PEC face, instead of 10 H of air nobody's field reaches.
             // The plane stays geometry; only where the box ends changes.
+            // brief-emb-2 R-emb2-5 — a hole is allowed where no other metal lies over it (other than metal on the plane's own
+            // net): closing such a hole with the floor shorts nothing. A hole with a via through it, or signal metal over it,
+            // keeps the floor off, and the note says where.
             if (!pecFloor && !FloorStatedAway && !options.Instance && ground is not null
                 && polysByBand.TryGetValue(ground.Index, out var plane) && plane.Count > 0
                 && bands.All(b => b.BottomM >= ground.BottomM - 1e-15)
                 && _viaSpans.All(v => v.Bottom.BottomM >= ground.BottomM - 1e-15)
-                && plane.All(p => p.Poly.HoleRings.Count == 0)
                 && UnbrokenCover(plane.Select(p => p.Poly).ToList(), polysByBand.Values.SelectMany(l => l).Select(p => p.Poly)))
-                PlaneFloorZ = ground.BottomM;
+            {
+                var drills = _viaSpans.Select(v => Drill(v.Shape)).OfType<(double X, double Y, double R)>().ToList();
+                foreach (var p in plane.Where(p => p.Poly.HoleRings.Count > 0))
+                {
+                    var own = p.Net;
+                    var metal = polysByBand.Values.SelectMany(l => l)
+                                           .Where(q => !ReferenceEquals(q.Poly, p.Poly) && !(own is not null && q.Net == own))
+                                           .Select(q => Ring(q.Poly.Outer));
+                    if (Em3dGenerator.CoveredHole(p.Poly.HoleRings.Select(Ring), metal, drills) is { } covered)
+                    {
+                        PlaneFloorBlockedAt = covered;
+                        break;
+                    }
+                    PlaneFloorHoles += p.Poly.HoleRings.Count;
+                }
+                if (PlaneFloorBlockedAt is null) PlaneFloorZ = ground.BottomM;
+                else PlaneFloorHoles = 0;
+            }
 
             // ── Conductor pieces: named, sheet or solid ──────────────────────────────────────
             foreach (var band in bands.Where(b => polysByBand.ContainsKey(b.Index)))
@@ -820,7 +857,7 @@ public static class Em3dLayoutSolids
                                       Em3dObjectKind.Via, entry.Name, shape.Layer));
                     foreach (string n in viaNets) Net(name, n);
                     double wall = (entry.WallThicknessDbu ?? 0) * StackPerDbu;
-                    if (entry.Fill == ViaFillKind.Plated && wall > 0 && wall < r)
+                    if (Hollow(entry) && wall < r)
                         solids.Add(Origin(new Em3dSolid(name + "/fill", AirMaterialName(), Em3dRole.Air,
                                                         new Em3dCylinder(a, e, r - wall), ++order),
                                           Em3dObjectKind.Air, entry.Name));
@@ -841,7 +878,7 @@ public static class Em3dLayoutSolids
                         foreach (string n in viaNets) Net(piece, n);
                     }
                     double wall = (entry.WallThicknessDbu ?? 0) * StackPerDbu;
-                    if (entry.Fill == ViaFillKind.Plated && wall > 0 && wall < cr && ClipDisc(cx, cy, cr - wall) is { Count: > 0 } fill)
+                    if (Hollow(entry) && wall < cr && ClipDisc(cx, cy, cr - wall) is { Count: > 0 } fill)
                     {
                         order++;
                         for (int k = 0; k < fill.Count; k++)
@@ -863,6 +900,8 @@ public static class Em3dLayoutSolids
                     }
                 }
             }
+
+            if (ViaFillNote() is { } fillNote) Notes.Add(fillNote);
 
             // Non-plated holes: air, after every metal so the order rule drills it (an Air solid drawn after the first
             // metal is in the metal band, Em3dPrecedence). A conductor that is a SHEET is a surface, and is not cut.
@@ -990,6 +1029,7 @@ public static class Em3dLayoutSolids
             ObjectNets = ObjectNetMap.ToDictionary(kv => kv.Key, kv => (IReadOnlySet<string>)kv.Value, StringComparer.Ordinal),
             ViaNetConflicts = ViaNetConflictMap,
             GroundBandObjects = GroundBandObjectList,
+            OutlineMoveM = _robust.MaxMoveM,
             Wires = WireBuild?.Reports ?? [],
             NoAlpha = NoAlphaList,
             UnknownTemperature = _unknownTemperature,
@@ -1336,6 +1376,26 @@ public static class Em3dLayoutSolids
             var holes = poly.HoleRings.Select(Clean).ToList();
             return ReferenceEquals(outer, poly.Outer) && holes.Zip(poly.HoleRings).All(h => ReferenceEquals(h.First, h.Second))
                 ? poly : new PlanarPolygon(outer, poly.Holes is null ? null : holes);
+        }
+
+        /// <summary>brief-emb-2 R-emb2-2 — whether a via of <paramref name="entry"/> is built as a tube with an air core: a plated
+        /// entry with a wall, unless the problem is an EM one (<see cref="Em3dLayoutSolidsOptions.SolidVias"/>).</summary>
+        private bool Hollow(StackupLayer entry)
+            => entry.Fill == ViaFillKind.Plated && (entry.WallThicknessDbu ?? 0) > 0 && !options.SolidVias;
+
+        /// <summary>brief-emb-2 R-emb2-2 — for an EM problem, what each via entry's barrels were built as, so <c>explain</c> says
+        /// it per entry; null when there is no via or the problem keeps the walls.</summary>
+        private string? ViaFillNote()
+        {
+            if (!options.SolidVias || _viaSpans.Count == 0) return null;
+            var entries = _viaSpans.Select(v => v.Entry).Distinct().ToList();
+            // Said only where it changes something: an entry whose Fill is Solid is built as it is drawn anyway.
+            if (!entries.Any(e => e.Fill == ViaFillKind.Plated && (e.WallThicknessDbu ?? 0) > 0)) return null;
+            string Says(StackupLayer e) => e.Fill == ViaFillKind.Plated && (e.WallThicknessDbu ?? 0) > 0
+                ? $"'{e.Name}' (Fill Plated, {Fmt((e.WallThicknessDbu ?? 0) * StackPerDbu * 1e6)} µm wall) is built solid"
+                : $"'{e.Name}' (Fill {e.Fill}) is solid";
+            return $"Via barrels in this EM problem are solid: {string.Join("; ", entries.Select(Says))}. A hollow barrel's air " +
+                   "core changes nothing an RF answer can see and meshes into inverted elements; a thermal problem keeps the wall.";
         }
 
         /// <summary>The note a run gets when Robust meshing removed anything.</summary>

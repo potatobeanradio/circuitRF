@@ -254,6 +254,13 @@ public sealed class PlanarSolveContext
     /// <summary>How long this mesh's AIM geometry took, or 0 while it has not been built.</summary>
     public double AimGeometryBuildMs { get; private set; }
 
+    /// <summary>
+    /// EMB-4 R-emb4-5(b) — where the accelerated operator's near-field factor reports its columns done and total, or
+    /// null. Read on the accelerated path only (the dense path has no near factor); the sweep sets it on the structure's
+    /// own context, so a factor that takes minutes shows its progress on the run's stage.
+    /// </summary>
+    public Action<long, long>? FactorProgress { get; set; }
+
     /// <summary>Fill, factor, excite — the raw admittance at one frequency.</summary>
     public PlanarPortSolution SolveAt(PlanarKernelPair kernel, double fHz)
     {
@@ -262,7 +269,8 @@ public sealed class PlanarSolveContext
 
         if (_aimGeometry is not null)
         {
-            LastAccelerator = PlanarAimOperator.Build(_aimGeometry.Value, k.VectorPotential, k.Scalar, omega);
+            LastAccelerator = PlanarAimOperator.Build(_aimGeometry.Value, k.VectorPotential, k.Scalar, omega,
+                                                      FactorProgress);
             return Excite(LastAccelerator, () => SingleLevelPulse(_aimGeometry.Value.EntryCores, k.Scalar), omega);
         }
 
@@ -346,7 +354,7 @@ public sealed class PlanarSolveContext
         {
             var bset = kernel.Set!.For(Cores);
             LastBorderedAccelerator = PlanarBorderedAimOperator.Build(
-                _aimGeometry.Value, bset, Levels, 2.0 * Math.PI * fHz);
+                _aimGeometry.Value, bset, Levels, 2.0 * Math.PI * fHz, factorProgress: FactorProgress);
             return Excite(LastBorderedAccelerator, () => MultiLevelPulse(_aimGeometry.Value.EntryCores, bset),
                           2.0 * Math.PI * fHz);
         }
@@ -1541,6 +1549,17 @@ public sealed record PlanarRunSize(int Unknowns, int Cells, bool Accelerated, lo
 
     /// <summary>The unknown ceiling the mesh was judged against.</summary>
     public int CeilingUnknowns { get; init; }
+
+    /// <summary>EMB-4 — the run is accelerated but its mesh is judged on the DENSE ceiling (more than one metal level,
+    /// or a via; <c>SurfaceMesher.UsesAcceleratedCeiling</c>), so <see cref="CeilingUnknowns"/> is the dense one.</summary>
+    public bool DenseCeiling { get; init; }
+
+    /// <summary>EMB-4 R-emb4-2 — what the accelerated operator this run builds holds, estimated; null when not known.</summary>
+    public long? AcceleratedResidentBytes { get; init; }
+
+    /// <summary>EMB-4 R-emb4-3 — the mesh's cores the ceiling was sized beside; past the limit alone they make
+    /// <see cref="CeilingUnknowns"/> 0.</summary>
+    public long CoreBytes { get; init; }
 }
 
 /// <summary>A run <see cref="PlanarSolveSettings.Admit"/> declined. Its message is the caller's own
@@ -2224,6 +2243,22 @@ public static class PlanarSolve
         var sw    = Stopwatch.StartNew();
         var dut   = new PlanarSolveContext(mesh, ports, fillSt, levels, slab.HeightM);
         double setupMs = sw.Elapsed.TotalMilliseconds;
+
+        // ── EMB-4 R-emb4-5 — the accelerated solve's near-field factor, said before it runs and while it runs ──
+        //
+        // The factor is one single-threaded sparse LU per frequency point; on an imported board whose near radius
+        // spans most of the metal it is minutes, and the stage said "solving the structure" throughout. The estimate
+        // (the same one `check` reports) goes in the notes — a warning past a minute — and the factor's own columns
+        // go on the stage's live figure. Only the structure's context reports; the standards are small.
+        if (fillSt.Aim is { } aimSt)
+        {
+            var nearEstimate = PlanarNearFieldEstimate.For(mesh, slab.HeightM, aimSt, control?.Token ?? default);
+            string said = nearEstimate.Describe(fmt);
+            notes.Add(nearEstimate.Large ? EmFinding.Warn(said) : said);
+            if (control is not null)
+                dut.FactorProgress = (done, total) =>
+                    control.SetStageDetail($"factoring the near field: {done:N0} / {total:N0} columns");
+        }
         int    cores   = 1;
 
         // ── CL2 — what the power budget needs to book a conductor term, and it is the FILL's ─────

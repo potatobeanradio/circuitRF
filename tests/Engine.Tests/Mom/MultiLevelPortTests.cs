@@ -994,8 +994,10 @@ public sealed class MultiLevelPortTests
     // number here. **The FR-4 conclusion therefore stands as being about FR-4**, and the refusal
     // stays where L9c measured it.
 
+    // EMB-4 R-emb4-7 — EdgeMesh now survives Auto, so the inert `EdgeMesh: false` this fixture carried would start to
+    // act; the default is spelled instead, which keeps every mesh it measured bit-identical.
     private static readonly PlanarMeshSettings CoarseForZz =
-        new(Auto: true, CellsPerWavelength: 4, EdgeMesh: false);
+        new(Auto: true, CellsPerWavelength: 4, EdgeMesh: PlanarMeshSettings.DefaultEdgeMesh);
 
     /// <summary>The assembled ẑẑ submatrix — every entry between two vertical bases, which is the
     /// ONLY place G_A^zz is ever evaluated.</summary>

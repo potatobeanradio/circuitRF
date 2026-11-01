@@ -9395,6 +9395,14 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             if (result.NpyPath is { } npyWritten) Messages.Success("Wrote results", npyWritten);
         }
         PostSnpSchematic(result.SnpSchematic, owningWorkspace);
+        // brief-emb-1 R-emb1-7 — the co-simulation netlist a run with component ports wrote.
+        if (result.CoSim is { } cosim)
+            Messages.Post(cosim.Outcome switch
+            {
+                EmSnpSchematicOutcome.Created    => MessageLevel.Success,
+                EmSnpSchematicOutcome.NotCreated => MessageLevel.Warning,
+                _                                => MessageLevel.Info,
+            }, cosim.Sentence, cosim.Path);
 
         // The window moved to another workspace while this was solving. The write above is still
         // correct — it went to the workspace the run was started in — but the Data Display below is

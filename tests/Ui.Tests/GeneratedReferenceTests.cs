@@ -372,7 +372,8 @@ public sealed class GeneratedReferenceTests(ITestOutputHelper output)
     [Fact]
     public void TheGeneratedFieldListIsTheReadersOwnType()
     {
-        var run = RunCli("reference", "technology", "--json");
+        // The tables travel as reference.schema when asked for (EMB-5 R-emb5-12); by default they are the page's text.
+        var run = RunCli("reference", "technology", "--tables", "schema", "--json");
         Assert.Equal(0, run.ExitCode);
 
         var root = Payload(run.StdOut).GetProperty("reference").GetProperty("schema")[0];

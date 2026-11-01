@@ -86,6 +86,10 @@ public sealed class C3dPortContext
     /// <summary>The document's DBU per micrometre.</summary>
     public int DbuPerMicron { get; }
 
+    /// <summary>brief-emb-2 R-emb2-3 — the farthest Robust meshing moved a placed layout's outline in this elaboration, metres:
+    /// how far from the moved outline an inferred port's edge may sit and still be taken to touch it (and then follow it).</summary>
+    public double OutlineMoveM { get; }
+
     /// <summary>Contact queries over all conductors made through this context — gate 1 reads that a port with both ends
     /// stated makes none.</summary>
     public int InferenceRuns { get; internal set; }
@@ -101,6 +105,7 @@ public sealed class C3dPortContext
         NotModelled = elaboration.NotModelled;
         DbuPerMicron = dbuPerMicron;
         Dbu = C3dLowering.Metres(1, dbuPerMicron);
+        OutlineMoveM = elaboration.OutlineMoveM;
         Ground = new HashSet<string>(ground, StringComparer.Ordinal);
         foreach (var s in elaboration.Solids.Where(s => s.Role == Em3dRole.Conductor))
         {
@@ -154,7 +159,7 @@ public sealed class C3dPortContext
     /// port's axis needs, since a sheet stopped short of its metal is far from both conductors by the same few µm.</param>
     internal double Distance(Conductor c, Point3 a, Point3 b, bool bounded = true)
     {
-        double tol = 2 * Dbu;
+        double tol = 2 * Dbu + OutlineMoveM;       // brief-emb-2 R-emb2-3: a moved outline is still in reach
         var (x0, y0, z0, x1, y1, z1) = c.Box;
         if (bounded &&
             (Math.Min(a.X, b.X) > x1 + tol || Math.Max(a.X, b.X) < x0 - tol || Math.Min(a.Y, b.Y) > y1 + tol ||
@@ -394,7 +399,8 @@ public static class C3dPorts
                                         Func<double, double, Point3> P)
     {
         // The four edges, their ends pulled in by two DBU so a corner contact does not count.
-        double inset = 2 * ctx.Dbu;
+        // brief-emb-2 R-emb2-3 — and by twice Robust meshing's largest move, which widens what counts as touching.
+        double inset = 2 * ctx.Dbu + 2 * ctx.OutlineMoveM;
         (Point3, Point3) Edge(double ua, double va, double ub, double vb)
         {
             double du = ub - ua, dv = vb - va, len = Math.Sqrt(du * du + dv * dv);
@@ -426,26 +432,21 @@ public static class C3dPorts
                 var m = new Point3((e.A.X + e.B.X) / 2, (e.A.Y + e.B.Y) / 2, (e.A.Z + e.B.Z) / 2);
                 return (m, m);
             }
-            double best = double.PositiveInfinity;
-            (pair, negativeOnLow) = (0, true);
-            for (int k = 0; k < 2; k++)
-                foreach (bool low in new[] { true, false })
-                {
-                    var (na, nb) = Mid(edges[2 * k + (low ? 0 : 1)]);
-                    var (pa, pb) = Mid(edges[2 * k + (low ? 1 : 0)]);
-                    double d = ctx.Distance(nc, na, nb, bounded: false) + ctx.Distance(pc, pa, pb, bounded: false);
-                    if (d < best) (best, pair, negativeOnLow) = (d, k, low);
-                }
-            if (double.IsInfinity(best))
-                return Refuse(port, $"{label} states '{sp}' and '{sn}' as its ends, and neither pair of its opposite edges " +
-                                    "can be measured against them, so its direction is undecided.");
+            var mids = edges.Select(Mid).ToArray();
+            double[] dn = [.. mids.Select(m => ctx.Distance(nc, m.Item1, m.Item2, bounded: false))];
+            double[] dpos = [.. mids.Select(m => ctx.Distance(pc, m.Item1, m.Item2, bounded: false))];
+            if (StatedPair(dn, dpos, ctx.Dbu) is not { } chosen)
+                return Refuse(port, StatedUndecided(label, sp, sn, dn, dpos, EdgeNames));
+            (pair, negativeOnLow) = chosen;
             (negative, positive) = (sn, sp);
             reason = "both ends are stated";
         }
         else
         {
             ctx.InferenceRuns++;
-            double tol = ctx.Dbu;
+            // brief-emb-2 R-emb2-3 — measured against the outline the run meshes: an edge that touched the artwork as drawn is
+            // within Robust meshing's largest move of it, and follows it (below).
+            double tol = ctx.Dbu + ctx.OutlineMoveM;
             var touching = edges.Select(e => ctx.Conductors.Where(c => ctx.Distance(c, e.Item1, e.Item2) <= tol)
                                                            .Select(c => c.Name).ToList()).ToArray();
             contacts = [.. EdgeNames.Select((n, i) => (n, (IReadOnlyList<string>)touching[i]))];
@@ -462,6 +463,13 @@ public static class C3dPorts
             (negative, reason) = Negative(lc, hc, ctx);
             negativeOnLow = negative == low;
             positive = negativeOnLow ? high : low;
+            if (ctx.OutlineMoveM > 0 && FollowOutline(ctx, pair, lc, hc, ref u0, ref v0, ref u1, ref v1, P, Edge) is { } moved)
+            {
+                reason += "; " + moved;
+                var cs = new[] { P(u0, v0), P(u1, v0), P(u1, v1), P(u0, v1) };
+                min = new Point3(cs.Min(c => c.X), cs.Min(c => c.Y), cs.Min(c => c.Z));
+                max = new Point3(cs.Max(c => c.X), cs.Max(c => c.Y), cs.Max(c => c.Z));
+            }
         }
         if (port.Flip)
         {
@@ -477,6 +485,38 @@ public static class C3dPorts
         var resolved = new Em3dPort(port.Number, ProblemName(port.Number), positive, negative, min, max, direction, z0,
                                     new Em3dReferencePlane(centre, normal, 0));
         return new C3dPortResult(port, resolved, null, contacts, reason);
+    }
+
+    /// <summary>
+    /// brief-emb-2 R-emb2-3 — the two end edges of an inferred lumped port moved onto the outline Robust meshing left: an edge
+    /// short of its conductor moves out to it, one reaching into it moves back to its face. Each move is at most the
+    /// elaboration's largest outline move; the sentence says what moved, or null when neither edge had to.
+    /// </summary>
+    private static string? FollowOutline(C3dPortContext ctx, int pair, C3dPortContext.Conductor low, C3dPortContext.Conductor high,
+                                         ref double u0, ref double v0, ref double u1, ref double v1, Func<double, double, Point3> P,
+                                         Func<double, double, double, double, (Point3, Point3)> edge)
+    {
+        double a0 = pair == 0 ? u0 : v0, a1 = pair == 0 ? u1 : v1;
+        double b0 = pair == 0 ? v0 : u0, b1 = pair == 0 ? v1 : u1;
+        (Point3, Point3) At(double a) => pair == 0 ? edge(a, b0, a, b1) : edge(b0, a, b1, a);
+        double D(C3dPortContext.Conductor c, double a) { var (p, q) = At(a); return ctx.Distance(c, p, q, bounded: false); }
+        double m = ctx.OutlineMoveM, tol = ctx.Dbu;
+        // outward: −1 for the low edge, +1 for the high one.
+        double Settle(C3dPortContext.Conductor c, double a, int outward)
+        {
+            double d = D(c, a);
+            if (d > tol) return D(c, a + outward * d) <= tol ? a + outward * d : a;
+            double inward = m - D(c, a - outward * m);      // how far the conductor reaches into the sheet
+            return inward > tol && D(c, a - outward * inward) <= tol ? a - outward * inward : a;
+        }
+        double n0 = Settle(low, a0, -1), n1 = Settle(high, a1, +1);
+        if (Math.Abs(n0 - a0) <= tol && Math.Abs(n1 - a1) <= tol) return null;
+        string Moved(string name, double by) => $"its edge on '{name}' follows Robust meshing's outline by {Fmt(Math.Abs(by))} µm";
+        var said = new List<string>();
+        if (Math.Abs(n0 - a0) > tol) said.Add(Moved(low.Name, n0 - a0));
+        if (Math.Abs(n1 - a1) > tol) said.Add(Moved(high.Name, n1 - a1));
+        if (pair == 0) (u0, u1) = (n0, n1); else (v0, v1) = (n0, n1);
+        return string.Join("; ", said);
     }
 
     // ── brief-sar-8b R-sar8b-1 — a lumped gap on a cylinder ────────────────────────────────────
@@ -519,14 +559,14 @@ public static class C3dPorts
             if (pc is null || nc is null)
                 return Refuse(port, $"{label} names '{(pc is null ? sp : sn)}' as its {(pc is null ? "Positive" : "Negative")} end, " +
                                     "which is no conductor of the elaborated model" + (ctx.Box is null ? "" : " and no PEC face of the setup's air box") + ".");
-            double best = double.PositiveInfinity;
-            (pair, negativeOnLow) = (0, true);
-            for (int k = 0; k < 2; k++)
-                foreach (bool low in new[] { true, false })
-                {
-                    double d = CylDistance(ctx, nc, patch, edges[2 * k + (low ? 0 : 1)]) + CylDistance(ctx, pc, patch, edges[2 * k + (low ? 1 : 0)]);
-                    if (d < best) (best, pair, negativeOnLow) = (d, k, low);
-                }
+            // brief-emb-3 R-emb3-1 — the planar rule (F5): each edge at its midpoint, with no box cut-off, and a refusal in place of
+            // a default. Measured with the cut-off, a conductor stopped short of the gap scored every pair infinite and kept pair 0.
+            var mids = edges.Select(Mid).ToArray();
+            double[] dn = [.. mids.Select(m => CylDistance(ctx, nc, patch, m, bounded: false))];
+            double[] dpos = [.. mids.Select(m => CylDistance(ctx, pc, patch, m, bounded: false))];
+            if (StatedPair(dn, dpos, ctx.Dbu) is not { } chosen)
+                return Refuse(port, StatedUndecided(label, sp, sn, dn, dpos, CylEdgeNames));
+            (pair, negativeOnLow) = chosen;
             (negative, positive) = (sn, sp);
             reason = "both ends are stated";
         }
@@ -571,14 +611,55 @@ public static class C3dPorts
         return new C3dPortResult(port, resolved, null, contacts, reason);
     }
 
+    /// <summary>A cylinder edge's midpoint, as an edge of no length.</summary>
+    private static CylEdge Mid(CylEdge e) => e with { From = (e.From + e.To) / 2, To = (e.From + e.To) / 2 };
+
+    /// <summary>
+    /// brief-emb-3 R-emb3-1 — which pair of opposite edges two STATED ends sit on, from each end's distance to each edge's midpoint
+    /// (left, right, bottom, top; or a cylinder's start azimuth, end azimuth, lower arc, upper arc). The pair and orientation with
+    /// the least summed distance, provided that pair is nearer than the other by more than <paramref name="tol"/> and each end is
+    /// nearer its own edge than the opposite one; null otherwise, so the direction is undecided rather than defaulted.
+    /// </summary>
+    internal static (int Pair, bool NegativeOnLow)? StatedPair(double[] dn, double[] dp, double tol)
+    {
+        double[] best = [double.PositiveInfinity, double.PositiveInfinity];
+        bool[] lowOf = [true, true];
+        for (int k = 0; k < 2; k++)
+            foreach (bool low in new[] { true, false })
+            {
+                double d = dn[2 * k + (low ? 0 : 1)] + dp[2 * k + (low ? 1 : 0)];
+                if (d < best[k]) (best[k], lowOf[k]) = (d, low);
+            }
+        int pair = best[0] <= best[1] ? 0 : 1;
+        if (double.IsInfinity(best[pair]) || !(best[pair] + tol < best[1 - pair])) return null;
+        int ne = 2 * pair + (lowOf[pair] ? 0 : 1), pe = 2 * pair + (lowOf[pair] ? 1 : 0);
+        if (!(dn[ne] + tol < dn[pe]) || !(dp[pe] + tol < dp[ne])) return null;
+        return (pair, lowOf[pair]);
+    }
+
+    /// <summary>R-emb3-1 — the refusal when <see cref="StatedPair"/> cannot decide: the port, both ends, and how far each is from
+    /// each edge.</summary>
+    private static string StatedUndecided(string label, string sp, string sn, double[] dn, double[] dp, string[] edgeNames)
+    {
+        if (dn.Concat(dp).Any(double.IsInfinity))
+            return $"{label} states '{sp}' and '{sn}' as its ends, and neither pair of its opposite edges can be measured against " +
+                   "them, so its direction is undecided.";
+        string Row(string who, double[] d)
+            => $"'{who}' is " + string.Join(", ", d.Select((x, i) => $"{(x * 1e6).ToString("0.###", CultureInfo.InvariantCulture)} µm from its {edgeNames[i]}"));
+        return $"{label} states '{sp}' and '{sn}' as its ends, and they do not face two opposite edges of it ({Row(sp, dp)}; " +
+               $"{Row(sn, dn)}), so its direction is undecided. Draw the port between them, one at each end of its gap, or " +
+               "correct Positive and Negative.";
+    }
+
     /// <summary>The distance from a gap's edge on <paramref name="patch"/>'s cylinder to conductor <paramref name="c"/>, metres.</summary>
-    private static double CylDistance(C3dPortContext ctx, C3dPortContext.Conductor c, Em3dCylinderPatch patch, CylEdge e)
+    /// <param name="bounded">As <see cref="C3dPortContext.Distance"/>'s: false measures however far, for a stated end.</param>
+    private static double CylDistance(C3dPortContext ctx, C3dPortContext.Conductor c, Em3dCylinderPatch patch, CylEdge e, bool bounded = true)
     {
         if (c.Patch is { } q)
         {
             if (q.Axis != patch.Axis || Math.Abs(C3dPortContext.Get(q.Origin, q.U) - C3dPortContext.Get(patch.Origin, patch.U)) > ctx.Dbu ||
                 Math.Abs(C3dPortContext.Get(q.Origin, q.V) - C3dPortContext.Get(patch.Origin, patch.V)) > ctx.Dbu)
-                return Chords(ctx, c, patch, e);
+                return Chords(ctx, c, patch, e, bounded);
             double radial = Math.Abs(q.Radius - patch.Radius);
             double OutsideAxial(double lo, double hi) => Math.Max(0, Math.Max(q.Lo - lo, hi - q.Hi));
             double OutsideAngle(double lo, double hi)
@@ -592,18 +673,18 @@ public static class C3dPorts
             return e.Arc ? radial + OutsideAxial(e.At, e.At) + OutsideAngle(e.From, e.To)
                          : radial + OutsideAxial(e.From, e.To) + OutsideAngle(e.At, e.At);
         }
-        return Chords(ctx, c, patch, e);
+        return Chords(ctx, c, patch, e, bounded);
     }
 
     /// <summary>The edge as straight chords (one for an axial line; for an arc, enough that none strays a quarter DBU off it).</summary>
-    private static double Chords(C3dPortContext ctx, C3dPortContext.Conductor c, Em3dCylinderPatch patch, CylEdge e)
+    private static double Chords(C3dPortContext ctx, C3dPortContext.Conductor c, Em3dCylinderPatch patch, CylEdge e, bool bounded = true)
     {
-        if (!e.Arc) return ctx.Distance(c, patch.World(e.At, e.From), patch.World(e.At, e.To));
+        if (!e.Arc) return ctx.Distance(c, patch.World(e.At, e.From), patch.World(e.At, e.To), bounded);
         double step = Math.Sqrt(8 * 0.25 * ctx.Dbu / patch.Radius);
         int n = Math.Clamp((int)Math.Ceiling((e.To - e.From) / step), 1, 4096);
         double best = double.PositiveInfinity;
         for (int i = 0; i < n && best > 0; i++)
-            best = Math.Min(best, ctx.Distance(c, patch.World(e.From + (e.To - e.From) * i / n, e.At), patch.World(e.From + (e.To - e.From) * (i + 1) / n, e.At)));
+            best = Math.Min(best, ctx.Distance(c, patch.World(e.From + (e.To - e.From) * i / n, e.At), patch.World(e.From + (e.To - e.From) * (i + 1) / n, e.At), bounded));
         return best;
     }
 
@@ -1283,7 +1364,7 @@ public static class Geometry3
         return Dist(cp, x) <= 1e-15 * Math.Max(1, Math.Sqrt(Dot(n, n)));
     }
 
-    private static Point3 ClosestOnTriangle(Point3 p, Point3 a, Point3 b, Point3 c)
+    internal static Point3 ClosestOnTriangle(Point3 p, Point3 a, Point3 b, Point3 c)
     {
         var ab = Sub(b, a); var ac = Sub(c, a); var ap = Sub(p, a);
         double d1 = Dot(ab, ap), d2 = Dot(ac, ap);

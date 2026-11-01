@@ -47,18 +47,30 @@ public static class CnlTechnologyBinding
     /// <c>.cnl</c> file reads it with, so a netlist means the same thing headless and in the window.
     /// </summary>
     public static (Library Library, TestBench TestBench) ReadFile(string path, string testBenchName = "tb")
+        => ReadFile(path, out _, testBenchName);
+
+    /// <inheritdoc cref="ReadFile(string, string)"/>
+    /// <param name="parts">The vendor parts its <c>SpiceModel</c> lines place, as tunables (<c>C1.Part</c>) — what a
+    /// schematic's extraction hands a run in <see cref="NetExtractor.ExtractionResult.PartTunables"/> (EMB-5 R-emb5-13).</param>
+    public static (Library Library, TestBench TestBench) ReadFile(
+        string path, out IReadOnlyList<VendorLibraries.VendorPartTunable> parts, string testBenchName = "tb")
     {
         var (lib, tb) = CnlReader.ReadFile(path, testBenchName);
-        Bind(lib, tb, Path.GetDirectoryName(Path.GetFullPath(path)));
+        parts = Bind(lib, tb, Path.GetDirectoryName(Path.GetFullPath(path)));
         return (lib, tb);
     }
 
     /// <summary>Binds every microstrip and via instance in <paramref name="tb"/> and in every cell
-    /// <paramref name="lib"/> defines, resolving the technology from <paramref name="directory"/>.</summary>
+    /// <paramref name="lib"/> defines, resolving the technology from <paramref name="directory"/> — and first
+    /// emits every <c>SpiceModel</c> line, a SPICE model or a vendor part, exactly as a schematic's SpiceModel
+    /// component is emitted (<see cref="NetExtractor.ResolveNetlistSpiceModels"/>, EMB-5 R-emb5-13). Returns the
+    /// placed vendor parts as tunables.</summary>
     /// <exception cref="InvalidOperationException">An instance names a layer that cannot be
-    /// resolved.</exception>
-    public static void Bind(Library lib, TestBench tb, string? directory)
+    /// resolved, or a <c>SpiceModel</c> line cannot be emitted.</exception>
+    public static IReadOnlyList<VendorLibraries.VendorPartTunable> Bind(Library lib, TestBench tb, string? directory)
     {
+        var parts = NetExtractor.ResolveNetlistSpiceModels(lib, tb, directory);
+
         var cellNames = new HashSet<string>(lib.Cells.Select(c => c.Name), StringComparer.Ordinal);
         var context   = new Context(directory, cellNames, tb);
 
@@ -70,6 +82,7 @@ public static class CnlTechnologyBinding
 
         BindAll(tb.Instances, context);
         foreach (var cell in lib.Cells) BindAll(cell.Instances, context);
+        return parts;
     }
 
     private static void BindAll(List<Instance> instances, Context context)

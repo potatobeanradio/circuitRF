@@ -13,7 +13,7 @@ namespace CircuitRF.Cli;
 /// </summary>
 internal static class ExplainTunables
 {
-    public static (ExplainTunablesJson? Report, int Exit) Collect(string path, DocumentKind kind)
+    public static (ExplainTunablesJson? Report, int Exit) Collect(string path, DocumentKind kind, IReadOnlyList<string>? snpEntries = null)
     {
         TunableCatalog catalog;
         Core.Design.TuningSetup? setup;
@@ -37,8 +37,8 @@ internal static class ExplainTunables
                 }
                 case DocumentKind.Netlist:
                 {
-                    var (lib, tb) = CnlTechnologyBinding.ReadFile(path);
-                    catalog = TunableCatalog.FromNetlist(tb, lib);
+                    var (lib, tb) = CnlTechnologyBinding.ReadFile(path, out var parts);
+                    catalog = TunableCatalog.FromNetlist(tb, lib, parts: parts);
                     setup   = tb.Tuning;
                     break;
                 }
@@ -51,7 +51,15 @@ internal static class ExplainTunables
             return (null, JsonRun.Fail(CliDiagnostics.ExplainUnreadable(path, ex.Message)));
         }
 
-        var rows = catalog.Tunables.Select(t =>
+        // EMB-5 R-emb5-9: an SnP block offers 2·N² offset rows (a 15-port board, 450), which the per-block line below
+        // already summarises — so they are folded to it unless the block is named (or all). A result that grows with
+        // its input says how much it left out and how to ask for it.
+        bool all = snpEntries?.Any(n => n.Equals("all", StringComparison.OrdinalIgnoreCase)) ?? false;
+        bool Listed(string instance) => all || (snpEntries?.Contains(instance, StringComparer.OrdinalIgnoreCase) ?? false);
+        var folded = catalog.SnpInstances.Select(s => s.Instance).Where(i => !Listed(i)).ToHashSet(StringComparer.Ordinal);
+        bool Fold(Tunable t) => t.Kind == TunableKind.SnpEntry && folded.Any(i => t.Key.StartsWith(i + ".", StringComparison.Ordinal));
+
+        var rows = catalog.Tunables.Where(t => !Fold(t)).Select(t =>
         {
             var entry = setup?.Variables.FirstOrDefault(e => e.Key == t.Key);
             return new ExplainTunableJson(
@@ -73,7 +81,8 @@ internal static class ExplainTunables
         }).ToList();
 
         var snp = catalog.SnpInstances.Select(s => new ExplainSnpJson(
-            s.Instance, s.Location, s.Ports, s.Tied is { } tied ? (tied ? "tied" : "untied") : null, s.TieReason, s.Entries, s.LoadError)).ToList();
+            s.Instance, s.Location, s.Ports, s.Tied is { } tied ? (tied ? "tied" : "untied") : null, s.TieReason, s.Entries, s.LoadError,
+            folded.Contains(s.Instance) && s.Entries > 0 ? true : null)).ToList();
         return (new ExplainTunablesJson(rows, catalog.UnresolvedKeys, snp.Count > 0 ? snp : null), 0);
     }
 
@@ -129,7 +138,8 @@ internal static class ExplainTunables
             foreach (var b in blocks)
                 Console.WriteLine(b.LoadError is { } why
                     ? $"  {b.Instance}: not offered — {why}"
-                    : $"  {b.Instance}: {b.Ports} ports, {b.Tie} ({b.Reason}), {b.Entries} entries");
+                    : $"  {b.Instance}: {b.Ports} ports, {b.Tie} ({b.Reason}), {b.Entries} entries"
+                      + (b.Folded == true ? $" (folded: --snp-entries {b.Instance} lists them)" : ""));
         }
 
         if (report.Unresolved.Count > 0)

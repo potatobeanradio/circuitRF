@@ -421,6 +421,8 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "check.args.unknown-severity",
         // The `.cdd` arm (2026-09). Declared when `check` grew an arm for a data display and
         // never recorded here, so this list was stale before railRF added to it.
+        // brief-emb-1 R-emb1-7: a component port whose part has no model on the board schematic.
+        "check.c3d.component-port",
         "check.c3d.elaboration",
         "check.c3d.face-boundary",
         "check.c3d.note",
@@ -442,6 +444,7 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "check.elaboration.failed",
         "check.elaboration.note",
         "check.elaboration.warning",
+        "check.em.mesh-auto-kept",
         "check.em.mesh-auto-override",
         "check.em.note",
         "check.em.refused",
@@ -526,6 +529,7 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "cli.args.unknown-option",
         "cli.em.component-refused",
         "cli.em.device-without-palace",
+        "cli.em.dry-run-needs-setup",   // EMB-5 R-emb5-1/R-emb5-2
         "cli.em.freq-without-component",
         "cli.em.memory-limit",
         "cli.em.setup-unreadable",
@@ -660,6 +664,9 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "elab.note",
         "elab.warning",
         "em.c3d.setup",
+        // brief-emb-1 R-emb1-8: `em --component-ports` that cannot be applied.
+        "em.component-ports.refused",
+        "em.dry-run.estimate",   // EMB-5 R-emb5-1/R-emb5-2
         "em.run.error",
         "em.run.note",
         "em.run.warning",
@@ -862,6 +869,8 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "new.args.noun-required",
         "new.args.unknown-noun",
         "new.args.unknown-option",
+        // brief-emb-1 R-emb1-1: `new view3d <cell> --from-layout`.
+        "new.args.view3d",
         "new.cell.exists",
         // brief-dfr22-1: `new workspace --length-unit` — an unknown unit, and a unit with no technology to carry it.
         "new.length-unit.no-technology",
@@ -875,6 +884,8 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "new.tech.unknown",
         // brief vendorlib-1 R-vl1-4c: `new workspace --vendor-library <name>=<folder>`.
         "new.vendor-library.malformed",
+        "new.view3d.note",
+        "new.view3d.ports-left-out",
         "new.views.unknown",
         // brief-img-11: a picture read by convert or recognize — one family for both verbs.
         "picture.args.px-required",
@@ -1040,6 +1051,8 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "recognize.output.write-failed",
         "recognize.path.no-layout",
         "recognize.path.not-found",
+        "recognize.plot.follow-failed",
+        "recognize.plot.followed",
         "recognize.plot.manual-conflict",
         "recognize.plot.manual-needs",
         "recognize.plot.manual-refused",
@@ -1052,6 +1065,7 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "reference.analysis.unknown",
         "reference.args.item-not-for-topic",
         "reference.args.item-without-topic",
+        "reference.args.tables",
         "reference.args.too-many",
         "reference.args.unknown-option",
         "reference.component.unknown",
@@ -1230,6 +1244,8 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         // means (src/Cli/RESOLVED.md, RND-5).
         "serve.image.too-large",
         "serve.image.unreadable",
+        "serve.job.not-finished",   // EMB-5 R-emb5-1/R-emb5-2
+        "serve.job.unknown",   // EMB-5 R-emb5-1/R-emb5-2
         "serve.path.outside-root",
         "serve.print-config.no-process-path",
         "serve.root.not-found",

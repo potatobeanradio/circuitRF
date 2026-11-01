@@ -298,6 +298,12 @@ public sealed class CemPalace
     /// preset's concern: every preset solves the same systems.</summary>
     public PalaceLinearSolver? LinearSolver { get; set; }
 
+    /// <summary>brief-emb-2 R-emb2-1 — how long, in minutes, Gmsh may spend curving and optimising second-order elements on
+    /// genuinely curved geometry before it is restarted with straight-sided ones (the run says so). Omitted is
+    /// <see cref="PalaceSettings.DefaultMeshCurvingMinutes"/>. A problem whose only curves are a layout's via barrels is never
+    /// curved, so this is not read for it.</summary>
+    public double? MeshCurvingMinutes { get; set; }
+
     /// <summary>A copy, so an editor can change one without touching a setup that shares it.</summary>
     public CemPalace Clone()
     {
@@ -312,7 +318,7 @@ public sealed class CemPalace
     public bool IsEmpty =>
         Quality is null && MaxElementWavelengths is null && EdgeRefinement is null && Grading is null && ElementOrder is null &&
         AdaptiveTol is null && AdaptiveMaxIterations is null && SweepAdaptiveTol is null && SaveFieldsGHz is null &&
-        LinearSolver is null;
+        LinearSolver is null && MeshCurvingMinutes is null;
 }
 
 /// <summary>
@@ -350,6 +356,18 @@ public sealed record PalaceSettings(
     /// <summary>brief-em3d-52 — how each linear system is solved (<see cref="PalaceLinearSolver"/>).</summary>
     public PalaceLinearSolver LinearSolver { get; init; } = PalaceLinearSolver.Iterative;
 
+    /// <summary>brief-emb-2 R-emb2-1 — the default wall-clock cap on Gmsh's curving of second-order elements, minutes.</summary>
+    public const double DefaultMeshCurvingMinutes = 5;
+
+    /// <summary>brief-emb-2 R-emb2-1 — the cap on Gmsh's high-order curving and optimisation, minutes (<see cref="CemPalace.MeshCurvingMinutes"/>).
+    /// Past it the mesh is made again with straight-sided second-order elements. Not part of the script: it changes no mesh
+    /// that finishes inside it.</summary>
+    public double MeshCurvingMinutes { get; init; } = DefaultMeshCurvingMinutes;
+
+    /// <summary>brief-emb-2 R-emb2-1 — straight-sided second-order elements whatever the geometry: the restart after
+    /// <see cref="MeshCurvingMinutes"/>. Never set from a <c>.cem</c>.</summary>
+    public bool StraightSided { get; init; }
+
     /// <summary>
     /// brief-em3d-21 R-em3d21-4 — a preset's values. <b>Standard is <see cref="Default"/></b>, so no
     /// golden and no existing answer moves. Draft and Accurate change only the element order, the
@@ -381,6 +399,7 @@ public sealed record PalaceSettings(
         {
             SaveFieldsGHz = section.SaveFieldsGHz,
             LinearSolver  = section.LinearSolver ?? PalaceLinearSolver.Iterative,
+            MeshCurvingMinutes = section.MeshCurvingMinutes ?? DefaultMeshCurvingMinutes,
         };
     }
 
@@ -402,6 +421,8 @@ public sealed record PalaceSettings(
             p.Add($"Palace.AdaptiveMaxIterations is {AdaptiveMaxIterations}; it must be 0 or more.");
         if (!(SweepAdaptiveTol >= 0))
             p.Add($"Palace.SweepAdaptiveTol is {SweepAdaptiveTol}; it must be 0 or more.");
+        if (!(MeshCurvingMinutes > 0) || double.IsInfinity(MeshCurvingMinutes))
+            p.Add($"Palace.MeshCurvingMinutes is {MeshCurvingMinutes}; it must be a positive number of minutes.");
         foreach (double f in SaveFieldsGHz ?? [])
             if (!(f > 0) || double.IsInfinity(f))
             {
@@ -1138,6 +1159,60 @@ public sealed class Em3dSolverSpellingConverter : JsonConverter<Em3dSolverSpelli
 
 /// <summary>brief-emi-6 R-emi6-1 — what <c>"Solver3D": "Compare"</c> runs: two or more solvers by their <c>Solver3D</c>
 /// spellings, and the one the others are compared against. Written only beside <c>Compare</c>.</summary>
+/// <summary>
+/// brief-emb-1 R-emb1-2 — <c>ComponentPorts</c>: the string <c>"*"</c>, or a list of refdes strings and objects. A lone <c>*</c> with
+/// no override is written back as the string; any other list keeps each plain entry a string.
+/// </summary>
+public sealed class ComponentPortsConverter : JsonConverter<List<EmComponentPort>?>
+{
+    public override List<EmComponentPort>? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.Null) return null;
+        if (reader.TokenType == JsonTokenType.String) return [new EmComponentPort(reader.GetString() ?? "")];
+        if (reader.TokenType != JsonTokenType.StartArray)
+            throw new JsonException("ComponentPorts is \"*\" or a list of reference designators.");
+        var list = new List<EmComponentPort>();
+        while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+        {
+            if (reader.TokenType == JsonTokenType.String) { list.Add(new EmComponentPort(reader.GetString() ?? "")); continue; }
+            if (reader.TokenType != JsonTokenType.StartObject)
+                throw new JsonException("A ComponentPorts entry is a reference designator or an object with Refdes, Z0 and Reference.");
+            using var doc = JsonDocument.ParseValue(ref reader);
+            string? Get(string key)
+            {
+                foreach (var prop in doc.RootElement.EnumerateObject())
+                    if (prop.Name.Equals(key, StringComparison.OrdinalIgnoreCase))
+                        return prop.Value.ValueKind switch
+                        {
+                            JsonValueKind.String => prop.Value.GetString(),
+                            JsonValueKind.Number => prop.Value.GetRawText(),
+                            _ => null,
+                        };
+                return null;
+            }
+            list.Add(new EmComponentPort(Get("Refdes") ?? "", Get("Z0"), Get("Reference")));
+        }
+        return list;
+    }
+
+    public override void Write(Utf8JsonWriter writer, List<EmComponentPort>? value, JsonSerializerOptions options)
+    {
+        if (value is null) { writer.WriteNullValue(); return; }
+        if (value is [{ Refdes: EmSetup.AllComponents, Z0: null, Reference: null }]) { writer.WriteStringValue(EmSetup.AllComponents); return; }
+        writer.WriteStartArray();
+        foreach (var c in value)
+        {
+            if (c.Z0 is null && c.Reference is null) { writer.WriteStringValue(c.Refdes); continue; }
+            writer.WriteStartObject();
+            writer.WriteString("Refdes", c.Refdes);
+            if (c.Z0 is { } z) writer.WriteString("Z0", z);
+            if (c.Reference is { } r) writer.WriteString("Reference", r);
+            writer.WriteEndObject();
+        }
+        writer.WriteEndArray();
+    }
+}
+
 public sealed class CemCompare
 {
     /// <summary>The solvers, by spelling (<c>Palace</c>, <c>OpenEms</c>, <c>Emerge</c>); run in circuitRF's solver order.</summary>
@@ -1420,9 +1495,8 @@ public sealed class CemFile
     /// <summary>A 3D setup's air box, per face. Null takes the default on every face.</summary>
     public CemAirBox? AirBox { get; set; }
 
-    /// <summary>brief-dfr28-3 — <see cref="EmSetup.RobustMeshing"/>. <b>Null means off</b>, which is what every <c>.cem</c> and
-    /// embedded setup written before it existed means, so such a file reproduces its results and re-serialises
-    /// byte-identically. A new setup writes it on.</summary>
+    /// <summary>brief-dfr28-3 — <see cref="EmSetup.RobustMeshing"/>. brief-emb-2 R-emb2-3: <b>null means ON</b> — a setup that
+    /// does not state it is robust, as every setup the GUI makes already was — so only <c>false</c> is ever written.</summary>
     public bool? RobustMeshing { get; set; }
 
     /// <summary>Palace's own section. Null takes the defaults.</summary>
@@ -1451,6 +1525,11 @@ public sealed class CemFile
     /// <summary>brief-dfr31-1 R-dfr31-1-5 — what an electrostatic solve does with metal in no terminal and not ground. Null is
     /// Float, the default, so a file written before it gains no byte.</summary>
     public EmUnassignedConductors? UnassignedConductors3D { get; set; }
+
+    /// <summary>brief-emb-1 R-emb1-2 — the component ports a 3D setup builds on its layout's placed parts: <c>"*"</c> for every
+    /// two-terminal part, or a list whose entries are a refdes or <c>{ "Refdes", "Z0", "Reference" }</c>. Null when there are none.</summary>
+    [JsonConverter(typeof(ComponentPortsConverter))]
+    public List<EmComponentPort>? ComponentPorts { get; set; }
 
     /// <summary>brief-em3d-23 — per-port 3D settings (the port's kind, a wave port's extent and offset).
     /// Null when every port is lumped with nothing stated.</summary>
@@ -1602,7 +1681,7 @@ public static class EmSetupPersistence
             : null,
         OperatingTempC = s.OperatingTempC,
         AirBox         = ToCem(s.AirBox),
-        RobustMeshing  = s.RobustMeshing ? true : null,
+        RobustMeshing  = s.RobustMeshing ? null : false,
         Palace         = s.Palace,
         OpenEms        = s.OpenEms,
         Emerge         = s.Emerge is { IsEmpty: false } emerge ? emerge : null,
@@ -1615,6 +1694,7 @@ public static class EmSetupPersistence
         UnassignedConductors3D = s.UnassignedConductors3D == EmUnassignedConductors.Float ? null : s.UnassignedConductors3D,
         // R-em3d23-2a — a port with nothing but the default kind writes nothing, so every lumped-port
         // file keeps its bytes (gate 9).
+        ComponentPorts = s.ComponentPorts.Count > 0 ? [.. s.ComponentPorts] : null,
         Ports3D        = s.Ports3D.Where(p => !p.IsDefault).ToList() is { Count: > 0 } p3
             ? [.. p3.Select(p => new CemPort3D
               {
@@ -1703,7 +1783,7 @@ public static class EmSetupPersistence
         Solver3D              = Solver3DOf(f),
         OperatingTempC        = f.OperatingTempC,
         AirBox                = FromCem(f.AirBox),
-        RobustMeshing         = f.RobustMeshing ?? false,
+        RobustMeshing         = f.RobustMeshing ?? true,
         Palace                = f.Palace,
         OpenEms               = f.OpenEms,
         Emerge                = f.Emerge,
@@ -1711,6 +1791,7 @@ public static class EmSetupPersistence
         Terminals3D           = f.Terminals3D is { } ts ? [.. ts.Select(t => new EmTerminal3D(t.Name ?? "", t.Net ?? "", t.Source, t.Objects is { Count: > 0 } o ? [.. o] : null))] : [],
         Ground3D              = f.Ground3D ?? "",
         UnassignedConductors3D = f.UnassignedConductors3D ?? EmUnassignedConductors.Float,
+        ComponentPorts        = f.ComponentPorts is { } cps ? [.. cps] : [],
         Ports3D               = f.Ports3D is { } ps
             ? [.. ps.Select(p => new EmPort3D(p.Port, p.Kind ?? CircuitRF.Engine.Em3d.Em3dPortKind.Lumped, p.Width, p.Height, p.OffsetUm,
                                      p.Return is { Length: > 0 } r ? r : null))]

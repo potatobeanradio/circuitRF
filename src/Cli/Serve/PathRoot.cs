@@ -58,11 +58,28 @@ internal sealed class PathRoot
 
         if (!IsUnder(Real(full), _realRoot))
         {
-            refusal = CliDiagnostics.ServePathOutsideRoot(given, Root);
+            refusal = CliDiagnostics.ServePathOutsideRoot(given, Root, Scratch());
             return null;
         }
         refusal = null;
         return full;
+    }
+
+    /// <summary>EMB-5 R-emb5-5 — the folder under the root the server keeps for a caller's own files. Hidden, so it is
+    /// not mistaken for a workspace's content; named by every root refusal.</summary>
+    public const string ScratchFolderName = ".circuitrf-scratch";
+
+    /// <summary>
+    /// The scratch folder, created on demand — the moment a refusal is about to name it, so the folder it names exists.
+    /// Creating it is the one write this class makes, and only inside the root. A root that cannot take it (read-only)
+    /// still gets the sentence: the path is then the answer to "where would I write", not a promise.
+    /// </summary>
+    public string Scratch()
+    {
+        string dir = Path.Combine(Root, ScratchFolderName);
+        try { Directory.CreateDirectory(dir); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { /* named all the same */ }
+        return dir;
     }
 
     private bool IsUnder(string candidate, string root)

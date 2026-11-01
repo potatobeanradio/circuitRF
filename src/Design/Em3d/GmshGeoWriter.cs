@@ -613,10 +613,14 @@ public static partial class GmshGeoWriter
         int min = ++field;
         L($"Field[{min}] = Min; Field[{min}].FieldsList = {{{string.Join(", ", fields)}}};");
         L($"Background Field = {min};");
-        // Curved second-order elements, optimised (F0: HighOrderOptimize = 1 left three negative-Jacobian
-        // elements on case A), saved as MSH 2.2 binary — the format the validated Palace read in F0.
+        // Second-order elements, saved as MSH 2.2 binary — the format the validated Palace read in F0.
+        // brief-emb-2 R-emb2-1 — CURVED and optimised only when the geometry is genuinely curved: F0 chose HighOrderOptimize = 2
+        // on case A's round bond wire, where HighOrderOptimize = 1 left three negative-Jacobian elements. Layout artwork's only
+        // curves are its drilled barrels, already faceted, and on an imported board (330k nodes) the elastic optimisation ran
+        // 17+ minutes on one core where straight-sided order 2 meshed in 10-30 s; so straight sides there, and for the restart
+        // after PalaceSettings.MeshCurvingMinutes.
         L("Mesh.ElementOrder = 2;");
-        L("Mesh.HighOrderOptimize = 2;");
+        L(Curved(problem, settings) ? CurvingLine : StraightSidedLine);
         L("Mesh.MshFileVersion = 2.2;");
         L("Mesh.Binary = 1;");
 
@@ -640,6 +644,31 @@ public static partial class GmshGeoWriter
                $"Field[{field}].ZMin = {Um(region.Min.Z)}; Field[{field}].ZMax = {Um(region.Max.Z)}; " +
                $"Field[{field}].Thickness = {Num(Round(thickness))};  // mesh region {Comment(region.Name)}";
     }
+
+    /// <summary>brief-emb-2 R-emb2-1 — the high-order curving line the script writes: <c>HighOrderOptimize = 2</c> when
+    /// <see cref="Curved"/>, otherwise <c>SecondOrderLinear = 1</c>. What a test and the cap's restart look for.</summary>
+    public const string CurvingLine = "Mesh.HighOrderOptimize = 2;", StraightSidedLine = "Mesh.SecondOrderLinear = 1;";
+
+    /// <summary>
+    /// brief-emb-2 R-emb2-1 — whether Gmsh curves and optimises the second-order elements: true when a solid has a curved
+    /// surface that is not one of the problem's <see cref="Em3dProblem.ArtworkBarrels"/> (a <c>.c3d</c> cylinder, sphere, ellipsoid,
+    /// round bond wire or curved kernel/STEP face), and <paramref name="settings"/> does not ask for straight sides.
+    /// </summary>
+    public static bool Curved(Em3dProblem problem, PalaceSettings settings)
+    {
+        if (settings.StraightSided) return false;
+        var barrels = problem.ArtworkBarrels as IReadOnlySet<string> ?? problem.ArtworkBarrels.ToHashSet(StringComparer.Ordinal);
+        return problem.Solids.Any(s => !barrels.Contains(s.Name) && s.Primitive switch
+        {
+            Em3dCylinder or Em3dSphere or Em3dTruncatedSphere or Em3dEllipsoid => true,
+            Em3dSweep w => w.Section == Em3dSection.Circle,
+            Em3dShapeSolid k => k.Faces.Count == 0 || k.Faces.Any(f => Em3dShapeSolid.IsCurved(f.Kind)),
+            _ => false,
+        });
+    }
+
+    /// <summary>brief-emb-2 R-emb2-1 — whether <paramref name="lowering"/>'s script curves its second-order elements.</summary>
+    public static bool Curves(GmshLowering lowering) => lowering.Geo?.Contains(CurvingLine, StringComparison.Ordinal) == true;
 
     /// <summary>brief-em3d-65 R-em3d65-2a — the file a kernel solid's B-rep is handed to Gmsh in: named by its hash, so the
     /// script names it byte-deterministically and an unchanged solid reuses the mesh beside it.</summary>

@@ -22,9 +22,10 @@ public class DetailFloorTests(ITestOutputHelper output)
 
     /// <summary>
     /// <b>Auto: false in every fixture here, and it is not decoration.</b>
-    /// <c>PlanarMeshSettings.Default with { EdgeMesh = false }</c> is INERT — <c>Default</c> has
-    /// <c>Auto = true</c> and <c>Resolved</c> collapses it back to the defaults — so a fixture that
-    /// varies the edge mesh through <c>Default</c> silently tests the same mesh twice. That trap is
+    /// <c>PlanarMeshSettings.Default with { CellsPerWavelength = … }</c> is INERT — <c>Default</c> has
+    /// <c>Auto = true</c> and <c>Resolved</c> collapses it back to the defaults (the edge mesh too, until
+    /// EMB-4 made a stated one survive Auto) — so a fixture that varies a resolution through
+    /// <c>Default</c> silently tests the same mesh twice. That trap is
     /// recorded in brief-em-transmission-line-mesh.md §0a and has already cost this area once.
     /// </summary>
     private static PlanarMeshSettings At(int div, bool tl = true, bool edge = true,

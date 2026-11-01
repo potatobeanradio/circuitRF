@@ -13224,3 +13224,66 @@ that might fit is still counted exactly as CAP-3 specified. `EmRunService.Prefli
 Not done, recorded: the count itself is still O(band) and its merge is still serial; a mesh just under
 the limit near 60,000 unknowns pays it. Per-worker accumulation (`localInit`/`localFinally`) instead of a
 merge per 256th of the rows is the obvious next step and was not measured.
+
+## EMB-4 — honest estimates: the near-field factor, the dense-judged accelerated run, a ceiling of 0, the core count (2026-11-01)
+
+`docs/sonnet-briefs/brief-emb-4-honest-estimates.md`. Four sentences or numbers that were wrong in the direction that
+costs the most time, on an imported 35 × 20 mm two-layer board.
+
+**The near-field factor (R-emb4-5).** The accelerated operators precondition GMRES with ONE exact CSparse `SparseLU`
+over an AMD ordering, single-threaded, at every frequency point, and nothing estimated it: on the board it ran 18 min
+without finishing the first point. The near radius is six of the LARGEST basis support (floored at 2h), so on a graded
+board with big bulk cells it spans most of the metal and the "sparse" near matrix is close to dense.
+`PlanarNearFieldEstimate.For(mesh, slabHeightM, aim)` builds the near set exactly as `AimProjection.NearSet` does
+(counted first, without storing; equal to `PlanarAimGeometry.ColIdx.Length` on a test mesh), orders it with the same
+AMD and counts the factor's column counts on the elimination tree — the symbolic half of a Cholesky, no numbers.
+Measured on synthetic rooftop patterns (scratch harness, Release, one core), `2·Σc − n` equals
+`SparseLU.NonZerosCount` EXACTLY whenever the pivots stay on the diagonal:
+
+| n | near / row | near nnz | L+U nnz (= prediction) | LU time | Σc² / s |
+|---|---|---|---|---|---|
+| 3,120 | 24 | 74,868 | 509,074 | 0.05 s | 5.4e8 |
+| 3,120 | 197 | 614,540 | 2,358,756 | 0.74 s | 7.2e8 |
+| 7,080 | 150 | 1,058,900 | 6,490,866 | 2.66 s | 7.0e8 |
+| 12,640 | 97 | 1,223,096 | 11,058,098 | 4.72 s | 7.3e8 |
+| 19,800 | 214 | 4,230,740 | 34,607,360 | 26.3 s | 7.5e8 |
+
+The work is Σc² and the rate is flat at 7.0-7.5e8 from 2.5e8 of work upward, so the time estimate is work over
+`MeasuredFactorWorkPerSecond` = 7.5e8 (errs short; a Debug build is slower). The table was measured while other builds and test runs
+shared the machine; repeated on an idle machine the same five patterns read 5.4e8 / 7.1e8 / 6.8e8 / 6.8e8 / 7.1e8
+(Σc² / s, same order), so the single-core rate is not load-sensitive here and 7.5e8 stands (about 5 % short). The symbolic analysis itself took 0.08 s
+at 4.2 M entries. It is a WARNING past `LargeFactorSeconds` = 60 s; above `AnalysedNearEntriesCap` = 20 M entries the
+pattern is not built and the set is large on its count alone (P8's 17.4 M entries did not factor in 8 minutes). Only
+partial pivoting is not modelled, and it can only add fill. Said by `check` (`EmRunService.Preflight`) and by the run's
+own notes; the factor reports its columns through `PlanarNearFactor.Factor` (CSparse reports a fraction 100 times a
+factor; the last column is always reported) onto the stage's live figure, "factoring the near field: k / n columns".
+The two operators' `FactorNear` were two copies of one block and are now that one function.
+
+**R-emb4-5(c) — a parallel or incomplete factor: NOT built, deferred.** CSparse has no parallel factor; a parallel
+supernodal one is a native dependency (ask-before) or a large managed implementation. An incomplete LU is cheap to
+write and cannot change the answer (GMRES is right-preconditioned and its residual is the true one), but what decides
+it is the GMRES iteration count it costs on the BORDERED MPIE operator, with the Schur complement folded in from an
+incomplete N_hh — and that only shows on a real near field at the size where the exact factor is slow (20k+ unknowns,
+minutes a point). A synthetic diagonally dominant pattern says nothing about it, and the long run is ruled out here.
+What a taker owes: on a board mesh that the estimate calls large, ILUT at two drop tolerances against the exact LU —
+iterations, wall clock and memory per point — and the same on a single-level mesh.
+
+**R-emb4-2 — the dense-judged accelerated run says both figures.** `UsesAcceleratedCeiling(aimOn, multiLevel)` is
+unchanged (owner decision): a multi-level or via mesh is judged on the dense ceiling with the accelerator on. The
+budget and `MachineLimitWarning` quoted only the dense bytes (23 GB on the board, for a run the accelerator holds in
+well under 1 GB). `SurfaceMesher.Mesh(…, aimOn: true)` now computes the estimate above for such a mesh and both
+sentences add `AcceleratedClause`: "judged on the dense ceiling (X), …, and the accelerated solve this run uses holds
+about Y, estimated (Z of it the near-field factor)". Y is `PlanarNearFieldEstimate.ResidentBytes`, on
+`PlanarBorderedAimReport.ResidentBytes`' terms (less the class-keyed core store). The report carries it as
+`PlanarMeshReport.AcceleratedEstimate`; `PlanarRunSize.DenseCeiling`/`AcceleratedResidentBytes` carry it to
+`PlanarMemoryCheck`, whose accelerated sentence called the dense ceiling "the accelerated solve's".
+
+**R-emb4-3 — a ceiling of 0.** With a limit, `CeilingFor` is 0 when the mesh's cores alone exceed it; the budget read
+"which allows 0 unknowns here — ∞× OVER" and the admit sentence "past the 0 the accelerated solve is judged against".
+Both now say `SurfaceMesher.CoresAlone`: "this mesh's cores alone need X of the Y limit, so no unknown count fits beside
+them". `PlanarMeshReport.CoreBytes` carries the figure.
+
+**R-emb4-6 — the core count's merge.** `DistinctBandKeys` merged one `HashSet` per 256th of the rows under one lock,
+each `UnionWith` as large as the class count. It now goes through `PlanarFill.ForRowsLocal` (`localInit`/`localFinally`
+over the same three loop shapes and the same budget) and merges once per worker, the larger set absorbing the smaller.
+Gate: identical ascending arrays to a plain serial scan on three meshes (`HonestEstimatesTests`). Not timed.

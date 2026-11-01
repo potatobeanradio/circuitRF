@@ -2015,6 +2015,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         _suppressCommit = false;
         SyncThermalFields();
         RaiseThermalVisibility();
+        SyncComponentPortRows();
         Refresh();
     }
 

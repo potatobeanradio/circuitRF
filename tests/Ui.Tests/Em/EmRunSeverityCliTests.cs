@@ -238,24 +238,30 @@ public sealed class EmRunSeverityCliTests(ITestOutputHelper output) : IDisposabl
     }
 
     /// <summary>
-    /// With <c>Auto</c> on, a stated <c>EdgeMesh: false</c> is discarded (<c>PlanarMeshSettings.Resolved</c>
-    /// is the contract) and the mesh notes report only the value used. <c>check</c> says so, naming the
-    /// field and the switch that makes it take effect; otherwise the notes say "edge mesh on" and
-    /// nothing explains why.
+    /// With <c>Auto</c> on, a stated <c>CellsPerWavelength</c> is discarded (<c>PlanarMeshSettings.Resolved</c> is the
+    /// contract) and the mesh notes report only the value used. <c>check</c> says so, naming the field and the switch
+    /// that makes it take effect. EMB-4 R-emb4-7: a stated <c>EdgeMesh: false</c> is no longer discarded — it wins, and
+    /// <c>check</c> notes that instead.
     /// </summary>
     [Fact]
-    public void CheckOnACem_AFieldAutoDiscards_IsAWarningNamingIt()
+    public void CheckOnACem_AFieldAutoDiscards_IsAWarningNamingIt_AndAStatedEdgeMeshIsKept()
     {
-        string cemPath = BuildLine(PlanarMeshSettings.Default with { EdgeMesh = false });
+        string cemPath = BuildLine(PlanarMeshSettings.Default with { CellsPerWavelength = 40, EdgeMesh = false });
 
         var (_, stdout, stderr) = RunCli("check", cemPath, "--json");
         output.WriteLine(stderr);
 
-        var d = JsonDocument.Parse(stdout).RootElement.GetProperty("diagnostics").EnumerateArray()
-                            .Single(x => x.GetProperty("id").GetString() == "check.em.mesh-auto-override");
+        var all = JsonDocument.Parse(stdout).RootElement.GetProperty("diagnostics").EnumerateArray().ToList();
+        var d = all.Single(x => x.GetProperty("id").GetString() == "check.em.mesh-auto-override");
         Assert.Equal("warning", d.GetProperty("severity").GetString());
-        Assert.Equal("EdgeMesh", d.GetProperty("arguments").GetProperty("fields").GetString());
+        Assert.Equal("CellsPerWavelength", d.GetProperty("arguments").GetProperty("fields").GetString());
         Assert.Contains("\"Auto\": false", d.GetProperty("message").GetString(), StringComparison.Ordinal);
+
+        var kept = all.Single(x => x.GetProperty("id").GetString() == "check.em.mesh-auto-kept");
+        Assert.Equal("info", kept.GetProperty("severity").GetString());
+        Assert.Equal("EdgeMesh", kept.GetProperty("arguments").GetProperty("fields").GetString());
+        // …and the mesh really is built with it off: the budget says there is no edge fan.
+        Assert.Contains(all, x => x.GetProperty("message").GetString()!.Contains("no edge fan", StringComparison.Ordinal));
     }
 
     /// <summary>

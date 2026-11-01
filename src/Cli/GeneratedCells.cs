@@ -93,7 +93,10 @@ internal static class GeneratedCells
     }
 
     /// <summary>This invocation's <see cref="PythonFlag"/>s. Replaced by every <see cref="TakeTrustFlags"/>.</summary>
-    internal static PythonFlags Python { get; private set; } = PythonFlags.None;
+    internal static PythonFlags Python { get => _python.Value ?? PythonFlags.None; private set => _python.Value = value; }
+
+    /// <summary>EMB-5 R-emb5-1 — per async flow, as <see cref="_trusted"/> is: one serve call's flags are its own.</summary>
+    private static readonly AsyncLocal<PythonFlags?> _python = new();
 
     /// <summary>
     /// The interpreter for a gdsfactory kit's module: its own <c>--python module=</c>, else a bare
@@ -116,7 +119,11 @@ internal static class GeneratedCells
 
     /// <summary>The kit directories <c>--trust-kit</c> allowed for THIS invocation. Reset by every
     /// <see cref="TakeTrustFlags"/>, so one call never inherits another call's grant.</summary>
-    private static List<string> _trusted = [];
+    private static List<string> _trusted { get => _trustedFlow.Value ?? []; set => _trustedFlow.Value = value; }
+
+    /// <summary>EMB-5 R-emb5-1 — held per async flow, so one serve call's grant is never read by another call
+    /// running at the same time.</summary>
+    private static readonly AsyncLocal<List<string>?> _trustedFlow = new();
 
     /// <summary>
     /// What <c>serve --trust-kit</c> allowed, for the life of the server. The OPERATOR's grant, like

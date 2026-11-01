@@ -50,6 +50,7 @@ public static class Authoring
         {
             "workspace" => NewWorkspace(args[1..]),
             "cell"      => NewCell(args[1..]),
+            "view3d"    => NewView3d(args[1..]),
             _           => UnknownNoun(noun),
         };
     }
@@ -140,13 +141,8 @@ public static class Authoring
         LayoutUnit? lengthUnit = null;
         if (lengthUnitText is not null)
         {
-            lengthUnit = lengthUnitText.ToLowerInvariant() switch
-            {
-                "um" or "µm" => LayoutUnit.Um,
-                "mm"         => LayoutUnit.Mm,
-                "mil"        => LayoutUnit.Mil,
-                _            => null,
-            };
+            string unitWord = lengthUnitText.ToLowerInvariant();
+            lengthUnit = LengthUnitWords.TryGetValue(unitWord == "µm" ? "um" : unitWord, out var unit) ? unit : null;
             if (lengthUnit is null) return JsonRun.Fail(CliDiagnostics.NewUnknownLengthUnit(lengthUnitText));
             if (techId is null) return JsonRun.Fail(CliDiagnostics.NewLengthUnitWithoutTechnology());
         }
@@ -288,6 +284,75 @@ public static class Authoring
         }
     }
 
+    // ── new view3d ────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// brief-emb-1 R-emb1-1 — Design ▸ New 3D View from Layout, headlessly: the document
+    /// <see cref="C3dHierarchy.NewFromLayout"/> makes (the one place it is made, and the call the GUI's command makes), written
+    /// with <see cref="CellCreate.WriteThreeDView"/>. The cell's own layout is placed as an instance with View Layout, its 3D
+    /// setups are copied in as embedded setups and its port labels come in as ports, exactly as the GUI's does. The name the
+    /// dialog asks for is <c>--name</c>, defaulting to the cell's; the workspace is the cell's nearest ancestor one.
+    /// </summary>
+    private static int NewView3d(string[] args)
+    {
+        string? cellDir = null, name = null;
+        bool fromLayout = false;
+        for (int i = 0; i < args.Length; i++)
+        {
+            switch (args[i])
+            {
+                case "--from-layout": fromLayout = true; break;
+                case "--name" when i + 1 < args.Length: name = args[++i]; break;
+                default:
+                    if (args[i].StartsWith('-')) { JsonRun.Report(CliDiagnostics.NewUnknownOption(args[i])); return NewUsage(); }
+                    if (cellDir is null) cellDir = args[i];
+                    else { JsonRun.Report(CliDiagnostics.NewCellExtraArgument(args[i])); return NewUsage(); }
+                    break;
+            }
+        }
+        if (cellDir is null) { JsonRun.Report(CliDiagnostics.NewView3dArgs("a cell folder is required.")); return NewUsage(); }
+        JsonRun.InputPath = cellDir;
+        if (!fromLayout)
+            return JsonRun.Fail(CliDiagnostics.NewView3dArgs(
+                "say what the 3D view is made from: --from-layout places the cell's own layout. An empty 3D view is " +
+                "'new cell <workspace> <name> --views 3d'."));
+
+        string dir = Path.GetFullPath(cellDir).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        if (!File.Exists(Path.Combine(dir, CellFolder.CcellFileName)))
+            return JsonRun.Fail(CliDiagnostics.NewView3dArgs($"'{cellDir}' is not a cell folder (it holds no {CellFolder.CcellFileName})."));
+        name ??= Path.GetFileName(dir);
+        if (NameValidator.Validate(name) is { } badName)
+            return JsonRun.Fail(CliDiagnostics.NewInvalidName("3D view", name, badName));
+        string path = Path.Combine(CellFolder.SubFolderPath(dir, ViewType.ThreeD), name + CircuitRF.Design.ThreeD.C3dPersistence.Extension);
+        if (File.Exists(path))
+            return JsonRun.Fail(CliDiagnostics.NewRefused($"A file named '{name}{CircuitRF.Design.ThreeD.C3dPersistence.Extension}' already exists. Nothing was created."));
+
+        string? cws = WorkspaceRootFinder.FindAncestorCws(dir);
+        var made = CircuitRF.Design.ThreeD.C3dHierarchy.NewFromLayout(dir, path, cws, new TechnologyCache());
+        if (made.Document is not { } c3d)
+            return JsonRun.Fail(CliDiagnostics.NewRefused($"New 3D View from Layout: {made.Refusal}"));
+        try { CellCreate.WriteThreeDView(dir, name, c3d); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            return JsonRun.Fail(CliDiagnostics.NewRefused($"Failed to create the 3D view: {ex.Message}"));
+        }
+
+        Console.WriteLine(path);
+        JsonRun.AddOutput("3d", path);
+        void Note(string text) { Console.Error.WriteLine("note: " + text); JsonRun.Note(CliDiagnostics.NewView3dNote(text)); }
+        if (made.SetupsCopied.Count > 0)
+            Note($"Copied {made.SetupsCopied.Count} 3D setup(s) as embedded setups: {string.Join(", ", made.SetupsCopied)}.");
+        if (made.PortsNote is { } portsNote) Note(portsNote);
+        foreach (string moved in made.PortsMoved) Note(moved);
+        if (made.PortsLeftOut.Count > 0)
+        {
+            string left = string.Join("; ", made.PortsLeftOut);
+            Console.Error.WriteLine($"warning: Ports left out: {left}.");
+            JsonRun.Note(CliDiagnostics.NewView3dPortsLeftOut(left));
+        }
+        return 0;
+    }
+
     /// <summary>
     /// <c>--views</c>, or <see cref="CellCreate.DefaultViews"/> when it is absent. Null on a name that
     /// is not one of the four, having already refused — a misspelt view silently creating fewer files
@@ -300,20 +365,35 @@ public static class Authoring
         var views = CellViews.None;
         foreach (var part in text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
-            switch (part.ToLowerInvariant())
+            if (!ViewWords.TryGetValue(part.ToLowerInvariant(), out var one))
             {
-                case "schematic": views |= CellViews.Schematic; break;
-                case "symbol":    views |= CellViews.Symbol;    break;
-                case "layout":    views |= CellViews.Layout;    break;
-                case "3d":        views |= CellViews.ThreeD;    break;
-                case "none":      break;
-                default:
-                    JsonRun.Fail(CliDiagnostics.NewUnknownView(part));
-                    return null;
+                JsonRun.Fail(CliDiagnostics.NewUnknownView(part));
+                return null;
             }
+            views |= one;
         }
         return views;
     }
+
+    /// <summary>Every word <c>--views</c> takes, and what each creates. EMB-5 R-emb5-6: the MCP <c>create</c> tool's
+    /// description lists these, and <c>ToolCatalogAgreesWithTheParserTests</c> holds the two lists together.</summary>
+    internal static readonly IReadOnlyDictionary<string, CellViews> ViewWords = new Dictionary<string, CellViews>(StringComparer.Ordinal)
+    {
+        ["schematic"] = CellViews.Schematic,
+        ["symbol"]    = CellViews.Symbol,
+        ["layout"]    = CellViews.Layout,
+        ["3d"]        = CellViews.ThreeD,
+        ["none"]      = CellViews.None,
+    };
+
+    /// <summary>Every word <c>--length-unit</c> takes, as the MCP tool documents them (EMB-5 R-emb5-6). <c>µm</c> is
+    /// read as well, as the spelling of <c>um</c>.</summary>
+    internal static readonly IReadOnlyDictionary<string, LayoutUnit> LengthUnitWords = new Dictionary<string, LayoutUnit>(StringComparer.Ordinal)
+    {
+        ["um"]  = LayoutUnit.Um,
+        ["mm"]  = LayoutUnit.Mm,
+        ["mil"] = LayoutUnit.Mil,
+    };
 
     /// <summary>What <c>CellFolder.ResolvePrimary</c> says about each view of the cell just made — the
     /// same five-branch rule the project tree reads (R-aut3-7).</summary>
@@ -728,6 +808,7 @@ public static class Authoring
     {
         Console.Error.WriteLine("Usage: circuitrf new workspace <dir> [--name N] [--tech <id>|none] [--length-unit um|mm|mil] [--vendor-library <name>=<folder>]...");
         Console.Error.WriteLine("       circuitrf new cell <workspace-or-dir> <cellName> [--views schematic,symbol,layout,3d]");
+        Console.Error.WriteLine("       circuitrf new view3d <cell-dir> --from-layout [--name N]");
         return 1;
     }
 

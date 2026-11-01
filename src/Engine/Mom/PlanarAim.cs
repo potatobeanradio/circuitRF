@@ -831,18 +831,23 @@ public sealed class PlanarAimOperator : IPlanarOperator
         => Build(PlanarAimGeometry.Build(cores, slabHeightM, settings), termsA, termsQ, omega);
 
     /// <summary>P6 — the per-frequency operator over a geometry built once per mesh.</summary>
+    /// <param name="factorProgress">EMB-4 R-emb4-5(b) — the near-field factor's columns done and total, or null.</param>
     public static PlanarAimOperator Build(PlanarAimGeometry geometry, PlanarKernelTerms termsA,
-                                          PlanarKernelTerms termsQ, double omega)
+                                          PlanarKernelTerms termsQ, double omega,
+                                          Action<long, long>? factorProgress = null)
     {
         ArgumentNullException.ThrowIfNull(geometry);
         ArgumentNullException.ThrowIfNull(termsA);
         ArgumentNullException.ThrowIfNull(termsQ);
-        return new PlanarAimOperator(geometry, termsA, termsQ, omega);
+        return new PlanarAimOperator(geometry, termsA, termsQ, omega, factorProgress);
     }
 
+    private readonly Action<long, long>? _factorProgress;
+
     private PlanarAimOperator(PlanarAimGeometry g, PlanarKernelTerms termsA, PlanarKernelTerms termsQ,
-                              double omega)
+                              double omega, Action<long, long>? factorProgress = null)
     {
+        _factorProgress = factorProgress;
         // P12 — the ẑ family is not modelled HERE, and the sentence now names where it is. This
         // operator carries ONE grid kernel pair, which is a statement that every source and every
         // observer sits at one height; a via mesh is a bordered system with a kernel per height
@@ -1033,27 +1038,11 @@ public sealed class PlanarAimOperator : IPlanarOperator
     /// <c>_nearExact</c> so that this cannot be called after P1 releases them — the field is nullable
     /// from here on and an argument is a cheaper guarantee than a null check with a sentence in it.</param>
     private (SparseLU? Lu, long Nnz, long FactorNnz) FactorNear(Complex[] exact)
-    {
-        var tri = new CoordinateStorage<Complex>(_n, _n, Math.Max(1, _colIdx.Length));
-        for (int i = 0; i < _n; i++)
-            for (int k = _rowPtr[i]; k < _rowPtr[i + 1]; k++)
-                tri.At(i, _colIdx[k], exact[k]);
-
-        var csc = SparseMatrix.OfIndexed(tri);
-        try
-        {
-            var perm = AMD.Generate(csc, ColumnOrdering.MinimumDegreeAtPlusA);
-            var lu = SparseLU.Create(csc, perm, 1.0);
-            return (lu, csc.NonZerosCount, lu.NonZerosCount);
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            // A failed near-field factorisation is not fatal — GMRES still runs unpreconditioned, and
-            // §11 measured what that costs (129 -> 341 iterations over the same span) rather than
-            // leaving it as a guess. Reporting it as "no preconditioner" beats refusing the solve.
-            return (null, csc.NonZerosCount, 0);
-        }
-    }
+        // A failed near-field factorisation is not fatal — GMRES still runs unpreconditioned, and
+        // §11 measured what that costs (129 -> 341 iterations over the same span) rather than
+        // leaving it as a guess. Reporting it as "no preconditioner" beats refusing the solve.
+        // EMB-4 — one implementation with the bordered operator's, reporting columns done.
+        => PlanarNearFactor.Factor(_n, _rowPtr, _colIdx, exact, _factorProgress);
 
     // ══════════════════════════════════════════════════════════════════════════════════════════
     // The accelerated product

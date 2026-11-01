@@ -528,9 +528,19 @@ No outline moves by more than the tolerance, and the run's notes say how many po
 move. A conductor point that close to the board's edge is moved onto it, and a conductor's side that lies along the
 board's edge stays on it, so a plane cut at the edge never ends a fraction of a degree off the board's side, a sliver
 the mesher refuses as "overlapping facets". Only conductor outlines change; via barrels, the board outline and slabs
-are meshed as drawn. It is on in every
-setup the application creates. A `.cem` without the field runs with it off, so its results stay as they were. Off,
-the artwork is meshed exactly as drawn.
+are meshed as drawn. It is on unless a setup says `"RobustMeshing": false`, which is the only value ever written: a
+`.cem` or an embedded setup without the field runs with it on. Off, the artwork is meshed exactly as drawn. A port
+on a placed layout is inferred on the outline robust meshing leaves, by `check` and by the run alike, and an edge that
+touched a point the cleanup moved moves with it; the port's line in `check` says by how much.
+
+<a id="component-ports-list"></a>**Component ports** (`ComponentPorts`), below Robust meshing in a 3D view's setup, lists
+every part placed on the view's layout with its pad count. A ticked part gets a lumped gap port across its own pads,
+numbered after the view's own ports; **Every two-terminal part** writes `"*"`. **Check** builds and verifies the ports
+exactly as a run would and shows each part's port, gap, landings and verdict, or why it is refused. In the file it is
+`"ComponentPorts": ["C1", "L2"]`, `"ComponentPorts": "*"`, or entries that state more:
+`{ "Refdes": "U2", "Z0": "50", "Reference": "GND" }`. A `.cem` on a layout refuses it: component ports are built in a
+3D view of the layout. How they are built and what a run writes from them is
+[A port across each part's own pads](em-3d.html#part-ports).
 
 With Palace chosen the panel shows Palace's own settings. **A blank box is the default shown in it**, and
 every box is a field of the `.cem` — nothing here lives only in the panel.
@@ -561,6 +571,7 @@ Accurate has not been measured.
 | Refinement passes | `AdaptiveMaxIterations` | 2 | The most refinement passes; 0 solves the starting mesh only. Each pass costs a solve and memory |
 | Sweep tolerance | `SweepAdaptiveTol` | 0.0001 | The tolerance of Palace's adaptive frequency sweep; 0 solves every frequency |
 | Linear solver | `LinearSolver` | `Iterative` | How Palace solves each linear system. *Iterative* (GMRES with multigrid) needs the least memory. *Direct* factors it with SuperLU_DIST: more memory, and far faster for an **eigenmode** solve, whose shifted operator an iterative solver converges on slowly. On the 3D Package example's lid mode (128 k unknowns) Direct took 35 s and 4.0 GB; Iterative had not finished after ten minutes. Not part of any preset |
+| Curving limit (min) | `MeshCurvingMinutes` | 5 | How long Gmsh may curve and optimise second-order elements on genuinely curved geometry (a cylinder, sphere or curved part in a 3D view, a round bond wire) before the mesh is made again with straight sides; the run says when it was. A layout's own geometry, whose only curves are its drilled via barrels, is always meshed straight-sided and never waits for this |
 | Save fields at (GHz) | `SaveFieldsGHz` | the sweep's centre | The frequencies, GHz, whose fields Palace saves for the 3D view; `[]` saves none. See [Fields for the 3D view](#palace-fields) — they are large |
 
 The settings above size only the **starting** mesh; Palace's adaptive refinement adds elements where its
@@ -572,7 +583,10 @@ script, the mesh, the Palace configuration, both programs' logs). An unchanged m
 
 Before it solves, circuitRF checks that every surface in the mesh belongs to exactly the object it was
 made for — each port sheet, each conductor, each face of the air box. **Any mismatch refuses the run,
-naming the object**; a boundary is never guessed onto a face.
+naming the object**; a boundary is never guessed onto a face. It then reads the mesh itself: a tetrahedron with no
+volume or turned inside out, or a surface triangle that is no tetrahedron's face (a sheet the mesher did not join to
+the volume around it), refuses the run with one sentence per place — how many, the objects they lie on, and where in
+millimetres — instead of a solver error that names nothing.
 
 **Will it fit?** Palace's memory is checked against the machine's twice: before Gmsh starts, from the
 model's volumes and the refined shell round each conductor and port, and again once Gmsh has reported how many tetrahedra it made, before Palace starts.

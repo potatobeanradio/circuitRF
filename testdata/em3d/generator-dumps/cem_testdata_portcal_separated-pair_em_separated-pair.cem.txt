@@ -8,12 +8,13 @@ note Port 1 at its line's end is a vertical lumped sheet 254 µm wide and 900 µ
 note Port 2 at its line's end is a vertical lumped sheet 254 µm wide and 900 µm tall from 'Top Copper (1 oz)' down to 'Bottom Copper (1 oz)' (the air box's floor): the nearest ground-reference plane with metal under the port.
 note Port 3 at its line's end is a vertical lumped sheet 254 µm wide and 900 µm tall from 'Top Copper (1 oz)' down to 'Bottom Copper (1 oz)' (the air box's floor): the nearest ground-reference plane with metal under the port.
 note Port 4 at its line's end is a vertical lumped sheet 254 µm wide and 900 µm tall from 'Top Copper (1 oz)' down to 'Bottom Copper (1 oz)' (the air box's floor): the nearest ground-reference plane with metal under the port.
+note Robust meshing removed 2 of 18 outline points that lay within a fraction of a micrometre of the line through their neighbours; no outline moved by more than 0 µm.
 note 'Top Copper (1 oz)' names no material, so its σ is a number of unknown temperature and is used as given at 20 °C. Name a material with an α₂₀ to have it evaluated at the operating temperature.
 note The air box's floor is 'Bottom Copper (1 oz)' as a PEC plane at 35 µm: it is the lowest ground-reference conductor, nothing is drawn on it and nothing is drawn below it.
 solid FR-4 FR-4 Dielectric 1 box (-0.01183,-0.01183,3.5000000000000004E-05) (0.02366,0.018084,0.0009350000000000001)
 solid air Air Air 2 box (-0.01183,-0.01183,0.0009350000000000001) (0.02366,0.018084,0.0128)
 solid Top Copper (1 oz)/1 Top Copper (1 oz) Conductor 3 extrude 0.0009350000000000001 0.00097 [0,0 0.01183,0 0.01183,0.000254 0,0.000254]
-solid Top Copper (1 oz)/2 Top Copper (1 oz) Conductor 4 extrude 0.0009350000000000001 0.00097 [0.00783,0.006 0.01183,0.006 0.01183,0.006254 0.007576,0.006254 0.007576,0.000754 0.004254,0.000754 0.004254,0.006254 0.004,0.006254 0,0.006254 0,0.006 0.004,0.006 0.004,0.0005 0.004254,0.0005 0.00783,0.0005]
+solid Top Copper (1 oz)/2 Top Copper (1 oz) Conductor 4 extrude 0.0009350000000000001 0.00097 [0.00783,0.006 0.01183,0.006 0.01183,0.006254 0.007576,0.006254 0.007576,0.000754 0.004254,0.000754 0.004254,0.006254 0,0.006254 0,0.006 0.004,0.006 0.004,0.0005 0.00783,0.0005]
 material Top Copper (1 oz) 1 - 0 1 58000000
 material FR-4 4.4 - 0.02 1 0
 material Air 1 - 0 1 0

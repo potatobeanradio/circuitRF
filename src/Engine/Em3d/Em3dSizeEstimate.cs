@@ -21,7 +21,16 @@ public sealed record Em3dRegionEstimate(string Solid, double VolumeM3, double El
 public sealed record Em3dRefinementSizing(double ConductorEdgeM, Func<Em3dPort, double> PortEdgeM, double Grading, double MaxM);
 
 public sealed record Em3dPalaceEstimate(
-    long Tetrahedra, long Unknowns, int Order, long? MemoryBytes, IReadOnlyList<Em3dRegionEstimate> Regions);
+    long Tetrahedra, long Unknowns, int Order, long? MemoryBytes, IReadOnlyList<Em3dRegionEstimate> Regions)
+{
+    /// <summary>EMB-4 R-emb4-1 — of <see cref="Tetrahedra"/>, the share priced for the outlines' SHORT EDGES
+    /// (<see cref="Em3dSizeEstimate.OutlineTetrahedraPerShortEdge"/>); 0 with no refinement sizing.</summary>
+    public long OutlineTetrahedra { get; init; }
+
+    /// <summary>The short-edge term is a third or more of the estimate — then the largest single correction in it, the
+    /// least certain one, and the case an imported outline produces. <c>explain</c> says so.</summary>
+    public bool OutlineDominates => OutlineTetrahedra > 0 && 3 * OutlineTetrahedra >= Tetrahedra;
+}
 
 public static class Em3dSizeEstimate
 {
@@ -108,6 +117,36 @@ public static class Em3dSizeEstimate
     public const double GmshVolumeFill = 0.6;
 
     /// <summary>
+    /// EMB-4 R-emb4-1 — the tetrahedra an outline edge SHORTER than the element the script asks for there adds:
+    /// <c>K·√(e/h)·(1 − e/h)</c> for an edge of length e against an element h, this being K. Gmsh meshes every curve
+    /// with at least one segment, so a short edge puts nodes e apart on the faces that meet it and the mesh has to grow
+    /// from e back to h around it. Measured with Gmsh 4.15 on the shipped microstrip beside an 8 mm pour whose top edge
+    /// is a sampled sinusoid (12.9 mm of outline at a 313 µm conductor element), against the same pour with a straight
+    /// edge: 120, 400 and 800 edges added 2,784, 7,109 and 10,751 tetrahedra, which is K = 61.7, 62.4 and 63.0 — the
+    /// largest is kept, so the term errs high. A per-edge constant (the linear form) read 35, 20 and 14 on the same
+    /// three: the count per edge falls as the edges shorten, as the square root of their length.
+    /// Without the term an imported board read 43,800 elements against Gmsh's 185,000 (src/Design/RESOLVED.md, EMB-4).
+    /// </summary>
+    public const double OutlineTetrahedraPerShortEdge = 63;
+
+    /// <summary>
+    /// EMB-4 R-emb4-1 — the short-edge term for <paramref name="rings"/> meshed at <paramref name="edgeM"/>:
+    /// <see cref="OutlineTetrahedraPerShortEdge"/> × √(e/h) × (1 − e/h) for every edge of length e below h.
+    /// </summary>
+    public static double ShortEdgeTetrahedra(IEnumerable<IReadOnlyList<Point2>> rings, double edgeM)
+    {
+        if (!(edgeM > 0)) return 0;
+        double n = 0;
+        foreach (var r in rings)
+            for (int i = 0, j = r.Count - 1; i < r.Count; j = i++)
+            {
+                double e = Math.Sqrt((r[i].X - r[j].X) * (r[i].X - r[j].X) + (r[i].Y - r[j].Y) * (r[i].Y - r[j].Y));
+                if (e > 0 && e < edgeM) n += OutlineTetrahedraPerShortEdge * Math.Sqrt(e / edgeM) * (1 - e / edgeM);
+            }
+        return n;
+    }
+
+    /// <summary>
     /// The initial Palace mesh, estimated: every MESHED region's volume divided by the volume of one
     /// regular tetrahedron at that region's initial element edge, times <see cref="GmshVolumeFill"/>, summed,
     /// plus the refined shells round conductors, sheets and ports when <c>refinement</c> is given. Conductors are holes in a
@@ -141,7 +180,7 @@ public static class Em3dSizeEstimate
             throw new ArgumentOutOfRangeException(nameof(order), order, "F0 measured element orders 1 and 2 only");
 
         var regions = new List<Em3dRegionEstimate>();
-        double tets = 0;
+        double tets = 0, outline = 0;
         foreach (var s in problem.Solids.Where(s => s.Role != Em3dRole.Conductor))
         {
             double h = initialEdgeM(s);
@@ -185,10 +224,22 @@ public static class Em3dSizeEstimate
             foreach (var p in problem.Ports)
                 Shell($"port {p.Name} (both sides)", 2 * PortArea(p), r.PortEdgeM(p));
             tets = Math.Max(tets - overlap, 0) + shells;
+
+            // EMB-4 R-emb4-1 — the outlines' short edges: a conductor's or a sheet's at the conductor element, a
+            // dielectric's at its own.
+            foreach (var s in problem.Solids)
+                if (s.Primitive is Em3dExtrudedPolygon e)
+                    outline += ShortEdgeTetrahedra([e.Outline, .. e.Holes],
+                                                   s.Role == Em3dRole.Conductor ? r.ConductorEdgeM : initialEdgeM(s));
+            foreach (var sh in problem.Sheets)
+                outline += ShortEdgeTetrahedra([sh.Outline, .. sh.Holes], r.ConductorEdgeM);
+            if (outline > 0) regions.Add(new Em3dRegionEstimate("outline short edges", 0, r.ConductorEdgeM, outline));
+            tets += outline;
         }
         long unknowns = (long)Math.Round(tets * UnknownsPerTet(order, problem.IsStatic));
         return new Em3dPalaceEstimate((long)Math.Round(tets), unknowns, order,
-                                      PalaceMemoryBytes(unknowns, order, refinementPasses, problem.IsStatic, direct), regions);
+                                      PalaceMemoryBytes(unknowns, order, refinementPasses, problem.IsStatic, direct), regions)
+               { OutlineTetrahedra = (long)Math.Round(outline) };
     }
 
     /// <summary>Palace's unknowns per tetrahedron: Nédélec for a field (driven, eigenmode), H1 for a static potential.</summary>

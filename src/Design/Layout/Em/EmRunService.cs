@@ -114,7 +114,12 @@ public sealed record EmRunResult(
     /// brief-dfr31-4 R-dfr31-4-4 — what the setup's <see cref="EmSetup.CreateSnpSchematic"/> did once the run had written its
     /// Touchstone: the cell made, found current, re-pointed or left alone. Null when the setup does not ask.
     /// </summary>
-    EmSnpSchematicResult? SnpSchematic = null);
+    EmSnpSchematicResult? SnpSchematic = null,
+    /// <summary>
+    /// brief-emb-1 R-emb1-7 — the co-simulation netlist a finished driven run with component ports wrote beside the
+    /// <c>_sim</c> cell: the board's N-port with each part across its own port. Null when the setup names no component ports.
+    /// </summary>
+    EmCoSimResult? CoSim = null);
 
 /// <summary>One file a run wrote: what it is (<c>touchstone</c>, <c>npy</c>) and where.</summary>
 public sealed record EmRunOutput(string Kind, string Path);
@@ -149,6 +154,10 @@ public sealed record EmPreflightResult(
 
     /// <summary>The findings that are the run explaining itself.</summary>
     public IReadOnlyList<string> Notes => EmFindings.NoteTexts(Findings);
+
+    /// <summary>EMB-5 R-emb5-2 — the accelerated solve's near-field estimate this preflight described (EMB-4 R-emb4-5),
+    /// kept so <c>em --dry-run</c> can state its numbers rather than only its sentence; null when none was made.</summary>
+    public PlanarNearFieldEstimate? NearField { get; init; }
 }
 
 /// <summary>
@@ -388,7 +397,8 @@ public static class EmRunService
                 accelerated: SurfaceMesher.UsesAcceleratedCeiling(
                     setup.AcceleratedSolve, meshed.RequiresGeneralKernel),
                 lengthFormat: EmLengthFormat.For(source.View.DisplayUnit, source.DbuPerMicron),
-                ports: ports.Ports);
+                ports: ports.Ports,
+                aimOn: setup.AcceleratedSolve);
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception ex)
@@ -428,8 +438,34 @@ public static class EmRunService
             return new EmPreflightResult(pre.Choice.Kind, pre.Choice.KernelName, findings,
                                          thin.Reason, report);
 
+        // EMB-4 R-emb4-4 — G_A^zz's validated range over the via footprints at the sweep's top, asked exactly as the
+        // solve asks it (PlanarSolve.Run's `general` arm, the same fill switch), so a setup the run refuses after
+        // minutes of meshing and setup is refused here, with the same remedies. Its notes are not repeated: the
+        // level-separation sentences in them are already above.
+        if (report.CanSolve && meshed.RequiresGeneralKernel)
+        {
+            var (vertical, _) = PlanarSolve.VerticalRangeVerdict(
+                meshed, report.Mesh, fMax,
+                PlanarFillSettings.Default with { DirectVerticalKernel = setup.DirectVerticalKernel }, lengthFmt);
+            if (!vertical.Ok)
+                return new EmPreflightResult(pre.Choice.Kind, pre.Choice.KernelName, findings,
+                                             vertical.Reason, report);
+        }
+
+        // EMB-4 R-emb4-5(a) — the accelerated solve's near field and its exact sparse factor, which is single-threaded
+        // and runs at every frequency point before GMRES does; a warning past a minute a point.
+        PlanarNearFieldEstimate? nearField = null;
+        if (report.CanSolve && setup.AcceleratedSolve && meshed.Slab.HeightM > 0)
+        {
+            var near = report.AcceleratedEstimate
+                       ?? PlanarNearFieldEstimate.For(report.Mesh, meshed.Slab.HeightM, null, control?.Token ?? default);
+            string said = near.Describe(lengthFmt);
+            findings.Add(near.Large ? EmFinding.Warn(said) : said);
+            nearField = near;
+        }
+
         return new EmPreflightResult(pre.Choice.Kind, pre.Choice.KernelName, findings, null,
-                                     report);
+                                     report) { NearField = nearField };
     }
 
     /// <summary>
@@ -622,7 +658,7 @@ public static class EmRunService
         if (!setup.IsStatic3D && CircuitRF.Design.Em3d.Em3dRunService.TerminalPortRefusal(setup.Solver3D,
                 [.. document.Ports.Where(p => p.Model && p.Kind == CircuitRF.Engine.Em3d.Em3dPortKind.Wave && p.Terminals is { Count: >= 2 })
                                   .Select(p => (CircuitRF.Design.ThreeD.C3dPorts.Label(p), p.Terminals!.Count))],
-                lumpedPorts: document.Ports.Any(p => p.Model && p.Kind == CircuitRF.Engine.Em3d.Em3dPortKind.Lumped)) is { } terminalPorts)
+                lumpedPorts: document.Ports.Any(p => p.Model && p.Kind == CircuitRF.Engine.Em3d.Em3dPortKind.Lumped) || setup.ComponentPorts.Count > 0) is { } terminalPorts)
         {
             var d = EmDiagnostics.Forwarded(CircuitRF.Design.Em3d.Em3dRunService.TerminalPortsSource, terminalPorts);
             return new EmRunResult(EmRunStatus.Refused, null, null, null, null, null, d.Render(), [], Diagnostic: d);
@@ -635,11 +671,13 @@ public static class EmRunService
             // through the one door. brief-em3d-98 R-em3d98-2 — per LEG, as each completes (or does not converge), so a Both run
             // whose openEMS leg is cancelled still keeps Palace's record; a leg that did not finish keeps none.
             CircuitRF.Design.ThreeD.C3dRunInputs? inputs = null;
+            CircuitRF.Design.Layout.Em3d.Em3dGenerationResult? assembled = null;
             var notKept = new List<string>();
             var result = CircuitRF.Design.Em3d.Em3dRunService.Run(setup, s =>
                 {
                     var generated = CircuitRF.Design.ThreeD.C3dProblemAssembly.Assemble(s, document, documentPath, workspaceCws, elaborator, fromCem);
                     if (generated.Ok) inputs = CircuitRF.Design.ThreeD.C3dRunInputs.Take(document, documentPath, generated.FilesRead);
+                    assembled = generated;
                     return generated;
                 },
                 resultsRoot, ct, control, maxCores, confirmMemory, (_, dir) =>
@@ -649,6 +687,7 @@ public static class EmRunService
                 }, device, memoryCeilingBytes, emergeDevice);
             foreach (string why in notKept)
                 result = result with { Warnings = [.. result.Warnings, $"The run's inputs could not be kept, so its result cannot be called stale: {why}"] };
+            result = WithCoSim(result, setup, resultsRoot, assembled, document);
             return WithSnpSchematic(result, setup, resultsRoot, () => EmSnpSchematic.FacesOf(document));
         }
         catch (OperationCanceledException)
@@ -681,6 +720,25 @@ public static class EmRunService
         try { portFaces = faces(); }
         catch (Exception e) when (e is IOException or InvalidDataException or ArgumentException) { portFaces = new Dictionary<int, EmPortFace>(); }
         return result with { SnpSchematic = EmSnpSchematic.Create(workspace, setup, snp, portFaces) };
+    }
+
+    /// <summary>
+    /// brief-emb-1 R-emb1-7 — a finished driven run whose setup built component ports writes <c>&lt;setup&gt;_cosim.cnl</c> in the
+    /// workspace the results root belongs to, beside where the <c>_sim</c> cell goes; whatever else the setup asks.
+    /// </summary>
+    private static EmRunResult WithCoSim(EmRunResult result, EmSetup setup, string resultsRoot,
+                                         CircuitRF.Design.Layout.Em3d.Em3dGenerationResult? assembled, CircuitRF.Design.ThreeD.C3dDocument document)
+    {
+        if (assembled is not { ComponentPorts: { } build, Problem: { } problem } || result.Status != EmRunStatus.Ok ||
+            setup.Problem3D != CircuitRF.Engine.Em3d.Em3dProblemType.Driven)
+            return result;
+        string? snp = result.SnpPath ?? result.Outputs?.FirstOrDefault(o => o.Kind == "touchstone")?.Path;
+        if (snp is null || !File.Exists(snp))
+            return result with { CoSim = new EmCoSimResult(EmSnpSchematicOutcome.NotCreated, null,
+                "No co-simulation netlist was written: this run wrote no Touchstone, and its board block reads one.") };
+        string workspace = Path.GetDirectoryName(Path.GetFullPath(resultsRoot))!;
+        var cosim = EmCoSimNetlist.Write(workspace, setup, snp, problem.Ports, document, build);
+        return result with { CoSim = cosim };
     }
 
     /// <summary>brief-em3d-120 C5 — a .cem's openEMS setup asking for a cylindrical grid, refused before anything is looked for.</summary>

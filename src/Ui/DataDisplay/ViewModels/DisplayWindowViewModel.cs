@@ -818,6 +818,7 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
         _currentConfigPath = path;
         OnPropertyChanged(nameof(CurrentConfigPath));
         WindowTitle = Path.GetFileName(path);
+        DataSourceLibrary.DocumentDirectory = Path.GetDirectoryName(Path.GetFullPath(path));
 
         string configDir = Path.GetDirectoryName(path) ?? "";
 
@@ -892,6 +893,8 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
         _currentConfigPath = path;
         OnPropertyChanged(nameof(CurrentConfigPath));
         WindowTitle = Path.GetFileName(path);
+        // A relative source is looked for beside the document first, as `circuitrf render` looks (EMB-5 R-emb5-14).
+        DataSourceLibrary.DocumentDirectory = Path.GetDirectoryName(Path.GetFullPath(path));
 
         string configDir = Path.GetDirectoryName(path) ?? "";
 

@@ -82,13 +82,24 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
     /// <summary>Fired after SelectDataSourceAsync completes (selection or load changed).</summary>
     public event EventHandler? SelectedDataSourceChanged;
 
+    /// <summary>The folder of the <c>.cdd</c> this library serves — set when the display is loaded or saved; null for
+    /// a display never saved. A relative source reference is looked for here first (EMB-5 R-emb5-14).</summary>
+    public string? DocumentDirectory { get; set; }
+
     /// <summary>Resolves a logical SourceRef to an absolute path.
-    /// Null/sentinel → SelectedDataSourceAbs. Rooted → as-is. Relative → under ResultsRootProvider.</summary>
+    /// Null/sentinel → SelectedDataSourceAbs. Rooted → as-is. Relative → beside the document when the file is there
+    /// (<see cref="DocumentDirectory"/>), else under ResultsRootProvider.
+    /// <para>The same rule <c>circuitrf render</c> reads a <c>.cdd</c> by (<c>CddSources.LocateFile</c>, EMB-5 R-emb5-14):
+    /// <c>plot --write-cdd</c> writes a source relative to the document's own folder, so a display written anywhere
+    /// but <c>results/</c> itself — <c>results/agent/</c> — used to open with every plot empty; a display this
+    /// application saved names its sources relative to the results root, which stays the fallback.</para></summary>
     public string? ResolveAbs(string? sourceRef)
     {
         if (string.IsNullOrEmpty(sourceRef) || sourceRef == DataSourceRef.Selected)
             return SelectedDataSourceAbs;
         if (Path.IsPathRooted(sourceRef)) return sourceRef;
+        if (DocumentDirectory is { Length: > 0 } dir && RefPath.Resolve(dir, sourceRef) is { } beside && File.Exists(beside))
+            return beside;
         var root = ResultsRootProvider?.Invoke();
         return root is null ? null : RefPath.Resolve(root, sourceRef);
     }
@@ -136,8 +147,14 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
             AvailableDataSources.Add(new DataSourceItem(Path.GetFileNameWithoutExtension(abs), logicalId, abs, SourceKind.Npy));
         }
 
-        // Workspace known Touchstone files, sorted by name.
-        var touchstone = KnownTouchstoneProvider?.Invoke() ?? Array.Empty<string>();
+        // Workspace known Touchstone files, sorted by name — and any Touchstone this display already holds that the
+        // workspace does not list (a .cdd that names one beside itself, EMB-5 R-emb5-14), so it reaches the source list
+        // without a hand edit of the .cws KnownFiles.
+        var touchstone = (KnownTouchstoneProvider?.Invoke() ?? Array.Empty<string>()).ToList();
+        foreach (var e in Entries)
+            if (e.FilePath is { } fp && IsSnpExtension(Path.GetExtension(fp)) && File.Exists(fp)
+                && !touchstone.Contains(fp, StringComparer.OrdinalIgnoreCase))
+                touchstone.Add(fp);
         foreach (var p in touchstone.OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase))
             AvailableDataSources.Add(new DataSourceItem(Path.GetFileName(p), p, p, SourceKind.Touchstone));
 

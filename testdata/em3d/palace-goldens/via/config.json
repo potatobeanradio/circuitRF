@@ -48,26 +48,18 @@
         "Permeability": 1,
         "Permittivity": 1,
         "LossTan": 0
-      },
-      {
-        "Attributes": [
-          9
-        ],
-        "Permeability": 1,
-        "Permittivity": 1,
-        "LossTan": 0
       }
     ]
   },
   "Boundaries": {
     "Absorbing": {
       "Attributes": [
+        11,
         12,
         13,
         14,
         15,
-        16,
-        17
+        16
       ],
       "Order": 1
     },
@@ -105,7 +97,7 @@
       {
         "Index": 1,
         "Attributes": [
-          10
+          9
         ],
         "Direction": "\u002BZ",
         "R": 50,
@@ -114,7 +106,7 @@
       {
         "Index": 2,
         "Attributes": [
-          11
+          10
         ],
         "Direction": "-Z",
         "R": 50,
