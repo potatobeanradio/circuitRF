@@ -13206,3 +13206,21 @@ Its tests (4, all passed before removal): the single triangle is the double
 one rounded entry by entry in the same layout; the single LDLᵀ recovers a known dyadic L·D·Lᵀ across panels (block
 size 4); the mixed solve matches the double one to 1e-8 relative on a real coarse 80 mm FR-4 fill; a solve that cannot
 converge throws `MixedPrecisionNotConvergedException` naming the switch.
+
+## Counting cores past the limit (2026-11-01)
+
+`SurfaceMesher.Mesh` judged a mesh against the machine's memory with `PlanarCoreFootprint.For`, which
+COUNTS the band (`PlanarFill.DistinctBandKeys`, every classifiable cell pair) for any mesh up to
+`CountedUpTo` = 60,000 unknowns. On a 46,329-unknown board that was over 16 minutes of one core — the
+per-chunk `HashSet` merges under one lock serialise the `Parallel.For` once the sets are large — inside
+`check`, which promises to run no analysis.
+
+The count only moves the verdict when the mesh is near the limit. When the dense matrix ALONE (a core
+footprint of zero bytes) is already past it, no count can bring the mesh back under, so the verdict is
+decided and the a-priori `Estimate` now stands in for the bytes. Below that line nothing changed: a mesh
+that might fit is still counted exactly as CAP-3 specified. `EmRunService.Preflight` already skipped
+`RunResidentBytes` for a report past the limit, so the run's own size question agrees.
+
+Not done, recorded: the count itself is still O(band) and its merge is still serial; a mesh just under
+the limit near 60,000 unknowns pays it. Per-worker accumulation (`localInit`/`localFinally`) instead of a
+merge per 256th of the rows is the obvious next step and was not measured.

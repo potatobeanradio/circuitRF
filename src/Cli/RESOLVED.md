@@ -3393,3 +3393,26 @@ PDF (the first page says it was cancelled) before exiting 130. The MCP `review` 
   `run analysis=em component=…` gets them too, since it runs the verb). Gate:
   `EmCliVerbTests.CircuitrfEmComponent_IsSizedOnTheMemoryLimit_AndForceStartsIt` — a 6 mm line at 20 GHz is
   85 unknowns, enough to pass a 0.0001 GB limit; a 300 µm one meshes to 4 and fits under it.
+
+## `check` and the MCP server — two silent stalls (2026-11-01)
+
+Found driving the MCP server on an imported two-layer board (a 35 × 20 mm LNA with a full top-side
+ground pour) the way an agent would.
+
+**A failed elaboration dropped the reader's own warnings.** `check` forwarded `TestBench.ReadWarnings`
+only through the elaborated netlist, so a skipped `var x=1` was reported as nothing at all while `x`
+was reported unresolved. They are now added beside the elaboration failure (and the error itself
+names the line — `src/Core/RESOLVED.md`).
+
+**`check` on a planar `.cem` ignored cancellation.** `EmRunService.Preflight` takes a `RunControl`;
+`check` passed none, so an MCP `notifications/cancelled` stopped the client waiting and left the
+server's single worker meshing — every later tool call queued behind it. `check` now hands
+`RunHost.Control` down and lets `OperationCanceledException` through to the server's own handler.
+
+**The minutes were spent counting cores for a verdict that was already decided** —
+`src/Engine/Mom/RESOLVED.md` §"Counting cores past the limit". With that fixed the same `check` went
+from more than 16 minutes (stopped by hand) to 1.2 s, same verdict.
+
+**`create`'s `views` documented three views and the CLI takes four** — `3d` was accepted by
+`new cell --views` and missing from the tool's description, so an agent had no way to know it could
+make a 3D view headlessly. Description only; no behaviour changed.

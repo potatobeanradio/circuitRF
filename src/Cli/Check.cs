@@ -1040,7 +1040,8 @@ internal static class Check
         // writes no FILES, so it runs on a read-only tree and on a workspace another process has
         // open, which is the property that makes `check` usable at all.
         EmPreflightResult pre;
-        try { pre = EmRunService.Preflight(setup, resolution.Source); }
+        try { pre = EmRunService.Preflight(setup, resolution.Source, RunHost.Control); }
+        catch (OperationCanceledException) { throw; }
         catch (Exception ex)
         {
             f.Add(CliDiagnostics.CheckEmRefused(path, ex.Message));
@@ -1467,6 +1468,11 @@ internal static class Check
         catch (Exception ex)
         {
             f.Add(CliDiagnostics.CheckElaborationFailed(path, ex.Message));
+            // What reading decided still stands when elaboration then fails, and it is often the
+            // cause: a skipped `var x=1` is exactly what leaves `x` unresolved. The elaborator forwards
+            // these only on success, so a failed one would otherwise report the effect and drop the
+            // cause.
+            foreach (var w in tb.ReadWarnings) f.Add(CliDiagnostics.CheckElaborationWarning(path, w));
             CheckTuning(path, tb, lib, null, catalog, f);
             return;
         }

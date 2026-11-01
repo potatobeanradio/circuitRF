@@ -149,12 +149,16 @@ public sealed class C3dPortContext
     }
 
     /// <summary>The distance from segment ab to conductor <paramref name="c"/>, metres.</summary>
-    internal double Distance(Conductor c, Point3 a, Point3 b)
+    /// <param name="bounded">True (contact queries): anything further than 2 DBU outside the conductor's box is
+    /// infinitely far, which keeps inference cheap. False: the true distance however far — what choosing a stated
+    /// port's axis needs, since a sheet stopped short of its metal is far from both conductors by the same few µm.</param>
+    internal double Distance(Conductor c, Point3 a, Point3 b, bool bounded = true)
     {
         double tol = 2 * Dbu;
         var (x0, y0, z0, x1, y1, z1) = c.Box;
-        if (Math.Min(a.X, b.X) > x1 + tol || Math.Max(a.X, b.X) < x0 - tol || Math.Min(a.Y, b.Y) > y1 + tol ||
-            Math.Max(a.Y, b.Y) < y0 - tol || Math.Min(a.Z, b.Z) > z1 + tol || Math.Max(a.Z, b.Z) < z0 - tol)
+        if (bounded &&
+            (Math.Min(a.X, b.X) > x1 + tol || Math.Max(a.X, b.X) < x0 - tol || Math.Min(a.Y, b.Y) > y1 + tol ||
+             Math.Max(a.Y, b.Y) < y0 - tol || Math.Min(a.Z, b.Z) > z1 + tol || Math.Max(a.Z, b.Z) < z0 - tol))
             return double.PositiveInfinity;
         if (c.Axis >= 0)
         {
@@ -413,16 +417,28 @@ public static class C3dPorts
                 return Refuse(port, $"{label} names '{(pc is null ? sp : sn)}' as its {(pc is null ? "Positive" : "Negative")} end, " +
                                     "which is no conductor of the elaborated model" +
                                     (ctx.Box is null ? "" : " and no PEC face of the setup's air box") + ".");
+            // Each candidate edge is measured at its MIDPOINT and without the contact query's 2-DBU box cut-off. With the
+            // cut-off, a sheet stopped short of its metal (which is what stating both ends is for) scored every pair
+            // infinite and silently kept pair 0 — the u axis — so a gap running along v was driven across its width.
+            // At the nearest point instead, a side edge's end is as close to each conductor as the true end edge is.
+            static (Point3, Point3) Mid((Point3 A, Point3 B) e)
+            {
+                var m = new Point3((e.A.X + e.B.X) / 2, (e.A.Y + e.B.Y) / 2, (e.A.Z + e.B.Z) / 2);
+                return (m, m);
+            }
             double best = double.PositiveInfinity;
             (pair, negativeOnLow) = (0, true);
             for (int k = 0; k < 2; k++)
                 foreach (bool low in new[] { true, false })
                 {
-                    var (na, nb) = edges[2 * k + (low ? 0 : 1)];
-                    var (pa, pb) = edges[2 * k + (low ? 1 : 0)];
-                    double d = ctx.Distance(nc, na, nb) + ctx.Distance(pc, pa, pb);
+                    var (na, nb) = Mid(edges[2 * k + (low ? 0 : 1)]);
+                    var (pa, pb) = Mid(edges[2 * k + (low ? 1 : 0)]);
+                    double d = ctx.Distance(nc, na, nb, bounded: false) + ctx.Distance(pc, pa, pb, bounded: false);
                     if (d < best) (best, pair, negativeOnLow) = (d, k, low);
                 }
+            if (double.IsInfinity(best))
+                return Refuse(port, $"{label} states '{sp}' and '{sn}' as its ends, and neither pair of its opposite edges " +
+                                    "can be measured against them, so its direction is undecided.");
             (negative, positive) = (sn, sp);
             reason = "both ends are stated";
         }

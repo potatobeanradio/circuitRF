@@ -25798,3 +25798,20 @@ added (from the Yield panel's Add, and from the Sensitivity panel's Add toleranc
 the nominal every trial and the next sensitivity run stepped it by nothing. An SnP entry now starts at `sd=0.1 dB` or
 `sd=1 deg` — the sensitivity line's own default steps, so σ and the step agree until either is changed. Any other value
 whose nominal is 0 (a variable at 0, say) still gets the percent default; nothing here has met one yet.
+
+## A lumped port with both ends stated was driven along the wrong axis (2026-11-01)
+
+`C3dPorts` chooses which pair of a lumped port's opposite edges carries the port by measuring the two named
+conductors against each pair. It measured with `Distance`, whose contact-query cut-off returns infinity for anything
+more than 2 DBU outside a conductor's box. Stating `Positive`/`Negative` is exactly what a port does when its sheet
+cannot touch its metal to within 1 DBU (imported artwork: round trace caps, zone-fill arcs), so every pair scored
+infinity and the loop silently kept pair 0, the u axis. Every port on an XY sheet went to the solver as ±X, so a gap
+running along y (four of fifteen component ports on the board that found it) was driven across its width. The drawn
+arrow comes from the same choice, which is how it was seen.
+
+Stated ends are now measured at each candidate edge's MIDPOINT with no cut-off (`Distance(…, bounded: false)`): a
+true end edge runs along its conductor's face, a side edge's midpoint is in the middle of the gap. A pair that still
+cannot be measured refuses instead of defaulting. The cylinder-port branch (`CylDistance`, same file) keeps the same
+silent default and is not changed here (`docs/sonnet-briefs/brief-emb-3-port-correctness.md`). No regression test yet —
+that brief owes one: a stated-end lumped port on an XY sheet whose gap runs along v, stopped short of its metal, must
+resolve along ±v.

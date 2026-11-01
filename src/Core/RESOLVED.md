@@ -4199,6 +4199,20 @@ by a dozen per-family resolvers, and a list of what each one reads does not exis
 shipped example (323 documents) and every `testdata` netlist (82): no warning. Gate:
 `tests/Core.Tests/Elaboration/UnreadOverrideWarningTests.cs`.
 
+## An unresolved name names the skipped line that defined it (2026-11-01)
+
+A `.cnl` line the reader does not know (`var x=1`, written by an agent used to another netlist
+dialect) is skipped with a read warning. That warning travels on the ELABORATED netlist, so when the
+skipped line was the definition of a name, elaboration threw `Unresolved name 'x'` and the warning —
+the actual cause — was never printed: not by `check`, not by any run verb, not by the GUI.
+
+`Elaborator.Elaborate` now catches `UnresolvedNameException` and, when a skipped line mentions the name
+as a whole word, rethrows it with that line quoted, plus the spelling of a global variable when the
+line looks like `<keyword> <name>=…`. `UnresolvedNameException` gained a third constructor argument
+for the appended reason; `Name` and `Scope` are unchanged, so every catcher keyed on them is too.
+`check` separately reports the read warnings when elaboration fails (`src/Cli/RESOLVED.md`). Gate:
+`tests/Core.Tests/Netlist/SkippedLineCauseTests.cs`.
+
 ## SnP entry offsets: who reads an SnP block's S, and whether it sees them (brief-sens-2, 2026-11-01)
 
 An SnP instance may state `SdB_i_j` / `Sdeg_i_j` (and `Reciprocal=auto|tied|untied`). `ComponentModelFactory`

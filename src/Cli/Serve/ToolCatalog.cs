@@ -759,7 +759,7 @@ internal static class ToolCatalog
                         new("workspace", true,  "The workspace the cell is created in."),
                         new("name",      false, "The cell name."),
                     ],
-                    [new("views", "--views", OptKind.StrList, "Which views to create: schematic, symbol, layout. Default schematic.")],
+                    [new("views", "--views", OptKind.StrList, "Which views to create: schematic, symbol, layout, 3d (an empty .c3d whose units come from the cell's layout, else the technology; a 3D view of an existing layout places it as an instance with View Layout). Default schematic.")],
                     "A cell folder and one empty-but-valid file per view."),
             ]),
 

@@ -107,6 +107,36 @@ public sealed class Elaborator
 
     public ElaboratedNetlist Elaborate(TestBench tb)
     {
+        try { return ElaborateCore(tb); }
+        catch (UnresolvedNameException ex) when (SkippedLineNaming(tb, ex.Name) is { } why)
+        {
+            throw new UnresolvedNameException(ex.Name, ex.Scope, why);
+        }
+    }
+
+    /// <summary>
+    /// When a name is unresolved and the reader skipped a line that mentions it, that skipped line is
+    /// almost always where the name was meant to be defined (`var x=1`, `param x=1`): say so in the
+    /// error itself. The read warning alone travels on the elaborated netlist, which a failed
+    /// elaboration never returns, so every caller printing only the exception lost the cause.
+    /// </summary>
+    private static string? SkippedLineNaming(TestBench tb, string name)
+    {
+        var word = new Regex($@"(?<![\w.]){Regex.Escape(name)}(?![\w])");
+        foreach (var w in tb.ReadWarnings)
+        {
+            int cut = w.IndexOf(" is not a statement the netlist reader knows", StringComparison.Ordinal);
+            if (cut < 0 || !word.IsMatch(w[..cut])) continue;
+            string where = w[..cut];
+            bool keyword = Regex.IsMatch(where, $@"'\S+\s+{Regex.Escape(name)}\s*=");
+            return $"the netlist reader skipped {where} as an unknown statement" +
+                   (keyword ? $"; a global variable is written '{name} = <value>', with no keyword before it" : "");
+        }
+        return null;
+    }
+
+    private ElaboratedNetlist ElaborateCore(TestBench tb)
+    {
         // User-defined expression functions must exist before any expression is resolved —
         // a cell parameter may call one in its default, which is evaluated during flattening.
         // Kept as well as registered: a model that evaluates an expression at STAMP time builds

@@ -9,11 +9,21 @@ public class CycleException(string chain)
     public string Chain { get; } = chain;
 }
 
-public class UnresolvedNameException(string name, string scope)
-    : ExpressionException($"Unresolved name '{name}' in scope '{scope}'")
+public class UnresolvedNameException : ExpressionException
 {
-    public string Name  { get; } = name;
-    public string Scope { get; } = scope;
+    public UnresolvedNameException(string name, string scope) : this(name, scope, null) { }
+
+    /// <param name="why">What else is known about why the name is missing — appended to the message after
+    /// a dash. Null for none.</param>
+    public UnresolvedNameException(string name, string scope, string? why)
+        : base($"Unresolved name '{name}' in scope '{scope}'" + (why is null ? "" : $" — {why}"))
+    {
+        Name  = name;
+        Scope = scope;
+    }
+
+    public string Name  { get; }
+    public string Scope { get; }
 }
 
 public class TypeErrorException(string message) : ExpressionException(message);

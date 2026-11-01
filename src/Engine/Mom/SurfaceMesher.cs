@@ -1475,7 +1475,13 @@ public static class SurfaceMesher
         // cores, counted (the class count is a property of the artwork). With no limit the ceiling is the
         // fixed count and the bytes beside it are the a-priori figure every guard below quotes too; the
         // accelerated path holds no dense cores and keeps the estimate.
-        var coreFootprint = new Lazy<PlanarCoreFootprint>(() => limit is null
+        // Counting is O(band) — 4.5·10⁸ pair classifications at N ≈ 60,000, minutes of `check` on a board
+        // that cannot run anyway. When the dense matrix ALONE (cores of zero bytes) is already past the
+        // limit, no count can bring the mesh back under it, so the verdict is decided and the estimate
+        // stands in for the bytes quoted beside it.
+        bool pastWithNoCores = limit is not null && !accel
+            && n > CeilingFor(false, limit, new PlanarCoreFootprint(cells.Count, 0, 0, 2, 0, Counted: false));
+        var coreFootprint = new Lazy<PlanarCoreFootprint>(() => limit is null || pastWithNoCores
             ? PlanarCoreFootprint.Estimate(n, cells.Count)
             : PlanarCoreFootprint.For(accel ? null : mesh, n, cells.Count));
         if (limit is not null) ceiling = CeilingFor(accel, limit, coreFootprint.Value);
