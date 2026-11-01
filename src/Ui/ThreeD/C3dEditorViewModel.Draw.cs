@@ -596,8 +596,28 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
         CloseField();
         var input = CursorInput();
         if (Command(modifiers)) input = input with { Command = true };
+        string? moved = clickCount == 1 ? PlaneThroughFirstSnap(_tool, input) : null;
         Apply(clickCount >= 2 ? _tool.DoubleClick(input) : _tool.Click(input));
+        if (moved is not null && _tool is { InProgress: true }) StatusMessage = moved;
         return true;
+    }
+
+    /// <summary>
+    /// The first click of a tool that takes the drawing plane, on a geometry snap off that plane: the plane moves along its
+    /// normal through the snap, and the sentence saying so is returned (else null, nothing changed). Without it the click
+    /// projected the snap onto the plane — a corner snapped on a substrate's top started the box on its bottom, away from
+    /// the glyph the cursor showed. Moving the plane, not just the gesture's, keeps the grid, the grid snap and the
+    /// rubber band's ray on the same plane as the object.
+    /// </summary>
+    private string? PlaneThroughFirstSnap(C3dDrawTool tool, in C3dDrawInput input)
+    {
+        if (tool.Step != 0 || !tool.TakesPlaneAtFirstClick) return null;
+        if (input.Snap is not { } s || !input.SnapOnGeometry) return null;
+        if (input.HasRay && _plane.IsEdgeOn(input.RayDirection!.Value)) return null;       // the tool refuses; change nothing
+        long w = _plane.W(s);
+        if (w == _plane.OffsetDbu) return null;
+        SetPlane(_plane with { OffsetDbu = w });
+        return $"Drawing plane: {PlaneText}, through the snapped point.";
     }
 
     public bool DrawKey(Key key, KeyModifiers modifiers)

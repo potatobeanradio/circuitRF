@@ -29,6 +29,8 @@ public abstract class C3dChainTool(IC3dDrawHost host) : C3dDrawTool(host)
 
     public override IReadOnlyList<string> Dimensions => Step > 0 ? Next : None;
 
+    public override bool TakesPlaneAtFirstClick => true;
+
     /// <summary>A polygon's vertices lie on its plane; a polyline's may be anywhere.</summary>
     protected abstract bool OnPlaneOnly { get; }
 

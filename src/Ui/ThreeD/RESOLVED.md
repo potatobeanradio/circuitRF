@@ -439,3 +439,15 @@ for each instance that is still not drawn: "invalid wBond geometry" when the lay
   `src/Design`. The 3D view passes `C3dEditorViewModel.MoveToTrash` (the system Trash; a test seam), then
   `RunFinished()` reads every plot's run again. A plot of that run then says the fields were deleted, through
   `FieldDiscovery.FieldsDeleted` → `PlotProblem(..., fieldsDeleted)`. Gate: `SavedFieldsTests`.
+
+## A first corner snapped above the drawing plane started the object on the plane (2026-10-31)
+
+- **Symptom:** with the plane at z = 0, a Box's first corner snapped onto a substrate's top corner showed the glyph on
+  the top, and the click put the corner on the bottom. `PlanePoint` projects every snap along the normal onto the
+  plane, and Box, Sheet, Cylinder, Sphere, Ellipsoid, Polygon and Polyline all take their first point through it.
+- **Fix:** those tools say `TakesPlaneAtFirstClick`; on that click a geometry snap off the plane moves the editor's
+  plane through it (`PlaneThroughFirstSnap`, announced in the status line) before the tool reads the click. The plane
+  itself moves, not only the gesture's copy, so the grid, the grid snap and the rubber band's ray hit the same plane
+  as the object; projecting onto a gesture-only plane would have left the second corner's grid snap on the old one.
+  A grid snap, an edge-on view or a snap already on the plane changes nothing. Gate:
+  `DrawToolGateTests.Draw1b_AFirstCornerSnappedAboveThePlane_MovesThePlaneThroughIt`.

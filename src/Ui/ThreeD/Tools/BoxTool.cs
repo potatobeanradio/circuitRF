@@ -25,6 +25,8 @@ public abstract class C3dRectangleTool(IC3dDrawHost host) : C3dDrawTool(host)
 
     public override IReadOnlyList<string> Dimensions => Step == 1 ? WidthDepth : Corner;
 
+    public override bool TakesPlaneAtFirstClick => true;
+
     protected C3dPoint2? Cursor(in C3dDrawInput input, out string? refusal)
     {
         if (Host.PlanePoint(input, out refusal) is not { } p) return null;

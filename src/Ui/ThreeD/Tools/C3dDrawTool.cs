@@ -97,6 +97,11 @@ public abstract class C3dDrawTool(IC3dDrawHost host)
     /// <summary>The tool's name as the menu and the status line say it.</summary>
     public virtual string Name => Kind.ToString();
 
+    /// <summary>True for a tool that takes the drawing plane at its first click (Box, Sheet, Cylinder, Sphere, Ellipsoid,
+    /// Polygon, Polyline). The editor moves the plane through a geometry snap there before the click, so the object starts
+    /// at the snap glyph and not at its shadow on the plane.</summary>
+    public virtual bool TakesPlaneAtFirstClick => false;
+
     /// <summary>0 before the first click; the gesture is in progress from then until it finishes or is cancelled.</summary>
     public int Step { get; protected set; }
 

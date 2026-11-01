@@ -18,6 +18,8 @@ public sealed class EllipsoidTool(IC3dDrawHost host) : C3dDrawTool(host)
 
     public override C3dToolKind Kind => C3dToolKind.Ellipsoid;
 
+    public override bool TakesPlaneAtFirstClick => true;
+
     public override string Prompt => Step switch
     {
         0 => "Ellipsoid: click the centre on the drawing plane.",

@@ -63,6 +63,33 @@ public sealed class DrawToolGateTests : IDisposable
         Assert.Equal(1, vm.ToolCommits);
     }
 
+    /// <summary>A first corner snapped on a top corner starts the box there, not at its shadow on the plane below.</summary>
+    [Fact]
+    public void Draw1b_AFirstCornerSnappedAboveThePlane_MovesThePlaneThroughIt()
+    {
+        var vm = Open();
+        var v = vm.Viewer;
+        vm.Arm(C3dToolKind.Box);
+        var c = NearestTopCorner(v, "pad");
+        HoverAt(v, c);
+        Assert.Equal(Snap3DKind.Vertex, v.Snap.Kind);
+        v.Click(false);
+        Assert.Equal(20 * Um, vm.Plane.OffsetDbu);
+
+        double cx = Math.Round(c.X / UmM), cy = Math.Round(c.Y / UmM);
+        double bx = cx + (cx <= 100 ? -20 : 20), by = cy + (cy <= 0 ? -20 : 20);   // off the pad, on the moved plane
+        ClickAt(vm, bx, by, 20);
+        Assert.Equal(2, vm.Tool!.Step);
+        vm.OpenField("1");
+        vm.FieldText = "15um";                                                 // the height, typed: no snap to argue with
+        vm.FieldEnter();
+        Settle(vm);
+
+        var box = Assert.IsType<C3dBox>(vm.Document.Objects[^1]);
+        Assert.Equal(new C3dPoint3((long)Math.Min(cx, bx) * Um, (long)Math.Min(cy, by) * Um, 20 * Um), box.Min);
+        Assert.Equal(new C3dPoint3(20 * Um, 20 * Um, 15 * Um), box.Size);
+    }
+
     // ── 2. every plane ───────────────────────────────────────────────────────────────────────
 
     [Fact]

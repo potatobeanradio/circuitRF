@@ -18,6 +18,8 @@ public sealed class SphereTool(IC3dDrawHost host) : C3dDrawTool(host)
 
     public override C3dToolKind Kind => C3dToolKind.Sphere;
 
+    public override bool TakesPlaneAtFirstClick => true;
+
     public override string Prompt => Step switch
     {
         0 => "Sphere: click the centre on the drawing plane.",
