@@ -1601,12 +1601,7 @@ public static class EmSetupPersistence
             }
             : null,
         OperatingTempC = s.OperatingTempC,
-        AirBox         = s.AirBox is { } box ? new CemAirBox
-        {
-            XMin = ToFace(box.XMin), XMax = ToFace(box.XMax),
-            YMin = ToFace(box.YMin), YMax = ToFace(box.YMax),
-            ZMin = ToFace(box.ZMin), ZMax = ToFace(box.ZMax),
-        } : null,
+        AirBox         = ToCem(s.AirBox),
         RobustMeshing  = s.RobustMeshing ? true : null,
         Palace         = s.Palace,
         OpenEms        = s.OpenEms,
@@ -1634,6 +1629,19 @@ public static class EmSetupPersistence
         Thermal        = s.Thermal,
         Sar            = s.Sar,
     };
+
+    /// <summary>An air box as a file spells it (a <c>.cem</c>'s, or a <c>.c3d</c>'s own); null for null.</summary>
+    public static CemAirBox? ToCem(EmAirBox? box) => box is null ? null : new CemAirBox
+    {
+        XMin = ToFace(box.XMin), XMax = ToFace(box.XMax),
+        YMin = ToFace(box.YMin), YMax = ToFace(box.YMax),
+        ZMin = ToFace(box.ZMin), ZMax = ToFace(box.ZMax),
+    };
+
+    /// <summary>An air box as a file spells it, read; null for null.</summary>
+    public static EmAirBox? FromCem(CemAirBox? box) => box is null ? null
+        : new EmAirBox(FromFace(box.XMin), FromFace(box.XMax), FromFace(box.YMin),
+                       FromFace(box.YMax), FromFace(box.ZMin), FromFace(box.ZMax));
 
     private static CemAirBoxFace? ToFace(EmAirBoxFace? f)
         => f is null ? null : new CemAirBoxFace { PaddingUm = f.PaddingUm, Boundary = f.Boundary, PaddingPercent = f.PaddingPercent };
@@ -1694,10 +1702,7 @@ public static class EmSetupPersistence
             : EmSetup.DefaultPlanarMesh,
         Solver3D              = Solver3DOf(f),
         OperatingTempC        = f.OperatingTempC,
-        AirBox                = f.AirBox is { } box
-            ? new EmAirBox(FromFace(box.XMin), FromFace(box.XMax), FromFace(box.YMin),
-                           FromFace(box.YMax), FromFace(box.ZMin), FromFace(box.ZMax))
-            : null,
+        AirBox                = FromCem(f.AirBox),
         RobustMeshing         = f.RobustMeshing ?? false,
         Palace                = f.Palace,
         OpenEms               = f.OpenEms,

@@ -131,6 +131,35 @@ public sealed class EditorRound1TreeTests : IDisposable
         Assert.Equal(10, EmSetupPersistence.FromEmbedded(vm.Document.Setups[0]).AirBox!.XMin!.PaddingPercent);
     }
 
+    /// <summary>With no setup, the air box's padding and faces are still in the Inspector and editable: the edit is the
+    /// document's own box (one undo entry, redrawn), and a setup added afterwards starts with it.</summary>
+    [Fact]
+    public void WithNoSetup_TheAirBoxIsSizedInTheInspector_AndANewSetupStartsWithIt()
+    {
+        var vm = Open(Doc());
+        vm.SelectedTreeItem = vm.Tree.SelectMany(g => g.Items).Single(i => i.IsAirBox);
+        Assert.True(vm.Properties.IsAirBox);
+        Assert.Equal(6, vm.Properties.AirBoxFaces.Count);
+
+        int entries = vm.UndoEntries;
+        vm.Properties.PadXMaxPercent = "10";
+        vm.Properties.CommitAirBoxPercent("xmax");
+        Settle(vm);
+        Assert.Equal("", vm.Properties.Error);
+        Assert.Equal(entries + 1, vm.UndoEntries);
+        Assert.Equal(10, vm.Document.AirBox!.XMax!.PaddingPercent);
+        Assert.Equal(1100e-6, vm.ShownAirBox!.Max.X, 12);
+
+        vm.UndoRedo.Undo();
+        Settle(vm);
+        Assert.Null(vm.Document.AirBox);
+        vm.UndoRedo.Redo();
+        Settle(vm);
+
+        vm.AddSetup();
+        Assert.Equal(new EmAirBoxFace(null, null, 10), EmSetupPersistence.FromEmbedded(vm.Document.Setups[0]).AirBox!.XMax);
+    }
+
     /// <summary>brief-dfr32-1 R-dfr32-1-4 — each face row reads its padding as a length, in the unit it reads in, beside its
     /// share of the extent: 20 % of this board's 100 µm z extent is "20 µm, 20 %", and a default face says both as well.</summary>
     [Fact]

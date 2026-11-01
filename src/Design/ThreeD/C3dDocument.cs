@@ -1252,6 +1252,14 @@ public sealed class C3dDocument
     public string? AirBoxMaterial { get; set; }
 
     /// <summary>
+    /// The air box while no setup is active — its padding and each face's boundary, spelled as a <c>.cem</c>'s
+    /// <c>AirBox</c> — and the one a setup added to the document starts with. The box is otherwise a setup's: a run reads its
+    /// setup's own, never this, so a document can be sized and walled before any setup exists without any of it being lost.
+    /// Absent: the generator's default on every face.
+    /// </summary>
+    public CircuitRF.Design.Layout.Em.CemAirBox? AirBox { get; set; }
+
+    /// <summary>
     /// 3D editor round 5 — the air box is hidden in the editor (its faces and its edges). Document state exactly as an
     /// object's <see cref="C3dObject.Hidden"/> is: saved with the file and undoable, so a reopened document shows what it
     /// was saved showing. Drawing only — a run solves in the box whether or not it is drawn.

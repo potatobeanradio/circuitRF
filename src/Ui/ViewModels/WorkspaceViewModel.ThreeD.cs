@@ -400,7 +400,8 @@ public partial class WorkspaceViewModel
         Messages.Success("Created", path);
         if (made.SetupsCopied.Count > 0) Messages.Info($"Copied {made.SetupsCopied.Count} 3D setup(s) as embedded setups: {string.Join(", ", made.SetupsCopied)}.");
         if (made.PortsNote is { } portsNote) Messages.Info(portsNote);
-        if (made.PortsLeftOut.Count > 0) Messages.Warning($"Ports left out (each must be one rectangle to become a parent-level port): {string.Join("; ", made.PortsLeftOut)}.");
+        foreach (string moved in made.PortsMoved) Messages.Info(moved);
+        if (made.PortsLeftOut.Count > 0) Messages.Warning($"Ports left out: {string.Join("; ", made.PortsLeftOut)}.");
         OpenOrActivateC3dEditor(path);
     }
 

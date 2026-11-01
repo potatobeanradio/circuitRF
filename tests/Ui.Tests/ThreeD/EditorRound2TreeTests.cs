@@ -97,19 +97,20 @@ public sealed class EditorRound2TreeTests : IDisposable
     }
 
     [Fact]
-    public void Round3_TheAirBoxIsListedWithNoSetup_AndSelectingItSaysWhatAddsOne()
+    public void Round3_TheAirBoxIsListedWithNoSetup_AndSelectingItShowsItsPadding()
     {
         var vm = Open(Doc());
         var box = vm.Tree.Single(g => g.Header == "Air").Items.Single();
         Assert.True(box.IsAirBox);
-        Assert.Equal("no setup yet: a new setup's default", box.Detail);
+        Assert.Equal("no setup yet", box.Detail);
         Assert.NotNull(vm.ShownAirBox);                                   // drawn with no setup, once there is a shape
         Assert.False(vm.TreeMenuItems(box).Single(m => m.Header == "Delete").Enabled);
 
         vm.SelectedTreeItem = box;
         Assert.Equal("Air box", vm.Properties.Heading);
-        Assert.Contains(vm.Properties.Rows, r => r.Label == "Setup" && r.Value.Contains("Setup Analyses"));
+        Assert.Contains(vm.Properties.Rows, r => r.Label == "Setup" && r.Value.StartsWith("None active", StringComparison.Ordinal));
         Assert.True(vm.Properties.IsAirBoxRow);
+        Assert.True(vm.Properties.IsAirBox);                              // padding and faces, with no setup
         Assert.Equal("Air", vm.Properties.AirBoxMaterial);
     }
 

@@ -1181,18 +1181,21 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         IsAirBoxRow = true;
         AirBoxMaterial = C3dProblemAssembly.BoxFill(editor.Document);
         OnPropertyChanged(nameof(AirBoxMaterials));
-        var setup = editor.ActiveSetup;
+        // No setup active: the document's own box, drawn on a new setup's defaults — sized and walled here all the same, and
+        // what a setup added later starts with.
+        var active = editor.ActiveSetup;
+        var stated = active is not null ? active.AirBox : EmSetupPersistence.FromCem(editor.Document.AirBox);
+        var setup = active ?? new EmSetup { Solver3D = CircuitRF.Design.Em3d.Em3dSolvers.Default, AirBox = stated };
         Heading = "Air box";
-        if (setup is null || editor.ShownAirBox is not { } box)
+        if (editor.ShownAirBox is not { } box)
         {
-            Rows.Add(new C3dPropertyRow("Setup", setup is null
-                ? "No setup is active: the box drawn is a new setup's default. Its padding and faces are a setup's — add one in Simulate ▸ Setup Analyses…"
+            Rows.Add(new C3dPropertyRow("Setup", active is null
+                ? "The box is drawn round the geometry: it appears with the first solid or sheet."
                 : "The active setup's air box could not be built around this geometry; Simulate ▸ Run reports why."));
             IsAirBox = false;
             return;
         }
-        Rows.Add(new C3dPropertyRow("Setup", editor.ActiveSetupLabel));
-        var stated = setup.AirBox;
+        Rows.Add(new C3dPropertyRow("Setup", active is null ? "None active: a setup added now starts with this box" : editor.ActiveSetupLabel));
         // A face that states no percentage shows the padding in use as one, so a smaller number visibly shrinks the box.
         string Pct(string face, EmAirBoxFace? s)
             => s?.PaddingPercent is { } p ? p.ToString("G6", CultureInfo.InvariantCulture)
@@ -1235,7 +1238,9 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         }
         Rows.Add(new C3dPropertyRow("Size", $"{editor.Viewer.FormatLength(box.Max.X - box.Min.X)} × " +
                                             $"{editor.Viewer.FormatLength(box.Max.Y - box.Min.Y)} × {editor.Viewer.FormatLength(box.Max.Z - box.Min.Z)}"));
-        Rows.Add(new C3dPropertyRow("Editing", "The air box is the active setup's, not the geometry's: it cannot be deleted or duplicated."));
+        Rows.Add(new C3dPropertyRow("Editing", active is null
+            ? "The air box is not geometry: it cannot be deleted or duplicated."
+            : "The air box is the active setup's, not the geometry's: it cannot be deleted or duplicated."));
     }
 
     private static readonly string[] BoxFaces = ["xmin", "xmax", "ymin", "ymax", "zmin", "zmax"];

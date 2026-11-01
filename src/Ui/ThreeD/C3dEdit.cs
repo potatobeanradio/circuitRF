@@ -180,14 +180,15 @@ public sealed class C3dRecordsEdit(string description, string before, string aft
     /// <summary>The records as one text: ports, face boundaries, setups — and (3D editor round 3) the air box's material,
     /// (round 5) whether it is hidden, and (brief-em3d-75) the thermal places: heat sources, probes, mesh regions and contact
     /// overrides, which are records beside the ports, never objects — and (brief-em3d-83) the field plots, and (brief-em3d-106) the
-    /// realistic view's Look — and (brief-sar-3) the lumped elements and (brief-sar-12) the band sweeps, as a document holding nothing else spells them.</summary>
+    /// realistic view's Look — and (brief-sar-3) the lumped elements, (brief-sar-12) the band sweeps and the document's own air box,
+    /// as a document holding nothing else spells them.</summary>
     public static string Of(C3dDocument doc)
         => C3dPersistence.SerializePorts(doc.Ports) + "\u0001" + C3dPersistence.SerializeFaceBoundaries(doc.FaceBoundaries) +
            "\u0001" + C3dPersistence.SerializeSetups(doc.Setups) + "\u0001" + (doc.AirBoxMaterial ?? "") +
            "\u0001" + (doc.AirBoxHidden ? "hidden" : "") + "\u0001" + C3dPersistence.SerializeThermalPlaces(doc) +
            "\u0001" + C3dPersistence.SerializeFieldPlots(doc.FieldPlots) + "\u0001" + C3dPersistence.SerializeLook(doc.Look) +
            "\u0001" + C3dPersistence.Serialize(new C3dDocument { DbuPerMicron = doc.DbuPerMicron, LumpedElements = doc.LumpedElements,
-                                                                BandSweeps = doc.BandSweeps });
+                                                                BandSweeps = doc.BandSweeps, AirBox = doc.AirBox });
 
     /// <summary>Whether <paramref name="text"/> (an <see cref="Of"/>) holds the air box hidden.</summary>
     public static bool AirBoxHiddenOf(string text) => text.Split('\u0001') is { Length: > 4 } parts && parts[4].Length > 0;
@@ -213,6 +214,8 @@ public sealed class C3dRecordsEdit(string description, string before, string aft
             var records = C3dPersistence.Deserialize(parts[8]);
             doc.LumpedElements = records.LumpedElements;
             doc.BandSweeps = records.BandSweeps;
+            // The air box while no setup is active: sized and walled before any setup exists, one entry per edit.
+            doc.AirBox = records.AirBox;
         }
     }
 }

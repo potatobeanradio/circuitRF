@@ -445,7 +445,7 @@ public sealed partial class C3dEditorViewModel
         var names = C3dSetups.Read(Document).Select(s => s.Name).ToHashSet(StringComparer.Ordinal);
         string name = Enumerable.Range(1, 10_000).Select(n => $"S{n}").First(n => !names.Contains(n));
         var setup = new EmSetup { Name = name, Solver3D = CircuitRF.Design.Em3d.Em3dSolvers.Default, RobustMeshing = true,
-                                  Frequency = EmSetup.NewSetupFrequency() };
+                                  Frequency = EmSetup.NewSetupFrequency(), AirBox = EmSetupPersistence.FromCem(Document.AirBox) };
         ChangeRecords($"Add setup {name}", d => d.Setups.Add(EmSetupPersistence.ToEmbedded(setup)));
         if (ActiveSetupName is null || ActiveSetup is null) SetActiveSetup(name);
         SelectedSetupItem = SetupItems.FirstOrDefault(i => i.Name == name && !i.IsExternal);
@@ -458,7 +458,8 @@ public sealed partial class C3dEditorViewModel
     {
         var names = C3dSetups.Read(Document).Select(s => s.Name).ToHashSet(StringComparer.Ordinal);
         string name = Enumerable.Range(1, 10_000).Select(n => $"T{n}").First(n => !names.Contains(n));
-        var setup = new EmSetup { Name = name, Solver3D = Em3dSolverChoice.None, Problem3D = Em3dProblemType.Thermal, Thermal = new CemThermal() };
+        var setup = new EmSetup { Name = name, Solver3D = Em3dSolverChoice.None, Problem3D = Em3dProblemType.Thermal, Thermal = new CemThermal(),
+                                  AirBox = EmSetupPersistence.FromCem(Document.AirBox) };
         ChangeRecords($"Add thermal setup {name}", d => d.Setups.Add(EmSetupPersistence.ToEmbedded(setup)));
         if (ActiveSetupName is null || ActiveSetup is null) SetActiveSetup(name);
         SelectedSetupItem = SetupItems.FirstOrDefault(i => i.Name == name && !i.IsExternal);
@@ -602,7 +603,10 @@ public sealed partial class C3dEditorViewModel
             try { setup = EmSetupPersistence.Deserialize(setupJson); } catch (Exception) { setup = null; }
         // 3D editor round 3 — with no setup, the box a new setup would solve in (owner decision): drawn once there is a solid
         // or a sheet to size it (Extent is null until then), never before.
-        var boxSetup = setup ?? (setupJson is null ? new EmSetup { Solver3D = CircuitRF.Design.Em3d.Em3dSolvers.Default } : null);
+        // With no setup, the document's own box (its padding and walls, stated before any setup exists) on that default.
+        var boxSetup = setup ?? (setupJson is null
+            ? new EmSetup { Solver3D = CircuitRF.Design.Em3d.Em3dSolvers.Default, AirBox = EmSetupPersistence.FromCem(doc.AirBox) }
+            : null);
         // 3D editor round 5 — the box is sized from what DID elaborate, refusals or not: a wire whose end a boolean took the
         // pad from is the wire's refusal, and gating the box on a clean elaboration took the box — and, with no setup, its
         // tree row — away with it. The ports and face boundaries below still wait for a clean elaboration.
@@ -1055,17 +1059,29 @@ public sealed partial class C3dEditorViewModel
     private string? EditActiveAirBox(IReadOnlyList<string> faces, Func<EmAirBoxFace?, EmAirBoxFace> change, string description)
     {
         if (IsExternalActive) return $"The active setup is the .cem {Path.GetFileName(ExternalSetup!.Value.Path)}: edit its air box in its own panel.";
+        EmAirBox Changed(EmAirBox? box)
+        {
+            box ??= new EmAirBox();
+            foreach (string face in faces)
+                box = face switch
+                {
+                    "xmin" => box with { XMin = change(box.XMin) }, "xmax" => box with { XMax = change(box.XMax) },
+                    "ymin" => box with { YMin = change(box.YMin) }, "ymax" => box with { YMax = change(box.YMax) },
+                    "zmin" => box with { ZMin = change(box.ZMin) }, _ => box with { ZMax = change(box.ZMax) },
+                };
+            return box;
+        }
+        // No setup active: the document's own box, which a setup added later starts with.
+        if (ActiveSetup is null)
+        {
+            var mine = EmSetupPersistence.ToCem(Changed(EmSetupPersistence.FromCem(Document.AirBox)));
+            ChangeRecords(description, d => d.AirBox = mine);
+            StatusMessage = "No setup is active: the air box is the document's, and a setup added now starts with it.";
+            return null;
+        }
         if (ActiveSetupName is not { } name || C3dSetups.Read(Document).FirstOrDefault(s => s.Name == name) is not { Setup: { } setup } read)
-            return "No setup is active: the air box is a setup's. Add or make one active in Simulate ▸ Setup Analyses…";
-        var box = setup.AirBox ?? new EmAirBox();
-        foreach (string face in faces)
-            box = face switch
-            {
-                "xmin" => box with { XMin = change(box.XMin) }, "xmax" => box with { XMax = change(box.XMax) },
-                "ymin" => box with { YMin = change(box.YMin) }, "ymax" => box with { YMax = change(box.YMax) },
-                "zmin" => box with { ZMin = change(box.ZMin) }, _ => box with { ZMax = change(box.ZMax) },
-            };
-        setup.AirBox = box;
+            return "The active setup cannot be read, so its air box cannot be edited.";
+        setup.AirBox = Changed(setup.AirBox);
         ChangeRecords(description, d => d.Setups[read.Index] = EmSetupPersistence.ToEmbedded(setup));
         StatusMessage = $"Writes setup '{name}': the air box is the setup's, not the geometry's.";
         return null;
@@ -1147,7 +1163,8 @@ public sealed partial class C3dEditorViewModel
         if (BoxFaceOf(o) is { } boxFace)
         {
             var current = ShownAirBox is { } bx ? FaceKindOf(bx, boxFace) : Em3dBoundaryKind.Absorbing;
-            string tip = ActiveSetupName is { } n ? $"Writes setup '{n}': the air box is the setup's." : "No setup is active.";
+            string tip = ActiveSetup is not null && ActiveSetupName is { } n ? $"Writes setup '{n}': the air box is the setup's."
+                       : "No setup is active: writes the 3D view's own air box, which a setup added later starts with.";
             yield return new Viewer3DMenuItem("Boundary", Tip: tip, Children:
             [
                 .. new[] { Em3dBoundaryKind.Absorbing, Em3dBoundaryKind.Pec, Em3dBoundaryKind.Pmc, Em3dBoundaryKind.Symmetry }
@@ -1445,7 +1462,7 @@ public sealed partial class C3dEditorViewModel
         // 3D editor round 3 — listed when a box is drawn (with no setup, once a solid or a sheet exists), and with a setup
         // whose box could not be built, so its row can say so. Headed, by material, by what fills it (Air by default).
         bool want = ShownAirBox is not null || (ActiveSetup is not null && (Document.Objects.Count > 0 || Document.Instances.Count > 0));
-        string detail = ActiveSetup is null ? "no setup yet: a new setup's default"
+        string detail = ActiveSetup is null ? "no setup yet"
                       : $"setup {(IsExternalActive ? ExternalItemName : ActiveSetupName)}{(ShownAirBox is null ? ": not built" : "")}";
         string air = C3dProblemAssembly.BoxFill(Document);
         if (Tree.FirstOrDefault(g => g.Items.Any(i => i.IsAirBox)) is { } home)

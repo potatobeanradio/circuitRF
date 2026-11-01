@@ -1725,7 +1725,9 @@ order a pane presents them, with the rules each one follows.
 - **The air box** (the box button). The active setup's air box, its faces tinted by boundary: **PEC** grey,
   **PMC** orange, **symmetry** hatched, and **absorbing** clear. It is shown until you hide it. In Face mode its faces can be picked, but only where no solid is under the cursor (**B** reaches
   one behind a solid). Right-click one for *Boundary ▸ Absorbing / PEC / PMC / Symmetry* and *Padding…*:
-  these change the **setup**, not the geometry, and the status line says which setup they wrote.
+  these change the **setup**, not the geometry, and the status line says which setup they wrote. With no setup active
+  they change the 3D view's own air box, and a setup added afterwards starts with it; the Properties Inspector shows
+  the padding and faces either way.
 - **Boundaries on faces** (Face mode). Right-click a face of a dielectric or air object for
   *Boundary ▸ Perfect Conductor*, *Conductive Surface* (choose the metal) or *None*. The face is drawn tinted
   and listed in the tree under its object. A boundary stays with its face through every edit, and a face

@@ -174,6 +174,58 @@ public sealed class PortEdgeWidthTests : IDisposable
         Assert.Contains("default driven setup", made.PortsNote, StringComparison.Ordinal);
     }
 
+    /// <summary>A board-edge launch's inner ground pulled back from the line's end, 300 µm on a 300 µm line, beyond the
+    /// tenth of a width a solve forgives: the port still comes into the .c3d, at x = 8.7 mm where the plane begins, and
+    /// says so. A solve of the layout itself still refuses it.</summary>
+    [Fact]
+    public void NewFromLayout_APlanePulledBackFromTheLineEnd_PutsThePortWhereThePlaneBegins()
+    {
+        var shapes = Pour();
+        shapes.Add(new RectShape { Layer = Bottom, X1 = 0, Y1 = 0, X2 = Um(8700), Y2 = Um(3000) });
+        var (cell, c3d, cws) = Board(shapes);
+        var made = C3dHierarchy.NewFromLayout(cell, c3d, cws);
+        Assert.Empty(made.PortsLeftOut);
+        Assert.Equal(Um(8700), made.Document!.Ports.Single(p => p.Number == 2).Offset);
+        Assert.Contains("Port 2's sheet is 300 µm inside its line's end", Assert.Single(made.PortsMoved), StringComparison.Ordinal);
+        Assert.Contains("short of the port's end", Solve(shapes).Refusal, StringComparison.Ordinal);
+    }
+
+    /// <summary>One port that cannot be built (its plane stops 3 mm, ten widths, short of the line's end) is left out with
+    /// its reason, and the other port still comes in.</summary>
+    [Fact]
+    public void NewFromLayout_OnePortRefusing_LeavesOutThatPortAlone()
+    {
+        var shapes = Pour();
+        shapes.Add(new RectShape { Layer = Bottom, X1 = 0, Y1 = 0, X2 = Um(6000), Y2 = Um(3000) });
+        var (cell, c3d, cws) = Board(shapes);
+        var made = C3dHierarchy.NewFromLayout(cell, c3d, cws);
+        Assert.Equal([1], made.Document!.Ports.Select(p => p.Number));
+        Assert.StartsWith("ports: port 2 (Port 2 ", Assert.Single(made.PortsLeftOut), StringComparison.Ordinal);
+    }
+
+    /// <summary>A label snapped to the corner of the line's end — on its long edge, y = 1650 µm — is the line's end, not
+    /// the pour's right edge 3 mm back along the same ray.</summary>
+    [Fact]
+    public void ALabelOnTheLinesLongEdge_FindsTheLinesEnd()
+    {
+        var shapes = Pour(plane: true);
+        shapes[3] = Port("2", 9000, 1650, LayoutRotation.R180);
+        var (cell, c3d, cws) = Board(shapes);
+        var port2 = C3dHierarchy.NewFromLayout(cell, c3d, cws).Document!.Ports.Single(p => p.Number == 2);
+        Assert.Equal(Um(9000), port2.Offset);
+        Assert.Equal(Um(300), port2.Rect.Size.U);
+    }
+
+    private static Em3dGenerationResult Solve(List<LayoutShape> shapes)
+    {
+        var setup = new EmSetup
+        {
+            Name = "pw", LayoutRef = "pw.clay", Solver3D = Em3dSolverId.Palace,
+            Frequency = new FrequencySpec("1", "3", 3, SweepKind.Linear, "GHz", "GHz"),
+        };
+        return Em3dGenerator.Generate(setup, new EmLayoutSource("/nowhere/pw.clay", Layout(shapes), Tech(), Dbu), Tech());
+    }
+
     /// <summary>R-pw1-4 — a Width edit on the layout after the .c3d was made is reported against the port, with the old and
     /// new widths; R-pw1-5 — Update Ports from Layout replaces exactly the ports the layout states.</summary>
     [Fact]

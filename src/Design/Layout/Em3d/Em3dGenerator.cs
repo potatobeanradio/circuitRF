@@ -37,6 +37,9 @@ namespace CircuitRF.Design.Layout.Em3d;
 /// <c>Return</c>, or named by the setup's legacy return plane.</summary>
 public sealed record Em3dPortReturn(string Layer, bool Above, bool Floor, string DecidedBy);
 
+/// <summary>A port left out of a problem generated with <c>portsEach</c>, and why.</summary>
+public sealed record Em3dPortLeftOut(int Port, string Why);
+
 /// <summary>The generator's answer: a problem, or a refusal naming what is missing, plus every
 /// note it made on the way. A problem is returned unvalidated — <see cref="Em3dProblem.Validate"/>
 /// is the backend's first call, and <c>check</c>'s.</summary>
@@ -86,6 +89,14 @@ public sealed record Em3dGenerationResult(Em3dProblem? Problem, string? Refusal,
     /// <summary>Why the problem has no ports, when it was generated with <c>portsOptional</c> and the ports refused:
     /// the refusal a solve would have stopped on. Null otherwise.</summary>
     public string? PortRefusal { get; init; }
+
+    /// <summary>The ports left out, each with the refusal a solve would have stopped on, when the problem was generated
+    /// with <c>portsEach</c> (a layout's ports brought into a <c>.c3d</c>). Empty otherwise.</summary>
+    public IReadOnlyList<Em3dPortLeftOut> PortsLeftOut { get; init; } = [];
+
+    /// <summary>The ports <c>portsEach</c> moved in from their line's end to where a pulled-back return plane begins,
+    /// each said in a sentence (also among <see cref="Notes"/>). Empty otherwise.</summary>
+    public IReadOnlyList<string> PortsMoved { get; init; } = [];
 
     /// <summary>Why a solve would have refused the geometry, when it was generated with <c>padsOptional</c> and drawn
     /// anyway: no conductor artwork, or a wire end over no pad. Null otherwise.</summary>
@@ -193,6 +204,15 @@ public static class Em3dGenerator
     public const double ReturnGapToleranceOfWidth = 0.1;
 
     /// <summary>
+    /// How far short of the line's end, as a multiple of the line's width, a return plane may stop when a layout's ports
+    /// are brought into a <c>.c3d</c> (<c>portsEach</c>): the sheet moves in to where the plane begins and a note says
+    /// how far. A board-edge launch's inner ground is routinely pulled back from the outline by a fraction of a
+    /// millimetre, which is where the port goes in practice; three widths keeps a sheet from sliding a long way up a
+    /// line that runs over no plane at all.
+    /// </summary>
+    public const double TranslatedReturnGapOfWidth = 3;
+
+    /// <summary>
     /// <b>R-em3d3-5f — a conductor is a sheet when its thickness is below this many skin depths at
     /// the top frequency…</b> Three skin depths carries ~95 % of the current, so metal thinner than
     /// that is not "thick" in the sense a volume mesh resolves. <b>Provisional</b>: F0's Q6
@@ -226,23 +246,30 @@ public static class Em3dGenerator
     /// <c>.wBond</c> stem-paired with the layout (WB40), if it has one.</param>
     /// <param name="portsOptional">True for a picture, never for a solve: ports that refuse leave the problem with no
     /// ports and the refusal in <see cref="Em3dGenerationResult.PortRefusal"/>, so the geometry is still drawn.</param>
+    /// <param name="portsEach">True when a layout's ports are being brought into a <c>.c3d</c>, never for a solve: a port
+    /// that refuses is left out alone (<see cref="Em3dGenerationResult.PortsLeftOut"/>) and the others are still built, and
+    /// a return plane pulled back from the line's end by more than <see cref="ReturnGapToleranceOfWidth"/> — a board-edge
+    /// launch's inner ground, typically — moves the sheet in to where the plane begins, up to
+    /// <see cref="TranslatedReturnGapOfWidth"/>, with a note. The .c3d's port is an editable rectangle, so where it was
+    /// put is shown rather than refused.</param>
     /// <param name="padsOptional">True for a picture, never for a solve: wires are drawn on a layout with no conductor
     /// artwork, and a wire end over no conductor lands on an undrawn pad (<see cref="Em3dLayoutSolidsOptions.PadsOptional"/>);
     /// the refusal is in <see cref="Em3dGenerationResult.PadRefusal"/>.</param>
     public static Em3dGenerationResult Generate(EmSetup setup, EmLayoutSource source, Technology tech,
                                                 Em3dWireSource? wires = null, bool displaySlabs = false,
-                                                bool portsOptional = false, bool padsOptional = false)
+                                                bool portsOptional = false, bool padsOptional = false,
+                                                bool portsEach = false)
     {
         ArgumentNullException.ThrowIfNull(setup);
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(tech);
-        return new Run(setup, source, tech, wires, displaySlabs, portsOptional, padsOptional).Go();
+        return new Run(setup, source, tech, wires, displaySlabs, portsOptional, padsOptional, portsEach).Go();
     }
 
     // ── One generation ─────────────────────────────────────────────────────────────────────────
 
     private sealed class Run(EmSetup setup, EmLayoutSource source, Technology tech, Em3dWireSource? wires, bool displaySlabs,
-                             bool portsOptional, bool padsOptional)
+                             bool portsOptional, bool padsOptional, bool portsEach)
     {
         // brief-em3d-42 R-em3d42-2 — the geometry lives in Em3dLayoutSolids now; this class adds the sweep,
         // the ports, the air box, the air above the stack and the terminals around its stages. The notes
@@ -254,6 +281,8 @@ public static class Em3dGenerator
         private string? _portRefusal;
         private bool _wantsDc;
         private readonly Dictionary<int, Em3dPortReturn> _portReturns = [];
+        private readonly List<Em3dPortLeftOut> _portsLeftOut = [];
+        private readonly List<string> _portsMoved = [];
 
         public Em3dGenerationResult Go()
         {
@@ -307,7 +336,7 @@ public static class Em3dGenerator
                 waves.Clear();
             }
             foreach (int n in setup.Ports3D.Where(q => q.Kind == Em3dPortKind.Wave).Select(q => q.Port).Distinct())
-                if (_portRefusal is null && ports.All(q => q.Number != n))
+                if (_portRefusal is null && ports.All(q => q.Number != n) && _portsLeftOut.All(q => q.Port != n))
                     return No($"The setup makes port {n} a wave port, and this layout has no port {n}.");
 
             // ── Content bounds (the builder's), then the air box (R-em3d3-6) ─────────────────
@@ -402,6 +431,8 @@ public static class Em3dGenerator
                 UnknownTemperature = _g.UnknownTemperatureList,
                 PortRefusal = _portRefusal,
                 PortReturns = _portReturns,
+                PortsLeftOut = _portsLeftOut,
+                PortsMoved = _portsMoved,
                 PadRefusal = _g.PadRefusal,
                 WantsDc = _wantsDc,
             };
@@ -448,6 +479,22 @@ public static class Em3dGenerator
 
             for (int portIndex = 0; portIndex < extracted.Ports.Count; portIndex++)
             {
+                // A translated port (portsEach) that refuses is left out ALONE — its sheet, return and notes rolled back —
+                // and every other port is still built; a solve refuses on the first, as it always has.
+                int portsBefore = ports.Count, wavesBefore = waves.Count, notesBefore = _notes.Count, movedBefore = _portsMoved.Count;
+                if (OnePort(portIndex) is not { } refusal) continue;
+                if (!portsEach) return refusal;
+                ports.RemoveRange(portsBefore, ports.Count - portsBefore);
+                waves.RemoveRange(wavesBefore, waves.Count - wavesBefore);
+                _notes.RemoveRange(notesBefore, _notes.Count - notesBefore);
+                _portsMoved.RemoveRange(movedBefore, _portsMoved.Count - movedBefore);
+                _portReturns.Remove(extracted.Ports[portIndex].Number);
+                _portsLeftOut.Add(new(extracted.Ports[portIndex].Number, refusal));
+            }
+            return null;
+
+            string? OnePort(int portIndex)
+            {
                 var p = extracted.Ports[portIndex];
                 var portLabel = portIndex < extracted.SourceLabels.Count ? extracted.SourceLabels[portIndex] : null;
                 if (p.Kind == PlanarPortKind.Internal && !p.IsConductorReferenced)
@@ -458,7 +505,7 @@ public static class Em3dGenerator
                     if (PadToPlanePort(p, bands, signal, pieces, floorPlane, floorZ, out var padPort) is { } padRefusal)
                         return padRefusal;
                     ports.Add(padPort!);
-                    continue;
+                    return null;
                 }
                 if (p.Kind != PlanarPortKind.Edge || p.IsConductorReferenced)
                     return $"Port {p.Number} is {(p.IsConductorReferenced ? "referenced to a drawn conductor" : "an internal delta-gap port")}. " +
@@ -527,7 +574,7 @@ public static class Em3dGenerator
                         // far short the plane is, which is what the designer has to fix.
                         double? gap = on.Count == 0 ? null : ReturnGap(on, p.Side, edgeAt, lo, hi);
                         double moved = edgeAt + inward * (gap ?? 0);
-                        if (gap is { } g && g <= tolerance && !wave &&
+                        if (gap is { } g && g <= (portsEach ? Math.Max(tolerance, TranslatedReturnGapOfWidth * (hi - lo)) : tolerance) && !wave &&
                             PieceContaining(on, p.Side, moved, mid) is { } near &&
                             MetalAt(piece.Poly, p.Side, moved + inward * 1e-3 * (hi - lo), mid))
                         {
@@ -574,10 +621,20 @@ public static class Em3dGenerator
                     if (moves.TryGetValue(retBand.Index, out var mv))
                     {
                         edgeAt = mv.At;
-                        _notes.Add($"Port {p.Number}'s sheet is {Length(mv.Gap)} inside its line's end, where " +
-                                   $"'{retBand.Layer.Name}' begins: the plane stops that far short of the end, within " +
-                                   $"a tenth of the line's width, {Length(tolerance)}. The port's reference plane " +
-                                   "moves with it; extend the plane to the line's end to put the port there.");
+                        if (mv.Gap > tolerance)
+                        {
+                            string moved = $"Port {p.Number}'s sheet is {Length(mv.Gap)} inside its line's end, where " +
+                                           $"'{retBand.Layer.Name}' begins: the plane is pulled back that far from the end, so " +
+                                           "the port stands where its return does, and the line beyond it is part of the " +
+                                           "structure. Move the port in the 3D editor, or extend the plane, to put it elsewhere.";
+                            _notes.Add(moved);
+                            _portsMoved.Add(moved);
+                        }
+                        else
+                            _notes.Add($"Port {p.Number}'s sheet is {Length(mv.Gap)} inside its line's end, where " +
+                                       $"'{retBand.Layer.Name}' begins: the plane stops that far short of the end, within " +
+                                       $"a tenth of the line's width, {Length(tolerance)}. The port's reference plane " +
+                                       "moves with it; extend the plane to the line's end to put the port there.");
                     }
                 }
 
@@ -638,8 +695,8 @@ public static class Em3dGenerator
                         PlanarPortSide.MinX => "xmin", PlanarPortSide.MaxX => "xmax",
                         PlanarPortSide.MinY => "ymin", _ => "ymax",
                     }, edgeAt, hi - lo, zHi - zLo, above));
+                return null;
             }
-            return null;
         }
 
         /// <summary>
@@ -1027,12 +1084,21 @@ public static class Em3dGenerator
             edge = null;
             Piece? best = null;
             double bestD = double.PositiveInfinity;
+            bool alongX = side is PlanarPortSide.MinX or PlanarPortSide.MaxX;
             foreach (var p in pieces)
             {
-                var e = EdgeOf(p.Poly, x, y, side);
-                if (e is null) continue;
-                double d = Math.Abs(e.Value.At - (side is PlanarPortSide.MinX or PlanarPortSide.MaxX ? x : y));
-                if (d < bestD) { bestD = d; best = p; edge = e; }
+                // A label placed ON the line's long edge (snapped to its corner) casts a ray along that edge, which the
+                // half-open crossing rule does not count as crossing it — and the nearest end found was then another
+                // piece's, millimetres away. So the ray is also cast a hair either side of the label.
+                var (x0, y0, x1, y1) = p.Poly.Bounds();
+                double nudge = 1e-6 * Math.Max(x1 - x0, y1 - y0);
+                foreach (double dv in new[] { 0, nudge, -nudge })
+                {
+                    var e = EdgeOf(p.Poly, alongX ? x : x + dv, alongX ? y + dv : y, side);
+                    if (e is null) continue;
+                    double d = Math.Abs(e.Value.At - (alongX ? x : y));
+                    if (d < bestD) { bestD = d; best = p; edge = e; }
+                }
             }
             return best;
         }

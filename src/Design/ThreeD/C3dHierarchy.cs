@@ -57,6 +57,9 @@ public sealed record C3dFromLayout(C3dDocument? Document, string? Refusal, IRead
     /// <summary>brief-port-width-planar-and-c3d R-pw1-6 — set when no 3D <c>.cem</c> names the layout and its port labels
     /// were translated with a default driven setup instead: the note that says so.</summary>
     public string? PortsNote { get; init; }
+
+    /// <summary>The ports moved in from their line's end to where a pulled-back return plane begins, each in a sentence.</summary>
+    public IReadOnlyList<string> PortsMoved { get; init; } = [];
 }
 
 /// <summary>One placed layout's port label, translated into the <c>.c3d</c>'s frame: the instance, the label's own port
@@ -898,6 +901,7 @@ public static class C3dHierarchy
         var leftOut = new List<string>();
         var names = new HashSet<string>(StringComparer.Ordinal);
         var ports = new Dictionary<int, C3dPort>();
+        var moved = new List<string>();
         foreach (string cem in cems.OrderBy(c => c, StringComparer.OrdinalIgnoreCase))
         {
             EmSetup setup;
@@ -909,7 +913,7 @@ public static class C3dHierarchy
             for (int n = 2; !names.Add(setup.Name); n++) setup.Name = $"{baseName} {n}";
             doc.Setups.Add(EmSetupPersistence.ToEmbedded(setup));
             copied.Add(setup.Name);
-            TranslatePorts(setup, cem, workspaceCws, cache, view, ports, leftOut);
+            TranslatePorts(setup, cem, workspaceCws, cache, view, ports, leftOut, moved);
         }
         // R-pw1-6 — a layout no 3D setup names still brings in its ports, translated with a default driven setup.
         string? portsNote = null;
@@ -917,12 +921,12 @@ public static class C3dHierarchy
             view.Shapes.OfType<LabelShape>().Any(l => l.IsPort))
         {
             TranslateWith(DefaultPortSetup(clay), new EmLayoutSource(clay, view, t, view.DbuPerMicron), t, view, null,
-                          ports, leftOut);
+                          ports, leftOut, moved);
             portsNote = DefaultSetupNote(ports.Count);
         }
         foreach (var (n, p) in ports) p.FromLayout = new C3dPortSource { Instance = doc.Instances[0].Name, Port = n };
         doc.Ports = [.. ports.OrderBy(p => p.Key).Select(p => p.Value)];
-        return new C3dFromLayout(doc, null, copied, leftOut) { PortsNote = portsNote };
+        return new C3dFromLayout(doc, null, copied, leftOut) { PortsNote = portsNote, PortsMoved = moved };
     }
 
     /// <summary>R-pw1-6 — the setup a layout's port labels are translated with when no 3D <c>.cem</c> names it: the
@@ -973,14 +977,14 @@ public static class C3dHierarchy
             {
                 var setup = EmSetupPersistence.LoadFromFile(cem);
                 if (setup.Name.Length == 0) setup.Name = Path.GetFileNameWithoutExtension(cem);
-                TranslatePorts(setup, cem, workspaceCws, cache, view, mine, leftOut, placement);
+                TranslatePorts(setup, cem, workspaceCws, cache, view, mine, leftOut, notes, placement);
             }
             else
             {
                 var (tech, _) = TechnologyResolver.ResolveForDocument(view.TechRef, clay, workspaceCws, cache);
                 if (tech.Tech is not { } t) { leftOut.Add($"{inst.Name}: its layout's technology does not resolve"); continue; }
                 TranslateWith(DefaultPortSetup(clay), new EmLayoutSource(clay, view, t, view.DbuPerMicron), t, view, placement,
-                              mine, leftOut);
+                              mine, leftOut, notes);
                 notes.Add($"{inst.Name}: " + DefaultSetupNote(mine.Count));
             }
             foreach (var (n, p) in mine.OrderBy(m => m.Key))
@@ -1082,24 +1086,31 @@ public static class C3dHierarchy
     /// in the new view's frame: the layout sits at the origin with its stack's bottom at z = 0, then
     /// <paramref name="placement"/> when the instance states one.</summary>
     private static void TranslatePorts(EmSetup setup, string cem, string? workspaceCws, TechnologyCache cache, LayoutView view,
-                                       Dictionary<int, C3dPort> ports, List<string> leftOut, C3dTransform? placement = null)
+                                       Dictionary<int, C3dPort> ports, List<string> leftOut, List<string> moved,
+                                       C3dTransform? placement = null)
     {
         // brief-em3d-49 — a layout's ports are its port labels, whatever kind the setup states for them: Ports3D only
         // names a wave port, so gating on it left every all-lumped setup's ports behind.
         var resolved = EmSetupResolver.Resolve(cem, setup.LayoutRef, workspaceCws, cache);
         if (resolved.Source is not { Technology: { } tech } source) return;
-        TranslateWith(setup, source, tech, view, placement, ports, leftOut);
+        TranslateWith(setup, source, tech, view, placement, ports, leftOut, moved);
     }
 
     private static void TranslateWith(EmSetup setup, EmLayoutSource source, Technology tech, LayoutView view,
-                                      C3dTransform? placement, Dictionary<int, C3dPort> ports, List<string> leftOut)
+                                      C3dTransform? placement, Dictionary<int, C3dPort> ports, List<string> leftOut,
+                                      List<string> moved)
     {
-        var g = Em3dGenerator.Generate(setup, source, tech);
+        // One port that cannot be built leaves out that port alone, and a plane pulled back from a line's end puts the
+        // port where the plane begins (Em3dGenerator's portsEach): the .c3d's ports are rectangles the user can move.
+        var g = Em3dGenerator.Generate(setup, source, tech, portsEach: true);
         if (g.Problem is not { } problem)
         {
             leftOut.Add($"{setup.Name}: its ports ({g.Refusal})");
             return;
         }
+        foreach (var lo in g.PortsLeftOut)
+            leftOut.Add($"{setup.Name}: port {lo.Port} ({lo.Why})");
+        moved.AddRange(g.PortsMoved);
         var solids = Em3dLayoutSolids.From(source, tech, null, new Em3dLayoutSolidsOptions(null, setup.OperatingTempC ?? EmSetup.DefaultOperatingTempC, Instance: true));
         double dz = -solids.StackBottomM;
         double per = C3dLowering.Metres(1, view.DbuPerMicron);

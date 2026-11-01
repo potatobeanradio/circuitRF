@@ -93,7 +93,7 @@ public sealed partial class C3dEditorViewModel
         ChangeRecords("Update ports from layout", d => update = C3dHierarchy.UpdatePorts(d, translated));
         foreach (string note in translated.Notes) PostMessage?.Invoke(note, false);
         if (translated.LeftOut.Count > 0)
-            PostMessage?.Invoke("Ports left out (each must be one rectangle to become a port here): " +
+            PostMessage?.Invoke("Ports left out: " +
                                 string.Join("; ", translated.LeftOut) + ".", true);
         _layoutPortStamp = null;
         _postedStalePorts.Clear();

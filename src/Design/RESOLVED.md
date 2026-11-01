@@ -25634,3 +25634,34 @@ Engine half in `src/Engine/Mom/RESOLVED.md` §CAP-1 follow-up 2.
 - User docs: `mom-engine.md` (§budget: the limit belongs to the computer; the refusal table row) and `settings.md`
   (the Solvers Memory limit row now says it sizes a planar run too), regenerated alone; `docs/design/cli.md` and the
   MCP `force` description lose the setup-limit sentence.
+
+## Layout ports into a `.c3d`: one refusal no longer drops them all (2026-10-31)
+
+A 14-port imported eval board made a `.c3d` with **0 ports**. Three separate defects:
+
+- **One port's refusal threw away every port.** `C3dHierarchy.TranslateWith` ran `Em3dGenerator.Generate`, and
+  `BuildPorts` returns on the first port that refuses — so port 1's return gap emptied the whole port list.
+  `Generate(…, portsEach: true)` (translation only, never a solve) builds each port in `OnePort` and, on a
+  refusal, rolls back that port's sheet, wave spec, return record and notes, lists it in
+  `Em3dGenerationResult.PortsLeftOut`, and carries on. A solve still refuses on the first.
+- **A board-edge launch's inner ground is pulled back from the outline** (231 µm under a 762 µm line here), well past
+  `ReturnGapToleranceOfWidth` (a tenth of the width, which exists for a hand-placed vertex a few µm off). In
+  `portsEach` mode the sheet moves in to where the plane begins up to `TranslatedReturnGapOfWidth` (3 widths), and
+  the move is said in `PortsMoved` → a Messages Info line. The solve-side tolerance is unchanged: the `.c3d`'s port
+  is an editable rectangle, so a placement is shown rather than refused.
+- **A label snapped to the corner of a line's end sits ON the line's long edge**, and `PieceAt`'s ray along that edge
+  is not counted as crossing it (the half-open crossing rule) — the nearest end it found was another piece's, 14 mm
+  back along the ray. `PieceAt` now casts the ray a hair (1e-6 of the piece's size) either side of the label too and
+  keeps the nearest end. The planar extractor already accepted such a label, so only the 3D sheet was misplaced.
+
+The "each must be one rectangle" prefix on the left-out warning was dropped: most left-out ports are not that.
+Gate: `PortEdgeWidthTests` (`NewFromLayout_APlanePulledBack…`, `…_OnePortRefusing…`, `ALabelOnTheLinesLongEdge…`).
+
+## A `.c3d`'s air box with no setup (2026-10-31)
+
+The air box lived only on a setup, so with none active the Inspector hid its padding and faces and every edit was
+refused. `C3dDocument.AirBox` (a `CemAirBox`, the `.cem`'s spelling, via `EmSetupPersistence.ToCem`/`FromCem`) is
+the box while no setup is active: drawn, sized and walled there, one records-edit undo entry, and **seeded into every
+setup Add / Add Thermal makes**. A run never reads it — it reads its setup's — so `SerializeForRun` leaves it out
+(`SolvedStatusTests` Gate 1's "document air box" row) and editing it marks no result stale.
+Gate: `EditorRound1TreeTests.WithNoSetup_TheAirBoxIsSizedInTheInspector_AndANewSetupStartsWithIt`.
