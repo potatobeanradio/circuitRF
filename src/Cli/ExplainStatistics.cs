@@ -111,7 +111,25 @@ internal static class ExplainStatistics
                 new Dictionary<string, string>(c.Values, StringComparer.Ordinal), c.Trial,
                 Bindings(lib, tb, c, parts), kit?.Axes(c.Name)))],
             correlation, StatisticsSummary.QuotedYield, halfWidth, trialsFor, YieldRun(lib, tb, setup, s, parts),
-            Center(lib, tb, setup, parts));
+            Center(lib, tb, setup, parts), Sensitivity(lib, tb, setup, parts));
+    }
+
+    /// <summary>R-sens1-6: what a sensitivity run would step and spend, asked of <see cref="SensitivityRun"/>, which
+    /// simulates nothing — the cost line that lets an agent decide before it spends.</summary>
+    private static ExplainSensitivityJson Sensitivity(Library lib, TestBench tb, TuningSetup setup,
+                                                      IReadOnlyList<CircuitRF.Design.VendorLibraries.VendorPartTunable>? parts)
+    {
+        var settings = setup.Sensitivity ?? new SensitivitySettings();
+        var run = SensitivityRun.Create(PreparedCircuit.FromBench(lib, tb, null, parts));
+        string factors = AnalysisDirectiveSchema.SensFactorTokens[(int)settings.EffectiveFactors];
+        if (run.Refusal is { } refused)
+            return new ExplainSensitivityJson(factors, settings.EffectiveStep, settings.EffectiveSigma, null, null, null, null, null, refused.Render());
+        int evaluations = run.PlannedEvaluations, parallel = run.Parallelism;
+        int batches = (evaluations - 1 + parallel - 1) / parallel;
+        string estimate = $"about {batches + 1} times one nominal evaluation: the nominal and {batches} batch(es) of up to " +
+                          $"{parallel} steps (an estimate)";
+        return new ExplainSensitivityJson(factors, settings.EffectiveStep, settings.EffectiveSigma, run.Factors.Count,
+            [.. run.Factors.Select(f => f.BasisText).Distinct()], evaluations, parallel, estimate, null);
     }
 
     /// <summary>R-ya11-6: a center line's estimated total, asked of <see cref="CenteringRun"/>, which evaluates nothing.</summary>
@@ -208,7 +226,7 @@ internal static class ExplainStatistics
     private static bool HasStatistics(TuningSetup setup)
         => setup.Statistics is not null || setup.Correlations.Count > 0 || setup.Corners.Count > 0
         || setup.Variables.Any(e => e.Distribution != StatDistribution.None)
-        || setup.Goals.Any(g => g.Use != GoalUse.Both) || setup.Centering is not null;
+        || setup.Goals.Any(g => g.Use != GoalUse.Both) || setup.Centering is not null || setup.Sensitivity is not null;
 
     public static void Print(ExplainStatisticsJson r)
     {
@@ -260,6 +278,13 @@ internal static class ExplainStatistics
                 Console.WriteLine($"  centering cost: {ctr.EvaluationsPerIteration} simulations per iteration ({ctr.PointsPerIteration} candidate(s) × " +
                                   $"{(ctr.Surrogate is null ? ctr.Trials : ctr.EvaluationsPerIteration / Math.Max(1, ctr.PointsPerIteration ?? 1))}) — {estimate}");
             if (ctr.Refusal is { } refused) Console.WriteLine($"  centering would be refused: {refused}");
+        }
+        if (r.Sensitivity is { } sens)
+        {
+            if (sens.Refusal is { } refused) Console.WriteLine($"  sensitivity would be refused: {refused}");
+            else
+                Console.WriteLine($"  sensitivity: factors={sens.Factors} · {sens.FactorCount} factor(s) at ±{string.Join(", ±", sens.Bases ?? [])} · " +
+                                  $"{sens.Evaluations} evaluations, {sens.Parallel} at once — {sens.Estimate}");
         }
     }
 }

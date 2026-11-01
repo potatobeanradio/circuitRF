@@ -77,6 +77,16 @@ public static class TuningDirectiveDiagnostics
         "cnl.doe.malformed", DiagnosticSeverity.Error,
         "'doe' is not written the way it reads: {shape}", ("shape", shape));
 
+    // ── The sensitivity line (brief-sens-1 R-sens1-5) ──────────────────────────
+
+    public static Diagnostic SecondSensitivity() => new(
+        "cnl.sensitivity.duplicate", DiagnosticSeverity.Error,
+        "A netlist states at most one 'sensitivity' line.");
+
+    public static Diagnostic SensitivityValueInvalid(string key, string value, string expected) => Diagnostic.Create(
+        "cnl.sensitivity.value-invalid", DiagnosticSeverity.Error,
+        "sensitivity {key}={value} is not {expected}.", ("key", key), ("value", value), ("expected", expected));
+
     public static Diagnostic CornerMalformed(string corner, string problem) => Diagnostic.Create(
         "cnl.corner.malformed", DiagnosticSeverity.Error,
         "corner {corner}: {problem}", ("corner", corner), ("problem", problem));

@@ -697,7 +697,7 @@ public sealed class StatisticalRun
 
     // ── The nominal's distribution calls ──────────────────────────────────────────────
 
-    private static IReadOnlyList<StatisticalCall> NominalCalls(PreparedCircuit circuit, Library lib, TestBench tb,
+    internal static IReadOnlyList<StatisticalCall> NominalCalls(PreparedCircuit circuit, Library lib, TestBench tb,
                                                                IReadOnlyList<(string Name, string Expression)> sets)
     {
         try

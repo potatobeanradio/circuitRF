@@ -426,4 +426,61 @@ public static class StatisticsDiagnostics
     public static Diagnostic DoeConfirmationFailed(string reason) => Diagnostic.Create(
         "yield.doe.confirmation-failed", DiagnosticSeverity.Warning,
         "The confirmation run at the model optimum did not evaluate: {reason}", ("reason", reason));
+
+    // ── Sensitivity (brief-sens-1) ─────────────────────────────────────────────
+
+    public static Diagnostic SensNoFactors(string source) => Diagnostic.Create(
+        "yield.sens.no-factors", DiagnosticSeverity.Error,
+        "sensitivity factors={source} has nothing to step: {what}", ("source", source),
+        ("what", source switch
+        {
+            "stat" => "no tune line carries a tolerance (stat=1). Add one in the Yield panel, or use factors=all.",
+            "opt"  => "no tune line is opt=1. Tick Opt in the Optimizer panel, or use factors=all.",
+            _      => "the design offers no value that can be stepped.",
+        }));
+
+    public static Diagnostic SensNoResponse() => new(
+        "yield.sens.no-response", DiagnosticSeverity.Error,
+        "sensitivity: nothing to rank — the design has no enabled goal and no measure that gives a single number. Add a " +
+        "goal (goal Vout = DC1.V(\"out\") analysis=DC1 in 0.49 0.51 use=yield) or a scalar measure (measure …).");
+
+    public static Diagnostic SensNoScalarResponse() => new(
+        "yield.sens.no-scalar-response", DiagnosticSeverity.Error,
+        "sensitivity: nothing to rank — the design has no enabled goal, and none of its measures is a single number (a " +
+        "measure over a sweep is a curve). Add a goal over the range that matters (goal Pout = Pout_dBm " +
+        "analysis=HB1_sweep_Pin over=Pin lo=28 hi=30 ge 40), which ranks by its tightest point.");
+
+    public static Diagnostic SensNominalFailed(string reason) => Diagnostic.Create(
+        "yield.sens.nominal-failed", DiagnosticSeverity.Error,
+        "sensitivity: the nominal design did not evaluate, so nothing can be stepped from it: {reason}", ("reason", reason));
+
+    public static Diagnostic SensLeftOut(string key, string reason) => Diagnostic.Create(
+        "yield.sens.left-out", DiagnosticSeverity.Info,
+        "sensitivity leaves {key} out: {reason}.", ("key", key), ("reason", reason));
+
+    public static Diagnostic SensUncorrelated(int correlations) => Diagnostic.Create(
+        "yield.sens.uncorrelated", DiagnosticSeverity.Info,
+        "sensitivity steps each factor on its own (uncorrelated): the {n} correlate line(s) are not applied.", ("n", correlations));
+
+    public static Diagnostic SensKitLeftOut(string streams) => Diagnostic.Create(
+        "yield.sens.kit-left-out", DiagnosticSeverity.Info,
+        "sensitivity steps the design's own values, not a kit's statistics: {streams} left out. A Monte Carlo draws them.",
+        ("streams", streams));
+
+    public static Diagnostic SensNoEstimate(string bases) => Diagnostic.Create(
+        "yield.sens.no-estimate", DiagnosticSeverity.Info,
+        "sensitivity gives no pass estimate: some factors step by {bases} rather than by their tolerance, so the spread is " +
+        "what a designer could change, not what production will do.", ("bases", bases));
+
+    public static Diagnostic SensWriteFailed(string path, string reason) => Diagnostic.Create(
+        "yield.sens.write-failed", DiagnosticSeverity.Warning,
+        "The sensitivity result could not be written to {path}: {reason}", ("path", path), ("reason", reason));
+
+    public static Diagnostic SensVarsNotOffered(string key, string offered) => Diagnostic.Create(
+        "yield.sens.vars-unknown", DiagnosticSeverity.Error,
+        "--vars {key} is not one of the factors this run would step: {offered}.", ("key", key), ("offered", offered));
+
+    public static Diagnostic SensGoalsUnknown(string name, string enabled) => Diagnostic.Create(
+        "yield.sens.goals-unknown", DiagnosticSeverity.Error,
+        "--goals {name} is not an enabled goal of the design: {enabled}.", ("name", name), ("enabled", enabled));
 }

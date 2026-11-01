@@ -1057,6 +1057,11 @@ public sealed class OptimizationRun
     public static string CacheKeyOf(IEnumerable<KeyValuePair<string, string>> values)
         => string.Join("\n", values.Select(kv => kv.Key + "=" + kv.Value));
 
+    /// <summary>Whether <see cref="EvaluateValues(IReadOnlyList{ValuePoint}, bool, CancellationToken)"/> would answer this
+    /// value map from the cache — what a run states before it spends (brief-sens-1 R-sens1-3). Not while a call is in
+    /// flight: the evaluator is one call at a time.</summary>
+    public bool IsCached(IReadOnlyDictionary<string, string> values) => _cache.ContainsKey(CacheKeyOf(values));
+
     /// <summary>
     /// Evaluates one batch of unit-box points: decode each into its value map, then
     /// <see cref="EvaluateKeyed"/> what is feasible, then assign penalties in batch order.

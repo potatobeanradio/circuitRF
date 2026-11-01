@@ -25,7 +25,8 @@ namespace CircuitRF.Cli;
 ///
 /// <para><b>One verb with nouns</b> (the <c>new</c>/<c>history</c> rule): <c>mc</c> is the spread alone and scores
 /// every enabled goal; <c>estimate</c> is a yield against the <c>use=yield|both</c> goals; <c>trial</c> re-runs one
-/// trial; <c>corners</c> evaluates the corners (YA-6); <c>center</c> centres the design for yield (YA-11).</para>
+/// trial; <c>corners</c> evaluates the corners (YA-6); <c>center</c> centres the design for yield (YA-11); <c>doe</c> runs a
+/// design of experiments (YA-14); <c>sens</c> ranks what moves each goal at the nominal (SENS-1).</para>
 ///
 /// <para><b>It writes nothing to the design's values (D12).</b> <c>--save-preset</c> and <c>--save-corner</c> are
 /// the two writes — a trial's values as a preset, or a statistical corner naming the trial — to a <c>.csch</c>,
@@ -47,15 +48,17 @@ internal static partial class Yield
         ("corners",  "Evaluates every enabled corner and prints a corner x goal margin table; exit 3 when a goal fails at a corner. --mc runs a Monte Carlo at each, --generate prints corner lines."),
         ("center",   "Design centering: moves the opt=1 nominals to maximize yield on M common trials, then verifies the start and the best point on fresh trials; exit 3 when the verified yield is below --target."),
         ("doe",      "Design of experiments: runs a structured design over the opt=1 ranges (or the stat=1 tolerances) and prints each response's main effects and interactions, Lenth's margin and the alias sets; --optimum searches the fitted model and confirms its best point by simulation. Exits 0 unless it could not run."),
+        ("sens",     "Sensitivity: steps each value + and - on its own about the nominal (a toleranced one by +-k sigma, any other by +-step) and ranks, per goal, what moves its normalized margin most, with shares, the predicted spread and a nonlinear flag. 2k+1 simulations; exits 0 unless it could not run, 2 when the nominal did not evaluate."),
     ];
 
     // The run each flag can change, as the table below names it. "trial" is also mc and estimate with --trial, which
     // re-run one trial; "corners --mc" is a run at each corner and "corners --generate" prints corner lines.
     private const string NMc = "mc", NEst = "estimate", NTrial = "trial", NCorners = "corners",
-                         NCornersMc = "corners --mc", NGenerate = "corners --generate", NCenter = "center", NDoe = "doe";
+                         NCornersMc = "corners --mc", NGenerate = "corners --generate", NCenter = "center", NDoe = "doe",
+                         NSens = "sens";
     private static readonly string[] Spread = [NMc, NEst, NTrial, NCornersMc, NCenter];
     private static readonly string[] Draws  = [NMc, NEst, NTrial, NCorners, NCornersMc, NCenter];
-    private static readonly string[] Runs   = [NMc, NEst, NTrial, NCorners, NCornersMc, NCenter, NDoe];
+    private static readonly string[] Runs   = [NMc, NEst, NTrial, NCorners, NCornersMc, NCenter, NDoe, NSens];
     private static readonly string[] Every  = [.. Runs, NGenerate];
 
     /// <summary>Every flag the verb reads and the runs that honour it — the table <c>reference statistics</c> renders,
@@ -75,11 +78,11 @@ internal static partial class Yield
         ("--process",      "0|1",                Draws,                                       "Kit process draws on or off."),
         ("--mismatch",     "0|1",                Draws,                                       "Kit mismatch draws on or off."),
         ("--sigma-scale",  "k",                  Draws,                                       "Scales every kit sigma."),
-        ("--parallel",     "n",                  [NMc, NEst, NCorners, NCornersMc, NCenter, NDoe], "Trials evaluated at once (center, doe: simulations)."),
+        ("--parallel",     "n",                  [NMc, NEst, NCorners, NCornersMc, NCenter, NDoe, NSens], "Trials evaluated at once (center, doe, sens: simulations)."),
         ("--analyses",     "goals|all",          Draws,                                       "Only the analyses the goals name, or every runnable one."),
         ("--set",          "var=expr",           Runs,                                        "Override a global before elaboration, as every run verb does."),
-        ("--vars",         "k,k",                Draws,                                       "Draw only these of the statistical entries; the rest stay at nominal."),
-        ("--goals",        "g,g",                Runs,                                        "Score only these of the enabled goals."),
+        ("--vars",         "k,k",                [.. Draws, NSens],                           "Draw only these of the statistical entries; the rest stay at nominal. sens: step only these of its factors."),
+        ("--goals",        "g,g",                Runs,                                        "Score only these of the enabled goals (sens: rank exactly these, whatever their use)."),
         ("--trial",        "n",                  [NTrial],                                    "Re-run only trial n (trial needs it; mc and estimate take it too, and then take what trial takes)."),
         ("--contributions","",                   [NMc, NEst],                                 "Also report what drives each goal's and measurement's spread."),
         ("--save-preset",  "name",               [NTrial, NCenter],                           "A .csch, with --trial: add that trial's values as a preset. center: add the centred nominals as a preset."),
@@ -97,12 +100,16 @@ internal static partial class Yield
         ("--surrogate",    "none|quadratic",     [NCenter],                                   "center: quadratic scores each candidate on a quadratic fit of its margins (2k+1 simulations and a few trials) and 10,000 virtual trials; the result's yield is still simulated."),
         ("--design",       "full2|frac|pb|ccf",  [NDoe],                                      "doe: the design — full factorial, fractional factorial, Plackett–Burman screening, face-centred composite."),
         ("--resolution",   "4|5",                [NDoe],                                      "doe --design frac: the resolution."),
-        ("--factors",      "opt|stat",           [NDoe],                                      "doe: the opt=1 entries over their ranges, or the stat=1 entries at nominal ± k sigma."),
+        ("--factors",      "all|opt|stat",       [NDoe, NSens],                               "doe: opt (the opt=1 entries over their ranges) or stat (the stat=1 entries at nominal ± k sigma). sens: all (default: every tunable, at its tolerance when it has one), stat or opt."),
         ("--levels",       "range|sigma:k",      [NDoe],                                      "doe: range with opt factors; sigma:k with stat factors."),
         ("--centre",       "n",                  [NDoe],                                      "doe: centre points added (0 adds none)."),
-        ("--responses",    "goals|all",          [NDoe],                                      "doe: the goals the factors are for, or every enabled goal; every scalar measure either way."),
+        ("--responses",    "goals|all",          [NDoe, NSens],                               "doe: the goals the factors are for, or every enabled goal; every scalar measure either way. sens: the yield goals (else the opt ones), or every enabled goal."),
         ("--optimum",      "",                   [NDoe],                                      "doe --factors opt: search the fitted model for the goals' best point and confirm it by one simulation."),
-        ("-o",             "out.npy",            Runs,                                        "Where the result is written; default <design>.yield.npy beside the design (center: the best point's verification; doe: <design>.doe.npy)."),
+        ("--step",         "p%",                 [NSens],                                     "sens: the ± step of a value with no tolerance, a percent of its value (default 1%); a phase steps ±1°."),
+        ("--ports",        "0|1",                [NSens],                                     "sens: 1 also steps the ports' own values (their reference impedances) under --factors all; 0, the default, leaves them out."),
+        ("--sigma",        "k",                  [NSens],                                     "sens: a toleranced value steps ± k sigma through its own distribution (default 1)."),
+        ("--top",          "n",                  [NSens],                                     "sens: the contributors the text table lists per goal (default 10); --json carries every one."),
+        ("-o",             "out.npy",            Runs,                                        "Where the result is written; default <design>.yield.npy beside the design (center: the best point's verification; doe: <design>.doe.npy; sens: <design>.sens.npy)."),
         ("-q",             "",                   Every,                                       "No progress line on stderr."),
     ];
 
@@ -138,7 +145,7 @@ internal static partial class Yield
             return code;
         }
         string noun = args[0].ToLowerInvariant();
-        if (noun is not ("mc" or "estimate" or "trial" or "corners" or "center" or "doe"))
+        if (noun is not ("mc" or "estimate" or "trial" or "corners" or "center" or "doe" or "sens"))
         {
             int code = JsonRun.Fail(CliDiagnostics.YieldNoun(args[0]));
             Usage();
@@ -160,6 +167,9 @@ internal static partial class Yield
         string? design = null, factors = null, levels = null, responses = null;
         int? resolution = null, centre = null;
         bool optimum = false;
+        double? step = null, sigma = null;
+        bool? ports = null;
+        int? top = null;
         var given = new List<string>();
         var sets = new List<(string Name, string Expr)>();
 
@@ -222,6 +232,18 @@ internal static partial class Yield
                 }
                 case "--centre" or "--center-points" when hasValue: if (!Int(a, args[++i], 0, out centre, out int r12)) return r12; break;
                 case "--optimum":                  optimum = true; break;
+                // brief-sens-1: the sensitivity line's own settings, and the table's length.
+                case "--step" when hasValue:       if (!Percent(a, args[++i], out step, out int r13)) return r13; break;
+                case "--ports" when hasValue:      if (!Switch(a, args[++i], out ports, out int r15)) return r15; break;
+                case "--top" when hasValue:        if (!Int(a, args[++i], 1, out top, out int r14)) return r14; break;
+                case "--sigma" when hasValue:
+                {
+                    string text = args[++i];
+                    if (!double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double k) || !(k > 0) || !double.IsFinite(k))
+                        return JsonRun.Fail(CliDiagnostics.YieldFlagValue(a, text, "a number above zero"));
+                    sigma = k;
+                    break;
+                }
                 case "--width" when hasValue:
                 {
                     string text = args[++i];
@@ -262,7 +284,7 @@ internal static partial class Yield
             return JsonRun.Fail(CliDiagnostics.YieldMcHasNoTarget(target is not null ? "--target" : "--autostop"));
         if (noun == "trial" && trial is null) return JsonRun.Fail(CliDiagnostics.YieldTrialRequired());
         foreach (var (flag, name) in new[] { ("--save-preset", presetName), ("--save-corner", cornerName) })
-            if (name is not null && trial is null && noun is not ("center" or "doe" or "corners")) return JsonRun.Fail(CliDiagnostics.YieldSaveNeedsTrial(flag));
+            if (name is not null && trial is null && noun is not ("center" or "doe" or "corners" or "sens")) return JsonRun.Fail(CliDiagnostics.YieldSaveNeedsTrial(flag));
         if (FlagNotTaken(noun, RunKey(noun, trial, perCorner, generate), given) is { } notTaken) return JsonRun.Fail(notTaken);
         // R-ya16-1: a statistical corner names a trial by its seed, sampling and trial count, and replays it under the
         // design's own statistics line. A flag that changed what this run drew is not in the corner, so the corner
@@ -302,6 +324,9 @@ internal static partial class Yield
             : PreparedCircuit.FromFile(full, Path.GetDirectoryName(full));
         if (circuit.ReadError is not null || circuit.Lib is null || circuit.Tb is not { } tb)
             return JsonRun.Fail(CliDiagnostics.RunFailed(circuit.ReadError ?? "the design could not be read"));
+
+        if (noun == "sens")
+            return RunSens(input, full, circuit, tb, sets, output, quiet, vars, goals, new SensFlags(factors, step, sigma, ports, responses, parallel, top));
 
         if (noun == "doe")
             return RunDoe(input, full, circuit, tb, sets, output, quiet, goals, optimum, new DoeFlags(design, resolution, factors, levels, centre, responses, parallel));
@@ -853,7 +878,7 @@ internal static partial class Yield
 
     private static void Usage()
     {
-        Console.Error.WriteLine("Usage: circuitrf yield mc|estimate|trial|corners|center|doe <file.csch|file.cnl> [--trials n] [--seed n]");
+        Console.Error.WriteLine("Usage: circuitrf yield mc|estimate|trial|corners|center|doe|sens <file.csch|file.cnl> [--trials n] [--seed n]");
         Console.Error.WriteLine("                     [--sampling random|lhs|sobol] [--target p%] [--confidence p%] [--autostop]");
         Console.Error.WriteLine("                     [--nonconverged fail|warn] [--save scalars|all|n|auto] [--process 0|1] [--mismatch 0|1]");
         Console.Error.WriteLine("                     [--sigma-scale k] [--parallel n] [--analyses goals|all] [--set var=expr]");
@@ -865,5 +890,7 @@ internal static partial class Yield
         Console.Error.WriteLine("                             [--save-preset name]");
         Console.Error.WriteLine("                     doe: [--design full2|frac|pb|ccf] [--resolution 4|5] [--factors opt|stat]");
         Console.Error.WriteLine("                          [--levels range|sigma:k] [--centre n] [--responses goals|all] [--optimum]");
+        Console.Error.WriteLine("                     sens: [--factors all|stat|opt] [--step p%] [--sigma k] [--ports 0|1] [--vars k,k] [--goals g,g]");
+        Console.Error.WriteLine("                           [--responses goals|all] [--top n]");
     }
 }

@@ -179,8 +179,7 @@ public sealed class DoeRun
     private readonly List<Diagnostic> _notes = [];
     private readonly List<DoeFactor> _factors = [];
     private readonly List<TunableEntry> _statEntries = [];
-    private readonly List<TunableEntry> _levelEntries = [];
-    private readonly List<double> _levelTrunc = [];
+    private readonly SigmaLevels? _sigmaLevels;
     private readonly IReadOnlyList<Tunable> _nominals = [];
     private readonly List<(double[] X, DoeRunKind Kind)> _points = [];
     private readonly IReadOnlyList<DoeModelTerm> _model = [];
@@ -238,17 +237,9 @@ public sealed class DoeRun
         {
             _statEntries.AddRange(_setup.Variables.Where(e => e.IsStatistical));
             if (_statEntries.Count == 0) { Refusal = StatisticsDiagnostics.DoeNoFactors(sourceWord); return; }
-            // A level is the nominal ± k of the entry's OWN σ (brief-yield-15 R-ya15-9): a truncated entry is set through
-            // its untruncated distribution with z clipped at the truncation, because the truncated quantile at z = k is
-            // not kσ (trunc=3 puts sigma:1 at 0.99σ) and a level is read as kσ.
-            foreach (var e in _statEntries)
-            {
-                var level = e.Clone();
-                double? trunc = level.Spread?.Trunc is { } tr ? ResolvedSpread.Number(tr) : null;
-                if (level.Spread is { } sp) sp.Trunc = null;
-                _levelEntries.Add(level);
-                _levelTrunc.Add(trunc is > 0 ? trunc.Value : double.PositiveInfinity);
-            }
+            // A level is the nominal ± k of the entry's OWN σ (brief-yield-15 R-ya15-9) — SigmaLevels, which sensitivity's
+            // ±kσ step shares (brief-sens-1 D3).
+            _sigmaLevels = new SigmaLevels(_statEntries, _sigma);
             foreach (var d in StatisticsValidator.ValidateSetup(_setup, catalog))
                 if (d.Severity == DiagnosticSeverity.Error) { Refusal = d; return; }
             _nominals = SampleValues.Nominals(catalog);
@@ -420,13 +411,7 @@ public sealed class DoeRun
     }
 
     /// <summary>A stat design's values at one coded point: z = k × level, through each factor's own distribution.</summary>
-    private SampledValues LevelValues(int run, double[] coded)
-    {
-        var z = new Dictionary<string, double>(StringComparer.Ordinal);
-        for (int i = 0; i < _statEntries.Count; i++)
-            z[_statEntries[i].Key] = Math.Clamp(_sigma * coded[i], -_levelTrunc[i], _levelTrunc[i]);
-        return SampleValues.Apply(_levelEntries, _nominals, new StatisticalSample(run, z));
-    }
+    private SampledValues LevelValues(int run, double[] coded) => _sigmaLevels!.At(_nominals, run, coded);
 
     private SampledValues LevelValues(int factor, double coded)
     {

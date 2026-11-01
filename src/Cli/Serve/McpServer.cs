@@ -276,7 +276,9 @@ internal sealed class McpServer
                 "is the spread alone. 8. to centre it: opt=1 with a range on the toleranced lines, then run " +
                 "analysis=center and read the verified yield. 9. which factors matter: a doe line (doe design=pb, then " +
                 "doe design=ccf on the active few) and run analysis=doe -> result.doe, the effects with their alias sets; " +
-                "optimum=true confirms the fitted model's best point by simulation.\n" +
+                "optimum=true confirms the fitted model's best point by simulation. Before any of it, run " +
+                "analysis=sensitivity path=<f> -> result.sensitivity: per goal, the values that move it most at the " +
+                "nominal (2k+1 simulations), each at its tolerance or 1 %, nonlinear ones flagged.\n" +
                 // The circuit envelope: a modulated signal through the circuit, beside the analyses it extends.
                 "Modulated signals (ACLR/ACPR, AM-AM/AM-PM, two-carrier IMD): drive the circuit with a MOD_Source " +
                 "(MOD_Source:S1 in 0 Fc=2 GHz Pavg=10 dBm Carrier[1]=\"NR;BW=20MHz;SCS=30kHz;Mod=64QAM;Off=0;P=0;Seed=1\"; " +

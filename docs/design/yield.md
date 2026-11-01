@@ -1214,3 +1214,79 @@ part's own cell is scaled; a model that calls a further subcircuit of its own le
 the candidate the instance ends up as. At a moved design (`SampleValues.Nominals`) the value tunable takes the
 candidate's stated value and `PartEntry`, so each candidate draws with its OWN tolerance. A candidate whose tolerance
 is not known is left out of the candidate list and reported (`VendorPartTunable.NoTolerance`), as an unreadable one is.
+
+## 20. Sensitivity at the nominal design (brief-sens-1)
+
+A quick ranked answer to "what moves each goal", at the nominal design, before any Monte Carlo. `SensitivityRun`
+(`src/Design/Statistics`) is the fourth client of the one evaluator (`OptimizationRun.ForEvaluation` /
+`EvaluateValues`) — cache, parallelism and the not-re-entrant rule are its, never a second evaluation path.
+
+### 20.1 Steps (D2, D3, R-sens1-1)
+
+For k factors: the nominal (an empty value map — the design exactly as it holds itself), then each factor at + and −
+with every other value at nominal: **2k + 1 evaluations**, deduplicated through the cache, no random draw, no seed.
+`factors=all` (the default) takes every tunable `TunableCatalog.FromNetlist` offers; `stat` the `stat=1` entries; `opt`
+the `opt=1` entries. A factor with a tolerance steps **±kσ through its own distribution** (`sigma=k`, default 1) by
+`SigmaLevels` — the helper DOE's `levels=sigma:k` uses, truncation clip included, so a DOE level and a sensitivity step
+are the same value for the same k. Any other factor steps **±`step` % of its value** (default 1 %); a phase ±1°. A
+complex value contributes the parts that carry a tolerance, or else its `mag(…)` and `phase(…)` parts — never the
+whole, never both coordinate systems. Under `factors=all`, two kinds of value are the measurement's setup rather than
+the design's and are left out, each kind named in one note: **a port's values** (its reference impedance) unless
+`ports=on`, and **a tone source's frequency** (`Freq…` of `V_1Tone`, `V_nTone`, `I_1Tone`, `I_nTone`, `P1Tone`,
+`PnTone`, `Fc` of `MOD_Source`) — harmonic balance needs a source on its analysis's tone grid, so a step of the source
+alone could never evaluate. Either is stepped when an `opt=1` or `stat=1` line names it. Also left out, each named once
+in the notes (`yield.sens.left-out`): a vendor part's
+choice of part, a part's value with no tolerance, a whole-number value, a value a sweep sets, a value of 0 (a percent
+of it moves nothing). Every contributor states its **basis** (`σ`, `2σ`, `1 %`, `1°`).
+
+Factors move alone (`yield.sens.uncorrelated` when the bench declares correlations) and a kit's distribution calls are
+not factors (`yield.sens.kit-left-out` names their streams) — D8, as DOE §17.1.
+
+### 20.2 The metric and the ranking (D4–D6)
+
+Per goal g the metric is its margin at the tightest point divided by `GoalResiduals.Scale(g)` — the normalization
+centering uses (§15.2) — so a goal in dB and one in volts rank on one footing. Δ = (m⁺ − m⁻)/2; contributors ranked by
+|Δ|; share = Δ² / ΣΔ²; spread σ_g = √ΣΔ². **A pass estimate Φ(m₀/σ_g) is given only when every contributor's basis is
+σ**; with a `%` or `°` step in the sum the spread is what a designer could change, not what production will do, and
+`yield.sens.no-estimate` says so once. It is labelled *estimated*: the Monte Carlo is the yield.
+
+asymmetry = |(m⁺ − m₀) + (m⁻ − m₀)| / max(|m⁺ − m₀|, |m⁻ − m₀|); above 0.5 the contributor is `nonlinear` — a goal over a
+sweep whose tightest point moves between the steps, or a value near a resonance. **A goal whose nominal sits at the
+centre of an `in` band is the extreme case**: the margin is the distance to the nearer edge, so it peaks at the centre,
+both steps cost margin, Δ is near zero and every factor is flagged — the flag is the honest answer there, and a Monte
+Carlo or `doe design=ccf` is the tool. The same holds for a passband goal over ripple (the shipped Bandpass example
+flags every factor on its passband spec and none on its stopband one).
+
+A step that does not evaluate leaves its contributor `failed` with the evaluator's sentence and the rest still rank; one
+side alone gives a forward or backward difference, `one-sided`. The nominal must evaluate — otherwise exit 2 with its
+own failure. Every real scalar `measure` is ranked too, Δ in its own unit, never against the goals. With
+`responses=goals` the goals are the enabled `use=yield|both` ones, else the `use=opt|both` ones; `responses=all` every
+enabled goal; `--goals` exactly the named ones. A bench with no goal and no measure is `yield.sens.no-response`; one
+whose only measures are curves over a sweep (every measure of the shipped Power Amplifier example is over `Pin`) is
+`yield.sens.no-scalar-response` after the nominal, naming a goal over the range as the way to rank it.
+
+Every analysis the goals name runs as it would for the optimizer — harmonic balance under a parametric sweep included.
+On the Power Amplifier example with a Pout and a PAE goal over `Pin` 28–30 dBm, 25 factors cost 51 swept HB
+evaluations, about a second.
+
+### 20.3 The result, the line, the verb (R-sens1-4 … R-sens1-7)
+
+`<design>.sens.npy` beside the design, group `sens` — layout in `results-dataset-layout.md` §"Sensitivity". Its
+`contrib:<goal>`, `:shown` and `:cumulative` cubes are the shape `ContributionParetoPreset` draws once given the group
+(`Build(…, group: "sens")`); a sensitivity result is never re-ranked by it. The file is the only write.
+
+`sensitivity [factors=all|stat|opt] [step=<pct>%] [sigma=<k>] [ports=on|off] [snp=on|off] [snpexclude=<inst>,…] [snpdb=<dB>]
+[snpdeg=<deg>] [responses=goals|all] [parallel=<n>]` — `SensitivitySettings` on `TuningSetup.Sensitivity` and
+`CschTuning.Sensitivity`; defaults are never held or written, a malformed value is `cnl.sensitivity.value-invalid`, a
+second line `cnl.sensitivity.duplicate`. The four `snp*` keys are read and validated now and used from SENS-2.
+`check` asks `SensitivityRun.Create` when the line is present; `explain --analysis` reports the factors, their bases,
+the evaluations and how many run at once. `circuitrf yield sens <path>` (`cli.md` §25.11), MCP `run analysis=sensitivity`
+(`result.sensitivity`). Nothing computes a sensitivity unasked (D7).
+
+Gates (`tests/Ui.Tests/Statistics/SensitivityRunTests.cs`): `SensitivityRunTests` (a divider whose nominal sits below
+its band so the margin is linear: R2 ranks first, Δ is the closed-form central difference to 1e-6, shares sum to 1;
+2k + 1 evaluations and none on a second run; an estimate only when every basis is σ; a series LC whose tightest band
+edge swaps between the steps is `nonlinear`), `SensitivityPortsTests` (ports out by default, in with `ports=on`),
+`SensitivityHarmonicBalanceTests` (an HB harmonic goal ranks; the tone frequency is left out),
+`SensitivityLineTests`, `YieldSensCliTests` (the verb's `.sens.npy` is the in-process run's bytes, its `--json` the
+run's ranking).

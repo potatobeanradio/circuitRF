@@ -285,10 +285,56 @@ internal static partial class Reference
             sb.AppendLine("  " + line);
         sb.AppendLine();
 
+        // brief-sens-1 R-sens1-8: sensitivity.
+        sb.AppendLine("Sensitivity (yield sens, the sensitivity line)");
+        sb.AppendLine();
+        foreach (var line in Wrap(
+            "A sensitivity run answers which values move each goal most at the nominal design. Each factor is stepped + " +
+            "and - on its own, every other value at nominal: 2k+1 simulations, no random draws, so it is deterministic " +
+            "and needs no seed. A toleranced value (stat=1) steps +-k sigma through its own distribution (sigma=, default " +
+            "1) — the same values doe levels=sigma:k sets; any other value steps +-step % of its value (step=, default " +
+            "1%), and a phase +-1 deg. factors=all (the default) takes every tunable the design offers, stat only the " +
+            "toleranced ones, opt only the opt=1 ones. all leaves out a port's own values (its reference impedance) unless " +
+            "ports=on, and a tone source's frequency, which harmonic balance fixes to its tone grid. Also left out, and " +
+            "named in the notes: a vendor part's choice of part, " +
+            "a whole-number value, a value a sweep sets. Factors move alone (correlations are not applied) and a kit's " +
+            "statistics are not factors.", 96))
+            sb.AppendLine("  " + line);
+        sb.AppendLine();
+        foreach (var line in Wrap(
+            "Each goal's metric is its margin at the tightest point divided by its scale — the normalization centering " +
+            "uses — so goals in dB and in volts rank on one footing. Per goal: delta = (m+ - m-)/2 per factor, ranked by " +
+            "|delta|, each one's share delta^2 / sum(delta^2), and the predicted spread sqrt(sum(delta^2)). Every " +
+            "contributor states its basis (sigma, 1 %, 1 deg): a ranking by tolerance is what production will do, a " +
+            "ranking by 1 % is what a designer could change. Only when every basis is sigma is a first-order pass " +
+            "estimate Phi(m0/spread) given, labelled estimated — the Monte Carlo is the yield. A factor whose two steps " +
+            "disagree (asymmetry above 0.5) is flagged nonlinear: a goal over a sweep whose tightest point moves, or a " +
+            "value near a resonance — such a factor wants doe design=ccf or a Monte Carlo. A step that does not " +
+            "evaluate leaves its factor failed (or one-sided, from the side that ran) and the rest still rank; the " +
+            "nominal must evaluate (exit 2 otherwise). Every scalar measure is ranked too, in its own unit.", 96))
+            sb.AppendLine("  " + line);
+        sb.AppendLine();
+        foreach (var line in Wrap(
+            "A good order: sensitivity first, then a Monte Carlo on what it ranks (yield mc --vars), then doe design=ccf " +
+            "on anything flagged nonlinear. The result is <design>.sens.npy, group sens: contrib:<goal> (the shares, " +
+            "largest first, which the Data Display's contribution Pareto draws), delta, plus, minus, nominal, asymmetry " +
+            "and status per goal, spread and estimate, and basis, step and notes.", 96))
+            sb.AppendLine("  " + line);
+        sb.AppendLine();
+        sb.AppendLine("    sensitivity factors=stat sigma=2");
+        sb.AppendLine("    circuitrf yield sens divider.cnl                  # what moves each goal, at tolerance or 1 %");
+        sb.AppendLine("    circuitrf yield sens divider.cnl --factors stat   # by tolerance only, with an estimated pass");
+        sb.AppendLine();
+        foreach (var line in Wrap(
+            "Over MCP: run analysis=sensitivity with the same fields (factors, step, sigma, vars, goals, responses); read " +
+            "result.sensitivity.goals[].contributors[] (key, basis, delta, share, status).", 96))
+            sb.AppendLine("  " + line);
+        sb.AppendLine();
+
         // brief-yield-5 R-ya5-7: the run, generated from the verb's own noun and flag tables.
         sb.AppendLine("Running it");
         sb.AppendLine();
-        sb.AppendLine("    circuitrf yield mc|estimate|trial|corners|center|doe <file.csch|file.cnl> [flags]");
+        sb.AppendLine("    circuitrf yield mc|estimate|trial|corners|center|doe|sens <file.csch|file.cnl> [flags]");
         sb.AppendLine();
         foreach (var (noun, summary) in Yield.Nouns)
             sb.AppendLine($"  {noun,-16} {summary}");

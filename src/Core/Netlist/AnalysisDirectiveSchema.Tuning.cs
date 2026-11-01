@@ -47,6 +47,7 @@ public static partial class AnalysisDirectiveSchema
     public static readonly IReadOnlyList<string> DoeDesignTokens   = ["full2", "frac", "pb", "ccf"];
     public static readonly IReadOnlyList<string> DoeFactorTokens   = ["opt", "stat"];
     public static readonly IReadOnlyList<string> DoeResponseTokens = ["goals", "all"];
+    public static readonly IReadOnlyList<string> SensFactorTokens  = ["all", "stat", "opt"];
 
     /// <summary>Each distribution a <c>tune</c> line's <c>dist=</c> names: the spread keys it reads, what
     /// they mean, and one line as the writer writes it (yield overview D2).</summary>
@@ -276,6 +277,33 @@ public static partial class AnalysisDirectiveSchema
             [],
             "doe design=frac resolution=5 centre=3"),
 
+        new("sensitivity", StatisticsTopic,
+            "sensitivity [factors=all|stat|opt] [step=<pct>%] [sigma=<k>] [ports=on|off] [snp=on|off] [snpexclude=<inst>,<inst>] " +
+            "[snpdb=<dB>] [snpdeg=<deg>] [responses=goals|all] [parallel=<n>]",
+            "Sensitivity: which values move each goal most at the nominal design. Each factor is stepped + and - on its " +
+            "own, every other value at nominal (2k+1 simulations, no random draws): a toleranced value by +-k sigma of its " +
+            "own distribution, any other by +-step of its value. Per goal, each factor's half-difference of the goal's " +
+            "normalized margin, its share of the sum of squares, and a nonlinear flag where the two steps disagree. The " +
+            "settings the Sensitivity panel and yield sens run with; at most one line, and a default is never written.",
+            [
+                new("factors",    Default: "all",
+                                  Summary: "all (every tunable: a toleranced one at +-k sigma, any other at +-step) | stat (the " +
+                                           "stat=1 entries at +-k sigma) | opt (the opt=1 entries at +-step of their value)."),
+                new("step",       Default: "1%", Summary: "The +- step of a value with no tolerance, a percent of its value. A phase steps +-1 deg."),
+                new("sigma",      Default: "1", Summary: "k: a toleranced value steps +-k sigma through its own distribution."),
+                new("ports",      Default: "off", Summary: "on | off: whether factors=all steps the ports' own values (their reference impedances). A port named on an opt=1 or stat=1 line is stepped either way."),
+                new("snp",        Default: "on", Summary: "on | off: whether an SnP block's S-parameters are factors (SENS-2)."),
+                new("snpexclude", Summary: "SnP instances left out, separated by commas (SENS-2)."),
+                new("snpdb",      Default: "0.1", Summary: "The +- step of an SnP entry's magnitude with no tolerance, in dB (SENS-2)."),
+                new("snpdeg",     Default: "1", Summary: "The +- step of an SnP entry's phase with no tolerance, in degrees (SENS-2)."),
+                new("responses",  Default: "goals",
+                                  Summary: "goals (the enabled use=yield|both goals, or the use=opt|both ones when there are none) | " +
+                                           "all (every enabled goal). Every scalar measure is a response too."),
+                new("parallel",   Summary: "How many simulations may run at once."),
+            ],
+            [],
+            "sensitivity factors=stat sigma=2"),
+
         new("corner", StatisticsTopic,
             "corner <Name> [enabled=0] [trial=<n> seed=<n> sampling=… trials=<n>] [temp=<v>] <key>=<v> [unit] ...",
             "A named corner: a value for the ambient temperature (temp, in degC) and for any global variable or " +
@@ -295,7 +323,7 @@ public static partial class AnalysisDirectiveSchema
             "corner SS_hot temp=85 Vdd=3.0 V R1.R=47 Ohm"),
     ];
 
-    /// <summary>The nine directives, in the order a <c>.cnl</c> writes them.</summary>
+    /// <summary>The ten directives, in the order a <c>.cnl</c> writes them.</summary>
     public static IReadOnlyList<TuningDirectiveSpec> TuningDirectives => _tuning;
 
     /// <summary>The directive spec for a keyword, or null.</summary>

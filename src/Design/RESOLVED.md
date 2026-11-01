@@ -25735,3 +25735,50 @@ stand in for a series part; only series-mode data can be placed directly as a tw
 
 Not done: the Data Display reads no CSV, so the digitiser's own CSV cannot be overlaid without going through a
 Touchstone file; the automatic plot reading of a measured S21 picture found dozens of empty traces.
+
+## Sensitivity at the nominal (brief-sens-1, 2026-11-01)
+
+**Cost, measured once.** `yield sens` on the shipped Bandpass yield example (`examples/Yield/BandpassYield`, `factors=all`)
+steps 8 factors — the six L/C values at ±σ of their tolerances and the two port impedances at ±1 % — in 17 evaluations,
+9 at a time: **0.34 s wall for the whole process, Debug build, process start included.** That is the point of the
+run: a ranked answer in a fraction of a second where a Monte Carlo of the same design is hundreds of simulations.
+
+**A centred `in` band, and a passband over ripple, flag everything nonlinear — correctly.** A goal's metric is its
+margin at the tightest point over its scale (D4). For `in a b` the margin is the distance to the nearer edge, so at the
+band's centre it is a maximum: both steps cost margin, Δ = (m⁺ − m⁻)/2 is near zero and the asymmetry is near 2. The
+Bandpass example's passband spec shows the same thing through its ripple — the tightest frequency moves between the
+two steps — and every one of its eight contributors is flagged, while its stopband spec (a monotone skirt) flags none.
+This is not a defect to smooth over: a first-order ranking is meaningless at a margin maximum, and the flag is what
+tells the designer to use the Monte Carlo or `doe design=ccf` there. It is why `SensitivityRunTests`' divider sits
+BELOW its band (R1 = 1100 Ω, Vout ≈ 0.476 V): there the margin is Vout − 0.49 at every step, linear, and the ranking
+has an exact answer to compare against.
+
+**The gate compares Δ with the closed-form CENTRAL DIFFERENCE, not with ∂V/∂R × step.** A ±5 % step on a divider is
+not small: (V(R2 + 50) − V(R2 − 50))/2 and ∂V/∂R2 × 50 differ by ~8e-6 V, 4e-4 in normalized-margin units, so the
+derivative cannot be matched to 1e-6 at that step by any finite difference. The run's contract is the finite
+difference through the one evaluator (adjoint derivatives are out of scope), so the gate holds it to 1e-6 against the
+same difference evaluated in closed form.
+
+**Port impedances and tone frequencies are not default factors.** `TunableCatalog` offers `P1.Z`, and the first
+build ranked it at ±1 % (last on the Bandpass example). A port is the measurement's reference, not something a
+designer looks at for sensitivity, so `factors=all` leaves every Port instance's values out unless `ports=on`
+(`--ports 1`). Running the run on harmonic balance found the second case: a `V_1Tone`'s `Freq` stepped ±1 % fails
+both steps — HB's commensurability check refuses a source off the analysis's tone grid — so it ranked as `failed` on
+every goal. A tone source's frequency is the analysis's setting, so `all` leaves it out too (`Freq…` of the tone
+sources, `Fc` of `MOD_Source`). Both are matched by the instance's TYPE (`Instance.Reference`), never by the
+parameter's name alone: a resistor may have a parameter called `Freq`. A port or frequency named on an `opt=1` or
+`stat=1` line is still stepped — that is the user asking.
+
+**Harmonic balance works through the one evaluator, sweeps included.** The shipped Power Amplifier example, with a
+Pout and a PAE goal over `Pin` 28–30 dBm added, ranks 25 factors in 51 swept-HB evaluations (~1 s, Debug); the FET
+model's temperature and threshold terms lead both goals. Without a goal it had nothing to rank — every measure is a
+curve over `Pin` — and the first build exited 0 with an empty table; that is now `yield.sens.no-scalar-response`,
+exit 1, naming a goal over the range as the fix. The evaluator's yield warning `yield.goal.nothing-varies` ("every
+trial is the nominal") is dropped from a sensitivity run's notes: it is about trials, and this run moves the values
+itself.
+
+**`DoeRun`'s ±kσ level code is now `SigmaLevels`**, shared with sensitivity (D3: "factor that into one shared
+helper"). DOE's own level and a sensitivity step are therefore the same value for the same k by construction, and the
+DOE gates pass unchanged on it. `SigmaLevels.One` sets a single entry and leaves every other value out of the map, so a
+step's "every other factor at nominal" is the design's own text rather than a z = 0 draw — the two differ for an
+asymmetric distribution, where z = 0 is the median, not the nominal.

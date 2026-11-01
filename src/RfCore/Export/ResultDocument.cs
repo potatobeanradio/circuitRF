@@ -176,6 +176,8 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         DoeReportJson? Doe = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        SensitivityReportJson? Sensitivity = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         RecognizeReportJson? Recognize = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         StepImportReportJson? StepImport = null,
@@ -1296,6 +1298,75 @@ namespace RfCore.Export
         int Iteration, double? BestYield, double? BestObjective, long Evaluations,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         IReadOnlyDictionary<string, double>? RSquared = null);
+
+    // ── `yield sens` / MCP `run analysis=sensitivity` (brief-sens-1 R-sens1-7) ─────────────────
+    //
+    // A PROJECTION of `SensitivityResult`. A goal's numbers are normalized margins (its margin over its scale); a
+    // measure's are in its own unit. Every contributor is here, whatever --top printed.
+
+    /// <summary>Which values move each goal most at the nominal design.</summary>
+    /// <param name="Outcome"><c>finished</c>, <c>refused</c>, <c>nominalFailed</c> or <c>cancelled</c> — exit 0, 1, 2, 130.</param>
+    /// <param name="Factors"><c>all</c>, <c>stat</c> or <c>opt</c>.</param>
+    /// <param name="Step">The ± step of a value with no tolerance, in percent.</param>
+    /// <param name="Sigma">k of a toleranced value's ±kσ step.</param>
+    /// <param name="Evaluations">Simulations this run spent.</param>
+    public sealed record SensitivityReportJson(
+        string                                  Document,
+        string                                  Outcome,
+        string                                  FinishReason,
+        string                                  Factors,
+        double                                  Step,
+        double                                  Sigma,
+        IReadOnlyList<SensitivityGoalJson>      Goals,
+        IReadOnlyList<SensitivityMeasureJson>   Measures,
+        IReadOnlyList<string>                   Notes,
+        long                                    Evaluations,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string?                                 Output = null);
+
+    /// <summary>One goal ranked.</summary>
+    /// <param name="Nominal">m₀, the goal's normalized margin at the nominal.</param>
+    /// <param name="Spread">√ΣΔ², in normalized-margin units.</param>
+    /// <param name="Estimate">Φ(m₀/spread), an ESTIMATED pass fraction — only when every contributor steps by its σ.</param>
+    public sealed record SensitivityGoalJson(
+        string                                  Goal,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double?                                 Nominal,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double?                                 Spread,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double?                                 Estimate,
+        IReadOnlyList<SensitivityContributorJson> Contributors);
+
+    /// <summary>One scalar measure ranked, in its own unit.</summary>
+    public sealed record SensitivityMeasureJson(
+        string                                  Measure,
+        string                                  Unit,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double?                                 Nominal,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double?                                 Spread,
+        IReadOnlyList<SensitivityContributorJson> Contributors);
+
+    /// <summary>One factor's effect on one response, largest |delta| first.</summary>
+    /// <param name="Basis">What its step is: <c>σ</c>, <c>1 %</c>, <c>1°</c>.</param>
+    /// <param name="Delta">(m⁺ − m⁻)/2, signed; absent when it failed.</param>
+    /// <param name="Share">delta² / Σ delta².</param>
+    /// <param name="Status"><c>ok</c>, <c>nonlinear</c>, <c>one-sided</c> or <c>failed</c>.</param>
+    /// <param name="Plus">The value set at the + step, as text.</param>
+    /// <param name="Reason">Why a step did not evaluate.</param>
+    public sealed record SensitivityContributorJson(
+        string  Key,
+        string  Label,
+        string  Basis,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double? Delta,
+        double  Share,
+        string  Status,
+        string  Plus,
+        string  Minus,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Reason);
 
     // ── `yield doe` / MCP `run analysis=doe` (brief-yield-14 R-ya14-8) ─────────────────────────
     //
@@ -2682,7 +2753,32 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         ExplainYieldRunJson? Run = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        ExplainCenterJson? Center = null);
+        ExplainCenterJson? Center = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        ExplainSensitivityJson? Sensitivity = null);
+
+    /// <summary>
+    /// What a sensitivity run would cost (brief-sens-1 R-sens1-6), stated before anything runs: the factors it steps,
+    /// the distinct evaluations (the nominal and each factor's two steps) and how many run at once.
+    /// </summary>
+    /// <param name="Estimate">The cost in nominal evaluations, in words.</param>
+    /// <param name="Refusal">What the run would refuse, in its own words; the numbers are then absent.</param>
+    public sealed record ExplainSensitivityJson(
+        string  Factors,
+        double  Step,
+        double  Sigma,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        int?    FactorCount,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<string>? Bases,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        int?    Evaluations,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        int?    Parallel,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Estimate,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Refusal);
 
     /// <summary>
     /// What a design-centering run would cost (brief-yield-11 R-ya11-6), stated before anything runs: evaluations per

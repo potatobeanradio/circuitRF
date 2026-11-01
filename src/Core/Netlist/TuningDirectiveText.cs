@@ -7,7 +7,7 @@ namespace CircuitRF.Core.Netlist;
 
 /// <summary>
 /// Reads and writes the <c>tune</c>, <c>preset</c>, <c>goal</c> and <c>optimize</c> directives, and the
-/// statistical <c>correlate</c>, <c>statistics</c>, <c>center</c>, <c>doe</c> and <c>corner</c> (docs/design/yield.md) — the
+/// statistical <c>correlate</c>, <c>statistics</c>, <c>center</c>, <c>doe</c>, <c>sensitivity</c> and <c>corner</c> (docs/design/yield.md) — the
 /// <c>.cnl</c> spelling of a <see cref="TuningSetup"/>. The grammar is
 /// <see cref="AnalysisDirectiveSchema.TuningDirectives"/>; the writer's output reads back to the same
 /// setup and writes the same bytes again.
@@ -19,9 +19,10 @@ namespace CircuitRF.Core.Netlist;
 /// </summary>
 public static class TuningDirectiveText
 {
-    /// <summary>The nine keywords.</summary>
+    /// <summary>The ten keywords.</summary>
     public static bool IsKeyword(string word)
-        => word is "tune" or "preset" or "goal" or "optimize" or "correlate" or "statistics" or "center" or "doe" or "corner";
+        => word is "tune" or "preset" or "goal" or "optimize" or "correlate" or "statistics" or "center" or "doe"
+                 or "sensitivity" or "corner";
 
     // ── Read ─────────────────────────────────────────────────────────────────
 
@@ -59,6 +60,11 @@ public static class TuningDirectiveText
                 if (setup.Doe is not null)
                     throw Refuse(TuningDirectiveDiagnostics.SecondDoe());
                 setup.Doe = ReadDoe(rest, Unknown);
+                break;
+            case "sensitivity":
+                if (setup.Sensitivity is not null)
+                    throw Refuse(TuningDirectiveDiagnostics.SecondSensitivity());
+                setup.Sensitivity = ReadSensitivity(rest, Unknown);
                 break;
             case "corner": setup.Corners.Add(ReadCorner(rest)); break;
         }
@@ -253,6 +259,74 @@ public static class TuningDirectiveText
         // The levels the factors take anyway are the default, wherever on the line factors= sits.
         if (d.Levels == DoeSettings.DefaultLevels(d.EffectiveFactors)) d.Levels = null;
         return d;
+    }
+
+    /// <summary>The <c>sensitivity</c> line (brief-sens-1 R-sens1-5). A malformed value is refused with
+    /// <c>cnl.sensitivity.value-invalid</c>; a default is never held, so neither serialization writes one.</summary>
+    private static SensitivitySettings ReadSensitivity(string rest, Action<string> unknown)
+    {
+        var t = Tokens(rest);
+        var s = new SensitivitySettings();
+        TuningDirectiveException Invalid(string key, string value, string expected)
+            => Refuse(TuningDirectiveDiagnostics.SensitivityValueInvalid(key, value, expected));
+        double AboveZero(string key, string value)
+            => double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double v) && v > 0 && double.IsFinite(v)
+               ? v : throw Invalid(key, value, "a number above zero");
+        for (int i = 0; i < t.Count; i++)
+        {
+            var (key, value) = KeyValue(t, ref i, unitsAllowed: false);
+            switch (key.ToLowerInvariant())
+            {
+                case "factors":
+                    var f = TryEnum<SensitivityFactorSource>(value, AnalysisDirectiveSchema.SensFactorTokens)
+                            ?? throw Invalid(key, value, "one of " + string.Join(", ", AnalysisDirectiveSchema.SensFactorTokens));
+                    s.Factors = f == SensitivityFactorSource.All ? null : f;
+                    break;
+                case "step":
+                    double step = StatSpread.IsPercent(value) && StatSpread.Percent(value) is { } p && p > 0 && double.IsFinite(p) ? p
+                                : throw Invalid(key, value, "a percent above zero, written 1%");
+                    s.Step = Default(step, SensitivitySettings.DefaultStep);
+                    break;
+                case "sigma":  s.Sigma  = Default(AboveZero(key, value), SensitivitySettings.DefaultSigma); break;
+                case "snpdb":  s.SnpDb  = Default(AboveZero(key, value), SensitivitySettings.DefaultSnpDb); break;
+                case "snpdeg": s.SnpDeg = Default(AboveZero(key, value), SensitivitySettings.DefaultSnpDeg); break;
+                case "ports":
+                    s.Ports = value.ToLowerInvariant() switch
+                    {
+                        "on" or "1"  => true,
+                        "off" or "0" => null,
+                        _ => throw Invalid(key, value, "on or off"),
+                    };
+                    break;
+                case "snp":
+                    s.Snp = value.ToLowerInvariant() switch
+                    {
+                        "on" or "1"  => null,
+                        "off" or "0" => false,
+                        _ => throw Invalid(key, value, "on or off"),
+                    };
+                    break;
+                case "snpexclude":
+                    var names = value.Split(',', StringSplitOptions.TrimEntries);
+                    s.SnpExclude = names.Length > 0 && names.All(IsIdentifier) ? string.Join(',', names)
+                                 : throw Invalid(key, value, "instance names separated by commas");
+                    break;
+                case "responses":
+                    var r = TryEnum<DoeResponseSet>(value, AnalysisDirectiveSchema.DoeResponseTokens)
+                            ?? throw Invalid(key, value, "one of " + string.Join(", ", AnalysisDirectiveSchema.DoeResponseTokens));
+                    s.Responses = r == DoeResponseSet.Goals ? null : r;
+                    break;
+                case "parallel":
+                    s.Parallelism = int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int n) && n >= 1 ? n
+                                  : throw Invalid(key, value, "a whole number, 1 or more");
+                    break;
+                default:
+                    (s.Extra ??= new(StringComparer.Ordinal))[key] = value;
+                    unknown(key);
+                    break;
+            }
+        }
+        return s;
     }
 
     private static int Positive(string key, string value)
@@ -504,7 +578,7 @@ public static class TuningDirectiveText
     // ── Write ────────────────────────────────────────────────────────────────
 
     /// <summary>The directive lines for <paramref name="setup"/>, in the order tune, preset, goal,
-    /// optimize, correlate, statistics, center, doe, corner. Empty for an empty setup.</summary>
+    /// optimize, correlate, statistics, center, doe, sensitivity, corner. Empty for an empty setup.</summary>
     public static IEnumerable<string> Write(TuningSetup setup)
     {
         foreach (var e in setup.Variables)    yield return WriteTune(e);
@@ -515,6 +589,7 @@ public static class TuningDirectiveText
         if (setup.Statistics is { } st)       yield return WriteStatistics(st);
         if (setup.Centering is { } center)    yield return WriteCenter(center);
         if (setup.Doe is { } doe)             yield return WriteDoe(doe);
+        if (setup.Sensitivity is { } sens)    yield return WriteSensitivity(sens);
         foreach (var c in setup.Corners)      yield return WriteCorner(c);
     }
 
@@ -577,6 +652,26 @@ public static class TuningDirectiveText
             sb.Append(" factors=").Append(AnalysisDirectiveSchema.DoeFactorTokens[(int)f]);
         Opt(sb, "levels", d.Levels);
         if (d.Centre is { } c)         sb.Append(" centre=").Append(c.ToString(CultureInfo.InvariantCulture));
+        if (d.Responses is { } rs && rs != DoeResponseSet.Goals)
+            sb.Append(" responses=").Append(AnalysisDirectiveSchema.DoeResponseTokens[(int)rs]);
+        if (d.Parallelism is { } p)    sb.Append(" parallel=").Append(p.ToString(CultureInfo.InvariantCulture));
+        Extra(sb, d.Extra, "");
+        return sb.ToString();
+    }
+
+    /// <summary>The <c>sensitivity</c> line, keys in the order the grammar lists them, defaults never written.</summary>
+    private static string WriteSensitivity(SensitivitySettings d)
+    {
+        var sb = new StringBuilder("sensitivity");
+        if (d.Factors is { } f && f != SensitivityFactorSource.All)
+            sb.Append(" factors=").Append(AnalysisDirectiveSchema.SensFactorTokens[(int)f]);
+        if (d.Step is { } step)        sb.Append(" step=").Append(PercentText(step));
+        if (d.Sigma is { } k)          sb.Append(" sigma=").Append(k.ToString("R", CultureInfo.InvariantCulture));
+        if (d.Ports == true)           sb.Append(" ports=on");
+        if (d.Snp == false)            sb.Append(" snp=off");
+        Opt(sb, "snpexclude", d.SnpExclude);
+        if (d.SnpDb is { } db)         sb.Append(" snpdb=").Append(db.ToString("R", CultureInfo.InvariantCulture));
+        if (d.SnpDeg is { } deg)       sb.Append(" snpdeg=").Append(deg.ToString("R", CultureInfo.InvariantCulture));
         if (d.Responses is { } rs && rs != DoeResponseSet.Goals)
             sb.Append(" responses=").Append(AnalysisDirectiveSchema.DoeResponseTokens[(int)rs]);
         if (d.Parallelism is { } p)    sb.Append(" parallel=").Append(p.ToString(CultureInfo.InvariantCulture));

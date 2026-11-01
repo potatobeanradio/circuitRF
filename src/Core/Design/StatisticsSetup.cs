@@ -273,6 +273,79 @@ public sealed class DoeSettings
     };
 }
 
+/// <summary>Which values a sensitivity run steps (brief-sens-1 R-sens1-1).</summary>
+public enum SensitivityFactorSource
+{
+    /// <summary>Every tunable the catalog offers: at its tolerance (±kσ) when it has one, at ±step otherwise.</summary>
+    All,
+    /// <summary>The <c>stat=1</c> entries, at ±kσ through their own distributions.</summary>
+    Stat,
+    /// <summary>The <c>opt=1</c> entries, at ±step of their value.</summary>
+    Opt,
+}
+
+/// <summary>
+/// The sensitivity settings — the <c>sensitivity</c> line (brief-sens-1 R-sens1-5). Every property is null at its
+/// default, so neither serialization ever writes one. <see cref="Snp"/>, <see cref="SnpExclude"/>, <see cref="SnpDb"/>
+/// and <see cref="SnpDeg"/> are read and validated now and used from SENS-2.
+/// </summary>
+public sealed class SensitivitySettings
+{
+    public const double DefaultStep   = 1;
+    public const double DefaultSigma  = 1;
+    public const double DefaultSnpDb  = 0.1;
+    public const double DefaultSnpDeg = 1;
+
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public SensitivityFactorSource? Factors { get; set; }
+
+    /// <summary>The ± step of a value with no tolerance, in percent of the value; null is 1 %.</summary>
+    public double? Step { get; set; }
+
+    /// <summary>k of the ±kσ step of a toleranced value; null is 1.</summary>
+    public double? Sigma { get; set; }
+
+    /// <summary>True with <c>ports=on</c>: <c>factors=all</c> then steps every value of a Port instance too (its
+    /// reference impedance). Null is off — a port is the measurement's reference, not a value of the design.</summary>
+    public bool? Ports { get; set; }
+
+    /// <summary>False with <c>snp=off</c>; null is on.</summary>
+    public bool? Snp { get; set; }
+
+    /// <summary>SnP instances left out, comma-separated as written; null leaves none out.</summary>
+    public string? SnpExclude { get; set; }
+
+    /// <summary>The ± step of an SnP entry's magnitude, in dB; null is 0.1.</summary>
+    public double? SnpDb { get; set; }
+
+    /// <summary>The ± step of an SnP entry's phase, in degrees; null is 1.</summary>
+    public double? SnpDeg { get; set; }
+
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public DoeResponseSet? Responses { get; set; }
+
+    /// <summary>How many simulations may run at once; null lets the evaluator decide.</summary>
+    public int? Parallelism { get; set; }
+
+    /// <summary>Keys this build does not know, kept verbatim.</summary>
+    public OrderedDictionary<string, string>? Extra { get; set; }
+
+    [JsonIgnore] public SensitivityFactorSource EffectiveFactors   => Factors ?? SensitivityFactorSource.All;
+    [JsonIgnore] public double                  EffectiveStep      => Step ?? DefaultStep;
+    [JsonIgnore] public double                  EffectiveSigma     => Sigma ?? DefaultSigma;
+    [JsonIgnore] public bool                    EffectivePorts     => Ports ?? false;
+    [JsonIgnore] public bool                    EffectiveSnp       => Snp ?? true;
+    [JsonIgnore] public double                  EffectiveSnpDb     => SnpDb ?? DefaultSnpDb;
+    [JsonIgnore] public double                  EffectiveSnpDeg    => SnpDeg ?? DefaultSnpDeg;
+    [JsonIgnore] public DoeResponseSet          EffectiveResponses => Responses ?? DoeResponseSet.Goals;
+
+    public SensitivitySettings Clone() => new()
+    {
+        Factors = Factors, Step = Step, Sigma = Sigma, Ports = Ports, Snp = Snp, SnpExclude = SnpExclude, SnpDb = SnpDb, SnpDeg = SnpDeg,
+        Responses = Responses, Parallelism = Parallelism, Extra = TunableEntry.CloneMap(Extra),
+    };
+}
+
 /// <summary>A correlation between two statistical entries (yield overview D3) — the <c>correlate</c> line.</summary>
 public sealed class StatCorrelation
 {

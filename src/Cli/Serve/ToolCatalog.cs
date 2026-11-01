@@ -427,7 +427,9 @@ internal static class ToolCatalog
           + "the yield vs iteration, and the start and centred yields verified on the same fresh trials. "
           + "doe runs a design of experiments over the opt=1 ranges (or the tolerances) and returns result.doe — each "
           + "response's effects, which are active, and what each is confounded with; optimum adds the fitted model's best "
-          + "point and its confirming simulation.",
+          + "point and its confirming simulation. "
+          + "sensitivity steps each value + and - about the nominal and returns result.sensitivity — per goal, the values "
+          + "that move it most, by how much per tolerance or per 1 %, and which respond nonlinearly.",
             "analysis",
             "Which analysis to run.",
             [
@@ -583,6 +585,25 @@ internal static class ToolCatalog
                   + "factors, active when beyond Lenth's margin; a fractional or Plackett-Burman design lists what every effect is "
                   + "confounded with (result.doe.responses[].effects[].aliases). Screen with design=pb first, then design=ccf on the "
                   + "few active factors. Exit 0 unless it could not run; exit 2: no run evaluated. Writes nothing to the design."),
+                // brief-sens-1 R-sens1-7: `yield sens`, the same verb's seventh noun. A progress notification per batch.
+                new("sensitivity", ["yield", "sens"],
+                    [new("path", true, "The .csch or .cnl whose tunables, tolerances, goals, measures and sensitivity line to run.")],
+                    [Set,
+                     new("factors",   "--factors",   OptKind.Str,     "all (default: every tunable — at +-k sigma when it has a tolerance, at +-step otherwise), stat (the stat=1 entries) or opt (the opt=1 entries, at +-step of their value)."),
+                     new("step",      "--step",      OptKind.Str,     "The +- step of a value with no tolerance, as a percent of its value (default 1%). A phase steps +-1 deg."),
+                     new("sigma",     "--sigma",     OptKind.Number,  "k: a toleranced value steps +-k sigma through its own distribution (default 1)."),
+                     new("ports",     "--ports",     OptKind.Str,     "1 or 0 (default): with factors=all, also step the ports' own values (their reference impedances)."),
+                     new("vars",      "--vars",      OptKind.StrList, "Step only these of the factors."),
+                     new("goals",     "--goals",     OptKind.StrList, "Rank exactly these enabled goals, whatever their use."),
+                     new("responses", "--responses", OptKind.Str,     "goals (default: the use=yield|both goals, else the use=opt|both ones) or all (every enabled goal). Every scalar measure is a response."),
+                     new("parallel",  "--parallel",  OptKind.Integer, "Simulations evaluated at once."),
+                     new("output",    "-o",          OptKind.Path,    "The result .npy; default <design>.sens.npy beside the design.")],
+                    "Sensitivity: which values move each goal most at the nominal design, and by how much per tolerance or per 1 %. "
+                  + "Each factor is stepped + and - alone (2k+1 simulations, deterministic); result.sensitivity.goals[] ranks the "
+                  + "contributors by |delta| of the goal's normalized margin, with each one's basis (sigma, 1 %, 1 deg), share and "
+                  + "status (nonlinear: the two steps disagree — confirm with doe design=ccf or a Monte Carlo). An estimated pass "
+                  + "fraction is given only when every factor steps by its tolerance. Exit 0 done; exit 2: the nominal did not "
+                  + "evaluate. Writes nothing to the design."),
                 new("em", ["em"],
                     [new("path", true, "The .cem or .c3d to run; with component, the workspace folder (or .cws, "
                                      + "or .ctech) whose technology the part is drawn on.")],

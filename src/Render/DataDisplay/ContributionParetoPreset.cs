@@ -30,15 +30,19 @@ public static class ContributionParetoPreset
     /// Ranks <paramref name="name"/> into <paramref name="ds"/> unless it is already there, and returns the Pareto plot
     /// over it bound to <paramref name="sourceRef"/> — or the refusal's sentence when nothing could be ranked.
     /// <paramref name="stored"/> is true when this call added the cubes (the caller then writes the source back).
+    /// <paramref name="group"/> is where the ranking lives: a Monte Carlo's <c>yield</c> (ranked here on request) or a
+    /// sensitivity run's <c>sens</c> (brief-sens-1 R-sens1-4), which the run wrote whole and nothing here computes.
     /// </summary>
-    public static (PlotContainerConfig? Plot, string? Refusal) Build(DataSet ds, string name, string sourceRef, out bool stored)
+    public static (PlotContainerConfig? Plot, string? Refusal) Build(DataSet ds, string name, string sourceRef, out bool stored,
+                                                                     string group = ResultContributions.Group)
     {
         stored = false;
-        string share = $"{ResultContributions.Group}.{ResultContributions.CubeName(name)}";
-        string shown = $"{ResultContributions.Group}.{ResultContributions.ShownName(name)}";
-        string cumulative = $"{ResultContributions.Group}.{ResultContributions.CumulativeName(name)}";
+        string share = $"{group}.{ResultContributions.CubeName(name)}";
+        string shown = $"{group}.{ResultContributions.ShownName(name)}";
+        string cumulative = $"{group}.{ResultContributions.CumulativeName(name)}";
         if (!ds.Contains(share) || !ds.Contains(shown) || !ds.Contains(cumulative))
         {
+            if (group != ResultContributions.Group) return (null, $"{name} is not ranked in this result's {group} group.");
             var report = ResultContributions.Store(ds, name);
             if (report.Refusal is { } why) return (null, why.Render());
             if (report.Contributors.Count == 0) return (null, $"Nothing drives {name}: no statistical variable varied.");

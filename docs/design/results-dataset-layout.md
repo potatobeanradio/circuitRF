@@ -230,3 +230,20 @@ the schematic or netlist**. `<r>` is a response: `goal:<g>:worst`, `goal:<g>:mar
 | `doe` | `design`, `factor_source`, `levels`, `generators`, `goal:<g>:spec` | one-point, labelled | the design described, the factor source, the levels, a fraction's generators, each goal's line |
 | `doe` | `factors` | `[factor]` (labelled `A = R1.R: low \| centre \| high`) | the factors |
 | `doe` | `runs`, `centre`, `evaluated`, `did_not_evaluate`, `resolution` | scalar | counts; resolution NaN unless a fraction |
+
+## Sensitivity (brief-sens-1)
+
+A sensitivity run (`SensitivityRun`, `src/Design/Statistics`) writes ONE grouped `DataSet` to **`<design>.sens.npy`
+beside the schematic or netlist**, everything in group `sens`. `<r>` is a goal's name or a scalar measure's. A goal's
+values are normalized margins (margin over the goal's scale); a measure's are in its own unit, which its cubes carry.
+
+| Group | Cube | Axes | What |
+|---|---|---|---|
+| `sens` | `contrib:<r>`, `contrib:<r>:shown`, `contrib:<r>:cumulative` | `[contributor]` (labelled with the factor keys, largest \|Δ\| first) | the shares Δ²/ΣΔ² (0–1; shown is the same values), and their running total — the contribution Pareto |
+| `sens` | `delta:<r>`, `plus:<r>`, `minus:<r>`, `nominal:<r>`, `asymmetry:<r>` | `[contributor]`, same order | signed Δ; the response at + and −; m₀ at every row; the D6 asymmetry |
+| `sens` | `status:<r>` | `[contributor]` (labelled `ok`, `nonlinear`, `one-sided`, `failed`) | 0–3 |
+| `sens` | `spread:<r>`, `estimate:<r>` | scalar | √ΣΔ²; Φ(m₀/spread) — a goal only, and only when every basis is σ |
+| `sens` | `factors`, `basis`, `step`, `status` | `[contributor]` in step order (labelled with the key; `σ`, `1 %`, `1°`; `+ v \| − v`; whether both steps evaluated for every response) | ordinals |
+| `sens` | `notes` | `[note]` (labelled with each note) | ordinals |
+| `sens` | `evaluations` | scalar | simulations the run spent |
+

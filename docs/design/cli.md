@@ -3816,7 +3816,7 @@ is a cancel of the run, and the file the design wrote is removed.
 
 **`Yield.Flags` says which run honours each flag, and every other run refuses it by name** through
 `cli.yield.corner-flag` ("yield: --trials belongs to yield mc, estimate, trial, corners --mc and center."). The runs are
-`mc`, `estimate`, `trial`, `corners`, `corners --mc`, `corners --generate`, `center` and `doe`; `mc` and `estimate` with
+`mc`, `estimate`, `trial`, `corners`, `corners --mc`, `corners --generate`, `center`, `doe` and `sens`; `mc` and `estimate` with
 `--trial` are `trial`. `reference statistics` prints the table with each flag's runs in brackets, so the page and the
 verb cannot disagree, and the old per-noun lists (`CornerFlagProblem`, `DoeFlagProblem`, `CenterFlagProblem`) are gone.
 In particular: on `doe` every statistics-line flag (`--confidence`, `--nonconverged`, `--save`, `--process`,
@@ -3839,6 +3839,22 @@ sensitivity's, `over=` anything's but a yield sensitivity's. **On a run at each 
 reads a stacked goal line's first slice (the line is the same at every corner). The yield display, the statistics
 table, contributions and a yield sensitivity refuse such a result by name.
 
+### 25.11 `yield sens` (brief-sens-1)
+
+`yield sens <path>` runs `SensitivityRun` (`docs/design/yield.md` §20): each factor stepped + and − on its own about
+the nominal — a toleranced one by ±k σ, any other by ±step % — and per goal the contributors ranked by |Δ| of the
+goal's normalized margin. A seventh noun on the verb: it shares the evaluator, `--set`, `--goals` (here: rank exactly
+these, whatever their `use`), `--vars` (step only these factors), `--parallel`, `-o`, `-q`, `--json` and the exit codes.
+Its own flags are the `sensitivity` line's — `--factors all|stat|opt`, `--step p%`, `--sigma k`, `--ports 0|1` (step
+the ports' reference impedances too; default 0), `--responses` — and
+`--top n`, the text table's length (default 10; `--json` always carries every contributor). stderr carries the plan
+(`8 factor(s) (2 at ±1 %, 6 at ±σ), 17 evaluations`) and a line per batch; stdout per goal
+`goal  m₀  σ  [estimated pass]`, then `rank  contributor  basis  Δ  share  status`, then each scalar measure in its own
+unit. The file is `<design>.sens.npy` (`-o` moves it); `--json` carries `result.sensitivity`
+(`goals[].contributors[]` with `key`, `label`, `basis`, `delta`, `share`, `status`; `measures[]`; `notes[]`;
+`evaluations`). It writes nothing to the design. Exit: **0** · **1** refused (also when nothing is rankable: no goal
+and only swept measures) · **2** the nominal did not evaluate ·
+**130** cancelled, nothing written — there is no target, so no 3. Over MCP it is `run analysis=sensitivity`.
 
 ## 26. `recognize` — a board's artwork as a circuit, headless
 

@@ -198,6 +198,9 @@ internal static class JsonRun
     /// <summary>What <c>yield doe</c> found (brief-yield-14 R-ya14-8).</summary>
     public static DoeReportJson? Doe;
 
+    /// <summary>What <c>yield sens</c> found (brief-sens-1 R-sens1-7).</summary>
+    public static SensitivityReportJson? Sensitivity;
+
     /// <summary>What <c>recognize</c> read and wrote (brief-artsch-7 R-as7-5).</summary>
     public static RecognizeReportJson? Recognize;
 
@@ -270,6 +273,7 @@ internal static class JsonRun
         Corners             = null;
         Center              = null;
         Doe                 = null;
+        Sensitivity         = null;
         Recognize           = null;
         StepImport          = null;
         ConvertImage        = null;
@@ -504,13 +508,13 @@ internal static class JsonRun
          || History is not null || Render is not null || Find is not null || Smith is not null || Snp is not null
          || Lvs is not null || Impedance is not null || ImpedanceSurvey is not null || FieldPlots is not null
          || ImpedanceLine is not null || Solvers is not null || Optimize is not null || Yield is not null || Corners is not null
-         || Center is not null || Doe is not null || Recognize is not null || StepImport is not null || ConvertImage is not null
+         || Center is not null || Doe is not null || Sensitivity is not null || Recognize is not null || StepImport is not null || ConvertImage is not null
          || Model is not null || Library is not null || Review is not null || ReviewChecks is not null)
             return new ResultPayload(null, null, Check, Explain, Document, Reference, History, Render,
                                      Find: Find, Smith: Smith, Lvs: Lvs, Impedance: Impedance,
                                      ImpedanceSurvey: ImpedanceSurvey, FieldPlots: FieldPlots,
                                      ImpedanceLine: ImpedanceLine, Solvers: Solvers, Optimize: Optimize,
-                                     Yield: Yield, Corners: Corners, Center: Center, Doe: Doe,
+                                     Yield: Yield, Corners: Corners, Center: Center, Doe: Doe, Sensitivity: Sensitivity,
                                      Recognize: Recognize, StepImport: StepImport, Convert: ConvertImage,
                                      Model: Model, Library: Library, Review: Review, ReviewChecks: ReviewChecks,
                                      Snp: Snp);

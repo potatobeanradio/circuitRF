@@ -398,6 +398,9 @@ public sealed class TuningSetup
     /// <summary>The design-of-experiments settings (brief-yield-14); null when the design states none.</summary>
     public DoeSettings?           Doe { get; set; }
 
+    /// <summary>The sensitivity settings (brief-sens-1); null when the design states none.</summary>
+    public SensitivitySettings?   Sensitivity { get; set; }
+
     /// <summary>How many significant digits the Tuning and Optimizer panels spell a tuned or optimized
     /// value with — what they show, simulate and push. Null is the panels' default; display only, so
     /// it is not part of the <c>.cnl</c>.</summary>
@@ -406,7 +409,7 @@ public sealed class TuningSetup
     [JsonIgnore]
     public bool IsEmpty => Variables.Count == 0 && Presets.Count == 0 && Goals.Count == 0 && Optimizer is null
                            && Digits is null && Correlations.Count == 0 && Statistics is null && Corners.Count == 0
-                           && Centering is null && Doe is null;
+                           && Centering is null && Doe is null && Sensitivity is null;
 
     public TuningSetup Clone() => new()
     {
@@ -420,6 +423,7 @@ public sealed class TuningSetup
         Corners      = [.. Corners.Select(c => c.Clone())],
         Centering    = Centering?.Clone(),
         Doe          = Doe?.Clone(),
+        Sensitivity  = Sensitivity?.Clone(),
     };
 }
 

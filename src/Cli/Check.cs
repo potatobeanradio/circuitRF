@@ -1572,3 +1572,11 @@ internal static class Check
         }
     }
 }
+
+        // brief-sens-1 R-sens1-6: a sensitivity line the run would refuse — no factor, no goal and no measure — from its
+        // constructor, which simulates nothing.
+        if (setup.Sensitivity is not null)
+        {
+            var sens = Design.Statistics.SensitivityRun.Create(PreparedCircuit.FromBench(lib, tb, null, catalog.PartTunables));
+            if (sens.Refusal is { } refusal) f.Add(CliDiagnostics.CheckTuningFinding(path, refusal));
+        }
