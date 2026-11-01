@@ -136,7 +136,9 @@ public sealed class PreparedCircuit
     public static PreparedCircuit FromText(string cnlText, string? sourceDirectory, string? baseDirectory,
                                            string testBenchName, NetExtractor.ExtractionResult extracted)
     {
-        var prepared = FromText(cnlText, sourceDirectory, baseDirectory, testBenchName, []);
+        var prepared = extracted.RunRefusal is { } refusal
+            ? new PreparedCircuit(null, null, refusal, baseDirectory, [])
+            : FromText(cnlText, sourceDirectory, baseDirectory, testBenchName, []);
         prepared.PartRangeWarnings = extracted.PartRangeWarnings;
         prepared.PartRefusals      = extracted.PartRefusals;
         prepared.PartTunables      = extracted.PartTunables;
@@ -158,8 +160,11 @@ public sealed class PreparedCircuit
         try
         {
             var (text, files, choices, extracted) = SchematicCircuit.CnlTextAndFilesOf(cschPath, hostWorkspaceRoot);
-            var prepared = FromText(text, SchematicCircuit.ReferenceBaseOf(cschPath, hostWorkspaceRoot), wsRoot,
-                                    Path.GetFileNameWithoutExtension(cschPath), files);
+            // A placed cell the netlist would leave out refuses the run (NetExtractor.ExtractionResult.DroppedInstances).
+            var prepared = extracted.RunRefusal is { } refusal
+                ? new PreparedCircuit(null, null, refusal, wsRoot, files)
+                : FromText(text, SchematicCircuit.ReferenceBaseOf(cschPath, hostWorkspaceRoot), wsRoot,
+                           Path.GetFileNameWithoutExtension(cschPath), files);
             prepared.HostCellChoices = choices;
             prepared.PartRangeWarnings = extracted.PartRangeWarnings;
             prepared.PartRefusals      = extracted.PartRefusals;

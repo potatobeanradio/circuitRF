@@ -132,7 +132,10 @@ public static class SchematicSexprReader
         private readonly SortedSet<string> _versions = new(StringComparer.Ordinal);
         private Dictionary<string, (string Reference, int? Unit)> _oldInstances = new(StringComparer.Ordinal);
         private string _rootUuid = "";
-        private int _implicitPins, _flags, _buses, _busLabels, _alternateBodies, _derived, _pinless;
+        private int _implicitPins, _flags, _buses, _busLabels, _alternateBodies, _derived, _pinless, _flagGrounds;
+
+        /// <summary>Where the current sheet's left-out power flags had their pin.</summary>
+        private readonly List<(double X, double Y)> _flagPins = [];
         private readonly SortedSet<string> _busesAcrossSheets = new(StringComparer.Ordinal);
 
         public ForeignSchematic Result()
@@ -142,7 +145,8 @@ public static class SchematicSexprReader
             if (_implicitPins > 0)
                 notes.Add($"{_implicitPins} hidden power-input pin(s) join the net their pin names with no wire, as this format does "
                         + $"in every version to date (file version {string.Join(", ", _versions)}).");
-            if (_flags > 0) notes.Add($"{_flags} power flag(s) were left out: they mark a net for the source's rule check and connect nothing.");
+            if (_flags > 0) notes.Add($"{_flags} power flag(s) were left out: they mark a net for the source's rule check and connect nothing."
+                                      + (_flagGrounds > 0 ? $" {_flagGrounds} power symbol(s) that touched only a flag went with them." : ""));
             if (_buses > 0 || _busLabels > 0)
                 notes.Add(string.Join(" and ", new[] { (_buses, "bus segment(s)"), (_busLabels, "bus label(s)") }
                                                .Where(x => x.Item1 > 0).Select(x => $"{x.Item1} {x.Item2}"))
@@ -239,7 +243,7 @@ public static class SchematicSexprReader
                         break;
                     case "text":
                         if (At(node) is { } tp && node.Atom(0) is { Length: > 0 } t)
-                            texts.Add(new ForeignText(t, tp.X, tp.Y, TextRotation(node), TextSize(node)));
+                            texts.Add(SheetText(node, t, tp));
                         break;
                     case "text_box":
                         if (XyOf(node.Child("at") ?? node.Child("start")) is { } bp2 && node.Atom(0) is { Length: > 0 } bt)
@@ -268,6 +272,49 @@ public static class SchematicSexprReader
                     case "netclass_flag" or "directive_label": NotCarried("net-class directive(s) were"); break;
                     case "group": NotCarried("group(s) were (their members were imported)"); break;
                 }
+            }
+
+            // A power symbol that reaches nothing but a left-out flag — the ground a flag is stood on, directly or by a
+            // short wire — joins nothing once the flag is gone, and would come in as a lone symbol with an unconnected
+            // marker. It goes, with any wire that only joined the two.
+            if (_flagPins.Count > 0)
+            {
+                var pinPoints = new List<(double X, double Y)>();
+                foreach (var inst in instances)
+                    if (libs.Values.FirstOrDefault(l => l.Symbol.Key == inst.SymbolKey)?.Symbol.Unit(inst.Unit) is { } iu)
+                        foreach (var ip in iu.Pins)
+                        {
+                            var (wx, wy) = SchematicGeometry.LocalToWorld((float)ip.X, (float)-ip.Y, inst.X, inst.Y, RotationOf(inst.Rotation), inst.Mirror);
+                            pinPoints.Add((wx, wy));
+                        }
+                static bool Near((double X, double Y) a, (double X, double Y) b) => Math.Abs(a.X - b.X) < 0.01 && Math.Abs(a.Y - b.Y) < 0.01;
+                static bool OnWire(ForeignWire w, (double X, double Y) p) => Enumerable.Range(0, w.Points.Count - 1).Any(i =>
+                    SchematicGeometry.PointOnSegment(p.X, p.Y, w.Points[i].X, w.Points[i].Y, w.Points[i + 1].X, w.Points[i + 1].Y, 0.01));
+
+                var gone = new HashSet<ForeignWire>();
+                foreach (var label in labels.Where(l => l.Kind == ForeignLabelKind.Power).ToList())
+                {
+                    // The wires reachable from the label, through shared points.
+                    var reach = new List<ForeignWire>();
+                    var points = new List<(double X, double Y)> { (label.X, label.Y) };
+                    for (bool grew = true; grew;)
+                    {
+                        grew = false;
+                        foreach (var w in wires)
+                            if (!reach.Contains(w) && points.Any(p => OnWire(w, p) || w.Points.Any(q => Near(p, q))))
+                            { reach.Add(w); points.AddRange(w.Points); grew = true; }
+                    }
+                    bool onFlag = points.Any(p => _flagPins.Any(f => Near(p, f)));
+                    bool joinsSomething = points.Any(p => pinPoints.Any(q => Near(p, q)))
+                        || labels.Any(o => !ReferenceEquals(o, label) && (points.Any(p => Near(p, (o.X, o.Y))) || reach.Any(w => OnWire(w, (o.X, o.Y)))))
+                        || reach.Any(w => pinPoints.Any(q => OnWire(w, q)));
+                    if (!onFlag || joinsSomething) continue;
+                    labels.Remove(label);
+                    foreach (var w in reach) gone.Add(w);
+                    _flagGrounds++;
+                }
+                wires.RemoveAll(gone.Contains);
+                _flagPins.Clear();
             }
 
             // A label on a bus names the bus, not a net: it goes with the bus.
@@ -377,7 +424,11 @@ public static class SchematicSexprReader
                 var drawing = ComponentSymbolSexprReader.ReadUnit(node, u, part);
                 units.Add(new ForeignSymbolUnit(u, pins, drawing.Shapes));
             }
-            return new ForeignSymbol(key, display, library, units);
+            // (pin_names (offset …) hide) in one epoch, (pin_names (hide yes)) in a later one.
+            var pinNames = node.Child("pin_names");
+            bool namesHidden = pinNames is not null
+                && (pinNames.HasAtom("hide") || pinNames.Child("hide") is { } h && h.Atom(0) is null or "yes");
+            return new ForeignSymbol(key, display, library, units) { PinNamesHidden = namesHidden };
         }
 
         private static ForeignPin? PinOf(PcbNode pin)
@@ -441,7 +492,16 @@ public static class SchematicSexprReader
                 // for the source's rule check — names nothing.
                 var u = lib.Symbol.Unit(unit) ?? lib.Symbol.Units.FirstOrDefault();
                 var pin = u?.Pins.FirstOrDefault();
-                if (pin is null || pin.ElectricalType != ForeignPinType.PowerIn) { _flags++; return; }
+                if (pin is null || pin.ElectricalType != ForeignPinType.PowerIn)
+                {
+                    _flags++;
+                    if (pin is not null)
+                    {
+                        var (fx, fy) = SchematicGeometry.LocalToWorld((float)pin.X, (float)-pin.Y, x, y, RotationOf(rotation), mirror);
+                        _flagPins.Add((Math.Round(fx, 4), Math.Round(fy, 4)));
+                    }
+                    return;
+                }
                 string net = value is { Length: > 0 } ? value : pin.Name;
                 var (px, py) = SchematicGeometry.LocalToWorld((float)pin.X, (float)-pin.Y, x, y, RotationOf(rotation), mirror);
                 labels.Add(new ForeignLabel(lib.Power == PowerKind.Local ? ForeignLabelKind.Local : ForeignLabelKind.Power,
@@ -572,6 +632,28 @@ public static class SchematicSexprReader
         foreach (var xy in node.Child("pts")?.Children("xy") ?? [])
             if (xy.Num(0) is { } x && xy.Num(1) is { } y) pts.Add((Mils(x), Mils(y)));
         return pts;
+    }
+
+    /// <summary>
+    /// Free text on the sheet. Its angle is a SPIN, not a turn: the format draws text at 180 degrees left to right and
+    /// at 270 bottom to top, so it is always readable, and only its stated justification says which end is anchored.
+    /// Taken as a turn, a label at 180 came in upside down.
+    /// </summary>
+    private static ForeignText SheetText(PcbNode node, string text, (double X, double Y) at)
+    {
+        double angle = node.Child("at")?.Num(2) ?? 0;
+        int quarter = (((int)Math.Round(angle / 90.0)) % 4 + 4) % 4;
+        int rotation = Orientation(quarter % 2 * 90, null).Rotation;
+        var justify = node.Child("effects")?.Child("justify");
+        CircuitRF.Design.Symbol.SymbolTextAlign? align = justify is null ? null
+            : justify.HasAtom("left") ? CircuitRF.Design.Symbol.SymbolTextAlign.Left
+            : justify.HasAtom("right") ? CircuitRF.Design.Symbol.SymbolTextAlign.Right
+            : CircuitRF.Design.Symbol.SymbolTextAlign.Center;
+        CircuitRF.Design.Symbol.SymbolTextVAlign? valign = justify is null ? null
+            : justify.HasAtom("top") ? CircuitRF.Design.Symbol.SymbolTextVAlign.Top
+            : justify.HasAtom("bottom") ? CircuitRF.Design.Symbol.SymbolTextVAlign.Bottom
+            : CircuitRF.Design.Symbol.SymbolTextVAlign.Middle;
+        return new ForeignText(text, at.X, at.Y, rotation, TextSize(node), align, valign);
     }
 
     /// <summary>Text turns counter-clockwise in this format and clockwise in circuitRF's.</summary>

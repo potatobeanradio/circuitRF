@@ -96,6 +96,23 @@ public static class NetExtractor
         public IReadOnlyList<string> PartRefusals { get; init; } = [];
 
         /// <summary>
+        /// Every placed cell the netlist LEAVES OUT — one with no schematic or model, one whose symbol's pins do not
+        /// match its cell's Pins, one that instantiates itself — each as the conflict that says why. Each is ALSO among
+        /// <see cref="Conflicts"/>. A run refuses while any is here (<see cref="RunRefusal"/>): the circuit it would
+        /// simulate is not the one drawn, and an amplifier left out reads as an open with nothing else to say so.
+        /// </summary>
+        public IReadOnlyList<string> DroppedInstances { get; init; } = [];
+
+        /// <summary>Why a run must not go ahead with this extraction, or null. <see cref="DroppedInstances"/>.</summary>
+        public string? RunRefusal => RefusalFor(DroppedInstances);
+
+        /// <summary><see cref="RunRefusal"/> for a list of dropped instances.</summary>
+        public static string? RefusalFor(IReadOnlyList<string> dropped) => dropped.Count == 0 ? null
+            : $"Not simulated: {dropped.Count} placed cell(s) would be left out of the circuit, so the result would not "
+            + "be the circuit drawn. Give each a schematic, an S-parameter file or a model, or set its Disable to Open. "
+            + string.Join(" ", dropped);
+
+        /// <summary>
         /// Every placed vendor part as a tunable — its key, and the candidate parts its <c>Part</c> entry chooses
         /// among (brief vendorlib-4 R-vl4-1/2). Kept here because the netlist cannot say it: a <c>.cnl</c> holds the
         /// cell an instance binds to, never the library part it came from. When the tuning setup tunes or
@@ -214,6 +231,7 @@ public static class NetExtractor
             HostCellChoices = scope.HostCellChoices,
             PartRangeWarnings = VendorLibraries.VendorPartRange.Warnings(tb, imports.VendorParts),
             PartRefusals = imports.VendorRefusals,
+            DroppedInstances = imports.DroppedInstances,
             PartTunables = PartTunablesOf(model, tb.Tuning, imports, lib, conflicts),
         };
     }
@@ -595,6 +613,7 @@ public static class NetExtractor
             if (comp.CellRef is not null)
             {
                 NoteHostWorkspaceCell(model, comp, scope.HostCellChoices);
+                int said = conflicts.Count;
 
                 // A part whose definition is a CIRCUIT comes first: a package is a subcircuit, not a
                 // device model, whatever else the kit says about it.
@@ -606,7 +625,7 @@ public static class NetExtractor
                 // A part the kit declares as a circuit is never emitted as a device instead. Falling
                 // back would answer with something the user did not place — the failure has already
                 // been reported, and skipping is the honest outcome.
-                if (isCircuitBacked) continue;
+                if (isCircuitBacked) { NoteDropped(comp, said, conflicts, imports); continue; }
 
                 // A cell backed by an external device provider is a LEAF: emit one ExtDevice
                 // instance rather than descending into a schematic it deliberately does not have.
@@ -617,6 +636,7 @@ public static class NetExtractor
                 var ci = EmitCellInstance(comp, model, uf, QK, netNames, detachedKeys,
                                           cells, lib, imports, scope, conflicts, cellRefResolutions);
                 if (ci is not null) instances.Add(ci);
+                else if (cells is not null) NoteDropped(comp, said, conflicts, imports);
                 continue;
             }
 
@@ -961,6 +981,10 @@ public static class NetExtractor
 
         /// <summary>The vendor parts this extraction refused, each as the conflict it added.</summary>
         public List<string> VendorRefusals { get; } = [];
+
+        /// <summary>Every cell instance this extraction LEFT OUT, at any level, each as the conflict that says why.
+        /// <see cref="ExtractionResult.DroppedInstances"/>.</summary>
+        public List<string> DroppedInstances { get; } = [];
 
         /// <summary>Every vendor part this extraction placed, with the drawing it is in — what
         /// <see cref="PartTunablesOf"/> turns into tunables once the whole hierarchy is known.</summary>
@@ -2041,6 +2065,13 @@ public static class NetExtractor
             => _names.ToDictionary(kv => kv.Value, kv => kv.Key, StringComparer.Ordinal);
     }
 
+    /// <summary>A placed cell left out of the netlist, recorded with the sentence that says why
+    /// (<see cref="ExtractionResult.DroppedInstances"/>).</summary>
+    private static void NoteDropped(EditableComponent comp, int conflictsBefore, List<string> conflicts, NetlistImports imports)
+        => imports.DroppedInstances.Add(conflicts.Count > conflictsBefore
+            ? conflicts[^1]
+            : $"Instance '{comp.InstanceName}' (cell '{comp.CellRef}') could not be extracted; skipped.");
+
     private static Instance? EmitCellInstance(
         EditableComponent comp,
         SchematicEditModel model,
@@ -2108,9 +2139,13 @@ public static class NetExtractor
         // BINDING CONTRACT GUARD: resolved pin count must equal the cell's interface-pin count.
         if (cellDef.Ports.Count != pinDefs.Count)
         {
-            conflicts.Add($"Cell '{cellName}' instance '{comp.InstanceName}': symbol exposes " +
-                          $"{pinDefs.Count} port(s) but the cell defines {cellDef.Ports.Count} " +
-                          $"interface pin(s); skipped.");
+            // Say what to do about it: a symbol pin connects to the cell's Pin of the SAME number, so the
+            // cell needs a Pin for every pin its symbol draws — a ground pin included (field report: a
+            // three-pin amplifier symbol over a two-Pin S-parameter cell ran as an open).
+            conflicts.Add($"Cell '{cellName}' instance '{comp.InstanceName}': its symbol has " +
+                          $"{pinDefs.Count} pin(s) but the cell's schematic places {cellDef.Ports.Count} Pin(s). " +
+                          $"Each symbol pin connects to the Pin whose Num is its number, so the cell needs " +
+                          $"a Pin for every one, Num 1 to {pinDefs.Count}; skipped.");
             return null;
         }
 

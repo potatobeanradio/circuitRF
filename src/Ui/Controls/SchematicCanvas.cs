@@ -85,6 +85,11 @@ public sealed class SchematicCanvas : Control
         get => _editContext;
         set
         {
+            // A different session in a canvas that already has a view of its own: a push into a cell or
+            // back up to its parent. The parent's pan/zoom says nothing about where the cell's drawing is,
+            // so the session comes back at the view it was left at, or fitted when it has never been shown.
+            bool retarget = _viewportEstablished && _editContext is not null && value is not null
+                            && !ReferenceEquals(_editContext, value);
             if (_editContext is not null)
             {
                 _editContext.PropertyChanged -= OnVmPropertyChanged;
@@ -107,12 +112,13 @@ public sealed class SchematicCanvas : Control
                 // fitted again. Field report (2026-09-22): the zoom was lost going schematic -> layout
                 // -> schematic. Only a canvas that has not established a view of its own restores:
                 // a push-in inside a live canvas keeps the behaviour it has always had.
-                if (!_viewportEstablished && _editContext.LastViewport is { } last)
+                if ((!_viewportEstablished || retarget) && _editContext.LastViewport is { } last)
                 {
                     (_panX, _panY, _zoom) = last;
                     MarkViewportEstablished();
                 }
                 _editContext.CanvasZoom = _zoom;
+                _fitOnRetarget = retarget && _editContext.LastViewport is null;
                 SyncFromVm();
                 UpdateCursor();
             }
@@ -200,8 +206,19 @@ public sealed class SchematicCanvas : Control
             ? _editContext.Overlay with { TunedLabels = tuned }
             : _editContext.Overlay;
         _needsInitialFit = _model is not null && _needsInitialFit;
+        if (_fitOnRetarget && _model is not null && Bounds.Width > 1 && Bounds.Height > 1)
+        {
+            _fitOnRetarget = false;
+            ZoomToFitInternal(Bounds.Width, Bounds.Height);
+            RaiseViewportChanged();
+            _followingFit = true;
+        }
         InvalidateVisual();
     }
+
+    /// <summary>A push into a cell (or up to a parent) never shown in this canvas: fitted as soon as its
+    /// drawing is there, rather than left at the view of the schematic it came from.</summary>
+    private bool _fitOnRetarget;
 
     // ── Viewport state ───────────────────────────────────────────────────────
 
@@ -536,6 +553,11 @@ public sealed class SchematicCanvas : Control
         foreach (var c in model.Components) Union(c.FullBbMinX, c.FullBbMinY, c.FullBbMaxX, c.FullBbMaxY);
         foreach (var w in model.Wires)      Union(w.BbMinX, w.BbMinY, w.BbMaxX, w.BbMaxY);
         foreach (var b in model.Bitmaps)    Union(b.X, b.Y, b.X + b.Width, b.Y + b.Height);
+        foreach (var sh in model.Shapes)
+        {
+            var (x0, y0, x1, y1) = CircuitRF.Design.Symbol.SymbolGeometry.BboxOf(sh.Primitive);
+            Union(x0, y0, x1, y1);
+        }
 
         // Nothing on the sheet: keep the model's own empty-schematic box rather than inventing one.
         if (minX == double.MaxValue)

@@ -138,7 +138,15 @@ cell. Save the schematic first: an unsaved one has nowhere to put them.</p>
 <tbody>
 <tr>
 <td><strong>R</strong>, <strong>C</strong>, <strong>L</strong></td>
-<td>a two-pin part whose symbol is named as one (<code>R</code>, <code>RES</code>, <code>RESISTOR</code>, <code>C</code>, <code>CAP</code>, <code>CAPACITOR</code>, <code>CP</code>, <code>L</code>, <code>IND</code>, <code>INDUCTOR</code>, alone or followed by <code>_</code> or a space and more) <strong>and</strong> whose reference starts with exactly that letter</td>
+<td>a two-pin part whose symbol is named as one (<code>R</code>, <code>RES</code>, <code>RESISTOR</code>, <code>C</code>, <code>CAP</code>, <code>CAPACITOR</code>, <code>CP</code>, <code>CP1</code>, <code>L</code>, <code>IND</code>, <code>INDUCTOR</code>, alone or followed by <code>_</code> or a space and more) <strong>and</strong> whose reference starts with exactly that letter</td>
+</tr>
+<tr>
+<td><strong>Bead</strong></td>
+<td>a two-pin part whose reference starts with <code>FB</code> and whose symbol is named <code>FB</code>, <code>BEAD</code>, <code>FERRITE</code>, or <code>Ferrite_Bead</code> and more. Its value, such as <code>220R/1A</code>, is the impedance the bead is sold by and becomes <strong>Rp</strong>. L and Cp are not in the source, so until you set them the bead is just its Rdc</td>
+</tr>
+<tr>
+<td><strong>Vdc</strong></td>
+<td>a supply connector: a two-pin part with one pin named for ground and the other for a voltage (<code>5V</code>, <code>+12V</code>, <code>3V3</code>). It becomes a DC source of that voltage, its + on the voltage pin</td>
 </tr>
 <tr>
 <td>R, C or L with its footprint</td>
@@ -161,7 +169,8 @@ variable to the value you meant.</p>
 <p><strong>A footprint property's size is metric when it is an IPC-7351 name.</strong> <code>RESC1005X038L</code> is a 1.0 × 0.5 mm resistor,
 the <strong>0402</strong> case, and its last letter is the density level: the part's <code>Footprint</code> becomes <code>smt:0402@L</code>. Any text
 before or after the name, such as a library prefix, is ignored.</p>
-<p><strong>A supply rail is a net, never a source.</strong> <code>+5V</code> stays a net named <code>+5V</code>; circuitRF adds no supply for it.</p>
+<p><strong>A supply rail is a net, never a source.</strong> <code>+5V</code> stays a net named <code>+5V</code>; circuitRF adds no supply for it. Only a
+connector whose own pins name the voltage and ground becomes a source.</p>
 <h2 id="symbol-cells">Symbol cells, and why they do not simulate yet</h2>
 <p>Each distinct symbol becomes one cell, holding the source's drawing as its symbol, in a folder beside the new cell
 named after the file: <code>amp.kicad_sch</code> puts them in <code>amp_parts/</code>. A part with several units, such as a dual op-amp,
@@ -170,6 +179,11 @@ cell is reused; a different cell of the same name is refused, naming both.</p>
 <p><strong>A symbol cell has no model.</strong> It is the source's picture of a transistor or an IC with nothing behind its pins, so
 <code>check</code> reports it and a simulation refuses to run until you give it one: a schematic of its own, an S-parameter file,
 or a model. circuitRF does not invent electrical behaviour the source did not state.</p>
+<p><strong>To give one a schematic</strong>, add a schematic to its cell. A new schematic in a cell that has a symbol starts with one
+Pin for each of the symbol's pins, its <strong>Num</strong> the pin's number and its <strong>Name</strong> the pin's name, so each symbol pin
+already connects to its own Pin. Wire your model to those Pins, including the ground pin: an amplifier drawn with
+in, GND and out needs all three. A cell whose Pins do not match its symbol's pins also refuses to run, and the
+message says which Pins it needs.</p>
 <p><strong>Test points are left out of a run.</strong> A part whose reference starts with <code>TP</code>, and any other symbol cell with a single
 pin, is drawn as usual with its <strong>Disable</strong> set to <strong>Open</strong>, so it neither needs a model nor takes part in a
 simulation. The report lists them. Set Disable back to <strong>None</strong> on any you want to include.</p>

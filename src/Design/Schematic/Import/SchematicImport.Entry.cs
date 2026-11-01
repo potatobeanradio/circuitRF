@@ -155,7 +155,7 @@ public static partial class SchematicImport
     {
         string prefix = new([.. d.Reference.TakeWhile(char.IsLetter)]);
         return ConnectorPrefixes.Contains(prefix, StringComparer.OrdinalIgnoreCase)
-            || System.Text.RegularExpressions.Regex.IsMatch(d.SymbolName, @"conn|sma|bnc|coax|port",
+            || System.Text.RegularExpressions.Regex.IsMatch(d.SymbolName, @"conn|(?<![a-z])(?:sma|bnc)(?![a-z])|coax|port",
                    System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
     }
 

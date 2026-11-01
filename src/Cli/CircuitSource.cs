@@ -250,6 +250,13 @@ internal static class CircuitSource
                 var (extracted, name) = ExtractFile(path);
                 ReportConflicts(extracted);
                 ReportVendorParts(extracted.PartRefusals, extracted.PartRangeWarnings);
+                // A placed cell the netlist would leave out is a refusal, never a run of a different circuit:
+                // an amplifier with no model left out reads as an open and nothing else says so.
+                if (extracted.RunRefusal is { } dropped)
+                {
+                    refusal = JsonRun.Fail(CliDiagnostics.RunFailed(dropped));
+                    return null;
+                }
                 return SchematicCircuit.FromExtraction(extracted, name, path, CliEntry.HostWorkspace);
             }
 

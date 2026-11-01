@@ -421,6 +421,14 @@ public static class SchematicRenderer
             }
         }
 
+        // ── Free lines, rectangles and circles (canvas objects) ───────────────
+        // An imported drawing's own graphics — a box drawn round a filter, a divider. Drawn like the free text below.
+        if (!isLod)
+            foreach (var sh in model.Shapes)
+                DrawSymbol(canvas, [sh.Primitive],
+                           compX: 0, compY: 0, rotation: SymbolRotation.R0, mirrorX: false,
+                           panX: panX, panY: panY, zoom: zoom, theme: theme);
+
         // ── Free text (canvas objects) ────────────────────────────────────────
         // Drawn by the symbol editor's own primitive renderer, at identity transform — the code the
         // symbol editor draws its text with, so the two editors' text cannot look different.

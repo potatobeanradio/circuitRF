@@ -34,9 +34,13 @@ public sealed class SchematicCanvasViewportPersistenceTests
                      + @"InvalidateVisual\(\);\s*ViewportChanged\?\.Invoke\(", src);
         Assert.Matches(@"_editContext\.LastViewport = \(_panX, _panY, _zoom\);", src);
 
-        // A canvas that has not yet established a view takes the remembered one instead of fitting.
-        Assert.Matches(@"(?s)if \(!_viewportEstablished && _editContext\.LastViewport is \{ \} last\)\s*\{\s*"
+        // A canvas that has not yet established a view takes the remembered one instead of fitting — and so does a
+        // push into a cell or back up to its parent (a retarget), whose drawing the previous view says nothing about.
+        Assert.Matches(@"(?s)if \(\(!_viewportEstablished \|\| retarget\) && _editContext\.LastViewport is \{ \} last\)\s*\{\s*"
                      + @"\(_panX, _panY, _zoom\) = last;\s*MarkViewportEstablished\(\);", src);
+        // A session never shown in this canvas is fitted as soon as its drawing is there, through the same funnel.
+        Assert.Matches(@"_fitOnRetarget = retarget && _editContext\.LastViewport is null;", src);
+        Assert.Matches(@"(?s)_fitOnRetarget = false;\s*ZoomToFitInternal\(Bounds\.Width, Bounds\.Height\);\s*RaiseViewportChanged\(\);", src);
     }
 
     /// <summary>Comments describe the rule; only code can break it.</summary>

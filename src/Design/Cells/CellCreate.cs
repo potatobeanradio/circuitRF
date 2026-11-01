@@ -132,6 +132,48 @@ public static class CellCreate
         return path;
     }
 
+    /// <summary>
+    /// The schematic a cell that already has a symbol starts with: one Pin per pin its primary symbol draws, Num the
+    /// pin's own number and Name its name, in a column — a pin on the symbol's right-hand side on the right, every other
+    /// on the left. A symbol pin connects to the cell's Pin of the SAME number, and a cell whose Pins do not match its
+    /// symbol is left out of a run, so starting from the symbol's own pins is what makes the first wiring right: a
+    /// three-pin amplifier symbol (in, ground, out) over a two-Pin S-parameter schematic is the field report this
+    /// answers. Null when the cell has no symbol, or one with no pins.
+    /// </summary>
+    public static SchematicEditModel? PinsFromSymbol(string cellDir)
+    {
+        var primary = CellFolder.ResolvePrimary(cellDir, ViewType.Symbol);
+        if (primary.ResolvedName is not { } file) return null;
+        CircuitRF.Design.Symbol.Symbol symbol;
+        try { symbol = SymbolPersistence.LoadFromFile(Path.Combine(CellFolder.SubFolderPath(cellDir, ViewType.Symbol), file)); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException) { return null; }
+        if (symbol.Pins.Count == 0) return null;
+
+        double centre = (symbol.Pins.Min(p => p.LocalX) + symbol.Pins.Max(p => p.LocalX)) / 2;
+        var model = new SchematicEditModel();
+        int left = 0, right = 0;
+        foreach (var pin in symbol.Pins.OrderBy(p => p.PortIndex))
+        {
+            bool onRight = pin.LocalX > centre + 1e-6;
+            int row = onRight ? right++ : left++;
+            var component = new EditableComponent
+            {
+                Symbol = SymbolKind.Pin,
+                X = onRight ? 600 : -600, Y = row * 200,
+                Rotation = onRight ? SymbolRotation.R180 : SymbolRotation.R0,
+            };
+            component.Parameters.Add(new EditableParameter { Name = "Num", Expression = pin.PortIndex.ToString(System.Globalization.CultureInfo.InvariantCulture) });
+            // A pin named only by its number ("1") says nothing its Num does not; one named "GND" says what it is.
+            string name = SymbolPinNames.IsStated(pin.Name) && NetName(pin.Name!) is { Length: > 0 } net ? net : "";
+            component.Parameters.Add(new EditableParameter { Name = "Name", Expression = name, ShowOnSchematic = name.Length > 0 });
+            model.Components.Add(component);
+        }
+        return model;
+
+        // A pin name that is not a net name (spaces, '~') is left off rather than mangled into one.
+        static string NetName(string text) => text.All(c => char.IsLetterOrDigit(c) || c is '_' or '+' or '-' or '.') ? text : "";
+    }
+
     /// <summary>Writes one <c>.csym</c> and returns its path: <paramref name="symbol"/>, or an empty one — no
     /// primitives, no pins, no ports — which loads through <c>SymbolPersistence</c> and opens on an empty canvas
     /// (R-aut3-8). A passive model's export hands its N-pin box here (brief-modelcomposer-12 R-mc12-7).</summary>

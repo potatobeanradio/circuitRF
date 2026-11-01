@@ -44,6 +44,10 @@ public sealed record ForeignSymbolUnit(int Unit, IReadOnlyList<ForeignPin> Pins,
 /// <summary>A symbol as the source defines it. <paramref name="Key"/> is unique within the source; instances name it.</summary>
 public sealed record ForeignSymbol(string Key, string DisplayName, string LibraryName, IReadOnlyList<ForeignSymbolUnit> Units)
 {
+    /// <summary>The source draws none of this symbol's pin names (a coaxial connector's "In" and "Ext"); its pins are
+    /// then known by their numbers, which circuitRF does not draw either.</summary>
+    public bool PinNamesHidden { get; init; }
+
     public int UnitCount => Units.Count;
 
     /// <summary>Unit <paramref name="unit"/>, or the only one when the symbol has one.</summary>
@@ -110,8 +114,11 @@ public sealed record ForeignSheetPin(string Name, double X, double Y);
 public sealed record ForeignSheetInstance(
     string Name, string SheetName, double X, double Y, double Width, double Height, IReadOnlyList<ForeignSheetPin> Pins);
 
-/// <summary>Free text, anchored at its top-left.</summary>
-public sealed record ForeignText(string Text, double X, double Y, int Rotation = 0, double Size = 50);
+/// <summary>Free text, anchored at its top-left unless the source states where: <paramref name="Align"/> and
+/// <paramref name="VAlign"/> are the source's own justification about (<paramref name="X"/>, <paramref name="Y"/>).</summary>
+public sealed record ForeignText(string Text, double X, double Y, int Rotation = 0, double Size = 50,
+                                 CircuitRF.Design.Symbol.SymbolTextAlign? Align = null,
+                                 CircuitRF.Design.Symbol.SymbolTextVAlign? VAlign = null);
 
 /// <summary>A free graphic line (a polyline; closed returns to its first point).</summary>
 public sealed record ForeignGraphic(IReadOnlyList<(double X, double Y)> Points, bool Closed = false);

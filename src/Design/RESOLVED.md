@@ -25684,3 +25684,54 @@ the box while no setup is active: drawn, sized and walled there, one records-edi
 setup Add / Add Thermal makes**. A run never reads it — it reads its setup's — so `SerializeForRun` leaves it out
 (`SolvedStatusTests` Gate 1's "document air box" row) and editing it marks no result stale.
 Gate: `EditorRound1TreeTests.WithNoSetup_TheAirBoxIsSizedInTheInspector_AndANewSetupStartsWithIt`.
+
+## An amplifier board's schematic, imported and simulated end to end (2026-11-01)
+
+A field user imported a single-sheet `.kicad_sch` of an amplifier with an input filter (an S-parameter amplifier, a
+ferrite bead, a polarized capacitor, a supply connector) and could not get an S-parameter run to mean anything. Found
+by doing the whole user path — Import Schematic, give the amplifier its S2P, simulate, compare with a measurement.
+
+- **A placed cell left out of the netlist simulated as an open, with only a warning.** `NetExtractor` skips a cell
+  instance it cannot extract (no primary schematic, its symbol's pin count unlike its cell's Pins, a cycle) and says so
+  among `Conflicts`; Simulate posted that as a warning and ran the rest. The import's own report and the user doc both
+  promised the opposite ("a run refuses it"). The user's amplifier cell had two Pins under a three-pin symbol (in,
+  GND, out) — skipped — so every result was the filter alone into an open. `ExtractionResult.DroppedInstances` now
+  records every cell instance left out, at any level, as the conflict that says why; `RunRefusal` turns it into a
+  refusal that Simulate (`WorkspaceViewModel`), every CLI run verb (`CircuitSource.ReadRunInput`) and
+  `PreparedCircuit` (tuning, optimizer, yield) all honour. `netlist`, `check`, LVS and Match extract as before.
+  The pin-count message now says a symbol pin connects to the Pin of the same Num, so the cell needs Num 1 to N.
+- **A new schematic in a cell that has a symbol starts with the symbol's pins as Pins** (`CellCreate.PinsFromSymbol`,
+  used by New Schematic with no template): Num the pin's number, Name the pin's name when it is a name rather than an
+  ordinal. Starting empty is how the two-Pin cell above came about.
+- **The renderer never drew a schematic line, rectangle or circle.** `EditablePrimitive` canvas objects were saved and
+  loaded but `BuildRenderModel` passed only bitmaps and texts on, so an import's own graphics (the box drawn round the
+  filter) were invisible. `SchematicModel.Shapes` carries them; the renderer draws them as the symbol editor's
+  primitives and the canvas fit includes them.
+- **Sheet text at 180 degrees came in upside down.** The format's text angle is a spin — 180 reads left to right, 270
+  bottom to top — and its justification says which end is anchored. `ForeignText` now carries `Align`/`VAlign`.
+- **The earlier arc spelling, `(arc (start)(end)(radius (at)(length)(angles)))`, was dropped** (it states a centre, not a
+  mid point): a polarized capacitor lost its curved plate. Read as the shorter way round from start to end.
+- **`fill (type background)` was drawn as a solid fill in the line colour**, so an amplifier triangle became a solid
+  shape hiding the GND pin name drawn inside it. Background is the sheet's pale body colour: now an outline.
+- **`(pin_names … hide)` was ignored**: a coaxial connector drew "In"/"Ext". `ForeignSymbol.PinNamesHidden`.
+- **Mapping:** `CP1` (and `CP2`…) is a capacitor; a ferrite bead (`FB` reference, `FB`/`BEAD`/`FERRITE`/`Ferrite_Bead…`
+  symbol) is the Bead with Rp read from its value ("220R/1A"); a two-pin part whose pins are named a voltage and
+  ground is a Vdc of that voltage, its + on the voltage pin (`ImportPartDecision.PinOrder`). A rail drawn as a net label
+  stays a net. The connector-likeness test matched "sma" inside "Small", offering a ferrite bead as a Port.
+- **Drawing:** a native part longer than the source's symbol is now also tried one grid step along its body, and a fit
+  that overlaps an already-fitted native part costs more than any snap — two parts drawn 350 mils apart (a resistor over
+  a capacitor) now meet pin to pin instead of overlapping and falling back to two stacked net labels. A pin whose own
+  stub was trimmed away under a longer body is no longer "re-joined" by a wire across the sheet to another run of its
+  net (the source joined the two by name only); a re-join longer than four grid steps is a net label. A power symbol
+  that reached nothing but a left-out power flag (directly or by a short wire) goes with the flag.
+- **Push in / push up kept the parent's pan and zoom**, so the cell's drawing was usually off screen. A different
+  session in a live canvas now comes back at the view it was left at, or is fitted when never shown.
+
+What the comparison taught, for the record: with nominal values and the amplifier's S2P, a small-value series LC
+filter sat well above where the built board measured it. Measured capacitor S-parameters alone did not move it; the
+inductors' self-resonance (a notch in the measured response sat on the series inductor's) and a few tenths of a pF
+of pad capacitance at the series resonator's middle node did. A shunt-mode two-port measurement of a capacitor cannot
+stand in for a series part; only series-mode data can be placed directly as a two-port.
+
+Not done: the Data Display reads no CSV, so the digitiser's own CSV cannot be overlaid without going through a
+Touchstone file; the automatic plot reading of a measured S21 picture found dozens of empty traces.

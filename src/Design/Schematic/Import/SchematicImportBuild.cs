@@ -326,6 +326,7 @@ public static class SchematicImportBuild
                     notes.Add($"{unit.Key.Inst.Reference} cannot be a Port: it has {why}. It is imported as its symbol cell.");
                     portRefs.Remove(unit.Key.Inst.Reference);
                 }
+            var fittedBodies = new List<((double X, double Y) A, (double X, double Y) B)>();
             foreach (var unit in units)
             {
                 var inst = unit.Key.Inst;
@@ -347,6 +348,11 @@ public static class SchematicImportBuild
 
                 if (decision.Becomes == ImportPartKind.Native)
                 {
+                    if (decision.PinOrder is { } order)
+                    {
+                        nodes = [.. order.Select(num => nodes.First(n => _nodes[n].Pin!.Number == num))];
+                        nets = nodes.Select(NetOfPin).ToList();
+                    }
                     var overrides = new List<ParameterAssignment>
                     {
                         new(decision.Parameter!, decision.Expression!, decision.Unit),
@@ -356,7 +362,10 @@ public static class SchematicImportBuild
                     tb.Instances.Add(instance);
                     if (decision.Variable is { } v && !tb.GlobalVariables.Any(g => g.Name == v.Name))
                         tb.GlobalVariables.Add(new Variable(v.Name, v.Expression, v.Unit));
-                    exactInstances[name] = FitNative(instance, nodes.Select(n => _nodes[n].At).ToList(), nets, ClashesWithOtherNet);
+                    var fit = FitNative(instance, nodes.Select(n => _nodes[n].At).ToList(), nets, ClashesWithOtherNet, fittedBodies);
+                    exactInstances[name] = fit;
+                    if (NetlistSchematic.PinOffsets(instance, fit.Rotation, fit.MirrorX) is { Count: 2 } body)
+                        fittedBodies.Add(((fit.X + body[0].X, fit.Y + body[0].Y), (fit.X + body[1].X, fit.Y + body[1].Y)));
                     nativePins[name] = (instance, nodes);
                 }
                 else
@@ -682,9 +691,13 @@ public static class SchematicImportBuild
         /// pitched 300 mils snaps its 400-mil native symbol 50 mils up or down, and one of the two can put a pin on a wire
         /// the source only crosses.</summary>
         private ExactInstance FitNative(Instance instance, IReadOnlyList<(double X, double Y)> sourcePins, IReadOnlyList<string> nets,
-                                        Func<(double X, double Y), string, bool> clashes)
+                                        Func<(double X, double Y), string, bool> clashes,
+                                        IReadOnlyList<((double X, double Y) A, (double X, double Y) B)> fitted)
         {
             const double Clash = 1e9;
+            // A body laid over another native part already fitted — two parts the source draws closer together than
+            // circuitRF's symbols are long — costs more than any snap: one grid further along, the two meet pin to pin.
+            const double Overlap = 1e6;
             ExactInstance best = new(sourcePins[0].X, sourcePins[0].Y, SymbolRotation.R0, false);
             double bestCost = double.MaxValue;
             foreach (var rot in new[] { SymbolRotation.R0, SymbolRotation.R90, SymbolRotation.R180, SymbolRotation.R270 })
@@ -692,24 +705,53 @@ public static class SchematicImportBuild
                 if (NetlistSchematic.PinOffsets(instance, rot, false) is not { } offsets || offsets.Count != sourcePins.Count) continue;
                 double mx = sourcePins.Select((p, k) => p.X - offsets[k].X).Average();
                 double my = sourcePins.Select((p, k) => p.Y - offsets[k].Y).Average();
-                foreach (double ox in SnapsOf(mx))
-                    foreach (double oy in SnapsOf(my))
+                foreach (double ox in SnapsOf(mx, offsets.Count == 2 && Math.Abs(offsets[0].X - offsets[1].X) > 1e-6))
+                    foreach (double oy in SnapsOf(my, offsets.Count == 2 && Math.Abs(offsets[0].Y - offsets[1].Y) > 1e-6))
                     {
                         double cost = sourcePins.Select((p, k) => Math.Abs(ox + offsets[k].X - p.X) + Math.Abs(oy + offsets[k].Y - p.Y)).Sum()
-                                    + offsets.Select((o, k) => clashes((ox + o.X, oy + o.Y), nets[k]) ? Clash : 0).Sum();
+                                    + offsets.Select((o, k) => clashes((ox + o.X, oy + o.Y), nets[k]) ? Clash : 0).Sum()
+                                    + (offsets.Count == 2 && OverlapsFitted((ox + offsets[0].X, oy + offsets[0].Y), (ox + offsets[1].X, oy + offsets[1].Y), fitted)
+                                        ? Overlap : 0);
                         if (cost < bestCost - 1e-9) { bestCost = cost; best = new ExactInstance(ox, oy, rot, false); }
                     }
             }
             return best;
         }
 
-        /// <summary>The nearest grid point to <paramref name="v"/> first, then the other one either side of it.</summary>
-        private IEnumerable<double> SnapsOf(double v)
+        /// <summary>The nearest grid point to <paramref name="v"/> first, then the other one either side of it — and,
+        /// <paramref name="alongBody"/>, one grid step either way as well, which is how a part longer than the source's
+        /// steps clear of a neighbour it would otherwise overlap.</summary>
+        private IEnumerable<double> SnapsOf(double v, bool alongBody = false)
         {
             double near = Snap(v);
             yield return near;
             double other = v < near ? near - grid : near + grid;
             if (Math.Abs(v - near) > 1e-9) yield return other;
+            else if (alongBody) { yield return near - grid; yield return near + grid; }
+        }
+
+        /// <summary>Whether the body between <paramref name="a"/> and <paramref name="b"/> runs along one already
+        /// fitted, sharing more than a point with it.</summary>
+        private static bool OverlapsFitted((double X, double Y) a, (double X, double Y) b,
+                                           IReadOnlyList<((double X, double Y) A, (double X, double Y) B)> fitted)
+        {
+            const double Eps = 1e-6;
+            bool vertical = Math.Abs(a.X - b.X) < Eps, horizontal = Math.Abs(a.Y - b.Y) < Eps;
+            if (vertical == horizontal) return false;
+            foreach (var (fa, fb) in fitted)
+            {
+                if (vertical && Math.Abs(fa.X - fb.X) < Eps && Math.Abs(fa.X - a.X) < Eps)
+                {
+                    double lo = Math.Max(Math.Min(a.Y, b.Y), Math.Min(fa.Y, fb.Y)), hi = Math.Min(Math.Max(a.Y, b.Y), Math.Max(fa.Y, fb.Y));
+                    if (hi - lo > Eps) return true;
+                }
+                if (horizontal && Math.Abs(fa.Y - fb.Y) < Eps && Math.Abs(fa.Y - a.Y) < Eps)
+                {
+                    double lo = Math.Max(Math.Min(a.X, b.X), Math.Min(fa.X, fb.X)), hi = Math.Min(Math.Max(a.X, b.X), Math.Max(fa.X, fb.X));
+                    if (hi - lo > Eps) return true;
+                }
+            }
+            return false;
         }
 
         private static bool OnPolyline(IReadOnlyList<(double X, double Y)> points, (double X, double Y) at)
@@ -913,6 +955,30 @@ public static class SchematicImportBuild
             {
                 if (!drawnFrom.TryGetValue(c.InstanceName, out var from) || from.Inst.Fields.Count == 0
                     || placedBeside.Contains(c.InstanceName)) continue;
+                // A supply connector's fields are the connector's: its value names the part ("PWR-IN") and is usually
+                // hidden. As a source it shows its name and its voltage, in circuitRF's own layout.
+                if (from.Decision.Rule == SchematicImportMap.SupplyRuleName)
+                {
+                    c.ShowInstanceName = true;
+                    c.ShowTypeLabel = false;
+                    if (c.Parameters.FirstOrDefault(p => p.Name == from.Decision.Parameter) is { } volts) volts.ShowOnSchematic = true;
+                    // The connector's wires leave its pins on the side its pins point to, which is where circuitRF puts a
+                    // part's labels: they go on the other side, clear of the supply's own wiring.
+                    var shown = c.ToRenderComponent(null, null).Labels;
+                    double width = shown.Where(l => l.Length > 0).Select(l => l.Length).DefaultIfEmpty(0).Max() * NetlistSchematic.LabelCharWidth;
+                    // Its pins stand off its body toward the wiring: to the right when they lie right of its origin.
+                    bool wiresRight = source.Symbol(from.Inst.SymbolKey)?.Unit(from.Inst.Unit)?.Pins is { Count: > 0 } sp
+                        && sp.Average(q => SchematicGeometry.LocalToWorld((float)q.X, (float)-q.Y, from.Inst.X, from.Inst.Y,
+                                                                          Rotation(from.Inst.Rotation), from.Inst.Mirror).X) > from.Inst.X;
+                    double dx = wiresRight ? -(SchematicComponent.LabelBaseXFor(c.Symbol) + width + 150) : 0;
+                    // Level with the body: the block's middle row on the part's centre.
+                    int shownRows = shown.Count(l => l.Length > 0);
+                    double dy = wiresRight ? -SchematicComponent.LabelBaseYFor(c.Symbol, c.PortCount) - (shownRows - 1) * SchematicComponent.LabelWorldStep / 2
+                                             + SchematicComponent.LabelWorldHeight / 2 : 0;
+                    c.LabelOffsets.Clear();
+                    for (int i = 0; i < shown.Count; i++) c.LabelOffsets.Add((dx, dy));
+                    continue;
+                }
                 var fields = from.Inst.Fields;
                 var reference = fields.FirstOrDefault(f => f.Name == "Reference");
                 var value = fields.FirstOrDefault(f => f.Name == "Value");
@@ -1024,7 +1090,7 @@ public static class SchematicImportBuild
                     var (x, y) = Shift((t.X, t.Y), offsets[s]);
                     model.CanvasObjects.Add(new EditableText
                     {
-                        Text = t.Text, X = x, Y = y, Align = SymbolTextAlign.Left, VAlign = SymbolTextVAlign.Top,
+                        Text = t.Text, X = x, Y = y, Align = t.Align ?? SymbolTextAlign.Left, VAlign = t.VAlign ?? SymbolTextVAlign.Top,
                         RotationDeg = t.Rotation,
                     });
                 }
@@ -1092,7 +1158,7 @@ public static class SchematicImportBuild
             string number = PinIdentity(unit, i);
             if (number != p.Number.Trim()) fallbacks++;
             numbers.Add(number);
-            drawing.Pins.Add(new ComponentSymbolPin(p.Name.Length > 0 ? p.Name : number, number,
+            drawing.Pins.Add(new ComponentSymbolPin(p.Name.Length > 0 && !symbol.PinNamesHidden ? p.Name : number, number,
                                                     (int)Math.Round(p.X - ox), (int)Math.Round(p.Y - oy), NameAlign: AlignOf(p.BodySide)));
         }
         foreach (var shape in unit.Graphics) drawing.Shapes.Add(Translate(shape, -ox, -oy));

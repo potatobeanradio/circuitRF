@@ -1587,6 +1587,10 @@ public static class NetlistSchematic
             {
                 if (runs.Any(r => OnPolyline(r, at))) continue;
                 var v = vertices.MinBy(q => Math.Abs(q.X - at.X) + Math.Abs(q.Y - at.Y));
+                // The re-join is a short bend to the pin's own wire. A pin whose own stub was trimmed away under a longer
+                // native body is nearest some OTHER run of its net, which the source joins only by name — a supply
+                // label at each end — and a dog-leg to it is a wire across the sheet the picture never drew.
+                if (Math.Abs(v.X - at.X) + Math.Abs(v.Y - at.Y) > MaxRejoin) { labelled.Add((at, net)); continue; }
                 var bend = ox != 0 ? (v.X, at.Y) : (at.X, v.Y);
                 if (Orthogonal([at, bend, v]) is { Count: >= 2 } leg) runs.Add(leg);
             }
@@ -1644,6 +1648,10 @@ public static class NetlistSchematic
                 $"{unrouted.Count} net(s) could not be wired as the picture draws them and are joined by net label "
               + $"instead: {string.Join(", ", unrouted)}. The circuit is the one the picture states; the drawing is what suffered.");
     }
+
+    /// <summary>The longest bend <see cref="WireExact"/> draws to re-join a pin to its net's wiring; farther, the pin is
+    /// joined by a label.</summary>
+    private const double MaxRejoin = 4 * P;
 
     /// <summary>A run made orthogonal: repeated points dropped, a diagonal step turned into an L.</summary>
     private static List<(double X, double Y)> Orthogonal(IEnumerable<(double X, double Y)> points)

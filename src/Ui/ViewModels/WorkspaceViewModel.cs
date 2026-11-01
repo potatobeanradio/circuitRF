@@ -3971,11 +3971,20 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         try
         {
             IReadOnlyList<string> conflicts;
-            (netlistPath, conflicts) = WriteNetlist(activeDoc.ViewModel.EditModel, testBenchName);
+            string? refusal;
+            (netlistPath, conflicts, refusal) = WriteNetlist(activeDoc.ViewModel.EditModel, testBenchName);
             baseDir = Path.GetDirectoryName(netlistPath)!;
             foreach (var conflict in conflicts)
                 Messages.Warning($"Extraction: {conflict}");
             Messages.Success("Wrote netlist", netlistPath);
+            // A placed cell the netlist leaves out (a symbol cell with no model, a cell whose Pins do not match its
+            // symbol) refuses the run: what would be simulated is not the circuit drawn, and it reads as an open.
+            if (refusal is not null)
+            {
+                Messages.Error(refusal);
+                Diagnostics.CrashReporter.Note($"run: '{runLabel}' refused - a placed cell would be left out");
+                return;
+            }
             Diagnostics.CrashReporter.Note($"run: '{runLabel}' netlist written to {netlistPath}");
         }
         catch (Exception ex)
@@ -4348,7 +4357,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             IReadOnlyList<string> conflicts;
             // ActiveViewModel = the cell currently being viewed (base schematic, or a pushed-in
             // sub-cell). WYSIWYG: generate a netlist for what the user is looking at.
-            (netlistPath, conflicts) = WriteNetlist(activeDoc.ActiveViewModel.EditModel, testBenchName);
+            (netlistPath, conflicts, _) = WriteNetlist(activeDoc.ActiveViewModel.EditModel, testBenchName);
             foreach (var conflict in conflicts)
                 Messages.Warning($"Extraction: {conflict}");
             Messages.Success("Wrote netlist", netlistPath);
@@ -4394,7 +4403,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// scratch-session dir when no workspace is open. Atomic write (temp + rename).
     /// </summary>
     /// <returns>The absolute path written and any non-fatal extraction conflicts.</returns>
-    private (string Path, IReadOnlyList<string> Conflicts) WriteNetlist(
+    private (string Path, IReadOnlyList<string> Conflicts, string? RunRefusal) WriteNetlist(
         SchematicEditModel model, string testBenchName)
     {
         var destDir    = RunBaseDirectory();
@@ -4440,7 +4449,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         File.WriteAllText(tmpPath, text, System.Text.Encoding.UTF8);
         File.Move(tmpPath, targetPath, overwrite: true);
 
-        return (targetPath, conflicts);
+        return (targetPath, conflicts, result.RunRefusal);
     }
 
     // ── ICellResolver implementation ──────────────────────────────────────────
@@ -15819,7 +15828,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             //
             // A template that fails to parse must not cost the user their cell: it is reported and
             // the schematic is created empty, which is what they would have got without templates.
-            var model = new SchematicEditModel();
+            // With no template, a cell that already has a symbol starts with that symbol's pins as Pins
+            // (CellCreate.PinsFromSymbol), so the interface the parent sees is already the one it connects to.
+            var model = template is null ? CellCreate.PinsFromSymbol(cellDir) ?? new SchematicEditModel() : new SchematicEditModel();
             if (template is not null)
             {
                 try

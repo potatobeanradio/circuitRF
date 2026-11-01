@@ -61,11 +61,13 @@ public sealed record SchematicImportRule(
 /// <param name="CellName">A symbol cell's name, before any collision suffix.</param>
 /// <param name="Footprint">A native part's land pattern, as its <c>Footprint</c> parameter spells it (<c>smt:1210@N</c>),
 /// when the source states one circuitRF has built in.</param>
+/// <param name="PinOrder">The source's pin numbers in the native part's terminal order, when that is not the order the
+/// symbol declares them in: a supply connector's voltage pin is the source's <c>+</c> whichever it lists first.</param>
 public sealed record ImportPartDecision(
     string Reference, string SymbolKey, string SymbolName, string? Value, ImportPartKind Becomes, string? Rule,
     SymbolKind? Native = null, string? Parameter = null, string? Expression = null, string? Unit = null,
     (string Name, string Expression, string Unit)? Variable = null, string? CellName = null, string? Note = null,
-    string? Footprint = null)
+    string? Footprint = null, IReadOnlyList<string>? PinOrder = null)
 {
     /// <summary>The parts table's "becomes" column: <c>R → R=10 kOhm</c>, <c>U3 → symbol cell LM358</c>.</summary>
     public string Describe() => Becomes switch
@@ -87,8 +89,11 @@ public static class SchematicImportMap
         new("capacitor in a case", @"C-.+", "C", 2, null, ImportPartKind.Native, SymbolKind.Capacitor, "C", CaseFromName: true),
         new("inductor in a case",  @"L-.+", "L", 2, null, ImportPartKind.Native, SymbolKind.Inductor,  "L", CaseFromName: true),
         new("resistor",  @"R|RES|RESISTOR|R[_ ].*|RES[_ ].*|RESISTOR[_ ].*",          "R", 2, null, ImportPartKind.Native, SymbolKind.Resistor,  "R"),
-        new("capacitor", @"C|CAP|CAPACITOR|CP|C[_ ].*|CAP[_ ].*|CAPACITOR[_ ].*|CP[_ ].*", "C", 2, null, ImportPartKind.Native, SymbolKind.Capacitor, "C"),
+        new("capacitor", @"C|CAP|CAPACITOR|CP\d?|C[_ ].*|CAP[_ ].*|CAPACITOR[_ ].*|CP\d?[_ ].*", "C", 2, null, ImportPartKind.Native, SymbolKind.Capacitor, "C"),
         new("inductor",  @"L|IND|INDUCTOR|L[_ ].*|IND[_ ].*|INDUCTOR[_ ].*",          "L", 2, null, ImportPartKind.Native, SymbolKind.Inductor,  "L"),
+        // A ferrite bead is circuitRF's Bead: the reference says what the part is and the symbol agrees. Its value
+        // ("220R/1A") is the impedance it is sold by, read as Rp, the peak of the Bead's impedance.
+        new("ferrite bead", @"FB|BEAD|FERRITE|FERRITE[_ ]?BEAD.*|BEAD[_ ].*|FB[_ ].*", "FB", 2, null, ImportPartKind.Native, SymbolKind.Bead, "Rp"),
         new("ground",    @"GND|GROUND|EARTH|0|GND[_ ].*|GROUND[_ ].*",                null, 1, null, ImportPartKind.Ground),
     ];
 
@@ -159,12 +164,45 @@ public static class SchematicImportMap
                 var rule = single && !force.Contains(inst.Reference)
                     ? Rules.FirstOrDefault(r => r.Matches(name, inst.Reference, pins, inst.Value))
                     : null;
-                decisions.Add(rule is null
+                var supply = rule is null && single && !force.Contains(inst.Reference)
+                    ? SupplyOf(inst, name, symbol?.Unit(inst.Unit)?.Pins) : null;
+                decisions.Add(supply ?? (rule is null
                     ? new ImportPartDecision(inst.Reference, inst.SymbolKey, name, inst.Value, ImportPartKind.SymbolCell, null,
                                              CellName: CellNameFor(name))
-                    : Native(inst, name, rule));
+                    : Native(inst, name, rule)));
             }
         return decisions;
+    }
+
+    /// <summary>
+    /// A supply connector: two pins, one named for ground and the other for a voltage (<c>5V</c>, <c>+12V</c>,
+    /// <c>3V3</c>). It is where the supply enters the circuit, so it becomes a DC source of that voltage, its <c>+</c>
+    /// on the voltage pin — the pin names are the source's own evidence. Null for anything else; a rail drawn only as a
+    /// net (a <c>+5V</c> label) stays a net.
+    /// </summary>
+    private static ImportPartDecision? SupplyOf(ForeignInstance inst, string name, IReadOnlyList<ForeignPin>? pins)
+    {
+        if (pins is not { Count: 2 }) return null;
+        int ground = pins[0].Name is { } a && IsGroundName(a) ? 0 : pins[1].Name is { } b && IsGroundName(b) ? 1 : -1;
+        if (ground < 0 || VoltageOf(pins[1 - ground].Name) is not { } volts) return null;
+        return new ImportPartDecision(inst.Reference, inst.SymbolKey, name, inst.Value, ImportPartKind.Native, SupplyRuleName,
+                                      SymbolKind.Vdc, "Vdc", volts, "V",
+                                      Note: $"{inst.Reference} is a supply connector (pins {pins[1 - ground].Name} and {pins[ground].Name}): "
+                                          + $"it is a DC source of {volts} V.",
+                                      PinOrder: [pins[1 - ground].Number, pins[ground].Number]);
+    }
+
+    /// <summary>The rule a supply connector's decision names (<see cref="SupplyOf"/>).</summary>
+    public const string SupplyRuleName = "supply connector";
+
+    /// <summary>The voltage a pin name states — <c>5V</c>, <c>+5V</c>, <c>+3.3V</c>, <c>3V3</c>, <c>12V0</c> — or null.</summary>
+    internal static string? VoltageOf(string? pinName)
+    {
+        var m = Regex.Match((pinName ?? "").Trim(), @"^\+?(\d+)(?:\.(\d+))?V(\d+)?$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (!m.Success || m.Groups[2].Success && m.Groups[3].Success) return null;
+        string frac = m.Groups[2].Success ? m.Groups[2].Value : m.Groups[3].Value;
+        double v = double.Parse(m.Groups[1].Value + (frac.Length > 0 ? "." + frac : ""), CultureInfo.InvariantCulture);
+        return v > 0 ? Invariant(v) : null;
     }
 
     private static ImportPartDecision Native(ForeignInstance inst, string name, SchematicImportRule rule) =>
@@ -180,6 +218,7 @@ public static class SchematicImportMap
 
         var kind = rule.Native!.Value;
         string param = rule.Parameter!;
+        if (kind == SymbolKind.Bead) return BeadValue(inst, name, rule);
         if (ReadValue(inst.Value, kind) is { } read)
             return new ImportPartDecision(inst.Reference, inst.SymbolKey, name, inst.Value, ImportPartKind.Native, rule.Name,
                                           kind, param, read.Number, read.Unit);
@@ -194,6 +233,24 @@ public static class SchematicImportMap
             : $"{inst.Reference} has no value; it is the variable {variable} = {number} {unit}.";
         return new ImportPartDecision(inst.Reference, inst.SymbolKey, name, inst.Value, ImportPartKind.Native, rule.Name,
                                       kind, param, variable, null, (variable, number, unit), Note: note);
+    }
+
+    /// <summary>
+    /// A ferrite bead's value is the impedance it is sold by (<c>220R</c>, <c>1k/200mA</c>), which is Rp, the peak of the
+    /// Bead's impedance. Nothing in it states L or Cp, and the Bead takes zero as "not modelled": until they are set the
+    /// part is its Rdc, which the note says. A value that is not an impedance leaves every parameter at its default.
+    /// </summary>
+    private static ImportPartDecision BeadValue(ForeignInstance inst, string name, SchematicImportRule rule)
+    {
+        if (ReadValue(inst.Value, SymbolKind.Resistor) is { } read)
+            return new ImportPartDecision(inst.Reference, inst.SymbolKey, name, inst.Value, ImportPartKind.Native, rule.Name,
+                                          SymbolKind.Bead, "Rp", read.Number, read.Unit,
+                                          Note: $"{inst.Reference} is a Bead with Rp = {read.Number} {read.Unit}, read from \"{inst.Value}\"; "
+                                              + "its L and Cp are not in the source, so it is its Rdc until they are set.");
+        return new ImportPartDecision(inst.Reference, inst.SymbolKey, name, inst.Value, ImportPartKind.Native, rule.Name,
+                                      SymbolKind.Bead, "Rdc", "0.01", "Ohm",
+                                      Note: (inst.Value is { Length: > 0 } v ? $"{inst.Reference}'s value \"{v}\" is not an impedance; " : $"{inst.Reference} has no value; ")
+                                          + "it is a Bead with its default parameters. Set Rdc, L, Rp and Cp from the part's data.");
     }
 
     /// <summary>

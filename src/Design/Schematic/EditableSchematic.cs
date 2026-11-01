@@ -1692,9 +1692,21 @@ public sealed class SchematicEditModel
             .Select(t => new SchematicText(t.Id, t.ToPrimitive()))
             .ToList();
 
+        var shapes = CanvasObjects
+            .OfType<EditablePrimitive>()
+            .OrderBy(p => p.ZOrder)
+            .Select(p => new SchematicShape(p.Id, ShapePrimitiveOf(p)))
+            .ToList();
+
         double minX = double.MaxValue, minY = double.MaxValue;
         double maxX = double.MinValue, maxY = double.MinValue;
 
+        foreach (var sh in shapes)
+        {
+            var (x0, y0, x1, y1) = SymbolGeometry.BboxOf(sh.Primitive);
+            if (x0 < minX) minX = x0; if (x1 > maxX) maxX = x1;
+            if (y0 < minY) minY = y0; if (y1 > maxY) maxY = y1;
+        }
         foreach (var t in texts)
         {
             var (x0, y0, x1, y1) = SymbolGeometry.BboxOf(t.Primitive);
@@ -1722,6 +1734,7 @@ public sealed class SchematicEditModel
             NetLabels      = netLabels,
             Bitmaps        = bitmaps,
             Texts          = texts,
+            Shapes         = shapes,
             GridSize       = GridSize,
             BbMinX = minX - 200, BbMinY = minY - 200,
             BbMaxX = maxX + 200, BbMaxY = maxY + 200,
@@ -1729,6 +1742,23 @@ public sealed class SchematicEditModel
 
         return (model, new SchematicSpatialIndex(model));
     }
+
+    /// <summary>A line, rectangle or circle canvas object as the symbol primitive it draws as: a line between its two
+    /// end points, a rectangle or circle about its centre (<see cref="EditableCanvasObject.X"/>, <c>Y</c>).</summary>
+    private static SymbolPrimitive ShapePrimitiveOf(EditablePrimitive p) => p.Shape switch
+    {
+        PrimitiveShape.Rect => new RectPrimitive
+        {
+            ColorRole = SymbolColorRole.SymbolLine, StrokeTier = SymbolStrokeTier.Thin,
+            Cx = p.X, Cy = p.Y, W = p.Width, H = p.Height,
+        },
+        PrimitiveShape.Circle => new CirclePrimitive
+        {
+            ColorRole = SymbolColorRole.SymbolLine, StrokeTier = SymbolStrokeTier.Thin,
+            Cx = p.X, Cy = p.Y, R = Math.Min(p.Width, p.Height) / 2,
+        },
+        _ => new LinePrimitive(SymbolColorRole.SymbolLine, SymbolStrokeTier.Thin, p.P1X, p.P1Y, p.P2X, p.P2Y),
+    };
 
     // ── Cell-ref resolution ───────────────────────────────────────────────────
 

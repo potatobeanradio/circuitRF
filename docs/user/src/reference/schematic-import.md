@@ -64,7 +64,9 @@ A part becomes one of circuitRF's own components only where the source makes it 
 
 | Becomes | When |
 |---|---|
-| **R**, **C**, **L** | a two-pin part whose symbol is named as one (`R`, `RES`, `RESISTOR`, `C`, `CAP`, `CAPACITOR`, `CP`, `L`, `IND`, `INDUCTOR`, alone or followed by `_` or a space and more) **and** whose reference starts with exactly that letter |
+| **R**, **C**, **L** | a two-pin part whose symbol is named as one (`R`, `RES`, `RESISTOR`, `C`, `CAP`, `CAPACITOR`, `CP`, `CP1`, `L`, `IND`, `INDUCTOR`, alone or followed by `_` or a space and more) **and** whose reference starts with exactly that letter |
+| **Bead** | a two-pin part whose reference starts with `FB` and whose symbol is named `FB`, `BEAD`, `FERRITE`, or `Ferrite_Bead` and more. Its value, such as `220R/1A`, is the impedance the bead is sold by and becomes **Rp**. L and Cp are not in the source, so until you set them the bead is just its Rdc |
+| **Vdc** | a supply connector: a two-pin part with one pin named for ground and the other for a voltage (`5V`, `+12V`, `3V3`). It becomes a DC source of that voltage, its + on the voltage pin |
 | R, C or L with its footprint | a symbol named after its land pattern, such as `R-0603` or `C-1210`; or an R, C or L whose footprint property names a chip land pattern, such as `RESC1005X038L` or `R_0603_1608Metric` |
 | **ground** | a ground symbol, and any net named `GND`, `GROUND`, `EARTH` or `0` |
 
@@ -82,7 +84,8 @@ variable to the value you meant.
 the **0402** case, and its last letter is the density level: the part's `Footprint` becomes `smt:0402@L`. Any text
 before or after the name, such as a library prefix, is ignored.
 
-**A supply rail is a net, never a source.** `+5V` stays a net named `+5V`; circuitRF adds no supply for it.
+**A supply rail is a net, never a source.** `+5V` stays a net named `+5V`; circuitRF adds no supply for it. Only a
+connector whose own pins name the voltage and ground becomes a source.
 
 ## Symbol cells, and why they do not simulate yet {#symbol-cells}
 
@@ -94,6 +97,12 @@ cell is reused; a different cell of the same name is refused, naming both.
 **A symbol cell has no model.** It is the source's picture of a transistor or an IC with nothing behind its pins, so
 `check` reports it and a simulation refuses to run until you give it one: a schematic of its own, an S-parameter file,
 or a model. circuitRF does not invent electrical behaviour the source did not state.
+
+**To give one a schematic**, add a schematic to its cell. A new schematic in a cell that has a symbol starts with one
+Pin for each of the symbol's pins, its **Num** the pin's number and its **Name** the pin's name, so each symbol pin
+already connects to its own Pin. Wire your model to those Pins, including the ground pin: an amplifier drawn with
+in, GND and out needs all three. A cell whose Pins do not match its symbol's pins also refuses to run, and the
+message says which Pins it needs.
 
 **Test points are left out of a run.** A part whose reference starts with `TP`, and any other symbol cell with a single
 pin, is drawn as usual with its **Disable** set to **Open**, so it neither needs a model nor takes part in a

@@ -233,8 +233,8 @@ public static class ComponentSymbolSexprReader
             case "arc":
             {
                 var s = Xy(node.Child("start"));
-                var m = Xy(node.Child("mid"));
                 var e = Xy(node.Child("end"));
+                var m = Xy(node.Child("mid")) ?? MidOfCentredArc(node, s, e);
                 if (s is null || m is null || e is null) break;
                 if (ArcThroughThreePoints(s.Value, m.Value, e.Value) is { } arc)
                     drawing.Shapes.Add(arc with { Width = StrokeWidth(node) });
@@ -311,11 +311,33 @@ public static class ComponentSymbolSexprReader
         return pts;
     }
 
-    /// <summary>A <c>(fill (type …))</c> of anything but <c>none</c> is filled. <c>background</c> is a
-    /// theme colour rather than the line colour, but circuitRF's symbol primitives carry one line role
-    /// by design (the file's own colours are the authoring editor's palette), so both read as fill.</summary>
+    /// <summary>
+    /// A <c>(fill (type outline))</c> or <c>(fill (type color))</c> is filled. <c>background</c> is NOT: it is the
+    /// sheet's pale body colour, and circuitRF's symbol primitives fill in their one line colour, so reading it as a
+    /// fill turns an amplifier's triangle into a solid shape that hides the pin names drawn inside it. An outline
+    /// is what the source looks like.
+    /// </summary>
     private static bool FilledOf(PcbNode node)
-        => node.Child("fill")?.ChildAtom("type") is { } type && type != "none";
+        => node.Child("fill")?.ChildAtom("type") is { } type && type is not ("none" or "background");
+
+    /// <summary>
+    /// The mid point of an arc written in the format's earlier spelling, which states its centre instead of a mid
+    /// point: <c>(arc (start …) (end …) (radius (at cx cy) (length r) (angles a1 a2)))</c>. That spelling always
+    /// draws the shorter way round from start to end, so the mid point is half that sweep from the start.
+    /// Null when the node states neither.
+    /// </summary>
+    private static (double X, double Y)? MidOfCentredArc(PcbNode node, (double X, double Y)? s, (double X, double Y)? e)
+    {
+        var radius = node.Child("radius");
+        if (s is null || e is null || Xy(radius?.Child("at")) is not { } c) return null;
+        double r = Mils(radius!.ChildNum("length") ?? 0);
+        if (r <= 0) r = Math.Sqrt((s.Value.X - c.X) * (s.Value.X - c.X) + (s.Value.Y - c.Y) * (s.Value.Y - c.Y));
+        double a1 = Math.Atan2(s.Value.Y - c.Y, s.Value.X - c.X);
+        double a2 = Math.Atan2(e.Value.Y - c.Y, e.Value.X - c.X);
+        double sweep = Math.IEEERemainder(a2 - a1, 2 * Math.PI);   // (-π, π]: the shorter way round
+        double mid = a1 + sweep / 2;
+        return (c.X + r * Math.Cos(mid), c.Y + r * Math.Sin(mid));
+    }
 
     /// <summary>
     /// The circle through three points, as a start angle and a signed sweep.
