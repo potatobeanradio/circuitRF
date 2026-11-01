@@ -164,6 +164,16 @@ public readonly struct LayoutRenderOptions
     /// — the toggle default lives at the VM layer, not here).</summary>
     public bool ShowPCellPins { get; init; }
 
+    /// <summary>R-dfr33-1-1 — the editor's Layers list has its Ports row's Vis box off: no port label, arrow,
+    /// name or width bar is drawn. False (the default) for every export and every <c>render</c>, which
+    /// choose their layers and leave ports as they are.</summary>
+    public bool HidePorts { get; init; }
+
+    /// <summary>Cross-frame memo of the conductor each port stands on (<see cref="LayoutConductorCache"/>), owned by
+    /// the interactive canvas and cleared on every model change. Null (every export and one-shot render) builds
+    /// the lookup afresh, as before.</summary>
+    public LayoutConductorCache? ConductorCache { get; init; }
+
     /// <summary>
     /// SL3 R-sl3-9 — the cell references in this document whose published interface no longer matches
     /// what the instances referencing them were placed against. Every instance carrying one of these
@@ -451,7 +461,11 @@ public readonly record struct LayoutRenderResult(
     /// <summary>RF4 — cached tiles this frame blitted. Zero when the tier did not engage, which is
     /// every export, every one-shot render and any document under
     /// <see cref="LayoutRenderOptions.TileShapeCountThreshold"/>.</summary>
-    int TilesBlitted = 0);
+    int TilesBlitted = 0,
+    /// <summary>R-dfr33-1-2 — the document indices of ports whose name this frame drew SHORTENED to its number or
+    /// left OUT because no clear space was within reach. The canvas shows such a port's name on hover. Empty when
+    /// every name was drawn in full.</summary>
+    IReadOnlyList<int>? PortNamesNotInFull = null);
 
 /// <summary>Plain-field, no-dictionary per-frame work counters (L2a) — threaded through the private
 /// draw helpers below by reference. A class (not a struct) so passing it around never copies; fields
@@ -459,6 +473,8 @@ public readonly record struct LayoutRenderResult(
 /// measurable time" guardrail (gate 6).</summary>
 internal sealed class LayoutFrameCounters
 {
+    /// <summary>R-dfr33-1-2 — see <see cref="LayoutRenderResult.PortNamesNotInFull"/>.</summary>
+    public List<int>? PortNamesNotInFull;
     public int ShapesExamined;
     public int ShapesDrawn;
     public int PathsConstructed;
@@ -768,7 +784,8 @@ public static partial class LayoutRenderer
             // Built once per frame, not per port: an EM port's marker needs the conductor it sits
                 // on, and that conductor may be a placed INSTANCE's artwork rather than a top-level
                 // shape (a schematic-generated layout has no top-level shapes at all).
-                var conductorAt = LayoutConductorLookup.LookupFor(view, tech, opts.BaseDir ?? "");
+                var conductorAt = opts.ConductorCache?.LookupFor(view, tech, opts.BaseDir ?? "")
+                                  ?? LayoutConductorLookup.LookupFor(view, tech, opts.BaseDir ?? "");
 
                 // L3a — instances (docs/sonnet-briefs/brief-L3a-instances-and-arrays.md). Culled the
                 // same way shapes are: the combined spatial-index query already excludes off-screen
@@ -1007,7 +1024,7 @@ public static partial class LayoutRenderer
                 if (designators.Count > 0)
                     DrawDesignators(canvas, designators, opts, ps, scaleUm, counters, tech);
 
-                if (deferredPorts.Count > 0)
+                if (deferredPorts.Count > 0 && !opts.HidePorts)
                     DrawPortGlyphs(canvas, deferredPorts, conductorAt, ps, scaleUm, opts, counters,
                                    view.DbuPerMicron, tech);
 
@@ -1119,7 +1136,8 @@ public static partial class LayoutRenderer
                 InstanceRastersBuilt: counters.InstanceRastersBuilt,
                 VerticesEmitted: counters.VerticesEmitted,
                 TilesBuilt: counters.TilesBuilt,
-                TilesBlitted: counters.TilesBlitted);
+                TilesBlitted: counters.TilesBlitted,
+                PortNamesNotInFull: counters.PortNamesNotInFull is { Count: > 0 } notInFull ? notInFull.ToArray() : []);
         }
         finally
         {
@@ -3486,8 +3504,11 @@ public static partial class LayoutRenderer
         // (LayoutRenderer.PortNames). The knockout, the names and their leaders are all this one placement.
         var colorOf = new Dictionary<int, SKColor>();
         foreach (var (index, _, layerColor) in ports) colorOf[index] = layerColor;
+        var omitted = new List<int>();
         var names = PlacePortNames(ports.Select(p => (p.Index, p.Label)), conductorAt, ps.DbuToUm * scaleUm, tech,
-                                   dbuPerMicron);
+                                   dbuPerMicron, omitted);
+        foreach (var name in names) if (name.Shortened) omitted.Add(name.Index);
+        if (omitted.Count > 0) (counters.PortNamesNotInFull ??= []).AddRange(omitted);
 
         using var knockout = new SKPath();
         foreach (var name in names)

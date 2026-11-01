@@ -60,7 +60,7 @@ using CircuitRF.Design.Layout;
 // --clay opens the layout editor view on a .clay, its technology resolved as the workspace resolves it, fitted. A step
 // point written @x,y is in the layout's micrometres. --rclick opens the canvas's context menu, --menu clicks one of its
 // items by header (prefix), --type types into the open dialog's text box and --button clicks a dialog button by its
-// label. --hide and --lock untick a layer's row in the layer list. Messages print as they are posted. An open context
+// label. --hide and --lock untick a layer's row in the layer list ("Ports" names the Ports row); --layer-list opens it. Messages print as they are posted. An open context
 // menu is drawn in the window's own frame; a dialog is its own window, so a capture also writes <out>.dialog.png.
 // --impedance runs the Impedance Analysis on the editor with that highest frequency (6GHz, or none) and prints each
 // trace's findings; --finding then selects the first finding of that kind (pad-shunt, return-broken, …) as the
@@ -144,6 +144,7 @@ string? gdsfactory = null, gdsfactoryPython = null, gdsfactoryKit = null, gdsfac
 string? csym = null, csymPick = null;
 bool dark = false;
 var layerToggles = new List<(string Name, bool Hide)>();
+bool layerList = false;
 bool standalone = false;
 var signal = new List<string>();
 string? snp = null;
@@ -191,6 +192,7 @@ for (int i = 0; i < args.Length; i++)
         case "--review": reviewRun = true; break;
         case "--place" when i + 1 < args.Length: place = args[++i]; break;
         case "--lock" when i + 1 < args.Length: layerToggles.Add((args[++i], false)); break;
+        case "--layer-list": layerList = true; break;
         case "--fc" when i + 1 < args.Length: fc = args[++i]; break;
         case "--c3d-setups" when i + 1 < args.Length: c3dSetups = Path.GetFullPath(args[++i]); break;
         case "--delete-fields" when i + 1 < args.Length: c3dDeleteFields = args[++i]; break;
@@ -342,8 +344,15 @@ else if (clay is not null)
     var (resolution, _) = TechnologyResolver.ResolveForDocument(model.TechRef, clay, null, new TechnologyCache());
     layoutVm.Technology = resolution.Tech;   // ApplyTechResolution is internal; TechRefFrom falls back to the stored TechRef
     layoutVm.OpenCreatedLayout = p => { Console.WriteLine($"opens {p}"); return Task.CompletedTask; };
+    layoutVm.ShowLayerList = layerList;
     foreach (var (name, hide) in layerToggles)
     {
+        // The Ports row (brief-dfr33-1) governs every port label whatever its layer; it is not one of LayerRows.
+        if (name == "Ports")
+        {
+            if (hide) layoutVm.PortsVisible = false; else layoutVm.PortsSelectable = false;
+            continue;
+        }
         var row = layoutVm.LayerRows.FirstOrDefault(r => r.Name == name);
         if (row is null)
         {

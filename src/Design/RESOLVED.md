@@ -25485,3 +25485,35 @@ Tests: `Em3dGeneratorTests.TheDefaultAirBox_PadsByMultiplesOfH_RoundedToFivePerc
 `…ADrawnUnbrokenBottomPlane_IsTheFloor_ExceptForARadiatorOrAStatedZMin`. The Properties panel now gives each padding
 box's length and rule as its tooltip; the face rows hold only the boundary picker, which reads PEC and PMC in capitals
 (`Em3dBoundaryKindNameConverter`).
+
+## DFR33-1: what a run does with port numbers 1, 3, 4, and the refusal that replaced it (2026-10-31)
+
+**R-dfr33-1-3, measured before anything changed.** Two lines on one copper layer over a plane: P1 and P3 on the
+ends of one, P4 on the other, no P2. One frequency point, a planar setup and a Palace Draft setup, run through `em`.
+
+| | Planar | Palace (Draft) |
+|---|---|---|
+| Ports in the `.sNp` | 3 (`.s3p`) | 3 (`.s3p`) |
+| Column order | P1, P3, P4 by position: S(1,2) ≈ 0.91, the through line between P1 and P3 | the same, S(1,2) ≈ 0.88 |
+| Header port lines | `port 1: 'P1'`, `port 3: 'P3'`, `port 4: 'P4'`, plus "port N of this file is the label named on the 'port N' line above", which is false for N = 2 and 3 | `port 1/3/4: 'port/1'…`, with no such sentence |
+| `.npy` | `S` and `Z0` axes `i`/`j`/`port` are 1, 2, 3 (positions); the planar diagnostics' `port` axis is 1, 3, 4 (numbers) | `S`/`Z0` axes 1, 2, 3 |
+| Create SnP Schematic | 3 pins, `Term1`–`Term3`, net labels `P1`–`P3`, so P3's data is named P2 and P4's is named P3. Each TermG's side is looked up by PORT NUMBER (`FacesOf`), so pin 2 takes the fallback side and pin 3 takes P3's side | the same |
+
+So nothing renumbered: every writer numbers by position, and the layout's numbers survived only in the header lines
+and one diagnostics axis. A schematic's SnP block connects by position, which makes the file's port 2 P3.
+
+**R-dfr33-1-4, owner decision D2: refuse.** `EmPortExtraction.Extract` ends with `firstProblem ??=
+NumberGap(...)`. It is asked after every per-port problem, so a port that is off the metal still names itself
+first. Both kernels go through `Extract` (`EmRunService` for planar, `Em3dGenerator` for 3D), so the run's
+refusal, `check` (Preflight, and Generate for 3D) and the EM Setup editor's port table all say the same sentence:
+*"Port numbers skip 2: the 3 ports are 1, 3, 4, and a Touchstone file numbers its ports by position, so its port 2
+would be port 3. Renumber the ports 1–3 so the file and the layout agree."* `explain` adds it as a `port numbers`
+step in its port walk. A lone port numbered 2 is a gap too. One existing test had used one as a one-port
+(`EmPortExtractionTests.APortIsALabelShape_NotANewShapeType`); it now clears P2's flag instead of P1's, and what it
+claims is unchanged. No tracked `.clay` under `examples/`, `testdata/` or `tests/` has a gap. Not covered: a `.c3d`'s
+own ports (`C3dPort.Number`), which are not layout labels. Tests: `PortNumberGapTests`.
+
+**R-dfr33-1-5 was already done.** `EmSolveRegionClip.Apply` (`EmSolveRegion.cs`) checks every numbered port against
+the region before it clips anything, and refuses the run naming the port, its point and the region. `EmGeometry`
+applies the region for every caller. Test: `EmSolveRegionTests.APortOutsideTheRegion_IsRefusedByName_BeforeAnythingIsExtracted`.
+Nothing changed.

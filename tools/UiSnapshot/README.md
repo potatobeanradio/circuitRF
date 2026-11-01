@@ -227,7 +227,8 @@ Messages print as they are posted. Besides the steps below:
 
 | Option | |
 |---|---|
-| `--hide`, `--lock` | Untick a layer's row in the layer list (its own `Visible`/`Selectable`). Repeat for several. |
+| `--hide`, `--lock` | Untick a layer's row in the layer list (its own `Visible`/`Selectable`). Repeat for several. `Ports` names the list's Ports row. |
+| `--layer-list` | Opens the Layers list beside the canvas. |
 | `@x,y` | Any step's point in the layout's micrometres instead of window DIPs, through the canvas's viewport. |
 | `--rclick x,y` | Right press and release: the canvas's context menu opens. It is drawn in the window's own frame. |
 | `--menu <header>` | Clicks the open context menu's item whose header starts with this (submenus searched), then closes it. A miss lists the headers. |

@@ -861,6 +861,12 @@
                     <TextBlock Classes="label" Text="Y:"/>
                     <TextBlock Classes="value coord" Text="{Binding ActiveViewModel.CursorYText}"/>
                 </StackPanel>
+
+                <!-- R-dfr33-1-1: a reminder while the Layers list's Ports row is off, so a port that will
+                     not take a click does not read as the editor having stopped working. Last in the
+                     bar, so its appearing moves nothing else. -->
+                <TextBlock Classes="value" x:Name="PortsRowStatus" Text="{Binding ActiveViewModel.PortsRowStatusText}"
+                           IsVisible="{Binding ActiveViewModel.PortsRowStatusText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
             </StackPanel>
         </Border>
 
@@ -954,6 +960,25 @@
                         <TextBlock Grid.Row="1" Grid.Column="0" Text="Vis" FontSize="10" Opacity="0.7" HorizontalAlignment="Center"/>
                         <TextBlock Grid.Row="1" Grid.Column="1" Text="Sel" FontSize="10" Opacity="0.7" HorizontalAlignment="Center"/>
                     </Grid>
+                    <!-- R-dfr33-1-1: the Ports row. A port label lives on the conductor layer it drives,
+                         so no layer row can set ports aside without the traces; this one governs every
+                         port in the view, whatever its layer. Above the layer rows and outside the
+                         filter, in the same columns. -->
+                    <Border DockPanel.Dock="Top" Classes="LayerRow" Margin="0,0,0,2">
+                        <Grid ColumnDefinitions="24,24,18,*" Margin="0,1">
+                            <CheckBox Grid.Column="0" x:Name="PortsVisibleBox" Padding="0" MinWidth="0" HorizontalAlignment="Center"
+                                      IsChecked="{Binding ActiveViewModel.PortsVisible, Mode=TwoWay}"
+                                      ToolTip.Tip="Draw port labels in this view"/>
+                            <CheckBox Grid.Column="1" x:Name="PortsSelectableBox" Padding="0" MinWidth="0" HorizontalAlignment="Center"
+                                      IsChecked="{Binding ActiveViewModel.PortsSelectable, Mode=TwoWay}"
+                                      IsEnabled="{Binding ActiveViewModel.PortsVisible}"
+                                      ToolTip.Tip="Let a click, marquee or Select All pick port labels. The Port tool still places ports."/>
+                            <mi:MaterialIcon Grid.Column="2" Kind="ArrowRightBoldBoxOutline" Width="12" Height="12"
+                                             VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                            <TextBlock Grid.Column="3" Margin="8,0,0,0" Text="Ports" FontSize="11" VerticalAlignment="Center"
+                                       ToolTip.Tip="Every port label in this layout, on whichever layer it sits"/>
+                        </Grid>
+                    </Border>
                     <ScrollViewer x:Name="LayerListScroll" HorizontalScrollBarVisibility="Disabled">
                         <ItemsControl ItemsSource="{Binding ActiveViewModel.FilteredLayerRows}">
                             <ItemsControl.ItemTemplate>

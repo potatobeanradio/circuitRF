@@ -35,6 +35,48 @@ public sealed partial class LayoutEditorViewModel
     private readonly HashSet<LayerKey> _hiddenLayers = [];
     private readonly HashSet<LayerKey> _lockedLayers = [];
 
+    // ── The Ports row (R-dfr33-1-1) ──────────────────────────────────────────────────────────────
+    //
+    // A port label lives on the conductor layer it drives, so the layer rows cannot set ports aside on
+    // their own: turning Top Copper's Sel box off takes the traces with it. This row governs every port
+    // label in the view, whatever its layer, and is stored beside the layer sets.
+    private bool _portsHidden, _portsLocked;
+
+    /// <summary>The Ports row's Vis box: off, no port label, arrow, name or width bar is drawn, and none
+    /// can be picked.</summary>
+    public bool PortsVisible
+    {
+        get => !_portsHidden;
+        set { if (_portsHidden == !value) return; _portsHidden = !value; DropUnpickablePorts(); LayerViewEdited(); }
+    }
+
+    /// <summary>The Ports row's Sel box: off, no port enters a click's pick stack, a marquee or Select
+    /// All. The Port tool still places ports.</summary>
+    public bool PortsSelectable
+    {
+        get => !_portsLocked;
+        set { if (_portsLocked == !value) return; _portsLocked = !value; DropUnpickablePorts(); LayerViewEdited(); }
+    }
+
+    /// <summary>A port already selected when its row goes off leaves the selection — otherwise Delete would
+    /// remove a port the user had just said they could not pick, and with Vis off could not see.</summary>
+    private void DropUnpickablePorts()
+    {
+        if (!_selectedIndices.Any(i => i >= 0 && i < Model.Shapes.Count && !PortRowAllowsPick(Model.Shapes[i]))) return;
+        SetSelection([.. _selectedIndices.Where(i => i >= 0 && i < Model.Shapes.Count && PortRowAllowsPick(Model.Shapes[i]))],
+                     clearOtherKind: false);
+        _cycleCache.Clear();
+    }
+
+    /// <summary>Whether a click, marquee or Select All may take <paramref name="shape"/> as far as the
+    /// Ports row is concerned — true for every shape that is not a port.</summary>
+    internal bool PortRowAllowsPick(LayoutShape shape) =>
+        shape is not LabelShape { IsPort: true } || (!_portsHidden && !_portsLocked);
+
+    /// <summary>The status line's reminder while ports cannot be picked, so a user who switched them off
+    /// does not think the editor has stopped responding to them. Empty otherwise.</summary>
+    public string PortsRowStatusText => _portsHidden || _portsLocked ? "Ports not selectable" : "";
+
     /// <summary>Layers this layout draws on that the technology does not define — listed as rows of
     /// their own, drawn with the fallback palette's look.</summary>
     private readonly HashSet<LayerKey> _undefinedLayers = [];
@@ -138,7 +180,7 @@ public sealed partial class LayoutEditorViewModel
     }
 
     /// <summary>True while any layer is hidden or locked — the only state in which Show all does anything.</summary>
-    public bool HasLayerOverrides => _hiddenLayers.Count > 0 || _lockedLayers.Count > 0;
+    public bool HasLayerOverrides => _hiddenLayers.Count > 0 || _lockedLayers.Count > 0 || _portsHidden || _portsLocked;
 
     /// <summary>Every row back to visible and selectable. Disabled, not hidden, while nothing is off.</summary>
     [RelayCommand(CanExecute = nameof(HasLayerOverrides))]
@@ -147,6 +189,7 @@ public sealed partial class LayoutEditorViewModel
         if (!HasLayerOverrides) return;
         _hiddenLayers.Clear();
         _lockedLayers.Clear();
+        _portsHidden = _portsLocked = false;
         LayerViewEdited();
     }
 
@@ -224,6 +267,8 @@ public sealed partial class LayoutEditorViewModel
         _lockedLayers.Clear();
         foreach (var k in stored?.Hidden ?? []) _hiddenLayers.Add(k);
         foreach (var k in stored?.Locked ?? []) _lockedLayers.Add(k);
+        _portsHidden = stored?.PortsHidden ?? false;
+        _portsLocked = stored?.PortsLocked ?? false;
         _applyingLayerView = true;
         try { SelectCurrentLayerOnly = stored?.CurrentLayerOnly ?? false; }
         finally { _applyingLayerView = false; }
@@ -244,6 +289,8 @@ public sealed partial class LayoutEditorViewModel
             Hidden = Sorted(_hiddenLayers),
             Locked = Sorted(_lockedLayers),
             CurrentLayerOnly = SelectCurrentLayerOnly,
+            PortsHidden = _portsHidden,
+            PortsLocked = _portsLocked,
             ListWidth = widthIsDefault ? null : LayerListWidth,
         };
     }
@@ -260,6 +307,9 @@ public sealed partial class LayoutEditorViewModel
         RefreshLayerRows();
         OnPropertyChanged(nameof(LayerViewVersion));
         OnPropertyChanged(nameof(HasLayerOverrides));
+        OnPropertyChanged(nameof(PortsVisible));
+        OnPropertyChanged(nameof(PortsSelectable));
+        OnPropertyChanged(nameof(PortsRowStatusText));
         ShowAllLayersCommand.NotifyCanExecuteChanged();
     }
 

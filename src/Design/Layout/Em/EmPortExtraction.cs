@@ -710,6 +710,11 @@ public static class EmPortExtraction
             // anything about this port, it never varies, and it belongs in the documentation.
         }
 
+        // brief-dfr33-1 R-dfr33-1-4 (owner decision D2: refuse) — a gap in the port numbers refuses the SET. A
+        // Touchstone file numbers its ports by position, so with ports 1, 3, 4 its port 2 is P3, and a schematic's
+        // SnP block connects by position. Asked last, so a per-port problem still names its own port first.
+        firstProblem ??= NumberGap([.. numbered.Select(p => p.Number)]);
+
         // Any problem at all refuses the SET — see the accumulator's own note above for why a
         // partial port list must never reach the solver. `Rows` survives either way, which is the
         // whole point: it is the only thing that still knows how many ports the user drew.
@@ -754,6 +759,45 @@ public static class EmPortExtraction
     }
 
     // ── Numbering ─────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// brief-dfr33-1 R-dfr33-1-4 — the sentence for port numbers that are not 1…N, or null when they are. Every
+    /// sNp writer numbers ports by POSITION (src/Design/RESOLVED.md, DFR33-1), so with ports 1, 3 and 4 the file's
+    /// port 2 is P3; the run refuses rather than write a file whose numbers disagree with the layout's.
+    /// </summary>
+    /// <param name="numbers">The port numbers, in any order.</param>
+    public static string? NumberGap(IReadOnlyList<int> numbers)
+    {
+        var sorted = numbers.Distinct().Order().ToList();
+        if (sorted.Count == 0 || sorted[^1] == sorted.Count) return null;
+
+        var missing = Enumerable.Range(1, sorted[^1]).Except(sorted).ToList();
+        int firstMoved = Enumerable.Range(0, sorted.Count).First(i => sorted[i] != i + 1);
+        string skipped = missing.Count switch
+        {
+            1 => $"{missing[0]}",
+            <= 6 => $"{string.Join(", ", missing.Take(missing.Count - 1))} and {missing[^1]}",
+            _ => $"{missing.Count} numbers",
+        };
+        string total = sorted.Count == 1 ? "the 1 port is" : $"the {sorted.Count} ports are";
+        string renumber = sorted.Count == 1 ? "the port 1" : $"the ports 1–{sorted.Count}";
+        return $"Port numbers skip {skipped}: {total} {Ranges(sorted)}, and a Touchstone file numbers its ports by " +
+               $"position, so its port {firstMoved + 1} would be port {sorted[firstMoved]}. Renumber {renumber} " +
+               "so the file and the layout agree.";
+
+        static string Ranges(List<int> n)
+        {
+            var parts = new List<string>();
+            for (int i = 0; i < n.Count;)
+            {
+                int j = i;
+                while (j + 1 < n.Count && n[j + 1] == n[j] + 1) j++;
+                parts.Add(j == i ? $"{n[i]}" : j == i + 1 ? $"{n[i]}, {n[j]}" : $"{n[i]}–{n[j]}");
+                i = j + 1;
+            }
+            return string.Join(", ", parts);
+        }
+    }
 
     /// <summary>
     /// Accepts <c>1</c>, <c>P1</c>, <c>p1</c>, <c>#1</c>, <c>Port 1</c>. Anything else is a name

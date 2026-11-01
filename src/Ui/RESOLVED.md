@@ -41595,3 +41595,28 @@ path; the lazily built `NetworkView` serves the derived metrics), which is the `
   tooltip), and `Viewer3DViewModel.Notes` keeps the refusal as its first line instead of dropping it while the banner
   shows, so the full text is readable in the notes. Visual check on screen still owed: the overlay is XAML over the
   native 3D surface and `UiSnapshot --c3d` captures the surface only.
+
+## DFR33-1: the Layers list's Ports row, and port names in a dense cluster (2026-10-31)
+
+- **Ports row (R-dfr33-1-1).** A port label lives on the copper it drives, so no layer row could set ports aside
+  without the traces. `LayoutEditorViewModel.Layers.cs` has `_portsHidden` / `_portsLocked`, exposed as
+  `PortsVisible` / `PortsSelectable`. `PortRowAllowsPick` is applied at the three selection gates: `BuildPickStack`,
+  `SelectableShapeIndices` (Select All) and the marquee's gate 8. Turning either box off drops ports that are already
+  selected, so Delete cannot remove a port the user can no longer pick or see. The Port tool's commit was not
+  touched: it never selected what it placed, and neither does drawing on a locked layer. The state is stored in
+  `CwsLayoutLayerView.PortsHidden` / `PortsLocked` in the `.cwsuser`, counted by `HasLayerOverrides`, and cleared by
+  Show all. Vis off reaches the renderer as `LayoutRenderOptions.HidePorts`, which skips `DrawPortGlyphs`. Ports
+  are never drawn into tiles (they are deferred to the frame's top pass), so the tile cache needs no key. `render`
+  never sets it. The status bar's last cell reads **Ports not selectable** while either box is off.
+- **Names in a cluster (R-dfr33-1-2, owner decision D1: full, then number, then hover).** A name used to move outward
+  up to 200 half-heights and stay wherever it got to, so nine ports along one line became a row of leaders.
+  `PlacePortNames` now moves a name at most `PortNameMaxTravelHeights` (3) of its heights, then tries the number
+  alone from `EmPortExtraction.TryParseNumber` (only when the number is shorter than the text), then leaves the name
+  out and adds the index to an `omitted` list. Placement still depends on zoom alone, so a name comes back when
+  zooming in makes room. The frame reports shortened and omitted indices as `LayoutRenderResult.PortNamesNotInFull`.
+  `LayoutCanvas` keeps the last frame's list, and on a hover with no button down asks
+  `LayoutEditorViewModel.PortNameTipAt` about only those ports, so the canvas tooltip costs nothing on a layout
+  whose names all fit. **Names are also spaced 7 px apart now** (`PortNameSpacingDevicePixels`; a name stays 3 px
+  from its own mark): at 3 px, "P5" beside "P4" read as "P5P4".
+- UiSnapshot gained `--layer-list` and `--hide Ports` / `--lock Ports` for the pictures this needed.
+- Tests: `PortsRowTests` (3), `PortNamePlacementTests.ACrowdedName_FallsBackToItsNumberThenToNothing_AndComesBackWhenZoomedIn`.

@@ -380,10 +380,11 @@ public class EmPortExtractionTests
         var r = Extract(Line(), Port("P1", 0, 1.45), Port("P2", 20, 1.45));
         Assert.True(r.Ok, r.Refusal);
 
-        // A label with the flag CLEARED is artwork annotation and contributes no port.
-        var plain = Port("P1", 0, 1.45);
+        // A label with the flag CLEARED is artwork annotation and contributes no port. P2's is the one
+        // cleared, not P1's: a lone port numbered 2 is a gap in the numbering, which refuses (R-dfr33-1-4).
+        var plain = Port("P2", 20, 1.45);
         plain.IsPort = false;
-        var shapes = new LayoutShape[] { Line(), plain, Port("P2", 20, 1.45) };
+        var shapes = new LayoutShape[] { Line(), Port("P1", 0, 1.45), plain };
 
         var r2 = EmPortExtraction.Extract(shapes, Problem(shapes), Dbu);
         Assert.True(r2.Ok, r2.Refusal);

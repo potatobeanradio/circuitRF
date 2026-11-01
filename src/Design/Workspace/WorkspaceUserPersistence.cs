@@ -92,6 +92,15 @@ public sealed class CwsLayoutLayerView
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool CurrentLayerOnly { get; set; }
 
+    /// <summary>The Layers list's Ports row with its Vis box off: no port label is drawn or picked.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool PortsHidden { get; set; }
+
+    /// <summary>The Ports row with its Sel box off: ports are drawn but no click, marquee or Select All
+    /// takes one.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool PortsLocked { get; set; }
+
     /// <summary>How wide the user dragged the Layers list, in device-independent pixels. Null is the
     /// default width, so a list nobody resized writes nothing.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

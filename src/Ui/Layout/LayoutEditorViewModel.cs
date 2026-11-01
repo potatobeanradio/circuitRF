@@ -188,6 +188,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
 
     partial void OnTechnologyChanged(Technology? value)
     {
+        _conductorCache.Clear();
         OnPropertyChanged(nameof(TechNameText));
         OnPropertyChanged(nameof(LayerCountText));
         OnPropertyChanged(nameof(TechSummaryText));
@@ -524,6 +525,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         // drawn, even though the shape really is in the model and really is being rendered underneath.
         Model.Changed += (_, info) =>
         {
+            _conductorCache.Clear();
             OnPropertyChanged(nameof(IsEmpty));
             OnPropertyChanged(nameof(ShapeCountText));
             OnPropertyChanged(nameof(InstanceCountText));
@@ -1488,7 +1490,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         for (int i = 0; i < Model.Shapes.Count; i++)
         {
             var def = ResolveLayerDef(Model.Shapes[i].Layer);
-            if (def.Visible && def.Selectable) yield return i;
+            if (def.Visible && def.Selectable && PortRowAllowsPick(Model.Shapes[i])) yield return i;
         }
     }
 
@@ -1736,6 +1738,9 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         // artwork it lies over. Nothing becomes unreachable: a second press at the same point cycles
         // down the stack to whatever is underneath, which is what the cycle is for.
         var shapes = LayoutHitTest.HitStack(Model, DrawTechnology, px, py, tolDbu, PortMarkerRegion);
+        // R-dfr33-1-1: the Layers list's Ports row, off, takes every port out of the stack — the
+        // shapes under it are then the top of the stack, as if no port were there.
+        shapes = [.. shapes.Where(i => i < 0 || i >= Model.Shapes.Count || PortRowAllowsPick(Model.Shapes[i]))];
         foreach (int i in shapes)
             if (i >= 0 && i < Model.Shapes.Count && Model.Shapes[i] is LabelShape { IsPort: true })
                 picks.Add(new LayoutPick(LayoutPickKind.Shape, i));
@@ -2316,9 +2321,13 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     /// outline — so what is highlighted and what responds to a click are the same rectangle by
     /// construction.</para>
     /// </summary>
+    /// <summary>The conductor under a point, remembered until the model changes — a port's pick region is asked for
+    /// on every click, hover and drag step, and each answer is a polygon union (<see cref="LayoutConductorCache"/>).</summary>
+    private readonly LayoutConductorCache _conductorCache = new();
+
     private Bbox PortMarkerRegion(LabelShape label)
     {
-        var conductorAt = LayoutConductorLookup.LookupFor(Model, DrawTechnology, InstanceBaseDir);
+        var conductorAt = _conductorCache.LookupFor(Model, DrawTechnology, InstanceBaseDir);
         var hint = LayoutPortDirection.Resolve(conductorAt, label);
 
         // The label's own type when it states one, the SAME inference the renderer makes when it
@@ -2338,6 +2347,25 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     /// (<see cref="PortMarkerRegion"/>) rather than a plain label box, so the menu appears for
     /// exactly the presses that select the port — including an edge port's bar-and-arrow out at the
     /// conductor end, which is nowhere near the label's anchor.</summary>
+    /// <summary>
+    /// R-dfr33-1-2 — the full name of the port under the pointer, when it is one of
+    /// <paramref name="candidates"/> (the ports whose name the last frame shortened to its number or left out),
+    /// or null. Only those are examined, so a hover over a layout whose names all fit costs nothing.
+    /// </summary>
+    internal string? PortNameTipAt(double wx, double wy, long tolDbu, IReadOnlyList<int> candidates)
+    {
+        long x = (long)Math.Round(wx), y = (long)Math.Round(wy);
+        long tol = Math.Max(tolDbu, 0);
+        foreach (int i in candidates)
+        {
+            if (i < 0 || i >= Model.Shapes.Count || Model.Shapes[i] is not LabelShape { IsPort: true } port) continue;
+            var bb = PortMarkerRegion(port);
+            if (!bb.IsEmpty && x >= bb.MinX - tol && x <= bb.MaxX + tol && y >= bb.MinY - tol && y <= bb.MaxY + tol)
+                return port.Text;
+        }
+        return null;
+    }
+
     public int? FindPortForContextMenu(double wx, double wy, long tolDbu)
     {
         long x = (long)Math.Round(wx), y = (long)Math.Round(wy);
@@ -2600,6 +2628,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
                 var shape = Model.Shapes[entry.Index];
                 var def = ResolveLayerDef(shape.Layer);
                 if (!def.Visible || !def.Selectable) continue; // gate 8: hidden/non-selectable never previewed
+                if (!PortRowAllowsPick(shape)) continue;       // R-dfr33-1-1: the Ports row, off
 
                 var bb = LayoutGeometry.BboxOf(shape);
                 if (bb.IsEmpty) continue;
@@ -2939,7 +2968,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         // target: the port reaches the edge along the free axis and does not budge on the locked one.
         if (_pointSnapDragActive && !_portDragIsTypedInternal && GeometrySnapEnabled)
         {
-            var portConductorAt = LayoutConductorLookup.LookupFor(Model, DrawTechnology, InstanceBaseDir);
+            var portConductorAt = _conductorCache.LookupFor(Model, DrawTechnology, InstanceBaseDir);
             long lx = _moveAnchorX + dx, ly = _moveAnchorY + dy;
             if (portConductorAt(lx, ly, null) is { } onMetal
                 && LayoutPortDirection.NearestBoundaryPoint(onMetal, lx, ly) is { } edge)

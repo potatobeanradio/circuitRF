@@ -19,7 +19,7 @@ public sealed class PortNamePlacementTests
 
     /// <summary>Lines 80 µm wide ending at x = 0, <paramref name="pitchUm"/> apart, a port on each end, each label
     /// stored 220 µm tall at the port's own point.</summary>
-    private static List<LayoutShape> Cluster(int count, double pitchUm)
+    private static List<LayoutShape> Cluster(int count, double pitchUm, string prefix = "")
     {
         var shapes = new List<LayoutShape>();
         for (int i = 0; i < count; i++)
@@ -28,7 +28,7 @@ public sealed class PortNamePlacementTests
             shapes.Add(new RectShape { Layer = Top, X1 = Um(-1500), Y1 = Um(y - 40), X2 = 0, Y2 = Um(y + 40) });
             shapes.Add(new LabelShape
             {
-                Layer = Top, PortLayer = Top, X = 0, Y = Um(y), Text = (i + 1).ToString(), Height = Um(220), IsPort = true,
+                Layer = Top, PortLayer = Top, X = 0, Y = Um(y), Text = $"{prefix}{i + 1}", Height = Um(220), IsPort = true,
                 PortKind = PlanarPortKind.Edge, PortDirection = LayoutRotation.R180,
             });
         }
@@ -70,5 +70,31 @@ public sealed class PortNamePlacementTests
         var second = Place(shapes, zoom);
         Assert.Equal(first.Select(p => (p.Index, p.Box, p.Drawn.X, p.Drawn.Y, p.Leader)),
                      second.Select(p => (p.Index, p.Box, p.Drawn.X, p.Drawn.Y, p.Leader)));
+    }
+
+    /// <summary>brief-dfr33-1 R-dfr33-1-2 — nine ports 160 µm apart, named "P1".."P9". Zoomed out, a name that cannot
+    /// clear the others within three of its heights falls back to its number, then to nothing, and every port is
+    /// either placed or reported as left out. Zoomed in far enough that each fits beside its port, all nine come back
+    /// in full.</summary>
+    [Fact]
+    public void ACrowdedName_FallsBackToItsNumberThenToNothing_AndComesBackWhenZoomedIn()
+    {
+        var shapes = Cluster(9, 160, prefix: "P");
+
+        var omitted = new List<int>();
+        var far = LayoutRenderer.PlacePortNames(
+            shapes.Select((s, i) => (i, s)).Where(p => p.s is LabelShape { IsPort: true }).Select(p => (p.i, (LabelShape)p.s)),
+            LayoutPortDirection.LookupFor(shapes), 5e-5, null, Dbu, omitted);
+        Assert.Contains(far, p => p.Shortened && p.Drawn.Text == p.Drawn.Text.TrimStart('P'));
+        Assert.NotEmpty(omitted);
+        Assert.Equal(9, far.Count + omitted.Count);
+        Assert.Contains(far, p => !p.Shortened);
+
+        omitted.Clear();
+        var near = LayoutRenderer.PlacePortNames(
+            shapes.Select((s, i) => (i, s)).Where(p => p.s is LabelShape { IsPort: true }).Select(p => (p.i, (LabelShape)p.s)),
+            LayoutPortDirection.LookupFor(shapes), 0.01, null, Dbu, omitted);
+        Assert.Empty(omitted);
+        Assert.Equal(9, near.Count(p => !p.Shortened));
     }
 }

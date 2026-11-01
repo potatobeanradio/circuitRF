@@ -5715,3 +5715,31 @@ and overlays in both colour passes so they still draw over it and over the secon
   still frames on the stored label, so a fit can leave margin a fixed-size name does not need.
 - **The edge bar is `EdgePortSheet.Bar`** (src/Design, DFR32-2): on an edge longer than 4 × the height to the return,
   or with a stated Width, it is the 3D sheet's width, centred on the port, and the arrow scales with it.
+
+## Slow pan and zoom on a board with ports: each port's conductor was a polygon union, every frame (2026-10-31)
+
+**Measured** with a scratch harness drawing a field-test board (4-layer evaluation board, 2,696 shapes, 14 edge
+ports, traces crossing a same-layer pour) through `LayoutRenderer.Draw` with the canvas's path and tile caches, in
+Debug, at 1600 × 1000, panning a few pixels per frame:
+
+| Zoom | ports drawn | ports hidden / removed | with `LayoutConductorCache` |
+|---|---|---|---|
+| fit | 52 ms | 16 ms | 17 ms |
+| ×4 | 37 ms | 2.5 ms | 2.7 ms |
+| ×16 | 34 ms | 0.1 ms | 0.3 ms |
+
+A profile put 98 % of a ports-drawn frame in `LayoutPortDirection.Resolve`, which calls the conductor lookup's
+`MergedWithOverlapping`, which calls `LayoutBooleans.Union`. Copper that overlaps is one conductor (round 7), so every
+port's trace was unioned with the pour it crosses. `PlacePortNames` and `DrawPortMarker` each resolve the port. The
+lookup's memo lived for one frame because `LookupFor` was called once per frame. The port labels' text was not the
+cost.
+
+**Fix.** `LayoutConductorCache` (`src/Render/Layout`) keeps the answers per (point, layer) across frames, and
+`LayoutRenderOptions.ConductorCache` hands it to `Draw`. It rebuilds when the view, the technology INSTANCE (a new
+`DrawTechnology` clone on any layer toggle), the base directory or `CellLayoutResolver.Generation` changes.
+`LayoutCanvas` clears it on `Model.Changed` (beside the path and tile caches) and on a `Technology` change. The view
+model keeps its own for `PortMarkerRegion`, which a click, the hover tip and the context menu ask per port, and for
+the port-drag edge snap. Every export and one-shot render passes none and builds the lookup per frame as before. A
+port being dragged asks at a new point each frame and pays for that one point. The first frame after an edit still
+pays the full cost once (~35–55 ms on this board). Test: `LayoutConductorCacheTests` (counters, plus an identical
+picture with and without the cache).

@@ -161,9 +161,14 @@ public sealed class LayoutCanvas : Control
         lock (model.RenderLock) tiles.Dispose();
     }
 
+    /// <summary>The conductor each port stands on, remembered across frames — without it the port pass redid a
+    /// polygon union per port per frame (see <see cref="LayoutConductorCache"/>).</summary>
+    private readonly LayoutConductorCache _conductorCache = new();
+
     private void OnModelChanged(object? sender, LayoutChangeInfo e)
     {
         _pathCache?.Apply(e);
+        _conductorCache.Clear();
         if (_viewModel is { } vm) _tileCache?.Apply(e, vm.Model);
         InvalidateVisual();
     }
@@ -283,6 +288,9 @@ public sealed class LayoutCanvas : Control
         if (e.PropertyName is nameof(LayoutEditorViewModel.ActiveTool)
             || LayoutEditorViewModel.IsCanvasPickProperty(e.PropertyName))
             UpdateCursor();
+        // A technology swapped or re-resolved may be the same instance edited; its stackup decides which layers are
+        // metal, so the remembered conductors go with it.
+        if (e.PropertyName is nameof(LayoutEditorViewModel.Technology)) _conductorCache.Clear();
         InvalidateVisual();
     }
 
@@ -548,7 +556,7 @@ public sealed class LayoutCanvas : Control
         var vp = CurrentViewport;
         var opts = new LayoutRenderOptions
         {
-            Theme = theme, ShowGrid = true, PathCache = _pathCache, TileCache = _tileCache,
+            Theme = theme, ShowGrid = true, PathCache = _pathCache, TileCache = _tileCache, ConductorCache = _conductorCache,
             // The zoom window rides on the frame's own marquee slot rather than a second rubber-band
             // path: it IS a marquee, and the editor already draws one. Applied to a COPY of the view
             // model's overlay (LayoutOverlay is a record) — never to the instance the view model
@@ -557,6 +565,7 @@ public sealed class LayoutCanvas : Control
                 ? (_viewModel?.Overlay ?? LayoutOverlay.Empty) with { Marquee = zoomBox }
                 : _viewModel?.Overlay,
             BaseDir = _viewModel?.InstanceBaseDir, ShowPCellPins = _viewModel?.ShowPCellPins ?? true,
+            HidePorts = _viewModel?.PortsVisible == false,
             ShowEmMesh = _viewModel?.ShowEmMesh ?? false, EmMesh = _viewModel?.EmMeshReport,
             ShowPlanarMesh = _viewModel?.ShowPlanarMesh ?? false, PlanarMesh = _viewModel?.PlanarMeshReport,
             PlanarCurrentDensity = _viewModel?.PlanarCurrentDensity,
@@ -573,6 +582,7 @@ public sealed class LayoutCanvas : Control
             r => Dispatcher.UIThread.Post(() =>
             {
                 FrameUnknownLayers?.Invoke(r.UnknownLayers);
+                _portNamesNotInFull = r.PortNamesNotInFull ?? [];
                 if (r.MissingInstanceCellRefs is { Count: > 0 } missing)
                     FrameMissingInstanceCellRefs?.Invoke(missing);
             })));
@@ -1923,6 +1933,7 @@ public sealed class LayoutCanvas : Control
         CursorWorldChanged?.Invoke(this, (wx, wy));
 
         bool leftDown = e.GetCurrentPoint(this).Properties.IsLeftButtonPressed;
+        UpdatePortNameTip(wx, wy, leftDown);
 
         if (_canvasOverlay?.OnPointerMoved(
                 (long)Math.Round(wx), (long)Math.Round(wy), HitTolDbu(), leftDown, e.KeyModifiers) == true)
@@ -1961,6 +1972,25 @@ public sealed class LayoutCanvas : Control
     }
 
     private void OnPointerExited(object? _, PointerEventArgs e) => CursorWorldChanged?.Invoke(this, null);
+
+    // ── R-dfr33-1-2: a port whose name the last frame shortened or left out shows it on hover ──────
+
+    /// <summary>Ports whose name the last frame drew as its number alone or not at all — the only ones a hover
+    /// has anything to add to. Empty on every layout whose names all fit, so the hover costs nothing there.</summary>
+    private IReadOnlyList<int> _portNamesNotInFull = [];
+
+    private string? _portNameTip;
+
+    private void UpdatePortNameTip(double wx, double wy, bool buttonDown)
+    {
+        string? tip = !buttonDown && _portNamesNotInFull.Count > 0
+            ? _viewModel?.PortNameTipAt(wx, wy, HitTolDbu(), _portNamesNotInFull)
+            : null;
+        if (tip == _portNameTip) return;
+        _portNameTip = tip;
+        ToolTip.SetTip(this, tip);
+        ToolTip.SetIsOpen(this, tip is not null);
+    }
 
     /// <summary>
     /// Ends a pan wherever it ended — the ONE place <see cref="_isPanning"/> is cleared, so every exit

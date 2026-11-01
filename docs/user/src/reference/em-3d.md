@@ -171,6 +171,12 @@ full description.
   port numbered `PortNum`, wherever the part is placed, turned or mirrored, and in 3D it is the pad-to-plane
   port above. A planar setup takes it as an internal port to ground. Its number is checked against the
   board's own port labels and every other component's: a number used twice is refused, naming both.
+
+  <a id="port-numbers"></a>**Port numbers run 1 to N.** A Touchstone file numbers its ports by position, not by
+  name, so a layout whose ports are 1, 3 and 4 would write P3 as the file's port 2, and a schematic that connects the
+  file connects it by position. A run, planar or 3D, is therefore refused while the numbers skip one, and the refusal
+  names what is missing (`Port numbers skip 2: the 3 ports are 1, 3, 4 …`); `check` and `explain` say the same.
+  Renumber the ports 1 to N. A port outside the setup's solve region is refused too, by name.
 - **Terminals** (`Terminals3D`, static solves): the matrix's rows and columns, each named by a net, an
   object's path or the end of one. An electrostatic terminal takes the whole piece of metal it names; a
   magnetostatic terminal also names the port its current enters by. Metal in no terminal floats, is

@@ -136,10 +136,17 @@ beside it reads, for example, **17 of 61** while it is narrowing the list. The t
 only the layers it shows, so "hide every pin layer" is a filter and one click. **Page Up** and **Page Down**
 page through the list, whether you are in the box, in the list, or on the canvas while the list is open.
 
+**The Ports row**, above the layers, has its own **Vis** and **Sel** boxes for every port label in the layout,
+whichever layer it sits on. A port lives on the copper it drives, so turning that layer's **Sel** off takes the traces
+with it; turning the Ports row's **Sel** off leaves the traces pickable and sets the ports aside, which is the way to
+build a selection of shapes for a boolean without picking up the ports between them. Ports are then left out of a
+click, a marquee and Select All, the Port tool still places them, and the status bar says **Ports not selectable**.
+**Vis** off draws no port at all. A picture made with [`render`](cli.html#render) is unaffected.
+
 **Select on the current layer only** (the target button in the list's header) lets a click pick only
 shapes on the drawing layer, whatever the **Sel** column says. It is the quick way to work on a trace
 that lies on a ground plane: choose the trace's layer, turn it on, and the plane can no longer be
-picked. **Show all** makes every layer visible and selectable again.
+picked. **Show all** makes every layer, and the Ports row, visible and selectable again.
 
 **Click again to select the next shape underneath.** A second click at the same spot moves to the next
 overlapping shape — see [Selection](#selection).
@@ -161,7 +168,10 @@ conductor end, or on an edge longer than 4 × the height to its return, twice th
 sets it; blank is that rule, which the field's grey text shows. The name is drawn at a fixed size on screen,
 beside the arrow on its outer side, at every zoom. Where two names would overlap, the later port's name moves
 further out along its own direction until it is clear, with a thin line back to its port when it has moved more
-than its own height. The label's stored height is unchanged and is still what a GDSII or DXF export writes.
+than its own height. A name moves at most three of its own heights. If it is still not clear, the port's number
+alone is drawn instead (**4** for **P4**), and if that does not fit either, no name is drawn: the arrow stays, and
+holding the pointer over the port shows its name. Zooming in brings the full names back as room appears. The label's
+stored height is unchanged and is still what a GDSII or DXF export writes.
 
 Curves, circles and rounded rectangles are **first-class primitives** — they are stored as curves, not
 as pre-flattened polygons — and are flattened on demand, always with an explicit tolerance prompt, and

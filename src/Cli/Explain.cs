@@ -1137,6 +1137,11 @@ internal static class Explain
                 source.View.DisplayUnit,
                 EmPortExtraction.DefaultGroundPathWidthM(source.Technology), source.Technology);
 
+        // brief-dfr33-1 R-dfr33-1-4 — a gap in the port numbers is the run's refusal; said here too, since it is a
+        // statement about which port is which and this is where the ports are walked.
+        if (EmPortExtraction.NumberGap([.. ports.Rows.Select(r => r.Number)]) is { } gap)
+            walks.Add(new ResolutionStepJson("port numbers", null, null, gap));
+
         if (!ports.Rows.Any(r => r.Port?.IsConductorReferenced == true)) return;
 
         foreach (var row in ports.Rows)
