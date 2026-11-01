@@ -4198,3 +4198,33 @@ whose text will not tokenize is not judged. Primitive instances are deliberately
 by a dozen per-family resolvers, and a list of what each one reads does not exist in one place. Checked against every
 shipped example (323 documents) and every `testdata` netlist (82): no warning. Gate:
 `tests/Core.Tests/Elaboration/UnreadOverrideWarningTests.cs`.
+
+## SnP entry offsets: who reads an SnP block's S, and whether it sees them (brief-sens-2, 2026-11-01)
+
+An SnP instance may state `SdB_i_j` / `Sdeg_i_j` (and `Reciprocal=auto|tied|untied`). `ComponentModelFactory`
+parses them into `SnpModel.Offsets` (null when none is nonzero), and `SnpPerturbation.Apply` is the one place they
+touch a matrix. The defect this guards against is a path that silently reads the unperturbed FILE. Verdict per reader:
+
+| File | Verdict |
+|---|---|
+| `SnpModel.Stamp` | applies them, after interpolation; at 0 Hz the magnitude only |
+| `SnpModel.ActivityFor` | measures the perturbed file (`SnpPerturbation.ApplyToFile`) on its own grid |
+| `SParameterEngine` | S only through `Stamp`; `BlockWaves` and the SDD control path read `PortBranchIndices` (bookkeeping) |
+| `NonlinearDcEngine`, `HbEngine` | S only through `Stamp`; `ValidateMultiPortBranch*` and the HB pin-current path read `PortBranchIndices` |
+| `HbLinearExtractor` | stamps the linear partition — sees them |
+| `ChainModel`, `SystemBlockPassivity` | read no SnP data (their comments cite `SnpModel` as the pattern) |
+| `ComposedModelCache` | a `.cmodel` cache; reads no SnP data |
+| `SmithCascade` | reads its own Smith elements' Touchstone files; an element carries no offsets |
+| `EnvelopeSnpFit` | fits the FILE — refuses a block with a nonzero offset: "SnP 'X''s S-parameter offsets are not applied by the envelope's rational fit" |
+| `FieldCosimulation` | the port fields are the file's structure's — refuses by name |
+| `ThermalCircuitLink` | the losses are the 3D view's structure's — refuses by name (`FilePath` alone is also read, to identify the instance) |
+
+Three traps found on the way:
+- **`deg` is a SCALED unit (to radians).** An offset written `Sdeg_2_1=10 deg` evaluates to 0.1745; a bare `10` to
+  10. `Elaborator.ResolveSnpParameters` therefore reads a `Sdeg_` value with `deg` as its site unit and converts
+  back, so both spellings are ten degrees. `dB` is an identity unit and needs nothing.
+- **`NumFlat.Mat<T>` is a struct over its storage.** "Returns the same instance" on the zero-offset path is the same
+  `Memory`; `Assert.Same` boxes both and always fails.
+- The tie rule needs the file, so the factory loads it (through `TouchstoneCache`) only when an offset is stated —
+  an upper-triangle key on a tied block is then refused at ELABORATION, which is how `check` names it; with no
+  offset stated nothing is read there and a missing file stays `SnpModel`'s own refusal, naming the instance.

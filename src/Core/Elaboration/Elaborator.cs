@@ -2076,7 +2076,7 @@ public sealed class Elaborator
 
     private static readonly HashSet<string> _snpStringParams =
         new(StringComparer.OrdinalIgnoreCase)
-            { "File", "InterpMode", "InterpDomain", "ExtrapMode", "PinConfig", "RefNode" };
+            { "File", "InterpMode", "InterpDomain", "ExtrapMode", "PinConfig", "RefNode", RfCore.SnpPerturbation.ReciprocalParameter };
 
     private IReadOnlyDictionary<string, Value> ResolveSnpParameters(
         Instance inst, Scope parentScope)
@@ -2097,6 +2097,17 @@ public sealed class Elaborator
                     raw = ResolveSnpFilePath(raw);
 
                 result[ov.Name] = new Value(raw);
+            }
+            else if (ov.Name.StartsWith(RfCore.SnpPerturbation.DegPrefix, StringComparison.Ordinal))
+            {
+                // brief-sens-2: a phase offset is in DEGREES. `deg` is a scaled unit (to radians), so the value is read
+                // with deg as its site unit — a bare 10 and `10 deg` are both ten degrees — and handed on in degrees.
+                try
+                {
+                    var v = _evaluator.EvalParameter(ov.Expression, parentScope, ov.Unit ?? "deg", $"{inst.InstanceName}.{ov.Name}");
+                    result[ov.Name] = v.Kind == ValueKind.Real ? new Value(v.AsReal() * 180.0 / Math.PI) : v;
+                }
+                catch { /* skip unresolvable, as below */ }
             }
             else
             {

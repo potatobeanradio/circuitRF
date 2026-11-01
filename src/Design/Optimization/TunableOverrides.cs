@@ -138,6 +138,13 @@ public static class TunableOverrides
                 var (expr, unit) = TunableValue.Split(value, decl.Unit);
                 overrides.Add(new ParameterAssignment(key.Name, expr, unit));
             }
+            else if (inst.Reference.Equals("SnP", StringComparison.OrdinalIgnoreCase) && key.IsSnpEntryShape)
+            {
+                // An SnP entry offset at its default 0 is not written anywhere: the override Push would add (brief-sens-2).
+                var (expr, unit) = TunableValue.Split(value, RfCore.SnpPerturbation.TryParseName(key.Name, out var kind, out _, out _)
+                                                             && kind == RfCore.SnpOffsetKind.Db ? "dB" : "deg");
+                overrides.Add(new ParameterAssignment(key.Name, expr, unit));
+            }
             else
             {
                 notes.Add($"'{keyText}': {key.Instance} has no parameter {key.Name}; skipped.");

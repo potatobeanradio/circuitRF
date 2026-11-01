@@ -39,15 +39,34 @@ public sealed record SensitivityOptions
 /// <summary>Evaluations done of the run's total.</summary>
 public sealed record SensitivityProgress(int Done, int Total, TimeSpan Elapsed);
 
-/// <summary>What a factor's step is measured in (D3): its own spread, a percent of its value, or degrees of a phase.</summary>
-public enum SensitivityBasis { Sigma, Percent, Degree }
+/// <summary>What a factor's step is measured in (D3): its own spread, a percent of its value, degrees of a phase, or
+/// decibels of an SnP entry's magnitude (brief-sens-2).</summary>
+public enum SensitivityBasis { Sigma, Percent, Degree, Decibel }
 
 /// <summary>One factor (R-sens1-1): the value it moves, what its step is in, and the value text at nominal, + and −.</summary>
 /// <param name="Key">The tunable key (<c>R1.R</c>, <c>mag(ZL)</c>).</param>
 /// <param name="Label">What a table calls it.</param>
-/// <param name="BasisText"><c>σ</c>, <c>2σ</c>, <c>1 %</c>, <c>1°</c> — what every contributor states (D3).</param>
+/// <param name="BasisText"><c>σ</c>, <c>2σ</c>, <c>1 %</c>, <c>1°</c>, <c>0.1 dB</c> — what every contributor states (D3).</param>
+/// <param name="Instance">What the instance roll-up groups it under: the key's owner prefix — <c>R1</c> for <c>R1.R</c>,
+/// <c>SNP3</c> for an SnP entry, a variable itself (brief-sens-2 R-sens2-6).</param>
+/// <param name="Snp">An SnP entry's place in its block; null for any other factor.</param>
 public sealed record SensitivityFactor(
-    string Key, string Label, string Unit, SensitivityBasis Basis, string BasisText, string Nominal, string Plus, string Minus);
+    string Key, string Label, string Unit, SensitivityBasis Basis, string BasisText, string Nominal, string Plus, string Minus,
+    string Instance = "", CircuitRF.Design.Optimization.SnpEntryInfo? Snp = null);
+
+/// <summary>
+/// One row of a roll-up of the per-key ranking (brief-sens-2 R-sens2-6) — computed from the same Δs, no simulation.
+/// </summary>
+/// <param name="Label"><c>SNP3 · S31</c>, <c>SNP3 · port 3</c>, <c>SNP3</c>, or a non-SnP key's own label.</param>
+/// <param name="Instance">The instance it belongs to (the owner prefix).</param>
+/// <param name="Port">The port, at the port level; null otherwise.</param>
+/// <param name="Delta">√ΣΔ² over its keys (a single key keeps its signed Δ); NaN when every one failed.</param>
+/// <param name="Share">The sum of its keys' shares.</param>
+/// <param name="Factors">How many keys it holds.</param>
+public sealed record SensitivityRollup(string Label, string Instance, int? Port, double Delta, double Share, int Factors);
+
+/// <summary>An SnP instance left out of a sensitivity run (R-sens2-5a), with the factors it would have contributed.</summary>
+public sealed record SensitivityExcluded(string Instance, int Factors);
 
 /// <summary>A contributor's standing: both steps ran and agree, they disagree (D6), one ran, or neither did.</summary>
 public enum SensitivityStatus { Ok, Nonlinear, OneSided, Failed }
@@ -71,7 +90,17 @@ public sealed record SensitivityContributor(
 /// <param name="Contributors">Largest |Δ| first; failed contributors last.</param>
 public sealed record SensitivityResponse(
     string Name, bool IsGoal, string Unit, double Nominal, double Spread, double? Estimate,
-    IReadOnlyList<SensitivityContributor> Contributors);
+    IReadOnlyList<SensitivityContributor> Contributors)
+{
+    /// <summary>The ranking by entry — an SnP entry's dB and phase keys combined; any other key its own entry.</summary>
+    public IReadOnlyList<SensitivityRollup> Entries { get; init; } = [];
+
+    /// <summary>By SnP port — every entry in that row or column. Shares OVERLAP (S31 counts toward ports 3 and 1).</summary>
+    public IReadOnlyList<SensitivityRollup> Ports { get; init; } = [];
+
+    /// <summary>By instance — every key whose owner is that instance, with its factor count.</summary>
+    public IReadOnlyList<SensitivityRollup> Instances { get; init; } = [];
+}
 
 /// <summary>How a sensitivity run ended.</summary>
 public enum SensitivityOutcome
@@ -105,6 +134,10 @@ public sealed class SensitivityResult
     public IReadOnlyList<Diagnostic> Notes { get; init; } = [];
     public IReadOnlyList<SensitivityResponse> Goals { get; init; } = [];
     public IReadOnlyList<SensitivityResponse> Measures { get; init; } = [];
+
+    /// <summary>The SnP instances left out by <c>snp=off</c> or <c>snpexclude</c> (brief-sens-2 R-sens2-5a) — reported, so
+    /// a block left out on purpose is never read as a block found insensitive.</summary>
+    public IReadOnlyList<SensitivityExcluded> Excluded { get; init; } = [];
 
     /// <summary>Simulations this run spent — the cache's known points cost none.</summary>
     public long Evaluations { get; init; }
@@ -140,6 +173,7 @@ public sealed class SensitivityRun
     private readonly List<(IReadOnlyDictionary<string, string> Map, Diagnostic? Blocked)> _plus = [];
     private readonly List<(IReadOnlyDictionary<string, string> Map, Diagnostic? Blocked)> _minus = [];
     private readonly List<string> _goalNames = [];
+    private readonly List<SensitivityExcluded> _excluded = [];
     private bool _measures;
 
     private readonly ManualResetEventSlim _resume = new(true);
@@ -237,6 +271,30 @@ public sealed class SensitivityRun
                 break;
         }
 
+        // ── R-sens2-5a: SnP blocks left out — all with snp=off (the list kept, unused), else the ones named ───────
+        var snpNames = catalog.SnpInstances.Select(s => s.Instance).ToList();
+        var excludeNamed = (_settings.SnpExclude ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                                                 .Distinct(StringComparer.Ordinal).ToList();
+        // A name that is no SnP instance is ignored here; its warning is StatisticsValidator's, which the evaluator's notes
+        // (and check) carry — said once.
+        var excludedSet = (_settings.EffectiveSnp ? excludeNamed.Where(n => snpNames.Contains(n, StringComparer.Ordinal)) : snpNames)
+                          .ToHashSet(StringComparer.Ordinal);
+        if (excludedSet.Count > 0)
+        {
+            var counts = excludedSet.ToDictionary(n => n, _ => (Factors: 0, Toleranced: 0), StringComparer.Ordinal);
+            candidates.RemoveAll(c =>
+            {
+                if (c.T.SnpEntry is not { } se || !counts.TryGetValue(se.Instance, out var n)) return false;
+                counts[se.Instance] = (n.Factors + 1, n.Toleranced + (c.Stat is null ? 0 : 1));
+                return true;
+            });
+            foreach (var name in snpNames.Where(excludedSet.Contains))
+            {
+                _excluded.Add(new SensitivityExcluded(name, counts[name].Factors));
+                if (counts[name].Toleranced > 0) _notes.Add(StatisticsDiagnostics.SensSnpExcluded(name, counts[name].Toleranced));
+            }
+        }
+
         var accepted = new List<(Tunable T, TunableEntry? Stat)>();
         foreach (var (t, entry) in candidates)
         {
@@ -246,7 +304,7 @@ public sealed class SensitivityRun
                 if (t.IsVendorPart) { LeftOut(t.Key, "a vendor part's choice of part is not a number"); continue; }
                 if (t.IsPartValue) { LeftOut(t.Key, "a vendor part's value moves only with its tolerance (tol=part)"); continue; }
                 if (t.IsInteger) { LeftOut(t.Key, "it takes whole numbers only"); continue; }
-                if (t.Part != ComplexPart.Phase && t.Value == 0) { LeftOut(t.Key, "its value is 0, so a step of a percent of it moves nothing"); continue; }
+                if (t.Part != ComplexPart.Phase && t.SnpEntry is null && t.Value == 0) { LeftOut(t.Key, "its value is 0, so a step of a percent of it moves nothing"); continue; }
             }
             accepted.Add((t, entry));
         }
@@ -262,8 +320,8 @@ public sealed class SensitivityRun
             var plus = levels.One(nominals, 2 * i + 1, i, +1);
             var minus = levels.One(nominals, 2 * i + 2, i, -1);
             string Text(SampledValues v) => v.Draws.TryGetValue(e.Key, out double x) ? TunableValue.Format(x, t.Unit, "G6") : "—";
-            _factors.Add(new SensitivityFactor(e.Key, e.Key, t.Unit, SensitivityBasis.Sigma, sigmaText,
-                                               TunableValue.Format(t.Value, t.Unit, "G6"), Text(plus), Text(minus)));
+            _factors.Add(new SensitivityFactor(e.Key, t.Label, t.Unit, SensitivityBasis.Sigma, sigmaText,
+                                               TunableValue.Format(t.Value, t.Unit, "G6"), Text(plus), Text(minus), InstanceOf(t), t.SnpEntry));
             _plus.Add((plus.Values, plus.Refusal));
             _minus.Add((minus.Values, minus.Refusal));
         }
@@ -301,13 +359,26 @@ public sealed class SensitivityRun
 
         void AddStepped(Tunable t)
         {
+            if (t.SnpEntry is { } se)
+            {
+                // R-sens2-5: an SnP entry with no tolerance steps ±snpdb dB or ±snpdeg degrees about its offset.
+                bool db = se.Kind == RfCore.SnpOffsetKind.Db;
+                double s = db ? _settings.EffectiveSnpDb : _settings.EffectiveSnpDeg;
+                _factors.Add(new SensitivityFactor(t.Key, t.Label, t.Unit, db ? SensitivityBasis.Decibel : SensitivityBasis.Degree,
+                    db ? G(s) + " dB" : G(s) + "°", TunableValue.Format(t.Value, t.Unit, "G6"),
+                    TunableValue.Format(t.Value + s, t.Unit, "G6"), TunableValue.Format(t.Value - s, t.Unit, "G6"), se.Instance, se));
+                _plus.Add(MapOf(t, t.Value + s));
+                _minus.Add(MapOf(t, t.Value - s));
+                return;
+            }
             bool phase = t.Part == ComplexPart.Phase;
             double step = _settings.EffectiveStep;
             double up = phase ? t.Value + PhaseStepDegrees : t.Value * (1 + step / 100);
             double down = phase ? t.Value - PhaseStepDegrees : t.Value * (1 - step / 100);
-            _factors.Add(new SensitivityFactor(t.Key, t.Key, t.Unit, phase ? SensitivityBasis.Degree : SensitivityBasis.Percent,
+            _factors.Add(new SensitivityFactor(t.Key, t.Label, t.Unit, phase ? SensitivityBasis.Degree : SensitivityBasis.Percent,
                 phase ? G(PhaseStepDegrees) + "°" : G(step) + " %",
-                TunableValue.Format(t.Value, t.Unit, "G6"), TunableValue.Format(up, t.Unit, "G6"), TunableValue.Format(down, t.Unit, "G6")));
+                TunableValue.Format(t.Value, t.Unit, "G6"), TunableValue.Format(up, t.Unit, "G6"), TunableValue.Format(down, t.Unit, "G6"),
+                InstanceOf(t)));
             _plus.Add(MapOf(t, up));
             _minus.Add(MapOf(t, down));
         }
@@ -331,6 +402,57 @@ public sealed class SensitivityRun
 
     /// <summary>The goals ranked, by name.</summary>
     public IReadOnlyList<string> GoalNames => _goalNames;
+
+    /// <summary>The SnP instances left out (R-sens2-5a), with the factors each would have contributed.</summary>
+    public IReadOnlyList<SensitivityExcluded> Excluded => _excluded;
+
+    /// <summary>The instance roll-up's owner of a tunable: an SnP entry's block, a parameter's instance, a variable
+    /// itself — a complex part by its whole value's owner.</summary>
+    private static string InstanceOf(Tunable t)
+        => t.SnpEntry?.Instance ?? (TunableKey.TryParse(t.ValueKey, out var k) ? k.OwnerPrefix : t.Key);
+
+    /// <summary>
+    /// The entry, port and instance roll-ups of one response's per-key ranking (brief-sens-2 R-sens2-6), from the same
+    /// Δs — no simulation. A group's Δ is √ΣΔ² over its keys (one key keeps its signed Δ), its share the sum of theirs.
+    /// </summary>
+    internal static (List<SensitivityRollup> Entries, List<SensitivityRollup> Ports, List<SensitivityRollup> Instances)
+        Rollups(IReadOnlyList<SensitivityContributor> ranked)
+    {
+        static SensitivityRollup Group(string label, string instance, int? port, List<SensitivityContributor> cs)
+        {
+            var finite = cs.Where(c => double.IsFinite(c.Delta)).ToList();
+            double delta = finite.Count == 0 ? double.NaN
+                         : cs.Count == 1 ? cs[0].Delta
+                         : Math.Sqrt(finite.Sum(c => c.Delta * c.Delta));
+            return new SensitivityRollup(label, instance, port, delta, cs.Sum(c => c.Share), cs.Count);
+        }
+        static List<SensitivityRollup> Order(IEnumerable<SensitivityRollup> rows)
+            => [.. rows.OrderByDescending(r => r.Share).ThenByDescending(r => double.IsFinite(r.Delta) ? Math.Abs(r.Delta) : -1)];
+
+        var entries = ranked
+            .GroupBy(c => c.Factor.Snp is { } s ? $"{s.Instance}\u0001{s.I}\u0001{s.J}" : "\u0002" + c.Factor.Key, StringComparer.Ordinal)
+            .Select(g =>
+            {
+                var first = g.First().Factor;
+                string label = first.Snp is { } s ? TunableKey.SnpEntryName(s.Instance, s.I, s.J, s.Ports) : first.Label;
+                return Group(label, first.Instance, null, [.. g]);
+            });
+
+        var ports = new List<SensitivityRollup>();
+        foreach (var block in ranked.Where(c => c.Factor.Snp is not null).GroupBy(c => c.Factor.Snp!.Instance, StringComparer.Ordinal))
+        {
+            int n = block.First().Factor.Snp!.Ports;
+            for (int p = 1; p <= n; p++)
+            {
+                var on = block.Where(c => c.Factor.Snp!.I == p || c.Factor.Snp!.J == p).ToList();
+                if (on.Count > 0) ports.Add(Group(TunableKey.SnpPortLabel(block.Key, p), block.Key, p, on));
+            }
+        }
+
+        var instances = ranked.GroupBy(c => c.Factor.Instance, StringComparer.Ordinal)
+                              .Select(g => Group(g.Key, g.Key, null, [.. g]));
+        return (Order(entries), Order(ports), Order(instances));
+    }
 
     /// <summary>The goals ranked.</summary>
     public IReadOnlyList<OptimizationGoal> Goals => _eval?.Goals ?? [];
@@ -556,7 +678,11 @@ public sealed class SensitivityRun
             double spread = Math.Sqrt(sum);
             double? estimate = isGoal && _factors.All(f => f.Basis == SensitivityBasis.Sigma) && double.IsFinite(m0)
                 ? (spread > 0 ? NormalDistribution.Cdf(m0 / spread) : m0 >= 0 ? 1.0 : 0.0) : null;
-            return new SensitivityResponse(name, isGoal, unit, m0, spread, estimate, ranked);
+            var (entries, ports, instances) = Rollups(ranked);
+            return new SensitivityResponse(name, isGoal, unit, m0, spread, estimate, ranked)
+            {
+                Entries = entries, Ports = ports, Instances = instances,
+            };
         }
 
         var goalResponses = goals.Select(g => Rank(g.Name, true, "", p => Goal(p, g.Name))).ToList();
@@ -570,7 +696,7 @@ public sealed class SensitivityRun
         var result = new SensitivityResult
         {
             Outcome = SensitivityOutcome.Finished, FinishReason = reason, Notes = notes, Goals = goalResponses,
-            Measures = measureResponses, Evaluations = Evaluations - before,
+            Measures = measureResponses, Evaluations = Evaluations - before, Excluded = _excluded,
         };
         var ds = SensitivityDataSet.Build(this, result);
         string? written = null;
@@ -587,7 +713,7 @@ public sealed class SensitivityRun
         return Result = new SensitivityResult
         {
             Outcome = SensitivityOutcome.Finished, FinishReason = reason, Notes = notes, Goals = goalResponses,
-            Measures = measureResponses, Evaluations = result.Evaluations, Data = ds, WrittenPath = written,
+            Measures = measureResponses, Evaluations = result.Evaluations, Data = ds, WrittenPath = written, Excluded = _excluded,
         };
     }
 

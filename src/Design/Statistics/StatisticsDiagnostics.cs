@@ -480,6 +480,22 @@ public static class StatisticsDiagnostics
         "yield.sens.vars-unknown", DiagnosticSeverity.Error,
         "--vars {key} is not one of the factors this run would step: {offered}.", ("key", key), ("offered", offered));
 
+    // ── SnP entries (brief-sens-2) ─────────────────────────────────────────────
+
+    public static Diagnostic SensSnpExcluded(string instance, int toleranced) => Diagnostic.Create(
+        "yield.sens.snp-excluded", DiagnosticSeverity.Info,
+        "{instance} excluded: {n} toleranced entr" + (toleranced == 1 ? "y" : "ies") + " not stepped.", ("instance", instance), ("n", toleranced));
+
+    public static Diagnostic SensSnpExcludeUnknown(string name, string instances) => Diagnostic.Create(
+        "yield.sens.snp-exclude-unknown", DiagnosticSeverity.Warning,
+        "snpexclude names {name}, which is not an SnP instance of the design ({instances}); the run ignores it.",
+        ("name", name), ("instances", instances));
+
+    public static Diagnostic SnpTiedNotReciprocal(string instance, string pair, double db, string at) => Diagnostic.Create(
+        "snp.tied-not-reciprocal", DiagnosticSeverity.Warning,
+        "{instance} is Reciprocal=tied, and its file is not reciprocal: {pair} differ by up to {db} dB at {at}; one offset moves them together.",
+        ("instance", instance), ("pair", pair), ("db", double.IsFinite(db) ? db.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) : "∞"), ("at", at));
+
     public static Diagnostic SensGoalsUnknown(string name, string enabled) => Diagnostic.Create(
         "yield.sens.goals-unknown", DiagnosticSeverity.Error,
         "--goals {name} is not an enabled goal of the design: {enabled}.", ("name", name), ("enabled", enabled));

@@ -30,7 +30,8 @@ internal static class ExplainTunables
                     var (model, _, _) = CircuitSource.LoadSchematic(csch);
                     string? cws = DocumentKinds.AncestorCws(Path.GetFullPath(csch));
                     catalog = TunableCatalog.Discover(model, DiskCellResolver.Instance,
-                                                      cws is null ? null : Path.GetDirectoryName(cws));
+                                                      cws is null ? null : Path.GetDirectoryName(cws),
+                                                      SchematicCircuit.ReferenceBaseOf(csch));
                     setup = model.Tuning;
                     break;
                 }
@@ -67,10 +68,13 @@ internal static class ExplainTunables
                 t.IsPartValue
                     ? new ExplainPartValueJson(t.PartEntry?.PartNumber ?? t.Owner, true,
                                                t.PartTolerance?.SpreadText, t.PartToleranceNote)
-                    : null);
+                    : null,
+                t.SnpEntry is null ? null : t.Label);
         }).ToList();
 
-        return (new ExplainTunablesJson(rows, catalog.UnresolvedKeys), 0);
+        var snp = catalog.SnpInstances.Select(s => new ExplainSnpJson(
+            s.Instance, s.Location, s.Ports, s.Tied is { } tied ? (tied ? "tied" : "untied") : null, s.TieReason, s.Entries, s.LoadError)).ToList();
+        return (new ExplainTunablesJson(rows, catalog.UnresolvedKeys, snp.Count > 0 ? snp : null), 0);
     }
 
     public static void Print(ExplainTunablesJson report)
@@ -88,7 +92,10 @@ internal static class ExplainTunables
             if (t.Tune)      flags.Add("tune");
             if (t.Opt)       flags.Add("opt");
             if (t.Integer)   flags.Add("integer");
-            if (t.IsDefault) flags.Add("cell default");
+            if (t.IsDefault) flags.Add(t.Kind == "snpEntry" ? "default 0" : "cell default");
+            if (t.Label is { } label) flags.Add(label);
+            // An SnP offset is one number at every frequency: toleranced and ranked, never tuned (brief-sens-2).
+            if (t.Kind == "snpEntry") flags.Add("sensitivity and yield only");
             if (t.RangeGuessed) flags.Add("range guessed");
             if (t.Whole is { } w) flags.Add("part of " + w);
             if (t.Disabled is { } d) flags.Add(d);
@@ -104,7 +111,7 @@ internal static class ExplainTunables
             // A vendor part's value has no range: it is drawn, never tuned.
             string line = t.Part is { } part
                 ? $"  {t.Key.PadRight(keyWidth)}  {t.Location.PadRight(locWidth)}  {part.Placed}"
-                : t.PartValue is not null
+                : t.PartValue is not null || t.Kind == "snpEntry"
                     ? $"  {t.Key.PadRight(keyWidth)}  {t.Location.PadRight(locWidth)}  {t.Value,-14}"
                     : $"  {t.Key.PadRight(keyWidth)}  {t.Location.PadRight(locWidth)}  {t.Value,-14}  {t.Min} .. {t.Max}";
             if (flags.Count > 0) line += "  [" + string.Join("; ", flags) + "]";
@@ -112,6 +119,17 @@ internal static class ExplainTunables
             if (t.Part is { } p)
                 Console.WriteLine($"  {"".PadRight(keyWidth)}  {"".PadRight(locWidth)}  {p.Selection}: {p.Summary}");
             if (t.Stat is { } stat) Console.WriteLine($"  {"".PadRight(keyWidth)}  {"".PadRight(locWidth)}  {stat.Text}");
+        }
+
+        // brief-sens-2 R-sens2-4: each SnP block's state — `SNP3: 4 ports, tied (auto: …), 20 entries`.
+        if (report.Snp is { Count: > 0 } blocks)
+        {
+            Console.WriteLine();
+            Console.WriteLine("SnP blocks (each S-parameter a dB and a phase offset):");
+            foreach (var b in blocks)
+                Console.WriteLine(b.LoadError is { } why
+                    ? $"  {b.Instance}: not offered — {why}"
+                    : $"  {b.Instance}: {b.Ports} ports, {b.Tie} ({b.Reason}), {b.Entries} entries");
         }
 
         if (report.Unresolved.Count > 0)
@@ -128,6 +146,7 @@ internal static class ExplainTunables
         TunableKind.CellParameter => "cellParameter",
         TunableKind.Part          => "part",
         TunableKind.PartValue     => "partValue",
+        TunableKind.SnpEntry      => "snpEntry",
         _                         => "parameter",
     };
 

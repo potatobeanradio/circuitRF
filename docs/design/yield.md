@@ -1278,7 +1278,7 @@ evaluations, about a second.
 `sensitivity [factors=all|stat|opt] [step=<pct>%] [sigma=<k>] [ports=on|off] [snp=on|off] [snpexclude=<inst>,…] [snpdb=<dB>]
 [snpdeg=<deg>] [responses=goals|all] [parallel=<n>]` — `SensitivitySettings` on `TuningSetup.Sensitivity` and
 `CschTuning.Sensitivity`; defaults are never held or written, a malformed value is `cnl.sensitivity.value-invalid`, a
-second line `cnl.sensitivity.duplicate`. The four `snp*` keys are read and validated now and used from SENS-2.
+second line `cnl.sensitivity.duplicate`. The four `snp*` keys are §20.4's.
 `check` asks `SensitivityRun.Create` when the line is present; `explain --analysis` reports the factors, their bases,
 the evaluations and how many run at once. `circuitrf yield sens <path>` (`cli.md` §25.11), MCP `run analysis=sensitivity`
 (`result.sensitivity`). Nothing computes a sensitivity unasked (D7).
@@ -1290,3 +1290,78 @@ edge swaps between the steps is `nonlinear`), `SensitivityPortsTests` (ports out
 `SensitivityHarmonicBalanceTests` (an HB harmonic goal ranks; the tone frequency is left out),
 `SensitivityLineTests`, `YieldSensCliTests` (the verb's `.sens.npy` is the in-process run's bytes, its `--json` the
 run's ranking).
+
+### 20.4 Every S-parameter of every SnP block (brief-sens-2)
+
+**The parameters.** An SnP instance takes, besides its file and interpolation settings, `SdB_<i>_<j>` (an offset in dB
+on |S(i,j)|), `Sdeg_<i>_<j>` (an offset in degrees on ∠S(i,j)), both default 0, and `Reciprocal=auto|tied|untied`
+(default `auto`). Ports are 1-based and always separated by `_` (`SdB_10_1`, never `S101`). No default is written. `dB`
+and `deg` are ordinary units on these values and on `tune` lines; a phase offset is read with `deg` as its site unit,
+so a bare `10` and `10 deg` are both ten degrees. A port outside `NumPorts` is refused at elaboration, naming the
+instance and its port count — which is how `check` reports it.
+
+**One function applies them** — `SnpPerturbation.Apply(S, offsets, hz)` (`src/RfCore`):
+S′(i,j) = S(i,j) · 10^(δdB/20) · e^{j·δdeg·π/180}, after interpolation, uniform over the band (a frequency-local offset
+is not modelled). At 0 Hz only the magnitude applies: a DC S-parameter is real. With every offset 0 the matrix comes
+back with its own storage — no copy, no cost, and no existing result moves by a bit (the Hero 1 golden runs
+unchanged). `SnpModel.Stamp` applies it; `SnpModel.ActivityFor` measures the PERTURBED matrix on the file's grid, so a
+step that makes a passive file active is refused by the analyses that refuse an active block, for that point, by
+name.
+
+**The audit of every other reader of SnP data** (each either sees the offsets, reads no S, or refuses by name):
+
+| Reader | Verdict |
+|---|---|
+| `SParameterEngine`, `NonlinearDcEngine`, `HbEngine`, `HbLinearExtractor` | read S only through `Stamp`; otherwise `PortBranchIndices` (port bookkeeping) |
+| `ChainModel`, `SystemBlockPassivity`, `ComposedModelCache` | read no SnP data (comments name `SnpModel` as the pattern they follow) |
+| `SmithCascade` | reads its own Smith elements' Touchstone files — an element carries no offsets |
+| `EnvelopeSnpFit` | fits the FILE: refuses a block with a nonzero offset — "SnP 'SNP3''s S-parameter offsets are not applied by the envelope's rational fit" |
+| `FieldCosimulation` | its port fields are the file's own structure's: refuses, by name |
+| `ThermalCircuitLink` | its losses are the 3D view's own structure's: refuses, by name |
+
+**Reciprocity is decided by the file.** `RFNetwork.Reciprocity(SNP)` is the worst |S(i,j) − S(j,i)| over the file's
+own points and every pair, judged in absolute linear terms (a −40 dB entry 3 dB apart differs by 0.003). `auto` ties
+when it is ≤ `SnpPerturbation.ReciprocalTolerance` = 0.01 — measured over all 166 Touchstone files in `examples/` and
+`testdata/`: every passive one at or below 5.5e-3, every active one at 0.117 and above (`src/RfCore/RESOLVED.md`).
+**Tied:** only the lower triangle (i ≥ j) is offered and one offset moves S(i,j) and S(j,i); an upper-triangle key on a
+tied block is refused naming the lower-triangle key and `Reciprocal=untied`. **Untied:** all N² entries. A stated
+`tied` on a file that is not reciprocal is allowed and `check` warns once (`snp.tied-not-reciprocal`), with the worst
+difference in dB and where.
+
+**The catalog.** `TunableKind.SnpEntry`: per SnP instance whose file loads (through `TouchstoneCache`), its keys per the
+tie — unit `dB`/`deg`, value 0, `IsDefault`. `Tunable.SnpEntry` carries
+the instance, i, j, the part and the tie state with its reason. A file that does not load leaves every key it would
+offer `notOffered` with the load's sentence. Inside a sub-cell the key lives in the cell (`DUT:SNP3.SdB_3_1`) and moves
+every instance. `TunableOverrides` writes the key as an instance override (a trial's or a step's value). **Labels** are `TunableKey.SnpEntryLabel` —
+`SNP3 · S31 dB`, `SNP3 · S31 phase`, `S(10,1)` above 9 ports — everywhere a key is shown; the key stays the identity.
+`explain --tunables` lists each block: `SNP3: 4 ports, tied (auto: worst |S(i,j) − S(j,i)| = 0.0021), 20 entries`.
+**Sensitivity and yield only — never tuned or optimized.** An offset is one number at every frequency: right for "how
+much does this block's S21 matter" and for a tolerance on measured data, but an optimum of it is no design anyone could
+build. So `tune=1`/`opt=1` on one is refused (`tuning.snp.statistical-only`, by the validator `check`, the Tuning
+window and the optimizer share), the Tuning and Optimizer Add… lists do not offer them, and the Inspector's and the
+canvas's Tune are absent on such a row (its Tolerance stays). The Yield panel's Add… list shows one collapsed row per
+instance; a double-click opens it, adding it adds every entry.
+
+**Steps.** An entry with no tolerance steps ±`snpdb` dB / ±`snpdeg` ° (defaults 0.1 and 1), basis `0.1 dB` / `1°`; one
+with a tolerance (`tune SNP3.SdB_3_1 dist=gauss sd=0.15 dB`) steps ±kσ like any other. `factors=all` includes them.
+
+**Leaving blocks out.** `snp=off` (`--snp off`) leaves every SnP entry out and keeps the `snpexclude` list, unused.
+`snpexclude=SNP4,DUT:SNP4` (`--snp-exclude`, replacing the list for one run) leaves those instances out, named by their
+keys' owner prefix. Exclusion wins over a tolerance (`yield.sens.snp-excluded` counts the toleranced entries not
+stepped) and is a sensitivity setting only. The result carries `excluded` (instance and factor count) in the data
+(`sens.excluded`), the JSON and one line after the table, so a block left out is never read as one found insensitive.
+A name that is no SnP instance is a warning (`yield.sens.snp-exclude-unknown`), ignored. Because each factor moves
+alone, leaving entries out changes no component's Δ: it renormalizes the shares over what is left and saves two
+simulations per entry.
+
+**Roll-ups** from the same Δs, no simulation: **entry** (`SNP3 · S31`: Δ = √(Δ_dB² + Δ_deg²), share = the sum; any other
+key is its own entry), **port** (`SNP3 · port 3`: every entry in row or column 3 — port shares OVERLAP, so there is no
+cumulative cube and the JSON says `overlapping: true`), **instance** (`SNP3`, `R1` for `R1.R`, a variable itself — with
+its factor count, so a 20-factor block and a 1-factor resistor rank honestly). Cubes
+`contrib:<r>:by=entry|port|instance` (+ `:cumulative` for entry and instance) and `factors:<r>:by=instance`; JSON
+`entries[]`, `ports[]`, `instances[]` per goal and measure; the text table takes `--by key|entry|port|instance`
+(default `entry`, which reads as the key table when no SnP is ranked).
+
+Gates: `SnpPerturbationTests`, `SnpReciprocityTests` (`tests/RfCore.Tests`); `SnpEntryTunableTests` (12 keys tied, 18
+untied; the upper-triangle refusal; `SdB_2_1=1` moves a through pad's |S21| by 1 dB to 1e-9);
+`SensitivityRollupTests`, `SnpExcludeTests` (`tests/Ui.Tests/Statistics/SensitivitySnpTests.cs`).

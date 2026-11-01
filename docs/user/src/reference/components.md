@@ -1206,6 +1206,15 @@ circuit and interpolated onto the analysis sweep.
 - `PinConfig` and `Pitch` — the pin arrangement and spacing on the symbol.
 - `InterpMode`, `InterpDomain` and `ExtrapMode` — how the data is interpolated between points, in
   which domain, and what happens beyond its frequency range.
+- `SdB_<i>_<j>` and `Sdeg_<i>_<j>` — an offset on one S-parameter: `SdB_3_1=0.2 dB` raises |S31| by
+  0.2 dB, `Sdeg_3_1=5` turns it by 5°, the same at every frequency. Ports are numbered from 1 and
+  always separated by `_` (`SdB_10_1`). Both are 0 unless set, which is what lets a sensitivity run
+  rank an S-parameter and a Monte Carlo give it a tolerance. Because an offset is the same at every
+  frequency it is not tuned or optimized. At 0 Hz only the dB offset applies.
+- `Reciprocal` — `auto` (the default), `tied` or `untied`. Tied, one offset on S31 moves S13 with it,
+  and only the lower entries (`SdB_3_1`, never `SdB_1_3`) are offered; untied, every entry has its own.
+  `auto` ties a file whose S(i,j) and S(j,i) agree (every passive file does) and unties one that does
+  not (an amplifier).
 
 The symbol is dynamic; the pin arrangement, the pitch and the floating-reference option are covered in
 [Dynamic symbols](dynamic-symbols.html#snp).

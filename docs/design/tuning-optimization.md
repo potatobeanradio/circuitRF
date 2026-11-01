@@ -61,6 +61,11 @@ way to tune an expression is to tune the variable it reads.
 - **Read-only** (`ReadOnlyReason`): a cell from a kit's netlist rather than a schematic, a cell outside
   the workspace, or a cell whose schematic file is read-only. Such a value can still be tuned and
   optimized; Push skips it.
+- **Every S-parameter of an SnP block** (`TunableKind.SnpEntry`, brief-sens-2) is in the catalog — a dB offset
+  `SdB_i_j` and a phase offset `Sdeg_i_j` per entry, at 0 unless the instance states one — **for sensitivity and
+  yield only.** An offset is one number at every frequency, so an optimum of it is no buildable design: `tune=1`/
+  `opt=1` on one is refused (`tuning.snp.statistical-only`), the Tuning and Optimizer Add… lists do not offer
+  them, and a row of one has no Tune toggle. The parameters, the tie rule and what applies them are `yield.md` §20.4.
 
 **The catalog walks the extracted netlist, not the drawing.** `TunableCatalog.Discover(schematic,
 resolver, workspaceRoot)` extracts once with the caller's resolver — the one Simulate uses — so cell names
@@ -125,6 +130,7 @@ real number stays an ordinary tunable; to tune the imaginary part of `50`, write
 | `DUT:X5.Wf` | declared parameter `Wf` of instance `X5` inside cell `DUT` |
 | `mag(Zsrc)` | the magnitude of the complex VAR `Zsrc` — likewise `real(…)`, `imag(…)`, `phase(…)` (D18) |
 | `phase(DUT:X5.ZL)` | the phase, in degrees, of a complex parameter inside cell `DUT` |
+| `SNP3.SdB_3_1` | the dB offset on S31 of SnP block `SNP3` — `Sdeg_3_1` its phase offset (brief-sens-2; toleranced and ranked, never tuned) |
 
 The cell part is the cell **as the `.cnl` spells its instance type** — `CellScope.NameFor` in
 `NetExtractor`: the cell folder's leaf name, or `name_2`, `name_3` … when two cells with one leaf name

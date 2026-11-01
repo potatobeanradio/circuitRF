@@ -52,6 +52,37 @@ public static class StatisticsValidator
         ComplexParts(setup, f);
         Correlations(setup, f);
         Settings(setup.Statistics, f);
+        SnpExclude(setup, catalog, f);
+        return f;
+    }
+
+    /// <summary>
+    /// brief-sens-2 R-sens2-5a: a name in <c>snpexclude</c> that is no SnP instance is a WARNING, ignored by the run —
+    /// deleting an instance from the schematic must not make the bench unrunnable.
+    /// </summary>
+    private static void SnpExclude(TuningSetup setup, TunableCatalog catalog, List<Diagnostic> f)
+    {
+        if (setup.Sensitivity?.SnpExclude is not { } list) return;
+        var snp = catalog.SnpInstances.Select(s => s.Instance).ToList();
+        foreach (var name in list.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct(StringComparer.Ordinal))
+            if (!snp.Contains(name, StringComparer.Ordinal))
+                f.Add(StatisticsDiagnostics.SensSnpExcludeUnknown(name, snp.Count == 0 ? "it has none" : string.Join(", ", snp)));
+    }
+
+    /// <summary>
+    /// brief-sens-2 R-sens2-3: an SnP stated <c>Reciprocal=tied</c> whose file is not reciprocal — allowed, and warned once
+    /// per instance with the worst difference in dB, because one offset will move two entries that differ.
+    /// </summary>
+    public static IReadOnlyList<Diagnostic> SnpTieWarnings(TunableCatalog catalog)
+    {
+        var f = new List<Diagnostic>();
+        foreach (var s in catalog.SnpInstances)
+        {
+            if (s.Mode != RfCore.SnpReciprocal.Tied || s.Reciprocity is not { } r || r.Worst <= RfCore.SnpPerturbation.ReciprocalTolerance) continue;
+            string pair = s.Ports > 9 ? $"S({r.I},{r.J}) and S({r.J},{r.I})" : $"S{r.I}{r.J} and S{r.J}{r.I}";
+            string at = $"{(r.Hz / 1e9).ToString("G4", System.Globalization.CultureInfo.InvariantCulture)} GHz";
+            f.Add(StatisticsDiagnostics.SnpTiedNotReciprocal(s.Instance, pair, r.WorstDb, at));
+        }
         return f;
     }
 

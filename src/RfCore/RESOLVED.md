@@ -1098,3 +1098,23 @@ the reader's header; these are the parts that are easy to get wrong:
 - **Writing a `DataSet`** (`BinaryDatasetWriter.FromDataSet`, `ExportFormat.Ds`): a `Z0 [port]` has no sweep axis,
   and written on its own it became a separate one-point block, so it read back as a different group (`SP1_2.Z0`).
   It is written as `PortZ[p]` at every point of the S sweep instead, beside S in S's block.
+
+## SnP reciprocity: the tolerance that ties S(i,j) to S(j,i) (brief-sens-2, 2026-11-01)
+
+`RFNetwork.Reciprocity(SNP)` is the worst |S(i,j) − S(j,i)| over a file's own points and every pair, in absolute
+LINEAR terms (a −40 dB entry 3 dB apart differs by 0.003). `SnpPerturbation.ReciprocalTolerance` is the line
+`Reciprocal=auto` ties at. It was fixed at **0.01** after measuring all 166 Touchstone files under `examples/` and
+`testdata/` (3D-EM results from Palace, EMerge and the FDTD reference runs among them):
+
+| Group | Files | Worst \|S(i,j) − S(j,i)\| |
+|---|---|---|
+| 1-ports, and 2/4/5/6-ports written symmetric (spirals, test pad, pads, hero 1B, the gap-capacitor DC row) | 63 | exactly 0 |
+| 3D-EM and port-calibration results, passive | 26 | 6.4e-11 … 1.9e-4 (EMerge cavity), 6.2e-4 … 1.6e-3 (FDTD coupled pairs) |
+| the worst passive file: a Palace coupled-microstrip 4-port | 1 | **5.5e-3** (S41, 2.2 dB on a weak entry) |
+| the least non-reciprocal ACTIVE file: a pinched-off FET bias point (Vgs −1.6 V) | 1 | **0.117** |
+| the shipped amplifiers (`potentially_unstable_amp.s2p`, `fet_bias.s2p`), hero 1's golden 4-port | 6 | 4.99 … 10.5 |
+
+0.01 sits 1.8× above the worst passive file and 11.7× below the least non-reciprocal active one. Two things worth
+knowing: a passive 3D-EM result is reciprocal only to its solver's accuracy (the coupled-microstrip's 5.5e-3 is on a
+−30 dB entry), so a tolerance much tighter than ~1e-2 would untie real passive structures; and a FET held in
+pinch-off is not reciprocal at all (S21 ≠ S12 by 6 dB), so "passive at this bias" does not imply tied.

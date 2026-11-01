@@ -321,6 +321,16 @@ internal static partial class Reference
             "and status per goal, spread and estimate, and basis, step and notes.", 96))
             sb.AppendLine("  " + line);
         sb.AppendLine();
+        foreach (var line in Wrap(
+            "Every S-parameter of an SnP block is a factor too: SNP3.SdB_3_1 (dB) and SNP3.Sdeg_3_1 (phase), stepped " +
+            "+-snpdb dB / +-snpdeg deg (0.1 dB, 1 deg) or by a tolerance on a tune line; a reciprocal file offers its lower " +
+            "triangle, one offset moving S31 and S13 together. The ranking rolls up by entry (an S-parameter's dB and " +
+            "phase together), by port (shares overlap) and by instance (with its factor count): contrib:<goal>:by=entry|" +
+            "port|instance, yield sens --by. snp=off or snpexclude=SNP4 leaves blocks out — because each factor is stepped " +
+            "on its own, that changes no other factor's delta: it renormalizes the shares over what is left, so a share " +
+            "then reads as a share of what the designer can change; the excluded blocks are listed (excluded).", 96))
+            sb.AppendLine("  " + line);
+        sb.AppendLine();
         sb.AppendLine("    sensitivity factors=stat sigma=2");
         sb.AppendLine("    circuitrf yield sens divider.cnl                  # what moves each goal, at tolerance or 1 %");
         sb.AppendLine("    circuitrf yield sens divider.cnl --factors stat   # by tolerance only, with an estimated pass");

@@ -1009,6 +1009,40 @@ namespace RfCore
         }
 
         /// <summary>
+        /// The worst |S(i,j) − S(j,i)| over the file's own frequency points and every pair (brief-sens-2 R-sens2-3), with
+        /// the pair (1-based, i &gt; j) and frequency where it occurs, and that difference in dB — the larger of
+        /// |S(i,j)| and |S(j,i)| over the smaller. Judged in absolute LINEAR terms: a −40 dB entry differing by 3 dB is
+        /// a 0.003 difference and reciprocal for this purpose. Converts from Z/Y first, as <see cref="Passivity(SNP)"/>
+        /// does; a 1-port is 0 at no pair.
+        /// </summary>
+        public static SnpReciprocity Reciprocity(SNP snp)
+        {
+            SNP s = snp.Type switch
+            {
+                MatrixType.Z => ZToS(snp),
+                MatrixType.Y => YToS(snp),
+                _            => snp
+            };
+            double worst = 0, hz = double.NaN, worstDb = 0;
+            int wi = 0, wj = 0;
+            for (int k = 0; k < s.FrequencyCount; k++)
+            {
+                var m = s.Matrices[k];
+                for (int i = 1; i < m.RowCount; i++)
+                    for (int j = 0; j < i; j++)
+                    {
+                        double d = (m[i, j] - m[j, i]).Magnitude;
+                        if (d <= worst) continue;
+                        worst = d; wi = i + 1; wj = j + 1; hz = s.Frequencies[k];
+                        double a = m[i, j].Magnitude, b = m[j, i].Magnitude;
+                        double lo = Math.Min(a, b), hi = Math.Max(a, b);
+                        worstDb = lo > 0 ? 20 * Math.Log10(hi / lo) : double.PositiveInfinity;
+                    }
+            }
+            return new SnpReciprocity(worst, wi, wj, hz, worstDb);
+        }
+
+        /// <summary>
         /// Source stability circles for a 2-port SNP over frequency.
         /// The source circle is the locus of ΓS values on the Smith chart
         /// that place the output on the unit circle (|Γout| = 1).

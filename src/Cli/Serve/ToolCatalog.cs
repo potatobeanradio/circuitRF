@@ -593,6 +593,8 @@ internal static class ToolCatalog
                      new("step",      "--step",      OptKind.Str,     "The +- step of a value with no tolerance, as a percent of its value (default 1%). A phase steps +-1 deg."),
                      new("sigma",     "--sigma",     OptKind.Number,  "k: a toleranced value steps +-k sigma through its own distribution (default 1)."),
                      new("ports",     "--ports",     OptKind.Str,     "1 or 0 (default): with factors=all, also step the ports' own values (their reference impedances)."),
+                     new("snp",       "--snp",       OptKind.Str,     "on (default) or off: off leaves every SnP block's S-parameter entries out."),
+                     new("snpExclude","--snp-exclude",OptKind.StrList, "SnP instances to leave out (SNP4, DUT:SNP4), replacing the sensitivity line's list; result.sensitivity.excluded names them."),
                      new("vars",      "--vars",      OptKind.StrList, "Step only these of the factors."),
                      new("goals",     "--goals",     OptKind.StrList, "Rank exactly these enabled goals, whatever their use."),
                      new("responses", "--responses", OptKind.Str,     "goals (default: the use=yield|both goals, else the use=opt|both ones) or all (every enabled goal). Every scalar measure is a response."),
@@ -602,8 +604,10 @@ internal static class ToolCatalog
                   + "Each factor is stepped + and - alone (2k+1 simulations, deterministic); result.sensitivity.goals[] ranks the "
                   + "contributors by |delta| of the goal's normalized margin, with each one's basis (sigma, 1 %, 1 deg), share and "
                   + "status (nonlinear: the two steps disagree — confirm with doe design=ccf or a Monte Carlo). An estimated pass "
-                  + "fraction is given only when every factor steps by its tolerance. Exit 0 done; exit 2: the nominal did not "
-                  + "evaluate. Writes nothing to the design."),
+                  + "fraction is given only when every factor steps by its tolerance. Each S-parameter of an SnP block is a factor "
+                  + "too (SNP3.SdB_3_1, SNP3.Sdeg_3_1, stepped +-0.1 dB / +-1 deg); each goal also carries entries[] (an "
+                  + "S-parameter's dB and phase together), ports[] (overlapping) and instances[] (with factor counts). Exit 0 "
+                  + "done; exit 2: the nominal did not evaluate. Writes nothing to the design."),
                 new("em", ["em"],
                     [new("path", true, "The .cem or .c3d to run; with component, the workspace folder (or .cws, "
                                      + "or .ctech) whose technology the part is drawn on.")],

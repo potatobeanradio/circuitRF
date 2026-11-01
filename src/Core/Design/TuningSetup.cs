@@ -464,6 +464,29 @@ public readonly record struct TunableKey(string? Cell, string? Instance, string 
     /// <summary>The key of the whole value a part key names; the key itself when it names no part.</summary>
     public TunableKey Whole => this with { Part = null };
 
+    /// <summary>The instance a key's owner prefix names — <c>SNP3</c>, <c>DUT:SNP3</c> inside a cell — or for a variable
+    /// the variable itself: the spelling <c>snpexclude</c> and the roll-ups name an instance by (brief-sens-2).</summary>
+    public string OwnerPrefix => (Cell is null ? "" : Cell + ":") + (Instance ?? Name);
+
+    /// <summary>The key names an SnP block's S-parameter entry offset (<c>SNP3.SdB_3_1</c>, brief-sens-2) — by shape;
+    /// whether the instance IS an SnP is the catalog's to know.</summary>
+    public bool IsSnpEntryShape => Instance is not null && Part is null && RfCore.SnpPerturbation.TryParseName(Name, out _, out _, out _);
+
+    /// <summary>
+    /// What every table, panel and <c>--json</c> <c>label</c> calls an SnP entry key (brief-sens-2 R-sens2-4):
+    /// <c>SNP3 · S31 dB</c>, <c>SNP3 · S31 phase</c>; <c>S(10,1)</c> on a block of more than 9 ports. The key stays the
+    /// identity; this is only its name on screen.
+    /// </summary>
+    public static string SnpEntryLabel(string owner, int i, int j, RfCore.SnpOffsetKind kind, int ports)
+        => $"{SnpEntryName(owner, i, j, ports)} {(kind == RfCore.SnpOffsetKind.Db ? "dB" : "phase")}";
+
+    /// <summary>The entry an SnP key belongs to, both offsets together: <c>SNP3 · S31</c> (the roll-up's label).</summary>
+    public static string SnpEntryName(string owner, int i, int j, int ports)
+        => ports > 9 ? $"{owner} · S({i},{j})" : $"{owner} · S{i}{j}";
+
+    /// <summary>One port of an SnP block in the port roll-up: <c>SNP3 · port 3</c>.</summary>
+    public static string SnpPortLabel(string owner, int port) => $"{owner} · port {port}";
+
     public override string ToString()
     {
         string whole = (Cell is null ? "" : Cell + ":") + (Instance is null ? Name : Instance + "." + Name);

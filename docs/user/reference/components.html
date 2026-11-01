@@ -2301,6 +2301,15 @@ port.</li>
 <li><code>PinConfig</code> and <code>Pitch</code> — the pin arrangement and spacing on the symbol.</li>
 <li><code>InterpMode</code>, <code>InterpDomain</code> and <code>ExtrapMode</code> — how the data is interpolated between points, in
 which domain, and what happens beyond its frequency range.</li>
+<li><code>SdB_&lt;i&gt;_&lt;j&gt;</code> and <code>Sdeg_&lt;i&gt;_&lt;j&gt;</code> — an offset on one S-parameter: <code>SdB_3_1=0.2 dB</code> raises |S31| by
+0.2 dB, <code>Sdeg_3_1=5</code> turns it by 5°, the same at every frequency. Ports are numbered from 1 and
+always separated by <code>_</code> (<code>SdB_10_1</code>). Both are 0 unless set, which is what lets a sensitivity run
+rank an S-parameter and a Monte Carlo give it a tolerance. Because an offset is the same at every
+frequency it is not tuned or optimized. At 0 Hz only the dB offset applies.</li>
+<li><code>Reciprocal</code> — <code>auto</code> (the default), <code>tied</code> or <code>untied</code>. Tied, one offset on S31 moves S13 with it,
+and only the lower entries (<code>SdB_3_1</code>, never <code>SdB_1_3</code>) are offered; untied, every entry has its own.
+<code>auto</code> ties a file whose S(i,j) and S(j,i) agree (every passive file does) and unties one that does
+not (an amplifier).</li>
 </ul>
 <p>The symbol is dynamic; the pin arrangement, the pitch and the floating-reference option are covered in
 <a href="dynamic-symbols.html#snp">Dynamic symbols</a>.</p>

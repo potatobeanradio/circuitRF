@@ -3856,6 +3856,15 @@ unit. The file is `<design>.sens.npy` (`-o` moves it); `--json` carries `result.
 and only swept measures) · **2** the nominal did not evaluate ·
 **130** cancelled, nothing written — there is no target, so no 3. Over MCP it is `run analysis=sensitivity`.
 
+**SnP entries (brief-sens-2, `yield.md` §20.4).** Every S-parameter of an SnP block is a factor (`SNP3.SdB_3_1`,
+`SNP3.Sdeg_3_1`, labelled `SNP3 · S31 dB`). `--snp on|off` is the master switch and `--snp-exclude a,b` replaces the
+line's list for the run (an empty value clears it); the excluded blocks print as one line after the tables
+(`excluded: SNP4 (20 factors)`) and ride `result.sensitivity.excluded[]`. `--by key|entry|port|instance` picks the
+table (default `entry`: an SnP entry's dB and phase together; with no SnP ranked it reads as the key table); a roll-up
+table is `rank  <level>  factors  Δ  share`, and the port table says its shares overlap. `--json` carries every level
+whatever `--by` says: `goals[].entries[]`, `ports[]` (with `instance`, `port`, and `overlapping: true` on the goal),
+`instances[]` (with `factors`).
+
 ## 26. `recognize` — a board's artwork as a circuit, headless
 
 **brief-artsch-7.** `circuitrf recognize <path>` is Create Schematic from Artwork with no display: a board's

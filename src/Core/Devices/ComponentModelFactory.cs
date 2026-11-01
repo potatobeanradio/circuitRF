@@ -720,7 +720,51 @@ public static class ComponentModelFactory
                 ? OutOfRangePolicy.WarnExtrapolate
                 : OutOfRangePolicy.WarnClamp;
 
-        return new SnpModel(portCount, filePath, interpMethod, extrapPolicy, interpFormat);
+        return new SnpModel(portCount, filePath, interpMethod, extrapPolicy, interpFormat, SnpOffsetsOf(parameters, portCount, filePath));
+    }
+
+    /// <summary>
+    /// An SnP's S-parameter entry offsets (brief-sens-2 R-sens2-1): <c>SdB_i_j</c> in dB and <c>Sdeg_i_j</c> in degrees,
+    /// expanded over the tie <c>Reciprocal=auto|tied|untied</c> decides. Null when none is stated or every one is 0 —
+    /// the block then stamps exactly as it always did. A port outside <c>NumPorts</c> is refused here; so is an
+    /// upper-triangle key on a tied block, which needs the file to decide <c>auto</c>, so it is asked only when an
+    /// offset is stated and the file is there (a missing file is the model's own refusal, naming the instance).
+    /// </summary>
+    private static SnpOffsets? SnpOffsetsOf(IReadOnlyDictionary<string, Value> parameters, int portCount, string filePath)
+    {
+        var stated = new List<(string Name, double Value)>();
+        foreach (var (name, v) in parameters)
+        {
+            if (!SnpPerturbation.TryParseName(name, out _, out int i, out int j)) continue;
+            if (i > portCount || j > portCount)
+                throw new ParameterRefusalException(
+                    $"{name} names port {Math.Max(i, j)}, and this SnP has {portCount} port(s) (NumPorts={portCount}).");
+            if (v.Kind != ValueKind.Real)
+                throw new ParameterRefusalException($"{name} must be a real number (dB or degrees).");
+            stated.Add((name, v.AsReal()));
+        }
+        string? modeText = parameters.TryGetValue(SnpPerturbation.ReciprocalParameter, out var rv) && rv.Kind == ValueKind.String
+            ? rv.AsString() : null;
+        if (SnpPerturbation.ParseReciprocal(modeText) is not { } mode)
+            throw new ParameterRefusalException(
+                $"{SnpPerturbation.ReciprocalParameter}={modeText} is not auto, tied or untied.");
+        if (stated.Count == 0) return null;
+
+        if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath))
+        {
+            // The file decides auto; without one the model refuses at stamp time, naming the instance. Untied needs
+            // no file, and tied states its own rule.
+            if (mode == SnpReciprocal.Auto) return null;
+        }
+        bool tied = mode switch
+        {
+            SnpReciprocal.Tied   => true,
+            SnpReciprocal.Untied => false,
+            _                    => SnpPerturbation.ResolveTie(TouchstoneCache.Get(filePath), mode).Tied,
+        };
+        var offsets = SnpPerturbation.Build(portCount, tied, stated, out string? refusal);
+        if (refusal is not null) throw new ParameterRefusalException(refusal + ".");
+        return offsets;
     }
 
     private static MutualInductanceModel CreateMutualModel(IReadOnlyDictionary<string, Value> parameters)

@@ -1322,12 +1322,36 @@ namespace RfCore.Export
         IReadOnlyList<string>                   Notes,
         long                                    Evaluations,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        string?                                 Output = null);
+        string?                                 Output = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<SensitivityExcludedJson>? Excluded = null);
+
+    /// <summary>An SnP instance left out by <c>snp=off</c> or <c>snpexclude</c> (brief-sens-2 R-sens2-5a), with the factors
+    /// it would have contributed — reported so a block left out is never read as one found insensitive.</summary>
+    public sealed record SensitivityExcludedJson(string Instance, int Factors);
+
+    /// <summary>One row of a roll-up of the ranking (brief-sens-2 R-sens2-6): an entry, an SnP port or an instance.</summary>
+    /// <param name="Delta">√ΣΔ² over its keys (one key keeps its signed Δ); absent when every one failed.</param>
+    /// <param name="Share">The sum of its keys' shares. Port shares OVERLAP — S31 counts toward ports 3 and 1.</param>
+    /// <param name="Factors">How many keys it holds.</param>
+    public sealed record SensitivityRollupJson(
+        string  Label,
+        string  Instance,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        int?    Port,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double? Delta,
+        double  Share,
+        int     Factors);
 
     /// <summary>One goal ranked.</summary>
     /// <param name="Nominal">m₀, the goal's normalized margin at the nominal.</param>
     /// <param name="Spread">√ΣΔ², in normalized-margin units.</param>
     /// <param name="Estimate">Φ(m₀/spread), an ESTIMATED pass fraction — only when every contributor steps by its σ.</param>
+    /// <param name="Entries">The ranking by entry: an SnP entry's dB and phase keys together, any other key on its own.</param>
+    /// <param name="Ports">By SnP port, with <paramref name="Overlapping"/> true: a port's share counts every entry in its row
+    /// and column, so the shares overlap and do not sum to 1.</param>
+    /// <param name="Instances">By instance, each with its factor count.</param>
     public sealed record SensitivityGoalJson(
         string                                  Goal,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -1336,7 +1360,13 @@ namespace RfCore.Export
         double?                                 Spread,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         double?                                 Estimate,
-        IReadOnlyList<SensitivityContributorJson> Contributors);
+        IReadOnlyList<SensitivityContributorJson> Contributors,
+        IReadOnlyList<SensitivityRollupJson>?   Entries = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<SensitivityRollupJson>?   Ports = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        bool?                                   Overlapping = null,
+        IReadOnlyList<SensitivityRollupJson>?   Instances = null);
 
     /// <summary>One scalar measure ranked, in its own unit.</summary>
     public sealed record SensitivityMeasureJson(
@@ -1346,7 +1376,13 @@ namespace RfCore.Export
         double?                                 Nominal,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         double?                                 Spread,
-        IReadOnlyList<SensitivityContributorJson> Contributors);
+        IReadOnlyList<SensitivityContributorJson> Contributors,
+        IReadOnlyList<SensitivityRollupJson>?   Entries = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<SensitivityRollupJson>?   Ports = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        bool?                                   Overlapping = null,
+        IReadOnlyList<SensitivityRollupJson>?   Instances = null);
 
     /// <summary>One factor's effect on one response, largest |delta| first.</summary>
     /// <param name="Basis">What its step is: <c>σ</c>, <c>1 %</c>, <c>1°</c>.</param>
@@ -2610,7 +2646,25 @@ namespace RfCore.Export
     /// </summary>
     public sealed record ExplainTunablesJson(
         IReadOnlyList<ExplainTunableJson> Tunables,
-        IReadOnlyList<string>             Unresolved);
+        IReadOnlyList<string>             Unresolved,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<ExplainSnpJson>?    Snp = null);
+
+    /// <summary>One SnP instance's S-parameter entries (brief-sens-2 R-sens2-4): its port count, whether one offset moves
+    /// S(i,j) and S(j,i) together and why, and how many keys it offers — or why its file did not load.</summary>
+    /// <param name="Instance">As a key's owner prefix spells it: <c>SNP3</c>, <c>DUT:SNP3</c>.</param>
+    /// <param name="Tie"><c>tied</c> or <c>untied</c>; absent when the file did not load.</param>
+    /// <param name="Reason"><c>auto: worst |S(i,j) − S(j,i)| = 0.0021</c>, or <c>stated</c>.</param>
+    public sealed record ExplainSnpJson(
+        string  Instance,
+        string  Location,
+        int     Ports,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Tie,
+        string  Reason,
+        int     Entries,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? LoadError);
 
     /// <summary>One tunable.</summary>
     /// <param name="Key">The identity a tune line, a preset and the CLI use: <c>R1.R</c>, <c>Wline</c>, <c>DUT:R3.R</c>.</param>
@@ -2654,7 +2708,9 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         ExplainPartJson? Part = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        ExplainPartValueJson? PartValue = null);
+        ExplainPartValueJson? PartValue = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Label = null);
 
     /// <summary>
     /// A placed vendor part's VALUE (brief vendorlib-5 R-vl5-5b): statistical only, never tuned or optimized, and what

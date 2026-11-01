@@ -221,6 +221,10 @@ public static class EnvelopeSnpFit
                 if (NotAffine(ec, ws, bandHz)) FitSystemBlock(nl, sub, i, ec, topHz, stampHz, bandHz, generic: true);
                 continue;
             }
+            // brief-sens-2: the fit is of the FILE; a block with entry offsets is refused by name rather than fitted
+            // unperturbed, which would silently drop them.
+            if (snp.OffsetsNotAppliedBy(ec.InstancePath, "the envelope's rational fit") is { } offsets)
+                throw new InvalidOperationException(offsets + ".");
             // A missing file is the SnpModel's own refusal, which names the instance: leave it to stamp.
             if (string.IsNullOrWhiteSpace(snp.FilePath) || !File.Exists(snp.FilePath)) continue;
             string who = $"SnP '{ec.InstancePath}'";

@@ -493,7 +493,7 @@
                                                     <DataTemplate x:DataType="tun:TuningAddRow">
                                                         <Grid ColumnDefinitions="*,Auto">
                                                             <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6">
-                                                                <TextBlock Text="{Binding Key}" FontSize="12"/>
+                                                                <TextBlock Text="{Binding Display}" FontSize="12"/>
                                                                 <TextBlock Text="{Binding Location}" Classes="muted" VerticalAlignment="Center"/>
                                                             </StackPanel>
                                                             <TextBlock Grid.Column="1" Text="{Binding ValueText}" FontSize="11"

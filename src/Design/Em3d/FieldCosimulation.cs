@@ -133,6 +133,9 @@ public static class FieldCosimulation
                     ?? throw new InvalidOperationException($"{who}: the circuit has no instance '{fa.Block}'.");
         if (block.Model is not SnpModel snp)
             throw new InvalidOperationException($"{who}: '{fa.Block}' is a {block.ComponentType}, not an S-parameter block.");
+        // brief-sens-2: the port fields are the FILE's structure's; offsets on its S describe one the field set does not hold.
+        if (snp.OffsetsNotAppliedBy(block.InstancePath, "the field co-simulation, whose port fields are the file's own") is { } offsets)
+            throw new InvalidOperationException($"{who}: {offsets}.");
 
         var (set, refusal) = PortFieldSet.Open(snp.FilePath, hz);
         if (set is null) throw new InvalidOperationException($"{who}: {refusal}");

@@ -16,6 +16,11 @@ namespace CircuitRF.Design.Statistics;
 /// <item>over the factors in step order: <c>factors</c> (labelled with the keys), <c>basis</c> (labelled <c>σ</c>,
 /// <c>1 %</c>, …), <c>step</c> (labelled with the value text set at + and −) and <c>status</c> (labelled with whether
 /// both steps evaluated for every response);</item>
+/// <item>the roll-ups (brief-sens-2 R-sens2-6), per response, each over a <c>contributor</c> axis labelled with its
+/// display labels, largest share first: <c>contrib:r:by=entry</c> and <c>contrib:r:by=instance</c> with their
+/// <c>:cumulative</c> cubes, <c>contrib:r:by=port</c> (none: port shares overlap), and <c>factors:r:by=instance</c>
+/// (each instance's key count);</item>
+/// <item><c>excluded</c> — the SnP instances left out (labels) and each one's factor count (values);</item>
 /// <item><c>notes</c> (each note as a label) and the scalar <c>evaluations</c>.</item>
 /// </list>
 /// A text is an axis label — a cube holds numbers — so each text cube's values are its items' ordinals.
@@ -40,6 +45,8 @@ internal static class SensitivityDataSet
                  : all.All(s => s == SensitivityStatus.Failed) ? "failed"
                  : all.Any(s => s is SensitivityStatus.OneSided or SensitivityStatus.Failed) ? "one-sided" : "ok";
         }));
+        if (r.Excluded.Count > 0)
+            ds.AddToGroup(Group, "excluded", Labelled("instance", r.Excluded.Select(e => e.Instance), r.Excluded.Select(e => (double)e.Factors)));
         if (r.Notes.Count > 0) Text(ds, "notes", "note", r.Notes.Select(n => n.Render()));
         ds.AddToGroup(Group, "evaluations", DataCube.Scalar(r.Evaluations));
         return ds;
@@ -71,6 +78,29 @@ internal static class SensitivityDataSet
         spread.Unit = unit;
         ds.AddToGroup(Group, $"spread:{n}", spread);
         if (resp.Estimate is { } e) ds.AddToGroup(Group, $"estimate:{n}", DataCube.Scalar(e));
+
+        // brief-sens-2 R-sens2-6: the roll-ups, from the same Δs.
+        void Rollup(string by, IReadOnlyList<SensitivityRollup> rows, bool cumulative)
+        {
+            if (rows.Count == 0) return;
+            var sh = rows.Select(x => x.Share).ToArray();
+            ds.AddToGroup(Group, $"contrib:{n}:by={by}", Labelled(ResultContributions.ContributorAxis, rows.Select(x => x.Label), sh));
+            if (cumulative)
+                ds.AddToGroup(Group, $"contrib:{n}:by={by}:cumulative",
+                              Labelled(ResultContributions.ContributorAxis, rows.Select(x => x.Label), Contributor.ShownCumulative(sh)));
+        }
+        Rollup("entry", resp.Entries, true);
+        Rollup("port", resp.Ports, false);
+        Rollup("instance", resp.Instances, true);
+        if (resp.Instances.Count > 0)
+            ds.AddToGroup(Group, $"factors:{n}:by=instance",
+                          Labelled(ResultContributions.ContributorAxis, resp.Instances.Select(x => x.Label), resp.Instances.Select(x => (double)x.Factors)));
+    }
+
+    private static DataCube Labelled(string axisName, IEnumerable<string> labels, IEnumerable<double> values)
+    {
+        var l = labels.ToList();
+        return new DataCube([new Axis(axisName, [.. Enumerable.Range(1, l.Count).Select(i => (double)i)], "", [.. l])], [.. values]);
     }
 
     private static void Text(DataSet ds, string name, string axisName, IEnumerable<string> texts)

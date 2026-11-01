@@ -1,5 +1,6 @@
 using System.Numerics;
 using CircuitRF.Core.Design;
+using CircuitRF.Core.Elaboration;
 using CircuitRF.Core.Expressions;
 using CircuitRF.Design.Cells;
 using CircuitRF.Design.Schematic;
@@ -7,8 +8,36 @@ using CircuitRF.Design.Schematic;
 namespace CircuitRF.Design.Optimization;
 
 /// <summary>What a tunable is: a component's parameter, a VAR row, a sub-circuit instance's own
-/// declared cell parameter, or a placed vendor part's choice of part (brief vendorlib-4).</summary>
-public enum TunableKind { Parameter, Variable, CellParameter, Part, PartValue }
+/// declared cell parameter, a placed vendor part's choice of part (brief vendorlib-4), or one S-parameter entry's
+/// dB or phase offset on an SnP block (brief-sens-2).</summary>
+public enum TunableKind { Parameter, Variable, CellParameter, Part, PartValue, SnpEntry }
+
+/// <summary>
+/// An SnP entry tunable's place in its block (brief-sens-2 R-sens2-4): <c>SdB_3_1</c> is (3, 1, dB).
+/// </summary>
+/// <param name="Instance">The instance as a key's owner prefix spells it — <c>SNP3</c>, <c>DUT:SNP3</c>.</param>
+/// <param name="I">The row port, 1-based.</param>
+/// <param name="J">The column port, 1-based.</param>
+/// <param name="Ports">The block's port count.</param>
+/// <param name="Tied">One offset moves S(i,j) and S(j,i) together.</param>
+/// <param name="TieReason">Why it is tied or not: <c>auto: worst |S(i,j) − S(j,i)| = 0.0021</c>, <c>stated</c>.</param>
+public sealed record SnpEntryInfo(string Instance, int I, int J, RfCore.SnpOffsetKind Kind, int Ports, bool Tied, string TieReason)
+{
+    /// <summary><c>SNP3 · S31 dB</c> — <see cref="TunableKey.SnpEntryLabel"/>.</summary>
+    public string Label => TunableKey.SnpEntryLabel(Instance, I, J, Kind, Ports);
+}
+
+/// <summary>One SnP instance as the catalog found it (brief-sens-2): what <c>explain --tunables</c> lists.</summary>
+/// <param name="Instance">The owner prefix (<c>SNP3</c>, <c>DUT:SNP3</c>).</param>
+/// <param name="Location"><c>top</c> or <c>DUT · ×2</c>.</param>
+/// <param name="Ports">The port count; 0 when the file did not load and NumPorts is not stated.</param>
+/// <param name="Tied">Null when the file did not load.</param>
+/// <param name="TieReason">Why it is tied or untied.</param>
+/// <param name="Entries">The keys offered.</param>
+/// <param name="LoadError">Why the file did not load; null when it did.</param>
+/// <param name="Reciprocity">The measured worst |S(i,j) − S(j,i)|; null when the file did not load.</param>
+public sealed record SnpInstanceInfo(string Instance, string Location, string? Cell, int Ports, bool? Tied, string TieReason,
+                                     int Entries, string? LoadError, RfCore.SnpReciprocity? Reciprocity, RfCore.SnpReciprocal Mode);
 
 /// <summary>
 /// One value of a design that can be tuned (overview D1/D2).
@@ -48,6 +77,8 @@ public enum TunableKind { Parameter, Variable, CellParameter, Part, PartValue }
 /// tolerance are the part's — the placed part, or at a moved design the candidate the part is bound to.</param>
 /// <param name="ValueOf">A part's value tunable: the placed part it is the value of. Deliberately not
 /// <paramref name="VendorPart"/>, which marks the part's CHOICE everywhere it is read.</param>
+/// <param name="SnpEntry">An SnP block's S-parameter entry offset (<see cref="TunableKind.SnpEntry"/>): the entry, the
+/// block's port count and its tie state with its reason.</param>
 public sealed record Tunable(
     string      Key,
     string      Location,
@@ -73,8 +104,12 @@ public sealed record Tunable(
     ComplexForm Form       = ComplexForm.Rect,
     CircuitRF.Design.VendorLibraries.VendorPartTunable? VendorPart = null,
     CircuitRF.Design.VendorLibraries.VendorLibraryEntry? PartEntry = null,
-    CircuitRF.Design.VendorLibraries.VendorPartTunable? ValueOf = null)
+    CircuitRF.Design.VendorLibraries.VendorPartTunable? ValueOf = null,
+    SnpEntryInfo? SnpEntry = null)
 {
+    /// <summary>What a table calls it: an SnP entry's <see cref="SnpEntryInfo.Label"/>, any other tunable its key.</summary>
+    public string Label => SnpEntry?.Label ?? Key;
+
     /// <summary>A placed vendor part's choice of part, not a number.</summary>
     public bool IsVendorPart => VendorPart is not null;
 
@@ -139,6 +174,9 @@ public sealed class TunableCatalog
 
     /// <summary>Every tunable, top level first, then each cell in the netlist's own order.</summary>
     public IReadOnlyList<Tunable> Tunables { get; }
+
+    /// <summary>Every SnP instance the design reaches, with its port count and tie state (brief-sens-2).</summary>
+    public IReadOnlyList<SnpInstanceInfo> SnpInstances { get; private set; } = [];
 
     /// <summary>The placed vendor parts the catalog was built with — what a run prepared from the same bench is
     /// handed (<see cref="Circuit.PreparedCircuit.FromBench"/>) so it offers the same <c>Instance.Part</c> keys.</summary>
@@ -215,7 +253,10 @@ public sealed class TunableCatalog
     /// </summary>
     /// <param name="workspaceRoot">The workspace the schematic belongs to. A cell outside it is
     /// read-only (Push would write another workspace). Null skips that test.</param>
-    public static TunableCatalog Discover(SchematicEditModel schematic, ICellResolver cells, string? workspaceRoot = null)
+    /// <param name="referenceBase">What a relative SnP <c>File</c> resolves against — the base Simulate elaborates with
+    /// (<c>SchematicCircuit.ReferenceBaseOf</c>); null takes <paramref name="workspaceRoot"/>.</param>
+    public static TunableCatalog Discover(SchematicEditModel schematic, ICellResolver cells, string? workspaceRoot = null,
+                                          string? referenceBase = null)
     {
         var recording = new RecordingResolver(cells);
         var extracted = NetExtractor.Extract(schematic, "tb", recording);
@@ -244,7 +285,7 @@ public sealed class TunableCatalog
         // A disabled component is not in the netlist; one excluded from it (a probe, a MEAS block) has
         // nothing to tune. Instances the extraction emitted are exactly the rest.
         var catalog = FromNetlist(extracted.TestBench, extracted.Library, varRows, extracted.CellKeys, workspaceRoot, Stored,
-                                  extracted.PartTunables);
+                                  extracted.PartTunables, referenceBase ?? workspaceRoot);
         catalog._drawings = drawings;
         return catalog;
     }
@@ -276,12 +317,16 @@ public sealed class TunableCatalog
     /// <see cref="Circuit.PreparedCircuit.PartTunables"/>): each is offered as ONE tunable, <c>Instance.Part</c>,
     /// and never as the hidden parameters it was placed with (brief vendorlib-4 R-vl4-1a). Null for a netlist,
     /// which cannot place one.</param>
+    /// <param name="referenceBase">What a relative SnP <c>File</c> resolves against, as elaboration resolves it
+    /// (<see cref="Elaborator.ResolveFileReference"/>); a <c>.cnl</c>'s reader has already made a quoted one absolute.</param>
     public static TunableCatalog FromNetlist(
         TestBench tb, Library lib, IReadOnlyCollection<string>? variableNames = null,
         IReadOnlyDictionary<string, string>? cellKeys = null, string? workspaceRoot = null,
         Func<string?, string, string, bool>? stored = null,
-        IReadOnlyList<CircuitRF.Design.VendorLibraries.VendorPartTunable>? parts = null)
+        IReadOnlyList<CircuitRF.Design.VendorLibraries.VendorPartTunable>? parts = null,
+        string? referenceBase = null)
     {
+        var snpInstances = new List<SnpInstanceInfo>();
         var partsByKey = (parts ?? []).GroupBy(p => p.Key, StringComparer.Ordinal)
                                       .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
         var tunables   = new List<Tunable>();
@@ -310,7 +355,7 @@ public sealed class TunableCatalog
             Scope(cell.Name, n, ReadOnlyReason(cell.Name, cellKeys, workspaceRoot), cell.Instances, cell.Variables);
         }
 
-        var catalog    = new TunableCatalog(tunables, notOffered) { PartTunables = parts ?? [] };
+        var catalog    = new TunableCatalog(tunables, notOffered) { PartTunables = parts ?? [], SnpInstances = snpInstances };
         var unresolved = new List<string>();
         if (tb.Tuning is { } setup)
         {
@@ -352,8 +397,13 @@ public sealed class TunableCatalog
                     continue;
                 }
 
+                bool isSnp = inst.Reference.Equals("SnP", StringComparison.OrdinalIgnoreCase);
+                if (isSnp) SnpEntries(inst, prefix, location, cell, count, readOnly);
+
                 foreach (var ov in inst.Overrides)
                 {
+                    // An SnP's entry offsets are offered by SnpEntries, every one of them, stated or not.
+                    if (isSnp && RfCore.SnpPerturbation.TryParseName(ov.Name, out _, out _, out _)) continue;
                     if (stored?.Invoke(cell, inst.InstanceName, ov.Name) == false)
                     {
                         notOffered[$"{prefix}{inst.InstanceName}.{ov.Name}"] =
@@ -367,6 +417,77 @@ public sealed class TunableCatalog
 
             foreach (var v in vars)
                 Consider(prefix + v.Name, v.Name, null, TunableKind.Variable, v.Expression, v.Unit, isDefault: false);
+
+            // brief-sens-2 R-sens2-4: an SnP block's S-parameter entries, per its tie state — the lower triangle when
+            // tied, all N² when untied — each a dB and a phase offset at 0 unless the instance states one.
+            void SnpEntries(Instance inst, string prefix, string location, string? cell, int count, string? readOnly)
+            {
+                string owner = prefix + inst.InstanceName;
+                string? Stated(string name) => inst.Overrides.FirstOrDefault(o => o.Name.Equals(name, StringComparison.OrdinalIgnoreCase)) is { } o
+                    ? Unquote(o.Expression) : null;
+                int ports = int.TryParse(Stated("NumPorts"), System.Globalization.NumberStyles.Integer,
+                                         System.Globalization.CultureInfo.InvariantCulture, out int np) ? np : 0;
+                var mode = RfCore.SnpPerturbation.ParseReciprocal(Stated(RfCore.SnpPerturbation.ReciprocalParameter)) ?? RfCore.SnpReciprocal.Auto;
+
+                string? loadError = null;
+                RfCore.SNP? snp = null;
+                string file = Elaborator.ResolveFileReference(Stated("File") ?? "", referenceBase);
+                if (string.IsNullOrWhiteSpace(file)) loadError = "no Touchstone file is specified";
+                else if (!File.Exists(file)) loadError = $"its Touchstone file was not found: '{file}'";
+                else
+                {
+                    try { snp = RfCore.TouchstoneCache.Get(file); }
+                    catch (Exception ex) when (ex is IOException or InvalidDataException or FormatException or ArgumentException)
+                    { loadError = $"its Touchstone file could not be read ({ex.Message})"; }
+                }
+                if (snp is not null && ports == 0) ports = snp.Matrices.Length > 0 ? snp.Matrices[0].RowCount : 0;
+
+                if (snp is null)
+                {
+                    // Every key the block would offer is named, with the load's own sentence.
+                    for (int i = 1; i <= ports; i++)
+                        for (int j = 1; j <= ports; j++)
+                            foreach (var kind in new[] { RfCore.SnpOffsetKind.Db, RfCore.SnpOffsetKind.Deg })
+                                notOffered[$"{owner}.{RfCore.SnpPerturbation.ParameterName(kind, i, j)}"] = $"{owner}: {loadError}";
+                    snpInstances.Add(new SnpInstanceInfo(owner, location, cell, ports, null, "", 0, loadError, null, mode));
+                    return;
+                }
+
+                var (tied, rec) = RfCore.SnpPerturbation.ResolveTie(snp, mode);
+                string reason = mode switch
+                {
+                    RfCore.SnpReciprocal.Tied   => "stated",
+                    RfCore.SnpReciprocal.Untied => "stated",
+                    _ => $"auto: worst |S(i,j) − S(j,i)| = {rec.Worst.ToString("G2", System.Globalization.CultureInfo.InvariantCulture)}",
+                };
+                int entries = 0;
+                for (int i = 1; i <= ports; i++)
+                    for (int j = 1; j <= ports; j++)
+                    {
+                        if (tied && i < j) continue;
+                        foreach (var kind in new[] { RfCore.SnpOffsetKind.Db, RfCore.SnpOffsetKind.Deg })
+                        {
+                            string name = RfCore.SnpPerturbation.ParameterName(kind, i, j);
+                            string unit = kind == RfCore.SnpOffsetKind.Db ? "dB" : "deg";
+                            double span = kind == RfCore.SnpOffsetKind.Db ? 1 : 10;
+                            var ov = inst.Overrides.FirstOrDefault(o => o.Name == name);
+                            double value = 0;
+                            if (ov is not null && TunableValue.InUnit(TunableValue.Text(ov.Expression, ov.Unit), unit) is { } v) value = v;
+                            else if (ov is not null)
+                            {
+                                notOffered[$"{owner}.{name}"] = $"its value '{TunableValue.Text(ov.Expression, ov.Unit)}' is not a plain number — tune the variable it reads instead";
+                                continue;
+                            }
+                            tunables.Add(new Tunable(
+                                $"{owner}.{name}", location, cell, count, inst.InstanceName, name, TunableKind.SnpEntry,
+                                TunableValue.Format(value, unit, "G6"), value, unit, false, ov is null, readOnly, null,
+                                TunableValue.Format(value - span, unit, "G6"), TunableValue.Format(value + span, unit, "G6"), false,
+                                SnpEntry: new SnpEntryInfo(owner, i, j, kind, ports, tied, reason)));
+                            entries++;
+                        }
+                    }
+                snpInstances.Add(new SnpInstanceInfo(owner, location, cell, ports, tied, reason, entries, null, rec, mode));
+            }
 
             void Consider(string key, string owner, string? parameter, TunableKind kind,
                           string expression, string? unit, bool isDefault)
@@ -511,5 +632,11 @@ public sealed class TunableCatalog
             return "its schematic file is read-only";
 
         return null;
+    }
+
+    private static string Unquote(string s)
+    {
+        s = s.Trim();
+        return s.Length >= 2 && s[0] == '"' && s[^1] == '"' ? s[1..^1] : s;
     }
 }

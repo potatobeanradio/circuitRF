@@ -684,8 +684,11 @@ public sealed partial class ParameterRowViewModel : ObservableObject
     /// <summary>The single key of a plain number, or null.</summary>
     public string? TuneKey => TuneKeys.Count == 1 ? TuneKeys[0] : null;
 
-    /// <summary>The row carries a tune toggle. Absent, never greyed, on a row that is not offered.</summary>
-    public bool CanTune => TuneKey is not null;
+    /// <summary>The row carries a tune toggle. Absent, never greyed, on a row that is not offered — nor on an SnP block's
+    /// S-parameter offset, which is toleranced and ranked, never tuned (brief-sens-2).</summary>
+    public bool CanTune => TuneKey is not null && !IsSnpEntryRow;
+
+    private bool IsSnpEntryRow => _ownerComp?.Symbol == SymbolKind.Snp && RfCore.SnpPerturbation.TryParseName(_param.Name, out _, out _, out _);
 
     /// <summary>The row is a complex value: its tune button offers a menu of the four parts instead.</summary>
     public bool CanTuneParts => TuneKeys.Count > 1;

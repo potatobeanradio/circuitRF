@@ -41,13 +41,30 @@ public sealed class SnpModel : ComponentModel
     /// brief-em3d-79 reads it to find the instance whose model is a 3D view's EM result.</summary>
     public string FilePath => _filePath;
 
+    /// <summary>The S-parameter entry offsets this instance states (brief-sens-2), expanded over the tie; null when it
+    /// states none or every one is 0 — then nothing about the block differs from a block with no such parameters.
+    /// A reader of the block's S that does not go through <see cref="Stamp"/> must apply these through
+    /// <see cref="SnpPerturbation.Apply"/> or refuse a nonzero one by name (<see cref="OffsetsNotAppliedBy"/>).</summary>
+    public SnpOffsets? Offsets { get; }
+
+    /// <summary>
+    /// The refusal of a path that reads this block's FILE rather than its stamp, when the instance states offsets:
+    /// "SnP 'SNP3''s S-parameter offsets are not applied by the envelope's rational fit". Null when there are none —
+    /// using the unperturbed file silently is the defect this exists to prevent (brief-sens-2 R-sens2-2).
+    /// </summary>
+    public string? OffsetsNotAppliedBy(string instancePath, string path)
+        => Offsets is null ? null : $"{Describe(instancePath)}'s S-parameter offsets are not applied by {path}; " +
+                                    "set them to 0 to run it, or use an analysis that stamps the block";
+
     public SnpModel(
         int                  portCount,
         string               absoluteFilePath,
         InterpolationMethod  interpMethod = InterpolationMethod.CubicSpline,
         OutOfRangePolicy     extrapPolicy = OutOfRangePolicy.WarnClamp,
-        InterpolationFormat  interpFormat = InterpolationFormat.RealImag)
+        InterpolationFormat  interpFormat = InterpolationFormat.RealImag,
+        SnpOffsets?          offsets      = null)
     {
+        Offsets       = offsets is { Any: true } ? offsets : null;
         _portCount    = portCount;
         _filePath     = absoluteFilePath;
         _interpMethod = interpMethod;
@@ -162,7 +179,9 @@ public sealed class SnpModel : ComponentModel
         const double Tol = 1e-6;
         try
         {
-            var sig = RFNetwork.Passivity(LoadSnp(c));
+            // The PERTURBED matrix on the file's grid (brief-sens-2 R-sens2-2): a step that makes a passive file active
+            // is refused by the analyses that refuse an active block, not hidden by measuring the file as written.
+            var sig = RFNetwork.Passivity(SnpPerturbation.ApplyToFile(LoadSnp(c), Offsets));
             double worst = 0.0; int at = -1;
             for (int k = 0; k < sig.Length; k++)
                 if (sig[k] > worst) { worst = sig[k]; at = k; }
@@ -194,7 +213,8 @@ public sealed class SnpModel : ComponentModel
 
         // Interpolate the stored S-parameters to this frequency, then convert to Z.
         // The splines were fitted once (see LoadInterpolator); this is the evaluation only.
-        var sMat = interp.Evaluate(hz);
+        // brief-sens-2: the entry offsets, after interpolation — the same instance back when there are none.
+        var sMat = SnpPerturbation.Apply(interp.Evaluate(hz), Offsets, hz);
         var zMat = RFNetwork.SToZ(sMat, snp.Z0);
 
         int n       = _portCount;

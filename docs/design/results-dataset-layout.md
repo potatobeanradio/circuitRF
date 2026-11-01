@@ -239,7 +239,11 @@ values are normalized margins (margin over the goal's scale); a measure's are in
 
 | Group | Cube | Axes | What |
 |---|---|---|---|
-| `sens` | `contrib:<r>`, `contrib:<r>:shown`, `contrib:<r>:cumulative` | `[contributor]` (labelled with the factor keys, largest \|Δ\| first) | the shares Δ²/ΣΔ² (0–1; shown is the same values), and their running total — the contribution Pareto |
+| `sens` | `contrib:<r>`, `contrib:<r>:shown`, `contrib:<r>:cumulative` | `[contributor]` (labelled with each factor's label — its key, or an SnP entry's `SNP3 · S31 dB` — largest \|Δ\| first) | the shares Δ²/ΣΔ² (0–1; shown is the same values), and their running total — the contribution Pareto |
+| `sens` | `contrib:<r>:by=entry`, `contrib:<r>:by=entry:cumulative` | `[contributor]` (`SNP3 · S31`, or a non-SnP key's label; largest share first) | an SnP entry's dB and phase shares summed; any other key on its own (brief-sens-2) |
+| `sens` | `contrib:<r>:by=port` | `[contributor]` (`SNP3 · port 3`) | every entry in that row or column, summed — shares OVERLAP, so no cumulative cube |
+| `sens` | `contrib:<r>:by=instance`, `…:cumulative`, `factors:<r>:by=instance` | `[contributor]` (`SNP3`, `R1`, a variable) | the shares of every key the instance owns; its key count |
+| `sens` | `excluded` | `[instance]` (labelled with each SnP instance left out by `snp=off` / `snpexclude`) | the factors each would have contributed |
 | `sens` | `delta:<r>`, `plus:<r>`, `minus:<r>`, `nominal:<r>`, `asymmetry:<r>` | `[contributor]`, same order | signed Δ; the response at + and −; m₀ at every row; the D6 asymmetry |
 | `sens` | `status:<r>` | `[contributor]` (labelled `ok`, `nonlinear`, `one-sided`, `failed`) | 0–3 |
 | `sens` | `spread:<r>`, `estimate:<r>` | scalar | √ΣΔ²; Φ(m₀/spread) — a goal only, and only when every basis is σ |

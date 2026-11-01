@@ -344,6 +344,9 @@ public static class ThermalCircuitLink
             var results = ResultPaths(doc, c3dPath, resultsRoot);
             if (Instance(nl, fc.Instance, results, out refusal) is not { } inst) return null;
             var snp = (SnpModel)inst.Model;
+            // brief-sens-2: the losses are the 3D view's own structure's; offsets on its S describe one it does not hold.
+            if (snp.OffsetsNotAppliedBy(inst.InstancePath, "the thermal link, whose losses are the 3D view's own structure's") is { } offsets)
+            { refusal = offsets + "."; return null; }
             var missing = Enumerable.Range(1, snp.PortCount).Where(k => !doc.Ports.Any(q => q.Number == k)).ToList();
             if (missing.Count > 0)
             {

@@ -35,6 +35,10 @@ public static class TuningValidator
             if (catalog.Find(e.Key) is { ValueOf: { } valueOf } && (e.Tune || e.Opt))
                 f.Add(TuningDiagnostics.PartValueStatisticalOnly(who, valueOf.Key));
 
+            // An SnP entry offset is uniform over frequency: sensitivity and yield only, never tuned or optimized (brief-sens-2).
+            if (catalog.Find(e.Key) is { SnpEntry: not null } && (e.Tune || e.Opt))
+                f.Add(TuningDiagnostics.SnpEntryStatisticalOnly(who));
+
             // A part is continuous, and preferred needs a ladder (brief-tuneopt-8 R-to8-2/7).
             if (e.Discrete != TuneDiscrete.None && catalog.Find(e.Key) is { VendorPart: null } t
                 && !TunableValue.DiscreteChoices(t).Contains(e.Discrete))

@@ -107,6 +107,9 @@ internal static partial class Yield
         ("--optimum",      "",                   [NDoe],                                      "doe --factors opt: search the fitted model for the goals' best point and confirm it by one simulation."),
         ("--step",         "p%",                 [NSens],                                     "sens: the ± step of a value with no tolerance, a percent of its value (default 1%); a phase steps ±1°."),
         ("--ports",        "0|1",                [NSens],                                     "sens: 1 also steps the ports' own values (their reference impedances) under --factors all; 0, the default, leaves them out."),
+        ("--snp",          "on|off",             [NSens],                                     "sens: off leaves every SnP block's S-parameter entries out (the snpexclude list is kept, unused); on, the default, steps them."),
+        ("--snp-exclude",  "a,b",                [NSens],                                     "sens: leave these SnP instances out (SNP4, DUT:SNP4), replacing the line's list for this run; every other one stays in."),
+        ("--by",           "key|entry|port|instance", [NSens],                                "sens: what the text table ranks — each key, each SnP entry (dB and phase together, the default), each SnP port, or each instance. --json carries all four."),
         ("--sigma",        "k",                  [NSens],                                     "sens: a toleranced value steps ± k sigma through its own distribution (default 1)."),
         ("--top",          "n",                  [NSens],                                     "sens: the contributors the text table lists per goal (default 10); --json carries every one."),
         ("-o",             "out.npy",            Runs,                                        "Where the result is written; default <design>.yield.npy beside the design (center: the best point's verification; doe: <design>.doe.npy; sens: <design>.sens.npy)."),
@@ -170,6 +173,7 @@ internal static partial class Yield
         double? step = null, sigma = null;
         bool? ports = null;
         int? top = null;
+        string? snp = null, snpExclude = null, by = null;
         var given = new List<string>();
         var sets = new List<(string Name, string Expr)>();
 
@@ -235,6 +239,10 @@ internal static partial class Yield
                 // brief-sens-1: the sensitivity line's own settings, and the table's length.
                 case "--step" when hasValue:       if (!Percent(a, args[++i], out step, out int r13)) return r13; break;
                 case "--ports" when hasValue:      if (!Switch(a, args[++i], out ports, out int r15)) return r15; break;
+                // brief-sens-2: the SnP master switch, the per-instance list, and the table's level.
+                case "--snp" when hasValue:        snp = args[++i]; break;
+                case "--snp-exclude" when hasValue: snpExclude = args[++i]; break;
+                case "--by" when hasValue:         by = args[++i]; break;
                 case "--top" when hasValue:        if (!Int(a, args[++i], 1, out top, out int r14)) return r14; break;
                 case "--sigma" when hasValue:
                 {
@@ -326,7 +334,7 @@ internal static partial class Yield
             return JsonRun.Fail(CliDiagnostics.RunFailed(circuit.ReadError ?? "the design could not be read"));
 
         if (noun == "sens")
-            return RunSens(input, full, circuit, tb, sets, output, quiet, vars, goals, new SensFlags(factors, step, sigma, ports, responses, parallel, top));
+            return RunSens(input, full, circuit, tb, sets, output, quiet, vars, goals, new SensFlags(factors, step, sigma, ports, responses, parallel, top, snp, snpExclude, by));
 
         if (noun == "doe")
             return RunDoe(input, full, circuit, tb, sets, output, quiet, goals, optimum, new DoeFlags(design, resolution, factors, levels, centre, responses, parallel));
@@ -891,6 +899,7 @@ internal static partial class Yield
         Console.Error.WriteLine("                     doe: [--design full2|frac|pb|ccf] [--resolution 4|5] [--factors opt|stat]");
         Console.Error.WriteLine("                          [--levels range|sigma:k] [--centre n] [--responses goals|all] [--optimum]");
         Console.Error.WriteLine("                     sens: [--factors all|stat|opt] [--step p%] [--sigma k] [--ports 0|1] [--vars k,k] [--goals g,g]");
+        Console.Error.WriteLine("                           [--snp on|off] [--snp-exclude a,b] [--by key|entry|port|instance]");
         Console.Error.WriteLine("                           [--responses goals|all] [--top n]");
     }
 }

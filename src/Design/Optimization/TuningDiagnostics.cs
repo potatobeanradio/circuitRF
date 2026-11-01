@@ -118,6 +118,11 @@ public static class TuningDiagnostics
         "{who}: a vendor part's value is drawn in a Monte Carlo trial, never tuned or optimized — a real part's value is not a continuous knob. Tune or optimize {partKey} to choose among real parts, and remove tune=1/opt=1 here.",
         ("who", who), ("partKey", partKey));
 
+    public static Diagnostic SnpEntryStatisticalOnly(string who) => Diagnostic.Create(
+        "tuning.snp.statistical-only", DiagnosticSeverity.Error,
+        "{who}: an SnP block's S-parameter offset is one number at every frequency — a sensitivity and a tolerance, not a design anyone could build, so it is never tuned or optimized. Give it a tolerance (dist=) or rank it with sensitivity, and remove tune=1/opt=1 here.",
+        ("who", who));
+
     public static Diagnostic PartLevelsAreCandidates(string who) => Diagnostic.Create(
         "tuning.part.levels", DiagnosticSeverity.Error,
         "{who}: a vendor part's levels are its candidate parts; discrete=, step= and scale= do not apply. Narrow the candidates with min=/max= instead.",

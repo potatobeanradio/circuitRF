@@ -603,7 +603,8 @@ internal static class Check
         if (tb.Tuning is { IsEmpty: false })
         {
             string? cws = DocumentKinds.AncestorCws(Path.GetFullPath(path));
-            try { catalog = TunableCatalog.Discover(model, DiskCellResolver.Instance, cws is null ? null : Path.GetDirectoryName(cws)); }
+            try { catalog = TunableCatalog.Discover(model, DiskCellResolver.Instance, cws is null ? null : Path.GetDirectoryName(cws),
+                                                    SchematicCircuit.ReferenceBaseOf(path)); }
             catch (Exception ex) { f.Add(CliDiagnostics.CheckUnreadable(path, ex.Message)); return; }
         }
 
@@ -1474,6 +1475,12 @@ internal static class Check
         {
             CheckTuning(path, tb, lib, nl, catalog, f);
 
+            // brief-sens-2 R-sens2-3: Reciprocal=tied on a file that is not reciprocal — allowed, warned once.
+            if (tb.Instances.Any(i => i.Reference.Equals("SnP", StringComparison.OrdinalIgnoreCase))
+                || lib.Cells.Any(c => c.Instances.Any(i => i.Reference.Equals("SnP", StringComparison.OrdinalIgnoreCase))))
+                foreach (var w in Design.Statistics.StatisticsValidator.SnpTieWarnings(catalog ?? TunableCatalog.FromNetlist(tb, lib)))
+                    f.Add(CliDiagnostics.CheckTuningFinding(path, w));
+
             foreach (var w in nl.Warnings) f.Add(CliDiagnostics.CheckElaborationWarning(path, w));
             foreach (var n in nl.Notes)    f.Add(CliDiagnostics.CheckElaborationNote(path, n));
 
@@ -1570,8 +1577,6 @@ internal static class Check
             var doe = Design.Statistics.DoeRun.Create(PreparedCircuit.FromBench(lib, tb, null, catalog.PartTunables));
             if (doe.Refusal is { } refusal) f.Add(CliDiagnostics.CheckTuningFinding(path, refusal));
         }
-    }
-}
 
         // brief-sens-1 R-sens1-6: a sensitivity line the run would refuse — no factor, no goal and no measure — from its
         // constructor, which simulates nothing.
@@ -1580,3 +1585,5 @@ internal static class Check
             var sens = Design.Statistics.SensitivityRun.Create(PreparedCircuit.FromBench(lib, tb, null, catalog.PartTunables));
             if (sens.Refusal is { } refusal) f.Add(CliDiagnostics.CheckTuningFinding(path, refusal));
         }
+    }
+}
