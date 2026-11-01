@@ -522,13 +522,21 @@ public static class LayoutHitTest
     /// a port on bare dielectric, or a caller with no technology. There is no marker to measure
     /// there (the renderer draws none either), and a port that could not be picked at all would be a
     /// port that could not be moved back onto the metal.</para>
+    ///
+    /// <para><b>An edge port's mark is its SHEET, not its whole edge.</b> The renderer narrows the bar
+    /// through <see cref="CircuitRF.Design.Layout.Em3d.EdgePortSheet.Bar"/> (a stated width, or 2 × H on
+    /// an edge longer than 4 × H), so this does too — with the same technology and DBU scale. Without
+    /// it a port on the long side of a trace drew a 0.4 mm bar inside a highlight and hit region the
+    /// length of the trace.</para>
     /// </summary>
     internal static Bbox PortPickBbox(LabelShape label, LayoutPortDirection.PortHint? hint,
-                                      bool atAnchor = false)
+                                      bool atAnchor = false, Technology? tech = null,
+                                      int dbuPerMicron = LayoutUnits.DefaultDbuPerMicron)
     {
         long padding = Math.Max(1, label.Height / 4);
 
         if (hint is not { } h) return AnchorSquare(label);
+        if (!atAnchor) h = CircuitRF.Design.Layout.Em3d.EdgePortSheet.Bar(h, label, tech, dbuPerMicron);
 
         var bb = LayoutPortDirection.MarkerBbox(label, h, atAnchor, padding);
         return bb.IsEmpty ? AnchorSquare(label) : bb;

@@ -138,6 +138,25 @@ public sealed class PortSheetWidthTests(ITestOutputHelper output) : IDisposable
         Assert.Equal(sheet.Min.X * 1e6 * Dbu, bar.PlaneX, 0);
     }
 
+    /// <summary>The port's hit region and selection highlight span the narrowed bar, not the 3 mm edge it stands on —
+    /// the same <see cref="EdgePortSheet.Bar"/> the renderer draws with.</summary>
+    [Theory]
+    [InlineData(null)]
+    [InlineData(300.0)]
+    public void ThePickRegion_SpansTheDrawnBar_NotTheEdge(double? statedUm)
+    {
+        var shapes = Pour(statedUm);
+        var label = shapes.OfType<LabelShape>().Single(l => l.Text == "1");
+        var hint = LayoutPortDirection.Resolve(LayoutPortDirection.LookupFor(shapes), label)!.Value;
+        var bar = EdgePortSheet.Bar(hint, label, Tech(), Dbu);
+        Assert.True(bar.WidthDbu < hint.WidthDbu);
+
+        var pick = CircuitRF.Render.LayoutHitTest.PortPickBbox(label, hint, atAnchor: false, Tech(), Dbu);
+        var expected = LayoutPortDirection.MarkerBbox(label, bar, atAnchor: false, padding: Math.Max(1, label.Height / 4));
+        Assert.Equal(expected, pick);
+        Assert.True(pick.MaxY - pick.MinY < hint.WidthDbu);
+    }
+
     // ── R-dfr32-2-3 ─────────────────────────────────────────────────────────────────────────────
 
     /// <summary>A round pad 1 mm across, polygonised at 64 vertices as an imported pad is, and a 0.2 mm trace 3 mm

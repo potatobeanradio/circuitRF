@@ -2337,7 +2337,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
                         && LayoutPortDirection.MarkAtAnchor(
                                label.PortKind ?? LayoutPortDirection.InferredKind(h), h);
 
-        return LayoutHitTest.PortPickBbox(label, hint, atAnchor: atAnchor);
+        return LayoutHitTest.PortPickBbox(label, hint, atAnchor: atAnchor, DrawTechnology, Model.DbuPerMicron);
     }
 
     // ── THE PORT'S OWN TYPE, EDITED FROM THE DRAWING (owner request, 2026-09-14) ────────────────

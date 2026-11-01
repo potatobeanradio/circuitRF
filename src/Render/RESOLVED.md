@@ -5743,3 +5743,16 @@ the port-drag edge snap. Every export and one-shot render passes none and builds
 port being dragged asks at a new point each frame and pays for that one point. The first frame after an edit still
 pays the full cost once (~35–55 ms on this board). Test: `LayoutConductorCacheTests` (counters, plus an identical
 picture with and without the cache).
+
+## An edge port's highlight and hit region spanned the whole edge, not its drawn bar (2026-10-31)
+
+A port standing on the long SIDE of a trace (a component pad's terminal on the side of an 11.25 mm line) drew a
+0.41 mm bar but was highlighted and picked by a box the length of the side. The bar goes through
+`EdgePortSheet.Bar` (a stated `Width`, else 2 × H on an edge longer than 4 × H) in `DrawPortMarker` and
+`PlacePortNames`, but `LayoutHitTest.PortPickBbox` measured `MarkerBbox` from the unnarrowed hint, whose width is the
+whole edge `EdgeAt` found.
+
+**Fix.** `PortPickBbox` takes the technology and DBU scale and narrows an edge port's hint through the same
+`EdgePortSheet.Bar` before `MarkerBbox`. Both callers pass them: `LayoutEditorViewModel.PortMarkerRegion` (hit test,
+hover, context menu) and `LayoutRenderer.DrawSelectionOutlines` (the highlight), so the two stay one rectangle. Test:
+`PortSheetWidthTests.ThePickRegion_SpansTheDrawnBar_NotTheEdge`.

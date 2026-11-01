@@ -1031,7 +1031,7 @@ public static partial class LayoutRenderer
                 if (opts.Overlay?.SelectedIndices is { Count: > 0 } selected)
                 {
                     DrawSelectionOutlines(canvas, view, selected, dragOverrides, theme, ps, scaleUm,
-                                          conductorAt);
+                                          conductorAt, tech);
 
                     // L1h R-L1h-5: bbox scale handles replace L1d's single-shape handles when showing
                     // (always for a 2+ selection; for a single shape, only while Scale mode is on).
@@ -2048,7 +2048,7 @@ public static partial class LayoutRenderer
     /// stroked path. Never touches fill — the layer color stays the information the user reads.</summary>
     private static void DrawSelectionOutlines(SKCanvas canvas, LayoutView view, IReadOnlyList<int> selected,
         IReadOnlyDictionary<int, LayoutShape> dragOverrides, LayoutRenderTheme theme, PathSpace ps, double scaleUm,
-        LayoutPortDirection.ConductorLookup? conductorAt = null)
+        LayoutPortDirection.ConductorLookup? conductorAt = null, Technology? tech = null)
     {
         using var batch = new SKPath();
         foreach (var idx in selected)
@@ -2059,7 +2059,7 @@ public static partial class LayoutRenderer
 
             // A port's outline follows its MARK, and the mark's position follows its TYPE — which
             // the shape itself carries, drag override included (LayoutGeometry's clone copies it).
-            using var outline = BuildOutlinePathForSelection(shape, ps, conductorAt);
+            using var outline = BuildOutlinePathForSelection(shape, ps, conductorAt, tech, view.DbuPerMicron);
             if (outline is null || outline.IsEmpty) continue;
             batch.AddPath(outline);
         }
@@ -2148,7 +2148,8 @@ public static partial class LayoutRenderer
     /// <see cref="BuildShapePath"/> entry: <c>Label</c> (real font metrics — see
     /// <see cref="MeasureLabelWorldBbox"/>) and <c>Via</c> (a circle at its pad radius).</summary>
     private static SKPath? BuildOutlinePathForSelection(LayoutShape shape, PathSpace ps,
-        LayoutPortDirection.ConductorLookup? conductorAt = null)
+        LayoutPortDirection.ConductorLookup? conductorAt = null, Technology? tech = null,
+        int dbuPerMicron = LayoutUnits.DefaultDbuPerMicron)
     {
         switch (shape)
         {
@@ -2161,7 +2162,8 @@ public static partial class LayoutRenderer
                 var pb = LayoutHitTest.PortPickBbox(port, hint,
                     atAnchor: hint is { } h
                               && LayoutPortDirection.MarkAtAnchor(
-                                     port.PortKind ?? LayoutPortDirection.InferredKind(h), h));
+                                     port.PortKind ?? LayoutPortDirection.InferredKind(h), h),
+                    tech, dbuPerMicron);
                 if (pb.IsEmpty) return null;
                 var portPath = new SKPath();
                 portPath.AddRect(NormalizedRect(ps.X(pb.MinX), ps.Y(pb.MinY), ps.X(pb.MaxX), ps.Y(pb.MaxY)));
