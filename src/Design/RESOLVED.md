@@ -25428,3 +25428,60 @@ than one way gets a note saying another order fits too: equal lengths cannot be 
 **The importer flags what still imports wrongly**, without changing it (`DataHygiene.Layout`): Id negative at Vds > 0,
 |S12| > |S21| at conducting biases, frequencies below 1 kHz, Id above 100 A, T above 200 °C, and an S table whose |S11|
 never reaches 0.1 (Y mapped as S).
+
+## A board edge drawn only on its copper layers: every dielectric reached the air box, and nothing said why (designer round 33, 2026-10-31)
+
+**What happened.** A 4-layer board's edge had been drawn as a closed zero-width square on each copper and mask layer,
+with nothing on the technology's Outline (Edge.Cuts) layer. A `.cem` 3D setup bounds a dielectric by the board outline
+only, so all three slabs ran out to the default air box: −30.4 to 60.88 mm on a 30.48 mm board. The preview showed
+FR-4 three boards wide while the `.c3d` view, which bounds slabs by the outline or else the drawn geometry's box, looked
+right. The zero-width paths were already noted as "centrelines, not artwork".
+
+**Fix.** A note, only when an unbounded dielectric coincides with a closed zero-width path, off the outline layers,
+whose box holds the drawn geometry to 1 %: it names that path's layer and says that putting it on the outline layer ends
+the dielectric there (verified: moving the square to Outline gives three 0–30.48 mm slabs). **Not a general "no outline"
+note:** that version fired on 30 of the generator-dump goldens, because every shipped line, coupon and patch example is
+an edge-less laminate on purpose. `OpenEmsBackendTests.Gate8`'s own comment records why the edge matters when it is
+real: dielectric beyond the port sheets read as a phase error growing to −12° at 20 GHz.
+Test: `Em3dGeneratorTests.ABoardEdgeDrawnAsACentrelineOnCopper_IsNamed_AndOnTheOutlineLayerItBoundsTheDielectric`.
+
+## The default air box: per axis, by multiples of H, round percentages, and a floor on an unbroken plane (designer round 33, 2026-10-31)
+
+**Why.** The default padded every face by one length, λ/8 at the lowest frequency capped at the structure's largest
+extent. On a 30.48 mm, 1.58 mm-thick board that was 30.48 mm on all six faces, which the 3D panel showed as 100 % on
+X and Y and 1928 % on Z, because each box shows its face's padding as a share of its own axis. The rule sized Z from
+X and Y, which is not how anyone reads a per-axis percentage. DFR32-1's measurements (above) left the choice to the
+owner: lines and vias settled by about 10 H on the top and sides and 5 H below, and a filter wanted about 20 H.
+
+**The owner's decisions.** Keep `PaddingPercent` as the gap beyond the geometry (0 % touches it), so files keep their
+boxes. Make the default per axis, from H rather than from a fixed share of the extent: a fixed share gives a 235 µm
+microstrip stack 1.2 H of air above, and DFR32-1 measured 3 H moving |S| by 0.035. Round each to the nearest 5 %.
+
+**The rule** (`Em3dGenerator.DefaultFacePadding`, `Em3dDefaultPadding`). Driven, no radiation pattern, and a dielectric
+directly under the top metal: 20 H on the sides and top, 10 H below. Each is rounded to the nearest 5 % of its own
+axis, never below 5 %, and never more than the old rule. H (`PaddingHeight`) runs from the underside of the topmost
+flat metal down to the next flat metal below it, or to the PEC floor. Vias, wires and balls don't count as "the top
+metal". A radiator, a static solve, an eigenmode solve, or a top metal on no dielectric keeps the old rule. The
+problem carries H (`Em3dProblem.PaddingHeightM`) so that `explain` and Palace's half-padding remedy name the default
+the box was built with. The designer's board goes from 30.48 mm to 4.572 mm on the sides (15 %) and 4.103 mm on top
+(260 %).
+
+**The floor on a drawn plane** (owner's addition). The floor already sat on an UNDRAWN lowest ground plane. Now it
+also sits on the underside of a DRAWN one, as a PEC face, when the setup states nothing for ZMin and all of these hold:
+- the problem is driven with no radiation pattern;
+- the plane's merged polygons have no holes, so no antipad is closed and no via is shorted;
+- it covers 95 % of the drawn metal's footprint (`PlaneFloorCover`);
+- nothing is stacked or drilled below it.
+
+The `.cem` path is `Em3dLayoutSolids.PlaneFloorZ`; the `.c3d` path is `C3dProblemAssembly.PlaneFloor`, using the
+instance's ground-band objects. The radiator exclusion was found by the patch-antenna dump: its unbroken ground plane
+would have turned the floor PEC, which removes back radiation and breaks Palace's far field, since that needs every
+face absorbing. Palace gate `PalaceBackendTests.ADrawnUnbrokenBottomPlane_FloorsTheBox_AndSolvesLikeTheUndrawnPlanesFloor`
+(Benchmark tier, 8 s): copper flush on the PEC face solves, and |ΔS| against the undrawn plane's floor is 0.0105 at
+Draft, inside Draft's 0.013 remeshing difference on a plain line.
+
+**Moved:** 8 generator dumps (via examples, spiral examples, case B). Only the box and the slabs built out to it changed.
+Tests: `Em3dGeneratorTests.TheDefaultAirBox_PadsByMultiplesOfH_RoundedToFivePercentOfItsOwnAxis`,
+`…ADrawnUnbrokenBottomPlane_IsTheFloor_ExceptForARadiatorOrAStatedZMin`. The Properties panel now gives each padding
+box's length and rule as its tooltip; the face rows hold only the boundary picker, which reads PEC and PMC in capitals
+(`Em3dBoundaryKindNameConverter`).

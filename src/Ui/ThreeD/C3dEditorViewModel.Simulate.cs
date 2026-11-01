@@ -1002,7 +1002,7 @@ public sealed partial class C3dEditorViewModel
     public string? SetAirBoxPaddingPercent(string face, string text)
     {
         string t = text.Trim().TrimEnd('%').Trim();
-        if (!double.TryParse(t, NumberStyles.Float, CultureInfo.InvariantCulture, out double pct) || !double.IsFinite(pct))
+        if (!NumericText.TryParseDouble(t, out double pct) || !double.IsFinite(pct))
             return $"'{text}' is not a percentage: a number such as 10.";
         if (pct < 0) return "A padding is a distance from the geometry: zero or more.";
         return EditActiveAirBox(face, f => new EmAirBoxFace(null, f?.Boundary, pct),

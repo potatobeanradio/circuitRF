@@ -654,6 +654,11 @@ public sealed record Em3dProblem(
     /// problem — means the solids' and sheets' own bounds. Nothing lowers it.</summary>
     public (Point3 Lo, Point3 Hi)? PaddedContent { get; init; }
 
+    /// <summary>Designer round 33 — the dielectric height H under the top metal that the default air box was padded by (20 H on
+    /// the top and sides, 10 H below), when its builder found one; null when the box took the wavelength rule. Carried so
+    /// <c>explain</c> and a run's remedies name the same default the box was built with. Nothing lowers it.</summary>
+    public double? PaddingHeightM { get; init; }
+
     /// <summary>A static problem's terminals, in index order (terminal k is index k + 1).</summary>
     public IReadOnlyList<Em3dTerminal> Terminals { get; init; } = [];
 

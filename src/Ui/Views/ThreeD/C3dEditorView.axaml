@@ -763,11 +763,14 @@
                     </StackPanel>
                 </Border>
                 <!-- brief-dfr26-1 R-dfr26-1-5 — a scene drawn although a solve would refuse it (a port that cannot be built)
-                     says why over the viewport, rather than the refusal replacing the scene. -->
-                <Border IsHitTestVisible="False" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="96,8" Padding="10,4"
+                     says why over the viewport, rather than the refusal replacing the scene. ONE line, so it never covers the
+                     scene (designer round 33: four wrapped lines hid a small preview); the whole sentence is the tooltip and
+                     the first line of the notes. -->
+                <Border HorizontalAlignment="Center" VerticalAlignment="Top" Margin="96,8" Padding="10,3"
                         CornerRadius="4" MaxWidth="900" Background="{DynamicResource SystemControlBackgroundAltMediumHighBrush}"
+                        ToolTip.Tip="{Binding ViewModel.Viewer.Banner}"
                         IsVisible="{Binding ViewModel.Viewer.Banner, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
-                    <TextBlock FontSize="12" Text="{Binding ViewModel.Viewer.Banner}" TextWrapping="Wrap"
+                    <TextBlock FontSize="12" Text="{Binding ViewModel.Viewer.Banner}" MaxLines="1" TextTrimming="CharacterEllipsis"
                                Foreground="{DynamicResource CrfWarningBrush}"/>
                 </Border>
                 <vv3:Viewer3DMeasureCard DataContext="{Binding ViewModel.Viewer}" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="12,0,0,104"/>

@@ -151,6 +151,15 @@ public sealed class EditorRound1TreeTests : IDisposable
     }
 
     [Fact]
+    public void APaddingTypedWithADecimalComma_IsReadAsADecimalPoint()
+    {
+        var vm = Open(Doc(new EmSetup { Name = "S1", Solver3D = Em3dSolverId.Palace }));
+        vm.RestoreActiveSetup("S1");
+        Assert.Null(vm.SetAirBoxPaddingPercent("zmax", "100,8"));
+        Assert.Equal(100.8, C3dSetups.Read(vm.Document).Single().Setup!.AirBox!.ZMax!.PaddingPercent);
+    }
+
+    [Fact]
     public void PaddingPercent_RoundTripsTheCem_RefusesBothSpellings_AndAFlatAxisTakesTheDefaultWithANote()
     {
         var setup = new EmSetup { Name = "S", Solver3D = Em3dSolverId.Palace, AirBox = new EmAirBox(ZMin: new EmAirBoxFace(null, null, 50), ZMax: new EmAirBoxFace(null, null, 50)) };

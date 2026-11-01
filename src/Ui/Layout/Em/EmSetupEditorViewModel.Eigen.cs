@@ -303,5 +303,5 @@ public sealed partial class EmSetupEditorViewModel
     /// <summary>Blank is null (the default); a number is itself; anything else NaN.</summary>
     private static double? Num(string text)
         => text.Trim().Length == 0 ? null
-         : double.TryParse(text.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double v) ? v : double.NaN;
+         : NumericText.TryParseDouble(text.Trim(), out double v) ? v : double.NaN;
 }

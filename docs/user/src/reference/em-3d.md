@@ -177,17 +177,19 @@ full description.
   ground or refuses the run, as **Other metal** (`UnassignedConductors3D`) says.
   [Static problems](em-setup.html#package-rlc).
 - **The air box** (`AirBox`): how far each face of the solved region lies beyond the geometry, and what
-  the face does to the field. It can be *Absorbing* (open space), *Pec* (a metal wall), *Pmc* or
-  *Symmetry*. By default the floor sits on the lowest ground plane and the other five faces are
-  absorbing, an eighth of the longest wavelength in the sweep out, or the structure's largest extent if
-  that is less (a quarter of the longest wavelength when a radiation pattern is asked for). A closed box of
-  `Pec` faces is a shielded enclosure, and it is how the example models a package lid. The Inspector and
-  `circuitrf explain` both give each face's distance and where it came from — *default: 18.74 mm, λ/8 at
-  2 GHz, the sweep's lowest frequency*, or *default: 4.014 mm, the structure's largest extent, less than
-  λ/8 at 400 MHz*. In a 3D view's Properties panel, each face's row gives its padding as a length and as a
-  share of the content's extent along that axis (*54 µm, 20 %*). A percentage of a thin board's height is a
-  very short distance. On a guided structure (a launch, a transition) a stated padding of a few substrate
-  heights is usually cheaper still.
+  the face does to the field. It can be *Absorbing* (open space), *PEC* (a metal wall), *PMC* or
+  *Symmetry*. A face's padding is a share of the geometry's extent along that face's own axis: 0 % touches
+  the geometry, and 100 % on +Z puts one board-thickness of air above it.
+  By default, on a driven setup, each face is padded by multiples of H, the dielectric height under the top metal: 20 H on the four
+  sides and the top, 10 H below, each rounded to the nearest 5 % of its axis and never more than an eighth of the
+  longest wavelength or the structure's largest extent. On a 1.6 mm board whose top dielectric is 0.2 mm that is
+  about 4 mm of air on the sides and top. The floor sits on the lowest ground plane, as a PEC face, when that plane is
+  undrawn, or when it is drawn with no hole in it under all the other metal: nothing below an unbroken plane carries
+  field. A setup that asks for a radiation pattern keeps every face absorbing and a quarter of the longest wavelength
+  of air, and a static or eigenmode setup keeps the wavelength rule. A closed box of PEC faces is a shielded
+  enclosure, and it is how the example models a package lid. Each padding box in a 3D view's Properties panel
+  gives the length it stands for, and the rule that set it, as its tooltip; `circuitrf explain` prints the same
+  (*default: 4.572 mm, 20 × H, H = 203.2 µm of dielectric under the top metal, to the nearest 5 %*).
 - **Robust meshing** (`RobustMeshing`): removes outline points that sit within a fraction of a micrometre of
   their neighbours' line, which imported artwork often has and which can stop the mesher. On in a new setup; see
   [EM Setup ▸ Robust meshing](em-setup.html#robust-meshing).

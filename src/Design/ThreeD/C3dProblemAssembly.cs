@@ -220,18 +220,52 @@ public static class C3dProblemAssembly
         try { fMin = setup.ExpandFrequencies().Where(f => f > 0).DefaultIfEmpty(1e9).Min(); }
         catch (Exception) { fMin = 1e9; }
         return Em3dGenerator.PaddedAirBox(setup, (extent.X0, extent.Y0, extent.X1, extent.Y1, extent.Z0, extent.Z1),
-                                          fMin, floorZ: null, waves: [], [], out refusal);
+                                          fMin, PlaneFloor(setup, e), waves: [], [], out refusal, PaddingHeight(e));
     }
+
+    /// <summary>
+    /// Designer round 33 — the underside of an unbroken ground plane at the bottom of what a run models, where the air box's
+    /// floor goes (a PEC face) when the setup states nothing for ZMin: a layout instance's object on its lowest
+    /// ground-reference conductor, with no hole in it, flush with the bottom of everything, covering
+    /// <see cref="Em3dGenerator.PlaneFloorCover"/> of the modelled footprint. Null otherwise — the floor is then padded like any face.
+    /// </summary>
+    public static double? PlaneFloor(EmSetup setup, C3dElaboration e)
+    {
+        if (setup.AirBox?.ZMin is not null || !Em3dGenerator.ByHeightApplies(setup) || e.ModelledExtent() is not { } x) return null;
+        var ground = e.GroundBandObjects.ToHashSet(StringComparer.Ordinal);
+        var plane = e.Solids.Where(s => ground.Contains(s.Name) && !e.NotModelled.Contains(s.Name) && s.Role == Em3dRole.Conductor)
+                            .Select(s => s.Primitive).OfType<Em3dExtrudedPolygon>()
+                            .Where(p => Math.Abs(p.ZBottom - x.Z0) <= 1e-9).ToList();
+        if (plane.Count == 0 || plane.Any(p => p.Holes.Count > 0)) return null;
+        double area = plane.Sum(p => Math.Abs(Area(p.Outline)));
+        return area >= Em3dGenerator.PlaneFloorCover * (x.X1 - x.X0) * (x.Y1 - x.Y0) ? x.Z0 : null;
+
+        static double Area(IReadOnlyList<Point2> r)
+        {
+            double a = 0;
+            for (int i = 0, j = r.Count - 1; i < r.Count; j = i++) a += (r[j].X + r[i].X) * (r[j].Y - r[i].Y);
+            return a / 2;
+        }
+    }
+
+    /// <summary>Designer round 33 — H for the default padding, read off the content a run models.</summary>
+    private static double? PaddingHeight(C3dElaboration e)
+        => Em3dGenerator.PaddingHeight(e.Solids.Where(s => !e.NotModelled.Contains(s.Name)),
+                                       e.Sheets.Where(s => !e.NotModelled.Contains(s.Name)), floorZ: null);
 
     /// <summary>Designer feedback round 11 — why a face the setup leaves unstated stands where it does ("λ/8 at 2 GHz, the
     /// sweep's lowest frequency"), on the same sweep and extent <see cref="AirBox"/> pads by. Null when there is no content.</summary>
-    public static string? DefaultPaddingBasis(EmSetup setup, C3dElaboration e)
+    public static string? DefaultPaddingBasis(EmSetup setup, C3dElaboration e, string face)
     {
         if (e.ModelledExtent() is not { } x) return null;
         double fMin;
         try { fMin = setup.ExpandFrequencies().Where(f => f > 0).DefaultIfEmpty(1e9).Min(); }
         catch (Exception) { fMin = 1e9; }
-        return Em3dGenerator.DefaultPadding(setup, fMin, Math.Max(Math.Max(x.X1 - x.X0, x.Y1 - x.Y0), x.Z1 - x.Z0)).Basis;
+        return Em3dGenerator.DefaultFacePadding(setup, fMin, Math.Max(Math.Max(x.X1 - x.X0, x.Y1 - x.Y0), x.Z1 - x.Z0),
+                                                PaddingHeight(e)).Basis(face, face[0] switch
+                                                {
+                                                    'x' => x.X1 - x.X0, 'y' => x.Y1 - x.Y0, _ => x.Z1 - x.Z0,
+                                                });
     }
 
     /// <summary>
@@ -379,11 +413,16 @@ public static class C3dProblemAssembly
         if (NotModelledBoundary(document, drawn) is { } offBoundary) return No(offBoundary, e.Warnings);
 
         // ── The air box, padded by the generator's own rule ─────────────────────────────────────
+        double? paddingH = PaddingHeight(e);
+        double? planeFloor = PlaneFloor(setup, e);
         var box = Em3dGenerator.PaddedAirBox(setup, (extent.X0, extent.Y0, extent.X1, extent.Y1, extent.Z0, extent.Z1),
-                                             fMin, floorZ: null, waves: [], notes, out string? boxRefusal);
+                                             fMin, planeFloor, waves: [], notes, out string? boxRefusal, paddingH);
         if (boxRefusal is not null || box is null) return No(boxRefusal ?? "The air box could not be built.", e.Warnings);
-        notes.Add("The air box's floor is below the geometry: a 3D view states no floor of its own, so every face is " +
-                  "the setup's (absorbing unless its AirBox says otherwise).");
+        notes.Add(planeFloor is not null
+            ? "The air box's floor is the underside of the ground plane at the bottom of the geometry, as a PEC face: the plane " +
+              "has no hole in it and lies under everything, so nothing below it carries field. State the AirBox's ZMin to pad below it instead."
+            : "The air box's floor is below the geometry: a 3D view states no floor of its own, so every face is " +
+              "the setup's (absorbing unless its AirBox says otherwise).");
 
         var solids = e.Solids.ToList();
         var sheets = e.Sheets.ToList();
@@ -475,6 +514,7 @@ public static class C3dProblemAssembly
         var problem = new Em3dProblem(solids, sheets, materials, ports, box, frequency, tempC)
         {
             Type = setup.Problem3D,
+            PaddingHeightM = paddingH,
             FaceBoundaries = faceBoundaries,
             MeshRegions = MeshRegions(document),
             Terminals = terminals,

@@ -345,7 +345,7 @@ public sealed partial class C3dEditorViewModel
         if (key is "LimitC" or "Grading" && text.Length > 0)
         {
             bool positive = key == "Grading";
-            if (!double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double v) || !double.IsFinite(v) || (positive && v <= 0))
+            if (!NumericText.TryParseDouble(text, out double v) || !double.IsFinite(v) || (positive && v <= 0))
                 return $"{(key == "Grading" ? "The grading" : "A limit")} is {(positive ? "a positive number" : "a number")}.";
             number = v;
         }
@@ -495,7 +495,7 @@ public sealed partial class C3dEditorViewModel
         double? r = null;
         if (text.Length > 0)
         {
-            if (!double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double v) || !(v >= 0) || !double.IsFinite(v))
+            if (!NumericText.TryParseDouble(text, out double v) || !(v >= 0) || !double.IsFinite(v))
                 return "A contact resistance is zero (perfect contact) or a positive number, m²·°C/W (1e-5 is a thin solder).";
             r = v;
         }

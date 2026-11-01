@@ -109,7 +109,7 @@ public sealed partial class VoxelImportDialogViewModel : ObservableObject
     /// <summary>The options as typed, or the sentence saying which field does not parse.</summary>
     private (VoxelImportOptions? Options, string? Why) Options(int dbuPerMicron)
     {
-        double? Mm(string text) => double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double v) ? v * 1e-3 : null;
+        double? Mm(string text) => NumericText.TryParseDouble(text, out double v) ? v * 1e-3 : null;
         RawVolumeLayout? raw = null;
         if (IsRaw)
         {

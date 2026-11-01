@@ -160,8 +160,12 @@ internal static class ExplainEm3d
         // Designer feedback round 11 — every face says how far it stands from the content, and where that distance came from:
         // a face that stated only its boundary used to read "setup", which hid that its padding was the default's.
         var (contentLo, contentHi) = Em3dGenerator.ContentBounds(p);
-        var (defaultPadM, defaultBasis) = Em3dGenerator.DefaultPadding(setup, p.Frequency.StartHz,
-            Math.Max(Math.Max(contentHi.X - contentLo.X, contentHi.Y - contentLo.Y), contentHi.Z - contentLo.Z));
+        var defaults = Em3dGenerator.DefaultFacePadding(setup, p.Frequency.StartHz,
+            Math.Max(Math.Max(contentHi.X - contentLo.X, contentHi.Y - contentLo.Y), contentHi.Z - contentLo.Z), p.PaddingHeightM);
+        double Span(string face) => face[0] switch
+        {
+            'x' => contentHi.X - contentLo.X, 'y' => contentHi.Y - contentLo.Y, _ => contentHi.Z - contentLo.Z,
+        };
         string Mm(double m) => (m * 1e3).ToString("G4", CultureInfo.InvariantCulture) + " mm";
         Em3dFaceJson Face(string name, Em3dBoundaryKind kind, EmAirBoxFace? face)
         {
@@ -174,7 +178,7 @@ internal static class ExplainEm3d
                 face?.PaddingPercent is { } pct ? $"setup: {Mm(at)}, {pct.ToString("G6", CultureInfo.InvariantCulture)} % of the content's extent"
                 : face?.PaddingUm is not null ? $"setup: {Mm(at)}"
                 : name == "zmin" && kind == Em3dBoundaryKind.Pec ? "floor"
-                : Math.Abs(at - defaultPadM) <= 1e-6 * Math.Max(defaultPadM, 1e-3) ? $"default: {Mm(at)}, {defaultBasis}"
+                : Math.Abs(at - defaults.For(name, Span(name))) <= 1e-6 * Math.Max(defaults.For(name, Span(name)), 1e-3) ? $"default: {Mm(at)}, {defaults.Basis(name, Span(name))}"
                 : Mm(at));
         }
         var airBox = new Em3dAirBoxJson(V(box.Min), V(box.Max),

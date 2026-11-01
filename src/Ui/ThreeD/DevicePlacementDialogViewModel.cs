@@ -58,7 +58,7 @@ public sealed partial class DevicePlacementDialogViewModel : ObservableObject
         var doc = _editor.Document;
         if (!LayoutUnits.TryParse(SeparationText.Trim(), doc.DisplayUnit, doc.DbuPerMicron, out long separation))
             return (null, $"'{SeparationText}' is not a length.");
-        if (!double.TryParse(TiltText.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double tilt) || !double.IsFinite(tilt))
+        if (!NumericText.TryParseDouble(TiltText.Trim(), out double tilt) || !double.IsFinite(tilt))
             return (null, $"'{TiltText}' is not an angle in degrees.");
         var parts = OffsetText.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
         long[] off = new long[3];

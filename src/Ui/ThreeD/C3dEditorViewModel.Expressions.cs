@@ -327,7 +327,7 @@ public sealed partial class C3dEditorViewModel
                 case C3dFieldKind.Microns:
                     // A bare number is in the display unit; a length with a unit written against it ("1mil") is that
                     // length. Either is stored in µm.
-                    bool isUm = double.TryParse(text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double um);
+                    bool isUm = NumericText.TryParseDouble(text, out double um);
                     if (isUm) um = Math.Round(um * MetresPerDisplayUnit * 1e6, 9);
                     else if (LayoutUnits.TryParse(text, Document.DisplayUnit, Document.DbuPerMicron, out long umDbu))
                         (isUm, um) = (true, (double)LayoutUnits.FromDbu(umDbu, LayoutUnit.Um, Document.DbuPerMicron));
@@ -339,7 +339,7 @@ public sealed partial class C3dEditorViewModel
                     var (e2, u2) = SplitUnit(text, Document.DisplayUnit);
                     return Bind(f, e2, C3dUnits.Stored(u2));
                 case C3dFieldKind.Angle:
-                    if (double.TryParse(text.TrimEnd('°'), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double deg))
+                    if (NumericText.TryParseDouble(text.TrimEnd('°'), out double deg))
                     { C3dBindings.SetExpr(f.Owner, f.Spec, f.Component, null); C3dBindings.SetNumber(f.Owner, f.Spec, f.Component, deg); return null; }
                     return Bind(f, text, C3dUnits.Degrees);
                 default:

@@ -341,7 +341,7 @@ public sealed partial class C3dLookPanelViewModel : ObservableObject
             nameof(C3dLook.Rotation) => RotationText, nameof(C3dLook.Intensity) => IntensityText,
             nameof(C3dLook.FieldOpacity) => FieldOpacityText, _ => ExposureText,
         }).Trim();
-        if (!double.TryParse(text.TrimEnd('°', '%'), NumberStyles.Float, CultureInfo.InvariantCulture, out double v) || !double.IsFinite(v))
+        if (!NumericText.TryParseDouble(text.TrimEnd('°', '%'), out double v) || !double.IsFinite(v))
         {
             Error = $"'{text}' is not a number.";
             return;

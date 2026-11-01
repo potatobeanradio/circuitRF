@@ -162,6 +162,21 @@ public static class Em3dLayoutSolids
         public bool PecFloor { get; private set; }
         public double FloorZ { get; private set; } = double.NaN;
         public bool FloorStatedAway { get; private set; }
+
+        /// <summary>Designer round 33 — the underside of a drawn, unbroken lowest ground plane, where the air box's floor goes
+        /// (a PEC face) when the setup states nothing for ZMin; null otherwise.</summary>
+        public double? PlaneFloorZ { get; private set; }
+
+        /// <summary>The plane's area is at least <see cref="Em3dGenerator.PlaneFloorCover"/> of the box round all drawn metal.</summary>
+        private static bool UnbrokenCover(IReadOnlyList<PlanarPolygon> plane, IEnumerable<PlanarPolygon> allMetal)
+        {
+            double x0 = double.MaxValue, y0 = double.MaxValue, x1 = double.MinValue, y1 = double.MinValue;
+            foreach (var p in allMetal)
+                foreach (var q in p.Outer) { x0 = Math.Min(x0, q.X); y0 = Math.Min(y0, q.Y); x1 = Math.Max(x1, q.X); y1 = Math.Max(y1, q.Y); }
+            double footprint = (x1 - x0) * (y1 - y0);
+            return footprint > 0 && plane.Sum(p => Math.Abs(p.Area())) >= Em3dGenerator.PlaneFloorCover * footprint;
+        }
+
         public Em3dWireBuild? WireBuild { get; private set; }
 
         /// <summary>With <see cref="Em3dLayoutSolidsOptions.PadsOptional"/>: the refusal a solve would have stopped on —
@@ -188,6 +203,9 @@ public static class Em3dLayoutSolids
         private readonly Dictionary<int, List<PlanarPolygon>> _filmPolys = [];
         private readonly List<PlanarPolygon> _outline = [];
         private readonly List<PlanarPolygon> _closedOutlineStrokes = [];
+        /// <summary>Zero-width paths that close on themselves, off the outline layers — what an import leaves when it
+        /// draws the board's edge on every copper layer instead of the outline layer.</summary>
+        private readonly List<(PathShape Path, LayerKey Layer)> _closedCentrelines = [];
         private readonly List<(TechBody Body, double ZBottom, double ZTop, List<PlanarPolygon> Polys)> _bodies = [];
         private readonly List<(LayoutShape Shape, StackupLayer Entry, PlanarExtractor.StackBand Top,
                                PlanarExtractor.StackBand Bottom)> _viaSpans = [];
@@ -280,7 +298,13 @@ public static class Em3dLayoutSolids
                     else if (holeBinding.TryGetValue(vs.Layer, out var hole)) holeShapes.Add((vs, hole));
                     continue;
                 }
-                if (s is PathShape { Width: <= 0 }) { zeroWidthPaths++; continue; }
+                if (s is PathShape { Width: <= 0 } zp)
+                {
+                    zeroWidthPaths++;
+                    var zxy = zp.Xy;
+                    if (zxy.Length >= 8 && zxy[0] == zxy[^2] && zxy[1] == zxy[^1]) _closedCentrelines.Add((zp, s.Layer));
+                    continue;
+                }
                 if (conductorBinding.TryGetValue(s.Layer, out var band)) { conductorShapes.Add((s, band.Index)); continue; }
                 if (viaBinding.TryGetValue(s.Layer, out var regionEntry)) viaShapes.Add((s, regionEntry));
                 else if (holeBinding.TryGetValue(s.Layer, out var regionHole)) holeShapes.Add((s, regionHole));
@@ -410,6 +434,18 @@ public static class Em3dLayoutSolids
             PecFloor = pecFloor;
             FloorZ = pecFloor ? ground!.TopM : double.NaN;
             double floorZ = FloorZ;
+
+            // Designer round 33 — a DRAWN lowest ground plane that is unbroken (no hole after the merge, so no antipad for a
+            // floor to close) and covers the drawn metal's footprint, with nothing drawn or stacked below it, shields everything
+            // under it: the air box's floor goes on its underside, as a PEC face, instead of 10 H of air nobody's field reaches.
+            // The plane stays geometry; only where the box ends changes.
+            if (!pecFloor && !FloorStatedAway && !options.Instance && ground is not null
+                && polysByBand.TryGetValue(ground.Index, out var plane) && plane.Count > 0
+                && bands.All(b => b.BottomM >= ground.BottomM - 1e-15)
+                && _viaSpans.All(v => v.Bottom.BottomM >= ground.BottomM - 1e-15)
+                && plane.All(p => p.Poly.HoleRings.Count == 0)
+                && UnbrokenCover(plane.Select(p => p.Poly).ToList(), polysByBand.Values.SelectMany(l => l).Select(p => p.Poly)))
+                PlaneFloorZ = ground.BottomM;
 
             // ── Conductor pieces: named, sheet or solid ──────────────────────────────────────
             foreach (var band in bands.Where(b => polysByBand.ContainsKey(b.Index)))
@@ -655,7 +691,7 @@ public static class Em3dLayoutSolids
             int order = 0;
             double x0 = fullExtent?.Min.X ?? Cx0, y0 = fullExtent?.Min.Y ?? Cy0;
             double x1 = fullExtent?.Max.X ?? Cx1, y1 = fullExtent?.Max.Y ?? Cy1;
-            int bounded = 0;
+            int bounded = 0, unboundedDielectrics = 0;
             // An instance (no air box) or a planar preview: a slab with no outline of its own takes SlabLateralBound's.
             bool bound = fullExtent is null || options.DisplaySlabs;
             _displayBox = options.DisplaySlabs ? fullExtent : null;
@@ -682,14 +718,31 @@ public static class Em3dLayoutSolids
                 order++;
                 if (lateral is not null) _dielectricOutlines.AddRange(lateral);
                 if (lateral is null)
+                {
                     solids.Add(Origin(new Em3dSolid(b.Layer.Name, material, Em3dRole.Dielectric, FullExtent(z0, z1), order),
                                       Em3dObjectKind.Dielectric, b.Layer.Name));
+                    if (fullExtent is not null) unboundedDielectrics++;
+                }
                 else
                     for (int k = 0; k < lateral.Count; k++)
                         solids.Add(Origin(new Em3dSolid(lateral.Count == 1 ? b.Layer.Name : $"{b.Layer.Name}/{k + 1}",
                                                         material, Em3dRole.Dielectric, Extrude(lateral[k], z0, z1), order),
                                           Em3dObjectKind.Dielectric, b.Layer.Name));
                 if (film is null) airBottom = double.IsNaN(airBottom) ? z1 : Math.Max(airBottom, z1);
+            }
+
+            // Designer round 33: a board whose edge was drawn only as closed zero-width paths on its copper layers had an
+            // empty outline layer, so every dielectric reached the air box — a laminate three boards wide in the preview,
+            // with nothing saying why. Said only when such a path goes round the drawn geometry: a laminate with no edge
+            // is otherwise the ordinary, intended model (every shipped line and coupon is one).
+            if (unboundedDielectrics > 0 && BoardEdgeCentreline() is { } edgeLayer)
+            {
+                var outlineNames = tech.Layers.Where(l => Em3dGenerator.BoardOutlineLayers(tech).Contains(l.Key)).Select(l => $"'{l.Name}'").ToList();
+                Notes.Add($"No board outline is drawn: {unboundedDielectrics} dielectric(s) reach the air box's sides, as a laminate " +
+                          $"with no edge. A zero-width path on '{tech.Layers.FirstOrDefault(l => l.Key == edgeLayer)?.Name ?? edgeLayer.ToString()}' goes round " +
+                          "the whole layout; if it is the board's edge, put it on " + (outlineNames.Count > 0
+                              ? $"{string.Join(" or ", outlineNames)}"
+                              : "a layer the technology marks as the board outline (Edge.Cuts)") + " and the dielectric ends there.");
             }
 
             if (reserveAir && fullExtent is { } box)
@@ -1286,6 +1339,24 @@ public static class Em3dLayoutSolids
         }
 
         /// <summary>The note a run gets when Robust meshing removed anything.</summary>
+        /// <summary>The layer of a closed zero-width path whose box holds the drawn geometry (within 1 %), or null.</summary>
+        private LayerKey? BoardEdgeCentreline()
+        {
+            double tolX = 0.01 * (Cx1 - Cx0), tolY = 0.01 * (Cy1 - Cy0);
+            foreach (var (path, layer) in _closedCentrelines)
+            {
+                var xy = path.Xy;
+                double x0 = double.MaxValue, y0 = double.MaxValue, x1 = double.MinValue, y1 = double.MinValue;
+                for (int i = 0; i + 1 < xy.Length; i += 2)
+                {
+                    double x = xy[i] * _perDbu, y = xy[i + 1] * _perDbu;
+                    x0 = Math.Min(x0, x); y0 = Math.Min(y0, y); x1 = Math.Max(x1, x); y1 = Math.Max(y1, y);
+                }
+                if (x0 <= Cx0 + tolX && y0 <= Cy0 + tolY && x1 >= Cx1 - tolX && y1 >= Cy1 - tolY) return layer;
+            }
+            return null;
+        }
+
         internal static string RobustNote(Em3dOutlineCleanup.Stats s) =>
             $"Robust meshing removed {s.Removed:N0} of {s.Points:N0} outline points that lay within a fraction of a micrometre " +
             "of the line through their neighbours" +

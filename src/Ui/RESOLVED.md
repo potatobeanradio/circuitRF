@@ -41578,3 +41578,20 @@ path; the lazily built `NetworkView` serves the derived metrics), which is the `
   Touchstone behaved the same). The list is built from Known Files when a display attaches, and only Import Data
   refreshed open displays afterwards. `WorkspaceViewModel.AddKnownFile` now refreshes every open display's list, so the
   tree drop, Import Data and Create Touchstone from Plot all take the one path.
+
+## Designer round 33: decimal commas in 3D/EM fields, and the would-not-run banner over the preview (2026-10-31)
+
+- **Single-number boxes in the 3D editor and the EM Setup editor refused a decimal comma.** `NumericText` says every
+  editable field accepts `1,5` as well as `1.5`, but these parsed strictly invariant, so `100,8` typed on a Danish
+  keyboard got "'100,8' is not a percentage". Nothing was ever misread; the value was refused. Now through
+  `NumericText.TryParseDouble`: air-box padding (`SetAirBoxPaddingPercent`), µm and angle property fields
+  (`C3dEditorViewModel.Expressions`), thermal limit/grading and contact resistance, the field plot's Other frequency,
+  face-image rotation, device tilt, voxel-import millimetres, the Look panel's rotation/intensity/opacity/exposure, and
+  the EM Setup editor's eigenmode and thermal numbers. **Left strict on purpose: every field that takes a LIST** —
+  save-fields frequencies, SAR values, band-sweep bands, a `.c3d` rotation list ("X 30, Y 45") — because there a
+  comma separates values and `1,5` is two of them. Test: `EditorRound1TreeTests.APaddingTypedWithADecimalComma_IsReadAsADecimalPoint`.
+- **The would-not-run banner covered a small preview.** It wrapped to four lines across the top of the viewport and let
+  the pointer through, so a port refusal hid most of the board. It is one line now (ellipsis, the whole sentence as its
+  tooltip), and `Viewer3DViewModel.Notes` keeps the refusal as its first line instead of dropping it while the banner
+  shows, so the full text is readable in the notes. Visual check on screen still owed: the overlay is XAML over the
+  native 3D surface and `UiSnapshot --c3d` captures the surface only.

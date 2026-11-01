@@ -22,6 +22,73 @@ public sealed class Em3dGeneratorTests
 
     // ── 1. The reference page's microstrip ──────────────────────────────────────────────────────
 
+    /// <summary>Designer round 33: with nothing stated, each face pads by multiples of H (20 H on the sides and top, 10 H
+    /// below), rounded to 5 % of its own axis — on case B (H = 200 µm) the sides are 4 mm, and every face is a round share.</summary>
+    [Fact]
+    public void TheDefaultAirBox_PadsByMultiplesOfH_RoundedToFivePercentOfItsOwnAxis()
+    {
+        var (setup, source) = CaseB(plated: false);
+        var p = Em3dGenerator.Generate(setup, source, source.Technology!).Problem!;
+        Assert.Equal(200e-6, p.PaddingHeightM!.Value, 1e-12);
+        var (lo, hi) = Em3dGenerator.ContentBounds(p);
+        var b = p.Boundary;
+        Assert.Equal(4e-3, lo.Y - b.Min.Y, 1e-9);
+        foreach (var (pad, span) in new[] { (lo.X - b.Min.X, hi.X - lo.X), (b.Max.Y - hi.Y, hi.Y - lo.Y),
+                                            (lo.Z - b.Min.Z, hi.Z - lo.Z), (b.Max.Z - hi.Z, hi.Z - lo.Z) })
+            Assert.Equal(0, Math.Round(pad / span * 100, 6) % 5);
+        Assert.True(b.Max.Z - hi.Z > lo.Z - b.Min.Z, "the top pads by 20 H, the bottom by 10 H");
+    }
+
+    /// <summary>Designer round 33: a drawn bottom ground plane with no hole floors the box on its underside, as a PEC face;
+    /// a radiator keeps its absorbing floor, and so does a setup that states ZMin.</summary>
+    [Fact]
+    public void ADrawnUnbrokenBottomPlane_IsTheFloor_ExceptForARadiatorOrAStatedZMin()
+    {
+        (EmSetup, EmLayoutSource) Board()
+        {
+            var (setup, source) = Microstrip();
+            var ground = source.Technology!.Stackup.Layers.Last(l => l.Kind == StackupKind.Conductor && l.IsGroundReference);
+            source.View.Shapes.Add(new RectShape { Layer = ground.DrawingLayers[0], X1 = 0, Y1 = -3_000_000, X2 = 10_000_000, Y2 = 3_000_000 });
+            return (setup, source);
+        }
+        var (s1, src1) = Board();
+        var floored = Em3dGenerator.Generate(s1, src1, src1.Technology!);
+        Assert.Equal(Em3dBoundaryKind.Pec, floored.Problem!.Boundary.Faces.ZMin);
+        Assert.Equal(0, floored.Problem.Boundary.Min.Z, 1e-12);
+        Assert.Contains(floored.Notes, n => n.Contains("floor is the underside of", StringComparison.Ordinal));
+
+        var (s2, src2) = Board();
+        s2.RadiationPattern = true;
+        Assert.Equal(Em3dBoundaryKind.Absorbing, Em3dGenerator.Generate(s2, src2, src2.Technology!).Problem!.Boundary.Faces.ZMin);
+
+        var (s3, src3) = Board();
+        s3.AirBox = new EmAirBox(ZMin: new EmAirBoxFace(null, null, 50));
+        Assert.Equal(Em3dBoundaryKind.Absorbing, Em3dGenerator.Generate(s3, src3, src3.Technology!).Problem!.Boundary.Faces.ZMin);
+    }
+
+    /// <summary>Designer round 33: a board edge drawn only as a closed zero-width path on a copper layer leaves every
+    /// dielectric reaching the air box, and the notes say so and name the layer; on the outline layer it bounds them.</summary>
+    [Fact]
+    public void ABoardEdgeDrawnAsACentrelineOnCopper_IsNamed_AndOnTheOutlineLayerItBoundsTheDielectric()
+    {
+        var (setup, source) = CaseB(plated: false);
+        var tech = source.Technology!;
+        var copper = tech.Stackup.Layers.First(l => l.Kind == StackupKind.Conductor).DrawingLayers[0];
+        var edge = new LayerKey(90, 0);
+        tech.Layers.Add(new LayerDef { Key = edge, Name = "Board outline", Interchange = new InterchangeMapping(null, null, null, null, null, "Edge.Cuts") });
+        long um = source.View.DbuPerMicron;
+        var square = new PathShape { Layer = copper, Width = 0, Xy = [-5000 * um, -2500 * um, 5000 * um, -2500 * um, 5000 * um, 2500 * um, -5000 * um, 2500 * um, -5000 * um, -2500 * um] };
+        source.View.Shapes.Add(square);
+
+        var onCopper = Em3dGenerator.Generate(setup, source, tech);
+        Assert.Contains(onCopper.Notes, n => n.StartsWith("No board outline is drawn", StringComparison.Ordinal) && n.Contains("'Board outline'"));
+
+        square.Layer = edge;
+        var onOutline = Em3dGenerator.Generate(setup, source, tech);
+        Assert.DoesNotContain(onOutline.Notes, n => n.StartsWith("No board outline is drawn", StringComparison.Ordinal));
+        Assert.All(onOutline.Problem!.Solids.Where(s => s.Role == Em3dRole.Dielectric), s => Assert.IsNotType<Em3dBox>(s.Primitive));
+    }
+
     [Fact]
     public void Gate1_TheReferenceMicrostrip_OneSubstrateOneAirOneConductorTwoPorts_OnAPecFloor()
     {

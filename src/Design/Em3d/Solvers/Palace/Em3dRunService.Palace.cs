@@ -983,15 +983,16 @@ public static partial class Em3dRunService
         if (regenerate is not null)
         {
             var (lo, hi) = Em3dGenerator.ContentBounds(problem);
-            double defaultPadUm = Em3dGenerator.DefaultPadding(setup, problem.Frequency.StartHz,
-                                      Math.Max(Math.Max(hi.X - lo.X, hi.Y - lo.Y), hi.Z - lo.Z)).PadM * 1e6;
-            EmAirBoxFace Half(EmAirBoxFace? f) => f?.PaddingPercent is { } pct
+            var defaults = Em3dGenerator.DefaultFacePadding(setup, problem.Frequency.StartHz,
+                               Math.Max(Math.Max(hi.X - lo.X, hi.Y - lo.Y), hi.Z - lo.Z), problem.PaddingHeightM);
+            EmAirBoxFace Half(EmAirBoxFace? f, string face) => f?.PaddingPercent is { } pct
                 ? new(null, f.Boundary, pct / 2)
-                : new((f?.PaddingUm ?? defaultPadUm) / 2, f?.Boundary);
+                : new((f?.PaddingUm ?? defaults.For(face, face[0] switch { 'x' => hi.X - lo.X, 'y' => hi.Y - lo.Y, _ => hi.Z - lo.Z }) * 1e6) / 2,
+                      f?.Boundary);
             var box = setup.AirBox ?? new EmAirBox();
             var smaller = setup.Clone();
-            smaller.AirBox = new EmAirBox(Half(box.XMin), Half(box.XMax), Half(box.YMin), Half(box.YMax),
-                                          Half(box.ZMin), Half(box.ZMax));
+            smaller.AirBox = new EmAirBox(Half(box.XMin, "xmin"), Half(box.XMax, "xmax"), Half(box.YMin, "ymin"), Half(box.YMax, "ymax"),
+                                          Half(box.ZMin, "zmin"), Half(box.ZMax, "zmax"));
             var regenerated = regenerate(smaller);
             if (regenerated.Ok && regenerated.Problem is { } q)
                 remedies.Add(new("an air box with half the padding on every side (AirBox)", At(settings, q)));

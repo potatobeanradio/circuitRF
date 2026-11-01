@@ -326,7 +326,7 @@ public sealed partial class C3dPropertiesViewModel
     public void CommitOtherFrequency()
     {
         if (!IsFieldPlot) return;
-        if (!double.TryParse(PlotOtherText.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double ghz))
+        if (!NumericText.TryParseDouble(PlotOtherText.Trim(), out double ghz))
         {
             Error = "Enter a frequency in GHz, e.g. 6.";
             return;

@@ -360,6 +360,35 @@ public sealed class PalaceBackendTests(ITestOutputHelper output) : IDisposable
     /// shunt parasitic is in that term too — and |S11| stays under −20 dB, which a line 20 % off 50 Ω
     /// breaks. Every expected value is computed here from the formulas, never from a circuitRF run.
     /// </summary>
+    /// <summary>Designer round 33 — a drawn, unbroken bottom ground plane floors the air box on its underside as a PEC face.
+    /// Palace must accept copper flush on that face, and the line must read as it does over the undrawn plane's own floor.</summary>
+    [PalaceFact]
+    [Trait("Category", "Benchmark")]
+    public void ADrawnUnbrokenBottomPlane_FloorsTheBox_AndSolvesLikeTheUndrawnPlanesFloor()
+    {
+        NumFlat.Mat<Complex> Solve(bool drawPlane, string dir)
+        {
+            var (setup, source) = Em3dGeneratorTests.Microstrip();
+            setup.Frequency = new FrequencySpec("5", "5", 1, SweepKind.Linear, "GHz", "GHz");
+            setup.Palace = new CemPalace { Quality = PalaceQuality.Draft };
+            if (drawPlane)
+            {
+                var ground = source.Technology!.Stackup.Layers.Last(l => l.Kind == StackupKind.Conductor && l.IsGroundReference);
+                source.View.Shapes.Add(new RectShape { Layer = ground.DrawingLayers[0], X1 = 0, Y1 = -3_000_000, X2 = 10_000_000, Y2 = 3_000_000 });
+            }
+            var result = EmRunService.Run(setup, source, Path.Combine(_root, dir));
+            Assert.True(result.Status == EmRunStatus.Ok, result.Error);
+            if (drawPlane) Assert.Contains(result.Notes ?? [], n => n.Contains("floor is the underside of", StringComparison.Ordinal));
+            return TouchstoneIO.ReadFile(result.SnpPath!)[0];
+        }
+        var undrawn = Solve(false, "undrawn");
+        var drawn = Solve(true, "drawn");
+        double worst = 0;
+        for (int i = 0; i < 2; i++) for (int j = 0; j < 2; j++) worst = Math.Max(worst, (drawn[i, j] - undrawn[i, j]).Magnitude);
+        output.WriteLine($"|ΔS| drawn plane floor vs undrawn plane floor: {worst:G3}");
+        Assert.True(worst < 0.02, $"|ΔS| {worst}");
+    }
+
     [PalaceFact]
     [Trait("Category", "Benchmark")]
     public void Gate6_HomogeneousStripline_MatchesTheClosedForms()

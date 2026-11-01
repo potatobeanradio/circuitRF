@@ -129,7 +129,7 @@ public sealed partial class C3dPropertiesViewModel
     public void CommitFaceImageRotation()
     {
         if (!HasFaceImage) return;
-        if (!double.TryParse(FaceImageRotation, NumberStyles.Float, CultureInfo.InvariantCulture, out double deg) || !double.IsFinite(deg))
+        if (!NumericText.TryParseDouble(FaceImageRotation, out double deg) || !double.IsFinite(deg))
         {
             FaceImageError = "A rotation is a number of degrees.";
             return;

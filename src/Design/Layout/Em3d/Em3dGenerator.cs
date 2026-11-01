@@ -111,6 +111,41 @@ public enum Em3dObjectKind { Dielectric, Air, Body, Conductor, Via, Wire }
 public sealed record Em3dObjectOrigin(Em3dObjectKind Kind, string? StackupEntry, LayerKey? DrawingLayer,
                                       string? SheetReason);
 
+/// <summary>
+/// Designer round 33 — the padding a face takes when the setup states none (<see cref="Em3dGenerator.DefaultFacePadding"/>):
+/// <see cref="Em3dGenerator.DefaultPaddingSidesAndTopH"/> × H on the top and sides and
+/// <see cref="Em3dGenerator.DefaultPaddingBelowH"/> × H below when <see cref="HeightM"/> is set, never more than
+/// <see cref="CapM"/>, the wavelength rule; <see cref="CapM"/> on every face otherwise.
+/// </summary>
+public sealed record Em3dDefaultPadding(double CapM, string CapBasis, double? HeightM)
+{
+    private double Multiple(string face) => face == "zmin" ? Em3dGenerator.DefaultPaddingBelowH : Em3dGenerator.DefaultPaddingSidesAndTopH;
+
+    /// <summary>The H rule's share of the face's axis is rounded to this many percent, so the panel reads round numbers.</summary>
+    public const double RoundToPercent = 5;
+
+    /// <summary>The padding of <paramref name="face"/> (xmin … zmax), metres, on content <paramref name="spanM"/> long along
+    /// that face's axis. The H rule is rounded to the nearest <see cref="RoundToPercent"/> % of the span, never below it; an
+    /// axis with no extent keeps the length.</summary>
+    public double For(string face, double spanM)
+    {
+        if (HeightM is not { } h) return CapM;
+        double pad = Multiple(face) * h;
+        if (spanM > 0)
+        {
+            double pct = Math.Max(RoundToPercent, Math.Round(pad / spanM * 100 / RoundToPercent, MidpointRounding.AwayFromZero) * RoundToPercent);
+            pad = pct / 100 * spanM;
+        }
+        return Math.Min(pad, CapM);
+    }
+
+    /// <summary>Why <paramref name="face"/> stands where it does, as the panel and <c>explain</c> print it.</summary>
+    public string Basis(string face, double spanM) => HeightM is { } h && For(face, spanM) < CapM
+        ? $"{Multiple(face).ToString(CultureInfo.InvariantCulture)} × H, H = {(h * 1e6).ToString("G4", CultureInfo.InvariantCulture)} µm of " +
+          "dielectric under the top metal" + (spanM > 0 ? $", to the nearest {RoundToPercent.ToString(CultureInfo.InvariantCulture)} %" : "")
+        : CapBasis;
+}
+
 public static class Em3dGenerator
 {
     /// <summary>
@@ -277,8 +312,16 @@ public static class Em3dGenerator
 
             // ── Content bounds (the builder's), then the air box (R-em3d3-6) ─────────────────
             var (cx0, cy0, cx1, cy1, zLow, zHigh) = (_g.Cx0, _g.Cy0, _g.Cx1, _g.Cy1, _g.ZLow, _g.ZHigh);
-            var airBox = PaddedAirBox(setup, (cx0, cy0, cx1, cy1, zLow, zHigh), fMin, pecFloor ? floorZ : null,
-                                waves.Select(w => (w.Face, w.EdgeAt, w.Port.Number)).ToList(), _notes, out string? boxRefusal);
+            // Designer round 33 — the default padding is a multiple of the dielectric height under the top metal.
+            double? paddingH = PaddingHeight(
+                _g.Pieces.Values.SelectMany(l => l).Select(q => q.IsSheet ? (q.SheetZ, q.SheetZ) : (q.ZBottom, q.ZTop)),
+                _g.Bands.Where(b => b.Layer.Kind == StackupKind.Dielectric && (!pecFloor || b.BottomM >= floorZ - 1e-15))
+                        .Select(b => (b.BottomM, b.TopM)),
+                pecFloor ? floorZ : null);
+            // Designer round 33 — an unbroken drawn bottom ground plane is the floor when the setup states nothing for ZMin.
+            double? planeFloor = !pecFloor && setup.AirBox?.ZMin is null && ByHeightApplies(setup) ? _g.PlaneFloorZ : null;
+            var airBox = PaddedAirBox(setup, (cx0, cy0, cx1, cy1, zLow, zHigh), fMin, pecFloor ? floorZ : planeFloor,
+                                waves.Select(w => (w.Face, w.EdgeAt, w.Port.Number)).ToList(), _notes, out string? boxRefusal, paddingH);
             if (boxRefusal is not null) return No(boxRefusal);
             // A wave port is still its lumped sheet here, and it belongs ON its face: only a lumped port is moved clear.
             airBox = ClearOfPortSheets(airBox!, [.. ports.Where(q => waves.All(w => w.Port.Number != q.Number))], _notes,
@@ -329,6 +372,10 @@ public static class Em3dGenerator
                 ? $"The air box's floor is '{ground!.Layer.Name}' as a PEC plane at {Fmt(floorZ * 1e6)} µm: it is " +
                   "the lowest ground-reference conductor, nothing is drawn on it and nothing is drawn below it." +
                   (zMinFace?.PaddingUm is not null ? " The AirBox ZMin padding does not apply to a floor on the plane." : "")
+                : planeFloor is { } pf
+                ? $"The air box's floor is the underside of '{ground!.Layer.Name}' at {Fmt(pf * 1e6)} µm, as a PEC face: it is a " +
+                  "drawn ground plane with no hole in it, under all the drawn metal, so nothing below it carries field. State " +
+                  "the AirBox's ZMin to pad below it instead."
                 : "The air box's floor is below the geometry" +
                   (floorStatedAway ? ", as this setup's AirBox states." :
                    ground is null ? ": the technology designates no ground-reference conductor."
@@ -343,6 +390,7 @@ public static class Em3dGenerator
                 EigenmodeCount = setup.Eigenmode?.Count ?? EmEigenmode3D.DefaultCount,
                 EigenmodeTargetHz = setup.Eigenmode?.TargetGHz is { } target ? target * 1e9 : fMin,
                 PaddedContent = (new Point3(cx0, cy0, zLow), new Point3(cx1, cy1, zHigh)),
+                PaddingHeightM = paddingH,
             };
             return new Em3dGenerationResult(problem, null, _notes)
             {
@@ -1283,7 +1331,7 @@ public static class Em3dGenerator
     /// <param name="waves">Each wave port's face, where its line ends, and its number.</param>
     public static Em3dAirBox? PaddedAirBox(EmSetup setup, (double X0, double Y0, double X1, double Y1, double Z0, double Z1) extent,
                                            double fMin, double? floorZ, IReadOnlyList<(string Face, double EdgeAt, int Port)> waves,
-                                           List<string> notes, out string? refusal)
+                                           List<string> notes, out string? refusal, double? paddingHeightM = null)
     {
         refusal = null;
         var (cx0, cy0, cx1, cy1, zLow, zHigh) = extent;
@@ -1291,7 +1339,8 @@ public static class Em3dGenerator
         // own largest extent: far enough that the box's faces barely touch the field, and a length a
         // package-sized problem can mesh.
         bool radiating = setup.RadiationPattern && setup.Problem3D == Em3dProblemType.Driven;
-        double pad = DefaultPadding(setup, fMin, Math.Max(Math.Max(cx1 - cx0, cy1 - cy0), zHigh - zLow)).PadM;
+        var defaults = DefaultFacePadding(setup, fMin, Math.Max(Math.Max(cx1 - cx0, cy1 - cy0), zHigh - zLow), paddingHeightM);
+        double pad = defaults.CapM;
         if (radiating)
             notes.Add($"The air box's default padding is a quarter of the longest wavelength ({Fmt(pad * 1e3)} mm) rather than " +
                       "an eighth, because a radiation pattern was asked for: its equivalence surface sits inside the absorber " +
@@ -1341,22 +1390,22 @@ public static class Em3dGenerator
             }
         }
         var flatAxes = new SortedSet<char>();
-        double Pad(EmAirBoxFace? f, char axis, double span)
+        double Pad(EmAirBoxFace? f, string face, double span)
         {
             if (f?.PaddingUm is { } um) return um * 1e-6;
-            if (f?.PaddingPercent is not { } pct) return pad;
+            if (f?.PaddingPercent is not { } pct) return defaults.For(face, span);
             if (span > 0) return pct / 100 * span;
-            flatAxes.Add(axis);
-            return pad;
+            flatAxes.Add(face[0]);
+            return defaults.For(face, 0);
         }
         Em3dBoundaryKind Kind(EmAirBoxFace? f) => f?.Boundary ?? Em3dBoundaryKind.Absorbing;
 
         double sx = cx1 - cx0, sy = cy1 - cy0, sz = zHigh - zLow;
-        var boxMin = new Point3(cx0 - Pad(box.XMin, 'x', sx), cy0 - Pad(box.YMin, 'y', sy), floorZ is { } fz ? fz : zLow - Pad(box.ZMin, 'z', sz));
-        var boxMax = new Point3(cx1 + Pad(box.XMax, 'x', sx), cy1 + Pad(box.YMax, 'y', sy), zHigh + Pad(box.ZMax, 'z', sz));
+        var boxMin = new Point3(cx0 - Pad(box.XMin, "xmin", sx), cy0 - Pad(box.YMin, "ymin", sy), floorZ is { } fz ? fz : zLow - Pad(box.ZMin, "zmin", sz));
+        var boxMax = new Point3(cx1 + Pad(box.XMax, "xmax", sx), cy1 + Pad(box.YMax, "ymax", sy), zHigh + Pad(box.ZMax, "zmax", sz));
         foreach (char a in flatAxes)
             notes.Add($"The air box's padding along {a} is stated as a percentage of the content's extent along {a}, which is " +
-                      $"zero (the content is flat there), so those faces take the default padding ({Fmt(pad * 1e3)} mm) instead.");
+                      $"zero (the content is flat there), so those faces take the default padding ({Fmt(defaults.For(a == 'z' ? "zmax" : "xmax", 0) * 1e3)} mm) instead.");
         var faces = new Em3dFaces(Kind(box.XMin), Kind(box.XMax), Kind(box.YMin), Kind(box.YMax),
                                   floorZ is not null ? Em3dBoundaryKind.Pec : Kind(box.ZMin), Kind(box.ZMax));
         return new Em3dAirBox(boxMin, boxMax, faces);
@@ -1428,6 +1477,78 @@ public static class Em3dGenerator
         return largestExtentM > 0 && largestExtentM < eighth
             ? (largestExtentM, $"the structure's largest extent, less than λ/8 at {Hz(fMin)}")
             : (eighth, $"λ/8 at {Hz(fMin)}, the sweep's lowest frequency");
+    }
+
+    /// <summary>Designer round 33 — the default padding in multiples of H, the dielectric height under the top metal: this
+    /// many H on the top and the four sides…</summary>
+    public const double DefaultPaddingSidesAndTopH = 20;
+
+    /// <summary>…and this many below. Measured in brief-dfr32-1 (src/Design/RESOLVED.md): lines and vias were settled by
+    /// 10 H on the top and sides and 5 H below; a resonant filter wanted about 20 H on the top and sides.</summary>
+    public const double DefaultPaddingBelowH = 10;
+
+    /// <summary>Designer round 33 — how much of the footprint an unbroken bottom ground plane must cover for the air box's floor
+    /// to go on its underside (<c>Em3dLayoutSolids</c> for a <c>.cem</c>, <c>C3dProblemAssembly.PlaneFloor</c> for a <c>.c3d</c>).</summary>
+    public const double PlaneFloorCover = 0.95;
+
+    /// <summary>
+    /// Designer round 33 — the padding each face takes when the setup states none. A driven problem that does not ask for a
+    /// radiation pattern, built on a dielectric under its top metal, pads by multiples of that dielectric's height H — the
+    /// length its field actually spreads by — so each axis is sized by what lies along it, never by the board's largest
+    /// extent. Never more than <see cref="DefaultPadding"/>'s wavelength rule, which every other problem still takes.
+    /// </summary>
+    public static Em3dDefaultPadding DefaultFacePadding(EmSetup setup, double fMin, double largestExtentM, double? heightM)
+    {
+        var (cap, basis) = DefaultPadding(setup, fMin, largestExtentM);
+        bool byHeight = ByHeightApplies(setup) && heightM is > 0;
+        return new Em3dDefaultPadding(cap, basis, byHeight ? heightM : null);
+    }
+
+    /// <summary>Designer round 33 — the problems the H rule and the floor on an unbroken bottom ground plane are for: driven,
+    /// not asking for a radiation pattern. A radiator keeps every face absorbing and λ/4 of air (its far field needs both);
+    /// a static or eigenmode solve keeps today's rules.</summary>
+    public static bool ByHeightApplies(EmSetup setup)
+        => !setup.IsStatic3D && setup.Problem3D == Em3dProblemType.Driven && !setup.RadiationPattern;
+
+    /// <summary>
+    /// Designer round 33 — H: from the bottom of the top metal down to the next metal below it (a plane, or the PEC floor),
+    /// when a dielectric lies directly under that metal. Null when the top metal sits on no dielectric (a bond wire in air,
+    /// a lid, a package's frame), and the wavelength rule applies. Only flat metal counts — a via barrel, a wire or a ball
+    /// is not "the top metal" — so a horizontal sheet counts as metal of no thickness.
+    /// </summary>
+    public static double? PaddingHeight(IEnumerable<(double Z0, double Z1)> flatMetal, IEnumerable<(double Z0, double Z1)> dielectric,
+                                        double? floorZ)
+    {
+        const double tol = 1e-9;
+        var m = flatMetal.ToList();
+        var d = dielectric.ToList();
+        if (m.Count == 0 || d.Count == 0) return null;
+        double top = m.Max(x => x.Z1);
+        double zb = m.Where(x => x.Z1 >= top - tol).Min(x => x.Z0);
+        if (!d.Any(x => Math.Abs(x.Z1 - zb) <= tol)) return null;
+        var below = m.Where(x => x.Z1 <= zb - tol).Select(x => x.Z1).ToList();
+        double ground = below.Count > 0 ? below.Max() : floorZ ?? d.Min(x => x.Z0);
+        double h = zb - ground;
+        return h > tol ? h : null;
+    }
+
+    /// <summary><see cref="PaddingHeight(IEnumerable{ValueTuple{double, double}}, IEnumerable{ValueTuple{double, double}}, double?)"/>
+    /// read off built solids and sheets — what a <c>.c3d</c>'s problem assembly has.</summary>
+    public static double? PaddingHeight(IEnumerable<Em3dSolid> solids, IEnumerable<Em3dSheet> sheets, double? floorZ)
+    {
+        var all = solids.ToList();
+        var metal = all.Where(s => s.Role == Em3dRole.Conductor)
+                       .Select(s => s.Primitive switch
+                       {
+                           Em3dExtrudedPolygon e => ((double, double)?)(e.ZBottom, e.ZTop),
+                           Em3dBox b => (b.Min.Z, b.Max.Z),
+                           _ => null,
+                       })
+                       .OfType<(double, double)>()
+                       .Concat(sheets.Where(s => s.Frame is null).Select(s => (s.Z, s.Z)));
+        var diel = all.Where(s => s.Role == Em3dRole.Dielectric)
+                      .Select(s => Em3dProblem.Bounds(s.Primitive)).Select(b => (b.Z0, b.Z1));
+        return PaddingHeight(metal, diel, floorZ);
     }
 
     /// <summary>The bound of what the air box pads round: every solid but the generator's air above the stack, and every

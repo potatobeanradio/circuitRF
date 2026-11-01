@@ -452,7 +452,7 @@ public sealed partial class EmSetupEditorViewModel
         {
             text = text.Trim();
             if (text.Length == 0 || ThermalError is not null) return null;
-            if (double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double v) && double.IsFinite(v) && (!positive || v > 0)) return v;
+            if (NumericText.TryParseDouble(text, out double v) && double.IsFinite(v) && (!positive || v > 0)) return v;
             ThermalError = $"{what} is {(positive ? "a positive number" : "a number")}; '{text}' is not.";
             return null;
         }

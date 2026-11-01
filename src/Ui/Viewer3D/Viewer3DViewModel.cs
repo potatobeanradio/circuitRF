@@ -374,12 +374,13 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
         IsRegenerating = scene.Generation < Source.Requested;
         OnPropertyChanged(nameof(IsBuildingFirstScene));
         // An empty scene's first note is its refusal, which Status already says. A drawn scene's refusal — the setup
-        // would not run, or its ports are not drawn — is the banner over the viewport, and not repeated in the notes.
+        // would not run, or its ports are not drawn — is ALSO the banner over the viewport: one line there, so it does not
+        // cover the scene (designer round 33), and kept in the notes, where the whole sentence can be read.
         Banner = scene.Objects.Length > 0 && scene.Notes.Count > 0 &&
                  (scene.Notes[0].StartsWith(WouldNotRunNote, StringComparison.Ordinal) ||
                   scene.Notes[0].StartsWith(PortsNotDrawnNote, StringComparison.Ordinal))
             ? scene.Notes[0] : "";
-        Notes = string.Join("\n", scene.Objects.Length == 0 || Banner.Length > 0 ? scene.Notes.Skip(1) : scene.Notes);
+        Notes = string.Join("\n", scene.Objects.Length == 0 ? scene.Notes.Skip(1) : scene.Notes);
         if (_lastSource is { } src)
         {
             var unit = src.View.DisplayUnit;

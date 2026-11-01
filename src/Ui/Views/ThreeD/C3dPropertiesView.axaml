@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:t3="using:CircuitRF.Ui.ThreeD"
+             xmlns:conv="using:CircuitRF.Ui.Converters"
              xmlns:apv="using:CircuitRF.Ui.Views.Appearance"
              x:Class="CircuitRF.Ui.Views.ThreeD.C3dPropertiesView"
              x:DataType="t3:C3dPropertiesViewModel">
@@ -298,30 +299,34 @@
                            ToolTip.Tip="10 on +X pads a tenth of the design's x-extent beyond its +X side. Each box shows the padding in use now; a smaller number shrinks the box on that side."/>
                 <Grid ColumnDefinitions="Auto,*,6,Auto,*,6,Auto,*" RowDefinitions="Auto,4,Auto">
                     <TextBlock Grid.Row="0" Grid.Column="0" Text="−X" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                    <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding PadXMinPercent}" Tag="xmin" PlaceholderText="—" KeyDown="OnPadKey" LostFocus="OnPadLostFocus"/>
+                    <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding PadXMinPercent}" ToolTip.Tip="{Binding PadXMinTip}" Tag="xmin" PlaceholderText="—" KeyDown="OnPadKey" LostFocus="OnPadLostFocus"/>
                     <TextBlock Grid.Row="0" Grid.Column="3" Text="−Y" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                    <TextBox Grid.Row="0" Grid.Column="4" Text="{Binding PadYMinPercent}" Tag="ymin" PlaceholderText="—" KeyDown="OnPadKey" LostFocus="OnPadLostFocus"/>
+                    <TextBox Grid.Row="0" Grid.Column="4" Text="{Binding PadYMinPercent}" ToolTip.Tip="{Binding PadYMinTip}" Tag="ymin" PlaceholderText="—" KeyDown="OnPadKey" LostFocus="OnPadLostFocus"/>
                     <TextBlock Grid.Row="0" Grid.Column="6" Text="−Z" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                    <TextBox Grid.Row="0" Grid.Column="7" Text="{Binding PadZMinPercent}" Tag="zmin" PlaceholderText="—" KeyDown="OnPadKey" LostFocus="OnPadLostFocus"/>
+                    <TextBox Grid.Row="0" Grid.Column="7" Text="{Binding PadZMinPercent}" ToolTip.Tip="{Binding PadZMinTip}" Tag="zmin" PlaceholderText="—" KeyDown="OnPadKey" LostFocus="OnPadLostFocus"/>
                     <TextBlock Grid.Row="2" Grid.Column="0" Text="+X" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                    <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding PadXMaxPercent}" Tag="xmax" PlaceholderText="—" KeyDown="OnPadKey" LostFocus="OnPadLostFocus"/>
+                    <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding PadXMaxPercent}" ToolTip.Tip="{Binding PadXMaxTip}" Tag="xmax" PlaceholderText="—" KeyDown="OnPadKey" LostFocus="OnPadLostFocus"/>
                     <TextBlock Grid.Row="2" Grid.Column="3" Text="+Y" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                    <TextBox Grid.Row="2" Grid.Column="4" Text="{Binding PadYMaxPercent}" Tag="ymax" PlaceholderText="—" KeyDown="OnPadKey" LostFocus="OnPadLostFocus"/>
+                    <TextBox Grid.Row="2" Grid.Column="4" Text="{Binding PadYMaxPercent}" ToolTip.Tip="{Binding PadYMaxTip}" Tag="ymax" PlaceholderText="—" KeyDown="OnPadKey" LostFocus="OnPadLostFocus"/>
                     <TextBlock Grid.Row="2" Grid.Column="6" Text="+Z" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                    <TextBox Grid.Row="2" Grid.Column="7" Text="{Binding PadZMaxPercent}" Tag="zmax" PlaceholderText="—" KeyDown="OnPadKey" LostFocus="OnPadLostFocus"/>
+                    <TextBox Grid.Row="2" Grid.Column="7" Text="{Binding PadZMaxPercent}" ToolTip.Tip="{Binding PadZMaxTip}" Tag="zmax" PlaceholderText="—" KeyDown="OnPadKey" LostFocus="OnPadLostFocus"/>
                 </Grid>
                 <TextBlock Text="Faces" FontSize="11" Opacity="0.7" Margin="0,4,0,0"/>
                 <ItemsControl ItemsSource="{Binding AirBoxFaces}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="t3:C3dAirBoxFaceRow">
-                            <!-- brief-dfr32-1 R-dfr32-1-4 — the boundary picker keeps its width; a long padding readout
-                                 (a default's basis) wraps beside it rather than squeezing it to nothing. -->
-                            <Grid ColumnDefinitions="44,120,*" Margin="0,1">
+                            <!-- Designer round 33 — the face's padding and its rule are the tooltip of that direction's padding
+                                 box above (and of this row), not text beside the picker. -->
+                            <Grid ColumnDefinitions="44,120" Margin="0,1" ToolTip.Tip="{Binding Padding}">
                                 <TextBlock Grid.Column="0" Text="{Binding Face}" VerticalAlignment="Center"/>
                                 <ComboBox Grid.Column="1" ItemsSource="{x:Static t3:C3dPropertiesViewModel.BoundaryKinds}"
-                                          SelectedItem="{Binding Kind}" HorizontalAlignment="Stretch" FontSize="11"/>
-                                <SelectableTextBlock Grid.Column="2" Text="{Binding Padding}" FontSize="11" Opacity="0.8"
-                                                     TextWrapping="Wrap" VerticalAlignment="Center" Margin="6,0,0,0"/>
+                                          SelectedItem="{Binding Kind}" HorizontalAlignment="Stretch" FontSize="11">
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding Converter={x:Static conv:Em3dBoundaryKindNameConverter.Instance}}"/>
+                                        </DataTemplate>
+                                    </ComboBox.ItemTemplate>
+                                </ComboBox>
                             </Grid>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
