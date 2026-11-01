@@ -187,15 +187,11 @@ public sealed class EmRunSeverityCliTests(ITestOutputHelper output) : IDisposabl
         string cemPath = BuildWorkspace();
 
         // Every line asserted on is printed before the first frequency point is solved, so the run is
-        // stopped there on purpose: a memory limit that admits the 853-unknown DUT but not a port's
-        // calibration standard (2,386 unknowns). This test was cheap only while the shipped unknown
-        // ceiling refused that standard; since the mesh and ceiling changes of 2026-10-29 it is solved,
-        // and a Debug build took 17 minutes over it.
-        var setup = EmSetupPersistence.LoadFromFile(cemPath);
-        setup.PlanarMesh = setup.PlanarMesh with { MemoryLimitBytes = PlanarSystem.ResidentBytes(2_000) };
-        EmSetupPersistence.SaveToFile(cemPath, setup);
-
-        var (_, _, stderr) = RunCli("em", cemPath);
+        // stopped there on purpose: a machine memory limit (`--memory-limit`, Settings ▸ Solvers headless)
+        // too small for the DUT and its calibration standards, so the run is asked about its size and,
+        // with no --force to say yes, declined before anything is filled. Solved, it took a Debug build
+        // 17 minutes.
+        var (_, _, stderr) = RunCli("em", cemPath, "--memory-limit", "0.01");
         output.WriteLine("stderr:\n" + (stderr.Length > 6000 ? stderr[..6000] + " …" : stderr));
 
         var lines = stderr.Split('\n');

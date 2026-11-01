@@ -121,6 +121,7 @@ string? impedance = null, finding = null;
 var impedanceLayers = new List<string>();
 bool impedancePanel = false;
 string? reviewPanel = null;
+bool planarMemoryDialog = false;
 bool reviewRun = false;
 string? place = null;
 string? cdd = null, output = null, view = "canvas", results = null, fc = "2", iq = null, tuning = null, clay = null, cem = null;
@@ -191,6 +192,7 @@ for (int i = 0; i < args.Length; i++)
         case "--impedance-layer" when i + 1 < args.Length: impedanceLayers.Add(args[++i]); break;
         case "--impedance-panel": impedancePanel = true; break;
         case "--review-panel" when i + 1 < args.Length: reviewPanel = args[++i]; break;
+        case "--planar-memory-dialog": planarMemoryDialog = true; break;
         case "--review": reviewRun = true; break;
         case "--place" when i + 1 < args.Length: place = args[++i]; break;
         case "--lock" when i + 1 < args.Length: layerToggles.Add((args[++i], false)); break;
@@ -240,6 +242,12 @@ if (args.Contains("--messages") && output is not null)
         .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
     if (dark && Application.Current is { } darkApp) darkApp.RequestedThemeVariant = Avalonia.Styling.ThemeVariant.Dark;
     return ShowMessagesPanel(output, sizeGiven ? width : 700, sizeGiven ? height : 260);
+}
+if (planarMemoryDialog && output is not null)
+{
+    AppBuilder.Configure<SnapshotApp>().UseSkia()
+        .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
+    return ShowPlanarMemoryDialog(output);
 }
 if (reviewPanel is not null && output is not null)
 {
@@ -1662,6 +1670,28 @@ static int ShowMessagesPanel(string path, double w, double h)
                         + $"(centre {textAt.Y + text.Bounds.Height / 2:0.0}){inline}");
     }
     window.CaptureRenderedFrame()!.Save(path);
+    Console.WriteLine($"wrote {path}");
+    return 0;
+}
+
+// --planar-memory-dialog: the question Simulate asks before a planar run past this machine's memory — the verdict from
+// PlanarMemoryCheck on a de-embedded 36,000-unknown run with 2 GB of calibration standards, in the dialog
+// WorkspaceViewModel.ConfirmEmMemory opens for it.
+static int ShowPlanarMemoryDialog(string path)
+{
+    const int n = 36_000, cells = 18_000;
+    const long std = 2_000_000_000;
+    long physical = CircuitRF.Design.Em3d.MachineMemory.PhysicalBytes;
+    var size = new CircuitRF.Engine.Mom.PlanarRunSize(n, cells, false,
+        CircuitRF.Engine.Mom.PlanarSystem.ResidentBytes(n, cells) + std) { StandardBytes = std };
+    var verdict = CircuitRF.Design.Layout.Em.PlanarMemoryCheck.Evaluate(size, physical);
+    Console.WriteLine($"{verdict.Level}: {verdict.Text}");
+    var dialog = new CircuitRF.Ui.Views.Dialogs.SaveChangesDialog(
+        verdict.Text ?? "", saveLabel: "Simulate Anyway", dontSaveLabel: null, cancelLabel: "Don't Simulate",
+        title: "This Run May Not Fit in Memory");
+    dialog.Show();
+    for (int k = 0; k < 6; k++) { Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); dialog.UpdateLayout(); }
+    dialog.CaptureRenderedFrame()!.Save(path);
     Console.WriteLine($"wrote {path}");
     return 0;
 }

@@ -149,10 +149,10 @@ public class EmCeilingRefusalTests
         string refusal = r.Refusal!;
 
         // The megabytes stay — they are real and a user sizing a problem wants them — but they are no
-        // longer the lead. Since 2026-10-29 the ceiling is a default a setup can raise, and the machine
-        // is asked about at Simulate, so the closing remedy says exactly that.
-        Assert.Contains("set Memory limit in Solver options", refusal, StringComparison.Ordinal);
-        Assert.Contains("asks before starting one that will not fit", refusal, StringComparison.Ordinal);
+        // longer the lead. The ceiling is a default a memory limit replaces — the one in Settings ▸ Solvers,
+        // since an EM setup carries none — and past it Simulate asks, so the closing remedy says exactly that.
+        Assert.Contains("set the memory limit in Settings ▸ Solvers", refusal, StringComparison.Ordinal);
+        Assert.Contains("asks before starting one past it", refusal, StringComparison.Ordinal);
         Assert.True(refusal.IndexOf("unknowns, past the", StringComparison.Ordinal)
                   < refusal.IndexOf("MB resident at the peak", StringComparison.Ordinal),
             "the unknown count must precede the megabytes; leading with MB is what read as a RAM limit");

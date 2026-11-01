@@ -100,13 +100,9 @@ public sealed class CemPlanarMesh
     /// </summary>
     public int? DetailFloorDivisor { get; set; }
 
-    /// <summary>
-    /// The setup's own memory limit for one frequency point, in decimal gigabytes
-    /// (<see cref="PlanarMeshSettings.MemoryLimitBytes"/>), in place of the shipped unknown ceilings.
-    /// <b>Nullable, and omitted when unset</b>, so a <c>.cem</c> written before it existed gains no
-    /// byte; a value that is not positive reads back as unset.
-    /// </summary>
-    public double? MemoryLimitGb { get; set; }
+    // A `MemoryLimitGb` key (a per-setup memory limit, 2026-10-29) is no longer a member: Settings ▸ Solvers is the
+    // one memory limit. A .cem that carries it opens with the key skipped — System.Text.Json ignores an unknown
+    // member by default — and, having no member to land in, it is not written back on save.
 
     /// <summary>
     /// <b>Mesh as Merged Shapes</b> (<see cref="PlanarMeshSettings.RooftopMerging"/>): on a single
@@ -1592,7 +1588,6 @@ public static class EmSetupPersistence
             DetailFloorDivisor =
                 s.PlanarMesh.DetailFloorDivisor == PlanarMeshSettings.DefaultDetailFloorDivisor
                     ? null : s.PlanarMesh.DetailFloorDivisor,
-            MemoryLimitGb = s.PlanarMesh.MemoryLimitBytes is { } mlb ? mlb / PlanarMemoryCheck.BytesPerGb : null,
             // PM-3 — omitted at the PRODUCT default (on); an explicit off is the only value written.
             RooftopMerging = s.PlanarMesh.RooftopMerging == EmSetup.DefaultPlanarMesh.RooftopMerging
                                  ? null : s.PlanarMesh.RooftopMerging,
@@ -1694,8 +1689,7 @@ public static class EmSetupPersistence
                                      ResolveCurrentModel(pm),
                                      pm.DetailFloorDivisor
                                          ?? PlanarMeshSettings.DefaultDetailFloorDivisor,
-                                     pm.MemoryLimitGb is > 0 and var gb && double.IsFinite(gb)
-                                         ? (long)Math.Round(gb * PlanarMemoryCheck.BytesPerGb) : null,
+                                     null,
                                      pm.RooftopMerging ?? EmSetup.DefaultPlanarMesh.RooftopMerging)
             : EmSetup.DefaultPlanarMesh,
         Solver3D              = Solver3DOf(f),

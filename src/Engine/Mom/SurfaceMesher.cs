@@ -147,15 +147,19 @@ public static class SurfaceMesher
 {
     /// <summary>
     /// R-msh-7 / R17 — <b>the DENSE path's default ceiling</b>. Above it the mesher refuses by name
-    /// unless the setup states its own memory limit (<see cref="PlanarMeshSettings.MemoryLimitBytes"/>).
+    /// unless the run is handed a memory limit (<see cref="PlanarMeshSettings.MemoryLimitBytes"/>).
     ///
     /// <para><b>It was 5,000 until 2026-10-29.</b> §10.7 chose that when one frequency point held the
     /// matrix AND a general LU's two factors, 1.31 GB at 5,000 (P1). P7's in-place LDLᵀ took the
     /// factors away, and 10,000 now holds about what 5,000 did then: ~2 GB at the peak of one point,
     /// measured 6.5 s to fill and 37 s to factor at N = 11,210 in Release on a 10-core machine. It is
-    /// a DEFAULT, not a property of the kernel: a setup can raise it, and the run checks the estimate
+    /// a DEFAULT, not a property of the kernel: a memory limit replaces it, and the run checks the estimate
     /// against the machine's memory before it starts (<c>EmRunService</c>), which is the question a
     /// fixed number could only answer the same way on every machine.</para>
+    /// <para><b>CAP-1 (2026-10-31) — now the FALLBACK only.</b> A run through the run service with no
+    /// limit of its own is handed the machine's (the machine-wide limit, else physical memory) as a
+    /// <see cref="PlanarMemoryLimitSource"/>-tagged limit, and its dense ceiling comes from that. This
+    /// number is what a caller that states nothing gets — every engine test, every direct solve.</para>
     /// See <see cref="AcceleratedUnknownCeiling"/> for the accelerated solver's own, separately
     /// measured ceiling.
     /// </summary>
@@ -231,7 +235,13 @@ public static class SurfaceMesher
     /// accelerated path never less than <see cref="AcceleratedUnknownCeiling"/>, since the accelerator
     /// holds far less than the dense matrix that count is sized on.
     /// </summary>
-    public static int CeilingFor(bool accelerated, long? memoryLimitBytes, int cellCount = 0)
+    /// <remarks>
+    /// <b>A memory limit is ADVISORY.</b> Past the count it allows a mesh is a warning and the run asks
+    /// (Simulate Anyway, <c>--force</c>); nothing below the mesher refuses on it. <paramref name="source"/>
+    /// only says whose number it is, for the sentences.
+    /// </remarks>
+    public static int CeilingFor(bool accelerated, long? memoryLimitBytes, int cellCount = 0,
+                                 PlanarMemoryLimitSource source = PlanarMemoryLimitSource.MachineLimit)
     {
         if (memoryLimitBytes is not { } bytes)
             return accelerated ? AcceleratedUnknownCeiling : UnknownCeiling;
@@ -244,16 +254,67 @@ public static class SurfaceMesher
         return accelerated ? Math.Max(lo, AcceleratedUnknownCeiling) : lo;
     }
 
+    /// <summary>
+    /// <b>CAP-3 — the ceiling for a mesh in hand</b>: the largest count whose dense peak fits beside THIS
+    /// mesh's cores (<paramref name="cores"/>, counted by <see cref="PlanarCoreFootprint.Count"/>). So
+    /// <c>n ≤ CeilingFor(…, cores, …)</c> is exactly <c>PlanarSystem.ResidentBytes(n, cores) ≤ limit</c>, and
+    /// the mesh verdict, the guards and the sentences quoting a ceiling agree with the bytes they quote.
+    /// </summary>
+    public static int CeilingFor(bool accelerated, long? memoryLimitBytes, PlanarCoreFootprint cores,
+                                 PlanarMemoryLimitSource source = PlanarMemoryLimitSource.MachineLimit)
+    {
+        if (memoryLimitBytes is not { } bytes)
+            return accelerated ? AcceleratedUnknownCeiling : UnknownCeiling;
+        int lo = 0, hi = 4_000_000;
+        while (lo < hi)
+        {
+            int mid = lo + (hi - lo + 1) / 2;
+            if (PlanarSystem.ResidentBytes(mid, cores) <= bytes) lo = mid; else hi = mid - 1;
+        }
+        return accelerated ? Math.Max(lo, AcceleratedUnknownCeiling) : lo;
+    }
+
     /// <summary>Bytes the way the memory limit is typed: decimal gigabytes, "4.2 GB".</summary>
     public static string FormatBytes(double bytes)
         => (bytes / 1e9).ToString(bytes < 1e10 ? "0.0" : "0", System.Globalization.CultureInfo.CurrentCulture) + " GB";
 
-    /// <summary>The refusal every guard below the mesher throws when a setup's own memory limit is
-    /// what binds — one sentence, so the mesh verdict and a guard a caller reached directly agree.</summary>
-    public static string LimitSentence(int n, long limitBytes, int cellCount = 0)
-        => $"This mesh has {n:N0} unknowns and needs about " +
-           $"{FormatBytes(PlanarSystem.ResidentBytes(n, cellCount))} at each frequency point, past the " +
-           $"{FormatBytes(limitBytes)} memory limit this EM setup sets (Solver options).";
+    /// <summary>
+    /// <b>Whose number a memory limit is, in one phrase</b> ("this machine's 17.2 GB of physical memory",
+    /// "the 8.0 GB memory limit set for this machine (Settings ▸ Solvers)").
+    ///
+    /// <para><b>A memory limit is ADVISORY, whoever stated it.</b> Past it a run is warned about and asked
+    /// about — Simulate Anyway in the panel, <c>--force</c> on <c>circuitrf em</c> — and never refused by
+    /// the engine: the mesher reports it as a warning with <see cref="PlanarMeshReport.PastMachineLimit"/>
+    /// set, and every guard below the mesher lets it through. The one memory limit a user states is the
+    /// machine's own, in Settings ▸ Solvers; an EM setup carries none.</para>
+    /// </summary>
+    public static string LimitOwner(long limitBytes, PlanarMemoryLimitSource source) => source switch
+    {
+        PlanarMemoryLimitSource.PhysicalMemory =>
+            $"this machine's {FormatBytes(limitBytes)} of physical memory",
+        _ => $"the {FormatBytes(limitBytes)} memory limit set for this machine (Settings ▸ Solvers)",
+    };
+
+    /// <summary>
+    /// <b>CAP-1 — seconds to factor one dense frequency point, per unknown cubed.</b> Measured in
+    /// Release on a 10-core machine (P7's in-place LDLᵀ): 37 s at N = 11,210 on the full square (CAP-1),
+    /// and <b>24.5 s at N = 11,201 since CAP-2</b> stores the lower triangle in block-column panels —
+    /// the same arithmetic, ~30 % less wall clock (mean of three runs against 33.7–35.1 s for the
+    /// square in the same harness; <c>RESOLVED.md</c> §CAP-2). Not scaled by the core count: nothing
+    /// measured says how it scales on a machine with a different one.
+    /// </summary>
+    public const double FactorSecondsPerUnknownCubed = 24.5 / (11_201.0 * 11_201.0 * 11_201.0);
+
+    /// <summary>The estimated factorisation time of one frequency point, as the budget states it
+    /// ("about 4 min"): <c>c·N³</c> with <see cref="FactorSecondsPerUnknownCubed"/>.</summary>
+    public static string EstimatedFactorTime(int n)
+    {
+        double s = FactorSecondsPerUnknownCubed * n * (double)n * n;
+        var c = System.Globalization.CultureInfo.CurrentCulture;
+        return s < 90 ? $"{s.ToString("0", c)} s"
+             : s < 90 * 60 ? $"{(s / 60).ToString("0", c)} min"
+             : $"{(s / 3600).ToString("0.0", c)} h";
+    }
 
     /// <summary>Warn — do not refuse — from this fraction of the ceiling upward.</summary>
     public const double WarnFraction = 0.6;
@@ -290,13 +351,14 @@ public static class SurfaceMesher
     /// <see cref="Mesh"/>'s own refusal would have used, minus the mesh-specific "why" clause, which
     /// this call site has no mesh geometry left to derive.
     /// </summary>
-    public static void GuardCeiling(int n, bool accelerated, int cellCount = 0, long? limit = null)
+    /// <param name="mesh">Kept for the callers' signature; the fixed ceilings below need no mesh, and a
+    /// memory limit is advisory here.</param>
+    public static void GuardCeiling(int n, bool accelerated, int cellCount = 0, long? limit = null,
+                                    PlanarMemoryLimitSource source = PlanarMemoryLimitSource.MachineLimit,
+                                    PlanarMesh? mesh = null)
     {
-        if (limit is { } bytes)
-        {
-            if (n <= CeilingFor(accelerated, bytes, cellCount)) return;
-            throw new InvalidOperationException(LimitSentence(n, bytes, cellCount));
-        }
+        // A memory limit is a QUESTION the run service asks, never a refusal here (LimitOwner's note).
+        if (limit is not null) return;
         int ceiling = accelerated ? AcceleratedUnknownCeiling : UnknownCeiling;
         if (n <= ceiling) return;
         throw new InvalidOperationException(
@@ -390,7 +452,11 @@ public static class SurfaceMesher
             ? PlanarMeshSettings.MaxEdgeRefinement
             : edgeRefinementCap;
         bool accel = accelerated && !problem.RequiresGeneralKernel;
-        int  ceiling = CeilingFor(accel, s.MemoryLimitBytes);
+        // CAP-1 — `limit` is what this mesh is judged against and `limitSource` says whose number it is.
+        // A memory limit is advisory: past it the mesh is a warning, not a refusal (LimitOwner's note).
+        var   limitSource = s.MemoryLimitSource;
+        long? limit = s.MemoryLimitBytes;
+        int  ceiling = CeilingFor(accel, limit, 0, limitSource);
         var  fmt = lengthFormat ?? DefaultLengthFormat;
 
         // EM-SEV — the mesher's sentences carry their CLASS from here on. A plain string still
@@ -1408,9 +1474,18 @@ public static class SurfaceMesher
         // machine's memory before it starts — so nearing it is not a warning of the mesher's.
         // With a memory limit the count it allows depends on THIS mesh's cells, so it is asked again
         // now that they are known.
-        if (s.MemoryLimitBytes is not null) ceiling = CeilingFor(accel, s.MemoryLimitBytes, cells.Count);
-        var verdict = n > ceiling ? PlanarBudgetVerdict.Refused
-                    : s.MemoryLimitBytes is null && n >= (int)(ceiling * WarnFraction) ? PlanarBudgetVerdict.Warn
+        // CAP-3 — judged against a memory limit, a mesh in hand on the dense path is judged on its OWN
+        // cores, counted (the class count is a property of the artwork). With no limit the ceiling is the
+        // fixed count and the bytes beside it are the a-priori figure every guard below quotes too; the
+        // accelerated path holds no dense cores and keeps the estimate.
+        var coreFootprint = new Lazy<PlanarCoreFootprint>(() => limit is null
+            ? PlanarCoreFootprint.Estimate(n, cells.Count)
+            : PlanarCoreFootprint.For(accel ? null : mesh, n, cells.Count));
+        if (limit is not null) ceiling = CeilingFor(accel, limit, coreFootprint.Value, limitSource);
+        bool pastMachine = n > ceiling && limit is not null;
+        var verdict = pastMachine ? PlanarBudgetVerdict.Warn
+                    : n > ceiling ? PlanarBudgetVerdict.Refused
+                    : limit is null && n >= (int)(ceiling * WarnFraction) ? PlanarBudgetVerdict.Warn
                     : PlanarBudgetVerdict.Ok;
 
         // ── MIM-13 item 2 — THE BUDGET GOES FIRST, AND IT GOES OUT WHATEVER THE VERDICT ──────────
@@ -1418,28 +1493,47 @@ public static class SurfaceMesher
         // Inserted at index 0 rather than appended: it is the summary of everything below it, and a
         // summary at the bottom of thirty sentences is not a summary. It is written on an Ok mesh
         // too — seeing the headroom before it runs out is most of the point.
-        string budget = BuildBudget(n, cells.Count, viaUnknowns, mesh.LayerNames, perLayerUnknowns,
+        string budget = BuildBudget(n, cells.Count, coreFootprint, viaUnknowns, mesh.LayerNames, perLayerUnknowns,
                                     gx.Length, gy.Length, bulkLinesX, bulkLinesY,
                                     accelerated: accel, multiLevel: problem.RequiresGeneralKernel,
                                     rimFraction: rimFraction,
                                     edgeMesh: s.EdgeMesh && s.EdgeCells > 0,
-                                    limit: s.MemoryLimitBytes);
+                                    limit: limit, limitSource: limitSource);
         notes.Insert(0, budget);
 
         string? refusal = null;
         if (verdict == PlanarBudgetVerdict.Refused)
-            refusal = BuildRefusal(n, cells.Count, s, narrowX, narrowY, hx, hy, hWave, x1 - x0, y1 - y0,
+            refusal = BuildRefusal(n, cells.Count, coreFootprint.Value, s, narrowX, narrowY, hx, hy, hWave, x1 - x0, y1 - y0,
                                    cellsAcrossRealised: across,
                                    accelerated: accel,
-                                   acceleratedWouldFit: s.MemoryLimitBytes is null && !accel
+                                   acceleratedWouldFit: limit is null
+                                                      && !accel
                                                       && n <= AcceleratedUnknownCeiling
                                                       && !problem.RequiresGeneralKernel,
                                    multiLevel: problem.RequiresGeneralKernel,
                                    fmt: fmt,
                                    coarsestPitch: pitch is null
                                        ? 0 : Math.Max(pitch.MaxPitchX, pitch.MaxPitchY),
-                                   limit: s.MemoryLimitBytes)
+                                   limit: limit, limitSource: limitSource)
                     + GrownLeadClause(leads, fmt);
+        else if (pastMachine)
+            // CAP-1 follow-up — past the memory limit is a question at Simulate, not a refusal here. The
+            // warning carries the refusal's own diagnosis (which quantity binds, what acts on the count),
+            // since a user asked to Simulate Anyway is owed the same remedies a refused one was.
+            notes.Add(EmFinding.Warn(
+                MachineLimitWarning(n, cells.Count, 0, limit!.Value, limitSource, accel, coreFootprint.Value) +
+                " " + BuildRefusal(n, cells.Count, coreFootprint.Value, s, narrowX, narrowY, hx, hy, hWave,
+                                   x1 - x0, y1 - y0,
+                                   cellsAcrossRealised: across,
+                                   accelerated: accel,
+                                   acceleratedWouldFit: !accel && !problem.RequiresGeneralKernel
+                                                      && n <= CeilingFor(true, limit, coreFootprint.Value, limitSource),
+                                   multiLevel: problem.RequiresGeneralKernel,
+                                   fmt: fmt,
+                                   coarsestPitch: pitch is null
+                                       ? 0 : Math.Max(pitch.MaxPitchX, pitch.MaxPitchY),
+                                   limit: limit, limitSource: limitSource, remediesOnly: true)
+                + GrownLeadClause(leads, fmt)));
         else if (verdict == PlanarBudgetVerdict.Warn)
             notes.Add(accel
                 ? $"{n:N0} unknowns is within {1 - WarnFraction:P0} of the {ceiling:N0}-unknown " +
@@ -1447,7 +1541,7 @@ public static class SurfaceMesher
                   "will solve much faster, and GMRES's own iteration count grows well before this " +
                   "ceiling on a mesh refined mainly by resolution rather than by extent."
                 : $"{n:N0} unknowns is within {1 - WarnFraction:P0} of the {ceiling:N0} " +
-                  $"ceiling ({PlanarSystem.ResidentBytes(n, cells.Count) / (1024.0 * 1024.0):N0} MB " +
+                  $"ceiling ({PlanarSystem.ResidentBytes(n, coreFootprint.Value) / (1024.0 * 1024.0):N0} MB " +
                   "resident at the peak of one frequency point: matrix + factors + cached cores). " +
                   "It will solve, but a coarser mesh will solve much faster.");
 
@@ -1487,7 +1581,40 @@ public static class SurfaceMesher
             GridLinesY:                    gy.Length,
             BulkGridLinesX:                bulkLinesX,
             BulkGridLinesY:                bulkLinesY,
-            RimFraction:                   rimFraction);
+            RimFraction:                   rimFraction) { PastMachineLimit = pastMachine };
+    }
+
+    /// <summary>
+    /// <b>CAP-1 follow-up — the one sentence for a run past the machine's own memory</b>, said by the mesh
+    /// report, the pre-solve check and the panel alike. It is a WARNING: Simulate asks before starting such
+    /// a run (Simulate Anyway), and <c>circuitrf em</c> starts it only with <c>--force</c>.
+    /// <paramref name="standardBytes"/> is what a de-embedded run's calibration standards add, solved at
+    /// the same time as the structure (<see cref="PlanarRunMemory"/>).
+    /// </summary>
+    /// <param name="cores">CAP-3 — the mesh's own counted cores when the caller has them; null states the
+    /// a-priori figure for <paramref name="cellCount"/>.</param>
+    public static string MachineLimitWarning(int n, int cellCount, long standardBytes, long limitBytes,
+                                             PlanarMemoryLimitSource source, bool accelerated,
+                                             PlanarCoreFootprint? cores = null)
+    {
+        var fp = cores ?? PlanarCoreFootprint.Estimate(n, cellCount);
+        long dut = PlanarSystem.ResidentBytes(n, fp);
+        string need = accelerated
+            ? $"This mesh has {n:N0} unknowns, past the {CeilingFor(true, limitBytes, fp, source):N0} " +
+              $"the accelerated solve is judged against in {LimitOwner(limitBytes, source)}"
+            : standardBytes > 0
+            ? $"This mesh has {n:N0} unknowns and, with its calibration standards solved beside it, needs " +
+              $"about {FormatBytes(dut + standardBytes)} at each frequency point " +
+              $"({FormatBytes(dut)} for the structure, {FormatBytes(standardBytes)} for the standards), past " +
+              LimitOwner(limitBytes, source)
+            : $"This mesh has {n:N0} unknowns and needs about {FormatBytes(dut)} at each frequency point, " +
+              $"past {LimitOwner(limitBytes, source)}";
+        return need + ". Simulate asks before starting it (Simulate Anyway); `circuitrf em` starts it only " +
+               "with --force." +
+               (source == PlanarMemoryLimitSource.PhysicalMemory
+                   ? " Past this machine's memory a run is likely to swap heavily or be stopped by the " +
+                     "operating system."
+                   : "");
     }
 
 
@@ -1637,12 +1764,14 @@ public static class SurfaceMesher
     /// refusal quoting 5,000 that a mesh of 9,316 is hopeless when the other ceiling is 12,000.</para>
     /// </summary>
     private static string BuildBudget(
-        int n, int cellCount, int viaUnknowns,
+        int n, int cellCount, Lazy<PlanarCoreFootprint> cores, int viaUnknowns,
         IReadOnlyList<string> layerNames, IReadOnlyList<int> unknownsPerLayer,
         int gxLines, int gyLines, int bulkXLines, int bulkYLines,
-        bool accelerated, bool multiLevel, double rimFraction, bool edgeMesh, long? limit = null)
+        bool accelerated, bool multiLevel, double rimFraction, bool edgeMesh, long? limit = null,
+        PlanarMemoryLimitSource limitSource = PlanarMemoryLimitSource.MachineLimit)
     {
-        int ceiling = CeilingFor(accelerated, limit, cellCount);
+        int ceiling = limit is null ? CeilingFor(accelerated, null, cellCount, limitSource)
+                                    : CeilingFor(accelerated, limit, cores.Value, limitSource);
 
         var sb = new System.Text.StringBuilder();
         sb.Append($"Mesh budget: {cellCount:N0} cells, {n:N0} unknowns");
@@ -1667,8 +1796,8 @@ public static class SurfaceMesher
 
         // THE CEILING, BOTH NUMBERS, AND WHICH ONE GOVERNS — every time, not only on a refusal.
         sb.Append(limit is { } own
-            ? $"About {FormatBytes(PlanarSystem.ResidentBytes(n, cellCount))} at each frequency point on the " +
-              $"dense path. Judged against this setup's memory limit, {FormatBytes(own)} (Solver options), " +
+            ? $"About {FormatBytes(PlanarSystem.ResidentBytes(n, cores.Value))} at each frequency point on the " +
+              $"dense path. Judged against {LimitOwner(own, limitSource)}, " +
               $"which allows {ceiling:N0} unknowns here"
             : accelerated
             ? $"Judged against the ACCELERATED ceiling, {AcceleratedUnknownCeiling:N0} unknowns " +
@@ -1680,6 +1809,11 @@ public static class SurfaceMesher
                   : ", reached by turning the accelerated solve on") + ")");
         sb.Append(n > ceiling ? $" — {(double)n / ceiling:G3}× OVER. "
                 : $" — {(double)n / ceiling:P0} of it. ");
+
+        // CAP-1 — past the old fixed ceiling a dense point is minutes, and growing as N³, so the cost
+        // is said before the run starts. One figure, labelled as the estimate it is.
+        if (!accelerated && n > UnknownCeiling && (n <= ceiling || limit is not null))
+            sb.Append($"Factoring takes about {EstimatedFactorTime(n)} per frequency point, estimated. ");
 
         // BULK AGAINST FAN, in gridlines, which is the unit a tensor product's cost has.
         sb.Append($"Grid {gxLines:N0} × {gyLines:N0} lines");
@@ -1713,7 +1847,7 @@ public static class SurfaceMesher
     /// act on THAT one — and, when the wavelength cap is not binding, says so outright rather than
     /// leaving the user to discover it by experiment. The megabytes moved to the end and lost the
     /// lead, because quoting them first reads as a memory limit and invites "does my machine need
-    /// more RAM". (Since 2026-10-29 the ceiling is a default a setup can raise, and the machine's
+    /// more RAM". (Since 2026-10-29 the ceiling is a default a memory limit replaces, and the machine's
     /// memory is asked about at Simulate, so the closing sentence now names that as the last remedy.)</para>
     ///
     /// <para><b>brief-em-aim-ceiling.md, 2026-08-14 — the accelerated solve moved from an inert remedy
@@ -1738,15 +1872,17 @@ public static class SurfaceMesher
     /// mesh rather than on the settings.
     /// </param>
     private static string BuildRefusal(
-        int n, int cellCount, PlanarMeshSettings s,
+        int n, int cellCount, PlanarCoreFootprint cores, PlanarMeshSettings s,
         double narrowX, double narrowY, double hx, double hy, double hWave,
         double extentX, double extentY, int cellsAcrossRealised,
         bool accelerated, bool acceleratedWouldFit, bool multiLevel,
-        PlanarLengthFormat fmt, double coarsestPitch = 0, long? limit = null)
+        PlanarLengthFormat fmt, double coarsestPitch = 0, long? limit = null,
+        PlanarMemoryLimitSource limitSource = PlanarMemoryLimitSource.MachineLimit,
+        bool remediesOnly = false)
     {
         double pitch     = Math.Min(hx, hy);
         double narrowest = Math.Min(narrowX, narrowY);
-        int    ceiling   = CeilingFor(accelerated, limit, cellCount);
+        int    ceiling   = CeilingFor(accelerated, limit, cores, limitSource);
         bool   field     = coarsestPitch > 0;
 
         // WHICH quantity set the cell size. This is the whole difference between a refusal a user can
@@ -1871,18 +2007,14 @@ public static class SurfaceMesher
         // checks the estimate against the machine's memory before it starts; every branch below
         // ends by saying so, because "a fixed property of this kernel, not of your machine" — which
         // these sentences used to end on — stopped being true.
-        string need = FormatBytes(PlanarSystem.ResidentBytes(n, cellCount));
+        string need = FormatBytes(PlanarSystem.ResidentBytes(n, cores));
+        // Reached only with no memory limit at all — a caller that stated none, or a machine whose memory
+        // could not be read — since past a limit the mesh is a warning rather than this refusal.
         string raise =
-            $" Or, if this machine can give the run {need}, set Memory limit in Solver options to " +
-            "at least that: Simulate checks the run against this machine and asks before starting " +
-            "one that will not fit.";
+            $" Or, if this machine can give the run {need}, set the memory limit in Settings ▸ Solvers " +
+            "to at least that: Simulate then sizes the run on it and asks before starting one past it.";
 
-        string costNote = limit is { } own
-            ? $"(This mesh needs about {need} at each frequency point, and the memory limit this " +
-              $"setup sets is {FormatBytes(own)} (Solver options). Raise it there if this machine " +
-              "has the memory: Simulate checks the run against this machine and asks before starting " +
-              "one that will not fit.)"
-            : accelerated
+        string costNote = accelerated
             ? // The dense byte count is meaningless here — this mesh will never see a dense matrix —
               // and the accelerator's own working set has no closed form (it depends on geometry), so
               // this states the measured ballpark rather than a number nothing computed for this run.
@@ -1896,7 +2028,7 @@ public static class SurfaceMesher
               ? // The remedy above already says what to do; this says WHY it works, in the same terms
                 // the dense-only sentence used, so a user comparing the two ceilings sees real numbers.
                 $"({ceilingPair} {n:N0} unknowns is " +
-                $"{PlanarSystem.ResidentPhrase(n, cellCount)}. The accelerated solve's ceiling is higher " +
+                $"{PlanarSystem.ResidentPhrase(n, cores)}. The accelerated solve's ceiling is higher " +
                 "because its working set is a near-field sparse correction plus a uniform auxiliary " +
                 "grid rather than the full N×N matrix, and this mesh fits under it — which is why " +
                 "turning it on is the first remedy above rather than a change to this mesh." + raise + ")"
@@ -1912,14 +2044,19 @@ public static class SurfaceMesher
                   $"so turning it on is worth doing for speed and memory, but it will not lift this " +
                   $"refusal. What does is a count at or under {UnknownCeiling:N0}, which is " +
                   $"{(double)n / UnknownCeiling:G3}× down from here; {n:N0} unknowns is " +
-                  $"{PlanarSystem.ResidentPhrase(n, cellCount)}." + raise + ")"
+                  $"{PlanarSystem.ResidentPhrase(n, cores)}." + raise + ")"
                 : $"({ceilingPair} This mesh is past BOTH, so the accelerated solve would not lift " +
                   $"this refusal either — it is {(double)n / AcceleratedUnknownCeiling:G3}× over the " +
                   $"accelerated ceiling as well; {n:N0} unknowns is " +
-                  $"{PlanarSystem.ResidentPhrase(n, cellCount)}." + raise + ")";
+                  $"{PlanarSystem.ResidentPhrase(n, cores)}." + raise + ")";
+
+        // Past a memory limit the caller has already said what the mesh needs and that Simulate asks; what it
+        // adds is the diagnosis — which quantity binds and what acts on the count.
+        if (remediesOnly)
+            return why.TrimStart() + " What acts on the count here: " + JoinOr(acts) + "." + how;
 
         return $"This geometry needs {n:N0} unknowns, past the {ceiling:N0}-unknown " +
-               (limit is null ? "ceiling this kernel is built for." : "count its memory limit allows.") + why +
+               "ceiling this kernel is built for." + why +
                " What acts on the count here: " + JoinOr(acts) + "." + how + " " + costNote;
     }
 

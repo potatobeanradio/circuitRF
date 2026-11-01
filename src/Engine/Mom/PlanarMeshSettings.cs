@@ -223,18 +223,17 @@ public enum PlanarCurrentModel
 /// it.</para>
 /// </param>
 /// <param name="MemoryLimitBytes">
-/// <b>How much memory one frequency point of this setup may hold, in place of the shipped unknown
-/// ceilings.</b> <c>null</c> (the default) keeps them (<see cref="SurfaceMesher.UnknownCeiling"/> on
-/// the dense path, <see cref="SurfaceMesher.AcceleratedUnknownCeiling"/> on the accelerated one). Set,
-/// a dense mesh is allowed while <see cref="PlanarSystem.ResidentBytes"/> fits it, and an accelerated
-/// one up to the larger of that count and the accelerated ceiling (<see cref="SurfaceMesher.CeilingFor"/>).
+/// <b>The memory one frequency point of this run is sized on — the CHANNEL the run service hands the
+/// machine's memory down in</b> (<c>PlanarMemoryCheck.WithMachineCeiling</c>: the Settings ▸ Solvers
+/// limit, else physical memory). No document carries it: an EM setup has no memory limit of its own.
+/// <c>null</c> (the default, and what every engine-direct caller passes) keeps the shipped ceilings
+/// (<see cref="SurfaceMesher.UnknownCeiling"/> dense, <see cref="SurfaceMesher.AcceleratedUnknownCeiling"/>
+/// accelerated), which refuse. Set, the ceiling is the largest count whose
+/// <see cref="PlanarSystem.ResidentBytes"/> fits it (never below 12,000 accelerated), and it is ADVISORY:
+/// past it the mesh warns and the run asks (<see cref="SurfaceMesher.LimitOwner"/>'s note).
 ///
-/// <para><b>A memory, not a count, because a user cannot know their unknown count before meshing</b>
-/// (owner, 2026-10-29) — but can know what their machine holds. The run checks the estimate against the
-/// machine before it starts, so a setup written on a larger machine is asked about rather than trusted.</para>
-///
-/// <para>It changes no cell and no answer — only which mesh is refused — so it enters no provenance
-/// hash, and it SURVIVES <see cref="Auto"/> on the taxonomy <see cref="Resolved"/> states.</para>
+/// <para>It changes no cell and no answer, so it enters no provenance hash, and it SURVIVES
+/// <see cref="Auto"/> on the taxonomy <see cref="Resolved"/> states.</para>
 /// </param>
 /// <param name="RooftopMerging">
 /// <b>PM-2 — solve a MERGED basis rather than the elemental one.</b> Off by default. Where a run of
@@ -266,6 +265,14 @@ public sealed record PlanarMeshSettings(
     long? MemoryLimitBytes  = null,
     bool RooftopMerging     = false)
 {
+    /// <summary>
+    /// <b>CAP-1 — whose number <see cref="MemoryLimitBytes"/> is</b>: the machine-wide limit (the default)
+    /// or the machine's physical memory. The engine never reads the machine; this changes only the
+    /// WORDING of the warning. Outside the positional list and in no provenance hash, for
+    /// <see cref="MemoryLimitBytes"/>' own reason.
+    /// </summary>
+    public PlanarMemoryLimitSource MemoryLimitSource { get; init; }
+
     public const int  DefaultCellsPerWavelength = 20;
     public const bool DefaultEdgeMesh           = true;
     public const int  DefaultEdgeCells          = 3;
@@ -457,6 +464,7 @@ public sealed record PlanarMeshSettings(
                                  DetailFloorDivisor: DetailFloorDivisor,
                                  MemoryLimitBytes: MemoryLimitBytes,
                                  RooftopMerging: RooftopMerging)
+          { MemoryLimitSource = MemoryLimitSource }
         : this with
         {
             CellsPerWavelength      = Math.Max(2, CellsPerWavelength),
@@ -464,4 +472,17 @@ public sealed record PlanarMeshSettings(
             MinCellsAcrossConductor = Math.Max(1, MinCellsAcrossConductor),
             DetailFloorDivisor      = Math.Max(0, DetailFloorDivisor),
         };
+}
+
+/// <summary>
+/// <b>CAP-1 — where a planar run's memory limit came from</b>, so its warning can quote the right owner
+/// of the number. The engine is told; it never asks the machine. Every memory limit is advisory.
+/// </summary>
+public enum PlanarMemoryLimitSource
+{
+    /// <summary>The machine-wide memory limit (Settings ▸ Solvers, or <c>em --memory-limit</c> / MCP
+    /// <c>memoryLimitGB</c>) — and what a limit with no stated source is taken to be.</summary>
+    MachineLimit = 0,
+    /// <summary>The machine's physical memory — what a run gets when nothing states a limit.</summary>
+    PhysicalMemory,
 }

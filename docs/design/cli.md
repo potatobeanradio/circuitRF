@@ -668,7 +668,12 @@ frequencies`, `Reading results` — one row per stage change, and ends with a `n
 cost; **stdout and `--json` are unchanged**. The memory Palace's processes are using is shown by the
 panel only (it changes every second, and a terminal row per second is noise). **`--force`** starts a
 Palace run whose memory estimate is past 150 % of the machine's, which is otherwise refused before Gmsh
-(or, when only the mesh's size shows it, before Palace, keeping the mesh for the forced re-run).
+(or, when only the mesh's size shows it, before Palace, keeping the mesh for the forced re-run). It is also
+the planar kernel's answer to the panel's Simulate Anyway: a planar run whose memory — the structure plus,
+de-embedded, the calibration standards solved beside it — is past this machine's memory, or past
+`--memory-limit`, or whose mesh is past the unknown count that memory allows, is refused (exit 1) unless
+`--force` is given. `--memory-limit` is the headless spelling of Settings ▸ Solvers, the one memory limit
+there is: an EM setup carries none, and no memory limit is ever more than a question.
 
 **A static 3D setup prints a MATRIX, not a point count** (brief-em3d-22). `Problem3D: Electrostatic`
 or `Magnetostatic` runs Palace only (openEMS/Both are refused before discovery, and by `check`), writes

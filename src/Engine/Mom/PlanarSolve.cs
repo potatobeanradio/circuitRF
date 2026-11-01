@@ -32,10 +32,14 @@ namespace CircuitRF.Engine.Mom;
 /// on matching a sentence.</para>
 /// </summary>
 public sealed class PlanarAcceleratorWouldFitException(int portNumber, int standardUnknowns,
-                                                       string message) : Exception(message)
+                                                       string message,
+                                                       int denseCeiling = SurfaceMesher.UnknownCeiling)
+    : Exception(message)
 {
     public int PortNumber       { get; } = portNumber;
     public int StandardUnknowns { get; } = standardUnknowns;
+    /// <summary>CAP-1 — the dense ceiling the standard was past, which a machine-derived limit moves.</summary>
+    public int DenseCeiling     { get; } = denseCeiling;
 }
 
 /// <summary>
@@ -201,7 +205,8 @@ public sealed class PlanarSolveContext
         // PM-2 — the dense path holds the MERGED matrix when the mesh carries one; the accelerator
         // never reads a merge and solves the elemental rooftops.
         SurfaceMesher.GuardCeiling(accelerated ? mesh.Bases.Count : mesh.SolvedUnknownCount,
-                                   accelerated, mesh.Cells.Count, Settings.MemoryLimitBytes);
+                                   accelerated, mesh.Cells.Count, Settings.MemoryLimitBytes,
+                                   Settings.MemoryLimitSource, mesh);
 
         // P2/M4 — LazyThreadSafetyMode.ExecutionAndPublication (the default): a de-embedded run fans
         // the standards out across workers, so two of them can reach the same context at once and the
@@ -1523,7 +1528,21 @@ public sealed record PlanarSolveSettings(
 /// <param name="DenseResidentBytes">One frequency point's peak on the dense path
 /// (<see cref="PlanarSystem.ResidentBytes"/>); null on the accelerated path, whose working set
 /// depends on the geometry and has no closed form.</param>
-public sealed record PlanarRunSize(int Unknowns, int Cells, bool Accelerated, long? DenseResidentBytes);
+public sealed record PlanarRunSize(int Unknowns, int Cells, bool Accelerated, long? DenseResidentBytes)
+{
+    /// <summary>CAP-1 follow-up — of <see cref="DenseResidentBytes"/>, what the calibration standards add: they
+    /// are solved beside the structure at every point, so the dense figure is both together
+    /// (<see cref="PlanarRunMemory"/>). 0 on a run that de-embeds nothing.</summary>
+    public long StandardBytes { get; init; }
+
+    /// <summary>CAP-1 follow-up — the mesh is past the unknown count the MACHINE's memory sizes
+    /// (<see cref="PlanarMeshReport.PastMachineLimit"/>). The one way an accelerated run, which has no dense
+    /// figure, is asked about.</summary>
+    public bool PastMachineCeiling { get; init; }
+
+    /// <summary>The unknown ceiling the mesh was judged against.</summary>
+    public int CeilingUnknowns { get; init; }
+}
 
 /// <summary>A run <see cref="PlanarSolveSettings.Admit"/> declined. Its message is the caller's own
 /// sentence, and nothing was filled.</summary>
@@ -2653,6 +2672,7 @@ public static class PlanarSolve
                     // ceiling the DUT is not judged against is the same defect P12 fixed.
                     bool accStd = SurfaceMesher.UsesAcceleratedCeiling(fillSt.Aim is not null, general);
                     long? stdLimit = fillSt.MemoryLimitBytes;
+                    var   stdLimitSource = fillSt.MemoryLimitSource;
                     // QSC — the plan is drawn ONCE and both the standards that are BUILT and the
                     // separations that are SELECTED come from it. Evaluating SeparationPlan twice
                     // with the same arguments would agree today and is exactly the shape PCAL6's
@@ -2680,8 +2700,14 @@ public static class PlanarSolve
                     {
                         var std  = stdSet[si];
                         int nStd = std.Mesh.Bases.Count;
-                        int stdCeiling = SurfaceMesher.CeilingFor(accStd, stdLimit, std.Mesh.Cells.Count);
+                        int stdCeiling = SurfaceMesher.CeilingFor(accStd, stdLimit,
+                                                                  PlanarCoreFootprint.For(accStd ? null : std.Mesh, nStd,
+                                                                      std.Mesh.Cells.Count),
+                                                                  stdLimitSource);
                         if (nStd <= stdCeiling) continue;
+                        // A memory limit is advisory: the run priced its standards beside the structure
+                        // (PlanarRunMemory) and asked before it started.
+                        if (stdLimit is not null) continue;
 
                         // The short line (index 0) is shared by both paths, so it is "quasi-static"
                         // exactly when there is no measured ladder for it to serve as well.
@@ -2706,13 +2732,12 @@ public static class PlanarSolve
                                 ports[i].Number, nStd,
                                 $"Port {ports[i].Number}'s calibration standard needs {nStd:N0} " +
                                 $"unknowns, past the {stdCeiling:N0}-unknown dense ceiling and " +
-                                $"inside the accelerated one.");
+                                $"inside the accelerated one.", stdCeiling);
 
                         throw new InvalidOperationException(
                             $"Port {ports[i].Number}'s calibration standard needs {nStd:N0} unknowns " +
                             $"to solve for its reference impedance, past the {stdCeiling:N0}-unknown " +
-                            (stdLimit is not null ? "count that fits the memory limit this EM setup sets (Solver options). "
-                             : accStd ? "ACCELERATED ceiling. " : "ceiling. ") + "This is de-embedding's OWN " +
+                            (accStd ? "ACCELERATED ceiling. " : "ceiling. ") + "This is de-embedding's OWN " +
                             "standard, not the DUT's mesh — a standard reproduces the DUT's " +
                             "transverse gridlines verbatim, so a wide port's standard can be larger " +
                             "than the DUT itself. " +
@@ -3174,6 +3199,7 @@ public static class PlanarSolve
                 sol = dut.SolveAt(k, f);
                 dMs = own.Elapsed.TotalMilliseconds;
                 control?.TickStage();
+                PlanarRunMemory.ReleaseFinishedSolve();
             });
 
             foreach (var cal in calibrators)
@@ -3187,6 +3213,7 @@ public static class PlanarSolve
                             solve();
                             lock (standardsClock) sMs += own.Elapsed.TotalMilliseconds;
                             control?.TickStage();
+                            PlanarRunMemory.ReleaseFinishedSolve();
                         });
                 }
 

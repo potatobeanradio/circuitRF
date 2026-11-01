@@ -17,6 +17,16 @@
 // Fill builds — the same class lookups, asked of (min, max) exactly as Fill's mirror reads them.
 // What a panel costs over Fill is that a cell's row is formed for each panel that touches it (about
 // twice) and in full rather than as a triangle — measured in RESOLVED.md §PM-2 Part 2.
+//
+// CAP-2 (2026-10-31): THE MERGED MATRIX IS HELD AS ITS LOWER TRIANGLE, and that cost exactly one thing.
+// X = TᵀUT is not symmetric — only X + Xᵀ is — so holding X in full and folding it at the end needs
+// the square this brief exists to remove. Instead each panel's product folds straight into the
+// triangle: destination column c (owned by one iteration, R-fil-11's shape) takes this panel's X[a, c]
+// for a ≥ c AND its X[c, a] for a > c. The diagonal takes only X[c, c] and is doubled at the end as
+// before, so it is bit-identical; an OFF-diagonal entry now accumulates the two halves interleaved
+// panel by panel where it used to sum each half over every panel and then add them. That is a change
+// of summation order, at round-off (the gate is |ΔS| ≤ 1e-12 on this path, RESOLVED.md §CAP-2), and it
+// leaves T = I bit-identical to Fill, since there every off-diagonal X[c, a] is an exact zero.
 
 using System.Numerics;
 using NumFlat;
@@ -42,11 +52,21 @@ public static partial class PlanarFill
     /// <b>PM-2 — the merged Galerkin matrix <c>Tᵀ Z T</c> at one angular frequency</b>, for a mesh
     /// carrying <see cref="PlanarMesh.Merge"/>. Full (both triangles), symmetric bit for bit, and of
     /// size <see cref="PlanarRooftopMerge.Count"/>. Single-level only, like <see cref="Fill"/>.
+    /// CAP-2: <see cref="FillMergedLower"/>'s triangle, expanded — for small-N callers.
     /// </summary>
     /// <param name="panelWidth">Columns of the elemental triangle per panel; 0 sizes it from
     /// <see cref="MergedPanelBudgetBytes"/>. Changes no answer.</param>
     public static Mat<Complex> FillMerged(PlanarFillCores cores, PlanarKernelTerms termsA,
                                           PlanarKernelTerms termsQ, double omega, int panelWidth = 0)
+        => FillMergedLower(cores, termsA, termsQ, omega, panelWidth).ToDense();
+
+    /// <summary>
+    /// <b>CAP-2 — <see cref="FillMerged"/>'s lower triangle</b>, folded straight into a
+    /// <see cref="BlockLowerMatrix"/> panel by panel; no square is ever held. See this file's header
+    /// for the one summation order this changed.
+    /// </summary>
+    public static BlockLowerMatrix FillMergedLower(PlanarFillCores cores, PlanarKernelTerms termsA,
+                                                   PlanarKernelTerms termsQ, double omega, int panelWidth = 0)
     {
         ArgumentNullException.ThrowIfNull(cores);
         ArgumentNullException.ThrowIfNull(termsA);
@@ -58,7 +78,7 @@ public static partial class PlanarFill
             "FillMerged needs a mesh carrying a rooftop merge (PlanarMesh.Merge); this one has none. " +
             "Use Fill for the elemental system.");
         int n = mesh.Bases.Count, nm = merge.Count, m = mesh.Cells.Count;
-        GuardCeiling(nm, m, cores.Settings.MemoryLimitBytes);
+        GuardCeiling(nm, m, cores.Settings.MemoryLimitBytes, cores.Settings.MemoryLimitSource, mesh);
         var st = cores.Settings;
         var bases = mesh.Bases;
 
@@ -139,15 +159,17 @@ public static partial class PlanarFill
 
         int w = panelWidth > 0 ? panelWidth : MergedPanelWidth(n, nm, m);
         w = Math.Min(w, Math.Max(1, n));
-        var x = new Mat<Complex>(nm, nm);
+        var x = new BlockLowerMatrix(nm);
         var u = new Mat<Complex>(n, w);
         var v = new Mat<Complex>(nm, w);
         var slot = new int[m];
         Array.Fill(slot, -1);
         var colPtr = merge.ColPtr; var colRow = merge.ColRow; var colVal = merge.ColVal;
         var rowPtr = merge.RowPtr; var rowCol = merge.RowCol; var rowVal = merge.RowVal;
-        const int chunk = 256;
-        int chunks = (nm + chunk - 1) / chunk;
+        // Per macro column, the first T entry not yet folded: T's columns are sorted by elemental
+        // row, and panels advance in row order, so each column's entries are consumed in order.
+        var cursor = new int[nm];
+        Array.Copy(colPtr, cursor, nm);
 
         for (int c0 = 0; c0 < n; c0 += w)
         {
@@ -213,35 +235,53 @@ public static partial class PlanarFill
                 }
             });
 
-            // X += V · T[P, :], parallel over disjoint row chunks of X.
-            ForRows(st, chunks, ch =>
+            // This panel's (a, ii, weight) for every T entry of its rows, by macro a: the transposed
+            // half's sources, so a destination column c reads exactly its a > c tail.
+            int nnzP = rowPtr[c1] - rowPtr[c0];
+            var tri = new (int A, int Ii, double W)[nnzP];
+            for (int i = c0, o = 0; i < c1; i++)
+                for (int k = rowPtr[i]; k < rowPtr[i + 1]; k++) tri[o++] = (rowCol[k], i - c0, rowVal[k]);
+            Array.Sort(tri, (p, q) => p.A != q.A ? p.A.CompareTo(q.A) : p.Ii.CompareTo(q.Ii));
+            var triA = new int[nnzP];
+            for (int t = 0; t < nnzP; t++) triA[t] = tri[t].A;
+
+            // X += V · T[P, :], folded into the triangle: destination column c is written by ONE
+            // iteration — X[a, c] for a ≥ c (column c of the product), then X[c, a] for a > c (row c).
+            int panelEnd = c1;
+            ForRows(st, nm, c =>
             {
-                int a0 = ch * chunk, a1 = Math.Min(nm, a0 + chunk), len = a1 - a0;
-                var xs = x.Memory.Span; var vs = v.Memory.Span;
-                for (int ii = 0; ii < width; ii++)
+                var xc = x.Column(c);
+                int len = nm - c;
+                var vs = v.Memory.Span;
+                int k = cursor[c], kEnd = colPtr[c + 1];
+                for (; k < kEnd && colRow[k] < panelEnd; k++)
                 {
-                    int i = c0 + ii;
-                    var vc = vs.Slice(ii * v.Stride + a0, len);
-                    for (int k = rowPtr[i]; k < rowPtr[i + 1]; k++)
-                    {
-                        double wt = rowVal[k];
-                        var xc = xs.Slice(rowCol[k] * x.Stride + a0, len);
-                        for (int a = 0; a < len; a++) xc[a] += wt * vc[a];
-                    }
+                    double wt = colVal[k];
+                    var vc = vs.Slice((colRow[k] - c0) * v.Stride + c, len);
+                    for (int a = 0; a < len; a++) xc[a] += wt * vc[a];
+                }
+                cursor[c] = k;
+
+                int t0 = Array.BinarySearch(triA, c + 1);
+                if (t0 < 0) t0 = ~t0;
+                else while (t0 > 0 && triA[t0 - 1] == c + 1) t0--;
+                if (t0 == nnzP) return;
+
+                // Row c of V, gathered once at a constant stride (which prefetches) rather than read
+                // in the triples' order (which would not).
+                Span<Complex> vr = width <= 512 ? stackalloc Complex[width] : new Complex[width];
+                for (int ii = 0; ii < width; ii++) vr[ii] = vs[ii * v.Stride + c];
+                for (int t = t0; t < nnzP; t++)
+                {
+                    var (a, ii, wt) = tri[t];
+                    xc[a - c] += wt * vr[ii];
                 }
             });
         }
 
-        // Tᵀ Z T = X + Xᵀ. Iteration j owns column j above the diagonal and row j left of it.
-        ForRows(st, nm, j =>
-        {
-            for (int i = 0; i < j; i++)
-            {
-                Complex s = x[i, j] + x[j, i];
-                x[i, j] = s; x[j, i] = s;
-            }
-            x[j, j] *= 2.0;
-        });
+        // Tᵀ Z T = X + Xᵀ: the off-diagonal halves were folded together above; the diagonal is
+        // X[j, j] alone and is doubled here, exactly as before.
+        for (int j = 0; j < nm; j++) x.Column(j)[0] *= 2.0;
         return x;
     }
 }

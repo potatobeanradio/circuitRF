@@ -468,40 +468,46 @@ public sealed class PlanarMemoryAccountingTests
     }
 
     [Fact]
-    public void P1_5_ResidentBytesReproducesTheCoresTheFillActuallyBuilt()
+    public void CAP3_TheCountedCoresAreWhatTheBuildAllocates_LowAndHighReuse_CutAndTwoLevel()
     {
-        // PlanarSystem.CoreBytes reconstructs PlanarFillCores.CoreBytes from N and the cell count,
-        // because a refusal has to quote the number BEFORE anything is cored. This is the gate on that
-        // reconstruction — and on its two stated assumptions (the shipped extraction order, and an
-        // even x̂/ŷ split, which minimises the vector term and therefore makes the estimate a floor).
-        (double LengthM, PlanarMeshSettings Settings)[] rungs =
+        // CAP-3 — a mesh in hand is quoted from its own count (PlanarCoreFootprint.Count), and the count
+        // is the allocation to the byte: the 4-byte index over the band, the class table, the cut rows
+        // and the O(N) vectors. Until CAP-3 the quote was P4's triangle layout reconstructed from N and
+        // the cell count, which the class layout undercuts 3–12× on real artwork and exceeds on a mesh
+        // with little reuse — no function of N and m alone serves both (RESOLVED.md §CAP-3). The four
+        // meshes span that: the GaAs line (1.2× reuse), the 60 mm taper (31×), a conformally cut mesh
+        // (rows for cut cells and bases) and a two-level line with a via.
+        var stack = LayerStacks.MmicTwoLevel;
+        var twoLevel = new PlanarProblem(
+            [new PlanarConductorLayer("M1", [PlanarLineFixtures.Rect(0, 0, 400e-6, 100e-6)], 4.1e7, 2e-6, stack.InterfaceZ[1]),
+             new PlanarConductorLayer("M2", [PlanarLineFixtures.Rect(0, 0, 400e-6, 100e-6)], 4.1e7, 3e-6, stack.TopZ)],
+            GroundedSlab.GaAsStarter, 10e9, null, stack,
+            [new PlanarVia(0, 1, [PlanarLineFixtures.Rect(180e-6, 30e-6, 220e-6, 70e-6)], 4.1e7)]);
+        var chamfer = new PlanarProblem([new PlanarConductorLayer("Metal",
+                          [new PlanarPolygon([new EmPoint(0, 0), new EmPoint(3.0e-3, 0), new EmPoint(3.0e-3, 1.6e-3),
+                                              new EmPoint(1.6e-3, 2.6e-3), new EmPoint(0, 2.6e-3)])], 5.8e7, 35e-6)],
+                          GroundedSlab.Fr4Starter, 10e9);
+        (string Label, PlanarProblem Problem, PlanarMeshSettings Settings)[] meshes =
         [
-            (20e-3, PlanarLineFixtures.Coarse),
-            (60e-3, PlanarLineFixtures.Coarse),
-            (20e-3, PlanarLineFixtures.Shipping),
+            ("GaAs line 2 mm", PlanarLineFixtures.GaAsLine(2e-3, 20e9), PlanarLineFixtures.Shipping),
+            ("FR-4 taper 60 mm", PlanarLineFixtures.Taper(GroundedSlab.Fr4Starter, 2.9e-3, 0.5e-3, 60e-3, 10e9),
+             PlanarLineFixtures.Shipping),
+            ("chamfer, conformal", chamfer, new PlanarMeshSettings(Auto: false, CellsPerWavelength: 4, EdgeMesh: false,
+                                                                   BoundaryCells: PlanarBoundaryCells.Conformal)),
+            ("two levels + via", twoLevel, PlanarLineFixtures.Shipping),
         ];
 
-        foreach (var (lengthM, settings) in rungs)
+        foreach (var (label, problem, settings) in meshes)
         {
-            var problem = PlanarLineFixtures.Fr4Line(lengthM, 10e9);
             var mesh    = SurfaceMesher.Mesh(problem, settings).Mesh;
+            var counted = PlanarCoreFootprint.Count(mesh);
             var cores   = PlanarFill.BuildCores(mesh);
-
-            long actual   = cores.CoreBytes;
-            long estimate = PlanarSystem.CoreBytes(mesh.Bases.Count, mesh.Cells.Count);
-            double ratio  = (double)estimate / actual;
-
-            _out.WriteLine($"N = {mesh.Bases.Count,5}, cells = {mesh.Cells.Count,5}: " +
-                           $"cores actually {Mb(actual)} MB, reconstructed {Mb(estimate)} MB " +
-                           $"({ratio:F3}×); {cores.ClassCount:N0} classes for {cores.BandPairs:N0} band pairs");
-
-            // P5: the reconstruction is P4's triangle layout, kept as the a-priori figure a refusal
-            // quotes before anything is cored. The class layout's actual bytes are geometry-dependent
-            // — a 4-byte index per band pair plus 112 bytes per class — so they meet the figure at a
-            // translation reuse of ≈ 3× and fall well below it above that. These three rungs span
-            // that range (the coarse meshes have no edge fan and reuse heavily; the shipping hero's
-            // 2.5× sits just under break-even), which is why the band is what it is.
-            Assert.InRange(ratio, 0.6, 20.0);
+            _out.WriteLine($"{label}: N = {mesh.Bases.Count:N0}, cells = {mesh.Cells.Count:N0}, " +
+                           $"{cores.ClassCount:N0} classes for {cores.BandPairs:N0} band pairs; " +
+                           $"allocated {cores.CoreBytes:N0} B, counted {counted.Bytes:N0} B");
+            Assert.Equal(cores.ClassCount, counted.Classes);
+            Assert.Equal(cores.BandPairs, counted.BandPairs);
+            Assert.Equal(cores.CoreBytes, counted.Bytes);
         }
     }
 
@@ -542,5 +548,36 @@ public sealed class PlanarMemoryAccountingTests
                         StringComparison.Ordinal);
         Assert.Contains("cached cores", report.Refusal!, StringComparison.Ordinal);
         Assert.DoesNotContain("MB of dense complex matrix", report.Refusal!, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// CAP-2 — the matrix a dense point stores is its lower triangle in block-column panels, and
+    /// <see cref="PlanarSystem.MatrixBytes"/> (and so <see cref="PlanarSystem.ResidentBytes"/>, the
+    /// ceiling and every refusal) is what that allocation is: within 1 % of 16·(N²/2 + N·nb/2), i.e.
+    /// half the 16·N² square it replaced plus the panels' diagonal blocks. 1,000 is not a multiple of
+    /// the block, 1,984 is.
+    /// </summary>
+    [Fact]
+    public void CAP2_TheStoredMatrixIsTheBlockColumnTriangle_AndMatrixBytesIsItsAllocation()
+    {
+        int nb = SymmetricFactorization.DefaultBlockSize;
+        foreach (int n in new[] { 1_000, 1_984 })
+        {
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            var z = new BlockLowerMatrix(n);
+            long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+            GC.KeepAlive(z);
+
+            double target = 16.0 * ((double)n * n / 2 + (double)n * nb / 2);
+            _out.WriteLine($"N = {n}: allocated {allocated:N0} B, 16·(N²/2 + N·nb/2) = {target:N0} B " +
+                           $"({allocated / target:F4}×), MatrixBytes {PlanarSystem.MatrixBytes(n):N0} B, " +
+                           $"the square {PlanarSystem.DenseMatrixBytes(n):N0} B");
+
+            Assert.InRange(allocated / target, 0.99, 1.01);
+            Assert.InRange(PlanarSystem.MatrixBytes(n) / (double)allocated, 0.99, 1.0);
+            Assert.True(allocated < PlanarSystem.DenseMatrixBytes(n) / 2 + 16L * n * nb,
+                $"{allocated:N0} B is not half the {PlanarSystem.DenseMatrixBytes(n):N0} B square " +
+                "plus the panels' diagonal blocks");
+        }
     }
 }

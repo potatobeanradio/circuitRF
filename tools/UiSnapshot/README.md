@@ -116,6 +116,13 @@ dotnet run --project tools/UiSnapshot --no-build -- --cem <file.cem> -o out.png 
 
 Default size 900x1200.
 
+**The planar memory question** Simulate asks before a planar run past this machine's memory (Simulate Anyway /
+Don't Simulate), with the verdict `PlanarMemoryCheck` gives a de-embedded 36,000-unknown run on this machine:
+
+```
+dotnet run --project tools/UiSnapshot --no-build -- --planar-memory-dialog -o out.png
+```
+
 **The technology editor** opens on a `.ctech` as the workspace opens one (the file's own content, its libraries
 resolved by the editor — copy a `.cmat` it names beside it). `--tab n` picks the section (0 Layers, 1 Stackup, 2 DRC
 Rules, 3 Interchange, 4 Materials). Two steps drive its real controls: `--unit <unit>` picks "Unit for new layouts",
@@ -235,7 +242,7 @@ Messages print as they are posted. Besides the steps below:
 | `@x,y` | Any step's point in the layout's micrometres instead of window DIPs, through the canvas's viewport. |
 | `--rclick x,y` | Right press and release: the canvas's context menu opens. It is drawn in the window's own frame. |
 | `--menu <header>` | Clicks the open context menu's item whose header starts with this (submenus searched), then closes it. A miss lists the headers. |
-| `--type <text>` | Types into the open dialog's first text box, replacing what is there. `--type Name=text` sets the text box of that `x:Name` instead (an inline box such as `SizeInput`); with `--cem` and no dialog open it types into the EM Setup editor (`--type MemoryLimitBox=8 --key Enter`), and `--button Mesh` presses a toolbar button by its label. |
+| `--type <text>` | Types into the open dialog's first text box, replacing what is there. `--type Name=text` sets the text box of that `x:Name` instead (an inline box such as `SizeInput`); with `--cem` and no dialog open it types into the EM Setup editor (`--type SnpOutputPathBox=out.s2p --key Enter`), and `--button Mesh` presses a toolbar button by its label. |
 | `--button <label>` | A real click on the open dialog's visible button with this label. A miss lists the buttons. |
 | `--impedance <freq\|none>` | Runs the editor's own Impedance Analysis with that highest frequency (`6GHz`, or `none`) before the steps, and prints each trace's findings. The canvas shows its overlay. |
 | `--finding <kind>` | With `--impedance`: selects the first finding of that kind (`pad-shunt`, `return-broken`, …) as the panel's row does, and zooms to it. The selection status prints. |

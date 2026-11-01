@@ -25560,3 +25560,77 @@ Nothing changed.
   is on a line end no longer than 4 × H, and no example states a `PortWidth`, so the planar spans are all null. All
   five 3D `.cem`s generate. Of the `.c3d`s with placed layouts, only *3D Package* has ports from layouts, and none is
   reported stale.
+
+## CAP-1: the planar dense ceiling is sized on the machine (run-service side, 2026-10-31)
+
+Engine half and the measurements in `src/Engine/Mom/RESOLVED.md` §CAP-1.
+
+- **`PlanarMemoryCheck.WithMachineCeiling(mesh, machineLimit, physical)` is the one place the limit is chosen**: the
+  setup's own `MemoryLimitBytes` wins; else the machine-wide limit (Settings ▸ Solvers, `em --memory-limit`); else
+  physical memory; physical 0 (unreadable) leaves the shipped 10,000. It returns mesh settings carrying the bytes and
+  `MemoryLimitSource`, handed down exactly as a setup's limit always was, so `src/Engine` still never reads the
+  machine.
+- **Every reader asks it**: `EmRunService.RunPlanar` (what Simulate, `circuitrf em` and the MCP `run analysis=em`
+  reach), `EmRunService.Preflight` (new optional `memoryCeilingBytes`, so `circuitrf check` and the run judge alike;
+  `check` passes none, i.e. physical memory), and the panel's mesh preview (`EmSetupEditorViewModel.ComputePlanarMesh`,
+  the machine values captured on the UI thread in `PreparePlanarMesh`). `DenseUnknownCeiling` feeds the multi-level
+  accelerated-solve note, and the Memory limit box's greyed placeholder is now the machine's figure ("17.2"), which is
+  what blank means. The VM's `MachineMemoryLimitBytes` / `PhysicalMemoryBytes` are seams so a test states its machine.
+- **The provenance stamp still reads `setup.PlanarMesh`**, and the limit is in no hash, so an `.sNp` written on one
+  machine is not stale on another (`PlanarMemoryLimitUiTests` asserts the hash equality).
+- **Two test traps.** The committed `testdata/portcal` setups run ACCELERATED, and a machine-derived limit does not
+  touch the accelerated ceiling, so a test of the derivation must turn the accelerator off. And `circuitrf em` on a
+  committed `.cem` writes its `.sNp` beside the fixture (git-ignored `results/`), so the CLI test copies the
+  workspace to a temp folder first.
+
+## CAP-1 follow-up: the machine's memory asks, and the standards count (run-service side, 2026-10-31)
+
+Engine half and measurements in `src/Engine/Mom/RESOLVED.md` §CAP-1 follow-up.
+
+- **`PlanarMemoryCheck.PriceStandards`** resolves the ports on a mesh report and prices the de-embedded run's
+  calibration standards through `PlanarRunMemory`; `EmRunService.Preflight` (`circuitrf check`) and the panel's
+  `ComputePlanarMesh` call it, the run prices them in `PlanarKernel.Solve`, so all three judge the same figure.
+- **Past the machine's memory a run is asked, never refused.** The report warns; the run's `Admit`
+  (`PlanarMemoryCheck.Admitter`) asks through `confirmMemory` — the GUI's existing "This Run May Not Fit in Memory"
+  dialog, **Simulate Anyway** / Don't Simulate — and headless with no one to ask it is declined
+  (`em.refused.memory`) naming `--force`. `circuitrf em --force` and the MCP `run` tool's `force` already passed
+  `confirmMemory: _ => true` for the 3D size check, so the planar run needed no new flag: the descriptions now say
+  it covers planar runs, and `docs/design/cli.md` says the same beside `--force`'s 3D paragraph. The check's sentence names the
+  standards' share ("— 2.0 GB of it for the calibration standards solved beside the structure —") instead of
+  "before de-embedding adds its calibration standards".
+- **A setup's own Memory limit still refuses** (the Memory limit tooltip says so).
+- The multi-level accelerated-solve note quotes the accelerated ceiling this machine gives
+  (`AcceleratedUnknownCeilingHere`) and, when it equals the dense one, says they are the same ceiling.
+- `tools/UiSnapshot --planar-memory-dialog` renders the question.
+
+## CAP-3: a mesh's memory is its own (run-service side, 2026-10-31)
+
+Engine half and measurements in `src/Engine/Mom/RESOLVED.md` §CAP-3.
+
+- **Nothing here computes a figure of its own**: the pre-solve check and the panel read
+  `PlanarMeshReport.RunResidentBytes`, which now counts the mesh's own cores (`PlanarCoreFootprint.For`) rather than
+  quoting a figure for its size, so Simulate's question, `circuitrf check` and the panel's budget move with the run's
+  own judgment.
+- `PlanarMemoryCheck.PriceStandards` hands the structure's mesh to `PlanarRunMemory.StandardBytes`, as
+  `PlanarKernel.Solve` does, so the standards' share also covers the calibrators' static capacitance step where that
+  is the larger.
+- The panel's placeholder ceiling and the multi-level note still ask `SurfaceMesher.CeilingFor(…, 0, …)` — the
+  a-priori figure, there being no mesh: about 42,000 on a 17.2 GB machine (was about 35,000).
+
+## CAP-1 follow-up 2: the EM setup's Memory limit is removed (2026-10-31)
+
+Engine half in `src/Engine/Mom/RESOLVED.md` §CAP-1 follow-up 2.
+
+- **Removed**: the panel's Memory limit row (box, greyed placeholder, error line, tooltip), `PlanarMemoryLimitText`,
+  `MemoryLimitError`, `MemoryLimitPlaceholder` and the `"PlanarMemoryLimit"` commit case; `CemPlanarMesh.MemoryLimitGb`.
+  The Solver options group closes up with no gap (the row is gone, not hidden). The accelerated-solve tooltip points
+  at Settings ▸ Solvers.
+- **`.cem` compatibility.** No committed `.cem` carries `MemoryLimitGb` (testdata and examples grepped). One that does
+  opens with the key skipped — `CemPlanarMesh` has no `[JsonExtensionData]` and the reader allows unmapped members, so
+  there is no error and no warning — and, with no member to land in, it is not written back on save
+  (`PlanarMemoryLimitUiTests.ACemThatStillNamesAMemoryLimit_OpensWithItIgnored_AndSavesWithoutIt`).
+- **`PlanarMemoryCheck.WithMachineCeiling` replaces** any bytes a setup's mesh carries in code with the machine's
+  (Settings ▸ Solvers, else physical memory, else none), so no path judges a run on a setup-held figure.
+- User docs: `mom-engine.md` (§budget: the limit belongs to the computer; the refusal table row) and `settings.md`
+  (the Solvers Memory limit row now says it sizes a planar run too), regenerated alone; `docs/design/cli.md` and the
+  MCP `force` description lose the setup-limit sentence.

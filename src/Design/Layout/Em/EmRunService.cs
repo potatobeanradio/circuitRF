@@ -282,8 +282,11 @@ public static class EmRunService
     /// </summary>
     /// <param name="control">Cancellation for the mesh, which on a large board is the one part of
     /// this that takes noticeable time. Progress is reported through it as a run's would be.</param>
+    /// <param name="memoryCeilingBytes">CAP-1 — the machine-wide memory limit, on <see cref="Run"/>'s own
+    /// terms (null: this machine's physical memory). A setup with no memory limit of its own has its
+    /// dense ceiling sized on it, exactly as the run will (<see cref="PlanarMemoryCheck.WithMachineCeiling"/>).</param>
     public static EmPreflightResult Preflight(
-        EmSetup setup, EmLayoutSource? source, RunControl? control = null)
+        EmSetup setup, EmLayoutSource? source, RunControl? control = null, long? memoryCeilingBytes = null)
     {
         ArgumentNullException.ThrowIfNull(setup);
         if (setup.IsThermal)
@@ -374,10 +377,14 @@ public static class EmRunService
             : problem;
 
         PlanarMeshReport report;
+        var preMesh = PlanarMemoryCheck.WithMachineCeiling(setup.PlanarMesh, memoryCeilingBytes,
+                                                           CircuitRF.Design.Em3d.MachineMemory.PhysicalBytes);
         try
         {
             report = SurfaceMesher.Mesh(
-                meshed, setup.PlanarMesh, PlanarEdgeReference.LocalConductorWidth, control,
+                meshed,
+                preMesh,
+                PlanarEdgeReference.LocalConductorWidth, control,
                 accelerated: SurfaceMesher.UsesAcceleratedCeiling(
                     setup.AcceleratedSolve, meshed.RequiresGeneralKernel),
                 lengthFormat: EmLengthFormat.For(source.View.DisplayUnit, source.DbuPerMicron),
@@ -390,17 +397,22 @@ public static class EmRunService
                                          EmDiagnostics.SolveFailed(ex.Message).Render());
         }
 
+        // CAP-1 follow-up — priced with its calibration standards and judged again, as the run judges it.
+        report = PlanarMemoryCheck.PriceStandards(report, meshed, ports.Ports, freqs, preMesh, setup.AcceleratedSolve);
+
         // MIM-13 item 3 — AllFindings, not AsNotes(Notes): the mesher classes its own sentences
         // now, and flattening them here is what put a warning at the weight of the core count.
         findings.AddRange(report.AllFindings);
 
         // The memory check a run makes before it fills anything, said here as a warning (a check
         // asks no one). The run's own mesh also carries any feed it grows, so it can be a little larger.
-        if (report.CanSolve && !setup.AcceleratedSolve &&
+        // A run past the machine's own memory already carries the mesh's warning, which says it more exactly.
+        if (report.CanSolve && !setup.AcceleratedSolve && !report.PastMachineLimit &&
             PlanarMemoryCheck.Evaluate(
-                new PlanarRunSize(report.UnknownCount, report.CellCount, false,
-                                  PlanarSystem.ResidentBytes(report.UnknownCount, report.CellCount)),
-                CircuitRF.Design.Em3d.MachineMemory.PhysicalBytes).Text is { } memory)
+                new PlanarRunSize(report.UnknownCount, report.CellCount, false, report.RunResidentBytes)
+                { StandardBytes = report.StandardResidentBytes },
+                memoryCeilingBytes ?? CircuitRF.Design.Em3d.MachineMemory.PhysicalBytes,
+                machineLimit: memoryCeilingBytes is not null).Text is { } memory)
             findings.Add(EmFinding.Warn(memory));
 
         // MIM-3/MIM-8's question, which is a property of the MESH against the STACKUP and needs no
@@ -1077,7 +1089,13 @@ public static class EmRunService
                              "for it to seed from. Turn adaptive sampling on to use it.");
 
             var lengthFormat = EmLengthFormat.For(source.View.DisplayUnit, source.DbuPerMicron);
-            solved = kernel.Solve(problem, setup.PlanarMesh, ports.Ports, freqs, solveSettings, ct, control,
+            // CAP-1 — with no memory limit of its own, the setup's DENSE ceiling is sized on this
+            // machine (the machine-wide limit, else physical memory) rather than on a constant. Handed
+            // down in the mesh settings, so the engine stays a pure function of what it is given; the
+            // provenance stamp below still reads setup.PlanarMesh, and a limit is in no hash anyway.
+            var meshSettings = PlanarMemoryCheck.WithMachineCeiling(
+                setup.PlanarMesh, memoryCeilingBytes, CircuitRF.Design.Em3d.MachineMemory.PhysicalBytes);
+            solved = kernel.Solve(problem, meshSettings, ports.Ports, freqs, solveSettings, ct, control,
                                   lengthFormat);
         }
         catch (OperationCanceledException) { throw; }
@@ -1096,10 +1114,13 @@ public static class EmRunService
         catch (PlanarRunDeclinedException ex)
         {
             // The memory check declined the run (not confirmed, or no one to ask): a refusal, with
-            // the check's own sentence, and nothing was filled.
-            var d = EmDiagnostics.Forwarded("memory", ex.Message);
+            // the check's own sentence, and nothing was filled. It is what a board past the memory limit
+            // meets now that no memory limit refuses at the mesh, so it carries the ceiling's pointer
+            // (R-as8-6) — the case that pointer exists for.
+            string declined = MeshCeilingRefusal(ex.Message);
+            var d = EmDiagnostics.Forwarded("memory", declined);
             return new EmRunResult(EmRunStatus.Refused, null, null, null, null, null,
-                ex.Message, warnings, Notes: notes, Errors: errors, Kind: choice.Kind,
+                declined, warnings, Notes: notes, Errors: errors, Kind: choice.Kind,
                 KernelName: choice.KernelName, Diagnostic: d);
         }
         catch (PlanarPortCollisionRefusedException ex)

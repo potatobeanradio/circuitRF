@@ -323,4 +323,42 @@ public sealed class EmCliVerbTests(ITestOutputHelper output) : IDisposable
         // …and stderr still says exactly what it said before, which is the contract cli.md §8 keeps.
         Assert.Contains("nope.clay", stderr, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// CAP-1 follow-up — `circuitrf em` (and the MCP `run analysis=em`, which runs it) reaches the planar size
+    /// check through <c>EmRunService</c>: with <c>--memory-limit</c> standing for the machine-wide limit, a run
+    /// past it is not refused at the mesh but asked about, and headless, with no <c>--force</c> to say yes, it is
+    /// declined — the panel's Simulate Anyway is <c>--force</c> here. Nothing is filled.
+    /// </summary>
+    [Fact]
+    public void CircuitrfEm_PastTheMachinesMemoryLimit_IsDeclinedWithoutForce()
+    {
+        string repo = RepoRoot();
+        // A copy of the committed workspace, so the fixture is untouched and nothing lands in testdata.
+        // Its setup runs accelerated, which this tiny limit leaves at the shipped 12,000-unknown floor, so the
+        // copy runs dense, whose size the limit is checked against.
+        string src = Path.Combine(repo, "testdata", "portcal");
+        foreach (string file in new[] { ".cws" }
+                     .Concat(Directory.GetFiles(Path.Combine(src, "tech")).Select(f => Path.Combine("tech", Path.GetFileName(f))))
+                     .Concat(Directory.GetFiles(Path.Combine(src, "separated-pair"), "*", SearchOption.AllDirectories)
+                                      .Select(f => Path.GetRelativePath(src, f))))
+        {
+            string to = Path.Combine(_root, file);
+            Directory.CreateDirectory(Path.GetDirectoryName(to)!);
+            File.Copy(Path.Combine(src, file), to);
+        }
+        string cem = Path.Combine(_root, "separated-pair", "em", "separated-pair.cem");
+        var setup = EmSetupPersistence.LoadFromFile(cem);
+        setup.AcceleratedSolve = false;
+        EmSetupPersistence.SaveToFile(cem, setup);
+
+        var (exitCode, stdout, stderr) = RunCli(repo, "em", cem, "--memory-limit", "0.0001", "--json");
+        output.WriteLine("stderr:\n" + (stderr.Length > 4000 ? stderr[..4000] + " …" : stderr));
+
+        Assert.Equal(1, exitCode);
+        var doc = System.Text.Json.JsonDocument.Parse(stdout).RootElement;
+        var refusal = doc.GetProperty("diagnostics").EnumerateArray()
+            .Single(d => d.GetProperty("id").GetString() == "em.refused.memory");
+        Assert.Contains("--force", refusal.GetProperty("message").GetString(), StringComparison.Ordinal);
+    }
 }

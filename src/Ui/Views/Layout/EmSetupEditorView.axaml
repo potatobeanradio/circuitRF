@@ -1994,7 +1994,7 @@
                           Content="Use the AIM accelerator (much less memory; faster only on large meshes)"
                           IsChecked="{Binding ViewModel.AcceleratedSolve}"
                           IsEnabled="{Binding ViewModel.AcceleratedSolveDisabledReason, Converter={x:Static ObjectConverters.IsNull}}"
-                          ToolTip.Tip="Solves the same system iteratively against a grid-accelerated matrix-vector product instead of forming and factoring the full dense matrix. It computes the same answer a different way, to its own accuracy gates. The win is working-set memory - roughly 4x less past about 900 unknowns - and it is also faster per frequency point past about 1,100; below that the dense path is faster. It raises the default unknown ceiling from 10,000 to 12,000 on a single-level mesh. A multi-level or via-bearing mesh RUNS accelerated (as a bordered system) but is still judged against the 10,000 dense ceiling, because its cost there is set by the vertical unknown count rather than by N."/>
+                          ToolTip.Tip="Solves the same system iteratively against a grid-accelerated matrix-vector product instead of forming and factoring the full dense matrix. It computes the same answer a different way, to its own accuracy gates. The win is working-set memory - roughly 4x less past about 900 unknowns - and it is also faster per frequency point past about 1,100; below that the dense path is faster. Its unknown ceiling is the count this machine's memory allows (or the memory limit in Settings ▸ Solvers), and never below 12,000 on a single-level mesh. A multi-level or via-bearing mesh RUNS accelerated (as a bordered system) but is judged against the dense ceiling, because its cost there is set by the vertical unknown count rather than by N."/>
                 <TextBlock Classes="colhdr" TextWrapping="Wrap"
                            Text="{Binding ViewModel.AcceleratedSolveDisabledReason}"
                            IsVisible="{Binding ViewModel.AcceleratedSolveDisabledReason, Converter={x:Static ObjectConverters.IsNotNull}}"/>
@@ -2005,27 +2005,6 @@
                 <TextBlock Classes="colhdr" TextWrapping="Wrap"
                            Text="{Binding ViewModel.AcceleratedSolveCeilingNote}"
                            IsVisible="{Binding ViewModel.AcceleratedSolveCeilingNote, Converter={x:Static ObjectConverters.IsNotNull}}"/>
-
-                <!-- The setup's own memory limit for one frequency point, in place of the shipped mesh-size
-                     ceilings. A MEMORY, not an unknown count: nobody knows their count before meshing,
-                     but they know their machine. Blank is the default and the placeholder shows it. Beside
-                     the accelerated solve because the two together decide how large a mesh this setup
-                     will solve; committed through the mesh committer because the mesh verdict above is
-                     judged against it. -->
-                <TextBlock Classes="colhdr" Margin="0,8,0,0" Text="Memory limit"/>
-                <StackPanel Orientation="Horizontal" Spacing="4"
-                            IsEnabled="{Binding ViewModel.AcceleratedSolveDisabledReason, Converter={x:Static ObjectConverters.IsNull}}">
-                    <TextBox Name="MemoryLimitBox" Classes="num" Tag="PlanarMemoryLimit" Width="80"
-                             Text="{Binding ViewModel.PlanarMemoryLimitText}"
-                             PlaceholderText="{x:Static em:EmSetupEditorViewModel.MemoryLimitPlaceholder}"
-                             LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
-                             ToolTip.Tip="How much memory each frequency point of the solve may use, which sets how fine a mesh this setup will solve. Leave it blank for the default, shown greyed. Raise it if this machine has the memory. When you press Simulate, the run is checked against this machine's memory, or against the memory limit in Settings ▸ Solvers when one is set, and you are asked before a run that will not fit is started."/>
-                    <TextBlock FontSize="11" VerticalAlignment="Center" Opacity="0.7" Text="GB"/>
-                </StackPanel>
-                <SelectableTextBlock FontSize="10" TextWrapping="Wrap"
-                           Foreground="{DynamicResource CrfWarningBrush}"
-                           Text="{Binding ViewModel.MemoryLimitError}"
-                           IsVisible="{Binding ViewModel.MemoryLimitError, Converter={x:Static ObjectConverters.IsNotNull}}"/>
 
                 <!-- ── PCAL2 — the calibration override. The de-embedding checkbox that stood
                      here is GONE: R-pcal2-3 added it only so the mesh-ceiling refusal's recommended

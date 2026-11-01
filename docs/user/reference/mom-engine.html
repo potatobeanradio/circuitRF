@@ -303,8 +303,8 @@ symmetric: it factors it <strong>in place</strong>, in half the arithmetic a gen
 every core your core-count setting allows. The accelerated path computes the same answer a different way,
 to its own accuracy gates; its win is <strong>working-set memory</strong>, roughly 4× less past about 900 unknowns,
 while the <em>time</em> crossover is much later, around 3,700 unknowns. Below that the dense path is faster.
-<strong>It raises the default unknown ceiling from 10,000 to 12,000, but only on a single-metal-level
-structure with no vias</strong>, which is the only case it can accelerate at all.</p>
+<strong>Its unknown ceiling is never below 12,000 on a single-metal-level structure with no vias</strong>; past
+that it is the count your memory allows, as for the dense solve.</p>
 <p><strong>De-embedding.</strong> A two-line calibration; see <a href="#deembedding">De-embedding</a>.</p>
 <h3 id="which-kernel-ran-and-why">Which kernel ran, and why</h3>
 <p>The EM Setup panel names it, with the reason. The quasi-static kernel is chosen when the geometry
@@ -1235,10 +1235,13 @@ the whole grid; the edge singularity is where the error lives.</li>
 <p>The <strong>Mesh</strong> button computes the mesh <strong>without solving</strong>, so the unknown count, the smallest and largest
 cell and the truncation extent are all visible before you commit to a run. Use it.</p>
 <h2 id="budget">What makes a run infeasible</h2>
-<p>The full-wave matrix is dense and complex: N unknowns is N² × 16 bytes. <strong>The matrix is most of what
-a frequency point costs, and the frequency-independent geometry cache is the rest</strong> — so the figure
-the refusal quotes, and the one below, is both together. The factorisation itself is free of charge:
-it is written into the matrix rather than beside it.</p>
+<p>The full-wave matrix is dense, complex and symmetric, and only its lower half is stored: N unknowns
+is about N² × 8 bytes. <strong>The matrix is most of what a frequency point costs; the
+frequency-independent geometry cache and the working space the fill uses while it builds the matrix
+are the rest</strong> — so the figure the refusal quotes, and the one below, is all three together. For a
+mesh you have already meshed the geometry cache is counted from that mesh, because how much of it a
+structure needs depends on how much of its geometry repeats. The factorisation itself is free of charge: it is written into the matrix
+rather than beside it.</p>
 <table>
 <thead>
 <tr>
@@ -1251,53 +1254,54 @@ it is written into the matrix rather than beside it.</p>
 <tbody>
 <tr>
 <td>500</td>
-<td>4 MB</td>
-<td><strong>6 MB</strong></td>
+<td>2 MB</td>
+<td><strong>4 MB</strong></td>
 <td>A short line or a bend lives here</td>
 </tr>
 <tr>
 <td>2,000</td>
-<td>64 MB</td>
-<td><strong>88 MB</strong></td>
+<td>33 MB</td>
+<td><strong>56 MB</strong></td>
 <td>Interactive: under a second per frequency</td>
 </tr>
 <tr>
 <td>5,000</td>
-<td>400 MB</td>
-<td><strong>0.6 GB</strong></td>
+<td>0.2 GB</td>
+<td><strong>0.31 GB</strong></td>
 <td>Seconds per frequency</td>
 </tr>
 <tr>
 <td>10,000</td>
-<td>1.6 GB</td>
-<td><strong>2.2 GB</strong></td>
-<td>The default ceiling: about half a minute per frequency on ten cores</td>
+<td>0.8 GB</td>
+<td><strong>1.0 GB</strong></td>
+<td>About 20 s per frequency on ten cores</td>
 </tr>
 <tr>
 <td>20,000</td>
-<td>6.4 GB</td>
-<td><strong>8.8 GB</strong></td>
-<td>Reachable with a memory limit; minutes per frequency</td>
+<td>3.2 GB</td>
+<td><strong>3.9 GB</strong></td>
+<td>Minutes per frequency</td>
 </tr>
 </tbody>
 </table>
-<p>A de-embedded run holds more again — every calibration standard's geometry cache is live alongside
-the structure's own.</p>
-<p><strong>By default a mesh above 10,000 unknowns is refused</strong>, about 2.2 GB at each frequency point. The
-predicted N is shown before you solve, and the refusal points at the remedies that actually bind. The
-<a href="#aim">accelerated solve</a> raises the default to 12,000 on a single-metal-level structure with no vias;
-a multi-level or via-bearing mesh keeps 10,000, and the refusal names turning the accelerator on as the
-first remedy whenever doing so would let your mesh through.</p>
-<p><strong>Memory limit</strong> (Solver options) replaces the default with a size in GB: a mesh is allowed whenever one
-frequency point of it fits. Leave it blank for the default, shown greyed. A refusal says how much
-memory your mesh needs, which is the number to type. Time grows faster than memory — the factorisation
-goes as the cube of the unknown count — so doubling the unknowns costs about eight times as long per
-frequency.</p>
-<p><strong>Simulate checks every planar run against this machine</strong> before anything is filled. Past 75 % of its
-memory the run carries a warning; past all of it you are asked before it starts, and <code>circuitrf em</code>
-needs <code>--force</code>. When <strong>Memory limit</strong> in Settings ▸ Solvers is set, the run is checked against that
-instead. The estimate is the structure's own, and de-embedding adds its calibration standards on top,
-so leave headroom.</p>
+<p>A de-embedded run holds more again: its calibration standards are solved at the same time as the
+structure, at every frequency, and each holds a matrix and a geometry cache of its own. Every memory
+figure below counts them.</p>
+<p><strong>The unknown ceiling is sized on this machine's memory</strong>: the largest mesh whose frequency point —
+the structure plus, de-embedded, its standards — fits this machine's physical memory, or the
+<strong>Memory limit</strong> in Settings ▸ Solvers when one is set. On a 16 GB machine that is about 40,000
+unknowns for a structure that de-embeds little. The predicted N and the ceiling are shown before you
+solve, with an estimate of the factorisation time per frequency once N is past 10,000.</p>
+<p><strong>Past that memory a run is not refused; you are asked.</strong> The mesh report carries a warning, and
+Simulate asks before anything is filled: <strong>Simulate Anyway</strong> starts it, <strong>Don't Simulate</strong> does not.
+<code>circuitrf em</code> (and the MCP <code>run</code> tool) starts such a run only with <code>--force</code> (<code>force</code>), and its
+<code>--memory-limit</code> (<code>memoryLimitGB</code>) stands in for the Settings ▸ Solvers limit. Short of that, past 75 %
+of the memory the run carries a warning. A run past its machine's physical memory is likely to swap
+heavily or be stopped by the operating system.</p>
+<p>The memory limit belongs to the computer, not to an EM setup: it is set once, in
+<a href="settings.html#em3d">Settings ▸ Solvers</a>, and holds the planar solver and the 3D solvers alike. Time
+grows faster than memory — the factorisation goes as the cube of the unknown count — so doubling the
+unknowns costs about eight times as long per frequency.</p>
 <p>Two numbers that surprise people, both measured on 1.6 mm FR-4 at 10 GHz:</p>
 <ul>
 <li><strong>A 4 MB matrix is not a 4 MB sweep.</strong> At N = 552, one frequency costs about 1.7 s once the
@@ -1312,18 +1316,16 @@ up 4.4× and the number of points did not.</p>
 about 900 unknowns, and a faster frequency point past about 1,100 — its frequency-independent state
 is built once per structure and the dense factorisation's cost grows as the cube of the unknown count,
 so the gap widens with size (about 2× at 1,900 unknowns, an order of magnitude at 3,700). Below the
-crossover it is somewhat slower than the dense solve. It is <strong>single-metal-level only, with no vias</strong>
-— and within that, it raises the default ceiling from 10,000 unknowns to 12,000.</p>
+crossover it is somewhat slower than the dense solve. On a <strong>single-metal-level structure with no vias</strong>
+its unknown ceiling is never below 12,000; a multi-level or via-bearing structure runs accelerated
+against the dense ceiling.</p>
 <div class="callout note">
-<span class="label">It now covers de-embedding's own reference-impedance step too</span>
+<span class="label">It covers de-embedding's own reference-impedance step too</span>
 <p>Working out a de-embedded result's reference impedance needs a separate static calculation on each
 calibration standard, and a standard reproduces your port's own cross-section — so a <em>wide</em>
-port's standard can be as large as the whole structure. That step used to stay dense whatever this
-option said, which meant a run could be refused up front even though the structure's own accelerated
-solve would have succeeded. It is accelerated as well now, and judged against the same 12,000-unknown
-ceiling as everything else. If a run is still refused because a calibration standard is too large,
-the remaining options are a coarser mesh, or turning de-embedding off and reading the raw solve —
-knowing those S-parameters include the port discontinuity and are for diagnostics only.</p>
+port's standard can be as large as the whole structure. With the accelerated solve on, that step is
+accelerated as well and judged against the same ceiling as everything else. If a run is still refused
+because a calibration standard is too large, coarsen the mesh at the port.</p>
 </div>
 <h2 id="aim">The accelerated solve, and when to use it</h2>
 <p><strong>Accelerated solve</strong> is a checkbox in the EM Setup panel, off by default. It changes <em>how</em> the linear
@@ -1388,21 +1390,21 @@ thresholds are measured rather than estimated:</p>
 </tr>
 <tr>
 <td>Above 10,000 unknowns</td>
-<td>Runs to 12,000 by default where the dense path stops at 10,000, and holds a fraction of the dense path's memory.</td>
+<td>Holds a fraction of the dense path's memory, and its ceiling is never below 12,000 on a single-level structure.</td>
 </tr>
 </tbody>
 </table>
 <p>Concretely, the cases where the answer is yes:</p>
 <ul>
-<li><strong>The mesh was refused for being past the 10,000-unknown ceiling</strong> and the structure is on one metal
-level. The refusal names the switch.</li>
+<li><strong>The mesh is past the unknown ceiling your memory allows</strong> and the structure is on one metal level.
+The refusal or warning names the switch.</li>
 <li><strong>A long or wide board at a fine mesh</strong> — anything where N is in the thousands. Measured on a
 length-growth ladder to N ≈ 12,900, the accelerator's working set went 53 MB → 188 MB; the dense
 matrix alone at that size would be 2.3 GB, which is why it is structurally unreachable.</li>
 <li><strong>A de-embedded run whose calibration standard was refused.</strong> A standard reproduces your port's own
 cross-section, so a wide port's standard can be larger than the DUT. Both the standards'
 frequency-domain solves and their static capacitance step are accelerated, and are judged against the
-same 12,000-unknown ceiling.</li>
+same ceiling as the structure.</li>
 <li><strong>A long frequency sweep on a big structure</strong>, where the frequency-independent projection state is
 built once and reused at every point.</li>
 </ul>
@@ -1411,10 +1413,9 @@ built once and reused at every point.</li>
 <li><strong>Small structures.</strong> Below about 1,100 unknowns it is 1.3–1.5× <em>slower</em> than the dense solve, and it
 saves memory you were not short of. A bend, a short line, a single stub — leave it off. This is why
 off is the default.</li>
-<li><strong>A multi-level or via-bearing layout.</strong> The checkbox is disabled, with the reason stated beside it:
-the accelerator projects the single-level horizontal basis family, and a via's vertical current needs
-its own grid kernel per height pairing. Such a mesh is judged against the 10,000-unknown dense
-ceiling whatever the switch says.</li>
+<li><strong>A multi-level or via-bearing layout, if you were hoping for headroom.</strong> It runs accelerated, as a
+bordered system, and is faster and smaller, but its cost is set by how many vertical unknowns it
+carries rather than by N, so it is judged against the dense ceiling whatever the switch says.</li>
 <li><strong>A cross-section (quasi-static) setup.</strong> There is no dense system to accelerate — that kernel's
 solve is closed-form per frequency — so the checkbox is disabled there too.</li>
 <li><strong>When you are checking a result you do not trust.</strong> The two paths are separate implementations of
@@ -1448,7 +1449,7 @@ and says where the capability arrives.</p>
 </tr>
 <tr>
 <td><strong>The predicted unknown count exceeds the ceiling</strong></td>
-<td>Coarsen the mesh, simulate less of the structure, or raise <strong>Memory limit</strong> if this machine has the memory. See <a href="#budget">the budget</a>.</td>
+<td>A warning, not a refusal: Simulate asks, and <strong>Simulate Anyway</strong> starts it. To fit, coarsen the mesh or simulate less of the structure. See <a href="#budget">the budget</a>.</td>
 </tr>
 <tr>
 <td><strong>&quot;Port n is ambiguous&quot;</strong></td>

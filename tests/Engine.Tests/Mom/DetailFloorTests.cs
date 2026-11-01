@@ -337,24 +337,27 @@ public class DetailFloorTests(ITestOutputHelper output)
         // to 1,909. The sentence is correct for the per-axis rule and wrong for the field, and it
         // sends a user in the opposite direction from the one that works.
         // The wording is the subject, not the ceiling: a memory limit sized at the old 5,000-unknown
-        // dense point keeps this fixture refused wherever the shipped ceiling moves (it is 10,000
-        // since 2026-10-29, and this patch then only warns).
+        // dense point keeps this fixture past it wherever the shipped ceiling moves. Past a memory limit
+        // the mesh WARNS (Simulate asks) and the warning carries the same diagnosis a refusal did.
         var p = PatchWithConnectorDetail();
         long? limit = PlanarSystem.ResidentBytes(5_000);
+        static string Past(PlanarMeshReport r)
+            => Assert.Single(r.AllFindings, f => f.IsWarning && f.Text.Contains("Simulate Anyway")).Text;
         var withField = SurfaceMesher.Mesh(p, At(0, tl: true) with { MemoryLimitBytes = limit },
                                            PlanarEdgeReference.LocalConductorWidth);
-        Assert.Equal(PlanarBudgetVerdict.Refused, withField.Verdict);
-        _out.WriteLine(withField.Refusal!);
+        Assert.True(withField.PastMachineLimit);
+        string fieldText = Past(withField);
+        _out.WriteLine(fieldText);
 
-        Assert.DoesNotContain("WILL NOT REDUCE THIS COUNT", withField.Refusal);
-        Assert.Contains("lower Cells per wavelength", withField.Refusal);
-        Assert.Contains("coarsen the Detail floor", withField.Refusal);
+        Assert.DoesNotContain("WILL NOT REDUCE THIS COUNT", fieldText);
+        Assert.Contains("lower Cells per wavelength", fieldText);
+        Assert.Contains("coarsen the Detail floor", fieldText);
 
-        // …and the per-axis rule's own refusal is unchanged, because there the sentence is TRUE.
+        // …and the per-axis rule's own diagnosis is unchanged, because there the sentence is TRUE.
         var perAxis = SurfaceMesher.Mesh(p, At(0, tl: false) with { MemoryLimitBytes = limit },
                                          PlanarEdgeReference.LocalConductorWidth);
-        Assert.Equal(PlanarBudgetVerdict.Refused, perAxis.Verdict);
-        Assert.Contains("WILL NOT REDUCE THIS COUNT", perAxis.Refusal);
+        Assert.True(perAxis.PastMachineLimit);
+        Assert.Contains("WILL NOT REDUCE THIS COUNT", Past(perAxis));
     }
 
     // ══════════════════════════════════════════════════════════════════════════════════════════

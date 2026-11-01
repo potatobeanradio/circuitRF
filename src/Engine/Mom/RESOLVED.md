@@ -12771,3 +12771,438 @@ live in the session scratchpad only; the hooks were removed from the engine befo
   `PlanarFeedExtensionResult.NotDeembedded`, `PlanarKernel.Solve` sets `PlanarPortResolution.DeembedDeclined`, and
   `IsDeembeddable` is false: the port is reported at its cut in its declared Z0, never calibrated against a line of
   a width the metal beyond the cut does not have. A two-cut port ignores its span.
+
+## CAP-1: the dense planar ceiling comes from the machine's memory (2026-10-31)
+
+Brief `docs/sonnet-briefs/brief-em-cap-1-ceiling-from-machine-memory.md`. Changes no answer: it changes which
+runs may start and what the budget says before one does. Design half in `src/Design/RESOLVED.md` §CAP-1.
+
+- **The engine is still told, never asks.** `PlanarMeshSettings.MemoryLimitSource` / `PlanarFillSettings.MemoryLimitSource`
+  (`Setup` default, `MachineLimit`, `PhysicalMemory`) ride beside `MemoryLimitBytes`, outside the positional lists and
+  in no provenance hash. `PlanarKernel.Solve` copies both across. A direct `Solve` or `Mesh` with no limit keeps
+  `UnknownCeiling` (10,000), so every engine test stays machine-independent.
+- **A limit the setup did not state never moves the ACCELERATED ceiling.** `CeilingFor(accelerated, limit, cells,
+  source)` returns `AcceleratedUnknownCeiling` for `accelerated && source != Setup`: that ceiling is a GMRES/near-LU
+  bound (§P8), not a memory one. A setup's own limit keeps the 2026-10-29 rule (`max(lo, 12,000)`). Consequence on a
+  machine with more than ~3 GB: a single-level mesh between 12,000 and the machine's dense ceiling is refused
+  accelerated and runs dense, so `BuildRefusal` now offers "turn the accelerated solve off" there, and the budget
+  and ceiling pair quote the machine's dense count beside 12,000. `SurfaceMesher.GuardCeiling` and
+  `PlanarDeembed.GuardCapacitanceCeiling` drop a machine-derived limit on the accelerated route for the same reason.
+- **Every guard takes the source** (`PlanarSystem.GuardCeiling`, `PlanarFill`'s copy, `FillMerged`, the standards'
+  ceiling in `PlanarSolve`, the capacitance guard), and every limit sentence goes through
+  `SurfaceMesher.LimitOwner`: "this machine's 17 GB of physical memory", "the X GB memory limit set for this machine
+  (Settings ▸ Solvers)", or the setup's unchanged wording. LF3's automatic accelerator for an oversize standard now
+  also fires under a machine-derived limit (it is not the user's number), and its note quotes the dense ceiling it
+  was past (`PlanarAcceleratorWouldFitException.DenseCeiling`) rather than the constant.
+- **The budget states the factor time past 10,000** on the dense path: `SurfaceMesher.EstimatedFactorTime(n)` =
+  `FactorSecondsPerUnknownCubed·n³`, c = 37 s / 11,210³, "Factoring takes about 2 min per frequency point, estimated."
+  Not scaled by `Environment.ProcessorCount`: only this 10-core machine was measured.
+
+**Measured (Release, this 16 GB / 10-core macOS machine, scratch harness, one frequency point, `Deembed: false`):**
+
+| | |
+|---|---|
+| Machine-derived dense ceiling, 17,179,869,184 B physical | 27,878 (cell count derived from N); 28,779–29,307 on real line meshes |
+| Gate 1 — FR-4 50 Ω line 40 mm, cells/λ 112 at 10 GHz | N = 14,781, 7,560 cells; `ResidentBytes` 4.827 GB (matrix 3.496 + cores 1.331); solve 83.9 s (mesh + cores + fill + factor; the estimate for the factor alone is 85 s) |
+| Peak, `/usr/bin/time -l` on the dotnet process | **peak memory footprint 4.886 GB (+1.2 % of `ResidentBytes`)**; max RSS 3.646 GB (−24 %) |
+| Gate 2 — same line, cells/λ 160 | N = 29,087 needs 18.7 GB; refused at the mesh: "past the 27,776-unknown count this machine's 17 GB of physical memory allows" |
+
+**Read the FOOTPRINT on macOS, not max RSS.** The kernel compresses idle pages (the cores, between the fill and the
+factor), and compressed pages leave RSS but not the footprint, so max RSS under-reads a dense point by a quarter.
+
+**De-embedding (§10.7's hero cross-section, 2.9 mm line, 20 mm, 10 GHz, one point).** The DUT and every standard are
+solved CONCURRENTLY, so the honest bound is `ResidentBytes(DUT) + Σ ResidentBytes(standard)`. At cells/λ 80: DUT
+N = 4,236 (0.397 GB) and four standards 2,127 / 2,793 / 2,127 / 2,793 (0.545 GB), sum **0.942 GB**. The LIVE peak
+sits on it: under `DOTNET_GCHeapHardLimit` the point completes at 1.07 GB and runs out at 0.94 GB (0.81 GB with the
+core cap at 1, standards in series). The PROCESS peak without a heap limit is 1.74 GB footprint (1.65 GB at cap 1):
+about 1.8× the sum, all of it collectable — finished standards' matrices are not collected before the next
+allocation. So `PlanarMemoryCheck`'s "before de-embedding adds its calibration standards" is still true and still the
+right caveat, and the machine-derived ceiling, sized on the DUT alone, does not budget the standards: on a plain line
+they are 1.4× the DUT's bytes. On a large board they are small next to the DUT; on a line they are not.
+
+**For CAP-2/CAP-3.** (1) `Mat<Complex>` is one `Complex[]` of N² elements, and a .NET array tops out at
+2,147,483,591 elements, i.e. **N ≤ 46,340 for a full square** — just above the series' 44,000 target; CAP-2's packed
+triangle (N(N+1)/2) is far inside it. (2) The cores are 28 % of `ResidentBytes` at N = 14,781 and 5.1 of 18.7 GB at
+N = 29,087 — CAP-3's quarry. (3) Measure peaks as the footprint, and with a heap limit when the question is the live
+peak, or the GC's laziness reads as a leak. (4) A run at the machine-derived ceiling needs all of physical memory;
+`PlanarMemoryCheck` warns from 75 %, which on 16 GB is about N = 24,000.
+
+## CAP-2: the dense matrix is its lower triangle, in block-column panels (2026-10-31)
+
+Brief `docs/sonnet-briefs/brief-em-cap-2-lower-triangle-storage.md`. Changes no answer on the elemental paths (bit for
+bit); the merged path moved at round-off, for the one reason in item 4.
+
+1. **The layout — `BlockLowerMatrix`.** One contiguous column-major array per block of nb = 64 columns
+   (`SymmetricFactorization.DefaultBlockSize`): rows k … N−1 × nb, leading dimension N − k. Stored entries
+   Σ(N − k)·jb = N²/2 + N·nb/2 when nb divides N. Chosen because it is the strip P7 already walks: the panel factor
+   is one array, and a trailing destination column is one contiguous span of another, so every inner loop still
+   runs over i with both columns contiguous. The classic packed triangle was not used: its column starts are not
+   block-aligned and it saves only N·nb/2 entries (0.15 % at N = 44,000). **One array per panel, not one array**: a
+   single triangle array would hit .NET's 2,147,483,591-element cap near N ≈ 65,500 — past CAP-4's ~60,000 but with
+   no margin — while the largest panel is N·64 elements, so there is no wall at any N this series reaches.
+   `Column(j)` (rows j…N−1 of column j) is the writers' and the substitution's accessor; `this[i, j]` answers either
+   triangle by symmetry; `Lower(i, j)` is a writable reference that refuses the upper triangle (a write there would
+   double-count); `ToDense()` is the named, expensive expansion; `Multiply` is the symmetric mat-vec.
+2. **Writers changed** (each now writes column spans of the triangle; none mirrors any more):
+   `PlanarFill.FillLower` (was `Fill`'s body), its `ScalarBlock` and `AddDirectionBlockFromClasses`;
+   `FillMultiLevelLower` (was `FillMultiLevel`'s body, all three vector arms); `FillMergedLower` (was `FillMerged`'s);
+   `AddSurfaceImpedance` (the CL1 sheet term and the via barrel term — the only writes after the fill blocks); the
+   reference paths `FillByPairs`, `FillByHalves`, `VectorBlock`, `AddDirectionBlock`. `Fill`, `FillMultiLevel` and
+   `FillMerged` keep their signatures and return the triangle's `ToDense()` — the same square bit for bit, since the
+   mirror was always a copy — so ~100 test call sites and Ui's `MimCapacitorTests` are untouched. Nothing else writes
+   Z: port loading and the grounded edge port act through `IPlanarOperator.Solve`. `MirrorLowerToUpper` now serves
+   only the m×m cell matrix P.
+3. **Readers.** `PlanarSystem.Lower` (guarded after factoring, as `Matrix` was); `PlanarSystem.Matrix` is now
+   `Lower.ToDense()`. `Wrap(Mat)` copies the square's lower triangle and leaves the square as it was;
+   `Wrap(BlockLowerMatrix)` is the in-place one. `SymmetricFactorization.Factor(BlockLowerMatrix, …)` consumes its
+   argument; the `Mat` overload copies first. `Residual` has a triangle overload (the same column summation);
+   `TrackFactorizationResidual` keeps a triangle copy, not a square. The NumFlat LU path expands to the square, drops
+   the triangle and factors the square — `ResidentBytes(n, cells, symmetric: false)` is its (pre-CAP-2) figure.
+4. **The merged path is the one summation-order change.** X = TᵀUT is not symmetric, only X + Xᵀ is, so holding X
+   to fold at the end would need the square this brief removes. Each panel's product now folds straight into the
+   triangle, parallel over destination columns c: X[a, c] for a ≥ c (T's column c, sorted by elemental row and
+   consumed by a per-column cursor), then X[c, a] for a > c (the panel's T entries sorted by macro, row c of V
+   gathered once at constant stride). The diagonal takes X[c, c] alone and is doubled at the end, exactly as before;
+   an off-diagonal entry accumulates its two halves interleaved per panel instead of summing each over every panel
+   and then adding. With T = I every X[c, a] above the diagonal is an exact zero, so `RooftopMergeTests`'
+   "nothing merges ⇒ Fill to the bit" still holds unmodified.
+5. **Accounting.** `MatrixBytes(n) = BlockLowerMatrix.Bytes(n)`; `DenseMatrixBytes(n) = 16n²` is the old figure and
+   sizes NumFlat's L and U in `LuFactorBytes`. `ResidentBytes`, `CeilingFor`, every refusal and `PlanarMemoryCheck`
+   follow from the one function. `SurfaceMesher.FactorSecondsPerUnknownCubed` re-measured (item 6).
+
+**Gates (Release scratch harness, this 16 GB / 10-core macOS machine; "before" = the tree with CAP-1 in, built and
+dumped before any CAP-2 edit, never by stashing).**
+
+| Gate | Measured |
+|---|---|
+| Bit-identity, §10.7 hero (FR-4 2.9 × 20 mm, 10 GHz, shipping mesh, N = 552, raw S) | S and raw S: **0 of 8 entries differ in any bit** |
+| Bit-identity, de-embedded hero (same, `Deembed: true`) | **0 of 8 differ** |
+| Bit-identity, multi-level via mesh (MMIC two-level 400 µm line + via, N = 400, conductor loss on) | **0 of 8 differ** |
+| Merged mesh (PM-2 inset patch, 1,852 elemental → 1,690 merged, 6 GHz), raw / de-embedded | max \|ΔS\| **5.6e-17 / 1.1e-14** (≤ 1e-12, item 4) |
+| Factorisation on a real fill vs the pre-CAP-2 square code (coarse 80 mm line, N = 388, 7 panels) | 0 of 388 solved entries differ (test) |
+| Allocation of the stored matrix | N = 1,000: 0.9992× of 16·(N²/2 + N·nb/2); N = 1,984: 1.0002× (test) |
+| Factor time, N = 11,201 (FR-4 line 38.5 mm, cells/λ 96, one point) | before **33.7 / 34.6 / 35.1 s** → after **23.8 / 24.7 / 25.0 s** (−29 %); solve of the same RHS identical to the bit |
+| Fill time, same mesh (warm) | 0.96–1.58 s → 0.85–1.48 s |
+| Merged fill, inset patch at cells/λ 120 (8,716 elemental → 8,382) | 1.71–2.60 s → 1.48–2.30 s (machine under another process's load; not worse) |
+| Peak, one dense point N = 14,781 (FR-4 2.9 × 40 mm, cells/λ 112, 10 GHz) | `ResidentBytes` **3.087 GB** (was 4.827); **peak footprint 3.142 GB** (+1.8 %; CAP-1: 4.886); max RSS 3.00 GB; solve 63 s (was 84) |
+| Live peak, same point, `DOTNET_GCHeapHardLimit` | runs out at 2.80 GB, completes at 2.95 GB — under `ResidentBytes` |
+| Machine-derived dense ceiling | 16e9 B: **33,661**; this machine's 17,179,869,184 B: **34,881** (CAP-1: 27,878); 12 GB: 29,149 |
+
+6. **Why the factorisation got faster, not merely no slower.** Same operations in the same order (the solve hash is
+   identical), different addresses. The panel's leading dimension is N − k, shrinking as the factorisation proceeds,
+   and each panel is one compact strip rather than 64 columns N·16 bytes apart in a 2 GB square; the source panel the
+   trailing update re-reads per destination column is therefore a far smaller, contiguous working set. Not
+   investigated further. `FactorSecondsPerUnknownCubed` is now 24.5 s / 11,201³ (the budget's "about … per frequency
+   point"); `PlanarMemoryLimitTests` pins it as "25 s" at N = 11,210.
+7. **The fill's transient P now sets the live peak — for CAP-3.** At N = 14,781 the factorisation holds the triangle
+   (1.755 GB) + the actual cores (0.202 GB) ≈ 1.96 GB, but the FILL holds the triangle + the m×m cell matrix P
+   (16·m² = 0.914 GB, m = 7,560) + the cores ≈ 2.87 GB, which is where the 2.80–2.95 GB live peak sits.
+   `ResidentBytes` still covers it only because `CoreBytes` quotes 1.331 GB of cores against 0.202 allocated. P is
+   ≈ 4.2·N² against the triangle's 8·N², so the moment CAP-3 makes the cores quote honest, `ResidentBytes` must carry
+   the fill transient (max of the two phases) or P must be bounded in panels (`PlanarFillMerged` already forms P as
+   per-panel rows). At this machine's new ceiling (N = 34,881, m ≈ 17,900) P alone is ≈ 5.1 GB.
+8. **For CAP-4 (complex single on this storage).** The type is complex-double and sealed; a single-precision twin
+   needs its own element type (two `float`s) with the same panel arithmetic (`PanelStart`, `PanelLeading`,
+   `PanelWidth`, `Column`), or a generic over the element. The factorisation's block size IS the matrix's panel
+   width, so a single type sweeping nb sweeps both. Every fill writer goes through `Column(j)`, but the fills are
+   parallel over basis index i and the direction blocks write column `idx[i]` — panels are not filled one at a time
+   today, so "fill in double, round to single panel by panel" needs either a double triangle transient (8·N²) or a
+   fill restructured to visit one panel's columns at a time. `PlanarSystem` holds a `BlockLowerMatrix` directly; a
+   second storage type needs a seam there and in `SymmetricFactorization`.
+
+**Also changed:** `docs/user/src/reference/mom-engine.md`'s budget table (matrix ≈ N² × 8 bytes; 500…20,000 rows
+recomputed from `MatrixBytes`/`ResidentBytes`; ~20 s per point at 10,000), that page regenerated alone. Its next
+paragraph still says a mesh above 10,000 unknowns is refused by default — true of the engine with no limit, not of
+Simulate since CAP-1 — and is left for the owner with the series' doc pass.
+
+Tests: `PlanarP7SymmetricFactorTests` +2 (`CAP2_TheTriangleAnswersEitherTriangleBySymmetry_…`,
+`CAP2_TheTriangleFactorisationIsTheSquareOne_BitForBit_OnARealFill`), `PlanarMemoryAccountingTests` +1
+(`CAP2_TheStoredMatrixIsTheBlockColumnTriangle_…`); `P7_9` now prices the pre-P7 and pre-CAP-2 square with
+`DenseMatrixBytes`.
+
+## CAP-1 follow-up: standards in the ceiling, the machine's memory asks rather than refuses, AIM raised (2026-10-31)
+
+Three decisions on CAP-1's report; supersedes CAP-1's "a machine-derived limit never moves the accelerated ceiling" and
+its "turn the accelerated solve off" remedy, both removed. Changes no answer.
+
+1. **A de-embedded run is judged with its calibration standards** (`PlanarRunMemory`). The standards are solved
+   concurrently with the structure at every point, so the figure judged against any limit is the DUT's
+   `ResidentBytes` + `StandardBytes`: per distinct port cross-section (`PlanarPortCalibrator.SameCrossSection`), the
+   short standard plus the largest long one (`PlannedSolvesAt` solves those two at a point), each built by
+   `PlanarCalibration.BuildSet` over the run's band — meshing only. `WithStandards` carries the figure on
+   `PlanarMeshReport.StandardResidentBytes` / `RunResidentBytes` and judges again: past a SETUP limit it refuses
+   (typed, "with its calibration standards solved beside it … past the X memory limit this EM setup sets"); past the
+   machine's it warns. `PlanarKernel.Solve` calls it after port resolution, and `PlanarRunSize.DenseResidentBytes`
+   is now the total (with `StandardBytes` beside it). On the CAP-2 tree the estimator gives the hero (cells/λ 80)
+   0.354 GB of standards, the same as the sum over the run's own four standard meshes. **A floor, not an exact
+   figure, for a PCAL4 group or a PCAL3-widened standard**: those build more than the port's own line.
+2. **The machine's memory is advisory** (`SurfaceMesher.IsAdvisory`: any source but `Setup`). Past it the mesher's
+   verdict is `Warn`, `PastMachineLimit` is set and `MachineLimitWarning` is the one sentence (mesh, pre-solve
+   check, panel); every guard below the mesher (`SurfaceMesher.GuardCeiling`, `PlanarSystem.GuardCeiling`,
+   `PlanarFill`'s copy, `FillMerged`, the standards' ceiling in `PlanarSolve`, `GuardCapacitanceCeiling`) returns
+   on an advisory limit, so a run the user confirmed is never thrown out by the limit it was handed. The question is
+   the existing `Admit` hook: `PlanarMemoryCheck` asks past 100 % of the machine's figure, and now also whenever
+   `PlanarRunSize.PastMachineCeiling` (the only way an accelerated run, which has no dense figure, is asked).
+   **A setup's own Memory limit still refuses** — it is a number chosen for this design, one field away from being
+   raised, and a design that states it should behave the same on every machine.
+3. **`CeilingFor` treats every source alike**: the machine's memory raises the accelerated ceiling to
+   `max(memory count, 12,000)` as a setup's own limit already did.
+
+**Uncollected garbage, closed where it was garbage.** `PlanarRunMemory.ReleaseFinishedSolve` runs a blocking gen-2
+collection at the end of each of a point's independent solves (structure and standards) when the managed heap is
+≥ 256 MB. Measured on the hero (DUT N = 4,236 + four standards, `RunResidentBytes` 0.61 GB), peak footprint:
+
+| | before | after |
+|---|---|---|
+| solves in series (cap 1) | 0.98 GB | **0.51 GB** |
+| concurrent (cap 10) | 1.21 GB | **0.91 GB** |
+| wall clock | 20.3 / 6.2 s | 20.1 / 6.5 s |
+
+What remains above the live sum concurrently is not garbage: the five fills' m×m `P` transients and the standards'
+static-capacitance LUs are live at once (CAP-2 §7 — CAP-3's). Not tested (a GC assertion would measure the
+runtime); it changes no answer by construction.
+
+Tests: `PlanarMemoryLimitTests` — `AMachineDerivedLimit_SizesBothCeilings_AsASetupsOwnLimitDoes`,
+`PastAMachineDerivedLimit_TheMeshWarns_TheGuardsLetItThrough_AndTheRunProceedsWhenAdmitted`,
+`ADeembeddedRun_IsJudgedWithItsCalibrationStandards` (replacing CAP-1's two).
+
+## CAP-3: the cores quoted as allocated, and the fill's cell potential in bounded panels (2026-10-31)
+
+Brief `docs/sonnet-briefs/brief-em-cap-3-cores-off-the-peak.md`. Changes no answer: every S-parameter below is
+bit-identical to the tree before any CAP-3 edit (dumped from that tree, Release, never by stashing). Design half in
+`src/Design/RESOLVED.md` §CAP-3.
+
+1. **The quote is the allocation, counted.** `PlanarCoreFootprint.Count(mesh)` runs the build's own classification
+   (every band pair keyed as `BuildCores` keys it, the distinct keys counted) and returns the band, the class count,
+   the cut rows and the O(N) vectors; its `Bytes` equals `PlanarFillCores.CoreBytes` to the byte on all nine meshes
+   measured (the seven P5 fixtures, the 38.5 mm line at N = 11,201 and a 20 mm patch at N = 13,944) and on a
+   conformally cut and a two-level via mesh (test). Cached per mesh and per (order, NearRatio, FarRatio). Cost of a
+   count: 0.00–0.07 s up to N = 13,944, 0.37 s at 14,781, 0.85 s at 42,042. **No function of N and the cell count
+   could be the quote**: the gate wants ≥ allocated and ≤ 2× on all seven fixtures, and the class count is a property
+   of the artwork — the 60 mm taper (m = 1,000) allows at most 56,700 classes in the quote and the 80 mm line
+   (m = 1,053) needs at least 84,078. So a mesh in hand is quoted from its count and a bare unknown count (the
+   ceiling before anything is meshed) from `PlanarCoreFootprint.Estimate`: band 0.61·m² (measured 0.508–0.602),
+   classes at a STATED reuse of 50 — not a bound; measured reuse is 15× at N = 3,731, 29× at 11,201, 48× at 14,781,
+   460–500× at 29,087–55,831 on FR-4 lines and 1,800–5,400× on patches, 1.2× on the 2 mm GaAs line.
+
+   | fixture | N | classes | reuse | allocated | counted | old quote (P4 triangles) |
+   |---|---|---|---|---|---|---|
+   | FR-4 hero 20 mm | 552 | 21,582 | 2.5× | 2.82 MB | 2.82 MB | 1.94 MB |
+   | FR-4 line 80 mm | 1,980 | 84,078 | 7.9× | 12.86 MB | 12.86 MB | 24.59 MB |
+   | FR-4 line 256 mm | 3,731 | 160,710 | 14.6× | 28.98 MB | 28.98 MB | 87.12 MB |
+   | taper 20 mm | 1,371 | 11,303 | 26.4× | 2.60 MB | 2.60 MB | 11.79 MB |
+   | taper 60 mm | 1,891 | 18,269 | 30.8× | 4.53 MB | 4.53 MB | 22.34 MB |
+   | GaAs line 2 mm | 297 | 13,474 | 1.2× | 1.69 MB | 1.69 MB | 0.57 MB |
+   | coupled 40 mm lines | 2,056 | 116,205 | 5.7× | 16.66 MB | 16.66 MB | 26.60 MB |
+
+   The old quote was under the allocation on the hero and the GaAs line and 3–5× over it on the long ones.
+2. **The index stays, and why (the brief's a/b/c, measured at N = 11,201, 17.9 M band pairs, 618,760 classes).**
+   (a) Deriving a pair's class at fill time (`PairClassifier.Key` + a lookup) costs 55–72 ns per pair per thread
+   with a binary search over the keys and 74–79 ns with a dictionary, against 2–8 ns for the stored read; the fill
+   reads about N² classes (four per same-direction basis pair), so +0.6–0.9 s on a 0.77 s fill — about double, far
+   past +10 %. (b) Releasing it before the factorisation is cheap (a rebuild is one band classification, 0.1–0.4 s
+   against a 57 s factor at N = 14,781) and buys nothing: the FILL reads the index while it writes the whole
+   triangle, so a point's peak is the fill phase (triangle + cores + fill transient = 2.109 GB at N = 14,781) and the
+   factorisation's (1.960) is below it; dropping the index there takes 1.96 to ~1.84 and leaves the peak where it is.
+   (c) Two bytes needs ≤ 32,767 classes; the lines at N = 11–15k have 619k–650k. Only a uniform patch fits (13,947
+   classes at N = 13,944, index 102 → 51 MB, 3 % of that point). None built; the index is 6–7 % of 8·N² on every
+   mesh measured (4 bytes × ~0.54·m²), the class table 0–4 % at N ≥ 11,000.
+3. **The fill's cell potential is formed in bounded panels** (`PlanarPotentialPanels.cs`, both `FillLower` and
+   `FillMultiLevelLower`). The scalar block writes columns a panel at a time from rows of P held under
+   `PlanarFill.PotentialBudgetBytes(n)` = max(64 MB, triangle/32). A row starts at the smallest cell any later
+   column reads (the suffix minimum over horizontal bases — the mesher's row-major numbering makes that the owner
+   cell); via bases (all after the horizontal ones, R-via-5) are carried as a short per-row segment over the via
+   cells, so one low via cell does not stretch every row to cell 0. A row's upper part is evaluated, its lower part
+   copied from the row it mirrors while that row is held, so each pair is evaluated about once — which is what keeps
+   the multi-level fill (whose P is ~45 % of its time, per-pair quadrature, no class memo) at its old speed. Rows are
+   pooled for the fill. `ScalarPotentialMatrix` (the m×m P) still exists for the static capacitance and the tests;
+   the class path's entry is one struct (`ClassPotential`) both read, the multi-level one one function
+   (`LevelPotentialEntry`). `PlanarFillMerged` keeps its own panels (64 MB). A two-level mesh at N = 3,876 was the
+   only multi-level case timed: fill 17.5–17.8 s against 17.4–18.1 s before, under another process's load.
+4. **One function.** `PlanarSystem.ResidentBytes(n, PlanarCoreFootprint, symmetric)` = triangle + cores +
+   max(D, `FillTransientBytes`), the transient being min(panel budget, 16·m²) + 128 bytes per class (the vector and
+   pulse remainder tables) + O(N). `ResidentBytes(n, cells)` is it on the estimate, `ResidentBytes(mesh)` on the
+   count. `PlanarCoreFootprint.For(mesh, n, cells)` picks: the count when there is a mesh and N ≤ 60,000, the
+   estimate otherwise. The mesher judges a LIMIT on the count (`CeilingFor(accelerated, limit, PlanarCoreFootprint)`
+   is the largest N whose peak fits beside this mesh's cores, so n ≤ ceiling ⇔ bytes ≤ limit); with no limit its
+   sentences keep the estimate, which is what every guard without a mesh quotes (P1_6). Every guard with a mesh
+   (`PlanarSystem.GuardCeiling`, `PlanarFill`'s, `FillMerged`, `SurfaceMesher.GuardCeiling` from the solve context,
+   the standards' ceiling in `PlanarSolve`) takes it, so a setup's limit is judged the same way at the mesh and at the
+   fill. `PlanarMeshReport.RunResidentBytes`, `MachineLimitWarning` and `PlanarRunMemory` follow.
+5. **De-embedded runs.** Each standard is priced on its own count, with its own fill transient. And the one step
+   that is not a solve is now in the figure: the calibrators' static capacitance (D7) forms a dense m×m P and
+   NumFlat's L and U over the LONGEST standard (48·m² bytes) once, after the first point's solves, when the structure
+   holds only its cores. `StandardBytes(…, structure)` returns max(the concurrent solves, cores + that step − the
+   structure's point), so it binds only where that step is the larger (a short structure behind a wide port).
+6. **The core build's 8-byte-per-pair key array is gone.** `BuildCores` gathers the distinct keys per chunk through
+   `ForRows` (`DistinctBandKeys`, shared with the count) instead of storing a key per band pair (0.25 GB at
+   N = 14,781). Same sorted keys, same class ids. Core build 1.25 → 1.04 s at N = 11,201.
+
+**Gates (Release scratch harness; this 16 GB / 10-core macOS machine, under another process's load throughout).**
+
+| Gate | Measured |
+|---|---|
+| Bit-identity, §10.7 hero (N = 552, raw and de-embedded) | 0 of 8 / 0 of 8 entries differ in any bit |
+| Bit-identity, multi-level via mesh (N = 400) and a larger one (2 mm, 400 cells/λ, N = 3,876, several panels) | 0 of 8 / 0 of 8 |
+| Bit-identity, merged mesh (raw / de-embedded) | 0 of 2 / 0 of 2 |
+| Bit-identity, de-embedded line at 80 cells/λ (DUT N = 4,236, P over budget → several panels) | 0 of 8 |
+| Panel budget 2–16 kB against unbounded (forced eviction), one-level real fill and a via-tail scalar block | bit for bit (tests) |
+| `CoreBytes` (counted) against allocated, seven P5 fixtures | equal, all seven (≥ and within 2×: 1.000×) |
+| Held at the factorisation, N = 14,781 (live, LOH compacted) | 1.960 GB = **1.121 × (8·N² + 16·N)** — the triangle's panel diagonals 0.4 %, the cores 0.202 GB (index 0.123, class table 0.078). **The ≤ 10 % gate is missed** by the index (item 2) |
+| `ResidentBytes(mesh)` at that point | 2.109 GB (triangle 1.755 + cores 0.202 + fill transient 0.151); CAP-2's figure was 3.087 |
+| Live peak of the whole point, `DOTNET_GCHeapHardLimit` | runs out at 2.10 GB, completes at 2.15 GB (CAP-2: 2.80 / 2.95) |
+| Process peak, `/usr/bin/time -l` | peak footprint **2.352 GB** (+11.5 % over `ResidentBytes`); same day, tree before CAP-3: 3.139 GB |
+| Fill, N = 11,201 (median of 6 warm) | 0.687–0.711 s against 0.769–0.807 s before (−8 to −15 %), same checksum |
+| Machine-derived dense ceiling (a priori, `CeilingFor` at 16e9) | **40,607** (CAP-2: 33,661); this machine's 17,179,869,184 B: **42,079** (34,881); 12e9: 35,163 |
+
+**The footprint is 11.5 % over the live figure, where CAP-2's was 1.8 %.** Not the build's key array (removing it
+moved the footprint by nothing) and not the panel rows (budget-bounded and pooled). At N = 14,781 a fill allocates about 0.21 GB of
+short-lived objects beyond the triangle, the rows and the remainder tables (measured: 0.31 / 0.40 / 0.61 GB besides
+the triangle at panel budgets of 16 / 64 / 256 MB), and the runtime keeps much of that committed; with one 0.9 GB P the same allowance was hidden inside a single large array. So a
+run sized to the machine's memory by `ResidentBytes` lands about a tenth over it in physical memory. Not corrected
+in the figure: it is the runtime's, not the point's, and the live peak is honest.
+
+**On real artwork the ceiling is higher than the a-priori one.** A 40 mm FR-4 line at N = 29,087 counts 0.49 GB of
+cores (reuse 460×) against the estimate's 1.33 GB; with that mesh's own cores a 16e9 figure holds about 42,400.
+
+**For CAP-4 (complex single + GMRES against a re-filled double operator).** (1) The fill now has a panel loop for
+the scalar half (`ScalarBlockInPanels`), with P bounded; the vector blocks are still row-parallel over direction
+positions writing whole columns of every panel, so "fill a panel in double, round it to single" needs the vector
+blocks reordered to the same column ranges — the scalar loop is the template. (2) A matrix-free double product for
+the refinement is a re-fill; at N = 11,201 one fill is ~3 % of a factorisation, so a few products are affordable if
+each is done panel by panel under this budget rather than as a double triangle. (3) At 4 bytes per entry the cores
+become 13–23 % of a point on lines (6.5 % on patches), and the index alone ~13 %: (c) and (a) are worth re-asking
+there. (4) `ResidentBytes` is the one place to change: the triangle term becomes the single-precision one and the
+fill-phase term must carry whatever double working set the fill keeps.
+
+Tests: `PlanarFillTests` +2 (`CAP3_APanelledFill_IsTheWholeOne_BitForBit_OnOneLevel`,
+`CAP3_APanelledScalarBlock_ReadsEveryEntryFromTheRightRow_WithAViaTail`); `PlanarMemoryAccountingTests`
+`CAP3_TheCountedCoresAreWhatTheBuildAllocates_LowAndHighReuse_CutAndTwoLevel` replaces `P1_5` (whose claim — the
+P4 reconstruction within 0.6–20× — is retired); `PlanarP2MemoryWinsTests.P2_2` now asserts the count equals the
+allocation; `PlanarP7SymmetricFactorTests.P7_9` and `PlanarMemoryLimitTests` restate the figure (the counted one for a
+mesh). `docs/user/src/reference/mom-engine.md`'s budget table (held: 4 MB / 56 MB / 0.31 / 1.0 / 3.9 GB) and the
+16 GB figure (about 40,000) updated, that page regenerated alone.
+
+## CAP-1 follow-up 2: no memory limit refuses — Settings ▸ Solvers is the one limit (2026-10-31)
+
+Owner decision: a per-setup limit that refused while the machine's offered Simulate Anyway made no sense, so the EM
+setup's own Memory limit is gone (UI and `.cem`; `src/Design/RESOLVED.md` §CAP-1 follow-up 2). Supersedes the
+"a setup's own limit still refuses" half of §CAP-1 follow-up. Changes no answer.
+
+- **Kept: `PlanarMeshSettings.MemoryLimitBytes` / `PlanarFillSettings.MemoryLimitBytes`** as the channel the run service
+  hands the resolved machine figure down in (`PlanarMemoryCheck.WithMachineCeiling`, which now REPLACES whatever a
+  setup's mesh holds), and **`MemoryLimitSource`** for the wording only. `PlanarMemoryLimitSource.Setup` is removed:
+  nothing produces it from a document, `circuitrf em --memory-limit` and the MCP `memoryLimitGB` already arrived as
+  `MachineLimit` (the headless spelling of Settings ▸ Solvers), and a limit stated with no source is taken as
+  `MachineLimit` (= 0, the default) — which is what the engine tests that hand a limit straight to the mesher now are.
+- **Every memory limit is advisory.** `IsAdvisory`, `LimitSentence` and every guard's limit branch are gone: with a
+  limit set, `SurfaceMesher.GuardCeiling`, `PlanarSystem.GuardCeiling`, `PlanarFill`'s copy, `FillMerged`,
+  `GuardCapacitanceCeiling` and the standards' ceiling in `PlanarSolve` return; `PlanarRunMemory.WithStandards` only
+  warns. The mesh past a limit WARNS, and the warning now carries the refusal's own diagnosis — which quantity binds
+  and "What acts on the count here" (`BuildRefusal(…, remediesOnly: true)`) — so a user asked to Simulate Anyway is
+  owed the remedies a refused one was; `WithStandards` keeps that diagnosis when it re-prices with the standards.
+- **What still refuses** is a run with NO limit at all — an engine-direct caller, or a machine whose memory could not
+  be read — at the fixed 10,000 / 12,000, plus the grid guard (`MaxGridCells`), which is not a memory question. That
+  refusal's last remedy now names Settings ▸ Solvers rather than the setup.
+- **The decline is the ceiling's outcome now**, so `EmRunService` puts R-as8-6's Create Schematic from Artwork pointer
+  on a memory decline (`em.refused.memory`) as it did on the mesh-ceiling refusal.
+
+Tests rewritten rather than dropped: `PlanarMemoryLimitTests` (the verdict warns with what the mesh needs; the guards
+let any limit through and hold the fixed ceiling without one; the standards' warning), `DetailFloorTests`
+(the transmission-line wording asserted on the warning's diagnosis), `EmRunSeverityCliTests` (stops the run with
+`--memory-limit` instead of a `.cem` limit), `EmRunServiceTests`, `EmCeilingRefusalTests`' remedy sentence.
+
+## CAP-4 Stage A: single-precision factor + GMRES in double — accuracy passes, low frequency does not (2026-10-31)
+
+Brief `docs/sonnet-briefs/brief-em-cap-4-mixed-precision-experiment.md`, Stage A only (gates E1-E3). **Decision:
+not shipped; Stage B not run; the experiment's code was removed** (see "The code" below). The measurements here are
+the record.
+
+**What was built for the measurement** (since removed): `ComplexSingle` (two floats);
+`BlockLowerMatrixSingle` (CAP-2's block-column layout, filled by rounding the double triangle — the double one is
+kept as the operator, which is Stage A's simplification); `SingleSymmetricFactorization` (P7's LDLᵀ, the same loops
+in the same order and parallel decomposition, every product in float; the substitution reads the float factor and
+keeps the vector in double); `MixedPrecisionSolve` (`PlanarGmres`, full, right-preconditioned by the single factor,
+on `BlockLowerMatrix.Multiply`, one RHS at a time, up to 4 refinement passes); `MixedPrecisionNotConvergedException`.
+Stage A instruments (`MaxIterations` 60, `Tolerance`, `Observer`) are internal statics a scratch harness sets.
+
+1. **The convergence test is the NORMWISE BACKWARD ERROR η = ‖b − Zx‖/(‖Z‖‖x‖ + ‖b‖), not ‖b − Zx‖/‖b‖.** The first
+   build used the relative residual and "failed" below 300 MHz; the double LDLᵀ itself reaches only 1.3e-6 / 1.3e-8 /
+   1.7e-9 relative residual at 10 / 100 / 300 MHz on the same matrix (FR-4 2.9 × 10 mm, N = 724), so 1e-10 there is
+   unreachable by any double solve and measures the criterion, not the preconditioner. η of the double LDLᵀ is
+   5e-16…8e-16 at every frequency (backward stable; growth 1.00). ‖Z‖₂ is estimated by 8 power steps on ZᴴZ (16
+   products — a Stage-A convenience; Stage B must take it from the fill).
+2. **η = 1e-10 (the brief's figure) leaves |ΔS| ~1e-12 raw and up to 6e-7 de-embedded.** The de-embedding amplifies:
+   on the GaAs line at 1 GHz the double LDLᵀ against NumFlat's LU differs by 4e-18 raw and 2.2e-12 de-embedded, i.e.
+   ×~1e6. At η = 1e-12 the same point is 3.7e-9 for +1-2 iterations at ordinary frequencies. **1e-12 is the figure a
+   Stage B should use.**
+
+**E1 / E2 — PASS** (Release scratch harness, double path vs mixed path through `PlanarKernel.Solve`, max |ΔS| over all
+entries, η = 1e-10 / η = 1e-12; iterations are operator products per RHS):
+
+| case | f | N | max \|ΔS\| at 1e-10 | at 1e-12 | iterations (1e-10 / 1e-12) |
+|---|---|---|---|---|---|
+| §10.7 hero, FR-4 2.9 × 20 mm, raw | 2 / 6 / 10 GHz | 552 | 5.4e-13 / 5.0e-11 / 1.6e-11 | 4.0e-15 / 4.7e-14 / 5.1e-15 | 2-3 / 3-4 |
+| same, de-embedded | 2 / 6 / 10 GHz | 552 (+ standards 297-569) | 4.1e-10 / 6.5e-9 / 3.6e-9 | 1.4e-11 / 4.9e-12 / 6.7e-13 | 2-3 / 3-4 |
+| two-level GaAs line + via, raw | 1 / 10 GHz | 400 | 1.0e-12 / 3.3e-11 | 7.2e-15 / 9.5e-14 | **60** / 5 → **115** / 8 |
+| PM-2 merged inset patch (1,852 → 1,690) | 5 / 6 GHz | 1,690 | 3.6e-10 / 4.3e-12 | 3.4e-12 / 9.2e-14 | 3 / 4 |
+| lossy GaAs line 72 µm × 2 mm, de-embedded | 1 / 10 / 20 GHz | 297 (+ 195-263) | **6.2e-7** / 9.2e-8 / 5.0e-9 | 3.7e-9 / 9.1e-11 / 6.6e-11 | 16-41 / 3-4 / 3 → 25-45 / 5-6 / 4-5 |
+
+Every run is conductor-lossy (CL3's default); the GaAs line is the one where the conductor term dominates.
+
+**E3 — FAILS, and there is no clean frequency threshold.** Iterations per RHS (η = 1e-10, cap raised to 300-400 to
+see the count; the shipped cap is 60):
+
+| mesh | 10 | 20 | 30 | 50 | 100 | 200 | 300 | 500 MHz | 1 | 2 | 3 | 10 | 20 GHz |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| FR-4 2.9 × 10 mm, mesh at 20 GHz, N = 724, raw | 184-196 | 167-273 | 201-210 | 238-244 | 175-190 | 68-70 | 28-38 | 5-10 | 3-5 | — | 3 | 2-3 | 2 |
+| same, de-embedded (standards N = 1,345 at 300 MHz) | | | | ✗ (400) | ✗ (400) | | 25-106 | | 4-5 | | | 2-3 | |
+| FR-4 2.9 × 20 mm, shipping mesh, N = 552 | | | | | | 17-19 | 11 | 6-7 | 3-4 | | | | |
+| FR-4 2.9 × 80 mm, shipping mesh, N = 1,980 | | | | | | 122-132 | 24-33 | 5-6 | 3-4 | | | | |
+| FR-4 2.9 × 200 mm, shipping mesh, N = 4,836 | | | | | | 167-186 | 67-69 | 12-13 | 7 | | | | |
+| FR-4 2.9 × 20 mm, cells/λ 80 at 10 GHz, N = 4,236 | | | | | ✗ (400) | | ✗ (400) | | 61-65 | 4 | 4 | 3 (at 10 GHz) | |
+| two-level GaAs + via, N = 400 | (LF2: conduction solve, not reached) | | | | 73-78 | | | | 63 | | | 5 | 3 |
+
+|ΔS| stays at 1e-11…1e-13 wherever the solve converges, including 10 MHz — the error that remains in x at low
+frequency (max|Δx|/max|x| 0.25 at 10 MHz, η 1e-10) lies in directions the port currents do not see. The failure is
+cost and convergence, not accuracy: **a cliff** of a factor 2-3 in frequency, from 3-7 iterations to 60-400, with
+GMRES stagnating near η ≈ 1e-10 below it (✗ = still above 1e-10 after 400). It is the expected one — κ(Z) grows as
+the scalar-potential term separates from the vector one, and once κ·ε_single ≈ 1 the single factor stops being a
+preconditioner. Where the cliff sits is NOT a frequency:
+
+- **it rises with refinement**: ~300-500 MHz on the shipping FR-4 mesh, ~1-2 GHz at cells/λ 80 (same line);
+- **it rises with N at fixed cell size**: 200 MHz is 17 iterations at N = 552, 122 at 1,980, 167 at 4,836;
+- **it depends on the structure**: the two-level GaAs via mesh (3 µm between levels) is already at 60-115 iterations
+  at 1 GHz, while its 10 GHz point takes 5-8;
+- `SmallestPivotRatio` does not predict it across meshes (1.7e-5 → 3 iterations at N = 724, 1.5e-5 → 37-82 at
+  N = 4,236).
+
+So the only clean fallback is a-posteriori — an iteration cap, then factor in double — and that exists only where the
+double factor fits, which is exactly where CAP-4 is not needed for capacity. Past the double ceiling a point below its
+cliff could only be refused, and the cliff moves UP as the mesh grows toward that ceiling.
+
+**Iterations at moderate N (10 GHz, above the cliff):** 2 (N = 552), 2 (1,368), 3 (4,236); 7 at N = 4,836 at 1 GHz.
+Above the cliff the count is flat in N; the cliff's position is what grows.
+
+**One cost figure (not E4, which is Stage B's):** at N = 11,201 the SCALAR single factor (round + factor) is 23.4 s
+against the double's 24.9 s — 6 % faster. Half the bytes alone buys nothing; any time win is the brief's
+`Vector<float>` work, unmeasured.
+
+**Recommendation: do not ship, and do not proceed to Stage B as specified.** E1 and E2 pass with margin at η = 1e-12,
+but E3 fails without a frequency threshold a switch could use, and the fallback that is clean (factor in double) is
+unavailable at the N the experiment exists for. Stage B's own per-point cost above the cliff would be roughly 5-10
+re-fills (iterations + one true-residual product per pass + a norm taken from the fill) ≈ 4-7 s at N = 11,201, on top of
+a single factor that is no faster until vectorised; below the cliff, 60-400 re-fills or a refusal. What would change
+the answer is a low-frequency-stable formulation (a loop/star-style basis change that removes the ω-separation from
+κ), not anything in the precision. If the owner wants the capacity regardless, the narrowed variant is: mixed only
+past the double ceiling, a 30-iteration cap that refuses the POINT by name with its frequency, and the user told that
+low points of a large run may be refused — a product decision, not a measurement.
+
+**The code**: one new file (~400 lines), a ~15-line seam in `PlanarSystem`, one settings property, four tests. Small
+and tested, but with no use without Stage B — so it was **removed** when the series closed, along with the switch,
+the seam and the tests. Rebuilding it from this description is a few hours; the tables above are what it was for.
+
+Its tests (4, all passed before removal): the single triangle is the double
+one rounded entry by entry in the same layout; the single LDLᵀ recovers a known dyadic L·D·Lᵀ across panels (block
+size 4); the mixed solve matches the double one to 1e-8 relative on a real coarse 80 mm FR-4 fill; a solve that cannot
+converge throws `MixedPrecisionNotConvergedException` naming the switch.

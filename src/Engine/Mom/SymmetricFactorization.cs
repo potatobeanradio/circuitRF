@@ -61,6 +61,15 @@
 //
 // R-fil-11's rule is preserved exactly — the parallelism is over destinations each written by one
 // iteration, so the answer does not depend on the schedule and cap 1 and cap 10 agree BIT FOR BIT.
+//
+// ── CAP-2 (2026-10-31): THE MATRIX IS A BlockLowerMatrix ────────────────────────────────────────
+//
+// The factorisation now runs on the block-column lower triangle (BlockLowerMatrix's header) rather
+// than on a square Mat<Complex> whose upper half it never read. The panel IS one of that type's
+// arrays, and a trailing destination column is one contiguous span of another, so every loop below
+// is the loop it was — same operations, same order, same parallel decomposition — over different
+// addresses. The factors are bit-identical to the square's (gated). The block size is the matrix's
+// own: the layout and the blocking are one decision.
 
 using System.Numerics;
 using NumFlat;
@@ -72,10 +81,10 @@ namespace CircuitRF.Engine.Mom;
 /// conjugation, and no second copy of the matrix anywhere. See this file's header for the algorithm
 /// and for the stability instruments the gates read.
 ///
-/// <para><b>The matrix handed to <see cref="Factor"/> is CONSUMED.</b> Its lower triangle comes back
-/// holding L and its upper triangle is untouched (i.e. it still holds Z's own upper triangle, which
-/// is stale the moment the first block is updated). Nothing here reads the upper triangle, and
-/// nothing may: a caller that needs Z afterwards must copy it BEFORE factoring.</para>
+/// <para><b>The <see cref="BlockLowerMatrix"/> handed to <see cref="Factor(BlockLowerMatrix, PlanarFillSettings?)"/>
+/// is CONSUMED</b>: it comes back holding L. A caller that needs Z afterwards copies it BEFORE
+/// factoring. The <see cref="Mat{T}"/> overload copies the lower triangle into a new
+/// <see cref="BlockLowerMatrix"/> first and leaves its argument as it was.</para>
 /// </summary>
 public sealed class SymmetricFactorization
 {
@@ -86,10 +95,10 @@ public sealed class SymmetricFactorization
     /// </summary>
     public const int DefaultBlockSize = 64;
 
-    private readonly Mat<Complex> _a;
+    private readonly BlockLowerMatrix _a;
     private readonly Complex[] _d;
 
-    private SymmetricFactorization(Mat<Complex> a, Complex[] d,
+    private SymmetricFactorization(BlockLowerMatrix a, Complex[] d,
                                    double growth, double smallestPivotRatio, double largestEntry)
     {
         _a                  = a;
@@ -131,7 +140,10 @@ public sealed class SymmetricFactorization
     // ══════════════════════════════════════════════════════════════════════════════════════════
 
     /// <summary>
-    /// Factor <paramref name="a"/> in place. <b>The matrix is consumed</b> — see the class note.
+    /// Factor <paramref name="a"/> — the dense square's LOWER triangle, copied into a
+    /// <see cref="BlockLowerMatrix"/> at <paramref name="blockSize"/> and factored there.
+    /// <paramref name="a"/> itself is not modified (CAP-2: the in-place form is the
+    /// <see cref="BlockLowerMatrix"/> overload, which is what the solver calls).
     /// </summary>
     /// <param name="settings">Supplies the ONE parallel cap, exactly as the fill's own row loop
     /// reads it: a <see cref="PlanarFillSettings.Budget"/> if a fanned-out run attached one,
@@ -150,57 +162,74 @@ public sealed class SymmetricFactorization
         if (blockSize < 1)
             throw new ArgumentOutOfRangeException(nameof(blockSize), blockSize,
                 "A block of no columns would make no progress.");
+        return Factor(BlockLowerMatrix.FromLower(a, blockSize), settings);
+    }
+
+    /// <summary>
+    /// <b>Factor <paramref name="a"/> in place</b> — the shipped path. <b>The matrix is consumed</b>:
+    /// it comes back holding L (unit lower triangular, diagonal not stored as such) — see the class
+    /// note. The block size is <paramref name="a"/>'s own panel width.
+    /// </summary>
+    /// <param name="settings">The ONE parallel cap; see the <see cref="Mat{T}"/> overload.</param>
+    public static SymmetricFactorization Factor(BlockLowerMatrix a, PlanarFillSettings? settings = null)
+    {
+        ArgumentNullException.ThrowIfNull(a);
+        int n = a.Size;
+        if (n == 0)
+            throw new ArgumentException(
+                "A symmetric factorisation needs a square, non-empty matrix; this one is 0×0.", nameof(a));
 
         var st  = settings ?? PlanarFillSettings.Default;
-        int lda = a.Stride;
-        var mem = a.Memory;
         var d   = new Complex[n];
 
         // Before anything is overwritten: the scale the two stability ratios are measured against.
         // One pass over the lower triangle, O(N²) reads and no writes — invisible beside the cubic.
         double largest = 0;
+        for (int j = 0; j < n; j++)
         {
-            var s = mem.Span;
-            for (int j = 0; j < n; j++)
+            var col = a.Column(j);
+            for (int i = 0; i < col.Length; i++)
             {
-                int cj = j * lda;
-                for (int i = j; i < n; i++)
-                {
-                    double m = Magnitude(s[i + cj]);
-                    if (m > largest) largest = m;
-                }
+                double m = Magnitude(col[i]);
+                if (m > largest) largest = m;
             }
         }
 
-        int nb = Math.Min(blockSize, n);
+        int nb = a.BlockSize;
 
-        for (int k = 0; k < n; k += nb)
+        for (int pk = 0, k = 0; k < n; pk++, k += nb)
         {
-            int jb = Math.Min(nb, n - k);
-            FactorPanel(mem.Span, n, lda, d, k, jb);
+            int jb  = a.PanelWidth(pk);
+            int lda = a.PanelLeading(pk);
+            FactorPanel(a.Panel(pk), n, lda, d, k, jb);
 
             int start = k + jb;
             int count = n - start;
             if (count <= 0) break;
 
             // R-fil-11's shape: one destination column per iteration, written by that iteration
-            // alone. The source columns k … k+jb-1 are read-only for the whole loop.
+            // alone. The source columns k … k+jb-1 — this panel — are read-only for the whole loop.
+            // Element (i, p) of the panel is s[(i − k) + (p − k)·lda]; the destination column's
+            // span starts at its diagonal, so dst[i − col] is element (i, col).
+            int panel = pk, kk = k;
             PlanarFill.ForRowsOf(st, count, t =>
             {
-                var s   = mem.Span;
+                var s   = a.Panel(panel);
                 int col = start + t;
-                int cc  = col * lda;
-                for (int p = k; p < start; p++)
+                var dst = a.Column(col);
+                int len = n - col;
+                for (int p = kk; p < start; p++)
                 {
-                    int cp = p * lda;
-                    Complex c = d[p] * s[col + cp];
+                    int cp = (p - kk) * lda + (col - kk);         // element (col, p)
+                    Complex c = d[p] * s[cp];
                     if (c == Complex.Zero) continue;
                     double cr = c.Real, ci = c.Imaginary;
-                    for (int i = col; i < n; i++)
+                    var src = s.Slice(cp, len);                   // rows col … n−1 of column p
+                    for (int i = 0; i < len; i++)
                     {
-                        Complex l = s[i + cp];
+                        Complex l = src[i];
                         double lr = l.Real, li = l.Imaginary;
-                        s[i + cc] -= new Complex(lr * cr - li * ci, lr * ci + li * cr);
+                        dst[i] -= new Complex(lr * cr - li * ci, lr * ci + li * cr);
                     }
                 }
             });
@@ -208,16 +237,13 @@ public sealed class SymmetricFactorization
 
         // Growth, after the fact: one pass over the strict lower triangle, which now holds L.
         double growth = 0;
+        for (int j = 0; j < n; j++)
         {
-            var s = mem.Span;
-            for (int j = 0; j < n; j++)
+            var col = a.Column(j);
+            for (int i = 1; i < col.Length; i++)
             {
-                int cj = j * lda;
-                for (int i = j + 1; i < n; i++)
-                {
-                    double m = Magnitude(s[i + cj]);
-                    if (m > growth) growth = m;
-                }
+                double m = Magnitude(col[i]);
+                if (m > growth) growth = m;
             }
         }
 
@@ -232,13 +258,14 @@ public sealed class SymmetricFactorization
     /// The unblocked right-looking LDLᵀ of one panel — columns <paramref name="k"/> …
     /// <paramref name="k"/>+<paramref name="jb"/>-1, every row below the diagonal, and the rank-1
     /// updates that stay INSIDE the panel. Everything outside it is the caller's trailing update.
+    /// <paramref name="s"/> is the panel's own array: element (i, j) at (i − k) + (j − k)·lda.
     /// </summary>
     private static void FactorPanel(Span<Complex> s, int n, int lda, Complex[] d, int k, int jb)
     {
         int end = k + jb;
         for (int j = k; j < end; j++)
         {
-            int cj = j * lda;
+            int cj = (j - k) * lda - k;                           // s[i + cj] is element (i, j)
             Complex dj = s[j + cj];
             if (dj == Complex.Zero)
                 throw new InvalidOperationException(
@@ -266,7 +293,7 @@ public sealed class SymmetricFactorization
                 Complex c = dj * s[q + cj];
                 if (c == Complex.Zero) continue;
                 double cr = c.Real, ci = c.Imaginary;
-                int cq = q * lda;
+                int cq = (q - k) * lda - k;
                 for (int i = q; i < n; i++)
                 {
                     Complex l = s[i + cj];
@@ -312,19 +339,17 @@ public sealed class SymmetricFactorization
             x[r] = col;
         }
 
-        var s   = _a.Memory.Span;
-        int lda = _a.Stride;
-
+        // Column j of L from its diagonal down: lj[i − j] is L[i, j] (CAP-2's block-column store).
         // Forward: L y = b, unit lower triangular, column sweep.
         for (int j = 0; j < n; j++)
         {
-            int cj = j * lda;
+            var lj = _a.Column(j);
             for (int r = 0; r < p; r++)
             {
                 Complex yj = x[r][j];
                 if (yj == Complex.Zero) continue;
                 var col = x[r];
-                for (int i = j + 1; i < n; i++) col[i] -= s[i + cj] * yj;
+                for (int i = j + 1; i < n; i++) col[i] -= lj[i - j] * yj;
             }
         }
 
@@ -337,12 +362,12 @@ public sealed class SymmetricFactorization
         // Backward: Lᵀ x = z. Column j of L is row j of Lᵀ, so this is a dot product down a column.
         for (int j = n - 1; j >= 0; j--)
         {
-            int cj = j * lda;
+            var lj = _a.Column(j);
             for (int r = 0; r < p; r++)
             {
                 var col = x[r];
                 Complex acc = Complex.Zero;
-                for (int i = j + 1; i < n; i++) acc += s[i + cj] * col[i];
+                for (int i = j + 1; i < n; i++) acc += lj[i - j] * col[i];
                 col[j] -= acc;
             }
         }
@@ -368,24 +393,21 @@ public sealed class SymmetricFactorization
         var work = new Complex[n];
         for (int i = 0; i < n; i++) work[i] = b[i];
 
-        var s   = _a.Memory.Span;
-        int lda = _a.Stride;
-
         for (int j = 0; j < n; j++)
         {
             Complex yj = work[j];
             if (yj == Complex.Zero) continue;
-            int cj = j * lda;
-            for (int i = j + 1; i < n; i++) work[i] -= s[i + cj] * yj;
+            var lj = _a.Column(j);
+            for (int i = j + 1; i < n; i++) work[i] -= lj[i - j] * yj;
         }
 
         for (int i = 0; i < n; i++) work[i] /= _d[i];
 
         for (int j = n - 1; j >= 0; j--)
         {
-            int cj = j * lda;
+            var lj = _a.Column(j);
             Complex acc = Complex.Zero;
-            for (int i = j + 1; i < n; i++) acc += s[i + cj] * work[i];
+            for (int i = j + 1; i < n; i++) acc += lj[i - j] * work[i];
             work[j] -= acc;
         }
 
@@ -438,6 +460,34 @@ public sealed class SymmetricFactorization
             }
             ax[j] += acc;
         }
+
+        double num = 0, den = 0;
+        for (int i = 0; i < n; i++)
+        {
+            Complex r = ax[i] - b[i];
+            num += r.Real * r.Real + r.Imaginary * r.Imaginary;
+            double bi2 = b[i].Real * b[i].Real + b[i].Imaginary * b[i].Imaginary;
+            den += bi2;
+        }
+        return den > 0 ? Math.Sqrt(num / den) : Math.Sqrt(num);
+    }
+
+    /// <summary>
+    /// The same backward error against Z held as CAP-2's <see cref="BlockLowerMatrix"/> — the same
+    /// summation, column by column, as the <see cref="Mat{T}"/> overload.
+    /// </summary>
+    public static double Residual(BlockLowerMatrix z, Vec<Complex> x, Vec<Complex> b)
+    {
+        ArgumentNullException.ThrowIfNull(z);
+        int n = z.Size;
+        if (x.Count != n || b.Count != n)
+            throw new ArgumentException(
+                $"A residual needs two vectors of the matrix's size; got {n}×{n}, x[{x.Count}], " +
+                $"b[{b.Count}].", nameof(z));
+
+        var xs = new Complex[n];
+        for (int i = 0; i < n; i++) xs[i] = x[i];
+        var ax = z.Multiply(xs);
 
         double num = 0, den = 0;
         for (int i = 0; i < n; i++)

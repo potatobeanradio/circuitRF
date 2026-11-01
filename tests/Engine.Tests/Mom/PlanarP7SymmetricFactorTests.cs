@@ -417,10 +417,13 @@ public sealed class PlanarP7SymmetricFactorTests(ITestOutputHelper output)
             long lu     = PlanarSystem.LuFactorBytes(n);
             long d      = PlanarSystem.SymmetricFactorBytes(n);
             long cores  = PlanarSystem.CoreBytes(n);
-            long before = matrix + lu + cores;
+            long before = PlanarSystem.DenseMatrixBytes(n) + lu + cores;   // the square, pre-CAP-2
             long after  = PlanarSystem.ResidentBytes(n);
 
-            Assert.Equal(matrix + d + cores, after);
+            // CAP-3 — beside the triangle and the cores, the larger of the factorisation's D and the
+            // fill's bounded transient (the cell potential's rows and the class remainders).
+            Assert.Equal(matrix + cores + Math.Max(d, PlanarSystem.FillTransientBytes(n, PlanarCoreFootprint.Estimate(n))),
+                         after);
             _out.WriteLine($"  {n,5}  {Mb(matrix),10:N1}  {Mb(lu),13:N1}  {Mb(d),9:N3}  " +
                            $"{Mb(cores),9:N1}  {Mb(before),12:N1}  {Mb(after),11:N1}  " +
                            $"{(double)before / after,6:F2}x");
@@ -432,7 +435,7 @@ public sealed class PlanarP7SymmetricFactorTests(ITestOutputHelper output)
         for (int n = 100; n <= 40_000; n += 1)
         {
             if (PlanarSystem.ResidentBytes(n) <= OneGb) fits = n;
-            long pre = PlanarSystem.MatrixBytes(n) + PlanarSystem.LuFactorBytes(n)
+            long pre = PlanarSystem.DenseMatrixBytes(n) + PlanarSystem.LuFactorBytes(n)
                      + PlanarSystem.CoreBytes(n);
             if (pre <= OneGb) fitsBefore = n;
             if (fits < n && fitsBefore < n) break;
@@ -453,7 +456,7 @@ public sealed class PlanarP7SymmetricFactorTests(ITestOutputHelper output)
         _out.WriteLine("  for the DENSE path, at the same 1 GB the 5,000 was sized against.");
 
         static long preP7Ceiling()
-            => PlanarSystem.MatrixBytes(SurfaceMesher.UnknownCeiling)
+            => PlanarSystem.DenseMatrixBytes(SurfaceMesher.UnknownCeiling)
              + PlanarSystem.LuFactorBytes(SurfaceMesher.UnknownCeiling)
              + PlanarSystem.CoreBytes(SurfaceMesher.UnknownCeiling);
         _out.WriteLine("");
@@ -466,5 +469,157 @@ public sealed class PlanarP7SymmetricFactorTests(ITestOutputHelper output)
         Assert.Equal(10_000, SurfaceMesher.UnknownCeiling);
         Assert.True(fits > fitsBefore,
             "P7 should have made the same memory buy more unknowns, not fewer");
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════════════════════
+    // CAP-2 — the lower triangle in block-column panels
+    // ═════════════════════════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// CAP-2 — the stored triangle answers EITHER triangle by symmetry, its column spans are the
+    /// same entries, its expansion is the square bit for bit, and its symmetric product is the
+    /// square's. 150 is three panels, the last one partial.
+    /// </summary>
+    [Fact]
+    public void CAP2_TheTriangleAnswersEitherTriangleBySymmetry_AndExpandsToTheSquareBitForBit()
+    {
+        const int n = 150;
+        var a = SyntheticSymmetric(n, 31);
+        var z = BlockLowerMatrix.FromLower(a);
+        var dense = z.ToDense();
+
+        Assert.Equal(3, z.PanelCount);
+        for (int j = 0; j < n; j++)
+        {
+            var col = z.Column(j);
+            Assert.Equal(n - j, col.Length);
+            for (int i = 0; i < n; i++)
+            {
+                Assert.True(z[i, j].Equals(a[i, j]), $"({i}, {j}) through the accessor");
+                Assert.True(dense[i, j].Equals(a[i, j]), $"({i}, {j}) through ToDense");
+                if (i >= j) Assert.True(col[i - j].Equals(a[i, j]), $"({i}, {j}) through Column");
+            }
+        }
+        Assert.Throws<ArgumentOutOfRangeException>(() => z.Lower(3, 7));   // the upper is not stored
+
+        var x = Rhs(n, 8);
+        var y = z.Multiply(x.Memory.Span);
+        var yRef = a * x;
+        double worst = 0, scale = 0;
+        for (int i = 0; i < n; i++)
+        {
+            worst = Math.Max(worst, (y[i] - yRef[i]).Magnitude);
+            scale = Math.Max(scale, yRef[i].Magnitude);
+        }
+        Assert.True(worst <= 1e-14 * scale, $"symmetric product off the square's by {worst:E2}");
+    }
+
+    /// <summary>
+    /// CAP-2's gate on the arithmetic: the factorisation on the triangle is the pre-CAP-2 one on the
+    /// square, bit for bit, on a real fill that spans several panels. The reference below is the
+    /// pre-CAP-2 code (blocked, in place on a column-major square, serial) kept verbatim in shape, so
+    /// a reordered operation anywhere in the new addressing shows up as a differing bit.
+    /// </summary>
+    [Fact]
+    public void CAP2_TheTriangleFactorisationIsTheSquareOne_BitForBit_OnARealFill()
+    {
+        var problem = PlanarLineFixtures.Fr4Line(80e-3, 10e9);
+        var mesh  = SurfaceMesher.Mesh(problem, PlanarLineFixtures.Coarse).Mesh;
+        var cores = PlanarFill.BuildCores(mesh);
+        var k     = PlanarLineFixtures.Kernel(problem.Slab, 10e9).For(cores, PlanarExtractionOrder.Constant);
+        double w  = 2.0 * Math.PI * 10e9;
+        int n = mesh.Bases.Count;
+        Assert.True(n > 3 * SymmetricFactorization.DefaultBlockSize, $"N = {n} must span several panels");
+
+        // The shipped path: the fill writes the triangle, the system factors it in place.
+        var b   = Rhs(n, 23);
+        var sys = PlanarSystem.Build(cores, k.VectorPotential, k.Scalar, w);
+        var x   = sys.Solve(b);
+
+        // The pre-CAP-2 path: the square, mirrored, factored in place.
+        var xRef = SquareLdlSolve(PlanarFill.Fill(cores, k.VectorPotential, k.Scalar, w), b);
+
+        int differ = 0;
+        for (int i = 0; i < n; i++) if (!x[i].Equals(xRef[i])) differ++;
+        _out.WriteLine($"N = {n}: {differ} of {n} solved entries differ from the square factorisation's.");
+        Assert.Equal(0, differ);
+    }
+
+    /// <summary>The pre-CAP-2 SymmetricFactorization on a square — Factor, FactorPanel and the
+    /// one-RHS substitution — serially (the parallel decomposition never changed an answer).</summary>
+    private static Vec<Complex> SquareLdlSolve(Mat<Complex> a, Vec<Complex> b)
+    {
+        int n = a.RowCount, lda = a.Stride, nb = SymmetricFactorization.DefaultBlockSize;
+        var s = a.Memory.Span;
+        var d = new Complex[n];
+        for (int k = 0; k < n; k += nb)
+        {
+            int jb = Math.Min(nb, n - k), end = k + jb;
+            for (int j = k; j < end; j++)
+            {
+                int cj = j * lda;
+                Complex dj = s[j + cj];
+                d[j] = dj;
+                Complex inv = Complex.One / dj;
+                double ir = inv.Real, ii = inv.Imaginary;
+                for (int i = j + 1; i < n; i++)
+                {
+                    Complex v = s[i + cj];
+                    double vr = v.Real, vi = v.Imaginary;
+                    s[i + cj] = new Complex(vr * ir - vi * ii, vr * ii + vi * ir);
+                }
+                for (int q = j + 1; q < end; q++)
+                {
+                    Complex c = dj * s[q + cj];
+                    if (c == Complex.Zero) continue;
+                    double cr = c.Real, ci = c.Imaginary;
+                    int cq = q * lda;
+                    for (int i = q; i < n; i++)
+                    {
+                        Complex l = s[i + cj];
+                        double lr = l.Real, li = l.Imaginary;
+                        s[i + cq] -= new Complex(lr * cr - li * ci, lr * ci + li * cr);
+                    }
+                }
+            }
+            for (int col = end; col < n; col++)
+            {
+                int cc = col * lda;
+                for (int p = k; p < end; p++)
+                {
+                    int cp = p * lda;
+                    Complex c = d[p] * s[col + cp];
+                    if (c == Complex.Zero) continue;
+                    double cr = c.Real, ci = c.Imaginary;
+                    for (int i = col; i < n; i++)
+                    {
+                        Complex l = s[i + cp];
+                        double lr = l.Real, li = l.Imaginary;
+                        s[i + cc] -= new Complex(lr * cr - li * ci, lr * ci + li * cr);
+                    }
+                }
+            }
+        }
+
+        var work = new Complex[n];
+        for (int i = 0; i < n; i++) work[i] = b[i];
+        for (int j = 0; j < n; j++)
+        {
+            Complex yj = work[j];
+            if (yj == Complex.Zero) continue;
+            int cj = j * lda;
+            for (int i = j + 1; i < n; i++) work[i] -= s[i + cj] * yj;
+        }
+        for (int i = 0; i < n; i++) work[i] /= d[i];
+        for (int j = n - 1; j >= 0; j--)
+        {
+            int cj = j * lda;
+            Complex acc = Complex.Zero;
+            for (int i = j + 1; i < n; i++) acc += s[i + cj] * work[i];
+            work[j] -= acc;
+        }
+        var x = new Vec<Complex>(n);
+        for (int i = 0; i < n; i++) x[i] = work[i];
+        return x;
     }
 }

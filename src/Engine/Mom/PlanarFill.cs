@@ -421,11 +421,15 @@ public sealed record PlanarFillSettings(
     /// <b>The memory limit this run was given in place of the shipped ceilings</b> — the same number
     /// as <see cref="PlanarMeshSettings.MemoryLimitBytes"/>, carried here so the guards below the mesher
     /// (this file's, <see cref="PlanarSystem"/>'s, <see cref="PlanarSolveContext"/>'s and the
-    /// calibration standards') judge against what the mesh verdict did. <c>PlanarKernel.Solve</c>
-    /// copies it across; null keeps the shipped ceilings. Outside the positional list and in no
-    /// provenance hash, for <see cref="Aim"/>'s reason: it decides what is refused, not the answer.
+    /// calibration standards') know the run was sized on it and asked about: with one set they let the
+    /// run through. <c>PlanarKernel.Solve</c> copies it across; null keeps the shipped ceilings. Outside
+    /// the positional list and in no provenance hash, for <see cref="Aim"/>'s reason.
     /// </summary>
     public long? MemoryLimitBytes { get; init; }
+
+    /// <summary>CAP-1 — who stated <see cref="MemoryLimitBytes"/>; <see cref="PlanarMeshSettings.MemoryLimitSource"/>,
+    /// copied across with it by <c>PlanarKernel.Solve</c>.</summary>
+    public PlanarMemoryLimitSource MemoryLimitSource { get; init; }
 
     /// <summary>
     /// <b>CL1 — the surface-impedance term: non-null models the metal's loss, null is a PEC and is
@@ -1095,7 +1099,7 @@ public static partial class PlanarFill
 
         int n = mesh.Bases.Count;
         int m = mesh.Cells.Count;
-        GuardCeiling(mesh.SolvedUnknownCount, m, st.MemoryLimitBytes);
+        GuardCeiling(mesh.SolvedUnknownCount, m, st.MemoryLimitBytes, st.MemoryLimitSource, mesh);
 
         var (minEdge, extent, rhoFloor) = MeshGeometry(mesh, st);
         bool wantRad = st.Order >= PlanarExtractionOrder.Linear;
@@ -1111,19 +1115,11 @@ public static partial class PlanarFill
         for (int a = 0; a < m; a++) bandStart[a + 1] = bandStart[a] + (m - topo.MinInner[a]);
         long bandCount = bandStart[m];
 
-        // ── classify: keys per pair (transient), the distinct keys sorted, ids by rank ────────
-        var keys = new long[bandCount];
-        ForRows(st, m, a =>
-        {
-            var ca = mesh.Cells[a];
-            long at = bandStart[a];
-            for (int c = topo.MinInner[a]; c < m; c++, at++)
-                keys[at] = ok[a] && ok[c] ? classifier.Key(ca, mesh.Cells[c], st, out _) : -1L;
-        });
-        var distinct = new HashSet<long>();
-        foreach (long k in keys) if (k >= 0) distinct.Add(k);
-        var classKey = distinct.ToArray();
-        Array.Sort(classKey);
+        // ── classify: the distinct keys sorted, ids by rank ──────────────────────────────────
+        // CAP-3 — the distinct keys are gathered per worker, not from a transient key per band pair:
+        // that array was 8 bytes per pair (a quarter of a GB at N = 14,781) and, freed or not, it sat
+        // in the process until a gen-2 collection. The same keys, sorted, so the same class ids.
+        var classKey = DistinctBandKeys(mesh, topo, classifier, st);
 
         var bandClass = new int[bandCount];
         ForRows(st, m, a =>
@@ -1132,13 +1128,11 @@ public static partial class PlanarFill
             long at = bandStart[a];
             for (int c = topo.MinInner[a]; c < m; c++, at++)
             {
-                long k = keys[at];
-                if (k < 0) { bandClass[at] = -1; continue; }
-                classifier.Key(ca, mesh.Cells[c], st, out bool rot);
+                if (!(ok[a] && ok[c])) { bandClass[at] = -1; continue; }
+                long k = classifier.Key(ca, mesh.Cells[c], st, out bool rot);
                 bandClass[at] = (Array.BinarySearch(classKey, k) << 1) | (rot ? 1 : 0);
             }
         });
-        keys = null!;
 
         // ── the class table: the seven primitives on each class's representative ─────────────
         int classCount = classKey.Length;
@@ -1274,7 +1268,7 @@ public static partial class PlanarFill
 
         int n = mesh.Bases.Count;
         int m = mesh.Cells.Count;
-        GuardCeiling(mesh.SolvedUnknownCount, m, st.MemoryLimitBytes);
+        GuardCeiling(mesh.SolvedUnknownCount, m, st.MemoryLimitBytes, st.MemoryLimitSource, mesh);
 
         var (minEdge, extent, rhoFloor) = MeshGeometry(mesh, st);
 
@@ -1464,7 +1458,7 @@ public static partial class PlanarFill
         var st = settings ?? PlanarFillSettings.Default;
 
         int m = mesh.Cells.Count;
-        GuardCeiling(mesh.SolvedUnknownCount, m, st.MemoryLimitBytes);
+        GuardCeiling(mesh.SolvedUnknownCount, m, st.MemoryLimitBytes, st.MemoryLimitSource, mesh);
         var (minEdge, extent, rhoFloor) = MeshGeometry(mesh, st);
         bool wantRad = st.Order >= PlanarExtractionOrder.Linear;
         var topo = RampTopology.Build(mesh);
@@ -2037,37 +2031,11 @@ public static partial class PlanarFill
 
         // P5: the pulse remainder once per class, then one lookup per pair. A pair with an
         // unclassifiable cell keeps L8c's own per-pair call, exactly as its core kept its own row.
-        var classRem = ClassPulseRemainders(cores, rem);
-        var band     = cores.BandClass!;
-        var cut      = cores.CutScalar;
-        var ok       = cores.Classifier.Classifiable;
-        int kernels  = cores.Kernels, stride = cores.ClassStride;
-        var table    = cores.ClassCores!;
+        // CAP-3: the entry is ClassPotential.At, the one expression the panelled scalar block reads too.
+        var pot = new ClassPotential(cores, terms, rem, ClassPulseRemainders(cores, rem));
         ForRows(st, m, a =>
         {
-            CellWeight? wa = ok[a] ? null : Pulse(mesh, a);
-            for (int b = a; b < m; b++)
-            {
-                int c = band[cores.BandIndex(a, b)];
-                Complex v;
-                if (c >= 0)
-                {
-                    long o = (long)(c >> 1) * stride;
-                    v = terms.Inverse * table[o] + terms.Log * table[o + 1];
-                    if (terms.ExtractsConstant) v += terms.Constant;
-                    if (terms.ExtractsLinear && kernels > 2) v += terms.Linear * table[o + 2];
-                    v += classRem[c >> 1];
-                }
-                else
-                {
-                    var t = cut!.Get(a, b);
-                    v = terms.Inverse * t.Inverse + terms.Log * t.Log;
-                    if (terms.ExtractsConstant) v += terms.Constant;
-                    if (terms.ExtractsLinear) v += terms.Linear * t.Radius;
-                    v += PairRemainder(mesh, wa ?? Pulse(mesh, a), Pulse(mesh, b), PlanarBasisDirection.X, rem, st);
-                }
-                p[b, a] = v;
-            }
+            for (int b = a; b < m; b++) p[b, a] = pot.At(a, b);
         });
         MirrorLowerToUpper(st, p);
         return p;
@@ -2112,21 +2080,37 @@ public static partial class PlanarFill
     /// vector block's seven sums and the scalar block's pulse sum), and every entry is assembled from
     /// its cell pairs' class values — no per-pair quadrature and no transient per-basis-pair
     /// triangles. The per-pair arithmetic survives as <see cref="FillByPairs"/>, the reference.</para>
+    ///
+    /// <para><b>CAP-2:</b> the square is <see cref="FillLower"/>'s triangle expanded by
+    /// <see cref="BlockLowerMatrix.ToDense"/> — the same entries, mirrored by copy exactly as the fill
+    /// used to mirror. For small-N callers; the solver fills the triangle and never builds this.</para>
     /// </summary>
     public static Mat<Complex> Fill(PlanarFillCores cores, PlanarKernelTerms termsA,
                                   PlanarKernelTerms termsQ, double omega)
+        => FillLower(cores, termsA, termsQ, omega).ToDense();
+
+    /// <summary>
+    /// <b>CAP-2 — the Galerkin matrix's lower triangle</b>, written straight into a
+    /// <see cref="BlockLowerMatrix"/> with no square and no mirror. Every entry is the expression, in
+    /// the order, <see cref="Fill"/> always computed; only where it is stored changed.
+    /// </summary>
+    /// <param name="potentialBudgetBytes">CAP-3 — the cap on the cell-potential rows held at once;
+    /// 0 is <see cref="PotentialBudgetBytes"/>. Changes no answer, only how many panels there are.</param>
+    public static BlockLowerMatrix FillLower(PlanarFillCores cores, PlanarKernelTerms termsA,
+                                             PlanarKernelTerms termsQ, double omega,
+                                             long potentialBudgetBytes = 0)
     {
         ArgumentNullException.ThrowIfNull(cores);
         RequirePairCores(cores);
         RequireLayout(cores, PlanarCoreLayout.Classes, nameof(Fill));
         var mesh = cores.Mesh;
         int n = mesh.Bases.Count;
-        GuardCeiling(n, mesh.Cells.Count, cores.Settings.MemoryLimitBytes);
+        GuardCeiling(n, mesh.Cells.Count, cores.Settings.MemoryLimitBytes, cores.Settings.MemoryLimitSource, mesh);
 
-        var z = new Mat<Complex>(n, n);
+        var z = new BlockLowerMatrix(n);
         var st = cores.Settings;
 
-        ScalarBlock(z, cores, termsQ, omega);
+        ScalarBlock(z, cores, termsQ, omega, potentialBudgetBytes);
 
         Complex vectorScale = Complex.ImaginaryOne * omega * EmConstants.Mu0;
         var termsAr = termsA.With(st.Order, cores.RhoFloorM);
@@ -2138,18 +2122,16 @@ public static partial class PlanarFill
         AddDirectionBlockFromClasses(z, cores, src, cores.Topology.X, PlanarBasisDirection.X, cores.CutX, termsAr, remA, vectorScale);
         AddDirectionBlockFromClasses(z, cores, src, cores.Topology.Y, PlanarBasisDirection.Y, cores.CutY, termsAr, remA, vectorScale);
 
-        // CL1 — after the direction blocks and before the mirror. A one-level mesh carries no
-        // vertical basis, so there is no barrel term to give it.
+        // CL1 — after the direction blocks. A one-level mesh carries no vertical basis, so there is
+        // no barrel term to give it. CAP-2: no mirror — the triangle is all there is.
         AddSurfaceImpedance(z, cores, levels: null, omega);
-
-        MirrorLowerToUpper(st, z);
         return z;
     }
 
     /// <summary>P5 — one direction's vector block, every whole pair pulled from the class table
     /// through <see cref="WholeVectorEntry{T}"/>, every pair with an unserved basis by L8c's four
     /// calls as before.</summary>
-    private static void AddDirectionBlockFromClasses(Mat<Complex> z, PlanarFillCores cores, BandSource src,
+    private static void AddDirectionBlockFromClasses(BlockLowerMatrix z, PlanarFillCores cores, BandSource src,
                                                      RampTopology.DirectionMap d, PlanarBasisDirection dir,
                                                      CutRows? cut, PlanarKernelTerms terms,
                                                      Func<double, Complex> rem, Complex scale)
@@ -2169,6 +2151,7 @@ public static partial class PlanarFill
             long local = 0;
             int  bi = idx[i];
             var  hi = topo.Halves[bi];
+            var  col = z.Column(bi);                             // idx ascending ⇒ lower triangle
             for (int j = i; j < k; j++)
             {
                 int bj = idx[j];
@@ -2190,7 +2173,7 @@ public static partial class PlanarFill
                     local += 4;
                     e = v + r;
                 }
-                z[bj, bi] += scale * e;                          // idx ascending ⇒ lower triangle
+                col[bj - bi] += scale * e;
             }
             if (local != 0) counters?.AddRemainderPasses(local);
         });
@@ -2210,9 +2193,9 @@ public static partial class PlanarFill
         RequireLayout(cores, PlanarCoreLayout.Triangles, nameof(FillByPairs));
         var mesh = cores.Mesh;
         int n = mesh.Bases.Count;
-        GuardCeiling(n, mesh.Cells.Count, cores.Settings.MemoryLimitBytes);
+        GuardCeiling(n, mesh.Cells.Count, cores.Settings.MemoryLimitBytes, cores.Settings.MemoryLimitSource, mesh);
 
-        var z = new Mat<Complex>(n, n);
+        var z = new BlockLowerMatrix(n);
         var st = cores.Settings;
 
         // ── the scalar block, assembled from P by signed differences (D4) ─────────────────────
@@ -2227,14 +2210,10 @@ public static partial class PlanarFill
         VectorBlock(z, cores, termsAr, remA, vectorScale);
 
         // ── R-fil-2: mirror, bit-identically ─────────────────────────────────────────────────
-        // Column-wise, so each column is written by exactly one iteration — R-fil-11's shape, and
-        // the assignment is a copy rather than a recomputation, so the two triangles cannot differ
-        // in their last bit the way a "compute both and trust reciprocity" fill would. P3 moved the
-        // computed triangle from upper to LOWER, because Mat<T> is column-major and z[j, i] with j
-        // innermost is the contiguous write; the copy runs the same way.
-        MirrorLowerToUpper(st, z);
-
-        return z;
+        // The assignment is a copy rather than a recomputation, so the two triangles cannot differ
+        // in their last bit the way a "compute both and trust reciprocity" fill would. CAP-2: the
+        // copy is ToDense's, at the very end, because the triangle is what is filled.
+        return z.ToDense();
     }
 
     /// <summary>
@@ -2253,7 +2232,7 @@ public static partial class PlanarFill
         int n = mesh.Bases.Count;
         var st = cores.Settings;
         var topo = cores.Topology;
-        var z = new Mat<Complex>(n, n);
+        var z = new BlockLowerMatrix(n);
         ScalarBlock(z, cores, termsQ, omega);
 
         Complex scale = Complex.ImaginaryOne * omega * EmConstants.Mu0;
@@ -2272,6 +2251,7 @@ public static partial class PlanarFill
             ForRows(st, k, i =>
             {
                 var (ma, mb) = topo.Halves[idx[i]];
+                var col = z.Column(idx[i]);
                 for (int j = i; j < k; j++)
                 {
                     var (na, nb) = topo.Halves[idx[j]];
@@ -2283,38 +2263,40 @@ public static partial class PlanarFill
                               + PairRemainder(mesh, ma, nb, dir, rem, st)
                               + PairRemainder(mesh, mb, na, dir, rem, st)
                               + PairRemainder(mesh, mb, nb, dir, rem, st);
-                    z[idx[j], idx[i]] += scale * (v + r);
+                    col[idx[j] - idx[i]] += scale * (v + r);
                 }
             });
         }
-        MirrorLowerToUpper(st, z);
-        return z;
+        return z.ToDense();
     }
 
-    private static void ScalarBlock(Mat<Complex> z, PlanarFillCores cores, PlanarKernelTerms termsQ,
-                                    double omega)
+    /// <summary>
+    /// The scalar block. <b>CAP-3:</b> P is formed in rows for a panel of columns at a time under
+    /// <paramref name="potentialBudgetBytes"/> (0 = <see cref="PotentialBudgetBytes"/>) rather than as
+    /// the m×m matrix — the same entries, so the same bits (PlanarPotentialPanels.cs).
+    /// </summary>
+    private static void ScalarBlock(BlockLowerMatrix z, PlanarFillCores cores, PlanarKernelTerms termsQ,
+                                    double omega, long potentialBudgetBytes = 0)
     {
         var mesh = cores.Mesh;
         int n = mesh.Bases.Count;
-        var p = ScalarPotentialMatrix(cores, termsQ);
+        var st = cores.Settings;
 
         Complex scalarScale = 1.0 / (Complex.ImaginaryOne * omega * EmConstants.Eps0);
         var halves = new (RooftopHalf A, RooftopHalf B)[n];
         for (int i = 0; i < n; i++) halves[i] = PlanarBasisFunctions.Halves(mesh, mesh.Bases[i]);
 
-        ForRows(cores.Settings, n, i =>
+        if (cores.Layout == PlanarCoreLayout.Triangles)
         {
-            var (ma, mb) = halves[i];
-            for (int j = i; j < n; j++)
-            {
-                var (na, nb) = halves[j];
-                Complex s = ma.Sign * na.Sign * p[ma.CellIndex, na.CellIndex]
-                          + ma.Sign * nb.Sign * p[ma.CellIndex, nb.CellIndex]
-                          + mb.Sign * na.Sign * p[mb.CellIndex, na.CellIndex]
-                          + mb.Sign * nb.Sign * p[mb.CellIndex, nb.CellIndex];
-                z[j, i] = scalarScale * s;                      // the contiguous triangle (P3)
-            }
-        });
+            // The two reference builders (FillByPairs, FillByHalves) keep the m×m P they always read.
+            ScalarBlockInPanels(z, halves, mesh, scalarScale, new MatrixPotential(ScalarPotentialMatrix(cores, termsQ)),
+                                st, long.MaxValue);
+            return;
+        }
+        var terms = termsQ.With(st.Order, cores.RhoFloorM);
+        var rem = Remainder(terms, cores);
+        var pot = new ClassPotential(cores, terms, rem, ClassPulseRemainders(cores, rem));
+        ScalarBlockInPanels(z, halves, mesh, scalarScale, pot, st, potentialBudgetBytes);
     }
 
     /// <summary>
@@ -2323,7 +2305,7 @@ public static partial class PlanarFill
     /// to another — one writer each), then a row pass per direction that assembles
     /// <c>scale·(v + (r_A + r_B))</c>. Pairs with a cut basis take the four-call path in the row pass.
     /// </summary>
-    private static void VectorBlock(Mat<Complex> z, PlanarFillCores cores, PlanarKernelTerms terms,
+    private static void VectorBlock(BlockLowerMatrix z, PlanarFillCores cores, PlanarKernelTerms terms,
                                     Func<double, Complex> rem, Complex scale)
     {
         var mesh = cores.Mesh;
@@ -2362,7 +2344,7 @@ public static partial class PlanarFill
                           ryA, ryB, terms, rem, scale);
     }
 
-    private static void AddDirectionBlock(Mat<Complex> z, PlanarFillCores cores, RampTopology.DirectionMap d,
+    private static void AddDirectionBlock(BlockLowerMatrix z, PlanarFillCores cores, RampTopology.DirectionMap d,
                                           PlanarBasisDirection dir,
                                           double[] c0, double[] cLog, double[]? cRad,
                                           Complex[] rA, Complex[] rB,
@@ -2381,6 +2363,7 @@ public static partial class PlanarFill
         {
             long local = 0;
             var (ma, mb) = topo.Halves[idx[i]];
+            var col = z.Column(idx[i]);                         // idx ascending ⇒ lower triangle
             for (int j = i; j < k; j++)
             {
                 long q = Packed(i, j, k);
@@ -2405,7 +2388,7 @@ public static partial class PlanarFill
                 else
                     r = rA[q] + rB[q];
 
-                z[idx[j], idx[i]] += scale * (v + r);           // idx ascending ⇒ lower triangle
+                col[idx[j] - idx[i]] += scale * (v + r);
             }
             if (local != 0) counters?.AddRemainderPasses(local);
         });
@@ -2741,11 +2724,25 @@ public static partial class PlanarFill
     ///
     /// <para>The lower triangle is written (column-major storage makes <c>z[j, i]</c> with <c>j</c>
     /// innermost the contiguous one) and mirrored to the upper afterwards — R-fil-2's "computed once,
-    /// copied" is intact, the triangle merely swapped.</para>
+    /// copied" is intact, the triangle merely swapped. <b>CAP-2:</b> the triangle is
+    /// <see cref="FillMultiLevelLower"/>'s and the mirror is <see cref="BlockLowerMatrix.ToDense"/>'s;
+    /// this square is for small-N callers.</para>
     /// </summary>
     public static Mat<Complex> FillMultiLevel(PlanarFillCores cores, PlanarKernelSet set,
                                               PlanarLevels levels, double omega,
                                               PlanarFillDiagnostics? diagnostics = null)
+        => FillMultiLevelLower(cores, set, levels, omega, diagnostics).ToDense();
+
+    /// <summary>
+    /// <b>CAP-2 — <see cref="FillMultiLevel"/>'s lower triangle</b>, written straight into a
+    /// <see cref="BlockLowerMatrix"/>: the same entries in the same order, no square, no mirror.
+    /// </summary>
+    /// <param name="potentialBudgetBytes">CAP-3 — the cap on the cell-potential rows held at once;
+    /// 0 is <see cref="PotentialBudgetBytes"/>. Changes no answer.</param>
+    public static BlockLowerMatrix FillMultiLevelLower(PlanarFillCores cores, PlanarKernelSet set,
+                                                       PlanarLevels levels, double omega,
+                                                       PlanarFillDiagnostics? diagnostics = null,
+                                                       long potentialBudgetBytes = 0)
     {
         ArgumentNullException.ThrowIfNull(cores);
         ArgumentNullException.ThrowIfNull(set);
@@ -2754,7 +2751,7 @@ public static partial class PlanarFill
 
         var mesh = cores.Mesh;
         int n = mesh.Bases.Count;
-        GuardCeiling(n, mesh.Cells.Count, cores.Settings.MemoryLimitBytes);
+        GuardCeiling(n, mesh.Cells.Count, cores.Settings.MemoryLimitBytes, cores.Settings.MemoryLimitSource, mesh);
         var st = cores.Settings;
         int m = mesh.Cells.Count;
 
@@ -2762,27 +2759,15 @@ public static partial class PlanarFill
         var cellLayer = new int[m];
         for (int a = 0; a < m; a++) cellLayer[a] = mesh.Cells[a].LayerIndex;
 
-        // ── the scalar half: P over CELLS, kernel chosen per (level, level) ───────────────────
-        var p = ScalarPotentialMatrix(cores, pr, cellLayer);
-
-        var z = new Mat<Complex>(n, n);
+        // ── the scalar half: P over CELLS, kernel chosen per (level, level) — CAP-3: in rows for a
+        //    panel of columns at a time, never the m×m matrix (PlanarPotentialPanels.cs) ──────────
+        var z = new BlockLowerMatrix(n);
         Complex scalarScale = 1.0 / (Complex.ImaginaryOne * omega * EmConstants.Eps0);
         var halves = new (RooftopHalf A, RooftopHalf B)[n];
         for (int i = 0; i < n; i++) halves[i] = PlanarBasisFunctions.Halves(mesh, mesh.Bases[i]);
 
-        ForRows(st, n, i =>
-        {
-            var (ma, mb) = halves[i];
-            for (int j = i; j < n; j++)
-            {
-                var (na, nb) = halves[j];
-                Complex s = ma.Sign * na.Sign * p[ma.CellIndex, na.CellIndex]
-                          + ma.Sign * nb.Sign * p[ma.CellIndex, nb.CellIndex]
-                          + mb.Sign * na.Sign * p[mb.CellIndex, na.CellIndex]
-                          + mb.Sign * nb.Sign * p[mb.CellIndex, nb.CellIndex];
-                z[j, i] = scalarScale * s;
-            }
-        });
+        ScalarBlockInPanels(z, halves, mesh, scalarScale, new LevelPotential(cores, pr, cellLayer), st,
+                            potentialBudgetBytes);
 
         // ── the vector half ───────────────────────────────────────────────────────────────────
         Complex vectorScale = Complex.ImaginaryOne * omega * EmConstants.Mu0;
@@ -2793,6 +2778,7 @@ public static partial class PlanarFill
             bool zi = bi.Direction == PlanarBasisDirection.Z;
             int  li = bi.LayerIndex;
             int  si = pr.SpanOfBasis[i];
+            var  col = z.Column(i);
             for (int j = i; j < n; j++)
             {
                 var bj = mesh.Bases[j];
@@ -2804,7 +2790,7 @@ public static partial class PlanarFill
                     // and the formulation-C vector kernel has no xy component.
                     if (bi.Direction != bj.Direction) continue;
                     int lj = bj.LayerIndex;
-                    z[j, i] += vectorScale * HorizontalVectorEntry(
+                    col[j - i] += vectorScale * HorizontalVectorEntry(
                         mesh, cores, i, j, bi.Direction, pr.Halves[i], pr.Halves[j],
                         pr.TermsA[li, lj]!, pr.RemA[li, lj]!, st);
                 }
@@ -2835,7 +2821,7 @@ public static partial class PlanarFill
                     // ViaZIntegral's header — and it is where the 0.673·(ℓ/w) went.
                     core += SingularPrismPart(mesh, asym, bi.CellA, bj.CellA, spanI, spanJ, st);
 
-                    z[j, i] += vectorScale * spanI.Length * spanJ.Length * core;
+                    col[j - i] += vectorScale * spanI.Length * spanJ.Length * core;
                 }
                 else
                 {
@@ -2845,18 +2831,16 @@ public static partial class PlanarFill
                     int hIndex     = zi ? j  : i;
                     // R-viz-5: ONE z-integral, and it is folded into the radial derivative the block
                     // already consumes — so MixedEntry is called exactly as often as it was.
-                    z[j, i] += vectorScale * pr.Spans[sv].Length
+                    col[j - i] += vectorScale * pr.Spans[sv].Length
                              * MixedEntry(mesh, vertical, horizontal, pr.Halves[hIndex],
                                           pr.Mixed[sv, horizontal.LayerIndex]!, cores.RhoFloorM, st);
                 }
             }
         });
 
-        // CL1 — after the direction blocks and before the mirror, exactly as the one-level fill does
-        // it, and with the levels this path has so every via gets its barrel's series impedance.
+        // CL1 — after the direction blocks, exactly as the one-level fill does it, and with the
+        // levels this path has so every via gets its barrel's series impedance. CAP-2: no mirror.
         AddSurfaceImpedance(z, cores, levels, omega);
-
-        MirrorLowerToUpper(st, z);
         return z;
     }
 
@@ -2897,9 +2881,20 @@ public static partial class PlanarFill
         var p = new Mat<Complex>(m, m);
         ForRows(st, m, a =>
         {
+            for (int b = a; b < m; b++) p[b, a] = LevelPotentialEntry(cores, mesh, pr, cellLayer, st, a, b);
+        });
+        MirrorLowerToUpper(st, p);
+        return p;
+    }
+
+    /// <summary>One entry (a ≤ b) of the multi-level P — the one expression the m×m matrix above and
+    /// the panelled scalar block (CAP-3) both read.</summary>
+    private static Complex LevelPotentialEntry(PlanarFillCores cores, PlanarMesh mesh, MultiLevelPairings pr,
+                                               int[] cellLayer, PlanarFillSettings st, int a, int b)
+    {
+        {
             var wa = pr.Pulses[a];
             int la = cellLayer[a];
-            for (int b = a; b < m; b++)
             {
                 int lb = cellLayer[b];
 
@@ -2930,11 +2925,9 @@ public static partial class PlanarFill
                         v += im.Amplitude / (4.0 * Math.PI)
                            * ShallowImageCore.CellPairMean(mesh, a, b, im.Depth, st);
 
-                p[b, a] = v;
+                return v;
             }
-        });
-        MirrorLowerToUpper(st, p);
-        return p;
+        }
     }
 
     /// <summary>The largest in-plane distance between any point of one cell and any point of the
@@ -3178,9 +3171,9 @@ public static partial class PlanarFill
     /// <summary>
     /// <b>CL1 — <c>Z[m,n] += Z_s(ω, layer)·⟨f_m, f_n⟩</c>, over the whole matrix.</b> Called from
     /// <see cref="Fill(PlanarFillCores, PlanarKernelTerms, PlanarKernelTerms, double)"/> and from
-    /// <see cref="FillMultiLevel"/> after their direction blocks and BEFORE
-    /// <see cref="MirrorLowerToUpper"/>, so R-fil-2's "computed once, copied" is untouched and the
-    /// term lands in exactly one triangle.
+    /// <see cref="FillMultiLevel"/> after their direction blocks, into the stored lower triangle
+    /// (CAP-2: there is no mirror any more; before CAP-2 this ran BEFORE the mirror for the same
+    /// reason), so the term lands in exactly one triangle.
     ///
     /// <para>No-op when <see cref="PlanarFillSettings.ConductorLoss"/> is null — nothing is read, the
     /// Gram is not even built, and the matrix is bit-identical to the pre-CL1 one. It is also a no-op
@@ -3191,7 +3184,7 @@ public static partial class PlanarFill
     /// to give a barrel impedance to. See <see cref="PlanarSurfaceImpedance"/>'s header for why a via
     /// is a series impedance in ohms rather than a Z_s times a Gram entry.</para>
     /// </summary>
-    internal static void AddSurfaceImpedance(Mat<Complex> z, PlanarFillCores cores,
+    internal static void AddSurfaceImpedance(BlockLowerMatrix z, PlanarFillCores cores,
                                              PlanarLevels? levels, double omega)
     {
         if (cores.Settings.ConductorLoss is not { } loss) return;
@@ -3203,15 +3196,18 @@ public static partial class PlanarFill
         // The stored triangle is (i ≤ j) and the fill writes z[j, i] with j ≥ i, so this is the
         // triangle the fill filled — no mirroring and no second visit.
         for (int i = 0; i < gram.UnknownCount; i++)
+        {
+            var col = z.Column(i);
             for (int k = gram.RowPtr[i]; k < gram.RowPtr[i + 1]; k++)
-                z[gram.ColIdx[k], i] += SheetTerm(zs, gram, k);
+                col[gram.ColIdx[k] - i] += SheetTerm(zs, gram, k);
+        }
 
         if (levels is null) return;
         for (int i = 0; i < mesh.Bases.Count; i++)
         {
             var b = mesh.Bases[i];
             if (b.Direction != PlanarBasisDirection.Z) continue;
-            z[i, i] += loss.BarrelAt(mesh, levels, b, omega);
+            z.Lower(i, i) += loss.BarrelAt(mesh, levels, b, omega);
         }
     }
 
@@ -3714,13 +3710,11 @@ public static partial class PlanarFill
     /// <see cref="PlanarSystem.ResidentPhrase"/>, the one function all three refusals share</b>, so
     /// the three cannot drift apart again — they had all three quoted 16·N², which is about a third
     /// of what the machine holds.</summary>
-    private static void GuardCeiling(int n, int cellCount = 0, long? limit = null)
+    private static void GuardCeiling(int n, int cellCount = 0, long? limit = null,
+                                     PlanarMemoryLimitSource source = PlanarMemoryLimitSource.MachineLimit,
+                                     PlanarMesh? mesh = null)
     {
-        if (limit is { } bytes)
-        {
-            if (n <= SurfaceMesher.CeilingFor(false, bytes, cellCount)) return;
-            throw new InvalidOperationException(SurfaceMesher.LimitSentence(n, bytes, cellCount));
-        }
+        if (limit is not null) return;   // a memory limit is asked about, never refused
         // MIM-13 — the fourth copy of PlanarSystem.GuardCeiling's own sentence, and it carried both
         // of that sentence's defects: it named two remedies without asking whether either BINDS on
         // this geometry (the 2026-08-14 owner report), and it closed on "matrix compression, which is

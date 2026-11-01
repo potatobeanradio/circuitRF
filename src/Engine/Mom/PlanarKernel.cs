@@ -307,10 +307,16 @@ public sealed class PlanarKernel
 
         var st = settings ?? PlanarSolveSettings.Default;
 
-        // The setup's own memory limit reaches every guard below the mesher through the fill
-        // settings, so a standard or a context judges against what the mesh verdict did.
+        // The run's memory limit reaches every guard below the mesher through the fill settings, so a
+        // standard or a context knows the run was sized on it and asked about.
         if (meshSettings.MemoryLimitBytes is { } limit)
-            st = st with { Fill = (st.Fill ?? PlanarFillSettings.Default) with { MemoryLimitBytes = limit } };
+            st = st with
+            {
+                Fill = (st.Fill ?? PlanarFillSettings.Default) with
+                {
+                    MemoryLimitBytes = limit, MemoryLimitSource = meshSettings.MemoryLimitSource,
+                },
+            };
 
         // ── R-fed-1 — grow whatever uniform feed the calibration needs, BEFORE meshing ───────────
         //
@@ -432,6 +438,15 @@ public sealed class PlanarKernel
         if (feed.NotDeembedded.Count > 0)
             resolved = [.. resolved.Select(r => feed.NotDeembedded.Contains(r.Number) ? r with { DeembedDeclined = true } : r)];
 
+        // ── CAP-1 follow-up — A DE-EMBEDDED RUN IS JUDGED WITH ITS STANDARDS ───────────────────────
+        //
+        // They are solved concurrently with the structure at every point, so the memory a limit is asked
+        // about is both together — the same function the pre-solve check and the panel ask.
+        bool aimOn = st.Fill?.Aim is not null;
+        report = PlanarRunMemory.WithStandards(
+            report, PlanarRunMemory.StandardBytes(meshed, resolved, freqsHz, st, report.Mesh), meshSettings, aimOn);
+        if (!report.CanSolve) throw new PlanarMeshRefusedException(report);
+
         // D5 — the heat map rides along with the sweep the panel already pays for: default to port 1
         // at the lowest swept frequency, which is where a user starts looking. Both are selectable
         // (PlanarSolveSettings), and a caller that wants no map passes 0.
@@ -453,9 +468,14 @@ public sealed class PlanarKernel
         // The caller's own question about this run's size, once the mesh it will solve is final.
         if (st.Admit is { } admit)
         {
-            bool aim = st.Fill?.Aim is not null;
+            bool aim = aimOn;
             var size = new PlanarRunSize(report.UnknownCount, report.CellCount, aim,
-                aim ? null : PlanarSystem.ResidentBytes(report.UnknownCount, report.CellCount));
+                aim ? null : report.RunResidentBytes)
+            {
+                StandardBytes       = aim ? 0 : report.StandardResidentBytes,
+                PastMachineCeiling  = report.PastMachineLimit,
+                CeilingUnknowns     = report.CeilingUnknowns,
+            };
             if (admit(size) is { } declined) throw new PlanarRunDeclinedException(declined);
         }
 
@@ -474,7 +494,7 @@ public sealed class PlanarKernel
             };
             acceleratorNote =
                 $"Port {ex.PortNumber}'s de-embedding standard needs {ex.StandardUnknowns:N0} " +
-                $"unknowns, past the {SurfaceMesher.UnknownCeiling:N0} a dense solve allows, so this " +
+                $"unknowns, past the {ex.DenseCeiling:N0} a dense solve allows, so this " +
                 $"run turned the ACCELERATED solve on (ceiling {SurfaceMesher.AcceleratedUnknownCeiling:N0}). " +
                 "A standard reproduces the port's own gridlines and grows as the frequency falls, so " +
                 "it is usually larger than the board itself.";

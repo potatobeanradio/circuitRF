@@ -135,10 +135,9 @@ public sealed class PlanarP2MemoryWinsTests
 
             Assert.Equal(expected, cores.CoreBytes);
 
-            // The a-priori figure a refusal quotes is P4's triangle layout (see P1_5's note); the
-            // class layout sits at or under it once translation reuse passes ≈ 3×.
-            long estimate = PlanarSystem.CoreBytes(n, cores.CellCount);
-            Assert.InRange((double)estimate / cores.CoreBytes, 0.6, 20.0);
+            // CAP-3 — what a refusal quotes for a mesh in hand is that mesh's own count, and it is
+            // the allocation to the byte.
+            Assert.Equal(cores.CoreBytes, PlanarCoreFootprint.Count(mesh).Bytes);
         }
     }
 

@@ -902,24 +902,8 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     /// anything that matters.</para></summary>
     [ObservableProperty] private string _planarDetailFloorText = "";
 
-    /// <summary>
-    /// The setup's own memory limit for one frequency point (<see cref="PlanarMeshSettings.MemoryLimitBytes"/>),
-    /// staged as text in decimal gigabytes. A memory rather than an unknown count because a user cannot
-    /// know their count before meshing (owner, 2026-10-29). <b>Blank means the default</b>, which
-    /// <see cref="MemoryLimitPlaceholder"/> shows greyed. It does not clear Auto (it is not a
-    /// resolution), and it invalidates the mesh because the verdict the panel shows is judged against it.
-    /// </summary>
-    [ObservableProperty] private string _planarMemoryLimitText = "";
-
-    /// <summary>Why the typed memory limit was not taken, shown under its own box; null when it was.</summary>
-    [ObservableProperty] private string? _memoryLimitError;
-
-    /// <summary>What a blank limit means, in the box's own unit: the memory one point of the default
-    /// dense ceiling holds. The accelerated ceiling is the larger count of the two at any limit
-    /// (<see cref="SurfaceMesher.CeilingFor"/>), so this one number is the default either way.</summary>
-    public static string MemoryLimitPlaceholder =>
-        (PlanarSystem.ResidentBytes(SurfaceMesher.UnknownCeiling) / PlanarMemoryCheck.BytesPerGb)
-            .ToString("0.#", CultureInfo.CurrentCulture);
+    // There is no per-setup memory limit: Settings ▸ Solvers is the one memory limit, and the planar run is
+    // sized on it (or on physical memory) through PlanarMemoryCheck.WithMachineCeiling.
 
     /// <summary>
     /// M0's mesh-frequency control, staged as text like every other dimensioned field in this panel.
@@ -1453,16 +1437,6 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
             // ANT-2's detail floor. It does NOT clear Auto, for the same reason Mesh frequency does
             // not: Auto chooses a resolution and this is not one — it says which drawn geometry is
             // electrically real enough to size a mesh on. 0 is a real value (off), not a blank.
-            // The setup's own memory limit, in GB. Blank is a real value (the default).
-            case "PlanarMemoryLimit":
-                if (PlanarMemoryLimitText.Trim().Length == 0)
-                    updatedPlanar = pm with { MemoryLimitBytes = null };
-                else if (TryDouble(PlanarMemoryLimitText, out double gb) && gb > 0 && double.IsFinite(gb))
-                    updatedPlanar = pm with { MemoryLimitBytes = (long)Math.Round(gb * PlanarMemoryCheck.BytesPerGb) };
-                else
-                    error = "Enter a size in GB, or leave it blank for the default.";
-                break;
-
             case "PlanarDetailFloor":
                 if (TryInt(PlanarDetailFloorText, 0, out int dfd))
                     updatedPlanar = pm with { DetailFloorDivisor = dfd };
@@ -1487,8 +1461,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
 
         bool isPlanarField = field is "CellsPerWavelength" or "PlanarEdgeCells" or "MeshFrequency"
                                    or "PlanarMinCellsAcross" or "PlanarDetailFloor";
-        if (field == "PlanarMemoryLimit") MemoryLimitError = error;
-        else if (isPlanarField) PlanarMeshFieldError = error; else MeshFieldError = error;
+        if (isPlanarField) PlanarMeshFieldError = error; else MeshFieldError = error;
 
         // Bug report, 2026-08-14: an invalid commit used to fall through to RefreshMeshText(), which
         // silently overwrote the box back to the last-good value — the user's typed text vanished
@@ -1911,13 +1884,30 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     public string? AcceleratedSolveCeilingNote =>
         Working.AnalysisKind != EmAnalysisKind.CrossSection
         && PlanarProblem is { } ap && ap.RequiresGeneralKernel
-            ? "This layout carries more than one metal level, or a via. The accelerated solve runs it " +
-              $"— as a bordered system — but the unknown ceiling stays the dense one " +
-              $"({SurfaceMesher.UnknownCeiling:N0}, not {SurfaceMesher.AcceleratedUnknownCeiling:N0}): " +
-              "the accelerator's cost on a mesh like this is set by how many vertical unknowns it " +
-              "carries rather than by N, so the wider ceiling is not offered for it. Expect speed and " +
-              "memory from this, not headroom."
+            ? (DenseUnknownCeiling < AcceleratedUnknownCeilingHere
+                ? "This layout carries more than one metal level, or a via. The accelerated solve runs it " +
+                  $"— as a bordered system — but it is judged against the dense ceiling " +
+                  $"({DenseUnknownCeiling:N0} unknowns), not the accelerated one " +
+                  $"({AcceleratedUnknownCeilingHere:N0}): the accelerator's cost on a mesh like " +
+                  "this is set by how many vertical unknowns it carries rather than by N. Expect speed and " +
+                  "memory from this, not headroom."
+                : "This layout carries more than one metal level, or a via. The accelerated solve runs it " +
+                  $"— as a bordered system — against the same {DenseUnknownCeiling:N0}-unknown ceiling as " +
+                  "the dense solve, which this machine's memory sets. Expect speed and memory from this, " +
+                  "not headroom.")
             : null;
+
+    /// <summary>CAP-1 follow-up — the accelerated ceiling a single-level mesh of this setup would get on this
+    /// machine: a memory limit (the setup's, else the machine's) raises it as it raises the dense one.</summary>
+    public int AcceleratedUnknownCeilingHere
+    {
+        get
+        {
+            var m = PlanarMemoryCheck.WithMachineCeiling(Working.PlanarMesh, MachineMemoryLimitBytes(),
+                                                         PhysicalMemoryBytes());
+            return SurfaceMesher.CeilingFor(true, m.MemoryLimitBytes, 0, m.MemoryLimitSource);
+        }
+    }
 
     /// <summary>
     /// ANT-12 — why the radiation pattern is unavailable, or null when it is. <b>Two reasons, and
@@ -2043,8 +2033,6 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         PlanarEdgeCellsText          = pm.EdgeCells.ToString(CultureInfo.InvariantCulture);
         PlanarMinCellsAcrossText     = pm.MinCellsAcrossConductor.ToString(CultureInfo.InvariantCulture);
         PlanarDetailFloorText        = pm.DetailFloorDivisor.ToString(CultureInfo.InvariantCulture);
-        PlanarMemoryLimitText        = pm.MemoryLimitBytes is { } mlb
-            ? (mlb / PlanarMemoryCheck.BytesPerGb).ToString("0.##", CultureInfo.CurrentCulture) : "";
         PlanarEdgeMesh               = pm.EdgeMesh;
         PlanarCurrentModel           = pm.CurrentModel;
         PlanarBoundaryCells          = pm.BoundaryCells;
@@ -2522,12 +2510,18 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         // copying them here carries none of PreparePlanarMesh's own data-race concern (see its header).
         _pendingDisplayUnit  = source.View.DisplayUnit;
         _pendingDbuPerMicron = source.DbuPerMicron;
+        // CAP-1 — the machine's memory, read here on the UI thread like the two above, so the preview
+        // sizes its dense ceiling on what the run will (PlanarMemoryCheck.WithMachineCeiling).
+        _pendingMachineLimit   = MachineMemoryLimitBytes();
+        _pendingPhysicalMemory = PhysicalMemoryBytes();
 
         double fMax = 0;
+        _pendingFrequencies = [];
         try
         {
             var freqs = Working.ExpandFrequencies();
             for (int i = 0; i < freqs.Length; i++) fMax = Math.Max(fMax, freqs[i]);
+            _pendingFrequencies = freqs;
         }
         catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or FormatException)
         {
@@ -2590,10 +2584,49 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     /// on a pool thread and may not read live view-model state.</summary>
     private IReadOnlyList<PlanarPort> _pendingPlanarPorts = [];
 
+    private long? _pendingMachineLimit;
+    private long  _pendingPhysicalMemory;
+
+    /// <summary>CAP-1 — the machine-wide memory limit (Settings ▸ Solvers), or null for none. A seam so a
+    /// test can state the machine rather than inherit the one it runs on.</summary>
+    public Func<long?> MachineMemoryLimitBytes { get; init; } = () => EmMemoryLimitPreference.CeilingBytes;
+
+    /// <summary>CAP-1 — this machine's physical memory, bytes (0: unreadable, the shipped ceiling). A seam
+    /// for the same reason as <see cref="MachineMemoryLimitBytes"/>.</summary>
+    public Func<long> PhysicalMemoryBytes { get; init; } = () => CircuitRF.Design.Em3d.MachineMemory.PhysicalBytes;
+
+    /// <summary>CAP-1 — the dense unknown ceiling this setup is judged against on this machine: its own
+    /// memory limit if it states one, else the machine's (<see cref="PlanarMemoryCheck.WithMachineCeiling"/>),
+    /// through the one function the run asks.</summary>
+    public int DenseUnknownCeiling
+    {
+        get
+        {
+            var m = PlanarMemoryCheck.WithMachineCeiling(Working.PlanarMesh, MachineMemoryLimitBytes(),
+                                                         PhysicalMemoryBytes());
+            return SurfaceMesher.CeilingFor(false, m.MemoryLimitBytes, 0, m.MemoryLimitSource);
+        }
+    }
+
     /// <summary>The POOLABLE half: pure, and touches no view-model state. Safe on any thread because
     /// <paramref name="problem"/> is an already-extracted snapshot.</summary>
     public PlanarMeshReport ComputePlanarMesh(PlanarProblem problem, RunControl? control)
-        => SurfaceMesher.Mesh(problem, Working.PlanarMesh, PlanarEdgeReference.LocalConductorWidth, control,
+    {
+        var mesh = PlanarMemoryCheck.WithMachineCeiling(Working.PlanarMesh, _pendingMachineLimit, _pendingPhysicalMemory);
+        // CAP-1 follow-up — priced with the calibration standards the run will solve beside it, through the
+        // function the run and the pre-solve check ask, so the three agree on a de-embedded run.
+        return PlanarMemoryCheck.PriceStandards(
+            ComputeBarePlanarMesh(problem, mesh, control), problem, _pendingPlanarPorts, _pendingFrequencies,
+            mesh, Working.AcceleratedSolve);
+    }
+
+    private double[] _pendingFrequencies = [];
+
+    private PlanarMeshReport ComputeBarePlanarMesh(PlanarProblem problem, PlanarMeshSettings meshSettings,
+                                                   RunControl? control)
+        => SurfaceMesher.Mesh(problem,
+                              meshSettings,
+                              PlanarEdgeReference.LocalConductorWidth, control,
                               accelerated: SurfaceMesher.UsesAcceleratedCeiling(
                                   Working.AcceleratedSolve, problem.RequiresGeneralKernel),
                               lengthFormat: EmLengthFormat.For(_pendingDisplayUnit, _pendingDbuPerMicron),

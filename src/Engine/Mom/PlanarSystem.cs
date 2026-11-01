@@ -19,6 +19,11 @@
 // is not lightweight, and a refusal that arrives as an OutOfMemoryException from inside a library is
 // not a refusal.
 //
+// CAP-2 (2026-10-31): THE MATRIX IS ITS LOWER TRIANGLE. Z is held as a BlockLowerMatrix — the
+// block-column panels P7's factorisation walks — at ~8·N² bytes where the square held 16·N². The fills
+// write into it directly and no longer mirror; `Matrix` is the expensive expansion for a small-N
+// reader, and the NumFlat LU reference path expands to a square for itself.
+//
 // D8: NO PORTS, NO EXCITATION, NO S-PARAMETERS. Nothing here builds a right-hand side. The sweep
 // below fills and factors and reports what that cost; it does not solve anything, because there is
 // nothing yet to solve for. That is L8d. The matrix is still fully gateable — see the four rungs of
@@ -74,12 +79,15 @@ public interface IPlanarOperator
 /// </summary>
 public sealed class PlanarSystem : IPlanarOperator
 {
-    private readonly Mat<Complex> _a;
+    /// <summary>CAP-2 — Z's lower triangle, the factorisation's workspace. Null once the NumFlat
+    /// reference path has expanded it into the square its LU needs.</summary>
+    private BlockLowerMatrix? _a;
+    private readonly int _n;
     private readonly PlanarFillSettings _st;
 
     /// <summary>P7 — the copy kept ONLY when the caller asked for residuals. Null otherwise, which
     /// is the default and is the whole memory saving.</summary>
-    private readonly Mat<Complex>? _residualReference;
+    private readonly BlockLowerMatrix? _residualReference;
 
     /// <summary>PM-2 — the merge this system was filled in, or null for the elemental system.
     /// Set, the matrix is <c>Tᵀ Z T</c> and <see cref="Solve(Vec{Complex})"/> takes and returns
@@ -91,26 +99,33 @@ public sealed class PlanarSystem : IPlanarOperator
     private bool _consumed;
 
     /// <summary>
-    /// The filled matrix — <b>readable only until it is factored</b>, see the class note. The guard
-    /// is an exception rather than a comment because the failure it prevents is silent: the upper
-    /// triangle survives the factorisation untouched, so a stale read of a symmetric matrix's upper
-    /// half returns plausible numbers that are simply the wrong frequency's.
+    /// The filled matrix as a full square — <b>CAP-2: an EXPANSION of <see cref="Lower"/>, 16·N²
+    /// bytes, for small-N readers only</b>, and <b>readable only until it is factored</b>, see the
+    /// class note. The guard is an exception rather than a comment because the failure it prevents is
+    /// silent: a factored triangle returns plausible numbers that are simply not Z.
     /// </summary>
-    public Mat<Complex> Matrix => _consumed
+    public Mat<Complex> Matrix => Lower.ToDense();
+
+    /// <summary>
+    /// <b>CAP-2 — the filled matrix as it is held: its lower triangle</b>, block-column panels.
+    /// Readable only until it is factored, on <see cref="Matrix"/>'s terms; its element accessor
+    /// answers either triangle by symmetry.
+    /// </summary>
+    public BlockLowerMatrix Lower => _consumed || _a is null
         ? throw new InvalidOperationException(
             "This system has been factored, and P7's factorisation runs IN PLACE — the matrix's " +
             "lower triangle now holds L, not Z. Copy the matrix before factoring if you need it " +
             "afterwards, or set PlanarFillSettings.TrackFactorizationResidual to have the system " +
-            "keep its own copy (which costs a whole N×N matrix, and is a diagnostic).")
+            "keep its own copy (which costs a whole second triangle, and is a diagnostic).")
         : _a;
 
     /// <summary>The length of the vectors <see cref="Solve(Vec{Complex})"/> takes — the ELEMENTAL
     /// rooftop count, also when the matrix is a merged one (<see cref="MatrixSize"/>).</summary>
-    public int Size => _merge?.ElementalCount ?? _a.RowCount;
+    public int Size => _merge?.ElementalCount ?? _n;
 
     /// <summary>The dimension of <see cref="Matrix"/> — the merged count under PM-2's rooftop
     /// merging, <see cref="Size"/> otherwise.</summary>
-    public int MatrixSize => _a.RowCount;
+    public int MatrixSize => _n;
 
     /// <summary>PM-2 — the merge this system is solved in, or null.</summary>
     public PlanarRooftopMerge? Merge => _merge;
@@ -126,16 +141,26 @@ public sealed class PlanarSystem : IPlanarOperator
     /// </summary>
     public double? LastResidual { get; private set; }
 
-    private PlanarSystem(Mat<Complex> matrix, PlanarFillSettings settings, PlanarRooftopMerge? merge = null)
+    private PlanarSystem(BlockLowerMatrix matrix, PlanarFillSettings settings, PlanarRooftopMerge? merge = null)
     {
         _a  = matrix;
+        _n  = matrix.Size;
         _st = settings;
         _merge = merge;
         if (settings.TrackFactorizationResidual) _residualReference = matrix.Copy();
     }
 
-    /// <summary>Bytes of dense complex matrix — §10.7's own budget line, and ONLY the matrix.</summary>
-    public static long MatrixBytes(int n) => 16L * n * n;
+    /// <summary>
+    /// <b>Bytes of the matrix as it is held — §10.7's own budget line, and ONLY the matrix.</b>
+    /// CAP-2: the lower triangle in block-column panels, <see cref="BlockLowerMatrix.Bytes"/> —
+    /// 16·(N²/2 + N·nb/2) when nb = 64 divides N. It was the full square, 16·N², until then;
+    /// <see cref="DenseMatrixBytes"/> is that figure, and is what the general-LU path still expands to.
+    /// </summary>
+    public static long MatrixBytes(int n) => BlockLowerMatrix.Bytes(n);
+
+    /// <summary>Bytes of a full N×N complex square — the pre-CAP-2 matrix, and the size of each of
+    /// NumFlat's L and U.</summary>
+    public static long DenseMatrixBytes(int n) => 16L * n * n;
 
     // ══════════════════════════════════════════════════════════════════════════════════════════
     // P1 — honest memory accounting. ONE function, three refusals.
@@ -151,42 +176,33 @@ public sealed class PlanarSystem : IPlanarOperator
     /// smaller cores term, which keeps <see cref="CoreBytes"/> a floor on this path exactly as its
     /// other two assumptions do.
     /// </summary>
-    private const double BasesPerCell = 1.95;
+    internal const double BasesPerCell = 1.95;
 
     /// <summary>
-    /// Bytes the cached frequency-independent geometric cores held at this size in P4's triangle
-    /// layout, reconstructed from N and the cell count so a refusal can quote a figure BEFORE a mesh
-    /// has been cored.
+    /// <b>CAP-3 — bytes the cached frequency-independent cores hold, a priori</b>: what
+    /// <see cref="PlanarCoreFootprint.Estimate"/> states for N unknowns on <paramref name="cellCount"/>
+    /// cells (derived from N when 0) — the class layout's 4-byte index over the band at 0.61·m², its
+    /// class table at a stated reuse, and O(N) vectors. A mesh in hand is quoted from its own count
+    /// instead (<see cref="PlanarCoreFootprint.Count"/>, which equals <c>PlanarFillCores.CoreBytes</c>).
     ///
-    /// <para><b>P5 (2026-08-29): this is an a-priori FIGURE, no longer an exact reconstruction.</b>
-    /// The production layout (<c>PlanarCoreLayout.Classes</c>) holds a 4-byte translation-class
-    /// index per ordered band pair (≈ 0.6 m² of them) plus 112 bytes per class, and the class count
-    /// is a property of the artwork: it meets this figure at a reuse of ≈ 3× and falls to a quarter
-    /// of it on a long line (measured: 25 MB against 83 at N = 3,731). A mesh with NO translation
-    /// reuse — every spacing distinct — would exceed it, by up to ~2.9×; none of the seven fixtures
-    /// the brief measured comes near that, and the number is kept here as the conservative quote.
-    /// <c>PlanarFillCores.CoreBytes</c> reports what was actually allocated.</para>
-    ///
-    /// <para>The arrays are <c>PlanarFill.BuildCores</c>'s own: two packed upper-triangles over cell
-    /// pairs (<c>S0</c>, <c>SLog</c>) and — since P2 — <b>two</b> over same-direction basis pairs per
-    /// direction (<c>V*0</c>, <c>V*Log</c>), plus one length-N vector of per-basis moments
-    /// (<c>VMoment</c>), all <c>double</c>. <b>P2 dropped the third packed vector triangle</b>: the
-    /// extracted constant's vector core is ∫w_m·∫w_n, an outer product, and it is now formed from the
-    /// O(N) vector at the point of use. <b>Two stated assumptions</b>, both of which make this a floor
-    /// rather than a ceiling: the extraction order is <c>PlanarExtractionOrder.Constant</c> (the
-    /// shipped default — <c>Linear</c> adds a radial array in each family, +50% to both the scalar and
-    /// the vector term), and the x̂/ŷ split is even, which MINIMISES the vector term (a wholly
-    /// one-directional mesh doubles it).</para>
+    /// <para>Until CAP-3 this was P4's triangle layout, reconstructed (≈ 6·N²): 3–12× what the class
+    /// layout allocates on real artwork, and every ceiling was sized on it. <c>RESOLVED.md</c> §CAP-3.</para>
     /// </summary>
-    public static long CoreBytes(int n, int cellCount = 0)
-    {
-        long m  = cellCount > 0 ? cellCount : (long)Math.Round(n / BasesPerCell);
-        long nx = n / 2, ny = n - nx;
-        long scalarPairs = m * (m + 1) / 2;
-        long vectorPairs = nx * (nx + 1) / 2 + ny * (ny + 1) / 2;
-        return 8L * (2 * scalarPairs + 2 * vectorPairs + n);
-    }
+    public static long CoreBytes(int n, int cellCount = 0) => PlanarCoreFootprint.Estimate(n, cellCount).Bytes;
 
+    /// <summary>
+    /// <b>CAP-3 — what a dense FILL holds beside the triangle and the cores while it runs</b>: the rows of
+    /// the cell potential P it forms panel by panel (capped at <see cref="PlanarFill.PotentialBudgetBytes"/>,
+    /// or the whole of P where that is smaller), the per-frequency class remainder tables
+    /// (<see cref="PlanarCoreFootprint.RemainderBytes"/>), and the per-basis halves and row plan. Released
+    /// before the factorisation starts.
+    /// </summary>
+    public static long FillTransientBytes(int n, PlanarCoreFootprint cores)
+    {
+        long m = cores.Cells;
+        return Math.Min(PlanarFill.PotentialBudgetBytes(n), 16L * m * m)
+             + cores.RemainderBytes + 64L * n + 32L * m;
+    }
     /// <summary>
     /// <b>Bytes NumFlat's dense LU holds</b> — the pre-P7 path, still reachable through
     /// <c>PlanarFillSettings.UseSymmetricFactorization = false</c>. <see cref="LuDecompositionComplex"/>
@@ -200,7 +216,7 @@ public sealed class PlanarSystem : IPlanarOperator
     /// process working set and not in the live heap, so it is deliberately outside this number, which
     /// counts what is still held when the factorisation returns.</para>
     /// </summary>
-    public static long LuFactorBytes(int n) => 2 * MatrixBytes(n) + 4L * n;
+    public static long LuFactorBytes(int n) => 2 * DenseMatrixBytes(n) + 4L * n;
 
     /// <summary>
     /// <b>P7 — bytes the SHIPPED factorisation holds beyond the matrix it consumed.</b>
@@ -218,30 +234,49 @@ public sealed class PlanarSystem : IPlanarOperator
     public static long FactorBytes(int n) => SymmetricFactorBytes(n);
 
     /// <summary>
-    /// <b>What one dense frequency point actually holds at its peak</b> — the number the ceiling
-    /// refusals quote, and the reason they no longer quote <see cref="MatrixBytes"/> alone.
+    /// <b>What one dense frequency point actually holds at its peak</b> — the number the ceiling, every
+    /// refusal and warning, <c>PlanarMemoryCheck</c>, <see cref="PlanarRunMemory"/> and the EM panel all
+    /// quote: the stored triangle (<see cref="MatrixBytes"/>), the cached cores, and the larger of what the
+    /// fill holds beside them (<see cref="FillTransientBytes"/>) and what the factorisation holds beside
+    /// them (<see cref="FactorBytes"/>, the diagonal D).
     ///
-    /// <para><b>P7 (2026-08-29) — the factors no longer sit beside the matrix; they ARE the matrix.</b>
-    /// <see cref="SymmetricFactorization"/> overwrites Z's lower triangle in place, so the peak is
-    /// <c>16n²</c> (the matrix, which the factorisation consumes) + <c>16n</c> (the diagonal D) + the
-    /// cores. Up to P6 the middle term was <c>32n²</c> of separate L and U. The transient m×m
-    /// scalar-potential matrix <c>P</c> that the FILL builds
-    /// (<c>PlanarFill.ScalarPotentialMatrix</c>) is released before the factorisation starts and the
-    /// fill's own peak is the lower of the two, so it does not enter — see <c>HISTORY.md</c>'s P1
-    /// table, which measures both.</para>
+    /// <para><b>CAP-3 (2026-10-31).</b> The cores are the class layout's own bytes — counted for a mesh,
+    /// stated for a bare unknown count — and the fill's transient is charged. Until CAP-3 the cores were
+    /// quoted at P4's triangle layout (≈ 6·N²) and the fill's m×m P (16·m², ≈ 4.2·N²) was left out on the
+    /// grounds that it was gone before the factorisation; once CAP-2 halved the matrix that P was what
+    /// set the live peak, and only the over-quoted cores were covering it. The fill now forms P in
+    /// bounded panels, so its share is the panel budget.</para>
     ///
-    /// <para><b>Measured at P1 (2026-08-29) at N = 552 / 1,980 / 4,836</b> and recorded in
-    /// <c>HISTORY.md</c> §P1: with the general LU, <c>16·N²</c> understated the peak by <b>3.52×</b>,
-    /// flat across all three, which P2 brought to <b>3.39×</b>. <b>P7 takes both factor matrices out
-    /// entirely</b>, so the same ratio is now <b>1.39×</b> and the ceiling refusal quotes 527 MB
-    /// rather than 1,290. Setting <c>PlanarFillSettings.UseSymmetricFactorization = false</c> puts
-    /// <see cref="LuFactorBytes"/> back and with it the old number; this function describes what
-    /// ships.</para>
+    /// <para><b>P7 / CAP-2.</b> <see cref="SymmetricFactorization"/> overwrites the triangle in place, so
+    /// the factors ARE the matrix: <c>8·N²</c> of triangle + <c>16·N</c> of diagonal. Up to P6 the factors
+    /// were <c>32·N²</c> of separate L and U beside a <c>16·N²</c> square; see <c>HISTORY.md</c> §P1 and
+    /// <c>RESOLVED.md</c> §CAP-2.</para>
     /// </summary>
     /// <param name="cellCount">The mesh's cell count, or 0 when the caller has none, in which case it
     /// is derived from <paramref name="n"/> — see <see cref="CoreBytes"/>.</param>
-    public static long ResidentBytes(int n, int cellCount = 0)
-        => MatrixBytes(n) + FactorBytes(n) + CoreBytes(n, cellCount);
+    /// <param name="symmetric">False for the general-LU reference path
+    /// (<c>PlanarFillSettings.UseSymmetricFactorization = false</c>), which expands the triangle into
+    /// a square for itself (dropping the triangle) and holds L and U beside it — the pre-CAP-2 figure.
+    /// It is not a capacity path, and no ceiling is sized on it.</param>
+    public static long ResidentBytes(int n, int cellCount = 0, bool symmetric = true)
+        => ResidentBytes(n, PlanarCoreFootprint.Estimate(n, cellCount), symmetric);
+
+    /// <summary>
+    /// <b>CAP-3 — the one function</b>: <see cref="ResidentBytes(int, int, bool)"/> for a stated or
+    /// counted core footprint. <paramref name="n"/> is the size of the matrix held (the merged count on a
+    /// merged mesh); <paramref name="cores"/> is the elemental mesh's, which is what the fill cores.
+    /// </summary>
+    public static long ResidentBytes(int n, PlanarCoreFootprint cores, bool symmetric = true)
+        => symmetric
+            ? MatrixBytes(n) + cores.Bytes + Math.Max(FactorBytes(n), FillTransientBytes(n, cores))
+            : DenseMatrixBytes(n) + LuFactorBytes(n) + cores.Bytes + FillTransientBytes(n, cores);
+
+    /// <summary>
+    /// <b>CAP-3 — one dense frequency point of THIS mesh</b>: its solved unknown count and its own counted
+    /// cores (<see cref="PlanarCoreFootprint.Count"/>, cached per mesh).
+    /// </summary>
+    public static long ResidentBytes(PlanarMesh mesh, PlanarFillSettings? settings = null)
+        => ResidentBytes(mesh.SolvedUnknownCount, PlanarCoreFootprint.Count(mesh, settings));
 
     /// <summary>
     /// <b>The one parenthetical all three ceiling refusals quote, so the three cannot drift.</b> It
@@ -249,9 +284,14 @@ public sealed class PlanarSystem : IPlanarOperator
     /// limit — which R17 is not (see <see cref="SurfaceMesher"/>'s own note on that).
     /// </summary>
     public static string ResidentPhrase(int n, int cellCount = 0)
-        => $"{Megabytes(ResidentBytes(n, cellCount)):N0} MB resident at the peak of one frequency " +
-           $"point (the matrix P7's in-place factorisation consumes, its diagonal, and the cached " +
-           $"cores), against " +
+        => ResidentPhrase(n, PlanarCoreFootprint.Estimate(n, cellCount));
+
+    /// <inheritdoc cref="ResidentPhrase(int, int)"/>
+    public static string ResidentPhrase(int n, PlanarCoreFootprint cores)
+        => $"{Megabytes(ResidentBytes(n, cores)):N0} MB resident at the peak of one frequency " +
+           $"point (the matrix's lower triangle, which P7's in-place factorisation consumes, its " +
+           $"diagonal, the cached " +
+           $"cores and the fill's working space), against " +
            $"{Megabytes(ResidentBytes(SurfaceMesher.UnknownCeiling)):N0} MB at the ceiling";
 
     private static double Megabytes(long bytes) => bytes / (1024.0 * 1024.0);
@@ -260,13 +300,15 @@ public sealed class PlanarSystem : IPlanarOperator
     /// R-fil-10 / R17, in <see cref="SurfaceMesher"/>'s own words and with the same numbers, asked
     /// before anything of that size is allocated.
     /// </summary>
-    public static void GuardCeiling(int n, int cellCount = 0, long? limit = null)
+    /// <param name="limit">The run's memory limit. ADVISORY: a run that carries one was asked about its size
+    /// before it started (<see cref="SurfaceMesher.LimitOwner"/>'s note), so this guard lets it through.</param>
+    /// <param name="mesh">Kept for the callers' signature; the fixed ceiling below needs no mesh.</param>
+    public static void GuardCeiling(int n, int cellCount = 0, long? limit = null,
+                                    PlanarMemoryLimitSource source = PlanarMemoryLimitSource.MachineLimit,
+                                    PlanarMesh? mesh = null)
     {
-        if (limit is { } bytes)
-        {
-            if (n <= SurfaceMesher.CeilingFor(false, bytes, cellCount)) return;
-            throw new InvalidOperationException(SurfaceMesher.LimitSentence(n, bytes, cellCount));
-        }
+        if (limit is not null) return;   // a memory limit is asked about, never refused
+
         if (n <= SurfaceMesher.UnknownCeiling) return;
         // ── MIM-13 item 1 — WHAT THIS SENTENCE USED TO END ON, AND WHY IT HAD TO CHANGE ─────────
         //
@@ -309,11 +351,11 @@ public sealed class PlanarSystem : IPlanarOperator
         // elemental matrix at all.
         if (cores.Mesh.Merge is { } merge)
         {
-            GuardCeiling(merge.Count, cores.CellCount, cores.Settings.MemoryLimitBytes);
-            return new PlanarSystem(PlanarFill.FillMerged(cores, termsA, termsQ, omega), cores.Settings, merge);
+            GuardCeiling(merge.Count, cores.CellCount, cores.Settings.MemoryLimitBytes, cores.Settings.MemoryLimitSource, cores.Mesh);
+            return new PlanarSystem(PlanarFill.FillMergedLower(cores, termsA, termsQ, omega), cores.Settings, merge);
         }
-        GuardCeiling(cores.UnknownCount, cores.CellCount, cores.Settings.MemoryLimitBytes);
-        return new PlanarSystem(PlanarFill.Fill(cores, termsA, termsQ, omega), cores.Settings);
+        GuardCeiling(cores.UnknownCount, cores.CellCount, cores.Settings.MemoryLimitBytes, cores.Settings.MemoryLimitSource, cores.Mesh);
+        return new PlanarSystem(PlanarFill.FillLower(cores, termsA, termsQ, omega), cores.Settings);
     }
 
     /// <summary>
@@ -333,21 +375,34 @@ public sealed class PlanarSystem : IPlanarOperator
             throw new InvalidOperationException(
                 "Rooftop merging is built for a single conductor level with no vias, and the mesher " +
                 "never attaches a merge to any other mesh. This one carries one; solve it elemental.");
-        GuardCeiling(cores.UnknownCount, cores.CellCount, cores.Settings.MemoryLimitBytes);
-        return new PlanarSystem(PlanarFill.FillMultiLevel(cores, set, levels, omega), cores.Settings);
+        GuardCeiling(cores.UnknownCount, cores.CellCount, cores.Settings.MemoryLimitBytes, cores.Settings.MemoryLimitSource, cores.Mesh);
+        return new PlanarSystem(PlanarFill.FillMultiLevelLower(cores, set, levels, omega), cores.Settings);
     }
 
     /// <summary>
     /// Wraps an already-filled matrix (the reduction tests build theirs directly).
     ///
-    /// <para><b>P7 — the matrix handed in is CONSUMED by the first factorisation.</b> A caller that
-    /// still wants it afterwards passes <c>matrix.Copy()</c>. This is deliberately not copied here:
-    /// the copy is the whole cost this phase removed, and hiding it inside the wrapper would hide it
-    /// from the one caller in a position to decide whether it is needed.</para>
+    /// <para><b>CAP-2 — the square's LOWER triangle is copied into a <see cref="BlockLowerMatrix"/>,
+    /// and the square is left as it was</b>; its upper triangle is not read. A small-N convenience:
+    /// the copy is half a square on top of the square the caller already holds.</para>
     /// </summary>
     public static PlanarSystem Wrap(Mat<Complex> matrix, PlanarFillSettings? settings = null)
     {
-        GuardCeiling(matrix.RowCount, limit: settings?.MemoryLimitBytes);
+        GuardCeiling(matrix.RowCount, limit: settings?.MemoryLimitBytes,
+                     source: settings?.MemoryLimitSource ?? PlanarMemoryLimitSource.MachineLimit);
+        return new PlanarSystem(BlockLowerMatrix.FromLower(matrix), settings ?? PlanarFillSettings.Default);
+    }
+
+    /// <summary>
+    /// Wraps an already-filled lower triangle. <b>P7 — it is CONSUMED by the first factorisation.</b>
+    /// A caller that still wants it afterwards passes <c>matrix.Copy()</c>; it is deliberately not
+    /// copied here, because the copy is the whole cost P7 removed.
+    /// </summary>
+    public static PlanarSystem Wrap(BlockLowerMatrix matrix, PlanarFillSettings? settings = null)
+    {
+        ArgumentNullException.ThrowIfNull(matrix);
+        GuardCeiling(matrix.Size, limit: settings?.MemoryLimitBytes,
+                     source: settings?.MemoryLimitSource ?? PlanarMemoryLimitSource.MachineLimit);
         return new PlanarSystem(matrix, settings ?? PlanarFillSettings.Default);
     }
 
@@ -361,14 +416,18 @@ public sealed class PlanarSystem : IPlanarOperator
 
         if (_st.UseSymmetricFactorization)
         {
-            _ldl = SymmetricFactorization.Factor(_a, _st);
+            _ldl = SymmetricFactorization.Factor(_a!, _st);
         }
         else
         {
-            // The pre-P7 path. NumFlat's LU does NOT consume its input, so `Matrix` would still be
-            // readable here — but it is sealed off either way, because a property whose validity
-            // depends on a setting is worse than one that is simply gone.
-            _lu = _a.Lu();
+            // The pre-P7 path. NumFlat's LU wants the square, so CAP-2's triangle is expanded for it
+            // — the mirror is a copy, so this is the very matrix the fill's own mirror used to make —
+            // and dropped, so the reference path holds the square and its factors, not a third copy.
+            // `Matrix` is sealed off either way, because a property whose validity depends on a
+            // setting is worse than one that is simply gone.
+            var dense = _a!.ToDense();
+            _a = null;
+            _lu = dense.Lu();
         }
 
         _consumed = true;
@@ -516,7 +575,7 @@ public static class PlanarSweep
         ArgumentNullException.ThrowIfNull(freqsHz);
 
         var st = settings ?? PlanarFillSettings.Default;
-        PlanarSystem.GuardCeiling(mesh.SolvedUnknownCount, mesh.Cells.Count, st.MemoryLimitBytes);
+        PlanarSystem.GuardCeiling(mesh.SolvedUnknownCount, mesh.Cells.Count, st.MemoryLimitBytes, st.MemoryLimitSource, mesh);
 
         // ── D6: ONCE, whatever the sweep's length ────────────────────────────────────────────
         var sw = Stopwatch.StartNew();

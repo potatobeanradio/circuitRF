@@ -183,6 +183,28 @@ public sealed record PlanarMeshReport(
     public bool CanSolve => Verdict != PlanarBudgetVerdict.Refused;
 
     /// <summary>
+    /// <b>CAP-1 follow-up — the run is past the MACHINE's own memory</b> (the limit the run service took from
+    /// physical memory or Settings ▸ Solvers, <see cref="SurfaceMesher.LimitOwner"/>). Not a refusal:
+    /// <see cref="CanSolve"/> stays true, the report carries a warning, and the run asks before it starts.
+    /// </summary>
+    public bool PastMachineLimit { get; init; }
+
+    /// <summary>
+    /// <b>CAP-1 follow-up — what a de-embedded run's calibration standards hold beside the structure</b>, at
+    /// the peak of one frequency point (they are solved concurrently with it). 0 for a run that de-embeds
+    /// nothing, an accelerated run, or a report nothing has priced them for
+    /// (<see cref="PlanarRunMemory.WithStandards"/>).
+    /// </summary>
+    public long StandardResidentBytes { get; init; }
+
+    /// <summary>The dense structure's own <see cref="PlanarSystem.ResidentBytes"/> plus
+    /// <see cref="StandardResidentBytes"/>: one frequency point of the whole run.</summary>
+    /// <remarks>CAP-3 — the structure's cores are this mesh's own, counted (<see cref="PlanarCoreFootprint.For"/>).</remarks>
+    public long RunResidentBytes =>
+        PlanarSystem.ResidentBytes(UnknownCount, PlanarCoreFootprint.For(Mesh, UnknownCount, CellCount))
+        + StandardResidentBytes;
+
+    /// <summary>
     /// <see cref="Findings"/>, or every note at <see cref="EmSeverity.Note"/> when a producer
     /// predates the class. <b>Read this, never <see cref="Notes"/>, when the class matters</b> — the
     /// fallback is what keeps a report built by an older call site from losing its sentences.

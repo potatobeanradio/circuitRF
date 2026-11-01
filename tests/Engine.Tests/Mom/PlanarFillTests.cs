@@ -485,4 +485,92 @@ public class PlanarFillTests
             Assert.Contains("Mesh the setup", m, StringComparison.Ordinal);
         }
     }
+
+    // ── CAP-3 — the cell potential P in bounded panels ────────────────────────────────────────────
+    //
+    // The scalar block reads P a panel of columns at a time, from rows formed under a byte budget
+    // (PlanarPotentialPanels.cs). A budget of a few kB forces a panel per handful of columns and the
+    // eviction and re-forming of carried rows; an unbounded one forms every row once in one panel.
+    // Every entry is P(min, max) by the one expression either way, so the triangles agree to the bit.
+    // (Against the m×m code that preceded it: RESOLVED.md §CAP-3's S dumps, and P3_1's pinned digests.)
+
+    private static void AssertSameBits(BlockLowerMatrix a, BlockLowerMatrix b)
+    {
+        Assert.Equal(a.Size, b.Size);
+        for (int j = 0; j < a.Size; j++)
+        {
+            var ca = a.Column(j); var cb = b.Column(j);
+            for (int i = 0; i < ca.Length; i++)
+                if (BitConverter.DoubleToInt64Bits(ca[i].Real) != BitConverter.DoubleToInt64Bits(cb[i].Real) ||
+                    BitConverter.DoubleToInt64Bits(ca[i].Imaginary) != BitConverter.DoubleToInt64Bits(cb[i].Imaginary))
+                    Assert.Fail($"entry ({j + i}, {j}) differs: {ca[i]} against {cb[i]}");
+        }
+    }
+
+    [Fact]
+    public void CAP3_APanelledFill_IsTheWholeOne_BitForBit_OnOneLevel()
+    {
+        var problem = PlanarLineFixtures.Fr4Line(20e-3, 10e9);
+        var mesh    = SurfaceMesher.Mesh(problem, PlanarLineFixtures.Shipping).Mesh;
+        var cores   = PlanarFill.BuildCores(mesh);
+        var pair    = PlanarLineFixtures.Kernel(problem.Slab, 10e9).For(cores, PlanarFillSettings.Default.Order);
+        double w    = 2 * Math.PI * 10e9;
+
+        var whole = PlanarFill.FillLower(cores, pair.VectorPotential, pair.Scalar, w, potentialBudgetBytes: long.MaxValue);
+        var tight = PlanarFill.FillLower(cores, pair.VectorPotential, pair.Scalar, w, potentialBudgetBytes: 16 << 10);
+        AssertSameBits(whole, tight);
+    }
+
+    /// <summary>A cheap stand-in for P: any deterministic function of the unordered pair will do,
+    /// because what is under test is which row an entry is read from, not what it is.</summary>
+    private readonly struct SyntheticPotential : PlanarFill.IPotentialEntry
+    {
+        public Complex At(int a, int b) => new(1.0 / (1 + b - a) + 1e-3 * a, Math.Sin(0.37 * a + 0.11 * b));
+    }
+
+    [Fact]
+    public void CAP3_APanelledScalarBlock_ReadsEveryEntryFromTheRightRow_WithAViaTail()
+    {
+        // The via bases sit after every horizontal one and their foot cells are carried as a separate
+        // segment per row, so this is the mesh that reads both halves of a row — and a 2 kB budget
+        // forces eviction and re-forming throughout. Against the m×m arithmetic written out directly.
+        var stack = LayerStacks.MmicTwoLevel;
+        const double len = 400e-6;
+        var lower = new PlanarConductorLayer("M1", [PlanarLineFixtures.Rect(0, 0, len, 100e-6)], 4.1e7, 2e-6, stack.InterfaceZ[1]);
+        var upper = new PlanarConductorLayer("M2", [PlanarLineFixtures.Rect(0, 0, len, 100e-6)], 4.1e7, 3e-6, stack.TopZ);
+        var vias  = new[] { new PlanarVia(0, 1, [PlanarLineFixtures.Rect(0.45 * len, 30e-6, 0.55 * len, 70e-6)], 4.1e7) };
+        var problem = new PlanarProblem([lower, upper], GroundedSlab.GaAsStarter, 10e9, null, stack, vias);
+        var mesh  = SurfaceMesher.Mesh(problem).Mesh;
+        Assert.Contains(mesh.Bases, b => b.Direction == PlanarBasisDirection.Z);
+
+        int n = mesh.Bases.Count;
+        var halves = new (RooftopHalf A, RooftopHalf B)[n];
+        for (int i = 0; i < n; i++) halves[i] = PlanarBasisFunctions.Halves(mesh, mesh.Bases[i]);
+        var pot   = new SyntheticPotential();
+        var scale = new Complex(0.3, -2.0);
+        Complex P(int a, int b) => pot.At(Math.Min(a, b), Math.Max(a, b));
+
+        var expected = new BlockLowerMatrix(n);
+        for (int i = 0; i < n; i++)
+        {
+            var (ma, mb) = halves[i];
+            var col = expected.Column(i);
+            for (int j = i; j < n; j++)
+            {
+                var (na, nb) = halves[j];
+                Complex s = ma.Sign * na.Sign * P(ma.CellIndex, na.CellIndex)
+                          + ma.Sign * nb.Sign * P(ma.CellIndex, nb.CellIndex)
+                          + mb.Sign * na.Sign * P(mb.CellIndex, na.CellIndex)
+                          + mb.Sign * nb.Sign * P(mb.CellIndex, nb.CellIndex);
+                col[j - i] = scale * s;
+            }
+        }
+
+        foreach (long budget in new[] { 2L << 10, long.MaxValue })
+        {
+            var z = new BlockLowerMatrix(n);
+            PlanarFill.ScalarBlockInPanels(z, halves, mesh, scale, pot, PlanarFillSettings.Default, budget);
+            AssertSameBits(expected, z);
+        }
+    }
 }

@@ -597,8 +597,9 @@ internal static class ToolCatalog
                          "Run a .c3d's band sweep, by name: one setup per band made from its template (each at that SAR "
                        + "frequency), then the table of psSAR1g and psSAR10g at the rated power beside the reference values."),
                      new("force", "--force", OptKind.Flag,
-                         "Start a Palace run whose memory estimate is past 150 % of this machine's, which is "
-                       + "otherwise refused."),
+                         "Start a run whose memory estimate is past this machine's, which is otherwise refused: a "
+                       + "Palace run past 150 % of it, a planar run past it (or past memoryLimitGB) — the panel's "
+                       + "Simulate Anyway."),
                      // A thermal setup driven from a circuit: one of the CIRCUIT's globals (brief-em3d-79).
                      Set,
                      new("workspace", "--workspace", OptKind.Path,
@@ -621,9 +622,10 @@ internal static class ToolCatalog
                        + "is enabled."),
                      // brief-emi-10 R-emi10-4 — `em --memory-limit`, through the CLI's own parsing and refusals.
                      new("memoryLimitGB", "--memory-limit", OptKind.Number,
-                         "A 3D run's memory ceiling for its solver and mesher processes, GB, below this machine's memory. A "
-                       + "process reaching it is stopped and the run refused, writing nothing. Default: this machine's memory; "
-                       + "a run started with force past its size check keeps none."),
+                         "A run's memory ceiling, GB, below this machine's memory. A 3D run's solver and mesher processes "
+                       + "are held to it: one reaching it is stopped and the run refused, writing nothing. A planar run's size "
+                       + "is checked against it before anything is filled. Default: this machine's memory; a run started "
+                       + "with force past its size check keeps none."),
                      new("component", "--component", OptKind.Str,
                          "Extract one built-in component's drawn part instead of a .cem: its type and parameters as on a "
                        + ".cnl instance line, e.g. \"SPIRAL N=3 W=10 um S=8 um Din=100 um\". Port n is terminal n. "

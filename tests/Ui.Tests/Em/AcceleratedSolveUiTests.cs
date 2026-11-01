@@ -194,6 +194,10 @@ public class AcceleratedSolveUiTests
     {
         string dir = TempDir();
         string path = Path.Combine(dir, "panel.cem");
+        // CAP-1 — the dense ceiling is sized on memory, so the test states the machine's limit rather than
+        // inherit whatever machine runs it — small enough that the dense count it allows is below the
+        // accelerated ceiling, which is the case the note is about.
+        const long Limit = 1_000_000_000;
         var setup = new EmSetup { Name = "panel", LayoutRef = "a.clay", AnalysisKind = EmAnalysisKind.Planar };
         EmSetupPersistence.SaveToFile(path, setup);
 
@@ -207,6 +211,8 @@ public class AcceleratedSolveUiTests
         {
             ResolveLayout = _ => new EmLayoutSource(
                 Path.Combine(dir, "a.clay"), view, StarterTechnologies.MmicGaAs(), Dbu),
+            MachineMemoryLimitBytes = () => Limit,
+            PhysicalMemoryBytes     = () => 16_000_000_000,
         };
         vm.Refresh();
 
@@ -215,11 +221,12 @@ public class AcceleratedSolveUiTests
 
         Assert.Null(vm.AcceleratedSolveDisabledReason);
         Assert.NotNull(vm.AcceleratedSolveCeilingNote);
-        Assert.Contains($"{SurfaceMesher.UnknownCeiling:N0}", vm.AcceleratedSolveCeilingNote!,
+        Assert.Contains($"{SurfaceMesher.CeilingFor(false, Limit):N0}", vm.AcceleratedSolveCeilingNote!,
                         StringComparison.Ordinal);
         Assert.Contains($"{SurfaceMesher.AcceleratedUnknownCeiling:N0}", vm.AcceleratedSolveCeilingNote!,
                         StringComparison.Ordinal);
         Assert.Contains("not headroom", vm.AcceleratedSolveCeilingNote!, StringComparison.Ordinal);
+        Assert.True(SurfaceMesher.CeilingFor(false, Limit) < SurfaceMesher.AcceleratedUnknownCeiling);
 
         Directory.Delete(dir, true);
     }
