@@ -1522,6 +1522,56 @@ public sealed class C3dTreeGroup(string header, IEnumerable<C3dTreeItem> items, 
     /// Material…; null for every other group.</summary>
     public string? MaterialName { get; init; }
     public override string ExpansionKey => "group:" + Role + ":" + Header;
+
+    // ── The header's one visibility switch ────────────────────────────────────────────────────────────────────────
+    // Every row this group lists, shown or hidden at once — the header's Show all / Hide all, scoped to one group. One
+    // tri-state box rather than an eye pair, so a header stays one line: ticked while every row is shown, clear while none
+    // is, and the indeterminate dash while some are. Clicking it shows every row unless every row is already shown, so a
+    // mixed group comes back first rather than vanishing. Each row goes through SetRowsVisible, the one visibility
+    // function, so the group's switch saves and undoes exactly as the rows' own ticks do.
+
+    private List<C3dTreeItem>? _members;
+
+    /// <summary>The rows the switch acts on — the same rows the header's Show all / Hide all reach (a group row stands for
+    /// its members), less a feature row, which has no visibility of its own. Read, and watched, on first use: the tree is
+    /// rebuilt on every edit, so a group's rows are fixed for its lifetime.</summary>
+    private List<C3dTreeItem> Members()
+    {
+        if (_members is not null) return _members;
+        _members = [.. Items.SelectMany(C3dEditorViewModel.VisibilityMembers).Where(r => !r.IsFeature)];
+        foreach (var r in _members)
+            r.PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName != nameof(C3dTreeItem.IsVisible)) return;
+                OnPropertyChanged(nameof(AllVisible));
+            };
+        return _members;
+    }
+
+    /// <summary>False for a group with nothing to show or hide (an empty Field Plots group): no switch is drawn.</summary>
+    public bool HasVisibilitySwitch => Members().Count > 0;
+
+    /// <summary>True while every row is shown, false while none is, null while some are. Setting it ignores the value the
+    /// box toggled to and shows every row unless every row is already shown.</summary>
+    public bool? AllVisible
+    {
+        get
+        {
+            var m = Members();
+            int shown = m.Count(r => r.IsVisible);
+            return shown == m.Count ? true : shown == 0 ? false : null;
+        }
+        set
+        {
+            var m = Members();
+            if (m.Count == 0) return;
+            bool show = m.Any(r => !r.IsVisible);
+            m[0].Owner.SetRowsVisible(m, show, $"{(show ? "Show" : "Hide")} {Header}");
+            OnPropertyChanged();   // the box goes back to what the rows now say, whatever it toggled to
+        }
+    }
+
+    public string VisibilityTip => $"Show or hide every row under {Header}";
 }
 
 /// <summary>One node of the editor's tree: a document object, an instance, or (read-only) an instance's part.</summary>
@@ -1530,6 +1580,9 @@ public sealed partial class C3dTreeItem(C3dEditorViewModel owner, string name, s
 {
     /// <summary>The kind of the air box's node (3D editor round 1): selectable, never deletable.</summary>
     public const string AirBoxKind = "Air box";
+
+    /// <summary>The editor this row belongs to — what a group's visibility switch calls.</summary>
+    internal C3dEditorViewModel Owner => owner;
 
     public override string ExpansionKey => "item:" + Kind + ":" + (GroupPath ?? Name) + (OperandPath is { } p ? "@" + TopName + "/" + p : "")
                                            + (FeaturePath is { } fp ? "@" + TopName + "#" + fp : "");

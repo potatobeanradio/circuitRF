@@ -38,7 +38,14 @@ public sealed class DocumentTabMenuVisibility : IValueConverter
     /// follows them; otherwise the <see cref="Any"/> separator is the next rule and two would stack.</summary>
     public static readonly DocumentTabMenuVisibility AfterPaths = new(Kind.AfterPaths);
 
-    private enum Kind { Save, SaveAs, Any, AfterPaths }
+    /// <summary>The Reveal in Workspace Tree item: shown on a file of the open workspace's tree.</summary>
+    public static readonly DocumentTabMenuVisibility RevealInTree = new(Kind.RevealInTree);
+
+    /// <summary>The separator under Reveal in Workspace Tree — shown when it is AND a save item follows; otherwise the
+    /// <see cref="Any"/> separator is the next rule and two would stack.</summary>
+    public static readonly DocumentTabMenuVisibility AfterRevealInTree = new(Kind.AfterRevealInTree);
+
+    private enum Kind { Save, SaveAs, Any, AfterPaths, RevealInTree, AfterRevealInTree }
 
     private readonly Kind _kind;
 
@@ -47,16 +54,18 @@ public sealed class DocumentTabMenuVisibility : IValueConverter
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
         var dockable = value as IDockable;
+        bool anySave = WorkspaceViewModel.HasSaveRoute(dockable) || WorkspaceViewModel.HasSaveAsRoute(dockable);
         return _kind switch
         {
             Kind.Save   => WorkspaceViewModel.HasSaveRoute(dockable),
             Kind.SaveAs => WorkspaceViewModel.HasSaveAsRoute(dockable),
+            Kind.RevealInTree => WorkspaceViewModel.HasTreeRevealRoute(dockable),
+            Kind.AfterRevealInTree => anySave && WorkspaceViewModel.HasTreeRevealRoute(dockable),
             Kind.AfterPaths => FileBackedDocumentConverter.Instance.Convert(
                                    value, targetType, parameter, culture) is true
-                               && (WorkspaceViewModel.HasSaveRoute(dockable)
-                                   || WorkspaceViewModel.HasSaveAsRoute(dockable)),
-            _           => WorkspaceViewModel.HasSaveRoute(dockable)
-                           || WorkspaceViewModel.HasSaveAsRoute(dockable)
+                               && (anySave || WorkspaceViewModel.HasTreeRevealRoute(dockable)),
+            _           => anySave
+                           || WorkspaceViewModel.HasTreeRevealRoute(dockable)
                            // the Reveal item's own rule, asked of the converter that states it
                            // rather than restated here — one file-backed test, not two.
                            || FileBackedDocumentConverter.Instance.Convert(

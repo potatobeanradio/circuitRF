@@ -32,6 +32,9 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
     /// <summary>The node that built this one; null on the workspace root. Only the root subscribes to
     /// filter changes — see the constructor for why.</summary>
     private readonly ProjectTreeNodeViewModel? _parent;
+
+    /// <summary>The row this one is listed under; null for the workspace root.</summary>
+    public ProjectTreeNodeViewModel? Parent => _parent;
     private readonly ITreeActions?          _actions;
 
     /// <summary>SL4 R-sl4-10 — raised the first time an unwalked referenced sub-tree is expanded, so
@@ -834,7 +837,11 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
                 // derived belongs in this set; only a real filter input does.
                 if (e.PropertyName is nameof(ProjectTreeFilterState.HasSearchQuery)
                                    or nameof(ProjectTreeFilterState.IsSearching)
-                                   or nameof(ProjectTreeFilterState.SearchTerm)) return;
+                                   or nameof(ProjectTreeFilterState.SearchTerm)
+                                   or nameof(ProjectTreeFilterState.AllOn)) return;
+                // SetAll assigns ten categories and then raises CategoriesChanged once — one pass,
+                // not ten.
+                if (_filter.IsBatching) return;
                 ApplyFilter();
             };
 

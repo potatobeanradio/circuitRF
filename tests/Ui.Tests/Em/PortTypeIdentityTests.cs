@@ -17,6 +17,11 @@
 // there is no slot for it to slide along and the whole class of defect is unrepresentable. These
 // tests keep asserting the behaviour — deleting a port must not retype its neighbours — because that
 // is the property, not the mechanism. `PortZ0s` still uses the slot rule and is still tested for it.
+//
+// A set whose numbers skip one is refused outright since DFR33-1 (a Touchstone file numbers its ports by
+// position), so ports 2 and 3 left alone can no longer be extracted at all. Each scenario therefore draws a
+// FRESH, untyped P1 where the deleted one stood — the numbers are 1…N again, and the deleted port's type and
+// impedance must reach neither the newcomer nor its neighbours.
 
 using System.Numerics;
 using Avalonia.Input;
@@ -91,12 +96,13 @@ public class PortTypeIdentityTests
     [Fact]
     public void DeletingTheTypedPort_LeavesTheSurvivorAnEdgePort()
     {
-        // P1 was typed internal and has since been DELETED — so it is simply not here.
-        var r = Extract(Setup(), Line(), Port("2", 20, 1.45));
+        // P1 was typed internal and has since been DELETED — so it is simply not here; a fresh, untyped P1 replaces it.
+        var r = Extract(Setup(), Line(), Port("1", 0, 1.45), Port("2", 20, 1.45));
 
         Assert.True(r.Ok, r.Refusal);
-        Assert.Equal(2, r.Rows[0].Number);
-        Assert.Equal(PlanarPortKind.Edge, r.Ports[0].Kind);
+        Assert.Equal(2, r.Rows[1].Number);
+        Assert.Equal(PlanarPortKind.Edge, r.Ports[0].Kind);   // the new P1 states nothing and stands on the end face
+        Assert.Equal(PlanarPortKind.Edge, r.Ports[1].Kind);
     }
 
     /// <summary>Scenario 1b: P1 typed internal, P3 added, then P1 deleted. Neither survivor takes
@@ -107,12 +113,13 @@ public class PortTypeIdentityTests
     [Fact]
     public void DeletingTheTypedPortWithAThirdPresent_LeavesEachSurvivorItsOwnType()
     {
-        var r = Extract(Setup(), Line(), Port("2", 20, 1.45), Port("3", 10, 1.45, LayoutRotation.R0));
+        var r = Extract(Setup(), Line(), Port("1", 0, 1.45), Port("2", 20, 1.45), Port("3", 10, 1.45, LayoutRotation.R0));
 
         Assert.True(r.Ok, r.Refusal);
-        Assert.Equal([2, 3], r.Rows.Select(x => x.Number));
-        Assert.Equal(PlanarPortKind.Edge,     r.Ports[0].Kind);   // P2, on the end face
-        Assert.Equal(PlanarPortKind.Internal, r.Ports[1].Kind);   // P3, mid-metal
+        Assert.Equal([1, 2, 3], r.Rows.Select(x => x.Number));
+        Assert.Equal(PlanarPortKind.Edge,     r.Ports[0].Kind);   // the new P1, untyped, on the other end face
+        Assert.Equal(PlanarPortKind.Edge,     r.Ports[1].Kind);   // P2, on the end face
+        Assert.Equal(PlanarPortKind.Internal, r.Ports[2].Kind);   // P3, mid-metal
     }
 
     /// <summary>Scenario 1c, the mirror: the type must not WALK either. P2 is the typed one and
@@ -123,14 +130,14 @@ public class PortTypeIdentityTests
     public void DeletingAnUNtypedPort_DoesNotWalkTheTypeOntoItsNeighbour()
     {
         var r = Extract(Setup(), Typed(2, PlanarPortKind.Internal,
-                        Line(), Port("2", 20, 1.45), Port("3", 10, 1.45, LayoutRotation.R0)));
+                        Line(), Port("1", 0, 1.45), Port("2", 20, 1.45), Port("3", 10, 1.45, LayoutRotation.R0)));
 
         Assert.True(r.Ok, r.Refusal);
-        Assert.Equal($"P2={PlanarPortKind.Internal} P3={PlanarPortKind.Internal}",
-                     $"P2={r.Ports[0].Kind} P3={r.Ports[1].Kind}");
+        Assert.Equal($"P1={PlanarPortKind.Edge} P2={PlanarPortKind.Internal} P3={PlanarPortKind.Internal}",
+                     $"P1={r.Ports[0].Kind} P2={r.Ports[1].Kind} P3={r.Ports[2].Kind}");
 
         // …and P3's is its ARTWORK's answer, not a copy of P2's: it states nothing at all.
-        Assert.Null(r.Rows[1].Label.PortKind);
+        Assert.Null(r.Rows[2].Label.PortKind);
     }
 
     /// <summary>The same rule for the reference impedance, which shared the defect: an override on
@@ -141,11 +148,11 @@ public class PortTypeIdentityTests
         var setup = new EmSetup { Name = "x", LayoutRef = "a.clay", AnalysisKind = EmAnalysisKind.Planar };
         setup.PortZ0s.AddRange([new Complex(50, 0), new Complex(50, 0), new Complex(75, 0)]);
 
-        var r = Extract(setup, Line(), Port("2", 20, 1.45), Port("3", 10, 1.45, LayoutRotation.R0));
+        var r = Extract(setup, Line(), Port("1", 0, 1.45), Port("2", 20, 1.45), Port("3", 10, 1.45, LayoutRotation.R0));
 
         Assert.True(r.Ok, r.Refusal);
-        Assert.Equal(new Complex(50, 0), r.Ports[0].Z0);   // port 2
-        Assert.Equal(new Complex(75, 0), r.Ports[1].Z0);   // port 3 keeps its own
+        Assert.Equal(new Complex(50, 0), r.Ports[1].Z0);   // port 2
+        Assert.Equal(new Complex(75, 0), r.Ports[2].Z0);   // port 3 keeps its own
     }
 
     // ══════════════════════════════════════════════════════════════════════════════════════════

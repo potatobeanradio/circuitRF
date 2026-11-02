@@ -84,6 +84,9 @@ public partial class ProjectTreeView : UserControl
         // never reach this control at all. See OnActivationFocusRequested.
         DataContextChanged += OnDataContextChangedForActivation;
 
+        // Reveal in Workspace Tree (a document tab's menu): the tool expands and selects; this focuses and scrolls.
+        DataContextChanged += OnDataContextChangedForReveal;
+
         // Escape closes the search (which clears it, so the tree comes back).
         //
         // handledEventsToo: true is REQUIRED, not defensive, and leaving it off is why Escape did
@@ -143,6 +146,44 @@ public partial class ProjectTreeView : UserControl
             if (PanelActivationFocus.AlreadyInside(this)) return;
             if (!TheTreeView.Focus()) TreeScroll.Focus();
         }, Avalonia.Threading.DispatcherPriority.Input);
+
+    // ── Reveal in Workspace Tree ──────────────────────────────────────────────
+
+    private ProjectTreeTool? _revealTool;
+
+    private void OnDataContextChangedForReveal(object? sender, EventArgs e)
+    {
+        if (_revealTool is not null) _revealTool.RevealRequested -= OnRevealRequested;
+        _revealTool = DataContext as ProjectTreeTool;
+        if (_revealTool is not null) _revealTool.RevealRequested += OnRevealRequested;
+    }
+
+    /// <summary>
+    /// Focuses the revealed row and scrolls it into sight. Posted at Background priority — below layout — because the rows
+    /// the reveal just expanded have no containers until the next layout pass; one more pass is allowed for a deep path
+    /// whose containers arrive a level at a time. The scroll is vertical only (<see cref="OnTreeBringIntoView"/>).
+    /// </summary>
+    private void OnRevealRequested(ProjectTreeNodeViewModel node)
+    {
+        void Attempt(int triesLeft)
+        {
+            if (TheTreeView.TreeContainerFromItem(node) is TreeViewItem row)
+            {
+                if (!ReferenceEquals(TheTreeView.SelectedItem, node)) TheTreeView.SelectedItem = node;
+                // A plain focus, as a click gives: a keyboard navigation method would draw the focus outline round the
+                // row, and the reveal has to look like an ordinary selection.
+                row.Focus();
+                // The row's own line, not its bounds: an expanded folder's bounds hold every row beneath it.
+                row.BringIntoView(new Rect(0, 0, row.Bounds.Width, Math.Min(row.Bounds.Height, 28)));
+                return;
+            }
+            if (triesLeft > 0)
+                Avalonia.Threading.Dispatcher.UIThread.Post(() => Attempt(triesLeft - 1), Avalonia.Threading.DispatcherPriority.Background);
+            else
+                TheTreeView.Focus();
+        }
+        Avalonia.Threading.Dispatcher.UIThread.Post(() => Attempt(3), Avalonia.Threading.DispatcherPriority.Background);
+    }
 
     // ── Bring-into-view: vertical only ────────────────────────────────────────
 

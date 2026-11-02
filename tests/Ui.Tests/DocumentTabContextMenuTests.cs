@@ -334,6 +334,22 @@ public class DocumentTabContextMenuTests
     }
 
     [Fact]
+    public void RevealInWorkspaceTreeSitsAboveSave_WithItsOwnSeparatorUnderIt()
+    {
+        string src = Menu();
+        int menu    = src.IndexOf("<ContextMenu x:Key=", StringComparison.Ordinal);
+        int paths   = src.IndexOf("cmds:DocumentTabCommands.CopyFullPath}", menu, StringComparison.Ordinal);
+        int reveal  = src.IndexOf("Command=\"{x:Static cmds:DocumentTabCommands.RevealInTree}\"", menu, StringComparison.Ordinal);
+        int sep     = src.IndexOf("<Separator IsVisible=\"{Binding Converter={x:Static conv:DocumentTabMenuVisibility.AfterRevealInTree}}", menu, StringComparison.Ordinal);
+        int save    = src.IndexOf("cmds:DocumentTabCommands.Save}", menu, StringComparison.Ordinal);
+
+        Assert.True(reveal > paths, "Reveal in Workspace Tree must follow Copy Full Path.");
+        Assert.True(sep > reveal && sep < save, "Its separator must sit between it and Save.");
+        Assert.Contains("CommandParameter=\"{Binding}\"", src.Substring(reveal, 200), StringComparison.Ordinal);
+        Assert.Contains("Header=\"Reveal in Workspace Tree\"", src, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void BothSaveEntriesPassTheDockableItself_SoAFloatingTabSavesToo()
     {
         // Same reason Reveal takes the dockable: a torn-off document lives in a floating host window

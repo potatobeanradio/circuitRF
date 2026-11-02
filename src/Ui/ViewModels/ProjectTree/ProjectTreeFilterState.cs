@@ -65,9 +65,46 @@ public partial class ProjectTreeFilterState : ObservableObject
         Cells && Libraries && TestBenches && DataDisplays && ColorThemes && TechFiles && KnownFiles
         && WorkspaceFileSystem && ReferencedCells && ReferencedWorkspaces;
 
+    /// <summary>
+    /// The flyout's all-on/all-off toggle: reads true only while every category is on, and setting it
+    /// turns every category on or off together. Derived — the node VMs ignore its notification, and
+    /// <see cref="SetAll"/> raises <see cref="CategoriesChanged"/> once instead of one filter pass per
+    /// category.
+    /// </summary>
+    public bool AllOn
+    {
+        get => IsAllOn;
+        set => SetAll(value);
+    }
+
+    /// <summary>The property name <see cref="SetAll"/> raises once, after the whole batch has landed —
+    /// a real filter input, so the tree re-filters exactly once.</summary>
+    public const string CategoriesChanged = "Categories";
+
+    /// <summary>True while <see cref="SetAll"/> is assigning categories one at a time; each of those
+    /// notifications is part of one change and must not re-filter the tree on its own.</summary>
+    public bool IsBatching { get; private set; }
+
     public void SetAll(bool value)
     {
-        Cells = Libraries = TestBenches = DataDisplays = ColorThemes = TechFiles = KnownFiles
-              = WorkspaceFileSystem = ReferencedCells = ReferencedWorkspaces = value;
+        IsBatching = true;
+        try
+        {
+            Cells = Libraries = TestBenches = DataDisplays = ColorThemes = TechFiles = KnownFiles
+                  = WorkspaceFileSystem = ReferencedCells = ReferencedWorkspaces = value;
+        }
+        finally { IsBatching = false; }
+        OnPropertyChanged(CategoriesChanged);
+        OnPropertyChanged(nameof(AllOn));
+    }
+
+    protected override void OnPropertyChanged(System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        base.OnPropertyChanged(e);
+        // One checkbox changed by hand: the toggle's own state may have changed with it.
+        if (!IsBatching && e.PropertyName is nameof(Cells) or nameof(Libraries) or nameof(TestBenches)
+                or nameof(DataDisplays) or nameof(ColorThemes) or nameof(TechFiles) or nameof(KnownFiles)
+                or nameof(WorkspaceFileSystem) or nameof(ReferencedCells) or nameof(ReferencedWorkspaces))
+            base.OnPropertyChanged(new System.ComponentModel.PropertyChangedEventArgs(nameof(AllOn)));
     }
 }

@@ -751,6 +751,68 @@ public partial class ProjectTreeTool : Tool, IActivatableTool
         return null;
     }
 
+    // ── Reveal in Workspace Tree ──────────────────────────────────────────────
+
+    /// <summary>Raised with the row <see cref="Reveal"/> selected, so the view can focus it and scroll it into sight
+    /// once the expanded rows have containers.</summary>
+    public event Action<ProjectTreeNodeViewModel>? RevealRequested;
+
+    /// <summary>True when the file at <paramref name="absPath"/> has a row in this tree, filtered out or not.</summary>
+    public bool HasNodeFor(string? absPath)
+        => !string.IsNullOrEmpty(absPath) && RootItems.Count > 0
+           && FindNodeByPath(RootItems[0], Path.GetFullPath(absPath)) is not null;
+
+    /// <summary>
+    /// The document tab menu's Reveal in Workspace Tree: expands every folder, cell and view folder above the file's row,
+    /// selects the row, and asks the view to focus it and scroll to it.
+    ///
+    /// <para>A file saved since the last scan has no row yet, and a referenced library's contents are read on demand, so a
+    /// path not found is looked for again after a full <see cref="Refresh"/>. A row the search or a category filter is
+    /// hiding cannot be shown without them, so both are cleared — that is what the user asked to see.</para>
+    /// </summary>
+    /// <returns>False when the file has no row in this tree at all.</returns>
+    public bool Reveal(string absPath)
+    {
+        if (RootItems.Count == 0) return false;
+        string full = Path.GetFullPath(absPath);
+        var node = FindNodeByPath(RootItems[0], full);
+        if (node is null)
+        {
+            Refresh();
+            if (RootItems.Count == 0 || FindNodeByPath(RootItems[0], full) is not { } found) return false;
+            node = found;
+        }
+
+        if (!IsListed(node))
+        {
+            // Synchronously, before any expansion is set: a search restores the expansion it overrode as it clears.
+            SearchText = "";
+            IsSearchOpen = false;
+            FilterState.SearchQuery = "";
+            if (!IsListed(node)) FilterState.SetAll(true);
+        }
+
+        // A row the tree folds into its parent (never listed under any filter) is revealed as its nearest listed ancestor.
+        var target = node;
+        while (target.Parent is { } p && !IsListed(target)) target = p;
+        if (target.Parent is null) return false;   // the workspace root: the header, not a row
+
+        for (var a = target.Parent; a is not null; a = a.Parent) a.IsExpanded = true;
+
+        SelectedNodes.Clear();
+        SelectedItem = target;
+        RevealRequested?.Invoke(target);
+        return true;
+    }
+
+    /// <summary>True when every row from the workspace root down to <paramref name="node"/> lists the next one.</summary>
+    private static bool IsListed(ProjectTreeNodeViewModel node)
+    {
+        for (var n = node; n.Parent is { } p; n = p)
+            if (!p.FilteredChildren.Contains(n)) return false;
+        return true;
+    }
+
     // ── Private helpers ───────────────────────────────────────────────────────
 
     private void RebuildVmTree(HashSet<string> expandedPaths)

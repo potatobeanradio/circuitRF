@@ -52,7 +52,7 @@
 
         <!-- Copy Path is the folder holding the file; Copy Full Path the file itself (PathClipboard).
              Same visibility as Reveal, and the same static-command-taking-the-dockable shape. The
-             separator under them shows only when Save or Save As… follows — with neither, the
+             separator under them shows only when Reveal in Workspace Tree, Save or Save As… follows — with neither, the
              separator that closes circuitRF's block is the next thing, and two would stack. -->
         <MenuItem Header="Copy Path"
                   Command="{x:Static cmds:DocumentTabCommands.CopyPath}"
@@ -70,6 +70,15 @@
              is gated by CanExecute — see DocumentTabMenuVisibility for why visibility carries every
              decision the menu makes, and WorkspaceViewModel.TabSave.cs for the routes themselves (each
              is the one File ▸ Save already uses; nothing is written there). -->
+        <!-- Reveal in Workspace Tree: the Workspace Tree takes focus with this document's row expanded to, selected and
+             scrolled into sight — for a workspace with too many files to find it by eye. Hidden on a document that is
+             not a file of the open workspace's tree. Its own separator under it shows only when a save item follows. -->
+        <MenuItem Header="Reveal in Workspace Tree"
+                  Command="{x:Static cmds:DocumentTabCommands.RevealInTree}"
+                  CommandParameter="{Binding}"
+                  IsVisible="{Binding Converter={x:Static conv:DocumentTabMenuVisibility.RevealInTree}}" />
+        <Separator IsVisible="{Binding Converter={x:Static conv:DocumentTabMenuVisibility.AfterRevealInTree}}" />
+
         <MenuItem Header="Save"
                   Command="{x:Static cmds:DocumentTabCommands.Save}"
                   CommandParameter="{Binding}"

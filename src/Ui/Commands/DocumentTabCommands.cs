@@ -39,6 +39,17 @@ public static class DocumentTabCommands
         dockable => PathClipboard.CopyAsync((dockable as IFileBackedDocument)?.FilePath, full: true),
         AsyncRelayCommandOptions.AllowConcurrentExecutions);
 
+    /// <summary>Reveal in Workspace Tree — the Workspace Tree takes focus with the right-clicked document's row expanded
+    /// to, selected and scrolled into sight. Hidden on a document that is not a file of the workspace's tree. The
+    /// workspace is resolved from the dockable, as <see cref="Save"/>'s is, so a floating tab reveals into its own
+    /// workspace's tree.</summary>
+    public static IRelayCommand<object?> RevealInTree { get; } = new RelayCommand<object?>(
+        dockable =>
+        {
+            if (dockable is IDockable d && WorkspaceViewModel.WorkspaceOf(d) is { } workspace)
+                workspace.RevealInWorkspaceTree(d);
+        });
+
     /// <summary>
     /// Saves the right-clicked document — the tab it was invoked on, never the active one, which is
     /// the whole difference between this and File ▸ Save.

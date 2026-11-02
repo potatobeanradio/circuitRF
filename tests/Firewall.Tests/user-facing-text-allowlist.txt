@@ -310,7 +310,7 @@ src/Design/Layout/Interchange/PlacementFile.cs|A landing check needs an origin, 
 src/Design/Layout/Em/EmSetupPersistence.cs|This .cem states its mesh current model twice and the two disagree: 
 src/Design/Layout/Em/EmSetupPersistence.cs|a name is a string
 src/Design/Layout/Em/EmSetupPersistence.cs|expected a name list or \"*\"
-src/Design/Layout/Em/EmSetupPersistence.cs|A ComponentPorts entry is a reference designator or an object with Refdes, Z0 and Reference.
+src/Design/Layout/Em/EmSetupPersistence.cs|A ComponentPorts entry is a reference designator or an object with Refdes, Z0, Reference and WidthUm.
 src/Design/Layout/Em/EmSetupPersistence.cs|ComponentPorts is \"*\" or a list of reference designators.
 src/Design/Thermal/ThermalFosterNetlist.cs|an empty network
 src/Design/Layout/Em/TraceImpedanceAcceptance.cs|An acceptance needs a reason.
@@ -1548,3 +1548,14 @@ src/RfCore/Export/BinaryDatasetWriter.cs|An object is larger than one page list 
 src/RfCore/Export/BinaryDatasetWriter.cs|Block '{block.Name}' has no axis.
 src/RfCore/Export/BinaryDatasetWriter.cs|Block '{block.Name}' sweeps '{a.Name}' over text.
 src/RfCore/Export/BinaryDatasetWriter.cs|The dataset has more objects than one directory list holds.
+# SnP perturbation parameters (SENS-2): elaboration errors on an SnP instance's SdB_i_j / Sdeg_i_j / Reciprocal
+# values, the same family as this factory's other parameter refusals above.
+src/Core/Devices/ComponentModelFactory.cs|{SnpPerturbation.ReciprocalParameter}={modeText} is not auto, tied or untied.
+src/Core/Devices/ComponentModelFactory.cs|{name} must be a real number (dB or degrees).
+src/Core/Devices/ComponentModelFactory.cs|{name} names port {Math.Max(i, j)}, and this SnP has {portCount} port(s) (NumPorts={portCount}).
+# BlockLowerMatrix / SymmetricFactorization (CAP-2): shape checks on matrices the planar solve builds itself,
+# internal invariants rather than refusals a user meets.
+src/Engine/Mom/BlockLowerMatrix.cs|Only a square matrix has a lower triangle to store; this one is {a.RowCount}×{a.ColCount}.
+src/Engine/Mom/BlockLowerMatrix.cs|x has {x.Length} entries against a {n}×{n} matrix.
+src/Engine/Mom/SymmetricFactorization.cs|A residual needs two vectors of the matrix's size; got {n}×{n}, x[{x.Count}], 
+src/Engine/Mom/SymmetricFactorization.cs|A symmetric factorisation needs a square, non-empty matrix; this one is 0×0.

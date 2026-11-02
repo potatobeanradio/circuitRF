@@ -159,6 +159,11 @@ int cmcMarkers = 0;
 string? palette = null, paletteCategory = null, paletteSearch = null, schematic = null, select = null;
 bool parameterDialog = false;
 string? archive = null, manageLibraries = null, addVendorLibrary = null;
+// --project-tree <workspace> [--reveal <file>] [--filter-open] [--filter-all-off]: the Workspace Tree panel; --reveal runs
+// a document tab's Reveal in Workspace Tree on that file, --filter-open opens the category filter's flyout.
+string? projectTree = null, revealPath = null;
+bool filterOpen = false, filterAllOff = false;
+CircuitRF.Ui.ViewModels.Dock.ProjectTreeTool? projectTreeTool = null;
 string? gdsfactory = null, gdsfactoryPython = null, gdsfactoryKit = null, gdsfactoryCell = null, gdsfactoryWorkspace = null;
 string? csym = null, csymPick = null;
 bool dark = false;
@@ -166,6 +171,8 @@ var layerToggles = new List<(string Name, bool Hide)>();
 bool layerList = false;
 bool layoutInspector = false;
 bool c3dEditor = false;
+// --untick <row> (with --c3d-setups): clears that Object Tree row's visibility tick, as a click on it does. Repeatable.
+var c3dUntick = new List<string>();
 bool standalone = false;
 var signal = new List<string>();
 string? snp = null;
@@ -226,6 +233,7 @@ for (int i = 0; i < args.Length; i++)
         case "--layer-list": layerList = true; break;
         case "--inspector": layoutInspector = true; break;
         case "--editor": c3dEditor = true; break;
+        case "--untick" when i + 1 < args.Length: c3dUntick.Add(args[++i]); break;
         case "--fc" when i + 1 < args.Length: fc = args[++i]; break;
         case "--c3d-setups" when i + 1 < args.Length: c3dSetups = Path.GetFullPath(args[++i]); break;
         case "--c3d-setup-panel" when i + 1 < args.Length: c3dSetupPanel = Path.GetFullPath(args[++i]); break;
@@ -244,6 +252,10 @@ for (int i = 0; i < args.Length; i++)
         case "--dialog": parameterDialog = true; break;
         case "--archive" when i + 1 < args.Length: archive = Path.GetFullPath(args[++i]); break;
         case "--manage-libraries" when i + 1 < args.Length: manageLibraries = Path.GetFullPath(args[++i]); break;
+        case "--project-tree" when i + 1 < args.Length: projectTree = Path.GetFullPath(args[++i]); break;
+        case "--reveal" when i + 1 < args.Length: revealPath = Path.GetFullPath(args[++i]); break;
+        case "--filter-open": filterOpen = true; break;
+        case "--filter-all-off": filterAllOff = true; break;
         case "--add-vendor-library" when i + 1 < args.Length: addVendorLibrary = Path.GetFullPath(args[++i]); break;
         // brief-gdf-2: the gdsfactory views — trust | pick | interpreter | report | prompt | permissions — with the
         // interpreter that has gdsfactory and (for trust/interpreter/report) a kit source tree.
@@ -284,7 +296,7 @@ if (reviewPanel is not null && output is not null)
         .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
     return ShowReviewPanel(reviewPanel, output, sizeGiven ? width : 420, sizeGiven ? height : 760);
 }
-bool vendorMode = palette is not null || schematic is not null || archive is not null || manageLibraries is not null || addVendorLibrary is not null || gdsfactory is not null || csym is not null;
+bool vendorMode = projectTree is not null || palette is not null || schematic is not null || archive is not null || manageLibraries is not null || addVendorLibrary is not null || gdsfactory is not null || csym is not null;
 if ((cdd is null && c3dSetups is null && c3dSetupPanel is null && signal.Count == 0 && snp is null && !standalone && tuning is null && optimizer is null && yieldCsch is null && clay is null && cem is null && ctech is null && cmc is null && image is null && exportData is null && !vendorMode) || output is null || view is not ("canvas" or "inspector" or "display"))
 {
     Console.Error.WriteLine("usage: UiSnapshot <file.cdd> -o <out.png> [--view canvas|inspector|display] [--plot n] [--size WxH] "
@@ -332,6 +344,22 @@ if (vendorMode)
     if (manageLibraries is not null) OpenManageLibraries(manageLibraries);
     if (addVendorLibrary is not null) OpenAddVendorLibrary(addVendorLibrary);
     if (gdsfactory is not null && !OpenGdsfactory(gdsfactory)) return 2;
+    if (projectTreeTool is { } treeTool)
+    {
+        if (filterAllOff) treeTool.FilterState.AllOn = false;
+        if (revealPath is not null)
+        {
+            Console.WriteLine($"reveal {revealPath}: {(treeTool.Reveal(revealPath) ? "selected " + treeTool.SelectedItem?.RelativePath : "not listed")}");
+            for (int k = 0; k < 6; k++) { Pump(); Thread.Sleep(10); }
+            Console.WriteLine($"focus {host.FocusManager?.GetFocusedElement()?.GetType().Name ?? "none"}");
+        }
+        if (filterOpen && host.GetVisualDescendants().OfType<Button>().FirstOrDefault(b => b.Flyout is not null
+                && ToolTip.GetTip(b) as string == "Filter categories") is { } filterButton)
+        {
+            filterButton.Flyout!.ShowAt(filterButton);
+            Pump();
+        }
+    }
 }
 else if (c3dSetups is not null)
 {
@@ -368,6 +396,9 @@ else if (c3dSetups is not null)
         c3dVm.MoveToTrash = d => { Directory.CreateDirectory(scratch); Directory.Move(d, Path.Combine(scratch, Guid.NewGuid().ToString("N"))); return null; };
         Console.WriteLine(c3dVm.DeleteSavedFields(c3dDeleteFields)?.Sentence ?? c3dVm.StatusMessage);
     }
+    foreach (string name in c3dUntick)
+        (c3dVm.Tree.SelectMany(g => g.Items).FirstOrDefault(t => t.Name == name)
+            ?? throw new InvalidOperationException($"--untick: no tree row named '{name}'")).IsVisible = false;
     if (c3dRow is not null)
     {
         static IEnumerable<CircuitRF.Ui.ThreeD.C3dTreeItem> Walk(CircuitRF.Ui.ThreeD.C3dTreeItem t) => t.Children.SelectMany(Walk).Prepend(t);
@@ -1215,6 +1246,13 @@ Window VendorView()
               ?? (schematic is not null ? CircuitRF.Design.Workspace.WorkspaceRootFinder.WorkspaceDirOf(Path.GetDirectoryName(schematic)) : null);
     if (ws is not null) IndexVendorLibraries(ws);
 
+    if (projectTree is not null)
+    {
+        var tree = projectTreeTool = new CircuitRF.Ui.ViewModels.Dock.ProjectTreeTool();
+        tree.SetWorkspace(projectTree);
+        return new Window { Width = sizeGiven ? width : 320, Height = sizeGiven ? height : 360,
+                            Content = new CircuitRF.Ui.Views.ProjectTree.ProjectTreeView { DataContext = tree } };
+    }
     if (palette is not null)
     {
         var tool = paletteTool = new PaletteTool();

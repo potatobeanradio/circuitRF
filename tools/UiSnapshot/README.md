@@ -209,7 +209,8 @@ dotnet run --project tools/UiSnapshot --no-build -- --c3d-setups <file.c3d> -o o
 (never the system Trash), and prints its sentence. `--c3d-row` selects an Object Tree row (a field plot) for the
 Properties panel, and prints why the plot draws nothing. `--rclick` on a card opens its menu. `--editor` hosts the whole
 3D editor view instead (toolbar, Object Tree and canvas; the canvas itself cannot draw headless), so `--rclick` on a tree
-row opens that row's menu. Whatever the editor posts to the Messages panel is also drawn to `<out>.messages.png`.
+row opens that row's menu. Whatever the editor posts to the Messages panel is also drawn to `<out>.messages.png`. `--untick <row>` (repeatable)
+clears an Object Tree row's visibility tick first, as a click on it does — what a section header's mixed state needs.
 
 `--c3d-pick <object>` (a step) is the 3D view's click on that object: the canvas cannot draw headless, but picking runs
 on the CPU, so it hovers a pixel that shows the object and sends the viewer's own Click, which an armed draw tool or a
@@ -317,6 +318,17 @@ field, and a vendor part's two toggle states print after every step. `--manage-l
 popup is drawn in the window's own frame, and so is a button's menu flyout opened by a real `--click` on the button
 (the palette's Type menu and its sub-menus). `--palette` prints the Type menu's state, item count and the selection
 after every step — a menu that opens with no items shows up as a near-zero presenter.
+
+## Workspace Tree
+
+```
+dotnet run --project tools/UiSnapshot --no-build -- --project-tree <workspace> [--reveal <file>] [--filter-open] \
+    [--filter-all-off] -o out.png [--size WxH] [steps]
+```
+
+The Workspace Tree panel on a workspace folder. `--reveal` runs a document tab's Reveal in Workspace Tree on that file
+and prints the row it selected and what has focus; a short `--size` shows it scrolling. `--filter-open` opens the
+category filter's flyout, and `--filter-all-off` turns its All switch off first.
 
 ## How it is faithful
 

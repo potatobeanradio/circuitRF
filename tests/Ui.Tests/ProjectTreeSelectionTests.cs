@@ -167,4 +167,59 @@ public sealed class ProjectTreeSelectionTests : IDisposable
         Assert.True(dir is not null, "Could not locate the repo root.");
         return File.ReadAllText(Path.Combine(dir!, relativePath));
     }
+
+    // ── Reveal in Workspace Tree (a document tab's menu) ──────────────────────────────────────
+
+    [Fact]
+    public void Reveal_ExpandsEveryAncestor_AndSelectsTheDocumentsRow()
+    {
+        Cell("Lib/Sub/Amp");
+        string view = Path.Combine(_root, "Lib", "Sub", "Amp", "schematic");
+        Directory.CreateDirectory(view);
+        string file = Path.Combine(view, "Amp.csch");
+        File.WriteAllText(file, "{}");
+        var tool = OpenTool();
+
+        ProjectTreeNodeViewModel? revealed = null;
+        tool.RevealRequested += n => revealed = n;
+        Assert.True(tool.Reveal(file));
+
+        Assert.NotNull(revealed);
+        Assert.Same(revealed, tool.SelectedItem);
+        Assert.Equal(Path.GetFullPath(file), Path.GetFullPath(revealed!.AbsolutePath), ignoreCase: true);
+        for (var a = revealed.Parent; a?.Parent is not null; a = a.Parent)
+            Assert.True(a.IsExpanded, $"{a.Name} was left collapsed.");
+    }
+
+    [Fact]
+    public void Reveal_ClearsAFilterThatHidesTheRow()
+    {
+        Cell("Amp");
+        var tool = OpenTool();
+        tool.FilterState.Cells = false;
+        Assert.False(tool.FilterState.AllOn);
+
+        Assert.True(tool.Reveal(Path.Combine(_root, "Amp")));
+        Assert.True(tool.FilterState.AllOn);
+        Assert.Equal("Amp", tool.SelectedItem!.Name);
+    }
+
+    [Fact]
+    public void TheFiltersAllSwitch_TurnsEveryCategoryOffAndOn_AndReadsFalseWhenAnyIsOff()
+    {
+        var f = new ProjectTreeFilterState();
+        Assert.True(f.AllOn);
+        f.AllOn = false;
+        Assert.False(f.Cells || f.Libraries || f.TestBenches || f.DataDisplays || f.ColorThemes || f.TechFiles
+                     || f.KnownFiles || f.WorkspaceFileSystem || f.ReferencedCells || f.ReferencedWorkspaces);
+        f.AllOn = true;
+        Assert.True(f.IsAllOn);
+
+        int raised = 0;
+        f.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(ProjectTreeFilterState.AllOn)) raised++; };
+        f.TechFiles = false;
+        Assert.False(f.AllOn);
+        Assert.Equal(1, raised);
+    }
 }
+

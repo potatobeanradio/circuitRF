@@ -154,6 +154,32 @@ public sealed class EditorRound5TreeTests : IDisposable
         Assert.All(vm.SelectedTreeItems, r => Assert.Contains(r, vm.Tree.SelectMany(g => g.Items)));
     }
 
+    /// <summary>A section header's one switch: ticked while every row under it is shown, the dash while some are, clear while
+    /// none are; a click on a mixed section shows all of it first, a click on a shown one hides it, one undo entry each, and
+    /// no other section is touched.</summary>
+    [Fact]
+    public void ASectionsSwitch_ShowsOrHidesThatSectionOnly_AndReadsMixedInBetween()
+    {
+        var vm = Open(Doc(), out _);
+        C3dTreeGroup Copper() => vm.Tree.Single(g => g.Items.Any(i => i.Name == "a"));
+        Assert.True(Copper().HasVisibilitySwitch);
+        Assert.True(Copper().AllVisible);
+
+        Row(vm, "b").IsVisible = false;
+        Assert.Null(Copper().AllVisible);
+
+        int entries = vm.UndoEntries;
+        Copper().AllVisible = false;                                       // whatever the box toggled to: a mixed section is shown
+        Assert.All(vm.Document.Objects, o => Assert.False(o.Hidden));
+        Assert.True(Copper().AllVisible);
+
+        Copper().AllVisible = false;
+        Assert.All(vm.Document.Objects, o => Assert.True(o.Hidden));
+        Assert.False(Copper().AllVisible);
+        Assert.True(vm.AirBoxShown);                                       // another section's row is left as it was
+        Assert.Equal(entries + 2, vm.UndoEntries);
+    }
+
     // ── fixtures ────────────────────────────────────────────────────────────────────────────
 
     private static C3dTreeItem Row(C3dEditorViewModel vm, string name) => vm.Tree.SelectMany(g => g.Items).Single(i => i.Name == name);

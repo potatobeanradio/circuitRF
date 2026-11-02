@@ -684,6 +684,9 @@
                         <TreeDataTemplate DataType="t3:C3dTreeGroup" ItemsSource="{Binding Items}">
                             <!-- brief-em3d-83 R-em3d83-3 — a group may add a member from its header (Field Plots' +). -->
                             <StackPanel Orientation="Horizontal" Spacing="4" Background="Transparent" ToolTip.Tip="{Binding HeaderTip}">
+                                <!-- Every row of this section shown or hidden at once; the dash while some are (C3dTreeGroup.AllVisible). -->
+                                <CheckBox IsChecked="{Binding AllVisible, Mode=TwoWay}" IsThreeState="False" MinWidth="0" Padding="0"
+                                          IsVisible="{Binding HasVisibilitySwitch}" ToolTip.Tip="{Binding VisibilityTip}"/>
                                 <TextBlock Text="{Binding Header}" FontWeight="SemiBold" VerticalAlignment="Center"/>
                                 <Button Command="{Binding AddCommand}" IsVisible="{Binding CanAdd}" ToolTip.Tip="{Binding AddTip}"
                                         Padding="2" Background="Transparent" BorderThickness="0" VerticalAlignment="Center">

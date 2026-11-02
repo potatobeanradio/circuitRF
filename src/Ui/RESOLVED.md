@@ -41666,3 +41666,24 @@ a horizontal carrying a net label. Two separate wires meeting end to end.
   and the merge, with a matching live preview). Labels anchor by segment INDEX; a jog inserted ahead of the
   dragged segment at a pinned end renumbered the segments and slid the label onto the jog.
 - Tests: `SegmentDragKeepsConnectionTests` (3).
+
+## Reveal in Workspace Tree, the filter's All switch, and a section switch per Object Tree group (2026-11-01)
+
+- **Reveal in Workspace Tree** (a document tab's menu, above Save, its own separator under it) is
+  `ProjectTreeTool.Reveal`: a path with no row is looked for again after a full `Refresh` (saved since the
+  last scan, or inside a referenced library not read yet); a row the search or a category filter hides
+  clears both, the search first and synchronously, because a clearing search restores the expansion it
+  overrode; every ancestor is expanded and the row selected. The view focuses and scrolls it at
+  Background priority, below layout, since the rows just expanded have no containers before the next pass.
+- **Focus the revealed row with a plain `Focus()`, never `Focus(NavigationMethod.Directional)`.** A
+  keyboard navigation method draws Avalonia's focus outline round the row, so the reveal looked unlike an
+  ordinary click selection.
+- **The filter's All switch** (`ProjectTreeFilterState.AllOn`) sets ten categories in one batch:
+  `IsBatching` makes the node VMs ignore each assignment and `CategoriesChanged` is raised once after, so
+  the tree re-filters once rather than ten times. `AllOn` is derived and is ignored by the node VMs too.
+- **A .c3d Object Tree group's header carries one tri-state box** (`C3dTreeGroup.AllVisible`): ticked while
+  every row is shown, the dash while some are. A click shows all unless all are shown, and goes through
+  `SetRowsVisible` with the rows Show all / Hide all reach (`C3dEditorViewModel.VisibilityMembers`), so it
+  saves and undoes as the rows' own ticks do.
+- Tests: `ProjectTreeSelectionTests` (3), `DocumentTabContextMenuTests` (1), `EditorRound5TreeTests` (1).
+  UiSnapshot gained `--project-tree [--reveal] [--filter-open] [--filter-all-off]` and `--untick <row>`.

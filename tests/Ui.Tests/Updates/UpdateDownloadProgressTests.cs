@@ -324,8 +324,9 @@ public sealed class DownloadCancellationTests : IDisposable
 /// <c>VerifyWindowsTree</c>, Linux a <c>.tar.gz</c> through <c>tar</c>, and a test host can only ever
 /// be one of the three.
 ///
-/// <para>What makes the bar platform-independent is that there is exactly ONE download in the
-/// application and every platform reaches it through the method that owns the row. The platform
+/// <para>What makes the bar platform-independent is that there is exactly ONE update download in the
+/// application and every platform reaches it through the method that owns the row (the Linux AppImage's
+/// Download button is a second, named download with a row of its own). The platform
 /// branches all sit INSIDE that method, in the phases the row covers as "verifying" and "installing".
 /// A second download path added later — or the <c>progress</c> argument going back to <c>null</c>,
 /// which is the state this whole change started from — would silently restore the original bug on
@@ -349,20 +350,31 @@ public sealed class DownloadProgressWiringTests
         return Regex.Replace(src, @"//[^\n]*", "");
     }
 
+    /// <summary>
+    /// Two downloads, each named: the update's own (staged and installed, every platform) and the Linux AppImage's
+    /// Download button (brief APPIMG), which fetches the new AppImage beside the running one and stages nothing. Each is
+    /// handed a reporter bound to its own Messages row. A third download, or either one handed <c>null</c>, is the
+    /// state this change started from — a transfer with no bar.
+    /// </summary>
     [Fact]
-    public void ThereIsExactlyOneDownload_AndItIsGivenAProgressReporter()
+    public void EachDownload_IsNamed_AndIsGivenAProgressReporter()
     {
         string src = StripComments(Source("src/Ui/Updates/UpdateService.cs"));
-
-        MatchCollection calls = Regex.Matches(src, @"\.DownloadAsync\(");
-        Assert.Single(calls);
-
-        // The argument list, on one logical line after whitespace collapse.
         string flat = Regex.Replace(src, @"\s+", " ");
-        Assert.Contains(".DownloadAsync(candidate.Asset, UpdatePaths.Staging, required, progress, ct)",
-                        flat);
-        Assert.DoesNotContain(
-            ".DownloadAsync(candidate.Asset, UpdatePaths.Staging, required, null, ct)", flat);
+
+        Assert.Equal(2, Regex.Matches(src, @"\.DownloadAsync\(").Count);
+
+        // The update's own download.
+        Assert.Contains(".DownloadAsync(candidate.Asset, UpdatePaths.Staging, required, progress, ct)", flat);
+        Assert.DoesNotContain(".DownloadAsync(candidate.Asset, UpdatePaths.Staging, required, null, ct)", flat);
+
+        // The AppImage's, inside the method that owns its row, with a reporter on that row.
+        int core = flat.IndexOf("DownloadAppImageCoreAsync(UpdateCandidate", StringComparison.Ordinal);
+        Assert.True(core > 0, "DownloadAppImageCoreAsync should exist - it is the AppImage download's row scope.");
+        int call = flat.IndexOf(".DownloadAsync(asset with", core, StringComparison.Ordinal);
+        Assert.True(call > core, "the AppImage download escaped the method that draws its progress row");
+        Assert.Contains("site.Root, required, progress, cts.Token)", flat[call..]);
+        Assert.Contains("new DownloadProgressReporter(row, title, asset.Size)", flat[core..call]);
     }
 
     [Fact]

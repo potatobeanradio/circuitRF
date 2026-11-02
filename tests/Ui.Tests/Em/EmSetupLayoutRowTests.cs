@@ -282,15 +282,22 @@ public sealed class EmSetupLayoutRowTests
         view.Shapes.Add(new LabelShape
         { Layer = new(1, 0), X = 60_000_000, Y = 1_500_000, Text = "P2", Height = 1_000_000, IsPort = true });
 
+        // CAP-1: a run handed a memory limit (the Settings limit, else physical memory) is never REFUSED by the mesher —
+        // past the limit is a warning and a Simulate Anyway question. The refusal this test is about is the one the
+        // fallback ceiling (SurfaceMesher.UnknownCeiling) still makes when no memory figure can be read, so that is the
+        // machine the panel is given here rather than whichever computer runs the test.
         var vm = new EmSetupEditorViewModel(path, setup)
         {
             ResolveLayout = _ => new EmLayoutSource(
                 Path.Combine(dir, "a.clay"), view, StarterTechnologies.Pcb2Layer(), Dbu),
+            MachineMemoryLimitBytes = () => null,
+            PhysicalMemoryBytes     = () => 0,
         };
         vm.Refresh();
         vm.BuildPlanarMesh();
 
-        Assert.NotNull(vm.PlanarBudgetRefusal);
+        Assert.True(vm.PlanarBudgetRefusal is not null,
+                    $"no refusal: {vm.PlanarMeshReport?.UnknownCount} unknowns against a ceiling of {vm.PlanarMeshReport?.CeilingUnknowns}");
         // Reported VERBATIM, which is the property that makes a copied message worth reading.
         Assert.Equal(vm.PlanarBudgetRefusal, vm.BlockingReason);
         Assert.Contains("unknown", vm.BlockingReason!, StringComparison.OrdinalIgnoreCase);

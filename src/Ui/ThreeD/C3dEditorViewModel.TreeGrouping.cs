@@ -103,12 +103,12 @@ public sealed partial class C3dEditorViewModel
     /// standing for its members, and an object's EM face boundaries beneath it. As the <c>.ctech</c> Layers switch does, a row
     /// the filter hid is not listed, so it is left as it is.
     /// </summary>
-    private List<C3dTreeItem> ListedRows()
-    {
-        static IEnumerable<C3dTreeItem> Members(C3dTreeItem r)
-            => r.IsGroup ? r.Children.SelectMany(Members) : r.Children.Where(c => c.Kind is EmBoundaryKind or FaceImageKind).Prepend(r);
-        return [.. Tree.SelectMany(g => g.Items).SelectMany(Members)];
-    }
+    private List<C3dTreeItem> ListedRows() => [.. Tree.SelectMany(g => g.Items).SelectMany(VisibilityMembers)];
+
+    /// <summary>The rows one top-level row stands for in Show all / Hide all and a section header's switch: a group's row its
+    /// members, any other row itself and the EM face boundaries and face images beneath it.</summary>
+    internal static IEnumerable<C3dTreeItem> VisibilityMembers(C3dTreeItem r)
+        => r.IsGroup ? r.Children.SelectMany(VisibilityMembers) : r.Children.Where(c => c.Kind is EmBoundaryKind or FaceImageKind).Prepend(r);
 
     /// <summary>The kind of an EM face boundary's row, beneath its object (brief-em3d-49).</summary>
     public const string EmBoundaryKind = "Boundary";

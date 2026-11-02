@@ -146,6 +146,22 @@
                 <Button.Flyout>
                     <Flyout Placement="BottomEdgeAlignedLeft">
                         <StackPanel Spacing="3" Margin="8">
+                            <!-- Every category on or off at once — the layout editor's bulk Sel toggle,
+                                 same glyph pair. Checked only while every box below is. -->
+                            <ToggleButton x:Name="FilterAllToggle"
+                                          IsChecked="{Binding FilterState.AllOn, Mode=TwoWay}"
+                                          ToolTip.Tip="Turn every category on or off"
+                                          HorizontalAlignment="Left" Padding="4,2" Margin="0,0,0,2">
+                                <StackPanel Orientation="Horizontal" Spacing="5">
+                                    <Panel>
+                                        <mi:MaterialIcon Kind="SelectAll" Width="13" Height="13"
+                                                         IsVisible="{Binding FilterState.AllOn}"/>
+                                        <mi:MaterialIcon Kind="SelectOff" Width="13" Height="13"
+                                                         IsVisible="{Binding !FilterState.AllOn}"/>
+                                    </Panel>
+                                    <TextBlock Text="All" FontSize="12" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </ToggleButton>
                             <CheckBox IsChecked="{Binding FilterState.WorkspaceFileSystem}" Content="Workspace File-System" FontSize="12"/>
                             <CheckBox IsChecked="{Binding FilterState.TestBenches}"         Content="TestBenches"           FontSize="12"/>
                             <CheckBox IsChecked="{Binding FilterState.Cells}"               Content="Cells"                 FontSize="12"/>
