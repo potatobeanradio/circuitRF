@@ -387,4 +387,84 @@ public class SegmentDragKeepsConnectionTests
         Assert.Equal(PortConnectionState.Connected, rr.Ports[0].State);
         Assert.True(HasDotAt(vm, 0, 0), "the tap connection survives the clamped slide");
     }
+
+    // ── A wire meeting another wire's free END that runs along the drag: that wire stretches ──
+    //
+    // An imported schematic routes a source's leads through its body: the pin at (1750,3800) is joined
+    // to a horizontal at y=3950 by a short vertical lying over the symbol. Dragging the horizontal must
+    // shorten or lengthen that vertical rather than hold its end fixed and draw a jog back onto it, and
+    // a net label riding the horizontal must survive the merge that follows.
+
+    private static (SchematicEditModel Model, SchematicViewModel Vm, EditableNetLabel Label) MakeSourceWithLeadsThroughBody()
+    {
+        var model = new SchematicEditModel { GridSize = 50, GridSnap = true };
+        model.Components.Add(new EditableComponent { Symbol = SymbolKind.Vdc, X = 1750, Y = 4000, InstanceName = "J2" });
+        model.Components.Add(new EditableComponent { Symbol = SymbolKind.Ground, X = 2000, Y = 4150, InstanceName = "G1" });
+        var top = MakeWire((1750, 3950), (2000, 3950));
+        model.Wires.Add(top);
+        model.Wires.Add(MakeWire((1750, 3800), (1750, 3950)));   // + pin → over the body
+        model.Wires.Add(MakeWire((1750, 4050), (2000, 4050)));
+        model.Wires.Add(MakeWire((2000, 4050), (2000, 4150)));   // → ground pin
+        model.Wires.Add(MakeWire((1750, 4200), (1750, 4050)));   // − pin → over the body
+        var label = new EditableNetLabel { Name = "5V" };
+        label.AnchorToWire(top, 1850, 3950);
+        model.NetLabels.Add(label);
+        return (model, new SchematicViewModel(model), label);
+    }
+
+    [Fact]
+    public void DraggingLabeledWire_AlongAParallelWiresEnd_KeepsTheLabel()
+    {
+        var (model, vm, label) = MakeSourceWithLeadsThroughBody();
+
+        DragSegment(vm, 1975, 3950, 1975, 3850);
+
+        Assert.Contains(label, model.NetLabels);
+        var owner = model.FindWire(label.OwnerWireId)!;
+        Assert.Equal([(1750.0, 3800.0), (1750.0, 3850.0), (2000.0, 3850.0)], owner.Points);
+        Assert.Equal((1850.0, 3850.0), (label.X, label.Y));
+
+        vm.UndoRedo.Undo();
+        Assert.Contains(label, model.NetLabels);
+        Assert.Equal((1850.0, 3950.0), (label.X, label.Y));
+        Assert.Equal(5, model.Wires.Count);
+    }
+
+    [Fact]
+    public void DraggingWireOntoThePin_RemovesTheWireOverTheBody()
+    {
+        var (model, vm, _) = MakeSourceWithLeadsThroughBody();
+
+        DragSegment(vm, 1900, 4050, 1900, 4100);   // the lead over the body shortens, no jog
+        Assert.Contains(model.Wires, w => w.Points.SequenceEqual([(1750.0, 4200.0), (1750.0, 4100.0)]));
+        Assert.DoesNotContain(model.Wires, w => w.Points.Contains((1750.0, 4050.0)));
+
+        DragSegment(vm, 1900, 4100, 1900, 4200);   // onto the pin: the lead is gone
+        Assert.DoesNotContain(model.Wires, w => w.Points.Any(p => p.X == 1750 && p.Y > 3950 && p.Y < 4200));
+        var rr = vm.RenderModel!.Components.Single(c => c.Symbol == SymbolKind.Vdc);
+        Assert.Equal(PortConnectionState.Connected, rr.Ports[1].State);
+    }
+
+    [Fact]
+    public void DraggingWireFromAPin_LabelStaysOnTheDraggedSegment()
+    {
+        // The pinned end gets a jog inserted ahead of the dragged segment; the label (anchored by
+        // segment index) must stay on the segment it was on, not slide onto the jog.
+        var model = new SchematicEditModel { GridSize = 50, GridSnap = true };
+        model.Components.Add(new EditableComponent { Symbol = SymbolKind.Vdc, X = 1750, Y = 4000, InstanceName = "J2" });
+        var w = MakeWire((1750, 3800), (2200, 3800));
+        model.Wires.Add(w);
+        var label = new EditableNetLabel { Name = "5V" };
+        label.AnchorToWire(w, 2000, 3800);
+        model.NetLabels.Add(label);
+        var vm = new SchematicViewModel(model);
+
+        DragSegment(vm, 2150, 3800, 2150, 3650);
+
+        Assert.Equal((2000.0, 3650.0), (label.X, label.Y));
+        var rl = vm.RenderModel!.NetLabels.Single();
+        Assert.Equal((2000.0, 3650.0), (rl.X, rl.Y));
+        vm.UndoRedo.Undo();
+        Assert.Equal((2000.0, 3800.0), (label.X, label.Y));
+    }
 }

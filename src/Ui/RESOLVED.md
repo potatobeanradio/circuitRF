@@ -41645,3 +41645,24 @@ path; the lazily built `NetworkView` serves the derived metrics), which is the `
   itself, and a zip saved there is swept into the next archive. Avalonia's Win32 dialog calls `SetFolder`, so
   Windows honours it over its own last-used memory too.
 - Tests: `ClipboardPayloadTests` (2).
+
+## Segment drag: a net label lost in the merge, and a lead left standing over a part (2026-11-01)
+
+Shape: an imported schematic routes a source's lead THROUGH its body — pin → short vertical over the symbol →
+a horizontal carrying a net label. Two separate wires meeting end to end.
+
+- **A wire end meeting another wire's free END whose last segment runs along the drag is no longer pinned**
+  (`ShouldPinDraggedEndpoint`). Pinning held the point fixed and drew a jog back onto the other wire, so
+  dragging the horizontal toward the pin left the vertical standing over the body. Now the other wire is a
+  follower and only its end segment changes length — the same thing an interior neighbour of one polyline
+  does. Dragged onto the pin it collapses to nothing and the degenerate-wire pass removes it. An interior
+  vertex (a corner of the other wire) and an end that would be dragged sideways still pin.
+- **`RouteStem` keeps a follower's bends** when its junction segment runs along the move: it moves the one
+  vertex instead of re-routing an L to the far end, which threw every bend away.
+- **`WireMergeCommand` carries net labels onto the merged wire.** Labels anchor by wire id; the merge removed
+  the owner, and `RevalidateNetLabels` looked for a surviving wire under the label's last DRAWN position —
+  which a drag does not refresh — found none, and deleted the label. That was the label vanishing on drag.
+- **A label rides its own segment through a segment drag** (`NetLabelFollowCommand`, composed between the move
+  and the merge, with a matching live preview). Labels anchor by segment INDEX; a jog inserted ahead of the
+  dragged segment at a pinned end renumbered the segments and slid the label onto the jog.
+- Tests: `SegmentDragKeepsConnectionTests` (3).

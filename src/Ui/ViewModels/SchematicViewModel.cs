@@ -312,6 +312,8 @@ public sealed partial class SchematicViewModel : ObservableObject
     // Per-segment wire drag state (B1–B4)
     // Note: segment *selection* lives in SchematicSelection.SelectedSegments, not here.
     private bool   _isSegmentDrag;
+    // The perpendicular delta the dragged segment carries this frame (the last live frame at commit).
+    private double _segmentDragDx, _segmentDragDy;
     private string? _segmentDragWireId;
     private int     _segmentDragSegmentIndex;
     private IReadOnlyList<(double X, double Y)>? _segmentDragStartPoints;
@@ -1631,7 +1633,22 @@ public sealed partial class SchematicViewModel : ObservableObject
             if (other.Id == wire.Id || Selection.IsSelected(other.Id)) continue;
             var pts = other.Points;
             for (int k = 0; k < pts.Count; k++)
-                if (SchematicGeometry.CoincidentPoints(wx, wy, pts[k].X, pts[k].Y, tol)) return true;   // vertex → pin
+            {
+                if (!SchematicGeometry.CoincidentPoints(wx, wy, pts[k].X, pts[k].Y, tol)) continue;
+                // The other wire's free END whose last segment runs along the drag: that wire simply
+                // stretches with the endpoint (FindStemsOnSegment follows it, RouteStem keeps its
+                // bends), exactly as an interior neighbour of the same polyline would. Pinning it here
+                // drew a jog back onto that wire and left it standing where the segment used to meet it
+                // — over a part's body, when an imported schematic routes a pin's lead through it.
+                bool isEnd = pts.Count >= 2 && (k == 0 || k == pts.Count - 1);
+                if (isEnd)
+                {
+                    var adj = k == 0 ? pts[1] : pts[^2];
+                    bool adjVertical = Math.Abs(adj.X - pts[k].X) < Math.Abs(adj.Y - pts[k].Y);
+                    if (adjVertical == dragIsVertical) continue;   // ∥ drag → that wire stretches
+                }
+                return true;   // interior vertex, or an end that would be dragged sideways → pin
+            }
             for (int k = 0; k < pts.Count - 1; k++)
                 if (SchematicGeometry.PointOnSegmentInterior(
                         wx, wy, pts[k].X, pts[k].Y, pts[k + 1].X, pts[k + 1].Y, tol))
@@ -3099,6 +3116,8 @@ public sealed partial class SchematicViewModel : ObservableObject
     private void ClearSegmentDragState()
     {
         _isSegmentDrag          = false;
+        _segmentDragDx          = 0;
+        _segmentDragDy          = 0;
         _segmentDragWireId      = null;
         _segmentDragStartPoints = null;
         _segmentDragStems       = null;
@@ -3183,6 +3202,8 @@ public sealed partial class SchematicViewModel : ObservableObject
         double clamped = Math.Clamp(proposed, clampLo, clampHi);
         double dx = isHoriz ? 0 : clamped;
         double dy = isHoriz ? clamped : 0;
+        _segmentDragDx = dx;
+        _segmentDragDy = dy;
 
         // Simplify LIVE (same cleanup as commit) so redundant collinear runs / zero-length jogs are
         // collapsed as the drag brings geometry back into line — otherwise segments (and their
@@ -3239,7 +3260,7 @@ public sealed partial class SchematicViewModel : ObservableObject
             SelectedWireIds      = Selection.GetSelectedWireIds(EditModel).ToHashSet(),
             SelectedCanvasObjIds = Selection.GetSelectedCanvasObjectIds(EditModel).ToHashSet(),
             WireDragPoints       = wireDragPoints,
-            NetLabelDragPositions = BuildNetLabelDragPositions(wireDragPoints),
+            NetLabelDragPositions = WithSegmentDragLabels(BuildNetLabelDragPositions(wireDragPoints)),
             // Preview the auto-wire stub(s) to any interior pin the segment has moved off of (the
             // real wire is created at commit; this mirrors the pin-on-pin preview, Case 2).
             PinOnPinPreviewWires = segStubs,
@@ -3328,6 +3349,23 @@ public sealed partial class SchematicViewModel : ObservableObject
     private static IReadOnlyList<(double X, double Y)> RouteStem(StemFollow stem, double dx, double dy)
     {
         double jx = stem.JunctionPt.X + dx, jy = stem.JunctionPt.Y + dy;
+        // The junction's own segment runs along the move: only that segment changes length, so the
+        // rest of the wire — every bend — stays exactly as drawn. (Re-routing would replace a bent
+        // follower with a bare L to its far end.)
+        var sp = stem.StartPoints;
+        if (sp.Count >= 2)
+        {
+            int jIdx = stem.JunctionAtStart ? 0 : sp.Count - 1;
+            var adj  = stem.JunctionAtStart ? sp[1] : sp[^2];
+            bool alongX = Math.Abs(dy) < 1e-9 && Math.Abs(adj.Y - sp[jIdx].Y) < 1e-6;
+            bool alongY = Math.Abs(dx) < 1e-9 && Math.Abs(adj.X - sp[jIdx].X) < 1e-6;
+            if (alongX || alongY)
+            {
+                var pts = sp.ToList();
+                pts[jIdx] = (jx, jy);
+                return pts;
+            }
+        }
         return stem.JunctionAtStart
             ? WireGeometry.OrthogonalRoute(jx, jy, stem.FarPt.X, stem.FarPt.Y)
             : WireGeometry.OrthogonalRoute(stem.FarPt.X, stem.FarPt.Y, jx, jy);
@@ -3452,9 +3490,13 @@ public sealed partial class SchematicViewModel : ObservableObject
                 stubCmds.Add(new PlaceWireCommand(EditModel, stubWire));
             }
 
-        // Compose: move (+ stems/dots) first, then the endpoint merge (if any) so it sees correct
-        // wire indices, then the stub wires last (independent new geometry). One Undo reverts all.
+        // Compose: move (+ stems/dots) first, then the labels riding the dragged wire back onto the
+        // segment they were on (a jog inserted ahead of it renumbers the segments), then the endpoint
+        // merge (if any) so it sees correct wire indices and carries those labels, then the stub wires
+        // last (independent new geometry). One Undo reverts all.
         IUiCommand finalCmd = moveCmd;
+        if (SegmentDragLabelFeet() is { Count: > 0 } feet)
+            finalCmd = new CompositeCommand(finalCmd, new NetLabelFollowCommand(EditModel, feet));
         if (mergeCmd is not null) finalCmd = new CompositeCommand(finalCmd, mergeCmd);
         foreach (var sc in stubCmds) finalCmd = new CompositeCommand(finalCmd, sc);
 
@@ -3464,6 +3506,43 @@ public sealed partial class SchematicViewModel : ObservableObject
             Selection.SelectOne(mergeCmd.MergedWireId);
             Selection.ClearSegmentsSilent();
         }
+    }
+
+    /// <summary>
+    /// Where each net label anchored to the dragged wire has its FOOT once the drag lands: a label on
+    /// the dragged segment moves with it; a label anywhere else stays where it is (a stretched
+    /// neighbour keeps its axis, so the foot is still on it, or is clamped onto it by the anchor's
+    /// nearest-point projection). Measured on the press-time geometry, so a jog inserted ahead of the
+    /// label's segment cannot carry the label onto the jog.
+    /// </summary>
+    private List<(EditableNetLabel Label, double FootX, double FootY)>? SegmentDragLabelFeet()
+    {
+        if (_segmentDragWireId is null || _segmentDragStartPoints is not { } pts) return null;
+        List<(EditableNetLabel, double, double)>? feet = null;
+        foreach (var l in EditModel.NetLabels)
+        {
+            if (l.OwnerWireId != _segmentDragWireId) continue;
+            if (l.SegmentIndex < 0 || l.SegmentIndex >= pts.Count - 1) continue;
+            var (ax, ay) = pts[l.SegmentIndex];
+            var (bx, by) = pts[l.SegmentIndex + 1];
+            double fx = ax + l.AlongT * (bx - ax), fy = ay + l.AlongT * (by - ay);
+            if (l.SegmentIndex == _segmentDragSegmentIndex) { fx += _segmentDragDx; fy += _segmentDragDy; }
+            (feet ??= []).Add((l, fx, fy));
+        }
+        return feet;
+    }
+
+    /// <summary><paramref name="positions"/> with every label on the segment-dragged wire drawn where
+    /// <see cref="SegmentDragLabelFeet"/> puts it, so the preview agrees with what the drop commits.</summary>
+    private IReadOnlyDictionary<string, (double X, double Y)>? WithSegmentDragLabels(
+        IReadOnlyDictionary<string, (double X, double Y)>? positions)
+    {
+        if (SegmentDragLabelFeet() is not { Count: > 0 } feet) return positions;
+        var result = positions is null
+            ? new Dictionary<string, (double X, double Y)>()
+            : new Dictionary<string, (double X, double Y)>(positions);
+        foreach (var (l, fx, fy) in feet) result[l.Id] = (fx + l.OffsetX, fy + l.OffsetY);
+        return result;
     }
 
     /// <summary>

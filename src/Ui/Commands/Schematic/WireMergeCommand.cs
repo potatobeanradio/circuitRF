@@ -23,6 +23,8 @@ internal sealed class WireMergeCommand : IUiCommand
     private readonly int                 _wireBIndex;
     private readonly IReadOnlyList<(double X, double Y)> _wireBPoints;
     private readonly EditableWire        _merged;
+    // Net labels anchored to wireA or wireB, as they were before Execute moved them onto _merged.
+    private List<SchematicEditModel.NetLabelAnchorSnap> _carriedLabels = [];
 
     public string Description  => "Merge wires";
     public string MergedWireId => _merged.Id;
@@ -50,6 +52,25 @@ internal sealed class WireMergeCommand : IUiCommand
 
     public void Execute()
     {
+        // A label is anchored to a wire by id, so removing its owner orphans it — and the orphan pass
+        // (RevalidateNetLabels) looks for a surviving wire under the label's LAST DRAWN position, which
+        // a drag has not refreshed: a label riding a dragged wire was then deleted outright. Carry each
+        // one onto the merged wire from where its owner puts it NOW. The merge preserves geometry, so
+        // the foot lands on the same stretch of wire.
+        _carriedLabels = [];
+        foreach (var l in _model.NetLabels)
+        {
+            if (l.OwnerWireId != _wireA.Id && l.OwnerWireId != _wireB.Id) continue;
+            var owner = l.OwnerWireId == _wireA.Id ? _wireA : _wireB;
+            _carriedLabels.Add(new SchematicEditModel.NetLabelAnchorSnap(
+                l, l.OwnerWireId, l.SegmentIndex, l.AlongT, l.OffsetX, l.OffsetY, l.X, l.Y));
+            l.RecomputePosition(owner);
+            double ox = l.OffsetX, oy = l.OffsetY;
+            l.AnchorToWire(_merged, l.X - ox, l.Y - oy);   // anchor the FOOT, keep the label's gap
+            l.OffsetX = ox; l.OffsetY = oy;
+            l.X += ox; l.Y += oy;
+        }
+
         _model.Wires.Remove(_wireA);
         _model.Wires.Remove(_wireB);
         int insertAt = Math.Min(Math.Min(_wireAIndex, _wireBIndex), _model.Wires.Count);
@@ -59,6 +80,16 @@ internal sealed class WireMergeCommand : IUiCommand
 
     public void Undo()
     {
+        foreach (var s in _carriedLabels)
+        {
+            s.Label.OwnerWireId  = s.OwnerWireId;
+            s.Label.SegmentIndex = s.SegmentIndex;
+            s.Label.AlongT       = s.AlongT;
+            s.Label.OffsetX      = s.OffsetX;
+            s.Label.OffsetY      = s.OffsetY;
+            s.Label.X            = s.X;
+            s.Label.Y            = s.Y;
+        }
         _model.Wires.Remove(_merged);
         // Restore A to its post-move points so the preceding MoveCommand.Undo() can
         // subsequently restore it to pre-move points.
