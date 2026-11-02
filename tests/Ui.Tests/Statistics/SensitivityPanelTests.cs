@@ -182,10 +182,10 @@ public sealed class SensitivityPanelTests
     }
 
     [Fact]
-    public void BothDefaults_OrderTuningSensitivityOptimizerYield_AndAnOldLayoutGainsItBeforeTheOptimizer()
+    public void BothDefaults_OrderTuningOptimizerSensitivityYield_AndAnOldLayoutGainsItAfterTheOptimizer()
     {
         Assert.Contains(DockPanelIds.Sensitivity, DockPanelIds.All);
-        string[] order = [DockPanelIds.Tuning, DockPanelIds.Sensitivity, DockPanelIds.Optimizer, DockPanelIds.Yield];
+        string[] order = [DockPanelIds.Tuning, DockPanelIds.Optimizer, DockPanelIds.Sensitivity, DockPanelIds.Yield];
         foreach (var layout in new[] { DockLayoutDefaults.Default(), DockLayoutDefaults.ProjectTreeAndLibrary() })
         {
             var tabs = layout.Panels.Where(p => order.Contains(p.Id)).ToList();
@@ -199,24 +199,27 @@ public sealed class SensitivityPanelTests
             return [.. l.Panels.Where(p => p.Side == at.Side && p.Group == at.Group && p.Inboard == at.Inboard).OrderBy(p => p.Order).Select(p => p.Id)];
         }
 
-        // Saved before the panel existed: it lands immediately before the Optimizer, and the input is not modified.
+        // Saved before the panel existed: it lands immediately before Yield (so after the Optimizer), and the input is
+        // not modified.
         var old = DockLayoutDefaults.ProjectTreeAndLibrary();
         old.Panels.RemoveAll(p => p.Id == DockPanelIds.Sensitivity);
-        int optimizerOrder = old.Panels.Single(p => p.Id == DockPanelIds.Optimizer).Order;
+        int yieldOrder = old.Panels.Single(p => p.Id == DockPanelIds.Yield).Order;
         var filled = DockLayoutDefaults.WithMissingPanelsFilled(old);
-        Assert.Equal([DockPanelIds.Properties, DockPanelIds.Analyses, DockPanelIds.Tuning, DockPanelIds.Sensitivity, DockPanelIds.Optimizer, DockPanelIds.Yield],
+        Assert.Equal([DockPanelIds.Properties, DockPanelIds.Analyses, DockPanelIds.Tuning, DockPanelIds.Optimizer, DockPanelIds.Sensitivity, DockPanelIds.Yield],
                      Dock(filled, DockPanelIds.Sensitivity));
-        Assert.Equal(optimizerOrder, old.Panels.Single(p => p.Id == DockPanelIds.Optimizer).Order);
+        Assert.Equal(yieldOrder, old.Panels.Single(p => p.Id == DockPanelIds.Yield).Order);
 
-        // The Optimizer moved to the right column, alone with the Library: the newcomer follows it there.
+        // Neither Sensitivity nor Yield saved, and the Optimizer moved to the right column, alone with the Library: both
+        // follow the Optimizer there, in the default order.
         var moved = DockLayoutDefaults.ProjectTreeAndLibrary();
-        moved.Panels.RemoveAll(p => p.Id == DockPanelIds.Sensitivity);
+        moved.Panels.RemoveAll(p => p.Id is DockPanelIds.Sensitivity or DockPanelIds.Yield);
         var opt = moved.Panels.Single(p => p.Id == DockPanelIds.Optimizer);
         opt.Side = DockSide.Right;
         opt.Group = 0;
         opt.Order = 1;
         var refilled = DockLayoutDefaults.WithMissingPanelsFilled(moved);
-        Assert.Equal([DockPanelIds.Palette, DockPanelIds.Sensitivity, DockPanelIds.Optimizer], Dock(refilled, DockPanelIds.Sensitivity));
+        Assert.Equal([DockPanelIds.Palette, DockPanelIds.Optimizer, DockPanelIds.Sensitivity, DockPanelIds.Yield],
+                     Dock(refilled, DockPanelIds.Sensitivity));
     }
 }
 

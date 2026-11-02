@@ -293,6 +293,8 @@ parts checked, and any placed part the library no longer holds.
 
 Selecting a placed vendor part shows its library and file, a **Part** field and the part's value,
 [tolerance](#vendor-tolerance), frequency range and description in the Parameter Editor. The editor's title is the part number.
+The check boxes beside **File** and **Part** say whether each one is drawn on the schematic, as the
+check box on every other parameter does; File is off when a part is placed.
 
 - **Choose another part** by typing in the Part field: it searches that file's parts with the
   palette's search, and <kbd>↓</kbd>/<kbd>↑</kbd> move through the matches while you type.

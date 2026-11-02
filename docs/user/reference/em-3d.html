@@ -258,7 +258,8 @@ with a warning naming it and what was found, and the other parts' ports are buil
 is left. Port numbers follow the 3D view's own ports, in list order, without a gap; an entry may state its own <code>Z0</code>,
 its <code>Reference</code> (one of the part's pins) to say which pad is the negative end, and its <code>WidthUm</code>, the port's width
 across the gap in micrometres, centred where the pads put it (omitted: the width the two pads share). An entry beside
-<code>&quot;*&quot;</code> is that part's override. The ports are drawn in the 3D view and listed under <strong>Component ports</strong> in the Object
+<code>&quot;*&quot;</code> is that part's override. The <code>.sNp</code> a run writes starts its header with one line per port saying which number is
+which port, a component port by its part (<code>! Port[3] = C1</code>, <code>! Port[4] = U1.IN</code>). The ports are drawn in the 3D view and listed under <strong>Component ports</strong> in the Object
 Tree as soon as the setup names them, a part left out with why; selecting one shows its Z0 and width in the
 Properties Inspector, which writes them into the part's entry. Its place and orientation come from the pads, so they
 follow the layout. A part with more pads, such as an

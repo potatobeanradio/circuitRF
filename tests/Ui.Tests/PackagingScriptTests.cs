@@ -918,6 +918,40 @@ public class PackagingScriptTests
     }
 
     /// <summary>
+    /// <b>Every AppImage carries AppImageUpdate's update information, and its .zsync is written beside it.</b> The
+    /// information names the repository <c>sign-release.sh</c> uploads to and a <c>.zsync</c> whose wildcard matches
+    /// the name the next release's AppImage will have; a mismatch in either is an image that never finds its update,
+    /// with no error anywhere. A missing <c>zsyncmake</c> is a refusal, and the release count includes the two files.
+    /// </summary>
+    [Fact]
+    public void TheAppImage_CarriesUpdateInformation_ThatFindsTheNextReleasesZsync()
+    {
+        string script = File.ReadAllText(RepoFile("packaging", "linux", "build-linux.sh"));
+        string env    = File.ReadAllText(RepoFile("packaging", "linux", "appimage.env"));
+        string sign   = File.ReadAllText(RepoFile("packaging", "sign-release.sh"));
+
+        var repo = Regex.Match(env, @"^APPIMAGE_UPDATE_GITHUB=([^/\s]+)/(\S+)$", RegexOptions.Multiline);
+        Assert.True(repo.Success, "appimage.env names no APPIMAGE_UPDATE_GITHUB=owner/repository");
+        Assert.Contains($"https://github.com/{repo.Groups[1].Value}/{repo.Groups[2].Value}/releases/download/", sign,
+                        StringComparison.Ordinal);
+
+        var info = Regex.Match(script, @"UPDATE_INFO=""gh-releases-zsync\|\$\{APPIMAGE_UPDATE_GITHUB%%/\*\}\|\$\{APPIMAGE_UPDATE_GITHUB#\*/\}\|\$\{APPIMAGE_UPDATE_TAG\}\|([^""]+)""");
+        Assert.True(info.Success, "build-linux.sh no longer builds the gh-releases-zsync update information");
+        Assert.Contains("UPDATE_ARGS=(-u \"$UPDATE_INFO\")", script, StringComparison.Ordinal);
+        Assert.Contains("-o \"${OUT}.zsync\" \"$OUT\"", script, StringComparison.Ordinal);
+        foreach (string arch in new[] { "x64", "arm64" })
+        {
+            string wildcard = "^" + Regex.Escape(info.Groups[1].Value.Replace("${ARCH}", arch)).Replace(@"\*", ".*") + "$";
+            Assert.Matches(wildcard, UpdateAssetNames.ExpectedAppImage("circuitRF", "2.0.1", arch) + ".zsync");
+            Assert.DoesNotMatch(wildcard, UpdateAssetNames.ExpectedAppImage("circuitRF", "2.0.1", arch == "x64" ? "arm64" : "x64") + ".zsync");
+        }
+
+        Assert.Contains("CRF_ALLOW_NO_ZSYNC", script, StringComparison.Ordinal);
+        Assert.Contains("sudo apt-get install zsync", script, StringComparison.Ordinal);
+        Assert.Matches(@"(?m)^EXPECTED_FILES=19\b", sign);        // Windows 9, macOS 2, Linux 6 + 2 .zsync
+    }
+
+    /// <summary>
     /// <b>The AppImage's desktop entry is the .deb's, with only Exec= rewritten</b> — not a second
     /// hand-written one, which would drift from the MIME list and the categories.
     /// </summary>

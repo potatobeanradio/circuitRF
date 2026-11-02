@@ -128,6 +128,18 @@ public sealed class ComponentPortBuildTests(Xunit.Abstractions.ITestOutputHelper
         Assert.Contains(g.Warnings, w => w.Contains("C1 is left out of this run", StringComparison.Ordinal));
     }
 
+    /// <summary>The Touchstone header says which numbered port is which component port: the problem's ports carry the names
+    /// they have in the 3D view, and every 3D writer's header starts with one <c>Port[N] = name</c> line each.</summary>
+    [Fact]
+    public void TheTouchstoneHeader_NamesEachComponentPortByItsNumber()
+    {
+        var (g, _) = Assemble(["U1"]);
+        Assert.True(g.Ok, g.Refusal);
+        Assert.Equal(["Port[1] = U1.IN", "Port[2] = U1.OUT"], CircuitRF.Design.Em3d.Em3dPortMap.NameLines(g.Problem!.Ports));
+        Assert.Equal(["U1.IN", "U1.OUT"],
+                     RfCore.TouchstonePortNames.Parse(CircuitRF.Design.Em3d.Em3dPortMap.NameLines(g.Problem.Ports), 2)!);
+    }
+
     /// <summary>The verification's sampler answers every sample exactly as C3dThermal.Inside does — inside, outside, on an edge,
     /// in a hole, either sign of tolerance — so making it fast moved no verdict.</summary>
     [Fact]

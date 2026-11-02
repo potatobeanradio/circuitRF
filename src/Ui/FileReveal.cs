@@ -61,8 +61,13 @@ public static class FileReveal
 
     /// <summary>
     /// Shows <paramref name="path"/> in the platform's file manager. A file is selected in its
-    /// containing folder; a directory is opened. A path that is no longer there is a no-op —
-    /// callers that owe the user an answer ("it is not there any more") check first and say so.
+    /// containing folder; a directory is opened — except a WORKSPACE folder (one holding a
+    /// <c>.cws</c>), which is selected in the folder that encloses it, on every surface that reveals
+    /// one (the workspace title, its root row, a recent-workspace row). A workspace is a thing the
+    /// user moves, copies and zips as a whole, so where it sits is what Reveal is asked; opening it
+    /// showed its contents instead. Linux's file managers cannot be asked to select, so there the
+    /// enclosing folder opens. A path that is no longer there is a no-op — callers that owe the user
+    /// an answer ("it is not there any more") check first and say so.
     /// </summary>
     /// <param name="onError">
     /// Reports a launch failure. Null means swallow it: a file manager that will not start is not
@@ -75,10 +80,14 @@ public static class FileReveal
         bool isDir  = Directory.Exists(path);
         bool isFile = !isDir && File.Exists(path);
         if (!isDir && !isFile) return;
+        bool select = isFile || IsWorkspaceFolder(path);
+        // A trailing separator would make a folder's "parent" the folder itself, and on Windows its
+        // backslash would escape the closing quote of /select,"…".
+        if (select && isDir) path = Path.TrimEndingDirectorySeparator(path);
 
         try
         {
-            var psi = BuildCommand(path, isFile,
+            var psi = BuildCommand(path, select,
                 OperatingSystem.IsMacOS()     ? Platform.MacOS
                 : OperatingSystem.IsWindows() ? Platform.Windows
                 : Platform.Other);
@@ -90,11 +99,20 @@ public static class FileReveal
         }
     }
 
+    /// <summary>Whether <paramref name="dir"/> is a workspace: a folder with a <c>.cws</c> in it.</summary>
+    internal static bool IsWorkspaceFolder(string dir)
+    {
+        try { return Directory.Exists(dir) && File.Exists(Path.Combine(dir, ".cws")); }
+        catch { return false; }
+    }
+
     /// <summary>Which argument form to build. A parameter rather than a query so it can be tested.</summary>
     internal enum Platform { MacOS, Windows, Other }
 
     /// <summary>
     /// The launch for one path on one platform, or null when there is nothing to launch.
+    /// <paramref name="select"/>: show the path SELECTED in its enclosing folder (a file, or a
+    /// workspace folder) rather than open it (any other folder).
     ///
     /// <para><b>Windows selects a file through <c>Arguments</c>, not <c>ArgumentList</c>, and that is
     /// not a relapse of the security fix above.</b> Explorer's command-line parser is not the standard
@@ -117,15 +135,15 @@ public static class FileReveal
     /// argument, where normal quoting is both correct and safe — which also keeps the raw-string form
     /// away from a trailing separator, whose backslash would escape the closing quote.</para>
     /// </summary>
-    internal static ProcessStartInfo? BuildCommand(string path, bool isFile, Platform platform)
+    internal static ProcessStartInfo? BuildCommand(string path, bool select, Platform platform)
     {
         switch (platform)
         {
             case Platform.MacOS:
             {
-                // -R selects a file; bare open opens a directory.
+                // -R selects a file or a folder in Finder; bare open opens a directory.
                 var psi = new ProcessStartInfo("open") { UseShellExecute = false };
-                if (isFile) psi.ArgumentList.Add("-R");
+                if (select) psi.ArgumentList.Add("-R");
                 psi.ArgumentList.Add(path);
                 return psi;
             }
@@ -133,7 +151,7 @@ public static class FileReveal
             case Platform.Windows:
             {
                 var psi = new ProcessStartInfo("explorer.exe") { UseShellExecute = false };
-                if (isFile) psi.Arguments = $"/select,\"{path}\"";
+                if (select) psi.Arguments = $"/select,\"{path}\"";
                 else        psi.ArgumentList.Add(path);
                 return psi;
             }
@@ -141,8 +159,8 @@ public static class FileReveal
             default:
             {
                 // Linux: xdg-open on the directory (it does not highlight), or on the containing
-                // directory for a file.
-                var target = isFile ? Path.GetDirectoryName(path) : path;
+                // directory for a file or a selected folder.
+                var target = select ? Path.GetDirectoryName(path) : path;
                 if (string.IsNullOrEmpty(target)) return null;
                 var psi = new ProcessStartInfo("xdg-open") { UseShellExecute = false };
                 psi.ArgumentList.Add(target);

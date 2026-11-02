@@ -31,7 +31,7 @@
   <div class="page-top">
     <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › Optimization</p>
     <nav class="page-nav-top" aria-label="Previous and next page">
-      <a class="prev" href="tuning.html" title="Previous: Tuning"><span class="arrow">‹</span><span class="name">Tuning</span></a>
+      <a class="prev" href="sensitivity.html" title="Previous: Sensitivity"><span class="arrow">‹</span><span class="name">Sensitivity</span></a>
       <a class="next" href="yield.html" title="Next: Yield"><span class="name">Yield</span><span class="arrow">›</span></a>
     </nav>
   </div>
@@ -288,11 +288,11 @@ from harmonic balance: write the <code>measure</code> row, then pick it;</li>
 </tr>
 </tbody>
 </table>
-<p>A goal also serves the <a href="yield.html#specs">Yield</a> panel, as a spec. Its <strong>Use</strong> — set there — says
-which: <strong>Opt</strong>, the optimizer aims for it and the yield ignores it; <strong>Yield</strong>, the yield counts it and
-the optimizer ignores it; <strong>Both</strong>, the default. A design is usually centred against tight goals marked
-<em>Opt</em>, and judged for yield against looser copies of them marked <em>Yield</em>. The goal list here shows only
-the goals the optimizer aims for. In a <code>.cnl</code> it is <code>use=opt</code> or <code>use=yield</code> at the end of the goal line.</p>
+<p>A goal also serves the <a href="yield.html#specs">Yield</a> and <a href="sensitivity.html">Sensitivity</a> panels. Its <strong>Use</strong> —
+two ticks on its row, here or in the Yield panel, which show the same setting — says which: <strong>Opt</strong>, the
+optimizer aims for it; <strong>Sensitivity / Yield</strong>, the yield counts it as a spec and the Sensitivity panel ranks
+it. Both ticked (the row reads <strong>All</strong>) is the default. A design is usually centred against tight goals
+ticked <em>Opt</em> only, and judged for yield against looser copies of them ticked <em>Sensitivity / Yield</em> only. In a <code>.cnl</code> it is <code>use=opt</code> or <code>use=yield</code> at the end of the goal line.</p>
 <p>When results exist, the editor previews the expression over the range with the limit drawn on it.</p>
 <p>Each goal row in the panel shows, at the best point so far, a bar (green when met), the worst value
 in its range and ✓ or ✕. A goal whose expression reads only variables, such as <code>L1 - L2</code> ≥ 0, is a
@@ -724,7 +724,9 @@ costs. At the end of the candidate list the row is marked railed. <strong>Widen<
 that side, and is not offered when the part is at the end of what the library holds.</p>
 <p><strong>Sensitivity</strong> (in the toolbar) simulates once more per variable around the best point and shows, on
 each row, how much of the cost that variable moves — which variables matter, and which could be left
-alone.</p>
+alone. Before any run, the same button opens the <a href="sensitivity.html">Sensitivity</a> panel, which ranks
+every value of the design against each goal at the values as they stand — a good way to choose which
+variables to optimize.</p>
 <h2 id="keeping">Keeping the result</h2>
 <p>While paused or after a run:</p>
 <ul>
@@ -752,7 +754,7 @@ command line writes: the best point, as a preset in the schematic.</p>
   <a href="cli.html#opt">The command line</a>.</p>
 
 <nav class="page-nav">
-  <a class="prev" href="tuning.html"><span class="dir">Previous</span><span class="name">Tuning</span></a>
+  <a class="prev" href="sensitivity.html"><span class="dir">Previous</span><span class="name">Sensitivity</span></a>
   <a class="next" href="yield.html"><span class="dir">Next</span><span class="name">Yield</span></a>
 </nav>
 </main>

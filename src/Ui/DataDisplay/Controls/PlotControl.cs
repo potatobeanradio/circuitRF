@@ -215,6 +215,10 @@ namespace CircuitRF.Ui.DataDisplay.Controls
 
         private PlotDetail  _renderDetail        = PlotDetail.Full;
 
+        /// <summary>The trial families' member pictures (TrialLayerCache): a page pan redraws this plot unchanged every
+        /// frame, and the members are the costly part. Read only on the render thread, by the draw operation.</summary>
+        private readonly TrialLayerCache _trialCache = new();
+
         // ---- ANT-10: the 3D pattern surface's own gesture state ----------
         //
         //  Three things and no more (§3): rotate, zoom, reset. The surface owns the LEFT DRAG on its
@@ -1168,7 +1172,8 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 // the curves beneath it come from the same pointer position (IPlotOverlay.CaptureFrame).
                 // The theme stays an argument, so it is the draw op's own.
                 Overlay?.CaptureFrame(),
-                legendSel));
+                legendSel,
+                _trialCache));
         }
 
         // ============================================================
@@ -1190,6 +1195,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             private readonly bool _alwaysShowSource;
             private readonly Action<SKCanvas, TransformSet, RenderTheme>? _overlay;
             private readonly SKColor _legendSelection;
+            private readonly TrialLayerCache? _trialCache;
 
             public PlotDrawOperation(
                 Rect             bounds,
@@ -1204,9 +1210,11 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 Func<Trace, string?>? aliasFor   = null,
                 bool alwaysShowSource = false,
                 Action<SKCanvas, TransformSet, RenderTheme>? overlay = null,
-                SKColor legendSelection = default)
+                SKColor legendSelection = default,
+                TrialLayerCache? trialCache = null)
             {
                 _legendSelection = legendSelection;
+                _trialCache      = trialCache;
                 _bounds          = bounds;
                 _plot            = plot;
                 _theme           = theme;
@@ -1258,7 +1266,8 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                     // R-smith5-6: the canvas and the transform are ARGUMENTS of this frame, never
                     // remembered — ContourRenderer once drew every contour on every Smith plot to
                     // the first target it had been handed.
-                    overlay: _overlay is { } ov ? (c, tf) => ov(c, tf, _theme) : null);
+                    overlay: _overlay is { } ov ? (c, tf) => ov(c, tf, _theme) : null,
+                    trialCache: _trialCache);
                 if (_legendSelection != default
                     && LegendRenderer.DockedBounds(canvasSize, _plot, PlotRenderer.BuildTransforms(_plot, canvasSize),
                                                    _aliasFor, _alwaysShowSource) is { } legendRect)

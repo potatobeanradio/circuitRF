@@ -337,6 +337,35 @@ public sealed class TechMaterialsTests(ITestOutputHelper output) : IDisposable
         Assert.Equal("4.4", row.StagedEpsr);
     }
 
+    /// <summary>A technology that defines no material and names no library still offers FR-4 on a dielectric row: picking
+    /// the built-in copies it into the technology's own materials and names it, and one Undo takes both back.</summary>
+    [Fact]
+    public void Editor_ATechnologyWithNoMaterialsOffersTheBuiltIns_AndPickingOneCopiesItIn()
+    {
+        var tech = Shipped();
+        tech.Materials.Clear();
+        tech.MaterialLibraries = null;
+        foreach (var l in tech.Stackup.Layers) l.Material = null;
+        TechPersistence.ResolveMaterials(tech);
+        var vm  = new TechEditorViewModel(Path.Combine(_tmp, "t.ctech"), tech);
+        Assert.Empty(vm.Working.ResolvedMaterials);
+        var row = vm.StackupLayers.First(r => r.IsDielectric);
+        Assert.True(row.HasMaterialChoices);
+        Assert.Contains("FR-4", row.MaterialChoices);
+
+        row.SelectedMaterial = "FR-4";
+        row = vm.StackupLayers.First(r => r.IsDielectric);
+        var fr4 = vm.Working.FindMaterial("FR-4");
+        Assert.NotNull(fr4);
+        Assert.Equal("FR-4", vm.Working.Stackup.Layers.First(l => l.Kind == StackupKind.Dielectric).Material);
+        Assert.True(row.EpsrFromMaterial);
+        Assert.Equal(fr4!.Epsr, vm.Working.Stackup.Layers.First(l => l.Kind == StackupKind.Dielectric).Epsr);
+
+        vm.UndoRedo.Undo();
+        Assert.Null(vm.Working.FindMaterial("FR-4"));
+        Assert.Null(vm.Working.Stackup.Layers.First(l => l.Kind == StackupKind.Dielectric).Material);
+    }
+
     /// <summary>The default technology's substrate names a laminate, so a board imported onto it
     /// showed εr and tanδ as read-only while its thickness took typing. A typed value goes into an edited
     /// copy the row then names — never "(none)", which would shed what only a material carries — and the

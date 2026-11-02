@@ -1344,8 +1344,15 @@ public static class BuiltInSymbols
     /// Renderer/glyph-BB/ghost must call this instead of Primitives(Snp, n) when they know
     /// the component's actual RefNode/PinConfig/Pitch values.
     /// </summary>
-    public static Symbol PrimitivesForSnp(int n, bool refNode, SnpPinConfig cfg, SnpPitch pitch)
+    /// <param name="portLabels">The names the file's header gives its ports (<c>Port[N] = name</c>, index 0 is port 1),
+    /// or null. A named port's lead reads <c>N name</c> and the body widens to hold the names; the pins, their NAMES (the
+    /// port numbers a net binds to) and their positions are the numbered symbol's, so nothing that wires or hit-tests a
+    /// lead can tell the two apart. Not cached: the names belong to one file, and the caller rebuilds only on a change.</param>
+    public static Symbol PrimitivesForSnp(int n, bool refNode, SnpPinConfig cfg, SnpPitch pitch,
+                                          IReadOnlyList<string?>? portLabels = null)
     {
+        if (portLabels is not null && portLabels.Any(l => !string.IsNullOrWhiteSpace(l)))
+            return BuildSnpSymbol(n, refNode, cfg, pitch, portLabels);
         var key = (n, refNode, cfg, pitch);
         if (!_snpCache.TryGetValue(key, out var sym))
             _snpCache[key] = sym = BuildSnpSymbol(n, refNode, cfg, pitch);
@@ -1465,11 +1472,38 @@ public static class BuiltInSymbols
         return BuildPortBox(ports, n, cfg, pitch, halfW * 2);
     }
 
-    private static Symbol BuildSnpSymbol(int n, bool refNode, SnpPinConfig cfg, SnpPitch pitch)
+    private static Symbol BuildSnpSymbol(int n, bool refNode, SnpPinConfig cfg, SnpPitch pitch,
+                                         IReadOnlyList<string?>? portLabels = null)
     {
         var ports = SymbolPortDefs.GenerateSnpPorts(n, refNode, cfg, pitch);
-        return BuildPortBox(ports, n, cfg, pitch, SymbolPortDefs.SnpBodyRect(n, cfg, pitch).W);
+        if (portLabels is null) return BuildPortBox(ports, n, cfg, pitch, SymbolPortDefs.SnpBodyRect(n, cfg, pitch).W);
+
+        // The text beside each lead: the port's own name in place of its number, kept short (a longer one is cut, ~
+        // marking the cut), and the number where the file names none.
+        var text = new string[ports.Length];
+        for (int i = 0; i < ports.Length; i++)
+        {
+            string number = ports[i].Name;
+            text[i] = int.TryParse(number, out int k) && k >= 1 && k <= portLabels.Count
+                      && Minimal(portLabels[k - 1]) is { Length: > 0 } label
+                ? label
+                : number;
+        }
+        // NamedPortBox's width rule: room for the longest text, inside the ±200 pins.
+        int longest = text.Max(t => t.Length);
+        double halfW = Math.Clamp(60 + longest * 9.0, SymbolPortDefs.SnpBodyRect(n, cfg, pitch).W * 0.5, 170);
+        return BuildPortBox(ports, n, cfg, pitch, halfW * 2, text);
+
+        static string Minimal(string? name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return "";
+            string s = name.Trim();
+            return s.Length <= SnpPortLabelMaxChars ? s : s[..(SnpPortLabelMaxChars - 1)] + "~";
+        }
     }
+
+    /// <summary>The longest port name an SnP lead shows; a longer one is cut to it, ending in <c>~</c>.</summary>
+    internal const int SnpPortLabelMaxChars = 8;
 
     /// <summary>
     /// The shared body-and-leads drawing for every box-shaped N-port glyph: SnP's numbered ports and
@@ -1479,7 +1513,7 @@ public static class BuiltInSymbols
     /// </summary>
     private static Symbol BuildPortBox(
         (string Name, float LocalX, float LocalY)[] ports,
-        int n, SnpPinConfig cfg, SnpPitch pitch, double w)
+        int n, SnpPinConfig cfg, SnpPitch pitch, double w, IReadOnlyList<string>? labelText = null)
     {
         float halfH = SymbolPortDefs.SnpBodyRect(n, cfg, pitch).HalfH;
         float cy = SymbolPortDefs.SnpBodyCenterYPublic(n, cfg, pitch);
@@ -1489,8 +1523,11 @@ public static class BuiltInSymbols
 
         var prims = new List<SymbolPrimitive> { RRect(0, cy, w, halfH * 2, 12) };
 
-        foreach (var (name, lx, ly) in ports)
+        for (int pi = 0; pi < ports.Length; pi++)
         {
+            var (pinName, lx, ly) = ports[pi];
+            // The pin keeps its own name (what a net binds to); only the text drawn beside it can differ.
+            string name = labelText is not null && pi < labelText.Count ? labelText[pi] : pinName;
             // Lead from the nearest body edge to the pin tip.
             if      (lx < 0)       prims.Add(L(bodyLeft,  ly, lx, ly));
             else if (lx > 0)       prims.Add(L(bodyRight, ly, lx, ly));
@@ -1504,7 +1541,7 @@ public static class BuiltInSymbols
             else if (lx > 0)
                 prims.Add(Txt(name, bodyRight - 20, ClampInsideBody(ly, bodyTop, bodyBot),
                     SddPortLabelFontSize, SymbolTextAlign.Right, SymbolTextVAlign.Middle));
-            else if (name == "Ref")
+            else if (pinName == "Ref")
                 prims.Add(Txt("Ref", 0, bodyBot - 22, SddPortLabelFontSize,
                     SymbolTextAlign.Center, SymbolTextVAlign.Middle));
             else   // top-center pin (3-port port 3)

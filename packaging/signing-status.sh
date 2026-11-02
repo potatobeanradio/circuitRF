@@ -5,7 +5,7 @@
 # The PUBLIC key is compiled into the binary (src/Ui/Updates/ReleaseKeys.cs), so a build either
 # carries one or does not, and that is decided long before packaging runs. These helpers only READ
 # it. The private half is never touched here - signing is a separate step over the finished dist/,
-# because one manifest covers all fifteen artifacts and they are built on three different machines.
+# because one manifest covers all nineteen artifacts and they are built on three different machines.
 # See packaging/sign-release.sh and BUILDING.md.
 
 # The compiled-in public key, or "" when the build carries none. The constant is written as adjacent
@@ -27,7 +27,7 @@ crf_report_release_key() {
     if [ -n "$_crf_pub" ]; then
         echo "Release key: COMPILED IN (${#_crf_pub} chars)."
         echo "   These artifacts can be installed as automatic updates - but ONLY once the release"
-        echo "   manifest is signed. Collect all 15 files from all three platforms into dist/, then"
+        echo "   manifest is signed. Collect all 19 files from all three platforms into dist/, then"
         echo "   run packaging/sign-release.sh on the machine holding the private key."
         echo "   Publishing without it means NO client is offered the release at all, silently."
     else

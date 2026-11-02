@@ -130,16 +130,18 @@ writes its statistics is in [PDK authoring](pdk-authoring.html#statistics).
 
 ## Specs {#specs}
 
-A spec is a [goal](optimization.html#goals). Every goal is listed, with a **Use** choice:
+A spec is a [goal](optimization.html#goals). Every goal is listed with its **Use**: two ticks, the same ones
+the Optimizer's goal row shows.
 
-| Use | |
-|---|---|
-| **Opt** | The optimizer meets it; the yield ignores it. |
-| **Yield** | The yield counts it; the optimizer ignores it. |
-| **Both** | Both — the default. |
+| Ticked | Reads | |
+|---|---|---|
+| **Opt** only | Opt | The optimizer meets it; the yield and the Sensitivity panel ignore it. |
+| **Sensitivity / Yield** only | Sens/Yield | The yield counts it and the [Sensitivity](sensitivity.html) panel ranks it; the optimizer ignores it. |
+| Both | All | Every one of them — the default. |
 
-A common way to work: centre the design with the optimizer against tight goals, then loosen copies of
-them, marked **Yield**, for the yield analysis. Goals are written in the Optimizer; the pencil
+The last tick cannot be cleared: a goal nothing uses is one with **Enabled** off. A common way to work: centre
+the design with the optimizer against tight goals, then loosen copies of them, ticked **Sensitivity / Yield**
+only, for the yield analysis. Goals are written in the Optimizer; the pencil
 (**Edit goals…**) takes you there with the selected goal. After a run each spec shows its own yield
 and interval.
 

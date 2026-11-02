@@ -98,4 +98,18 @@ public class SnpPathPolicyTests
         Assert.DoesNotContain('\\', result);
         Assert.Equal("a/b/amp.s2p", result);
     }
+
+    /// <summary>A File stored as a string literal names the path inside the quotes, as the Elaborator reads it — a quoted
+    /// path with a space in it (an EM result's <c>"results/board Driven.palace.s15p"</c>) included. Before, Preview looked
+    /// for a file whose name began with a quote and was disabled.</summary>
+    [Fact]
+    public void AQuotedFile_ResolvesToThePathInsideTheQuotes()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "ws");
+        string expected = Path.GetFullPath(Path.Combine(root, "results", "board Driven.palace.s15p"));
+        Assert.Equal(expected, SnpPathPolicy.Resolve("\"results/board Driven.palace.s15p\"", root, null));
+        Assert.Equal(expected, SnpPathPolicy.Resolve(" \"results/board Driven.palace.s15p\" ", root, null));
+        Assert.Equal(expected, SnpPathPolicy.Resolve("results/board Driven.palace.s15p", root, null));
+        Assert.Null(SnpPathPolicy.Resolve("\"\"", root, null));
+    }
 }

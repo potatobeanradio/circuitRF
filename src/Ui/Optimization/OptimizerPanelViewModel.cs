@@ -529,7 +529,7 @@ public sealed partial class OptimizerPanelViewModel : ObservableObject, ITunable
     internal void SetGoalUse(OptimizerGoalRowViewModel row, GoalUse use)
     {
         if (Setup is null || row.Goal.Use == use) return;
-        Execute(TuningSetupEdits.WithGoalUse(Setup, row.Name, use), $"Use goal {row.Name} for optimizing");
+        Execute(TuningSetupEdits.WithGoalUse(Setup, row.Name, use), $"Use goal {row.Name} for {GoalUseTicks.Word(use)}");
     }
 
     [RelayCommand(CanExecute = nameof(HasSchematic))]

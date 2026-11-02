@@ -151,7 +151,11 @@ public static class C3dModelled
     {
         // brief-em3d-114 — by the RESULT port's document number, which is a terminal's own: each terminal is one port here.
         var ordered = modelled.OrderBy(m => m.Resolved.Number).ToList();
-        if (off.Count == 0) return [.. ordered.Select(m => m.Resolved)];
+        // Every port carries the name it has in the 3D view (a component port's is its refdes), so the Touchstone file can
+        // say which numbered port is which (Em3dPortMap.NameLines); a terminal keeps its own, set when it was made.
+        if (off.Count == 0)
+            return [.. ordered.Select(m => m.Resolved.FaceGroup is null && m.Resolved.SourceLabel is null
+                                           ? m.Resolved with { SourceLabel = C3dPorts.Label(m.Port) } : m.Resolved)];
         var ports = new List<Em3dPort>(ordered.Count);
         for (int k = 0; k < ordered.Count; k++)
         {

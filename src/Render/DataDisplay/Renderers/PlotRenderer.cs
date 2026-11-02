@@ -332,7 +332,8 @@ namespace CircuitRF.Render.DataDisplay
             VswrReadout?         vswrReadout      = null,
             Func<Trace, string?>? aliasFor        = null,
             bool?                 alwaysShowSource = null,
-            Action<SKCanvas, TransformSet>? overlay = null)
+            Action<SKCanvas, TransformSet>? overlay = null,
+            TrialLayerCache?      trialCache      = null)
         {
             // ANT-10: the 3D pattern surface has no world window, so it leaves BEFORE
             // BuildTransforms — the same seam, and for the same reason, as the Table above it
@@ -473,7 +474,7 @@ namespace CircuitRF.Render.DataDisplay
                     StatisticsRenderer.DrawBars(canvas, canvasSize, trace, tf, theme, plot.FreqUnits);
                 // A family or scatter drawn by trial (brief-yield-9): pass/fail, band, nominal, selection.
                 else if (TrialRenderer.Handles(trace))
-                    TrialRenderer.Draw(canvas, canvasSize, trace, plot, tf, theme);
+                    TrialRenderer.Draw(canvas, canvasSize, trace, plot, tf, theme, trialCache);
                 else
                     TraceRenderer.Draw(canvas, canvasSize, trace, tf, theme,
                         stemMode: plotIsRect && (trace.IsHarmonicStem || trace.IsMixIndexStem));

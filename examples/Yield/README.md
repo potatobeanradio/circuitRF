@@ -2,7 +2,7 @@
 
 Three test benches, one for each question the **Yield** panel answers (View ▸ Panels ▸ Yield, tabbed
 behind the Optimizer), and a fourth for the question to ask before any of them — which values matter —
-in the **Sensitivity** panel (the tab between Tuning and the Optimizer). Each one already has its tolerances, its specs and its run settings saved in
+in the **Sensitivity** panel (the tab between the Optimizer and Yield). Each one already has its tolerances, its specs and its run settings saved in
 the schematic, so you can open it, pick the mode named below and press **▶** before reading anything
 else. Every run here takes a second or two.
 

@@ -241,7 +241,7 @@
                              stored on the shape where it would go stale under an edit. -->
                         <Button Classes.ToolActive="{Binding ActiveViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=Port}"
                                 Click="OnToolButtonClick" Command="{Binding ActiveViewModel.SetActiveToolCommand}" CommandParameter="Port"
-                                ToolTip.Tip="Port — click a conductor end to place an EM port (auto-numbered)" Padding="6,3">
+                                ToolTip.Tip="Port (P) — click a conductor end to place an EM port (auto-numbered)" Padding="6,3">
                             <mi:MaterialIcon Kind="TargetVariant" Width="16" Height="16"/>
                         </Button>
                         <!-- Ruler annotation tool (docs/design/layout-view.md §9B.5). Two clicks,

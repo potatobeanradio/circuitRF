@@ -186,3 +186,25 @@ public sealed class DynamicSymbolGeometryTests
 
     private static bool Near(double a, double b) => System.Math.Abs(a - b) < 1e-6;
 }
+
+/// <summary>An SnP whose file names its ports draws the names beside the leads, short, while every pin keeps its number
+/// (what a net binds to) and its position.</summary>
+public sealed class SnpPortLabelSymbolTests
+{
+    [Fact]
+    public void NamedPorts_DrawShortNames_AndThePinsAreTheNumberedSymbols()
+    {
+        var numbered = CircuitRF.Design.Schematic.BuiltInSymbols.PrimitivesForSnp(
+            3, false, CircuitRF.Design.Symbol.SnpPinConfig.Standard, CircuitRF.Design.Symbol.SnpPitch.Loose);
+        var named = CircuitRF.Design.Schematic.BuiltInSymbols.PrimitivesForSnp(
+            3, false, CircuitRF.Design.Symbol.SnpPinConfig.Standard, CircuitRF.Design.Symbol.SnpPitch.Loose,
+            ["U1.IN", null, "a-very-long-port-name"]);
+
+        Assert.Equal(numbered.Pins.Select(p => (p.LocalX, p.LocalY, p.Name)), named.Pins.Select(p => (p.LocalX, p.LocalY, p.Name)));
+        var text = named.Primitives.OfType<CircuitRF.Design.Symbol.TextPrimitive>().Select(t => t.Content).ToList();
+        Assert.Contains("U1.IN", text);
+        Assert.Contains("2", text);                                        // no name: its number
+        Assert.Contains("a-very-~", text);                                 // cut to 8, the cut marked
+        Assert.DoesNotContain(text, t => t.Length > 8);
+    }
+}

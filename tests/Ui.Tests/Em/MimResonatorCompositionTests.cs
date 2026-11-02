@@ -332,20 +332,22 @@ public sealed class MimResonatorCompositionTests(ITestOutputHelper output) : IDi
         var lines = EmSnpProvenance.PortMap(["Metal1", "Metal2"], ports, labels, 1000, LayoutUnit.Um);
         foreach (string l in lines) output.WriteLine(l);
 
+        // First, which numbered port is which named one, in the Port[N] = name spelling other tools read.
+        Assert.Equal(["Port[1] = 1", "Port[2] = P2"], lines.Take(2));
         Assert.Equal("circuitRF-EM port 1: '1' on 'Metal1' at (-110, -125 um), edge, de-embedded, 50 Ohm",
-                     lines[0]);
+                     lines[2]);
         Assert.Equal("circuitRF-EM port 2: 'P2' on 'Metal2' at (-155, -46 um), edge, de-embedded, 75 Ohm",
-                     lines[1]);
+                     lines[3]);
 
         // The sentence that says what to DO with the order — carried once, under the list, and only
         // where there is an order to get wrong.
-        Assert.Equal(3, lines.Count);
-        Assert.Contains("port N of this file", lines[2], StringComparison.Ordinal);
+        Assert.Equal(5, lines.Count);
+        Assert.Contains("port N of this file", lines[4], StringComparison.Ordinal);
 
         Assert.All(lines, l => Assert.All(l, c => Assert.True(c < 128, $"non-ASCII '{c}' in: {l}")));
 
         // One port has no order to get wrong, so there is no sentence about one.
-        Assert.Single(EmSnpProvenance.PortMap(["Metal1"], [ports[0]], [labels[0]], 1000, LayoutUnit.Um));
+        Assert.Equal(2, EmSnpProvenance.PortMap(["Metal1"], [ports[0]], [labels[0]], 1000, LayoutUnit.Um).Count);
         Assert.Empty(EmSnpProvenance.PortMap(["Metal1"], [], [], 1000, LayoutUnit.Um));
     }
 }

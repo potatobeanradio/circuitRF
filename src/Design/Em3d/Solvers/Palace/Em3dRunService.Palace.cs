@@ -808,7 +808,8 @@ public static partial class Em3dRunService
         string materialsText = string.Join("|", problem.Materials.Select(m =>
             $"{m.Name}:{R(m.Epsr)}:{R(m.TanD)}:{R(m.Mur)}:{R(m.SigmaSm)}"));
 
-        var lines = new List<string>();
+        // Which numbered port is which named port, first and in the spelling other tools read (Port[N] = name).
+        var lines = new List<string>(Em3dPortMap.NameLines(problem.Ports));
         foreach (var p in problem.Ports.OrderBy(p => p.Number))
             lines.Add($"{EmProvenanceStamp.PortPrefixNumbered}{p.Number}: '{Ascii(p.Name)}' from '{Ascii(p.NegativeObject)}' " +
                       $"to '{Ascii(p.PositiveObject)}', " + (p.Kind == Em3dPortKind.Wave

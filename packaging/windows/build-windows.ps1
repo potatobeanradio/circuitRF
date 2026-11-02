@@ -923,7 +923,7 @@ Write-Host ''
 if ($pub.Length -gt 0) {
     Write-Host "Release key: COMPILED IN ($($pub.Length) chars)."
     Write-Host '   These artifacts can be installed as automatic updates - but ONLY once the release'
-    Write-Host '   manifest is signed. Collect all 15 files from all three platforms into dist/, then'
+    Write-Host '   manifest is signed. Collect all 19 files from all three platforms into dist/, then'
     Write-Host '   run packaging/sign-release.sh on the machine holding the private key.'
     Write-Host '   Publishing without it means NO client is offered the release at all, silently.'
 } else {

@@ -998,15 +998,17 @@
                                                  material's value (the loader's own resolve-on-read rule,
                                                  applied again); typing a different one writes it into
                                                  an edited copy the row then names, and "(none)" keeps the
-                                                 values showing. Hidden when
-                                                 the technology defines no materials, since "(none)"
-                                                 alone is not a choice. -->
+                                                 values showing. Lists the
+                                                 technology's materials, then circuitRF's built-in ones
+                                                 of the row's role (FR-4 among them); picking a built-in
+                                                 copies it into this technology. Hidden only when there
+                                                 is nothing but "(none)" to offer. -->
                                             <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding HasMaterialChoices}">
                                                 <TextBlock Text="Material:" Width="70" FontSize="11" VerticalAlignment="Center"/>
                                                 <ComboBox Classes="cell" MinWidth="120"
                                                           ItemsSource="{Binding MaterialChoices}"
                                                           SelectedItem="{Binding SelectedMaterial, Mode=TwoWay}"
-                                                          ToolTip.Tip="One of this technology's named materials. While one is named, the values it states are this entry's values, for every solver. Typing a different value into one of them writes it into an edited copy of the material, which this entry then uses; the original is unchanged."/>
+                                                          ToolTip.Tip="One of this technology's named materials, or one built into circuitRF — picking a built-in copies it into this technology. While one is named, the values it states are this entry's values, for every solver. Typing a different value into one of them writes it into an edited copy of the material, which this entry then uses; the original is unchanged."/>
                                             </StackPanel>
 
                                             <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding !IsVia}">

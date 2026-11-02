@@ -283,7 +283,8 @@ public static class EmergeResults
         string settingsText = string.Join("|", R(settings.MaxElementWavelengths), R(settings.EdgeRefinement), settings.ElementOrder,
             settings.AdaptiveSweep, R(settings.Tolerance), settings.MaxSamples, settings.AdaptiveMesh);
 
-        var lines = new List<string>();
+        // Which numbered port is which named port, first and in the spelling other tools read (Port[N] = name).
+        var lines = new List<string>(Em3dPortMap.NameLines(problem.Ports));
         foreach (var p in problem.Ports.OrderBy(p => p.Number))
             lines.Add($"{EmProvenanceStamp.PortPrefixNumbered}{p.Number}: '{Ascii(p.Name)}' from '{Ascii(p.NegativeObject)}' " +
                       $"to '{Ascii(p.PositiveObject)}', lumped, {R(p.Z0.Real)} Ohm");

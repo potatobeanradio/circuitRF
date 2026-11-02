@@ -32,7 +32,7 @@ public sealed class FileRevealArgumentTests
     [InlineData(Plain)]
     public void WindowsFile_QuotesThePath_AndLeavesTheSwitchBare(string path)
     {
-        var psi = FileReveal.BuildCommand(path, isFile: true, FileReveal.Platform.Windows);
+        var psi = FileReveal.BuildCommand(path, select: true, FileReveal.Platform.Windows);
 
         Assert.NotNull(psi);
         Assert.Equal("explorer.exe", psi!.FileName);
@@ -69,7 +69,7 @@ public sealed class FileRevealArgumentTests
     [Fact]
     public void WindowsDirectory_UsesAnOrdinaryArgument()
     {
-        var psi = FileReveal.BuildCommand(@"C:\Users\First Last\Documents", isFile: false,
+        var psi = FileReveal.BuildCommand(@"C:\Users\First Last\Documents", select: false,
                                           FileReveal.Platform.Windows);
 
         Assert.NotNull(psi);
@@ -88,12 +88,12 @@ public sealed class FileRevealArgumentTests
     {
         const string nasty = "/tmp/a\" -a Calculator \".s2p";
 
-        var mac = FileReveal.BuildCommand(nasty, isFile: true, FileReveal.Platform.MacOS);
+        var mac = FileReveal.BuildCommand(nasty, select: true, FileReveal.Platform.MacOS);
         Assert.Equal("open", mac!.FileName);
         Assert.Equal("", mac.Arguments);
         Assert.Equal(new[] { "-R", nasty }, mac.ArgumentList);
 
-        var lin = FileReveal.BuildCommand(nasty, isFile: true, FileReveal.Platform.Other);
+        var lin = FileReveal.BuildCommand(nasty, select: true, FileReveal.Platform.Other);
         Assert.Equal("xdg-open", lin!.FileName);
         Assert.Equal("", lin.Arguments);
         Assert.Equal(new[] { "/tmp" }, lin.ArgumentList);          // the containing folder
@@ -102,7 +102,29 @@ public sealed class FileRevealArgumentTests
     [Fact]
     public void MacDirectory_OpensIt_WithoutTheSelectFlag()
     {
-        var psi = FileReveal.BuildCommand("/tmp/reports", isFile: false, FileReveal.Platform.MacOS);
+        var psi = FileReveal.BuildCommand("/tmp/reports", select: false, FileReveal.Platform.MacOS);
         Assert.Equal(new[] { "/tmp/reports" }, psi!.ArgumentList);
+    }
+
+    /// <summary>A workspace folder is shown SELECTED in the folder enclosing it, on all three platforms (Linux, which
+    /// cannot select, opens the enclosing folder); any other folder is still opened.</summary>
+    [Fact]
+    public void AWorkspaceFolder_IsSelectedInItsEnclosingFolder()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "crf-reveal-" + Guid.NewGuid().ToString("N"));
+        string ws = Path.Combine(root, "My Workspace");
+        Directory.CreateDirectory(Path.Combine(ws, "cell"));
+        File.WriteAllText(Path.Combine(ws, ".cws"), "{}");
+        try
+        {
+            Assert.True(FileReveal.IsWorkspaceFolder(ws));
+            Assert.False(FileReveal.IsWorkspaceFolder(Path.Combine(ws, "cell")));
+            Assert.False(FileReveal.IsWorkspaceFolder(root));
+
+            Assert.Equal(new[] { "-R", ws }, FileReveal.BuildCommand(ws, select: true, FileReveal.Platform.MacOS)!.ArgumentList);
+            Assert.Equal($"/select,\"{ws}\"", FileReveal.BuildCommand(ws, select: true, FileReveal.Platform.Windows)!.Arguments);
+            Assert.Equal(new[] { root }, FileReveal.BuildCommand(ws, select: true, FileReveal.Platform.Other)!.ArgumentList);
+        }
+        finally { Directory.Delete(root, true); }
     }
 }

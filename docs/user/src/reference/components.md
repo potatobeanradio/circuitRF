@@ -1216,6 +1216,10 @@ circuit and interpolated onto the analysis sweep.
   `auto` ties a file whose S(i,j) and S(j,i) agree (every passive file does) and unties one that does
   not (an amplifier).
 
+When the file's header names its ports (`! Port[1] = P1`, which every EM result circuitRF writes carries), each lead
+shows its port's name in place of its number, shortened past eight characters. The pins are still ports 1…N: only the
+text beside them changes.
+
 The symbol is dynamic; the pin arrangement, the pitch and the floating-reference option are covered in
 [Dynamic symbols](dynamic-symbols.html#snp).
 

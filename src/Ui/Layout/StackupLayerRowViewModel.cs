@@ -242,28 +242,43 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
     internal const string MaterialNone = SpanNone;
 
     /// <summary>
-    /// "(none)", every material the technology defines, and — when this row names one the technology
-    /// does NOT define — that name too. Without it the combo cannot show the selection it is given, and
-    /// a write-back of null would clear the name and hide <c>tech.material.unknown</c>.
+    /// "(none)", every material the technology defines, then circuitRF's built-in materials of this row's role that the
+    /// technology does not already define (a dielectric is offered those with an εr, a conductor those with a σ), and —
+    /// when this row names one that is in neither — that name too. Without it the combo cannot show the selection it is
+    /// given, and a write-back of null would clear the name and hide <c>tech.material.unknown</c>.
+    ///
+    /// <para>The built-ins are what make FR-4 pickable on a technology that names no material library: the picker used to
+    /// list the technology's own materials only, and was hidden when there were none.</para>
     /// </summary>
     public IReadOnlyList<string> MaterialChoices => _materialChoices ??= ComputeMaterialChoices();
     private IReadOnlyList<string>? _materialChoices;
 
     private IReadOnlyList<string> ComputeMaterialChoices()
     {
-        {
-            var names = _owner.Working.ResolvedMaterials.Select(m => m.Name)
-                                                .Where(n => n is { Length: > 0 })
-                                                .Distinct(StringComparer.OrdinalIgnoreCase)
-                                                .ToList();
-            if (Layer.Material is { Length: > 0 } stated && NamedMaterial is null) names.Add(stated);
-            return [MaterialNone, .. names];
-        }
+        var names = _owner.Working.ResolvedMaterials.Select(m => m.Name)
+                                            .Where(n => n is { Length: > 0 })
+                                            .Distinct(StringComparer.OrdinalIgnoreCase)
+                                            .ToList();
+        var defined = new HashSet<string>(names, StringComparer.OrdinalIgnoreCase);
+        names.AddRange(BuiltInsForRole().Select(m => m.Name).Where(n => !defined.Contains(n)));
+        if (Layer.Material is { Length: > 0 } stated && NamedMaterial is null
+            && !names.Contains(stated, StringComparer.OrdinalIgnoreCase)) names.Add(stated);
+        return [MaterialNone, .. names];
     }
+
+    /// <summary>circuitRF's generic materials, read once.</summary>
+    private static readonly Lazy<IReadOnlyList<TechMaterial>> BuiltInMaterials = new(MaterialLibraries.LoadGeneric);
+
+    /// <summary>The built-in materials this row can be made of: those with an εr for a dielectric, a σ for a conductor,
+    /// none for a via (its metal is the plating's, set on its own row).</summary>
+    private IEnumerable<TechMaterial> BuiltInsForRole() =>
+        IsDielectric ? BuiltInMaterials.Value.Where(m => m.Epsr is not null && m.Name is { Length: > 0 })
+      : IsConductor  ? BuiltInMaterials.Value.Where(m => m.Sigma20 is not null && m.Name is { Length: > 0 })
+      : [];
 
     /// <summary>Whether there is a named material to offer or to show — the picker is hidden
     /// otherwise, since "(none)" alone is not a choice.</summary>
-    public bool HasMaterialChoices => _owner.Working.ResolvedMaterials.Count > 0 || Layer.Material is { Length: > 0 };
+    public bool HasMaterialChoices => MaterialChoices.Count > 1;
 
     private string _selectedMaterial = MaterialNone;
     public string SelectedMaterial
@@ -276,6 +291,14 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
             if (string.Equals(Layer.Material, name, StringComparison.Ordinal)) return;
 
             var before = _owner.SnapshotJson();
+            // A built-in the technology does not define is copied into the technology's own materials in the same
+            // edit, so the file names a material it also defines (the Materials table adopts a built-in the same way).
+            if (name is not null && _owner.Working.FindMaterial(name) is null
+                && MaterialLibraries.LoadGeneric().FirstOrDefault(m => string.Equals(m.Name, name, StringComparison.OrdinalIgnoreCase)) is { } builtIn)
+            {
+                _owner.Working.Materials.Add(builtIn);
+                name = builtIn.Name;
+            }
             Layer.Material = name;
             TechPersistence.ResolveMaterials(_owner.Working);
             _owner.CommitEdit(before, name is null

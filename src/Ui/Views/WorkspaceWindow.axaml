@@ -592,8 +592,8 @@
                                     <NativeMenuItem Header="Properties"   Command="{Binding ShowToolPanelCommand}" CommandParameter="Properties"/>
                                     <NativeMenuItem Header="Analyses"     Command="{Binding ShowToolPanelCommand}" CommandParameter="Analyses"/>
                                     <NativeMenuItem Header="Tuning"       Command="{Binding ShowToolPanelCommand}" CommandParameter="Tuning"/>
-                                    <NativeMenuItem Header="Sensitivity"  Command="{Binding ShowToolPanelCommand}" CommandParameter="Sensitivity"/>
                                     <NativeMenuItem Header="Optimizer"    Command="{Binding ShowToolPanelCommand}" CommandParameter="Optimizer"/>
+                                    <NativeMenuItem Header="Sensitivity"  Command="{Binding ShowToolPanelCommand}" CommandParameter="Sensitivity"/>
                                     <NativeMenuItem Header="Yield"        Command="{Binding ShowToolPanelCommand}" CommandParameter="Yield"/>
                                     <NativeMenuItem Header="Messages"     Command="{Binding ShowToolPanelCommand}" CommandParameter="Messages"/>
                                     <NativeMenuItem Header="DRC"          Command="{Binding ShowToolPanelCommand}" CommandParameter="Drc"/>
@@ -1711,17 +1711,17 @@
                               Command="{Binding ShowToolPanelCommand}" CommandParameter="Tuning">
                         <MenuItem.Icon><mi:MaterialIcon Kind="TuneVertical" Width="16" Height="16"/></MenuItem.Icon>
                     </MenuItem>
-                    <!-- brief-sens-3. Tabbed between Tuning and the Optimizer in both shipped default layouts. -->
-                    <MenuItem Header="_Sensitivity"
-                              Command="{Binding ShowToolPanelCommand}" CommandParameter="Sensitivity">
-                        <MenuItem.Icon><mi:MaterialIcon Kind="SortVariant" Width="16" Height="16"/></MenuItem.Icon>
-                    </MenuItem>
-                    <!-- brief-tuneopt-10. Tabbed behind Sensitivity in both shipped default layouts. -->
+                    <!-- brief-tuneopt-10. Tabbed behind Tuning in both shipped default layouts. -->
                     <MenuItem Header="O_ptimizer"
                               Command="{Binding ShowToolPanelCommand}" CommandParameter="Optimizer">
                         <MenuItem.Icon><mi:MaterialIcon Kind="TargetVariant" Width="16" Height="16"/></MenuItem.Icon>
                     </MenuItem>
-                    <!-- brief-yield-10. Tabbed behind the Optimizer in both shipped default layouts. -->
+                    <!-- brief-sens-3. Tabbed between the Optimizer (which sets the goals) and Yield in both shipped default layouts. -->
+                    <MenuItem Header="_Sensitivity"
+                              Command="{Binding ShowToolPanelCommand}" CommandParameter="Sensitivity">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="SortVariant" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
+                    <!-- brief-yield-10. Tabbed behind Sensitivity in both shipped default layouts. -->
                     <MenuItem Header="_Yield"
                               Command="{Binding ShowToolPanelCommand}" CommandParameter="Yield">
                         <MenuItem.Icon><mi:MaterialIcon Kind="ChartBellCurve" Width="16" Height="16"/></MenuItem.Icon>

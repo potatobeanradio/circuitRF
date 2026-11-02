@@ -85,7 +85,12 @@ public static class SnpPathPolicy
     {
         if (string.IsNullOrWhiteSpace(stored)) return null;
 
+        // A File written as a string literal ("data/x.s2p" — quoted, as a .cnl writes it and as many schematics store it)
+        // names the path inside the quotes: the Elaborator strips one pair before resolving, and so does this, or every
+        // editor-side check (Preview, Show, the port count) looked for a file whose name starts with a quote and found none.
         string raw = stored.Trim();
+        if (raw.Length >= 2 && raw[0] == '"' && raw[^1] == '"') raw = raw[1..^1].Trim();
+        if (raw.Length == 0) return null;
 
         try
         {

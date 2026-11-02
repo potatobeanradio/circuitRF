@@ -52,6 +52,15 @@ set -euo pipefail
 # fpm, not dotnet-deb: that tool targets .NET 9 and does not work with .NET 10.
 # The AppImage needs curl or wget once, to fetch the tools packaging/linux/appimage.env pins, and no
 # FUSE: the packing tool runs with APPIMAGE_EXTRACT_AND_RUN=1, so a container or a CI runner can pack.
+# It also needs zsyncmake (sudo apt-get install zsync): every AppImage carries update information for
+# AppImageUpdate and ships with its .zsync file beside it,
+#
+#   dist/circuitRF-<version>-linux-x64.AppImage.zsync     what AppImageUpdate reads; upload with the release
+#   dist/circuitRF-<version>-linux-arm64.AppImage.zsync
+#
+# and an AppImage whose .zsync is missing from the release is one AppImageUpdate cannot update, with no
+# error anywhere. So a missing zsyncmake is a refusal before anything is built; CRF_ALLOW_NO_ZSYNC=1
+# packs AppImages with no update information instead, knowingly.
 # Cross-building is fine - an arm64 package can be produced on an x64 machine.
 
 ARCH_ARG="${1:-both}"
@@ -142,6 +151,35 @@ case " $KINDS " in
             appimage_pinned "RUNTIME_$(echo "$ARCH" | tr '[:lower:]' '[:upper:]')" >/dev/null || exit 1
         done
         APPIMAGE_COMPRESSION="$(appimage_val APPIMAGE_COMPRESSION)"
+
+        # -- AppImageUpdate: the update information and the tool that writes its .zsync ----------
+        #
+        # Checked HERE, before the publish, so a machine without zsyncmake is told in a second rather
+        # than after minutes of building. appimagetool itself only warns when zsyncmake is absent and
+        # then packs an image whose update information points at a file nobody wrote.
+        APPIMAGE_UPDATE_GITHUB="$(appimage_val APPIMAGE_UPDATE_GITHUB)"
+        case "$APPIMAGE_UPDATE_GITHUB" in
+            */*) ;;
+            *) echo "ERROR: ${APPIMAGE_ENV} has no APPIMAGE_UPDATE_GITHUB=owner/repository." >&2; exit 1 ;;
+        esac
+        # The channel follows VERSION, as packaging/sign-release.sh's prerelease flag does: GitHub's
+        # `latest` never considers a prerelease, so a beta's image asks for `latest-all`.
+        case "$CRF_VERSION" in
+            *-*) APPIMAGE_UPDATE_TAG=latest-all ;;
+            *)   APPIMAGE_UPDATE_TAG=latest     ;;
+        esac
+        if ZSYNCMAKE="$(command -v zsyncmake)"; then
+            :
+        elif [ "${CRF_ALLOW_NO_ZSYNC:-}" = 1 ]; then
+            ZSYNCMAKE=""
+            echo "NOTE: no zsyncmake and CRF_ALLOW_NO_ZSYNC=1 - the AppImages carry NO update information,"
+            echo "      so AppImageUpdate cannot update them."
+        else
+            echo "ERROR: zsyncmake is not installed. Every AppImage carries update information for AppImageUpdate," >&2
+            echo "       and the .zsync file it reads is written by zsyncmake. Install it (sudo apt-get install zsync)" >&2
+            echo "       and run this again, or set CRF_ALLOW_NO_ZSYNC=1 to pack images with no update information." >&2
+            exit 1
+        fi
         ;;
 esac
 
@@ -152,6 +190,8 @@ TMPROOT="$(mktemp -d)"
 trap 'rm -rf "$TMPROOT"' EXIT
 
 BUILT=()
+# The .zsync files written beside the AppImages - counted apart from BUILT, which is the packages.
+ZSYNCED=()
 
 # Icons are architecture-independent, so this runs once rather than once per package.
 echo "Building icons..."
@@ -613,15 +653,40 @@ APPRUN
             cp "${HERE}/icons/circuitrf.png" "${IMG}/usr/share/icons/hicolor/512x512/apps/circuitrf.png"
 
             OUT="${DIST}/circuitRF-${CRF_VERSION}-linux-${ARCH}.AppImage"
-            rm -f "$OUT"
+            # The .zsync too: one left from an earlier run would describe a different file.
+            rm -f "$OUT" "${OUT}.zsync"
+
+            # The update information AppImageUpdate reads out of the image (AppImageSpec,
+            # gh-releases-zsync): this repository's releases, the channel's tag, and the .zsync of the
+            # SAME architecture by a wildcard over the version - which is how one image finds the next.
+            UPDATE_ARGS=()
+            if [ -n "$ZSYNCMAKE" ]; then
+                UPDATE_INFO="gh-releases-zsync|${APPIMAGE_UPDATE_GITHUB%%/*}|${APPIMAGE_UPDATE_GITHUB#*/}|${APPIMAGE_UPDATE_TAG}|circuitRF-*-linux-${ARCH}.AppImage.zsync"
+                UPDATE_ARGS=(-u "$UPDATE_INFO")
+            fi
 
             # The HOST's appimagetool with the TARGET's runtime, which is what cross-packs the other
             # architecture; ARCH tells the tool which one it is packing. Extract-and-run: no FUSE.
+            # Run from the scratch directory: given -u, appimagetool runs zsyncmake itself with no
+            # output path, which writes a .zsync into the WORKING directory. That copy is discarded;
+            # the one shipped is written below, with its path stated, after the smoke test.
             echo "Packing ${OUT}..."
-            ARCH="$IMG_ARCH" APPIMAGE_EXTRACT_AND_RUN=1 "$APPIMAGETOOL" --no-appstream \
-                --comp "$APPIMAGE_COMPRESSION" --runtime-file "$RUNTIME" "$IMG" "$OUT"
+            ( cd "$TMPROOT" && ARCH="$IMG_ARCH" APPIMAGE_EXTRACT_AND_RUN=1 "$APPIMAGETOOL" --no-appstream \
+                ${UPDATE_ARGS[@]+"${UPDATE_ARGS[@]}"} \
+                --comp "$APPIMAGE_COMPRESSION" --runtime-file "$RUNTIME" "$IMG" "$OUT" )
             rm -rf "$IMG"
+            rm -f "${TMPROOT}/$(basename "$OUT").zsync"
             chmod +x "$OUT"
+
+            # The update information must BE in the image: appimagetool refuses a malformed string but
+            # says nothing of a runtime with no room for one. Read as bytes, so it works for either
+            # architecture on either build machine. A COUNT, not grep -q: -q stops at the first match,
+            # head then dies of SIGPIPE, and under pipefail a found string would read as missing.
+            if [ -n "$ZSYNCMAKE" ] && [ "$(head -c 4194304 "$OUT" | grep -acF "$UPDATE_INFO" || true)" = 0 ]; then
+                echo "ERROR: ${OUT} does not carry its update information (${UPDATE_INFO})." >&2
+                rm -f "$OUT"
+                exit 1
+            fi
 
             # -- The AppImage itself, smoke-tested (R-appimg-3) ---------------
             #
@@ -639,6 +704,15 @@ APPRUN
                 }
             fi
 
+            # -- The .zsync AppImageUpdate reads (written last, from the image that ships) --------
+            #
+            # -u names the AppImage relative to the .zsync, which is where a GitHub release puts both.
+            if [ -n "$ZSYNCMAKE" ]; then
+                "$ZSYNCMAKE" -u "$(basename "$OUT")" -o "${OUT}.zsync" "$OUT"
+                echo "OK  ${OUT}.zsync"
+                ZSYNCED+=("${OUT}.zsync")
+            fi
+
             echo "OK  ${OUT}"
             echo "    Run with:  chmod +x $(basename "$OUT") && ./$(basename "$OUT")"
             BUILT+=("$OUT")
@@ -652,6 +726,7 @@ echo "=== Done. ${#BUILT[@]} file(s) in ${DIST}"
 # ${BUILT[@]} on an EMPTY array is an unbound-variable error under `set -u` on bash 3.2, which is
 # still what macOS ships; the +"..." form is the portable spelling and costs nothing here.
 for f in ${BUILT[@]+"${BUILT[@]}"}; do echo "    $(basename "$f")"; done
+for f in ${ZSYNCED[@]+"${ZSYNCED[@]}"}; do echo "    $(basename "$f")   (upload with the release)"; done
 
 # A full run ships six files and a release needs every one of them. Stated here rather than left to
 # be noticed, because the failure this guards against is silent: a missing tarball stops Linux
@@ -661,6 +736,11 @@ case "${ARCH_ARG}:${KIND_ARG}" in both:both|both:all|all:both|all:all) FULL_RUN=
 if [ "$FULL_RUN" = 1 ] && [ "${#BUILT[@]}" -ne 6 ]; then
     echo ""
     echo "WARNING: expected 6 files for a full run, got ${#BUILT[@]}."
+fi
+# And the two .zsync files beside the AppImages, unless CRF_ALLOW_NO_ZSYNC=1 said there would be none.
+if [ "$FULL_RUN" = 1 ] && [ -n "${ZSYNCMAKE:-}" ] && [ "${#ZSYNCED[@]}" -ne 2 ]; then
+    echo ""
+    echo "WARNING: expected 2 .zsync files for a full run, got ${#ZSYNCED[@]}."
 fi
 
 # Reported after the packages exist, so nothing built is thrown away - but the run still fails.

@@ -52,5 +52,16 @@ public static class Em3dPortMap
             [.. ordered.Select(p => (double)(p.SourceNumber ?? p.Number))]));
     }
 
+    /// <summary>The name a result port has in the 3D view: its label (a component port's refdes), or for a terminal of a
+    /// multi-terminal port the port's name and the terminal's.</summary>
+    public static string Label(Em3dPort p) => p.FaceGroup is null
+        ? p.SourceLabel ?? p.Name
+        : $"{p.FaceGroupLabel ?? p.Name} {p.SourceLabel ?? (p.SourceNumber ?? p.Number).ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+
+    /// <summary>The <c>Port[N] = name</c> header lines (<see cref="RfCore.TouchstonePortNames"/>): which numbered port of the
+    /// file is which named port, for every result port. Every 3D writer calls this, so every 3D result carries it.</summary>
+    public static IReadOnlyList<string> NameLines(IReadOnlyList<Em3dPort> ports)
+        => RfCore.TouchstonePortNames.Lines(ports.Select(p => (p.Number, (string?)Label(p))));
+
     private static string Ascii(string s) => new([.. s.Select(c => c < 128 ? c : '?')]);
 }

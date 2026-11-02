@@ -87,11 +87,11 @@ A template fills in the fields; change any of them:
 | **Scale** (Advanced) | What one unit of violation is worth ([below](#cost)). |
 | **Enabled** | A disabled goal is kept but not scored. |
 
-A goal also serves the [Yield](yield.html#specs) panel, as a spec. Its **Use** — set there — says
-which: **Opt**, the optimizer aims for it and the yield ignores it; **Yield**, the yield counts it and
-the optimizer ignores it; **Both**, the default. A design is usually centred against tight goals marked
-*Opt*, and judged for yield against looser copies of them marked *Yield*. The goal list here shows only
-the goals the optimizer aims for. In a `.cnl` it is `use=opt` or `use=yield` at the end of the goal line.
+A goal also serves the [Yield](yield.html#specs) and [Sensitivity](sensitivity.html) panels. Its **Use** —
+two ticks on its row, here or in the Yield panel, which show the same setting — says which: **Opt**, the
+optimizer aims for it; **Sensitivity / Yield**, the yield counts it as a spec and the Sensitivity panel ranks
+it. Both ticked (the row reads **All**) is the default. A design is usually centred against tight goals
+ticked *Opt* only, and judged for yield against looser copies of them ticked *Sensitivity / Yield* only. In a `.cnl` it is `use=opt` or `use=yield` at the end of the goal line.
 
 When results exist, the editor previews the expression over the range with the limit drawn on it.
 

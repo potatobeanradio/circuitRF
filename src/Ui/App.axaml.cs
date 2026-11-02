@@ -71,6 +71,9 @@ public partial class App : Application
         // A tooltip never outlives the click that opens a dialog, or its window losing activation.
         Controls.ToolTipDismissGuard.Install();
 
+        // A double-click on the splitter beside the Workspace tree sizes that pane to its rows.
+        Docking.SplitterFitsWorkspaceTree.Install();
+
         // Teach the kit importer to recognise a process's own technology files, so importing a kit
         // that carries them SAYS SO rather than listing them as unrecognised. The readers behind them
         // are UI-project code, which is why this is registered here rather than shipped as a built-in.

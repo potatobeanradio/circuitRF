@@ -1601,3 +1601,26 @@ the release key once `sign-release.sh` runs. Checked in the source; it was not a
 Held by `PackagingScriptTests`: `TheAppImageNameTheLinuxScriptBuilds_IsWhatTheUpdaterMatches`,
 `TheLinuxScriptsDefaultKinds_IncludeTheAppImage_AndAFullRunIsSix`,
 `AppImageTools_ArePinnedByHash_AndNoMovingBuildIsNamed`, `TheAppImageDesktopEntry_IsDerivedFromTheDebs`.
+
+## AppImageUpdate: update information in every AppImage, a .zsync beside it (2026-11-02)
+
+The AppImage project's catalog found the AppImages on this repository's releases and listed them (an automated
+discovery commit, pending review), and its maintainers asked for update information plus a published `.zsync`.
+`build-linux.sh` now passes appimagetool `-u "gh-releases-zsync|<owner>|<repo>|<tag>|circuitRF-*-linux-<arch>.AppImage.zsync"`
+(owner/repository from `APPIMAGE_UPDATE_GITHUB` in `appimage.env`; tag `latest`, or `latest-all` for a prerelease
+`VERSION`, because GitHub's `latest` never considers a prerelease) and writes `${OUT}.zsync` itself.
+
+**Three traps in appimagetool 1.9.1, read from its source:**
+- **A missing `zsyncmake` is a WARNING, not an error.** The image is packed with update information pointing at a
+  `.zsync` nobody wrote. The script refuses up front instead (`CRF_ALLOW_NO_ZSYNC=1` packs with no update information).
+- **Given `-u`, it runs `zsyncmake` with no output path**, so its `.zsync` lands in the WORKING directory. The tool
+  runs from `$TMPROOT` and that copy is discarded; the shipped one is written after the smoke test with `-o`, from
+  the file that ships.
+- **Nothing checks the string reached the image.** The script counts it in the image's first 4 MB with `grep -c`.
+  Not `grep -q`: it stops at the first match, `head` dies of SIGPIPE, and under `pipefail` a found string reads as
+  missing.
+
+The `.zsync` files are ordinary assets: `sign-release.sh` uploads everything in `dist/` and hashes them into the
+manifest, and the updater matches the AppImage by exact name, so it ignores them. A release is now 19 files
+(`EXPECTED_FILES`). Not run end to end here: the packing runs only on Linux. Gate:
+`PackagingScriptTests.TheAppImage_CarriesUpdateInformation_ThatFindsTheNextReleasesZsync`.

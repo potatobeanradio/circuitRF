@@ -37,7 +37,7 @@ public static class InstallLocation
 
         try
         {
-            var psi = FileReveal.BuildCommand(site.Root, isFile: true, FileReveal.Platform.MacOS);
+            var psi = FileReveal.BuildCommand(site.Root, select: true, FileReveal.Platform.MacOS);
             if (psi is not null) Process.Start(psi);
         }
         catch (Exception) { /* no file manager; the path is on screen to copy either way */ }

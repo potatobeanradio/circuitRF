@@ -170,7 +170,10 @@ public static class EmSnpProvenance
     {
         if (ports.Count == 0) return [];
 
-        var lines = new List<string>();
+        // Which numbered port is which named port, first and in the spelling other tools read (Port[N] = name); a label
+        // that names nothing but a number writes nothing here.
+        var lines = new List<string>(RfCore.TouchstonePortNames.Lines(ports.Select((p, i) =>
+            (p.Number, i < labels.Count && labels[i].Text is { Length: > 0 } t ? (string?)t : null))));
         for (int i = 0; i < ports.Count; i++)
         {
             var p = ports[i];

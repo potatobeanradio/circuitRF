@@ -1,0 +1,48 @@
+<!-- A goal row's Use, as two ticks (IGoalUseTicks): Opt, and Sensitivity / Yield. The Optimizer's and the Yield panel's goal
+     rows both show this one control on the same goal state, so a change in either panel shows in the other. Closed, it reads
+     All, Opt or Sens/Yield and is drawn as the panels' own compact combos are (the combo's background, border and a small
+     chevron), not as a filled button. Each box is greyed while it is the only one ticked: a goal nothing uses is what
+     Enabled off already says. -->
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:opt="using:CircuitRF.Ui.Optimization"
+             xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="CircuitRF.Ui.Views.Optimization.GoalUseTicksView"
+             x:DataType="opt:IGoalUseTicks">
+    <UserControl.Styles>
+        <Style Selector="Button.useTicks">
+            <Setter Property="Background" Value="{DynamicResource ComboBoxBackground}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource ComboBoxBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="3"/>
+            <Setter Property="Padding" Value="5,1,3,1"/>
+            <Setter Property="MinHeight" Value="0"/>
+            <Setter Property="FontSize" Value="11"/>
+        </Style>
+        <Style Selector="Button.useTicks:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource ComboBoxBackgroundPointerOver}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource ComboBoxBorderBrushPointerOver}"/>
+        </Style>
+    </UserControl.Styles>
+    <Button Classes="useTicks" Width="88" HorizontalContentAlignment="Stretch" VerticalAlignment="Center"
+            ToolTip.Placement="Top" ToolTip.VerticalOffset="-4">
+        <ToolTip.Tip>
+            <TextBlock Text="{x:Static opt:GoalUseTicks.Tip}" TextWrapping="Wrap" MaxWidth="320"/>
+        </ToolTip.Tip>
+        <Grid ColumnDefinitions="*,Auto">
+            <TextBlock Text="{Binding UseSummary}" FontSize="11" VerticalAlignment="Center"/>
+            <mi:MaterialIcon Grid.Column="1" Kind="ChevronDown" Width="12" Height="12" Margin="2,0,0,0"
+                             Foreground="{DynamicResource ComboBoxDropDownGlyphForeground}"/>
+        </Grid>
+        <Button.Flyout>
+            <Flyout Placement="BottomEdgeAlignedLeft">
+                <StackPanel Spacing="2" Margin="-6,-4">
+                    <CheckBox Content="Opt" FontSize="11" MinHeight="0" Padding="4,0"
+                              IsChecked="{Binding UseOpt}" IsEnabled="{Binding UseSensYield}"/>
+                    <CheckBox Content="Sensitivity / Yield" FontSize="11" MinHeight="0" Padding="4,0"
+                              IsChecked="{Binding UseSensYield}" IsEnabled="{Binding UseOpt}"/>
+                </StackPanel>
+            </Flyout>
+        </Button.Flyout>
+    </Button>
+</UserControl>

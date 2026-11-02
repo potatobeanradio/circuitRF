@@ -9,6 +9,7 @@
 
 using System;
 using System.Globalization;
+using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using CircuitRF.Core.Design;
@@ -16,7 +17,7 @@ using CircuitRF.Design.Optimization;
 
 namespace CircuitRF.Ui.Optimization;
 
-public sealed partial class OptimizerGoalRowViewModel : ObservableObject
+public sealed partial class OptimizerGoalRowViewModel : ObservableObject, IGoalUseTicks
 {
     private readonly OptimizerPanelViewModel _panel;
     private bool _syncing;
@@ -59,13 +60,37 @@ public sealed partial class OptimizerGoalRowViewModel : ObservableObject
     /// <summary>The expression's value at its worst point, <c>−0.62</c>.</summary>
     [ObservableProperty] private string _worstText = "";
 
-    /// <summary>A yield spec only (<c>use=yield</c>, set in the Yield panel): the optimizer does not aim for it
-    /// however the check box reads, so the row says so.</summary>
+    /// <summary>A yield spec only (<c>use=yield</c>): the optimizer does not aim for it however the check box
+    /// reads.</summary>
     public bool IsYieldOnly => Goal.Use == GoalUse.Yield;
 
-    /// <summary>The goal serves the optimizer too from now on (<c>use=both</c>).</summary>
-    [RelayCommand]
-    private void UseForOptimizing() => _panel.SetGoalUse(this, GoalUse.Both);
+    /// <summary>The Use ticks (<see cref="IGoalUseTicks"/>) — the same state the Yield panel's goal row shows and sets.</summary>
+    public bool UseOpt
+    {
+        get => GoalUseTicks.Opt(Goal.Use);
+        set => SetUse(value, UseSensYield);
+    }
+
+    public bool UseSensYield
+    {
+        get => GoalUseTicks.SensYield(Goal.Use);
+        set => SetUse(UseOpt, value);
+    }
+
+    public string UseSummary => GoalUseTicks.Summary(Goal.Use);
+
+    private void SetUse(bool opt, bool sensYield)
+    {
+        if (!_syncing && GoalUseTicks.From(opt, sensYield) is { } use && use != Goal.Use) _panel.SetGoalUse(this, use);
+        else RaiseUse();                                     // refused or unchanged: the boxes go back to what the goal says
+    }
+
+    private void RaiseUse()
+    {
+        OnPropertyChanged(nameof(UseOpt));
+        OnPropertyChanged(nameof(UseSensYield));
+        OnPropertyChanged(nameof(UseSummary));
+    }
 
     internal void Bind(int index, OptimizationGoal goal)
     {
@@ -77,6 +102,7 @@ public sealed partial class OptimizerGoalRowViewModel : ObservableObject
         OnPropertyChanged(nameof(Name));
         OnPropertyChanged(nameof(Summary));
         OnPropertyChanged(nameof(IsYieldOnly));
+        RaiseUse();
     }
 
     /// <summary>Across corners, the binding corner — <c>@ hot</c> — where the goal's worst violation (met: its

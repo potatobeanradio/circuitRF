@@ -101,8 +101,8 @@ public static class DockLayoutDefaults
             new CwsDockPanel { Id = DockPanelIds.Properties,  Side = DockSide.Left,   Group = 1, Order = 0, Active = true,  Proportion = PropertiesGroupProportion  },
             new CwsDockPanel { Id = DockPanelIds.Analyses,    Side = DockSide.Left,   Group = 1, Order = 1, Active = false, Proportion = PropertiesGroupProportion  },
             new CwsDockPanel { Id = DockPanelIds.Tuning,      Side = DockSide.Left,   Group = 1, Order = 2, Active = false, Proportion = PropertiesGroupProportion  },
-            new CwsDockPanel { Id = DockPanelIds.Sensitivity, Side = DockSide.Left,   Group = 1, Order = 3, Active = false, Proportion = PropertiesGroupProportion  },
-            new CwsDockPanel { Id = DockPanelIds.Optimizer,   Side = DockSide.Left,   Group = 1, Order = 4, Active = false, Proportion = PropertiesGroupProportion  },
+            new CwsDockPanel { Id = DockPanelIds.Optimizer,   Side = DockSide.Left,   Group = 1, Order = 3, Active = false, Proportion = PropertiesGroupProportion  },
+            new CwsDockPanel { Id = DockPanelIds.Sensitivity, Side = DockSide.Left,   Group = 1, Order = 4, Active = false, Proportion = PropertiesGroupProportion  },
             new CwsDockPanel { Id = DockPanelIds.Yield,       Side = DockSide.Left,   Group = 1, Order = 5, Active = false, Proportion = PropertiesGroupProportion  },
             new CwsDockPanel { Id = DockPanelIds.Messages,    Side = DockSide.Bottom, Group = 0, Order = 0, Active = true,  Proportion = MessagesProportion         },
             new CwsDockPanel { Id = DockPanelIds.Drc,         Side = DockSide.Bottom, Group = 0, Order = 1, Active = false, Proportion = MessagesProportion         },
@@ -135,8 +135,8 @@ public static class DockLayoutDefaults
             new CwsDockPanel { Id = DockPanelIds.Properties,  Side = DockSide.Left,   Group = 1, Order = 0, Active = true,  Proportion = PropertiesGroupAloneProportion },
             new CwsDockPanel { Id = DockPanelIds.Analyses,    Side = DockSide.Left,   Group = 1, Order = 1, Active = false, Proportion = PropertiesGroupAloneProportion },
             new CwsDockPanel { Id = DockPanelIds.Tuning,      Side = DockSide.Left,   Group = 1, Order = 2, Active = false, Proportion = PropertiesGroupAloneProportion },
-            new CwsDockPanel { Id = DockPanelIds.Sensitivity, Side = DockSide.Left,   Group = 1, Order = 3, Active = false, Proportion = PropertiesGroupAloneProportion },
-            new CwsDockPanel { Id = DockPanelIds.Optimizer,   Side = DockSide.Left,   Group = 1, Order = 4, Active = false, Proportion = PropertiesGroupAloneProportion },
+            new CwsDockPanel { Id = DockPanelIds.Optimizer,   Side = DockSide.Left,   Group = 1, Order = 3, Active = false, Proportion = PropertiesGroupAloneProportion },
+            new CwsDockPanel { Id = DockPanelIds.Sensitivity, Side = DockSide.Left,   Group = 1, Order = 4, Active = false, Proportion = PropertiesGroupAloneProportion },
             new CwsDockPanel { Id = DockPanelIds.Yield,       Side = DockSide.Left,   Group = 1, Order = 5, Active = false, Proportion = PropertiesGroupAloneProportion },
             new CwsDockPanel { Id = DockPanelIds.Palette,     Side = DockSide.Right,  Group = 0, Order = 0, Active = true,  Proportion = 1.0                            },
             new CwsDockPanel { Id = DockPanelIds.Messages,    Side = DockSide.Bottom, Group = 0, Order = 0, Active = true,  Proportion = MessagesProportion             },
@@ -170,8 +170,8 @@ public static class DockLayoutDefaults
         [DockPanelIds.Tuning]    = DockPanelIds.Analyses,
         [DockPanelIds.Optimizer] = DockPanelIds.Tuning,
         [DockPanelIds.Yield]     = DockPanelIds.Optimizer,
-        // The fallback when the Optimizer is not docked: after Tuning (brief-sens-3 R-sens3-3).
-        [DockPanelIds.Sensitivity] = DockPanelIds.Tuning,
+        // The fallback when Yield is not docked: after the Optimizer, which sets the goals it ranks.
+        [DockPanelIds.Sensitivity] = DockPanelIds.Optimizer,
     };
 
     /// <summary>
@@ -179,12 +179,12 @@ public static class DockLayoutDefaults
     /// that predates the newcomer gains it in front of that panel, wherever the layout put it, and the tabs from there on
     /// shift one along. Tried before <see cref="TabbedBehind"/>; when the panel named here is not docked and open, the
     /// <see cref="TabbedBehind"/> rule applies, then the default. <b>Where the Sensitivity tab goes is decided by this
-    /// table, <see cref="TabbedBehind"/> and the default <c>Order</c> values only</b> — moving it to directly before
-    /// Yield is a change to those lines alone.
+    /// table, <see cref="TabbedBehind"/> and the default <c>Order</c> values only</b>. It follows the Optimizer: the
+    /// Optimizer is where the goals are set, so the tabs read left to right Tuning, Optimizer, Sensitivity, Yield.
     /// </summary>
     private static readonly IReadOnlyDictionary<string, string> TabbedBefore = new Dictionary<string, string>
     {
-        [DockPanelIds.Sensitivity] = DockPanelIds.Optimizer,
+        [DockPanelIds.Sensitivity] = DockPanelIds.Yield,
     };
 
     /// <summary>

@@ -200,6 +200,36 @@ public class DocsFactoryTests
           + "would open the page at the top and say nothing:\n  " + string.Join("\n  ", missing));
     }
 
+    /// <summary>
+    /// A Help button that names its page as a literal (<c>DocLauncher.Open("reference/x.html")</c>) is outside the
+    /// <see cref="DocAnchors"/> catalog, so the test above never sees it. Its page must have been GENERATED: a
+    /// source <c>.md</c> written and never run through DocGen leaves the button opening an empty browser tab.
+    /// </summary>
+    [Fact]
+    public void EveryLiteralHelpPageAViewOpensIsGenerated()
+    {
+        var missing = new List<string>();
+        int seen = 0;
+        foreach (var cs in Directory.EnumerateFiles(Path.Combine(RepoRoot(), "src", "Ui"), "*.cs", SearchOption.AllDirectories))
+        {
+            if (cs.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+             || cs.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal)) continue;
+            foreach (System.Text.RegularExpressions.Match call in Regex.Matches(File.ReadAllText(cs), @"DocLauncher\.Open\([^;]*"))
+            foreach (System.Text.RegularExpressions.Match lit in Regex.Matches(call.Value, @"""(?<page>[a-z0-9/_-]+\.html)(#[^""]*)?"""))
+            {
+                seen++;
+                string page = lit.Groups["page"].Value;
+                if (!File.Exists(Path.Combine(DocsRoot(), page.Replace('/', Path.DirectorySeparatorChar))))
+                    missing.Add($"{Path.GetFileName(cs)}: {page}");
+            }
+        }
+
+        Assert.True(seen >= 10, $"only {seen} literal Help page(s) found; the scan no longer matches the calls");
+        Assert.True(missing.Count == 0,
+            "These Help buttons open a page that was never generated (run DocGen --page on its source):\n  "
+          + string.Join("\n  ", missing));
+    }
+
     // ── §10.4 — no unexpanded placeholder survives ────────────────────────────
 
     [Fact]

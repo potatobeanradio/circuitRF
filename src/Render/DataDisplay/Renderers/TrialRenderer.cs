@@ -85,8 +85,11 @@ namespace CircuitRF.Render.DataDisplay
             };
         }
 
+        /// <param name="cache">A host that redraws unchanged plots (the Data Display) passes its cache, and the members are
+        /// then drawn from a picture once they have not changed between two frames; null draws them directly, as a
+        /// vector writer must.</param>
         public static void Draw(SKCanvas canvas, (double W, double H) canvasSize, Trace trace, Plot plot,
-                                TransformSet tf, RenderTheme theme)
+                                TransformSet tf, RenderTheme theme, TrialLayerCache? cache = null)
         {
             float lw      = (float)(Math.Min(canvasSize.W, canvasSize.H) / 200.0);
             var   props   = trace.Properties;
@@ -124,11 +127,22 @@ namespace CircuitRF.Render.DataDisplay
             }
 
             // ── the members, the nominal, the selection — in plan order ────────────
-            foreach (var stroke in FamilyPlan(trace, theme))
+            // The members lead the plan, so drawing them first from a picture keeps the order.
+            var plan = FamilyPlan(trace, theme);
+            int lead = 0;
+            while (lead < plan.Count && plan[lead].Kind == TrialStrokeKind.Member) lead++;
+            var members = lead == plan.Count ? plan : plan.Take(lead).ToList();
+
+            void Stroke(SKCanvas c, TrialStroke stroke)
             {
                 var pts = stroke.Kind == TrialStrokeKind.Nominal ? trace.NominalPoints : trace.FamilyCurves[stroke.Member].Points;
-                StrokePolyline(canvas, tf, sec, pts, stroke.Color, strokeW * stroke.WidthFactor);
+                StrokePolyline(c, tf, sec, pts, stroke.Color, strokeW * stroke.WidthFactor);
             }
+
+            if (lead == 0 || cache is null
+                || !cache.TryDraw(canvas, trace, tf, sec, strokeW, members, c => { foreach (var s in members) Stroke(c, s); }))
+                for (int i = 0; i < lead; i++) Stroke(canvas, plan[i]);
+            for (int i = lead; i < plan.Count; i++) Stroke(canvas, plan[i]);
         }
 
         /// <summary>

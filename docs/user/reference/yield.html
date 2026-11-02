@@ -67,6 +67,9 @@
 focused schematic many times — once per <strong>trial</strong> — with each toleranced value drawn afresh from its
 distribution, and counts how many trials meet the specs. It follows the focused schematic the same way
 <a href="tuning.html">Tuning</a> and the Optimizer do.</p>
+<p>To find which values are worth a tolerance before counting anything, start with the
+<a href="sensitivity.html">Sensitivity</a> panel: it ranks what moves each spec in a handful of simulations, and
+its <strong>Run Yield on these</strong> brings you here.</p>
 <p>Everything you set here — tolerances, correlations, which goals are specs, the run settings, the
 corners — is saved with the schematic, marks it changed and can be undone, one step per change. A run
 and its trial table are not: they belong to the session. A run never changes the schematic's values.</p>
@@ -207,31 +210,37 @@ independently — to see how much of the spread each one causes. When a kit offe
 that is not selected, <strong>Choose a corner…</strong> opens the corner picker in the Analyses panel. How a kit
 writes its statistics is in <a href="pdk-authoring.html#statistics">PDK authoring</a>.</p>
 <h2 id="specs">Specs</h2>
-<p>A spec is a <a href="optimization.html#goals">goal</a>. Every goal is listed, with a <strong>Use</strong> choice:</p>
+<p>A spec is a <a href="optimization.html#goals">goal</a>. Every goal is listed with its <strong>Use</strong>: two ticks, the same ones
+the Optimizer's goal row shows.</p>
 <table>
 <thead>
 <tr>
-<th>Use</th>
+<th>Ticked</th>
+<th>Reads</th>
 <th></th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>Opt</strong></td>
-<td>The optimizer meets it; the yield ignores it.</td>
+<td><strong>Opt</strong> only</td>
+<td>Opt</td>
+<td>The optimizer meets it; the yield and the Sensitivity panel ignore it.</td>
 </tr>
 <tr>
-<td><strong>Yield</strong></td>
-<td>The yield counts it; the optimizer ignores it.</td>
+<td><strong>Sensitivity / Yield</strong> only</td>
+<td>Sens/Yield</td>
+<td>The yield counts it and the <a href="sensitivity.html">Sensitivity</a> panel ranks it; the optimizer ignores it.</td>
 </tr>
 <tr>
-<td><strong>Both</strong></td>
-<td>Both — the default.</td>
+<td>Both</td>
+<td>All</td>
+<td>Every one of them — the default.</td>
 </tr>
 </tbody>
 </table>
-<p>A common way to work: centre the design with the optimizer against tight goals, then loosen copies of
-them, marked <strong>Yield</strong>, for the yield analysis. Goals are written in the Optimizer; the pencil
+<p>The last tick cannot be cleared: a goal nothing uses is one with <strong>Enabled</strong> off. A common way to work: centre
+the design with the optimizer against tight goals, then loosen copies of them, ticked <strong>Sensitivity / Yield</strong>
+only, for the yield analysis. Goals are written in the Optimizer; the pencil
 (<strong>Edit goals…</strong>) takes you there with the selected goal. After a run each spec shows its own yield
 and interval.</p>
 <h2 id="settings">Run settings</h2>
@@ -1190,7 +1199,8 @@ predicted beside what the simulation gave. <strong>Send to Tuning</strong> loads
 page, each run taking a second or two: a bandpass filter estimated against specs loosened from its
 optimizer goals, with its one-click yield display saved; an amplifier with six generated temperature and
 supply corners and a statistical corner, failing hot at low supply until it is optimized across all of
-them; and a bias divider centred from 73 % to 99 %. Its README walks through each with the numbers a run
+them; a bias divider centred from 73 % to 99 %; and an amplifier and spiral inductor, both Touchstone
+blocks, for the <a href="sensitivity.html">Sensitivity</a> panel. Its README walks through each with the numbers a run
 gives.</p>
 <h2 id="headless">From the command line, and from an agent</h2>
 <p>Everything the panel runs, <code>circuitrf yield</code> runs too — <code>yield mc</code>, <code>yield estimate</code>,

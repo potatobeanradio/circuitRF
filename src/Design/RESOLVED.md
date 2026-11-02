@@ -26074,3 +26074,31 @@ Check all reach it, so none of them has a copy.
   `ComponentPortBuildTests.TheInspector_SetsAComponentPortsWidth_BesideEveryPart`,
   `ComponentPortBuildTests.TheInspector_ResizesADrawnPort_AndTurnsItOntoAnotherPlane`,
   `SimulateEditorGateTests.TheRealisticViewWithPortsOff_DrawsNoPortNumber`.
+
+## Touchstone port names: `Port[N] = name` in every EM result, read back by the SnP symbol (2026-11-02)
+
+A run's `.sNp` numbered its ports and named them only inside the long `circuitRF-EM port N:` provenance lines, and a 3D
+run's lines named the MESH group (`port/1`), not anything the user drew, so which numbered port was which component
+port was not readable from the file. Every EM writer (planar, Palace, EMerge, openEMS) now starts its port lines with
+`Port[N] = name` (`RfCore.TouchstonePortNames.Lines`): a drawn port's name, a component port's refdes (`C1`,
+`U1.IN`).
+
+- **`Em3dPort.Name` is always `port/N`** (`C3dPorts.ProblemName`), the mesh's physical-group name. The user's name
+  travelled only on `SourceLabel`, and only when a port was renumbered. `C3dModelled` now sets `SourceLabel` on every
+  port, and `Em3dPortMap.Label` reads it. `Em3dPortMap.Lines` is unchanged: it returns nothing unless a port was
+  renumbered or has terminals.
+- **The SnP symbol draws the names and keeps its pins numbered.** A pin's NAME is what a net binds to, so only the
+  text beside a lead changes (`BuildPortBox`'s `labelText`), cut past 8 characters with `~`, and the body widens
+  inside the ±200 pins. The names come from `TouchstonePortNames.FromFile`, which reads the header only and caches by
+  modification time. The schematic model fills `EditableComponent.SnpPortLabels` before each render because a
+  component knows its `File` text but not the folder that text is relative to. That field is session state and is
+  never saved.
+
+## A quoted SnP File disabled Preview (2026-11-02)
+
+A schematic SnP whose `File` is stored as a string literal (`"results/board Driven.palace.s15p"`, quotes included, as a
+`.cnl` writes it and a generated schematic stores it) simulated correctly, but its Preview button was disabled. The
+Elaborator strips one pair of outer quotes before resolving the path, and `SnpPathPolicy.Resolve`, documented as
+mirroring it, did not. So every editor-side check (Preview, Show, the port-count read) looked for a file whose name began
+with a quote. `Resolve` now strips the pair itself. The callers that already stripped (`ComposedFetSymbolProvider`'s
+`Unquote`) are unaffected. Gate: `SnpPathPolicyTests.AQuotedFile_ResolvesToThePathInsideTheQuotes`.

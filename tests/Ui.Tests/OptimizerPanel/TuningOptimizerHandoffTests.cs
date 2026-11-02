@@ -114,7 +114,7 @@ public sealed class TuningOptimizerHandoffTests
     }
 
     [Fact]
-    public async Task AYieldOnlyGoal_IsNamedInTheRefusal_AndOneClickUsesItForOptimizing()
+    public async Task AYieldOnlyGoal_IsNamedInTheRefusal_AndItsOptTickUsesItForOptimizing()
     {
         var goal = OptimizerPanelFixture.Goal("Match", "A", GoalType.Eq, "37");
         goal.Use = GoalUse.Yield;                                    // set in the Yield panel; still Enabled
@@ -126,8 +126,14 @@ public sealed class TuningOptimizerHandoffTests
         Assert.Contains("every enabled goal is a yield spec only", f.Panel.StatusText);
         Assert.Contains("Match", f.Panel.StatusText);
 
-        f.Panel.Goals.Single().UseForOptimizingCommand.Execute(null);
+        Assert.True((row.UseOpt, row.UseSensYield, row.UseSummary) == (false, true, "Sens/Yield"));   // the Yield panel's state
+        row.UseSensYield = false;                                     // the last tick: refused, nothing written
+        Assert.Equal(GoalUse.Yield, f.Top.EditModel.Tuning!.Goals.Single().Use);
+        Assert.True(row.UseSensYield);
+        row.UseOpt = true;
         Assert.False(f.Panel.Goals.Single().IsYieldOnly);
+        Assert.Equal("All", f.Panel.Goals.Single().UseSummary);
+        Assert.Equal(GoalUse.Both, f.Top.EditModel.Tuning!.Goals.Single().Use);
         f.Panel.RunCommand.Execute(null);
         await f.Panel.RunTask!.WaitAsync(Wait);
         Assert.Equal(OptimizerRunState.Finished, f.Panel.State);

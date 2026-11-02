@@ -17,10 +17,9 @@ using CircuitRF.Ui.Optimization;
 
 namespace CircuitRF.Ui.Yield;
 
-public sealed partial class YieldGoalRowViewModel : ObservableObject
+public sealed partial class YieldGoalRowViewModel : ObservableObject, IGoalUseTicks
 {
     private readonly YieldPanelViewModel _panel;
-    private bool _syncing;
 
     internal YieldGoalRowViewModel(YieldPanelViewModel panel, OptimizationGoal goal)
     {
@@ -37,13 +36,32 @@ public sealed partial class YieldGoalRowViewModel : ObservableObject
     /// <summary>Disabled goals are listed, dimmed: enabling one is the Optimizer's.</summary>
     public bool IsEnabled => Goal.Enabled;
 
-    public System.Collections.Generic.IReadOnlyList<GoalUseChoice> Uses => GoalUseChoice.All;
-
-    [ObservableProperty] private GoalUseChoice? _use;
-
-    partial void OnUseChanged(GoalUseChoice? value)
+    /// <summary>The Use ticks (<see cref="IGoalUseTicks"/>) — the same state the Optimizer's goal row shows and sets.</summary>
+    public bool UseOpt
     {
-        if (!_syncing && value is not null) _panel.SetGoalUse(this, value.Value);
+        get => GoalUseTicks.Opt(Goal.Use);
+        set => SetUse(value, UseSensYield);
+    }
+
+    public bool UseSensYield
+    {
+        get => GoalUseTicks.SensYield(Goal.Use);
+        set => SetUse(UseOpt, value);
+    }
+
+    public string UseSummary => GoalUseTicks.Summary(Goal.Use);
+
+    private void SetUse(bool opt, bool sensYield)
+    {
+        if (GoalUseTicks.From(opt, sensYield) is { } use && use != Goal.Use) _panel.SetGoalUse(this, use);
+        else RaiseUse();                                     // refused or unchanged: the boxes go back to what the goal says
+    }
+
+    private void RaiseUse()
+    {
+        OnPropertyChanged(nameof(UseOpt));
+        OnPropertyChanged(nameof(UseSensYield));
+        OnPropertyChanged(nameof(UseSummary));
     }
 
     /// <summary>The yield a run gave this goal, with its interval; empty before one.</summary>
@@ -59,9 +77,7 @@ public sealed partial class YieldGoalRowViewModel : ObservableObject
     internal void Bind(OptimizationGoal goal)
     {
         Goal = goal;
-        _syncing = true;
-        Use = GoalUseChoice.All.FirstOrDefault(c => c.Value == goal.Use);
-        _syncing = false;
+        RaiseUse();
         OnPropertyChanged(nameof(Name));
         OnPropertyChanged(nameof(Summary));
         OnPropertyChanged(nameof(IsEnabled));

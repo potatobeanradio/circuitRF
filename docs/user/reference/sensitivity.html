@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — Sensitivity</title>
+<link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: docs/user/src/reference/sensitivity.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../index.html"><img class="logo" src="../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="index.html">Reference Guide</a>
+  <div class="doc-search" data-crf-search data-root="../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › Sensitivity</p>
+    <nav class="page-nav-top" aria-label="Previous and next page">
+      <a class="prev" href="tuning.html" title="Previous: Tuning"><span class="arrow">‹</span><span class="name">Tuning</span></a>
+      <a class="next" href="optimization.html" title="Next: Optimization"><span class="name">Optimization</span><span class="arrow">›</span></a>
+    </nav>
+  </div>
+
+  <h1>Sensitivity</h1>
+  <p class="lede">Which values move each goal, and by how much — ranked at the design as it stands, before you tune, optimize or estimate a yield.</p>
+
+<nav class="toc">
+<h2>On this page</h2>
+<ol>
+<li><a href="#what">What does the design depend on?</a></li>
+<li><a href="#order">Where it fits: Sensitivity, then Tuning and the Optimizer, then Yield</a></li>
+<li><a href="#settings">What is stepped, and by how much</a></li>
+<li><a href="#snp">S-parameter blocks</a></li>
+<li><a href="#ranking">Reading the ranking</a></li>
+<li><a href="#basis">The basis column</a></li>
+<li><a href="#levels">Entry, Port and Instance</a></li>
+<li><a href="#flags">Nonlinear, one-sided and failed</a></li>
+<li><a href="#tile">The S-parameter matrix tile</a></li>
+<li><a href="#actions">Acting on a row</a></li>
+<li><a href="#display">The display</a></li>
+<li><a href="#example">The example</a></li>
+<li><a href="#headless">From the command line, and from an agent</a></li>
+</ol>
+</nav>
+<h2 id="what">What does the design depend on?</h2>
+<p>The <strong>Sensitivity</strong> panel (View ▸ Panels ▸ Sensitivity, the tab after the
+<a href="optimization.html">Optimizer</a>, where the goals are set) answers that question for the focused schematic, at its values as they
+stand. Press <strong>▶</strong> and every value is moved a small step up and a small step down on its own, with
+everything else held where it is. Each goal is then given a ranked list of the values that move it, with
+each one's share of the total.</p>
+<p>That is 2k + 1 simulations for k values — the design once, then each value twice — and nothing is drawn
+at random, so the same design always gives the same ranking. The cost is shown under the settings
+before you run: <code>15 factor(s) (7 at ±0.1 dB, 7 at ±1°, 1 at ±σ), 31 evaluations</code>.</p>
+<p>The panel is the <a href="yield.html">Yield</a> panel's view with one mode. It edits the same schematic: a
+tolerance added here is in the Yield panel at once, and <strong>⌘Z</strong> undoes it from either. Nothing runs until
+you press <strong>▶</strong>, and a run never changes the schematic's values; its result is written beside the
+schematic as <code>&lt;name&gt;.sens.npy</code>.</p>
+<h2 id="order">Where it fits: Sensitivity, then Tuning and the Optimizer, then Yield</h2>
+<p>The panels sit in the order a design is usually worked:</p>
+<ol>
+<li><strong>Sensitivity</strong> — find the few values that matter.</li>
+<li><strong><a href="tuning.html">Tuning</a></strong> and the <strong><a href="optimization.html">Optimizer</a></strong> — move those few, by hand or by
+search, until the goals are met.</li>
+<li><strong><a href="yield.html">Yield</a></strong> — give the values that matter a tolerance and count how many builds pass.</li>
+</ol>
+<p>The Optimizer's <strong>Sensitivity</strong> button opens this panel on the same schematic when no optimization has
+run. After a run, the same button ranks the variables around the optimizer's best point instead.</p>
+<h2 id="settings">What is stepped, and by how much</h2>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Factors: All</strong></td>
+<td>Every value the design offers. A value with a tolerance steps ± k σ through its own distribution; any other steps ± <strong>Step</strong> % of its value; a phase steps ± 1°.</td>
+</tr>
+<tr>
+<td><strong>Factors: Toleranced</strong></td>
+<td>Only the values with a tolerance, at ± k σ.</td>
+</tr>
+<tr>
+<td><strong>Factors: Designable</strong></td>
+<td>Only the values with <strong>Opt</strong> ticked, at ± <strong>Step</strong> % of their value — not of their range.</td>
+</tr>
+<tr>
+<td><strong>Step</strong></td>
+<td>The percent a value with no tolerance moves (default 1 %).</td>
+</tr>
+<tr>
+<td><strong>σ</strong></td>
+<td>How many standard deviations a toleranced value moves (default 1).</td>
+</tr>
+<tr>
+<td><strong>S-parameters</strong></td>
+<td>Whether S-parameter blocks are stepped at all, and by how many dB and degrees (default 0.1 dB and 1°).</td>
+</tr>
+</tbody>
+</table>
+<p>A port's reference impedance and a source's tone frequency are left out of <strong>All</strong>; each run says which
+values it left out and why. Each setting is saved with the schematic as the <code>sensitivity</code> line, and only
+a value that differs from its default is written.</p>
+<h2 id="snp">S-parameter blocks</h2>
+<p>Every S-parameter of a Touchstone block is a value the ranking can move: its magnitude in dB and its
+phase in degrees, offset the same at every frequency. Before any run the panel lists each block under
+<strong>S-parameter blocks</strong> — <code>2 ports · tied · 6 factors</code> — so a block you are not going to change can be
+left out before its simulations are spent. Untick <strong>Include</strong> and the cost under the settings drops by
+two simulations per factor.</p>
+<p>Untick <strong>S-parameters</strong> and every block is left out at once. Each block's <strong>Include</strong> box stays as you
+set it, greyed, and ticking <strong>S-parameters</strong> again brings those choices back.</p>
+<p>A block whose file is reciprocal — S21 equal to S12, as for any passive part — offers one value for each
+pair: moving S21 moves S12 with it. A block that is not, such as an amplifier, offers every entry on its
+own. <strong>Tie reciprocal pairs</strong>, on the <a href="#tile">matrix tile</a>, changes that.</p>
+<h2 id="ranking">Reading the ranking</h2>
+<p>Choose a goal — under <strong>Specs</strong>, or in the picker above the list — and the list shows what moves it,
+largest first:</p>
+<table>
+<thead>
+<tr>
+<th>Column</th>
+<th>What it shows</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>basis</strong></td>
+<td>What the value was stepped by: <code>σ</code>, <code>1 %</code>, <code>0.1 dB · 1°</code>.</td>
+</tr>
+<tr>
+<td><strong>Δ</strong></td>
+<td>Half the change from the step down to the step up. A goal's is in <strong>normalized margin</strong> — its margin divided by its scale — so goals in dB and goals in volts rank on one footing. A measure's is in its own unit. A row that groups several values shows √ΣΔ², with no sign.</td>
+</tr>
+<tr>
+<td><strong>share</strong></td>
+<td>Δ² as a part of the goal's total. The shares add up to 100 %.</td>
+</tr>
+</tbody>
+</table>
+<p>Each goal row under <strong>Specs</strong> shows <strong>m₀</strong>, its normalized margin at the design as it stands (positive
+means met), and <strong>σ</strong>, the spread the ranking predicts (√ΣΔ²). When every value was stepped by its own
+tolerance, a first-order pass estimate follows, labelled <code>estimated</code>. The yield itself is what the Yield
+panel counts.</p>
+<p>An S-parameter block you left out is the last row, greyed, with <code>excluded</code> for its basis and no share:
+it was not found insensitive, it was not stepped. Tick its box to include it in the next run. A run does
+not repeat on its own, so until you press <strong>▶</strong> again the status line says the ranking is out of date.</p>
+<h2 id="basis">The basis column</h2>
+<p>A ranking can mix two kinds of step, and the basis says which each row had:</p>
+<ul>
+<li><strong>σ</strong> — the value moved by its own tolerance. Its share says how much of the goal's spread in
+production comes from that part.</li>
+<li><strong>%</strong>, <strong>dB</strong>, <strong>°</strong> — the value moved by a fixed small step. Its share says how strongly the goal
+responds near here: what a designer could change, not what production will do.</li>
+</ul>
+<p>When any row is not <strong>σ</strong>, there is no pass estimate, because σ is then not a production spread.</p>
+<h2 id="levels">Entry, Port and Instance</h2>
+<p>The same run, grouped three ways — the toggle regroups the list without simulating again:</p>
+<table>
+<thead>
+<tr>
+<th>Level</th>
+<th>One row per</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Entry</strong></td>
+<td>value, with an S-parameter's dB and phase as one row (<code>AMP · S21</code>).</td>
+</tr>
+<tr>
+<td><strong>Port</strong></td>
+<td>port of each S-parameter block: every entry in that port's row or column. S31 counts toward port 3 and port 1, so the shares overlap and the column reads <strong>share (overlapping)</strong>. Values that are not S-parameters keep their own rows.</td>
+</tr>
+<tr>
+<td><strong>Instance</strong></td>
+<td>part, block or variable. A block's row opens to its entries, and an entry to its dB and phase.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="flags">Nonlinear, one-sided and failed</h2>
+<p>A glyph at the end of a row flags a value whose Δ needs care; its tooltip gives the reason.</p>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Nonlinear</strong> (wave)</td>
+<td>The step up and the step down disagree — often a goal over a sweep whose worst point moves between them, or a value near a resonance. A <a href="yield.html#doe">DOE</a> with <strong>Composite</strong> or a Monte Carlo sees what a single Δ cannot.</td>
+</tr>
+<tr>
+<td><strong>One-sided</strong> (half circle)</td>
+<td>Only one of the two steps simulated; Δ is taken from that side.</td>
+</tr>
+<tr>
+<td><strong>Failed</strong> (alert)</td>
+<td>Neither step simulated. The other values still rank.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="tile">The S-parameter matrix tile</h2>
+<p>Select an S-parameter block, or any of its rows, and a tile opens under the list: one cell per entry,
+coloured by that entry's share of the selected goal, on one scale from 0 to the tile's largest share.
+The selected entry is outlined, and at the Port level so are the selected port's row and column. A tied
+block colours S21 and S12 as one. Each cell's tooltip gives its share.</p>
+<p>Two settings ride on the tile:</p>
+<ul>
+<li><strong>Include</strong> — the same setting as the block's row under S-parameter blocks.</li>
+<li><strong>Tie reciprocal pairs (S21 = S12)</strong> — whether one value moves both entries of a pair. Its tooltip
+shows what the file decides on its own (<code>auto: worst |S(i,j) − S(j,i)| = 0.0021</code>). Choosing what the
+file decides returns the block to automatic; choosing the other is saved on the block as
+<code>Reciprocal=tied</code> or <code>untied</code>. Tying ends the entries above the diagonal, so when a tolerance names one
+the panel lists those lines and asks first; the change and their removal are one undo step.</li>
+</ul>
+<h2 id="actions">Acting on a row</h2>
+<p>Right-click a row:</p>
+<ul>
+<li><strong>Add tolerance</strong> gives a value that was stepped by a percent, dB or degrees a tolerance, the same as
+the Yield panel's <strong>+</strong>. The next run steps it by σ.</li>
+<li><strong>Send to Tuning</strong> adds the value to the Tuning panel.</li>
+<li><strong>Use in Optimizer</strong> ticks <strong>Opt</strong> with the default range.</li>
+</ul>
+<p>S-parameter offsets are one number at every frequency, so they are tolerances only: <strong>Send to Tuning</strong>
+and <strong>Use in Optimizer</strong> are greyed on their rows.</p>
+<p><strong>Run Yield on these</strong> opens the Yield panel on the same schematic in Monte Carlo mode. When some of the
+ranked values have no tolerance, its status line says how many: a Monte Carlo holds them still.</p>
+<h2 id="display">The display</h2>
+<p>The chart button writes <code>&lt;name&gt;.sens.cdd</code> beside the schematic and opens it: one Pareto chart per goal at
+the level the list shows, the shares as bars, largest first, with their running total as a line. The Port
+level has no running total, because its shares overlap.</p>
+<h2 id="example">The example</h2>
+<p><strong>File ▸ New ▸ Examples ▸ Yield, Corners and Centering</strong> includes <strong>SnpSensitivity</strong>: an amplifier's
+Touchstone block followed by a spiral inductor's, with a toleranced shunt capacitor and two specs. The
+spiral's file is reciprocal and the amplifier's is not, so the two tiles show a tied and an untied
+block. Its README says what to click.</p>
+<h2 id="headless">From the command line, and from an agent</h2>
+<p><code>circuitrf yield sens &lt;schematic&gt;</code> runs the same ranking and writes the same <code>.sens.npy</code>; <code>--by entry</code>,
+<code>port</code> or <code>instance</code> prints a level. An agent runs it through MCP as <code>run analysis=sensitivity</code>. See
+<a href="cli.html">the command line</a> and <a href="ai-agents.html">AI agents</a>.</p>
+
+<nav class="page-nav">
+  <a class="prev" href="tuning.html"><span class="dir">Previous</span><span class="name">Tuning</span></a>
+  <a class="next" href="optimization.html"><span class="dir">Next</span><span class="name">Optimization</span></a>
+</nav>
+</main>
+
+<footer class="doc-footer">
+  <img src="../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../index.html">Documentation home</a>
+</footer>
+
+<script src="../assets/js/search-index.js" defer></script>
+<script src="../assets/js/docs-search.js" defer></script>
+</body>
+</html>

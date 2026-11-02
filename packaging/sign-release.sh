@@ -3,7 +3,7 @@
 # Sign a release: build update-manifest.json from dist/, sign it, and say plainly whether users
 # will receive this release as an automatic update.
 #
-# Run this ONCE, after all three platform scripts have run and all fifteen artifacts are together
+# Run this ONCE, after all three platform scripts have run and all nineteen artifacts are together
 # in dist/. It cannot live inside those scripts: a release carries exactly one manifest covering
 # every asset, and the three scripts run on three different machines that each see only their own
 # share. Running it per-platform would produce three partial manifests that cannot be combined -
@@ -30,7 +30,7 @@ DIST="${ROOT}/dist"
 KEYS_CS="${ROOT}/src/Ui/Updates/ReleaseKeys.cs"
 MANIFEST="${DIST}/update-manifest.json"
 SIGNATURE="${MANIFEST}.sig"
-EXPECTED_FILES=15
+EXPECTED_FILES=19   # Windows 9, macOS 2, Linux 8 (6 packages and the AppImages' two .zsync files)
 
 BASE_URL="${CRF_RELEASE_BASE_URL:-https://github.com/potatobeanradio/circuitRF/releases/download/${CRF_VERSION}}"
 

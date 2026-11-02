@@ -28,8 +28,8 @@ keywords: sensitivity, ranking, contributors, share, basis, sigma, step, nonline
 
 ## What does the design depend on? {#what}
 
-The **Sensitivity** panel (View ▸ Panels ▸ Sensitivity, the tab between Tuning and the
-[Optimizer](optimization.html)) answers that question for the focused schematic, at its values as they
+The **Sensitivity** panel (View ▸ Panels ▸ Sensitivity, the tab after the
+[Optimizer](optimization.html), where the goals are set) answers that question for the focused schematic, at its values as they
 stand. Press **▶** and every value is moved a small step up and a small step down on its own, with
 everything else held where it is. Each goal is then given a ranked list of the values that move it, with
 each one's share of the total.

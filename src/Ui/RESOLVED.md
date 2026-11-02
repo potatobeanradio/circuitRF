@@ -41700,3 +41700,33 @@ a horizontal carrying a net label. Two separate wires meeting end to end.
 - A sheet selected in Object mode offers the same Make Port; Face mode's always-disabled "Make Port…" / "Boundary"
   (a placeholder from before ports existed) are gone — the live items beside them already covered both.
 - Test: `EditorRound5TreeTests.MakingASheetALumpedPort_ReplacesTheSheet_WithItsOwnRectangle_AsOneUndoEntry`.
+
+## Yield-series field round: help page, flashing tips, FR-4, reveal, the tree's splitter (2026-11-02)
+
+**The Sensitivity panel's ? opened an empty page because the page was never generated.** `reference/sensitivity.md`
+existed and `DocLauncher.Open("reference/sensitivity.html")` named it, but no DocGen run had written the HTML. The
+existing anchor gate checks only `DocAnchors`' catalog, and a literal path in a view is outside it.
+`DocsFactoryTests.EveryLiteralHelpPageAViewOpensIsGenerated` now scans `src/Ui` for literal pages in
+`DocLauncher.Open` calls and requires each one in `docs/user`.
+
+**The Optimizer's Variables buttons flashed: the fifth report of the tooltip loop** ("Two tooltips flashed repeatedly",
+above). The Goals list takes the star row, so the Variables header and rows sit at the panel's bottom, and a tip placed
+at the cursor flips up onto the pointer. Every tip from the Variables header down now carries `Placement="Top"` with
+`VerticalOffset="-4"`; `OptimizerTooltipPlacementTests` holds it.
+
+**FR-4 could not be picked on a technology that defines no material.** The stackup row's Material picker listed the
+technology's own materials only and was hidden when there were none, so FR-4 was reachable only through the Materials
+tab's Add Generic Materials first. The picker now also offers circuitRF's built-ins of the row's role (εr for a
+dielectric, σ for a conductor); picking one copies it into the technology's own materials in the same undo entry, as
+the Materials table adopts a built-in.
+
+**Reveal on a workspace selects it in its enclosing folder.** The rule is in `FileReveal.Reveal` itself (a folder
+holding a `.cws`), so every surface that reveals a workspace — its title, its root row, a recent row — does it without
+a second copy. Linux opens the enclosing folder, since its file managers cannot be asked to select.
+
+**A double-click on the splitter beside the Workspace tree fits its pane** (`Docking/SplitterFitsWorkspaceTree`). The
+tree is not virtualised (it sits in a `ScrollViewer`), so the TreeView's DESIRED height is exact for the rows the
+filter and search leave, as expanded; the pane's chrome is its height less the viewport's. **Not `Extent`**, which the
+first version read: the TreeView is stretched to fill the viewport, so a tree shorter than its pane (any filtered one)
+reported the pane's own height and the pane never shrank, which is the half of the gesture that matters. Only the two panes the splitter divides move, the other keeps 40 %
+of them and at least 120 px, and the proportion is written on the PRESENTER at local value, `PaletteColumnPin`'s rule.

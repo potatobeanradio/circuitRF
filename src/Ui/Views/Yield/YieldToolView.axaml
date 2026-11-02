@@ -758,10 +758,13 @@
                                     Foreground="{DynamicResource SystemAccentColor}"/>
                         </StackPanel>
 
-                        <!-- The ranking: one row per contributor of the selected response, by entry, port or instance. -->
-                        <Grid ColumnDefinitions="Auto,*,Auto" Margin="6,6,4,1">
-                            <TextBlock Grid.Column="0" Text="Ranking" Classes="section" Margin="0,0,8,0"/>
-                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                        <!-- The ranking: one row per contributor of the selected response, by entry, port or instance.
+                             A WrapPanel, not a three-column Grid: a horizontal StackPanel in a star column does not
+                             clip, so in a narrow panel the radios ran on under the button. Here the button wraps to the
+                             next line instead. -->
+                        <WrapPanel Orientation="Horizontal" Margin="6,6,4,1">
+                            <TextBlock Text="Ranking" Classes="section" Margin="0,0,8,0"/>
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,8,0">
                                 <RadioButton Classes="mode" GroupName="sensBy" Content="Entry" IsChecked="{Binding IsByEntry}"
                                              ToolTip.Tip="One row per value — an S-parameter's dB and phase together"/>
                                 <RadioButton Classes="mode" GroupName="sensBy" Content="Port" IsChecked="{Binding IsByPort}"
@@ -769,10 +772,11 @@
                                 <RadioButton Classes="mode" GroupName="sensBy" Content="Instance" IsChecked="{Binding IsByInstance}"
                                              ToolTip.Tip="One row per part, block or variable — expand to its entries"/>
                             </StackPanel>
-                            <Button Grid.Column="2" Content="Run Yield on these" FontSize="11" Padding="6,1" MinHeight="0"
+                            <Button Content="Run Yield on these" FontSize="11" Padding="6,1" MinHeight="0"
+                                    VerticalAlignment="Center"
                                     Command="{Binding RunYieldOnTheseCommand}"
                                     ToolTip.Tip="The Yield panel, on this schematic, in Monte Carlo mode"/>
-                        </Grid>
+                        </WrapPanel>
                         <ComboBox Classes="cell" Margin="6,0,4,2" HorizontalAlignment="Stretch" IsVisible="{Binding HasSensResult}"
                                   ItemsSource="{Binding SensResponses}" SelectedItem="{Binding SelectedSensResponse}"
                                   ToolTip.Tip="The goal or measure ranked — or select a goal under Specs"/>
@@ -974,9 +978,7 @@
                                                Margin="0,0,6,0"/>
                                     <TextBlock Grid.Column="1" Text="{Binding Summary}" Classes="muted" VerticalAlignment="Center"
                                                TextTrimming="CharacterEllipsis"/>
-                                    <ComboBox Grid.Column="2" Classes="cell" Width="72" ItemsSource="{Binding Uses}"
-                                              SelectedItem="{Binding Use}" Margin="4,0"
-                                              ToolTip.Tip="Used by the optimizer, the yield, or both"/>
+                                    <optv:GoalUseTicksView Grid.Column="2" Margin="4,0"/>
                                     <TextBlock Grid.Column="3" Text="{Binding YieldText}" FontSize="11" MinWidth="46"
                                                TextAlignment="Right" VerticalAlignment="Center" Margin="0,0,4,0"
                                                ToolTip.Tip="{Binding IntervalText}"/>

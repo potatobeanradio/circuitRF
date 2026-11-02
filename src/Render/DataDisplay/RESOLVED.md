@@ -1284,3 +1284,19 @@ expression path before the card's own parser could read it as a transform (it no
 "Add as goal…" maps it to `unwrap(…)` with an equality goal, as Phase° maps to `phase(…)`.
 
 Gates: `Core.Tests` `UnwrapTests`, `Ui.Tests` `PhaseUnwrappedTransformTests` and the `TraceToGoalTests` row.
+
+## A trial family's members drawn from one picture while the page pans (2026-11-02)
+
+A yield display with two trial plots (500 trials × 151 points each) panned at a low frame rate, and the same display
+with only its histograms on screen did not. Panning the page redraws every plot on it each frame, unchanged, and the
+members are ~1,000 translucent anti-aliased strokes. Measured in a scratch harness on a CPU raster surface at retina
+size: **59 ms per plot to stroke the members, 0.16 ms to blit them as an image.**
+
+`TrialLayerCache` (one per `PlotControl`, passed through `PlotRenderer.Draw`'s `trialCache`) keeps the members as an
+image in DEVICE pixels, keyed by everything their pixels depend on relative to the image's origin (the curves by
+reference, the member order and colours, width, transform, the canvas's scale and sub-pixel offset) and NOT the
+whole-pixel translation a pan changes. **First sight draws directly**: a pan of the plot's own axes changes the members
+every frame, and building a picture it never reuses would cost 59 ms a frame on top. The picture is made when the same
+members are asked for again. Only the members are cached; band, nominal and selection still draw over them in plan
+order. Opt-in per call because the same renderer writes SVG and PDF, and raster images only, whose memory may be freed
+on any thread. Gate: `TrialLayerCacheTests`.

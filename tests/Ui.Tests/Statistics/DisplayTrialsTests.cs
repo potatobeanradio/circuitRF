@@ -307,3 +307,43 @@ public sealed class ContributionParetoTests
         Assert.True(bars.Points[0].Y >= bars.Points[1].Y);                     // largest share first
     }
 }
+
+/// <summary>A page pan redraws a trial plot unchanged every frame; its members come from one picture after the first
+/// frame, at the pixels a direct draw gives, while a change to the plot draws them directly again.</summary>
+public sealed class TrialLayerCacheTests
+{
+    private const int W = 400, H = 300;
+
+    private static byte[] Draw(Plot plot, TrialLayerCache? cache, int dx = 0, int dy = 0)
+    {
+        using var surface = SKSurface.Create(new SKImageInfo(W + 20, H + 20, SKColorType.Rgba8888, SKAlphaType.Premul));
+        var c = surface.Canvas;
+        c.Clear(SKColors.White);
+        c.Translate(dx, dy);
+        PlotRenderer.Draw(c, (W, H), plot, PlotDetail.Full, RenderTheme.Light, trialCache: cache);
+        using var img = surface.Snapshot();
+        using var px = img.PeekPixels();
+        return px.GetPixelSpan().ToArray();
+    }
+
+    [Fact]
+    public void TheSameMembersTwice_DrawFromOnePicture_AtTheDirectPixels_AndThroughAPan()
+    {
+        var plot   = DisplayFixtures.Resolved(TrialFixtures.Result(), TrialFixtures.Family());
+        var direct = Draw(plot, null);
+        var cache  = new TrialLayerCache();
+
+        Assert.Equal(direct, Draw(plot, cache));                 // first sight: drawn directly
+        Assert.Equal(0, cache.Builds);
+        var cached = Draw(plot, cache);
+        Assert.Equal(1, cache.Builds);
+        Assert.True(direct.Zip(cached).Max(p => Math.Abs(p.First - p.Second)) <= 2, "the picture's pixels differ from a direct draw");
+
+        Draw(plot, cache, dx: 13, dy: 7);                         // the page moved by whole pixels: the same picture
+        Assert.Equal(1, cache.Builds);
+
+        plot.Axes.Window = plot.Axes.Window with { X = plot.Axes.Window.X + 0.5 };   // the plot's own pan
+        Assert.Equal(Draw(plot, null), Draw(plot, cache));        // drawn directly, nothing made
+        Assert.Equal(1, cache.Builds);
+    }
+}

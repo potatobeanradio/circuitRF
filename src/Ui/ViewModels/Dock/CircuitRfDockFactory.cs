@@ -102,7 +102,7 @@ public class CircuitRfDockFactory : Factory
     public OptimizerTool?    OptimizerTool    { get; private set; }
     /// <summary>brief-yield-10's Yield panel, following the focused schematic and tabbed behind the Optimizer.</summary>
     public YieldTool?        YieldTool        { get; private set; }
-    /// <summary>brief-sens-3's Sensitivity panel — the Yield panel's view, one mode — tabbed between Tuning and the Optimizer.</summary>
+    /// <summary>brief-sens-3's Sensitivity panel — the Yield panel's view, one mode — tabbed between the Optimizer and Yield.</summary>
     public SensitivityTool?  SensitivityTool  { get; private set; }
 
     /// <summary>

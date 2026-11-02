@@ -313,6 +313,8 @@ public sealed partial class ParameterEditorViewModel
         VendorPartQuery    = name;
         SpiceModelShowNameOnSchematic = _target?.Parameters
             .FirstOrDefault(p => p.Name == SpiceModelSymbolProvider.NameParameter)?.ShowOnSchematic ?? true;
+        SpiceModelShowFileOnSchematic = _target?.Parameters
+            .FirstOrDefault(p => p.Name == SpiceModelSymbolProvider.FileParameter)?.ShowOnSchematic ?? false;
         IsVendorPartListOpen = false;
         VendorPartMatches.Clear();
 

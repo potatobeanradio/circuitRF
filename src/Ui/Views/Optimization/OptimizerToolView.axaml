@@ -305,10 +305,9 @@
                                       Margin="0,0,4,0" ToolTip.Tip="Enabled"/>
                             <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="12" VerticalAlignment="Center"
                                        Margin="0,0,6,0"/>
+                            <!-- The goal's Use ticks: the Yield panel's goal-row control, on the same goal state. -->
                             <Grid Grid.Column="2" ColumnDefinitions="Auto,*" VerticalAlignment="Center">
-                                <Button Grid.Column="0" Margin="0,0,4,0" Content="yield only" IsVisible="{Binding IsYieldOnly}" Command="{Binding UseForOptimizingCommand}"
-                                        FontSize="10" Padding="4,0" MinHeight="0" VerticalAlignment="Center"
-                                        ToolTip.Tip="A yield spec only (set in the Yield panel): the optimizer ignores it. Click to use it for optimizing too (undoable)."/>
+                                <optv:GoalUseTicksView Grid.Column="0" Margin="0,0,4,0" VerticalAlignment="Center"/>
                                 <TextBlock Grid.Column="1" Text="{Binding Summary}" Classes="muted" VerticalAlignment="Center"
                                            TextTrimming="CharacterEllipsis"/>
                             </Grid>
@@ -330,11 +329,14 @@
                 </ListBox.ItemTemplate>
             </ListBox>
 
-            <!-- Variables header + toolbar. -->
+            <!-- Variables header + toolbar. Every tip from here down is placed ABOVE its control (Placement Top WITH
+                 VerticalOffset -4, src/Ui/RESOLVED.md "Two tooltips flashed repeatedly"): the Goals list takes the
+                 star row, so these rows sit at the panel's bottom, where a tip placed at the cursor flips up onto the
+                 pointer and the button flashes. -->
             <Grid Grid.Row="6" ColumnDefinitions="*,Auto" Margin="6,4,4,0">
                 <TextBlock Text="Variables" Classes="section"/>
                 <StackPanel Grid.Column="1" Orientation="Horizontal">
-                    <Button Classes="tb" x:Name="AddButton" ToolTip.Tip="Add values to optimize…">
+                    <Button Classes="tb" x:Name="AddButton" ToolTip.Tip="Add values to optimize…" ToolTip.Placement="Top" ToolTip.VerticalOffset="-4">
                         <mi:MaterialIcon Kind="Plus"/>
                         <Button.Flyout>
                             <Flyout Placement="BottomEdgeAlignedRight">
@@ -379,7 +381,7 @@
                         </Button.Flyout>
                     </Button>
                     <Button Classes="tb" Command="{Binding SensitivityCommand}"
-                            ToolTip.Tip="{Binding SensitivityTip}">
+                            ToolTip.Tip="{Binding SensitivityTip}" ToolTip.Placement="Top" ToolTip.VerticalOffset="-4">
                         <mi:MaterialIcon Kind="ChartBellCurve"/>
                     </Button>
                 </StackPanel>
@@ -391,24 +393,24 @@
                         <DataTemplate x:DataType="opt:OptimizerVariableRowViewModel">
                             <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto,Auto,Auto,Auto" Margin="6,1,4,1">
                                 <CheckBox Grid.Column="0" IsChecked="{Binding IsOptimized}" MinWidth="0" Padding="0"
-                                          Margin="0,0,4,0" ToolTip.Tip="Optimize this value"/>
+                                          Margin="0,0,4,0" ToolTip.Tip="Optimize this value" ToolTip.Placement="Top" ToolTip.VerticalOffset="-4"/>
                                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" MinWidth="64"
                                             VerticalAlignment="Center" Margin="0,0,4,0">
                                     <TextBlock Text="{Binding Key}" FontSize="12"/>
                                     <TextBlock Text="{Binding Location}" Classes="muted" IsVisible="{Binding HasLocation}"
                                                VerticalAlignment="Center"/>
                                     <TextBlock Text="{Binding DiscreteText}" Classes="muted" IsVisible="{Binding HasDiscreteText}"
-                                               VerticalAlignment="Center" ToolTip.Tip="The values the run may give it — ⋮ to change"
+                                               VerticalAlignment="Center" ToolTip.Tip="The values the run may give it — ⋮ to change" ToolTip.Placement="Top" ToolTip.VerticalOffset="-4"
                                                IsHitTestVisible="{Binding IsNumeric}"/>
                                 </StackPanel>
                                 <TextBox Grid.Column="2" Classes="optBound" Tag="min" Text="{Binding MinText, Mode=OneWay}"
-                                         HorizontalContentAlignment="Right" ToolTip.Tip="Minimum"/>
+                                         HorizontalContentAlignment="Right" ToolTip.Tip="Minimum" ToolTip.Placement="Top" ToolTip.VerticalOffset="-4"/>
                                 <optv:RangeMarkBar Grid.Column="3" Position="{Binding BestPosition}" Height="14"
                                                    MinWidth="40" RailedMin="{Binding IsRailedMin}" RailedMax="{Binding IsRailedMax}"/>
                                 <TextBox Grid.Column="4" Classes="optBound" Tag="max" Text="{Binding MaxText, Mode=OneWay}"
-                                         ToolTip.Tip="Maximum"/>
+                                         ToolTip.Tip="Maximum" ToolTip.Placement="Top" ToolTip.VerticalOffset="-4"/>
                                 <TextBlock Grid.Column="5" FontSize="12" VerticalAlignment="Center" Margin="4,0,0,0"
-                                           MinWidth="56" TextAlignment="Right" ToolTip.Tip="{Binding BestTip}">
+                                           MinWidth="56" TextAlignment="Right" ToolTip.Tip="{Binding BestTip}" ToolTip.Placement="Top" ToolTip.VerticalOffset="-4">
                                     <Run Text="{Binding BestText}"/>
                                     <Run Text="{Binding UnitText}" FontSize="10"/>
                                 </TextBlock>
@@ -420,9 +422,9 @@
                                     <TextBlock Text="{Binding RailedText}" FontSize="10" VerticalAlignment="Center"/>
                                     <Button Content="Widen" FontSize="10" Padding="4,0" MinHeight="0"
                                             Command="{Binding WidenCommand}" IsVisible="{Binding ShowWiden}"
-                                            ToolTip.Tip="{Binding WidenTip}"/>
+                                            ToolTip.Tip="{Binding WidenTip}" ToolTip.Placement="Top" ToolTip.VerticalOffset="-4"/>
                                 </StackPanel>
-                                <Button Grid.Column="8" Classes="tb" ToolTip.Tip="More">
+                                <Button Grid.Column="8" Classes="tb" ToolTip.Tip="More" ToolTip.Placement="Top" ToolTip.VerticalOffset="-4">
                                     <mi:MaterialIcon Kind="DotsVertical"/>
                                     <Button.Flyout>
                                         <MenuFlyout FlyoutPresenterClasses="compact">

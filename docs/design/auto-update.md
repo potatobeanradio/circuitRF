@@ -134,6 +134,15 @@ then names the path with an Open Folder button. Nothing is replaced, deleted or 
 starts the new file when they choose. A folder this account cannot write gets a button that opens the
 release page instead. The tarball remains the self-updating Linux install and the update payload.
 
+**AppImageUpdate can also update it, outside circuitRF.** Every image carries AppImageSpec update
+information (`gh-releases-zsync|<owner>|<repo>|<tag>|circuitRF-*-linux-<arch>.AppImage.zsync`, the owner
+and repository from `packaging/linux/appimage.env`, the tag `latest` for a stable `VERSION` and
+`latest-all` for a prerelease), and every release carries a `.zsync` beside each AppImage, written by
+`zsyncmake` from the image that ships. That is AppImageUpdate's own mechanism, run by its own tool when the
+user chooses; circuitRF neither reads the update information nor writes over the running file. The
+`.zsync` files are ordinary release assets, so they are hashed into the signed manifest with the rest,
+and the updater ignores them: it matches the AppImage by its exact name.
+
 ### 2.3 macOS — the exception
 
 A `.app` bundle **is** the launch path: LaunchServices, the Dock, and every file association resolve
@@ -1274,8 +1283,9 @@ Recorded so that they stay visible rather than quietly becoming permanent omissi
   cheaper first move, and zsync/bsdiff the more expensive second one. **§18 records a Windows-only
   route that gets them for free**, at the cost of a certificate and a host.
 - **A self-updating AppImage.** The AppImage ships (§2.2) and offers each new version as a Download saved
-  beside the running file. It does not replace itself, and the zsync delta updates its format allows
-  are not used; the tarball is the Linux install that updates itself.
+  beside the running file. It does not replace itself; the tarball is the Linux install that updates
+  itself. Its format's zsync delta updates are published (update information and a `.zsync` per image,
+  §2.2), for AppImageUpdate to apply; circuitRF does not apply them itself.
 - ~~**A signed manifest**~~ — **built** (§15.5), and shipping inert: the client half is complete and
   every release from the one that carries a key onward must be signed. What is left is the key ceremony,
   which is the owner's to perform and is deliberately not something a build script can do.

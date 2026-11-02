@@ -581,6 +581,14 @@ public static class SymbolPortDefs
 public sealed class EditableComponent
 {
     public string         Id           { get; } = Guid.NewGuid().ToString("N")[..12];
+
+    /// <summary>
+    /// An SnP's port names as its Touchstone file's header states them (<c>Port[N] = name</c>, index 0 is port 1), or
+    /// null. Session state, never saved: the schematic model fills it from the file before each render
+    /// (<see cref="SchematicEditModel.BuildRenderModel"/>), because a component knows its <c>File</c> text and not the
+    /// folder it is relative to. The glyph draws the names beside the leads; the pins keep their numbers.
+    /// </summary>
+    public IReadOnlyList<string?>? SnpPortLabels { get; set; }
     public string         InstanceName { get; set; } = "";
     public SymbolKind     Symbol       { get; set; }
     /// <summary>
@@ -977,7 +985,8 @@ public sealed class EditableComponent
         SymbolKind.Snp => BuiltInSymbols.PrimitivesForSnp(
             PortCount, GetBoolParam("RefNode"),
             GetEnumParam<SnpPinConfig>("PinConfig", SnpPinConfig.Standard),
-            GetEnumParam<SnpPitch>("Pitch", SnpPitch.Loose)),
+            GetEnumParam<SnpPitch>("Pitch", SnpPitch.Loose),
+            SnpPortLabels),
         SymbolKind.Tuner or SymbolKind.SourceTuner or SymbolKind.LoadTuner
             => BuiltInSymbols.PrimitivesForTuner(Symbol, GetBoolParam("ShowBias")),
         SymbolKind.Match      => BuiltInSymbols.PrimitivesForMatch(MatchGlyphForm(), MatchGlyphBands()),
@@ -1657,6 +1666,12 @@ public sealed class SchematicEditModel
 
         var comps = Components.Select(c =>
         {
+            // An SnP's port names, from its file's header (a stat per render; the header is read when the file changes).
+            if (c.Symbol == SymbolKind.Snp)
+                c.SnpPortLabels = RfCore.TouchstonePortNames.FromFile(
+                    SnpPathPolicy.Resolve(c.Parameters.FirstOrDefault(p => p.Name == "File")?.Expression,
+                                          HostWorkspaceRoot, SchematicDirectory),
+                    c.PortCount);
             CellSymbolResolution? res = c.ExternalSymbolRef is not null && cellRefResolutions is not null
                 && cellRefResolutions.TryGetValue(c.Id, out var r) ? r : null;
             return c.ToRenderComponent(IsConnected, res);

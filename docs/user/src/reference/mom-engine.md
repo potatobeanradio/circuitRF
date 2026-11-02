@@ -299,8 +299,8 @@ The two port types differ in **where the cut is** — at the end of a conductor,
 
 ### How you define one
 
-**A port is a label, not a new kind of shape.** The Port tool places an ordinary layout label with its
-port flag set, which is why a layout carrying ports is still just a layout.
+**A port is a label, not a new kind of shape.** The Port tool (<kbd>P</kbd> in the layout editor) places an
+ordinary layout label with its port flag set, which is why a layout carrying ports is still just a layout.
 
 - **Numbering comes from the label's own text.** `1`, `P1`, `p2`, `#3`, `Port 4` all parse. A label that
   names no number is auto-numbered to the lowest free one rather than refused.

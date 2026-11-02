@@ -25,6 +25,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using CircuitRF.Core.Design;
 using CircuitRF.Design.Optimization;
+using CircuitRF.Ui.Optimization;
 using CircuitRF.Design.Statistics;
 using CircuitRF.Ui.Commands.Schematic;
 using CircuitRF.Ui.Schematic;
@@ -435,7 +436,7 @@ public sealed partial class YieldPanelViewModel : ObservableObject, ITunableAddH
     internal void SetGoalUse(YieldGoalRowViewModel row, GoalUse use)
     {
         if (Setup?.Goals.FirstOrDefault(g => g.Name == row.Name) is not { } g || g.Use == use) return;
-        Execute(TuningSetupEdits.WithGoalUse(Setup, row.Name, use), $"Use goal {row.Name} for {GoalUseChoice.Word(use)}");
+        Execute(TuningSetupEdits.WithGoalUse(Setup, row.Name, use), $"Use goal {row.Name} for {GoalUseTicks.Word(use)}");
     }
 
     /// <summary>Edit goals…: goals are authored in the Optimizer (D4), so it is focused with the selected goal.</summary>
@@ -691,13 +692,3 @@ public sealed record DistributionChoice(StatDistribution Value, string Label)
     public override string ToString() => Label;
 }
 
-/// <summary>One entry of a goal's Use drop-down (yield overview D4).</summary>
-public sealed record GoalUseChoice(GoalUse Value, string Label)
-{
-    public static IReadOnlyList<GoalUseChoice> All { get; } =
-        [new(GoalUse.Opt, "Opt"), new(GoalUse.Yield, "Yield"), new(GoalUse.Both, "Both")];
-
-    public static string Word(GoalUse u) => u switch { GoalUse.Opt => "optimizing", GoalUse.Yield => "yield", _ => "both" };
-
-    public override string ToString() => Label;
-}

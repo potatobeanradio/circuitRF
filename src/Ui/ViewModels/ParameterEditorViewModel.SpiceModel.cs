@@ -77,6 +77,24 @@ public sealed partial class ParameterEditorViewModel
         _schematicVm.Execute(new SetParameterVisibilityCommand(_schematicVm.EditModel, p, value));
     }
 
+    /// <summary>
+    /// Whether the <c>File</c> parameter draws its own label on the sheet — <see cref="SpiceModelShowNameOnSchematic"/>
+    /// for <c>File</c>, on the vendor part panel, whose File row is the panel's and so carries no generic row's checkbox.
+    /// The same flag and the same undo entry (<see cref="SetParameterVisibilityCommand"/>).
+    /// </summary>
+    [ObservableProperty] private bool _spiceModelShowFileOnSchematic;
+
+    partial void OnSpiceModelShowFileOnSchematicChanged(bool value)
+    {
+        if (_isRefreshing || _target is null || _schematicVm is null) return;
+
+        var p = _target.Parameters.FirstOrDefault(
+            q => q.Name == SpiceModelSymbolProvider.FileParameter);
+        if (p is null || p.ShowOnSchematic == value) return;
+
+        _schematicVm.Execute(new SetParameterVisibilityCommand(_schematicVm.EditModel, p, value));
+    }
+
     /// <summary>What was found, or the reason it cannot be run. Never both, never empty when a file is set.</summary>
     [ObservableProperty] private string _spiceModelStatus = "";
 

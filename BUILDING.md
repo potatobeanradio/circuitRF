@@ -545,7 +545,7 @@ sudo gem install fpm
 **Build:**
 
 ```bash
-./packaging/linux/build-linux.sh                # everything Linux ships: 6 files
+./packaging/linux/build-linux.sh                # everything Linux ships: 6 packages + 2 .zsync
 ```
 
 That is both architectures as a `.deb`, a `.tar.gz` **and** an `.AppImage`. Narrow it only when you
@@ -567,6 +567,16 @@ needs no FUSE**, because the tool runs with `APPIMAGE_EXTRACT_AND_RUN=1`, so a c
 runner can pack. The image is cross-packed the same way the rest is (the host's tool, the target's
 runtime), and its command line is smoke-tested against the `.AppImage` file itself. It must be packed
 on Linux.
+
+**Every AppImage carries update information for AppImageUpdate**, and a `.zsync` file is written
+beside each one: `circuitRF-<ver>-linux-<arch>.AppImage.zsync`. Upload both `.zsync` files with the
+release (`sign-release.sh` uploads everything in `dist/`, so this happens on its own). The update
+information names this repository's GitHub releases (`APPIMAGE_UPDATE_GITHUB` in `appimage.env`),
+the `.zsync` of the same architecture, and a tag that follows `VERSION`: `latest` for a stable
+version, `latest-all` for a prerelease. It needs **`zsyncmake`** on the build machine
+(`sudo apt-get install zsync`). Without it the script refuses before building anything, because an
+AppImage whose `.zsync` is missing from the release cannot be updated and nothing says so.
+`CRF_ALLOW_NO_ZSYNC=1` packs AppImages with no update information instead.
 
 The package installs to `/opt/circuitrf/`, puts `circuitrf` on `PATH`, and registers the icon, the
 application-menu entry and the `.crfw` / `.cws`, `.charm` and `.wBond` file types.
@@ -648,7 +658,8 @@ here.
 | `circuitRF-<ver>-<arch>.dmg` | `build-macos.sh` | `/Applications` | **yes**, for an admin user |
 | `circuitRF-<ver>-<arch>.deb` | `build-linux.sh` | `/opt/circuitrf` | notify only |
 | `circuitRF-<ver>-linux-<arch>.tar.gz` | `build-linux.sh` | `~/.local/share/circuitRF` | **yes** |
-| `circuitRF-<ver>-linux-<arch>.AppImage` | `build-linux.sh` | — (one file, run where it is) | no — offers a **Download** beside it |
+| `circuitRF-<ver>-linux-<arch>.AppImage` | `build-linux.sh` | — (one file, run where it is) | no — offers a **Download** beside it; AppImageUpdate can update it |
+| `circuitRF-<ver>-linux-<arch>.AppImage.zsync` | `build-linux.sh` | — (what AppImageUpdate reads) | — |
 
 **Both Windows installers ask for the folder** on a Destination Folder page, between the licence
 and the feature tree. The defaults are the ones in the table. The chosen folder is written to
@@ -761,10 +772,10 @@ staged. Quit and relaunch — that relaunch is what the matrix is actually testi
    ```
    Windows   .\packaging\windows\build-windows.ps1     9 files
    macOS     ./packaging/macos/build-macos.sh           2 files
-   Linux     ./packaging/linux/build-linux.sh           4 files
+   Linux     ./packaging/linux/build-linux.sh           8 files
    ```
 
-   Each prints what it produced and warns if the count is short. Fifteen files in `dist/` is a
+   Each prints what it produced and warns if the count is short. Nineteen files in `dist/` is a
    complete release; anything less ships a platform that cannot update itself.
 4. Install each one on a clean machine; confirm the icon appears in the file manager, **Help ▸ About**
    shows the version you set, and double-clicking a workspace (`.crfw` / `.cws`) opens it. Check a
@@ -779,7 +790,7 @@ staged. Quit and relaunch — that relaunch is what the matrix is actually testi
    six findings, click one and watch the layout zoom to it. Then read the workspace's own
    `README.md` beside the report and check the two agree. It exercises the example browser, a
    technology resolve, both editors, a tool panel and cross-probing in about two minutes.
-7. **Collect all fifteen files from all three machines into one `dist/`, then sign and upload:**
+7. **Collect all nineteen files from all three machines into one `dist/`, then sign and upload:**
 
    ```bash
    ./packaging/sign-release.sh
@@ -916,12 +927,12 @@ diffable and attributable to the commit that introduced it.
 
 **Where the key is used, and where it is not.** Not in `dotnet build`, not in `dotnet run`, and not in
 any of the three packaging scripts — nothing about building circuitRF touches it, and you are never
-prompted for it while building. It is used once, by `packaging/sign-release.sh`, after all fifteen
+prompted for it while building. It is used once, by `packaging/sign-release.sh`, after all nineteen
 artifacts exist. Day to day it sits in your password manager and nowhere else.
 
 **Letting someone else cut a release without giving them the key.** Signing is not part of the build:
 the thing that gets signed is `update-manifest.json`, a few kilobytes of file names and SHA-256s. So a
-contributor can build the fifteen artifacts, upload them to a **draft** release, run the `manifest` step
+contributor can build the nineteen artifacts, upload them to a **draft** release, run the `manifest` step
 themselves and send you only that one small file; you run `sign` on your own machine and send back
 `update-manifest.json.sig`, which they attach before publishing. The private key never leaves your
 machine, and nobody waits on you for more than a moment.

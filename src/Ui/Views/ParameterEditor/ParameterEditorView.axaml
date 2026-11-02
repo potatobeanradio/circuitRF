@@ -979,12 +979,19 @@
                         <SelectableTextBlock Grid.Column="1" Text="{Binding VendorLibraryName}"
                                              FontSize="11" VerticalAlignment="Center"/>
                     </Grid>
-                    <Grid ColumnDefinitions="60,*">
+                    <!-- The checkbox is the SAME "Show on schematic" every generic parameter row carries:
+                         File has no generic row on this panel, so it is carried here, as Part's is below. -->
+                    <Grid ColumnDefinitions="60,*,Auto">
                         <TextBlock Grid.Column="0" Text="File"
                                    FontSize="11" VerticalAlignment="Center"/>
                         <SelectableTextBlock Grid.Column="1" Text="{Binding VendorLibraryFile}"
                                              FontSize="11" VerticalAlignment="Center"
                                              TextWrapping="Wrap"/>
+                        <CheckBox Grid.Column="2"
+                                  IsChecked="{Binding SpiceModelShowFileOnSchematic}"
+                                  ToolTip.Tip="Show on schematic"
+                                  Margin="6,0,2,0"
+                                  VerticalAlignment="Center"/>
                     </Grid>
                     <Grid ColumnDefinitions="60,*,Auto,Auto">
                         <TextBlock Grid.Column="0" Text="Part"

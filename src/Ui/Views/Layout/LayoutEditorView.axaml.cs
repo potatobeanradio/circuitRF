@@ -178,6 +178,23 @@ public partial class LayoutEditorView : UserControl
     }
 
     /// <summary>
+    /// <b>P</b> arms the Port tool, as its toolbar button does — from anywhere in this view, on
+    /// <see cref="TryToggleLayerList"/>'s terms: bare P only, never from a field that types it (a text
+    /// box, a combobox's type-to-select, a label being typed on the canvas, where P is a letter).
+    /// </summary>
+    private bool TryArmPortTool(KeyEventArgs e, LayoutDocument doc)
+    {
+        if (e.Key != Key.P || e.KeyModifiers != KeyModifiers.None || e.Handled) return false;
+        if (!IsKeyboardFocusWithin || e.Source is TextBox or ComboBox) return false;
+        var vm = doc.ActiveViewModel;
+        if (vm.IsTypingLabel) return false;
+
+        vm.SetActiveToolCommand.Execute(nameof(LayoutEditorViewModel.Tool.Port));
+        e.Handled = true;
+        return true;
+    }
+
+    /// <summary>
     /// Page Up/Down with focus on the canvas page the Layers list when it is open — the canvas gives the
     /// two keys no meaning, and the canvas is where focus sits nearly all the time, so without this the
     /// keys would work only after clicking into the list. Home/End are left alone here.
@@ -516,6 +533,7 @@ public partial class LayoutEditorView : UserControl
     private void OnViewKeyDownTunnel(object? sender, KeyEventArgs e)
     {
         if (DataContext is LayoutDocument layersDoc && TryToggleLayerList(e, layersDoc)) return;
+        if (DataContext is LayoutDocument portDoc && TryArmPortTool(e, portDoc)) return;
         if (!LayoutCanvasCtrl.IsKeyboardFocusWithin) return; // a toolbar text field owns its own Escape
         if (DataContext is not LayoutDocument doc) return;
 
