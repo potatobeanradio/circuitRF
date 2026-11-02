@@ -850,7 +850,8 @@ public static class Scene3DBuilder
             }
             return (verts, tris);
         }
-        if (a.X == c.X)      verts.AddRange([new(a.X, a.Y, a.Z), new(a.X, c.Y, a.Z), new(a.X, c.Y, c.Z), new(a.X, a.Y, c.Z)]);
+        if (p.Quad is { } quad) verts.AddRange(quad.Corners);
+        else if (a.X == c.X) verts.AddRange([new(a.X, a.Y, a.Z), new(a.X, c.Y, a.Z), new(a.X, c.Y, c.Z), new(a.X, a.Y, c.Z)]);
         else if (a.Y == c.Y) verts.AddRange([new(a.X, a.Y, a.Z), new(c.X, a.Y, a.Z), new(c.X, a.Y, c.Z), new(a.X, a.Y, c.Z)]);
         else                 verts.AddRange([new(a.X, a.Y, a.Z), new(c.X, a.Y, a.Z), new(c.X, c.Y, a.Z), new(a.X, c.Y, a.Z)]);
         tris.Add(new Em3dTriangle(0, 1, 2, p.Name));
@@ -890,23 +891,34 @@ public static class Scene3DBuilder
     /// </summary>
     internal static (Em3dTriangleMesh Mesh, uint[] Rgba)? Checkerboard(Em3dPort p, uint a, uint b, uint arrow)
     {
-        var (lo, hi) = (p.Min, p.Max);
-        double[] min = [lo.X, lo.Y, lo.Z], ext = [hi.X - lo.X, hi.Y - lo.Y, hi.Z - lo.Z];
-        int normal = Array.FindIndex(ext, e => e == 0);
-        if (normal < 0) return null;
-        int u = (normal + 1) % 3, v = (normal + 2) % 3;
+        // The sheet as a corner and its two sides: an upright port's from its box, a turned one's from its corners.
+        Point3 origin, su3, sv3;
+        if (p.Quad is { } quad)
+        {
+            origin = quad.A;
+            (su3, sv3) = quad.Sides;
+        }
+        else
+        {
+            var (lo, hi) = (p.Min, p.Max);
+            double[] e3 = [hi.X - lo.X, hi.Y - lo.Y, hi.Z - lo.Z];
+            int flat = Array.FindIndex(e3, e => e == 0);
+            if (flat < 0) return null;
+            int iu = (flat + 1) % 3, iv = (flat + 2) % 3;
+            static Point3 Axis(int i, double l) => i == 0 ? new Point3(l, 0, 0) : i == 1 ? new Point3(0, l, 0) : new Point3(0, 0, l);
+            (origin, su3, sv3) = (lo, Axis(iu, e3[iu]), Axis(iv, e3[iv]));
+        }
+        static double Len(Point3 q) => Math.Sqrt(q.X * q.X + q.Y * q.Y + q.Z * q.Z);
+        double[] ext = [Len(su3), Len(sv3)];
+        const int u = 0, v = 1;
         if (!(ext[u] > 0 && ext[v] > 0)) return null;
         double cell = Math.Min(ext[u], ext[v]) / 2;
         int nu = Math.Clamp((int)Math.Round(ext[u] / cell), 1, CheckerCellsMax), nv = Math.Clamp((int)Math.Round(ext[v] / cell), 1, CheckerCellsMax);
         var verts = new List<Point3>(4 * nu * nv + 7);
         var tris = new List<Em3dTriangle>(2 * nu * nv + 3);
         var rgba = new List<uint>(4 * nu * nv + 7);
-        Point3 At(double su, double sv)
-        {
-            var c = (double[])min.Clone();
-            c[u] += ext[u] * su; c[v] += ext[v] * sv;
-            return new Point3(c[0], c[1], c[2]);
-        }
+        Point3 At(double fu, double fv)
+            => new(origin.X + su3.X * fu + sv3.X * fv, origin.Y + su3.Y * fu + sv3.Y * fv, origin.Z + su3.Z * fu + sv3.Z * fv);
         void Quad(Point3 p0, Point3 p1, Point3 p2, Point3 p3, uint colour)
         {
             int k = verts.Count;
@@ -923,7 +935,8 @@ public static class Scene3DBuilder
             }
 
         // The arrow, in the sheet's (along, across) fractions: along runs − to +, so a negative direction flips it.
-        double[] d = [p.Direction.X, p.Direction.Y, p.Direction.Z];
+        static double Dot(Point3 q, Point3 r) => q.X * r.X + q.Y * r.Y + q.Z * r.Z;
+        double[] d = [Dot(p.Direction, su3) / ext[u], Dot(p.Direction, sv3) / ext[v]];
         int along = Math.Abs(d[u]) >= Math.Abs(d[v]) ? u : v, across = along == u ? v : u;
         if (d[along] != 0)
         {
@@ -962,8 +975,9 @@ public static class Scene3DBuilder
         if (p.Kind == Em3dPortKind.Wave && p.VoltagePath is { } vp) (from, to) = (vp.From, vp.To);
         else
         {
-            var c = p.Cylinder?.Patch.Centre ?? new Point3((p.Min.X + p.Max.X) / 2, (p.Min.Y + p.Max.Y) / 2, (p.Min.Z + p.Max.Z) / 2);
-            double side = Math.Max(p.Max.X - p.Min.X, Math.Max(p.Max.Y - p.Min.Y, p.Max.Z - p.Min.Z));
+            var c = p.Cylinder?.Patch.Centre ?? p.Quad?.Centre ?? new Point3((p.Min.X + p.Max.X) / 2, (p.Min.Y + p.Max.Y) / 2, (p.Min.Z + p.Max.Z) / 2);
+            double side = p.Quad is { } quad ? Math.Max(quad.Extent(p.Direction).Length, quad.Extent(p.Direction).Width)
+                        : Math.Max(p.Max.X - p.Min.X, Math.Max(p.Max.Y - p.Min.Y, p.Max.Z - p.Min.Z));
             if (p.Annulus is { } an) side = 2 * an.OuterRadiusM;
             double h = side * ArrowFraction / 2;
             var d = p.Direction;

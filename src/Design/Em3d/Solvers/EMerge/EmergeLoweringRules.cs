@@ -141,7 +141,7 @@ internal static class EmergeLoweringRules
         if (p.Z0.Imaginary != 0 || !(p.Z0.Real > 0))
             return $"Port {n}'s reference impedance is {Ohms(p.Z0)}. EMerge's lumped port is terminated in a real resistance, " +
                    "which must be positive: set the port's Z0 to a positive real value.";
-        if (Rect(p.Min, p.Max, p.Direction) is null)
+        if (PortRect(p) is null)
             return $"Port {n}'s direction is not along a side of its sheet, so its height (the side the voltage is across) " +
                    "cannot be told to EMerge. Draw the port with its direction along one of the sheet's sides.";
         return null;
@@ -211,6 +211,16 @@ internal static class EmergeLoweringRules
     /// and its width and height — the height being its extent along <paramref name="direction"/>, which must lie along one
     /// of its two sides (to 1e-9). Null when it does not.
     /// </summary>
+    /// <summary>A lumped port's sheet as the driver takes it (<see cref="Rect"/>): a turned port's from its corners, its width
+    /// across its direction and its height along it.</summary>
+    public static (Point3 Origin, Point3 U, Point3 V, double Width, double Height)? PortRect(Em3dPort p)
+    {
+        if (p.Quad is not { } quad) return Rect(p.Min, p.Max, p.Direction);
+        var (u, v) = quad.Sides;
+        var (length, width) = quad.Extent(p.Direction);
+        return (quad.A, u, v, width, length);
+    }
+
     public static (Point3 Origin, Point3 U, Point3 V, double Width, double Height)? Rect(Point3 min, Point3 max, Point3 direction)
     {
         double[] d = [max.X - min.X, max.Y - min.Y, max.Z - min.Z];
@@ -318,7 +328,7 @@ internal static class EmergeLoweringRules
                 rows.Add(new(p.Name, "port", WaveMapping(problem, p)));
                 continue;
             }
-            var r = Rect(p.Min, p.Max, p.Direction)!.Value;
+            var r = PortRect(p)!.Value;
             rows.Add(new(p.Name, "port",
                 $"a lumped port, number {p.Number}: {Mm(r.Width)} wide, {Mm(r.Height)} high, voltage along ({G(p.Direction.X)}, " +
                 $"{G(p.Direction.Y)}, {G(p.Direction.Z)}) as circuitRF's port direction states it, Z0 {G(p.Z0.Real)} Ω"));

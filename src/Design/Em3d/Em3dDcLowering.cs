@@ -166,7 +166,7 @@ public static class Em3dDcLowering
                                              new Em3dDcContactSpec($"{label}−", port.NegativeObject, [], planeTol, region)));
                 continue;
             }
-            var (pos, neg, tol) = Edges(port.Min, port.Max, port.Direction, port.Annulus, port.Cylinder);
+            var (pos, neg, tol) = Edges(port.Min, port.Max, port.Direction, port.Annulus, port.Cylinder, port.Quad);
             ports.Add(new Em3dDcPortSpec(port.Number, label, port.Z0.Real,
                                          new Em3dDcContactSpec($"{label}+", port.PositiveObject, pos, tol),
                                          new Em3dDcContactSpec($"{label}−", port.NegativeObject, neg, tol)));
@@ -491,9 +491,19 @@ public static class Em3dDcLowering
     /// point may lie off a surface by: a rectangle's two edges across its direction, a coaxial annulus' two circles, a
     /// cylinder gap's two arcs (or lines).</summary>
     private static (IReadOnlyList<Point3> Positive, IReadOnlyList<Point3> Negative, double Tol) Edges(Point3 min, Point3 max, Point3 direction,
-                                                                                                     Em3dAnnulus? annulus, Em3dCylinderGap? cylinder)
+                                                                                                     Em3dAnnulus? annulus, Em3dCylinderGap? cylinder,
+                                                                                                     Em3dPortQuad? quad = null)
     {
         double[] fr = [0.01, 0.25, 0.5, 0.75, 0.99];
+        if (quad is { } q)
+        {
+            // A turned port: its two ends across its direction, each from corner to corner.
+            var (negEnd, posEnd) = q.Ends(direction);
+            static IReadOnlyList<Point3> Along((Point3 P, Point3 Q) e, double[] at)
+                => [.. at.Select(t => new Point3(e.P.X + t * (e.Q.X - e.P.X), e.P.Y + t * (e.Q.Y - e.P.Y), e.P.Z + t * (e.Q.Z - e.P.Z)))];
+            double tolQ = 1e-3 * Math.Max(q.Extent(direction).Width, 1e-9);
+            return (Along(posEnd, fr), Along(negEnd, fr), tolQ);
+        }
         if (cylinder is { } cg)
         {
             var pt = cg.Patch;

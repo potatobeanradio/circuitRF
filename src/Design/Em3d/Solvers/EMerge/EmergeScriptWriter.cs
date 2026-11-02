@@ -149,7 +149,7 @@ public static partial class EmergeScriptWriter
         e.Key("ports").BeginArray();
         foreach (var p in problem.Ports.Where(p => p.Kind == Em3dPortKind.Lumped))
         {
-            var r = EmergeLoweringRules.Rect(p.Min, p.Max, p.Direction)!.Value;
+            var r = EmergeLoweringRules.PortRect(p)!.Value;
             e.BeginObject().Key("number").Int(p.Number).Key("name").Str(p.Name)
              .Key("origin").Point(r.Origin).Key("u").Point(r.U).Key("v").Point(r.V)
              .Key("widthM").Number(r.Width).Key("heightM").Number(r.Height)

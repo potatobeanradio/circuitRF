@@ -500,6 +500,79 @@ public sealed record Em3dPort(
     /// cylindrical grid about the same axis writes it; every other lowering refuses it (<see cref="Em3dCylinderGap.NotHere"/>).
     /// </summary>
     public Em3dCylinderGap? Cylinder { get; init; }
+
+    /// <summary>
+    /// A lumped port whose sheet is a rectangle TURNED in its plane: its four corners, in order round it.
+    /// <see cref="Min"/>/<see cref="Max"/> are then the corners' bounding box and <see cref="Direction"/> lies along two of its
+    /// sides, from the negative end to the positive one. Null on every other port. The corners are an exact rectangle (each
+    /// solver measures the sheet's length and width from them), and the copper at each end has these same corner points in its
+    /// outline, so the two meet exactly.
+    /// </summary>
+    public Em3dPortQuad? Quad { get; init; }
+}
+
+/// <summary>
+/// A turned lumped port's sheet: corners <paramref name="A"/>, <paramref name="B"/>, <paramref name="C"/> and
+/// <paramref name="D"/> in order round a rectangle, world metres.
+/// </summary>
+public sealed record Em3dPortQuad(Point3 A, Point3 B, Point3 C, Point3 D)
+{
+    /// <summary>The four corners, in order.</summary>
+    public Point3[] Corners => [A, B, C, D];
+
+    /// <summary>The centre.</summary>
+    public Point3 Centre => new((A.X + C.X) / 2, (A.Y + C.Y) / 2, (A.Z + C.Z) / 2);
+
+    /// <summary>The side from A to B and the side from A to D, as vectors.</summary>
+    public (Point3 U, Point3 V) Sides => (Sub(B, A), Sub(D, A));
+
+    /// <summary>The bounding box of the corners.</summary>
+    public (Point3 Min, Point3 Max) Bounds
+        => (new Point3(Corners.Min(c => c.X), Corners.Min(c => c.Y), Corners.Min(c => c.Z)),
+            new Point3(Corners.Max(c => c.X), Corners.Max(c => c.Y), Corners.Max(c => c.Z)));
+
+    /// <summary>The port's length along <paramref name="direction"/> and its width across it, metres: the lengths of the side
+    /// nearer that direction and of the other.</summary>
+    public (double Length, double Width) Extent(Point3 direction)
+    {
+        var (u, v) = Sides;
+        double lu = Norm(u), lv = Norm(v);
+        bool alongU = Math.Abs(Dot(u, direction)) * lv >= Math.Abs(Dot(v, direction)) * lu;
+        return alongU ? (lu, lv) : (lv, lu);
+    }
+
+    /// <summary>The two ends a current along <paramref name="direction"/> runs between: each a side across it, as its two
+    /// corners. The negative end is the one the direction leaves.</summary>
+    public ((Point3, Point3) Negative, (Point3, Point3) Positive) Ends(Point3 direction)
+    {
+        var (u, v) = Sides;
+        bool alongU = Math.Abs(Dot(u, direction)) * Norm(v) >= Math.Abs(Dot(v, direction)) * Norm(u);
+        // Along U the ends are the sides A–D and B–C; along V they are A–B and D–C.
+        var (first, second) = alongU ? ((A, D), (B, C)) : ((A, B), (D, C));
+        double s1 = Dot(Mid(first), direction), s2 = Dot(Mid(second), direction);
+        return s1 <= s2 ? (first, second) : (second, first);
+    }
+
+    /// <summary>Why these corners are not a rectangle lying flat, or null when they are: opposite sides equal and parallel and
+    /// adjacent sides square, each to one part in a hundred million of the longer side (a solver measures the sheet's length
+    /// to one part in a million).</summary>
+    public string? Problem()
+    {
+        var (u, v) = Sides;
+        double lu = Norm(u), lv = Norm(v), scale = Math.Max(lu, lv);
+        if (!(lu > 0) || !(lv > 0)) return "has a side of zero length";
+        var c = Add(A, Add(u, v));
+        double off = Norm(Sub(c, C));
+        if (off > 1e-8 * scale) return "is not a parallelogram";
+        if (Math.Abs(Dot(u, v)) > 1e-8 * lu * lv) return "is not square at its corners";
+        return null;
+    }
+
+    private static Point3 Sub(Point3 a, Point3 b) => new(a.X - b.X, a.Y - b.Y, a.Z - b.Z);
+    private static Point3 Add(Point3 a, Point3 b) => new(a.X + b.X, a.Y + b.Y, a.Z + b.Z);
+    private static Point3 Mid((Point3 P, Point3 Q) e) => new((e.P.X + e.Q.X) / 2, (e.P.Y + e.Q.Y) / 2, (e.P.Z + e.Q.Z) / 2);
+    private static double Dot(Point3 a, Point3 b) => a.X * b.X + a.Y * b.Y + a.Z * b.Z;
+    private static double Norm(Point3 a) => Math.Sqrt(Dot(a, a));
 }
 
 /// <summary>brief-sar-3 R-sar3-3 — how a lumped element's R, L and C are joined.</summary>
@@ -866,6 +939,16 @@ public sealed record Em3dProblem(
             {
                 if (p.Kind == Em3dPortKind.Wave) problems.Add($"Port {p.Number} is a wave port on a cylinder; a gap on a cylinder is a lumped port.");
                 if (pc.Patch.Problems($"Port {p.Number}") is { Count: > 0 } gapProblems) problems.AddRange(gapProblems);
+                else if (!Inside(p.Min.X, p.Min.Y, p.Min.Z, p.Max.X, p.Max.Y, p.Max.Z))
+                    problems.Add($"Port {p.Number}'s sheet extends outside the air box.");
+                continue;
+            }
+            if (p.Quad is { } quad)
+            {
+                if (p.Kind == Em3dPortKind.Wave) problems.Add($"Port {p.Number} is a wave port turned in its plane; a wave port's region is a rectangle of an air-box face.");
+                if (p.Annulus is not null) problems.Add($"Port {p.Number} is coaxial and turned; an annulus has no angle to turn.");
+                if (quad.Problem() is { } shape) problems.Add($"Port {p.Number}'s turned sheet {shape}.");
+                else if (zeroAxes != 1) problems.Add($"Port {p.Number}'s turned sheet does not lie flat in a plane of constant x, y or z.");
                 else if (!Inside(p.Min.X, p.Min.Y, p.Min.Z, p.Max.X, p.Max.Y, p.Max.Z))
                     problems.Add($"Port {p.Number}'s sheet extends outside the air box.");
                 continue;

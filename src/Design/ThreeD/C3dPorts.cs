@@ -54,6 +54,10 @@ public sealed record C3dPortResult(C3dPort Port, Em3dPort? Resolved, string? Ref
     /// <summary>brief-em3d-121 D1 — a reading the port keeps and the gesture would not make, naming the alternative; null on
     /// every other port. A run adds it to its notes, and <c>check</c>/<c>explain</c> print it after the reason.</summary>
     public string? Note { get; init; }
+
+    /// <summary>A turned port's two ends as points the copper's outline takes (<see cref="C3dTurnedPorts"/>); empty on every
+    /// other port.</summary>
+    public IReadOnlyList<C3dSeam> Seams { get; init; } = [];
 }
 
 /// <summary>
@@ -69,6 +73,10 @@ public sealed class C3dPortContext
         /// <summary>brief-sar-8b — a sheet on a cylinder: its patch, measured exactly by a gap on the same cylinder (its
         /// <see cref="Mesh"/> is the patch's tessellation, for anything else).</summary>
         public Em3dCylinderPatch? Patch { get; init; }
+
+        /// <summary>A solid that is an outline extruded in z — a layout's copper, a drawn extruded polygon: the only kind a
+        /// turned port can end on, because its end becomes two points of that outline.</summary>
+        public Em3dExtrudedPolygon? Prism { get; init; }
     }
 
     internal readonly List<Conductor> Conductors = [];
@@ -117,7 +125,8 @@ public sealed class C3dPortContext
                 continue;
             }
             var mesh = Em3dTessellation.Of(s);
-            Conductors.Add(new Conductor(s.Name, Em3dProblem.Bounds(s.Primitive), mesh, null, Area(mesh)));
+            Conductors.Add(new Conductor(s.Name, Em3dProblem.Bounds(s.Primitive), mesh, null, Area(mesh))
+                           { Prism = s.Primitive as Em3dExtrudedPolygon });
         }
         foreach (var sh in elaboration.Sheets)
         {
@@ -369,20 +378,31 @@ public static class C3dPorts
             return Refuse(port, $"{label} states its {(port.Positive is null ? "Negative" : "Positive")} end only. State both " +
                                 "ends, or neither and let what the port touches decide.");
 
+        bool turned = port.Angle != 0;
+        if (turned && C3dTurnedPorts.AngleRefusal(port, label) is { } notTurnable) return Refuse(port, notTurnable);
+
         double M(long v) => C3dLowering.Metres(v, dbuPerMicron);
         double u0 = M(port.Rect.Min.U), v0 = M(port.Rect.Min.V);
         double u1 = M(port.Rect.Min.U + port.Rect.Size.U), v1 = M(port.Rect.Min.V + port.Rect.Size.V);
         double h = M(port.Offset);
-        Point3 P(double u, double v) => C3dLowering.OnPlane(port.Plane, u, v, h);
+        // A turned port is its rectangle turned about its centre: the edges, the contact queries and the end that follows the
+        // outline are all measured through this one map, so they are the turned sheet's.
+        Func<double, double, Point3> P;
+        Point3 uDir, vDir;
+        if (turned) (P, uDir, vDir) = C3dTurnedPorts.Map(port.Angle, u0, v0, u1, v1, h);
+        else
+        {
+            P = (u, v) => C3dLowering.OnPlane(port.Plane, u, v, h);
+            (uDir, vDir) = PlaneAxes(port.Plane);
+        }
         var corners = new[] { P(u0, v0), P(u1, v0), P(u1, v1), P(u0, v1) };
         var min = new Point3(corners.Min(c => c.X), corners.Min(c => c.Y), corners.Min(c => c.Z));
         var max = new Point3(corners.Max(c => c.X), corners.Max(c => c.Y), corners.Max(c => c.Z));
         int normalAxis = port.Plane switch { C3dPlane.YZ => 0, C3dPlane.XZ => 1, _ => 2 };
-        var (uDir, vDir) = PlaneAxes(port.Plane);
 
         return port.Kind == Em3dPortKind.Wave
             ? Wave(port, label, z0, context, u0, v0, u1, v1, h, normalAxis, uDir, vDir, min, max, P)
-            : Lumped(port, label, z0, context, u0, v0, u1, v1, normalAxis, uDir, vDir, min, max, P);
+            : Lumped(port, label, z0, context, u0, v0, u1, v1, normalAxis, uDir, vDir, min, max, P, turned);
     }
 
     /// <summary>
@@ -424,11 +444,13 @@ public static class C3dPorts
 
     private static C3dPortResult Lumped(C3dPort port, string label, Complex z0, C3dPortContext ctx, double u0, double v0,
                                         double u1, double v1, int normalAxis, Point3 uDir, Point3 vDir, Point3 min, Point3 max,
-                                        Func<double, double, Point3> P)
+                                        Func<double, double, Point3> P, bool turned = false)
     {
         // The four edges, their ends pulled in by two DBU so a corner contact does not count.
         // brief-emb-2 R-emb2-3 — and by twice Robust meshing's largest move, which widens what counts as touching.
-        double inset = 2 * ctx.Dbu + 2 * ctx.OutlineMoveM;
+        // A turned port measures contact to twice an upright one's tolerance (C3dTurnedPorts.Tolerance), so its ends are pulled in
+        // twice as far: else a side edge would touch the copper its end meets.
+        double inset = turned ? 2 * C3dTurnedPorts.Tolerance(ctx) : 2 * ctx.Dbu + 2 * ctx.OutlineMoveM;
         (Point3, Point3) Edge(double ua, double va, double ub, double vb)
         {
             double du = ub - ua, dv = vb - va, len = Math.Sqrt(du * du + dv * dv);
@@ -474,7 +496,7 @@ public static class C3dPorts
             ctx.InferenceRuns++;
             // brief-emb-2 R-emb2-3 — measured against the outline the run meshes: an edge that touched the artwork as drawn is
             // within Robust meshing's largest move of it, and follows it (below).
-            double tol = ctx.Dbu + ctx.OutlineMoveM;
+            double tol = turned ? C3dTurnedPorts.Tolerance(ctx) : ctx.Dbu + ctx.OutlineMoveM;
             var touching = edges.Select(e => ctx.Conductors.Where(c => ctx.Distance(c, e.Item1, e.Item2) <= tol)
                                                            .Select(c => c.Name).ToList()).ToArray();
             contacts = [.. EdgeNames.Select((n, i) => (n, (IReadOnlyList<string>)touching[i]))];
@@ -508,11 +530,22 @@ public static class C3dPorts
 
         var axis = pair == 0 ? uDir : vDir;
         var direction = negativeOnLow ? axis : new Point3(-axis.X, -axis.Y, -axis.Z);
+        // A turned port: its sheet is the four corners as the map gives them, an exact rectangle; each end must lie along one
+        // straight side of its copper, whose outline then takes the end's two corners (C3dTurnedPorts.Seam).
+        Em3dPortQuad? quad = null;
+        IReadOnlyList<C3dSeam> seams = [];
+        if (turned)
+        {
+            quad = new Em3dPortQuad(P(u0, v0), P(u1, v0), P(u1, v1), P(u0, v1));
+            (min, max) = quad.Bounds;
+            if (C3dTurnedPorts.Ends(label, quad, direction, negative, positive, ctx, out seams) is { } why)
+                return Refuse(port, why, contacts);
+        }
         var centre = new Point3((min.X + max.X) / 2, (min.Y + max.Y) / 2, (min.Z + max.Z) / 2);
         var normal = Into(normalAxis, centre, ctx);
         var resolved = new Em3dPort(port.Number, ProblemName(port.Number), positive, negative, min, max, direction, z0,
-                                    new Em3dReferencePlane(centre, normal, 0));
-        return new C3dPortResult(port, resolved, null, contacts, reason);
+                                    new Em3dReferencePlane(centre, normal, 0)) { Quad = quad };
+        return new C3dPortResult(port, resolved, null, contacts, reason) { Seams = seams };
     }
 
     /// <summary>

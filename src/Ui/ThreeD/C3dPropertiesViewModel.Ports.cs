@@ -36,6 +36,8 @@ public sealed partial class C3dPropertiesViewModel
     [ObservableProperty] private string _portCentreV = "";
     [ObservableProperty] private string _portWidth = "";
     [ObservableProperty] private string _portHeight = "";
+    /// <summary>Degrees the port is turned about its centre in the XY plane; 0 is upright.</summary>
+    [ObservableProperty] private string _portAngle = "0";
     /// <summary>The axis each field is along on the port's plane: "Centre x", "Width (x)", "z of the plane".</summary>
     [ObservableProperty] private string _portULabel = "x";
     [ObservableProperty] private string _portVLabel = "y";
@@ -80,6 +82,7 @@ public sealed partial class C3dPropertiesViewModel
             (PortULabel, PortVLabel, PortAtLabel) = port.Plane switch { C3dPlane.XZ => ("x", "z", "y"), C3dPlane.YZ => ("y", "z", "x"), _ => ("x", "y", "z") };
             var (cu, cv, at, w, h) = C3dEditorViewModel.PortPlace(port);
             PortCentreU = Spell(cu); PortCentreV = Spell(cv); PortAt = Spell(at); PortWidth = Spell(w); PortHeight = Spell(h);
+            PortAngle = C3dTurnedPorts.Degrees(port.Angle);
         }
         finally { _loading = was; }
     }
@@ -117,6 +120,11 @@ public sealed partial class C3dPropertiesViewModel
                 var now = (L(PortCentreU, was.CentreU), L(PortCentreV, was.CentreV), L(PortAt, was.At), L(PortWidth, was.Width), L(PortHeight, was.Height));
                 if (now != was) why ??= editor.SetPortGeometry(port, port.Plane, now.Item3, now.Item1, now.Item2, now.Item4, now.Item5);
             }
+            if (PortAngle.Trim() != C3dTurnedPorts.Degrees(port.Angle))
+                why ??= double.TryParse(PortAngle.Trim().TrimEnd('°'), System.Globalization.NumberStyles.Float,
+                                        System.Globalization.CultureInfo.InvariantCulture, out double deg)
+                    ? editor.SetPortAngle(port, deg)
+                    : "A port's angle is a number of degrees.";
         }
         Error = why ?? "";
         if (why is not null) { PortName = port.Name; PortNumber = port.Number.ToString(System.Globalization.CultureInfo.InvariantCulture); PortZ0 = port.Z0; ShowPortPlace(port); }

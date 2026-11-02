@@ -311,6 +311,7 @@ public static partial class GmshGeoWriter
                 L($"// ... the face of port {Comment(p.FaceGroupLabel ?? "")}'s terminals " +
                   string.Join(", ", problem.Ports.Where(q => q.FaceGroup == fg).OrderBy(q => q.Number).Select(q => q.Number.ToString(CultureInfo.InvariantCulture))));
             if (p.Annulus is { } ring) EmitAnnulus(g, $"p{k}", p, ring);
+            else if (p.Quad is { } quad) EmitCorners(g, $"p{k}", quad.Corners);
             else EmitRectangle(g, $"p{k}", p.Min, p.Max);
         }
         L();
@@ -351,9 +352,12 @@ public static partial class GmshGeoWriter
             return Flat(p.Min.X, p.Max.X, box.Min.X, box.Max.X) || Flat(p.Min.Y, p.Max.Y, box.Min.Y, box.Max.Y)
                 || Flat(p.Min.Z, p.Max.Z, box.Min.Z, box.Max.Z);
         }
+        // A turned port's query box is wider than its sheet, so it is claimed after every upright port: a neighbour's sheet
+        // inside that box is the neighbour's. With no turned port the order, and the script, are as they were.
+        var claimOrder = portIndex.OrderBy(k => problem.Ports[k].Quad is null ? 0 : 1).ToList();
         void ClaimPorts(Func<Em3dPort, bool> which)
         {
-            foreach (int k in portIndex)
+            foreach (int k in claimOrder)
             {
                 var p = problem.Ports[k];
                 if (!which(p)) continue;
@@ -1207,12 +1211,19 @@ public static partial class GmshGeoWriter
     /// <summary>An axis-aligned rectangle with one zero axis — a port sheet.</summary>
     private static void EmitRectangle(StringBuilder g, string list, Point3 min, Point3 max)
     {
-        void L(string line) => g.Append(line).Append('\n');
         Point3[] corners = max.X == min.X
             ? [new(min.X, min.Y, min.Z), new(min.X, max.Y, min.Z), new(min.X, max.Y, max.Z), new(min.X, min.Y, max.Z)]
             : max.Y == min.Y
             ? [new(min.X, min.Y, min.Z), new(max.X, min.Y, min.Z), new(max.X, min.Y, max.Z), new(min.X, min.Y, max.Z)]
             : [new(min.X, min.Y, min.Z), new(max.X, min.Y, min.Z), new(max.X, max.Y, min.Z), new(min.X, max.Y, min.Z)];
+        EmitCorners(g, list, corners);
+    }
+
+    /// <summary>A flat four-cornered sheet through <paramref name="corners"/> in order: an upright port's rectangle, or a turned
+    /// one's, whose end corners are points of its copper's outline written by the same <see cref="Um"/>.</summary>
+    private static void EmitCorners(StringBuilder g, string list, Point3[] corners)
+    {
+        void L(string line) => g.Append(line).Append('\n');
         L("p = newp;");
         for (int k = 0; k < 4; k++)
             L($"Point(p + {k}) = {{{Um(corners[k].X)}, {Um(corners[k].Y)}, {Um(corners[k].Z)}}};");
@@ -1371,6 +1382,11 @@ public static partial class GmshGeoWriter
 
     private static double SmallerSide(Em3dPort p)
     {
+        if (p.Quad is { } quad)
+        {
+            var (length, width) = quad.Extent(p.Direction);
+            return Math.Min(length, width);
+        }
         double[] d = [p.Max.X - p.Min.X, p.Max.Y - p.Min.Y, p.Max.Z - p.Min.Z];
         return d.Where(v => v > 0).Min();
     }

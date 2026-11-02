@@ -1280,6 +1280,18 @@ two ports are 5 × 5 mil rectangles on the YZ plane at each lead's outer end, fr
 each runs **from `floor` (−) up to its lead (+)**. *Flip* on its menu turns it round; a wrong arrow turns
 every transmission term by 180°, so look before a run.
 
+<a id="turned-port"></a>**A port at an angle.** Between pads that are not square to the axes, such as a part placed at 45°,
+a lumped port lying flat in the XY plane can be turned. Draw a sheet across the gap with its two ends along the two pads'
+facing sides, then *Make Port ▸ Lumped* on it: a sheet that is a rectangle at any angle becomes a port at that angle, or
+set **Angle** in the port's Properties (degrees, counter-clockwise seen from above). **It must be a rectangle**: a lumped
+port applies one even field from end to end and turns voltage and current into impedance with its length and width, so its
+two ends must be straight, parallel and the same distance apart everywhere. A sheet whose width changes along it, whose
+corners are not square, or that has more than four corners is refused, saying which. **Each end must lie along one
+straight side of its copper**, to within two database units, and not at a corner, a curve or past the end of the side.
+Copper read from a layout was rounded to its grid when it was imported, so the solved problem moves that side by at most
+that tolerance onto the port's corners, and the two meet exactly; the layout is not changed. A wave port, a port on the
+XZ or YZ plane and a gap on a cylinder stay upright, and openEMS refuses a turned port: run it on Palace or EMerge.
+
 **Lumped elements.** **Shift+A C** draws a resistor, inductor or capacitor across a gap, two corners exactly
 as a port is drawn; the gap is found the same way. Properties sets **Topology** (parallel or series) and any
 of **R**, **L** and **C**, each with its unit; an empty value is left out. A value can be a variable

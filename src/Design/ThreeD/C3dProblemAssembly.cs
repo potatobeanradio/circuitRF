@@ -494,6 +494,7 @@ public static class C3dProblemAssembly
                 : null;
             var modelled = new List<(C3dPort Port, Em3dPort Resolved)>();
             var off = new List<C3dPort>();
+            var seams = new List<C3dSeam>();
             foreach (var r in C3dPorts.Resolve(portDocument, context))
             {
                 if (sources is not null && !sources.Contains(C3dPorts.ProblemName(r.Port.Number))) continue;
@@ -508,6 +509,16 @@ public static class C3dProblemAssembly
                 if (r.Resolved is null) return No(r.Refusal!, e.Warnings);
                 if (r.Note is { } note) notes.Add(note);                  // brief-em3d-121 D1
                 foreach (var q in r.All) modelled.Add((r.Port, q));      // brief-em3d-114 — a terminal is a port
+                seams.AddRange(r.Seams);
+            }
+            // A turned port's ends become points of its copper's outline, so the sheet and the copper meet exactly
+            // (C3dTurnedPorts): moved by at most the contact tolerance, in the solved problem only.
+            if (seams.Count > 0)
+            {
+                double reach = C3dTurnedPorts.Tolerance(context);
+                if (C3dTurnedPorts.Apply(solids, seams, reach) is { } seamRefusal) return No(seamRefusal, e.Warnings);
+                notes.Add($"{seams.Count / 2} turned port(s): the copper at each end takes the port's corners, moving its side by at most " +
+                          $"{reach * 1e9:0.###} nm, so the sheet meets it exactly.");
             }
             if (setup.Problem3D == Em3dProblemType.Driven && portDocument.Ports.Count > 0 && modelled.Count == 0)
                 return No(C3dModelled.AllPortsOff, e.Warnings);

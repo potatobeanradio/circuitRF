@@ -214,6 +214,40 @@ public sealed class EditorRound5TreeTests : IDisposable
         Assert.Empty(vm.Document.Ports);
     }
 
+    /// <summary>A drawn polygon sheet that is a rectangle at 30°, its corners on the grid, across the gap between two pads turned
+    /// alike: Make Port ▸ Lumped makes a port turned 30° that resolves between the pads. A sheet whose width changes along it is
+    /// refused, saying so.</summary>
+    [Fact]
+    public void MakingATurnedSheetALumpedPort_TurnsThePort_AndATaperIsRefused()
+    {
+        double c = Math.Cos(Math.PI / 6), s = Math.Sin(Math.PI / 6);
+        List<C3dPoint2> Turned(double cx, double cy, params (double A, double B)[] q)
+            => [.. q.Select(p => new C3dPoint2((long)Math.Round((cx + p.A * c - p.B * s) * Um), (long)Math.Round((cy + p.A * s + p.B * c) * Um)))];
+        (double, double)[] Box(double a, double b) => [(-a, -b), (a, -b), (a, b), (-a, b)];
+        C3dPrism Pad(string name, double along) => new()
+        {
+            Name = name, Material = "Copper", Plane = C3dPlane.XY, Offset = 0, Height = 35 * Um,
+            Outline = Turned(1500 + along * c, 1500 + along * s, Box(400, 500)),
+        };
+        C3dSheet Sheet(string name, double cy, params (double, double)[] q)
+            => new() { Name = name, Material = "Copper", Plane = C3dPlane.XY, Offset = 17500, Outline = Turned(1500, cy, q) };
+        var vm = Open(new C3dDocument { Objects = [Pad("padA", -600), Pad("padB", 600), Sheet("gap", 1500, Box(200, 400)),
+                                                   Sheet("taper", 4500, (-200, -400), (200, -300), (200, 300), (-200, 400))] }, out string path);
+
+        Assert.Null(vm.MakePortFromFace(vm.Viewer.Scene.Objects.Single(o => o.Name == "gap").Id, 0, CircuitRF.Engine.Em3d.Em3dPortKind.Lumped));
+        var port = Assert.Single(vm.Document.Ports);
+        Assert.Equal(30, port.Angle, 4);
+        Assert.InRange(port.Rect.Size.U, 400 * Um - 2, 400 * Um + 2);
+        Assert.InRange(port.Rect.Size.V, 800 * Um - 2, 800 * Um + 2);
+        string cws = Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(path)!)!)!, ".cws");
+        var e = new C3dElaborator().Elaborate(vm.Document, path, cws);
+        var resolved = C3dPorts.Resolve(port, vm.Document.DbuPerMicron, C3dProblemAssembly.PortContext(null, vm.Document, e, null));
+        Assert.True(resolved.Resolved is not null, resolved.Refusal);
+
+        string? taper = vm.MakePortFromFace(vm.Viewer.Scene.Objects.Single(o => o.Name == "taper").Id, 0, CircuitRF.Engine.Em3d.Em3dPortKind.Lumped);
+        Assert.Contains("width runs from", taper);
+    }
+
     // ── fixtures ────────────────────────────────────────────────────────────────────────────
 
     private static C3dTreeItem Row(C3dEditorViewModel vm, string name) => vm.Tree.SelectMany(g => g.Items).Single(i => i.Name == name);

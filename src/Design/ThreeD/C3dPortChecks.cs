@@ -71,7 +71,7 @@ public static class C3dPortChecks
             yield break;
         }
 
-        var (uDir, vDir) = C3dPorts.PlaneAxes(port.Plane);
+        var (uDir, vDir) = C3dTurnedPorts.Axes(port);
         int pair = Math.Abs(Geometry3.Dot(p.Direction, uDir)) >= 0.5 ? 0 : 1;
         double M(long v) => C3dLowering.Metres(v, doc.DbuPerMicron);
         double du = M(port.Rect.Size.U), dv = M(port.Rect.Size.V);
@@ -120,12 +120,12 @@ public static class C3dPortChecks
         var bare = new C3dPort
         {
             Number = port.Number, Name = port.Name, Kind = port.Kind, Plane = port.Plane, Offset = port.Offset, Rect = port.Rect,
-            Cylinder = port.Cylinder, Z0 = port.Z0, Model = port.Model,
+            Angle = port.Angle, Cylinder = port.Cylinder, Z0 = port.Z0, Model = port.Model,
         };
         if (C3dPorts.Resolve(bare, dbuPerMicron, ctx).Resolved is not { } inferred) return null;
         int inferredPair = cylinder
             ? inferred.Cylinder!.Along == Em3dCylinderGapAxis.Axial ? 1 : 0
-            : Math.Abs(Geometry3.Dot(inferred.Direction, C3dPorts.PlaneAxes(port.Plane).U)) >= 0.5 ? 0 : 1;
+            : Math.Abs(Geometry3.Dot(inferred.Direction, C3dTurnedPorts.Axes(port).U)) >= 0.5 ? 0 : 1;
         string Way(int pair, Em3dPort q) => cylinder ? (pair == 1 ? "along its cylinder's axis" : "round its cylinder") : "along " + Along(q.Direction)[1..];
         string label = r.Label;
         if (inferredPair != statedPair)
@@ -153,8 +153,10 @@ public static class C3dPortChecks
         double M(long v) => C3dLowering.Metres(v, dbuPerMicron);
         double u0 = M(port.Rect.Min.U), v0 = M(port.Rect.Min.V), u1 = u0 + M(port.Rect.Size.U), v1 = v0 + M(port.Rect.Size.V);
         double h = M(port.Offset), um = (u0 + u1) / 2, vm = (v0 + v1) / 2;
-        Point3[] mids = [C3dLowering.OnPlane(port.Plane, u0, vm, h), C3dLowering.OnPlane(port.Plane, u1, vm, h),
-                         C3dLowering.OnPlane(port.Plane, um, v0, h), C3dLowering.OnPlane(port.Plane, um, v1, h)];
+        Func<double, double, Point3> P = port.Angle != 0 && port.Plane == C3dPlane.XY
+            ? C3dTurnedPorts.Map(port.Angle, u0, v0, u1, v1, h).P
+            : (a, b) => C3dLowering.OnPlane(port.Plane, a, b, h);
+        Point3[] mids = [P(u0, vm), P(u1, vm), P(um, v0), P(um, v1)];
         var nearest = mids.Select(m => TwoNearest(ctx, m)).ToArray();
         var best = new (double Score, Near Low, Near High)[2];
         for (int k = 0; k < 2; k++)
@@ -227,7 +229,12 @@ public static class C3dPortChecks
     private static string Along(Point3 d)
     {
         double ax = Math.Abs(d.X), ay = Math.Abs(d.Y), az = Math.Abs(d.Z);
-        return ax >= ay && ax >= az ? (d.X >= 0 ? "+x" : "-x") : ay >= az ? (d.Y >= 0 ? "+y" : "-y") : (d.Z >= 0 ? "+z" : "-z");
+        string axis = ax >= ay && ax >= az ? (d.X >= 0 ? "+x" : "-x") : ay >= az ? (d.Y >= 0 ? "+y" : "-y") : (d.Z >= 0 ? "+z" : "-z");
+        // A turned port's direction is named by its nearest axis and its angle in the XY plane.
+        double n = Math.Sqrt(ax * ax + ay * ay + az * az);
+        if (n > 0 && az <= 1e-9 * n && Math.Min(ax, ay) > 1e-6 * n)
+            axis += $" (at {(Math.Atan2(d.Y, d.X) * 180 / Math.PI).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)}° in XY)";
+        return axis;
     }
 
     /// <summary>The findings as sentences, for <c>explain</c>'s walk.</summary>

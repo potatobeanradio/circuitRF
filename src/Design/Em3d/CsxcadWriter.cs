@@ -196,6 +196,9 @@ public static partial class CsxcadWriter
                     : $"Port {p.Number}'s reference impedance is {Ohms(p.Z0)}. An openEMS lumped port is " +
                       "terminated in a resistance, which must be positive: set the port's Z0 to a value with a " +
                       "positive real part.");
+            if (p.Quad is not null)
+                return No($"Port {p.Number} is turned in its plane. openEMS's grid and its lumped port run along x, y and z, so a " +
+                          "turned port cannot be written for it. Run the setup on Palace or EMerge, or set the port's Angle to 0.");
             if (p.Kind == Em3dPortKind.Lumped && p.Cylinder is null && ExcitationAxis(p) is null)
                 return No($"Port {p.Number}'s direction is not along an axis in the port's own sheet, so openEMS's " +
                           "lumped port cannot state it.");

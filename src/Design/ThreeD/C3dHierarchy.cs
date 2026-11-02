@@ -1034,7 +1034,8 @@ public static class C3dHierarchy
         {
             if (MatchOf(port, translated, claimed) is not { } now) continue;
             claimed.Add(now);
-            if (SamePlace(port, now.Port)) continue;
+            // A turned port was turned here, on purpose: it stands for its label and is left as it is.
+            if (port.Angle != 0 || SamePlace(port, now.Port)) continue;
             stale.Add(new C3dStalePort(port.Number, Width(port), Width(now.Port), now));
         }
         return stale;
@@ -1056,7 +1057,7 @@ public static class C3dHierarchy
             if (MatchOf(record, translated, claimed) is not { } now) continue;
             claimed.Add(now);
             record.FromLayout ??= new C3dPortSource { Instance = now.Instance, Port = now.LayoutNumber };
-            if (SamePlace(record, now.Port) && record.Kind == now.Port.Kind) continue;
+            if (record.Angle != 0 || (SamePlace(record, now.Port) && record.Kind == now.Port.Kind)) continue;
             record.Plane = now.Port.Plane; record.Offset = now.Port.Offset; record.Kind = now.Port.Kind;
             record.Rect = new C3dRect { Min = now.Port.Rect.Min, Size = now.Port.Rect.Size };
             updated.Add(record.Number);

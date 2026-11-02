@@ -931,6 +931,8 @@ public sealed partial class C3dEditorViewModel
     {
         if (port.Cylinder is not null) return $"{C3dPorts.Label(port)} is a patch of a cylinder; its place is its cylinder's.";
         if (width <= 0 || height <= 0) return "A port's width and height are lengths greater than zero.";
+        if (port.Angle != 0 && plane != C3dPlane.XY)
+            return $"{C3dPorts.Label(port)} is turned {C3dTurnedPorts.Degrees(port.Angle)}°, and a port is turned only in the XY plane. Set its Angle to 0 first.";
         var was = PortPlace(port);
         bool samePlane = plane == port.Plane;
         long minU = samePlane && width == was.Width && centreU == was.CentreU ? port.Rect.Min.U : centreU - width / 2;
@@ -941,6 +943,29 @@ public sealed partial class C3dEditorViewModel
             port.Offset = at;
             port.Rect = new C3dRect { Min = new C3dPoint2(minU, minV), Size = new C3dPoint2(width, height) };
         });
+        return null;
+    }
+
+    /// <summary>
+    /// Turns a drawn port by <paramref name="degrees"/> about its centre in the XY plane, counter-clockwise seen from +z (0 makes it
+    /// upright). Only a lumped port in the XY plane turns. One undo entry; null on success, else why not.
+    /// </summary>
+    public string? SetPortAngle(C3dPort port, double degrees)
+    {
+        if (!double.IsFinite(degrees)) return "A port's angle is a number of degrees.";
+        degrees %= 360;
+        if (degrees > 180) degrees -= 360;
+        else if (degrees <= -180) degrees += 360;
+        if (degrees == port.Angle) return null;
+        if (degrees != 0)
+        {
+            string label = C3dPorts.Label(port);
+            if (port.Kind == Em3dPortKind.Wave) return $"{label} is a wave port: a rectangle of an air-box face, square to its edges, never turned.";
+            if (port.Cylinder is not null) return $"{label} is a patch of a cylinder, which is not turned.";
+            if (port.Plane != C3dPlane.XY) return $"{label} lies in the {port.Plane} plane; a port is turned only in the XY plane.";
+        }
+        ChangeRecords(degrees == 0 ? $"Make {C3dPorts.Label(port)} upright" : $"Turn {C3dPorts.Label(port)} to {C3dTurnedPorts.Degrees(degrees)}°",
+                      _ => port.Angle = degrees);
         return null;
     }
 
@@ -1056,18 +1081,31 @@ public sealed partial class C3dEditorViewModel
         long u0 = D(pts.Min(q => Get(q, ua))), u1 = D(pts.Max(q => Get(q, ua)));
         long v0 = D(pts.Min(q => Get(q, va))), v1 = D(pts.Max(q => Get(q, va)));
         double rectArea = (u1 - u0) * per * ((v1 - v0) * per);
+        double turnedAngle = 0;
         if (u1 <= u0 || v1 <= v0 || Math.Abs(rectArea - area) > 1e-6 * rectArea)
         {
+            if (kind == Em3dPortKind.Lumped)
+            {
+                // A lumped port may be turned in the XY plane: a face that is a rectangle at an angle is one, anything else is
+                // refused saying what it is instead.
+                if (axis != 2)
+                    return $"Face {o.FaceName(face)} is not a rectangle square to its plane's axes, and a port is turned only in the XY plane.";
+                if (TurnedRect(o, face, pts, area) is not var (rect, angle, notRect)) return "That face's corners are not known.";
+                if (notRect is not null) return $"Face {o.FaceName(face)} {notRect}";
+                (u0, v0, u1, v1) = (rect.Min.U, rect.Min.V, rect.Min.U + rect.Size.U, rect.Min.V + rect.Size.V);
+                turnedAngle = angle;
+            }
             // brief-em3d-121 — a wave port's rectangle is a region of the box's face, not the face itself: a flat face of any
             // other shape (a coax's dielectric end, a disc) gives its bounding rectangle
-            if (kind != Em3dPortKind.Wave || WaveRegion(o, face, axis, ua, va, D) is not var (wu0, wv0, wu1, wv1) || wu1 <= wu0 || wv1 <= wv0)
+            else if (WaveRegion(o, face, axis, ua, va, D) is not var (wu0, wv0, wu1, wv1) || wu1 <= wu0 || wv1 <= wv0)
                 return $"Face {o.FaceName(face)} is not a rectangle: a port takes a rectangular face.";
-            (u0, v0, u1, v1) = (wu0, wv0, wu1, wv1);
+            else (u0, v0, u1, v1) = (wu0, wv0, wu1, wv1);
         }
         port = NewPortTemplate(kind);
         port.Plane = plane;
         port.Offset = D(Get(pts[0], axis));
         port.Rect = new C3dRect { Min = new C3dPoint2(u0, v0), Size = new C3dPoint2(u1 - u0, v1 - v0) };
+        port.Angle = turnedAngle;
         // brief-em3d-114 R-em3d114-3a — a box face met by three or more conductors: one terminal per conductor besides the
         // reference, numbered with the next free numbers in a stable order and named P<n>; the reference is written.
         if (C3dPorts.TerminalsFor(port, Document.DbuPerMicron, PortContextFor(o), out string? tie) is var (reference, why, conductors))
@@ -1083,6 +1121,37 @@ public sealed partial class C3dEditorViewModel
         }
         else if (tie is not null) return tie;
         return null;
+    }
+
+    /// <summary>
+    /// A flat face in the XY plane as a turned port's rectangle and angle (<see cref="C3dTurnedPorts.Fit"/>), or why it is not one.
+    /// A drawn sheet is read from the elaboration, exactly: the scene's vertices are single precision, a nanometre off on a board.
+    /// Any other face is read from its corners as the scene holds them. Null when the face's corners are not known.
+    /// </summary>
+    private (C3dRect Rect, double Angle, string? Refusal)? TurnedRect(Scene3DObject o, int face, IReadOnlyList<Point3> corners, double area)
+    {
+        double dbu = C3dLowering.Metres(1, Document.DbuPerMicron);
+        List<Point2> ring;
+        if (Elaboration?.Sheets.FirstOrDefault(s => s.Name == o.Name) is { } sheet)
+        {
+            if (sheet.Holes.Count > 0) return (new C3dRect(), 0, "has a hole, and a port is a rectangle.");
+            ring = [.. sheet.Outline.Select(sheet.World).Select(q => new Point2(q.X, q.Y))];
+        }
+        else
+        {
+            if (corners.Count < 3) return null;
+            // In order round the face's centre: a face's points as its feature table lists them need not be.
+            double cx = corners.Average(q => q.X), cy = corners.Average(q => q.Y);
+            ring = [.. corners.OrderBy(q => Math.Atan2(q.Y - cy, q.X - cx)).Select(q => new Point2(q.X, q.Y))];
+        }
+        // Two DBU: a rectangle drawn at an angle has its corners rounded to the grid, each up to seven tenths of a DBU off.
+        if (C3dTurnedPorts.Fit(ring, Document.DbuPerMicron, 2 * dbu, out string? why) is not { } fit) return (new C3dRect(), 0, why);
+        // The fitted rectangle must BE the face, not a rectangle through some of its corners.
+        double fitted = fit.Rect.Size.U * dbu * (fit.Rect.Size.V * dbu);
+        double perimeter = 2 * (fit.Rect.Size.U + fit.Rect.Size.V) * dbu;
+        if (Math.Abs(fitted - area) > perimeter * dbu + 1e-6 * fitted)
+            return (new C3dRect(), 0, "is not a rectangle: its corners are a rectangle's, and its area is not.");
+        return (fit.Rect, fit.Angle, null);
     }
 
     /// <summary>

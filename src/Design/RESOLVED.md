@@ -26102,3 +26102,29 @@ Elaborator strips one pair of outer quotes before resolving the path, and `SnpPa
 mirroring it, did not. So every editor-side check (Preview, Show, the port-count read) looked for a file whose name began
 with a quote. `Resolve` now strips the pair itself. The callers that already stripped (`ComposedFetSymbolProvider`'s
 `Unquote`) are unaffected. Gate: `SnpPathPolicyTests.AQuotedFile_ResolvesToThePathInsideTheQuotes`.
+
+## Turned lumped ports: what made a port at an angle exact (2026-11-02)
+
+A lumped port in the XY plane may carry an `Angle` (`C3dTurnedPorts`). Four constraints shaped it, none visible from the
+port code alone:
+
+- **Palace measures a lumped port's sheet to one part in a million.** It fits a box to the port surface's extreme
+  corners and aborts when the length along the stated direction differs from the surface's projected length by more than
+  1e-6 of it. On a 400 µm gap that is 0.4 nm, so a sheet rounded to a 1 nm grid at an angle fails about half the time. The
+  sheet is therefore carried as four exact corners (`Em3dPort.Quad`), computed from the rectangle and its angle in
+  double precision, never rounded.
+- **The mesher joins surfaces only where they coincide, to 0.1 pm (OCC's tolerance in micrometres).** Copper read from a
+  layout has its corners rounded to the grid, so no turned port's end lies exactly on its side. A port end a nanometre
+  short leaves a sliver of air; one a nanometre inside leaves a piece of sheet that bounds nothing. So each end must lie
+  along one straight side of its copper, and the solved problem's outline takes the end's two corners in place of the
+  stretch of side between them (`C3dTurnedPorts.Seam`): the same doubles, written by the same formatter, on both.
+- **One DBU of contact tolerance is not enough at an angle.** The port's rectangle is rounded to the grid (up to 0.75 DBU)
+  and so are the copper's corners (up to 0.7 DBU): a port drawn exactly on its copper can sit 1.5 DBU off it. Turned ports
+  use two DBU (`C3dTurnedPorts.Tolerance`), and their edge ends are pulled in twice that, or a side edge counts as touching
+  the copper its end meets.
+- **The 3D scene's vertices are single precision**, about 0.6 nm off at board scale. Make Port reads a drawn sheet's
+  outline from the elaboration instead, exactly.
+
+Measured: the same 1-port gap board turned 30° and upright gave |ΔS11| = 1.6e-4 at 3 GHz on Palace. openEMS refuses a
+turned port: its grid runs along the axes. Gate: `tests/Ui.Tests/ThreeD/TurnedPortTests.cs` and
+`EditorRound5TreeTests.MakingATurnedSheetALumpedPort_TurnsThePort_AndATaperIsRefused`.

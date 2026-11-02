@@ -925,6 +925,15 @@ internal static class DocumentSchema
             U1/pad allowed, or airbox/zmin) state both ends and override inference entirely; one
             without the other is refused. A refusal names what each edge touched. `check` reports
             every port's polarity and `explain` walks each edge's contacts.
+          * A LUMPED port in the XY plane may be TURNED: "Angle" is degrees about its Rect's centre,
+            counter-clockwise seen from +z, and Rect is the rectangle before it is turned (omitted,
+            0, it is upright). Its ends are inferred from its turned edges as above, and each must
+            lie along ONE straight side of copper drawn as an outline (a layout's copper, an
+            extruded polygon) to within the contact tolerance; a corner, a curve or an end that
+            runs past its side is refused. The solved problem's outline of that copper takes the
+            end's two corners, so the sheet meets it exactly (the copper moves by at most the
+            tolerance; the layout is not changed). A wave port, a port in XZ or YZ and a gap on a
+            cylinder are never turned; openEMS refuses a turned port.
           * A WAVE port's rectangle is a region of an air-box face of the setup being run — the box
             is each setup's own, so this is checked per setup. Its two conductors are the ones that
             meet the region, and its voltage path runs across the gap between them at the positive

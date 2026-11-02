@@ -138,6 +138,16 @@ public static class ThermalCurrents
         double at = high ? hi[along] : lo[along];
         Point3 P(double a) { var v = new double[3]; v[along] = at; v[normal] = lo[normal]; v[across] = a; return new Point3(v[0], v[1], v[2]); }
         var probe = new[] { P(lo[across] + tol), P((lo[across] + hi[across]) / 2), P(hi[across] - tol) };
+        if (port.Quad is { } quad)
+        {
+            // A turned port: its end on this side, from corner to corner.
+            var (negEnd, posEnd) = quad.Ends(port.Direction);
+            var (e0, e1) = positive ? posEnd : negEnd;
+            double len = Math.Sqrt((e1.X - e0.X) * (e1.X - e0.X) + (e1.Y - e0.Y) * (e1.Y - e0.Y) + (e1.Z - e0.Z) * (e1.Z - e0.Z));
+            double f = len > 2 * tol ? tol / len : 0.5;
+            Point3 Q(double t) => new(e0.X + t * (e1.X - e0.X), e0.Y + t * (e1.Y - e0.Y), e0.Z + t * (e1.Z - e0.Z));
+            probe = [Q(f), Q(0.5), Q(1 - f)];
+        }
         var prim = solids[si].Primitive;
         string? best = null;
         double bestArea = double.PositiveInfinity;

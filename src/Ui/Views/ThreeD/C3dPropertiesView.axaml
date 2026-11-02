@@ -323,6 +323,10 @@
                         <TextBlock Grid.Row="8" Grid.Column="0" Text="{Binding PortAtLabel, StringFormat='Plane at {0}'}" FontSize="11" Opacity="0.7"/>
                         <TextBox Grid.Row="10" Grid.Column="0" Text="{Binding PortAt}" KeyDown="OnPortKey" LostFocus="OnPortLostFocus"/>
                         <TextBlock Grid.Row="10" Grid.Column="2" Text="{Binding LengthUnit}" FontSize="11" VerticalAlignment="Center"/>
+                        <TextBlock Grid.Row="8" Grid.Column="4" Text="Angle" FontSize="11" Opacity="0.7"/>
+                        <TextBox Grid.Row="10" Grid.Column="4" Text="{Binding PortAngle}" KeyDown="OnPortKey" LostFocus="OnPortLostFocus"
+                                 ToolTip.Tip="Degrees the port is turned about its centre, counter-clockwise seen from +z. A lumped port in the XY plane turns; each end must lie along a straight side of its copper."/>
+                        <TextBlock Grid.Row="10" Grid.Column="6" Text="°" FontSize="11" VerticalAlignment="Center"/>
                     </Grid>
                 </StackPanel>
             </StackPanel>

@@ -990,6 +990,15 @@ public sealed class C3dPort
     public C3dRect  Rect   { get; set; } = new();
 
     /// <summary>
+    /// A lumped port in the XY plane turned by this many degrees about its <see cref="Rect"/>'s centre, counter-clockwise seen
+    /// from +z: <see cref="Rect"/> is the rectangle before it is turned. Its two ends are inferred from what its turned edges
+    /// touch, as an upright port's are. Written only when not 0; a wave port, a port in another plane and a port on a cylinder
+    /// are never turned.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public double Angle { get; set; }
+
+    /// <summary>
     /// brief-sar-8b R-sar8b-1 — a lumped port whose gap is a patch of a cylinder instead of <see cref="Rect"/> on <see cref="Plane"/>
     /// (which are then not read): its two ends are inferred from what its arcs and its axial edges touch, as a planar port's are from
     /// its four edges. Written only when set; only openEMS's cylindrical grid about the same axis writes it.
