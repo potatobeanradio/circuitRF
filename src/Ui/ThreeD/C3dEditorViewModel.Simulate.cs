@@ -774,11 +774,13 @@ public sealed partial class C3dEditorViewModel
     /// <summary>Adds a port: one undo entry; the status line says what it joins, or why it cannot be built.
     /// <paramref name="referenceWhy"/> is why Make Port chose the reference it wrote (brief-em3d-121), which the resolver
     /// would otherwise call stated.</summary>
-    public void AddPort(C3dPort port, string? referenceWhy = null)
+    /// <param name="context">What the status line judges the new port against; the scene's when null. A port that replaced a
+    /// sheet passes the scene's without it — the elaboration still shows the sheet until the scene is rebuilt.</param>
+    public void AddPort(C3dPort port, string? referenceWhy = null, C3dPortContext? context = null)
     {
         ChangeRecords($"Add port {port.Name}", d => d.Ports.Add(port));
         ToolCommits++;
-        var r = C3dPorts.Resolve(port, Document.DbuPerMicron, CurrentPortContext());
+        var r = C3dPorts.Resolve(port, Document.DbuPerMicron, context ?? CurrentPortContext());
         StatusMessage = r.Refusal ?? (r.Terminals is { } ts
             ? $"Made {C3dPorts.Label(port)}, a wave port with {ts.Count} terminals ({string.Join(", ", ts.Select(t => $"{t.SourceLabel} on '{t.PositiveObject}'"))}); " +
               $"'{r.Resolved!.NegativeObject}' is the reference: {referenceWhy ?? r.Reason}."
@@ -982,9 +984,36 @@ public sealed partial class C3dEditorViewModel
     public string? MakePortFromFace(uint objectId, int face, Em3dPortKind kind)
     {
         if (PortFromFace(objectId, face, kind, out var port, out string? referenceWhy) is { } why) return why;
+        // A port made from a drawn sheet's surface REPLACES the sheet: the sheet and its material go, the port takes its place,
+        // and the two are one undo entry. A face of a solid stays: the port is drawn on it.
+        if (Viewer.Scene.Object(objectId) is { } o && SheetReplacedBy(o) is var sheet and >= 0)
+        {
+            string name = Document.Objects[sheet].Name;
+            BeginGroup($"Make {name} a port");
+            try
+            {
+                DeleteObjects([sheet]);
+                AddPort(port!, referenceWhy, CurrentPortContext().Without(name));
+            }
+            finally { EndGroup(); }
+            return null;
+        }
         AddPort(port!, referenceWhy);
         return null;
     }
+
+    /// <summary>The document index of the drawn sheet a port made from <paramref name="o"/>'s surface replaces, or −1 when
+    /// <paramref name="o"/> is not a top-level document sheet (a solid's face, an instance's part).</summary>
+    private int SheetReplacedBy(Scene3DObject o)
+    {
+        int i = DocumentIndex(o);
+        return i >= 0 && i < Document.Objects.Count && Document.Objects[i] is C3dSheet s && s.Name == o.Name ? i : -1;
+    }
+
+    /// <summary>The port context a port made from <paramref name="o"/>'s face is judged in: without <paramref name="o"/> when
+    /// the port replaces it (a sheet), else the scene's.</summary>
+    private C3dPortContext PortContextFor(Scene3DObject o)
+        => SheetReplacedBy(o) >= 0 ? CurrentPortContext().Without(o.Name) : CurrentPortContext();
 
     /// <summary>The port Make Port would add on a face, not added — or why the face cannot take one.</summary>
     private string? PortFromFace(uint objectId, int face, Em3dPortKind kind, out C3dPort? port, out string? referenceWhy)
@@ -1022,7 +1051,7 @@ public sealed partial class C3dEditorViewModel
         port.Rect = new C3dRect { Min = new C3dPoint2(u0, v0), Size = new C3dPoint2(u1 - u0, v1 - v0) };
         // brief-em3d-114 R-em3d114-3a — a box face met by three or more conductors: one terminal per conductor besides the
         // reference, numbered with the next free numbers in a stable order and named P<n>; the reference is written.
-        if (C3dPorts.TerminalsFor(port, Document.DbuPerMicron, CurrentPortContext(), out string? tie) is var (reference, why, conductors))
+        if (C3dPorts.TerminalsFor(port, Document.DbuPerMicron, PortContextFor(o), out string? tie) is var (reference, why, conductors))
         {
             referenceWhy = why;
             var numbers = NextPortNumbers(conductors.Count);
@@ -1095,11 +1124,14 @@ public sealed partial class C3dEditorViewModel
     {
         string word = kind == Em3dPortKind.Wave ? "Wave" : "Lumped";
         string? why = PortFromFace(item.Object, item.Face, kind, out var port, out _)
-                      ?? C3dPorts.Resolve(port!, Document.DbuPerMicron, CurrentPortContext()).Refusal;
+                      ?? C3dPorts.Resolve(port!, Document.DbuPerMicron,
+                                          Viewer.Scene.Object(item.Object) is { } o ? PortContextFor(o) : CurrentPortContext()).Refusal;
         string tip = kind == Em3dPortKind.Wave
             ? "A wave port lies on a face of the active setup's air box — the end of a line that reaches the box. A face met by " +
               "more than two conductors makes one terminal per conductor besides the reference, each its own port of the result."
             : "A lumped port bridges two conductors, one on each of two opposite edges of the face.";
+        if (Viewer.Scene.Object(item.Object) is { } replaced && SheetReplacedBy(replaced) >= 0)
+            tip += $" The port replaces '{replaced.Name}': the sheet and its material go.";
         return new Viewer3DMenuItem(word, () => Report(MakePortFromFace(item.Object, item.Face, kind)), Enabled: why is null,
                                     Tip: why ?? tip);
     }
@@ -1299,6 +1331,15 @@ public sealed partial class C3dEditorViewModel
                 foreach (var m in PortValueItems(ports[0])) yield return m;
             yield return new Viewer3DMenuItem(ports.Count == 1 ? $"Delete {C3dPorts.Label(ports[0])}" : "Delete Ports", () => DeletePorts(ports));
             yield return Viewer3DMenuItem.Separator;
+        }
+        // A drawn sheet selected in Object mode: its one face is the port, as in Face mode.
+        if (Viewer.SelectMode == Scene3DSelectMode.Object && sel.Count == 1 && SelectedPorts().Count == 0 &&
+            Viewer.Scene.Object(sel[0].Object) is { } sheetObj && SheetReplacedBy(sheetObj) >= 0)
+        {
+            var surface = sel[0] with { Face = 0 };
+            yield return new Viewer3DMenuItem("Make Port", Children: [MakePortItem(surface, Em3dPortKind.Lumped), MakePortItem(surface, Em3dPortKind.Wave)]);
+            yield return Viewer3DMenuItem.Separator;
+            yield break;
         }
         if (Viewer.SelectMode != Scene3DSelectMode.Face || sel.Count != 1 || sel[0].Face < 0) yield break;
         var item = sel[0];

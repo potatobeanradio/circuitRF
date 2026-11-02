@@ -617,7 +617,6 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
     /// <summary>The Face-mode and Vertex-mode context-menu operations, and Object mode's Convert to Polyhedron.</summary>
     private IEnumerable<Viewer3DMenuItem> FaceMenuItems()
     {
-        const string Ports = "Comes with simulating from the document (brief 49).";
         if (FaceSelection() is { } kf && ResultEditRefusal(kf.Obj) is { } d13)
         {
             // brief-em3d-66 D13 — every edit of a result's face disabled, with what to edit instead; what reads it stays.
@@ -644,8 +643,6 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
                                               Tip: sphWhy ?? "Then click the face to align with: T toggles Touching and Flush.");
             yield return new Viewer3DMenuItem("Copy as Sheet", CopyFaceAsSheet, Enabled: copyWhy is null, Tip: copyWhy);
             yield return new Viewer3DMenuItem("Measure", MeasureFace, Tip: "Area, perimeter and normal in Properties; Shift-click a parallel face for the distance.");
-            yield return new Viewer3DMenuItem("Make Port…", Enabled: false, Tip: Ports);
-            yield return new Viewer3DMenuItem("Boundary", Enabled: false, Tip: Ports);
         }
         else if (SelectedKernelVertex() is { } vd13)
         {

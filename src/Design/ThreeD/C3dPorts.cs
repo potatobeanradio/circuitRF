@@ -153,6 +153,22 @@ public sealed class C3dPortContext
         Centre = new Point3((e.X0 + e.X1) / 2, (e.Y0 + e.Y1) / 2, (e.Z0 + e.Z1) / 2);
     }
 
+    private C3dPortContext(C3dPortContext from, string omit)
+    {
+        Box = from.Box;
+        NotModelled = from.NotModelled;
+        DbuPerMicron = from.DbuPerMicron;
+        Dbu = from.Dbu;
+        OutlineMoveM = from.OutlineMoveM;
+        Ground = new HashSet<string>(from.Ground.Where(g => g != omit), StringComparer.Ordinal);
+        Conductors.AddRange(from.Conductors.Where(c => c.Name != omit));
+        Centre = from.Centre;
+    }
+
+    /// <summary>This context with the conductor named <paramref name="conductor"/> left out — a port made from a sheet's surface
+    /// REPLACES that sheet, so the sheet is not one of the conductors the port's edges meet.</summary>
+    public C3dPortContext Without(string conductor) => new(this, conductor);
+
     /// <summary>The distance from segment ab to conductor <paramref name="c"/>, metres.</summary>
     /// <param name="bounded">True (contact queries): anything further than 2 DBU outside the conductor's box is
     /// infinitely far, which keeps inference cheap. False: the true distance however far — what choosing a stated

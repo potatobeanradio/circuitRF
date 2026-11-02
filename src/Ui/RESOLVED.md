@@ -41687,3 +41687,16 @@ a horizontal carrying a net label. Two separate wires meeting end to end.
   saves and undoes as the rows' own ticks do.
 - Tests: `ProjectTreeSelectionTests` (3), `DocumentTabContextMenuTests` (1), `EditorRound5TreeTests` (1).
   UiSnapshot gained `--project-tree [--reveal] [--filter-open] [--filter-all-off]` and `--untick <row>`.
+
+## A drawn sheet made a port, and a stale Make Port… in Face mode (2026-11-01)
+
+- **Make Port ▸ Lumped was always disabled on a drawn sheet**, because the port it would make lies exactly on the sheet, and
+  the port check counted the sheet as one of the conductors the port's edge touches ("touches both '<metal>' and
+  'sheet1'"). A port made from a document sheet's surface now REPLACES the sheet: it is judged against
+  `C3dPortContext.Without(sheet)` and making it deletes the sheet and adds the port as ONE undo entry
+  (`MakePortFromFace`, `SheetReplacedBy`). A face of a solid is unchanged — the port is drawn on it.
+- **The port takes the sheet's rectangle exactly; no geometry is ever moved to make a port fit.** A sheet whose edge
+  does not reach a conductor stays refused, and the item's tooltip names the edge (owner decision).
+- A sheet selected in Object mode offers the same Make Port; Face mode's always-disabled "Make Port…" / "Boundary"
+  (a placeholder from before ports existed) are gone — the live items beside them already covered both.
+- Test: `EditorRound5TreeTests.MakingASheetALumpedPort_ReplacesTheSheet_WithItsOwnRectangle_AsOneUndoEntry`.

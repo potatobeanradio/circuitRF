@@ -180,6 +180,40 @@ public sealed class EditorRound5TreeTests : IDisposable
         Assert.Equal(entries + 2, vm.UndoEntries);
     }
 
+    /// <summary>A drawn sheet made a lumped port: the sheet itself is not one of the conductors the port meets (it was refused as
+    /// touching itself), the port takes the sheet's rectangle exactly and the sheet and its material go — one undo entry, and
+    /// undo brings the sheet back. A sheet selected in Object mode offers the same Make Port.</summary>
+    [Fact]
+    public void MakingASheetALumpedPort_ReplacesTheSheet_WithItsOwnRectangle_AsOneUndoEntry()
+    {
+        C3dBox Slab(string name, long z) => new() { Name = name, Material = "Copper", Min = new C3dPoint3(0, 0, z * Um), Size = new C3dPoint3(200 * Um, 200 * Um, 100 * Um) };
+        var gap = new C3dSheet
+        {
+            Name = "gap", Material = "Copper", Plane = C3dPlane.XZ, Offset = 100 * Um,
+            Rect = new C3dRect { Min = new C3dPoint2(50 * Um, 100 * Um), Size = new C3dPoint2(100 * Um, 100 * Um) },
+        };
+        var vm = Open(new C3dDocument { Objects = [Slab("low", 0), Slab("high", 200), gap] }, out _);
+        var sheet = vm.Viewer.Scene.Objects.Single(o => o.Name == "gap");
+
+        vm.Viewer.SelectMode = CircuitRF.Render.Scene3D.Edit.Scene3DSelectMode.Object;
+        vm.Viewer.SetSelection([new CircuitRF.Render.Scene3D.Edit.Scene3DItem(sheet.Id, -1, default)]);
+        var lumped = vm.DrawMenuItems().Single(i => i.Header == "Make Port").Children!.Single(i => i.Header == "Lumped");
+        Assert.True(lumped.Enabled, lumped.Tip);
+        Assert.Contains("replaces 'gap'", lumped.Tip);
+
+        int entries = vm.UndoEntries;
+        Assert.Null(vm.MakePortFromFace(sheet.Id, 0, CircuitRF.Engine.Em3d.Em3dPortKind.Lumped));
+        Assert.DoesNotContain(vm.Document.Objects, o => o.Name == "gap");
+        var port = Assert.Single(vm.Document.Ports);
+        Assert.Equal((C3dPlane.XZ, 100 * Um), (port.Plane, port.Offset));
+        Assert.Equal((50 * Um, 100 * Um, 100 * Um, 100 * Um), (port.Rect.Min.U, port.Rect.Min.V, port.Rect.Size.U, port.Rect.Size.V));
+        Assert.Equal(entries + 1, vm.UndoEntries);
+
+        vm.UndoRedo.Undo();
+        Assert.Contains(vm.Document.Objects, o => o.Name == "gap");
+        Assert.Empty(vm.Document.Ports);
+    }
+
     // ── fixtures ────────────────────────────────────────────────────────────────────────────
 
     private static C3dTreeItem Row(C3dEditorViewModel vm, string name) => vm.Tree.SelectMany(g => g.Items).Single(i => i.Name == name);
