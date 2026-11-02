@@ -93,6 +93,9 @@ public static class WorkspaceArchiveExtractor
             Directory.CreateDirectory(Path.GetDirectoryName(full)!);
             entry.ExtractToFile(full, overwrite: true);
             count++;
+            // Every workspace file the archive carries, a bundled one included: a zip keeps no extended attribute, so an
+            // unarchived `.cws` would otherwise open in a text editor from Finder until circuitRF first opened it.
+            if (Path.GetFileName(full) is ".cws" or ".cwsuser") WorkspaceOpenWith.Mark(full);
         }
 
         var cws = Path.Combine(targetDir, ".cws");

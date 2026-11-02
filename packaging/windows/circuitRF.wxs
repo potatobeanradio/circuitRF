@@ -381,6 +381,18 @@
           </Extension>
         </ProgId>
 
+        <ProgId Id="circuitRF.ThreeD" Description="circuitRF 3D View" Icon="CircuitRfExe" Advertise="no">
+          <Extension Id="c3d" ContentType="application/x-circuitrf-3dview">
+            <Verb Id="open" Command="Open" TargetFile="CircuitRfExe" Argument="&quot;%1&quot;" />
+          </Extension>
+        </ProgId>
+
+        <ProgId Id="circuitRF.ModelComposer" Description="Model Composer Document" Icon="CircuitRfExe" Advertise="no">
+          <Extension Id="cmc" ContentType="application/x-circuitrf-modelcomposer">
+            <Verb Id="open" Command="Open" TargetFile="CircuitRfExe" Argument="&quot;%1&quot;" />
+          </Extension>
+        </ProgId>
+
       </Component>
     </ComponentGroup>
 

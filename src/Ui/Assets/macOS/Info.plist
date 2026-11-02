@@ -285,6 +285,42 @@
                 </array>
             </dict>
         </dict>
+        <dict>
+            <key>UTTypeIdentifier</key>
+            <string>com.circuitrf.c3d</string>
+            <key>UTTypeDescription</key>
+            <string>circuitRF 3D View</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.json</string>
+                <string>public.content</string>
+            </array>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>c3d</string>
+                </array>
+            </dict>
+        </dict>
+        <dict>
+            <key>UTTypeIdentifier</key>
+            <string>com.circuitrf.cmc</string>
+            <key>UTTypeDescription</key>
+            <string>Model Composer Document</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.json</string>
+                <string>public.content</string>
+            </array>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>cmc</string>
+                </array>
+            </dict>
+        </dict>
     </array>
 
     <!-- Document types this app can open. -->
@@ -502,6 +538,34 @@
             <key>CFBundleTypeExtensions</key>
             <array>
                 <string>csmith</string>
+            </array>
+        </dict>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>circuitRF 3D View</string>
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>com.circuitrf.c3d</string>
+            </array>
+            <key>CFBundleTypeExtensions</key>
+            <array>
+                <string>c3d</string>
+            </array>
+        </dict>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>Model Composer Document</string>
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>com.circuitrf.cmc</string>
+            </array>
+            <key>CFBundleTypeExtensions</key>
+            <array>
+                <string>cmc</string>
             </array>
         </dict>
     </array>

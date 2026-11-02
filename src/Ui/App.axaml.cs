@@ -809,6 +809,8 @@ public partial class App : Application
                 case ".wbond":
                 case ".crail":
                 case ".csmith":
+                case ".c3d":
+                case ".cmc":
                     documents.Add(path);
                     break;
             }

@@ -407,6 +407,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // cell resolving to the wrong kit's script — is silent.
         ResetPCellGenerators(dir);
 
+        // A workspace's `.cws`/`.cwsuser` are dot-named, so macOS gives them no type and Finder opened them in a text editor;
+        // marking them on open reaches every workspace that existed before the mark did (WorkspaceOpenWith). Not on a
+        // read-only workspace, which writes nothing (SL2).
+        if (value is not null && dir is not null && !WorkspaceWritability.IsReadOnly(dir)) WorkspaceOpenWith.MarkWorkspace(value);
+
         NewCellInWorkspaceCommand.NotifyCanExecuteChanged();
         NewThreeDDesignCommand.NotifyCanExecuteChanged();
         RaiseImageCommandsChanged();   // brief-img-6 R-im6-1/2: enabled whenever a workspace is open
@@ -11751,6 +11756,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             case ".wbond": OpenWBondPath(abs);             return true;
             case ".crail": OpenRailPath(abs);              return true;
             case ".csmith": OpenSmithPath(abs);           return true;
+            case ".c3d":   OpenOrActivateC3dEditor(abs);  return true;
             case ".cmc":   OpenModelComposerPath(abs);    return true;
             // R-rail24-1a — the part library. Deliberately ABSENT from App.OpenFiles' own switch,
             // which is held shut against the three operating systems' type registrations: a `.crlib`

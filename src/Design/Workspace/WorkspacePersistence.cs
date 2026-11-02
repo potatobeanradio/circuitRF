@@ -613,6 +613,7 @@ public static class WorkspacePersistence
     {
         File.WriteAllText(path, Serialize(ws));
         WorkspaceUserPersistence.Save(path, WorkspaceUserPersistence.Extract(ws));
+        WorkspaceOpenWith.MarkWorkspace(path);
     }
 
     /// <summary>
@@ -656,6 +657,8 @@ public static class WorkspacePersistence
         // as the .cws is.
         AtomicFile.WriteAllText(path, Serialize(ws));
         WorkspaceUserPersistence.Save(path, WorkspaceUserPersistence.Extract(ws));
+        // The rename replaced both files, and an extended attribute belongs to the file it was set on: mark the new ones.
+        WorkspaceOpenWith.MarkWorkspace(path);
         return true;
     }
 

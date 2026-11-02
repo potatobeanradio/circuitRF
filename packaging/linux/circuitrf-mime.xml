@@ -85,4 +85,16 @@
         <glob pattern="*.csmith"/>
     </mime-type>
 
+    <mime-type type="application/x-circuitrf-3dview">
+        <comment>circuitRF 3D View</comment>
+        <sub-class-of type="application/json"/>
+        <glob pattern="*.c3d"/>
+    </mime-type>
+
+    <mime-type type="application/x-circuitrf-modelcomposer">
+        <comment>Model Composer Document</comment>
+        <sub-class-of type="application/json"/>
+        <glob pattern="*.cmc"/>
+    </mime-type>
+
 </mime-info>

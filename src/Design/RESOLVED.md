@@ -26128,3 +26128,24 @@ port code alone:
 Measured: the same 1-port gap board turned 30° and upright gave |ΔS11| = 1.6e-4 at 3 GHz on Palace. openEMS refuses a
 turned port: its grid runs along the axes. Gate: `tests/Ui.Tests/ThreeD/TurnedPortTests.cs` and
 `EditorRound5TreeTests.MakingATurnedSheetALumpedPort_TurnsThePort_AndATaperIsRefused`.
+
+## A double-clicked `.cws` opened in a text editor on macOS (2026-11-02)
+
+A workspace's files are named `.cws` and `.cwsuser` — no stem. macOS reads a name that starts with a dot as a hidden
+file with NO extension, so neither ever took the `com.circuitrf.crfw` type the bundle declares for `cws`/`cwsuser`:
+`mdls` reports `public.data`, and Finder handed it to a text editor. The same bytes named `probe.cws` resolve to
+circuitRF. No `Info.plist` entry can reach a file without an extension. Windows (last-dot extension) and Linux
+(`*.cws` matches the whole name) were never affected.
+
+The fix is Finder's own per-file Open With record, the `com.apple.LaunchServices.OpenWith` extended attribute — a
+binary property list `{bundleidentifier, path?, version = 0}` — written by `WorkspaceOpenWith` after every save of
+either file, when the GUI opens a workspace, and for every workspace file an archive unpacks. Measured before writing
+it: a stale `path` and a missing `path` both still resolve through `bundleidentifier`, so a process outside a bundle
+(a `dotnet run`, a test, the CLI run from the build tree) writes the identifier alone. An extended attribute belongs to
+the file, not the name: the atomic save's rename replaces both files, which is why the mark is written after the
+rename, every time. Git and zip carry no extended attribute, so a cloned or unzipped-by-hand workspace is unmarked
+until circuitRF first opens it.
+
+The same sweep found `.c3d` and `.cmc` declared to no operating system (and `.c3d` absent from both halves of the open
+dispatcher), and the Linux tarball's own desktop entry missing the rail and Smith types. Gate:
+`tests/Ui.Tests/WorkspaceOpenWithTests.cs` plus the three dispatcher parity tests in `WBondStandaloneTests`.
