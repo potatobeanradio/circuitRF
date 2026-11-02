@@ -185,14 +185,15 @@ public static class Em3dLayoutSolids
         /// floor off the plane; null otherwise.</summary>
         public (double X, double Y)? PlaneFloorBlockedAt { get; private set; }
 
-        /// <summary>The plane's area is at least <see cref="Em3dGenerator.PlaneFloorCover"/> of the box round all drawn metal.</summary>
-        private static bool UnbrokenCover(IReadOnlyList<PlanarPolygon> plane, IEnumerable<PlanarPolygon> allMetal)
+        /// <summary>The plane covers <see cref="Em3dGenerator.PlaneFloorCover"/> of the box round all drawn metal, a band
+        /// <paramref name="edgeBandM"/> (H) wide round its edge left out (<see cref="Em3dGenerator.PlaneCoversFootprint"/>).</summary>
+        private static bool UnbrokenCover(IReadOnlyList<PlanarPolygon> plane, IEnumerable<PlanarPolygon> allMetal, double? edgeBandM)
         {
             double x0 = double.MaxValue, y0 = double.MaxValue, x1 = double.MinValue, y1 = double.MinValue;
             foreach (var p in allMetal)
                 foreach (var q in p.Outer) { x0 = Math.Min(x0, q.X); y0 = Math.Min(y0, q.Y); x1 = Math.Max(x1, q.X); y1 = Math.Max(y1, q.Y); }
-            double footprint = (x1 - x0) * (y1 - y0);
-            return footprint > 0 && plane.Sum(p => Math.Abs(p.Area())) >= Em3dGenerator.PlaneFloorCover * footprint;
+            return x1 > x0 && y1 > y0 && Em3dGenerator.PlaneCoversFootprint(
+                plane.Select(p => (IReadOnlyList<(double X, double Y)>)[.. p.Outer.Select(q => (q.X, q.Y))]), x0, y0, x1, y1, edgeBandM);
         }
 
         public Em3dWireBuild? WireBuild { get; private set; }
@@ -464,7 +465,10 @@ public static class Em3dLayoutSolids
                 && polysByBand.TryGetValue(ground.Index, out var plane) && plane.Count > 0
                 && bands.All(b => b.BottomM >= ground.BottomM - 1e-15)
                 && _viaSpans.All(v => v.Bottom.BottomM >= ground.BottomM - 1e-15)
-                && UnbrokenCover(plane.Select(p => p.Poly).ToList(), polysByBand.Values.SelectMany(l => l).Select(p => p.Poly)))
+                && UnbrokenCover(plane.Select(p => p.Poly).ToList(), polysByBand.Values.SelectMany(l => l).Select(p => p.Poly),
+                                 Em3dGenerator.PaddingHeight(polysByBand.Keys.Select(i => (_bandByIndex[i].BottomM, _bandByIndex[i].TopM)),
+                                                             bands.Where(b => b.Layer.Kind == StackupKind.Dielectric).Select(b => (b.BottomM, b.TopM)),
+                                                             floorZ: null)))
             {
                 bool OnNet(LayoutShape via, PlanarExtractor.StackBand top, string? net)
                 {

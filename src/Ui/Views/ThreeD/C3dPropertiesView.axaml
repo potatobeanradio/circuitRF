@@ -286,6 +286,64 @@
                 </Grid>
             </StackPanel>
 
+            <!-- A port drawn in the 3D view: its name, number and Z0, and its place on its plane. Lengths are in the .c3d's display
+                 unit, shown to the right of each box (a suffix typed in the box may name another). Enter or leaving a box writes
+                 it, one undo entry. -->
+            <StackPanel Name="PortPage" Spacing="4" IsVisible="{Binding IsPortPage}">
+                <Grid ColumnDefinitions="Auto,8,*,4,28" RowDefinitions="Auto,4,Auto,4,Auto">
+                    <TextBlock Grid.Row="0" Text="Name" FontSize="11" Opacity="0.7" VerticalAlignment="Center"/>
+                    <TextBox Name="PortNameBox" Grid.Row="0" Grid.Column="2" Text="{Binding PortName}" KeyDown="OnPortKey" LostFocus="OnPortLostFocus"/>
+                    <TextBlock Grid.Row="2" Text="Number" FontSize="11" Opacity="0.7" VerticalAlignment="Center"/>
+                    <TextBox Grid.Row="2" Grid.Column="2" Text="{Binding PortNumber}" KeyDown="OnPortKey" LostFocus="OnPortLostFocus"/>
+                    <TextBlock Grid.Row="4" Text="Z0" FontSize="11" Opacity="0.7" VerticalAlignment="Center"/>
+                    <TextBox Grid.Row="4" Grid.Column="2" Text="{Binding PortZ0}" KeyDown="OnPortKey" LostFocus="OnPortLostFocus"
+                             ToolTip.Tip="Reference impedance: a number of ohms, or a complex one such as 25+j10."/>
+                    <TextBlock Grid.Row="4" Grid.Column="4" Text="Ω" FontSize="11" VerticalAlignment="Center"/>
+                </Grid>
+                <StackPanel Spacing="4" IsVisible="{Binding PortPlaceEditable}">
+                    <Grid ColumnDefinitions="Auto,8,*,4,28">
+                        <TextBlock Text="Plane" FontSize="11" Opacity="0.7" VerticalAlignment="Center"/>
+                        <ComboBox Grid.Column="2" ItemsSource="{x:Static t3:C3dPropertiesViewModel.PortPlanes}" SelectedItem="{Binding PortPlane}"
+                                  HorizontalAlignment="Stretch"
+                                  ToolTip.Tip="The plane the port's sheet lies in. Changing it keeps the port's centre where it is, and its width and height."/>
+                    </Grid>
+                    <Grid ColumnDefinitions="*,4,28,10,*,4,28" RowDefinitions="Auto,2,Auto,6,Auto,2,Auto,6,Auto,2,Auto">
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="{Binding PortULabel, StringFormat='Centre {0}'}" FontSize="11" Opacity="0.7"/>
+                        <TextBlock Grid.Row="0" Grid.Column="4" Text="{Binding PortVLabel, StringFormat='Centre {0}'}" FontSize="11" Opacity="0.7"/>
+                        <TextBox Grid.Row="2" Grid.Column="0" Text="{Binding PortCentreU}" KeyDown="OnPortKey" LostFocus="OnPortLostFocus"/>
+                        <TextBlock Grid.Row="2" Grid.Column="2" Text="{Binding LengthUnit}" FontSize="11" VerticalAlignment="Center"/>
+                        <TextBox Grid.Row="2" Grid.Column="4" Text="{Binding PortCentreV}" KeyDown="OnPortKey" LostFocus="OnPortLostFocus"/>
+                        <TextBlock Grid.Row="2" Grid.Column="6" Text="{Binding LengthUnit}" FontSize="11" VerticalAlignment="Center"/>
+                        <TextBlock Grid.Row="4" Grid.Column="0" Text="{Binding PortULabel, StringFormat='Width ({0})'}" FontSize="11" Opacity="0.7"/>
+                        <TextBlock Grid.Row="4" Grid.Column="4" Text="{Binding PortVLabel, StringFormat='Height ({0})'}" FontSize="11" Opacity="0.7"/>
+                        <TextBox Name="PortWidthBox" Grid.Row="6" Grid.Column="0" Text="{Binding PortWidth}" KeyDown="OnPortKey" LostFocus="OnPortLostFocus"/>
+                        <TextBlock Grid.Row="6" Grid.Column="2" Text="{Binding LengthUnit}" FontSize="11" VerticalAlignment="Center"/>
+                        <TextBox Grid.Row="6" Grid.Column="4" Text="{Binding PortHeight}" KeyDown="OnPortKey" LostFocus="OnPortLostFocus"/>
+                        <TextBlock Grid.Row="6" Grid.Column="6" Text="{Binding LengthUnit}" FontSize="11" VerticalAlignment="Center"/>
+                        <TextBlock Grid.Row="8" Grid.Column="0" Text="{Binding PortAtLabel, StringFormat='Plane at {0}'}" FontSize="11" Opacity="0.7"/>
+                        <TextBox Grid.Row="10" Grid.Column="0" Text="{Binding PortAt}" KeyDown="OnPortKey" LostFocus="OnPortLostFocus"/>
+                        <TextBlock Grid.Row="10" Grid.Column="2" Text="{Binding LengthUnit}" FontSize="11" VerticalAlignment="Center"/>
+                    </Grid>
+                </StackPanel>
+            </StackPanel>
+
+            <!-- A component port: built from its part's pads, so its place follows the layout. What it states of its own — Z0
+                 and its width across the gap — is the setup's entry for the part. Blank is the default. -->
+            <StackPanel Name="ComponentPortPage" Spacing="4" IsVisible="{Binding IsComponentPortPage}">
+                <Grid ColumnDefinitions="Auto,8,*,4,28" RowDefinitions="Auto,4,Auto">
+                    <TextBlock Grid.Row="0" Text="Z0" FontSize="11" Opacity="0.7" VerticalAlignment="Center"/>
+                    <TextBox Grid.Row="0" Grid.Column="2" Text="{Binding ComponentZ0}" PlaceholderText="50"
+                             KeyDown="OnComponentPortKey" LostFocus="OnComponentPortLostFocus"
+                             ToolTip.Tip="Reference impedance: a number of ohms, or a complex one such as 25+j10. Blank is 50 Ω."/>
+                    <TextBlock Grid.Row="0" Grid.Column="4" Text="Ω" FontSize="11" VerticalAlignment="Center"/>
+                    <TextBlock Grid.Row="2" Text="Width" FontSize="11" Opacity="0.7" VerticalAlignment="Center"/>
+                    <TextBox Name="ComponentWidthBox" Grid.Row="2" Grid.Column="2" Text="{Binding ComponentWidth}" PlaceholderText="{Binding ComponentWidthPlaceholder}"
+                             KeyDown="OnComponentPortKey" LostFocus="OnComponentPortLostFocus"
+                             ToolTip.Tip="The port's width across its gap, centred where the pads put it. Blank is the width the part's two pads share."/>
+                    <TextBlock Grid.Row="2" Grid.Column="4" Text="{Binding LengthUnit}" FontSize="11" VerticalAlignment="Center"/>
+                </Grid>
+            </StackPanel>
+
             <!-- 3D editor round 3 — what fills the air box: Air by default, Vacuum or any technology material by choice. -->
             <StackPanel Spacing="4" IsVisible="{Binding IsAirBoxRow}">
                 <TextBlock Text="Material" FontSize="11" Opacity="0.7"/>

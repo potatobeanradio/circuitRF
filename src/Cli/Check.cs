@@ -846,10 +846,12 @@ internal static class Check
                 if (assembled.Refusal is { } why) f.Add(CliDiagnostics.CheckThreeDPortRefused(path, at + "its component ports were not built: " + why));
                 continue;
             }
+            // A part whose port cannot be built is left out of the run, which goes ahead with the rest: it is the build's
+            // warning, not an error. The run refusing (no build at all, or no port left) is still an error.
             if (build.Refusal is { } refused) f.Add(CliDiagnostics.CheckThreeDPortRefused(path, at + refused));
-            foreach (var p in build.Ports)
-                f.Add(p.Ok ? CliDiagnostics.CheckThreeDPort(path, at + C3dComponentPorts.Describe(p))
-                           : CliDiagnostics.CheckThreeDPortRefused(path, at + p.Refusal));
+            else if (assembled.Refusal is { } none) f.Add(CliDiagnostics.CheckThreeDPortRefused(path, at + none));
+            foreach (var p in build.Ports.Where(p => p.Ok))
+                f.Add(CliDiagnostics.CheckThreeDPort(path, at + C3dComponentPorts.Describe(p)));
             foreach (string w in build.Warnings) f.Add(CliDiagnostics.CheckThreeDComponentPortWarning(path, at + w));
         }
     }

@@ -365,7 +365,8 @@ public sealed partial class C3dEditorViewModel
             vm.ThermalContext = new EmThermalContext(() => Document, () => Resolution, () => Elaboration, () => FilePath, () => ResultsRootProvider?.Invoke());
         // brief-emb-1 R-emb1-8 — the Component ports list reads this document's placed layouts and builds through the run's own code.
         if (!item.IsExternal)
-            vm.ComponentPortsContext = new EmComponentPortsContext(() => Document, () => FilePath, _workspaceCws, () => Elaboration);
+            vm.ComponentPortsContext = new EmComponentPortsContext(() => Document, () => FilePath, _workspaceCws, () => Elaboration,
+                                                                   (text, warning) => PostMessage?.Invoke(text, warning));
         if (!item.IsExternal)
         {
             string name = item.Name;
@@ -603,6 +604,11 @@ public sealed partial class C3dEditorViewModel
 
         /// <summary>brief-sar-3 — each lumped element, resolved by the port's rule against this elaboration.</summary>
         public IReadOnlyList<C3dLumpedResult> Lumped { get; init; } = [];
+
+        /// <summary>The active setup's component ports, built as a run builds them: each part, with its port resolved when it
+        /// was built (null when it is left out). Drawn, labelled and listed like the document's own ports, but never editable
+        /// as one: the setup's ComponentPorts list is what makes them.</summary>
+        public IReadOnlyList<(C3dComponentPort Part, C3dPortResult? Result)> ComponentPorts { get; init; } = [];
     }
 
     private readonly System.Collections.Concurrent.ConcurrentDictionary<long, RecordsView> _records = new();
@@ -641,8 +647,50 @@ public sealed partial class C3dEditorViewModel
         var ports = e.Ok ? C3dPorts.Resolve(doc, ctx) : [];
         var boundaries = e.Ok ? C3dProblemAssembly.FaceBoundaryPreview(doc, e) : [];
         var lumped = e.Ok ? doc.LumpedElements.Select(l => C3dLumpedElements.Resolve(l, doc.DbuPerMicron, ctx, e.Resolution)).ToList() : [];
-        return new RecordsView(box, ports, boundaries, ctx) { ThermalTints = ThermalTints(doc, e, setup, hiddenTints), Lumped = lumped };
+        return new RecordsView(box, ports, boundaries, ctx)
+        {
+            ThermalTints = ThermalTints(doc, e, setup, hiddenTints), Lumped = lumped,
+            ComponentPorts = e.Ok ? ComponentPortsOf(setup, setupJson, doc, e, box) : [],
+        };
     }
+
+    /// <summary>The last component ports built, and what they were built from (see <see cref="ComponentPortsOf"/>).</summary>
+    private (string Key, IReadOnlyList<(C3dComponentPort, C3dPortResult?)> Ports)? _componentPortsBuilt;
+
+    /// <summary>
+    /// The active setup's component ports on this elaboration (the build's thread, under the elaboration lock): each part, and its
+    /// port resolved against the elaboration with the landings applied, numbered after the document's own as a run numbers them.
+    /// Kept while nothing they are built from changes — the document but for its own ports and setups, the files the elaboration
+    /// read, the setup, and the first number free — so an edit to a drawn port, an object's look or a selection does not build
+    /// every part's port again (a board's fourteen took about a quarter of a second, each scene).
+    /// </summary>
+    private IReadOnlyList<(C3dComponentPort, C3dPortResult?)> ComponentPortsOf(EmSetup? setup, string? setupJson, C3dDocument doc, C3dElaboration e,
+                                                                             Em3dAirBox? box)
+    {
+        if (setup is not { Is3D: true, IsThermal: false, ComponentPorts.Count: > 0 } || setup.Problem3D == Em3dProblemType.Electrostatic) return [];
+        int first = C3dProblemAssembly.FirstComponentPortNumber(doc);
+        var geometry = C3dPersistence.Deserialize(C3dPersistence.Serialize(doc));
+        geometry.Ports.Clear();
+        geometry.Setups.Clear();
+        string key = string.Join("\n", setupJson, first.ToString(CultureInfo.InvariantCulture), ReadStamp(e.FilesRead, FilePath),
+                                 C3dPersistence.Serialize(geometry));
+        if (_componentPortsBuilt is { } kept && kept.Key == key) return kept.Ports;
+        C3dComponentPortBuild? build;
+        try { build = C3dComponentPorts.Build(setup, doc, e, first); }
+        catch (Exception) { return []; }
+        if (build is null) return [];
+        var ctx = C3dProblemAssembly.PortContext(setup, doc, build.Elaboration, box);
+        IReadOnlyList<(C3dComponentPort, C3dPortResult?)> ports =
+            [.. build.Ports.Select(p => (p, p.Port is { } port ? C3dPorts.Resolve(port, doc.DbuPerMicron, ctx) : (C3dPortResult?)null))];
+        _componentPortsBuilt = (key, ports);
+        return ports;
+    }
+
+    /// <summary>The component ports the current scene built (see <see cref="RecordsView.ComponentPorts"/>).</summary>
+    public IReadOnlyList<(C3dComponentPort Part, C3dPortResult? Result)> ComponentPortResults => _recordsView?.ComponentPorts ?? [];
+
+    /// <summary>A component port's row kind: listed and shown like a port, never edited as the document's own.</summary>
+    public const string ComponentPortKind = "ComponentPort";
 
     /// <summary>
     /// 3D editor round 3 — whether the air box is drawn (faces and edges): the toolbar switch and the tree tick. The user's
@@ -846,6 +894,76 @@ public sealed partial class C3dEditorViewModel
         if (name.Length == 0) return "A port needs a name.";
         if (name == port.Name) return null;
         ChangeRecords($"Rename {C3dPorts.Label(port)} to {name}", _ => port.Name = name);
+        return null;
+    }
+
+    /// <summary>A drawn port's place on its plane: the centre (u, v), where the plane sits, and the size (DBU).</summary>
+    public static (long CentreU, long CentreV, long At, long Width, long Height) PortPlace(C3dPort p)
+        => (p.Rect.Min.U + p.Rect.Size.U / 2, p.Rect.Min.V + p.Rect.Size.V / 2, p.Offset, p.Rect.Size.U, p.Rect.Size.V);
+
+    /// <summary>
+    /// Places a drawn port: its plane, where the plane sits, its centre on it and its width and height there (DBU). One undo
+    /// entry; null on success, else why not. A centre and size left as they were keep the corner exactly, so an odd size that
+    /// halves a DBU short does not creep. A cylinder-patch port is placed by its cylinder, not here.
+    /// </summary>
+    public string? SetPortGeometry(C3dPort port, C3dPlane plane, long at, long centreU, long centreV, long width, long height)
+    {
+        if (port.Cylinder is not null) return $"{C3dPorts.Label(port)} is a patch of a cylinder; its place is its cylinder's.";
+        if (width <= 0 || height <= 0) return "A port's width and height are lengths greater than zero.";
+        var was = PortPlace(port);
+        bool samePlane = plane == port.Plane;
+        long minU = samePlane && width == was.Width && centreU == was.CentreU ? port.Rect.Min.U : centreU - width / 2;
+        long minV = samePlane && height == was.Height && centreV == was.CentreV ? port.Rect.Min.V : centreV - height / 2;
+        ChangeRecords($"Place {C3dPorts.Label(port)}", _ =>
+        {
+            port.Plane = plane;
+            port.Offset = at;
+            port.Rect = new C3dRect { Min = new C3dPoint2(minU, minV), Size = new C3dPoint2(width, height) };
+        });
+        return null;
+    }
+
+    /// <summary>The component port a scene object is (its sheet), or null.</summary>
+    public (C3dComponentPort Part, C3dPortResult? Result)? ComponentPortOf(Scene3DObject o)
+        => o.Kind == Scene3DKind.Port && ComponentPortResults.FirstOrDefault(c => c.Part.Port?.Number == o.PortNumber) is { Part: not null } hit
+            ? hit : null;
+
+    /// <summary>The component port a Component ports row stands for — a left-out part's included, which has no sheet.</summary>
+    public (C3dComponentPort Part, C3dPortResult? Result)? ComponentPortOfRow(C3dTreeItem row)
+        => row.Kind != ComponentPortKind ? null
+         : ComponentPortResults.FirstOrDefault(c => c.Result?.Resolved?.Name == row.Name
+                                                    || "component/" + c.Part.Refdes + "/" + (c.Part.Pin ?? "") == row.Name) is { Part: not null } hit
+            ? hit : null;
+
+    /// <summary>What the active setup states for one part (its own entry, beside <c>*</c> or alone), or null.</summary>
+    public EmComponentPort? ComponentPortEntry(string refdes)
+        => ActiveSetup?.ComponentPorts.FirstOrDefault(c => c.Refdes.Equals(refdes, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// A component port's own settings — its Z0 and its width across the gap (µm), null for the default — written into the active
+    /// setup's entry for the part (added beside <c>*</c> when there was none, dropped again when it states nothing). Its place
+    /// and orientation stay the part's pads'. One undo entry; null on success, else why not.
+    /// </summary>
+    public string? SetComponentPortOverride(string refdes, string? z0, double? widthUm)
+    {
+        if (z0 is { } zt && (!C3dPorts.TryParseZ0(zt, out var z) || !(z.Real > 0)))
+            return $"'{zt}' is not a reference impedance: a number of ohms with a positive real part, or a complex one such as 25+j10.";
+        if (widthUm is <= 0) return "A port's width is a length greater than zero; leave it blank for the width the pads share.";
+        if (ActiveSetupName is not { } name || C3dSetups.Read(Document).FirstOrDefault(s => s.Name == name) is not { Setup: { } current } item)
+            return "No setup is active, so there is no component port to change.";
+        var setup = EmSetupPersistence.Deserialize(EmSetupPersistence.Serialize(current));
+        var list = setup.ComponentPorts.ToList();
+        int at = list.FindIndex(c => c.Refdes.Equals(refdes, StringComparison.OrdinalIgnoreCase));
+        var entry = (at >= 0 ? list[at] : new EmComponentPort(refdes)) with { Z0 = z0?.Trim(), WidthUm = widthUm };
+        bool all = list.Any(c => c.Refdes == EmSetup.AllComponents);
+        if (at >= 0)
+        {
+            if (entry.IsPlain && all) list.RemoveAt(at);
+            else list[at] = entry;
+        }
+        else if (!entry.IsPlain) list.Add(entry);
+        setup.ComponentPorts = list;
+        ChangeRecords($"Component port {refdes}", d => d.Setups[item.Index] = EmSetupPersistence.ToEmbedded(setup));
         return null;
     }
 
@@ -1296,6 +1414,19 @@ public sealed partial class C3dEditorViewModel
     private void FillSimulateOverlay(Viewer3DDrawOverlay overlay)
     {
         int dbu = Document.DbuPerMicron;
+        // The realistic view's Look hides the ports (their sheets, in the frame plan): their numbers, refdes and refused outlines
+        // go with them, as an unticked port's do. A port being drawn still shows what it would join.
+        if (!(Viewer.View.DrawsRealistic && !Viewer.View.Look.Shows(CircuitRF.Render.Scene3D.Look.Scene3DChrome.Ports))) FillPortLabels(overlay, dbu);
+        if (_tool is PortTool pt && pt.Preview(CursorInput()) is { } draft) FillPortPreview(overlay, draft, dbu);
+    }
+
+    /// <summary>Each port's number (a terminal's at its arrow), each component port's refdes, and a refused port's outline.</summary>
+    private void FillPortLabels(Viewer3DDrawOverlay overlay, int dbu)
+    {
+        // Each component port's refdes at its sheet, as a port's number is at its own.
+        foreach (var (part, result) in ComponentPortResults)
+            if (result?.Resolved is { } cp && IsPortShown(cp.Name))
+                overlay.Labels.Add((Centre(cp.Min, cp.Max), part.Port?.Name ?? part.Refdes));
         foreach (var r in PortResults)
         {
             // A port unticked shows nothing of itself: no number, no refusal, no red outline.
@@ -1317,7 +1448,11 @@ public sealed partial class C3dEditorViewModel
             AddRect(overlay.Crossing, r.Port, dbu);
             overlay.Labels.Add((Centre(min, max), $"{C3dPorts.Label(r.Port)}: refused"));
         }
-        if (_tool is PortTool pt && pt.Preview(CursorInput()) is { } draft)
+    }
+
+    /// <summary>The port tool's preview: the port it would add, its + and − ends, or why it cannot be one.</summary>
+    private void FillPortPreview(Viewer3DDrawOverlay overlay, C3dPort draft, int dbu)
+    {
         {
             var r = C3dPorts.Resolve(draft, dbu, CurrentPortContext());
             var (min, max) = Rectangle(draft, dbu);
@@ -1379,7 +1514,7 @@ public sealed partial class C3dEditorViewModel
 
     private void RebuildRecordRows()
     {
-        foreach (var g in Tree.Where(g => g.Role == C3dTreeGroupRole.Ports).ToList())
+        foreach (var g in Tree.Where(g => g.Role is C3dTreeGroupRole.Ports or C3dTreeGroupRole.ComponentPorts).ToList())
         {
             DetachExpansion([g]);
             Tree.Remove(g);
@@ -1400,6 +1535,15 @@ public sealed partial class C3dEditorViewModel
         bool byType = TreeGrouping == C3dTreeGrouping.Primitive;
         var ports = rows.Where(t => !(byType && t.Off)).Select(t => t.Row).ToList();
         if (ports.Count > 0) Tree.Add(new C3dTreeGroup("Ports", ports, C3dTreeGroupRole.Ports));
+        // The setup's component ports, after the document's own: one row per part, its port or why it is left out.
+        var parts = ComponentPortResults.Select(t => t.Result?.Resolved is { } cp
+            ? new C3dTreeItem(this, cp.Name, ComponentPortKind,
+                  $"port {t.Part.Port!.Number}, lumped: {cp.NegativeObject} → {cp.PositiveObject}", -1, -1, IsPortShown(cp.Name))
+              { IsReadOnly = true, DisplayName = t.Part.Port.Name }
+            : new C3dTreeItem(this, "component/" + t.Part.Refdes + "/" + (t.Part.Pin ?? ""), ComponentPortKind,
+                  $"{t.Part.Refdes}: left out. {t.Part.Refusal ?? t.Result?.Refusal}", -1, -1, false)
+              { IsReadOnly = true, DisplayName = t.Part.Refdes, Refusal = t.Part.Refusal ?? t.Result?.Refusal }).ToList();
+        if (parts.Count > 0) Tree.Add(new C3dTreeGroup("Component ports", parts, C3dTreeGroupRole.ComponentPorts));
         if (byType && rows.Where(t => t.Off).Select(t => t.Row).ToList() is { Count: > 0 } offPorts)
         {
             if (Tree.FirstOrDefault(g => g.Role == C3dTreeGroupRole.NotModelled) is { } home)

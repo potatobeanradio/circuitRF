@@ -317,7 +317,8 @@ public sealed class OpenEmsBackendTests(ITestOutputHelper output) : IDisposable
     private static CsxcadLowering Lowered(string name)
     {
         var (setup, source) = name == "via" ? Em3dGeneratorTests.CaseB(plated: true) : Em3dGeneratorTests.Microstrip();
-        if (name == "via") setup.AirBox = PalaceBackendTests.Padded(1500);
+        // Each golden states its air box, so a change to the default padding never rewrites it.
+        setup.AirBox = name == "via" ? PalaceBackendTests.Padded(1500) : GoldenAirBoxes.For("fixture microstrip");
         setup.Solver3D = Em3dSolverId.OpenEms;
         return Lower(setup, source);
     }

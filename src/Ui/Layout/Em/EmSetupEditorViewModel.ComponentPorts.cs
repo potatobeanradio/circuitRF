@@ -1,8 +1,9 @@
 // brief-emb-1 R-emb1-8 — the 3D setup panel's "Component ports" list: every part placed on the 3D view's layout, a box to
 // include it (writing the setup's ComponentPorts through the panel's one undoable commit), "Every two-terminal part" for `*`,
 // and Check, which builds and verifies the ports exactly as a run would (C3dProblemAssembly.Assemble — the run's own function)
-// and shows each part's verdict: the same lines `explain --component-ports` and `check` print. A picker, not a text box: the
-// parts can be listed, so a misspelt refdes cannot be written.
+// and posts each part's verdict to Messages: the same lines `explain --component-ports` and `check` print. The panel itself
+// keeps one short line and marks a part that was left out; the sentences live in Messages, where they can be read and
+// copied without crowding the setup. A picker, not a text box: the parts can be listed, so a misspelt refdes cannot be written.
 
 using System.Collections.ObjectModel;
 using CircuitRF.Design.Layout.Em;
@@ -13,9 +14,10 @@ using CommunityToolkit.Mvvm.Input;
 namespace CircuitRF.Ui.Layout.Em;
 
 /// <summary>What the Component ports list reads of the 3D view it is embedded in: its document, path, workspace and the
-/// elaboration the view already holds (for the list of placed parts).</summary>
+/// elaboration the view already holds (for the list of placed parts), and where Check's verdicts are posted (Messages:
+/// the text, and whether it is a warning).</summary>
 public sealed record EmComponentPortsContext(Func<C3dDocument> Document, Func<string> Path, Func<string?> Workspace,
-                                             Func<C3dElaboration?> Elaboration);
+                                             Func<C3dElaboration?> Elaboration, Action<string, bool>? Post = null);
 
 /// <summary>One placed part in the list.</summary>
 public sealed partial class EmComponentPortRow(EmSetupEditorViewModel owner, string refdes, int pads) : ObservableObject
@@ -26,7 +28,8 @@ public sealed partial class EmComponentPortRow(EmSetupEditorViewModel owner, str
     public string PadsText { get; } = pads == 2 ? "2 pads" : $"{pads} pads";
 
     [ObservableProperty] private bool _isIncluded;
-    [ObservableProperty] private string _verdict = "";
+
+    /// <summary>The last Check left this part out; why is in Messages.</summary>
     [ObservableProperty] private bool _isRefused;
 
     internal bool Syncing;
@@ -70,30 +73,41 @@ public sealed partial class EmSetupEditorViewModel
         "touches bridges two nets. A part with more pads gets one port per signal pad against its own ground pad. A finished " +
         "driven run also writes <setup>_cosim.cnl: the board's N-port with each part's model across its port.";
 
+    /// <summary>Builds and verifies the ports as a run would, off the UI thread (a board's elaboration and every part's port
+    /// is seconds of work): the document is read as it stands when Check is pressed, and the panel stays usable meanwhile.
+    /// The button is disabled until it finishes.</summary>
     [RelayCommand]
-    private void CheckComponentPorts()
+    private async Task CheckComponentPorts()
     {
         if (ComponentPortsContext is not { } ctx) return;
-        foreach (var row in ComponentPortRows) { row.Verdict = ""; row.IsRefused = false; }
+        foreach (var row in ComponentPortRows) row.IsRefused = false;
         if (Working.ComponentPorts.Count == 0) { ComponentPortsStatus = "No part is chosen."; return; }
-        string path = ctx.Path();
-        var g = C3dProblemAssembly.Assemble(C3dSetups.ForRun(Working, path), ctx.Document(), path, ctx.Workspace());
+        string path = ctx.Path(), documentText = C3dPersistence.Serialize(ctx.Document());
+        string? workspace = ctx.Workspace();
+        var setup = C3dSetups.ForRun(Working, path);
+        ComponentPortsStatus = "Checking…";
+        var g = await Task.Run(() => C3dProblemAssembly.Assemble(setup, C3dPersistence.Deserialize(documentText), path, workspace));
         if (g.ComponentPorts is not { } build)
         {
-            ComponentPortsStatus = g.Refusal ?? "The ports were not built.";
+            ctx.Post?.Invoke($"Component ports: {g.Refusal ?? "the ports were not built."}", true);
+            ComponentPortsStatus = "Not built; see Messages.";
             return;
         }
         foreach (var p in build.Ports)
-            if (ComponentPortRows.FirstOrDefault(r => r.Refdes.Equals(p.Refdes, StringComparison.OrdinalIgnoreCase)) is { } row)
-            {
-                string line = p.Ok ? C3dComponentPorts.Describe(p) : p.Refusal!;
-                row.Verdict = row.Verdict.Length == 0 ? line : row.Verdict + "\n" + line;
-                row.IsRefused |= !p.Ok;
-            }
-        int ok = build.Ports.Count(p => p.Ok);
-        ComponentPortsStatus = build.Refusal ?? (ok == build.Ports.Count
-            ? $"{ok} port(s) built and verified." + (build.Warnings.Count > 0 ? " " + string.Join(" ", build.Warnings) : "")
-            : $"{build.Ports.Count - ok} of {build.Ports.Count} port(s) refused: the run would refuse too.");
+        {
+            ctx.Post?.Invoke(p.Ok ? C3dComponentPorts.Describe(p) : p.Refusal!, !p.Ok);
+            if (!p.Ok && ComponentPortRows.FirstOrDefault(r => r.Refdes.Equals(p.Refdes, StringComparison.OrdinalIgnoreCase)) is { } row)
+                row.IsRefused = true;
+        }
+        // The left-out parts were just posted with their reasons; the build's other warnings (no model on the schematic) follow.
+        var refusals = build.Ports.Where(p => p.Refusal is not null).Select(p => p.Refusal!).ToList();
+        foreach (string w in build.Warnings.Where(w => !refusals.Any(r => w.StartsWith(r, StringComparison.Ordinal))))
+            ctx.Post?.Invoke(w, true);
+        if (build.Refusal is { } whole) ctx.Post?.Invoke(whole, true);
+        int ok = build.Ports.Count(p => p.Ok), left = build.Ports.Count - ok;
+        ComponentPortsStatus = build.Refusal is not null || g.Refusal is not null ? "Not built; see Messages."
+            : left == 0 ? $"{ok} built; details in Messages."
+            : $"{ok} built, {left} left out; see Messages.";
     }
 
     /// <summary>The placed parts, listed off the elaboration the view holds, each ticked as the setup names it.</summary>
@@ -128,7 +142,8 @@ public sealed partial class EmSetupEditorViewModel
     {
         if (_suppressCommit) return;
         string before = SnapshotJson();
-        Working.ComponentPorts = value ? [new EmComponentPort(EmSetup.AllComponents)]
+        // A part's own settings (its Z0, its width) are kept beside "*": ticking every part must not throw them away.
+        Working.ComponentPorts = value ? [new EmComponentPort(EmSetup.AllComponents), .. Working.ComponentPorts.Where(c => c.Refdes != EmSetup.AllComponents && !c.IsPlain)]
                                : [.. ComponentPortRows.Where(r => r.IsIncluded).Select(r => Keep(r.Refdes))];
         SyncComponentPortRows();
         CommitEdit(before, "Component ports");
@@ -142,7 +157,7 @@ public sealed partial class EmSetupEditorViewModel
         _suppressCommit = true;
         AllComponentParts = false;
         _suppressCommit = false;
-        foreach (var row in ComponentPortRows) { row.Verdict = ""; row.IsRefused = false; }
+        foreach (var row in ComponentPortRows) row.IsRefused = false;
         ComponentPortsStatus = "";
         CommitEdit(before, "Component ports");
     }

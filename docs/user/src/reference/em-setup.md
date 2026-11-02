@@ -536,9 +536,10 @@ touched a point the cleanup moved moves with it; the port's line in `check` says
 <a id="component-ports-list"></a>**Component ports** (`ComponentPorts`), below Robust meshing in a 3D view's setup, lists
 every part placed on the view's layout with its pad count. A ticked part gets a lumped gap port across its own pads,
 numbered after the view's own ports; **Every two-terminal part** writes `"*"`. **Check** builds and verifies the ports
-exactly as a run would and shows each part's port, gap, landings and verdict, or why it is refused. In the file it is
-`"ComponentPorts": ["C1", "L2"]`, `"ComponentPorts": "*"`, or entries that state more:
-`{ "Refdes": "U2", "Z0": "50", "Reference": "GND" }`. A `.cem` on a layout refuses it: component ports are built in a
+exactly as a run would and posts each part's port, gap, landings and verdict to Messages, a part left out as a warning
+saying why; the list marks that part. In the file it is `"ComponentPorts": ["C1", "L2"]`, `"ComponentPorts": "*"`, or
+entries that state more: `{ "Refdes": "U2", "Z0": "50", "Reference": "GND", "WidthUm": 600 }`, an entry beside `"*"`
+overriding that part. A `.cem` on a layout refuses it: component ports are built in a
 3D view of the layout. How they are built and what a run writes from them is
 [A port across each part's own pads](em-3d.html#part-ports).
 

@@ -1217,9 +1217,10 @@ touched a point the cleanup moved moves with it; the port's line in <code>check<
 <p><a id="component-ports-list"></a><strong>Component ports</strong> (<code>ComponentPorts</code>), below Robust meshing in a 3D view's setup, lists
 every part placed on the view's layout with its pad count. A ticked part gets a lumped gap port across its own pads,
 numbered after the view's own ports; <strong>Every two-terminal part</strong> writes <code>&quot;*&quot;</code>. <strong>Check</strong> builds and verifies the ports
-exactly as a run would and shows each part's port, gap, landings and verdict, or why it is refused. In the file it is
-<code>&quot;ComponentPorts&quot;: [&quot;C1&quot;, &quot;L2&quot;]</code>, <code>&quot;ComponentPorts&quot;: &quot;*&quot;</code>, or entries that state more:
-<code>{ &quot;Refdes&quot;: &quot;U2&quot;, &quot;Z0&quot;: &quot;50&quot;, &quot;Reference&quot;: &quot;GND&quot; }</code>. A <code>.cem</code> on a layout refuses it: component ports are built in a
+exactly as a run would and posts each part's port, gap, landings and verdict to Messages, a part left out as a warning
+saying why; the list marks that part. In the file it is <code>&quot;ComponentPorts&quot;: [&quot;C1&quot;, &quot;L2&quot;]</code>, <code>&quot;ComponentPorts&quot;: &quot;*&quot;</code>, or
+entries that state more: <code>{ &quot;Refdes&quot;: &quot;U2&quot;, &quot;Z0&quot;: &quot;50&quot;, &quot;Reference&quot;: &quot;GND&quot;, &quot;WidthUm&quot;: 600 }</code>, an entry beside <code>&quot;*&quot;</code>
+overriding that part. A <code>.cem</code> on a layout refuses it: component ports are built in a
 3D view of the layout. How they are built and what a run writes from them is
 <a href="em-3d.html#part-ports">A port across each part's own pads</a>.</p>
 <p>With Palace chosen the panel shows Palace's own settings. <strong>A blank box is the default shown in it</strong>, and

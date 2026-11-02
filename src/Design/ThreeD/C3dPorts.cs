@@ -173,9 +173,21 @@ public sealed class C3dPortContext
         if (c.Cylinder is { } cyl) return SegmentToCylinder(a, b, cyl);
         double best = double.PositiveInfinity;
         var m = c.Mesh!;
+        // A triangle is measured only when it could matter: the gap between its box and the segment's is a lower bound on its
+        // distance, so one no nearer than the best so far cannot lower the minimum, and bounded, one beyond the tolerance is as
+        // far as the bounded contract says (infinitely). A board's ground pour is one conductor of thousands of triangles whose
+        // box is the whole board, and every port measured every one: ~8 ms a port.
+        double sx0 = Math.Min(a.X, b.X), sx1 = Math.Max(a.X, b.X), sy0 = Math.Min(a.Y, b.Y), sy1 = Math.Max(a.Y, b.Y),
+               sz0 = Math.Min(a.Z, b.Z), sz1 = Math.Max(a.Z, b.Z);
         foreach (var t in m.Triangles)
         {
-            best = Math.Min(best, Geometry3.SegmentTriangle(a, b, m.Vertices[t.A], m.Vertices[t.B], m.Vertices[t.C]));
+            Point3 p = m.Vertices[t.A], q = m.Vertices[t.B], r = m.Vertices[t.C];
+            double gx = Math.Max(0, Math.Max(Math.Min(p.X, Math.Min(q.X, r.X)) - sx1, sx0 - Math.Max(p.X, Math.Max(q.X, r.X))));
+            double gy = Math.Max(0, Math.Max(Math.Min(p.Y, Math.Min(q.Y, r.Y)) - sy1, sy0 - Math.Max(p.Y, Math.Max(q.Y, r.Y))));
+            double gz = Math.Max(0, Math.Max(Math.Min(p.Z, Math.Min(q.Z, r.Z)) - sz1, sz0 - Math.Max(p.Z, Math.Max(q.Z, r.Z))));
+            double lowest = Math.Sqrt(gx * gx + gy * gy + gz * gz);
+            if (lowest >= best || (bounded && lowest > tol)) continue;
+            best = Math.Min(best, Geometry3.SegmentTriangle(a, b, p, q, r));
             if (best == 0) break;
         }
         return best;

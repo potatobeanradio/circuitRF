@@ -17,6 +17,7 @@ namespace CircuitRF.Ui.Tests.Em3d;
 //  byte for byte. Everything the generator returns is in the text — the problem, the notes, the
 //  warnings, the origins, the material sources, the wire reports — so a refactor cannot move any of
 //  it unseen. Set CRF_WRITE_GENERATOR_DUMPS=1 to (re)write them; nothing else does.
+//  Every case states its air box (GoldenAirBoxes), so a change to the default padding never moves a dump.
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 
 public sealed class Em3dGeneratorDumpTests
@@ -33,7 +34,7 @@ public sealed class Em3dGeneratorDumpTests
     public void Gate2_TheGeneratorsOutput_IsByteIdenticalToItsPreSplitDump(string name)
     {
         var build = Fixtures().Single(f => f.Name == name).Build;
-        string text = Dump(build());
+        string text = Dump(build(GoldenAirBoxes.For(name)));
         string path = Path.Combine(PalaceBackendTests.RepoRoot(), "testdata", "em3d", "generator-dumps", FileName(name));
         if (Environment.GetEnvironmentVariable("CRF_WRITE_GENERATOR_DUMPS") == "1")
         {
@@ -49,7 +50,8 @@ public sealed class Em3dGeneratorDumpTests
 
     /// <summary>Every case: the repo's .cem files (a planar one made 3D in memory, so every one
     /// exercises the generator), and the fixtures of the Em3d tests.</summary>
-    internal static IEnumerable<(string Name, Func<Em3dGenerationResult> Build)> Fixtures()
+    /// <summary>Each build takes the air box it states (<see cref="GoldenAirBoxes"/>); a face its own setup states wins.</summary>
+    internal static IEnumerable<(string Name, Func<EmAirBox?, Em3dGenerationResult> Build)> Fixtures()
     {
         string root = PalaceBackendTests.RepoRoot();
         foreach (string cem in new[] { "examples", "testdata" }
@@ -57,10 +59,11 @@ public sealed class Em3dGeneratorDumpTests
                      .Order(StringComparer.Ordinal))
         {
             string rel = Path.GetRelativePath(root, cem).Replace('\\', '/');
-            yield return ("cem " + rel, () =>
+            yield return ("cem " + rel, box =>
             {
                 var setup = EmSetupPersistence.LoadFromFile(cem);
                 if (!setup.Is3D) setup.Solver3D = Em3dSolverId.Palace;
+                setup.AirBox = GoldenAirBoxes.Merge(setup.AirBox, box);
                 var resolution = EmSetupResolver.Resolve(cem, setup.LayoutRef,
                                                          WorkspaceRootFinder.FindAncestorCws(Path.GetDirectoryName(cem)),
                                                          new TechnologyCache());
@@ -70,31 +73,34 @@ public sealed class Em3dGeneratorDumpTests
             });
         }
 
-        yield return ("fixture microstrip", () => Gen(Em3dGeneratorTests.Microstrip()));
-        yield return ("fixture caseB-plated", () => Gen(Em3dGeneratorTests.CaseB(plated: true)));
-        yield return ("fixture caseB-solid", () => Gen(Em3dGeneratorTests.CaseB(plated: false)));
-        yield return ("fixture via-padded", () =>
+        yield return ("fixture microstrip", box => Gen(Em3dGeneratorTests.Microstrip(), box));
+        yield return ("fixture caseB-plated", box => Gen(Em3dGeneratorTests.CaseB(plated: true), box));
+        yield return ("fixture caseB-solid", box => Gen(Em3dGeneratorTests.CaseB(plated: false), box));
+        yield return ("fixture via-padded", box =>
         {
             var (s, src) = Em3dGeneratorTests.CaseB(plated: true);
             s.AirBox = PalaceBackendTests.Padded(1500);
-            return Gen((s, src));
+            return Gen((s, src), box);
         });
-        yield return ("fixture stripline", () => Gen(PalaceBackendTests.Stripline(800e-6, 1000e-6, 5e-3, 2.2)));
-        yield return ("fixture wave-microstrip", () => Gen(PalaceEigenTests.WaveMicrostrip(wave: true)));
-        yield return ("fixture wave-microstrip-outline", () => Gen(PalaceEigenTests.WaveMicrostrip(wave: true, outlineBeyond: true)));
-        yield return ("fixture lumped-microstrip", () => Gen(PalaceEigenTests.WaveMicrostrip(wave: false)));
+        yield return ("fixture stripline", box => Gen(PalaceBackendTests.Stripline(800e-6, 1000e-6, 5e-3, 2.2), box));
+        yield return ("fixture wave-microstrip", box => Gen(PalaceEigenTests.WaveMicrostrip(wave: true), box));
+        yield return ("fixture wave-microstrip-outline", box => Gen(PalaceEigenTests.WaveMicrostrip(wave: true, outlineBeyond: true), box));
+        yield return ("fixture lumped-microstrip", box => Gen(PalaceEigenTests.WaveMicrostrip(wave: false), box));
         foreach (var kind in new[] { Em3dProblemType.Electrostatic, Em3dProblemType.Eigenmode })
-            yield return ($"fixture microstrip-{kind}", () =>
+            yield return ($"fixture microstrip-{kind}", box =>
             {
                 var (s, src) = Em3dGeneratorTests.Microstrip();
                 s.Problem3D = kind;
                 if (kind == Em3dProblemType.Electrostatic) s.Terminals3D = [new EmTerminal3D("T", "none")];
-                return Gen((s, src));
+                return Gen((s, src), box);
             });
     }
 
-    private static Em3dGenerationResult Gen((EmSetup Setup, EmLayoutSource Source) f)
-        => Em3dGenerator.Generate(f.Setup, f.Source, f.Source.Technology!);
+    private static Em3dGenerationResult Gen((EmSetup Setup, EmLayoutSource Source) f, EmAirBox? box)
+    {
+        f.Setup.AirBox = GoldenAirBoxes.Merge(f.Setup.AirBox, box);
+        return Em3dGenerator.Generate(f.Setup, f.Source, f.Source.Technology!);
+    }
 
     // ── the dump ────────────────────────────────────────────────────────────────────────────────
 

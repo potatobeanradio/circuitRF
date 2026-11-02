@@ -67,6 +67,26 @@ public sealed class Em3dGeneratorTests
         Assert.Equal(Em3dBoundaryKind.Absorbing, Em3dGenerator.Generate(s3, src3, src3.Technology!).Problem!.Boundary.Faces.ZMin);
     }
 
+    /// <summary>A bottom plane stopping short of the board's edge metal by less than H is still the floor (93.75 % of the
+    /// footprint, all of it once the edge band is left out); one whose board reaches 3 mm past it is not.</summary>
+    [Fact]
+    public void ABottomPlanePulledBackFromTheEdge_IsTheFloor_AndOneUnderTwoThirdsOfTheBoardIsNot()
+    {
+        Em3dBoundaryKind Floor(long padY)
+        {
+            var (setup, source) = Microstrip();
+            var ground = source.Technology!.Stackup.Layers.Last(l => l.Kind == StackupKind.Conductor && l.IsGroundReference);
+            source.View.Shapes.Add(new RectShape { Layer = ground.DrawingLayers[0], X1 = 0, Y1 = -3_000_000, X2 = 10_000_000, Y2 = 3_000_000 });
+            // A pad on top copper beyond the plane's edge: 0.3 mm past it, inside H = 508 µm; or 3 mm past it.
+            source.View.Shapes.Add(new RectShape { Layer = new LayerKey(1, 0), X1 = 4_000_000, Y1 = padY, X2 = 5_000_000, Y2 = padY + 100_000 });
+            var r = Em3dGenerator.Generate(setup, source, source.Technology!);
+            Assert.True(r.Ok, r.Refusal);
+            return r.Problem!.Boundary.Faces.ZMin;
+        }
+        Assert.Equal(Em3dBoundaryKind.Pec, Floor(3_300_000));
+        Assert.NotEqual(Em3dBoundaryKind.Pec, Floor(5_900_000));
+    }
+
     /// <summary>Designer round 33: a board edge drawn only as a closed zero-width path on a copper layer leaves every
     /// dielectric reaching the air box, and the notes say so and name the layer; on the outline layer it bounds them.</summary>
     [Fact]

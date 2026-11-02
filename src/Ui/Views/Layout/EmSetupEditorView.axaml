@@ -45,8 +45,8 @@
             <Setter Property="FontSize" Value="10"/>
             <Setter Property="Foreground" Value="{DynamicResource SystemBaseMediumColor}"/>
         </Style>
-        <!-- brief-emb-1 — a component port the run would refuse. -->
-        <Style Selector="SelectableTextBlock.refused">
+        <!-- brief-emb-1 — a part the last Check left out of the run; why is in Messages. -->
+        <Style Selector="CheckBox.refused">
             <Setter Property="Foreground" Value="{DynamicResource CrfWarningBrush}"/>
         </Style>
         <Style Selector="TextBlock.sect">
@@ -1109,21 +1109,25 @@
                         </Grid>
                         <CheckBox Name="AllComponentPartsCheck" Content="Every two-terminal part"
                                   IsChecked="{Binding ViewModel.AllComponentParts}"/>
-                        <ItemsControl ItemsSource="{Binding ViewModel.ComponentPortRows}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate x:DataType="em:EmComponentPortRow">
-                                    <Grid ColumnDefinitions="90,60,*" Margin="0,1">
-                                        <CheckBox Content="{Binding Refdes}" IsChecked="{Binding IsIncluded}" VerticalAlignment="Top"/>
-                                        <TextBlock Grid.Column="1" Text="{Binding PadsText}" FontSize="11" Opacity="0.7"
-                                                   VerticalAlignment="Top" Margin="0,6,0,0"/>
-                                        <SelectableTextBlock Grid.Column="2" Text="{Binding Verdict}" FontSize="11" TextWrapping="Wrap"
-                                                             Margin="0,6,0,0" Classes.refused="{Binding IsRefused}"/>
-                                    </Grid>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                        <SelectableTextBlock Text="{Binding ViewModel.ComponentPortsStatus}" FontSize="11" TextWrapping="Wrap"
-                                             IsVisible="{Binding ViewModel.ComponentPortsStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                        <!-- A board places dozens of parts: the list scrolls on its own past about six rows rather than
+                             pushing the rest of the panel down. -->
+                        <ScrollViewer Name="ComponentPortsScroll" MaxHeight="200" VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Disabled">
+                            <ItemsControl ItemsSource="{Binding ViewModel.ComponentPortRows}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="em:EmComponentPortRow">
+                                        <Grid ColumnDefinitions="90,*" Margin="0,1">
+                                            <CheckBox Content="{Binding Refdes}" IsChecked="{Binding IsIncluded}" VerticalAlignment="Center"
+                                                      Classes.refused="{Binding IsRefused}"/>
+                                            <TextBlock Grid.Column="1" Text="{Binding PadsText}" FontSize="11" Opacity="0.7"
+                                                       VerticalAlignment="Center"/>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                        <TextBlock Text="{Binding ViewModel.ComponentPortsStatus}" FontSize="11" Opacity="0.7"
+                                   IsVisible="{Binding ViewModel.ComponentPortsStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                     </StackPanel>
                   </StackPanel>
                 </Border>

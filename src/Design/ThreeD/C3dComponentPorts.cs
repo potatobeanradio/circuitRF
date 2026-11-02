@@ -107,6 +107,8 @@ public sealed record C3dComponentPortBuild(
     /// <summary>The first refusal — the whole build's, or a port's.</summary>
     public string? FirstRefusal => Refusal ?? Ports.FirstOrDefault(p => p.Refusal is not null)?.Refusal;
 
+    /// <summary>Every part built: no port is left out. A run proceeds with the ones that were (<see cref="Warnings"/> names the
+    /// rest) unless <see cref="Refusal"/> is set.</summary>
     public bool Ok => FirstRefusal is null;
 
     /// <summary>The built ports as document ports, for <see cref="C3dPorts.Resolve(C3dDocument, C3dPortContext)"/>.</summary>
@@ -169,6 +171,14 @@ public static class C3dComponentPorts
             if (drawn.ObjectNets.TryGetValue(o, out var ns)) groundNets.UnionWith(ns);
 
         // ── Which parts ───────────────────────────────────────────────────────────────────────
+        // A named entry beside "*" is that part's override (its Z0, Reference or width), not a second port: "*" takes it in its
+        // place, and a part named twice is still refused.
+        var overrides = new Dictionary<string, EmComponentPort>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in setup.ComponentPorts.Where(c => c.Refdes.Trim() != EmSetup.AllComponents))
+        {
+            var rd = entry.Refdes.Trim();
+            if (!overrides.TryAdd(rd, entry with { Refdes = rd })) return Refuse($"ComponentPorts names {rd} twice; each part is one entry.");
+        }
         var wanted = new List<EmComponentPort>();
         foreach (var entry in setup.ComponentPorts)
         {
@@ -176,13 +186,11 @@ public static class C3dComponentPorts
             {
                 foreach (var p in parts.Values.Where(p => p.Pads.Count == 2).OrderBy(p => p.Refdes, NaturalOrder.Instance))
                     if (!wanted.Any(w => w.Refdes.Equals(p.Refdes, StringComparison.OrdinalIgnoreCase)))
-                        wanted.Add(entry with { Refdes = p.Refdes });
+                        wanted.Add(overrides.GetValueOrDefault(p.Refdes) is { } own ? own with { Refdes = p.Refdes } : entry with { Refdes = p.Refdes });
                 continue;
             }
             var rd = entry.Refdes.Trim();
-            if (wanted.Any(w => w.Refdes.Equals(rd, StringComparison.OrdinalIgnoreCase)))
-                return Refuse($"ComponentPorts names {rd} twice; each part is one entry.");
-            wanted.Add(entry with { Refdes = rd });
+            if (!wanted.Any(w => w.Refdes.Equals(rd, StringComparison.OrdinalIgnoreCase))) wanted.Add(overrides[rd]);
         }
         if (wanted.Count == 0)
             return Refuse("ComponentPorts asks for every placed two-terminal part, and no part placed on this 3D view's layout has two pads.");
@@ -193,6 +201,7 @@ public static class C3dComponentPorts
         var built = new List<Draft>();
         var bridges = new List<C3dShellBridge>();
         var results = new List<C3dComponentPort>();
+        var noModel = new List<string>();
         int number = firstNumber;
         foreach (var entry in wanted)
         {
@@ -270,7 +279,8 @@ public static class C3dComponentPorts
             foreach (var (pos, neg) in pairs)
             {
                 string name = pairs.Count == 1 ? rd : $"{rd}.{pos.Pad.Pin}";
-                var draft = Construct(name, rd, pos, neg, dbu, out string? constructWhy);
+                double? widthM = entry.WidthUm is > 0 and var w ? w * 1e-6 : null;
+                var draft = Construct(name, rd, pos, neg, dbu, out string? constructWhy, widthM);
                 if (draft is null)
                 {
                     results.Add(Refused(rd, constructWhy!) with { Pin = pos.Pad.Pin, ReferencePin = neg.Pad.Pin, Connector = connector });
@@ -284,24 +294,47 @@ public static class C3dComponentPorts
                     PartPins = [.. part.Pads.Select(pd => pd.Pin)], SchematicId = part.SchematicId, ClayPath = part.Frame.DocumentPath,
                 });
             }
-            if (part.HasModel == false && !connector)
-                warnings.Add($"{rd} has no model on the board's schematic, so the co-simulation netlist will carry a placeholder for it.");
+            if (part.HasModel == false && !connector) noModel.Add(rd);
         }
 
         // ── Apply every landing and bridge, then verify ────────────────────────────────────────
-        var (applied, applyWhy) = Apply(drawn, built.SelectMany(d => d.Landings).ToList(), bridges, dbu);
-        if (applyWhy is { } aw)
+        // A port whose landing cannot be applied, or which fails verification, is left out and the rest are built: one part's
+        // copper never costs every other part its port. Leaving one out takes its landings out of the geometry too, so the
+        // others are applied and verified again without them, until nothing more is left out.
+        var dropped = new Dictionary<string, string>(StringComparer.Ordinal);     // by port name
+        C3dElaboration applied;
+        while (true)
         {
-            // Name the part the failing landing belongs to.
-            return new C3dComponentPortBuild(results, drawn, bridges, notes, warnings, aw);
+            var live = built.Where(d => !dropped.ContainsKey(d.Name)).ToList();
+            var (app, applyWhy, culprits) = Apply(drawn, live.SelectMany(d => d.Landings).ToList(), bridges, dbu);
+            if (applyWhy is { } aw)
+            {
+                var named = live.Where(d => culprits.Contains(d.Name)).ToList();
+                if (named.Count == 0) return new C3dComponentPortBuild(results, drawn, bridges, notes, warnings, aw);
+                foreach (var d in named) dropped[d.Name] = aw;
+                continue;
+            }
+            applied = app;
+            var context = new C3dPortContext(applied, document.DbuPerMicron, null, []);
+            bool more = false;
+            // Each port's verification only reads the applied geometry and its own sheet, so they run side by side; the verdicts
+            // land in list order, as one after another would leave them.
+            var verdicts = new string?[live.Count];
+            Parallel.For(0, live.Count, i => verdicts[i] = Verify(live[i], applied, context, dbu));
+            for (int i = 0; i < live.Count; i++)
+                if (verdicts[i] is { } v) { dropped[live[i].Name] = v; more = true; }
+            if (!more) break;
         }
-        var context = new C3dPortContext(applied, document.DbuPerMicron, null, []);
+        // The ports left in are numbered without a gap, in list order.
+        int next = firstNumber;
+        for (int i = 0; i < built.Count; i++)
+            if (!dropped.ContainsKey(built[i].Name)) built[i] = built[i] with { Number = next++ };
         var final = new List<C3dComponentPort>();
         foreach (var r in results)
         {
             if (r.Refusal is not null) { final.Add(r); continue; }
             var d = built.First(b => b.Refdes == r.Refdes && (b.PosPin == r.Pin));
-            string? verdict = Verify(d, applied, context, dbu);
+            string? verdict = dropped.GetValueOrDefault(d.Name);
             var port = new C3dPort
             {
                 Number = d.Number,
@@ -324,8 +357,14 @@ public static class C3dComponentPorts
                 Refusal = verdict,
                 Verdict = verdict ?? "verified",
                 Nets = (d.PosNet, d.NegNet),
+                Landings = verdict is null ? r.Landings : [],
             });
         }
+        foreach (var r in final.Where(p => p.Refusal is not null))
+            warnings.Add($"{r.Refusal} {r.Refdes} is left out of this run; the other component ports are built.");
+        if (noModel.Count > 0)
+            warnings.Add($"{string.Join(", ", noModel)} {(noModel.Count == 1 ? "has" : "have")} no model on the board's schematic, so the " +
+                         $"co-simulation netlist will carry a placeholder for {(noModel.Count == 1 ? "it" : "each")}.");
         if (bridges.Count > 0)
             notes.Add($"{bridges.Count} copper block(s) bridge connector ground pads through the substrate, as a connector's shell does: " +
                       string.Join(", ", bridges.Select(b => $"'{b.Name}' ({b.Top} to {b.Bottom})")) + ".");
@@ -490,8 +529,10 @@ public static class C3dComponentPorts
 
     private static double Dist(Pad a, Pad b) => Math.Sqrt((a.Cx - b.Cx) * (a.Cx - b.Cx) + (a.Cy - b.Cy) * (a.Cy - b.Cy));
 
+    /// <param name="widthM">The port's width across the gap when its entry states one, centred on the width the pads share;
+    /// null: that shared width.</param>
     private static Draft? Construct(string name, string rd, (Pad Pad, Em3dSolid Solid) pos, (Pad Pad, Em3dSolid Solid) neg, double dbu,
-                                    out string? why)
+                                    out string? why, double? widthM = null)
     {
         why = null;
         string label = name == rd ? rd : $"{rd} (pad {pos.Pad.Pin})";
@@ -520,12 +561,22 @@ public static class C3dComponentPorts
         bool posLow = ax ? pos.Pad.Cx < neg.Pad.Cx : pos.Pad.Cy < neg.Pad.Cy;
         var (low, high) = posLow ? (pos, neg) : (neg, pos);
         double lowEdge = ax ? low.Pad.X1 : low.Pad.Y1, highEdge = ax ? high.Pad.X0 : high.Pad.Y0;
-        double mid = (lowEdge + highEdge) / 2;
-        double w0 = Math.Ceiling(face.W0 / dbu - 1e-6) * dbu, w1 = Math.Floor(face.W1 / dbu + 1e-6) * dbu;
+        var (fw0, fw1) = widthM is { } wm ? ((face.W0 + face.W1) / 2 - wm / 2, (face.W0 + face.W1) / 2 + wm / 2) : (face.W0, face.W1);
+        double w0 = Math.Ceiling(fw0 / dbu - 1e-6) * dbu, w1 = Math.Floor(fw1 / dbu + 1e-6) * dbu;
         if (w1 - w0 < 2 * dbu)
         {
             why = $"{label}: pads {pos.Pad.Pin} and {neg.Pad.Pin} share no width across the gap.";
             return null;
+        }
+        // The middle of the gap is where the two conductors' copper leaves off on the centre line, not the middle between the
+        // pads: a ground pour often fills most of the space between a part's pads, up to its clearance round the other pad, and
+        // the pads' own middle then lies in the pour. The pads' middle stays when the centre line does not show both.
+        double mid = (lowEdge + highEdge) / 2;
+        {
+            double vc = (w0 + w1) / 2, lc = ax ? low.Pad.Cx : low.Pad.Cy, hc = ax ? high.Pad.Cx : high.Pad.Cy;
+            var lowRun = Intervals((Em3dExtrudedPolygon)low.Solid.Primitive, vc, ax).Where(t => t.A <= lc && lc <= t.B).ToList();
+            var highRun = Intervals((Em3dExtrudedPolygon)high.Solid.Primitive, vc, ax).Where(t => t.A <= hc && hc <= t.B).ToList();
+            if (lowRun.Count == 1 && highRun.Count == 1 && highRun[0].A > lowRun[0].B) mid = (lowRun[0].B + highRun[0].A) / 2;
         }
         // Scan across the width, inset a little from the ends so a corner is not read as a face.
         double inset = Math.Min(2 * dbu, (w1 - w0) / 4);
@@ -620,7 +671,7 @@ public static class C3dComponentPorts
 
     /// <summary>The stretches of a line across the gap's width that lie in a conductor's copper: the line at <paramref name="v"/>
     /// across the axis (y when <paramref name="alongX"/>), as (from, to) along the gap's axis.</summary>
-    private static List<(double A, double B)> Intervals(Em3dExtrudedPolygon p, double v, bool alongX)
+    internal static List<(double A, double B)> Intervals(Em3dExtrudedPolygon p, double v, bool alongX)
     {
         var xs = new List<double>();
         void Ring(IReadOnlyList<Point2> ring)
@@ -635,6 +686,11 @@ public static class C3dComponentPorts
         Ring(p.Outline);
         foreach (var h in p.Holes) Ring(h);
         xs.Sort();
+        // A line through a vertex the outline only touches (both its edges on one side) crosses there twice at one point. Those
+        // two hold no copper between them: as an interval of their own they were read as a face 0.6 µm short of the real one,
+        // and inside copper they split one interval in two. Cancel them in pairs, which keeps every other crossing's parity.
+        for (int k = xs.Count - 2; k >= 0; k--)
+            if (k + 1 < xs.Count && xs[k + 1] - xs[k] <= 1e-12) { xs.RemoveRange(k, 2); k--; }
         var list = new List<(double, double)>();
         for (int k = 0; k + 1 < xs.Count; k += 2) list.Add((xs[k], xs[k + 1]));
         return list;
@@ -672,10 +728,12 @@ public static class C3dComponentPorts
 
     /// <summary>The elaboration with every landing unioned into its conductor and every shell bridge added. A landing that would
     /// touch another conductor (other than one already part of its own body) is a refusal: it would bridge two nets.</summary>
-    private static (C3dElaboration Elaboration, string? Refusal) Apply(C3dElaboration e, IReadOnlyList<C3dLanding> landings,
-                                                                     IReadOnlyList<C3dShellBridge> bridges, double dbu)
+    /// <remarks>The third item names the ports whose landings the refusal is about, so the build can leave them out.</remarks>
+    private static (C3dElaboration Elaboration, string? Refusal, IReadOnlySet<string> Ports) Apply(C3dElaboration e,
+        IReadOnlyList<C3dLanding> landings, IReadOnlyList<C3dShellBridge> bridges, double dbu)
     {
-        if (landings.Count == 0 && bridges.Count == 0) return (e, null);
+        var none = new HashSet<string>(StringComparer.Ordinal);
+        if (landings.Count == 0 && bridges.Count == 0) return (e, null, none);
         var solids = e.Solids.ToList();
         var nets = e.ObjectNets.ToDictionary(kv => kv.Key, kv => new HashSet<string>(kv.Value, StringComparer.Ordinal), StringComparer.Ordinal);
         foreach (var group in landings.GroupBy(l => l.Conductor))
@@ -692,7 +750,7 @@ public static class C3dComponentPorts
                     if (sameNet && other.Primitive is not Em3dExtrudedPolygon) continue;
                     return (e, $"{l.Port}: a landing rectangle {Um(l.DepthM)} × {Um(l.WidthM)} µm on '{group.Key}' at ({Mm(l.Box.X0)}, {Mm(l.Box.Y0)}) mm " +
                                $"would touch '{other.Name}', bridging two conductors{NetsOf(nets, group.Key, other.Name)}. The part's gap is too " +
-                               "close to other copper for a landing; move the copper, or draw this port by hand.");
+                               "close to other copper for a landing; move the copper, or draw this port by hand.", new HashSet<string>([l.Port], StringComparer.Ordinal));
                 }
             var paths = new Paths64 { Path(own.Outline) };
             var holes = new Paths64(own.Holes.Select(Path));
@@ -704,13 +762,13 @@ public static class C3dComponentPorts
             clipper.AddClip(Positive(rects));
             clipper.Execute(ClipType.Union, FillRule.NonZero, tree);
             if (tree.Count != 1)
-                return (e, $"{string.Join(", ", group.Select(l => l.Port).Distinct())}: the landing rectangles on '{group.Key}' do not join its copper into one piece ({tree.Count} pieces).");
+                return (e, $"{string.Join(", ", group.Select(l => l.Port).Distinct())}: the landing rectangles on '{group.Key}' do not join its copper into one piece ({tree.Count} pieces).", group.Select(l => l.Port).ToHashSet(StringComparer.Ordinal));
             var outer = tree[0];
             var newHoles = new List<IReadOnlyList<Point2>>();
             for (int k = 0; k < outer.Count; k++)
             {
                 if (outer[k].Count > 0)
-                    return (e, $"{string.Join(", ", group.Select(l => l.Port).Distinct())}: the landing rectangles on '{group.Key}' leave copper islands inside its holes; it cannot be lowered as one outline.");
+                    return (e, $"{string.Join(", ", group.Select(l => l.Port).Distinct())}: the landing rectangles on '{group.Key}' leave copper islands inside its holes; it cannot be lowered as one outline.", group.Select(l => l.Port).ToHashSet(StringComparer.Ordinal));
                 newHoles.Add(Ring(outer[k].Polygon!));
             }
             solids[at] = solids[at] with { Primitive = own with { Outline = Ring(outer.Polygon!), Holes = newHoles } };
@@ -735,7 +793,7 @@ public static class C3dComponentPorts
             if (origins.TryGetValue(b.Top, out var o)) origins[b.Name] = o;
         var ground = e.GroundBandObjects.Concat(bridges.Where(b => e.GroundBandObjects.Contains(b.Top) || e.GroundBandObjects.Contains(b.Bottom))
                                                        .Select(b => b.Name)).ToList();
-        return (e with { Solids = solids, ObjectNets = nets, Origins = origins, GroundBandObjects = ground }, null);
+        return (e with { Solids = solids, ObjectNets = nets, Origins = origins, GroundBandObjects = ground }, null, none);
 
         static Paths64 Positive(Paths64 ps) => new(ps.Select(p => Clipper.IsPositive(p) ? p : Reversed(p)));
         static Path64 Reversed(Path64 p) { var r = new Path64(p); r.Reverse(); return r; }
@@ -814,13 +872,17 @@ public static class C3dComponentPorts
                            .Where(s => { var (x0, y0, z0, x1, y1, z1) = Em3dProblem.Bounds(s.Primitive);
                                          return x0 <= u1 && x1 >= u0 && y0 <= v1 && y1 >= v0 && z0 <= d.ZMid && z1 >= d.ZMid; }).ToList();
         int nu = Math.Max(2, (int)Math.Ceiling((u1 - u0) / SampleStepM) + 1), nv = Math.Max(2, (int)Math.Ceiling((v1 - v0) / SampleStepM) + 1);
+        double[] vs = [.. Enumerable.Range(0, nv).Select(j => v0 + (v1 - v0) * j / (nv - 1))];
+        // An extruded polygon is tested through a SheetSampler (C3dThermal.Inside's own rule, its rows' crossings found once);
+        // anything else through Inside itself. The same samples in the same order, so the same first hit.
+        var samplers = near.Select(s => s.Primitive is Em3dExtrudedPolygon ep ? new SheetSampler(ep, vs, u0, u1, -0.5 * dbu) : null).ToList();
         for (int i = 0; i < nu && near.Count > 0; i++)
             for (int j = 0; j < nv; j++)
             {
-                var q = new Point3(u0 + (u1 - u0) * i / (nu - 1), v0 + (v1 - v0) * j / (nv - 1), d.ZMid);
-                foreach (var s in near)
-                    if (C3dThermal.Inside(s.Primitive, q, -0.5 * dbu))
-                        return $"{who}: copper of '{s.Name}' lies inside the port's sheet at ({Mm(q.X)}, {Mm(q.Y)}) mm.";
+                var q = new Point3(u0 + (u1 - u0) * i / (nu - 1), vs[j], d.ZMid);
+                for (int k = 0; k < near.Count; k++)
+                    if (samplers[k] is { } sp ? sp.Inside(q, j) : C3dThermal.Inside(near[k].Primitive, q, -0.5 * dbu))
+                        return $"{who}: copper of '{near[k].Name}' lies inside the port's sheet at ({Mm(q.X)}, {Mm(q.Y)}) mm.";
             }
         return null;
 
@@ -832,6 +894,102 @@ public static class C3dComponentPorts
             double probeX = x.AlongX ? x.X0 - dbu : (x.X0 + x.X1) / 2, probeY = x.AlongX ? (x.Y0 + x.Y1) / 2 : x.Y0 - dbu;
             var pos = e.Solids.First(s => s.Name == x.Positive);
             return C3dThermal.Inside(pos.Primitive, new Point3(probeX, probeY, x.ZMid), 0.5 * dbu) ? x.Positive : x.Negative;
+        }
+    }
+
+    /// <summary>
+    /// <see cref="C3dThermal.Inside(Em3dPrimitive, Point3, double)"/>'s rule for an extruded polygon, for the samples of one
+    /// sheet: rows at <c>vs</c>, columns within [<c>u0</c>, <c>u1</c>]. A board's ground pour is one polygon of a thousand
+    /// edges or more, and asking Inside of every sample measured each sample's distance to every edge — about 100 s for one
+    /// board's fourteen ports. Here each row's ray crossings are found once (the same expression, so the same parity), and only
+    /// the edges that can lie within the tolerance of the sheet are measured (an edge farther away never decides a sample).
+    /// </summary>
+    internal sealed class SheetSampler
+    {
+        private readonly Em3dExtrudedPolygon _p;
+        private readonly double _tol;
+        private readonly Ring _outline;
+        private readonly Ring[] _holes;
+
+        public SheetSampler(Em3dExtrudedPolygon p, double[] vs, double u0, double u1, double tol)
+        {
+            _p = p;
+            _tol = tol;
+            double vMin = vs.Min(), vMax = vs.Max(), reach = 2 * Math.Abs(tol);
+            _outline = new Ring(p.Outline, vs, u0 - reach, u1 + reach, vMin - reach, vMax + reach, reach);
+            // A hole whose box does not reach the sheet can neither hold a sample nor come within reach of one: left out.
+            _holes = [.. p.Holes.Where(h => h.Count > 0 && h.Max(q => q.X) >= u0 - reach && h.Min(q => q.X) <= u1 + reach
+                                            && h.Max(q => q.Y) >= vMin - reach && h.Min(q => q.Y) <= vMax + reach)
+                                .Select(h => new Ring(h, vs, u0 - reach, u1 + reach, vMin - reach, vMax + reach, reach))];
+        }
+
+        /// <summary>Inside(p, q, tol), for a sample on row <paramref name="row"/>.</summary>
+        public bool Inside(Point3 q, int row)
+        {
+            if (q.Z < _p.ZBottom - _tol || q.Z > _p.ZTop + _tol) return false;
+            if (!_outline.Contains(q.X, q.Y, row, _tol)) return false;
+            foreach (var h in _holes) if (h.Contains(q.X, q.Y, row, -_tol)) return false;
+            return true;
+        }
+
+        private sealed class Ring
+        {
+            /// <summary>Per row, the edges that come within reach of it, with their bounds: an edge farther than its bounds'
+            /// reach from a sample never decides it, so a sample measures only these (a pour's thousand edges become a few).</summary>
+            private readonly (Point2 A, Point2 B, double X0, double X1)[][] _rowEdges;
+            private readonly double _reach;
+            private readonly double[][] _crossings;
+
+            public Ring(IReadOnlyList<Point2> ring, double[] vs, double x0, double x1, double y0, double y1, double reach)
+            {
+                _reach = reach;
+                var near = new List<(Point2 A, Point2 B, double X0, double X1, double Y0, double Y1)>();
+                for (int i = 0; i < ring.Count; i++)
+                {
+                    var a = ring[i];
+                    var b = ring[(i + 1) % ring.Count];
+                    if (Math.Max(a.X, b.X) >= x0 && Math.Min(a.X, b.X) <= x1 && Math.Max(a.Y, b.Y) >= y0 && Math.Min(a.Y, b.Y) <= y1)
+                        near.Add((a, b, Math.Min(a.X, b.X), Math.Max(a.X, b.X), Math.Min(a.Y, b.Y), Math.Max(a.Y, b.Y)));
+                }
+                _rowEdges = new (Point2, Point2, double, double)[vs.Length][];
+                _crossings = new double[vs.Length][];
+                var xs = new List<double>();
+                for (int r = 0; r < vs.Length; r++)
+                {
+                    double y = vs[r];
+                    _rowEdges[r] = [.. near.Where(e => y >= e.Y0 - reach && y <= e.Y1 + reach).Select(e => (e.A, e.B, e.X0, e.X1))];
+                    xs.Clear();
+                    for (int i = 0, j = ring.Count - 1; i < ring.Count; j = i++)
+                    {
+                        var a = ring[i];
+                        var b = ring[j];
+                        if ((a.Y > y) != (b.Y > y)) xs.Add((b.X - a.X) * (y - a.Y) / (b.Y - a.Y) + a.X);
+                    }
+                    xs.Sort();
+                    _crossings[r] = [.. xs];
+                }
+            }
+
+            /// <summary>C3dThermal's InPolygon: within |tol| of an edge is <c>tol ≥ 0</c>; otherwise the parity of crossings right of x.
+            /// <paramref name="tol"/>'s size is never more than the reach the ring was built with.</summary>
+            public bool Contains(double x, double y, int row, double tol)
+            {
+                foreach (var (a, b, ex0, ex1) in _rowEdges[row])
+                    if (x >= ex0 - _reach && x <= ex1 + _reach && SegmentDistance(a, b, x, y) <= Math.Abs(tol)) return tol >= 0;
+                var c = _crossings[row];
+                int lo = 0, hi = c.Length;                       // the first crossing strictly greater than x
+                while (lo < hi) { int m = (lo + hi) / 2; if (c[m] > x) hi = m; else lo = m + 1; }
+                return ((c.Length - lo) & 1) == 1;
+            }
+
+            private static double SegmentDistance(Point2 a, Point2 b, double x, double y)
+            {
+                double dx = b.X - a.X, dy = b.Y - a.Y;
+                double l2 = dx * dx + dy * dy;
+                double t = l2 == 0 ? 0 : Math.Clamp(((x - a.X) * dx + (y - a.Y) * dy) / l2, 0, 1);
+                double px = a.X + t * dx - x, py = a.Y + t * dy - y;
+                return Math.Sqrt(px * px + py * py);
+            }
         }
     }
 

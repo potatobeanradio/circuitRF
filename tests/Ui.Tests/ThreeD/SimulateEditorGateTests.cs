@@ -189,6 +189,31 @@ public sealed class SimulateEditorGateTests : IDisposable
         Assert.Null(vm.SceneObject("port/1"));
     }
 
+    /// <summary>The realistic view with its Look's Ports off draws no port number, as it draws no port sheet; with Ports on, and
+    /// in the plain view, the number is there.</summary>
+    [Fact]
+    public void TheRealisticViewWithPortsOff_DrawsNoPortNumber()
+    {
+        C3dRect R(long u, long v, long du, long dv) => new() { Min = new C3dPoint2(u * Um, v * Um), Size = new C3dPoint2(du * Um, dv * Um) };
+        var doc = Microstrip(Setup("S1"));
+        doc.Ports = [new C3dPort { Number = 1, Plane = C3dPlane.YZ, Offset = 0, Rect = R(450, 0, 100, 100) }];
+        var vm = Open(doc);
+        Assert.NotNull(vm.PortResults[0].Resolved);
+        bool Numbered()
+        {
+            var overlay = new Viewer3DDrawOverlay();
+            vm.FillDrawOverlay(overlay);
+            return overlay.Labels.Any(l => l.Text == "1");
+        }
+        Assert.True(Numbered());
+        vm.Viewer.View.Realistic = true;
+        vm.Viewer.View.Environment = CircuitRF.Render.Scene3D.Look.EnvironmentPrefilter.For(C3dLook.DefaultStudio, null);
+        vm.Viewer.View.Look = CircuitRF.Render.Scene3D.Look.RealisticLook.From(new C3dLook { ShowPorts = false });
+        Assert.False(Numbered());
+        vm.Viewer.View.Look = CircuitRF.Render.Scene3D.Look.RealisticLook.From(new C3dLook { ShowPorts = true });
+        Assert.True(Numbered());
+    }
+
     /// <summary>A port unticked shows nothing of itself — its sheet, its number, and for a refused port its "refused" text and red
     /// outline — and stays that way across a rebuild; ticked again, all of it is back.</summary>
     [Fact]

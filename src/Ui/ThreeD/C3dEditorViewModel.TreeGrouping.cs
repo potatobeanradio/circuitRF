@@ -32,7 +32,7 @@ public enum C3dTreeGrouping { Material, Primitive }
 
 /// <summary>What a group of the editor's tree holds — what code finds a group by (a header may be any material's name).</summary>
 public enum C3dTreeGroupRole { Objects, Construction, Instances, Ports, AirBox, Booleans, Groups, HeatSources, Probes, MeshRegions, ThermalBoundaries,
-                              EffectiveBlocks, SymmetryPlanes, FieldPlots, NotModelled, LumpedElements }
+                              EffectiveBlocks, SymmetryPlanes, FieldPlots, NotModelled, LumpedElements, ComponentPorts }
 
 public sealed partial class C3dEditorViewModel
 {
@@ -152,7 +152,7 @@ public sealed partial class C3dEditorViewModel
                     if (SceneObject(n) is { } s) Viewer.SetVisibleEverywhere(s.Id, visible);
                 foreach (var c in r.Children) c.Sync(visible);
                 r.Sync(visible);
-                if (r.Kind is "Port" or TerminalKind)                  // a refused port has no sheet: its overlay goes too
+                if (r.Kind is "Port" or TerminalKind or ComponentPortKind)   // a refused port has no sheet: its overlay goes too
                     foreach (string n in group ? names : [r.Name]) SetPortShown(n, visible);
             }
         }

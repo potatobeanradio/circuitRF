@@ -310,6 +310,7 @@ public sealed class SarSetupUnchangedTests
     {
         var (setup, source) = Em3dGeneratorTests.Microstrip();
         setup.Solver3D = Em3dSolverId.OpenEms;
+        setup.AirBox = GoldenAirBoxes.For("fixture microstrip");       // the golden's own box, never the default
         var r = Em3dGenerator.Generate(setup, source, source.Technology!);
         Assert.True(r.Ok, r.Refusal);
         var gs = CemOpenEms.ResolveGrid(setup.OpenEms);

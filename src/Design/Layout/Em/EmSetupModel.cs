@@ -105,7 +105,13 @@ public sealed record EmPort3D(int Port, Em3dPortKind Kind = Em3dPortKind.Lumped,
 /// <param name="Z0">The port's reference impedance, as a <c>.c3d</c> port writes one (<c>50</c>, <c>25+j10</c>); null is 50 Ω.</param>
 /// <param name="Reference">R-emb1-6 — the port's negative end: one of the part's own pins (its ground pin), or the conductor a
 /// pad lands on. Null: the second pad of a two-terminal part, the part's ground pad otherwise.</param>
-public sealed record EmComponentPort(string Refdes, string? Z0 = null, string? Reference = null);
+/// <param name="WidthUm">The port's width across its gap, micrometres, centred where the pads put it. Null: the width the two
+/// pads share. An entry beside <c>*</c> overrides that part's port without naming it twice.</param>
+public sealed record EmComponentPort(string Refdes, string? Z0 = null, string? Reference = null, double? WidthUm = null)
+{
+    /// <summary>Overrides nothing: written as its refdes alone.</summary>
+    public bool IsPlain => Z0 is null && Reference is null && WidthUm is null;
+}
 
 /// <summary>brief-em3d-23 R-em3d23-4a — an eigenmode solve's settings; a null field takes its default.</summary>
 public sealed record EmEigenmode3D(int? Count = null, double? TargetGHz = null)

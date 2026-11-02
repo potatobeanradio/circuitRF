@@ -121,6 +121,22 @@ public partial class C3dPropertiesView : UserControl
 
     private void OnVertexLostFocus(object? sender, RoutedEventArgs e) => _vm?.CommitVertex();
 
+    private void OnPortKey(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter) { _vm?.CommitPort(); e.Handled = true; }
+        else if (e.Key == Key.Escape) { _vm?.Reload(); e.Handled = true; }
+    }
+
+    private void OnPortLostFocus(object? sender, RoutedEventArgs e) => _vm?.CommitPort();
+
+    private void OnComponentPortKey(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter) { _vm?.CommitComponentPort(); e.Handled = true; }
+        else if (e.Key == Key.Escape) { _vm?.Reload(); e.Handled = true; }
+    }
+
+    private void OnComponentPortLostFocus(object? sender, RoutedEventArgs e) => _vm?.CommitComponentPort();
+
     private void OnDimensionKey(object? sender, KeyEventArgs e)
     {
         if (e.Key == Key.Escape) { _vm?.Reload(); e.Handled = true; return; }

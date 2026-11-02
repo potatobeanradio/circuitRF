@@ -88,7 +88,7 @@ using CircuitRF.Design.Layout;
 // panel does; each finding prints.
 //
 // --c3d-setup-panel <x.c3d> opens a .c3d's first EM embedded setup in the same panel, embedded, with its Component ports list
-// over the document's placed layouts (brief-emb-1); --check-component-ports presses Check, and each row's verdict prints.
+// over the document's placed layouts (brief-emb-1); --check-component-ports presses Check, and what it posts to Messages prints.
 //
 // --cem opens the EM Setup editor on a .cem, as the workspace opens one: the file's setup, its own view model, the real
 // EmSetupEditorView. Every named CheckBox's state and tooltip is printed, so a setting is read as well as seen.
@@ -528,11 +528,17 @@ else if (c3dSetupPanel is not null)
     var elaboration = new CircuitRF.Design.ThreeD.C3dElaborator().Elaborate(c3dDoc, c3dSetupPanel, panelCws);
     var panelVm = new CircuitRF.Ui.Layout.Em.EmSetupEditorViewModel(c3dSetupPanel, embedded.Setup!, embedded: true)
     {
-        ComponentPortsContext = new CircuitRF.Ui.Layout.Em.EmComponentPortsContext(() => c3dDoc, () => c3dSetupPanel, () => panelCws, () => elaboration),
+        ComponentPortsContext = new CircuitRF.Ui.Layout.Em.EmComponentPortsContext(() => c3dDoc, () => c3dSetupPanel, () => panelCws, () => elaboration,
+                                                                                    (text, warning) => Console.WriteLine($"message ({(warning ? "warning" : "info")}): {text}")),
     };
-    if (componentPortsCheck) panelVm.CheckComponentPortsCommand.Execute(null);
+    if (componentPortsCheck)
+    {
+        // Check runs off the UI thread and finishes on it: pump until it has.
+        var checking = panelVm.CheckComponentPortsCommand.ExecuteAsync(null);
+        while (!checking.IsCompleted) { Dispatcher.UIThread.RunJobs(); Thread.Sleep(5); }
+    }
     foreach (var row in panelVm.ComponentPortRows)
-        Console.WriteLine($"{row.Refdes} [{(row.IsIncluded ? "x" : " ")}] {row.PadsText}: {row.Verdict}");
+        Console.WriteLine($"{row.Refdes} [{(row.IsIncluded ? "x" : " ")}] {row.PadsText}{(row.IsRefused ? " (left out)" : "")}");
     Console.WriteLine($"status: {panelVm.ComponentPortsStatus}");
     host = new Window { Width = sizeGiven ? width : 700, Height = sizeGiven ? height : 2000,
                         Content = new EmSetupEditorView { DataContext = new CircuitRF.Ui.Layout.Em.EmSetupDocument(embedded.Name, panelVm, c3dSetupPanel) } };
@@ -929,7 +935,9 @@ foreach (var (kind, arg) in steps)
         }
         case "--type":
         {
-            var dialog = TopDialog() ?? (imageVm is not null || vendorMode || cem is not null || snp is not null ? host : throw new InvalidOperationException("--type: no dialog is open"));
+            // Name=text with no dialog open types into that named box of the hosted view itself (the 3D Properties panel's).
+            var dialog = TopDialog() ?? (imageVm is not null || vendorMode || cem is not null || snp is not null || arg.IndexOf('=') > 0
+                ? host : throw new InvalidOperationException("--type: no dialog is open"));
             // Name=text types into the text box of that x:Name (an inline box: SizeInput, DistanceInput); else the dialog's
             // first text box.
             int eq = arg.IndexOf('=');

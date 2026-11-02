@@ -25986,3 +25986,91 @@ Check all reach it, so none of them has a copy.
   generated with, and the committed golden matches byte for byte.
 - Gates: `MeshRobustnessTests.AGroundViaInAHoleOfTheBottomPlane_LeavesTheFloorOnIt_AndASignalViaDoesNot`,
   `Em3dGeneratorTests.TheDefaultAirBox_PadsByMultiplesOfH_RoundedToFivePercentOfItsOwnAxis`.
+
+## The floor on a plane pulled back from the board edge, and component ports on a part whose pad sits in a pour (2026-11-01)
+
+- **The floor's coverage rule measured the plane against the whole footprint**, so the copper-to-edge pullback every board
+  has counted against it. On a 34.9 × 19.9 mm two-layer board whose bottom plane is one unbroken polygon (no hole, one notch
+  round a mounting hole), the 80 µm / 460 µm pullback and the notch left 92.5 % against the 95 % rule: no floor, and the
+  bottom face padded 10 H = 6 mm, which the panel shows as 895 % (10 H to the nearest 5 % of the 670 µm stack). The three
+  earlier fixes to this rule were all about HOLES; none reached the coverage test. `Em3dGenerator.PlaneCoversFootprint` now
+  leaves out a band H wide round the footprint's edge (never more than a quarter of its shorter side), and both paths call
+  it (`C3dProblemAssembly.PlaneFloor`, `Em3dLayoutSolids.UnbrokenCover`). A plane under part of the board is still refused:
+  the band is H, not a percentage.
+- **A scan line through a vertex the ring only touches** (both its edges on one side of the line) adds two equal crossings.
+  `C3dComponentPorts.Intervals` paired them as a run of zero length, which became the conductor's FACE 0.59 µm in front of
+  the real copper, and no landing could "run on to its face" from it: C1 and C3 on that board, each with a ground pad in the
+  pour, were refused. Inside copper the same pair split one run in two. Equal neighbouring crossings now cancel in pairs.
+- **The gap's middle was the pads' middle.** Where the ground pour fills most of the space between a part's pads (up to its
+  clearance round the signal pad), the pads' middle lies IN the pour and the part was refused as "copper across the middle
+  of the gap" (C6, a 3216 tantalum). It is now where the two conductors' copper leaves off on the centre scan line, with the
+  pads' middle as the fallback when that line does not show both.
+- **One refused part refused the whole problem**, by EMB-1's design, so with Every two-terminal part on, those three left the
+  3D view with no component ports at all. With them fixed, all 14 two-terminal parts on that board build and verify.
+- **A part whose port cannot be built is now LEFT OUT, and the rest are built** (owner decision, same day). A landing that
+  would bridge copper, or a port that fails verification, drops that part and takes its landings out of the geometry; the
+  others are applied and verified again without them until nothing more drops, then renumbered without a gap (a gap in the
+  port numbers would itself refuse the run). Each left-out part is a build WARNING naming it, and the build's warnings now
+  reach the run's own (`C3dProblemAssembly.Assemble`), so a skipped part is said wherever a run speaks. The run still refuses
+  when the build itself cannot be made, or when no port at all is left to drive. `check` reports a left-out part as that
+  warning, not an error. The per-part "no model on the board's schematic" warnings are one line naming every such part.
+- **The setup panel carries no verdict text.** Check posts each part's line (the sentence `explain --component-ports` prints)
+  to Messages, a left-out part as a warning; the panel keeps one short line and marks a left-out part's row in the warning
+  colour. The list scrolls on its own past about seven rows.
+- **The generator and wire dumps state their own air box** (`tests/Ui.Tests/Em3d/GoldenAirBoxes.cs`), as do the openEMS
+  microstrip golden and the SAR test that reads it. They had taken the default, so DefaultPaddingTopPercent rewrote 32 of
+  them though nothing they record had changed. Each face is the value the committed dump was written with, found by
+  regenerating rather than by arithmetic: a percentage where one reproduces the dump to the last digit, micrometres
+  otherwise. Micrometres cannot reach every padding (one ulp of a µm value is a little more than one ulp of the metres it
+  becomes, so some metre values are skipped), which is why some faces are odd percentages. A floor on a ground plane stays
+  unstated: stating ZMin would take it off the plane. No dump file changed.
+- **Component ports were never shown before a run.** The 3D editor's Object Tree and view list only what its scene's records
+  resolve, which were the document's own ports; component ports were built inside `Assemble` and thrown away, so ticking
+  Every two-terminal part changed nothing anyone could see. The editor now builds the active setup's component ports with
+  each scene (on the build thread, from the elaboration it already made): drawn as port sheets with their refdes, and
+  listed under a Component ports group, one row per part, a left-out part's row saying why. The rows are their own kind
+  (`ComponentPortKind`), never the document's Port rows, so nothing that edits a port can reach one; the tick hides the
+  sheet and label for the session, as a port's does.
+- **Building them took about 100 s on this board (Debug).** Verification samples each sheet on a 2 µm grid (~100,000 samples a
+  port) and asked `C3dThermal.Inside` of every nearby conductor at each — and the ground pour is one polygon of a thousand
+  edges, every sample measuring its distance to every edge. `C3dComponentPorts.SheetSampler` answers the same question by
+  the same rule with each row's ray crossings found once and only the edges near the sheet measured: 0.69 s, the same
+  14 of 14 verified. Check in the setup panel also ran the whole assembly on the UI thread; it runs off it now, on a copy
+  of the document taken when it is pressed, and the button is disabled until it finishes.
+- **Ports are edited in the Properties Inspector.** A drawn port: Name, Number, Z0, its Plane (XY/XZ/YZ), its centre on the
+  plane, Width × Height, and where the plane sits — each through the editor's own writer (`SetPortGeometry` is new; the rest
+  existed only on the tree's right-click menu), one undo entry each, lengths in the `.c3d`'s display unit shown beside the
+  box. Another plane keeps the port's centre in space and its width and height; a centre and size left alone keep the
+  corner exactly, so an odd size that halves a DBU short does not creep. A drawn port that does not resolve has no sheet to
+  click, so its tree row opens the page — its place is usually what to fix. A cylinder-patch port and a port with terminals
+  show their name, number and Z0 only.
+- **A component port is the setup's, and only its own two values are edited:** its Z0 and its width across the gap, the new
+  `WidthUm` on its `ComponentPorts` entry (centred where the pads put it; omitted, the width the pads share). Its place and
+  orientation are its pads', so they follow the layout. With `"*"` the list had no entry to put them in, and naming a part
+  beside `"*"` was refused as "names C1 twice": **an entry beside `"*"` is now that part's override**, which ticking Every
+  two-terminal part keeps. A left-out part's row opens the page too, since a width is often why it was left out.
+- **A port edit's scene, faster (Debug, measured end to end in the editor):** a component port's width 750 → ~260 ms, a drawn
+  port's width ~200 → ~112 ms. Four changes, none of which moves an answer:
+  - `C3dPortContext.Distance` measured a segment against every triangle of a conductor whose BOX was near it — and a board's
+    ground pour is one conductor of thousands of triangles boxed by the whole board. A triangle is now measured only when the
+    gap between its box and the segment's is below the best distance so far (and, bounded, below the tolerance): exact for
+    the minimum. Resolving 15 drawn ports went 120 → 13 ms; a component port's edge checks 18 → 0.4 ms each.
+  - `SheetSampler` indexes each ring's near edges by row and leaves out holes whose box cannot reach the sheet.
+  - Component ports are verified in parallel (each reads only the applied geometry and its own sheet; verdicts in list order).
+  - The editor keeps the last component-port build while nothing it is built from changes (the document but for its own
+    ports and setups, the files the elaboration read, the setup, the first port number free), so editing a drawn port, a
+    look or anything else builds no part's port again. What is left of an edit is scene assembly, ~90 ms, which every edit pays.
+- **The realistic view's Look hid the port sheets and left their numbers.** The frame plan hides a port's sheet when the
+  Look's Ports is off; the numbers, refdes and refused outlines are the editor's 2D overlay, which only asked each port's own
+  tick. The overlay now asks the Look too (`View.DrawsRealistic`, then `Look.Shows(Ports)`); a port being drawn still previews.
+- **Still failing, and not an air box:** the openEMS `via` writer golden (it states its box): the via's fill solid is no
+  longer written and the grid has fewer lines, from an earlier change; it fails the same way on a clean checkout of the
+  previous commit.
+- Gates: `Em3dGeneratorTests.ABottomPlanePulledBackFromTheEdge_IsTheFloor_AndOneUnderTwoThirdsOfTheBoardIsNot`,
+  `ComponentPortBuildTests.AScanLineThatOnlyTouchesAVertex_ReadsNoBoundaryThere`,
+  `ComponentPortBuildTests.ACopperFillReachingPastThePadsMiddle_PutsTheGapWhereTheCopperLeavesOff`,
+  `ComponentPortBuildTests.APartThatCannotBeBuilt_IsLeftOut_AndTheOthersAreBuilt`,
+  `ComponentPortBuildTests.TheSheetSampler_AnswersAsInsideDoes`, `ComponentPortBuildTests.TheEditor_DrawsAndListsTheSetupsComponentPorts`,
+  `ComponentPortBuildTests.TheInspector_SetsAComponentPortsWidth_BesideEveryPart`,
+  `ComponentPortBuildTests.TheInspector_ResizesADrawnPort_AndTurnsItOntoAnotherPlane`,
+  `SimulateEditorGateTests.TheRealisticViewWithPortsOff_DrawsNoPortNumber`.

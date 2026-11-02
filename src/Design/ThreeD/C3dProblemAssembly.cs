@@ -253,18 +253,11 @@ public static class C3dProblemAssembly
                               .Select(s => s.Primitive is Em3dExtrudedPolygon ep ? ep.Outline : Rect(Em3dProblem.Bounds(s.Primitive)));
             if (Em3dGenerator.CoveredHole(plane.SelectMany(p => p.Holes), metal, drills) is not null) return null;
         }
-        double area = plane.Sum(p => Math.Abs(Area(p.Outline)));
-        return area >= Em3dGenerator.PlaneFloorCover * (x.X1 - x.X0) * (x.Y1 - x.Y0) ? x.Z0 : null;
+        return Em3dGenerator.PlaneCoversFootprint(plane.Select(p => (IReadOnlyList<(double X, double Y)>)[.. p.Outline.Select(q => (q.X, q.Y))]),
+                                                  x.X0, x.Y0, x.X1, x.Y1, PaddingHeight(e)) ? x.Z0 : null;
 
         static IReadOnlyList<Point2> Rect((double X0, double Y0, double Z0, double X1, double Y1, double Z1) b)
             => [new(b.X0, b.Y0), new(b.X1, b.Y0), new(b.X1, b.Y1), new(b.X0, b.Y1)];
-
-        static double Area(IReadOnlyList<Point2> r)
-        {
-            double a = 0;
-            for (int i = 0, j = r.Count - 1; i < r.Count; j = i++) a += (r[j].X + r[i].X) * (r[j].Y - r[i].Y);
-            return a / 2;
-        }
     }
 
     /// <summary>Designer round 33 — H for the default padding, read off the content a run models.</summary>
@@ -434,7 +427,11 @@ public static class C3dProblemAssembly
         if (setup.ComponentPorts.Count > 0 && setup.Problem3D != Em3dProblemType.Electrostatic)
         {
             components = C3dComponentPorts.Build(setup, document, drawn, FirstComponentPortNumber(document));
-            if (components is { Ok: false }) return No(components.FirstRefusal!, e.Warnings) with { ComponentPorts = components };
+            // A part whose port cannot be built is left out with a warning; the run refuses only when the build itself cannot be
+            // made, or when nothing is left to drive.
+            if (components is { Refusal: { } whole }) return No(whole, e.Warnings) with { ComponentPorts = components };
+            if (components is not null && components.DocumentPorts.Count == 0 && document.Ports.Count == 0)
+                return No(components.FirstRefusal ?? "No component port could be built.", e.Warnings) with { ComponentPorts = components };
             if (components is not null)
             {
                 drawn = components.Elaboration;
@@ -568,7 +565,7 @@ public static class C3dProblemAssembly
         {
             WantsDc = wantsDc,
             ComponentPorts = components,
-            Warnings = e.Warnings,
+            Warnings = components is { Warnings.Count: > 0 } ? [.. e.Warnings, .. components.Warnings] : e.Warnings,
             Wires = e.Wires,
             Origins = e.Origins,
             MaterialSources = materialSources,

@@ -181,9 +181,15 @@ full description.
   reaching back into solid copper across the whole width. Landings exist only in the solved problem; the layout is
   not changed. Before anything is meshed, in `check` as in the run, each port is verified: no landing touches other
   copper (it would join two nets), each end of the sheet touches its own pad's copper and nothing else, its sides touch
-  nothing, no copper lies inside it, and its two pads are on different nets. A failure refuses the run naming the part
-  and what was found. Port numbers follow the 3D view's own ports, in list order; an entry may state its own `Z0`, and
-  its `Reference` (one of the part's pins) to say which pad is the negative end. A part with more pads, such as an
+  nothing, no copper lies inside it, and its two pads are on different nets. A part that fails is left out of the run
+  with a warning naming it and what was found, and the other parts' ports are built; the run refuses only when no port
+  is left. Port numbers follow the 3D view's own ports, in list order, without a gap; an entry may state its own `Z0`,
+  its `Reference` (one of the part's pins) to say which pad is the negative end, and its `WidthUm`, the port's width
+  across the gap in micrometres, centred where the pads put it (omitted: the width the two pads share). An entry beside
+  `"*"` is that part's override. The ports are drawn in the 3D view and listed under **Component ports** in the Object
+  Tree as soon as the setup names them, a part left out with why; selecting one shows its Z0 and width in the
+  Properties Inspector, which writes them into the part's entry. Its place and orientation come from the pads, so they
+  follow the layout. A part with more pads, such as an
   amplifier, gets one gap port per signal pad against its own ground pad (a pad on the ground net, or named GND); a
   part whose ground pads on top and bottom copper lie over each other is a coaxial launch, and its shell is modelled
   by a copper block through the substrate joining the two. `explain <view.c3d> --component-ports` lists each port's

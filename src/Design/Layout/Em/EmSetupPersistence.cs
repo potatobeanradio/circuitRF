@@ -1176,7 +1176,7 @@ public sealed class ComponentPortsConverter : JsonConverter<List<EmComponentPort
         {
             if (reader.TokenType == JsonTokenType.String) { list.Add(new EmComponentPort(reader.GetString() ?? "")); continue; }
             if (reader.TokenType != JsonTokenType.StartObject)
-                throw new JsonException("A ComponentPorts entry is a reference designator or an object with Refdes, Z0 and Reference.");
+                throw new JsonException("A ComponentPorts entry is a reference designator or an object with Refdes, Z0, Reference and WidthUm.");
             using var doc = JsonDocument.ParseValue(ref reader);
             string? Get(string key)
             {
@@ -1190,7 +1190,9 @@ public sealed class ComponentPortsConverter : JsonConverter<List<EmComponentPort
                         };
                 return null;
             }
-            list.Add(new EmComponentPort(Get("Refdes") ?? "", Get("Z0"), Get("Reference")));
+            double? width = Get("WidthUm") is { } w && double.TryParse(w, System.Globalization.NumberStyles.Float,
+                                                                       System.Globalization.CultureInfo.InvariantCulture, out double wv) ? wv : null;
+            list.Add(new EmComponentPort(Get("Refdes") ?? "", Get("Z0"), Get("Reference"), width));
         }
         return list;
     }
@@ -1198,15 +1200,16 @@ public sealed class ComponentPortsConverter : JsonConverter<List<EmComponentPort
     public override void Write(Utf8JsonWriter writer, List<EmComponentPort>? value, JsonSerializerOptions options)
     {
         if (value is null) { writer.WriteNullValue(); return; }
-        if (value is [{ Refdes: EmSetup.AllComponents, Z0: null, Reference: null }]) { writer.WriteStringValue(EmSetup.AllComponents); return; }
+        if (value is [{ Refdes: EmSetup.AllComponents, IsPlain: true }]) { writer.WriteStringValue(EmSetup.AllComponents); return; }
         writer.WriteStartArray();
         foreach (var c in value)
         {
-            if (c.Z0 is null && c.Reference is null) { writer.WriteStringValue(c.Refdes); continue; }
+            if (c.IsPlain) { writer.WriteStringValue(c.Refdes); continue; }
             writer.WriteStartObject();
             writer.WriteString("Refdes", c.Refdes);
             if (c.Z0 is { } z) writer.WriteString("Z0", z);
             if (c.Reference is { } r) writer.WriteString("Reference", r);
+            if (c.WidthUm is { } w) writer.WriteNumber("WidthUm", w);
             writer.WriteEndObject();
         }
         writer.WriteEndArray();

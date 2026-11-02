@@ -401,6 +401,7 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         ClearModel();
         ClearImage();
         ClearFaceImage();
+        ClearPortPages();
         var viewer = editor.Viewer;
         var sel = viewer.Selection;
         // brief-em3d-67 R-em3d67-6b — a fillet's or chamfer's row: its own fields, not its object's.
@@ -433,6 +434,20 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
             if (editor.TreeOnlyObjectIndex() is >= 0 and var only) { LoadObject(only, inScene: false); return; }
             if (editor.SelectedTreeItem is { IsGroup: true, GroupPath: { } undrawn }) { LoadGroup(undrawn); return; }
             if (editor.SelectedTreeItem is { IsAirBox: true }) { LoadAirBox(); return; }
+            // A drawn port's row with no sheet (a port that does not resolve): its page all the same — its place is what to fix.
+            if (editor.SelectedTreeItem is { Kind: "Port" } portRow && editor.PortOfRow(portRow) is { } unresolved)
+            {
+                Heading = C3dPorts.Label(unresolved);
+                LoadPortPage(unresolved);
+                LoadPortModel([unresolved]);
+                return;
+            }
+            // A component port's row, its sheet not drawn (a part left out of the run has none): its page all the same.
+            if (editor.SelectedTreeItem is { Kind: C3dEditorViewModel.ComponentPortKind } componentRow && editor.ComponentPortOfRow(componentRow) is { } cp)
+            {
+                LoadComponentPortPage(cp);
+                return;
+            }
             // brief-em3d-101 — a face image's row when it is not drawn (Hidden): its section all the same
             if (editor.SelectedTreeItem is { Kind: C3dEditorViewModel.FaceImageKind, FaceImageHost: >= 0 and var fh, FaceImageFace: { } ff })
             {
@@ -528,8 +543,14 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
             }
             return;
         }
-        // brief-em3d-93 — a port's Model: the one field a port has here
-        if (o.Kind == Scene3DKind.Port) { LoadPortModel(editor.SelectedPorts()); return; }
+        // A drawn port: its name, number, Z0 and place, and its Model. A component port: its own Z0 and width, the rest read-only.
+        if (o.Kind == Scene3DKind.Port)
+        {
+            if (editor.PortOf(o) is { } drawn) LoadPortPage(drawn);
+            else if (editor.ComponentPortOf(o) is { } component) { LoadComponentPortPage(component); return; }
+            LoadPortModel(editor.SelectedPorts());
+            return;
+        }
         // brief-em3d-108 R-em3d108-2d — a setup's view writes nothing: its look, read-only
         if (editor.IsViewOnly) { LoadAppearanceReadOnly(o, ViewOnlyAppearance); return; }
 

@@ -86,6 +86,170 @@ public sealed class ComponentPortBuildTests(Xunit.Abstractions.ITestOutputHelper
         Assert.Contains("bridging two conductors", g.Refusal, StringComparison.Ordinal);
     }
 
+    /// <summary>A scan line through a vertex the ring only touches (both its edges on one side) reads no copper boundary there:
+    /// inside copper it does not split the run in two, and an ordinary crossing is unchanged. The split, or a zero-length run
+    /// in front of the face, was what refused a real board's capacitor whose ground pad sits in a pour.</summary>
+    [Fact]
+    public void AScanLineThatOnlyTouchesAVertex_ReadsNoBoundaryThere()
+    {
+        // A 10 × 10 plate with a diamond hole whose lowest vertex (5, 5) the line y = 5 only touches.
+        var plate = new Em3dExtrudedPolygon([new(0, 0), new(10, 0), new(10, 10), new(0, 10)],
+                                            [[new(5, 5), new(6, 7), new(5, 9), new(4, 7)]], 0, 1);
+        Assert.Equal([(0.0, 10.0)], C3dComponentPorts.Intervals(plate, 5, alongX: true));
+        Assert.Equal([(0.0, 4.0), (6.0, 10.0)], C3dComponentPorts.Intervals(plate, 7, alongX: true));
+    }
+
+    /// <summary>Copper of pad 2's conductor reaching most of the way across the gap, as a ground pour round the other pad
+    /// does, puts the gap where the two conductors leave off rather than refusing it as copper across the pads' middle.</summary>
+    [Fact]
+    public void ACopperFillReachingPastThePadsMiddle_PutsTheGapWhereTheCopperLeavesOff()
+    {
+        var (g, _) = Assemble(["C1"], [new RectShape { Layer = Top, X1 = Um(4900), Y1 = Um(4700), X2 = Um(5400), Y2 = Um(5300) }]);
+        Assert.True(g.Ok, g.Refusal);
+        var c1 = Assert.Single(g.ComponentPorts!.Ports);
+        Assert.Equal("verified", c1.Verdict);
+        double x0 = c1.Port!.Rect.Min.U * 1e-9, x1 = (c1.Port.Rect.Min.U + c1.Port.Rect.Size.U) * 1e-9;
+        Assert.InRange(x0, 4849 * M, 4850.1 * M);   // the trace cap's tip
+        Assert.Equal(4900 * M, x1, 9);              // the fill's edge
+    }
+
+    /// <summary>A part whose port cannot be built is left out with a warning, and the others are built and numbered without a
+    /// gap: one part's copper never costs every other part its port.</summary>
+    [Fact]
+    public void APartThatCannotBeBuilt_IsLeftOut_AndTheOthersAreBuilt()
+    {
+        var (g, _) = Assemble(["C1", "U1"], [new RectShape { Layer = Top, X1 = Um(4750), Y1 = Um(5250), X2 = Um(4900), Y2 = Um(5400) }]);
+        Assert.True(g.Ok, g.Refusal);
+        var build = g.ComponentPorts!;
+        Assert.Contains("bridging two conductors", Assert.Single(build.Ports, p => p.Refdes == "C1").Refusal);
+        Assert.Equal([1, 2], build.Ports.Where(p => p.Ok).Select(p => p.Port!.Number));
+        Assert.Equal(["U1.IN", "U1.OUT"], build.Ports.Where(p => p.Ok).Select(p => p.Port!.Name));
+        Assert.Equal([1, 2], g.Problem!.Ports.Select(p => p.Number));
+        Assert.Contains(g.Warnings, w => w.Contains("C1 is left out of this run", StringComparison.Ordinal));
+    }
+
+    /// <summary>The verification's sampler answers every sample exactly as C3dThermal.Inside does — inside, outside, on an edge,
+    /// in a hole, either sign of tolerance — so making it fast moved no verdict.</summary>
+    [Fact]
+    public void TheSheetSampler_AnswersAsInsideDoes()
+    {
+        var plate = new Em3dExtrudedPolygon(
+            [new(0, 0), new(10e-6, 0), new(10e-6, 4e-6), new(6e-6, 4e-6), new(6e-6, 10e-6), new(0, 10e-6)],
+            [[new(1e-6, 1e-6), new(3e-6, 1e-6), new(2e-6, 3e-6)]], 0, 1e-6);
+        double[] vs = [.. Enumerable.Range(0, 41).Select(j => -0.5e-6 + 11e-6 * j / 40)];
+        foreach (double tol in new[] { -0.5e-9, 0.5e-9, -0.3e-6 })
+        {
+            var sampler = new C3dComponentPorts.SheetSampler(plate, vs, -0.5e-6, 10.5e-6, tol);
+            for (int i = 0; i <= 44; i++)
+                for (int j = 0; j < vs.Length; j++)
+                {
+                    var q = new Point3(-0.5e-6 + 11e-6 * i / 44, vs[j], 0.5e-6);
+                    Assert.Equal(C3dThermal.Inside(plate, q, tol), sampler.Inside(q, j));
+                }
+        }
+    }
+
+    /// <summary>The 3D editor builds the active setup's component ports with its scene: drawn as port sheets, and listed in the
+    /// Object Tree under Component ports — ticking "Every two-terminal part" shows them, with no run.</summary>
+    [Fact]
+    public void TheEditor_DrawsAndListsTheSetupsComponentPorts()
+    {
+        var (_, cws, c3d) = Written(["C1"]);
+        var (vm, settle) = OpenEditor(c3d, cws);
+        try
+        {
+            var (part, result) = Assert.Single(vm.ComponentPortResults);
+            Assert.Equal("C1", part.Refdes);
+            var port = Assert.IsType<Em3dPort>(result?.Resolved);
+            Assert.NotNull(vm.SceneObject(port.Name));
+            var group = Assert.Single(vm.Tree.OfType<CircuitRF.Ui.ThreeD.C3dTreeGroup>(), g => g.Role == CircuitRF.Ui.ThreeD.C3dTreeGroupRole.ComponentPorts);
+            Assert.Equal("C1", Assert.Single(group.Items).Label);
+        }
+        finally { vm.Dispose(); }
+    }
+
+    /// <summary>A component port's width, typed in the Inspector, is the setup's override for that part beside "*" — and the port
+    /// built next is that wide, still centred on the pads.</summary>
+    [Fact]
+    public void TheInspector_SetsAComponentPortsWidth_BesideEveryPart()
+    {
+        var (_, cws, c3d) = Written(["*"]);
+        var (vm, settle) = OpenEditor(c3d, cws);
+        try
+        {
+            var before = Assert.Single(vm.ComponentPortResults, c => c.Part.Refdes == "C1").Part;
+            Assert.Equal(500 * M, before.WidthM, 9);
+            var row = vm.Tree.OfType<CircuitRF.Ui.ThreeD.C3dTreeGroup>().Single(g => g.Role == CircuitRF.Ui.ThreeD.C3dTreeGroupRole.ComponentPorts)
+                        .Items.Single(i => i.Label == "C1");
+            vm.SelectedTreeItem = row;
+            vm.Properties.Reload();
+            Assert.True(vm.Properties.IsComponentPortPage);
+            vm.Properties.ComponentWidth = "400um";
+            vm.Properties.CommitComponentPort();
+            Assert.Equal("", vm.Properties.Error);
+            settle();
+
+            Assert.Equal([EmSetup.AllComponents, "C1"], vm.ActiveSetup!.ComponentPorts.Select(c => c.Refdes));
+            Assert.Equal(400, vm.ActiveSetup.ComponentPorts[1].WidthUm);
+            var after = Assert.Single(vm.ComponentPortResults, c => c.Part.Refdes == "C1").Part;
+            Assert.Equal(400 * M, after.WidthM, 9);
+            double Centre(C3dComponentPort p) => (p.Port!.Rect.Min.V + p.Port.Rect.Size.V / 2.0) * 1e-9;
+            Assert.Equal(Centre(before), Centre(after), 9);
+        }
+        finally { vm.Dispose(); }
+    }
+
+    /// <summary>A drawn port's width typed in the Inspector resizes it about its centre; another plane keeps its centre in space and
+    /// its width and height.</summary>
+    [Fact]
+    public void TheInspector_ResizesADrawnPort_AndTurnsItOntoAnotherPlane()
+    {
+        var (_, cws, c3d) = Written([]);
+        var doc = C3dPersistence.LoadFromFile(c3d);
+        long D(double um) => (long)Math.Round(um * doc.DbuPerMicron);
+        doc.Ports.Add(new C3dPort { Number = 7, Name = "P7", Plane = C3dPlane.XY, Offset = D(543),
+                                    Rect = new C3dRect { Min = new C3dPoint2(D(4900), D(4750)), Size = new C3dPoint2(D(200), D(500)) } });
+        C3dPersistence.SaveToFile(c3d, doc);
+        var (vm, settle) = OpenEditor(c3d, cws);
+        try
+        {
+            vm.SelectedTreeItem = vm.Tree.OfType<CircuitRF.Ui.ThreeD.C3dTreeGroup>().Single(g => g.Role == CircuitRF.Ui.ThreeD.C3dTreeGroupRole.Ports)
+                                    .Items.Single(i => i.Name.EndsWith("/7", StringComparison.Ordinal));
+            vm.Properties.Reload();
+            Assert.True(vm.Properties.IsPortPage);
+            vm.Properties.PortWidth = "300um";
+            vm.Properties.CommitPort();
+            Assert.Equal("", vm.Properties.Error);
+            var port = vm.Document.Ports.Single(p => p.Number == 7);
+            Assert.Equal((D(4850), D(300)), (port.Rect.Min.U, port.Rect.Size.U));      // about its centre, x = 5000 µm
+
+            vm.Properties.PortPlane = "XZ";
+            Assert.Equal(C3dPlane.XZ, port.Plane);
+            Assert.Equal((D(5000), D(543), D(5000)), (port.Rect.Min.U + port.Rect.Size.U / 2, port.Rect.Min.V + port.Rect.Size.V / 2, port.Offset));
+            Assert.Equal((D(300), D(500)), (port.Rect.Size.U, port.Rect.Size.V));
+        }
+        finally { vm.Dispose(); }
+    }
+
+    /// <summary>A 3D editor on <paramref name="c3d"/> with its first scene adopted, and how to wait for the next.</summary>
+    private static (CircuitRF.Ui.ThreeD.C3dEditorViewModel Vm, Action Settle) OpenEditor(string c3d, string cws)
+    {
+        var posted = new System.Collections.Concurrent.ConcurrentQueue<Action>();
+        var fake = new CircuitRF.Ui.Tests.ThreeD.PatchRecordingBackend();
+        var vm = new CircuitRF.Ui.ThreeD.C3dEditorViewModel(c3d, C3dPersistence.LoadFromFile(c3d), () => fake, () => cws, posted.Enqueue);
+        void Settle() => Assert.True(SpinWait.SpinUntil(() =>
+        {
+            while (posted.TryDequeue(out var a)) a();
+            return vm.AdoptedGeneration == vm.Viewer.Source.Requested;
+        }, TimeSpan.FromSeconds(60)), "the scene never settled");
+        vm.RestoreActiveSetup(null);
+        vm.Viewer.Resized(640, 480);
+        vm.Viewer.Session.EnsureBackend();
+        vm.Start();
+        Settle();
+        return (vm, Settle);
+    }
+
     /// <summary>A three-pad part gets one gap port per signal pad, each against its own ground pad, numbered in list order.</summary>
     [Fact]
     public void AThreePadPart_GetsTwoPorts_EachAgainstItsGroundPad()
@@ -119,8 +283,8 @@ public sealed class ComponentPortBuildTests(Xunit.Abstractions.ITestOutputHelper
     }
 
     /// <summary>R-emb1-8 — <c>explain --component-ports</c> lists each port's refdes, conductors, gap, width, landings and verdict
-    /// without meshing, its list overriding the setup's; <c>check</c> reports the same ports (and a refusal by refdes) — both
-    /// through the CLI as a process.</summary>
+    /// without meshing, its list overriding the setup's; <c>check</c> reports the same ports (and a part left out, by refdes) —
+    /// both through the CLI as a process.</summary>
     [Fact]
     public void ExplainAndCheck_ReportTheComponentPorts_ThroughTheCli()
     {
@@ -141,10 +305,13 @@ public sealed class ComponentPortBuildTests(Xunit.Abstractions.ITestOutputHelper
         Assert.True(exit == 0, stderr + stdout);
         Assert.Contains("setup 'board': C1: port 1", stdout + stderr);
 
+        // A part that cannot be built is left out with a warning and the rest are built, so check passes and says so.
         var (_, _, bad) = Written(["C1", "Q9"]);
-        (exit, _, stderr) = CliProcess.Run(repo, [], "check", bad);
-        Assert.Equal(1, exit);
-        Assert.Contains("Q9 is no part placed on this 3D view's layout", stderr);
+        (exit, stdout, stderr) = CliProcess.Run(repo, [], "check", bad);
+        Assert.True(exit == 0, stderr + stdout);
+        Assert.Contains("Q9 is no part placed on this 3D view's layout", stdout + stderr);
+        Assert.Contains("Q9 is left out of this run", stdout + stderr);
+        Assert.Contains("setup 'board': C1: port 1", stdout + stderr);
     }
 
     /// <summary>

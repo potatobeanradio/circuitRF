@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using CircuitRF.Design.Layout.Em;
 using CircuitRF.Design.Layout.Em3d;
 using CircuitRF.Ui.Tests.Em3d;
 using CircuitRF.WBond;
@@ -15,7 +16,8 @@ namespace CircuitRF.Ui.Tests.ThreeD;
 //  the split, and anything after it, must reproduce them byte for byte. Beyond the generator dump
 //  (Em3dGeneratorDumpTests) each wire's whole report is written — both loop heights and every
 //  process value with its source — so the split cannot move a number the problem does not carry.
-//  Set CRF_WRITE_WIRE_DUMPS=1 to (re)write them; nothing else does.
+//  Set CRF_WRITE_WIRE_DUMPS=1 to (re)write them; nothing else does. Every case states its air box (GoldenAirBoxes), so a
+//  change to the default padding never moves a dump.
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 
 public sealed class WireSplitDumpTests
@@ -32,7 +34,7 @@ public sealed class WireSplitDumpTests
     public void Gate1_TheWireBuild_IsByteIdenticalToItsPreSplitDump(string name)
     {
         var build = Fixtures().Single(f => f.Name == name).Build;
-        string text = Dump(build());
+        string text = Dump(build(GoldenAirBoxes.For(name)));
         string path = Path.Combine(PalaceBackendTests.RepoRoot(), "testdata", "em3d", "wire-dumps", FileName(name));
         if (Environment.GetEnvironmentVariable("CRF_WRITE_WIRE_DUMPS") == "1")
         {
@@ -46,7 +48,7 @@ public sealed class WireSplitDumpTests
     private static string FileName(string name)
         => new string([.. name.Select(c => char.IsLetterOrDigit(c) || c is '-' or '.' ? c : '_')]) + ".txt";
 
-    internal static IEnumerable<(string Name, Func<Em3dGenerationResult> Build)> Fixtures()
+    internal static IEnumerable<(string Name, Func<EmAirBox?, Em3dGenerationResult> Build)> Fixtures()
     {
         // The examples: every .cem whose layout carries a .wBond.
         foreach (var (name, build) in Em3dGeneratorDumpTests.Fixtures())
@@ -54,68 +56,68 @@ public sealed class WireSplitDumpTests
                 yield return (name, build);
 
         string caseA = Path.Combine(PalaceBackendTests.RepoRoot(), "testdata", "em3d", "f0", "A-bondwire", "kernelw", "case.wBond");
-        yield return ("f0 case A", () => Em3dWireTests.Generate(WBondIo.ReadFile(caseA)));
-        yield return ("f0 case A round", () =>
+        yield return ("f0 case A", box => Em3dWireTests.Generate(WBondIo.ReadFile(caseA), airBox: box));
+        yield return ("f0 case A round", box =>
         {
             var d = WBondIo.ReadFile(caseA);
             foreach (var w in d.AllWires()) w.CrossSection = WireCrossSection.Round;
-            return Em3dWireTests.Generate(d);
+            return Em3dWireTests.Generate(d, airBox: box);
         });
 
         WPoint3[] asym = [new(-475_000, 0, 112_700), new(-400_000, 30_000, 250_000), new(300_000, 0, 250_000), new(475_000, 0, 112_700)];
-        yield return ("asymmetric array foot", () =>
+        yield return ("asymmetric array foot", box =>
         {
             var d = OneWire(asym);
             d.Arrays[0].FootLengthNm = 40_000;
-            return Em3dWireTests.Generate(d);
+            return Em3dWireTests.Generate(d, airBox: box);
         });
-        yield return ("asymmetric overhang", () =>
+        yield return ("asymmetric overhang", box =>
         {
             var d = OneWire(asym);
             d.Arrays[0].FootLengthNm = 40_000;
             d.Arrays[0].Wires[0].FootLengthNm = 200_000;
-            return Em3dWireTests.Generate(d);
+            return Em3dWireTests.Generate(d, airBox: box);
         });
         foreach (bool vertical in new[] { false, true })
-            yield return ($"ball start vertical={vertical}", () =>
+            yield return ($"ball start vertical={vertical}", box =>
             {
                 var d = OneWire(new(-475_000, 0, 112_700),
                                 vertical ? new WPoint3(-475_000, 0, 250_000) : new WPoint3(-325_000, 0, 262_700),
                                 new(325_000, 0, 262_700), new(475_000, 0, 112_700));
                 d.Arrays[0].Wires[0].StartBond = BondStyle.Ball;
-                return Em3dWireTests.Generate(d);
+                return Em3dWireTests.Generate(d, airBox: box);
             });
-        yield return ("ball end round", () =>
+        yield return ("ball end round", box =>
         {
             var d = OneWire(new(-475_000, 0, 112_700), new(-325_000, 0, 262_700), new(475_000, 0, 112_700));
             d.Arrays[0].Wires[0].EndBond = BondStyle.Ball;
             d.Arrays[0].Wires[0].CrossSection = WireCrossSection.Round;
-            return Em3dWireTests.Generate(d);
+            return Em3dWireTests.Generate(d, airBox: box);
         });
-        yield return ("through vertical", () => Em3dWireTests.Generate(OneWire(
+        yield return ("through vertical", box => Em3dWireTests.Generate(OneWire(
             new(-475_000, 0, 112_700), new(-375_000, 0, 212_700), new(-370_000, 0, 312_700), new(-370_000, 0, 412_700),
-            new(-375_000, 0, 512_700), new(-200_000, 0, 600_000), new(475_000, 0, 112_700))));
-        yield return ("plan dogleg", () => Em3dWireTests.Generate(OneWire(
+            new(-375_000, 0, 512_700), new(-200_000, 0, 600_000), new(475_000, 0, 112_700)), airBox: box));
+        yield return ("plan dogleg", box => Em3dWireTests.Generate(OneWire(
             new(-475_000, 0, 112_700), new(-375_000, 0, 300_000), new(0, 0, 300_000), new(-100_000, 173_205, 300_000),
-            new(300_000, 300_000, 300_000), new(475_000, 0, 112_700))));
-        yield return ("two arrays", () =>
+            new(300_000, 300_000, 300_000), new(475_000, 0, 112_700)), airBox: box));
+        yield return ("two arrays", box =>
         {
             var d = OneWire(new(-475_000, 0, 112_700), new(0, 0, 262_700), new(475_000, 0, 112_700));
             var second = new Wire { DiameterNm = 17_780, Material = "Gold" };
             second.Points.AddRange([new(-470_000, 20_000, 112_700), new(0, 20_000, 200_000), new(470_000, 20_000, 112_700)]);
             d.Arrays.Add(new WireArray { Name = "G2", Wires = { second } });
-            return Em3dWireTests.Generate(d);
+            return Em3dWireTests.Generate(d, airBox: box);
         });
-        yield return ("refusal unknown metal", () =>
+        yield return ("refusal unknown metal", box =>
         {
             var d = OneWire(new(-475_000, 0, 112_700), new(475_000, 0, 112_700));
             d.Arrays[0].Wires[0].Material = "Unobtainium";
-            return Em3dWireTests.Generate(d);
+            return Em3dWireTests.Generate(d, airBox: box);
         });
-        yield return ("refusal no pad", () =>
-            Em3dWireTests.Generate(OneWire(new(-475_000, 0, 112_700), new(0, 0, 262_700), new(900_000, 0, 112_700))));
-        yield return ("refusal sharp turn", () => Em3dWireTests.Generate(OneWire(
-            new(-475_000, 0, 112_700), new(0, 0, 262_700), new(-300_000, 0, 262_800), new(475_000, 0, 112_700))));
+        yield return ("refusal no pad", box =>
+            Em3dWireTests.Generate(OneWire(new(-475_000, 0, 112_700), new(0, 0, 262_700), new(900_000, 0, 112_700)), airBox: box));
+        yield return ("refusal sharp turn", box => Em3dWireTests.Generate(OneWire(
+            new(-475_000, 0, 112_700), new(0, 0, 262_700), new(-300_000, 0, 262_800), new(475_000, 0, 112_700)), airBox: box));
     }
 
     private static WBondDesign OneWire(params WPoint3[] points)

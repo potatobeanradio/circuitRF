@@ -1601,6 +1601,70 @@ public static class Em3dGenerator
     public const double PlaneFloorCover = 0.95;
 
     /// <summary>
+    /// Whether a bottom ground plane's <paramref name="outlines"/> cover <see cref="PlaneFloorCover"/> of the footprint
+    /// (<paramref name="x0"/>…<paramref name="y1"/>, metres), leaving out a band <paramref name="edgeBandM"/> wide round the
+    /// footprint's edge (H, the dielectric under the top metal; never more than a quarter of the footprint's shorter side).
+    /// A board's copper is pulled back from its edge as a matter of course, and on a small board that band alone is several
+    /// percent of the area: a 0.46 mm pullback on a 20 mm board read 92.5 % against the whole footprint and kept an
+    /// unbroken plane from being the floor. Holes are judged on their own (<see cref="CoveredHole"/>), so only the outlines
+    /// count here.
+    /// </summary>
+    public static bool PlaneCoversFootprint(IEnumerable<IReadOnlyList<(double X, double Y)>> outlines,
+                                            double x0, double y0, double x1, double y1, double? edgeBandM)
+    {
+        double band = Math.Clamp(edgeBandM ?? 0, 0, Math.Min(x1 - x0, y1 - y0) / 4);
+        double ax = x0 + band, ay = y0 + band, bx = x1 - band, by = y1 - band;
+        double footprint = (bx - ax) * (by - ay);
+        if (footprint <= 0) return false;
+        double covered = outlines.Sum(o => Math.Abs(SignedArea(ClipToRect(o, ax, ay, bx, by))));
+        return covered >= PlaneFloorCover * footprint;
+
+        static double SignedArea(List<(double X, double Y)> r)
+        {
+            double a = 0;
+            for (int i = 0, j = r.Count - 1; i < r.Count; j = i++) a += (r[j].X + r[i].X) * (r[j].Y - r[i].Y);
+            return a / 2;
+        }
+
+        // Clipping a simple ring against a rectangle, one side at a time. Where the ring leaves and re-enters the rectangle the
+        // result runs along the side between, which adds no area, so the area is exact for a non-convex ring too.
+        static List<(double X, double Y)> ClipToRect(IReadOnlyList<(double X, double Y)> ring, double ax, double ay, double bx, double by)
+        {
+            var poly = ring.ToList();
+            poly = Side(poly, p => p.X >= ax, (p, q) => Cut(p, q, ax, true));
+            poly = Side(poly, p => p.X <= bx, (p, q) => Cut(p, q, bx, true));
+            poly = Side(poly, p => p.Y >= ay, (p, q) => Cut(p, q, ay, false));
+            poly = Side(poly, p => p.Y <= by, (p, q) => Cut(p, q, by, false));
+            return poly;
+        }
+
+        static (double X, double Y) Cut((double X, double Y) p, (double X, double Y) q, double at, bool onX)
+        {
+            double t = onX ? (at - p.X) / (q.X - p.X) : (at - p.Y) / (q.Y - p.Y);
+            return onX ? (at, p.Y + t * (q.Y - p.Y)) : (p.X + t * (q.X - p.X), at);
+        }
+
+        static List<(double X, double Y)> Side(List<(double X, double Y)> poly, Func<(double X, double Y), bool> inside,
+                                               Func<(double X, double Y), (double X, double Y), (double X, double Y)> cut)
+        {
+            var output = new List<(double X, double Y)>();
+            for (int i = 0; i < poly.Count; i++)
+            {
+                var cur = poly[i];
+                var prev = poly[(i + poly.Count - 1) % poly.Count];
+                bool ci = inside(cur), pi = inside(prev);
+                if (ci)
+                {
+                    if (!pi) output.Add(cut(prev, cur));
+                    output.Add(cur);
+                }
+                else if (pi) output.Add(cut(prev, cur));
+            }
+            return output;
+        }
+    }
+
+    /// <summary>
     /// brief-emb-2 R-emb2-5 — the first hole of a floor plane that something lies over in footprint (a centre, metres): a ring
     /// of <paramref name="metal"/> overlapping it, or a drill of <paramref name="drills"/> reaching into it. Null when every hole
     /// is clear, so the floor closing them shorts nothing and no field above one is cut off.
