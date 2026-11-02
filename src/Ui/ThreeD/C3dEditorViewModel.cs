@@ -272,6 +272,15 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         var extent = e.DisplayExtent() ?? FieldPlotResolver.EmptyExtent;
         var box = records.Box ?? C3dProblemAssembly.ExtentBox(extent);
         IReadOnlyList<Em3dSolid> solids = e.Solids;
+        // The component ports' landings and shell bridges are drawn as the run solves them: each conductor they changed in place
+        // of its elaboration's own, each bridge after the rest. Drawn without them, a port's sheet met the imported copper at two
+        // corners of an arc while the solver met a straight face.
+        var portSolids = records.ComponentPortSolids;
+        if (portSolids.Count > 0)
+        {
+            var own = new HashSet<string>(solids.Select(s => s.Name), StringComparer.Ordinal);
+            solids = [.. solids.Select(s => portSolids.GetValueOrDefault(s.Name) ?? s), .. portSolids.Values.Where(s => !own.Contains(s.Name))];
+        }
         IReadOnlyList<Em3dSheet> sheets = e.Sheets;
         IReadOnlyList<Em3dMaterial> materials = e.Materials;
         // 3D editor bugs round 1 — what has no material is drawn as a wireframe, last (never an instance run's
@@ -297,7 +306,9 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
             new Scene3DBuildOptions(name => e.Provenance.TryGetValue(name, out var p) ? p.FaceNames : null,
                                     _tessellations, DrawAirBox: records.Box is not null, Origin: _origin,
                                     FeatureShare: name => e.Provenance.TryGetValue(name, out var p) ? ShareOf(p) : null,
-                                    Instancing: name => unassigned.Contains(name) || e.Images.ContainsKey(name) || faceImageHosts.Contains(name) ? null : instancing(name),
+                                    // A conductor a landing changed is no copy of its run's prototype: it is drawn from its own triangles.
+                                    Instancing: name => unassigned.Contains(name) || e.Images.ContainsKey(name) || faceImageHosts.Contains(name)
+                                                        || portSolids.ContainsKey(name) ? null : instancing(name),
                                     Wireframe: unassigned.Count > 0 ? unassigned.Contains : null,
                                     EditorBoundaries: true,
                                     Ghost: inputs.Ghosts is { Count: > 0 } ghosts ? n => ghosts.TryGetValue(n, out var g) ? g : Scene3DGhost.None : null,

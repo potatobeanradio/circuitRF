@@ -609,6 +609,11 @@ public sealed partial class C3dEditorViewModel
         /// was built (null when it is left out). Drawn, labelled and listed like the document's own ports, but never editable
         /// as one: the setup's ComponentPorts list is what makes them.</summary>
         public IReadOnlyList<(C3dComponentPort Part, C3dPortResult? Result)> ComponentPorts { get; init; } = [];
+
+        /// <summary>The conductors the component ports changed, by name, as the run solves them: a conductor with its landing
+        /// rectangles unioned in, and each connector shell bridge. The scene draws these in place of the elaboration's own, so
+        /// a port sheet is seen against the copper it is verified against rather than the copper before its landings.</summary>
+        public IReadOnlyDictionary<string, Em3dSolid> ComponentPortSolids { get; init; } = new Dictionary<string, Em3dSolid>();
     }
 
     private readonly System.Collections.Concurrent.ConcurrentDictionary<long, RecordsView> _records = new();
@@ -651,11 +656,12 @@ public sealed partial class C3dEditorViewModel
         {
             ThermalTints = ThermalTints(doc, e, setup, hiddenTints), Lumped = lumped,
             ComponentPorts = e.Ok ? ComponentPortsOf(setup, setupJson, doc, e, box) : [],
+            ComponentPortSolids = e.Ok && _componentPortsBuilt is { } built ? built.Solids : new Dictionary<string, Em3dSolid>(),
         };
     }
 
     /// <summary>The last component ports built, and what they were built from (see <see cref="ComponentPortsOf"/>).</summary>
-    private (string Key, IReadOnlyList<(C3dComponentPort, C3dPortResult?)> Ports)? _componentPortsBuilt;
+    private (string Key, IReadOnlyList<(C3dComponentPort, C3dPortResult?)> Ports, IReadOnlyDictionary<string, Em3dSolid> Solids)? _componentPortsBuilt;
 
     /// <summary>
     /// The active setup's component ports on this elaboration (the build's thread, under the elaboration lock): each part, and its
@@ -667,7 +673,11 @@ public sealed partial class C3dEditorViewModel
     private IReadOnlyList<(C3dComponentPort, C3dPortResult?)> ComponentPortsOf(EmSetup? setup, string? setupJson, C3dDocument doc, C3dElaboration e,
                                                                              Em3dAirBox? box)
     {
-        if (setup is not { Is3D: true, IsThermal: false, ComponentPorts.Count: > 0 } || setup.Problem3D == Em3dProblemType.Electrostatic) return [];
+        if (setup is not { Is3D: true, IsThermal: false, ComponentPorts.Count: > 0 } || setup.Problem3D == Em3dProblemType.Electrostatic)
+        {
+            _componentPortsBuilt = null;
+            return [];
+        }
         int first = C3dProblemAssembly.FirstComponentPortNumber(doc);
         var geometry = C3dPersistence.Deserialize(C3dPersistence.Serialize(doc));
         geometry.Ports.Clear();
@@ -677,13 +687,22 @@ public sealed partial class C3dEditorViewModel
         if (_componentPortsBuilt is { } kept && kept.Key == key) return kept.Ports;
         C3dComponentPortBuild? build;
         try { build = C3dComponentPorts.Build(setup, doc, e, first); }
-        catch (Exception) { return []; }
-        if (build is null) return [];
+        catch (Exception) { _componentPortsBuilt = null; return []; }
+        if (build is null) { _componentPortsBuilt = null; return []; }
         var ctx = C3dProblemAssembly.PortContext(setup, doc, build.Elaboration, box);
         IReadOnlyList<(C3dComponentPort, C3dPortResult?)> ports =
             [.. build.Ports.Select(p => (p, p.Port is { } port ? C3dPorts.Resolve(port, doc.DbuPerMicron, ctx) : (C3dPortResult?)null))];
-        _componentPortsBuilt = (key, ports);
+        _componentPortsBuilt = (key, ports, ChangedSolids(build));
         return ports;
+    }
+
+    /// <summary>The solids of <paramref name="build"/>'s elaboration that its landings and shell bridges made or changed, by name
+    /// (see <see cref="RecordsView.ComponentPortSolids"/>).</summary>
+    private static IReadOnlyDictionary<string, Em3dSolid> ChangedSolids(C3dComponentPortBuild build)
+    {
+        var names = new HashSet<string>(build.Ports.SelectMany(p => p.Landings).Select(l => l.Conductor), StringComparer.Ordinal);
+        names.UnionWith(build.Bridges.Select(b => b.Name));
+        return build.Elaboration.Solids.Where(s => names.Contains(s.Name)).ToDictionary(s => s.Name, StringComparer.Ordinal);
     }
 
     /// <summary>The component ports the current scene built (see <see cref="RecordsView.ComponentPorts"/>).</summary>

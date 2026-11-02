@@ -178,8 +178,10 @@ full description.
   would be built) or with `em <view.c3d> --component-ports "C1,C2"` for one run. Each is a lumped **gap** port between
   the part's two pads: its ends at the closest copper facing the gap across the port's width — the pad, a trace's
   round cap, a zone's arc — and where that copper is not one straight face, a **landing** rectangle extends it to one,
-  reaching back into solid copper across the whole width. Landings exist only in the solved problem; the layout is
-  not changed. Before anything is meshed, in `check` as in the run, each port is verified: no landing touches other
+  reaching back into solid copper across the whole width. So a port between pads that end in rounded or scalloped
+  copper, as imported artwork often does, meets that copper along both of its edges rather than at a few points.
+  Landings are part of the solved problem and are drawn in the 3D view as part of the copper they extend, so the
+  view shows what is solved; the layout is not changed. Before anything is meshed, in `check` as in the run, each port is verified: no landing touches other
   copper (it would join two nets), each end of the sheet touches its own pad's copper and nothing else, its sides touch
   nothing, no copper lies inside it, and its two pads are on different nets. A part that fails is left out of the run
   with a warning naming it and what was found, and the other parts' ports are built; the run refuses only when no port

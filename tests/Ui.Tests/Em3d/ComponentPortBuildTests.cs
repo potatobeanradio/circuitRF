@@ -180,6 +180,33 @@ public sealed class ComponentPortBuildTests(Xunit.Abstractions.ITestOutputHelper
         finally { vm.Dispose(); }
     }
 
+    /// <summary>The 3D view draws the copper the run solves: each conductor a landing extends is drawn reaching the landing's face,
+    /// both corners of it. Drawn from the elaboration before its landings, the sheet met a round cap and a zone's arc at their
+    /// tips while the solver met a straight face.</summary>
+    [Fact]
+    public void TheEditor_DrawsTheLandingsTheRunSolves()
+    {
+        var (_, cws, c3d) = Written(["C1"]);
+        var (vm, settle) = OpenEditor(c3d, cws);
+        try
+        {
+            var (part, _) = Assert.Single(vm.ComponentPortResults);
+            Assert.Equal(2, part.Landings.Count);
+            var scene = vm.Viewer.Scene;
+            foreach (var l in part.Landings)
+            {
+                var conductor = vm.SceneObject(l.Conductor);
+                Assert.NotNull(conductor);
+                var drawn = scene.Vertices.Skip(conductor.FirstVertex).Take(conductor.VertexCount)
+                                 .Select(v => (X: v.X + scene.Origin.X, Y: v.Y + scene.Origin.Y)).ToList();
+                double face = l.Box.X0 < 5000 * M ? l.Box.X1 : l.Box.X0;
+                foreach (double y in new[] { l.Box.Y0, l.Box.Y1 })
+                    Assert.Contains(drawn, v => Math.Abs(v.X - face) < 0.05 * M && Math.Abs(v.Y - y) < 0.05 * M);
+            }
+        }
+        finally { vm.Dispose(); }
+    }
+
     /// <summary>A component port's width, typed in the Inspector, is the setup's override for that part beside "*" — and the port
     /// built next is that wide, still centred on the pads.</summary>
     [Fact]

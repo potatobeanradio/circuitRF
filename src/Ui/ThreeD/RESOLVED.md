@@ -469,3 +469,17 @@ for each instance that is still not drawn: "invalid wBond geometry" when the lay
 - **Layout:** the hidden magnetostatic source-port column kept its fixed 70 px, which pushed each row's ✕ past the
   setup window's 520 px edge; the column is Auto with a fixed-width box now.
 - Gate: `SetupTerminalPickTests` (fails before: no conductors listed).
+
+## Component ports: the 3D view drew the copper before its landings (2026-11-02)
+
+- **Symptom:** on a board imported from Gerbers, a component port's sheet met a pad's round end at two corners of the arc,
+  which reads as a poor excitation. The run never solved that: `C3dComponentPorts.Build` unions a landing rectangle into
+  each conductor whose face is not straight, and verifies each end edge against that copper. Only the picture was wrong.
+- **Cause:** `ComponentPortsOf` resolved the ports against the build's elaboration, but `Assemble` drew `e.Solids`, the
+  elaboration before the landings and shell bridges.
+- **Fix:** `RecordsView.ComponentPortSolids` carries the conductors the build changed or added, by name (from the
+  ports' landings and the bridges, not by comparing solids, since a cached build is from an earlier elaboration). `Assemble`
+  draws those in place of the elaboration's own, and does not instance them: a landed conductor is no copy of its run's
+  prototype.
+- Gate: `ComponentPortBuildTests.TheEditor_DrawsTheLandingsTheRunSolves` (fails before: the drawn conductor has no vertex
+  at either corner of the landing's face).
