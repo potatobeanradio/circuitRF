@@ -1,7 +1,7 @@
 # railRF — Power Integrity on Real Board Shapes, from DC Up
 
 **Status:** **BUILT** — rev 4, amended 2026-09-18 · **Date:** 2026-09-18 · **Phase:** P0…P3 shipped; see §6
-**Implementation:** [`docs/sonnet-briefs/brief-railrf-0-overview.md`](../sonnet-briefs/brief-railrf-0-overview.md) — 17 briefs across P0…P3, all built 2026-09-18
+**Implementation:** [`docs/briefs/brief-railrf-0-overview.md`](../briefs/brief-railrf-0-overview.md) — 17 briefs across P0…P3, all built 2026-09-18
 **Reads with:** `docs/design/match.md` §9 (the UI this one is modelled on), `docs/design/data-display.md`
 (the plot layer this reuses), `docs/design/mom-engine.md` (the full-wave solver this deliberately does
 *not* use, and why), `docs/design/layout-view.md` and `src/Design/Layout/Interchange/` (the Gerber /

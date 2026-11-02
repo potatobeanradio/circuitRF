@@ -2,7 +2,7 @@
 
 **Status:** **BUILT** — rev 3, amended 2026-09-21 · **Date:** 2026-09-21 ·
 **Phase:** shipped (post-L9, post-railRF)
-**Implementation:** [`docs/sonnet-briefs/brief-lvs-0-overview.md`](../sonnet-briefs/brief-lvs-0-overview.md)
+**Implementation:** [`docs/briefs/brief-lvs-0-overview.md`](../briefs/brief-lvs-0-overview.md)
 — 15 briefs, all built 2026-09-21. Findings live in the sibling `RESOLVED.md` files:
 [`src/Design/Layout/Lvs/`](../../src/Design/Layout/Lvs/RESOLVED.md),
 [`src/Design/Layout/Extraction/`](../../src/Design/Layout/Extraction/RESOLVED.md),
@@ -949,7 +949,7 @@ present, all in use, all tested.
 > **All 15 briefs are built (2026-09-21).** The order below is what was followed, and §12 decision
 > 5 held: the whole of LVS landed before any of it shipped, so no phase became a place to stop.
 
-**Implementation:** [`docs/sonnet-briefs/brief-lvs-0-overview.md`](../sonnet-briefs/brief-lvs-0-overview.md)
+**Implementation:** [`docs/briefs/brief-lvs-0-overview.md`](../briefs/brief-lvs-0-overview.md)
 — 15 briefs, written 2026-09-21. The overview fixes the boundaries between them and records the
 nine things that came out of reading the code rather than out of this note; the table below is the
 order and the reason for it.

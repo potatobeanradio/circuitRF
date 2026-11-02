@@ -25966,3 +25966,23 @@ Check all reach it, so none of them has a copy.
   |S21| = 0.664 (2/3). 166,678 unknowns after two refinement passes.
 - **Not built:** `check`'s warning when a port's negative conductor and the nearest shunt part's return are different
   bodies (it needs the via walk between them); planar (MoM) component ports.
+
+## Air box defaults: drill holes no longer keep the floor off the plane, and the top pads by 100 % (2026-11-01)
+
+- **Floor on the bottom plane:** a hole in the lowest ground plane used to keep the PEC floor off it whenever ANY via passed
+  through or any non-ground metal lay over it, so a board's ground-via drill holes cost it 10 H of air below. Now metal on
+  the plane's own net does not count: `.c3d` (`C3dProblemAssembly.PlaneFloor`) through the elaboration's `ObjectNets`, and
+  `.cem` (`Em3dLayoutSolids`) through the via's stated net, else the net of the copper it lands on at its top (one net
+  only; none that can be told counts as foreign). A hole with a via or metal of another net still keeps the floor off: a
+  PEC floor there would short a signal via's bottom pad to ground.
+- **On an imported board with edge-launch connectors this rule never runs:** the connector housing reaches below the board,
+  so the plane is not the bottom of the geometry and the floor stays below everything.
+- **Top padding:** a driven, non-radiating setup's unstated ZMax is now `DefaultPaddingTopPercent` (100 %; 50 % at first, raised the same day) of the content's z
+  extent, capped by the wavelength rule, whether or not H can be read. On the Palace microstrip fixture that takes the air
+  above the board from about 10 mm to about 0.54 mm (about 1 H on a 20 mil substrate). brief-dfr32-1 measured lines and
+  vias settling at 10 H on top, so a setup that wants a settled field above the line states ZMax.
+- **The Palace goldens state their own air box** (`PalaceBackendTests.Lowerable`): the microstrip one used the default, so
+  every change to the defaults rewrote it although the writers had not changed. It now states 10 mm a face, the box it was
+  generated with, and the committed golden matches byte for byte.
+- Gates: `MeshRobustnessTests.AGroundViaInAHoleOfTheBottomPlane_LeavesTheFloorOnIt_AndASignalViaDoesNot`,
+  `Em3dGeneratorTests.TheDefaultAirBox_PadsByMultiplesOfH_RoundedToFivePercentOfItsOwnAxis`.

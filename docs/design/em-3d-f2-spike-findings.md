@@ -5,7 +5,7 @@ macOS; the remaining hand checks (macOS feel, Windows, Linux) are **pending** (�
 (§8):** route A's D3D11 and Vulkan halves are built; Vulkan's harness passes on Linux (software driver),
 D3D11 is compiled but has never run — **both panes await the owner's Windows and Linux runs** (§7). **D3 decided
 2026-09-25: route A primary, route B secondary** (§6) · **Date:** 2026-09-25 ·
-**Brief:** [`brief-em3d-27-3d-pane-spike.md`](../sonnet-briefs/brief-em3d-27-3d-pane-spike.md) ·
+**Brief:** [`brief-em3d-27-3d-pane-spike.md`](../briefs/brief-em3d-27-3d-pane-spike.md) ·
 **Design note:** [`em-3d.md`](em-3d.md) §8 · **Code:** [`tools/Viewer3dSpike/`](../../tools/Viewer3dSpike/README.md)
 (throwaway; not in `circuitRF.slnx`; the README has every command per OS)
 

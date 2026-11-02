@@ -40,6 +40,7 @@ public enum YieldMode { MonteCarlo, Yield, Corners, Centering, Doe, Sensitivity 
 public sealed partial class YieldPanelViewModel : ObservableObject, ITunableAddHost, IToleranceSurface
 {
     public const string NoSchematicText = "Focus a schematic to run a yield analysis on it.";
+    public const string SensitivityNoSchematicText = "Focus a schematic to run a sensitivity analysis on it.";
 
     // ---- What the workspace supplies ----------------------------------------
 
@@ -126,6 +127,10 @@ public sealed partial class YieldPanelViewModel : ObservableObject, ITunableAddH
             if (!_availableModes.Contains(Mode)) Mode = _availableModes[0];
         }
     }
+
+    /// <summary>The empty-state line: the Sensitivity panel shares this view model and must not talk about yield.</summary>
+    public string NoSchematicMessage
+        => AvailableModes.Count == 1 && AvailableModes[0] == YieldMode.Sensitivity ? SensitivityNoSchematicText : NoSchematicText;
 
     /// <summary>The mode radio row — only with more than one mode to choose between.</summary>
     public bool ShowModeRow => AvailableModes.Count > 1;

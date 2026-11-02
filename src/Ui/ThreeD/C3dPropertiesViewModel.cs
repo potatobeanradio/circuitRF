@@ -1223,7 +1223,7 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
                        + (s?.PaddingPercent is not null ? "" : s?.PaddingUm is not null ? " (stated)" : DefaultBasis(face));
             // Designer round 33 — a floor on an unbroken bottom ground plane has no padding rule to explain.
             if (face == "zmin" && s is null && kind == Em3dBoundaryKind.Pec)
-                pad = "0 — on the underside of the ground plane at the bottom, which has no hole in it: nothing below it carries " +
+                pad = "0 — on the underside of the ground plane at the bottom, with nothing of another net in its holes: nothing below it carries " +
                       "field. Type a padding to put air below it instead.";
             switch (face)
             {

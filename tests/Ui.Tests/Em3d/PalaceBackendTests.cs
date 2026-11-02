@@ -627,7 +627,9 @@ public sealed class PalaceBackendTests(ITestOutputHelper output) : IDisposable
     private static (Em3dProblem, PalaceSettings) Lowerable(string name)
     {
         var (setup, source) = name == "via" ? Em3dGeneratorTests.CaseB(plated: true) : Em3dGeneratorTests.Microstrip();
+        // A golden tests the writers, not the default padding: each states its own box, so a change to the defaults leaves it alone.
         if (name == "via") setup.AirBox = Padded(1500);
+        if (name == "microstrip") setup.AirBox = Padded(10_000);
         if (name == "small-microstrip") Shrink(setup);
         var r = Em3dGenerator.Generate(setup, source, source.Technology!);
         Assert.True(r.Ok, r.Refusal);

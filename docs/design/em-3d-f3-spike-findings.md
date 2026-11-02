@@ -1,8 +1,8 @@
 # circuitRF — 3D thermal, F3 spike: references and findings
 
 **Status:** done on macOS, except W5 (waits for the paper) · **Date:** 2026-09-28 ·
-**Brief:** [`brief-em3d-72-thermal-references-and-spike.md`](../sonnet-briefs/brief-em3d-72-thermal-references-and-spike.md) ·
-**Series:** [`brief-em3d-71-thermal-overview.md`](../sonnet-briefs/brief-em3d-71-thermal-overview.md) ·
+**Brief:** [`brief-em3d-72-thermal-references-and-spike.md`](../briefs/brief-em3d-72-thermal-references-and-spike.md) ·
+**Series:** [`brief-em3d-71-thermal-overview.md`](../briefs/brief-em3d-71-thermal-overview.md) ·
 **Data:** [`testdata/thermal/`](../../testdata/thermal/README.md) — every reference, every script, every
 command and tool version; the spike's harnesses and raw results in
 [`testdata/thermal/spike/`](../../testdata/thermal/spike/README.md).

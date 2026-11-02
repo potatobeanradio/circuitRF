@@ -1,6 +1,6 @@
 # circuitRF — SAR and B1 for MRI coil designers and phone SAR
 
-**Status:** SAR-1 done (§1–§3), SAR-2 done (§4), SAR-3 done (§5), SAR-4 done (§6), SAR-5 done (§7), SAR-6 done (§8), SAR-7 done (§9), SAR-8 done (§10; the birdcage moved to SAR-8b), SAR-9 done (§11), SAR-10 done (§12), SAR-11 done (§13), SAR-12 done (§14), SAR-13 done (§15: acceptance) · **Series:** [`brief-sar-0-overview.md`](../sonnet-briefs/brief-sar-0-overview.md) ·
+**Status:** SAR-1 done (§1–§3), SAR-2 done (§4), SAR-3 done (§5), SAR-4 done (§6), SAR-5 done (§7), SAR-6 done (§8), SAR-7 done (§9), SAR-8 done (§10; the birdcage moved to SAR-8b), SAR-9 done (§11), SAR-10 done (§12), SAR-11 done (§13), SAR-12 done (§14), SAR-13 done (§15: acceptance) · **Series:** [`brief-sar-0-overview.md`](../briefs/brief-sar-0-overview.md) ·
 **Reference data:** [`testdata/sar/openems-ref/`](../../testdata/sar/openems-ref/README.md) · **Builds on:**
 [`em-3d.md`](em-3d.md) (the openEMS backend) and [`em-3d-f0-findings.md`](em-3d-f0-findings.md) (its validated versions).
 

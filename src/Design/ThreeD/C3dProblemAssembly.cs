@@ -233,14 +233,18 @@ public static class C3dProblemAssembly
     {
         if (setup.AirBox?.ZMin is not null || !Em3dGenerator.ByHeightApplies(setup) || e.ModelledExtent() is not { } x) return null;
         var ground = e.GroundBandObjects.ToHashSet(StringComparer.Ordinal);
-        var plane = e.Solids.Where(s => ground.Contains(s.Name) && !e.NotModelled.Contains(s.Name) && s.Role == Em3dRole.Conductor)
-                            .Select(s => s.Primitive).OfType<Em3dExtrudedPolygon>()
-                            .Where(p => Math.Abs(p.ZBottom - x.Z0) <= 1e-9).ToList();
+        var planeSolids = e.Solids.Where(s => ground.Contains(s.Name) && !e.NotModelled.Contains(s.Name) && s.Role == Em3dRole.Conductor
+                                              && s.Primitive is Em3dExtrudedPolygon ep && Math.Abs(ep.ZBottom - x.Z0) <= 1e-9).ToList();
+        var plane = planeSolids.Select(s => (Em3dExtrudedPolygon)s.Primitive).ToList();
         if (plane.Count == 0) return null;
-        // brief-emb-2 R-emb2-5 — a hole is allowed where no other conductor (outside the ground set) lies over it.
+        // brief-emb-2 R-emb2-5 — a hole is allowed where no other conductor (outside the ground set) lies over it. Metal on the
+        // plane's own net (a ground via's barrel, a ground pin) is joined to the plane already, so it does not count either.
         if (plane.Any(p => p.Holes.Count > 0))
         {
-            var others = e.Solids.Where(s => s.Role == Em3dRole.Conductor && !ground.Contains(s.Name) && !e.NotModelled.Contains(s.Name)).ToList();
+            var planeNets = planeSolids.SelectMany(s => e.ObjectNets.TryGetValue(s.Name, out var n) ? n : []).ToHashSet(StringComparer.Ordinal);
+            bool OwnNet(string name) => e.ObjectNets.TryGetValue(name, out var n) && n.Count > 0 && n.All(planeNets.Contains);
+            var others = e.Solids.Where(s => s.Role == Em3dRole.Conductor && !ground.Contains(s.Name) && !e.NotModelled.Contains(s.Name)
+                                             && !OwnNet(s.Name)).ToList();
             static bool Upright(Em3dPrimitive p) => p is Em3dCylinder c &&
                 Math.Abs(c.AxisStart.X - c.AxisEnd.X) < 1e-12 && Math.Abs(c.AxisStart.Y - c.AxisEnd.Y) < 1e-12;
             var drills = others.Select(s => s.Primitive).Where(Upright).Cast<Em3dCylinder>()

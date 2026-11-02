@@ -3,8 +3,8 @@
 **Status:** the agent's part is complete on osx-arm64 (Q1–Q12 answered, `selftest` passes); osx-x64 is
 built but **not run** (no Rosetta on the spike's machine); Linux and Windows builds and Q13 are **owed by
 the owner** (§ Not done). **One licence finding is with upstream** ([OCCT#1564](https://github.com/Open-Cascade-SAS/OCCT/issues/1564), § Licence). · **Date:** 2026-09-27 ·
-**Brief:** [`brief-em3d-61-kernel-spike.md`](../sonnet-briefs/brief-em3d-61-kernel-spike.md) ·
-**Series:** [`brief-em3d-60-overview.md`](../sonnet-briefs/brief-em3d-60-overview.md) ·
+**Brief:** [`brief-em3d-61-kernel-spike.md`](../briefs/brief-em3d-61-kernel-spike.md) ·
+**Series:** [`brief-em3d-60-overview.md`](../briefs/brief-em3d-60-overview.md) ·
 **Design note:** [`em-3d.md`](em-3d.md) §6.2 Route B, §6.4, §6.5 ·
 **Data:** [`testdata/em3d/f4b/`](../../testdata/em3d/f4b/README.md) — the harness, every input and output,
 every command.

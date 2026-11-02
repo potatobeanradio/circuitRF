@@ -1,7 +1,7 @@
 # circuitRF — Smith Chart: narrowband matching, by hand, with the chart doing the arguing
 
 **Status:** **BUILT** — rev 1, closed out 2026-09-19 · **Date:** 2026-09-19 · **Phase:** P1…P3 shipped; see §9.1
-**Implementation:** [`docs/sonnet-briefs/brief-smith-0-overview.md`](../sonnet-briefs/brief-smith-0-overview.md) — 11 briefs, all built 2026-09-19
+**Implementation:** [`docs/briefs/brief-smith-0-overview.md`](../briefs/brief-smith-0-overview.md) — 11 briefs, all built 2026-09-19
 **Reads with:** `docs/design/match.md` §9 (the Designer this one is deliberately *not*, and the window
 conventions this one borrows), `docs/design/harmonicarf.md` §7.2 (the interactive Smith chart that
 already exists, and what it proved), `docs/design/data-display.md` (the plot layer this reuses whole),

@@ -51,7 +51,7 @@ public sealed class SeriesTraceabilityTests
     public void EveryBriefInTheSeriesExistsAndEveryLinkResolves()
     {
         string root = RepoRoot();
-        string briefs = Path.Combine(root, "docs", "sonnet-briefs");
+        string briefs = Path.Combine(root, "docs", "briefs");
 
         for (int n = 1; n <= 15; n++)
             Assert.True(
@@ -72,7 +72,7 @@ public sealed class SeriesTraceabilityTests
     // ── reading the two documents ────────────────────────────────────────────
 
     private static string Overview()
-        => Read("docs", "sonnet-briefs", "brief-lvs-0-overview.md");
+        => Read("docs", "briefs", "brief-lvs-0-overview.md");
 
     private static string Read(params string[] parts)
         => File.ReadAllText(Path.Combine([RepoRoot(), .. parts]));

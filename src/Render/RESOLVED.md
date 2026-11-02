@@ -5771,3 +5771,21 @@ hover, context menu) and `LayoutRenderer.DrawSelectionOutlines` (the highlight),
 - **A port's corner is an EXACT document point** (`C3dEditorViewModel.ToDocumentPoint`): a port is declared in the
   document's own DBU, never through an instance placement, and has no provenance entry to say so.
 - Test: `PortSnapTests`.
+
+## Filled vias and conductor boxes carve the copper they pass through (2026-11-01, owner report)
+
+- **Symptom:** in a `.c3d` holding an imported board, every filled via's cap speckled against the top copper (plain view),
+  and a conductor `Box` (a connector's ground strap) spanning the board's copper height streaked against the copper's top
+  face. The hover tint showed the same.
+- **Cause:** the cap and the copper top are one plane drawn by two triangulations, kept apart only by `Scene3DDepthTie.Via`'s
+  constant bias (a box conductor ties `None`, so not even that). Seen obliquely the two interpolate depths further apart than
+  the constant covers. Plated vias were already carved (`Scene3DBores`, 2026-10-25), but a filled via has no air core and
+  so was never a bore.
+- **Fix:** `Scene3DBores.Of` takes a filled via cylinder (named a via by the builder, with no coaxial air bore) and every
+  conductor `Em3dBox` as a `Metal` bore. A metal bore carves a conductor it passes right through regardless of precedence
+  (metal over metal draws the same either way), and a dielectric only under the usual precedence rule. Boxes go through
+  the shaped (Clipper2 notch) path, since a strap usually crosses the board's edge.
+- **Trade-off, unchanged in kind:** carving is baked into the scene's meshes, and visibility toggles at draw time, so hiding
+  a filled via or a strap in the Object Tree leaves its hole or notch in the copper. The plated and edge-cut vias already
+  behaved this way.
+- Gate: `PlatedViaAndPerspectiveTests.AFilledViaAndAConductorBox_CarveThePadTheyPassThrough`.

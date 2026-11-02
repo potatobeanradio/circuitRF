@@ -47,8 +47,10 @@ internal sealed class Scene3DBores
     /// <param name="Outer">The radius a polygon is carved at: the barrel's outside when the bore is a plated via's, else
     /// <paramref name="R"/> — a bare hole. For a <paramref name="Shape"/>, the radius that encloses it.</param>
     /// <param name="Shape">An edge-cut via's barrel outline, carved exactly instead of a circle.</param>
+    /// <param name="Metal">The bore is itself metal (a filled via, a conductor box): it carves a conductor it passes right
+    /// through whatever their precedence, since metal over metal draws the same either way.</param>
     private readonly record struct Bore(double X, double Y, double R, double Z0, double Z1, int Priority, double Outer,
-                                        Point2[]? Shape = null);
+                                        Point2[]? Shape = null, bool Metal = false);
 
     private readonly Bore[] _bores;   // by X
     private readonly Em3dPrecedence _precedence;
@@ -82,6 +84,32 @@ internal sealed class Scene3DBores
                         if (bores[i].Outer == bores[i].R && Math.Abs(bores[i].X - m.AxisStart.X) <= Tol && Math.Abs(bores[i].Y - m.AxisStart.Y) <= Tol &&
                             bores[i].R < m.Radius - Tol)
                             bores[i] = bores[i] with { Outer = m.Radius };
+        // A FILLED via (no air core) and a conductor box (a strap, a block) carve the metal they pass right through, at their own
+        // outline (2026-11-01, owner report): the via's cap lay on the copper's top face, a box's top and bottom on the copper's,
+        // two triangulations of one plane apart only by a constant depth bias, which speckled at a distance and an angle.
+        var airBores = bores.Count;
+        foreach (var s in problem.Solids)
+        {
+            if (s.Role != Em3dRole.Conductor) continue;
+            if (s.Primitive is Em3dCylinder f && Vertical(f) && isVia?.Invoke(s.Name) == true)
+            {
+                bool plated = false;
+                for (int i = 0; i < airBores; i++)
+                    plated |= Math.Abs(bores[i].X - f.AxisStart.X) <= Tol && Math.Abs(bores[i].Y - f.AxisStart.Y) <= Tol;
+                if (plated) continue;
+                precedence ??= Em3dPrecedence.Of(problem);
+                bores.Add(new Bore(f.AxisStart.X, f.AxisStart.Y, f.Radius, Math.Min(f.AxisStart.Z, f.AxisEnd.Z),
+                                   Math.Max(f.AxisStart.Z, f.AxisEnd.Z), precedence.Of(s), f.Radius, Metal: true));
+            }
+            else if (s.Primitive is Em3dBox b && b.Max.Z - b.Min.Z > Tol)
+            {
+                precedence ??= Em3dPrecedence.Of(problem);
+                double cx = (b.Min.X + b.Max.X) / 2, cy = (b.Min.Y + b.Max.Y) / 2;
+                double reach = Math.Sqrt((b.Max.X - cx) * (b.Max.X - cx) + (b.Max.Y - cy) * (b.Max.Y - cy));
+                bores.Add(new Bore(cx, cy, reach, b.Min.Z, b.Max.Z, precedence.Of(s), reach,
+                                   [new(b.Min.X, b.Min.Y), new(b.Max.X, b.Min.Y), new(b.Max.X, b.Max.Y), new(b.Min.X, b.Max.Y)], Metal: true));
+            }
+        }
         if (isVia is not null)
             foreach (var s in problem.Solids)
             {
@@ -148,7 +176,7 @@ internal sealed class Scene3DBores
             // Carved at the barrel's outside, metal and dielectric alike: at the bore, a pad's hole wall would be the tube's inner
             // wall drawn a second time and its cap would lie on the tube's end ring, two coincident faces apart only by a depth bias.
             // A pad too narrow for the barrel's outside is still carved at the bore, as it was, rather than drawn over it.
-            if (bore.Priority <= priority || !Spans(bore, e.ZBottom, e.ZTop)) continue;
+            if ((bore.Priority <= priority && !(bore.Metal && s.Role == Em3dRole.Conductor)) || !Spans(bore, e.ZBottom, e.ZTop)) continue;
             var centre = new Point2(bore.X, bore.Y);
             if (bore.Shape is not null)
             {

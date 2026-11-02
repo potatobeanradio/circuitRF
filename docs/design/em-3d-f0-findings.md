@@ -1,7 +1,7 @@
 # circuitRF — 3D EM, F0 spike: findings
 
 **Status:** F0 complete on macOS; Windows and Linux installs are the owner's (§1) · **Date:** 2026-09-24 ·
-**Brief:** [`brief-em3d-1-f0-spike.md`](../sonnet-briefs/brief-em3d-1-f0-spike.md) ·
+**Brief:** [`brief-em3d-1-f0-spike.md`](../briefs/brief-em3d-1-f0-spike.md) ·
 **Design note:** [`em-3d.md`](em-3d.md) (rev 5 carries the corrections this spike forced) ·
 **Data:** [`testdata/em3d/f0/`](../../testdata/em3d/f0/README.md) — every input, every port file, every
 command and timing.

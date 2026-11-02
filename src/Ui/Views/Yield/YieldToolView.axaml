@@ -147,7 +147,7 @@
 
     <Panel>
         <TextBlock IsVisible="{Binding !Panel.HasSchematic}"
-                   Text="{x:Static yld:YieldPanelViewModel.NoSchematicText}"
+                   Text="{Binding Panel.NoSchematicMessage}"
                    Margin="8" FontSize="12" Opacity="0.6" TextWrapping="Wrap"/>
 
         <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,*" IsVisible="{Binding HasSchematic}"

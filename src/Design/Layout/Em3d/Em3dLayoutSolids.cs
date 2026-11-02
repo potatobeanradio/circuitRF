@@ -466,10 +466,23 @@ public static class Em3dLayoutSolids
                 && _viaSpans.All(v => v.Bottom.BottomM >= ground.BottomM - 1e-15)
                 && UnbrokenCover(plane.Select(p => p.Poly).ToList(), polysByBand.Values.SelectMany(l => l).Select(p => p.Poly)))
             {
-                var drills = _viaSpans.Select(v => Drill(v.Shape)).OfType<(double X, double Y, double R)>().ToList();
+                bool OnNet(LayoutShape via, PlanarExtractor.StackBand top, string? net)
+                {
+                    if (net is null) return false;
+                    if (via.Net is { Length: > 0 } stated) return stated == net;
+                    if (ViaFootprint(via).FirstOrDefault() is not { } fp || !polysByBand.TryGetValue(top.Index, out var onTop)) return false;
+                    var (x0, y0, x1, y1) = fp.Bounds();
+                    double cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+                    var landing = onTop.Where(q => q.Poly.Contains(cx, cy)).Select(q => q.Net).Distinct().ToList();
+                    return landing.Count == 1 && landing[0] == net;
+                }
                 foreach (var p in plane.Where(p => p.Poly.HoleRings.Count > 0))
                 {
                     var own = p.Net;
+                    // A drill on the plane's own net (a ground via) is joined to the plane already, so a floor closing its hole
+                    // shorts nothing; only a via on another net (or on none that can be told) keeps the floor off.
+                    var drills = _viaSpans.Where(v => !OnNet(v.Shape, v.Top, own))
+                                          .Select(v => Drill(v.Shape)).OfType<(double X, double Y, double R)>().ToList();
                     var metal = polysByBand.Values.SelectMany(l => l)
                                            .Where(q => !ReferenceEquals(q.Poly, p.Poly) && !(own is not null && q.Net == own))
                                            .Select(q => Ring(q.Poly.Outer));

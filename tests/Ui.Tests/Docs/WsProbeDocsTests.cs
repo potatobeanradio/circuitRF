@@ -149,7 +149,7 @@ public class WsProbeDocsTests
 
         Assert.True(unlisted.Count == 0,
             "The WSProbe chapter cites equations that are NOT in the register of "
-          + "docs/sonnet-briefs/brief-wsprobe-0-overview.md §4, so nothing in this repository has "
+          + "docs/briefs/brief-wsprobe-0-overview.md §4, so nothing in this repository has "
           + "checked them: " + string.Join(", ", unlisted.Distinct()) + ".");
     }
 
@@ -171,7 +171,7 @@ public class WsProbeDocsTests
     private static (HashSet<int> Bare, HashSet<int> M, HashSet<int> E, HashSet<string> Proxies) Register()
     {
         string overview = File.ReadAllText(
-            Path.Combine(RepoRoot(), "docs", "sonnet-briefs", "brief-wsprobe-0-overview.md"));
+            Path.Combine(RepoRoot(), "docs", "briefs", "brief-wsprobe-0-overview.md"));
 
         int start = overview.IndexOf("## 4. The equation register", StringComparison.Ordinal);
         Assert.True(start > 0, "brief-wsprobe-0-overview.md no longer has a §4 equation register.");

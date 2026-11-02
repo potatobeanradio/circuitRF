@@ -130,9 +130,10 @@ public sealed record Em3dObjectOrigin(Em3dObjectKind Kind, string? StackupEntry,
 /// Designer round 33 — the padding a face takes when the setup states none (<see cref="Em3dGenerator.DefaultFacePadding"/>):
 /// <see cref="Em3dGenerator.DefaultPaddingSidesAndTopH"/> × H on the top and sides and
 /// <see cref="Em3dGenerator.DefaultPaddingBelowH"/> × H below when <see cref="HeightM"/> is set, never more than
-/// <see cref="CapM"/>, the wavelength rule; <see cref="CapM"/> on every face otherwise.
+/// <see cref="CapM"/>, the wavelength rule; <see cref="CapM"/> on every face otherwise. With <see cref="TopByExtent"/> the
+/// top instead takes <see cref="Em3dGenerator.DefaultPaddingTopPercent"/> of the content's height, never more than <see cref="CapM"/>.
 /// </summary>
-public sealed record Em3dDefaultPadding(double CapM, string CapBasis, double? HeightM)
+public sealed record Em3dDefaultPadding(double CapM, string CapBasis, double? HeightM, bool TopByExtent = false)
 {
     private double Multiple(string face) => face == "zmin" ? Em3dGenerator.DefaultPaddingBelowH : Em3dGenerator.DefaultPaddingSidesAndTopH;
 
@@ -144,6 +145,7 @@ public sealed record Em3dDefaultPadding(double CapM, string CapBasis, double? He
     /// axis with no extent keeps the length.</summary>
     public double For(string face, double spanM)
     {
+        if (TopByExtent && face == "zmax" && spanM > 0) return Math.Min(Em3dGenerator.DefaultPaddingTopPercent / 100 * spanM, CapM);
         if (HeightM is not { } h) return CapM;
         double pad = Multiple(face) * h;
         if (spanM > 0)
@@ -155,7 +157,9 @@ public sealed record Em3dDefaultPadding(double CapM, string CapBasis, double? He
     }
 
     /// <summary>Why <paramref name="face"/> stands where it does, as the panel and <c>explain</c> print it.</summary>
-    public string Basis(string face, double spanM) => HeightM is { } h && For(face, spanM) < CapM
+    public string Basis(string face, double spanM) => TopByExtent && face == "zmax" && spanM > 0 && For(face, spanM) < CapM
+        ? $"{Em3dGenerator.DefaultPaddingTopPercent.ToString(CultureInfo.InvariantCulture)} % of the content's height"
+        : HeightM is { } h && For(face, spanM) < CapM
         ? $"{Multiple(face).ToString(CultureInfo.InvariantCulture)} × H, H = {(h * 1e6).ToString("G4", CultureInfo.InvariantCulture)} µm of " +
           "dielectric under the top metal" + (spanM > 0 ? $", to the nearest {RoundToPercent.ToString(CultureInfo.InvariantCulture)} %" : "")
         : CapBasis;
@@ -424,8 +428,8 @@ public static class Em3dGenerator
                   (floorStatedAway ? ", as this setup's AirBox states." :
                    ground is null ? ": the technology designates no ground-reference conductor."
                    : _g.PlaneFloorBlockedAt is var (bx, by) && ByHeightApplies(setup) && setup.AirBox?.ZMin is null
-                   ? $": '{ground.Layer.Name}' has a hole at ({Fmt(bx * 1e3)}, {Fmt(by * 1e3)}) mm with a via through it or " +
-                     "other metal over it, which a floor on the plane would close, so the plane is geometry rather than a floor."
+                   ? $": '{ground.Layer.Name}' has a hole at ({Fmt(bx * 1e3)}, {Fmt(by * 1e3)}) mm with a via or other metal of another net " +
+                     "in or over it, which a floor on the plane would short to ground, so the plane is geometry rather than a floor."
                                   : $": '{ground.Layer.Name}' is drawn or has metal below it, so it is " +
                                     "geometry rather than a floor."));
 
@@ -1587,6 +1591,11 @@ public static class Em3dGenerator
     /// 10 H on the top and sides and 5 H below; a resonant filter wanted about 20 H on the top and sides.</summary>
     public const double DefaultPaddingBelowH = 10;
 
+    /// <summary>The top's default padding, as a percentage of the content's height (z extent), for the problems
+    /// <see cref="ByHeightApplies"/> covers; never more than the wavelength rule's cap. A setup that needs more air above
+    /// states its AirBox ZMax.</summary>
+    public const double DefaultPaddingTopPercent = 100;
+
     /// <summary>Designer round 33 — how much of the footprint an unbroken bottom ground plane must cover for the air box's floor
     /// to go on its underside (<c>Em3dLayoutSolids</c> for a <c>.cem</c>, <c>C3dProblemAssembly.PlaneFloor</c> for a <c>.c3d</c>).</summary>
     public const double PlaneFloorCover = 0.95;
@@ -1673,7 +1682,7 @@ public static class Em3dGenerator
     {
         var (cap, basis) = DefaultPadding(setup, fMin, largestExtentM);
         bool byHeight = ByHeightApplies(setup) && heightM is > 0;
-        return new Em3dDefaultPadding(cap, basis, byHeight ? heightM : null);
+        return new Em3dDefaultPadding(cap, basis, byHeight ? heightM : null, TopByExtent: ByHeightApplies(setup));
     }
 
     /// <summary>Designer round 33 — the problems the H rule and the floor on an unbroken bottom ground plane are for: driven,

@@ -75,6 +75,14 @@ internal sealed class SensitivityPanelFixture
 public sealed class SensitivityPanelTests
 {
     [Fact]
+    public void WithNoSchematic_TheSensitivityPanelTalksAboutSensitivity_NotYield()
+    {
+        Assert.Equal(YieldPanelViewModel.NoSchematicText, new YieldPanelViewModel().NoSchematicMessage);
+        Assert.Equal(YieldPanelViewModel.SensitivityNoSchematicText,
+                     new YieldPanelViewModel { AvailableModes = YieldPanelViewModel.SensitivityModes }.NoSchematicMessage);
+    }
+
+    [Fact]
     public void AToleranceAddedInSensitivity_IsInYieldAtOnce_AndOneUndoRemovesIt()
     {
         var f = SensitivityPanelFixture.Divider();

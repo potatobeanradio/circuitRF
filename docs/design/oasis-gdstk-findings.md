@@ -2,7 +2,7 @@
 
 **Status:** G0 is complete. The owner's real-Windows session passed on win-arm64 and win-x64 (§ Q1).
 **The go/no-go is GO WITH CONDITIONS** (§ Go/no-go). Nothing found is a hold. · **Date:** 2026-10-06 ·
-**Brief:** [`brief-oasis-gdstk.md`](../sonnet-briefs/brief-oasis-gdstk.md) §3 (R-oas-0) ·
+**Brief:** [`brief-oasis-gdstk.md`](../briefs/brief-oasis-gdstk.md) §3 (R-oas-0) ·
 **Harness:** [`tools/gdstk-worker/spike/`](../../tools/gdstk-worker/spike/README.md) (raw runs in its git-ignored
 `runs/`) · **Corpus:** [`testdata/interchange/gdstk/`](../../testdata/interchange/gdstk/README.md)
 
@@ -401,7 +401,7 @@ come back as half-width (the same shape).
    gdstk's own round trip keeps `[20, 70]`.
 6. **A label's text type other than 0 or 1 is lost** (texttype 5 becomes 0), because our model holds port or not.
 
-**Fixed afterwards** by `docs/sonnet-briefs/brief-gdsii-native-fixes.md` (2026-10-06): findings 1, 2, 3, 4 and 6, and
+**Fixed afterwards** by `docs/briefs/brief-gdsii-native-fixes.md` (2026-10-06): findings 1, 2, 3, 4 and 6, and
 the silent magnification in †, each tested against the gdstk file named above; finding 5 was outside that brief and
 stands. The numbers in this section are what the spike measured before the fix. Detail: `src/Design/RESOLVED.md`.
 

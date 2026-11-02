@@ -70,6 +70,24 @@ public sealed class PlatedViaAndPerspectiveTests
         Assert.DoesNotContain(tube.Vertices, v => Math.Sqrt(v.X * v.X + v.Y * v.Y) < 0.1 * Mm);
     }
 
+    /// <summary>A FILLED via and a conductor box carve the pad they pass right through at their own outline, so the via's cap and
+    /// the box's top are the only faces on the pad's plane there: drawn whole, the pad's top lay under both and speckled
+    /// (owner report, 2026-11-01). Only a via named as one carves; a problem with none costs nothing.</summary>
+    [Fact]
+    public void AFilledViaAndAConductorBox_CarveThePadTheyPassThrough()
+    {
+        var problem = Via(bore: false);
+        var strap = new Em3dSolid("strap", "cu", Em3dRole.Conductor, new Em3dBox(new(0.5 * Mm, -0.3 * Mm, 0), new(1.5 * Mm, 0.3 * Mm, 0.535 * Mm)), 3);
+        problem = problem with { Solids = [.. problem.Solids, strap] };
+        var bores = Scene3DBores.Of(problem, name => name == "via")!;
+        var pad = bores.Carved(problem.Solids[0])!.Value.Make();
+        var top = pad.Triangles.Where(t => t.Face == 1).ToList();
+        Assert.DoesNotContain(top, t => Covers(pad, t, 0, 0));
+        Assert.DoesNotContain(top, t => Covers(pad, t, 0.8 * Mm, 0));
+        Assert.Contains(top, t => Covers(pad, t, -0.5 * Mm, 0));
+        Assert.Null(bores.Carved(problem.Solids[1]));
+    }
+
     /// <summary>A non-plated hole is an air cylinder with no barrel: the substrate it passes through is drawn with the hole,
     /// and a box-shaped slab keeps the box's own face numbers (z max is 5), the hole's wall no face. A plated via carves it
     /// too, at its barrel's outside.</summary>

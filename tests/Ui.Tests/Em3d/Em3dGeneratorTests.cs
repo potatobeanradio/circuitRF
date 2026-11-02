@@ -22,8 +22,9 @@ public sealed class Em3dGeneratorTests
 
     // ── 1. The reference page's microstrip ──────────────────────────────────────────────────────
 
-    /// <summary>Designer round 33: with nothing stated, each face pads by multiples of H (20 H on the sides and top, 10 H
-    /// below), rounded to 5 % of its own axis — on case B (H = 200 µm) the sides are 4 mm, and every face is a round share.</summary>
+    /// <summary>Designer round 33: with nothing stated, each face pads by multiples of H (20 H on the sides, 10 H below),
+    /// rounded to 5 % of its own axis — on case B (H = 200 µm) the sides are 4 mm, and every face is a round share. The top
+    /// takes 100 % of the content's height.</summary>
     [Fact]
     public void TheDefaultAirBox_PadsByMultiplesOfH_RoundedToFivePercentOfItsOwnAxis()
     {
@@ -36,7 +37,7 @@ public sealed class Em3dGeneratorTests
         foreach (var (pad, span) in new[] { (lo.X - b.Min.X, hi.X - lo.X), (b.Max.Y - hi.Y, hi.Y - lo.Y),
                                             (lo.Z - b.Min.Z, hi.Z - lo.Z), (b.Max.Z - hi.Z, hi.Z - lo.Z) })
             Assert.Equal(0, Math.Round(pad / span * 100, 6) % 5);
-        Assert.True(b.Max.Z - hi.Z > lo.Z - b.Min.Z, "the top pads by 20 H, the bottom by 10 H");
+        Assert.Equal(hi.Z - lo.Z, b.Max.Z - hi.Z, 1e-12);
     }
 
     /// <summary>Designer round 33: a drawn bottom ground plane with no hole floors the box on its underside, as a PEC face;

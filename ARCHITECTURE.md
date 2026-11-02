@@ -169,7 +169,7 @@ circuitRF/
 │                  Python PCell host, the release signer, the macOS build VM
 ├─ packaging/      One script per platform, each building everything that platform ships
 ├─ docs/           PRD.md, Development_Plan.md, design/ (the "why" — start here to go deep),
-│                  skills/, sonnet-briefs/, and user/ (the shipped documentation — GENERATED;
+│                  skills/, briefs/, and user/ (the shipped documentation — GENERATED;
 │                  sources in docs/user/src/)
 ├─ examples/       The workspaces File ▸ New ▸ Examples opens
 ├─ testdata/       Golden references + regression fixtures (the five heroes live here)

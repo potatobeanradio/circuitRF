@@ -220,6 +220,29 @@ public sealed class MeshRobustnessTests : IDisposable
         Assert.Contains(covered.Notes, n => n.Contains("has a hole at (2.5, 2) mm", StringComparison.Ordinal));
     }
 
+    /// <summary>A via on the plane's own net through one of its holes (a ground via's drill) leaves the floor on the plane: it is
+    /// joined to the plane already, so closing the hole shorts nothing. The same via on another net keeps the floor off.</summary>
+    [Fact]
+    public void AGroundViaInAHoleOfTheBottomPlane_LeavesTheFloorOnIt_AndASignalViaDoesNot()
+    {
+        Em3dGenerationResult Board(string viaNet)
+        {
+            var (setup, source) = Em3dGeneratorTests.Microstrip();
+            var ground = source.Technology!.Stackup.Layers.Last(l => l.Kind == StackupKind.Conductor && l.IsGroundReference);
+            source.View.Shapes.Add(new PolygonShape
+            {
+                Layer = ground.DrawingLayers[0], Net = "GND",
+                Xy = [0, -3_000_000, 10_000_000, -3_000_000, 10_000_000, 3_000_000, 0, 3_000_000],
+                Holes = [[2_000_000, 1_500_000, 3_000_000, 1_500_000, 3_000_000, 2_500_000, 2_000_000, 2_500_000]],
+            });
+            source.View.Shapes.Add(new ViaShape { X = 2_500_000, Y = 2_000_000, PadSize = 600_000, DrillSize = 300_000,
+                                                  Layer = new LayerKey(7, 0), Net = viaNet });
+            return Em3dGenerator.Generate(setup, source, source.Technology!);
+        }
+        Assert.Equal(Em3dBoundaryKind.Pec, Board("GND").Problem!.Boundary.Faces.ZMin);
+        Assert.NotEqual(Em3dBoundaryKind.Pec, Board("SIG").Problem!.Boundary.Faces.ZMin);
+    }
+
     // ── R-emb2-6 ───────────────────────────────────────────────────────────────────────────────
 
     /// <summary>Gmsh 4.15's own lines, as it prints them at verbosity 5: every stage is named, the high-order stage with its
