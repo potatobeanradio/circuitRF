@@ -419,9 +419,9 @@ static int Serve(string exe, string root, TimeSpan timeout)
         if (list?["result"]?["tools"] is not JsonArray tools)
             return FailServe(p, $"tools/list answered {(list is null ? "nothing" : list.ToJsonString())}", Err());
 
-        // THE CATALOGUE, not a count: what ToolCatalog defines plus the batch tool, which is the one
-        // tool that is not a command line (McpServer's tools/list adds it the same way).
-        var expected = ToolCatalog.Tools.Select(t => t.Name).Append(HistoryBatch.ToolName)
+        // THE CATALOGUE, not a count: what ToolCatalog defines plus the batch and job tools, the two
+        // that are not command lines (McpServer's tools/list adds them the same way).
+        var expected = ToolCatalog.Tools.Select(t => t.Name).Append(HistoryBatch.ToolName).Append(ServeJobs.ToolName)
                                   .ToHashSet(StringComparer.Ordinal);
         var advertised = tools.Select(t => t?["name"]?.GetValue<string>() ?? "").ToHashSet(StringComparer.Ordinal);
         var missing = expected.Except(advertised).OrderBy(n => n).ToList();
