@@ -82,7 +82,8 @@ internal static class Viewer3DLabelLayout
         return false;
     }
 
-    private static bool Touches(Rect box, Point a) => box.Inflate(Gap + 0.5).Contains(a);
+    /// <summary>Whether <paramref name="box"/> sits against <paramref name="a"/>: one that does not gets a leader line.</summary>
+    internal static bool Touches(Rect box, Point a) => box.Inflate(Gap + 0.5).Contains(a);
 
     /// <summary>The point on <paramref name="box"/>'s edge nearest <paramref name="a"/> — where a leader line meets the box.</summary>
     public static Point NearestOnEdge(Rect box, Point a)

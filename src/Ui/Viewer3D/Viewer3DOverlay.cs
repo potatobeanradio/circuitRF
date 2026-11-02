@@ -74,8 +74,26 @@ public sealed class Viewer3DOverlay : Control
     {
         // The silhouette at the GPU outline's two device pixels, whatever the display's scaling.
         double scaling = TopLevel.GetTopLevel(this)?.RenderScaling ?? 1;
-        if (Vm is { } vm) Paint(ctx, vm, Bounds.Width, Bounds.Height, _draw, picture: false, outlineWidth: 2 / Math.Max(1, scaling));
+        if (Vm is not { } vm) return;
+        double now = _clock.Elapsed.TotalSeconds;
+        _labels.BeginFrame(now - _lastFrame);
+        _lastFrame = now;
+        Paint(ctx, vm, Bounds.Width, Bounds.Height, _draw, picture: false, outlineWidth: 2 / Math.Max(1, scaling), labels: _labels);
+        _labels.EndFrame();
+        // A label still swinging to its new side asks for the next frame itself: once the camera stops, no frame is presented
+        // to redraw the overlay, and the label would freeze mid-swing.
+        if (_labels.Moving && !_framePending && TopLevel.GetTopLevel(this) is { } top)
+        {
+            _framePending = true;
+            top.RequestAnimationFrame(_ => { _framePending = false; InvalidateVisual(); });
+        }
     }
+
+    /// <summary>The labels' springs (<see cref="Viewer3DLabelSpring"/>) and the clock that steps them.</summary>
+    private readonly Viewer3DLabelSpring _labels = new();
+    private readonly System.Diagnostics.Stopwatch _clock = System.Diagnostics.Stopwatch.StartNew();
+    private double _lastFrame;
+    private bool _framePending;
 
     /// <summary>
     /// The overlay, <paramref name="w"/> × <paramref name="h"/> DIPs. <paramref name="picture"/> paints it for a PICTURE of
@@ -86,7 +104,7 @@ public sealed class Viewer3DOverlay : Control
     /// is left to FieldPicture, which paints it as the export options say.
     /// </summary>
     internal static void Paint(DrawingContext ctx, Viewer3DViewModel vm, double w, double h, Viewer3DDrawOverlay draw, bool picture,
-                               double outlineWidth = 2)
+                               double outlineWidth = 2, Viewer3DLabelSpring? labels = null)
     {
         bool dark = ThemeService.CurrentVariant == ColorVariant.Dark;
         IBrush ink = dark ? Brushes.WhiteSmoke : new SolidColorBrush(Color.FromRgb(35, 38, 44));
@@ -182,7 +200,7 @@ public sealed class Viewer3DOverlay : Control
         {
             draw.Clear();
             host.FillDrawOverlay(draw);
-            Drawing(ctx, vm, draw, w, h, dark);
+            Drawing(ctx, vm, draw, w, h, dark, labels);
         }
 
         Measurement(ctx, vm, w, h, dark);
@@ -404,7 +422,8 @@ public sealed class Viewer3DOverlay : Control
 
     /// <summary>brief-em3d-45 — the drawing's chrome: construction dashed, a selected polyline in the selection colour,
     /// the rubber band in amber over a halo, fixed points as dots, a crossing in red.</summary>
-    private static void Drawing(DrawingContext ctx, Viewer3DViewModel vm, Viewer3DDrawOverlay d, double w, double h, bool dark)
+    private static void Drawing(DrawingContext ctx, Viewer3DViewModel vm, Viewer3DDrawOverlay d, double w, double h, bool dark,
+                                Viewer3DLabelSpring? springs)
     {
         var cam = vm.View.Camera;
         var scene = vm.Scene;
@@ -439,7 +458,7 @@ public sealed class Viewer3DOverlay : Control
             ctx.DrawGeometry(PlaneFill, new Pen(PlaneBrush, 1.5), g);
             planeLabels.Add((pts.MinBy(q => q.P.Y + q.P.X * 1e-3).P, label));
         }
-        DrawingLabels(ctx, planeLabels, w, h, dark);
+        DrawingLabels(ctx, planeLabels, w, h, dark, springs, "plane");
         var construction = new Pen(dark ? new SolidColorBrush(Color.FromArgb(200, 200, 205, 215)) : new SolidColorBrush(Color.FromArgb(200, 70, 75, 85)), 1.2)
         {
             DashStyle = new DashStyle([4, 3], 0),
@@ -468,7 +487,7 @@ public sealed class Viewer3DOverlay : Control
         var shown = new List<(Point At, string Text)>();
         foreach (var (at, text) in d.Labels)
             if (Screen(at) is (var lp, true)) shown.Add((lp, text));
-        DrawingLabels(ctx, shown, w, h, dark);
+        DrawingLabels(ctx, shown, w, h, dark, springs, "label");
         Lines(d.Selected, new Pen(new SolidColorBrush(Color.FromRgb(255, 90, 255)), 2));
         // The face a tool lands on, in the hover's cyan: only that face, never the whole object it belongs to.
         foreach (var rings in d.TargetFaces)
@@ -855,14 +874,20 @@ public sealed class Viewer3DOverlay : Control
     /// <summary>
     /// General designer feedback round 14 — the drawing's labels, placed by <see cref="Viewer3DLabelLayout"/> so none covers
     /// another; one moved away from its point is joined back to it by a thin leader line. The box and the text are
-    /// <see cref="Text"/>'s.
+    /// <see cref="Text"/>'s. On screen each box follows its laid-out place on <paramref name="springs"/>, so a label changing
+    /// side as the camera turns swings over rather than jumping; a picture (no springs) draws the laid-out place.
     /// </summary>
-    private static void DrawingLabels(DrawingContext ctx, List<(Point At, string Text)> labels, double w, double h, bool dark)
+    private static void DrawingLabels(DrawingContext ctx, List<(Point At, string Text)> labels, double w, double h, bool dark,
+                                      Viewer3DLabelSpring? springs, string channel)
     {
         if (labels.Count == 0) return;
         IBrush ink = dark ? Brushes.White : Brushes.Black;
         var texts = labels.Select(l => new FormattedText(l.Text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, Typeface.Default, 11, ink)).ToList();
-        var boxes = Viewer3DLabelLayout.Place([.. labels.Select(l => l.At)], [.. texts.Select(t => new Size(t.Width + 8, t.Height + 6))], w, h);
+        var placed = Viewer3DLabelLayout.Place([.. labels.Select(l => l.At)], [.. texts.Select(t => new Size(t.Width + 8, t.Height + 6))], w, h);
+        var boxes = springs is null
+            ? placed
+            : springs.Follow(channel, [.. labels.Select(l => l.At)], [.. labels.Select(l => l.Text)], [.. placed.Select(p => p.Box)])
+                .Select((box, i) => (Box: box, Leader: !Viewer3DLabelLayout.Touches(box, labels[i].At))).ToArray();
         var leader = new Pen(dark ? new SolidColorBrush(Color.FromArgb(200, 220, 222, 228)) : new SolidColorBrush(Color.FromArgb(200, 60, 64, 72)), 1);
         var background = new SolidColorBrush(dark ? Color.FromArgb(200, 30, 32, 36) : Color.FromArgb(215, 250, 250, 252));
         for (int i = 0; i < labels.Count; i++)
