@@ -148,10 +148,10 @@ because most clients load servers only when a session starts.
 **4. Check that it answers.** Ask the agent to call circuitRF's `reference` tool. It should list
 the reference topics.
 
-Then read **[Designing with an AI agent](docs/user/reference/ai-agents.html)**, which covers what
+Then read **[Designing with an AI agent](https://potatobeanradio.github.io/circuitRF/reference/ai-agents.html)**, which covers what
 to tell the agent, which reference topics it should read first, and the design flow that works. The
 full server description, including running it from a source build, is in
-[The MCP Server](docs/user/reference/mcp-server.html).
+[The MCP Server](https://potatobeanradio.github.io/circuitRF/reference/mcp-server.html).
 
 ---
 
@@ -274,12 +274,12 @@ dotnet run --project src/Ui
 ### To run circuitRF headless from the command line
 
 Full CLI documentation: the
-[Command Line chapter](docs/user/reference/cli.html) of the user docs (design notes in
+[Command Line chapter](https://potatobeanradio.github.io/circuitRF/reference/cli.html) of the user docs (design notes in
 [`docs/design/cli.md`](docs/design/cli.md)).
 An installed circuitRF is the command line too (`circuitrf <verb> …`, `circuitrf serve --root <dir>`
 for MCP, set up as in [Use circuitRF from an AI agent](#use-circuitrf-from-an-ai-agent)) — for an
 agent installing it unattended, see
-[Installing for an agent](docs/user/reference/mcp-server.html#install).
+[Installing for an agent](https://potatobeanradio.github.io/circuitRF/reference/mcp-server.html#install).
 
 
 ```bash
