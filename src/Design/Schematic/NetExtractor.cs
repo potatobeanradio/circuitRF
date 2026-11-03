@@ -3062,7 +3062,7 @@ public static class NetExtractor
             int numPorts = comp.PortCount;
 
             var overrides = comp.Parameters
-                .Where(p => p.Name is not "RefNode" and not "PinConfig" and not "Pitch")
+                .Where(p => p.Name is not "RefNode" and not "PinConfig" and not "Pitch" and not SnpGlyph.SymbolParameter)
                 .Select(p =>
                 {
                     var unit = UnitNormalizer.ToEngineUnit(p.Unit);
@@ -3352,7 +3352,7 @@ public static class NetExtractor
 
         // The test pad (brief-dfr26-7): D, Drill and ClearD reach the engine as typed; every other row is a resolution
         // or artwork input, consumed here, and what the stackup resolves for it is appended in their place.
-        if (comp.Symbol == SymbolKind.TestPad)
+        if (TestPadInjection.IsTestPadKind(comp.Symbol))
         {
             overrides2.RemoveAll(o => !TestPadInjection.EngineParams.Contains(o.Name) || string.IsNullOrWhiteSpace(o.Expression));
             var pad = TestPadInjection.Build(microstripTech, comp.Parameters);

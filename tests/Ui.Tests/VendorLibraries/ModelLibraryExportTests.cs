@@ -125,7 +125,8 @@ public sealed class ModelLibraryExportTests : IDisposable
         var result = ModelLibraryExport.Export(cell, new ExportOptions { LibraryDir = lib, Category = "C" });
         Assert.False(result.Succeeded);
         Assert.Contains(expected, result.Refusal);
-        if (which == "technology") Assert.Contains("TL1 (MLIN) takes its substrate from the technology; a model cannot carry one.", result.Refusal);
+        // Brief 11 converts a technology part; with no technology to sample it on, that is the refusal.
+        if (which == "technology") Assert.Contains("TL1 (MLIN) needs a technology to be converted, and this schematic has none.", result.Refusal);
         Assert.False(Directory.Exists(lib) && Directory.EnumerateFileSystemEntries(lib, "*", SearchOption.AllDirectories).Any());
     }
 
@@ -382,6 +383,8 @@ public sealed class ModelLibraryExportTests : IDisposable
 
     private static string StripComments(string code)
         => Regex.Replace(Regex.Replace(code, @"/\*.*?\*/", "", RegexOptions.Singleline), @"//[^\n]*", "");
+
+    internal static (int Exit, string StdOut, string StdErr) RunCliPublic(params string[] args) => RunCli(args);
 
     private static (int Exit, string StdOut, string StdErr) RunCli(params string[] args)
     {

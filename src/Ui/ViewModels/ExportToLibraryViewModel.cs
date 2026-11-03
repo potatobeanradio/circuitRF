@@ -17,6 +17,7 @@ using CircuitRF.Design.Schematic;
 using CircuitRF.Design.VendorLibraries.ModelLibrary;
 using CircuitRF.Engine;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 
 namespace CircuitRF.Ui.ViewModels;
 
@@ -45,6 +46,7 @@ public sealed partial class ExportToLibraryViewModel : ObservableObject
         KnownLibraries = knownLibraries;
         _partNumber = CellName;
         _libraryPath = initialLibrary ?? knownLibraries.FirstOrDefault()?.Root ?? "";
+        foreach (var segment in ModelLibraryExport.DefaultSweep) AddFrequencyRow(segment);
         Replan();
     }
 
@@ -81,6 +83,47 @@ public sealed partial class ExportToLibraryViewModel : ObservableObject
     public string EffectiveKind => Kind ?? Plan?.DefaultKind ?? ModelPartManifest.KindPassive;
     public bool IsPassive => EffectiveKind == ModelPartManifest.KindPassive;
 
+    // ── Frequency (brief vendorlib-11 R-vl11-4) ────────────────────────────
+
+    /// <summary>The plan the technology-bound parts are sampled over: the EM Setup's own segment rows, seeded with
+    /// <see cref="ModelLibraryExport.DefaultSweep"/>.</summary>
+    public ObservableCollection<FrequencySpecViewModel> FrequencySegments { get; } = [];
+
+    /// <summary>What will be converted, or that nothing uses the technology (R-vl11-4c) — the core's sentence.</summary>
+    [ObservableProperty] private string _conversionLine = "";
+
+    /// <summary>The Frequency group is live only when something is converted.</summary>
+    public bool IsFrequencyPlanEnabled => Plan is { Conversions.Count: > 0 };
+
+    [RelayCommand]
+    private void AddFrequencySegment()
+    {
+        var first = FrequencySegments.Count > 0 ? FrequencySegments[0].Build() : ModelLibraryExport.DefaultSweep[0];
+        AddFrequencyRow(new Core.Design.FrequencySpec(first.StopExpr, first.StopExpr, 1, Core.Design.SweepKind.Linear,
+                                                      first.StopUnit, first.StopUnit));
+        Replan();
+    }
+
+    private void AddFrequencyRow(Core.Design.FrequencySpec segment)
+    {
+        // An empty schematic model: the plan is literal numbers, as an EM setup's is.
+        var row = new FrequencySpecViewModel(new SchematicEditModel(), segment, offersSinglePoint: true);
+        row.PropertyChanged += (_, e) => { if (e.PropertyName != nameof(FrequencySpecViewModel.CanRemoveSelf)) Replan(); };
+        row.SetRemoveCallback(RemoveFrequencyRow);
+        FrequencySegments.Add(row);
+        foreach (var r in FrequencySegments) r.CanRemoveSelf = FrequencySegments.Count > 1;
+    }
+
+    private void RemoveFrequencyRow(FrequencySpecViewModel row)
+    {
+        if (FrequencySegments.Count <= 1 || !FrequencySegments.Remove(row)) return;
+        foreach (var r in FrequencySegments) r.CanRemoveSelf = FrequencySegments.Count > 1;
+        Replan();
+    }
+
+    /// <summary>The Frequency range the plan last filled in, so a range the user typed is never overwritten.</summary>
+    private string _filledLow = "", _filledHigh = "";
+
     // ── Symbol (R-vl10-3d) ─────────────────────────────────────────────────
 
     public ObservableCollection<ExportSymbolRow> Symbols { get; } = [];
@@ -110,6 +153,8 @@ public sealed partial class ExportToLibraryViewModel : ObservableObject
     partial void OnPartNumberChanged(string value) => Replan();
     partial void OnKindChanged(string? value) { OnPropertyChanged(nameof(EffectiveKind)); OnPropertyChanged(nameof(IsPassive)); Replan(); }
     partial void OnValueChanged(string value) => Replan();
+    partial void OnFrequencyLowChanged(string value) => Replan();
+    partial void OnFrequencyHighChanged(string value) => Replan();
     partial void OnSymbolChanged(string? value) => Replan();
     partial void OnIsPlanningChanged(bool value) => OnPropertyChanged(nameof(CanExport));
     partial void OnIsExportingChanged(bool value) => OnPropertyChanged(nameof(CanExport));
@@ -122,6 +167,8 @@ public sealed partial class ExportToLibraryViewModel : ObservableObject
         Kind = Kind, Value = IsPassive ? Value : "", FrequencyLow = FrequencyLow, FrequencyHigh = FrequencyHigh,
         Conditions = Conditions, Footprint = Footprint, Documents = [.. Documents], Symbol = Symbol,
         Replace = replace, IncludeVendorParts = true,
+        // The plan is stated only while something is converted: with nothing to sample, a plan is a refusal.
+        Sweep = IsFrequencyPlanEnabled ? [.. FrequencySegments.Select(r => r.Build())] : null,
         LibraryName = LibraryName, Publisher = Publisher, LibraryVersion = LibraryVersion, License = License,
     };
 
@@ -162,6 +209,16 @@ public sealed partial class ExportToLibraryViewModel : ObservableObject
         if (plan is null) { RefusalLines.Add(error ?? "The export could not be planned."); OnPropertyChanged(nameof(CanExport)); return; }
 
         foreach (string r in plan.Refusals) RefusalLines.Add(r);
+        ConversionLine = ModelLibraryExport.ConversionLine(plan);
+        OnPropertyChanged(nameof(IsFrequencyPlanEnabled));
+        // R-vl11-4d: the part's range follows the plan until the user types one of their own.
+        if (plan.Conversions.Count > 0 && plan.Frequencies.Length > 0)
+        {
+            string low = ModelLibraryExport.FormatFrequency(plan.Frequencies[0]);
+            string high = ModelLibraryExport.FormatFrequency(plan.Frequencies[^1]);
+            if (FrequencyLow.Trim().Length == 0 || FrequencyLow == _filledLow) { _filledLow = low; FrequencyLow = low; }
+            if (FrequencyHigh.Trim().Length == 0 || FrequencyHigh == _filledHigh) { _filledHigh = high; FrequencyHigh = high; }
+        }
         foreach (var c in plan.Copies) CopyLines.Add(c.Describe());
         if (plan.VendorParts.Any())
             CopyLines.Add("Vendor parts are copied into the model, and their libraries' terms travel with it.");

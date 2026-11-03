@@ -1565,93 +1565,9 @@
                 <Border Classes="group" IsVisible="{Binding ViewModel.IsNotThermalSetup}">
                   <StackPanel Spacing="2">
                 <TextBlock Classes="grouphdr" Text="Frequency"/>
-                <!-- GitHub discussion 26: a frequency PLAN, one tinted card per segment. A card's top line is its mode
-                     (Step / Points / Single, then Lin / Log) and its x; under it three equal blocks, Start, Stop and the
-                     count or step, each a label, a box and a preview — so the three boxes share one line in every card
-                     by construction, and the card fits a 520 px dialog without wrapping. On a single point the Stop and
-                     count blocks hide their CONTENT and keep their width, and Lin / Log is last on its line, so nothing
-                     moves under the pointer that clicked Single. "+ Segment" adds a single point; the run takes the
-                     union of every card's frequencies. -->
-                <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,6">
-                    <TextBlock Classes="colhdr" Text="Sweep" VerticalAlignment="Bottom"/>
-                    <Button Grid.Column="1" Content="+ Segment" Classes="seg-btn" Name="AddFrequencySegmentButton"
-                            Command="{Binding ViewModel.AddFrequencySegmentCommand}"
-                            ToolTip.Tip="Add a segment to the frequency plan: a single frequency, or a further sweep. The run solves every segment's frequencies together, each once."/>
-                </Grid>
-                <ItemsControl ItemsSource="{Binding ViewModel.FrequencySegments}">
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate x:DataType="vm:FrequencySpecViewModel">
-                      <Border Background="{DynamicResource CrfSubCardBrush}" CornerRadius="4" Padding="8,6" Margin="0,0,0,6">
-                        <StackPanel Spacing="4">
-                          <Grid ColumnDefinitions="*,Auto">
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                              <StackPanel Orientation="Horizontal" Spacing="0">
-                                <Button Content="Step"   Classes="seg-btn" Classes.active="{Binding IsStepMode}"
-                                        Command="{Binding SetModeStepCommand}"/>
-                                <Button Content="Points" Classes="seg-btn" Classes.active="{Binding IsPointsMode}"
-                                        Command="{Binding SetModePointsCommand}"/>
-                                <Button Content="Single" Classes="seg-btn" Classes.active="{Binding IsSinglePoint}"
-                                        Command="{Binding SetModeSingleCommand}"
-                                        ToolTip.Tip="One frequency rather than a sweep."/>
-                              </StackPanel>
-                              <StackPanel Orientation="Horizontal" Spacing="0" IsVisible="{Binding IsSweep}">
-                                <Button Content="Lin" Classes="seg-btn"
-                                        Classes.active="{Binding IsLinear}" Command="{Binding SetKindLinearCommand}"/>
-                                <Button Content="Log" Classes="seg-btn"
-                                        Classes.active="{Binding IsLog}" Command="{Binding SetKindLogCommand}"/>
-                              </StackPanel>
-                            </StackPanel>
-                            <Button Grid.Column="1" Content="×" Command="{Binding RemoveCommand}" IsVisible="{Binding CanRemoveSelf}"
-                                    VerticalAlignment="Center" Padding="4,0"
-                                    Background="Transparent" BorderThickness="0" FontSize="13"
-                                    ToolTip.Tip="Remove this segment"/>
-                          </Grid>
-                          <WrapPanel>
-                            <StackPanel Spacing="2" Width="140" Margin="0,0,8,0">
-                              <Panel>
-                                <TextBlock Text="Start" Classes="colhdr" IsVisible="{Binding IsSweep}"/>
-                                <TextBlock Text="Frequency" Classes="colhdr" IsVisible="{Binding IsSinglePoint}"/>
-                              </Panel>
-                              <Grid ColumnDefinitions="*,Auto">
-                                <TextBox Classes="cell" Text="{Binding StartCoeff, Mode=TwoWay}"/>
-                                <ComboBox Grid.Column="1" Classes="cell"
-                                          ItemsSource="{x:Static vm:FrequencySpecViewModel.FreqUnits}"
-                                          SelectedItem="{Binding StartUnit, Mode=TwoWay}"/>
-                              </Grid>
-                              <TextBlock Text="{Binding StartPreview}" FontSize="10" Opacity="0.55"
-                                         TextTrimming="CharacterEllipsis"/>
-                            </StackPanel>
-                            <StackPanel Spacing="2" Width="140" Margin="0,0,8,0">
-                              <TextBlock Text="Stop" Classes="colhdr" IsVisible="{Binding IsSweep}"/>
-                              <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding IsSweep}">
-                                <TextBox Classes="cell" Text="{Binding StopCoeff, Mode=TwoWay}"/>
-                                <ComboBox Grid.Column="1" Classes="cell"
-                                          ItemsSource="{x:Static vm:FrequencySpecViewModel.FreqUnits}"
-                                          SelectedItem="{Binding StopUnit, Mode=TwoWay}"/>
-                              </Grid>
-                              <TextBlock Text="{Binding StopPreview}" FontSize="10" Opacity="0.55"
-                                         TextTrimming="CharacterEllipsis" IsVisible="{Binding IsSweep}"/>
-                            </StackPanel>
-                            <StackPanel Spacing="2" Width="140">
-                              <TextBlock Text="Step" Classes="colhdr" IsVisible="{Binding IsStepMode}"/>
-                              <TextBlock Text="Points" Classes="colhdr" IsVisible="{Binding IsPointsMode}"/>
-                              <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding IsStepMode}">
-                                <TextBox Classes="cell" Text="{Binding StepCoeff, Mode=TwoWay}"/>
-                                <ComboBox Grid.Column="1" Classes="cell"
-                                          ItemsSource="{x:Static vm:FrequencySpecViewModel.FreqUnits}"
-                                          SelectedItem="{Binding StepUnit, Mode=TwoWay}"/>
-                              </Grid>
-                              <TextBox Classes="cell" IsVisible="{Binding IsPointsMode}"
-                                       Text="{Binding NumPointsExpr, Mode=TwoWay}"/>
-                              <TextBlock Text="{Binding StepPreview}" FontSize="10" Opacity="0.55"
-                                         TextTrimming="CharacterEllipsis" IsVisible="{Binding IsStepMode}"/>
-                            </StackPanel>
-                          </WrapPanel>
-                        </StackPanel>
-                      </Border>
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
+                <!-- The frequency plan is the shared control (brief vendorlib-11 R-vl11-4a): Export to Library uses the same one. -->
+                <ctl:FrequencyPlanEditor Segments="{Binding ViewModel.FrequencySegments}"
+                                         AddSegmentCommand="{Binding ViewModel.AddFrequencySegmentCommand}"/>
 
                     <!-- Owner request, 2026-08-09: adaptive sampling belongs beside the sweep it
                          samples — it decides how many of THESE points are actually solved, so the

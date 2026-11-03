@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Numerics;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -48,6 +49,9 @@ public sealed record ExportOptions
     /// <summary>Copy the vendor parts the cell places into the model, carrying their libraries' terms with it. The
     /// dialog lists them; headless it is <c>--include-vendor-parts</c>.</summary>
     public bool IncludeVendorParts { get; init; }
+    /// <summary>The frequency plan technology-bound parts are sampled over (brief vendorlib-11 R-vl11-4); null is
+    /// <see cref="ModelLibraryExport.DefaultSweep"/>. Stating one when nothing is converted is a refusal.</summary>
+    public IReadOnlyList<FrequencySpec>? Sweep { get; init; }
 
     // library.clib, used only when the library has none
     public string LibraryName { get; init; } = "";
@@ -109,6 +113,11 @@ public sealed record ExportPlan
     /// <summary>The library folder holds no <c>library.clib</c> yet; Export writes one.</summary>
     public bool LibraryIsNew { get; init; }
     public IReadOnlyList<ExportCopy> Copies { get; init; } = [];
+    /// <summary>The technology-bound parts Export converts to SnPs (brief vendorlib-11), the cell's and every
+    /// sub-cell's.</summary>
+    public IReadOnlyList<ExportConversion> Conversions { get; init; } = [];
+    /// <summary>The frequencies those parts are sampled at, 0 Hz first; empty when nothing is converted.</summary>
+    public double[] Frequencies { get; init; } = [];
     /// <summary>Every reason the export cannot go ahead. Nothing is written while any stands.</summary>
     public IReadOnlyList<string> Refusals { get; init; } = [];
 
@@ -168,6 +177,8 @@ public static partial class ModelLibraryExport
     /// sides (a node no source biases, an S-parameter of an ideal short).</summary>
     public const double SelfCheckTolerance = 1e-9;
     private const double SelfCheckFloor = 1e-12;
+    /// <summary>The driven DC comparison's floor: pin 1's drive, the smallest (brief vendorlib-11 R-vl11-3).</summary>
+    private const double DrivenDcFloor = 0.1;
 
     // ── Plan ─────────────────────────────────────────────────────────────────────────────────────
 
@@ -235,6 +246,25 @@ public static partial class ModelLibraryExport
         }
         if (walk.Nonlinear) defaultKind = ModelPartManifest.KindActive;
 
+        // Brief vendorlib-11: the parts the technology supplies a substrate to are sampled over the plan.
+        double[] freqs = [];
+        if (walk.Conversions.Count > 0)
+        {
+            freqs = PlanFrequencies(options.Sweep ?? DefaultSweep, out string? planRefusal) ?? [];
+            if (planRefusal is not null) refusals.Add(planRefusal);
+            else
+            {
+                // R-vl11-4d: the part's range may be narrowed inside the plan, never widened past it.
+                double lo = freqs[0], hi = freqs[^1];
+                if (VendorLibraryIndex.HzOf(options.FrequencyHigh) is { } h && h > hi * (1 + 1e-12))
+                    refusals.Add($"The part's frequency range reaches {FormatFrequency(h)}, past the plan's {FormatFrequency(hi)}; the converted S-parameters stop there.");
+                if (VendorLibraryIndex.HzOf(options.FrequencyLow) is { } l && l < lo)
+                    refusals.Add($"The part's frequency range starts at {FormatFrequency(l)}, below the plan's {FormatFrequency(lo)}.");
+            }
+        }
+        else if (options.Sweep is not null)
+            refusals.Add("No component uses the technology, so there is nothing to sample over a frequency plan.");
+
         if (!options.IncludeVendorParts)
             foreach (var v in walk.Copies.Where(c => c.Kind is ExportCopyKind.VendorSpicePart or ExportCopyKind.VendorModel))
                 refusals.Add($"{v.Part} comes from the vendor library '{v.Library}', and exporting copies it into this model, so that library's terms travel with it. Include vendor parts to accept that.");
@@ -276,7 +306,8 @@ public static partial class ModelLibraryExport
             DefaultKind = defaultKind, DefaultSymbol = defaultSymbol, HasOwnSymbol = hasOwn,
             ExistingRevision = revision,
             LibraryIsNew = !File.Exists(Path.Combine(libraryDir, ModelFolder.LibraryFileName)),
-            Copies = walk.Copies, Refusals = refusals.Distinct(StringComparer.Ordinal).ToList(),
+            Copies = walk.Copies, Conversions = walk.Conversions, Frequencies = freqs,
+            Refusals = refusals.Distinct(StringComparer.Ordinal).ToList(),
         };
     }
 
@@ -325,7 +356,9 @@ public static partial class ModelLibraryExport
         {
             Directory.CreateDirectory(tmp);
             control?.BeginStage("Copying the cell");
-            var built = Build(plan, options, tmp);
+            Built built;
+            try { built = Build(plan, options, tmp, control); }
+            catch (ConversionRefused refused) { return Refuse(wrapper, refused.Message); }
             if (Cancelled(control)) return Cancel(wrapper);
 
             control?.BeginStage("Writing the netlist");
@@ -358,12 +391,11 @@ public static partial class ModelLibraryExport
                 })],
                 Glyph = symbol is SymbolOwn or SymbolBox ? "" : symbol,
                 Value = kind == ModelPartManifest.KindPassive ? options.Value.Trim() : "",
-                Frequency = options.FrequencyLow.Trim().Length + options.FrequencyHigh.Trim().Length == 0 ? null
-                    : new ModelPartFrequency { Low = options.FrequencyLow.Trim(), High = options.FrequencyHigh.Trim() },
+                Frequency = FrequencyRange(plan, options),
                 Conditions = options.Conditions, Footprint = options.Footprint,
                 CaseMetric = options.CaseMetric, CaseImperial = options.CaseImperial,
                 Revision = plan.ExistingRevision + 1,
-                Converted = [],
+                Converted = [.. built.Converted],
             };
             ModelPartManifest.Write(partPath, manifest);
 
@@ -387,7 +419,8 @@ public static partial class ModelLibraryExport
                 return Refuse(wrapper, "The exported model does not check clean: " + string.Join(" ", errors.Select(e => e.Render())));
 
             control?.BeginStage("Self-check", 2, "run(s)");
-            if (SelfCheck(plan.CellDir, tmp, manifest, control) is { } mismatch) return Refuse(wrapper, mismatch);
+            if (SelfCheck(plan.CellDir, tmp, manifest, out double? betweenDb, plan.Conversions.Count > 0 ? plan.Frequencies : null, control) is { } mismatch)
+                return Refuse(wrapper, mismatch);
             if (Cancelled(control)) return Cancel(wrapper);
 
             // The rename. A replaced model is moved aside first and deleted only once the new one is in place.
@@ -413,7 +446,10 @@ public static partial class ModelLibraryExport
             return new ExportResult
             {
                 ModelDir = modelDir, Revision = manifest.Revision, Created = created, LibraryManifest = clib,
-                Message = $"Exported {plan.PartNumber} to {where} (revision {manifest.Revision}).",
+                Message = $"Exported {plan.PartNumber} to {where} (revision {manifest.Revision})."
+                          + (plan.Conversions.Count == 0 ? ""
+                             : $" {plan.Conversions.Count} part{(plan.Conversions.Count == 1 ? "" : "s")} converted to S-parameters, {plan.Frequencies.Length} points"
+                               + (betweenDb is { } db ? $"; between samples, within {db.ToString("G2", CultureInfo.InvariantCulture)} dB." : ".")),
                 Warnings = [.. findings.Where(f => f.Severity != DiagnosticSeverity.Error).Select(f => f.Render()).Concat(built.Warnings)],
             };
         }
@@ -465,6 +501,7 @@ public static partial class ModelLibraryExport
     private sealed class Walk
     {
         public readonly List<ExportCopy> Copies = [];
+        public readonly List<ExportConversion> Conversions = [];
         public int TopPinCount;
         public bool Nonlinear;
         private readonly HashSet<string> _visited = new(DocumentFileRefs.PathComparer);
@@ -479,6 +516,8 @@ public static partial class ModelLibraryExport
             string schDir = Path.GetDirectoryName(Path.GetFullPath(schPath))!;
             model.SchematicDirectory = schDir;
             string where = top ? "" : $" (in {Path.GetFileName(cellDir)})";
+            // R-vl11-1c: the technology Simulate would use for this schematic — the one the seams resolve.
+            var tech = SchematicTechnology.Resolve(model);
 
             foreach (var comp in model.Components)
             {
@@ -490,9 +529,16 @@ public static partial class ModelLibraryExport
                     refusals.Add($"{name} is a kit (pdk://) part; a model must run on a machine that does not have the kit, so it cannot be exported.");
                     continue;
                 }
-                if (IsTechnologyBound(comp.Symbol))
+                if (TechnologyBound.Is(comp.Symbol))
                 {
-                    refusals.Add($"{name} ({ComponentTypeRegistry.EngineReference(comp.Symbol)}) takes its substrate from the technology; a model cannot carry one.");
+                    var conv = new ExportConversion(Path.TrimEndingDirectorySeparator(Path.GetFullPath(cellDir)), comp.InstanceName,
+                                                    comp.Symbol, comp.EffectivePortCount, ParametersAsWritten(comp),
+                                                    tech.Technology is { } t ? (t.Name.Trim().Length > 0 ? t.Name.Trim() : Path.GetFileNameWithoutExtension(tech.Path)) : null);
+                    Conversions.Add(conv);
+                    if (tech.Technology is null)
+                        refusals.Add(tech.Error is { } error
+                            ? $"{name} ({conv.Type}) needs a technology to be converted: {error}"
+                            : $"{name} ({conv.Type}) needs a technology to be converted, and this schematic has none.");
                     continue;
                 }
                 if (IsNonlinearReference(ComponentTypeRegistry.EngineReference(comp.Symbol))) Nonlinear = true;
@@ -564,12 +610,6 @@ public static partial class ModelLibraryExport
         => PdkKitRegistry.IsKitRef(comp.CellRef)
            || comp.Parameters.Any(p => (p.Expression ?? "").Contains(PdkKitRegistry.Scheme, StringComparison.OrdinalIgnoreCase));
 
-    /// <summary>Every component whose substrate is injected from the technology's stackup (brief 11 converts them).</summary>
-    public static bool IsTechnologyBound(SymbolKind kind)
-        => PlanarLineSubstrateInjection.IsStackupLineKind(kind)
-           || kind is SymbolKind.Via or SymbolKind.ViaGnd or SymbolKind.TestPad or SymbolKind.MimCap or SymbolKind.Spiral
-                   or SymbolKind.OctSpiral or SymbolKind.Tfr or SymbolKind.Airbridge;
-
     /// <summary>The engine references of nonlinear components (R-vl10-3c): Verilog-A, ComposedFET, the FET, BJT and
     /// MOS families, diodes, SDD and external devices.</summary>
     public static bool IsNonlinearReference(string reference)
@@ -584,16 +624,17 @@ public static partial class ModelLibraryExport
 
     // ── The copy (Export's half) ─────────────────────────────────────────────────────────────────
 
-    private sealed record Built(IReadOnlyList<string> Warnings);
+    private sealed record Built(IReadOnlyList<string> Warnings, IReadOnlyList<ModelPartConversion> Converted);
 
     /// <summary>
     /// R-vl10-2c: the cell, its sub-cells, every file they reference and every vendor part, copied into
     /// <paramref name="modelDir"/>, with each reference rewritten to where its copy now lives.
     /// </summary>
-    private static Built Build(ExportPlan plan, ExportOptions options, string modelDir)
+    private static Built Build(ExportPlan plan, ExportOptions options, string modelDir, RunControl? control)
     {
         var warnings = new List<string>();
         var files = new FileCopier(modelDir);
+        var converted = Convert(plan, options, files, control);
 
         // Sub-cell folders, named by their leaf; a second cell of the same name takes a numeric suffix.
         var cellMap = new Dictionary<string, string>(DocumentFileRefs.PathComparer) { [plan.CellDir] = modelDir };
@@ -610,7 +651,7 @@ public static partial class ModelLibraryExport
         {
             bool top = DocumentFileRefs.PathComparer.Equals(src, plan.CellDir);
             string name = top ? plan.PartNumber : Path.GetFileName(dst);
-            CopyCell(src, dst, name, top, plan, options, cellMap, files, warnings);
+            CopyCell(src, dst, name, top, plan, options, cellMap, files, converted, warnings);
         }
 
         foreach (string doc in options.Documents)
@@ -619,11 +660,12 @@ public static partial class ModelLibraryExport
             Directory.CreateDirectory(docs);
             File.Copy(doc, Unique(Path.Combine(docs, Path.GetFileName(doc))));
         }
-        return new Built(warnings);
+        warnings.AddRange(converted.Warnings);
+        return new Built(warnings, converted.Records);
     }
 
     private static void CopyCell(string src, string dst, string name, bool top, ExportPlan plan, ExportOptions options,
-                                 Dictionary<string, string> cellMap, FileCopier files, List<string> warnings)
+                                 Dictionary<string, string> cellMap, FileCopier files, Converted converted, List<string> warnings)
     {
         Directory.CreateDirectory(dst);
         string? srcSch = PrimaryPath(src, ViewType.Schematic);
@@ -642,7 +684,7 @@ public static partial class ModelLibraryExport
             string dstSch = Path.Combine(CellFolder.SubFolderPath(dst, ViewType.Schematic), name + CellFolder.ViewExtension(ViewType.Schematic));
             Directory.CreateDirectory(Path.GetDirectoryName(dstSch)!);
             string text = RewriteFiles(srcSch, dstSch, files, cellMap);
-            text = RewriteSchematic(text, srcSch, dstSch, name, files, cellMap, options);
+            text = RewriteSchematic(text, srcSch, dstSch, name, files, cellMap, options, src, converted);
             AtomicFile.WriteAllText(dstSch, text);
         }
 
@@ -733,7 +775,8 @@ public static partial class ModelLibraryExport
     /// the document's cell name.
     /// </summary>
     private static string RewriteSchematic(string text, string srcSch, string dstSch, string name, FileCopier files,
-                                           Dictionary<string, string> cellMap, ExportOptions options)
+                                           Dictionary<string, string> cellMap, ExportOptions options,
+                                           string srcCell, Converted converted)
     {
         // A document that is not a JSON object has no components to re-point; the extraction says what is wrong with it.
         if (JsonNode.Parse(text) is not JsonObject root) return text;
@@ -742,8 +785,22 @@ public static partial class ModelLibraryExport
         root["CellName"] = name;
 
         if (root["Components"] is not JsonArray comps) return root.ToJsonString(JsonOptions);
+        string cellKey = Path.TrimEndingDirectorySeparator(Path.GetFullPath(srcCell));
         foreach (var node in comps.OfType<JsonObject>())
         {
+            // R-vl11-2d: a converted part keeps its name, position, rotation and glyph; only its kind and File change.
+            if (node["InstanceName"]?.GetValue<string>() is { } inst
+                && converted.Files.TryGetValue((cellKey, inst), out string? snpFile)
+                && node["Symbol"]?.GetValue<string>() is { } kindName)
+            {
+                int ports = int.Parse(Path.GetExtension(snpFile)[2..^1], CultureInfo.InvariantCulture);
+                node["Symbol"] = nameof(SymbolKind.Snp);
+                node["Parameters"] = new JsonArray(
+                    SnpParameter("File", snpFile), SnpParameter("NumPorts", ports.ToString(CultureInfo.InvariantCulture)),
+                    SnpParameter(SnpGlyph.SymbolParameter, kindName));
+                node.Remove("CellRef");
+                continue;
+            }
             var parameters = node["Parameters"] as JsonArray;
             if (node["CellRef"]?.GetValue<string>() is { Length: > 0 } cellRef)
             {
@@ -779,6 +836,9 @@ public static partial class ModelLibraryExport
         }
         return root.ToJsonString(JsonOptions);
     }
+
+    private static JsonObject SnpParameter(string name, string value)
+        => new() { ["Name"] = name, ["Expression"] = value, ["Unit"] = "", ["ShowOnSchematic"] = false };
 
     private static string? Expression(JsonObject p)
         => p["Expression"]?.GetValue<string>() ?? (p["Value"] is JsonValue v && v.TryGetValue<string>(out var s) ? s : null);
@@ -886,25 +946,50 @@ public static partial class ModelLibraryExport
     /// refusal naming the worst entry. Equality is the claim, not physics, so an unbiased transistor is a valid subject.
     /// </summary>
     public static string? SelfCheck(string sourceCellDir, string modelDir, ModelPartManifest manifest, RunControl? control = null)
+        => SelfCheck(sourceCellDir, modelDir, manifest, out _, sampled: null, control);
+
+    /// <summary>
+    /// <see cref="SelfCheck(string, string, ModelPartManifest, RunControl?)"/>, extended for a model with converted
+    /// parts (brief vendorlib-11 R-vl11-3) when <paramref name="sampled"/> is the plan they were sampled at: the
+    /// S-parameters are compared at every sampled frequency above 0 Hz, and the DC comparison DRIVES current through
+    /// the converted parts — behind each pin's 50 Ω is a source of pin k × 0.1 V — so a wrong DC row shows up as a
+    /// voltage. The 0 Hz S of a line is its RF model's clamp, not what a DC run makes of it, so it is the driven DC
+    /// comparison that checks the DC row. <paramref name="betweenSamplesDb"/> is the worst |S| difference, in dB, halfway
+    /// between samples — information, not a gate — over every entry above −40 dB on either side.
+    /// </summary>
+    public static string? SelfCheck(string sourceCellDir, string modelDir, ModelPartManifest manifest,
+                                    out double? betweenSamplesDb, double[]? sampled, RunControl? control = null)
     {
-        double[] freqs = SelfCheckFrequencies(manifest.Frequency);
+        betweenSamplesDb = null;
+        bool driven = sampled is not null;
+        double[] freqs = driven ? [.. sampled!.Where(f => f > 0)] : SelfCheckFrequencies(manifest.Frequency);
 
         string? srcText = ModelNetlist.FromCell(sourceCellDir, out string? why);
         if (srcText is null) return $"The self-check could not extract the source cell: {why}";
         string srcSch = PrimaryPath(sourceCellDir, ViewType.Schematic) ?? sourceCellDir;
         string? srcBase = SchematicCircuit.ReferenceBaseOfDirectory(Path.GetDirectoryName(srcSch));
+        string srcCell = Path.GetFileName(Path.TrimEndingDirectorySeparator(Path.GetFullPath(sourceCellDir)));
 
         string modelText;
         try { modelText = File.ReadAllText(ModelNetlist.PathOf(modelDir)); }
         catch (Exception ex) { return $"The self-check could not read the exported netlist: {ex.Message}"; }
 
+        int n = manifest.Pins.Count;
         Run a, b;
+        Complex[]? am = null, bm = null;
+        double[] mids = [];
         try
         {
-            a = RunBench(srcText, Path.GetFileName(Path.TrimEndingDirectorySeparator(Path.GetFullPath(sourceCellDir))), srcBase, manifest.Pins.Count, freqs);
+            a = RunBench(srcText, srcCell, srcBase, n, freqs, driven);
             control?.TickStage();
-            b = RunBench(modelText, manifest.Cell, modelDir, manifest.Pins.Count, freqs);
+            b = RunBench(modelText, manifest.Cell, modelDir, n, freqs, driven);
             control?.TickStage();
+            if (driven && sampled!.Length > 1)
+            {
+                mids = [.. sampled.Zip(sampled.Skip(1), (x, y) => (x + y) / 2)];
+                am = BenchS(srcText, srcCell, srcBase, n, mids);
+                bm = BenchS(modelText, manifest.Cell, modelDir, n, mids);
+            }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -917,42 +1002,89 @@ public static partial class ModelLibraryExport
             double e = Relative(a.S[i], b.S[i]);
             if (e > worst.Error)
             {
-                int n = manifest.Pins.Count, f = i / (n * n), ij = i % (n * n);
+                int f = i / (n * n), ij = i % (n * n);
                 worst = (e, $"S({ij / n + 1},{ij % n + 1}) at {FormatHz(freqs[f])}");
             }
         }
+        // Driven, a pin voltage is judged against at least the smallest drive (pin 1's 0.1 V): a pin a milliohm via
+        // away from ground sits at microvolts, where the source's own solve is only good to ~1e-11 V (RESOLVED.md).
         for (int k = 0; k < a.Dc.Length && k < b.Dc.Length; k++)
         {
-            double e = Relative(a.Dc[k], b.Dc[k]);
+            double e = driven ? Math.Abs(a.Dc[k] - b.Dc[k]) / Math.Max(Math.Max(Math.Abs(a.Dc[k]), Math.Abs(b.Dc[k])), DrivenDcFloor)
+                              : Relative(a.Dc[k], b.Dc[k]);
             if (e > worst.Error) worst = (e, $"the DC voltage at pin {manifest.Pins[k]}");
         }
         if (a.S.Length != b.S.Length) return "The self-check failed: the source and the model give different numbers of S-parameters.";
-        if (worst.Error <= SelfCheckTolerance) return null;
-        return $"The self-check failed: the exported model differs from the source cell, worst at {worst.Where} " +
-               $"(relative difference {worst.Error:G3}, allowed {SelfCheckTolerance:G1}). Nothing was written.";
+        if (worst.Error > SelfCheckTolerance)
+            return $"The self-check failed: the exported model differs from the source cell, worst at {worst.Where} " +
+                   $"(relative difference {worst.Error:G3}, allowed {SelfCheckTolerance:G1}). Nothing was written.";
+
+        if (am is not null && bm is not null)
+        {
+            double db = 0;
+            for (int i = 0; i < am.Length && i < bm.Length; i++)
+            {
+                double ma = am[i].Magnitude, mb = bm[i].Magnitude;
+                if (Math.Max(ma, mb) < 0.01) continue;
+                db = ma == 0 || mb == 0 ? double.PositiveInfinity : Math.Max(db, Math.Abs(20 * Math.Log10(mb / ma)));
+            }
+            betweenSamplesDb = db;
+        }
+        return null;
     }
 
     private sealed record Run(Complex[] S, double[] Dc);
 
-    private static Run RunBench(string cnlText, string topCell, string? baseDir, int pins, double[] freqs)
+    /// <summary>The cell placed with a port from each pin to ground: its S at <paramref name="freqs"/>, and its DC
+    /// voltage at each pin — undriven, or with each pin's 50 Ω behind a source of pin k × 0.1 V.</summary>
+    private static Run RunBench(string cnlText, string topCell, string? baseDir, int pins, double[] freqs, bool driven)
     {
-        var bench = new System.Text.StringBuilder(cnlText);
-        bench.Append('\n');
+        Complex[] s = freqs.Length == 0 ? [] : BenchS(cnlText, topCell, baseDir, pins, freqs);
+        var bench = new System.Text.StringBuilder(cnlText).Append('\n');
         for (int k = 1; k <= pins; k++)
-            bench.Append($"Port:SCP{k} __sc_n{k} 0 Num={k} Z=50 Ohm\n");
-        bench.Append(topCell).Append(":SCX1");
-        for (int k = 1; k <= pins; k++) bench.Append($" __sc_n{k}");
-        bench.Append('\n');
+            bench.Append(driven
+                ? $"Vdc:SCV{k} __sc_s{k} 0 Vdc={(k * 0.1).ToString("R", CultureInfo.InvariantCulture)}\nR:SCR{k} __sc_s{k} __sc_n{k} R=50 Ohm\n"
+                : $"Port:SCP{k} __sc_n{k} 0 Num={k} Z=50 Ohm\n");
+        AppendInstance(bench, topCell, pins);
 
         var (lib, tb) = new CnlReader().Read(bench.ToString(), "selfcheck", baseDir);
         using var nl = new Elaborator(lib).Elaborate(tb);
-        var s = SParameterEngine.Run(nl, freqs).Cubes["S"].ComplexValues;
         var dc = NonlinearDcEngine.Run(nl);
         var v = new double[pins];
         for (int k = 1; k <= pins; k++)
             v[k - 1] = nl.Nodes.TryGetIndex($"__sc_n{k}", out int idx) && idx > 0 && idx - 1 < dc.NodeVoltages.Length
                 ? dc.NodeVoltages[idx - 1] : 0;
-        return new Run([.. s], v);
+        return new Run(s, v);
+    }
+
+    private static Complex[] BenchS(string cnlText, string topCell, string? baseDir, int pins, double[] freqs)
+    {
+        var bench = new System.Text.StringBuilder(cnlText).Append('\n');
+        for (int k = 1; k <= pins; k++) bench.Append($"Port:SCP{k} __sc_n{k} 0 Num={k} Z=50 Ohm\n");
+        AppendInstance(bench, topCell, pins);
+        var (lib, tb) = new CnlReader().Read(bench.ToString(), "selfcheck", baseDir);
+        using var nl = new Elaborator(lib).Elaborate(tb);
+        return [.. SParameterEngine.Run(nl, freqs).Cubes["S"].ComplexValues];
+    }
+
+    private static void AppendInstance(System.Text.StringBuilder bench, string topCell, int pins)
+    {
+        bench.Append(topCell).Append(":SCX1");
+        for (int k = 1; k <= pins; k++) bench.Append($" __sc_n{k}");
+        bench.Append('\n');
+    }
+
+    /// <summary>The range part.cpart states: the one asked for, and — when anything was converted — whatever half of
+    /// it is left blank taken from the plan the S-parameters were sampled over (R-vl11-4d).</summary>
+    private static ModelPartFrequency? FrequencyRange(ExportPlan plan, ExportOptions options)
+    {
+        string low = options.FrequencyLow.Trim(), high = options.FrequencyHigh.Trim();
+        if (plan.Conversions.Count > 0 && plan.Frequencies.Length > 0)
+        {
+            if (low.Length == 0) low = FormatFrequency(plan.Frequencies[0]);
+            if (high.Length == 0) high = FormatFrequency(plan.Frequencies[^1]);
+        }
+        return low.Length + high.Length == 0 ? null : new ModelPartFrequency { Low = low, High = high };
     }
 
     /// <summary>DC, then ten points log-spaced over the stated range — 1 MHz to 10 GHz when none is stated, and a

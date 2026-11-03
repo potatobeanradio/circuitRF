@@ -35,6 +35,7 @@ public static class ExportPart
         string category = "", description = "", value = "", low = "", high = "", conditions = "", footprint = "";
         string libraryName = "", publisher = "", license = "", libraryVersion = "1.0.0";
         var docs = new List<string>();
+        var sweeps = new List<CircuitRF.Core.Design.FrequencySpec>();
         bool replace = false, includeVendor = false;
 
         for (int i = 1; i < args.Length; i++)
@@ -59,6 +60,18 @@ public static class ExportPart
                 case "--publisher" when more:       publisher = args[++i]; break;
                 case "--license" when more:         license = args[++i]; break;
                 case "--library-version" when more: libraryVersion = args[++i]; break;
+                case "--sweep" when more:
+                {
+                    // One segment per --sweep, in the sparam directive's own keys: everything up to the next option.
+                    var words = new List<string>();
+                    while (i + 1 < args.Length && !args[i + 1].StartsWith("--", StringComparison.Ordinal))
+                        words.AddRange(args[++i].Split(' ', StringSplitOptions.RemoveEmptyEntries));
+                    if (ParseSweep(words) is not { } segment)
+                        return JsonRun.Fail(CliDiagnostics.ExportBadValue("--sweep", string.Join(' ', words),
+                            "start=… stop=… and npts=… or step=…, with unit=… and log optional"));
+                    sweeps.Add(segment);
+                    break;
+                }
                 case "--replace":                   replace = true; break;
                 case "--include-vendor-parts":      includeVendor = true; break;
                 default:
@@ -96,6 +109,7 @@ public static class ExportPart
             Footprint = footprint, Documents = docs, Symbol = symbolWord, Replace = replace,
             IncludeVendorParts = includeVendor, LibraryName = libraryName, Publisher = publisher,
             LibraryVersion = libraryVersion, License = license,
+            Sweep = sweeps.Count == 0 ? null : sweeps,
         };
 
         // The plan first, so a refusal the dialog would have ASKED about can name the flag that answers it.
@@ -130,12 +144,33 @@ public static class ExportPart
         return 0;
     }
 
+    /// <summary>
+    /// One <c>--sweep</c> segment, read by the <c>sparam</c> directive's own parser so its keys, its <c>unit=</c>
+    /// and its <c>log</c> mean exactly what they mean there. Null when it is not a segment: start, stop, and npts or
+    /// step are all required, since the directive's own fallbacks are not a plan anyone wrote.
+    /// </summary>
+    private static CircuitRF.Core.Design.FrequencySpec? ParseSweep(IReadOnlyList<string> words)
+    {
+        var keys = words.Select(w => w.Split('=', 2)[0].ToLowerInvariant()).ToHashSet();
+        if (!keys.Contains("start") || !keys.Contains("stop") || !(keys.Contains("npts") || keys.Contains("step"))) return null;
+        if (words.Any(w => w.Contains('"') || !(w.Contains('=') || w.Equals("log", StringComparison.OrdinalIgnoreCase)))) return null;
+        if (keys.Contains("type")) return null;
+        try
+        {
+            var (_, tb) = new CircuitRF.Core.Netlist.CnlReader().Read(
+                "analysis SWEEP type=sparam " + string.Join(' ', words) + "\n", "sweep", sourceDirectory: null);
+            return tb.Analyses.OfType<CircuitRF.Core.Design.SParameterAnalysis>().FirstOrDefault()?.Freq;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException) { return null; }
+    }
+
     private static int Usage()
     {
         Console.Error.WriteLine(
             "Usage: circuitrf export part <cell folder> --library <dir> [--category a/b] [--part PN]\n" +
             "         [--description …] [--kind active|passive] [--value …] [--freq-low … --freq-high …]\n" +
             "         [--conditions …] [--footprint …] [--doc <file>]… [--symbol own|fet|r|c|l|box]\n" +
+            "         [--sweep start=… stop=… npts=…|step=… [unit=GHz] [log]]…   (technology parts; default 0-20 GHz, 1001 points)\n" +
             "         [--replace] [--include-vendor-parts]\n" +
             "         [--library-name … --publisher … --license … --library-version …]   (a new library only)\n" +
             "         [--json]");

@@ -67,7 +67,7 @@ matrix entry.
     <img class="sym-dark"  src="../assets/symbols/snp-dark.svg" alt="">
   </span><figcaption>SnP at 2 ports</figcaption></figure>
 
-The Touchstone block's symbol is the most configurable. Besides `NumPorts` and the `File`, three
+The Touchstone block's symbol is the most configurable. Besides `NumPorts` and the `File`, four
 options shape the symbol and its reference convention:
 
 ### Pin arrangement (`PinConfig`)
@@ -88,6 +88,16 @@ By default each port is referenced to ground, so an N-port shows **N nets**. Set
 to expose a **common external reference pin** instead — now the block has **N + 1 nets**, and all
 ports are measured against that shared reference rather than ground. Use this when the data
 block's reference is not circuit ground (a floating measurement).
+
+### Drawn as a built-in part (`Symbol`)
+
+`Symbol` names a built-in part — `Mlin`, `MTee`, `ViaGnd` — and the SnP is drawn with that part's glyph, its port
+*k* on the glyph's pin *k*. It needs as many pins as the SnP has ports, and no `RefNode`; otherwise, or left
+empty, the SnP draws its own box. It changes only the picture: the netlist and the run are the SnP's.
+
+Export to Library writes it for every part it converts to S-parameters, so the converted part keeps its pins
+where its wires are and still reads as a line. On a placed SnP, the **Symbol** picture in the Parameter Editor
+opens the menu of glyphs with that many pins.
 
 <div class="callout note">
     <span class="label">N or N+1 nets</span>

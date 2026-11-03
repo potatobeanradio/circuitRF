@@ -4761,6 +4761,12 @@ source scan holds both shells to that.
   `<category>/.<part>.tmp-<id>/<part>` and renamed into place only after `check` and the self-check pass.
 - **The created paths are the result**, on stdout and in `--json` (`model`, `library`, `file`).
 - Over MCP it is a mode of `create` (`what=libraryPart`), not an eighteenth tool.
+- **`--sweep start=… stop=… npts=…|step=… [unit=GHz] [log]`** (brief vendorlib-11) is one segment of the plan the
+  technology-bound parts are sampled over, repeatable. It is read by the `sparam` directive's OWN parser, so its
+  keys and its `unit=` (Hz when absent, as there) cannot drift from the directive's; start, stop and npts-or-step
+  are required, because the directive's fallbacks are not a plan anyone wrote. The default is the dialog's
+  (0-20 GHz, 1001 points). With no part to convert it is refused rather than ignored. Over MCP it is `sweep`, a
+  list, one segment per item.
 
 Gate: `tests/Ui.Tests/VendorLibraries/ModelLibraryExportTests.cs` — the CLI as a process against the in-process
 call, byte for byte over the whole library folder, `part.cpart` included.

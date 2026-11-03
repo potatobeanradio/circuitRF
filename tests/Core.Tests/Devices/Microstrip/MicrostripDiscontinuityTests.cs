@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Numerics;
 using CircuitRF.Core.Devices;
 using CircuitRF.Core.Devices.Microstrip;
@@ -161,18 +162,12 @@ public class MicrostripDiscontinuityTests
     [Fact]
     public void MCross_AsymmetricWidths_RuntimeWarning_NamesTheDivergence()
     {
-        var sw = new System.IO.StringWriter();
-        var original = Console.Error;
-        Console.SetError(sw);
-        try
-        {
-            var model = new MicrostripCrossModel(2.9e-3, 1.5e-3, 2.0e-3, 1.5e-3, 1.6e-3, 35e-6, 4.4, 5.8e7, 0.02, "MCROSS:X1");
-            model.Stamp(new CapturingMnaContext(), MakeEc(model, "MCROSS", [1, 2, 3, 4]), 2 * Math.PI * 1e9);
-            string output = sw.ToString();
-            Assert.Contains("R11", output);
-            Assert.Contains("opposing arms are not equal-width", output);
-        }
-        finally { Console.SetError(original); }
+        // Queued for the run's warnings (IReportsWarnings), not written to stderr, so it reaches Messages once per run.
+        var model = new MicrostripCrossModel(2.9e-3, 1.5e-3, 2.0e-3, 1.5e-3, 1.6e-3, 35e-6, 4.4, 5.8e7, 0.02, "MCROSS:X1");
+        model.Stamp(new CapturingMnaContext(), MakeEc(model, "MCROSS", [1, 2, 3, 4]), 2 * Math.PI * 1e9);
+        string output = string.Join("\n", model.DrainWarnings().Select(w => w.Message));
+        Assert.Contains("R11", output);
+        Assert.Contains("opposing arms are not equal-width", output);
     }
 
     // ── Factory registration ─────────────────────────────────────────────────────────────────

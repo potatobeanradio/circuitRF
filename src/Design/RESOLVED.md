@@ -26346,3 +26346,47 @@ Gate: `tests/Ui.Tests/VendorLibraries/VendorModelLibraryTests.cs` (7).
   include and the rewritten reference.
 
 Gate: `tests/Ui.Tests/VendorLibraries/ModelLibraryExportTests.cs` (7 tests, 11 cases).
+
+## Export to Library: technology parts become S-parameters (brief vendorlib-11, 2026-11-03)
+
+`ModelLibraryExport.Convert.cs`; the predicate is `Schematic/TechnologyBound.cs`, the SnP glyph `Schematic/SnpGlyph.cs`.
+
+- **VL-10's own predicate missed the broadside pairs.** `IsTechnologyBound` was `IsStackupLineKind` plus a
+  hand-written list, and BCLIN / MBCLIN were in neither, so a cell placing one exported without a word and ran on
+  the consumer's substrate. `TechnologyBound.Is` is now one call per seam predicate (TESTPAD gained
+  `TestPadInjection.IsTestPadKind`, which the extractor now calls too), and the gate finds the seams by reflection:
+  every `*Injection` class in `CircuitRF.Design.Schematic` with a public `Is…Kind(SymbolKind)`, so a seventh seam
+  that follows the pattern fails the test until it is added.
+- **The conversion re-derives nothing.** The source cell is extracted as a run extracts it (the seams have
+  already written H, Er and the rest onto each instance); the one instance moves into a bench cell that keeps the
+  cell's parameters and variables, so `W=w1` evaluates as it does in the cell. Terminal *k* of the symbol is net
+  *k*; nets past the symbol's pin count (VIAGND's `0`) are kept.
+- **The DC row.** When every elaborated component of the part implements `IDcShortedTerminals`, the 0 Hz row is
+  the ideal junction of each union-find group of its nodes (2/m − δ; −1 on the diagonal for a group that reaches
+  node 0; open for a terminal in none). Otherwise it is `SParameterEngine` at 0 Hz. Measured on MTEE and VIAGND on
+  the shipped RO4350B board: that agrees with what `NonlinearDcEngine` makes of the same part to ~1e-11 in S.
+- **The S comparison skips 0 Hz when anything is converted.** A lossless line's 0 Hz S from the S-parameter
+  analysis is its resonance clamp (S21 = 1 − 1e-9 j), and the file's DC row is the ideal short: comparing the two
+  compares two different things. The DC row is checked by the driven DC comparison instead.
+- **Deviation: the driven DC comparison's floor is 0.1 V, not 1e-12 V.** On the brief's own circuit (R, MLIN,
+  MTEE, VIAGND to ground on the bias path), the source and the model differed by 1.3e-11 V at BOTH pins: 4.5e-10
+  relative at `in` (29 mV), but 6e-6 at `out`, which a milliohm via holds at 2.3 µV. That 1e-11 V is the source
+  solve's own noise. The MTEE's milliohm arms make its stamp ill-conditioned, and the probe above shows the same
+  1e-11 between its two engines. Judged against 1e-12 V, any pin a via away from ground would refuse every export.
+  Each driven pin voltage is now judged against the larger of itself and 0.1 V (pin 1's drive, the smallest), so
+  the bar for a near-zero pin is 1e-10 V. Deleting the line's DC row still fails it (test 2). The undriven VL-10
+  comparison is unchanged.
+- **Touchstone written at G17, in Hz**, so the 1e-9 compares the sampled numbers rather than their rounding, and
+  the stored frequency is the sampled one exactly.
+- **`--sweep` is parsed by the `sparam` directive's own reader** (`CnlReader` on a one-line `analysis … type=sparam`)
+  so its keys and units cannot drift from the directive's.
+- **MTEE and MCROSS still wrote four of their notes straight to `Console.Error`** (the single-point epsR
+  calibration and the unequal-width approximation), once per MODEL OBJECT, so a CLI export printed the tee's
+  note once per internal elaboration and the GUI never showed it at all. They now queue through the
+  `MicrostripValidityReporter` they already held (`IReportsWarnings`), keyed per instance, so a run reports each
+  once through `AddWarningOnce`. Export reports what the CONVERSION's run of each part said, once, prefixed with
+  the part (`T1 (MTEE): …`). The self-check benches' copies are discarded. That also brings out the tee's W/h
+  validity notes and the via's electrical-length note, which an export used to drop.
+- **MCP `create what=libraryPart` takes `sweep`**, a repeated string, one segment per item, passed as `--sweep`.
+
+Gate: `tests/Ui.Tests/VendorLibraries/TechnologyPartConversionTests.cs` (5 tests, ~0.9 s together).

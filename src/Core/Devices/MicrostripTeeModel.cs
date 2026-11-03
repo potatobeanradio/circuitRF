@@ -184,8 +184,8 @@ public sealed class MicrostripTeeModel : ComponentModel, IReportsWarnings
     {
         if (!_warnedEpsR && (_epsR < 9.0 || _epsR > 10.8))
         {
-            Console.Error.WriteLine(
-                $"[circuitRF] MTEE:{_instancePath}: L1/L2/CT (Gupta-Garg-Chadha eq 6.41-6.42) are " +
+            _reporter.ReportOnce($"MTEE:EpsR:{_instancePath}",
+                $"L1/L2/CT (Gupta-Garg-Chadha eq 6.41-6.42) are " +
                 $"calibrated at a single point, epsR=9.9, with no epsR-scaling law given by the " +
                 $"source; this instance's epsR={_epsR:G4} is an extrapolation beyond that.");
             _warnedEpsR = true;
@@ -195,8 +195,8 @@ public sealed class MicrostripTeeModel : ComponentModel, IReportsWarnings
         if (!_warnedAsymmetry && _w1 != _w2)
         {
             double meanFrac = wMain > 0 ? Math.Abs(_w1 - _w2) / wMain : 0.0;
-            Console.Error.WriteLine(
-                $"[circuitRF] MTEE:{_instancePath}: through_in/through_out widths differ " +
+            _reporter.ReportOnce($"MTEE:Asymmetry:{_instancePath}",
+                $"through_in/through_out widths differ " +
                 $"(W1={_w1:G3}m, W2={_w2:G3}m, diverge {meanFrac:P1}) — the source's own model assumes " +
                 "one uniform main-line width; the arithmetic mean is used for the L1/CT terms.");
             _warnedAsymmetry = true;

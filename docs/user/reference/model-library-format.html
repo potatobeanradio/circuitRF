@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — Model Library Format</title>
+<link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: docs/user/src/reference/model-library-format.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../index.html"><img class="logo" src="../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="index.html">Reference Guide</a>
+  <div class="doc-search" data-crf-search data-root="../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › Model Library Format</p>
+    <nav class="page-nav-top" aria-label="Previous and next page">
+      <a class="prev" href="pdk-authoring.html" title="Previous: PDK Authoring"><span class="arrow">‹</span><span class="name">PDK Authoring</span></a>
+      <a class="next" href="gdsfactory-kits.html" title="Next: Using a gdsfactory kit"><span class="name">Using a gdsfactory kit</span><span class="arrow">›</span></a>
+    </nav>
+  </div>
+
+  <h1>Model Library Format</h1>
+  <p class="lede">The folder format a model library is written in — every file and key, what a reader must do, and a complete example — for writing a library by hand or by script, or reading one in another tool.</p>
+
+<nav class="toc">
+<h2>On this page</h2>
+<ol>
+<li><a href="#what">What a model library is</a></li>
+<li><a href="#layout">The folder layout</a></li>
+<li><a href="#clib">library.clib</a></li>
+<li><a href="#cpart">part.cpart</a></li>
+<li><a href="#cnl">The model's netlist</a></li>
+<li><a href="#hash">PublishedHash</a></li>
+<li><a href="#reader">What a reader must do</a></li>
+<li><a href="#example">A complete example</a></li>
+<li><a href="#checking">Checking a library</a></li>
+<li><a href="#making">Making a library</a></li>
+</ol>
+</nav>
+<h2 id="what">What a model library is</h2>
+<p>A <strong>model library</strong> is a folder of <strong>model folders</strong>. Each model folder is one part: a cell with pins and
+cell parameters, packaged with every file it needs so it runs on a machine that has nothing else. A model can
+hold any component circuitRF has — R, L and C, Verilog-A, a ComposedFET, an SnP, a SpiceModel, sub-cells.</p>
+<p>A workspace lists a model library the way it lists a <a href="pdk-integration.html#vendor">vendor part library</a>:
+<strong>Add Vendor Library…</strong> on its folder. Model folders and SPICE files can share one library.</p>
+<p><strong>circuitRF defines this format, and the files in it are plain text.</strong> What runs is the model's netlist, a
+<a href="netlist.html"><code>.cnl</code></a> — documented and readable by another tool. Every model file it uses (<code>.va</code>, <code>.sNp</code>, …)
+sits beside it, so a tool that does not read <code>.cnl</code> can take a <code>.va</code> directly.</p>
+<h2 id="layout">The folder layout</h2>
+<pre><code>&lt;library&gt;/
+  library.clib                 optional
+  &lt;Category&gt;/&lt;Sub&gt;/            ordinary folders: the palette's sub-menus
+    &lt;PartNumber&gt;/              a model folder
+      part.cpart               required; its presence makes this a model folder
+      &lt;PartNumber&gt;.cnl         required; the netlist that runs
+      .ccell                   the cell's own file
+      schematic/&lt;PartNumber&gt;.csch
+      symbol/&lt;PartNumber&gt;.csym
+      models/                  .va and every file it includes, .cmodel, .sNp, SPICE files a SpiceModel names
+      cells/&lt;Sub&gt;/             sub-cell folders the model's schematic places
+      docs/                    optional; the palette's ? button opens these
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Entry</th>
+<th>Required</th>
+<th>What it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>part.cpart</code></td>
+<td>Yes</td>
+<td>What finds and describes the part (<a href="#cpart">below</a>).</td>
+</tr>
+<tr>
+<td><code>&lt;PartNumber&gt;.cnl</code></td>
+<td>Yes</td>
+<td>The netlist that runs (<a href="#cnl">below</a>).</td>
+</tr>
+<tr>
+<td><code>.ccell</code></td>
+<td>No</td>
+<td>The cell file every circuitRF cell has. Export to Library writes it.</td>
+</tr>
+<tr>
+<td><code>schematic/</code></td>
+<td>No</td>
+<td>The schematic the <code>.cnl</code> was extracted from. Export writes it so the model can be opened and edited; nothing reads it to run. A model written by hand or by script may leave it out.</td>
+</tr>
+<tr>
+<td><code>symbol/</code></td>
+<td>When <code>Glyph</code> is empty</td>
+<td>The part's symbol. With a <code>Glyph</code>, the part draws that glyph and needs no symbol.</td>
+</tr>
+<tr>
+<td><code>models/</code></td>
+<td>When used</td>
+<td>Every file a parameter in the <code>.cnl</code> names.</td>
+</tr>
+<tr>
+<td><code>cells/</code></td>
+<td>When used</td>
+<td>The sub-cells the schematic places, each an ordinary cell folder.</td>
+</tr>
+<tr>
+<td><code>docs/</code></td>
+<td>No</td>
+<td>Data sheets and notes.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>A model folder is also a cell folder</strong>, so it opens, renders and checks as one. The folder is named after the
+part number. A <code>.lib</code> inside <code>models/</code> is the model's own file and is never listed as a part, however the library
+is indexed.</p>
+<h2 id="clib">library.clib</h2>
+<pre><code class="language-json">{
+  &quot;Format&quot;: &quot;circuitrf-model-library&quot;,
+  &quot;FormatVersion&quot;: 1,
+  &quot;Name&quot;: &quot;Example Devices&quot;,
+  &quot;Publisher&quot;: &quot;&quot;,
+  &quot;LibraryVersion&quot;: &quot;1.0.0&quot;,
+  &quot;License&quot;: &quot;&quot;,
+  &quot;Url&quot;: &quot;&quot;,
+  &quot;ReadOnly&quot;: false
+}
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Required</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Format</code></td>
+<td>Yes</td>
+<td>Always <code>circuitrf-model-library</code>.</td>
+</tr>
+<tr>
+<td><code>FormatVersion</code></td>
+<td>Yes</td>
+<td><code>1</code>. A higher number is refused, naming both versions.</td>
+</tr>
+<tr>
+<td><code>Name</code></td>
+<td>No</td>
+<td>The library's name. Without it, or without the file, the library takes its folder's name.</td>
+</tr>
+<tr>
+<td><code>Publisher</code></td>
+<td>No</td>
+<td>Who made it.</td>
+</tr>
+<tr>
+<td><code>LibraryVersion</code></td>
+<td>No</td>
+<td>The publisher's own version string.</td>
+</tr>
+<tr>
+<td><code>License</code></td>
+<td>No</td>
+<td>The terms the publisher states. circuitRF displays it and does nothing else with it.</td>
+</tr>
+<tr>
+<td><code>Url</code></td>
+<td>No</td>
+<td>Where the library comes from.</td>
+</tr>
+<tr>
+<td><code>ReadOnly</code></td>
+<td>No</td>
+<td><code>true</code>: copy a part to change it. It greys out <strong>Edit Vendor Model…</strong> and nothing else.</td>
+</tr>
+</tbody>
+</table>
+<p>A key circuitRF does not know is kept when it rewrites the file.</p>
+<h2 id="cpart">part.cpart</h2>
+<pre><code class="language-json">{
+  &quot;Format&quot;: &quot;circuitrf-model&quot;,
+  &quot;FormatVersion&quot;: 1,
+  &quot;Part&quot;: &quot;TSTFET100&quot;,
+  &quot;Cell&quot;: &quot;TSTFET100&quot;,
+  &quot;Kind&quot;: &quot;Active&quot;,
+  &quot;Description&quot;: &quot;Low-noise pHEMT, packaged&quot;,
+  &quot;Pins&quot;: [&quot;g&quot;, &quot;d&quot;, &quot;s&quot;],
+  &quot;Parameters&quot;: [ { &quot;Name&quot;: &quot;Vds&quot;, &quot;Default&quot;: &quot;3 V&quot; } ],
+  &quot;Glyph&quot;: &quot;FET&quot;,
+  &quot;Value&quot;: &quot;&quot;,
+  &quot;Frequency&quot;: { &quot;Low&quot;: &quot;0 Hz&quot;, &quot;High&quot;: &quot;20 GHz&quot; },
+  &quot;Conditions&quot;: &quot;&quot;,
+  &quot;Footprint&quot;: &quot;&quot;,
+  &quot;CaseMetric&quot;: &quot;&quot;,
+  &quot;CaseImperial&quot;: &quot;&quot;,
+  &quot;Revision&quot;: 1,
+  &quot;PublishedHash&quot;: &quot;sha256:…&quot;,
+  &quot;Converted&quot;: [ { &quot;Instance&quot;: &quot;TL1&quot;, &quot;Cell&quot;: &quot;TSTFET100&quot;, &quot;Type&quot;: &quot;MLIN&quot;, &quot;File&quot;: &quot;models/TL1.s2p&quot;,
+                   &quot;Parameters&quot;: &quot;W=1.1 mm L=8 mm&quot;, &quot;Technology&quot;: &quot;PCB 2-Layer RO4350B (20mil, 1oz)&quot;,
+                   &quot;Frequency&quot;: &quot;start=0 GHz stop=20 GHz npts=1001; DC always included&quot;, &quot;Version&quot;: &quot;…&quot; } ]
+}
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Required</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Format</code></td>
+<td>Yes</td>
+<td>Always <code>circuitrf-model</code>.</td>
+</tr>
+<tr>
+<td><code>FormatVersion</code></td>
+<td>Yes</td>
+<td><code>1</code>. A higher number is refused, naming both versions.</td>
+</tr>
+<tr>
+<td><code>Part</code></td>
+<td>Yes</td>
+<td>The part number. Equals the model folder's name.</td>
+</tr>
+<tr>
+<td><code>Cell</code></td>
+<td>Yes</td>
+<td>The top <code>define</code> in the <code>.cnl</code>.</td>
+</tr>
+<tr>
+<td><code>Kind</code></td>
+<td>Yes</td>
+<td><code>Active</code> or <code>Passive</code>.</td>
+</tr>
+<tr>
+<td><code>Pins</code></td>
+<td>Yes</td>
+<td>The top cell's pins, in the <code>.cnl</code>'s order.</td>
+</tr>
+<tr>
+<td><code>Description</code></td>
+<td>No</td>
+<td>One line, searched by the palette.</td>
+</tr>
+<tr>
+<td><code>Parameters</code></td>
+<td>No</td>
+<td>The top cell's parameters, each <code>{ &quot;Name&quot;, &quot;Default&quot; }</code>, in the <code>.cnl</code>'s order and spelling.</td>
+</tr>
+<tr>
+<td><code>Glyph</code></td>
+<td>No</td>
+<td><code>R</code>, <code>C</code>, <code>L</code> or <code>FET</code> to draw that glyph; empty to draw the model's own symbol.</td>
+</tr>
+<tr>
+<td><code>Value</code></td>
+<td>No</td>
+<td>For a passive, its value with a unit (<code>10 pF</code>), so search by value finds it.</td>
+</tr>
+<tr>
+<td><code>Frequency</code></td>
+<td>No</td>
+<td><code>{ &quot;Low&quot;, &quot;High&quot; }</code>, the range the model is valid over. A run outside it is warned about.</td>
+</tr>
+<tr>
+<td><code>Conditions</code></td>
+<td>No</td>
+<td>The bias, temperature or other conditions the model holds at, as text.</td>
+</tr>
+<tr>
+<td><code>Footprint</code></td>
+<td>No</td>
+<td>A footprint name; empty to take the case code's.</td>
+</tr>
+<tr>
+<td><code>CaseMetric</code>, <code>CaseImperial</code></td>
+<td>No</td>
+<td>The case size (<code>1005</code>, <code>0402</code>), which also gives the footprint.</td>
+</tr>
+<tr>
+<td><code>Revision</code></td>
+<td>No</td>
+<td>How many times this part number has been exported.</td>
+</tr>
+<tr>
+<td><code>PublishedHash</code></td>
+<td>No</td>
+<td>Written by Export (<a href="#hash">below</a>). Empty or absent in a hand-made model.</td>
+</tr>
+<tr>
+<td><code>Converted</code></td>
+<td>No</td>
+<td>The parts Export replaced by S-parameter files (<a href="#converted">below</a>): each one's instance, the cell that placed it, its type, its file, its parameters as written, the technology's name, the frequency plan and the circuitRF version. Provenance; nothing reads it to run.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Nothing in <code>part.cpart</code> changes a result.</strong> What runs is the <code>.cnl</code>. <code>Pins</code> and <code>Parameters</code> repeat what the
+<code>.cnl</code> states so a library can be listed without reading every netlist, and <code>check</code> says when the two disagree.</p>
+<h2 id="cnl">The model's netlist</h2>
+<p><code>&lt;PartNumber&gt;.cnl</code> is a <a href="netlist.html"><code>.cnl</code></a> holding one or more <code>define … end</code> blocks and <strong>nothing at the
+top level except comments</strong>:</p>
+<ul>
+<li>no analyses, no global variables, no <code>technology</code> line and no <code>measure</code> lines</li>
+<li>exactly one <code>define</code> that no other <code>define</code> places: the top cell, named by <code>Cell</code>; the others are its sub-cells</li>
+<li>the top cell's pins and parameters are <code>part.cpart</code>'s <code>Pins</code> and <code>Parameters</code>, in the same order</li>
+<li>every file a parameter names (<code>File=</code>) is a path <strong>relative to the model folder</strong> that stays inside it — a
+model never names a file outside itself, another library, or a kit</li>
+</ul>
+<pre><code class="language-netlist">define TSTFET100 (g d s)
+  parameters Vds=3 V
+  SnP:S1 g d s NumPorts=3 File=&quot;models/TSTFET100.s3p&quot;
+end TSTFET100
+</code></pre>
+<p><strong>A model never carries a technology.</strong> A part whose substrate would come from a technology — a microstrip line,
+a placed layout — is an S-parameter file in <code>models/</code> instead.</p>
+<p><strong>Verilog-A needs a compiler wherever it runs.</strong> A <code>.va</code> ships as source; anyone who places the model needs a
+Verilog-A compiler, as for any <a href="components.html#veriloga">Verilog-A part</a>. Precompiled models are not part of the
+format.</p>
+<h2 id="hash">PublishedHash</h2>
+<p><code>PublishedHash</code> lets circuitRF say a model was edited after it was exported. It is <code>sha256:</code> followed by the
+lower-case hex SHA-256 of a list of lines, one per file:</p>
+<ol>
+<li>Take every file under the model folder except <code>part.cpart</code> itself, <code>.DS_Store</code>, <code>Thumbs.db</code>, <code>desktop.ini</code>
+and anything inside a <code>.git</code> folder.</li>
+<li>For a text file (<code>.cnl .csch .csym .ccell .va .vams .sNp .lib .cir .sub .txt .md</code>, where <code>.sNp</code> is any N)
+replace every CR LF with LF in its content. A changed line ending is then not an edit.</li>
+<li>Write one line per file, <code>&lt;lower-case hex SHA-256 of the content&gt;  &lt;path&gt;</code> with two spaces and a LF, where
+<code>&lt;path&gt;</code> is relative to the model folder with <code>/</code> separators. Order the lines by path, comparing bytes.</li>
+<li>Hash the lines as UTF-8.</li>
+</ol>
+<p>A model with no <code>PublishedHash</code> is never reported as edited. A script that makes a library may write the hash
+too; it then gets the same warning when someone edits its output.</p>
+<h2 id="reader">What a reader must do</h2>
+<ul>
+<li><strong>Find models by <code>part.cpart</code>.</strong> Any folder holding one is a model folder; do not look inside it for more.</li>
+<li><strong>Run the <code>.cnl</code>.</strong> Place the top cell with its pins in <code>Pins</code> order, and override its parameters by name.</li>
+<li><strong>Resolve every relative path against the model folder</strong> — the folder holding <code>part.cpart</code>, whichever file
+names it.</li>
+<li><strong>Assume no technology</strong> and no workspace. A model needs nothing outside its own folder.</li>
+<li><strong>Keep keys you do not know</strong> when you rewrite a manifest, and refuse a <code>FormatVersion</code> above the one you read.</li>
+</ul>
+<h2 id="example">A complete example</h2>
+<p>A library with one passive part, written by hand. Each file is shown with its path inside the library; save them
+there and <code>circuitrf check example-devices</code> reports no errors and no warnings.</p>
+<!-- example:begin -->
+<p><code>example-devices/library.clib</code></p>
+<pre><code class="language-json">{
+  &quot;Format&quot;: &quot;circuitrf-model-library&quot;,
+  &quot;FormatVersion&quot;: 1,
+  &quot;Name&quot;: &quot;Example Devices&quot;,
+  &quot;LibraryVersion&quot;: &quot;1.0.0&quot;
+}
+</code></pre>
+<p><code>example-devices/Capacitors/0402/TSTCAP0402/part.cpart</code></p>
+<pre><code class="language-json">{
+  &quot;Format&quot;: &quot;circuitrf-model&quot;,
+  &quot;FormatVersion&quot;: 1,
+  &quot;Part&quot;: &quot;TSTCAP0402&quot;,
+  &quot;Cell&quot;: &quot;TSTCAP0402&quot;,
+  &quot;Kind&quot;: &quot;Passive&quot;,
+  &quot;Description&quot;: &quot;10 pF capacitor, 0402, with its series loss and inductance&quot;,
+  &quot;Pins&quot;: [&quot;p1&quot;, &quot;p2&quot;],
+  &quot;Glyph&quot;: &quot;C&quot;,
+  &quot;Value&quot;: &quot;10 pF&quot;,
+  &quot;Frequency&quot;: { &quot;Low&quot;: &quot;0 Hz&quot;, &quot;High&quot;: &quot;6 GHz&quot; },
+  &quot;CaseMetric&quot;: &quot;1005&quot;,
+  &quot;CaseImperial&quot;: &quot;0402&quot;
+}
+</code></pre>
+<p><code>example-devices/Capacitors/0402/TSTCAP0402/TSTCAP0402.cnl</code></p>
+<pre><code class="language-netlist">; TSTCAP0402: 10 pF in series with its ESR and ESL
+define TSTCAP0402 (p1 p2)
+  C:C1 p1 a C=10 pF
+  L:L1 a b L=0.45 nH
+  R:R1 b p2 R=0.12 Ohm
+end TSTCAP0402
+</code></pre>
+<!-- example:end -->
+<p>The part has no symbol, because <code>Glyph</code> draws a capacitor, and no schematic, because the <code>.cnl</code> is what runs.</p>
+<h2 id="checking">Checking a library</h2>
+<p><code>circuitrf check</code> takes a library folder, a model folder, a <code>part.cpart</code> or a <code>library.clib</code>. Over MCP it is
+<code>check path=&lt;folder&gt;</code>. Besides the checks every cell gets, it reports:</p>
+<table>
+<thead>
+<tr>
+<th>Finding</th>
+<th>Severity</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>part.cpart</code> unreadable, not this format, a newer <code>FormatVersion</code>, or a required key missing</td>
+<td>Error</td>
+</tr>
+<tr>
+<td><code>Part</code> different from the folder's name</td>
+<td>Error</td>
+</tr>
+<tr>
+<td>The <code>.cnl</code> missing or unreadable, or holding a line outside every <code>define</code></td>
+<td>Error</td>
+</tr>
+<tr>
+<td>The top <code>define</code> not <code>Cell</code>, or more than one top <code>define</code></td>
+<td>Error</td>
+</tr>
+<tr>
+<td>The top cell's pins or parameters different from <code>Pins</code> / <code>Parameters</code></td>
+<td>Error</td>
+</tr>
+<tr>
+<td>A file parameter naming a file outside the model folder</td>
+<td>Error</td>
+</tr>
+<tr>
+<td>Two model folders with one part number</td>
+<td>Error</td>
+</tr>
+<tr>
+<td>The folder no longer matching <code>PublishedHash</code> — edited since exported</td>
+<td>Warning</td>
+</tr>
+</tbody>
+</table>
+<p>A folder holding model folders is checked to its full depth without <code>--recursive</code>.</p>
+<h2 id="making">Making a library</h2>
+<p><strong>Export to Library…</strong> packages a cell as a model folder. It is on the <strong>File</strong> menu and on the schematic
+toolbar, and it is available when the active document is a saved cell's primary schematic with at least one
+<strong>Pin</strong>; otherwise it is greyed, and its tooltip says why (a test bench, unsaved changes, no Pin). An empty
+folder chosen as the library starts a new library.</p>
+<p>The dialog asks for:</p>
+<ul>
+<li><strong>Library</strong> and <strong>Category</strong>. Pick a folder, or one of the libraries the workspace already references. A
+category is a folder in the library, and so a sub-menu in the palette; typing <code>Amplifiers/LNA</code> creates both
+folders.</li>
+<li>The <strong>library's</strong> Name, Publisher, Version and License, written to <code>library.clib</code>. They are asked only when
+the folder has no <code>library.clib</code> yet.</li>
+<li>The <strong>part</strong>: its number (the cell's name by default), Description, <strong>Kind</strong> (Active when any component is
+nonlinear — Verilog-A, ComposedFET, a FET, a diode, SDD or an external device — Passive otherwise), a passive's
+<strong>Value</strong>, the <strong>Frequency</strong> range it is valid over, <strong>Conditions</strong>, <strong>Footprint</strong>, and any <strong>Documents</strong> to copy
+into <code>docs/</code>.</li>
+<li>The <strong>symbol</strong>. The default is the cell's own symbol when it has one; otherwise the FET glyph for three or four
+pins whose names read as gate, drain and source on an active part; otherwise R, C or L for a two-pin passive
+whose value is a resistance, capacitance or inductance; otherwise a box. A built-in glyph is written into the
+model as <code>symbol/&lt;part&gt;.csym</code>, with its pins named after the cell's, and recorded as <code>Glyph</code>.</li>
+</ul>
+<p>While you fill it in, the dialog lists what will be copied in — every file, every sub-cell, every vendor part
+and the library it came from — and every reason the export cannot go ahead. <strong>Export</strong> stays greyed while any
+reason stands. <strong>Add this library to the workspace</strong> puts the part in the palette as soon as the export
+finishes.</p>
+<p>What Export does, in order:</p>
+<ol>
+<li><strong>Refuses before writing anything</strong> when the cell places a kit (<code>pdk://</code>) part or a file reference that does
+not resolve, when it has no Pin, or when a part takes its substrate from the technology and the schematic
+has none to sample it on (<code>TL1 (MLIN) needs a technology to be converted, and this schematic has none.</code>).</li>
+<li><strong>Copies the cell</strong> into a temporary folder beside the destination: <code>.ccell</code>, the schematic and the symbol,
+renamed to the part number. Sub-cells, including any from a referenced workspace, go to <code>cells/&lt;name&gt;/</code>.
+Every file a document references goes to <code>models/</code>, and its reference is rewritten relative to the model
+folder. A <code>.va</code> brings every file it <code>`include</code>s, laid out as before so the include still resolves. A
+name already taken in <code>models/</code> gets a numeric suffix. A vendor part is copied in as well: a SPICE part's
+own <code>.subckt</code> block into <code>models/</code>, a model part as a sub-cell.
+Every part that takes its substrate from the technology is <strong>converted</strong> to an SnP first
+(<a href="#converted">below</a>).</li>
+<li><strong>Writes the netlist</strong> by extracting the copied cell, so every reference in it is model-relative, then
+<code>part.cpart</code> (pins and parameters from the cell, so they agree with the <code>.cnl</code>), <code>library.clib</code> for a new
+library, and the <code>PublishedHash</code> last.</li>
+<li><strong>Checks</strong> the folder as <code>circuitrf check</code> does, and then <strong>self-checks</strong> it: the source cell and the model,
+each with a 50 Ω port from every pin to ground at the default parameters, must give the same S-parameters at
+eleven frequencies (DC, then ten log-spaced over the stated range, or 1 MHz to 10 GHz) and the same DC voltage
+at every pin, to 1e-9 relative. A difference is a refusal naming the worst entry and frequency. A model with
+converted parts is checked harder, as <a href="#converted">below</a> says.</li>
+<li><strong>Renames</strong> the folder into place. A refusal or <strong>Cancel</strong> at any step leaves nothing behind.</li>
+</ol>
+<h3 id="converted">Parts that use the technology</h3>
+<p>A model never carries a technology. MLIN and every other part that takes its substrate from one — the
+microstrip family and the GSG pad, CPWG and SLIN, the broadside pairs, VIA and VIAGND, the MMIC passives and the
+test pad — would otherwise run on whatever substrate the design placing the model has. So Export samples each
+such part on the technology Simulate would use for the source schematic (its own, else the workspace's), with
+the circuit model a run uses: the part on its own, with a 50 Ω port from each terminal to ground. Its
+S-parameters go to <code>models/&lt;instance&gt;.s&lt;N&gt;p</code>, where N is its terminal count (MLIN 2, MTEE 3, MCLIN 4, VIAGND
+1). Sub-cells' parts are converted too.</p>
+<p>The conversion is exact at every sampled frequency. Between samples the SnP interpolates, and outside the
+plan the <a href="#cpart">range warning</a> applies.</p>
+<ul>
+<li><strong>The frequency plan</strong> is the dialog's <strong>Frequency</strong> group, the EM Setup's own plan editor: Start, Stop, Step
+or Points, Lin or Log, <strong>+ Segment</strong> and <strong>Single</strong>. The default is one linear segment, 0 Hz to 20 GHz, 1001
+points. The line above it names what will be converted; with nothing to convert the group is greyed and reads
+<em>No component uses the technology.</em> The part's <strong>Frequency</strong> range fills in from the plan. It can be narrowed,
+but widening it past the plan is a refusal, since the S-parameters stop there.</li>
+<li><strong>DC is always in the file.</strong> A plan that starts above 0 Hz gets a 0 Hz row added. Without one, a DC run
+holds an SnP at its lowest frequency, and a line feeding a drain inside an active model would bias wrongly
+with nothing said. The DC row is what circuitRF's DC engines do with the part, not its RF model at 0 Hz: a
+line is a short from end to end, so its row is the ideal junction of each pair of terminals it joins, and a
+terminal it joins to nothing is open. Any other part's row is the S-parameter analysis at 0 Hz, and a part
+with no finite answer there is a refusal naming its type.</li>
+<li><strong>The converted instance keeps its glyph.</strong> In the exported <code>.csch</code> it is an SnP with its name, position and
+rotation, its <code>File</code>, and <a href="dynamic-symbols.html#snp"><code>Symbol</code></a> set to its old type, so its pins stay on its
+wires and the picture still reads as a line. The <code>.cnl</code> is extracted from that schematic as usual.</li>
+<li><strong>Provenance.</strong> Each file's header comment names the part's type, its parameters as written, the
+technology by name (never its path), the frequency plan and the circuitRF version. <code>part.cpart</code>'s
+<code>Converted</code> holds the same record.</li>
+<li><strong>The self-check is harder.</strong> The S-parameters are compared at every sampled frequency above 0 Hz. The DC
+comparison drives current through the converted parts — behind pin <em>k</em>'s 50 Ω is a source of <em>k</em> × 0.1 V —
+so a wrong DC row shows as a voltage; each pin voltage is judged against at least 0.1 V, the smallest
+drive. The success message gives the worst |S| difference halfway between samples, over every entry above
+−40 dB: <em>Exported TSTBRD to MyLib (revision 1). 4 parts converted to S-parameters, 1001 points; between
+samples, within 0.00029 dB.</em> That number is information, not a gate.</li>
+</ul>
+<p>Exporting a part number that is already in the library asks first, and replaces it with <code>Revision</code> one higher.
+Messages says <em>Exported TSTFET100 to MyLib/Amplifiers (revision 1).</em></p>
+<p>On the command line:</p>
+<pre><code>circuitrf export part &lt;cell folder&gt; --library &lt;dir&gt; [--category a/b] [--part PN] [--description …]
+    [--kind active|passive] [--value …] [--freq-low … --freq-high …] [--conditions …] [--footprint …]
+    [--doc &lt;file&gt;]… [--symbol own|fet|r|c|l|box] [--replace] [--include-vendor-parts]
+    [--sweep start=… stop=… npts=…|step=… [unit=GHz] [log]]…
+    [--library-name … --publisher … --license … --library-version …] [--json]
+</code></pre>
+<p>The defaults are the dialog's. What the dialog would have asked about is a refusal naming the flag that
+answers it: <code>--replace</code> for a part already exported, and <code>--include-vendor-parts</code> for a cell that places vendor
+parts, whose libraries' terms then travel with the model. <code>--sweep</code> is one segment of the frequency plan, in
+the <code>sparam</code> directive's own keys (<code>unit=</code> defaults to Hz, as it does there), repeated for more; the default is
+the dialog's. With no part to convert, <code>--sweep</code> is refused rather than ignored. The paths created are printed, and listed in
+<code>--json</code>. Over MCP it is <code>create what=libraryPart cell=&lt;cell folder&gt; library=&lt;dir&gt;</code>, with <code>sweep</code> a list of
+segments (<code>[&quot;start=1 stop=20 npts=101 unit=GHz&quot;]</code>). What a converted part's model says about itself, such as a
+junction used outside its calibration, is reported once per part as a warning.</p>
+<p>A library can also be written by hand or by a script: the <a href="#example">example</a> is the smallest one. Check it
+with <code>circuitrf check &lt;library&gt;</code>.</p>
+<p>The MCP server's <code>reference</code> tool serves this page as the topic <code>model-library</code>.</p>
+
+<nav class="page-nav">
+  <a class="prev" href="pdk-authoring.html"><span class="dir">Previous</span><span class="name">PDK Authoring</span></a>
+  <a class="next" href="gdsfactory-kits.html"><span class="dir">Next</span><span class="name">Using a gdsfactory kit</span></a>
+</nav>
+</main>
+
+<footer class="doc-footer">
+  <img src="../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../index.html">Documentation home</a>
+</footer>
+
+<script src="../assets/js/search-index.js" defer></script>
+<script src="../assets/js/docs-search.js" defer></script>
+</body>
+</html>

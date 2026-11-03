@@ -778,6 +778,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         ShowFileLabel         = _target.Parameters.FirstOrDefault(p => p.Name == "File")?.ShowOnSchematic ?? false;
         ShowFileNameOnly      = _target.ShowFileNameOnly;
         _isRefreshing = false;
+        RefreshSnpSymbolPicker();
     }
 
     // ── Internal surface for view (C-V editor dialog) ────────────────────────

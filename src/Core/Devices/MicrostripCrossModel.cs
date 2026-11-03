@@ -212,8 +212,8 @@ public sealed class MicrostripCrossModel : ComponentModel, IReportsWarnings
     {
         if (!_warnedEpsR && (_epsR < 9.0 || _epsR > 10.8))
         {
-            Console.Error.WriteLine(
-                $"[circuitRF] MCROSS:{_instancePath}: C/L1/L2/L3 (Gupta-Garg-Chadha eq 6.44-6.45) are " +
+            _reporter.ReportOnce($"MCROSS:EpsR:{_instancePath}",
+                $"C/L1/L2/L3 (Gupta-Garg-Chadha eq 6.44-6.45) are " +
                 $"calibrated at a single point, epsR=9.9, with no epsR-scaling law given by the " +
                 $"source; this instance's epsR={_epsR:G4} is an extrapolation beyond that.");
             _warnedEpsR = true;
@@ -221,8 +221,8 @@ public sealed class MicrostripCrossModel : ComponentModel, IReportsWarnings
 
         if (!_warnedAsymmetry && UsesOpposingMeanApproximation(out double d13, out double d24))
         {
-            Console.Error.WriteLine(
-                $"[circuitRF] MCROSS:{_instancePath}: opposing arms are not equal-width " +
+            _reporter.ReportOnce($"MCROSS:Asymmetry:{_instancePath}",
+                $"opposing arms are not equal-width " +
                 $"(W1={_w1:G3}m/W3={_w3:G3}m diverge {d13:P1}; W2={_w2:G3}m/W4={_w4:G3}m diverge {d24:P1}) " +
                 "— the source's own cross-junction model (microstrip-models.md R11/R22) requires opposing " +
                 "arms equal; this uses the arithmetic-mean-of-each-pair approximation, valid only while " +

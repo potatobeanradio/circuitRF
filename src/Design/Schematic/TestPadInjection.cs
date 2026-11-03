@@ -24,6 +24,10 @@ public static class TestPadInjection
     public const string ViaFromParam = "ViaFrom";
     public const string ClearLayersParam = "ClearLayers";
 
+    /// <summary>The one kind this seam injects (the extractor's own test, named so <see cref="TechnologyBound"/> can
+    /// take the union of every seam's).</summary>
+    public static bool IsTestPadKind(SymbolKind kind) => kind == SymbolKind.TestPad;
+
     /// <summary>The rows the engine reads as typed — every other TESTPAD row is consumed here.</summary>
     public static readonly IReadOnlySet<string> EngineParams = new HashSet<string>(StringComparer.Ordinal) { "D", "Drill", "ClearD", "InnerPadD", "AntipadD" };
 

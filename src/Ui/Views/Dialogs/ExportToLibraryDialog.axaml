@@ -6,14 +6,14 @@
         x:Class="CircuitRF.Ui.Views.Dialogs.ExportToLibraryDialog"
         x:DataType="vm:ExportToLibraryViewModel"
         Title="Export to Library"
-        Width="900" Height="640"
+        Width="940" Height="860"
         MinWidth="760" MinHeight="520"
         WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False">
 
     <!-- brief vendorlib-10 R-vl10-3: the target and the fields on the left; the symbol, what will be copied in and every
          refusal on the right, live, before Export is pressed. -->
-    <Grid RowDefinitions="*,Auto" ColumnDefinitions="430,16,*" Margin="16,14,16,14">
+    <Grid RowDefinitions="*,Auto" ColumnDefinitions="470,16,*" Margin="16,14,16,14">
 
         <ScrollViewer Grid.Row="0" Grid.Column="0" VerticalScrollBarVisibility="Auto">
             <StackPanel Spacing="10" Margin="0,0,8,0">
@@ -74,6 +74,16 @@
                     <TextBox   Grid.Row="6" Grid.Column="1" Grid.ColumnSpan="2" Text="{Binding Footprint}" FontSize="12"
                                PlaceholderText="1005M(0402)"/>
                 </Grid>
+
+                <!-- Frequency (brief vendorlib-11 R-vl11-4): the plan technology-bound parts are sampled over — the EM
+                     Setup's own plan editor. Greyed when nothing uses the technology. -->
+                <TextBlock Text="Frequency" FontWeight="SemiBold" FontSize="12"/>
+                <TextBlock Text="{Binding ConversionLine}" FontSize="11" TextWrapping="Wrap" Opacity="0.8"/>
+                <StackPanel Spacing="4" IsEnabled="{Binding IsFrequencyPlanEnabled}">
+                    <ctl:FrequencyPlanEditor x:Name="FrequencyPlan" Segments="{Binding FrequencySegments}"
+                                             AddSegmentCommand="{Binding AddFrequencySegmentCommand}"/>
+                    <TextBlock Text="DC is always included." FontSize="11" Opacity="0.6"/>
+                </StackPanel>
 
                 <Grid ColumnDefinitions="90,*,Auto">
                     <TextBlock Grid.Column="0" Text="Documents" FontSize="12" VerticalAlignment="Top" Margin="0,4,0,0"/>

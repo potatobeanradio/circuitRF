@@ -909,6 +909,8 @@ public sealed class EditableComponent
 
     internal (string Name, float LocalX, float LocalY)[] GetEffectiveSnpPortDefs()
     {
+        // An SnP drawn as a built-in part (brief vendorlib-11): port k is that glyph's pin k.
+        if (SnpGlyph.Of(this) is { } glyph) return SymbolPortDefs.For(glyph, PortCount);
         bool refNode = GetBoolParam("RefNode");
         SnpPinConfig cfg = GetEnumParam<SnpPinConfig>("PinConfig", SnpPinConfig.Standard);
         SnpPitch pitch   = GetEnumParam<SnpPitch>("Pitch", SnpPitch.Loose);
@@ -995,6 +997,7 @@ public sealed class EditableComponent
     /// </summary>
     private Symbol? InstanceGlyph() => Symbol switch
     {
+        SymbolKind.Snp when SnpGlyph.Of(this) is { } glyph => BuiltInSymbols.Primitives(glyph, PortCount),
         SymbolKind.Snp => BuiltInSymbols.PrimitivesForSnp(
             PortCount, GetBoolParam("RefNode"),
             GetEnumParam<SnpPinConfig>("PinConfig", SnpPinConfig.Standard),

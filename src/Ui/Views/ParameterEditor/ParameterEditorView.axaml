@@ -1344,6 +1344,21 @@
                                   Padding="4,3"
                                   ToolTip.Tip="Interp Domain — RI: interpolate real/imaginary parts (default). MA: interpolate magnitude/angle."/>
                     </Grid>
+                    <!-- The symbol (brief vendorlib-11): the SnP's own box, or a built-in part's glyph whose pin k is
+                         port k — what Export to Library writes for a part it converted. Verilog-A's picker, in shape. -->
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="Symbol" FontSize="11"/>
+                        <Button Name="SnpSymbolButton" Background="Transparent" HorizontalAlignment="Stretch"
+                                HorizontalContentAlignment="Stretch" Padding="4" ToolTip.Tip="Choose the symbol">
+                            <StackPanel Spacing="2">
+                                <ctl:PaletteGlyphControl Kind="{Binding SnpSymbolKind}" PortCount="{Binding SnpSymbolPortCount}" Height="70"/>
+                                <StackPanel Orientation="Horizontal" Spacing="2" HorizontalAlignment="Center">
+                                    <TextBlock FontSize="11" Text="{Binding SnpSymbolLabel}" VerticalAlignment="Center"/>
+                                    <mi:MaterialIcon Kind="MenuDown" Width="14" Height="14" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
                 </StackPanel>
                 <!-- ══ Footprint (brief-footprint-2 R-fp2-4) ═══════════════════════════════
                      A first-class row on EVERY component — R-fp2-2 is explicit that there is no

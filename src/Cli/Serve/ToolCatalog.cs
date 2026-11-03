@@ -836,6 +836,12 @@ internal static class ToolCatalog
                         new("publisher",          "--publisher",            OptKind.Str,        "A new library's publisher."),
                         new("license",            "--license",              OptKind.Str,        "A new library's license."),
                         new("libraryVersion",     "--library-version",      OptKind.Str,        "A new library's version. Default 1.0.0."),
+                        // brief vendorlib-11 R-vl11-5 — the plan technology-bound parts are sampled over.
+                        new("sweep",              "--sweep",                OptKind.StrRepeat,
+                            "One segment of the frequency plan the parts that take their substrate from the technology are sampled "
+                          + "over, in the sparam directive's keys: 'start=1 stop=20 npts=101 unit=GHz', or step= for npts=, with log "
+                          + "optional; unit defaults to Hz, as in the directive. One item per segment. Default: 0 to 20 GHz, 1001 points. "
+                          + "Refused when no part uses the technology."),
                     ],
                     "A self-contained model folder: the cell, its sub-cells and every file it uses copied in, its netlist, part.cpart, "
                   + "checked and self-checked against the source before it appears. Prints every path created."),

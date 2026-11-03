@@ -117,7 +117,9 @@ A key circuitRF does not know is kept when it rewrites the file.
   "CaseImperial": "",
   "Revision": 1,
   "PublishedHash": "sha256:…",
-  "Converted": [ { "Instance": "TL1", "Type": "MLIN", "File": "models/TL1.s2p" } ]
+  "Converted": [ { "Instance": "TL1", "Cell": "TSTFET100", "Type": "MLIN", "File": "models/TL1.s2p",
+                   "Parameters": "W=1.1 mm L=8 mm", "Technology": "PCB 2-Layer RO4350B (20mil, 1oz)",
+                   "Frequency": "start=0 GHz stop=20 GHz npts=1001; DC always included", "Version": "…" } ]
 }
 ```
 
@@ -139,7 +141,7 @@ A key circuitRF does not know is kept when it rewrites the file.
 | `CaseMetric`, `CaseImperial` | No | The case size (`1005`, `0402`), which also gives the footprint. |
 | `Revision` | No | How many times this part number has been exported. |
 | `PublishedHash` | No | Written by Export ([below](#hash)). Empty or absent in a hand-made model. |
-| `Converted` | No | The parts Export replaced by S-parameter files. Provenance; nothing reads it to run. |
+| `Converted` | No | The parts Export replaced by S-parameter files ([below](#converted)): each one's instance, the cell that placed it, its type, its file, its parameters as written, the technology's name, the frequency plan and the circuitRF version. Provenance; nothing reads it to run. |
 
 **Nothing in `part.cpart` changes a result.** What runs is the `.cnl`. `Pins` and `Parameters` repeat what the
 `.cnl` states so a library can be listed without reading every netlist, and `check` says when the two disagree.
@@ -294,23 +296,63 @@ finishes.
 
 What Export does, in order:
 
-1. **Refuses before writing anything** when the cell places a kit (`pdk://`) part, a file reference that does
-   not resolve, or a part that takes its substrate from the technology (`TL1 (MLIN) takes its substrate from
-   the technology; a model cannot carry one.`), or when it has no Pin.
+1. **Refuses before writing anything** when the cell places a kit (`pdk://`) part or a file reference that does
+   not resolve, when it has no Pin, or when a part takes its substrate from the technology and the schematic
+   has none to sample it on (`TL1 (MLIN) needs a technology to be converted, and this schematic has none.`).
 2. **Copies the cell** into a temporary folder beside the destination: `.ccell`, the schematic and the symbol,
    renamed to the part number. Sub-cells, including any from a referenced workspace, go to `cells/<name>/`.
    Every file a document references goes to `models/`, and its reference is rewritten relative to the model
    folder. A `.va` brings every file it `` `include ``s, laid out as before so the include still resolves. A
    name already taken in `models/` gets a numeric suffix. A vendor part is copied in as well: a SPICE part's
    own `.subckt` block into `models/`, a model part as a sub-cell.
+   Every part that takes its substrate from the technology is **converted** to an SnP first
+   ([below](#converted)).
 3. **Writes the netlist** by extracting the copied cell, so every reference in it is model-relative, then
    `part.cpart` (pins and parameters from the cell, so they agree with the `.cnl`), `library.clib` for a new
    library, and the `PublishedHash` last.
 4. **Checks** the folder as `circuitrf check` does, and then **self-checks** it: the source cell and the model,
    each with a 50 Ω port from every pin to ground at the default parameters, must give the same S-parameters at
    eleven frequencies (DC, then ten log-spaced over the stated range, or 1 MHz to 10 GHz) and the same DC voltage
-   at every pin, to 1e-9 relative. A difference is a refusal naming the worst entry and frequency.
+   at every pin, to 1e-9 relative. A difference is a refusal naming the worst entry and frequency. A model with
+   converted parts is checked harder, as [below](#converted) says.
 5. **Renames** the folder into place. A refusal or **Cancel** at any step leaves nothing behind.
+
+### Parts that use the technology {#converted}
+
+A model never carries a technology. MLIN and every other part that takes its substrate from one — the
+microstrip family and the GSG pad, CPWG and SLIN, the broadside pairs, VIA and VIAGND, the MMIC passives and the
+test pad — would otherwise run on whatever substrate the design placing the model has. So Export samples each
+such part on the technology Simulate would use for the source schematic (its own, else the workspace's), with
+the circuit model a run uses: the part on its own, with a 50 Ω port from each terminal to ground. Its
+S-parameters go to `models/<instance>.s<N>p`, where N is its terminal count (MLIN 2, MTEE 3, MCLIN 4, VIAGND
+1). Sub-cells' parts are converted too.
+
+The conversion is exact at every sampled frequency. Between samples the SnP interpolates, and outside the
+plan the [range warning](#cpart) applies.
+
+- **The frequency plan** is the dialog's **Frequency** group, the EM Setup's own plan editor: Start, Stop, Step
+  or Points, Lin or Log, **+ Segment** and **Single**. The default is one linear segment, 0 Hz to 20 GHz, 1001
+  points. The line above it names what will be converted; with nothing to convert the group is greyed and reads
+  *No component uses the technology.* The part's **Frequency** range fills in from the plan. It can be narrowed,
+  but widening it past the plan is a refusal, since the S-parameters stop there.
+- **DC is always in the file.** A plan that starts above 0 Hz gets a 0 Hz row added. Without one, a DC run
+  holds an SnP at its lowest frequency, and a line feeding a drain inside an active model would bias wrongly
+  with nothing said. The DC row is what circuitRF's DC engines do with the part, not its RF model at 0 Hz: a
+  line is a short from end to end, so its row is the ideal junction of each pair of terminals it joins, and a
+  terminal it joins to nothing is open. Any other part's row is the S-parameter analysis at 0 Hz, and a part
+  with no finite answer there is a refusal naming its type.
+- **The converted instance keeps its glyph.** In the exported `.csch` it is an SnP with its name, position and
+  rotation, its `File`, and [`Symbol`](dynamic-symbols.html#snp) set to its old type, so its pins stay on its
+  wires and the picture still reads as a line. The `.cnl` is extracted from that schematic as usual.
+- **Provenance.** Each file's header comment names the part's type, its parameters as written, the
+  technology by name (never its path), the frequency plan and the circuitRF version. `part.cpart`'s
+  `Converted` holds the same record.
+- **The self-check is harder.** The S-parameters are compared at every sampled frequency above 0 Hz. The DC
+  comparison drives current through the converted parts — behind pin *k*'s 50 Ω is a source of *k* × 0.1 V —
+  so a wrong DC row shows as a voltage; each pin voltage is judged against at least 0.1 V, the smallest
+  drive. The success message gives the worst |S| difference halfway between samples, over every entry above
+  −40 dB: *Exported TSTBRD to MyLib (revision 1). 4 parts converted to S-parameters, 1001 points; between
+  samples, within 0.00029 dB.* That number is information, not a gate.
 
 Exporting a part number that is already in the library asks first, and replaces it with `Revision` one higher.
 Messages says *Exported TSTFET100 to MyLib/Amplifiers (revision 1).*
@@ -321,13 +363,18 @@ On the command line:
 circuitrf export part <cell folder> --library <dir> [--category a/b] [--part PN] [--description …]
     [--kind active|passive] [--value …] [--freq-low … --freq-high …] [--conditions …] [--footprint …]
     [--doc <file>]… [--symbol own|fet|r|c|l|box] [--replace] [--include-vendor-parts]
+    [--sweep start=… stop=… npts=…|step=… [unit=GHz] [log]]…
     [--library-name … --publisher … --license … --library-version …] [--json]
 ```
 
 The defaults are the dialog's. What the dialog would have asked about is a refusal naming the flag that
 answers it: `--replace` for a part already exported, and `--include-vendor-parts` for a cell that places vendor
-parts, whose libraries' terms then travel with the model. The paths created are printed, and listed in
-`--json`. Over MCP it is `create what=libraryPart cell=<cell folder> library=<dir>`.
+parts, whose libraries' terms then travel with the model. `--sweep` is one segment of the frequency plan, in
+the `sparam` directive's own keys (`unit=` defaults to Hz, as it does there), repeated for more; the default is
+the dialog's. With no part to convert, `--sweep` is refused rather than ignored. The paths created are printed, and listed in
+`--json`. Over MCP it is `create what=libraryPart cell=<cell folder> library=<dir>`, with `sweep` a list of
+segments (`["start=1 stop=20 npts=101 unit=GHz"]`). What a converted part's model says about itself, such as a
+junction used outside its calibration, is reported once per part as a warning.
 
 A library can also be written by hand or by a script: the [example](#example) is the smallest one. Check it
 with `circuitrf check <library>`.

@@ -59,8 +59,18 @@ public sealed record ModelPartFrequency
 public sealed record ModelPartConversion
 {
     public string Instance { get; init; } = "";
+    /// <summary>The cell whose schematic placed it: the model's own, or a sub-cell's folder name.</summary>
+    public string Cell     { get; init; } = "";
     public string Type     { get; init; } = "";
     public string File     { get; init; } = "";
+    /// <summary>Its parameters as they were written (brief vendorlib-11 R-vl11-2c).</summary>
+    public string Parameters { get; init; } = "";
+    /// <summary>The technology it was sampled on, by name — never its path.</summary>
+    public string Technology { get; init; } = "";
+    /// <summary>The frequency plan, as the <c>sparam</c> directive spells it.</summary>
+    public string Frequency  { get; init; } = "";
+    /// <summary>The circuitRF version that converted it.</summary>
+    public string Version    { get; init; } = "";
     [JsonExtensionData] public Dictionary<string, JsonElement>? Unknown { get; init; }
 }
 

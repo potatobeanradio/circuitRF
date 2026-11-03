@@ -27,6 +27,26 @@ public partial class ParameterEditorView : UserControl
         VendorPartList.AddHandler(KeyDownEvent, OnVendorPartListKeyDown, RoutingStrategies.Tunnel);
         VendorPartList.AddHandler(PointerReleasedEvent, OnVendorPartListPointerReleased, handledEventsToo: true);
         VerilogASymbolButton.Click += (_, _) => OpenVerilogASymbolMenu();
+        SnpSymbolButton.Click += (_, _) => OpenSnpSymbolMenu();
+    }
+
+    /// <summary>An SnP's symbol menu (brief vendorlib-11): one row per glyph, its picture and its name.</summary>
+    private void OpenSnpSymbolMenu()
+    {
+        if (DataContext is not ParameterEditorViewModel vm || vm.SnpSymbols.Count == 0) return;
+        var menu = new MenuFlyout();
+        foreach (var symbol in vm.SnpSymbols)
+        {
+            var row = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 10 };
+            row.Children.Add(new CircuitRF.Ui.Controls.PaletteGlyphControl
+            {
+                Kind = symbol.Kind, PortCount = symbol.PortCount, Width = 48, Height = 39,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            });
+            row.Children.Add(new TextBlock { Text = symbol.Label, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center });
+            menu.Items.Add(new MenuItem { Header = row, Command = vm.ChooseSnpSymbolCommand, CommandParameter = symbol });
+        }
+        menu.ShowAt(SnpSymbolButton);
     }
 
     /// <summary>
