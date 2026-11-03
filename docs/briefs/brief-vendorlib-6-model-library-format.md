@@ -41,6 +41,11 @@ Build in order. Brief 7 is independent and may be built first.
 
 The unwritten catalogue + Touchstone-edition brief, previously numbered VL-6, becomes **VL-14**.
 
+[VL-15, protected models](brief-vendorlib-15-protected-models.md), follows: compiled-only model folders and
+signed libraries. It depends on 6, 9 and 10, and is independent of 11–14.
+[VL-16, Compile Netlist](brief-vendorlib-16-compile-netlist.md) follows it: Export turns a cell, ComposedFETs
+included, into one compiled module, and proves that module matches the cell.
+
 ## 2. Decisions (owner, 2026-11-02)
 
 - **D1 — The `.cnl` is what runs; the `.csch` is the source.** Both are shipped. They must agree: the
