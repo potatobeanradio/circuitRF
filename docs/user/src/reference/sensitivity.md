@@ -4,7 +4,7 @@ slug: reference/sensitivity.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Sensitivity
 lede: Which values move each goal, and by how much — ranked at the design as it stands, before you tune, optimize or estimate a yield.
-keywords: sensitivity, ranking, contributors, share, basis, sigma, step, nonlinear, one-sided, s-parameters, snp, touchstone, entry, port, instance, reciprocal, tie, snpexclude, matrix, pareto, normalized margin, spread, estimate
+keywords: sensitivity, sensitivity analysis, sense, sensitive, ranking, contributors, share, basis, sigma, step, nonlinear, one-sided, s-parameters, snp, touchstone, entry, port, instance, reciprocal, tie, snpexclude, matrix, pareto, normalized margin, spread, estimate
 ---
 
 <nav class="toc">

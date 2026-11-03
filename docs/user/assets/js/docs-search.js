@@ -90,6 +90,11 @@
       /* "The Command Line" and a query of "command line" name the same thing. */
       nameTitle:   bareName(page[1]),
       nameHeading: bareName(row[2]),
+      /* "Design of experiments" → "doe": a section is named by its initials too. */
+      initHeading: initials(row[2]),
+      /* "Hierarchy: putting one schematic inside another", "Loadpull / Sourcepull":
+         each clause of a heading is a name of the section too. */
+      nameClauses: row[2].split(/[:\/\u2014(]/).map(bareName),
       /* The initials of the page title and of every multi-word keyword phrase, so a
          reader who types the abbreviation they use out loud finds the chapter: "CL"
          and "DD" are how people refer to the command line and the Data Display, and
@@ -168,6 +173,25 @@
     return kind === WHOLE ? whole : kind === PREFIX ? prefix : kind === INSIDE ? inside : 0;
   }
 
+  /* A section the page's keywords tie to the query. The page declares BOTH the
+     query and a name of this section — its heading, or a clause of it — and that
+     name either contains the query as a word ("MCP" and "MCP server" →
+     "serve — the MCP server") or is what its initials spell ("DOE" and "design of
+     experiments" → Design of experiments). Without the declaration this is far
+     too loose: "convert — layout interchange" also spells "cli", and a dozen
+     headings contain "dielectric". */
+  function declaredSection(section, bare) {
+    if (bare.length < 2 || findTerm(section.lcKeywords, bare).kind !== WHOLE) return false;
+    var names = [section.nameHeading].concat(section.nameClauses);
+    for (var i = 0; i < names.length; i++) {
+      var n = names[i];
+      if (n.length === 0 || n === bare || findTerm(section.lcKeywords, n).kind !== WHOLE) continue;
+      if (findTerm(n, bare).kind === WHOLE) return true;
+      if (bare.indexOf(' ') < 0 && initials(n) === bare) return true;
+    }
+    return false;
+  }
+
   function score(section, ts, phrase) {
     var total = 0;
 
@@ -230,6 +254,7 @@
        Compared with articles and punctuation stripped from both sides. */
     var bare = bareName(phrase);
     if (bare.length > 0 && (section.nameHeading === bare || section.nameTitle === bare)) total += 60;
+    else if (declaredSection(section, bare)) total += 60;
 
     /* Reading order as a tie-break with a soft edge. Two sections genuinely can
        answer a query equally well — "Hierarchy" heads a section in both editors —
@@ -237,6 +262,54 @@
        reader to. The spread is 15%, so it only ever decides a near-tie; it cannot
        lift a weak match over a strong one. */
     return total * section.prior;
+  }
+
+  /* A query that NAMES a page — its title, or one of the phrases its keywords
+     declare — opens that page at the TOP, not at whichever subsection happened to
+     repeat the word most. Keywords and title belong to the page, so every section
+     of it collects them equally, and the tie was broken by the section's own
+     prose: "sensitivity" opened its chapter halfway down, at the section that
+     compares it with Tuning, and "monte carlo" at the Yield chapter's list of modes.
+
+     Where on the page: its top, unless a subsection's heading IS the query
+     ("corners" → the Corners section of the Yield chapter; a clause counts, so
+     "hierarchy" → "Hierarchy: putting one schematic inside another") or the page's
+     keywords tie the two together (see declaredSection). A heading that
+     merely CONTAINS the word does not count — "dielectric" opens the Stackup
+     chapter, not its section on the capacitor dielectric.
+
+     Which page: a page that declares the query outranks every page that does not,
+     by lifting all the declaring pages by one common amount, so among themselves
+     they keep the order their own sections earned. Without that, a two-line
+     "Optimizer" section that only points to the Optimization chapter outranked
+     the chapter, because its heading equalled the query. */
+  function liftPageTops(hits, phrase) {
+    var bare = bareName(phrase);
+    if (bare.length === 0) return;
+    var best = {}, top = {}, named = {};
+    for (var i = 0; i < hits.length; i++) {
+      var h = hits[i], slug = h.section.slug;
+      if (!(slug in best) || h.score > best[slug]) best[slug] = h.score;
+      if (h.section.anchor === '') top[slug] = h;
+      else if (h.section.nameHeading === bare || h.section.nameClauses.indexOf(bare) >= 0
+               || declaredSection(h.section, bare)) {
+        if (!named[slug] || h.score > named[slug].score) named[slug] = h;
+      }
+    }
+
+    var landing = {}, maxDeclared = -1, maxOther = 0;
+    for (var key in top) {
+      var t = top[key].section;
+      if (t.nameTitle === bare || findTerm(t.lcKeywords, phrase).kind === WHOLE) {
+        landing[key] = t.nameTitle === bare ? top[key] : (named[key] || top[key]);
+        if (best[key] > maxDeclared) maxDeclared = best[key];
+      }
+    }
+    if (maxDeclared < 0) return;
+    for (var slug2 in best) if (!(slug2 in landing) && best[slug2] > maxOther) maxOther = best[slug2];
+
+    var lift = Math.max(0, maxOther - maxDeclared) + 0.01;
+    for (var k2 in landing) landing[k2].score = best[k2] + lift;
   }
 
   function search(query) {
@@ -250,6 +323,7 @@
       if (s > 0) hits.push({ section: SECTIONS[i], score: s, order: i });
     }
 
+    liftPageTops(hits, phrase);
     hits.sort(function (a, b) { return b.score - a.score || a.order - b.order; });
 
     /* Cap per page AFTER ranking, so a page's best section is always the one kept. */

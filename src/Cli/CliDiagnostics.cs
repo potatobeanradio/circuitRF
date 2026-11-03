@@ -4801,7 +4801,7 @@ internal static class CliDiagnostics
     /// <summary>The noun is missing or is not one of the verb's.</summary>
     public static Diagnostic YieldNoun(string noun) => Diagnostic.Create(
         "cli.yield.noun", DiagnosticSeverity.Error,
-        "yield: expected mc, estimate, trial, corners or center before the path, got '{noun}'.", ("noun", noun));
+        "yield: expected mc, estimate, trial, corners, center, doe or sens before the path, got '{noun}'.", ("noun", noun));
 
     public static Diagnostic YieldFlagValue(string flag, string text, string expected) => Diagnostic.Create(
         "cli.yield.flag-value", DiagnosticSeverity.Error,

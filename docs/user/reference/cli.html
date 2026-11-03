@@ -31,8 +31,8 @@
   <div class="page-top">
     <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › The command line</p>
     <nav class="page-nav-top" aria-label="Previous and next page">
-      <a class="prev" href="npy-export.html" title="Previous: Results &amp; Data Export"><span class="arrow">‹</span><span class="name">Results &amp; Data Export</span></a>
-      <a class="next" href="ai-agents.html" title="Next: Designing with an AI agent"><span class="name">Designing with an AI agent</span><span class="arrow">›</span></a>
+      <a class="prev" href="railrf.html" title="Previous: railRF"><span class="arrow">‹</span><span class="name">railRF</span></a>
+      <a class="next" href="mcp-server.html" title="Next: The MCP Server"><span class="name">The MCP Server</span><span class="arrow">›</span></a>
     </nav>
   </div>
 
@@ -82,7 +82,6 @@
 <li><a href="#elab"><code>elab</code> — the elaborated netlist</a></li>
 <li><a href="#json"><code>--json</code> — one machine-readable document</a></li>
 <li><a href="#serve"><code>serve</code> — the MCP server</a></li>
-<li><a href="#agent-install">Installing for an agent</a></li>
 <li><a href="#exit">Exit codes</a></li>
 <li><a href="#scripting">Scripting patterns</a></li>
 </ol>
@@ -241,6 +240,12 @@ convention behind both.</p>
 <td><code>.csch</code> or <code>.cnl</code></td>
 <td>A design of experiments over the optimizer's or the tolerances' values</td>
 <td>Each response's effects to stdout; the runs to <code>&lt;design&gt;.doe.npy</code>; <strong>nothing</strong> in the design</td>
+</tr>
+<tr>
+<td><code>yield sens</code></td>
+<td><code>.csch</code> or <code>.cnl</code></td>
+<td>The <a href="sensitivity.html">Sensitivity</a> panel's ranking — each value stepped up and down on its own</td>
+<td>Per goal, the values that move it most and their shares, to stdout; the steps to <code>&lt;design&gt;.sens.npy</code>; <strong>nothing</strong> in the design</td>
 </tr>
 <tr>
 <td><code>model new</code>, <code>import</code>, <code>deembed</code>, <code>fit</code>, <code>check-charge</code>, <code>explain</code>, <code>export</code>, <code>validate</code>, <code>report</code></td>
@@ -1156,7 +1161,7 @@ specification either. Over <a href="ai-agents.html">MCP</a> the same run is <cod
 <code>reference goals</code>, <code>reference tuning</code> and <code>reference optimizers</code> say what may be written;
 <code>reference statistics</code> covers tolerances, correlations, the statistics settings and corners.</p>
 <h2 id="yield"><code>yield</code> — Monte Carlo and yield from the command line</h2>
-<pre><code class="language-text">circuitrf yield mc|estimate|trial|corners|center|doe &lt;schematic.csch | netlist.cnl&gt; [flags]
+<pre><code class="language-text">circuitrf yield mc|estimate|trial|corners|center|doe|sens &lt;schematic.csch | netlist.cnl&gt; [flags]
 </code></pre>
 <p><code>yield</code> draws the design's tolerances — the <code>dist=</code> keys on its tune lines, and its kit's process and
 mismatch statistics — and simulates each draw. <strong><code>mc</code></strong> reports the spread alone; <strong><code>estimate</code></strong>
@@ -1375,6 +1380,68 @@ estimated from the small ones is starred; an effect a fractional design cannot t
 </table>
 <p>It writes <code>&lt;design&gt;.doe.npy</code> and nothing in the design. There is no target, so the exit codes are <strong>0</strong>, <strong>1</strong>, <strong>2</strong>
 and <strong>130</strong>. Over MCP it is <code>run analysis=doe</code>.</p>
+<h3 id="yield-sens">Sensitivity</h3>
+<p><code>yield sens</code> runs the <a href="sensitivity.html">Sensitivity</a> panel's ranking: each value is stepped up and down on its own
+about the design as it stands — a toleranced value by ± k σ, any other by ± <code>--step</code> %, each S-parameter of a
+Touchstone block by ± 0.1 dB and ± 1° — and each goal is given the values that move its normalized margin most,
+largest first, with each one's share. That is 2k + 1 simulations for k values, and nothing is drawn at random.</p>
+<pre><code class="language-text">$ circuitrf yield sens SnpSensitivity/schematic/SnpSensitivity.csch
+Sensitivity: SnpSensitivity/schematic/SnpSensitivity.csch
+  factors=all · step 1 % · sigma 1 · 31 simulations
+
+Gain  m₀ 0.04807  σ 0.01945  (normalized margin: margin / scale)
+  rank  entry      factors  Δ          share
+  1     L1 · S21   2        0.01424    53.6 %
+  2     AMP · S21  2        0.01111    32.6 %
+  3     L1 · S11   2        0.004913   6.4 %
+  ...
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--factors all\|stat\|opt</code></td>
+<td>Every value, only the toleranced ones, or only the <code>opt=1</code> ones.</td>
+</tr>
+<tr>
+<td><code>--step p%</code>, <code>--sigma k</code></td>
+<td>How far a value with no tolerance moves, and how many σ a toleranced one moves.</td>
+</tr>
+<tr>
+<td><code>--ports 0\|1</code></td>
+<td>With <code>--factors all</code>, also step the ports' reference impedances (left out by default).</td>
+</tr>
+<tr>
+<td><code>--snp on\|off</code>, <code>--snp-exclude a,b</code></td>
+<td>Step S-parameter blocks at all, and which to leave out (<code>SNP4</code>, <code>DUT:SNP4</code>). A block left out is listed as excluded, not as insensitive.</td>
+</tr>
+<tr>
+<td><code>--vars key,key</code>, <code>--goals name,name</code></td>
+<td>Step only these values; rank only these goals.</td>
+</tr>
+<tr>
+<td><code>--responses goals\|all</code></td>
+<td>The specs, or every enabled goal. Every scalar measurement is ranked either way.</td>
+</tr>
+<tr>
+<td><code>--by key\|entry\|port\|instance</code></td>
+<td>The level the table groups by (default <code>entry</code>); <code>--json</code> carries all four.</td>
+</tr>
+<tr>
+<td><code>--top n</code></td>
+<td>Rows per goal in the table (default 10); <code>--json</code> carries every one.</td>
+</tr>
+</tbody>
+</table>
+<p>Each flag overrides the file's <code>sensitivity</code> line for this run only. It writes <code>&lt;design&gt;.sens.npy</code> (<code>-o</code> moves it)
+and nothing in the design. Exit <strong>0</strong> means it ran; <strong>1</strong>, refused; <strong>2</strong>, the nominal did not evaluate; <strong>130</strong>,
+cancelled. <code>explain &lt;file&gt; --analysis</code> gives the factor count and the cost before you run it. Over MCP it is
+<code>run analysis=sensitivity</code>.</p>
 <h2 id="model"><code>model</code> — the Model Composer, headless</h2>
 <pre><code>circuitrf model &lt;noun&gt; &lt;doc.cmc&gt; [flags]
 </code></pre>
@@ -4112,257 +4179,10 @@ as <code>check</code>'s mesh budget on a <code>.cem</code>, is in the result and
 <hr />
 <h2 id="serve"><code>serve</code> — the MCP server</h2>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf serve --root &lt;dir&gt; [--kits &lt;dir&gt;] [--print-config]</code></pre>
-<p><strong>This is circuitRF as an MCP server.</strong> It speaks the <strong>Model Context Protocol</strong> over its standard
-input and output — the stdio transport, newline-delimited JSON-RPC 2.0, with <code>initialize</code>,
-<code>tools/list</code> and <code>tools/call</code> — so any MCP client can discover what circuitRF can do and ask it to
-do it. Protocol versions <code>2025-06-18</code>, <code>2025-03-26</code> and <code>2024-11-05</code> are accepted.</p>
-<p>In practice that means an assistant, a design agent, a CI job or an automation harness can run a
-simulation, check a design, create a workspace or import a part without a human at a terminal. It is
-started by that program, not by you, and it ends when that program disconnects.</p>
-<div class="callout note">
-<span class="label">Point an MCP client at it</span>
-<p>A client is configured with a command and its arguments. The command is the installed circuitRF
-executable (<a href="#invoking">where it is</a>), the arguments are <code>serve --root &lt;dir&gt;</code>,
-and <code>--root</code> is the only directory tree the server will read or write, and a path escaping
-it is refused rather than clamped (see <em>What it will not do</em> below). Nothing else about the
-host matters, because the transport is the process's own stdin and stdout.</p>
-</div>
-<p>Most clients take the same shape of configuration — a server name, a command and its arguments:</p>
-<pre><code class="language-json">{
-  &quot;mcpServers&quot;: {
-    &quot;circuitrf&quot;: {
-      &quot;command&quot;: &quot;/Applications/circuitRF.app/Contents/MacOS/circuitRF&quot;,
-      &quot;args&quot;: [&quot;serve&quot;, &quot;--root&quot;, &quot;/Users/you/designs&quot;]
-    }
-  }
-}
-</code></pre>
-<p>Use the full path to the executable rather than relying on the client's <code>PATH</code>, which is often not
-your shell's. On Windows it is <code>%LOCALAPPDATA%\Programs\circuitRF\circuitRF.exe</code> or
-<code>C:\Program Files\circuitRF\circuitRF.exe</code>; on Linux, <code>/usr/bin/circuitrf</code> or
-<code>~/.local/bin/circuitrf</code>. With Claude Code it is one line:</p>
-<pre><code class="cmd"><span class="prompt">$ </span>claude mcp add circuitrf -- /Applications/circuitRF.app/Contents/MacOS/circuitRF serve --root ~/designs</code></pre>
-<p><strong>Or let circuitRF write the configuration for you.</strong> <code>--print-config</code> starts nothing: it prints the
-<code>mcpServers</code> JSON for the executable you ran it with, with the root (and any <code>--kits</code> folders) made
-absolute, and exits. The JSON goes to stdout, so it can be redirected into a file; the matching
-<code>claude mcp add</code> line goes to stderr, ready to paste.</p>
-<pre><code class="cmd"><span class="prompt">$ </span>/Applications/circuitRF.app/Contents/MacOS/circuitRF serve --root ~/designs --print-config</code></pre>
-<p>The root is checked before anything is printed, so a configuration naming a folder that does not
-exist is refused rather than written.</p>
-<p><strong>Choose the root deliberately.</strong> It is everything the server can read and write, with your own
-authority. Point it at the folder your designs live in, such as <code>~/designs</code>, not at your home
-folder or a whole drive: an agent working inside <code>~/designs</code> needs nothing outside it, and a root of
-<code>~</code> lets every tool read and write anywhere in your home folder.</p>
-<p><strong>From a source build</strong>, the command is <code>dotnet</code> and the first argument is the built
-<code>CircuitRF.Cli.dll</code>. Build it once, then point the client at the build output rather than at
-<code>dotnet run</code>. <code>dotnet run</code> builds before every start, so the server is slow to come up and a client
-may give up waiting for it:</p>
-<pre><code class="cmd"><span class="prompt">$ </span>dotnet build src/Cli -c Release
-<span class="prompt">$ </span>dotnet src/Cli/bin/Release/net10.0/CircuitRF.Cli.dll serve --root ~/designs --print-config</code></pre>
-<p>Rebuild after pulling changes; the client keeps running whatever was built last.</p>
-<p>What to tell an agent once it is connected, which reference topics it should read, and the design
-flow that works are in <a href="ai-agents.html">Designing with an AI agent</a>.</p>
-<p><strong>Most clients load a server when a session starts</strong>, so one registered mid-session appears in the
-next one. Nothing is lost meanwhile: every tool is a verb, and the same verbs answer from a shell with
-the same documents.</p>
-<p><strong>Sixteen tools, and each is a verb you already have:</strong></p>
-<table>
-<thead>
-<tr>
-<th>Tool</th>
-<th>Runs</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>run</code></td>
-<td><code>sparam</code>, <code>dc</code>, <code>hb</code>, <code>lp</code>, <code>lpp</code> or <code>em</code>, chosen by an argument</td>
-</tr>
-<tr>
-<td><code>check</code></td>
-<td><code>check</code></td>
-</tr>
-<tr>
-<td><code>explain</code></td>
-<td><code>explain</code>, including <code>--cells</code>, <code>--layers</code>, <code>--extents</code> and <code>--footprints</code></td>
-</tr>
-<tr>
-<td><code>create</code></td>
-<td><code>new workspace</code> or <code>new cell</code></td>
-</tr>
-<tr>
-<td><code>import</code></td>
-<td><code>import part</code> — a component, as a cell; <code>import schematic</code> (<code>what=schematic</code>) — a schematic design, as a cell</td>
-</tr>
-<tr>
-<td><code>convert</code></td>
-<td><code>convert</code> — artwork between formats, in either direction, so exporting a layout is a <code>convert</code></td>
-</tr>
-<tr>
-<td><code>render</code></td>
-<td><code>render</code> — one tool over every document kind, as the verb is</td>
-</tr>
-<tr>
-<td><code>read</code></td>
-<td><code>read</code></td>
-</tr>
-<tr>
-<td><code>netlist</code></td>
-<td><code>netlist</code> — the extraction a schematic runs as</td>
-</tr>
-<tr>
-<td><code>plot</code></td>
-<td><code>plot</code> — one picture from one result file. It takes <code>attachImage</code> too</td>
-</tr>
-<tr>
-<td><code>find</code></td>
-<td><code>find</code> — the workspaces, cells, views and analyses under a directory</td>
-</tr>
-<tr>
-<td><code>lvs</code></td>
-<td><a href="#lvs"><code>lvs</code></a> — does a cell's artwork implement its schematic</td>
-</tr>
-<tr>
-<td><code>impedance</code></td>
-<td><a href="#impedance"><code>impedance</code></a> — every trace on a layout against a target Z0, and its return path</td>
-</tr>
-<tr>
-<td><code>review</code></td>
-<td><a href="#review"><code>review</code></a> — the Layout Review's checks over a board</td>
-</tr>
-<tr>
-<td><code>model</code></td>
-<td><a href="#model"><code>model</code></a> — the Model Composer's nouns, chosen by <code>noun</code></td>
-</tr>
-<tr>
-<td><code>history</code></td>
-<td><a href="history.html"><code>history checkpoint</code>, <code>list</code> or <code>restore</code></a> — the correction nouns (<code>rename</code>, <code>retitle</code>, <code>correct</code>, <code>review</code>) are on the verb but not on this server</td>
-</tr>
-<tr>
-<td><code>reference</code></td>
-<td><code>reference</code></td>
-</tr>
-<tr>
-<td><code>batch</code></td>
-<td>The <strong>only</strong> tool with no verb behind it: it holds a restore-point batch open across several calls, which a process that exits after one command cannot</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Every tool returns exactly the document <code>--json</code> writes</strong>, byte for byte, because the server calls
-the verb rather than re-implementing it. Nothing is reachable through the server that is not
-reachable from your own shell, and nothing is reachable from your shell that the server cannot do.</p>
-<p><strong><code>render</code> and <code>plot</code> can hand the picture back, not just its path.</strong> Pass <code>attachImage: true</code> and the result
-carries the rendered file itself — a <code>.png</code> or <code>.svg</code> as image content, a <code>.pdf</code> as an embedded
-resource with its own type. It is <strong>off by default</strong>, because an image is expensive in a way a JSON
-document is not, and a client that only wanted the path should not pay for one.</p>
-<div class="callout note">
-<span class="label">Over 4 MB it hands back the path and says what to narrow</span>
-<p>The file is still written and still named in <code>outputs</code>; only the attachment is withheld,
-and the answer says how large it came to and which argument would bring it under —
-<code>--detail screen</code>, <code>--layers</code>, <code>--window</code>, a smaller
-<code>--size</code>, or <code>.png</code> instead of a vector format. It is never truncated and never
-dropped in silence: half a PNG is not a smaller PNG, and a request that comes back empty with no
-explanation just gets sent again.</p>
-<p>The number is the <a href="#render-detail">measured one</a>. A whole six-layer board is 1.4 MB as a PNG and
-23.5 MB as an undecimated SVG, so the cap admits every raster this verb plausibly produces and refuses
-exactly the case where you should have narrowed the render.</p>
-</div>
-<p><strong>The attached bytes are the bytes on disk.</strong> The server attaches the file the verb wrote; it never
-draws a second time, and it never converts one format into another to make it attachable — that would
-be the adapter making a rendering decision, which is the one thing it does not do.</p>
-<div class="callout note">
-<span class="label">What it will not do</span>
-<ul>
-<li><b><code>--root</code> is required</b>, and every path a client names resolves under it. A path
-that escapes — through <code>../</code>, through an absolute path, or through a symbolic link — is
-<b>refused, naming the root</b>. It is never quietly clamped to something inside.</li>
-<li><b>Nothing deletes, and nothing overwrites an existing workspace.</b> There is no person at the
-other end to confirm with, so the answer is no. A client that wants a file gone deletes it itself.
-<code>create</code> does make a missing <i>parent</i> directory, because that overwrites nothing and
-a client with no file tools of its own had nowhere to go from the refusal.</li>
-<li><b>No tool writes a file of the client's own text.</b> circuitRF is driven by writing its
-documents, and the client supplies that half itself — what these tools write is what they
-<i>produce</i>: a created document, a result, a netlist, a picture. A general write tool would put an
-unbounded filesystem write behind the root, and it is deliberately not offered.</li>
-<li><b>No shell, and no program a client names.</b> Device workers and PCell generators still run as
-they always did; nothing new becomes launchable because something asked.</li>
-</ul>
-</div>
-<p><strong>The reference surface is also published as protocol <em>resources</em></strong> — one per topic, at
-<code>circuitrf://reference/&lt;topic&gt;</code>, each advertising its size so a client can decide what to spend. That
-is the cheaper channel: a resource costs a URI and a title until something reads it, where a tool
-description is carried for the whole session whether or not it is used. The <code>reference</code> tool exists
-alongside it because not every client shows resources to the model at all, and both return the same
-bytes.</p>
-<p><strong>A long run reports progress and can be cancelled</strong> — a client that asks for progress is sent it as
-the run moves, and a cancellation stops the run at a work boundary and returns exit code 130 having
-written nothing.</p>
-<p><strong>A server outlives an update, and says so when it cannot.</strong> A <code>serve</code> that is still running when
-the application updates itself is running out of an installation that has changed underneath it —
-and a running program cannot load code it had not already loaded from files that have since been
-replaced. So before each call the server checks that its own executable is still the one it started
-from. If not, that call is answered with a JSON-RPC error, code <code>-32001</code>, saying so, and the server
-exits. Start it again with the same command and it runs the updated version.</p>
-<p><code>serve</code> is the one verb whose stdout is not the result: it carries the protocol, so everything else —
-progress, notes, warnings, device-worker logs — goes to stderr, where the program that started it
-picks it up. For that reason it takes no <code>--json</code> of its own; every call through it already returns
-one.</p>
-<pre><code class="cmd"><span class="prompt">$ </span>circuitrf serve --root ~/designs 2&gt; serve.log</code></pre>
-<h2 id="agent-install">Installing for an agent</h2>
-<p>An agent — or any unattended script — can install circuitRF and start driving it with no person at
-the keyboard. Five steps:</p>
-<p><strong>1. Find the release and pick the asset.</strong> Asset names carry the version, and every circuitRF
-release so far is a <em>pre</em>release, which GitHub's &quot;latest release&quot; link and a tagless
-<code>gh release download</code> both skip. <strong>There is no fixed download URL</strong>, so look the newest tag up
-first:</p>
-<pre><code class="cmd"><span class="prompt">$ </span>TAG=$(gh release list --repo potatobeanradio/circuitRF --limit 1 --json tagName -q '.[0].tagName')
-<span class="prompt">$ </span>gh release download "$TAG" --repo potatobeanradio/circuitRF --pattern 'circuitRF-*-arm64.dmg'</code></pre>
-<p>Without <code>gh</code>, the same list is <code>https://api.github.com/repos/potatobeanradio/circuitRF/releases</code>,
-newest first. A release that carries <code>update-manifest.json</code> lists every asset in it with its name,
-download URL, size and SHA-256, which is the one file to read to choose and to verify a download.</p>
-<table>
-<thead>
-<tr>
-<th>Platform</th>
-<th>Asset</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Windows</td>
-<td><code>circuitRF-&lt;version&gt;-win-x64-user.msi</code> — per-user, no administrator (also <code>arm64</code>, <code>x86</code>)</td>
-</tr>
-<tr>
-<td>macOS</td>
-<td><code>circuitRF-&lt;version&gt;-arm64.dmg</code> (Apple Silicon) or <code>circuitRF-&lt;version&gt;-x64.dmg</code> (Intel)</td>
-</tr>
-<tr>
-<td>Linux</td>
-<td><code>circuitRF-&lt;version&gt;-linux-x64.tar.gz</code> or <code>…-linux-arm64.tar.gz</code></td>
-</tr>
-</tbody>
-</table>
-<p><strong>2. Install it without a prompt.</strong></p>
-<pre><code class="cmd"><span class="prompt">&gt; </span>msiexec /i circuitRF-&lt;version&gt;-win-x64-user.msi /qn</code></pre>
-<pre><code class="cmd"><span class="prompt">$ </span>hdiutil attach -nobrowse -mountpoint /tmp/circuitrf-dmg circuitRF-&lt;version&gt;-arm64.dmg
-<span class="prompt">$ </span>cp -R /tmp/circuitrf-dmg/circuitRF.app /Applications/
-<span class="prompt">$ </span>hdiutil detach /tmp/circuitrf-dmg</code></pre>
-<pre><code class="cmd"><span class="prompt">$ </span>tar -xzf circuitRF-&lt;version&gt;-linux-x64.tar.gz
-<span class="prompt">$ </span>./circuitRF-&lt;version&gt;/install.sh</code></pre>
-<p>The Windows install adds circuitRF to the user's <code>PATH</code>, but only processes started afterwards see
-it — so in the session that installed it, use the full path,
-<code>%LOCALAPPDATA%\Programs\circuitRF\circuitRF.exe</code>. The Linux one links <code>~/.local/bin/circuitrf</code>.</p>
-<p><strong>3. Check that it answers:</strong></p>
-<pre><code class="cmd"><span class="prompt">$ </span>/Applications/circuitRF.app/Contents/MacOS/circuitRF --version</code></pre>
-<p>It prints the release's version — the tag from step 1 — and exits <code>0</code>, opening no window. Anything else means the path is wrong.</p>
-<p><strong>4. Register the server</strong> with the client: the command is that same executable, the arguments are
-<code>serve --root &lt;dir&gt;</code> (<a href="#serve">above</a>). <code>serve --root &lt;dir&gt; --print-config</code> prints exactly that
-configuration, with the executable's full path filled in.</p>
-<p><strong>5. Keep working in the meantime.</strong> Most clients load a newly registered server only when their
-next session starts, so the tools will not appear in the session that did the install. Nothing is
-lost: every MCP tool is a verb returning the same JSON document, so the same work can be driven from
-the shell right away — <code>circuitrf check &lt;path&gt; --json</code> returns byte for byte what the <code>check</code> tool
-would.</p>
+<p><code>serve</code> runs circuitRF as a <strong>Model Context Protocol</strong> server over its standard input and output, so an
+assistant, a design agent or a CI job can drive every verb on this page. Connecting a client, the tools
+it offers, what it refuses and how to install circuitRF unattended are on
+<a href="mcp-server.html">The MCP Server</a> page.</p>
 <hr />
 <h2 id="exit">Exit codes</h2>
 <table>
@@ -4450,8 +4270,8 @@ extracted Touchstones picks the new results up with no further action.</p>
   <a href="pdk-integration.html">Kits and external device models</a>.</p>
 
 <nav class="page-nav">
-  <a class="prev" href="npy-export.html"><span class="dir">Previous</span><span class="name">Results &amp; Data Export</span></a>
-  <a class="next" href="ai-agents.html"><span class="dir">Next</span><span class="name">Designing with an AI agent</span></a>
+  <a class="prev" href="railrf.html"><span class="dir">Previous</span><span class="name">railRF</span></a>
+  <a class="next" href="mcp-server.html"><span class="dir">Next</span><span class="name">The MCP Server</span></a>
 </nav>
 </main>
 

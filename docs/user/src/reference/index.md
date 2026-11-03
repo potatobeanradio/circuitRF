@@ -22,6 +22,8 @@ as dipped into.
 
 {{toc: section:Tools}}
 
+{{toc: section:Command Line & Agents}}
+
 ## Where to start
 
 <div class="callout note">

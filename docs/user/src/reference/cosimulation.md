@@ -1,5 +1,5 @@
 ---
-title: "Co-simulation: B1 and SAR from a schematic"
+title: Co-simulation: B1 and SAR from a schematic
 slug: reference/cosimulation.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Co-simulation

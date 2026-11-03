@@ -123,10 +123,10 @@ public class DocsSearchRankingTests(ITestOutputHelper output)
     [InlineData("headless",    "reference/cli.html")]
     [InlineData("verilog-a",   "reference/veriloga.html")]
     [InlineData("PCell",       "reference/pcells.html")]
-    // `serve` IS an MCP server — initialize / tools/list / tools/call over stdio — and "MCP" is
-    // what anyone looking for it will type. It appears in no chapter title.
-    [InlineData("MCP",                     "reference/cli.html")]
-    [InlineData("Model Context Protocol",  "reference/cli.html")]
+    // `serve` IS an MCP server, and "MCP" is what anyone looking for it will type; its own chapter
+    // is titled "The MCP Server", so the acronym alone has to reach it through the keywords.
+    [InlineData("MCP",                     "reference/mcp-server.html")]
+    [InlineData("Model Context Protocol",  "reference/mcp-server.html")]
     public void AReadersOwnWordFindsTheChapterAboutIt(string query, string slug)
         => AssertTopPage(query, slug);
 
@@ -166,6 +166,53 @@ public class DocsSearchRankingTests(ITestOutputHelper output)
     [NodeFact]
     public void AQueryWithAnUnknownTermReturnsNothing()
         => Assert.Empty(Rank("stackup zzzznotaword"));
+
+    /// <summary>
+    /// A query that names a page — its title, or a phrase its keywords declare — opens the page at
+    /// its TOP. Every section of a page shares the page's keywords and title, so the tie used to go
+    /// to whichever subsection repeated the word most: "sensitivity" opened mid-chapter, at the
+    /// section comparing it with Tuning, and "monte carlo" at the Yield chapter's list of modes.
+    /// </summary>
+    [NodeTheory]
+    [InlineData("sense",                "reference/sensitivity.html")]
+    [InlineData("Sensitivity",          "reference/sensitivity.html")]
+    [InlineData("sensitivity analysis", "reference/sensitivity.html")]
+    [InlineData("yield",                "reference/yield.html")]
+    [InlineData("Monte Carlo",          "reference/yield.html")]
+    [InlineData("montecarlo",           "reference/yield.html")]
+    [InlineData("tuning",               "reference/tuning.html")]
+    [InlineData("MCP server",           "reference/mcp-server.html")]
+    // A heading that merely CONTAINS the word does not take the landing.
+    [InlineData("dielectric",           "reference/stackup.html")]
+    [InlineData("PCell",                "reference/pcells.html")]
+    [InlineData("headless",             "reference/cli.html")]
+    // A page that declares the query beats another page's section headed with it: the Simulations
+    // chapter's two-line "Optimizer" section only points to this one.
+    [InlineData("optimizer",            "reference/optimization.html")]
+    public void NamingAPageOpensItsTop(string query, string slug)
+    {
+        AssertTopPage(query, slug);
+        var top = Rank(query)[0];
+        Assert.True(top.Anchor.Length == 0,
+            $"A search for \"{query}\" should open {slug} at its top, but landed on #{top.Anchor} (\"{top.Heading}\").");
+    }
+
+    /// <summary>
+    /// The page-top rule stops at a subsection the query names: "corners" is a keyword of the Yield
+    /// chapter and the reader still wants its Corners section; "DOE" spells the initials of its
+    /// "Design of experiments" heading, and the chapter's keywords declare both spellings; a
+    /// heading's leading clause names it too ("Hierarchy: putting one schematic inside another").
+    /// </summary>
+    [NodeTheory]
+    [InlineData("corners",   "reference/yield.html",            "corners")]
+    [InlineData("DOE",       "reference/yield.html",            "doe")]
+    [InlineData("hierarchy", "reference/schematic-editor.html", "hierarchy")]
+    public void ASubsectionNamedByTheQueryStillWins(string query, string slug, string anchor)
+    {
+        var top = Rank(query)[0];
+        Assert.Equal(slug, top.Slug);
+        Assert.Equal(anchor, top.Anchor);
+    }
 
     // ── harness ────────────────────────────────────────────────────────────────────────────────
 

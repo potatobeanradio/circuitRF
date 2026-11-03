@@ -4,7 +4,7 @@ slug: reference/yield.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Yield
 lede: Give values a tolerance, mark which goals are specs, and find out how many builds of the design meet them — and which ones do not.
-keywords: yield, design centering, centering, surrogate, monte carlo, tolerance, tolerances, distribution, gaussian, uniform, lognormal, discrete, truncation, spread, correlation, specs, trials, seed, sampling, latin hypercube, sobol, auto-stop, confidence, interval, corners, statistical corner, contributions, sensitivity, histogram, kit statistics, process, mismatch, cdf, normal quantile, envelope, scatter, design of experiments, doe, optimizing across corners, evaluate at
+keywords: yield, yield analysis, monte carlo analysis, montecarlo, monte-carlo, design centering, centering, surrogate, monte carlo, tolerance, tolerances, distribution, gaussian, uniform, lognormal, discrete, truncation, spread, correlation, specs, trials, seed, sampling, latin hypercube, sobol, auto-stop, confidence, interval, corners, statistical corner, contributions, sensitivity, histogram, kit statistics, process, mismatch, cdf, normal quantile, envelope, scatter, design of experiments, doe, optimizing across corners, evaluate at
 ---
 
 <nav class="toc">

@@ -31,8 +31,8 @@
   <div class="page-top">
     <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › Designing with an AI agent</p>
     <nav class="page-nav-top" aria-label="Previous and next page">
-      <a class="prev" href="cli.html" title="Previous: The Command Line"><span class="arrow">‹</span><span class="name">The Command Line</span></a>
-      <a class="next" href="layout-editor.html" title="Next: The Layout Editor"><span class="name">The Layout Editor</span><span class="arrow">›</span></a>
+      <a class="prev" href="mcp-server.html" title="Previous: The MCP Server"><span class="arrow">‹</span><span class="name">The MCP Server</span></a>
+      <a class="next" href="../app-notes/index.html" title="Next: circuitRF Application Notes"><span class="name">circuitRF Application Notes</span><span class="arrow">›</span></a>
     </nav>
   </div>
 
@@ -93,8 +93,8 @@ run the <code>claude mcp add …</code> line it prints underneath.</p>
 <p><strong>4. Check that it answers.</strong> Ask the agent to call circuitRF's <code>reference</code> tool with no topic. It
 should list the reference topics with their sizes. If it cannot see a circuitRF tool, the client
 did not start the server: run the printed command yourself and read what it says on stderr.</p>
-<p>The <a href="cli.html#serve">Command Line chapter</a> describes the server in full, including what it refuses
-and how to run it from a source build.</p>
+<p><a href="mcp-server.html">The MCP Server</a> describes the server in full, including what it refuses, how to
+run it from a source build and how to install circuitRF unattended.</p>
 <h2 id="brief">What to tell it</h2>
 <p>Give the agent the same things you would give a colleague: the specification, the process, what
 you want back, and how you will judge it. A brief that has worked well:</p>
@@ -279,7 +279,10 @@ the nominal and at every corner at once, and each goal's result names the corner
 <li><strong>Centering.</strong> Put <code>opt=1</code> and a range on the toleranced lines whose values may move, then <code>run</code>
 with <code>analysis=center</code>. The verified start and centred yields are the result; <code>surrogate=quadratic</code>
 makes each step cheaper when there are few toleranced values.</li>
-<li><strong>Which values matter.</strong> <code>run</code> with <code>analysis=doe</code> and <code>design=pb</code> screens many values in a few
+<li><strong>Which values matter.</strong> <code>run</code> with <code>analysis=sensitivity</code> ranks, per goal, the values that move it
+most at the design as it stands, each stepped up and down on its own (2k + 1 simulations, nothing
+random); <code>result.sensitivity.goals[].contributors[]</code> gives each one's basis, share and status. For
+interactions, <code>run</code> with <code>analysis=doe</code> and <code>design=pb</code> screens many values in a few
 runs; <code>design=ccf</code> on the few that matter fits a curved model, and <code>optimum=true</code> confirms that
 model's best point with a simulation.</li>
 </ol>
@@ -351,8 +354,8 @@ turned on, the agent can take a restore point before a change (<code>history</co
 assistants</a> describes how that works.</p>
 
 <nav class="page-nav">
-  <a class="prev" href="cli.html"><span class="dir">Previous</span><span class="name">The Command Line</span></a>
-  <a class="next" href="layout-editor.html"><span class="dir">Next</span><span class="name">The Layout Editor</span></a>
+  <a class="prev" href="mcp-server.html"><span class="dir">Previous</span><span class="name">The MCP Server</span></a>
+  <a class="next" href="../app-notes/index.html"><span class="dir">Next</span><span class="name">circuitRF Application Notes</span></a>
 </nav>
 </main>
 

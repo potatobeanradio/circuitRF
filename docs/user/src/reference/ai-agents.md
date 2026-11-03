@@ -4,7 +4,7 @@ slug: reference/ai-agents.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Designing with an AI agent
 lede: Connect an AI agent to circuitRF's MCP server, tell it what to build, and know where it will need your help. What to set up, what to say, which reference topics it should read, and the design flow that works.
-keywords: AI agent, assistant, MCP, Model Context Protocol, serve, print-config, Claude Code, automation, headless design, reference topics, design flow, prompt
+keywords: AI agent, assistant, MCP, Claude Code, automation, headless design, reference topics, design flow, prompt
 ---
 
 <nav class="toc">
@@ -74,8 +74,8 @@ run the `claude mcp add …` line it prints underneath.
 should list the reference topics with their sizes. If it cannot see a circuitRF tool, the client
 did not start the server: run the printed command yourself and read what it says on stderr.
 
-The [Command Line chapter](cli.html#serve) describes the server in full, including what it refuses
-and how to run it from a source build.
+[The MCP Server](mcp-server.html) describes the server in full, including what it refuses, how to
+run it from a source build and how to install circuitRF unattended.
 
 ## What to tell it {#brief}
 
@@ -192,7 +192,10 @@ The rest of the workflow is reachable the same way:
 10. **Centering.** Put `opt=1` and a range on the toleranced lines whose values may move, then `run`
     with `analysis=center`. The verified start and centred yields are the result; `surrogate=quadratic`
     makes each step cheaper when there are few toleranced values.
-11. **Which values matter.** `run` with `analysis=doe` and `design=pb` screens many values in a few
+11. **Which values matter.** `run` with `analysis=sensitivity` ranks, per goal, the values that move it
+    most at the design as it stands, each stepped up and down on its own (2k + 1 simulations, nothing
+    random); `result.sensitivity.goals[].contributors[]` gives each one's basis, share and status. For
+    interactions, `run` with `analysis=doe` and `design=pb` screens many values in a few
     runs; `design=ccf` on the few that matter fits a curved model, and `optimum=true` confirms that
     model's best point with a simulation.
 

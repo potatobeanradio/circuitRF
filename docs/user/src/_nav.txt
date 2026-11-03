@@ -51,16 +51,14 @@ reference/simulations.html  | DC, S-parameters, harmonic balance, parametric swe
 reference/measurements.html | Post-processing a run into named quantities.
 reference/netlist.html      | The .cnl elaborated-netlist format.
 reference/data-display.html | Plots, tables, trace cards and markers.
+reference/plot-types.html   | Rectangular, Smith, Polar and Table — and which data each will accept.
 reference/tuning.html       | Sliders on any value, with every Data Display following them as you drag.
 reference/sensitivity.html  | Which values move each goal, ranked at the design as it stands — S-parameter blocks included.
 reference/optimization.html | Goals, variables and algorithms: letting circuitRF find values that meet the specification.
 reference/yield.html        | Tolerances, Monte Carlo, yield and corners: how many builds meet the specification.
 reference/derived-metrics.html | Stability, passivity, group delay and the passive impedance readouts — with the equations.
 reference/wsprobe.html      | The WSProbe: nodal transfer functions for stability and in-situ design — with an appendix on stability itself.
-reference/plot-types.html   | Rectangular, Smith, Polar and Table — and which data each will accept.
 reference/npy-export.html   | Getting results out into Python, MATLAB or a Touchstone file.
-reference/cli.html          | Running every analysis headless: the verbs, their options and their exit codes.
-reference/ai-agents.html    | Connecting an AI agent through MCP, what to tell it, and the design flow that works.
 
 == Layout & EM
 reference/layout-editor.html   | The layout view: technology, drawing, snapping, and the schematic it belongs to.
@@ -99,6 +97,11 @@ reference/model-data.html  | The data a model is built from: what it needs, samp
 reference/cmodel.html      | The .cmodel file, field by field, and scripts that write one without the Model Composer.
 reference/wbond.html       | Bondwire arrays: geometry, the 3D kernel, and S-parameters out.
 reference/railrf.html      | Power integrity on the board you drew: DC drop, Z(f) against a target, and which decaps earn their place.
+
+== Command Line & Agents
+reference/cli.html          | Running every analysis headless: the verbs, their options and their exit codes.
+reference/mcp-server.html   | circuitRF as an MCP server: installing it, connecting a client, and the tools it offers.
+reference/ai-agents.html    | Connecting an AI agent through MCP, what to tell it, and the design flow that works.
 
 == Application notes
 app-notes/index.html                    | Worked investigations of questions that come up on real boards.
