@@ -1957,6 +1957,7 @@ warns about range.
     [--kind active|passive] [--value …] [--freq-low … --freq-high …] [--conditions …] [--footprint …]
     [--doc &lt;file&gt;]… [--symbol own|fet|r|c|l|box] [--replace] [--include-vendor-parts]
     [--compile-models] [--build &lt;rid&gt;=&lt;path&gt;]…
+    [--compile-netlist [--source-out &lt;file.va&gt;] [--check-bias "pin=V …"]…]
     [--library-name … --publisher … --license … --library-version …]</code></pre>
 
 The same code **File ▸ Export to Library…** runs: the cell, its sub-cells and every file they use are copied
@@ -1982,6 +1983,16 @@ A compiled `.osdi` the cell places ships as this platform's build in `models/<ri
 cell places and ships the build instead of the source; it is off unless given, as the dialog's checkbox is. Each
 `--build <rid>=<path>` adds a build made on another platform, such as `--build win-x64=builds/TSTFET100.osdi`. The
 self-check runs this platform's build only, and the last line says so.
+
+`--compile-netlist` publishes the whole cell as one compiled Verilog-A module instead of its schematic
+([Compile netlist](protected-models.html#compile-netlist)); it is off unless given. The generated source goes to
+`protected-source/<Part>/<Part>.va` beside the workspace, or to `--source-out`, never into the library. Each
+`--check-bias` is one bias point of the proof (pins not named are at 0 V); without any, the proof runs every pin at
+0 V and each pair of pins at ±1 V. Every platform the compiler can reach is tried. Standard error lists them, led
+by *"This part will be unavailable on: …"* when any is missing, and `--json` carries the same rows as `exportPart`'s
+`builds[]` (`rid`, `state`, `reason`, `fix`) beside the source path, `compiledFrom` and the proof's verdict. A
+missing platform does not change the exit code. Run the same command on another platform into the same library to
+add that platform's build: it is added when the source hashes the same, and refused when the cell has changed.
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf export part &lt;model folder&gt; --refresh</code></pre>
 

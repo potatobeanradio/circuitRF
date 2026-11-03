@@ -67,6 +67,7 @@ internal static class JsonRun
         public RailReportJson? Rail;
         public SmithReportJson? Smith;
         public SnpReportJson? Snp;
+        public ExportPartReportJson? ExportPart;
         public LvsReportJson? Lvs;
         public ImpedanceReportJson? Impedance;
         public ReviewReportJson? Review;
@@ -235,6 +236,8 @@ internal static class JsonRun
     /// <summary>What <c>snp</c> read — the S-Parameter Viewer's file pane and the terms it plotted. It runs
     /// no analysis and carries no DataSet, which is why it is its own payload, as <see cref="Smith"/> is.</summary>
     public static SnpReportJson? Snp { get => S.Snp; set => S.Snp = value; }
+    /// <summary><c>export part --compile-netlist</c>'s builds table (brief vendorlib-16 R-vl16-6c).</summary>
+    public static ExportPartReportJson? ExportPart { get => S.ExportPart; set => S.ExportPart = value; }
 
     /// <summary>What <c>lvs</c> compared and what it concluded (R-lvs11-3c) — a projection of
     /// <c>LvsRunResult</c> and nothing else. The findings themselves also travel as diagnostics,
@@ -346,6 +349,7 @@ internal static class JsonRun
         Rail                = null;
         Smith               = null;
         Snp                 = null;
+        ExportPart          = null;
         Lvs                 = null;
         Impedance           = null;
         Review              = null;
@@ -595,7 +599,7 @@ internal static class JsonRun
         // is about no document at all — so they are answered before the cube machinery, not folded
         // into it.
         if (Check is not null || Explain is not null || Document is not null || Reference is not null
-         || History is not null || Render is not null || Find is not null || Smith is not null || Snp is not null
+         || History is not null || Render is not null || Find is not null || Smith is not null || Snp is not null || ExportPart is not null
          || Lvs is not null || Impedance is not null || ImpedanceSurvey is not null || FieldPlots is not null
          || ImpedanceLine is not null || Solvers is not null || Optimize is not null || Yield is not null || Corners is not null
          || Center is not null || Doe is not null || Sensitivity is not null || Recognize is not null || StepImport is not null || ConvertImage is not null
@@ -621,7 +625,7 @@ internal static class JsonRun
                                      Yield: yieldR, Corners: corners, Center: center, Doe: doe, Sensitivity: Sensitivity,
                                      Recognize: Recognize, StepImport: StepImport, Convert: ConvertImage,
                                      Model: Model, Library: Library, Review: Review, ReviewChecks: ReviewChecks,
-                                     Snp: Snp, Summarized: summarized);
+                                     Snp: Snp, ExportPart: ExportPart, Summarized: summarized);
         }
 
         // `rail` is the one verb that carries a report AND a DataSet — the cubes are the field and

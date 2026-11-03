@@ -46,9 +46,11 @@ public sealed partial class ExportToLibraryViewModel
     public ObservableCollection<ExportBuildRowViewModel> BuildRows { get; } = [];
 
     /// <summary>Builds for other platforms apply when the export ships a compiled model.</summary>
-    public bool IsBuildsEnabled => Plan is { ShipsCompiled: true };
+    public bool IsBuildsEnabled => Plan is { ShipsCompiled: true } && !CompileNetlist;
 
-    public string BuildsNote => Plan is { ShipsCompiled: true }
+    public string BuildsNote => CompileNetlist
+        ? "Compile netlist builds every platform the compiler can reach; another platform's build is added by exporting there."
+        : Plan is { ShipsCompiled: true }
         ? $"The {OsdiBuilds.CurrentRid} build is the one this export runs and checks. A build listed here is copied, not run."
         : "Only a model that ships compiled has builds for other platforms.";
 
@@ -79,6 +81,7 @@ public sealed partial class ExportToLibraryViewModel
 
     private void RaiseBuildState()
     {
+        RaiseProtectState();
         OnPropertyChanged(nameof(IsCompileEnabled));
         OnPropertyChanged(nameof(CompileNote));
         OnPropertyChanged(nameof(IsBuildsEnabled));

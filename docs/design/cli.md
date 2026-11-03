@@ -4797,3 +4797,13 @@ the two export options are `create what=libraryPart`'s `compileModels` (a flag) 
 identifier to file emitted as one `--build` per entry; it is the `PathMap` option kind, a `StrMap` whose values are
 confined to the server root like any other path. Gate:
 `tests/Ui.Tests/VendorLibraries/ProtectedModelTests.cs`.
+
+**Compile netlist (brief vendorlib-16).** `export part --compile-netlist` is the dialog's **Compile netlist (protected
+model)** checkbox, off unless given; `--source-out <file.va>` moves the generated source (never into the library) and
+each `--check-bias "pin=V …"` is one row of **Proof bias**. All three are `ExportOptions` fields; the partition, the
+module, every compile and the proof are `ModelLibraryExport` and `src/Design/VendorLibraries/ModelLibrary/Protect/`.
+`--build` is refused with it, because the export builds every platform the compiler can reach itself. The Builds
+table goes to stderr one row per platform, after the "unavailable on" warning, and to `--json` as `exportPart`
+(`source`, `compiledFrom`, `proof`, `builds[]` of `rid`/`state`/`reason`/`fix`); a missing platform leaves the exit
+code 0, so a CI job that requires every platform tests the JSON. Over MCP the three are `create what=libraryPart`'s
+`compileNetlist`, `sourceOut` and `checkBias`. Gate: `tests/Ui.Tests/VendorLibraries/CompileNetlistTests.cs`.

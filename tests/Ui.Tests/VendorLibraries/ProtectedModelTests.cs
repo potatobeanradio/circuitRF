@@ -406,7 +406,7 @@ public sealed class ProtectedModelTests : IDisposable
 
     /// <summary>The checkout's worker beside the test assembly, which is where the resolver looks by default — moved in by
     /// rename, never rewritten in place, so a process another test started on it is never disturbed.</summary>
-    private static void EnsureWorkerBeside(string dir)
+    internal static void EnsureWorkerBeside(string dir)
     {
         string worker = FixturePaths.Require(WorkerRel);
         string target = Path.Combine(dir, "osdi-worker");

@@ -40,7 +40,9 @@ public static class ExportPart
         string libraryName = "", publisher = "", license = "", libraryVersion = "1.0.0";
         var docs = new List<string>();
         var sweeps = new List<CircuitRF.Core.Design.FrequencySpec>();
-        bool replace = false, includeVendor = false, compile = false;
+        bool replace = false, includeVendor = false, compile = false, compileNetlist = false;
+        string? sourceOut = null;
+        var checkBias = new List<string>();
         var builds = new Dictionary<string, string>(StringComparer.Ordinal);
 
         for (int i = 1; i < args.Length; i++)
@@ -81,6 +83,10 @@ public static class ExportPart
                 case "--include-vendor-parts":      includeVendor = true; break;
                 // brief vendorlib-15: off unless asked for, as the dialog's checkbox is.
                 case "--compile-models":            compile = true; break;
+                // brief vendorlib-16: off unless asked for, as the dialog's checkbox is.
+                case "--compile-netlist":           compileNetlist = true; break;
+                case "--source-out" when more:      sourceOut = Path.GetFullPath(args[++i]); break;
+                case "--check-bias" when more:      checkBias.Add(args[++i]); break;
                 case "--build" when more:
                 {
                     string spec = args[++i];
@@ -127,6 +133,7 @@ public static class ExportPart
             LibraryVersion = libraryVersion, License = license,
             Sweep = sweeps.Count == 0 ? null : sweeps,
             CompileModels = compile, Builds = builds,
+            CompileNetlist = compileNetlist, SourceOut = sourceOut, CheckBias = checkBias,
         };
 
         // The plan first, so a refusal the dialog would have ASKED about can name the flag that answers it.
@@ -158,6 +165,16 @@ public static class ExportPart
         if (result.LibraryManifest is { } clib) { Console.WriteLine(clib); JsonRun.AddOutput("library", clib); }
         foreach (string f in result.Created) { Console.WriteLine(f); JsonRun.AddOutput("file", f); }
         Console.Error.WriteLine($"[circuitRF] {result.Message}");
+
+        // R-vl16-6c: the Builds table — one line per platform to stderr (the summary line is already a warning), and the same rows in
+        // --json. A missing platform is not an export failure, so the exit code stays 0.
+        if (result.Builds.Count > 0)
+        {
+            foreach (var b in result.Builds) Console.Error.WriteLine($"[circuitRF]   {b.Describe()}");
+            if (result.SourcePath is { } src) JsonRun.AddOutput("source", src);
+            JsonRun.ExportPart = new RfCore.Export.ExportPartReportJson(result.SourcePath, result.CompiledFrom, result.Proof,
+                [.. result.Builds.Select(b => new RfCore.Export.ExportBuildJson(b.Rid, b.State, b.Reason, b.Fix))]);
+        }
         return 0;
     }
 
@@ -222,6 +239,8 @@ public static class ExportPart
             "         [--replace] [--include-vendor-parts]\n" +
             "         [--compile-models]   (ship each Verilog-A source compiled, without the source)\n" +
             "         [--build <rid>=<path>]…   (a compiled model's builds made on other platforms)\n" +
+            "         [--compile-netlist [--source-out <file.va>] [--check-bias \"pin=V pin=V\"]…]\n" +
+            "              (publish the cell as one compiled, protected module; the source stays with you)\n" +
             "         [--library-name … --publisher … --license … --library-version …]   (a new library only)\n" +
             "         [--json]\n" +
             "       circuitrf export part <model folder> --refresh   (after its schematic was edited)");

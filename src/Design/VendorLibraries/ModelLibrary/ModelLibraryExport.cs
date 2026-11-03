@@ -12,6 +12,7 @@ using SymbolModel = CircuitRF.Design.Symbol.Symbol;
 using CircuitRF.Design.Workspace;
 using CircuitRF.Diagnostics;
 using CircuitRF.Engine;
+using CircuitRF.Design.VendorLibraries.ModelLibrary.Protect;
 
 namespace CircuitRF.Design.VendorLibraries.ModelLibrary;
 
@@ -60,6 +61,16 @@ public sealed record ExportOptions
     /// R-vl15-1d); headless <c>--build &lt;rid&gt;=&lt;path&gt;</c>. This platform's build is the one the export runs
     /// with and is never listed here.</summary>
     public IReadOnlyDictionary<string, string> Builds { get; init; } = new Dictionary<string, string>();
+    /// <summary>Compile the cell's netlist into one protected Verilog-A module and publish the compiled build in place of
+    /// the cell (brief vendorlib-16). OFF unless asked for — the dialog's checkbox starts unticked and headless it is
+    /// <c>--compile-netlist</c>.</summary>
+    public bool CompileNetlist { get; init; }
+    /// <summary>Where the generated source is written; null is <c>protected-source/&lt;Part&gt;/&lt;Part&gt;.va</c> beside
+    /// the source workspace (R-vl16-2c). Headless <c>--source-out</c>.</summary>
+    public string? SourceOut { get; init; }
+    /// <summary>The proof's bias points, each <c>pin=volts …</c>; empty is the default set (§4). Headless
+    /// <c>--check-bias</c>.</summary>
+    public IReadOnlyList<string> CheckBias { get; init; } = [];
 
     // library.clib, used only when the library has none
     public string LibraryName { get; init; } = "";
@@ -139,6 +150,19 @@ public sealed record ExportPlan
     /// <summary>Every reason the export cannot go ahead. Nothing is written while any stands.</summary>
     public IReadOnlyList<string> Refusals { get; init; } = [];
 
+    /// <summary>Compile netlist's partition, one line each: what is compiled, what stays outside, the terminal count
+    /// (brief vendorlib-16 R-vl16-2a). Empty when the option is off.</summary>
+    public IReadOnlyList<string> ProtectLines { get; init; } = [];
+    /// <summary>Why Compile netlist cannot be used here (no compiler), or null when it can.</summary>
+    public string? CompileNetlistUnavailable { get; init; }
+    /// <summary>Where Compile netlist writes the generated source.</summary>
+    public string? SourcePath { get; init; }
+    /// <summary>The proof's bias points, as the dialog lists them.</summary>
+    public IReadOnlyList<string> CheckBias { get; init; } = [];
+    /// <summary>The export adds this platform's build to a model exported elsewhere from the same source (R-vl16-2d).</summary>
+    public bool AddsPlatform { get; init; }
+    internal ModelLibraryExport.ProtectPlanned? Protect { get; init; }
+
     public IEnumerable<ExportCopy> VendorParts
         => Copies.Where(c => c.Kind is ExportCopyKind.VendorSpicePart or ExportCopyKind.VendorModel);
 }
@@ -160,6 +184,14 @@ public sealed record ExportResult
     public string? Message { get; init; }
     /// <summary>check's warnings on the new folder, which do not stop an export.</summary>
     public IReadOnlyList<string> Warnings { get; init; } = [];
+    /// <summary>Compile netlist: one row per platform (R-vl16-6a); empty otherwise.</summary>
+    public IReadOnlyList<ExportBuild> Builds { get; init; } = [];
+    /// <summary>Compile netlist: where the generated source was written, outside the library.</summary>
+    public string? SourcePath { get; init; }
+    /// <summary>Compile netlist: <c>sha256:&lt;hex&gt;</c> of the generated source (R-vl16-2d).</summary>
+    public string? CompiledFrom { get; init; }
+    /// <summary>Compile netlist: the proof's verdict, one line.</summary>
+    public string? Proof { get; init; }
 
     public bool Succeeded => ModelDir is not null;
 }
@@ -298,8 +330,14 @@ public static partial class ModelLibraryExport
             : CompilerMissing();
         if (options.CompileModels && compileUnavailable is not null)
             refusals.Add($"Compile Verilog-A models is on, and it cannot be used: {compileUnavailable}");
-        bool shipsCompiled = walk.Compiled.Count > 0 || (options.CompileModels && walk.Sources.Count > 0);
-        PlanBuilds(options, walk, shipsCompiled, refusals);
+        bool shipsCompiled = walk.Compiled.Count > 0 || (options.CompileModels && walk.Sources.Count > 0) || options.CompileNetlist;
+        if (!options.CompileNetlist) PlanBuilds(options, walk, shipsCompiled, refusals);
+        else if (options.Builds.Count > 0)
+            refusals.Add("Compile netlist builds every platform the compiler can reach, and adds another platform's build when it is run " +
+                         "there into the same library; builds made elsewhere are not listed with it.");
+
+        // Brief vendorlib-16: Compile netlist.
+        var protect = schPath is null ? null : PlanProtect(dir, part, options, libraryDir, pins, refusals);
 
         // What the export would replace.
         int revision = 0;
@@ -309,9 +347,10 @@ public static partial class ModelLibraryExport
             revision = existing is null ? 0 : Math.Max(existing.Revision, 1);
             if (existing is null && Directory.EnumerateFileSystemEntries(modelDir).Any())
                 refusals.Add($"'{modelDir}' already exists and is not a model folder; it is never replaced.");
-            else if (!options.Replace)
+            else if (!options.Replace && AddsPlatformTo(modelDir, protect) is null)
                 refusals.Add($"{part} is already exported to '{Path.GetDirectoryName(modelDir)}' (revision {revision}). Replace it to export again.");
         }
+        bool addsPlatform = !options.Replace && AddsPlatformTo(modelDir, protect) is not null;
 
         string kind = options.Kind ?? defaultKind;
         string value = kind == ModelPartManifest.KindPassive ? options.Value : "";
@@ -342,6 +381,10 @@ public static partial class ModelLibraryExport
             CompiledModels = walk.Compiled, CompilableSources = walk.Sources,
             CompileUnavailable = compileUnavailable, ShipsCompiled = shipsCompiled,
             Refusals = refusals.Distinct(StringComparer.Ordinal).ToList(),
+            ProtectLines = protect is null ? [] : [.. protect.Partition.Describe()],
+            CompileNetlistUnavailable = CompilerMissingCached(), SourcePath = protect?.SourcePath,
+            CheckBias = protect is null ? [] : [.. protect.Bias.Select(b => b.ToString())],
+            AddsPlatform = addsPlatform, Protect = protect,
         };
     }
 
@@ -376,6 +419,9 @@ public static partial class ModelLibraryExport
     {
         var plan = Plan(cellDir, options);
         if (plan.Refusals.Count > 0) return new ExportResult { Refusal = string.Join(" ", plan.Refusals) };
+        if (plan.AddsPlatform && plan.Protect is { } adding
+            && ModelPartManifest.Read(Path.Combine(plan.ModelDir, ModelFolder.PartFileName)).Manifest is { } existingPart)
+            return AddPlatform(plan, options, adding, existingPart, control);
 
         string modelDir   = plan.ModelDir;
         string parent     = Path.GetDirectoryName(modelDir)!;
@@ -405,6 +451,18 @@ public static partial class ModelLibraryExport
 
             string? cnl = ModelNetlist.FromCell(tmp, out string? why);
             if (cnl is null) return Refuse(wrapper, why ?? "The copied cell could not be extracted.");
+
+            // Brief vendorlib-16: the copy becomes the wrapper of its compiled module, and the netlist is extracted again.
+            IReadOnlyList<ExportBuild> protectedBuilds = [];
+            if (plan.Protect is { } protect)
+            {
+                try { protectedBuilds = BuildProtected(protect, plan.PartNumber, tmp, cnl, control).Builds; }
+                catch (ProtectRefusedException ex) { return Refuse(wrapper, ex.Message); }
+                catch (CircuitRF.Core.Devices.External.ExternalDeviceException ex) { return Refuse(wrapper, ex.Message); }
+                InvalidateResolution();
+                cnl = ModelNetlist.FromCell(tmp, out why);
+                if (cnl is null) return Refuse(wrapper, why ?? "The wrapper could not be extracted.");
+            }
             if (ModelFolderCheck.TopLevelStatements(cnl).FirstOrDefault() is { Statement: { } stray })
                 return Refuse(wrapper, $"The extracted netlist holds '{stray}' outside every define block.");
             File.WriteAllText(ModelNetlist.PathOf(tmp), cnl);
@@ -431,7 +489,9 @@ public static partial class ModelLibraryExport
                 CaseMetric = options.CaseMetric, CaseImperial = options.CaseImperial,
                 Revision = plan.ExistingRevision + 1,
                 Converted = [.. built.Converted],
-                Builds = built.Builds.Count == 0 ? null : [.. built.Builds],
+                Builds = plan.Protect is not null ? BuildsOfWrapper(tmp) : built.Builds.Count == 0 ? null : [.. built.Builds],
+                CompiledFrom = plan.Protect?.Hash,
+                Proved = plan.Protect is not null ? [CircuitRF.Core.Devices.External.OsdiBuilds.CurrentRid] : null,
             };
             ModelPartManifest.Write(partPath, manifest);
 
@@ -454,9 +514,21 @@ public static partial class ModelLibraryExport
             if (errors.Count > 0)
                 return Refuse(wrapper, "The exported model does not check clean: " + string.Join(" ", errors.Select(e => e.Render())));
 
-            control?.BeginStage("Self-check", 2, "run(s)");
-            if (SelfCheck(plan.CellDir, tmp, manifest, out double? betweenDb, plan.Conversions.Count > 0 ? plan.Frequencies : null, control) is { } mismatch)
-                return Refuse(wrapper, mismatch);
+            double? betweenDb = null;
+            ProtectCheckResult? proof = null;
+            if (plan.Protect is { } proving)
+            {
+                // D5: the compiled part proved against the cell, or nothing is written. The source stays with the maker.
+                control?.BeginStage("Proving the compiled part");
+                proof = Prove(plan, options, proving, tmp, manifest);
+                if (!proof.Passed) return Refuse(wrapper, proof.Refusal + $" The generated source is kept at {proving.SourcePath}.");
+            }
+            else
+            {
+                control?.BeginStage("Self-check", 2, "run(s)");
+                if (SelfCheck(plan.CellDir, tmp, manifest, out betweenDb, plan.Conversions.Count > 0 ? plan.Frequencies : null, control) is { } mismatch)
+                    return Refuse(wrapper, mismatch);
+            }
             if (Cancelled(control)) return Cancel(wrapper);
 
             // The rename. A replaced model is moved aside first and deleted only once the new one is in place.
@@ -486,8 +558,10 @@ public static partial class ModelLibraryExport
                           + (plan.Conversions.Count == 0 ? ""
                              : $" {plan.Conversions.Count} part{(plan.Conversions.Count == 1 ? "" : "s")} converted to S-parameters, {plan.Frequencies.Length} points"
                                + (betweenDb is { } db ? $"; between samples, within {db.ToString("G2", CultureInfo.InvariantCulture)} dB." : "."))
-                          + BuildsNote(built.Builds),
-                Warnings = [.. findings.Where(f => f.Severity != DiagnosticSeverity.Error).Select(f => f.Render()).Concat(built.Warnings)],
+                          + (proof is null ? BuildsNote(built.Builds) : " " + proof.Summary + " " + SourceKeptLineFor(plan.Protect?.SourcePath)),
+                Warnings = [.. findings.Where(f => f.Severity != DiagnosticSeverity.Error).Select(f => f.Render()).Concat(built.Warnings)
+                              .Concat(UnavailableLine(protectedBuilds) is { Length: > 0 } gap ? [gap] : [])],
+                Builds = protectedBuilds, SourcePath = plan.Protect?.SourcePath, CompiledFrom = plan.Protect?.Hash, Proof = proof?.Summary,
             };
         }
         catch (OperationCanceledException) { return Cancel(wrapper); }

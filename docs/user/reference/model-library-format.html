@@ -32,7 +32,7 @@
     <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › Model Library Format</p>
     <nav class="page-nav-top" aria-label="Previous and next page">
       <a class="prev" href="pdk-authoring.html" title="Previous: PDK Authoring"><span class="arrow">‹</span><span class="name">PDK Authoring</span></a>
-      <a class="next" href="gdsfactory-kits.html" title="Next: Using a gdsfactory kit"><span class="name">Using a gdsfactory kit</span><span class="arrow">›</span></a>
+      <a class="next" href="protected-models.html" title="Next: Protected Models"><span class="name">Protected Models</span><span class="arrow">›</span></a>
     </nav>
   </div>
 
@@ -47,7 +47,9 @@
 <li><a href="#clib">library.clib</a></li>
 <li><a href="#cpart">part.cpart</a></li>
 <li><a href="#cnl">The model's netlist</a></li>
+<li><a href="#compiled">Compiled-only models</a></li>
 <li><a href="#hash">PublishedHash</a></li>
+<li><a href="#signing">Signed libraries</a></li>
 <li><a href="#reader">What a reader must do</a></li>
 <li><a href="#example">A complete example</a></li>
 <li><a href="#checking">Checking a library</a></li>
@@ -66,6 +68,8 @@ sits beside it, so a tool that does not read <code>.cnl</code> can take a <code>
 <h2 id="layout">The folder layout</h2>
 <pre><code>&lt;library&gt;/
   library.clib                 optional
+  library.sums                 optional; what a signature covers (see Signed libraries)
+  library.sig                  optional; who signed it, and the signature
   &lt;Category&gt;/&lt;Sub&gt;/            ordinary folders: the palette's sub-menus
     &lt;PartNumber&gt;/              a model folder
       part.cpart               required; its presence makes this a model folder
@@ -74,6 +78,7 @@ sits beside it, so a tool that does not read <code>.cnl</code> can take a <code>
       schematic/&lt;PartNumber&gt;.csch
       symbol/&lt;PartNumber&gt;.csym
       models/                  .va and every file it includes, .cmodel, .sNp, SPICE files a SpiceModel names
+        &lt;rid&gt;/                 one platform's build of a compiled model (osx-arm64, win-x64, …)
       cells/&lt;Sub&gt;/             sub-cell folders the model's schematic places
       docs/                    optional; the palette's ? button opens these
 </code></pre>
@@ -309,6 +314,11 @@ is indexed.</p>
 <td>Written by Export (<a href="#hash">below</a>). Empty or absent in a hand-made model.</td>
 </tr>
 <tr>
+<td><code>Builds</code></td>
+<td>No</td>
+<td>For a <a href="#compiled">compiled-only</a> model, the platforms it has a build for, as runtime identifiers (<code>[&quot;osx-arm64&quot;, &quot;win-x64&quot;]</code>). Absent for a model with source.</td>
+</tr>
+<tr>
 <td><code>Converted</code></td>
 <td>No</td>
 <td>The parts Export replaced by S-parameter files (<a href="#converted">below</a>): each one's instance, the cell that placed it, its type, its file, its parameters as written, the technology's name, the frequency plan and the circuitRF version. Provenance; nothing reads it to run.</td>
@@ -386,9 +396,77 @@ the cell's own defaults. A cell that declares a parameter named <code>Corner</co
 name chooses the corner.</p>
 <p><strong>A model never carries a technology.</strong> A part whose substrate would come from a technology — a microstrip line,
 a placed layout — is an S-parameter file in <code>models/</code> instead.</p>
-<p><strong>Verilog-A needs a compiler wherever it runs.</strong> A <code>.va</code> ships as source; anyone who places the model needs a
-Verilog-A compiler, as for any <a href="components.html#veriloga">Verilog-A part</a>. Precompiled models are not part of the
-format.</p>
+<p><strong>Verilog-A source needs a compiler wherever it runs.</strong> A <code>.va</code> ships as source; anyone who places the model
+needs a Verilog-A compiler, as for any <a href="components.html#veriloga">Verilog-A part</a>. A model can ship compiled
+instead, with no source, as the next section describes.</p>
+<h2 id="compiled">Compiled-only models</h2>
+<p>A model folder may place a compiled model (<code>.osdi</code>) with <strong>no Verilog-A source beside it</strong>. That is how a device
+maker publishes a model whose inside stays private: <a href="protected-models.html">Protected Models</a> says what to compile
+and what such a model still reveals. Nothing else about the folder changes. The <code>.cnl</code> stays plain text and is
+still what runs, and an SnP the model uses stays an ordinary <code>.sNp</code> in <code>models/</code>.</p>
+<p><strong>The <code>.cnl</code> names no platform.</strong> It says <code>File=&quot;models/TSTFET100.osdi&quot;</code>, however many platforms there are builds
+for. Each build sits in a folder named for its platform's runtime identifier:</p>
+<pre><code>TSTFET100/
+  part.cpart                   &quot;Builds&quot;: [&quot;osx-arm64&quot;, &quot;win-x64&quot;, &quot;linux-x64&quot;]
+  TSTFET100.cnl                VerilogA:D1 g d s File=&quot;models/TSTFET100.osdi&quot;
+  models/
+    osx-arm64/TSTFET100.osdi
+    win-x64/TSTFET100.osdi
+    linux-x64/TSTFET100.osdi
+    pkg.s2p
+</code></pre>
+<p>The runtime identifiers are the platforms circuitRF is packaged for: <code>win-x64</code>, <code>win-arm64</code>, <code>win-x86</code>,
+<code>osx-arm64</code>, <code>osx-x64</code>, <code>linux-x64</code> and <code>linux-arm64</code>.</p>
+<p><strong>Resolution.</strong> A reference <code>&lt;dir&gt;/&lt;name&gt;.osdi</code> loads <code>&lt;dir&gt;/&lt;rid&gt;/&lt;name&gt;.osdi</code> for the running platform when
+that file exists, and <code>&lt;dir&gt;/&lt;name&gt;.osdi</code> otherwise. The platform folder comes first because a plain
+<code>&lt;name&gt;.osdi</code> beside it is usually one platform's build copied up. When neither exists, the run is refused with a
+sentence naming the running platform and the platforms the folder does hold builds for. The rule applies to every
+<code>.osdi</code> reference, in a model library or not.</p>
+<p><strong>A model is compiled-only when it is.</strong> A <code>.osdi</code> the <code>.cnl</code> names with no <code>.va</code> or <code>.vams</code> of the same name
+anywhere in the folder is compiled-only. There is no flag to set, because a flag could disagree with the files.</p>
+<p><strong><code>Builds</code></strong> lists the platforms a compiled-only model has a build for. It is a describing fact, like <code>Pins</code>: the
+palette reads it, and <code>check</code> proves it matches the folders. On a platform not in <code>Builds</code> the part is still
+listed, greyed, with <em>No build of this model for linux-arm64. The publisher ships it for: osx-arm64, win-x64,
+linux-x64.</em> Placing it is refused with the same sentence.</p>
+<p><code>check</code> reports, for compiled models:</p>
+<table>
+<thead>
+<tr>
+<th>Finding</th>
+<th>Severity</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Builds</code> names a platform with no build in its folder</td>
+<td>Error</td>
+</tr>
+<tr>
+<td><code>Builds</code> names something that is not one of the runtime identifiers above</td>
+<td>Error</td>
+</tr>
+<tr>
+<td>A build in a platform folder is, by its own header, a build for another platform</td>
+<td>Error</td>
+</tr>
+<tr>
+<td><code>Builds</code> lists platforms and the <code>.cnl</code> places no compiled model</td>
+<td>Error</td>
+</tr>
+<tr>
+<td>A compiled-only model with no <code>Builds</code></td>
+<td>Warning</td>
+</tr>
+<tr>
+<td>A platform folder holds a build that <code>Builds</code> does not list</td>
+<td>Warning</td>
+</tr>
+<tr>
+<td>No build for the running platform</td>
+<td>Info</td>
+</tr>
+</tbody>
+</table>
 <h2 id="hash">PublishedHash</h2>
 <p><code>PublishedHash</code> lets circuitRF say a model was edited after it was exported. It is <code>sha256:</code> followed by the
 lower-case hex SHA-256 of a list of lines, one per file:</p>
@@ -403,6 +481,129 @@ replace every CR LF with LF in its content. A changed line ending is then not an
 </ol>
 <p>A model with no <code>PublishedHash</code> is never reported as edited. A script that makes a library may write the hash
 too; it then gets the same warning when someone edits its output.</p>
+<h2 id="signing">Signed libraries</h2>
+<p>A library can say who published it. <code>PublishedHash</code> shows that a part changed, but anyone who edits a part can
+work out the new hash. A signature cannot be remade without the publisher's private key, so it answers &quot;is this the
+publisher's library, unmodified&quot;. That matters most for a library holding compiled models, which are native code
+that runs on your machine.</p>
+<p><strong>Signing is information. It never stops a run.</strong> An unsigned library behaves as it always has.</p>
+<h3 id="sig-files">The files</h3>
+<p><code>library.sums</code> is the list of what was signed. It is UTF-8 text with LF line endings and one line per signed item:</p>
+<pre><code>sha256:&lt;64 lower-case hex digits&gt;  &lt;path&gt;
+</code></pre>
+<p>with two spaces between the hash and the path.</p>
+<ul>
+<li>Each <strong>model folder</strong> has one line. The hash is the folder's <a href="#hash">PublishedHash</a>, computed by the rule
+above whatever <code>part.cpart</code> says. The path is the folder's, relative to the library with <code>/</code> separators.
+Because that hash covers every file in the folder, every platform's <code>.osdi</code> is covered.</li>
+<li><strong><code>library.clib</code></strong> has one line, path <code>library.clib</code>. Its hash is the SHA-256 of the file's content after every
+CR LF is replaced with LF.</li>
+<li>The lines are sorted by path, comparing bytes, and each ends with LF, the last one included.</li>
+</ul>
+<p><code>library.sig</code> is JSON:</p>
+<pre><code class="language-json">{
+  &quot;Format&quot;: &quot;circuitrf-library-signature&quot;,
+  &quot;Publisher&quot;: &quot;Example Devices&quot;,
+  &quot;PublicKey&quot;: &quot;&lt;base64&gt;&quot;,
+  &quot;Signature&quot;: &quot;&lt;base64&gt;&quot;
+}
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Format</code></td>
+<td>Always <code>circuitrf-library-signature</code>.</td>
+</tr>
+<tr>
+<td><code>Publisher</code></td>
+<td>The publisher. It must equal <code>library.clib</code>'s <code>Publisher</code>.</td>
+</tr>
+<tr>
+<td><code>PublicKey</code></td>
+<td>The signer's ECDSA P-256 public key as a DER-encoded SubjectPublicKeyInfo, base64.</td>
+</tr>
+<tr>
+<td><code>Signature</code></td>
+<td>ECDSA P-256 with SHA-256 over the exact bytes of <code>library.sums</code>, in the IEEE P1363 form (r then s, 32 bytes each, 64 in all), base64.</td>
+</tr>
+</tbody>
+</table>
+<p>To verify a library with no circuitRF code: decode <code>PublicKey</code> and <code>Signature</code>, verify the signature over the bytes
+of <code>library.sums</code> as they are on disk, check that <code>Publisher</code> equals <code>library.clib</code>'s, then compute every line of
+<code>library.sums</code> again from the library and compare.</p>
+<p>The key's <strong>fingerprint</strong> is the SHA-256 of the SubjectPublicKeyInfo bytes, its first 16 bytes written as
+lower-case hex pairs joined by colons (<code>3f:a0:…:9c</code>). That is what a user is shown to decide whether to trust it.</p>
+<h3 id="sig-states">What you see</h3>
+<p>Add Vendor Library and the library's row in <strong>File ▸ Manage Libraries</strong> say what the signature means for you:</p>
+<table>
+<thead>
+<tr>
+<th>The library is</th>
+<th>The row says</th>
+<th><code>check</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Unsigned</td>
+<td>nothing</td>
+<td>nothing</td>
+</tr>
+<tr>
+<td>Signed by a publisher you trust, and unchanged</td>
+<td><em>Signed by Example Devices</em></td>
+<td>Info</td>
+</tr>
+<tr>
+<td>Signed with a key you have not trusted yet</td>
+<td><em>Signed by Example Devices, key 3f:a0:…. Trust this publisher?</em> with <strong>Trust</strong> and <strong>Not now</strong></td>
+<td>Info</td>
+</tr>
+<tr>
+<td>Signed, and some parts changed since</td>
+<td><em>Signed by Example Devices. 2 parts changed since signing: TSTFET100, TSTCAP0402</em></td>
+<td>Warning, one per part</td>
+</tr>
+<tr>
+<td>Signed, and the signature does not verify</td>
+<td><em>The signature does not match this library's contents.</em></td>
+<td>Error</td>
+</tr>
+<tr>
+<td>Signed by a publisher you trusted with a different key</td>
+<td><em>Example Devices was trusted with a different key. This library may not come from them.</em></td>
+<td>Error</td>
+</tr>
+</tbody>
+</table>
+<p>A changed <code>library.clib</code> counts as a signature that does not verify, since it is the publisher's own statement.</p>
+<p><strong>Trust is yours alone.</strong> circuitRF ships no list of trusted publishers. Pressing <strong>Trust</strong> records the publisher's
+name and key fingerprint in your own preferences on this machine, never in a workspace, so a workspace someone
+sends you cannot vouch for its own libraries. A later library naming the same publisher with a different key gets
+the last row of the table. <code>circuitrf check</code> judges against the same preferences and never asks.</p>
+<p>Editing a signed library you received, with <strong>Edit Vendor Model</strong>, shows as <em>changed since signing</em> on its row.
+That is correct, and it is not an error.</p>
+<h3 id="sign">Signing a library</h3>
+<pre><code>circuitrf sign --new-key &lt;private.pem&gt;          make a key; prints its fingerprint
+circuitrf sign &lt;library&gt; --key &lt;private.pem&gt;    write library.sums and library.sig
+</code></pre>
+<ul>
+<li><code>--new-key</code> writes a new P-256 private key as PKCS#8 PEM and prints its path and fingerprint. It never
+overwrites a file.</li>
+<li><code>sign</code> recomputes every model folder's hash, writes <code>library.sums</code>, and signs it. It refuses a library whose
+<code>library.clib</code> names no <code>Publisher</code>, and a library any model folder of which fails <code>check</code> with an error,
+because a signature over a broken library certifies the breakage.</li>
+<li>Both refuse a key path <strong>inside the library folder</strong>. A private key published with a library cannot be taken
+back. Keep it somewhere else.</li>
+</ul>
+<p>Sign again after every change. There is no signing command in the application, because publishing a library is
+the publisher's own build step.</p>
 <h2 id="reader">What a reader must do</h2>
 <ul>
 <li><strong>Find models by <code>part.cpart</code>.</strong> Any folder holding one is a model folder; do not look inside it for more.</li>
@@ -493,6 +694,14 @@ end TSTCAP0402
 <td>The folder no longer matching <code>PublishedHash</code> — edited since exported</td>
 <td>Warning</td>
 </tr>
+<tr>
+<td>A compiled model's builds not matching <code>Builds</code> (<a href="#compiled">above</a>)</td>
+<td>Error, Warning or Info</td>
+</tr>
+<tr>
+<td>A library's signature (<a href="#sig-states">above</a>)</td>
+<td>Info, Warning or Error</td>
+</tr>
 </tbody>
 </table>
 <p>A folder holding model folders is checked to its full depth without <code>--recursive</code>.</p>
@@ -555,6 +764,15 @@ Uniform. It is written into the parameter's default as a <a href="#tolerances">d
 and the row's × add and remove one.</p>
 <p>Both tables write the <strong>source cell's</strong> <code>.ccell</code>, so the next export keeps them; the dialog says so when it has.</p>
 </li>
+<li><p><strong>Compiled models.</strong> <strong>Compile Verilog-A models (ship the build, not the source)</strong> compiles each Verilog-A
+source the cell places with the Verilog-A compiler on this machine and ships the build in <code>models/&lt;rid&gt;/</code>
+instead of the source. It is <strong>off</strong> until you tick it, and greyed, saying why, when the cell places no
+Verilog-A source or no compiler is found. A cell that places a compiled <code>.osdi</code> with no source ships that
+build in <code>models/&lt;rid&gt;/</code> either way. <strong>Builds for other platforms…</strong> lists builds of the compiled model made on
+other platforms, each a platform chosen from the list and a file; <strong>Add build</strong> adds a row. It is greyed when
+the export ships no compiled model. With more than one compiled model, each build is matched to one by its file
+name.</p>
+</li>
 </ul>
 <p>While you fill it in, the dialog lists what will be copied in — every file, every sub-cell, every vendor part
 and the library it came from — and every reason the export cannot go ahead. <strong>Export</strong> stays greyed while any
@@ -583,6 +801,9 @@ at every pin, to 1e-9 relative. A difference is a refusal naming the worst entry
 converted parts is checked harder, as <a href="#converted">below</a> says.</li>
 <li><strong>Renames</strong> the folder into place. A refusal or <strong>Cancel</strong> at any step leaves nothing behind.</li>
 </ol>
+<p>The self-check runs this platform's build only. For a compiled model the message says so: <em>Checked on
+osx-arm64. The other 2 builds were copied, not run.</em> A build listed for another platform is refused when its own
+header says it is for a different one.</p>
 <h3 id="converted">Parts that use the technology</h3>
 <p>A model never carries a technology. MLIN and every other part that takes its substrate from one — the
 microstrip family and the GSG pad, CPWG and SLIN, the broadside pairs, VIA and VIAGND, the MMIC passives and the
@@ -624,6 +845,7 @@ Messages says <em>Exported TSTFET100 to MyLib/Amplifiers (revision 1).</em></p>
 <pre><code>circuitrf export part &lt;cell folder&gt; --library &lt;dir&gt; [--category a/b] [--part PN] [--description …]
     [--kind active|passive] [--value …] [--freq-low … --freq-high …] [--conditions …] [--footprint …]
     [--doc &lt;file&gt;]… [--symbol own|fet|r|c|l|box] [--replace] [--include-vendor-parts]
+    [--compile-models] [--build &lt;rid&gt;=&lt;path&gt;]…
     [--sweep start=… stop=… npts=…|step=… [unit=GHz] [log]]…
     [--library-name … --publisher … --license … --library-version …] [--json]
 </code></pre>
@@ -631,17 +853,20 @@ Messages says <em>Exported TSTFET100 to MyLib/Amplifiers (revision 1).</em></p>
 answers it: <code>--replace</code> for a part already exported, and <code>--include-vendor-parts</code> for a cell that places vendor
 parts, whose libraries' terms then travel with the model. <code>--sweep</code> is one segment of the frequency plan, in
 the <code>sparam</code> directive's own keys (<code>unit=</code> defaults to Hz, as it does there), repeated for more; the default is
-the dialog's. With no part to convert, <code>--sweep</code> is refused rather than ignored. The paths created are printed, and listed in
+the dialog's. With no part to convert, <code>--sweep</code> is refused rather than ignored. <code>--compile-models</code> is the
+Compile Verilog-A models checkbox, off unless given, and each <code>--build &lt;rid&gt;=&lt;path&gt;</code> is one row of Builds for other
+platforms. The paths created are printed, and listed in
 <code>--json</code>. Over MCP it is <code>create what=libraryPart cell=&lt;cell folder&gt; library=&lt;dir&gt;</code>, with <code>sweep</code> a list of
-segments (<code>[&quot;start=1 stop=20 npts=101 unit=GHz&quot;]</code>). What a converted part's model says about itself, such as a
+segments (<code>[&quot;start=1 stop=20 npts=101 unit=GHz&quot;]</code>), <code>compileModels</code> for <code>--compile-models</code>, and <code>builds</code> an object
+of platform to file (<code>{&quot;win-x64&quot;: &quot;builds/TSTFET100.osdi&quot;}</code>), each file inside the server's root. What a converted part's model says about itself, such as a
 junction used outside its calibration, is reported once per part as a warning.</p>
 <p>A library can also be written by hand or by a script: the <a href="#example">example</a> is the smallest one. Check it
-with <code>circuitrf check &lt;library&gt;</code>.</p>
+with <code>circuitrf check &lt;library&gt;</code>, and sign it with <a href="#sign"><code>circuitrf sign</code></a>.</p>
 <p>The MCP server's <code>reference</code> tool serves this page as the topic <code>model-library</code>.</p>
 
 <nav class="page-nav">
   <a class="prev" href="pdk-authoring.html"><span class="dir">Previous</span><span class="name">PDK Authoring</span></a>
-  <a class="next" href="gdsfactory-kits.html"><span class="dir">Next</span><span class="name">Using a gdsfactory kit</span></a>
+  <a class="next" href="protected-models.html"><span class="dir">Next</span><span class="name">Protected Models</span></a>
 </nav>
 </main>
 

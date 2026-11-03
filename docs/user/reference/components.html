@@ -4166,6 +4166,7 @@ glyph, the pins and the parameter table.</p>
 <tr><td>Model</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Which device type inside that file to place. A file usually declares one, and then this can be left blank; when it declares several, pick the one you want.</td></tr>
 <tr><td>Pins</td><td><code>2</code></td><td>&mdash;</td><td>&mdash;</td><td>How many terminals the symbol draws. It is the model&#39;s own terminal count, filled in from the file — change it only if you are drawing before choosing one.</td></tr>
 <tr><td>OpVars</td><td><code>true</code></td><td>&mdash;</td><td>&mdash;</td><td>Whether this instance publishes the operating-point variables its model computes — transconductances, capacitances, node temperatures. On by default; turn it off on devices you are not studying to keep a swept result small.</td></tr>
+<tr><td>Symbol</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The symbol drawn: blank is the FET symbol when the model&#39;s terminal names say which is the gate, drain and source, and the box otherwise; VerilogA is the box; a transistor symbol&#39;s name, or a .csym path, chooses one. Its pins take the model&#39;s terminals by name.</td></tr>
 </tbody></table>
 <h3 id="composedfet">Composed FET model (ComposedFET)</h3>
 <figure class="symbol"><span class="frame">

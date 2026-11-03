@@ -150,6 +150,12 @@ public static class FigureCatalog
             "A design-rule check on the MMIC starter process: a 2 um neck breaking minimum width and "
           + "a 2 um gap breaking minimum spacing, listed in the DRC panel and marked on the artwork."),
 
+        new("export-compile-netlist", DocExportFixtures.ExportCompileNetlist, 940, 1310,
+            WindowFrame.Titled("Export to Library"),
+            "Export to Library with Compile netlist ticked: the cell's R, C, sub-cell inductor and ComposedFET are compiled "
+          + "into one module, its S-parameter file stays outside in the wrapper, and the proof's default bias points are "
+          + "listed under the bias field."),
+
         new("manage-pdks", DocVerifyFixtures.ManagePdks, 720, 440,
             WindowFrame.Titled("Manage Libraries"),
             "Manage Libraries: the workspace's kit and vendor-library references, what each one resolved to, how many parts "

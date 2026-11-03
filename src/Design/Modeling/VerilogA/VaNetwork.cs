@@ -32,9 +32,10 @@ internal sealed class VaNetwork
     }
 
     public sealed record Element(string Name, string Type, string A, string B, string? Value, string? Inductor1 = null,
-                                 string? Inductor2 = null)
+                                 string? Inductor2 = null, string? Branch = null)
     {
-        public string BranchName => "br_" + Name;
+        /// <summary>An inductor's branch: <see cref="Branch"/> when given, else <c>br_</c> and its name.</summary>
+        public string BranchName => Branch ?? "br_" + Name;
     }
 
     public IReadOnlyList<Variable> Variables { get; }
@@ -194,10 +195,18 @@ internal sealed class VaNetwork
     }
 
     /// <summary>The contributions, one or more per element, each with the element's name in a comment.</summary>
-    public IEnumerable<string> Contributions()
+    public IEnumerable<string> Contributions() => Contributions(Elements);
+
+    /// <summary>
+    /// The contributions of <paramref name="elements"/> — the one writer for an R, C, L, Mutual or Short, used for a
+    /// composed FET's network and for a compiled netlist (brief vendorlib-16) alike. A Mutual's <c>Inductor1</c> and
+    /// <c>Inductor2</c> name elements of the same list, whose branch it couples.
+    /// </summary>
+    public static IEnumerable<string> Contributions(IReadOnlyList<Element> elements)
     {
-        var coupled = Elements.Where(e => e.Type == "Mutual").ToList();
-        foreach (var e in Elements)
+        var coupled = elements.Where(e => e.Type == "Mutual").ToList();
+        var branchOf = elements.Where(e => e.Type == "L").ToDictionary(e => e.Name, e => e.BranchName, StringComparer.Ordinal);
+        foreach (var e in elements)
             switch (e.Type)
             {
                 case "R":
@@ -212,7 +221,7 @@ internal sealed class VaNetwork
                     {
                         string? other = m.Inductor1 == e.Name ? m.Inductor2 : m.Inductor2 == e.Name ? m.Inductor1 : null;
                         if (other is not null)
-                            yield return $"V({e.BranchName}) <+ {Paren(m.Value!)}*ddt(I(br_{other}));   // {m.Name}, coupling {e.Name} to {other}";
+                            yield return $"V({e.BranchName}) <+ {Paren(m.Value!)}*ddt(I({branchOf.GetValueOrDefault(other, "br_" + other)}));   // {m.Name}, coupling {e.Name} to {other}";
                     }
                     break;
                 case "Short":

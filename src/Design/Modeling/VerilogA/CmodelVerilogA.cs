@@ -117,6 +117,16 @@ public static class CmodelVerilogA
         => Render(model, options, Convert.ToHexStringLower(SHA256.HashData(CmodelFile.ModelJson(model)))).Text;
 
     /// <summary>
+    /// The same module as <see cref="Write"/>, as a FRAGMENT to inline into a larger module (brief vendorlib-16
+    /// R-vl16-1b): every name it declares prefixed by <paramref name="prefix"/>, and each name <paramref name="bind"/> maps
+    /// — its terminals, its ground — bound to the host's node. One writer, two outputs: this renders the standalone module
+    /// and renames it, so the equations are never written twice, and every refusal <see cref="Write"/> makes (a table
+    /// constituent above all) is made here unchanged.
+    /// </summary>
+    internal static VaFragment Fragment(ComposedModel model, VerilogAOptions options, string prefix, IReadOnlyDictionary<string, string> bind)
+        => VaFragment.From(Write(model, options), prefix, bind);
+
+    /// <summary>
     /// What blocks a Verilog-A export of the document's fitted constituents, before anything is assembled: one line naming
     /// every table — <c>Id and Qg are tables; Verilog-A export needs ANN or equation constituents.</c> — or "" when there
     /// is none. The Export step shows it; the writer's own refusal names each table's field.

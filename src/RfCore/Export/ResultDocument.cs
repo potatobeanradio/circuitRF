@@ -201,6 +201,8 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         SnpReportJson? Snp = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        ExportPartReportJson? ExportPart = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         string? Summarized = null);
 
     /// <summary>
@@ -901,6 +903,16 @@ namespace RfCore.Export
     /// <param name="Z0PerPort">Per-port references when the file states them.</param>
     /// <param name="HasDcPoint">True when a frequency sample is at 0 Hz.</param>
     /// <param name="Plotted">The terms drawn, as named on the plots (<c>S21</c>, or <c>S(10,1)</c> from ten ports).</param>
+    /// <summary><c>export part --compile-netlist</c> (brief vendorlib-16 R-vl16-6c): where the generated source went, the
+    /// hash every platform's build is compiled from, the proof's verdict, and one row per platform. A CI job that needs every
+    /// platform tests <see cref="Builds"/>; a missing platform is not an export failure.</summary>
+    public sealed record ExportPartReportJson(string? Source, string? CompiledFrom, string? Proof, IReadOnlyList<ExportBuildJson> Builds);
+
+    /// <param name="State"><c>built and checked</c>, <c>built, not run on this machine</c> or <c>not built</c>.</param>
+    /// <param name="Reason">For a platform not built, the compiler's own first error line.</param>
+    /// <param name="Fix">For a platform not built, what would build it, or that nothing known would.</param>
+    public sealed record ExportBuildJson(string Rid, string State, string Reason, string Fix);
+
     public sealed record SnpReportJson(
         string                   File,
         int                      Ports,

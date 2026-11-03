@@ -140,12 +140,14 @@ public partial class ExportToLibraryDialog : Window
             if (!replace) return;
         }
         var result = await _vm.Export(replace);
+        // A protected export stays open to show its Builds table (brief vendorlib-16 R-vl16-6a); Close returns it.
+        if (result.Succeeded && result.Builds.Count > 0) { _vm.ShowBuilds(result); return; }
         if (result.Succeeded) Close(result);
     }
 
     private void OnCancel(object? sender, RoutedEventArgs e)
     {
         if (_vm is { IsExporting: true }) { _vm.Cancel(); return; }
-        Close(null);
+        Close(_vm?.Finished);
     }
 }

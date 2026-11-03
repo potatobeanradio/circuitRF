@@ -120,6 +120,14 @@ public sealed record ModelPartManifest
     /// and check proves it matches <c>models/&lt;rid&gt;/</c>. Absent for a model with source.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public List<string>? Builds { get; init; }
+    /// <summary>Compile netlist (brief vendorlib-16 R-vl16-2d): <c>sha256:&lt;hex&gt;</c> of the generated source every
+    /// platform's build was compiled from. A second platform's build is added only when its source hashes the same.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? CompiledFrom { get; init; }
+    /// <summary>The platforms whose build the proof ran on (R-vl16-2i); a build listed in <see cref="Builds"/> and not
+    /// here was compiled elsewhere and never run by its publisher.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? Proved { get; init; }
 
     [JsonExtensionData] public Dictionary<string, JsonElement>? Unknown { get; init; }
 

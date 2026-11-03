@@ -78,6 +78,7 @@ public partial class WorkspaceViewModel
 
         Messages.Info(result.Message ?? "");
         foreach (string w in result.Warnings) Messages.Warning($"Export to Library — {w}");
+        foreach (var b in result.Builds) Messages.Info($"Export to Library — build {b.Describe()}");
 
         string libraryRoot = vm.LibraryPath.Trim();
         if (vm.AddToWorkspace && !vm.IsReferenced(libraryRoot) && CurrentWorkspacePath is { } cwsPath && wsRoot is not null)

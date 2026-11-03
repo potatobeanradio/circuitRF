@@ -111,6 +111,7 @@ using CircuitRF.Design.Layout;
 //   --add-vendor-library <folder>                             Add Vendor Library's confirm step (<out>.dialog.png)
 //   --export-to-library <cell> [--export-library <dir>]       Export to Library's dialog on a cell (<out>.dialog.png)
 //       [--export-build <rid>=<path>]…                        with rows of Builds for other platforms
+//       [--export-protect [run]]                              Compile netlist ticked; run also exports and shows Builds
 //   --yield <csch> --generate-corners                         the Yield panel's Generate Corners dialog (<out>.dialog.png)
 //   --import-schematic <file>                                 File ▸ Import ▸ Schematic…'s dialog on a design file (<out>.dialog.png)
 //   --repoint-question <part>                                 Copy to Workspace…'s re-point question (<out>.dialog.png)
@@ -167,6 +168,7 @@ string? palette = null, paletteCategory = null, paletteSearch = null, schematic 
 bool parameterDialog = false;
 string? archive = null, manageLibraries = null, addVendorLibrary = null, exportToLibrary = null, exportLibrary = null, importSchematic = null;
 var exportBuilds = new List<(string Rid, string Path)>();
+string? exportProtect = null;
 string? repointQuestion = null;
 // --project-tree <workspace> [--reveal <file>] [--filter-open] [--filter-all-off]: the Workspace Tree panel; --reveal runs
 // a document tab's Reveal in Workspace Tree on that file, --filter-open opens the category filter's flyout.
@@ -277,6 +279,10 @@ for (int i = 0; i < args.Length; i++)
             if (eq > 0) exportBuilds.Add((spec[..eq], Path.GetFullPath(spec[(eq + 1)..])));
             break;
         }
+        // brief vendorlib-16: Compile netlist ticked; "run" also runs the export, so the Builds table is drawn.
+        case "--export-protect":
+            exportProtect = i + 1 < args.Length && args[i + 1] == "run" ? args[++i] : "tick";
+            break;
         case "--import-schematic" when i + 1 < args.Length: importSchematic = Path.GetFullPath(args[++i]); break;
         case "--repoint-question" when i + 1 < args.Length: repointQuestion = args[++i]; break;
         // brief-gdf-2: the gdsfactory views — trust | pick | interpreter | report | prompt | permissions — with the
@@ -1784,11 +1790,35 @@ void OpenExportToLibrary(string cell, string? library)
         vm.BuildRows[^1].Rid = rid;
         vm.BuildRows[^1].Path = path;
     }
+    if (exportProtect is not null) vm.CompileNetlist = true;
     _ = CircuitRF.Ui.Views.Dialogs.ExportToLibraryDialog.AskAsync(host, vm);
     Pump();
     // The plan's continuation runs on this dispatcher, so it is pumped for, never waited on.
     for (int k = 0; k < 1500 && (vm.IsPlanning || !vm.Replanned.IsCompleted); k++) { Pump(); Thread.Sleep(20); }
     Pump();
+    if (exportProtect == "run" && vm.CanExport)
+    {
+        var running = vm.Export(replace: false);
+        for (int k = 0; k < 6000 && !running.IsCompleted; k++) { Pump(); Thread.Sleep(20); }
+        var done = running.Result;
+        if (done.Succeeded && done.Builds.Count > 0) vm.ShowBuilds(done);
+        Console.WriteLine($"export: {(done.Succeeded ? done.Message : done.Refusal)}");
+        Pump();
+    }
+    foreach (var l in vm.ProtectLines) Console.WriteLine($"  protect: {l}");
+    // The Compile netlist rows sit low in the left column: bring them into view for the capture.
+    if (exportProtect is not null && TopDialog() is { } shown
+        && shown.GetVisualDescendants().OfType<Avalonia.Controls.CheckBox>().FirstOrDefault(c => c.Name == "CompileNetlistBox") is { } box)
+    {
+        box.BringIntoView();
+        Pump();
+        if (box.FindAncestorOfType<Avalonia.Controls.ScrollViewer>() is { } sv)
+        {
+            if (exportProtect == "run") sv.ScrollToEnd();
+            else sv.Offset = sv.Offset.WithY(Math.Max(0, sv.Offset.Y + 120));
+        }
+        Pump();
+    }
     Console.WriteLine($"plan: {vm.RefusalLines.Count} refusal(s), {vm.CopyLines.Count} copy line(s), symbol {vm.CurrentSymbol?.Value}, can export {vm.CanExport}");
     foreach (var r in vm.RefusalLines) Console.WriteLine($"  refusal: {r}");
 }

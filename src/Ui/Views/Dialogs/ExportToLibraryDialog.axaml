@@ -212,6 +212,37 @@
                     <TextBlock Text="{Binding BuildsNote}" FontSize="11" TextWrapping="Wrap" Opacity="0.6"/>
                 </StackPanel>
 
+                <!-- Compile netlist (brief vendorlib-16 R-vl16-2a). Always shown, greyed with a sentence when no compiler is
+                     found; the checkbox starts unticked. Ticked, the list on the right becomes what is compiled, what stays
+                     outside and the terminal count, and the refusals join the list below it. -->
+                <TextBlock Text="Protected model" FontWeight="SemiBold" FontSize="12"/>
+                <CheckBox x:Name="CompileNetlistBox" IsChecked="{Binding CompileNetlist}" IsEnabled="{Binding IsCompileNetlistEnabled}"
+                          ToolTip.Tip="Compile the cell's netlist into one Verilog-A module and publish the compiled build in place of the cell. The source is written outside the library.">
+                    <TextBlock Text="Compile netlist (protected model)" FontSize="12"/>
+                </CheckBox>
+                <TextBlock Text="{Binding CompileNetlistNote}" FontSize="11" TextWrapping="Wrap" Opacity="0.8"/>
+                <StackPanel Spacing="4" IsVisible="{Binding CompileNetlist}">
+                    <Grid ColumnDefinitions="90,*">
+                        <TextBlock Grid.Column="0" Text="Proof bias" FontSize="12" VerticalAlignment="Top" Margin="0,4,0,0"/>
+                        <TextBox Grid.Column="1" Text="{Binding CheckBiasText}" FontSize="12" AcceptsReturn="True" MinHeight="44"
+                                 PlaceholderText="g=-0.5 d=5"/>
+                    </Grid>
+                    <TextBlock Text="{Binding CheckBiasNote}" FontSize="11" TextWrapping="Wrap" Opacity="0.6"/>
+                </StackPanel>
+                <!-- The Builds table (R-vl16-6a), once a protected export has run. -->
+                <StackPanel Spacing="2" IsVisible="{Binding HasBuilds}">
+                    <TextBlock Text="Builds" FontWeight="SemiBold" FontSize="12"/>
+                    <TextBlock Text="{Binding UnavailableLine}" FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource CrfWarningBrush}"
+                               IsVisible="{Binding UnavailableLine, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                    <ItemsControl x:Name="BuildsResult" ItemsSource="{Binding BuildLines}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="x:String">
+                                <SelectableTextBlock Text="{Binding}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,4"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+
                 <Grid ColumnDefinitions="90,*,Auto">
                     <TextBlock Grid.Column="0" Text="Documents" FontSize="12" VerticalAlignment="Top" Margin="0,4,0,0"/>
                     <Border Grid.Column="1" BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="1" CornerRadius="3" MinHeight="44">
@@ -241,7 +272,7 @@
                 </Button>
             </StackPanel>
 
-            <TextBlock Grid.Row="1" Text="Copied into the model" FontWeight="SemiBold" FontSize="12" Margin="0,12,0,4"/>
+            <TextBlock Grid.Row="1" Text="{Binding CopiedHeader}" FontWeight="SemiBold" FontSize="12" Margin="0,12,0,4"/>
             <Border Grid.Row="2" BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="1" CornerRadius="3">
                 <ScrollViewer>
                     <StackPanel Margin="6,4">
@@ -277,7 +308,7 @@
         <Grid Grid.Row="1" Grid.ColumnSpan="3" ColumnDefinitions="*,Auto" Margin="0,12,0,0">
             <TextBlock Grid.Column="0" Text="{Binding Status}" FontSize="12" TextWrapping="Wrap" VerticalAlignment="Center" Opacity="0.8"/>
             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
-                <Button Content="Cancel" Width="80" HorizontalContentAlignment="Center" IsCancel="True" Click="OnCancel"/>
+                <Button Content="{Binding CancelLabel}" Width="80" HorizontalContentAlignment="Center" IsCancel="True" Click="OnCancel"/>
                 <Button Content="Export" Width="80" HorizontalContentAlignment="Center" IsDefault="True"
                         IsEnabled="{Binding CanExport}" Click="OnExport"/>
             </StackPanel>

@@ -145,7 +145,7 @@ public sealed partial class ExportToLibraryViewModel : ObservableObject
 
     public ExportPlan? Plan { get; private set; }
 
-    public bool CanExport => !IsExporting && !IsPlanning && Plan is { Refusals.Count: 0 };
+    public bool CanExport => !IsExporting && !IsPlanning && Plan is { Refusals.Count: 0 } && Finished is null;
 
     private int _generation;
 
@@ -171,11 +171,12 @@ public sealed partial class ExportToLibraryViewModel : ObservableObject
         // The plan is stated only while something is converted: with nothing to sample, a plan is a refusal.
         Sweep = IsFrequencyPlanEnabled ? [.. FrequencySegments.Select(r => r.Build())] : null,
         CompileModels = CompileModels, Builds = BuildsOption(),
+        CompileNetlist = CompileNetlist, CheckBias = CheckBiasPoints(),
         LibraryName = LibraryName, Publisher = Publisher, LibraryVersion = LibraryVersion, License = License,
     };
 
     /// <summary>Re-asks <see cref="ModelLibraryExport.Plan"/> off the UI thread; the latest answer wins.</summary>
-    public void Replan() => _ = ReplanAsync();
+    public void Replan() { if (!_planningOff) _ = ReplanAsync(); }
 
     public Task Replanned { get; private set; } = Task.CompletedTask;
 
@@ -202,7 +203,7 @@ public sealed partial class ExportToLibraryViewModel : ObservableObject
         }, scheduler);
     }
 
-    private void Apply(ExportPlan? plan, string? error)
+    internal void Apply(ExportPlan? plan, string? error)
     {
         Plan = plan;
         IsPlanning = false;
@@ -222,7 +223,10 @@ public sealed partial class ExportToLibraryViewModel : ObservableObject
             if (FrequencyLow.Trim().Length == 0 || FrequencyLow == _filledLow) { _filledLow = low; FrequencyLow = low; }
             if (FrequencyHigh.Trim().Length == 0 || FrequencyHigh == _filledHigh) { _filledHigh = high; FrequencyHigh = high; }
         }
-        foreach (var c in plan.Copies) CopyLines.Add(c.Describe());
+        // Brief vendorlib-16: compiled, the cell's topology is not copied — the list says what is compiled and what stays.
+        if (plan.ProtectLines.Count > 0) foreach (string l in plan.ProtectLines) CopyLines.Add(l);
+        else foreach (var c in plan.Copies) CopyLines.Add(c.Describe());
+        OnPropertyChanged(nameof(CopiedHeader));
         if (plan.VendorParts.Any())
             CopyLines.Add("Vendor parts are copied into the model, and their libraries' terms travel with it.");
 

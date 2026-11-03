@@ -348,7 +348,7 @@ public static class VerilogASourceCompiler
               + $"Verilog-A source could not be compiled: {ex.Message}");
         }
 
-        RunCompiler(compiler, source, output, included);
+        RunCompiler(compiler, source, output, included, []);
 
         note = $"Compiled '{Path.GetFileName(source)}' with the Verilog-A compiler {compiler.HowFound} "
              + $"('{compiler.Command}') to '{output}'. It will be reused until the source changes.";
@@ -524,8 +524,36 @@ public static class VerilogASourceCompiler
     /// here so a compiler that wedges is a refusal rather than a hung application.</summary>
     private static readonly TimeSpan CompileTimeout = TimeSpan.FromMinutes(5);
 
+    /// <summary>
+    /// Compiles <paramref name="sourcePath"/> to exactly <paramref name="output"/>, bypassing the cache — a build made to
+    /// be SHIPPED (brief vendorlib-16 R-vl16-2g, -2h). <paramref name="target"/> is the compiler's target triple, null for
+    /// this machine; <paramref name="targetCpu"/> is passed as the CPU option, and a shipped build passes
+    /// <c>generic</c> because the compiler's default is the instructions of the machine doing the compiling, which can
+    /// fault on a user's older processor. The compile-on-place path (<see cref="Compile(string, out string)"/>) passes
+    /// neither and is unchanged.
+    /// </summary>
+    /// <exception cref="ExternalDeviceException">No compiler, or the compiler refused; the refusal carries its own text
+    /// verbatim.</exception>
+    public static void Build(string sourcePath, string output, string? target, string targetCpu = "generic")
+    {
+        string source = Path.GetFullPath(sourcePath.Trim());
+        if (!File.Exists(source))
+            throw new ExternalDeviceException($"The Verilog-A source '{source}' does not exist.");
+        var compiler = VerilogACompilerDiscovery.Find(out var rejected)
+            ?? throw new ExternalDeviceException(VerilogACompilerDiscovery.DescribeFailure(rejected));
+        var included = new List<string>();
+        SourceAndIncludes(source, included);
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(output))!);
+        var extra = new List<string>();
+        if (target is { Length: > 0 }) { extra.Add("--target"); extra.Add(target); }
+        extra.Add("--target_cpu");
+        extra.Add(targetCpu);
+        RunCompiler(compiler, source, Path.GetFullPath(output), included, extra);
+    }
+
     private static void RunCompiler(
-        VerilogACompilerInfo compiler, string source, string output, IReadOnlyList<string> included)
+        VerilogACompilerInfo compiler, string source, string output, IReadOnlyList<string> included,
+        IReadOnlyList<string> extraArguments)
     {
         var info = new ProcessStartInfo(compiler.Command)
         {
@@ -541,6 +569,7 @@ public static class VerilogASourceCompiler
         info.ArgumentList.Add(source);
         info.ArgumentList.Add("-o");
         info.ArgumentList.Add(output);
+        foreach (string a in extraArguments) info.ArgumentList.Add(a);
 
         // THE SOURCE'S OWN DIRECTORY IS THE FIRST INCLUDE PATH. A model that compiles from its own
         // folder and fails from circuitRF is this, every time — the includes beside it resolve

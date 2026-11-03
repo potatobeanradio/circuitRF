@@ -859,6 +859,20 @@ internal static class ToolCatalog
                           + "{\"win-x64\": \"builds/TSTFET100.osdi\"}. Each is copied into models/<rid>/, not run; this platform's "
                           + "build is the one the export runs. Identifiers: win-x64, win-arm64, win-x86, osx-arm64, osx-x64, "
                           + "linux-x64, linux-arm64. With several compiled models, a build is matched to one by its file name."),
+                        // brief vendorlib-16 — Compile netlist.
+                        new("compileNetlist",     "--compile-netlist",      OptKind.Flag,
+                            "Compile the whole cell into ONE protected Verilog-A module and publish the compiled build in place of "
+                          + "the cell: R, C, L, Mutual, Short and ComposedFET go inside; SnPs, transmission lines, technology parts and "
+                          + "external models stay outside in a wrapper netlist, each joining net an extra terminal. The generated source "
+                          + "is written outside the library (sourceOut). Every platform the compiler can reach is tried; the export is "
+                          + "proved against the cell (DC currents and Y at three frequencies, 1e-6 relative) or nothing is written. Off "
+                          + "unless true; needs a Verilog-A compiler."),
+                        new("sourceOut",          "--source-out",           OptKind.Path,
+                            "With compileNetlist: where the generated .va goes. Default protected-source/<Part>/<Part>.va beside the "
+                          + "workspace. Refused inside the library."),
+                        new("checkBias",          "--check-bias",           OptKind.StrRepeat,
+                            "With compileNetlist: one bias point of the proof per item, 'g=-0.5 d=5' (pins not named are at 0 V). "
+                          + "Default: every pin at 0 V, then each pair of pins at +1 V and -1 V across them."),
                         // brief vendorlib-12 R-vl12-4 — after a model's .csch was edited by writing it.
                         new("refresh",            "--refresh",              OptKind.Flag,
                             "cell is a library MODEL folder whose schematic was edited in place: copy in what it newly references, "

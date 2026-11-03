@@ -26667,3 +26667,70 @@ Designs F1-F7 added to `testdata/schematic-to-layout/` (drawn from `.cnl` throug
 F7's footprints are cell folders under `parts/` with a `.ccell` terminal map), plus `F2b-three-shunts`, which is not in
 `designs.txt` because its third capacitor is placed in the row by design. Gate: `SdlDesignSetTests`,
 `FootprintChainTests` (8).
+
+## Compile netlist: a cell published as one compiled module (brief vendorlib-16, 2026-11-03)
+
+`Protect/ProtectPartition` flattens the cell's extracted `.cnl` and sorts each element by one table;
+`Protect/NetlistVerilogA` writes one module; `Protect/ProtectCheck` is the proof; `ModelLibraryExport.Protect.cs` is
+where Export calls them. Off unless asked (`ExportOptions.CompileNetlist`, `--compile-netlist`, the dialog's
+checkbox).
+
+**A compiled module's own `ground` node is not the circuit's ground when it runs here.** The first mixed cell
+(R, C, a sub-cell L, a ComposedFET with its source on ground, an SnP outside) failed the proof with Y21 of the
+opposite sign at zero bias. The same FET's standalone module, edited only to take its source from an internal
+`electrical s; ground s;` instead of its `s` terminal, failed identically; with the source a terminal tied to node 0
+it matched to 2e-13. So the writer never declares `ground`: when anything inside touches node 0, ground is the
+module's LAST terminal and the wrapper ties it to `0`. Not chased into the worker; anything else that compiles a
+module with an internal `ground` and relies on it (`CmodelVerilogA` declares one when a network uses net `0`) is
+worth checking against this.
+
+**A function's own names must never be bound to a host node.** The ANN continuation functions declare a local `s`,
+the FET's source terminal's name. Renaming a fragment by token mapped every `s` to the host's ground node, inside the
+functions too. `VaFragment` renames each function's arguments and locals in that function's own scope, under a prefix
+of their own (`<prefix>l_`), and only the function's name and the module names it reads are mapped as the module
+maps them. The separate prefix also keeps a local from sharing the name of a module variable the fragment declares
+BEFORE its functions (the standalone module declares them after); that order alone was not shown to matter, but the
+names now cannot meet.
+
+**Parameters below the cell are `localparam`s, not variables.** A composed FET's analog functions read module
+parameters (equation coefficients, `Gx_*`), and a Verilog-A function cannot read a module variable, so a sub-cell's
+parameter, an override and the FET's own instance values are `localparam` expressions of the cell's parameters. The
+compiler accepts `localparam` and a function reads it. Internal names are opaque (`crf_n*`, `crf_k*`, `crf_u<k>_*`);
+the source's comments say what each is.
+
+**Site units follow the elaborator.** A value's site unit is applied as `Evaluator.EvalAtSite` applies it — var-unit-
+wins decided by `Evaluator.IsUnitBearing` against a `Scope` built as `Elaborator.BuildCellScope` builds one (an
+override bound as `__resolved__`, unit-less), and otherwise the unit's scale on the result — so the module computes
+the number a run computes. A native flat netlist of the test cell matched the cell exactly, which is what pinned the
+mismatch above on the module rather than on this.
+
+**Two traps on the way.** (1) The copy's netlist must be partitioned with NO base folder: `CnlReader` rebases a
+relative `File=` against its source directory, and the wrapper then carried absolute paths that `check` refuses as
+leaving the folder. (2) `NetlistSchematic.Build` given the schematic folder rewrote the wrapper's model-relative
+`models/line.s2p` as `../models/line.s2p`; it is given no folder.
+
+**The proof's floor is near the solver's.** A dangling internal node differed by 3e-12 S between the cell and a
+module (a floating node's conductance floor), against the brief's 1e-12 S floor. A cell with a node that is
+connected to nothing inside could trip the proof on this alone.
+
+### Cross-platform builds, measured (R-vl16-5)
+
+Host: macOS on Apple silicon; a Verilog-A compiler built locally for that host. Every compile ~0.1-1.5 s.
+
+| Target | Result as installed | What was tried |
+|---|---|---|
+| osx-arm64 | built; loads and proves (the native route) | — |
+| osx-x64, linux-x64, win-x64 | not built: the compiler crashes, "No available targets are compatible with triple x86_64-…" in its crash log | this compiler build has no x86-64 code generator; a build with one was not available here |
+| win-x86 | impossible: the compiler's `--supported-targets` has no 32-bit Windows triple | — |
+| linux-arm64 | not built: the compiler runs `clang <objects> -o out --no-add-needed --hash-style=gnu -shared` (found by putting a logging `clang` first on `PATH`), and the system `clang` rejects the GNU linker flags | an LLVM ELF linker (`ld.lld`) put on `PATH` under the name `clang` links an ELF64 aarch64 shared object. It has no `DT_NEEDED` for libc/libm, so its `malloc`/`exp`/… resolve against the loading process. **Not run**: no Linux machine or container runtime here |
+| win-arm64 | not built: "linker not found" — it runs `link.exe` from `PATH` | `lld-link` as `link.exe` then needs `msvcrt.lib` (made with `llvm-dlltool` from a `.def` of the C functions a module uses, found via `LIB`) and `_DllMainCRTStartup` (`/noentry` passed by a wrapper script). That links a PE32+ arm64 DLL exporting the `OSDI_*` symbols. **Not run**: the Windows VM was not reachable from this session |
+
+Note the compiler exits 0 on a failed link and writes nothing; `VerilogASourceCompiler` already treats a missing
+output as a refusal, which is what catches it.
+
+**Recommendation.** Export does nothing automatic beyond trying each target as installed (5d: nothing proved to
+load). The page tells a maker the per-platform route — run the same export on each platform into one library — and
+states what was measured. Worth a follow-up, in this order: load the two linked arm64 builds on Linux and on the
+Windows VM with `osdi-worker`; if they load, a linker setting beside the compiler's in Settings ▸ Security &
+Permissions (the brief's "follow-up brief", not this one) plus the import-library recipe; separately, a compiler
+build with the x86-64 code generator for the three x86-64 targets. win-x86 stays impossible with this compiler.
