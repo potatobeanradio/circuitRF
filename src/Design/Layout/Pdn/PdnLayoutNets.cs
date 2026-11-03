@@ -252,8 +252,10 @@ public sealed record PdnSchematicNets(
             var ports = extracted.Library.Find(inst.Reference)?.Ports;
             drawn.TryGetValue(who, out var component);
             byInstance[who] = new PdnSchematicPart(
-                ports is { Count: > 0 } p && p.Count == inst.NetBindings.Count ? [.. p] : [],
-                inst.NetBindings,
+                // An SnP's reference terminal is its last pin and its net is kept apart from the ports' (brief-sdl-3):
+                // put back, a pad on it is named like any other.
+                ports is { Count: > 0 } p && p.Count == TerminalNets.Of(inst).Count ? [.. p] : [],
+                TerminalNets.Of(inst),
                 ValueOf(component),
                 component?.Footprint,
                 component?.TypeLabelText(),

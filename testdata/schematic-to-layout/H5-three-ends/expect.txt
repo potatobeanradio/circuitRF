@@ -1,0 +1,10 @@
+# Three MLIN ends on one net and no tee: not joined, and reported. No tee is inserted (series rule S2), so the
+# net stays open in LVS too.
+Info ML1 added
+Info ML2 added
+Info ML5 added
+Warning P1 no layout view — skipped
+Warning P2 no layout view — skipped
+Warning - Net n1 joins three line ends (ML1.2, ML2.1, ML5.1); a junction part (MTEE, MCROSS) is needed to place it
+Info - Joined 0 of 1 connection; 1 left as ratsnest
+lvs lvs.net.open

@@ -16,3 +16,12 @@ F4-wilkinson SDL-2
 F5-bias-tee SDL-2
 F6-board-footprint SDL-2
 F7-three-pad SDL-2
+H1-stepped-lowpass SDL-3
+H2-coupled-bandpass SDL-3
+H3-layer-change SDL-3
+H4-taper SDL-3
+H5-three-ends SDL-3
+H6-long-curve-chain SDL-3
+H7-self-crossing SDL-3
+H6b-u-turn-ring SDL-3
+F7b-snp-reference SDL-3

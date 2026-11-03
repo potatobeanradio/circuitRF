@@ -51,7 +51,68 @@ public static partial class SchematicLayoutPlanner
     /// rule about per-instance noise, and a run that deliberately created nothing and said so is the
     /// one case where silence is indistinguishable from a broken command.</para>
     /// </summary>
-    public sealed record ReportLine(string InstanceName, string Text, ReportSeverity Severity);
+    public sealed record ReportLine(string InstanceName, string Text, ReportSeverity Severity)
+    {
+        /// <summary>Which group of the connected-placement report the line belongs to (brief-sdl-3 R-sdl3-2), or
+        /// <see cref="ReportKind.General"/> for every other line, which is posted as it always was.</summary>
+        public ReportKind Kind { get; init; }
+
+        /// <summary>The schematic ids the line is about — what a click on it selects in both views. Empty for a
+        /// line that names no part.</summary>
+        public IReadOnlyList<string> Ids { get; init; } = [];
+
+        // Value equality over the ids too: the plan-equivalence gate compares two runs' lines.
+        public bool Equals(ReportLine? other) =>
+            other is not null && InstanceName == other.InstanceName && Text == other.Text && Severity == other.Severity
+            && Kind == other.Kind && Ids.SequenceEqual(other.Ids, StringComparer.Ordinal);
+
+        public override int GetHashCode() => HashCode.Combine(InstanceName, Text, Severity, Kind, Ids.Count);
+    }
+
+    /// <summary>The groups the connected-placement report is posted in (brief-sdl-3 R-sdl3-2), in that order.</summary>
+    public enum ReportKind
+    {
+        /// <summary>Any other line: added, updated, renamed, the run's summary.</summary>
+        General,
+        /// <summary>A loop, joint, bridging part or side-on pad that does not close (S1).</summary>
+        LoopGap,
+        /// <summary>A net or connection the placement cannot join, and why.</summary>
+        Unjoined,
+        /// <summary>Copper of different nets that overlaps or touches (<see cref="PlacementOverlaps"/>).</summary>
+        Overlap,
+        /// <summary>A note about how one part's pins were read: a pad with nothing to face away from, a pin with no
+        /// copper under it or no stated width, a third pad at one joint.</summary>
+        FootprintNote,
+    }
+
+    /// <summary>One group of the connected-placement report: its heading, its severity (the worst of its lines)
+    /// and its lines.</summary>
+    public sealed record ReportGroup(ReportKind Kind, string Heading, ReportSeverity Severity, IReadOnlyList<ReportLine> Lines);
+
+    /// <summary>
+    /// brief-sdl-3 R-sdl3-2: the connected-placement lines of a run, grouped by kind so a large design's report is
+    /// readable — one group per kind that has lines, in <see cref="ReportKind"/>'s order, each line in the order the
+    /// run produced it. <see cref="ReportKind.General"/> lines are not grouped.
+    /// </summary>
+    public static IReadOnlyList<ReportGroup> GroupConnectionReport(IEnumerable<ReportLine> lines)
+    {
+        var groups = new List<ReportGroup>();
+        foreach (var g in lines.Where(l => l.Kind != ReportKind.General).GroupBy(l => l.Kind).OrderBy(g => g.Key))
+        {
+            var members = g.ToList();
+            int n = members.Count;
+            string heading = g.Key switch
+            {
+                ReportKind.LoopGap => n == 1 ? "1 joint does not close" : $"{n} joints do not close",
+                ReportKind.Unjoined => n == 1 ? "1 connection is not joined" : $"{n} connections are not joined",
+                ReportKind.Overlap => n == 1 ? "1 overlap of unconnected copper" : $"{n} overlaps of unconnected copper",
+                _ => n == 1 ? "1 footprint note" : $"{n} footprint notes",
+            };
+            var severity = members.Any(l => l.Severity == ReportSeverity.Warning) ? ReportSeverity.Warning : ReportSeverity.Info;
+            groups.Add(new ReportGroup(g.Key, heading, severity, members));
+        }
+        return groups;
+    }
 
     // Excluded from the parameter dict handed to a PCell generator — layer-selection inputs
     // (consumed separately, below) and non-numeric/UI-only fields, mirroring NetExtractor.EmitInstance's
@@ -174,6 +235,7 @@ public static partial class SchematicLayoutPlanner
         var deleteIndices = new List<int>();
         var lines = new List<ReportLine>();
         var noLayoutWarnings = new List<string>();
+        var noLayout = new List<EditableComponent>();   // brief-sdl-3: parts joined only through one of these are placed apart
         var replacedAt = new Dictionary<int, LayoutInstance>();
         // In the order the GUI's command chain applies them: adds and replacements in schematic order, then the
         // deletions, then the ground ties. Placement records are attached at the end, once every part is where
@@ -198,6 +260,7 @@ public static partial class SchematicLayoutPlanner
 
             if (resolvedCellRef is null)
             {
+                noLayout.Add(comp);
                 // R-fp3-5c: a pad-count refusal is a COMPLETE sentence naming both numbers, not a
                 // fragment to wrap in the "(type): reason — skipped." shape the resolution failures
                 // use. Both land in NoLayoutWarnings, which is reported unconditionally.
@@ -406,7 +469,8 @@ public static partial class SchematicLayoutPlanner
                                     schematicDir, targetLayoutBaseDir, technology);
         var chained = connectParts
             ? ConnectChains(extraction, model, physical, newInstances, beside, schematicFacing, target, existingBySchematicId,
-                            replacedAt, new HashSet<int>(deleteIndices), schematicDir, targetLayoutBaseDir, technology, lines)
+                            replacedAt, new HashSet<int>(deleteIndices), schematicDir, targetLayoutBaseDir, technology, lines,
+                            noLayout)
             : ChainOutcome.None;
         var unplaced = newInstances.Where(n => !beside.ContainsKey(n.Instance) && !chained.Placed.Contains(n.Instance)).ToList();
         var atArtwork = overArtwork ? Bbox.Empty
@@ -452,7 +516,7 @@ public static partial class SchematicLayoutPlanner
         // (or whose name it carries over a rename). Taken last, from where each part finally is.
         var edits = steps.Select(s => s.ToEdit(chained.Anchors)).ToList();
 
-        return new SchematicLayoutPlan
+        var plan = new SchematicLayoutPlan
         {
             Edits = edits,
             Ground = ground,
@@ -471,6 +535,14 @@ public static partial class SchematicLayoutPlanner
             DeletedCount = deleteIndices.Count,
             OrientationLinksRecorded = linksRecorded,
         };
+
+        // brief-sdl-3 R-sdl3-1: copper of different nets that overlaps or touches once the plan is applied — read off
+        // the finished plan, because it is the whole layout as the run leaves it that can cross itself. Appended to the
+        // plan's own line list (Lines IS `lines`). Off with Connect parts, which leaves the plan the pre-series one.
+        if (connectParts)
+            lines.AddRange(PlacementOverlaps.Find(plan, target, targetLayoutBaseDir, technology, extraction)
+                                            .Select(o => o.ToReportLine()));
+        return plan;
     }
 
     /// <summary>The indices in <paramref name="view"/>'s shapes of what <paramref name="plan"/> takes out — the
@@ -572,8 +644,9 @@ public static partial class SchematicLayoutPlanner
             if (string.IsNullOrEmpty(comp.InstanceName) || !byName.TryGetValue(comp.InstanceName, out var inst)) continue;
             var symbol = comp.ExternalSymbolRef is { } symRef ? CellSymbolResolver.Resolve(symRef, schematicDir) : null;
             int drawn = comp.ToRenderComponent(null, symbol).Ports.Count;
-            for (int k = 0; k < Math.Min(drawn, inst.NetBindings.Count); k++)
-                if (inst.NetBindings[k] == "0") pins.Add(new GroundPin(comp.InstanceName, k + 1));
+            var nets = TerminalNets.Of(inst);   // an SnP's reference terminal is drawn last, and may be grounded
+            for (int k = 0; k < Math.Min(drawn, nets.Count); k++)
+                if (nets[k] == "0") pins.Add(new GroundPin(comp.InstanceName, k + 1));
         }
         return pins;
     }
@@ -1344,6 +1417,23 @@ public static partial class SchematicLayoutPlanner
         string? signalOverride = NonEmptyOrNull(comp.Parameters.FirstOrDefault(p => p.Name == "SignalLayer")?.Expression);
         string? groundOverride = NonEmptyOrNull(comp.Parameters.FirstOrDefault(p => p.Name == "GroundReference")?.Expression);
         var layerSelection = new PCellLayerSelection(signalOverride, groundOverride);
+
+        // A layer row naming no conductor falls back to the default inside every generator, which drops the resolver's
+        // warning — so a line meant for the bottom copper was drawn on the top with nothing said. Said here, once per
+        // part, naming the conductors the row can take: they are the stackup's names, not the drawing layers'.
+        if (technology is not null)
+        {
+            var conductors = technology.Stackup.Layers.Where(l => l.Kind == StackupKind.Conductor).Select(l => l.Name).ToList();
+            foreach (var (row, name, fallback) in new[]
+                     {
+                         ("SignalLayer", signalOverride, "it is drawn on the topmost conductor"),
+                         ("GroundReference", groundOverride, "the default ground reference is used"),
+                     })
+                if (name is not null && conductors.Count > 0
+                    && !conductors.Any(c => string.Equals(c, name, StringComparison.OrdinalIgnoreCase)))
+                    (paramNotes ??= []).Add($"{row}: no conductor is named '{name}', so {fallback}; the conductors " +
+                                            $"are {string.Join(", ", conductors.Select(c => $"'{c}'"))}");
+        }
 
         // R-L5f-3: MKlopfPCell.Generate only ever reads Z1/Z2/GammaMax/L/Offset/SmoothSteps — it has
         // no notion of the alternate W1/W2 or F3db entry routes. When one of those is the active

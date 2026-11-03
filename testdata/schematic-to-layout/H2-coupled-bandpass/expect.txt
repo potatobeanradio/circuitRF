@@ -1,0 +1,14 @@
+# Three edge-coupled sections in a staircase: each section's pin 4 joins the next one's pin 1, the open ends (2, 3)
+# join nothing, and each section lands offset by its own W + S. HardCaseTests reads the offsets.
+Info TL1 added
+Info CL1 added
+Info CL2 added
+Info CL3 added
+Info TL2 added
+Warning P1 no layout view — skipped
+Warning P2 no layout view — skipped
+Info - Joined 4 of 4 connections; 0 left as ratsnest
+joinable n1
+joinable n2
+joinable n3
+joinable n4

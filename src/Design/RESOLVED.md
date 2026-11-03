@@ -26734,3 +26734,60 @@ states what was measured. Worth a follow-up, in this order: load the two linked 
 Windows VM with `osdi-worker`; if they load, a linker setting beside the compiler's in Settings ▸ Security &
 Permissions (the brief's "follow-up brief", not this one) plus the import-library recipe; separately, a compiler
 build with the x86-64 code generator for the three x86-64 targets. win-x86 stays impossible with this compiler.
+
+## Connected placement: the hard cases, overlaps and the grouped report (brief SDL-3, 2026-11-03)
+
+Designs H1-H7 plus `H6b-u-turn-ring` in `testdata/schematic-to-layout/` (drawn from `.cnl` through
+`netlist --to-schematic`), `H1b-through-ideal-r` as a variant `HardCaseTests` reads. Gate: `SdlDesignSetTests`,
+`HardCaseTests` (5).
+
+**A via joins as a line does.** Both of a VIA's pins sit at the barrel's centre and the generator faces them alike, so
+the planner hands the joint graph pin A facing 180° and pin B facing 0°: a line on either layer ends at the centre and
+the line beyond carries straight on, and the via's solved rotation is whatever turns A to the incoming line. With
+that, a via is a line end everywhere the graph counts them (three line ends, D4/D5, the bridging rule); `PartKind.Via`
+stays only so the planner knows to re-face the pins. `NetReason.Via` is gone.
+
+**The test technology's conductors are named `Top Copper (1 oz)` and `Bottom Copper (1 oz)`; the drawing layers are
+`Top Copper` and `Bottom Copper`.** A line's `SignalLayer` names the CONDUCTOR. `SignalLayer=Bottom Copper` named
+no conductor, and the line was drawn on the top copper with nothing said: every line generator calls
+`ResolveSignalLayerKey(…, out _)` and drops the resolver's fallback warning. The planner now checks `SignalLayer` and
+`GroundReference` against the stackup's conductors itself, where it reads them, and a name that matches none is a
+warning on that part's line naming the conductors it could have been. The generators are unchanged.
+
+**An SnP's reference terminal had no net on the layout.** The extraction keeps it apart from the ports'
+(`Instance.RefNetBinding`, the netlist's N-or-N+1 rule), and every layout reader took `NetBindings` alone, so a
+three-pad footprint under a two-port SnP with a reference had three pads against two nets: the ratsnest and the pin
+naming named none of them, and a grounded reference got no ground via. `TerminalNets.Of` (`src/Design/Schematic`)
+puts the reference back last, the order the symbol draws it; `PdnSchematicNets`, the planner's ground pins, the joint
+graph and the overlap check read through it. `F7b-snp-reference` is F7's package under such an SnP.
+
+**The run's ground pours do not clear signal copper on their own layer.** H3 (a line on each copper layer, each
+referenced to the other) gets a bottom pour under its bottom-layer line and a top pour under its top-layer line and the
+via's top pad. `GroundPourPlanner` clears only vias passing through a plane and, by its own header, knows no nets. LVS
+does not see it either: each pour touches copper of one net only, so it reads as part of that net. The overlap check
+names the pour copper as the ground net (its `Generated` tag says what it is) and reports all three; H3's `expect.txt`
+lists them. Fixing the pour is the pour planner's own change, not made here.
+
+**Overlap pieces, not parts.** SDL-1's checker asks part by part whether two parts that share no net touch. The run's
+own check (`PlacementOverlaps`) has to be finer, because two shunt capacitors at one joint share both their nets as
+parts while one's signal pad can land on the other's ground pad. A part's copper is unioned per layer into pieces and
+each piece carries the nets of the pins that land on it. Two things had to be got right for curves: a pin is matched
+to its piece within the hairline, because an oblique bend's rounded pin and its rounded, turned copper disagree by a
+fraction of a DBU; and Clipper's `Rect64.top` is the LEAST y, so a box built as (left, bottom, right, top) was empty
+and every broad-phase query missed.
+
+**A feed line wider than a coupled strip touches the strip beside it.** H2's first draft fed 0.8 mm coupled strips
+(0.15 mm gap) with 1.1 mm lines; the feed's edge lands exactly on strip B's corner, which the overlap check reports
+correctly. H2 feeds with 0.8 mm lines.
+
+**H6's radius is chosen, not incidental.** At 10 mm the chain rounded at every link happened to end within a DBU of the
+exact one; per-link rounding is a walk of half-DBU errors and lands anywhere. At 6 mm it misses by about 3 DBU while
+the written chain is within one, so the test proves the rule rather than relying on luck.
+
+**A 180° MCURVE now turns consistently.** SDL-2 saw a ring of two unmirrored U-turns open by 12 mm. `PinAlignment`
+gives every positive-angle curve the same mirror and every negative-angle curve the other at 17°, 30°, 90°, 135°, 180°,
+200° and 270°, and a ring of two unmirrored 180° curves closes; `H6b-u-turn-ring` holds it. What SDL-2 saw was not
+reproduced, so its cause is not known.
+
+**`ReportLine` equality.** The line record gained `Kind` and `Ids`; a list property broke the record's generated
+equality, which the plan-equivalence gate relies on, so `Equals` compares the ids by sequence.

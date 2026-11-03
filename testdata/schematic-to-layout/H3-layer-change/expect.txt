@@ -1,0 +1,17 @@
+# A line on the top copper, a via, and a line on the bottom copper: each of the via's pins joins the same-layer
+# line end on its net, at the barrel's centre, and the second line carries straight on.
+# The run's ground pours are plain rectangles that clear only vias passing through them: the bottom pour (TL1's
+# ground) runs under TL2, and the top pour (TL2's ground) runs under TL1 and the via's top pad. The overlap check
+# reports all three, which is what it is for; the pour planner clearing signal copper on its own layer is not this
+# design's to fix.
+Info TL1 added
+Info V1 added
+Info TL2 added
+Warning P1 no layout view — skipped
+Warning P2 no layout view — skipped
+Info - Joined 2 of 2 connections; 0 left as ratsnest
+Warning TL1 TL1 overlaps the ground pour on Top Copper (nets p1/n1, 0).
+Warning TL2 TL2 overlaps the ground pour on Bottom Copper (nets n2/p2, 0).
+Warning V1 V1 overlaps the ground pour on Top Copper (nets n1, 0).
+joinable n1
+joinable n2

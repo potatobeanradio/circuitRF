@@ -26,7 +26,7 @@ public static class ShuntAttach
         var (bx, by, bf) = poses[attachment.Base.Part].Apply(attachment.Base.Pin);
         bool baseFirst = depth(attachment.Base.Part) <= depth(attachment.Across.Part);
         double px = bx, py = by, travel, half;
-        if (attachment.Across.Part.Kind == JointGraph.PartKind.Line)
+        if (attachment.Across.Part.Kind != JointGraph.PartKind.Pad)
         {
             // D4: two lines meet here; the pad goes against whichever is the wider, so it never sits on copper.
             var (cx, cy, cf) = poses[attachment.Across.Part].Apply(attachment.Across.Pin);

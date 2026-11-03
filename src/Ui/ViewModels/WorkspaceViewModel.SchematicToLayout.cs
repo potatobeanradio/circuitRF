@@ -243,7 +243,12 @@ public partial class WorkspaceViewModel
             ReportGenerationResult(result.Command, result.Lines, result.NoLayoutWarnings,
                 result.AddedCount, result.UpdatedCount, result.UnchangedCount, result.RemovedCount,
                 result.OverwrittenParameterCount, "Update Layout from Schematic",
-                deleted: result.DeletedCount);
+                deleted: result.DeletedCount,
+                select: ids =>
+                {
+                    layoutVm.SelectLayoutDevices(ids);
+                    layoutVm.SelectSchematicDevices(ids);
+                });
 
             addedRegion = result.AddedRegion;
 
@@ -726,9 +731,26 @@ public partial class WorkspaceViewModel
         IReadOnlyList<SchematicLayoutPlanner.ReportLine> lines,
         IReadOnlyList<string> extraWarnings,
         int addedOrCreated, int updated, int unchanged, int removed, int overwrittenParamCount,
-        string commandLabel, int cap = 20, string overwrittenNoun = "layout edits", int deleted = 0)
+        string commandLabel, int cap = 20, string overwrittenNoun = "layout edits", int deleted = 0,
+        Action<IReadOnlyList<string>>? select = null)
     {
         foreach (var w in extraWarnings) Messages.Warning(w);
+
+        // brief-sdl-3 R-sdl3-2: the connected-placement lines go out grouped by kind — loop gaps, unjoined
+        // connections, overlaps, footprint notes — one expandable message per kind, so a large design's report is
+        // readable. A double-click on a line selects the parts it names in the layout and, when it is open, the
+        // schematic (the LVS cross-probe's own selection). Posted whether or not anything changed, as the run-level
+        // lines below are: a re-run that moves nothing still has a loop that does not close.
+        foreach (var group in SchematicLayoutPlanner.GroupConnectionReport(lines))
+        {
+            var items = group.Lines
+                .Select(l => new MessageItem(l.Text, select is null || l.Ids.Count == 0 ? null : () => select(l.Ids)))
+                .ToList();
+            Messages.PostItems(group.Severity == SchematicLayoutPlanner.ReportSeverity.Warning
+                                   ? MessageLevel.Warning : MessageLevel.Info,
+                               $"{commandLabel}: {group.Heading}", items);
+        }
+        lines = lines.Where(l => l.Kind == SchematicLayoutPlanner.ReportKind.General).ToList();
 
         // brief-footprint-6 R-fp6-1b/1c: a line with no instance name is about the RUN — an aggregate
         // count, or the closing statement of what the command did and did not do — and is posted

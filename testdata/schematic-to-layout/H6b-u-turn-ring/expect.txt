@@ -1,0 +1,7 @@
+# Two 180° MCURVEs joined end to end into a ring, both symbols unmirrored. Both pins of a U-turn face the same way, so
+# their facing alone cannot say which way it turns; the two curves have to turn alike for the ring to close.
+Info CV1 added
+Info CV2 added
+Info - Joined 2 of 2 connections; 0 left as ratsnest
+joinable a
+joinable m

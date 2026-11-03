@@ -1,0 +1,14 @@
+# A stepped-impedance lowpass: five MLINs of alternating width and no junction part. Each width step is joined
+# centre to centre and reported nowhere: the widths are the schematic's (brief-sdl-3 §1).
+Info TL1 added
+Info TL2 added
+Info TL3 added
+Info TL4 added
+Info TL5 added
+Warning P1 no layout view — skipped
+Warning P2 no layout view — skipped
+Info - Joined 4 of 4 connections; 0 left as ratsnest
+joinable n1
+joinable n2
+joinable n3
+joinable n4

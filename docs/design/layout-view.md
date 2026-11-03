@@ -1104,10 +1104,10 @@ behaviour until the brief that implements S3 (SDL-4) lands.
 `JointGraph` and `ChainPlacer` in `src/Design/Layout/SchematicSync/`, run by the planner when the **Connect parts on
 Update Layout from Schematic** setting is on (the default; off, every new part goes into the rows exactly as before).
 
-- **D1 — A joint is a net with exactly two layout pins**, both on one layer, neither on the ground net, and neither a
-  via (whose joint point SDL-3 defines); a footprint pad joins at the point SDL-2 gives it, below. Every other net
-  with two or more pins keeps its ratsnest and gets a report line naming its reason: three or more pins, the ground
-  net, two layers, two sides of the board, or a via. A part's terminals are matched to its cell's pins by `SchematicLayoutOrientation.CellPinFor`, the rule
+- **D1 — A joint is a net with exactly two layout pins**, both on one layer and neither on the ground net; a
+  footprint pad joins at the point SDL-2 gives it and a via at the point SDL-3 gives it, below. Every other net
+  with two or more pins keeps its ratsnest and gets a report line naming its reason: three or more line ends, three
+  or more pads, the ground net, two layers, or two sides of the board. A part's terminals are matched to its cell's pins by `SchematicLayoutOrientation.CellPinFor`, the rule
   the orientation alignment already reads. The connected components of the joints are **chains**.
 - **D2 — Mirror comes from the schematic; rotation is solved.** Which way a bend turns or a tee's stub leaves is
   chirality, and pin geometry cannot decide it, so each new part keeps the mirror its symbol gives it (the symbol's
@@ -1177,14 +1177,51 @@ pad's joint point, so `ChainPlacer` has no case of its own for pads (`PadJoint`,
   and is reported; that check comes before the layer check, because a part turned over carries its pins to the other
   copper too.
 
-Side-on parts placed at one joint are checked against each other, and against the pad the line joins: pads of
-different nets whose copper overlaps are reported. The whole-layout overlap check is SDL-3's.
+Side-on parts that land on each other's copper are reported by SDL-3's overlap check, below.
 
 **LVS reads a line's end on its whole end edge.** A placed line is a device to LVS, its copper out of the partition and
 its terminals read at their pins (`LayoutReadBodies`). A side-on pad touches the line at the corner of its end edge
 and nowhere under the pin point, so a junction is read on the copper under its pin point AND on the copper at the
 two corners of its end edge; every partition net found there is one LVS net (`NetTable.Join`). Copper that meets a
 line part-way along still reads as not connected, which is what the schematic can draw.
+
+#### The remaining hard cases (SDL-3)
+
+| Case | Rule |
+|---|---|
+| **Width step** (two lines of different W, no junction part) | Joined centre to centre, and not reported: the widths are the schematic's. A step with one edge aligned is not placed. |
+| **Taper** (MTAPER) | An ordinary two-pin part whose pins carry their own widths. |
+| **Coupled lines** (MCLIN, MBCLIN) | Four pins; each joined pin is a joint, the open ends are not. A staircase of sections is a tree, so each section lands at its own W + S offset. MBCLIN's two strips are on two layers and each pin joins only a pin on its own layer. |
+| **Layer change** (VIA) | Both of a via's pins sit at the barrel's centre; the joint faces pin A back the way the line came and pin B onward, so each pin joins the same-layer line end on its net there and the line beyond carries straight on. The via has no handedness, so its solved rotation is whatever turns A to the incoming line. Two pins on different layers with no via is not a joint, and the line names both layers. |
+| **Three or more line ends on one net**, no junction part | Not joined. *Net N joins three line ends (ML1.2, ML2.1, ML5.1); a junction part (MTEE, MCROSS) is needed to place it.* No tee is inserted (S2). A via counts as a line end. |
+| **Long any-angle chains** | SDL-1 D3's exact poses. Twenty 17° curves end within a DBU of the chain carried in doubles; rounded at every link the same chain misses by several. |
+| **A U-turn** (MCURVE at 180°) | Both pins face the same way, so facing alone cannot say which way it turns; two of them joined into a ring turn alike and close. |
+| **Ground and multi-pin ground nets** | Never joints: ground is the pour's and the ground vias' job. CPWG and GSGPAD ground pins are excluded by NET, not by part type. |
+| **Hierarchical sub-cells with a layout** | A part like any other; its pins come from `CellPins.Resolve`. |
+| **Arrays and magnified placements** | Not chained, left where they are, and reported once each. |
+| **A part reached only through a part with no layout** (an ideal R) | The two sides are separate chains, placed apart, and the run says so once: *ML3 and ML4 are joined through R1, which has no layout; they are placed apart.* Said only when the two sides did end up in different chains. |
+
+**Overlaps of unconnected copper** (`PlacementOverlaps`). After the plan is made, it is applied to a copy and every
+part's copper is split into pieces (connected copper per layer), each carrying the nets of the part's pins that land
+on it within the partition's hairline — a line's strip carries both its nets, a capacitor's pads one each, a coupled
+pair's strips their own two. Two pieces of different parts with no net in common whose copper overlaps or comes
+within the hairline (1 µm) of each other are a warning: *TL1 overlaps TL4 (nets p1/n1, n6/p2): the schematic's
+lengths make these cross.* A contact with no area between two parts that are both joined to one part between them is
+not reported: the lines on a tee's arms, or either side of a bend, meet corner to corner at its junction. Candidates
+come from a `LayoutSpatialIndex` over the pieces' boxes. Copper with no schematic link counts too: a drawn shape on a
+stated net is on that net, the run's own ground pour and ground-via copper are on the ground net, and copper whose net
+is unknown (a drawn shape, a placement no schematic part names) is reported when it joins two parts that share no net.
+Nothing moves (S1).
+
+**The run's ground pours do not clear signal copper on their own layer.** A pour clears only the vias that pass
+through it, so where a line sits on a layer that is another line's ground — a two-layer board with a layer change —
+the pour covers it. The overlap check reports each such line; the pour planner does not yet avoid it.
+
+**The report is grouped** (`SchematicLayoutPlanner.GroupConnectionReport`). Every connected-placement line carries a
+kind — loop gap, unjoined connection, overlap, footprint note — and the schematic ids it is about. Messages posts one
+expandable line per kind, its heading the count; a double-click on an item selects its parts in the layout and, when
+it is open, in the schematic, through the selection LVS's cross-probe uses (`SelectLayoutDevices`,
+`SelectSchematicDevices`).
 
 ---
 

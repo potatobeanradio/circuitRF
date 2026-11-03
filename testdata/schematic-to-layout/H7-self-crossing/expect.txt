@@ -1,0 +1,20 @@
+# A spiral of four lines and three right-angle bends whose lengths make the last line cross the first: placed as
+# the lengths say (series rule S1) and reported, once, naming both parts. The crossing is a short, so LVS says so.
+Info TL1 added
+Info BD1 added
+Info TL2 added
+Info BD2 added
+Info TL3 added
+Info BD3 added
+Info TL4 added
+Warning P1 no layout view — skipped
+Warning P2 no layout view — skipped
+Info - Joined 6 of 6 connections; 0 left as ratsnest
+Warning TL1 TL1 overlaps TL4 (nets p1/n1, n6/p2): the schematic's lengths make these cross.
+overlap
+joinable n1
+joinable n2
+joinable n3
+joinable n4
+joinable n5
+joinable n6

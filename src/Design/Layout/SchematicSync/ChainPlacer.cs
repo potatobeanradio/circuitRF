@@ -257,8 +257,8 @@ public static class ChainPlacer
         {
             var part = mine.Part;
             if (part.Kind != JointGraph.PartKind.Pad || part.Existing || ReferenceEquals(part, anchor)) continue;
-            if (treeChild.Contains(part) || edgesOf[part].Count != 2 || other.Part.Kind != JointGraph.PartKind.Line) continue;
-            if (parent.GetValueOrDefault(part) is not { } up || up.Kind != JointGraph.PartKind.Line) continue;
+            if (treeChild.Contains(part) || edgesOf[part].Count != 2 || other.Part.Kind == JointGraph.PartKind.Pad) continue;
+            if (parent.GetValueOrDefault(part) is not { } up || up.Kind == JointGraph.PartKind.Pad) continue;
             if (chain.Attachments.Any(a => ReferenceEquals(a.Pad.Part, part) || ReferenceEquals(a.Across.Part, part))) continue;
             var tree = edgesOf[part].Single(j => !ReferenceEquals(j, joint));
             if (!ReferenceEquals(tree.Other(part), up)) continue;

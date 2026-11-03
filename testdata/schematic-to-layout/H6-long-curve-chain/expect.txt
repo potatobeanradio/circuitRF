@@ -1,0 +1,44 @@
+# Twenty 17° MCURVEs of 6 mm radius in a row, turning one way: 340° of arc. HardCaseTests holds the last pin to the exact
+# double result, and shows that rounding at every link would have missed it.
+Info CV1 added
+Info CV2 added
+Info CV3 added
+Info CV4 added
+Info CV5 added
+Info CV6 added
+Info CV7 added
+Info CV8 added
+Info CV9 added
+Info CV10 added
+Info CV11 added
+Info CV12 added
+Info CV13 added
+Info CV14 added
+Info CV15 added
+Info CV16 added
+Info CV17 added
+Info CV18 added
+Info CV19 added
+Info CV20 added
+Warning P1 no layout view — skipped
+Warning P2 no layout view — skipped
+Info - Joined 19 of 19 connections; 0 left as ratsnest
+joinable n1
+joinable n2
+joinable n3
+joinable n4
+joinable n5
+joinable n6
+joinable n7
+joinable n8
+joinable n9
+joinable n10
+joinable n11
+joinable n12
+joinable n13
+joinable n14
+joinable n15
+joinable n16
+joinable n17
+joinable n18
+joinable n19

@@ -471,9 +471,13 @@ A group that touches nothing already in the layout is placed as one piece, besid
 the layout is never moved: new parts join onto it.
 
 A net that cannot be joined this way keeps its ratsnest line, and Messages says why, one line per net: three or more
-pins meet on it, it is the ground net, its pins are on different layers or different sides of the board, or one end
-is a via.
+pins meet on it, it is the ground net, or its pins are on different layers or different sides of the board.
 The run ends with a count, for example *Joined 12 of 12 connections; 0 left as ratsnest*.
+
+Lines of different widths join centre to centre, a taper's ends carry its own two widths, and coupled lines join at
+each pin that is connected, so a staircase of coupled sections steps across by each section's own width and gap. A
+**via** joins the line ending on it on each of its two layers, at the barrel's centre, with the second line carrying
+straight on.
 
 **A loop that does not close is reported, not closed.** If the lengths in a loop do not add up, say one arm of a
 coupler is 50 µm longer than the arm opposite, Messages warns:
@@ -483,6 +487,19 @@ coupler is 50 µm longer than the arm opposite, Messages warns:
 The parts stay where the joints that did close put them, and the open joint keeps its ratsnest line. Nothing is
 stretched or nudged to hide the gap: the copper is exactly what the schematic's values say, so fix the values and
 run Update Layout again.
+
+#### What the report says, and what to do about it
+
+Messages groups what Update Layout says about joining into one expandable line per kind, headed with the count.
+Expand one to see its lines; **double-click a line to select the parts it names** in the layout, and in the schematic
+when it is open.
+
+| Group | Means | What to do |
+|---|---|---|
+| **Joints do not close** | A loop's lengths do not add up, or a part bridging two line ends does not fit the gap between them. | Fix the lengths or the part, then run Update Layout again. |
+| **Connections are not joined** | A net the placement cannot join, and why. *Net n1 joins three line ends (ML1.2, ML2.1, ML5.1); a junction part (MTEE, MCROSS) is needed to place it* means three lines meet at one point with no tee: add the MTEE or MCROSS the junction needs. Pins on two layers need a VIA between them. Two parts joined only through a part with no layout, such as an ideal resistor, are placed apart. A part placed as an array is not joined. | Add the missing part, or join the copper by hand. |
+| **Overlaps of unconnected copper** | Copper of two nets that touches, for example a meander whose lengths make it cross itself: *TL1 overlaps TL4 (nets p1/n1, n6/p2): the schematic's lengths make these cross.* Copper you drew counts too. | Change the lengths, or move a part by hand. |
+| **Footprint notes** | How a part's pins were read: a pad with no other pad to face away from, a pin with no copper under it or no stated width, a third shunt part at one joint. | Check the part lands the way you expect. |
 
 #### Footprints in lines
 

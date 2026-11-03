@@ -1,0 +1,4 @@
+! A matched through line, for the schematic-to-layout test set
+# GHZ S MA R 50
+1 0 0 1 0 1 0 0 0
+10 0 0 1 -90 1 -90 0 0

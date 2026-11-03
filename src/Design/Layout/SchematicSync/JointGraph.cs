@@ -21,7 +21,8 @@ namespace CircuitRF.Design.Layout.SchematicSync;
 public sealed class JointGraph
 {
     /// <summary>What a part is to the chain: a line drawn from its own geometry, a part with pads (a footprint, an
-    /// imported part, a placed cell), or a via, whose barrel joins at a point SDL-3 defines.</summary>
+    /// imported part, a placed cell), or a via. A via joins like a line (brief-sdl-3): each of its pins meets the
+    /// same-layer pin on its net at the barrel's centre, and the line beyond it carries straight on.</summary>
     public enum PartKind { Line, Pad, Via }
 
     /// <summary>Why a net with layout pins is not a joint.</summary>
@@ -31,12 +32,13 @@ public sealed class JointGraph
         OnePin,
         /// <summary>The ground net ("0"): its pins return through vias and the pour, not through each other.</summary>
         Ground,
-        /// <summary>Three or more pins with no defined answer: three line ends, or three pads and no line (SDL-3).</summary>
+        /// <summary>Three or more pins with no defined answer, and no line among them: pads only.</summary>
         ThreeOrMorePins,
-        /// <summary>The pins are on different layers: joining them needs a via (SDL-3).</summary>
+        /// <summary>Three or more line ends (lines, junctions, bends, vias) meet on the net, with no junction part
+        /// to say which goes where (brief-sdl-3). No tee is ever inserted (series rule S2).</summary>
+        LineEnds,
+        /// <summary>The pins are on different layers and no via joins them (brief-sdl-3).</summary>
         LayerMismatch,
-        /// <summary>One end is a via, whose joint point is SDL-3's to define.</summary>
-        Via,
         /// <summary>Parts on different sides of the board (SDL-2 D8): no joint without a via.</summary>
         SideMismatch,
     }
@@ -105,7 +107,7 @@ public sealed class JointGraph
     public static JointGraph Build(NetExtractor.ExtractionResult extraction, IEnumerable<Part> parts)
     {
         var bindings = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
-        foreach (var inst in extraction.TestBench.Instances) bindings.TryAdd(inst.InstanceName, inst.NetBindings);
+        foreach (var inst in extraction.TestBench.Instances) bindings.TryAdd(inst.InstanceName, TerminalNets.Of(inst));
 
         var ordered = parts.OrderBy(p => p.SchematicId, Comparer<string>.Create(CompareIds)).ToList();
         for (int i = 0; i < ordered.Count; i++) ordered[i].Order = i;
@@ -134,20 +136,22 @@ public sealed class JointGraph
         foreach (string net in netOrder)
         {
             var list = ends[net];
+            // A via is a line end here: its pins meet same-layer pins like a line's do (brief-sdl-3).
+            int lineEnds = list.Count(e => e.Part.Kind != PartKind.Pad);
             NetReason? reason =
                 list.Count == 1 ? NetReason.OnePin
                 : net == "0" ? NetReason.Ground
-                : list.Any(e => e.Part.Kind == PartKind.Via) ? NetReason.Via
                 // D8 before the layers: a part flipped to the bottom has its pins on the bottom copper too, and
                 // the side is the reason.
                 : list.Any(e => e.Part.Instance.Side != list[0].Part.Instance.Side) ? NetReason.SideMismatch
                 : list.Any(e => e.Pin.Layer != list[0].Pin.Layer) ? NetReason.LayerMismatch
+                : lineEnds >= 3 ? NetReason.LineEnds
                 : null;
             if (reason is { } r) { unjoined.Add(new UnjoinedNet(net, r, list)); continue; }
 
             if (list.Count == 2) { joints.Add(new Joint(net, list[0], list[1])); continue; }
 
-            var lines = list.Where(e => e.Part.Kind == PartKind.Line).ToList();
+            var lines = list.Where(e => e.Part.Kind != PartKind.Pad).ToList();
             var pads = list.Where(e => e.Part.Kind == PartKind.Pad).ToList();
             End baseEnd, across;
             List<End> side;
@@ -199,7 +203,7 @@ public sealed class JointGraph
                 foreach (var e in ends[queue.Dequeue()])
                 {
                     if (!seenParts.Add(e.Part)) continue;
-                    if (e.Part.Kind == PartKind.Line) return true;
+                    if (e.Part.Kind != PartKind.Pad) return true;
                     foreach (string n in netsOf[e.Part]) if (seenNets.Add(n)) queue.Enqueue(n);
                 }
             }

@@ -1,0 +1,82 @@
+{
+	"FormatVersion": 1,
+	"DbuPerMicron": 1000,
+	"DisplayUnit": "Um",
+	"SnapDbu": 0,
+	"AngleMode": "AnyAngle",
+	"TechRef": "../../../../tech/microstrip-0508.ctech",
+	"Pins": [
+		{
+			"Name": "C",
+			"X": 1200000,
+			"Y": 0,
+			"WidthDbu": 900000,
+			"OutwardDeg": 0,
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			}
+		},
+		{
+			"Name": "B",
+			"X": -1200000,
+			"Y": 0,
+			"WidthDbu": 900000,
+			"OutwardDeg": 180,
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			}
+		},
+		{
+			"Name": "E",
+			"X": 0,
+			"Y": -1100000,
+			"WidthDbu": 800000,
+			"OutwardDeg": 270,
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			}
+		}
+	],
+	"Shapes": [
+		{
+			"$type": "Rect",
+			"X1": -1600000,
+			"Y1": -450000,
+			"X2": -800000,
+			"Y2": 450000,
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			},
+			"Pin": "B"
+		},
+		{
+			"$type": "Rect",
+			"X1": 800000,
+			"Y1": -450000,
+			"X2": 1600000,
+			"Y2": 450000,
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			},
+			"Pin": "C"
+		},
+		{
+			"$type": "Rect",
+			"X1": -400000,
+			"Y1": -1500000,
+			"X2": 400000,
+			"Y2": -700000,
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			},
+			"Pin": "E"
+		}
+	],
+	"Instances": []
+}
