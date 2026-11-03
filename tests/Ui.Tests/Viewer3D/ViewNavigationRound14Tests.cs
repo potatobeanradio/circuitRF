@@ -95,4 +95,22 @@ public sealed class ViewNavigationRound14Tests
         Assert.Contains(placed, p => p.Leader);
         Assert.All(placed.Where(p => !p.Leader), p => Assert.True(p.Box.Inflate(3).Contains(anchors[Array.IndexOf(placed, p)])));
     }
+
+    /// <summary>A label whose point is off the view goes with it: placed against its point on the side away from the view,
+    /// with no leader, never slid back on screen — while a label just inside the edge is still kept in view.</summary>
+    [Fact]
+    public void Labels_WhosePointIsOffScreen_StayOffScreen()
+    {
+        var anchors = new Point[] { new(400, 505), new(805, 250), new(-3, 100), new(400, -2), new(400, 495) };
+        var sizes = Enumerable.Repeat(new Size(80, 20), anchors.Length).ToArray();
+        var view = new Rect(0, 0, 800, 500);
+        var placed = Viewer3DLabelLayout.Place(anchors, sizes, view.Width, view.Height);
+
+        for (int i = 0; i < 4; i++)
+        {
+            Assert.False(placed[i].Leader, $"label {i} has a leader");
+            Assert.False(placed[i].Box.Intersects(view), $"label {i} was pulled into view: {placed[i].Box}");
+        }
+        Assert.True(view.Contains(placed[4].Box));
+    }
 }

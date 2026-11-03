@@ -7,6 +7,11 @@
 // the four corners round its point — up-right first, which is where every label used to go — then slides away from it, up and
 // down, a label's height at a time. A label that had to move away from its point gets a leader line back to it. The points
 // themselves (the probe diamonds) are obstacles too, so a label never covers another label's marker.
+//
+// A POINT OFF SCREEN keeps its label off screen too: the label goes on the corner facing away from the view, against its
+// point, and is never slid back in. Pulling it into view with a leader line said "this is here" about something that is
+// not; a label that leaves with its point says plainly that the point is out of sight, and it swings back in (on its
+// spring) as the point comes on screen.
 
 using Avalonia;
 
@@ -41,6 +46,13 @@ internal static class Viewer3DLabelLayout
         {
             var a = anchors[i];
             var s = sizes[i];
+            if (!view.Contains(a))
+            {
+                var away = Outward(a, s, width, height);
+                placed.Add(away);
+                result[i] = (away, false);
+                continue;
+            }
             Rect? inView = null, anywhere = null;
             foreach (var box in Candidates(a, s))
             {
@@ -53,6 +65,16 @@ internal static class Viewer3DLabelLayout
             result[i] = (chosen, !Touches(chosen, a));
         }
         return result;
+    }
+
+    /// <summary>The box against <paramref name="a"/>, a point off the view, on the corner facing away from the view: right
+    /// of a point past the right edge, left of one past the left, below one past the bottom, and above otherwise.</summary>
+    internal static Rect Outward(Point a, Size s, double width, double height)
+    {
+        double w = s.Width, h = s.Height;
+        double x = a.X < 0 ? a.X - w : a.X;
+        double y = a.Y > height ? a.Y + Gap : a.Y - h;
+        return new Rect(x, y, w, h);
     }
 
     private static IEnumerable<Rect> Candidates(Point a, Size s)

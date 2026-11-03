@@ -312,3 +312,15 @@ labels covered one another in the Front and Side views.
 - **If X11's Vulkan compositor is ever enabled**, revisit this: Avalonia's Vulkan importer re-creates the image OPTIMAL,
   so a linear export would then be the mismatch. An Avalonia that marks the memory object dedicated makes the switch
   unnecessary.
+
+## A label whose point is off screen stays off screen (2026-11-02)
+
+- **Symptom:** a port's or a probe's name label whose point had gone just past the edge of the 3D view was pulled back
+  in, slid up to twelve label heights with a leader line, so it jumped about as the view moved and pointed at nothing
+  visible.
+- **Cause:** `Viewer3DLabelLayout.Place` preferred a box wholly inside the view for every label, whatever its point.
+- **Fix:** a point outside the view gets its box against it on the corner facing away from the view
+  (`Viewer3DLabelLayout.Outward`), no leader, never slid. The label leaves with its point, which itself says the point
+  is out of sight, and swings back on its spring as the point comes on screen. A point on screen near an edge is laid
+  out as before, kept in view.
+- Gate: `ViewNavigationRound14Tests.Labels_WhosePointIsOffScreen_StayOffScreen`.
