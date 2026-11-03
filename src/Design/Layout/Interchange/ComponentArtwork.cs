@@ -267,6 +267,8 @@ public static class ComponentFootprintBuilder
             messages.Add($"Layer {layer} has no known meaning in this format — " +
                          $"{count:N0} primitive(s) placed on {PcbLayerNaming.FallbackName}.");
 
+        // brief-sdl-2 D1: a format that states only the pad's rotation says nothing about which way it faces.
+        PadFacing.Apply(cell.Pins.Select(p => p.Pin).ToList());
         cell.ContentKey = artwork.Name;
         return new Result(cell, PcbReader.SynthesiseFootprintLayerTable(), padNames, messages);
     }

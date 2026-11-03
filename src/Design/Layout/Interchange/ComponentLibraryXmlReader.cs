@@ -262,6 +262,9 @@ public static class ComponentLibraryXmlReader
             }
         }
 
+        // brief-sdl-2 D1: each pad's stored direction faces away from the package's other pads, not along whichever
+        // way its long side happens to run.
+        PadFacing.Apply(footprint.Cell.Pins.Select(p => p.Pin).ToList());
         part.Footprints.Add(footprint);
     }
 

@@ -1,0 +1,14 @@
+# A pi attenuator with feed lines: R2 in series between the lines, R1 and R3 side-on at each end of it,
+# both grounded.
+joinable n2
+joinable n3
+Info TL1 added
+Info R1 added
+Info R2 added
+Info R3 added
+Info TL2 added
+Warning P1 no layout view — skipped
+Warning P2 no layout view — skipped
+# The two grounded pads return through their vias; the ground net is the one connection left as ratsnest.
+Info - Net 0 left as ratsnest: the ground net returns through vias and the pour
+Info - Joined 4 of 5 connections; 1 left as ratsnest

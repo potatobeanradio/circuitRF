@@ -16,6 +16,13 @@
 //   else on another body's pin at the same point   two lines abutting end to end, a bend, a tee
 //   else on a net of its own                       an open end, which is what the schematic says too
 //
+// and ALSO on any copper that touches the pin's end edge at either corner (brief-sdl-2). A part laid
+// side-on against a junction — a shunt capacitor whose pad meets the edges of two lines where they
+// join, or the side of a line where it ends on another part's pad — touches the line exactly at the
+// end of its terminal edge and nowhere under its pin point. Every piece a junction touches there is
+// one net with the junction's own; the partition never joins them, because the line between them
+// left it.
+//
 // Decided per CELL, from the cell's own shapes and pins, so a line placed forty times is asked once.
 // A cell that places other cells, or that has a schematic of its own, is never a body — it is a
 // design, and its insides are the hierarchy's business (or, under --flat, one graph with the rest).
@@ -46,15 +53,27 @@ internal sealed class LayoutReadBodies
     private readonly List<int> _groupPartition = [];   // partition net under the junction, or -1
     private readonly List<int> _groupNet = [];         // LVS net, allocated on first use
     private readonly Dictionary<int, int> _pieceOfPad = [];
+    private readonly List<(int A, int B)> _joins = [];
+    private readonly LayoutView? _view;
+    private readonly IReadOnlyList<PlacedCell> _placed;
+    private readonly Technology? _tech;
 
-    private LayoutReadBodies(HashSet<int> instances, HashSet<string> paths)
+    private LayoutReadBodies(HashSet<int> instances, HashSet<string> paths,
+                             LayoutView? view = null, IReadOnlyList<PlacedCell>? placed = null, Technology? tech = null)
     {
         Instances = instances;
         Paths = paths;
+        _view = view;
+        _placed = placed ?? [];
+        _tech = tech;
     }
 
     /// <summary>Nothing is a body — every reading is exactly as it was.</summary>
     public static readonly LayoutReadBodies None = new([], []);
+
+    /// <summary>Partition nets one junction touches, which are therefore one net (brief-sdl-2): what
+    /// <see cref="LayoutRead.NetTable.Join"/> is handed before any net is numbered.</summary>
+    public IReadOnlyList<(int A, int B)> PartitionJoins => _joins;
 
     /// <summary>Root instance indices read as bodies.</summary>
     public HashSet<int> Instances { get; }
@@ -97,7 +116,7 @@ internal sealed class LayoutReadBodies
             paths.Add(LayoutDesignFlatten.PathOf(view.Instances[i], i));
         }
 
-        return instances.Count == 0 ? None : new LayoutReadBodies(instances, paths);
+        return instances.Count == 0 ? None : new LayoutReadBodies(instances, paths, view, placed, tech);
     }
 
     /// <summary>
@@ -204,8 +223,40 @@ internal sealed class LayoutReadBodies
             }
             _groupOfPad[p] = group;
 
-            // The first copper any pin of the junction lands on is the junction's.
-            if (piece >= 0 && _groupPartition[group] < 0) _groupPartition[group] = pieces.NetOfPiece(piece);
+            // The first copper any pin of the junction lands on is the junction's; copper touching the end edge's
+            // corners joins it (the file header).
+            foreach (int touched in Touching(p, piece))
+            {
+                int net = pieces.NetOfPiece(touched);
+                if (_groupPartition[group] < 0) _groupPartition[group] = net;
+                else if (_groupPartition[group] != net) _joins.Add((_groupPartition[group], net));
+            }
+        }
+
+        // The pieces at pin p: the one under its point, then those at the two corners of its end edge.
+        IEnumerable<int> Touching(int p, int under)
+        {
+            if (under >= 0) yield return under;
+            if (_view is null || origins[p].Instance >= _view.Instances.Count
+                || _placed.ElementAtOrDefault(origins[p].Instance) is not { View: { } cell }) yield break;
+            var pins = CellPins.Resolve(cell, _tech);
+            int at = -1;
+            for (int i = 0; i < pins.Count && at < 0; i++)
+                if (string.Equals(PlacedPins.PinKeyOf(pins, i), origins[p].PinKey, StringComparison.OrdinalIgnoreCase)) at = i;
+            if (at < 0 || pins[at].WidthDbu <= 0) yield break;
+
+            var pin = pins[at];
+            var (nx, ny) = LayoutAngle.CosSin(pin.OutwardDeg + 90.0);
+            double half = pin.WidthDbu / 2.0;
+            var inst = _view.Instances[origins[p].Instance];
+            foreach (int sign in new[] { 1, -1 })
+            {
+                var (wx, wy) = LayoutInstanceTransform.TransformPoint(
+                    pin.X + (long)Math.Round(sign * nx * half), pin.Y + (long)Math.Round(sign * ny * half),
+                    inst, origins[p].Row, origins[p].Col);
+                int corner = pieces.IndexAt(wx, wy, origins[p].Layer);
+                if (corner >= 0 && corner != under) yield return corner;
+            }
         }
     }
 

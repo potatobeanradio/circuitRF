@@ -1,0 +1,2 @@
+# F2 with three shunt capacitors on the one joint: not in designs.txt, because the third is placed in the row
+# by design and leaves a ratsnest line. FootprintChainTests reads it.

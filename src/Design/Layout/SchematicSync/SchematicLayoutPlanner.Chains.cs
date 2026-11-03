@@ -1,4 +1,5 @@
 using System.Globalization;
+using CircuitRF.Design.Layout.Footprints;
 using CircuitRF.Design.Schematic;
 
 namespace CircuitRF.Design.Layout.SchematicSync;
@@ -42,6 +43,7 @@ public static partial class SchematicLayoutPlanner
 
         var slotOf = new Dictionary<LayoutInstance, int>(ReferenceEqualityComparer.Instance);
         var parts = new List<JointGraph.Part>();
+        var padSets = new Dictionary<JointGraph.Part, PadJoint.Set>(ReferenceEqualityComparer.Instance as IEqualityComparer<JointGraph.Part>);
         foreach (var (slot, inst) in newInstances)
         {
             slotOf[inst] = slot;
@@ -70,6 +72,7 @@ public static partial class SchematicLayoutPlanner
 
         int joined = 0;
         var unstatedWidth = new HashSet<JointGraph.Part>(ReferenceEqualityComparer.Instance as IEqualityComparer<JointGraph.Part>);
+        var padNoted = new HashSet<JointGraph.Part>(ReferenceEqualityComparer.Instance as IEqualityComparer<JointGraph.Part>);
         foreach (var chain in graph.Chains)
         {
             var anchor = ChainPlacer.ChooseAnchor(chain, part => LowestPort(part));
@@ -106,8 +109,34 @@ public static partial class SchematicLayoutPlanner
                             $"{end.Part.SchematicId} — pin {PinName(end)} has no stated width; joined at its centre",
                             ReportSeverity.Info));
 
+            // brief-sdl-2: a footprint with nothing to face away from (D1), and a pin joined with no copper under it (D2),
+            // once per part each.
+            foreach (var part in chain.Parts)
+            {
+                if (part.Kind != JointGraph.PartKind.Pad || !padSets.TryGetValue(part, out var set) || !padNoted.Add(part)) continue;
+                if (set.SinglePad)
+                    lines.Add(new ReportLine(part.SchematicId,
+                        $"{part.SchematicId} — its pad has no other pad to face away from; joined facing the way its footprint " +
+                        "stores it", ReportSeverity.Info));
+                var used = chain.Joints.SelectMany(j => new[] { j.A, j.B })
+                                .Concat(chain.Attachments.SelectMany(a => new[] { a.Pad, a.Across }))
+                                .Where(e => ReferenceEquals(e.Part, part)).Select(e => e.Pin.Name).ToHashSet(StringComparer.Ordinal);
+                foreach (var point in set.Points.Where(q => !q.OnCopper && used.Contains(q.Pin.Name)).Take(1))
+                    lines.Add(new ReportLine(part.SchematicId,
+                        $"{part.SchematicId} — pin {(point.Pin.Name.Length > 0 ? point.Pin.Name : "?")} has no copper under it; " +
+                        "joined at the pin itself", ReportSeverity.Info));
+            }
+
             foreach (var gap in result.Gaps) lines.Add(new ReportLine("", GapLine(gap, target), ReportSeverity.Warning));
+            ReportSideOnOverlaps(chain, result, padSets, bindings, lines);
         }
+
+        // D4: a third or later pad at one joint is not placed against it.
+        foreach (var (net, end) in graph.Overflow)
+            if (!placed.Contains(end.Part.Instance) && !end.Part.Existing)
+                lines.Add(new ReportLine(end.Part.SchematicId,
+                    $"{end.Part.SchematicId} — pin {PinName(end)} is a third part at the joint on net {net}; at most two attach " +
+                    "side-on at one joint, so it was placed in the row", ReportSeverity.Warning));
 
         foreach (var net in graph.Unjoined.Where(u => u.Reason != JointGraph.NetReason.OnePin))
             lines.Add(new ReportLine("", $"Net {net.Net} left as ratsnest: {ReasonText(net.Reason)} " +
@@ -132,9 +161,22 @@ public static partial class SchematicLayoutPlanner
             var symbol = comp.ExternalSymbolRef is { } symRef ? CellSymbolResolver.Resolve(symRef, schematicDir) : null;
             int drawn = comp.ToRenderComponent(null, symbol).Ports.Count;
             var terminals = Enumerable.Range(1, drawn).Select(k => SchematicLayoutOrientation.CellPinFor(k, pins)).ToList();
-            // A footprint's pads and a via's barrels join at points SDL-2 and SDL-3 define, not at their pin points.
-            bool joinable = comp.Footprint is null && !ViaSubstrateInjection.IsViaKind(comp.Symbol);
-            return new JointGraph.Part(sid, inst, terminals, existing, joinable);
+
+            // brief-sdl-2 R-sdl2-2: a line joins at its own pin; anything with pads — a footprint, an imported part, a
+            // placed cell — joins at the middle of its pad's outer edge (D2), facing the pad's effective direction (D1;
+            // only a footprint's file can store it backwards). A via's barrel joins where SDL-3 says.
+            var kind = ViaSubstrateInjection.IsViaKind(comp.Symbol) ? JointGraph.PartKind.Via
+                     : FootprintDefaults.IsOffered(comp.Symbol) ? JointGraph.PartKind.Pad
+                     : JointGraph.PartKind.Line;
+            if (kind == JointGraph.PartKind.Pad)
+            {
+                var set = PadJoint.Of(cell, technology, effectiveFacing: comp.Footprint is not null);
+                terminals = terminals.Select(t => t is null ? null : set.For(t)?.Joint ?? t).ToList();
+                var part = new JointGraph.Part(sid, inst, terminals, existing, kind);
+                padSets[part] = set;
+                return part;
+            }
+            return new JointGraph.Part(sid, inst, terminals, existing, kind);
         }
 
         bool MirrorOf(JointGraph.Part part) =>
@@ -189,8 +231,9 @@ public static partial class SchematicLayoutPlanner
     {
         JointGraph.NetReason.Ground => "the ground net returns through vias and the pour, not pin to pin",
         JointGraph.NetReason.ThreeOrMorePins => "three or more pins meet on it, and no one pairing is the schematic's",
-        JointGraph.NetReason.LayerMismatch => "its two pins are on different layers",
-        JointGraph.NetReason.PadOrVia => "one end is a footprint pad or a via, which this run does not join",
+        JointGraph.NetReason.LayerMismatch => "its pins are on different layers",
+        JointGraph.NetReason.Via => "one end is a via, which this run does not join",
+        JointGraph.NetReason.SideMismatch => "its parts are on different sides of the board, which only a via can join",
         _ => "it has one pin",
     };
 
@@ -198,6 +241,58 @@ public static partial class SchematicLayoutPlanner
         end.Pin.Name is { Length: > 0 } n ? n : end.Terminal.ToString(CultureInfo.InvariantCulture);
 
     private static string EndName(JointGraph.End end) => $"{end.Part.SchematicId} pin {PinName(end)}";
+
+    /// <summary>
+    /// R-sdl2-3: the parts placed beside one joint — its side-on pads and, at a line's end (D5), the pad it joins —
+    /// whose pads on DIFFERENT nets overlap. Checked against the parts at the same joint only; the whole-layout overlap
+    /// check is SDL-3's. Pad copper is compared box to box in the layout's coordinates, interiors only, so pads that
+    /// merely touch are not reported.
+    /// </summary>
+    private static void ReportSideOnOverlaps(JointGraph.Chain chain, ChainPlacer.Result result,
+                                             Dictionary<JointGraph.Part, PadJoint.Set> padSets,
+                                             Dictionary<string, IReadOnlyList<string>> bindings, List<ReportLine> lines)
+    {
+        foreach (var group in chain.Attachments.GroupBy(a => a.Net))
+        {
+            var members = group.Select(a => a.Pad.Part)
+                               .Concat(group.Select(a => a.Across.Part).Where(p => p.Kind == JointGraph.PartKind.Pad))
+                               .Distinct(ReferenceEqualityComparer.Instance as IEqualityComparer<JointGraph.Part>)
+                               .Where(p => result.Poses.ContainsKey(p) && padSets.ContainsKey(p))
+                               .OrderBy(p => p.Order).ToList();
+            for (int i = 0; i < members.Count; i++)
+                for (int k = i + 1; k < members.Count; k++)
+                    if (PadsOverlap(members[i], members[k]))
+                        lines.Add(new ReportLine(members[k].SchematicId,
+                            $"{members[i].SchematicId} and {members[k].SchematicId}, both placed at the joint on net {group.Key}, " +
+                            "overlap", ReportSeverity.Warning));
+        }
+
+        bool PadsOverlap(JointGraph.Part a, JointGraph.Part b)
+        {
+            foreach (var (pa, na) in Pads(a))
+                foreach (var (pb, nb) in Pads(b))
+                    if (na != nb && pa.MinX < pb.MaxX && pb.MinX < pa.MaxX && pa.MinY < pb.MaxY && pb.MinY < pa.MaxY) return true;
+            return false;
+        }
+
+        IEnumerable<((double MinX, double MinY, double MaxX, double MaxY) Box, string Net)> Pads(JointGraph.Part part)
+        {
+            var nets = bindings.GetValueOrDefault(part.SchematicId) ?? [];
+            var pose = result.Poses[part];
+            for (int t = 0; t < part.Terminals.Count && t < nets.Count; t++)
+            {
+                if (part.Terminals[t] is not { } joint || padSets[part].Points.FirstOrDefault(q => q.Joint.Name == joint.Name)
+                        is not { Ring: { } ring }) continue;
+                double x0 = double.MaxValue, y0 = double.MaxValue, x1 = double.MinValue, y1 = double.MinValue;
+                for (int v = 0; v + 1 < ring.Length; v += 2)
+                {
+                    var (x, y, _) = pose.Apply(new LayoutPin { X = ring[v], Y = ring[v + 1] });
+                    (x0, y0, x1, y1) = (Math.Min(x0, x), Math.Min(y0, y), Math.Max(x1, x), Math.Max(y1, y));
+                }
+                yield return ((x0, y0, x1, y1), nets[t]);
+            }
+        }
+    }
 
     /// <summary>D4's report: "Loop MT1, ML1, … does not close: MT3 pin 3 is 50 µm from ML4 pin 2 (x 0, y −50 µm),
     /// angle 0°."</summary>
@@ -208,8 +303,20 @@ public static partial class SchematicLayoutPlanner
         string where = $"{EndName(gap.From)} is {Len(Math.Sqrt(gap.Dx * gap.Dx + gap.Dy * gap.Dy))} {u} from " +
                        $"{EndName(gap.To)} (x {Len(gap.Dx)}, y {Len(gap.Dy)} {u}), " +
                        $"angle {gap.AngleDeg.ToString("0.######", CultureInfo.InvariantCulture)}°";
+        string loop = string.Join(", ", gap.Loop.Select(p => p.SchematicId));
+        if (gap.Bridge is { } b)
+        {
+            // D6: the part is centred between the two line ends, so the misfit is the difference of two spacings.
+            string fit = $"{b.Part.SchematicId} bridges {EndName(b.First)} and {EndName(b.Second)}, which are " +
+                         $"{Len(b.RequiredDbu)} {u} apart, and its pads span {Len(b.ActualDbu)} {u}";
+            return gap.Loop.Count > 0 ? $"Loop {loop} does not close: {fit}." : $"{fit}.";
+        }
+        if (gap.Attachment is { } a)
+            return $"{EndName(gap.From)} does not sit against the side of {EndName(a.Base)}: " +
+                   $"{Len(Math.Sqrt(gap.Dx * gap.Dx + gap.Dy * gap.Dy))} {u} out (x {Len(gap.Dx)}, y {Len(gap.Dy)} {u}), " +
+                   $"angle {gap.AngleDeg.ToString("0.######", CultureInfo.InvariantCulture)}°.";
         return gap.Loop.Count > 0
-            ? $"Loop {string.Join(", ", gap.Loop.Select(p => p.SchematicId))} does not close: {where}."
+            ? $"Loop {loop} does not close: {where}."
             : $"{EndName(gap.To)} and {EndName(gap.From)} are joined in the schematic but do not meet: {where}. " +
               "Both are fixed by parts already in the layout, which this run does not move.";
     }

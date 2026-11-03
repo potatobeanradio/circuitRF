@@ -1006,6 +1006,9 @@ public static class PcbReader
             }
         }
 
+        // brief-sdl-2 D1: a pad's long axis says which way it runs, not which way it faces — the sign (and, on an 0603
+        // whose pads are taller than they are wide, the axis) comes from where the part's other pads are.
+        PadFacing.Apply(cell.Pins.Select(p => p.Pin).ToList());
         cell.ContentKey = ContentKeyOf(cell);
         ctx.Board.FootprintCells.TryAdd(cell.ContentKey, cell);
         var (labelDx, labelDy, labelRot) = ReferencePlacementOf(node, ctx);

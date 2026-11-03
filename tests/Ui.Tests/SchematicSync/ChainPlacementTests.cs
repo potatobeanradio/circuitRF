@@ -55,7 +55,7 @@ public sealed class ChainPlacementTests : IDisposable
                        .ToList();
 
         var parts = Enumerable.Range(1, 12)
-            .Select(k => new JointGraph.Part($"CV{k}", new LayoutInstance(), [pins[0], pins[1]], false, true) { Order = k - 1 })
+            .Select(k => new JointGraph.Part($"CV{k}", new LayoutInstance(), [pins[0], pins[1]], false, JointGraph.PartKind.Line) { Order = k - 1 })
             .ToList();
         var joints = parts.Zip(parts.Skip(1), (a, b) => new JointGraph.Joint($"n{a.Order}",
             new JointGraph.End(a, 2, pins[1]), new JointGraph.End(b, 1, pins[0]))).ToList();
@@ -86,8 +86,8 @@ public sealed class ChainPlacementTests : IDisposable
     public void D4_AOneDbuClosingGapIsJoinedAndATwoDbuGapIsReported(int gap, bool joined)
     {
         LayoutPin Pin(string name, long x, double deg) => new() { Name = name, X = x, WidthDbu = 100, OutwardDeg = deg };
-        var a = new JointGraph.Part("A1", new LayoutInstance(), [Pin("1", 0, 90), Pin("2", 1000, 90)], false, true) { Order = 0 };
-        var b = new JointGraph.Part("B1", new LayoutInstance(), [Pin("1", 0, 270), Pin("2", 1000 + gap, 270)], false, true) { Order = 1 };
+        var a = new JointGraph.Part("A1", new LayoutInstance(), [Pin("1", 0, 90), Pin("2", 1000, 90)], false, JointGraph.PartKind.Line) { Order = 0 };
+        var b = new JointGraph.Part("B1", new LayoutInstance(), [Pin("1", 0, 270), Pin("2", 1000 + gap, 270)], false, JointGraph.PartKind.Line) { Order = 1 };
         var chain = new JointGraph.Chain([a, b],
         [
             new("n1", new(a, 1, a.Terminals[0]!), new(b, 1, b.Terminals[0]!)),

@@ -316,8 +316,12 @@ public static class GroundArtwork
     public static (long X, long Y, PathShape Tie) Beside(LayoutInstance inst, LayoutView cell, LayoutPin pin, long padDbu,
                                                          int dbuPerMicron)
     {
-        // How far the land reaches from the pin along its outward direction: its own copper, else half its width.
-        double rad = pin.OutwardDeg * Math.PI / 180;
+        // How far the land reaches from the pin along its outward direction: its own copper, else half its width. The
+        // direction is the pad's EFFECTIVE one (brief-sdl-2 D1) on a cell read from a file: a footprint read before that
+        // rule can store it backwards, and a via placed on the inward side lands under the part. A generated cell's
+        // directions are its generator's and exact — and "away from the centroid" is not a bend's or a tee's answer.
+        double facing = cell.PCellOrigin is null && cell.Pins.Count > 0 ? PadFacing.Of(cell.Pins, pin) : pin.OutwardDeg;
+        double rad = facing * Math.PI / 180;
         double dx = Math.Cos(rad), dy = Math.Sin(rad);
         double reach = 0;
         bool any = false;

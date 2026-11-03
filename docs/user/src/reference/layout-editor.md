@@ -471,7 +471,8 @@ A group that touches nothing already in the layout is placed as one piece, besid
 the layout is never moved: new parts join onto it.
 
 A net that cannot be joined this way keeps its ratsnest line, and Messages says why, one line per net: three or more
-pins meet on it, it is the ground net, its two pins are on different layers, or one end is a footprint pad or a via.
+pins meet on it, it is the ground net, its pins are on different layers or different sides of the board, or one end
+is a via.
 The run ends with a count, for example *Joined 12 of 12 connections; 0 left as ratsnest*.
 
 **A loop that does not close is reported, not closed.** If the lengths in a loop do not add up, say one arm of a
@@ -482,6 +483,31 @@ coupler is 50 µm longer than the arm opposite, Messages warns:
 The parts stay where the joints that did close put them, and the open joint keeps its ratsnest line. Nothing is
 stretched or nudged to hide the gap: the copper is exactly what the schematic's values say, so fix the values and
 run Update Layout again.
+
+#### Footprints in lines
+
+Parts with footprints join the lines they connect to. **A line ends on the middle of a pad's outer edge**, so the
+line's L is the length of exposed line, the length the circuit simulation counts: a 5 mm MLIN either side of an 0603
+DC block leaves 5 mm of line between each pad and the next part, and the capacitor's pads fill the rest.
+
+- **A series part** sits in the line, one pad meeting each line end.
+- **A shunt part where two lines meet** (one net holding the two lines and the part, with no tee) is turned to face the
+  line and placed against its side, its pad's edge on the line's edge, centred on the joint. Its other pad, grounded,
+  gets its ground via beyond it. Two such parts go one on each side, the first on the left looking from port 1; a
+  third is placed in the row and Messages says so.
+- **A line that ends at a series part that also has a shunt part beside it**, such as a bias tee's inductor where the
+  line meets the DC block, joins the series part; the shunt part goes against the side of the line's end.
+- **A part whose two pads join two line ends already placed**, such as a Wilkinson's resistor across the ends of its
+  arms, is turned to face both and centred between them. If its pads do not span the gap, the loop warning names the
+  part and both spacings:
+
+> Loop CV1, CV2, R1, CV4, CV3, MT1 does not close: R1 bridges CV2 pin 2 and CV4 pin 2, which are 1550 µm apart, and its pads span 1350 µm.
+
+  The arm lengths and the resistor's case size decide that gap, so change one of them: nothing is stretched to fit.
+
+A pad on a part turned over to the bottom side is not joined to top-side lines, since that joint needs a via. A
+footprint read from a board or library file faces away from its own other pads whatever direction the file stores,
+so it lands the same way round as the same part generated from a case size.
 
 **Connect parts on Update Layout from Schematic** in Settings turns this off; off, every new part is placed in rows
 and the ratsnest shows what joins what.

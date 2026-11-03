@@ -227,9 +227,12 @@ public sealed class MicrostripGroundReferenceReportTests(ITestOutputHelper outpu
         foreach (var l in run.Lines) output.WriteLine(l.Text);
         Bbox Box(string id) => CellHierarchy.InstanceBbox(target.Instances.Single(i => i.SchematicId == id), layoutDir);
 
-        // The parts sit just past the line's end — millimetres, not the 600 mm a pitch of 1.5 lines put them at.
+        // The parts sit at the line's ends — millimetres from it, not the 600 mm a pitch of 1.5 lines put them at. Since
+        // brief-sdl-2 each is joined to the end the schematic puts it on (L1 the start, C1 the far end), so it is the
+        // GAP between the boxes that is millimetres, on whichever side.
         var line = Box("ML1");
-        Assert.All(new[] { "L1", "C1" }, id => Assert.InRange(Box(id).MinX - line.MaxX, 1, 5_000_000));
+        static long Gap(Bbox a, Bbox b) => Math.Max(Math.Max(a.MinX - b.MaxX, b.MinX - a.MaxX), Math.Max(a.MinY - b.MaxY, b.MinY - a.MaxY));
+        Assert.All(new[] { "L1", "C1" }, id => Assert.InRange(Gap(Box(id), line), long.MinValue, 5_000_000));
 
         var pour = Assert.Single(run.GroundArtwork.Pours);
         Assert.Equal(groundName, pour.Ground.Name);

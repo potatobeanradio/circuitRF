@@ -1,0 +1,9 @@
+# Two MLINs and a 0603 capacitor on one net, no tee, the capacitor to ground: the lines join, the
+# capacitor goes side-on against the joint, its grounded pad away from the line.
+joinable n2
+Info TL1 added
+Info TL2 added
+Info C1 added
+Warning P1 no layout view — skipped
+Warning P2 no layout view — skipped
+Info - Joined 2 of 2 connections; 0 left as ratsnest

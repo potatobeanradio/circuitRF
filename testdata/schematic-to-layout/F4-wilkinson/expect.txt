@@ -1,0 +1,20 @@
+# A ring Wilkinson: a tee splits into two arms of two 90° MCURVEs each, whose ends face each other across the tee's
+# own span, and an 0402 resistor bridging them closes the loop exactly.
+joinable n2
+joinable n3
+joinable n4
+joinable n5
+joinable n6
+joinable n7
+joinable n8
+Info TL1 added
+Info MT1 added
+Info CV1 added
+Info CV2 added
+Info CV3 added
+Info CV4 added
+Info R1 added
+Warning P1 no layout view — skipped
+Warning P2 no layout view — skipped
+Warning P3 no layout view — skipped
+Info - Joined 7 of 7 connections; 0 left as ratsnest

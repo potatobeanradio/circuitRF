@@ -266,6 +266,7 @@ public static class LayoutRead
 
         // ── The devices ────────────────────────────────────────────────────────────────────────
         var nets = new NetTable(pieces);
+        foreach (var (a, b) in bodies.PartitionJoins) nets.Join(a, b);
         var devices = new List<LvsDevice>();
 
         // R-lvs14-4a: which placements OWN copper, so tier-3 recognition can be kept out of it.
@@ -794,12 +795,38 @@ public static class LayoutRead
         private readonly List<string?> _labels = [];
         private readonly List<List<(int Device, int Terminal)>> _pins = [];
         private readonly SortedSet<string> _groundLabels = new(StringComparer.Ordinal);
+        private readonly Dictionary<int, int> _joined = [];
+        private readonly HashSet<int> _groundRoots = [];
         private int _ground = -1;
+
+        /// <summary>
+        /// Two partition nets that are one LVS net although no copper of the partition joins them: the pieces a
+        /// line's end touches at its edge, whose line left the partition (<see cref="LayoutReadBodies"/>, brief-sdl-2).
+        /// Called before any net is numbered.
+        /// </summary>
+        public void Join(int a, int b)
+        {
+            a = Root(a);
+            b = Root(b);
+            if (a == b) return;
+            if (b < a) (a, b) = (b, a);
+            _joined[b] = a;
+            if (pieces.IsGround(b) || _groundRoots.Contains(b)) _groundRoots.Add(a);
+        }
+
+        private int Root(int partitionNet)
+        {
+            while (_joined.TryGetValue(partitionNet, out int up)) partitionNet = up;
+            return partitionNet;
+        }
+
+        private bool IsGround(int root) => pieces.IsGround(root) || _groundRoots.Contains(root);
 
         /// <summary>The LVS net a partition net belongs to.</summary>
         public int Of(int partitionNet)
         {
-            if (pieces.IsGround(partitionNet))
+            partitionNet = Root(partitionNet);
+            if (IsGround(partitionNet))
             {
                 if (_ground < 0) _ground = Add("0");
                 if (pieces.NameOfNet(partitionNet) is { Length: > 0 } stated) _groundLabels.Add(stated);
@@ -829,8 +856,9 @@ public static class LayoutRead
         public int Existing(int partitionNet)
         {
             if (partitionNet < 0) return -1;
+            partitionNet = Root(partitionNet);
             if (_ofPartition.TryGetValue(partitionNet, out int existing)) return existing;
-            return pieces.IsGround(partitionNet) ? _ground : -1;
+            return IsGround(partitionNet) ? _ground : -1;
         }
 
         public void Attach(int net, int device, int terminal) => _pins[net].Add((device, terminal));

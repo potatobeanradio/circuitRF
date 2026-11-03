@@ -1105,9 +1105,9 @@ behaviour until the brief that implements S3 (SDL-4) lands.
 Update Layout from Schematic** setting is on (the default; off, every new part goes into the rows exactly as before).
 
 - **D1 — A joint is a net with exactly two layout pins**, both on one layer, neither on the ground net, and neither a
-  footprint pad nor a via (whose joint points SDL-2 and SDL-3 define). Every other net with two or more pins keeps
-  its ratsnest and gets a report line naming its reason: three or more pins, the ground net, two layers, or a pad
-  or via. A part's terminals are matched to its cell's pins by `SchematicLayoutOrientation.CellPinFor`, the rule
+  via (whose joint point SDL-3 defines); a footprint pad joins at the point SDL-2 gives it, below. Every other net
+  with two or more pins keeps its ratsnest and gets a report line naming its reason: three or more pins, the ground
+  net, two layers, two sides of the board, or a via. A part's terminals are matched to its cell's pins by `SchematicLayoutOrientation.CellPinFor`, the rule
   the orientation alignment already reads. The connected components of the joints are **chains**.
 - **D2 — Mirror comes from the schematic; rotation is solved.** Which way a bend turns or a tee's stub leaves is
   chirality, and pin geometry cannot decide it, so each new part keeps the mirror its symbol gives it (the symbol's
@@ -1135,6 +1135,56 @@ a DBU outside its copper, and LVS read whatever was joined to it as open.
 **A unit after a unit-bearing variable is skipped.** A parameter written `W = w50 mm` with `w50 = 280.152 um` is
 280.152 µm, the same as `W = w50`, in the circuit and in the artwork, because the evaluation site's unit applies
 only when the expression names nothing that carries its own unit (`expressions.md` §8).
+
+#### Footprints in lines (SDL-2)
+
+A part with pads — a footprint, an imported part, a placed cell — joins a chain as a line does. Only a line drawn from
+its own geometry (the microstrip and transmission-line kinds) joins at its pin point; everything else joins at its
+pad's joint point, so `ChainPlacer` has no case of its own for pads (`PadJoint`, `ShuntAttach`, `PadFacing`).
+
+- **D1 — One facing rule.** `PadFacing.Effective` gives each pad the direction away from the centroid of all of the
+  part's pads, in the frame its stored direction gives it: of the stored direction turned by 0°, 90°, 180° and 270°,
+  the one nearest "away". A pad stored at a multiple of 90° therefore gets the nearest 90° to away, and a part turned
+  30° keeps its 30° frame. The frame matters as much as the sign: an 0603's pads are usually taller than they are
+  wide, so a reader that stores the pad's long axis gets the AXIS wrong, not only the sign. The board reader, the XML
+  library reader, the artwork builder behind the other library formats and `ComponentImport` all call it, so a newly
+  read file stores the right direction; placement applies it too, because files already written keep theirs, and so
+  does the ground via placed beside a pad. Pads that all sit on their centroid (one pad) keep the stored direction,
+  reported once per part. Only a footprint's direction is corrected: an imported part was written with this rule
+  already, and a placed cell's pins face the way its author drew them.
+- **D2 — A line ends on the middle of the pad's outer edge** (series decision D-joint). `PadJoint` measures the pad's
+  copper on the pin's layer that holds the pin point, along the effective direction: the joint point is the pin
+  point plus that direction times the copper's reach. Cached per resolved cell, as `CellPins` is. A pin with no copper
+  under it joins at its own point, reported once per part.
+- **D3 — A series part is a link in the chain.** A two-pad part between two line nets joins both through D2's
+  points; its solved rotation makes the pad meeting the incoming line face it.
+- **D4 — A shunt part attaches side-on, at most one per side.** On a net with two line ends and one or more pads, the
+  lines join each other and each pad goes against the side of that joint: the part turned so the pad faces the line,
+  the pad's outer edge on the line's edge (the wider line's, where the two differ), centred on the joint's centre
+  line. The first pad goes on the left of the direction of travel, the second on the right; a third or later is not
+  placed by the chain and is reported. Travel runs away from the chain's anchor, the part joined to the
+  lowest-numbered port. A grounded far pad takes the ground via beside it as any pad does.
+- **D5 — A line that ends at a pad which also has a shunt part.** On a net with one line end and two or more pads, the
+  line joins the pad whose part continues the chain (one of its other nets reaches a line without passing back
+  through this net), else the first in schematic-id order; the other pads go side-on at the line's end, its end edge
+  being the joint's centre line.
+- **D6 — A bridging part is never forced.** A part with pads whose two joints both reach line ends the chain placed
+  first is centred between those ends. When its pads do not span the gap within SDL-1's D4 tolerance, the loop's
+  warning names the part, the spacing between the line ends and the span of its pads.
+- **D7 — A three-or-more-pad part chains by its joints** as any part does: the first one the walk reaches is a tree
+  edge and the rest are closing joints or place what lies beyond. Grounded pads take ground vias.
+- **D8 — Sides must match.** A net whose parts are on different sides of the board is not joined (no via is invented)
+  and is reported; that check comes before the layer check, because a part turned over carries its pins to the other
+  copper too.
+
+Side-on parts placed at one joint are checked against each other, and against the pad the line joins: pads of
+different nets whose copper overlaps are reported. The whole-layout overlap check is SDL-3's.
+
+**LVS reads a line's end on its whole end edge.** A placed line is a device to LVS, its copper out of the partition and
+its terminals read at their pins (`LayoutReadBodies`). A side-on pad touches the line at the corner of its end edge
+and nowhere under the pin point, so a junction is read on the copper under its pin point AND on the copper at the
+two corners of its end edge; every partition net found there is one LVS net (`NetTable.Join`). Copper that meets a
+line part-way along still reads as not connected, which is what the schematic can draw.
 
 ---
 

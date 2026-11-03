@@ -290,15 +290,14 @@ public static class ComponentImport
         foreach (var p in footprint.Cell.Pins)
             if (p.Pin.Name.Length > 0) byPad.TryAdd(p.Pin.Name, p);
 
-        // R-PL1-15: OutwardDeg is the direction AWAY from the land pattern's centroid, snapped to the
-        // nearest 90°. Not PcbReader's board-side rule (the pad's own long axis), because a package pad
-        // faces out of the body while a board pad is reached from any direction.
-        double cx = 0, cy = 0;
-        if (footprint.Cell.Pins.Count > 0)
-        {
-            cx = footprint.Cell.Pins.Average(p => (double)p.Pin.X);
-            cy = footprint.Cell.Pins.Average(p => (double)p.Pin.Y);
-        }
+        // R-PL1-15 / brief-sdl-2 D1: OutwardDeg is the direction AWAY from the land pattern's centroid — PadFacing's
+        // rule, the one every footprint reader and the schematic-driven placement also apply. Not PcbReader's old
+        // board-side rule (the pad's own long axis), because a package pad faces out of the body while a board pad
+        // is reached from any direction.
+        var cellPins = footprint.Cell.Pins.Select(p => p.Pin).ToList();
+        var facing = PadFacing.Effective(cellPins).Deg;
+        var facingOf = new Dictionary<LayoutPin, double>(ReferenceEqualityComparer.Instance);
+        for (int i = 0; i < cellPins.Count; i++) facingOf[cellPins[i]] = facing[i];
 
         foreach (var terminal in terminals)
         {
@@ -307,18 +306,9 @@ public static class ComponentImport
 
             var pin = source.Pin;
             if (ResolveKey(keyByName, choices, source.LayerName) is { } key) pin.Layer = key;
-            pin.OutwardDeg = FacingOf(pin.X - cx, pin.Y - cy, pin.OutwardDeg);
+            pin.OutwardDeg = facingOf[pin];
             view.Pins.Add(pin);
         }
-    }
-
-    /// <summary>The nearest 90° to the direction away from the centroid; the geometry's own answer when
-    /// the pad sits ON the centroid and there is no outward direction to read.</summary>
-    private static double FacingOf(double dx, double dy, double fallback)
-    {
-        if (Math.Abs(dx) < 1e-9 && Math.Abs(dy) < 1e-9) return fallback;
-        double deg = Math.Atan2(dy, dx) * 180.0 / Math.PI;
-        return LayoutAngle.Normalize(Math.Round(deg / 90.0, MidpointRounding.AwayFromZero) * 90.0);
     }
 
     private static LayerKey? ResolveKey(

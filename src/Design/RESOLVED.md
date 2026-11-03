@@ -26610,3 +26610,60 @@ the server root.
 
 Gate: `tests/Ui.Tests/VendorLibraries/ProtectedModelTests.cs` (9), `tests/Core.Tests/Devices/External/OsdiRefusingModelTests.cs`,
 `tests/Engine.Tests/External/VerilogARefusingModelCliTests.cs`.
+
+## Footprints in lines: pad facing, pad joints, side-on parts, bridging parts (brief SDL-2, 2026-11-03)
+
+**The long-axis readers get the AXIS wrong, not only the sign.** The brief assumed a board or library footprint keeps
+the right axis and only the sign can be backwards. An 0603's pads are usually taller than they are wide, so a pad's
+long axis runs ACROSS the line it sits in, and "stored axis, sign away from the centroid" would point both pads along
+±Y. `PadFacing.Effective` therefore keeps the stored direction's FRAME (the direction turned by a multiple of 90°)
+and takes whichever of the four is nearest "away from the centroid of all the part's pads". A pad stored at a multiple
+of 90° gets exactly `ComponentImport`'s old answer (nearest 90° to away, ties away from zero), so imported parts do not
+change; a part turned 30° keeps its 30° frame. The board reader (`PcbReader`, at the end of each footprint, before
+its content key), the XML library reader and `ComponentFootprintBuilder.Build` (every other library format) all apply
+it; `ComponentImport` calls it instead of its own copy. Placement applies it only to a part that states a
+`Footprint`: an imported part was written with it, and a placed cell's pins face the way its author drew them, which
+"away from the centroid" need not be (a cell with both pins on its left side). `GroundArtwork.Beside` applies it to a
+cell read from a file and never to a generated one, whose directions are exact and for which "away from the centroid"
+is wrong (a bend's pin 1).
+
+**LVS could not see a side-on part.** A placed line is a body to LVS: its copper leaves the partition and its pins are
+read at their pin points (`LayoutReadBodies`). A shunt pad laid against the side of a junction (D4), or against the
+side of a line where it ends on another part's pad (D5), touches the line at the corner of its end edge and nowhere
+under the pin point, so LVS reported every such joint open while the copper partition, DRC and the ratsnest all read
+it joined. `ReadPins` now also reads the copper at the two corners of a body pin's end edge (the pin's width across
+its facing), and every partition net a junction touches there is joined into one LVS net by `NetTable.Join`, a
+union-find applied before any net is numbered (ground if any member is). Copper that meets a line part-way along still
+reads as not connected, as the file header says. Gates: the `Lvs` tests pass unchanged, and F2, F3 and F5 are
+LVS-clean through `SdlChecker`.
+
+**A 180° MCURVE has no handedness the pin alignment can read.** Both of its pins face the same way, so
+`SchematicLayoutOrientation.PinAlignment` cannot tell which way it turns and fell to `FacingError`'s tie-break: in a
+ring of two unmirrored 180° curves one came out mirrored and the other not, and the ring opened by 12 mm. F4 builds
+each arm from two 90° curves, the second arm mirrored in the schematic as C4 does. The U-turn case is SDL-3's
+(any-angle chains); until then a 180° curve's turn is not reliably the symbol's.
+
+**An SnP with a reference terminal cannot be named on the layout.** `PdnSchematicNets` lists an instance's
+`NetBindings`, which for an SnP hold the N port nets and not its `RefNetBinding`, so a three-pad footprint under a
+two-port SnP with a reference has three pins against two nets and `PlacedPins.JoinPinsToPorts` names none of them: the
+ratsnest and the checker see the part on no net. LVS is unaffected (it reads the cell's terminal map). F7 is a BJT on a
+three-pad package instead. Not fixed here.
+
+**In a `.cnl`, an MCURVE `Angle` with no unit is RADIANS.** `Angle=-180` drew −180 rad (−10 313°) and the elaborator
+refused it as past a full circle. Write `Angle=-180 deg`.
+
+**The pad joint is a pin, so the placer has no pad case.** `PadJoint.Of` gives each pin a synthetic `LayoutPin` at the
+middle of its pad's outer edge, facing its effective direction, and the planner hands those to `JointGraph` as the
+part's terminals; `ChainPlacer` joins them exactly as it joins line pins. The joint point is rounded to DBU once (axis-
+aligned pads land exactly). D6's bridging part is the one placement rule of its own: a part with pads, two joints, both
+to lines, placed from one and placing nothing, is recentred by half the closing gap, so the misfit is split between
+its two ends and its warning gives both spacings.
+
+**`MicrostripGroundReferenceReportTests.ALongLine…` asserted the old row placement** (both parts just past the line's
+far end). The circuit's two shunt parts each sit alone on one of the line's end nets, so they are now joined to those
+ends; the assertion now asks for millimetres of GAP between each part and the line, which is what it was for.
+
+Designs F1-F7 added to `testdata/schematic-to-layout/` (drawn from `.cnl` through `netlist --to-schematic`; F6's and
+F7's footprints are cell folders under `parts/` with a `.ccell` terminal map), plus `F2b-three-shunts`, which is not in
+`designs.txt` because its third capacitor is placed in the row by design. Gate: `SdlDesignSetTests`,
+`FootprintChainTests` (8).

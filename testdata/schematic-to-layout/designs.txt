@@ -9,3 +9,10 @@ C4-bends SDL-1
 C5-cross SDL-1
 C6-broken-loop SDL-1
 C7-turned SDL-1
+F1-dc-block SDL-2
+F2-shunt-cap SDL-2
+F3-pi-attenuator SDL-2
+F4-wilkinson SDL-2
+F5-bias-tee SDL-2
+F6-board-footprint SDL-2
+F7-three-pad SDL-2
