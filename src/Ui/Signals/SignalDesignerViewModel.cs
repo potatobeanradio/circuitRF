@@ -1070,7 +1070,8 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
 
     /// <summary>How a picked I/Q file is stored in the <c>.csch</c>: workspace-relative when it can be, as an SnP's
     /// Touchstone is, so the design stays portable.</summary>
-    private string StoreIqPath(string absolute) => SnpPathPolicy.ToStored(absolute, _schematicVm?.WorkspaceRoot);
+    private string StoreIqPath(string absolute)
+        => SnpPathPolicy.ToStored(absolute, _schematicVm?.WorkspaceRoot, _schematicVm?.EditModel.SchematicDirectory);
 
     // ── carriers and presets ──────────────────────────────────────────────
 

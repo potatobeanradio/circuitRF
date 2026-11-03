@@ -109,6 +109,9 @@ public static class WorkspaceRootFinder
         // cell that was just created or just imported appear in the picker at once rather than
         // within T.
         Layout.Footprints.FootprintCatalog.Invalidate();
+        // Brief vendorlib-8: the owning-root walk stops at the workspace root this memo answers, and a
+        // part.cpart appearing is the same kind of event as a .cws appearing.
+        OwningRoot.InvalidateCache();
     }
 
     /// <summary>

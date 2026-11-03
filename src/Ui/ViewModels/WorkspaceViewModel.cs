@@ -316,6 +316,17 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         => CurrentWorkspacePath is null ? null : Path.GetDirectoryName(CurrentWorkspacePath);
 
     /// <summary>
+    /// The base a run of <paramref name="model"/> resolves relative file references against: the schematic's
+    /// OWNING root (brief vendorlib-8 — its model folder, else its own workspace), then this window's workspace
+    /// for a loose or unsaved schematic, then the schematic's folder. <c>SchematicCircuit.ReferenceBaseOf</c>'s
+    /// rule, so a top-level document from a referenced workspace or a model folder runs against the files
+    /// the editor shows, and the GUI and a headless run agree. For a schematic of this workspace it is this
+    /// workspace's root, as before.
+    /// </summary>
+    private string? RunReferenceBase(SchematicEditModel model)
+        => SchematicCircuit.ReferenceBaseOfDirectory(model.SchematicDirectory, CurrentWorkspaceRoot);
+
+    /// <summary>
     /// The workspace roots open in this process OTHER than this window's own (MW2 R-mw2-14). An
     /// external cell reference makes a cell in another workspace a possible referrer, so the two
     /// operations that ask "who points at this?" — Remove Cell and Rename Cell — have to ask every
@@ -4013,9 +4024,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             return;
         }
 
-        string? workspaceRoot = CurrentWorkspacePath is not null
-            ? Path.GetDirectoryName(CurrentWorkspacePath)
-            : null;
+        string? workspaceRoot = RunReferenceBase(activeDoc.ViewModel.EditModel);
 
         // Step 2: work out what the run WILL do, and say so BEFORE running any of it. This is the
         // whole point of the plan/execute split — a nested sweep can be tens of thousands of points

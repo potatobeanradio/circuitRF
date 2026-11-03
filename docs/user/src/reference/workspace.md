@@ -116,6 +116,11 @@ to the *workspace* is not blocked — it costs nothing until a cell is actually 
 warns you at that point.) You are also told before copying if the cell uses parts from a kit this
 workspace has not imported.
 
+**A referenced cell's files are read from its own workspace.** A Touchstone file, a `.cmodel` or a
+Verilog-A source that the cell names with a relative path is found relative to the workspace the cell
+lives in, not the one placing it. A file of the same name in your own workspace is never used in its
+place.
+
 Because a reference is written as *alias + cell name* rather than as a path, moving the shared library
 later is one edit in one place, not a hunt through every document that used it.
 

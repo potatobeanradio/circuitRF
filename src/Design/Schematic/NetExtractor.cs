@@ -1,4 +1,5 @@
 using CircuitRF.Core.Design;
+using CircuitRF.Core.Elaboration;
 using CircuitRF.Core.Expressions;
 using CircuitRF.Core.Devices.Composed;
 using CircuitRF.Core.Devices.External;
@@ -162,7 +163,7 @@ public static class NetExtractor
         var lib        = new Library("netlist");
         var imports    = new NetlistImports(cornerSections);
         var conflicts  = new List<string>();
-        var scope      = new CellScope();
+        var scope      = new CellScope { RunBase = SchematicCircuit.ReferenceBaseOfDirectory(model.SchematicDirectory, model.HostWorkspaceRoot) };
         var labeled    = new HashSet<string>(StringComparer.Ordinal);
 
         var (instances, cellPorts, topVars, topMeas) = ExtractModel(model, cells, lib, imports, scope, conflicts, labeled);
@@ -2122,6 +2123,11 @@ public static class NetExtractor
     /// </summary>
     private sealed class CellScope
     {
+        /// <summary>The base the run resolves a relative file reference against: the extraction root's
+        /// <see cref="SchematicCircuit.ReferenceBaseOfDirectory"/>. A cell whose own owning root differs
+        /// has its file references rebased (<see cref="RebaseFileReferences"/>).</summary>
+        public string? RunBase { get; init; }
+
         /// <summary>Cell KEYS on the path from the extraction root to here.</summary>
         public readonly HashSet<string> InProgress = new(StringComparer.OrdinalIgnoreCase);
 
@@ -2214,7 +2220,7 @@ public static class NetExtractor
                 conflicts.Add($"Cell '{cellName}': MEAS components are ignored inside a cell; measurements attach to the top testbench only.");
             var cell = new Cell(cellName);
             cell.Ports.AddRange(subPorts);
-            cell.Instances.AddRange(subInstances);
+            cell.Instances.AddRange(RebaseFileReferences(subInstances, res.Schematic.SchematicDirectory, scope.RunBase));
             cell.Variables.AddRange(subVars);
             foreach (var p in res.Parameters) cell.Parameters.Add(p);
             lib.Cells.Add(cell);
@@ -2260,6 +2266,40 @@ public static class NetExtractor
             .ToList();
 
         return new Instance(comp.InstanceName, cellName, nets, overrides);
+    }
+
+    /// <summary>
+    /// A cell's instances with each relative file reference made absolute against the cell's OWN
+    /// owning root, when that differs from the run's base (brief vendorlib-8 R-vl8-2c). A cell from a
+    /// referenced workspace stores its SnP relative to its workspace root, and a model folder's
+    /// schematic relative to the model folder; the elaborator resolves every relative reference
+    /// against the one base the run started in, so without this both would read the consuming
+    /// workspace's file of the same name, or none.
+    ///
+    /// <para><b>The elaborator is unchanged</b>: an absolute path passes through
+    /// <c>ResolveFileReference</c> untouched, so a <c>.cnl</c> written from such a design runs on its
+    /// own. Which parameters are files is <see cref="FileReferences"/>'s answer, the one list the
+    /// elaborator's resolution sites are checked against. A cell in the run's own root is returned
+    /// as it is, so an ordinary design's netlist keeps its portable relative paths.</para>
+    /// </summary>
+    private static IEnumerable<Instance> RebaseFileReferences(IEnumerable<Instance> instances, string? cellDirectory, string? runBase)
+    {
+        string? owning = OwningRoot.Of(cellDirectory);
+        if (owning is null || OwningRoot.Same(owning, runBase)) return instances;
+
+        return instances.Select(inst =>
+        {
+            bool changed = false;
+            var overrides = inst.Overrides.Select(o =>
+            {
+                if (FileReferences.Rebase(inst.Reference, o.Name, o.Expression, owning) is not { } rebased) return o;
+                changed = true;
+                return new ParameterAssignment(o.Name, rebased, o.Unit);
+            }).ToList();
+            return changed
+                ? new Instance(inst.InstanceName, inst.Reference, inst.NetBindings, overrides) { RefNetBinding = inst.RefNetBinding }
+                : inst;
+        }).ToList();
     }
 
     // ── Shared geometric union helper ────────────────────────────────────────────

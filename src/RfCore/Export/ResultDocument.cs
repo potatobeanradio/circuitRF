@@ -2406,6 +2406,13 @@ namespace RfCore.Export
     /// True when the reference resolves to somewhere outside the referring document's own workspace.
     /// Null when there is no workspace to be outside of.
     /// </param>
+    /// <param name="OwningRoot">
+    /// For a model or data FILE reference, the folder it was resolved against (brief vendorlib-8 R-vl8-3).
+    /// </param>
+    /// <param name="OwningRootWalk">
+    /// Which walk produced <paramref name="OwningRoot"/>: <c>model-folder</c>, <c>workspace</c>,
+    /// <c>host-workspace</c> or <c>document-folder</c>.
+    /// </param>
     public sealed record ExplainReferenceJson(
         string  Ref,
         string  From,
@@ -2417,7 +2424,11 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         string? Redirect,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        IReadOnlyList<string>? Via = null);
+        IReadOnlyList<string>? Via = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? OwningRoot = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? OwningRootWalk = null);
 
     // ── the three questions a caller asks BEFORE it can render (RND-3) ───────
     //

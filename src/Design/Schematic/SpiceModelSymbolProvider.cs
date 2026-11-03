@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using CircuitRF.Design.Workspace;
 
 using CircuitRF.Design.Symbol;
 namespace CircuitRF.Design.Schematic;
@@ -156,7 +157,7 @@ public static class SpiceModelSymbolProvider
         reason = null;
         if (VendorLibraries.VendorLibraryRefs.IsVendorRef(file))
             return VendorLibraries.VendorLibraryRefs.ResolveFile(file, schematicDir, out reason);
-        return SnpPathPolicy.Resolve(file, WBondSymbolProvider.WorkspaceRootOf(schematicDir), schematicDir);
+        return SnpPathPolicy.Resolve(file, OwningRoot.Of(schematicDir), schematicDir);
     }
 
     /// <summary>
@@ -174,7 +175,7 @@ public static class SpiceModelSymbolProvider
     /// null root.</para>
     /// </summary>
     public static string ToStored(string absolutePath, string? schematicDir)
-        => SnpPathPolicy.ToStored(absolutePath, WBondSymbolProvider.WorkspaceRootOf(schematicDir));
+        => SnpPathPolicy.ToStored(absolutePath, OwningRoot.Of(schematicDir), schematicDir);
 
     // ── The CellSymbolResolver seam ───────────────────────────────────────────
 

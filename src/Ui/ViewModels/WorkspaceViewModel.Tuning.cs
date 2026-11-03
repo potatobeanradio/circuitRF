@@ -115,7 +115,7 @@ public partial class WorkspaceViewModel
 
         var baseDir = RunBaseDirectory();
         var text    = CnlWriter.Write(extracted.TestBench, extracted.Library, "tuning session");
-        var wsRoot  = CurrentWorkspacePath is not null ? Path.GetDirectoryName(CurrentWorkspacePath) : null;
+        var wsRoot  = RunReferenceBase(model);
         // With the extraction's vendor parts, which the text cannot carry: their candidates are what a part's
         // slider steps through and what the optimizer chooses among (brief vendorlib-4).
         return (PreparedCircuit.FromText(text, baseDir, wsRoot, doc.Id, extracted), doc, baseDir);

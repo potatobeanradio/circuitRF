@@ -210,8 +210,9 @@ public static class SchematicCircuit
     }
 
     /// <summary>
-    /// What a relative file reference inside a document resolves against: <b>the workspace root</b>,
-    /// and the document's own folder only when it belongs to no workspace.
+    /// What a relative file reference inside a document resolves against: <b>its owning root</b>
+    /// (<see cref="OwningRoot"/> — the nearest model folder, else the workspace root), and the
+    /// document's own folder only when it belongs to neither.
     ///
     /// <para><b>This is the GUI's base, not a headless one</b> (<c>SnpPathPolicy</c> states the rule
     /// and <c>MoveRefRegistry</c> repairs against it). Simulate writes <c>netlist.cnl</c> at the
@@ -227,9 +228,14 @@ public static class SchematicCircuit
     /// own folder, the same fallback <c>SnpPathPolicy.Resolve</c> takes.</para>
     /// </summary>
     public static string? ReferenceBaseOf(string documentPath, string? hostWorkspaceRoot = null)
+        => ReferenceBaseOfDirectory(Path.GetDirectoryName(Path.GetFullPath(documentPath)), hostWorkspaceRoot);
+
+    /// <inheritdoc cref="ReferenceBaseOf"/>
+    /// <param name="documentDirectory">The folder the document is in; null for an unsaved one.</param>
+    public static string? ReferenceBaseOfDirectory(string? documentDirectory, string? hostWorkspaceRoot = null)
     {
-        string? own = Path.GetDirectoryName(Path.GetFullPath(documentPath));
-        return WorkspaceRootFinder.WorkspaceDirOf(own)
+        string? own = string.IsNullOrWhiteSpace(documentDirectory) ? null : Path.GetFullPath(documentDirectory);
+        return OwningRoot.Of(own)
             ?? (string.IsNullOrWhiteSpace(hostWorkspaceRoot) ? null : WorkspaceRootFinder.Normalize(hostWorkspaceRoot))
             ?? own;
     }

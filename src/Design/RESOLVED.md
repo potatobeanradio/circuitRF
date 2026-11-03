@@ -26218,3 +26218,42 @@ bind (`FetPinBinding`), the box otherwise; `VerilogA` is the box; a transistor k
 
 Gate: `tests/Ui.Tests/VendorLibraries/VerilogASymbolTests.cs` (9),
 `tests/Core.Tests/Devices/External/ReservedSelectorNameTests.AVerilogAsSymbol_NeverReachesTheModel`.
+
+## VL-8 — a file reference resolves where its document lives (2026-11-03)
+
+`OwningRoot.Of(dir)` (`src/Design/Workspace`) is the one answer to "what does a relative file reference in this
+document resolve against": the nearest model folder (`part.cpart`), else the workspace root, else null. The nearest
+wins, so a model library kept inside a workspace tree still resolves each model against its own folder.
+`SnpPathPolicy.Resolve`/`ToStored`, the ComposedFET/VerilogA/SpiceModel providers and `SchematicCircuit.ReferenceBaseOf`
+all take it; the elaborator is unchanged.
+
+- **§1 confirmed the referenced-cell defect before it was fixed.** Workspace B placing A's cell `Line`, whose SnP
+  stores `data/line.s2p` against A's root: the elaborated SnP held `B/data/line.s2p`. That happened with no decoy
+  present, so the run read nothing; with one present, it would have read B's file without a word. Nothing rebased
+  it: extraction copied the cell's `File` verbatim and the elaborator resolves every relative path against the one
+  base the run started in. A model folder inside a workspace had the same shape: `models/x.s2p` read `ws/models/x.s2p`.
+- **Extraction rebases; the `.cnl` stays runnable on its own.** When `NetExtractor` builds a cell whose owning root
+  differs from the run's base (`SchematicCircuit.ReferenceBaseOfDirectory` of the top schematic), each relative
+  file-valued parameter is written ABSOLUTE and quoted (`RebaseFileReferences`). A cell in the run's own root is
+  untouched, so an ordinary design's netlist keeps its portable relative paths. The model's own `.cnl` is never
+  touched; only a consumer's extraction rebases it.
+- **Which parameters are files: `Core.Elaboration.FileReferences`**, collected from the elaborator's own resolution
+  sites (SnP/ComposedFET/ComposedCore/VerilogA `File`, wBond `File`/`MaterialLibrary`, MOD_Source `Carrier[n]`'s
+  `File=` field). A scheme-qualified value (`vendorlib://`, `pdk://`) and an absolute path are never rebased; nor is
+  an unquoted bare word on a VerilogA, which the elaborator may bind as a variable. A source scan in the gate fails on
+  any new `ResolveFileReference`/`ResolveSnpFilePath` site the table does not name.
+- **`OwningRoot` is memoised**: `EditableSchematic` resolves an SnP's file per render. The memo is dropped by
+  `WorkspaceRootFinder.InvalidateCache`, so whatever writes a `part.cpart` (Export to Library, brief 10) must call it.
+- **The GUI's run base follows the same rule** (`WorkspaceViewModel.RunReferenceBase`, used by Simulate and by the
+  tuning/optimizer/yield preparation). It used to be the open window's workspace root. That is the same folder for a
+  document of that workspace, but it was wrong when the TOP document lives elsewhere: a model's own schematic, or a
+  referenced workspace's cell simulated as the top level. Those ran against the window's root while the editor read
+  the owning root. A loose or unsaved schematic still falls back to the window's workspace. With no workspace open it
+  falls back to the schematic's own folder, where it used to have no base at all. Where results are written
+  (`RunBaseDirectory`) is unchanged.
+- `explain <doc> --ref <file>` (a model or data file by extension) resolves against the base a run of that document
+  uses and reports `owningRoot` and `owningRootWalk` (`model-folder` / `workspace` / `host-workspace` /
+  `document-folder`). Its `.cmodel` case used to resolve against the document's own folder, which was not what a
+  `.csch` run does.
+
+Gate: `tests/Ui.Tests/VendorLibraries/OwningRootPathTests.cs` (3).

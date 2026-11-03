@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using CircuitRF.Design.Workspace;
 
 namespace CircuitRF.Design.Schematic;
 
@@ -24,6 +25,13 @@ namespace CircuitRF.Design.Schematic;
 /// command. There is now one function, so a caller cannot pick the wrong base by writing a
 /// <c>Path.Combine</c> of its own.</para>
 ///
+/// <para><b>The root is the document's OWNING root</b> (brief vendorlib-8 R-vl8-2b): when the caller
+/// names the document's folder, <see cref="OwningRoot.Of"/> decides — the nearest model folder, else the
+/// workspace root — and the <c>workspaceRoot</c> argument is only the fallback for a document that has
+/// neither. A model placed from somebody else's workspace, and a cell from a referenced workspace, are
+/// then read where they live, which is where extraction rebases them for the run
+/// (<c>NetExtractor.RebaseFileReferences</c>).</para>
+///
 /// <para><b>Not a duplicate of <c>WorkspaceRefs.Resolve</c>, and please do not add a third.</b>
 /// That one is the general workspace-reference resolver — datasets, layouts, bitmaps — and states
 /// the same rooted/relative rule. This one adds the two things the SnP editor needs and it does
@@ -42,10 +50,11 @@ public static class SnpPathPolicy
     /// absolute otherwise. When <paramref name="workspaceRoot"/> is null/empty, or the inputs are not
     /// rootable to a common base, the absolute path is returned unchanged.
     /// </summary>
-    public static string ToStored(string absolutePath, string? workspaceRoot)
+    public static string ToStored(string absolutePath, string? workspaceRoot, string? documentDirectory = null)
     {
         if (string.IsNullOrEmpty(absolutePath) || !Path.IsPathRooted(absolutePath))
             return absolutePath;
+        workspaceRoot = OwningRoot.Of(documentDirectory) ?? workspaceRoot;
         if (string.IsNullOrEmpty(workspaceRoot))
             return absolutePath;
 
@@ -97,7 +106,8 @@ public static class SnpPathPolicy
             if (Path.IsPathRooted(raw)) return Path.GetFullPath(raw);
 
             string rel  = raw.Replace('\\', '/');
-            string? bas = !string.IsNullOrEmpty(workspaceRoot) ? workspaceRoot : schematicDirectory;
+            string? bas = OwningRoot.Of(schematicDirectory)
+                       ?? (!string.IsNullOrEmpty(workspaceRoot) ? workspaceRoot : schematicDirectory);
             return string.IsNullOrEmpty(bas) ? null : Path.GetFullPath(Path.Combine(bas, rel));
         }
         catch

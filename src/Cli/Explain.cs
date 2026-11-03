@@ -1254,16 +1254,20 @@ internal static class Explain
         if (VendorLibraryRefs.IsVendorRef(reference))
             return ExplainVendorReference(reference, from);
 
-        // A ComposedFET's model file resolves by the elaborator's own rule (brief-modelcomposer-13 R-mc13-5), never by the
-        // cell walk: a .cmodel is a file, and the walk would answer a question elaboration never asks.
-        if (reference.EndsWith(".cmodel", StringComparison.OrdinalIgnoreCase))
+        // A model or data file a part's File names (a .cmodel, a Touchstone, a Verilog-A source, a SPICE library)
+        // resolves by the elaborator's own rule (brief-modelcomposer-13 R-mc13-5), never by the cell walk: it is a
+        // file, and the walk would answer a question elaboration never asks. The base is the document's OWNING root
+        // (brief vendorlib-8 R-vl8-3), reported with the walk that found it — the one thing a caller cannot see when a
+        // reference resolves somewhere unexpected.
+        if (IsModelFileReference(reference))
         {
-            string model = CircuitRF.Core.Elaboration.Elaborator.ResolveFileReference(reference.Trim('"'), from);
+            var (bas, walk) = FileReferenceBase(path, from);
+            string model = CircuitRF.Core.Elaboration.Elaborator.ResolveFileReference(reference.Trim('"'), bas);
             string? root = WorkspaceRootFinder.FindAncestorCws(from) is { } ws ? Path.GetDirectoryName(ws) : null;
             bool exists = File.Exists(model);
             int code = exists ? 0 : JsonRun.Fail(CliDiagnostics.ExplainRefFileNotFound(reference, model));
             return (new ExplainReferenceJson(reference, from, model, exists ? "resolved" : "not-found",
-                root is null ? null : WorkspaceRootFinder.IsOutside(model, root), null), code);
+                root is null ? null : WorkspaceRootFinder.IsOutside(model, root), null, null, bas, walk), code);
         }
 
         var res = CellSymbolResolver.Resolve(reference, from);
@@ -1302,6 +1306,29 @@ internal static class Explain
 
         return (new ExplainReferenceJson(
             reference, from, resolved, state, outside, res.Redirect?.To), exit);
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex RxModelFile = new(
+        @"\.(cmodel|s\d+p|ts|va|vams|osdi|lib|sp|spi|cir|mod|inc)$",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// <summary>A reference naming a file a part's <c>File</c> parameter holds, which the elaborator resolves.</summary>
+    private static bool IsModelFileReference(string reference) => RxModelFile.IsMatch(reference.Trim('"'));
+
+    /// <summary>
+    /// The base a relative file reference in the document at <paramref name="path"/> resolves against, and the walk
+    /// that produced it (brief vendorlib-8 R-vl8-3) — what a run of that document uses. A netlist runs from its own
+    /// folder (<see cref="CircuitSource.ReferenceBaseOf"/>); anything else from its owning root (the nearest model
+    /// folder, else the workspace), else the host workspace, else its own folder.
+    /// </summary>
+    private static (string Base, string Walk) FileReferenceBase(string path, string from)
+    {
+        if (!Directory.Exists(path) && DocumentKinds.Classify(path) == DocumentKind.Netlist)
+            return (from, "document-folder");
+        if (OwningRoot.Find(from) is { } owning) return (owning.Root, owning.KindName);
+        if (!string.IsNullOrWhiteSpace(CliEntry.HostWorkspace))
+            return (WorkspaceRootFinder.Normalize(CliEntry.HostWorkspace), "host-workspace");
+        return (from, "document-folder");
     }
 
     private static (ExplainReferenceJson?, int) ExplainVendorReference(string reference, string from)
@@ -1849,6 +1876,8 @@ internal static class Explain
                               (reference.OutsideWorkspace == true ? "  (outside its workspace)" : ""));
             if (reference.Redirect is { } moved)
                 Console.WriteLine($"  {"",-12} via a recorded move to '{moved}'");
+            if (reference.OwningRoot is { } owningRoot)
+                Console.WriteLine($"  {"",-12} relative to {owningRoot}  ({reference.OwningRootWalk})");
             foreach (var step in reference.Via ?? [])
                 Console.WriteLine($"  {"",-12} via {step}");
         }

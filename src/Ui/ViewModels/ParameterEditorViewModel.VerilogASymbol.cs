@@ -68,7 +68,7 @@ public partial class ParameterEditorViewModel
     {
         if (_schematicVm is null || PickVerilogASymbolFileAsync is null) return;
         if (await PickVerilogASymbolFileAsync() is not { } path) return;
-        SetVerilogASymbol(SnpPathPolicy.ToStored(path, _schematicVm.WorkspaceRoot));
+        SetVerilogASymbol(SnpPathPolicy.ToStored(path, _schematicVm.WorkspaceRoot, _schematicVm.EditModel.SchematicDirectory));
     }
 
     /// <summary>

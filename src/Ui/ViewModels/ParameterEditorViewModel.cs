@@ -720,7 +720,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         if (!schematic.EditModel.Components.Contains(target)) return null;
         var newParams = target.Parameters.Select(p => p.Clone()).ToList();
         // Prefer a workspace-relative path (portable); falls back to absolute per SnpPathPolicy.
-        string stored = SnpPathPolicy.ToStored(path, schematic.WorkspaceRoot);
+        string stored = SnpPathPolicy.ToStored(path, schematic.WorkspaceRoot, schematic.EditModel.SchematicDirectory);
         var fileParam = newParams.FirstOrDefault(p => p.Name == "File");
         if (fileParam is null) return null;
         fileParam.Expression = stored;
@@ -1564,10 +1564,13 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
                 Task<VerilogAParameterInfo?>>? PickModelParameterAsync
     { get; set; }
 
-    /// <summary>The model file as the elaborator resolves it: a relative path against the workspace root.</summary>
+    /// <summary>The model file as the run reads it: a relative path against the schematic's owning root
+    /// (<see cref="SnpPathPolicy.Resolve"/>, brief vendorlib-8), the base extraction rebases it from.</summary>
     private string VerilogAModelFile()
-        => CircuitRF.Core.Elaboration.Elaborator.ResolveFileReference(
-            ParamValue(_target!, ComponentModelFactory.VerilogAFileParam), _schematicVm?.WorkspaceRoot);
+    {
+        string stored = ParamValue(_target!, ComponentModelFactory.VerilogAFileParam);
+        return SnpPathPolicy.Resolve(stored, _schematicVm?.WorkspaceRoot, _schematicVm?.EditModel.SchematicDirectory) ?? stored;
+    }
 
     /// <summary>The parameters the currently chosen model declares. Read on demand — this stands a
     /// probe model up inside the worker, so it is the picker's own cost, not the dialog's.</summary>

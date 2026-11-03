@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using CircuitRF.Design.Workspace;
 using System.Linq;
 using CircuitRF.Core.Devices.Composed;
 using CircuitRF.Design.Symbol;
@@ -59,7 +60,7 @@ public static class ComposedFetSymbolProvider
     /// <summary>The absolute path a stored <c>File</c> names — SnP's rule (<see cref="SnpPathPolicy"/>),
     /// which is also what the elaborator applies, so the drawn and the simulated model are one file.</summary>
     public static string? ResolvePath(string? file, string? schematicDir)
-        => SnpPathPolicy.Resolve(Unquote(file), WBondSymbolProvider.WorkspaceRootOf(schematicDir), schematicDir);
+        => SnpPathPolicy.Resolve(Unquote(file), OwningRoot.Of(schematicDir), schematicDir);
 
     public static CellSymbolResolution Resolve(string symbolRef, string? schematicDir)
     {

@@ -1129,7 +1129,10 @@ as a step: what was being resolved, from where, to what, and by which rule.
   `--set` applies first, exactly as it does for a run verb (§5).
 - **`--ref`** — what a relative cell reference resolves to from that document's directory, its
   three-state result (`resolved` / `not-found` / `primary-missing`), whether it leaves the workspace,
-  and whether it only resolved through a recorded move.
+  and whether it only resolved through a recorded move. A model or data FILE a part's `File` names
+  (`.cmodel`, Touchstone, Verilog-A, SPICE) resolves instead against the base a run of that document uses,
+  and the result names it as `owningRoot` plus the walk that found it (`owningRootWalk`: `model-folder`,
+  `workspace`, `host-workspace` or `document-folder`; brief vendorlib-8).
 
 RND-3 (`brief-render-3-query-surface.md`) adds **the three questions a caller has to be able to ask
 before `render` is usable** — *what cells does this hold and which views does each have*, *what layers

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using CircuitRF.Design.Workspace;
 using System.Linq;
 using CircuitRF.Core.Devices;
 using CircuitRF.Design.Modeling;
@@ -237,7 +238,7 @@ public static class VerilogASymbolProvider
         }
 
         // A .csym resolves by File's own rule, so a model and its symbol travel together.
-        string? path = SnpPathPolicy.Resolve(name, WBondSymbolProvider.WorkspaceRootOf(schematicDir), schematicDir);
+        string? path = SnpPathPolicy.Resolve(name, OwningRoot.Of(schematicDir), schematicDir);
         if (path is null || !File.Exists(path)) return Default(name);
         Symbol loaded;
         try { loaded = SymbolPersistence.LoadFromFile(path); }
