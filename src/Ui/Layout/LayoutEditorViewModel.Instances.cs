@@ -258,7 +258,7 @@ public sealed partial class LayoutEditorViewModel
         try
         {
             adopted = WorkspaceRootDir is { Length: > 0 } root
-                ? Schematic.CrossWorkspaceCellCopy.PlaceTechnology(theirTech, root)
+                ? CrossWorkspaceCellCopy.PlaceTechnology(theirTech, root)
                 : theirTech;
         }
         catch (Exception ex)

@@ -41781,3 +41781,24 @@ of them and at least 120 px, and the proportion is written on the PRESENTER at l
 - UiSnapshot: `--export-to-library <cell> [--export-library <dir>]` opens the dialog over an empty window
   (`<out>.dialog.png`) and prints the plan; `--import-schematic <file>` does the same for File ▸ Import ▸
   Schematic…, importing nothing.
+
+## Edit Vendor Model and Copy to Workspace (VL-12, 2026-11-03)
+
+`WorkspaceViewModel.VendorModelEdit.cs`, `SchematicViewModel.VendorModel.cs`, `Views/Dialogs/RepointCopyDialog.cs`; the
+menu items in `SchematicView.axaml`. Every rule and every write is in `src/Design` (`VendorModelAuthoring`,
+`ModelLibraryExport.Refresh`); a source scan in `VendorModelEditTests` holds the shells to that.
+
+- **On a library part Push In and Open Cell in New Tab are HIDDEN**, not greyed: Open Cell in New Tab would have been an
+  Edit without its confirmation. The two new items are shown on a library part only and greyed with the reason.
+- **A `MenuItem` shows no tooltip while disabled unless it says `ToolTip.ShowOnDisabled="True"`**: the global style sets
+  it for `Button`/`ToggleButton`. The two new items set it.
+- **The confirmation and the refresh hang off `SaveSingleDocument`**, the funnel every schematic save goes through
+  (⌘S, Save All, save-on-close). The paths it covers are the base document and every dirty pushed-in frame, so a save
+  inside a model's own `cells/` is covered too. Confirmed per model folder per session.
+- **A document the refresh rewrote is reloaded on a later dispatcher pass**, through `ReloadDocumentsAt` (split out of
+  the restore's `ReloadChangedDocuments` so it takes absolute paths: a library usually lives outside the workspace).
+  Posted rather than awaited because the save may be part of closing that very tab; reloading inline would reopen it.
+- **Re-pointing is one `CommandBatch` of `SetCellRefCommand`s** (VL-9's command), each dropping the `Glyph` row with the
+  library reference. The copy's own `.csym` is the symbol the model drew, so the pins land where the wires end.
+- UiSnapshot: `--schematic` now hosts a hierarchy host (so the library items are offered), `--menu` reaches the
+  schematic canvas's menu, a step point `#X1` is the middle of that part's pins, and `--repoint-question <part>`.

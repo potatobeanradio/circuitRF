@@ -533,6 +533,30 @@ missing, or that the library no longer holds, is reported by name and left out o
 go outside it, the run says so once per part number: <em>&quot;… is characterised from 100 MHz to 30 GHz; this
 run reaches 1 MHz.&quot;</em> It is a warning in the Messages pane (on stderr from the command line); the run
 still completes. A DC operating point never warns.</p>
+<p><strong>Changing a placed model.</strong> A library part is somebody else's design, so it cannot be pushed into:
+Push In is not on its menu, toolbar button 18 is greyed and <kbd>⌘]</kbd> / <kbd>Ctrl</kbd>+<kbd>]</kbd>
+only says why. Two commands on its right-click menu change it instead:</p>
+<ul>
+<li><strong>Edit Vendor Model…</strong> opens the model's own schematic in a tab of its own. The first save of a model
+asks once: <em>&quot;Saving changes TSTFET100 in Test parts for every design that places it. This workspace
+places it 3 times.&quot;</em> (Other workspaces cannot be counted.) Each save then brings the model up to date:
+a file the schematic now names is copied into its <code>models/</code> folder, a newly added part that takes its
+substrate from the technology is converted to S-parameters on the plan the model already records
+(0–20 GHz, 1001 points when it has none), and its netlist, pins and parameters are written again.
+Every open design placing it picks up the change. Its published hash is left as it was, so <strong>Validate</strong>
+and <code>check</code> report the model as <em>edited since exported</em>. Export it again to give it a new revision.
+If the schematic cannot become the model's netlist (a kit part was added, or a file does not resolve),
+the schematic is still saved, the model keeps running its previous netlist, Messages says why, and
+<code>check</code> reports the mismatch as an error until it is fixed.
+The item is greyed, with the reason as its tooltip, for a SPICE part (there is no schematic to edit),
+for a library whose publisher marked it read-only, and for a model folder that cannot be written.</li>
+<li><strong>Copy to Workspace…</strong> copies the model into this workspace as an ordinary cell named after its part
+number (<code>TSTFET100_2</code> when that name is taken), with its <code>models/</code>, <code>cells/</code> and <code>docs/</code>, every file
+reference rewritten to this workspace's form and a note in the cell of where it came from. It then asks
+whether to point <strong>this instance</strong>, <strong>every instance of the part in this schematic</strong>, or none at the
+copy. Pointed parts keep their names, places, wires and values, and one Undo puts them all back.
+Greyed for a SPICE part.</li>
+</ul>
 <p><strong>Sharing.</strong> <strong>Archive Workspace</strong> lists each referenced vendor library unticked, because a library is
 usually licensed for your own use. The recipient adds their own copy. Ticked, the library is copied into
 the archive and the archived workspace points at the copy.</p>

@@ -294,7 +294,7 @@ public sealed class ModelLibraryExportTests : IDisposable
         return WriteCell(ws, "TSTFET100", sch);
     }
 
-    private static string WriteCell(string parent, string name, SchematicEditModel sch)
+    internal static string WriteCell(string parent, string name, SchematicEditModel sch)
     {
         string cell = Path.Combine(parent, name);
         if (!Directory.Exists(cell)) cell = CellFolder.CreateCellFolder(parent, name);
@@ -309,7 +309,7 @@ public sealed class ModelLibraryExportTests : IDisposable
 
     private static string Add(SchematicEditModel sch, EditableComponent c) { sch.Components.Add(c); return c.InstanceName; }
 
-    private static EditableComponent Pin(string name, int num, string label, double x, double y)
+    internal static EditableComponent Pin(string name, int num, string label, double x, double y)
     {
         var c = new EditableComponent { InstanceName = name, Symbol = SymbolKind.Pin, X = x, Y = y };
         c.Parameters.Add(new EditableParameter { Name = "Num", Expression = num.ToString() });
@@ -317,14 +317,14 @@ public sealed class ModelLibraryExportTests : IDisposable
         return c;
     }
 
-    private static EditableComponent Part(string name, SymbolKind kind, double x, double y, string p, string v, string unit)
+    internal static EditableComponent Part(string name, SymbolKind kind, double x, double y, string p, string v, string unit)
     {
         var c = new EditableComponent { InstanceName = name, Symbol = kind, X = x, Y = y };
         c.Parameters.Add(new EditableParameter { Name = p, Expression = v, Unit = unit });
         return c;
     }
 
-    private static EditableComponent Snp(string name, string file, double x, double y)
+    internal static EditableComponent Snp(string name, string file, double x, double y)
     {
         var c = new EditableComponent { InstanceName = name, Symbol = SymbolKind.Snp, X = x, Y = y };
         c.Parameters.Add(new EditableParameter { Name = "File", Expression = file });
@@ -333,7 +333,7 @@ public sealed class ModelLibraryExportTests : IDisposable
     }
 
     /// <summary>An L-shaped wire from one pin to another.</summary>
-    private static void Wire(SchematicEditModel sch, EditableComponent a, int ka, EditableComponent b, int kb)
+    internal static void Wire(SchematicEditModel sch, EditableComponent a, int ka, EditableComponent b, int kb)
     {
         var pa = PinAt(sch, a, ka);
         var pb = PinAt(sch, b, kb);
@@ -351,15 +351,15 @@ public sealed class ModelLibraryExportTests : IDisposable
         return (c.X + pin.LocalX, c.Y + pin.LocalY);
     }
 
-    private static JsonObject Comp(JsonNode sch, string name)
+    internal static JsonObject Comp(JsonNode sch, string name)
         => sch["Components"]!.AsArray().OfType<JsonObject>().First(c => c["InstanceName"]!.GetValue<string>() == name);
 
-    private static string? Param(JsonNode sch, string comp, string name)
+    internal static string? Param(JsonNode sch, string comp, string name)
         => Comp(sch, comp)["Parameters"]!.AsArray().OfType<JsonObject>()
               .First(p => p["Name"]!.GetValue<string>() == name)["Expression"]?.GetValue<string>();
 
     /// <summary>The cell placed once, with a 50 Ω port from each of its pins to ground, run for S-parameters.</summary>
-    private static DataSet RunPlaced(string schDir, string cellRef, double[] freqs)
+    internal static DataSet RunPlaced(string schDir, string cellRef, double[] freqs)
     {
         var model = new SchematicEditModel { SchematicDirectory = schDir };
         var comp = new EditableComponent { InstanceName = "X1", Symbol = SymbolKind.Generic, CellRef = cellRef };
@@ -381,7 +381,7 @@ public sealed class ModelLibraryExportTests : IDisposable
         return SParameterEngine.Run(new Elaborator(r.Library) { BaseDirectory = SchematicCircuit.ReferenceBaseOfDirectory(schDir) }.Elaborate(r.TestBench), freqs);
     }
 
-    private static string StripComments(string code)
+    internal static string StripComments(string code)
         => Regex.Replace(Regex.Replace(code, @"/\*.*?\*/", "", RegexOptions.Singleline), @"//[^\n]*", "");
 
     internal static (int Exit, string StdOut, string StdErr) RunCliPublic(params string[] args) => RunCli(args);
@@ -401,7 +401,7 @@ public sealed class ModelLibraryExportTests : IDisposable
         return (proc.ExitCode, outTask.GetAwaiter().GetResult(), errTask.GetAwaiter().GetResult());
     }
 
-    private static string RepoRoot()
+    internal static string RepoRoot()
     {
         string dir = AppContext.BaseDirectory;
         while (dir is { Length: > 0 } && !File.Exists(Path.Combine(dir, "circuitRF.slnx")))

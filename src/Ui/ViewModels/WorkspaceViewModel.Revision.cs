@@ -815,6 +815,15 @@ public partial class WorkspaceViewModel
             catch (ArgumentException) { }
         }
 
+        await ReloadDocumentsAt(changedAbs);
+    }
+
+    /// <summary>
+    /// <see cref="ReloadChangedDocuments"/>'s work, over absolute paths — which a file outside the workspace (a library
+    /// model refreshed after its schematic was saved, brief vendorlib-12) can only be named by.
+    /// </summary>
+    private async Task ReloadDocumentsAt(IReadOnlyList<string> changedAbs)
+    {
         // A technology whose file came back is a different technology, and the cache hands out the one
         // it read. Invalidated per PATH — a blanket ResetTechCache would drop every entry, including
         // the live overrides of technologies this restore never touched.

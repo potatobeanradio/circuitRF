@@ -360,6 +360,9 @@ Once that round trip works, everything else about hierarchy follows from it:
 - **Push In is not the only way in.** **Right-click ▸ Open Cell in New Tab** opens the cell as its
   own document instead, which is what you want when you are going back and forth and would rather
   have both on screen than one behind the other.
+- **A library part cannot be pushed into.** It is the publisher's design, placed in many; its menu offers
+  **Edit Vendor Model…** and **Copy to Workspace…** instead
+  ([A placed part](pdk-integration.html#vendor-placed)).
 - **Depth is not limited to one level.** A cell can instance other cells, and the breadcrumb grows a
   step each time you push in. Elaboration flattens the whole tree into one netlist before an analysis
   ever runs, so depth costs you nothing at simulation time.

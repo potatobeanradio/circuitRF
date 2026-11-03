@@ -28,6 +28,11 @@ public static class HierarchyResolver
             return false;
         if (comp.CellRef is null)
         { reason = "not a cell instance"; return false; }
+        // Brief vendorlib-12 R-vl12-1: a placed library model is somebody else's design. Editing it through Push In
+        // would change every design that places it, so it is never pushed into; the reason names the two commands
+        // that do change it, each saying what it does. The menu, toolbar 18 and Ctrl/⌘+] all ask here.
+        if (VendorLibraries.ModelLibrary.VendorModelRefs.IsRef(comp.CellRef))
+        { reason = VendorLibraries.ModelLibrary.VendorModelAuthoring.PushInRefusal; return false; }
         if (parentModel.SchematicDirectory is null)
         { reason = "parent schematic has no directory (scratch document)"; return false; }
 

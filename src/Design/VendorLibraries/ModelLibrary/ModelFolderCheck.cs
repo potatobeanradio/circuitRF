@@ -129,7 +129,17 @@ public static class ModelFolderCheck
 
         string? extracted = ModelNetlist.FromCell(dir, out string? why);
         bool? same = extracted is null ? null : ModelNetlist.SameDefinitions(text, extracted);
-        if (same == true) return;
+        // Brief vendorlib-12 R-vl12-2e: what Refresh refuses on is a mismatch too — an extraction drops a kit part it
+        // cannot resolve, so the two would otherwise compare equal while the schematic holds a part the netlist lacks.
+        string? refusal = same == true ? ModelLibraryExport.SchematicRefusal(dir) : null;
+        if (same == true && refusal is null) return;
+        if (refusal is not null)
+        {
+            found.Add(Diagnostic.Create("check.model.netlist-not-schematic", DiagnosticSeverity.Error,
+                "{part}: its schematic cannot become its netlist ({reason}); the part runs its previous netlist.",
+                ("path", cnlPath), ("part", part.Part), ("reason", refusal)));
+            return;
+        }
         found.Add(Diagnostic.Create("check.model.netlist-not-schematic", DiagnosticSeverity.Error,
             "{part}: its netlist is not what its schematic extracts to; the part runs its netlist. Export it again, or Edit Vendor Model and save.",
             ("path", cnlPath), ("part", part.Part), ("reason", why ?? "")));

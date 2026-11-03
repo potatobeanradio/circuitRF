@@ -528,6 +528,28 @@
                             </MenuItem.Icon>
                         </MenuItem>
 
+                        <!-- brief vendorlib-12: a library part is never pushed into. These two change it, each saying
+                             what it does; greyed with the reason as the tooltip, shown on library parts only. -->
+                        <MenuItem x:Name="CtxEditVendorModel"
+                                  ToolTip.ShowOnDisabled="True"
+                                  Header="Edit Vendor Model…"
+                                  IsVisible="False"
+                                  Click="OnCtxEditVendorModel">
+                            <MenuItem.Icon>
+                                <mi:MaterialIcon Kind="PencilBoxOutline" Width="14" Height="14"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
+
+                        <MenuItem x:Name="CtxCopyToWorkspace"
+                                  ToolTip.ShowOnDisabled="True"
+                                  Header="Copy to Workspace…"
+                                  IsVisible="False"
+                                  Click="OnCtxCopyToWorkspace">
+                            <MenuItem.Icon>
+                                <mi:MaterialIcon Kind="ContentDuplicate" Width="14" Height="14"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
+
                         <!-- brief-artsch-8 R-as8-5: a FromArtwork component only — hidden for every other, as
                              Flatten to Cell is: it is not an action that exists for a hand-drawn part. -->
                         <MenuItem x:Name="CtxShowInArtwork"

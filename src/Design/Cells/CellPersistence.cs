@@ -340,6 +340,14 @@ public sealed class CcellFile
     public CcellImportProvenance? ImportedFrom { get; set; }
 
     /// <summary>
+    /// The library model this cell was copied from by Copy to Workspace (brief vendorlib-12 R-vl12-3c). Nothing runs
+    /// on it: it is for a person reading the cell later, and <c>explain</c> prints it. <c>WhenWritingNull</c>, so
+    /// every other <c>.ccell</c> stays byte-identical.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CcellCopyProvenance? CopiedFrom { get; set; }
+
+    /// <summary>
     /// Which layout pin is which schematic port (<c>brief-lvs-1-terminal-map.md</c> R-lvs1-1). Null —
     /// the state every cell written before this field existed is in — means the cell does not say, and
     /// <c>TerminalMap.Resolve</c> derives an answer with its provenance stated. <c>WhenWritingNull</c>,
@@ -393,6 +401,16 @@ public sealed class CcellImportProvenance
     /// WOULD write (same definition?) and against what is on disk now (edited since?).
     /// </summary>
     public string ContentHash { get; set; } = "";
+}
+
+/// <summary>Which library model a cell was copied from (brief vendorlib-12 R-vl12-3c): the library by name, the part
+/// number, and the model's <c>Revision</c> and <c>PublishedHash</c> as they were at the copy.</summary>
+public sealed class CcellCopyProvenance
+{
+    public string Library       { get; set; } = "";
+    public string Part          { get; set; } = "";
+    public int    Revision      { get; set; }
+    public string PublishedHash { get; set; } = "";
 }
 
 // ── Serializer ────────────────────────────────────────────────────────────────

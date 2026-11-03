@@ -834,7 +834,7 @@ internal static class CliDiagnostics
 
     public static Diagnostic ImportUnknownNoun(string noun) => Diagnostic.Create(
         "import.args.unknown-noun", DiagnosticSeverity.Error,
-        "import: there is nothing called '{noun}' to import. Known: part, pdk, schematic, library, voxels, surfaces. "
+        "import: there is nothing called '{noun}' to import. Known: part, model, pdk, schematic, library, voxels, surfaces. "
         + "For layout interchange (GDSII, DXF, Gerber, boards) use `convert`.", ("noun", noun));
 
     /// <summary>brief-sar-11 — an anatomy import's argument that is missing or does not parse; the sentence is whole.</summary>

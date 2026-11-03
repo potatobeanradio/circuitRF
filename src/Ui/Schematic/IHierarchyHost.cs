@@ -53,4 +53,16 @@ public interface IHierarchyHost
     /// <summary>brief vendorlib-10 R-vl10-1a: the schematic toolbar's Export to Library… — File ▸ Export to Library… on
     /// this document. A host with no workspace does nothing.</summary>
     Task ExportToLibraryAsync(SchematicDocument doc) => Task.CompletedTask;
+
+    /// <summary>brief vendorlib-12 R-vl12-2a: Edit Vendor Model… — the placed model's own schematic opened as its own
+    /// document tab, never pushed into. A host with no workspace does nothing.</summary>
+    void EditVendorModel(SchematicDocument doc, EditableComponent comp) { }
+
+    /// <summary>brief vendorlib-12 R-vl12-3: Copy to Workspace… — the placed model copied into the open workspace as an
+    /// ordinary cell, then the question whether to point this instance, every instance of the part in this schematic,
+    /// or none at the copy. A host with no workspace does nothing.</summary>
+    Task CopyVendorModelToWorkspaceAsync(SchematicDocument doc, EditableComponent comp) => Task.CompletedTask;
+
+    /// <summary>One line in the status line — a key that does nothing says why there (brief vendorlib-12 R-vl12-1).</summary>
+    void ShowStatus(string text) { }
 }

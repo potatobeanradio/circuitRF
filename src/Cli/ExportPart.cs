@@ -31,6 +31,10 @@ public static class ExportPart
             return Usage();
         }
 
+        // brief vendorlib-12 R-vl12-4: `--refresh` brings a model folder whose schematic was edited by writing it back
+        // into step — ModelLibraryExport.Refresh, the function Edit Vendor Model's save calls.
+        if (args.Skip(1).Contains("--refresh")) return RunRefresh(args[1..]);
+
         string? cell = null, library = null, kind = null, symbol = null, part = null;
         string category = "", description = "", value = "", low = "", high = "", conditions = "", footprint = "";
         string libraryName = "", publisher = "", license = "", libraryVersion = "1.0.0";
@@ -145,6 +149,37 @@ public static class ExportPart
     }
 
     /// <summary>
+    /// <c>export part &lt;model folder&gt; --refresh</c>: R-vl12-2d after a model's <c>.csch</c> was edited by writing it.
+    /// Exit 1 on R-vl12-2e's refusal, with its sentence; the edited schematic is never touched by a refusal.
+    /// </summary>
+    private static int RunRefresh(string[] args)
+    {
+        string? model = null;
+        foreach (string a in args)
+        {
+            if (a == "--refresh") continue;
+            if (a.StartsWith('-')) { JsonRun.Report(CliDiagnostics.ExportUnknownOption(a)); return Usage(); }
+            if (model is not null) { JsonRun.Report(CliDiagnostics.ExportCellRequired()); return Usage(); }
+            model = a;
+        }
+        if (model is null) { JsonRun.Report(CliDiagnostics.ExportCellRequired()); return Usage(); }
+        JsonRun.InputPath = model;
+        if (!Directory.Exists(model)) return JsonRun.Fail(CliDiagnostics.ExportCellNotFound(model));
+        if (!ModelFolder.Is(model))
+            return JsonRun.Fail(CliDiagnostics.ExportRefused(
+                $"'{model}' is not a model folder (it holds no {ModelFolder.PartFileName}); --refresh refreshes a model a library holds."));
+
+        RefreshResult result;
+        try { result = ModelLibraryExport.Refresh(model, RunHost.Control); }
+        catch (OperationCanceledException) { JsonRun.Report(CliDiagnostics.ExportCancelled()); return 130; }
+        if (!result.Succeeded) return JsonRun.Fail(CliDiagnostics.ExportRefused(result.Message));
+
+        foreach (string f in result.Written) { Console.WriteLine(f); JsonRun.AddOutput("file", f); }
+        Console.Error.WriteLine($"[circuitRF] {result.Message}");
+        return 0;
+    }
+
+    /// <summary>
     /// One <c>--sweep</c> segment, read by the <c>sparam</c> directive's own parser so its keys, its <c>unit=</c>
     /// and its <c>log</c> mean exactly what they mean there. Null when it is not a segment: start, stop, and npts or
     /// step are all required, since the directive's own fallbacks are not a plan anyone wrote.
@@ -173,7 +208,8 @@ public static class ExportPart
             "         [--sweep start=… stop=… npts=…|step=… [unit=GHz] [log]]…   (technology parts; default 0-20 GHz, 1001 points)\n" +
             "         [--replace] [--include-vendor-parts]\n" +
             "         [--library-name … --publisher … --license … --library-version …]   (a new library only)\n" +
-            "         [--json]");
+            "         [--json]\n" +
+            "       circuitrf export part <model folder> --refresh   (after its schematic was edited)");
         return 1;
     }
 }

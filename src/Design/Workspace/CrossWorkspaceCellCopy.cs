@@ -1,7 +1,10 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using CircuitRF.Design.Cells;
+using CircuitRF.Design.Layout;
+using CircuitRF.Design.Schematic;
 
-namespace CircuitRF.Ui.Schematic;
+namespace CircuitRF.Design.Workspace;
 
 /// <summary>How a copied cell's sub-cells travel (MW3 §4, R-mw3-7).</summary>
 public enum SubCellMode
@@ -23,7 +26,7 @@ public enum SubCellMode
 /// still resolves from the copy's new sibling position. Across workspaces both the base and the depth
 /// change, so every <c>CellRef</c> inside the copy has to be rewritten — and rewritten by RESOLUTION,
 /// never by a last-segment name match, which is the same rule MW2 R-mw2-15 had to install in
-/// <see cref="CellUsageScanner"/> before external references could ship at all.</para>
+/// <c>CellUsageScanner</c> before external references could ship at all.</para>
 ///
 /// <para><b>The plan is computed before anything is written</b> so the dialog can state what will
 /// happen: which folders arrive, which names already exist (R-mw3-9 — collisions are asked about,
@@ -34,13 +37,17 @@ public enum SubCellMode
 /// <para><b>A cross-workspace copy is a FILE operation and is not undoable</b> (R-mw3-10). Per-document
 /// undo is not the right shape for a directory tree and a half-working one is worse than none, so the
 /// prompt says so and this class simply reports the folder it wrote.</para>
+///
+/// <para><b>Below the UI firewall since brief vendorlib-12</b> (it lived in <c>src/Ui/Schematic</c>): Copy to
+/// Workspace copies a library model into a workspace with this same step, from the GUI and from
+/// <c>circuitrf import model</c>, and an operation only the GUI could reach would not be a capability.</para>
 /// </summary>
 public static class CrossWorkspaceCellCopy
 {
     private readonly record struct ScanKind(ViewType ViewType, string FilePattern, string ArrayPropertyName);
 
     /// <summary>The view kinds that can carry a <c>CellRef</c> — the same list
-    /// <see cref="CellUsageScanner"/> scans, and the one list a future view kind has to join.</summary>
+    /// <c>CellUsageScanner</c> scans, and the one list a future view kind has to join.</summary>
     private static readonly ScanKind[] ScannedKinds =
     [
         new(ViewType.Schematic, "*.csch", "Components"),
@@ -194,7 +201,7 @@ public static class CrossWorkspaceCellCopy
     /// process in one workspace is exactly the confusion the picker's duplicate-name disambiguation
     /// had to be widened for.
     /// </summary>
-    internal static string PlaceTechnology(string sourceTechPath, string destWorkspaceRoot)
+    public static string PlaceTechnology(string sourceTechPath, string destWorkspaceRoot)
     {
         string techDir = Path.Combine(destWorkspaceRoot, "tech");
         Directory.CreateDirectory(techDir);
@@ -357,7 +364,7 @@ public static class CrossWorkspaceCellCopy
 
     /// <summary>Every cell one cell reaches, bounded by its own workspace. A reference that leaves it
     /// is a chain nobody chose, and following it would copy a third project — the same bound
-    /// <see cref="Archive.ExternalCellArchive"/> applies for the same reason.</summary>
+    /// <c>ExternalCellArchive</c> applies for the same reason.</summary>
     private static void CollectHierarchy(
         string cellDir, string workspaceRoot, HashSet<string> seen, List<string> ordered)
     {

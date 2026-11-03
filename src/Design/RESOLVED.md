@@ -26390,3 +26390,35 @@ Gate: `tests/Ui.Tests/VendorLibraries/ModelLibraryExportTests.cs` (7 tests, 11 c
 - **MCP `create what=libraryPart` takes `sweep`**, a repeated string, one segment per item, passed as `--sweep`.
 
 Gate: `tests/Ui.Tests/VendorLibraries/TechnologyPartConversionTests.cs` (5 tests, ~0.9 s together).
+
+## Edit Vendor Model and Copy to Workspace (brief vendorlib-12, 2026-11-03)
+
+`ModelLibraryExport.Refresh.cs`, `VendorLibraries/ModelLibrary/VendorModelAuthoring.cs`; the copy step moved to
+`Workspace/CrossWorkspaceCellCopy.cs`.
+
+- **Push In is refused in `HierarchyResolver.CanPushInto`**, the one gate the menu, toolbar 18, Ctrl/⌘+], double-click
+  descent and the Instances panel's descent all ask, so no surface can be missed. Before this a `vendormodel://`
+  reference already failed there, but as "cell reference not found", which read as a broken part.
+- **Refresh is Export's internals run on the folder itself**: the same `Walk` (refusals, new files, new sub-cells,
+  technology parts), `FileCopier`, `Convert`, `CopyCell` and `RewriteSchematic`, with every reference that already
+  resolves inside the model left alone. **A model document is rewritten only when something new came in**, compared
+  as text, so a value edit leaves the saved `.csch` byte-for-byte as the editor wrote it and the GUI has nothing to
+  reload. The plan for a newly added technology part is read back from the first `Converted` entry's `Frequency`
+  (`ParsePlan`, the inverse of `DescribePlan`); an unreadable one is a refusal, never a silent default.
+- **Found: an extraction DROPS a kit part it cannot resolve.** A model `.csch` with a `pdk://` instance added extracts
+  to exactly the old `.cnl`, so check's D1 comparison passed and the §2e mismatch was invisible. D1 now also asks
+  `ModelLibraryExport.SchematicRefusal` (Refresh's own refusal walk) when the two compare equal, and reports what it
+  finds as `check.model.netlist-not-schematic`, an error. Only asked on an equal comparison, so a clean library pays
+  one walk per model.
+- **A newly placed vendor part is a refusal in Refresh**, not a copy: Export copies a vendor library's part in only
+  with the consent that its terms travel with it, and Refresh has no dialog to ask. The sentence says to export again.
+- **Copy to Workspace rewrites references while the copy is still a model folder.** `CrossWorkspaceCellCopy` copies
+  the tree; at that moment `part.cpart` is still in it, so `OwningRoot` resolves `models/x.s2p` against the copy and
+  `SnpPathPolicy.ToStored(abs, workspaceRoot)` writes the workspace-root form. Only then are `part.cpart` and
+  `<Part>.cnl` deleted. Done the other way round, every model-relative reference resolves against the workspace root
+  and names nothing. The `.cnl` is deleted by the PART's name: the copy's folder may be `TSTFET100_2`.
+- **`CrossWorkspaceCellCopy` moved from `src/Ui/Schematic` unchanged** but for its namespace and `PlaceTechnology`
+  becoming public, so `circuitrf import model` can reach it.
+- **`import model` is a noun of its own**, not `import part`; why is in `docs/design/cli.md` §35.
+
+Gate: `tests/Ui.Tests/VendorLibraries/VendorModelEditTests.cs` (6 tests, 11 cases).

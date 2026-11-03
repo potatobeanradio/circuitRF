@@ -854,6 +854,8 @@ public static partial class ModelLibraryExport
     {
         public string ModelDir { get; } = modelDir;
         private readonly Dictionary<string, string> _copied = new(DocumentFileRefs.PathComparer);
+        /// <summary>Every file this copier wrote, absolute.</summary>
+        public List<string> Written { get; } = [];
 
         public string Copy(string abs)
         {
@@ -867,6 +869,7 @@ public static partial class ModelLibraryExport
             {
                 string dst = Unique(Path.Combine(models, Path.GetFileName(full)));
                 File.Copy(full, dst);
+                Written.Add(dst);
                 return _copied[full] = dst;
             }
 
@@ -880,7 +883,7 @@ public static partial class ModelLibraryExport
             {
                 string dst = Path.Combine(folder, Path.GetRelativePath(root, f));
                 Directory.CreateDirectory(Path.GetDirectoryName(dst)!);
-                if (!File.Exists(dst)) File.Copy(f, dst);
+                if (!File.Exists(dst)) { File.Copy(f, dst); Written.Add(dst); }
             }
             return _copied[full] = Path.Combine(folder, Path.GetRelativePath(root, full));
         }
@@ -894,6 +897,7 @@ public static partial class ModelLibraryExport
             Directory.CreateDirectory(models);
             string dst = Unique(Path.Combine(models, fileName));
             File.WriteAllText(dst, text.EndsWith('\n') ? text : text + "\n");
+            Written.Add(dst);
             return _copied[key] = dst;
         }
 

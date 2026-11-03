@@ -438,6 +438,7 @@ public static class Authoring
         if (noun == "schematic") return ImportSchematic(args[1..]);
         if (noun == "library") return VendorLibraryVerbs.ImportLibrary(args[1..]);
         if (noun == "pdk") return ImportPdk.Run(args[1..]);
+        if (noun == "model") return ImportModel.Run(args[1..]);
         if (noun != "part")
         {
             JsonRun.Report(CliDiagnostics.ImportUnknownNoun(noun));
@@ -470,6 +471,11 @@ public static class Authoring
 
         if (!File.Exists(source) && !Directory.Exists(source))
             return JsonRun.Fail(CliDiagnostics.ImportSourceNotFound(source));
+
+        // A library model is already a cell; it is not a symbol or a footprint for ComponentImport to read.
+        if (Directory.Exists(source) && CircuitRF.Design.VendorLibraries.ModelLibrary.ModelFolder.Is(source))
+            return JsonRun.Fail(CliDiagnostics.ImportRefused(
+                $"'{source}' is a library model folder, not a part file. Copy it into a workspace with `circuitrf import model {source} --into <workspace>`."));
 
         // The GUI scans a FOLDER and shows a chooser; ComponentFolderScan takes a single file too, so
         // both spellings work here and both go through the one scanner.
@@ -821,6 +827,7 @@ public static class Authoring
             + "[--symbol-cell <ref>]... [--codepage N] [--list]\n"
             + VendorLibraryVerbs.ImportUsageText + "\n"
             + ImportPdk.UsageText + "\n"
+            + ImportModel.UsageText + "\n"
             + AnatomyImportVerb.UsageText);
         return 1;
     }

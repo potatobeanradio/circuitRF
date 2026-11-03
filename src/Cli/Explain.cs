@@ -261,6 +261,7 @@ internal static class Explain
                 // every other answer is read against.
                 Workspace(path, walks);
                 ModelFolderStep(path, walks);
+                if (kind is DocumentKind.Cell) CopiedFromStep(path, walks);
                 if (kind is DocumentKind.Netlist or DocumentKind.Schematic) CircuitTechnology(path, kind, walks);
                 if (kind is DocumentKind.Netlist or DocumentKind.Schematic) PhysicalLines(path, kind, walks);
                 if (kind is DocumentKind.Netlist or DocumentKind.Schematic) ComposedSwitchSteps(path, kind, walks);
@@ -525,6 +526,21 @@ internal static class Explain
         string full = Path.GetFullPath(path);
         if (CircuitRF.Design.VendorLibraries.ModelLibrary.ModelFolder.OwningModelFolder(full) is { } owner)
             walks.Add(new ResolutionStepJson("model-folder", full, owner, "nearest folder at or above holding a part.cpart"));
+    }
+
+    /// <summary>brief vendorlib-12 R-vl12-3c: the library model a cell was copied from, as its <c>.ccell</c> records it.
+    /// Nothing resolves through it; it is printed for the person reading the cell.</summary>
+    private static void CopiedFromStep(string path, List<ResolutionStepJson> walks)
+    {
+        string ccell = Path.Combine(Path.GetFullPath(path), CellFolder.CcellFileName);
+        if (!File.Exists(ccell)) return;
+        CcellCopyProvenance? from;
+        try { from = CellPersistence.LoadFromFile(ccell).CopiedFrom; } catch { return; }
+        if (from is null) return;
+        walks.Add(new ResolutionStepJson(
+            "copied-from", ccell,
+            $"{from.Library}: {from.Part}, revision {from.Revision}" + (from.PublishedHash.Length > 0 ? $", {from.PublishedHash}" : ""),
+            "the library model Copy to Workspace copied this cell from; recorded for a reader, nothing runs on it"));
     }
 
     private static string? Workspace(string path, List<ResolutionStepJson> walks)

@@ -111,6 +111,9 @@ using CircuitRF.Design.Layout;
 //   --add-vendor-library <folder>                             Add Vendor Library's confirm step (<out>.dialog.png)
 //   --export-to-library <cell> [--export-library <dir>]       Export to Library's dialog on a cell (<out>.dialog.png)
 //   --import-schematic <file>                                 File ▸ Import ▸ Schematic…'s dialog on a design file (<out>.dialog.png)
+//   --repoint-question <part>                                 Copy to Workspace…'s re-point question (<out>.dialog.png)
+// With --schematic, a step point written #<instance> is the middle of that part's pins, so --rclick #X1 opens the
+// canvas's context menu on X1; the schematic is hosted with a hierarchy host, so its library-part items are offered.
 // A list drop-down, a context menu and a button's menu flyout are drawn in the window's own frame; a popup that opens
 // as a top level of its own instead is written to <out>.popup.png.
 
@@ -161,6 +164,7 @@ int cmcMarkers = 0;
 string? palette = null, paletteCategory = null, paletteSearch = null, schematic = null, select = null;
 bool parameterDialog = false;
 string? archive = null, manageLibraries = null, addVendorLibrary = null, exportToLibrary = null, exportLibrary = null, importSchematic = null;
+string? repointQuestion = null;
 // --project-tree <workspace> [--reveal <file>] [--filter-open] [--filter-all-off]: the Workspace Tree panel; --reveal runs
 // a document tab's Reveal in Workspace Tree on that file, --filter-open opens the category filter's flyout.
 string? projectTree = null, revealPath = null;
@@ -263,6 +267,7 @@ for (int i = 0; i < args.Length; i++)
         case "--export-to-library" when i + 1 < args.Length: exportToLibrary = Path.GetFullPath(args[++i]); break;
         case "--export-library" when i + 1 < args.Length: exportLibrary = Path.GetFullPath(args[++i]); break;
         case "--import-schematic" when i + 1 < args.Length: importSchematic = Path.GetFullPath(args[++i]); break;
+        case "--repoint-question" when i + 1 < args.Length: repointQuestion = args[++i]; break;
         // brief-gdf-2: the gdsfactory views — trust | pick | interpreter | report | prompt | permissions — with the
         // interpreter that has gdsfactory and (for trust/interpreter/report) a kit source tree.
         case "--gdsfactory" when i + 1 < args.Length: gdsfactory = args[++i]; break;
@@ -302,7 +307,7 @@ if (reviewPanel is not null && output is not null)
         .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
     return ShowReviewPanel(reviewPanel, output, sizeGiven ? width : 420, sizeGiven ? height : 760);
 }
-bool vendorMode = projectTree is not null || palette is not null || schematic is not null || archive is not null || manageLibraries is not null || addVendorLibrary is not null || exportToLibrary is not null || importSchematic is not null || gdsfactory is not null || csym is not null;
+bool vendorMode = projectTree is not null || palette is not null || schematic is not null || archive is not null || manageLibraries is not null || addVendorLibrary is not null || exportToLibrary is not null || importSchematic is not null || gdsfactory is not null || csym is not null || repointQuestion is not null;
 if ((cdd is null && c3dSetups is null && c3dSetupPanel is null && signal.Count == 0 && snp is null && !standalone && tuning is null && optimizer is null && yieldCsch is null && clay is null && cem is null && ctech is null && cmc is null && image is null && exportData is null && !vendorMode) || output is null || view is not ("canvas" or "inspector" or "display"))
 {
     Console.Error.WriteLine("usage: UiSnapshot <file.cdd> -o <out.png> [--view canvas|inspector|display] [--plot n] [--size WxH] "
@@ -351,6 +356,11 @@ if (vendorMode)
     if (addVendorLibrary is not null) OpenAddVendorLibrary(addVendorLibrary);
     if (exportToLibrary is not null) OpenExportToLibrary(exportToLibrary, exportLibrary);
     if (importSchematic is not null) OpenImportSchematic(importSchematic);
+    if (repointQuestion is not null)
+    {
+        CircuitRF.Ui.Views.Dialogs.RepointCopyDialog.Build(repointQuestion, repointQuestion + "_2", 3, c => Console.WriteLine($"answer: {c}")).Show(host);
+        Pump();
+    }
     if (gdsfactory is not null && !OpenGdsfactory(gdsfactory)) return 2;
     if (projectTreeTool is { } treeTool)
     {
@@ -1303,7 +1313,8 @@ Window VendorView()
         // The dialog a double-click on the part opens (SchematicView.OpenParameterEditorFor), at its own width.
         if (parameterDialog)
             return new CircuitRF.Ui.Views.Dialogs.ParameterEditorDialog { DataContext = editor };
-        var doc = new CircuitRF.Ui.Schematic.SchematicDocument(Path.GetFileNameWithoutExtension(schematic), vm, schematic);
+        var doc = new CircuitRF.Ui.Schematic.SchematicDocument(Path.GetFileNameWithoutExtension(schematic), vm, schematic)
+            { Hierarchy = new SnapshotHierarchy() };
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,360") };
         grid.Children.Add(new CircuitRF.Ui.Views.Content.SchematicView { DataContext = doc });
         var pe = new CircuitRF.Ui.Views.ParameterEditor.ParameterEditorView { DataContext = editor };
@@ -1791,7 +1802,9 @@ static void IndexVendorLibraries(string ws)
 
 Window? TopDialog() => host.OwnedWindows.LastOrDefault(w => w.IsVisible);
 
-ContextMenu? OpenContextMenu() => layoutCanvas?.ContextMenu is { IsOpen: true } m ? m : null;
+ContextMenu? OpenContextMenu()
+    => layoutCanvas?.ContextMenu is { IsOpen: true } m ? m
+     : host.GetVisualDescendants().OfType<SchematicCanvas>().FirstOrDefault()?.ContextMenu is { IsOpen: true } s ? s : null;
 
 static IEnumerable<MenuItem> MenuItems(IEnumerable<MenuItem> items)
 {
@@ -1811,6 +1824,21 @@ Point PointOf(string xy)
         double dbu = layoutVm.Model.DbuPerMicron;
         var (sx, sy) = layoutCanvas.WorldToScreen(w.X * dbu, w.Y * dbu);
         return layoutCanvas.TranslatePoint(new Point(sx, sy), host)!.Value;
+    }
+    if (xy.StartsWith('#') && host.GetVisualDescendants().OfType<SchematicCanvas>().FirstOrDefault() is { } canvas
+        && host.GetVisualDescendants().OfType<CircuitRF.Ui.Views.Content.SchematicView>().FirstOrDefault()?.DataContext
+               is CircuitRF.Ui.Schematic.SchematicDocument sdoc)
+    {
+        // The middle of the part's pins, which lies on its body.
+        var model = sdoc.ActiveViewModel.EditModel;
+        var comp = model.Components.FirstOrDefault(c => c.InstanceName == xy[1..])
+                   ?? throw new InvalidOperationException($"{xy}: no such part");
+        var pins = comp.CellRef is null
+            ? Enumerable.Range(0, comp.EffectivePortCount).Select(comp.GetPortWorldCoord).ToList()
+            : CellSymbolResolver.Resolve(comp.ExternalSymbolRef!, model.SchematicDirectory, model.HostWorkspaceRoot).Symbol!.Pins
+                  .Select(p => (X: comp.X + p.LocalX, Y: comp.Y + p.LocalY)).ToList();
+        var (sx, sy) = canvas.WorldToScreen(pins.Average(p => p.X), pins.Average(p => p.Y));
+        return canvas.TranslatePoint(new Point(sx, sy), host)!.Value;
     }
     return ParsePoint(xy);
 }
@@ -2064,6 +2092,23 @@ sealed class SnapshotApp : Application
         app.Initialize();
         foreach (var template in app.DataTemplates) DataTemplates.Add(template);
     }
+}
+
+/// <summary>What the shell gives a hosted schematic for Push In and the library-part commands: the answers, printed
+/// rather than acted on.</summary>
+sealed class SnapshotHierarchy : CircuitRF.Ui.Schematic.IHierarchyHost
+{
+    public bool CanPushInto(EditableComponent? comp, SchematicEditModel? parentModel, out string? reason)
+        => HierarchyResolver.CanPushInto(comp, parentModel, out reason);
+    public void PushIntoCell(CircuitRF.Ui.Schematic.SchematicDocument doc, EditableComponent comp) => Console.WriteLine($"push into {comp.InstanceName}");
+    public void PopOutOf(CircuitRF.Ui.Schematic.SchematicDocument doc) { }
+    public void PopToLevel(CircuitRF.Ui.Schematic.SchematicDocument doc, int frameIndex) { }
+    public void OpenCellInNewTab(CircuitRF.Ui.Schematic.SchematicDocument fromDoc, EditableComponent comp) { }
+    public Task SaveSchematicDocumentAsync(CircuitRF.Ui.Schematic.SchematicDocument doc) => Task.CompletedTask;
+    public Task ReReferenceCellAsync(CircuitRF.Ui.Schematic.SchematicDocument doc, EditableComponent comp) => Task.CompletedTask;
+    public Task<string?> ReferenceExternalCellAsync() => Task.FromResult<string?>(null);
+    public bool CanReferenceExternalCell => true;
+    public void ShowStatus(string text) => Console.WriteLine($"[status] {text}");
 }
 
 /// <summary>The Messages panel, for --clay: each line printed as it is posted.</summary>

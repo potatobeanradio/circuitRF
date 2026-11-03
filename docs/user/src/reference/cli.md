@@ -25,6 +25,7 @@ keywords: CLI, command line, command-line, terminal, shell, console, headless, b
 <li><a href="#import"><code>import part</code> — a footprint and its symbol</a></li>
 <li><a href="#import-schematic"><code>import schematic</code> — another editor's schematic, as a cell</a></li>
 <li><a href="#export-part"><code>export part</code> — a cell as a model in a model library</a></li>
+<li><a href="#import-model"><code>import model</code> — a library model, as a workspace cell</a></li>
 <li><a href="#render"><code>render</code> — a picture of a document</a>
   <ol>
   <li><a href="#render-viewport">The viewport, and the unit rule</a></li>
@@ -141,6 +142,7 @@ convention behind both.</p>
 | `new workspace` | a directory | The same code **File ▸ New Workspace** runs | A `.cws` and, unless you say otherwise, a copied technology |
 | `new cell` | a workspace + a name | The same code **New Cell** runs | A cell folder and one empty-but-valid file per view |
 | `import part` | a component file or folder | The same code **Import Component** runs | A cell folder holding the land patterns and the symbol |
+| `import model` | a library model folder | The same code **Copy to Workspace…** runs | A cell folder: the model as an ordinary, editable cell |
 | `import schematic` | a `.kicad_sch`, EDIF 2.0.0 or binary `.DSN` design | The same code **File ▸ Import ▸ Schematic…** runs | A cell folder with its schematic, and a folder of symbol cells beside it |
 | `render` | a `.csch`, `.csym`, `.clay` or `.cdd`, a cell folder, or a workspace | The same Skia renderers the editors draw every frame with | A `.svg`, `.pdf` or `.png`, where `-o` says |
 | `check` | a workspace, a cell folder, or one document | Every validator the application already uses | **Nothing** — findings to stdout |
@@ -1971,6 +1973,28 @@ a part that takes its substrate from the technology, a cell with no Pin, or a se
 A part number already in the library needs `--replace` (its `Revision` goes up by one), and a cell that places
 vendor parts needs `--include-vendor-parts`, because their libraries' terms travel with the model. A
 cancelled export exits 130. `--json` lists every path created.
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf export part &lt;model folder&gt; --refresh</code></pre>
+
+After a model's schematic was edited by writing it, `--refresh` does what saving it in **Edit Vendor Model…**
+does ([A placed part](pdk-integration.html#vendor-placed)): a file it newly names is copied into `models/`, a newly
+added part that takes its substrate from the technology is converted, and its netlist, pins and parameters are
+written again. Its published hash and revision are left as they are. It prints each file written. When the
+schematic cannot become the netlist it exits 1 with the reason and writes nothing, and the model runs its
+previous netlist.
+
+---
+
+## `import model` — a library model, as a workspace cell {#import-model}
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf import model &lt;model folder&gt; --into &lt;workspace-or-dir&gt;</code></pre>
+
+The same code **Copy to Workspace…** runs: the model folder is copied in as an ordinary cell named after its part
+number (`TSTFET100_2` when the name is taken), its file references rewritten to the workspace's form, without its
+`part.cpart` and netlist, and with a `CopiedFrom` note in its `.ccell` that `explain` prints. It prints the cell
+folder. Placed parts are not pointed at the copy: change the part's `CellRef` in the `.csch` to do that.
+`import part` handed a model folder refuses and names this command, because a model is already a cell rather
+than a symbol and footprint to read.
 
 ---
 

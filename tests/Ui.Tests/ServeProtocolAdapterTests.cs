@@ -983,6 +983,7 @@ public sealed class ServeProtocolAdapterTests(ITestOutputHelper output) : IDispo
             // filed under "import"; `convert` stays single-mode. brief-sar-11 gave `import` its CLI nouns
             // back as modes — every one of them brings something in.
             ["import/part"]       = ["path"],
+            ["import/model"]      = ["path"],           // brief vendorlib-12 R-vl12-4 — Copy to Workspace
             ["import/schematic"]  = ["path"],
             ["import/library"]    = ["path"],
             ["import/pdk"]        = ["path"],

@@ -354,6 +354,30 @@ go outside it, the run says so once per part number: *"… is characterised from
 run reaches 1 MHz."* It is a warning in the Messages pane (on stderr from the command line); the run
 still completes. A DC operating point never warns.
 
+**Changing a placed model.** A library part is somebody else's design, so it cannot be pushed into:
+Push In is not on its menu, toolbar button 18 is greyed and <kbd>⌘]</kbd> / <kbd>Ctrl</kbd>+<kbd>]</kbd>
+only says why. Two commands on its right-click menu change it instead:
+
+- **Edit Vendor Model…** opens the model's own schematic in a tab of its own. The first save of a model
+  asks once: *"Saving changes TSTFET100 in Test parts for every design that places it. This workspace
+  places it 3 times."* (Other workspaces cannot be counted.) Each save then brings the model up to date:
+  a file the schematic now names is copied into its `models/` folder, a newly added part that takes its
+  substrate from the technology is converted to S-parameters on the plan the model already records
+  (0–20 GHz, 1001 points when it has none), and its netlist, pins and parameters are written again.
+  Every open design placing it picks up the change. Its published hash is left as it was, so **Validate**
+  and `check` report the model as *edited since exported*. Export it again to give it a new revision.
+  If the schematic cannot become the model's netlist (a kit part was added, or a file does not resolve),
+  the schematic is still saved, the model keeps running its previous netlist, Messages says why, and
+  `check` reports the mismatch as an error until it is fixed.
+  The item is greyed, with the reason as its tooltip, for a SPICE part (there is no schematic to edit),
+  for a library whose publisher marked it read-only, and for a model folder that cannot be written.
+- **Copy to Workspace…** copies the model into this workspace as an ordinary cell named after its part
+  number (`TSTFET100_2` when that name is taken), with its `models/`, `cells/` and `docs/`, every file
+  reference rewritten to this workspace's form and a note in the cell of where it came from. It then asks
+  whether to point **this instance**, **every instance of the part in this schematic**, or none at the
+  copy. Pointed parts keep their names, places, wires and values, and one Undo puts them all back.
+  Greyed for a SPICE part.
+
 **Sharing.** **Archive Workspace** lists each referenced vendor library unticked, because a library is
 usually licensed for your own use. The recipient adds their own copy. Ticked, the library is copied into
 the archive and the archived workspace points at the copy.

@@ -303,8 +303,12 @@ public partial class SchematicView : UserControl
         EditableComponent? singleComp = null;
         if (vm?.Selection.Ids.Count == 1)
             singleComp = vm.EditModel.FindComponent(vm.Selection.Ids.First());
+        string? pushReason = null;
         PushInBtn.IsEnabled = singleComp?.CellRef is not null
-                              && (doc?.Hierarchy?.CanPushInto(singleComp, vm?.EditModel, out _) ?? false);
+                              && (doc?.Hierarchy?.CanPushInto(singleComp, vm?.EditModel, out pushReason) ?? false);
+        // brief vendorlib-12 R-vl12-1: on a library part the button says which two commands change it instead.
+        ToolTip.SetTip(PushInBtn, singleComp is not null && VendorModelAuthoring.IsModelPart(singleComp)
+            ? pushReason : "Push Into Cell  (Ctrl+])");
 
         // Pop Out: enabled whenever the doc nav stack has depth > 0.
         PopOutBtn.IsEnabled = doc?.CanPopOut ?? false;
@@ -356,9 +360,13 @@ public partial class SchematicView : UserControl
                 var doc  = DataContext as SchematicDocument;
                 var comp = vm.Selection.Ids.Count == 1
                     ? vm.EditModel.FindComponent(vm.Selection.Ids.First()) : null;
+                string? reason = null;
                 if (doc is not null && comp?.CellRef is not null
-                    && doc.Hierarchy?.CanPushInto(comp, vm.EditModel, out _) == true)
+                    && doc.Hierarchy?.CanPushInto(comp, vm.EditModel, out reason) == true)
                     doc.Hierarchy.PushIntoCell(doc, comp);
+                // brief vendorlib-12 R-vl12-1: a library part is not pushed into; the key says why and does nothing else.
+                else if (comp is not null && VendorModelAuthoring.IsModelPart(comp) && reason is not null)
+                    doc?.Hierarchy?.ShowStatus(reason);
                 e.Handled = true;
                 return;
             }
@@ -732,8 +740,25 @@ public partial class SchematicView : UserControl
                 ?? $"Arrange the {selected.Count} selected components in instance-name order, in free space.");
         }
 
-        CtxPushIn.IsVisible      = isCell;
-        CtxOpenInNewTab.IsVisible = isCell;
+        // brief vendorlib-12: a library part is somebody else's design. Push In is not offered on it at all; its two
+        // commands are, each greyed with its reason as the tooltip.
+        bool isLibraryPart = comp is not null && VendorModelAuthoring.IsLibraryPart(comp);
+        CtxPushIn.IsVisible      = isCell && !isLibraryPart;
+        CtxOpenInNewTab.IsVisible = isCell && !isLibraryPart;
+        CtxEditVendorModel.IsVisible = isLibraryPart;
+        CtxCopyToWorkspace.IsVisible = isLibraryPart;
+        if (isLibraryPart)
+        {
+            string? schDir = Vm?.EditModel.SchematicDirectory, host = Vm?.EditModel.HostWorkspaceRoot;
+            string? editWhy = VendorModelAuthoring.EditRefusal(comp!, schDir, host);
+            string? copyWhy = VendorModelAuthoring.CopyRefusal(comp!, schDir, host)
+                              ?? (DataContext is SchematicDocument { Hierarchy.CanReferenceExternalCell: true } ? null
+                                  : "Copy to Workspace needs an open workspace to copy into.");
+            CtxEditVendorModel.IsEnabled = editWhy is null;
+            CtxCopyToWorkspace.IsEnabled = copyWhy is null;
+            ToolTip.SetTip(CtxEditVendorModel, editWhy ?? "Open the model's own schematic. Saving it changes the part for every design that places it.");
+            ToolTip.SetTip(CtxCopyToWorkspace, copyWhy ?? "Copy the model into this workspace as an ordinary cell you can edit.");
+        }
         CtxShowInArtwork.IsVisible = CircuitRF.Ui.Recognition.ArtworkCrossProbe.Offers(comp);
 
         // Swap Line Type: on a line, for every selected line when the clicked one is selected.
@@ -768,7 +793,7 @@ public partial class SchematicView : UserControl
             CtxFlattenMatch.IsEnabled = availability.CanRun;
             ToolTip.SetTip(CtxFlattenMatch, availability.Reason);
         }
-        if (isCell && comp is not null)
+        if (isCell && comp is not null && !isLibraryPart)
         {
             var doc      = DataContext as SchematicDocument;
             string? reason = null;
@@ -892,6 +917,27 @@ public partial class SchematicView : UserControl
         var comp = id is not null ? Vm?.EditModel.FindComponent(id) : null;
         if (comp is null) return;
         doc.Hierarchy?.PushIntoCell(doc, comp);
+        SchematicCanvasCtrl.InvalidateVisual();
+    }
+
+    /// <summary>brief vendorlib-12 R-vl12-2a: the model folder's schematic as its own document tab — not a push-in.</summary>
+    private void OnCtxEditVendorModel(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not SchematicDocument doc) return;
+        var id   = SchematicCanvasCtrl.ContextMenuTargetId;
+        var comp = id is not null ? Vm?.EditModel.FindComponent(id) : null;
+        if (comp is null) return;
+        doc.Hierarchy?.EditVendorModel(doc, comp);
+    }
+
+    /// <summary>brief vendorlib-12 R-vl12-3: the model copied into the workspace as a cell, then the re-point question.</summary>
+    private async void OnCtxCopyToWorkspace(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not SchematicDocument doc || doc.Hierarchy is null) return;
+        var id   = SchematicCanvasCtrl.ContextMenuTargetId;
+        var comp = id is not null ? Vm?.EditModel.FindComponent(id) : null;
+        if (comp is null) return;
+        await doc.Hierarchy.CopyVendorModelToWorkspaceAsync(doc, comp);
         SchematicCanvasCtrl.InvalidateVisual();
     }
 

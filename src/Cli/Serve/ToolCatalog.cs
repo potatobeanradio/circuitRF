@@ -842,6 +842,11 @@ internal static class ToolCatalog
                           + "over, in the sparam directive's keys: 'start=1 stop=20 npts=101 unit=GHz', or step= for npts=, with log "
                           + "optional; unit defaults to Hz, as in the directive. One item per segment. Default: 0 to 20 GHz, 1001 points. "
                           + "Refused when no part uses the technology."),
+                        // brief vendorlib-12 R-vl12-4 — after a model's .csch was edited by writing it.
+                        new("refresh",            "--refresh",              OptKind.Flag,
+                            "cell is a library MODEL folder whose schematic was edited in place: copy in what it newly references, "
+                          + "convert newly added technology parts, extract its .cnl again and update part.cpart's Pins and Parameters. "
+                          + "PublishedHash and Revision are left as they are. Takes no other option."),
                     ],
                     "A self-contained model folder: the cell, its sub-cells and every file it uses copied in, its netlist, part.cpart, "
                   + "checked and self-checked against the source before it appears. Prints every path created."),
@@ -853,7 +858,7 @@ internal static class ToolCatalog
         // look. Both are single-mode now, like `render`.
         new("import",
             "Bring something in: a component as a cell (a footprint and its symbol); a process design kit, referenced from the "
-          + "workspace with its parts placeable; a schematic design (.kicad_sch, EDIF "
+          + "workspace with its parts placeable; a library model copied in as an editable cell; a schematic design (.kicad_sch, EDIF "
           + "2.0.0, or a binary .DSN of version 2.0 or 3.2) as a new cell with its own schematic, reporting the connectivity check against the source (exit 1 when "
           + "it is not matched, the cell still written); a segmented voxel model (NIfTI, raw, a "
           + "DiscMaterial .h5, or a tetrahedral .node/.ele voxelised) or per-tissue closed surfaces (STL, OBJ, PLY) into a .c3d. "
@@ -873,6 +878,17 @@ internal static class ToolCatalog
                         Summary,
                     ],
                     "A footprint and its symbol, as a cell."),
+                // brief vendorlib-12 R-vl12-4 — Copy to Workspace. Re-pointing placed instances at the copy has no
+                // spelling here: a caller rewrites the reference in the .csch.
+                new("model", ["import", "model"],
+                    [new("path", true, "The library model folder (the one holding part.cpart).")],
+                    [
+                        new("into", "--into", OptKind.Path, "The workspace (or a folder in one) the cell is created in."),
+                    ],
+                    "A library model copied into the workspace as an ordinary, editable cell named after its part number "
+                  + "(made unique): models/, cells/ and docs/ come with it, every file reference is rewritten workspace-relative, "
+                  + "part.cpart and the .cnl are left behind, and the .ccell records CopiedFrom. Placed instances are not "
+                  + "re-pointed; rewrite their CellRef to point one at the copy."),
                 // brief-gdf-1 R-gdf1-4c — File ▸ Import PDK. --allow-code is deliberately NOT offered: a client
                 // granting itself consent to run a kit's code is what the consent exists to stop. The
                 // operator's `serve --trust-kit` and a decision recorded at the keyboard still apply.

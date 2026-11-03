@@ -6054,7 +6054,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         string workspaceDir = Path.GetDirectoryName(CurrentWorkspacePath)!;
 
         string adopted;
-        try { adopted = Schematic.CrossWorkspaceCellCopy.PlaceTechnology(theirTech, workspaceDir); }
+        try { adopted = CrossWorkspaceCellCopy.PlaceTechnology(theirTech, workspaceDir); }
         catch (Exception ex) { Messages.Error($"Could not copy the technology in: {ex.Message}"); return false; }
 
         if (!await ConfirmWorkspaceDefaultTechChangeAsync(workspaceDir, adopted)) return false;
@@ -6079,7 +6079,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var window = ResolveOwner(null);
         if (window is null) return null;
 
-        var plan = Schematic.CrossWorkspaceCellCopy
+        var plan = CrossWorkspaceCellCopy
             .Plan(sourceCellDir, workspaceDir, workspaceDir, SubCellMode.Copy, cache: _techCache);
 
         // R-mw3-9 stands here too: a name already in use is asked about, never suffixed silently.
@@ -6088,7 +6088,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         plan = plan with { Folders = resolved, DestCellDir = resolved[0].DestDir };
 
         string written;
-        try { written = Schematic.CrossWorkspaceCellCopy.Execute(plan); }
+        try { written = CrossWorkspaceCellCopy.Execute(plan); }
         catch (Exception ex) { Messages.Error($"Copy failed: {ex.Message}"); return null; }
 
         RefreshAfterReferenceChange();
@@ -18504,6 +18504,16 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         }
 
         if (doc.FilePath is null) return false;
+
+        // brief vendorlib-12: a save into a library model's own folder changes the part for every design that places
+        // it — asked once per model per session before anything is written, and the model refreshed after.
+        var savedPaths = new List<string> { doc.FilePath };
+        foreach (var (session, _) in doc.NavFrames)
+            if (!ReferenceEquals(session, doc.ViewModel) && session.UndoRedo.IsModified
+                && _registry.TryGetPath(session, out var framePath) && framePath is not null)
+                savedPaths.Add(framePath);
+        if (!await ConfirmModelEditsAsync(savedPaths, owner)) return false;
+
         try
         {
             SchematicPersistence.SaveToFile(doc.FilePath, doc.ViewModel.EditModel, doc.Id);
@@ -18537,6 +18547,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             }
         }
 
+        await RefreshSavedModelsAsync(savedPaths);
         return true;
     }
 

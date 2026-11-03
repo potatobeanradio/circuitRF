@@ -1480,7 +1480,7 @@ be found by its name.
 | `check` | `check` |
 | `explain` | `explain`, including RND-3's `--cells` / `--layers` / `--extents`, `--footprints` and `--tunables` |
 | `create` | `new workspace` / `new cell` / `new view3d` (`what=view3d fromLayout=true`) |
-| `import` | `import part` / `import pdk` / `import schematic` / `import voxels` / `import surfaces`, selected by `what` (brief-sar-11, brief-schimp-5, brief-gdf-1): every mode brings something in, so an export still never lands here |
+| `import` | `import part` / `import model` / `import pdk` / `import schematic` / `import voxels` / `import surfaces`, selected by `what` (brief-sar-11, brief-schimp-5, brief-gdf-1): every mode brings something in, so an export still never lands here |
 | `convert` | `convert` — one import and one export between any two formats, so an export is a `convert` |
 | `render` | `render` — **one tool over every document kind**, as the verb is (R-rnd0-4/R-rnd5-2). The kind comes from the path, so there is no selector; making the view type one would advertise three modes where there is one verb |
 | `netlist` | `netlist` — the extraction Simulate performs, as a document |
@@ -4770,3 +4770,16 @@ source scan holds both shells to that.
 
 Gate: `tests/Ui.Tests/VendorLibraries/ModelLibraryExportTests.cs` — the CLI as a process against the in-process
 call, byte for byte over the whole library folder, `part.cpart` included.
+
+**`--refresh` and `import model` (brief vendorlib-12).** `export part <model folder> --refresh` is Edit Vendor
+Model's save with no display: `ModelLibraryExport.Refresh`, the function the GUI's save hook calls, run on a model
+folder whose `.csch` was edited by writing it. It takes no other option, prints every file written, and exits 1
+with "`<part>` still runs its previous netlist: …" on a refusal, which writes nothing. `import model <model folder>
+--into <dir>` is Copy to Workspace…: `VendorModelAuthoring.CopyToWorkspace`, built on `CrossWorkspaceCellCopy` (Add
+Cell to Workspace's copy step, moved to `src/Design/Workspace` for it). **A noun of its own, not `import part`**:
+`import part` is `ComponentImport`'s contract — a symbol or footprint file read into a new cell, its layers
+reconciled against a technology — and its `--cell`, `--variant`, `--tech`, `--add-layers` and `--list-parts`
+mean nothing for a folder that is already a cell. `import part` handed a model folder refuses and names `import
+model`. The GUI's re-point question has no headless spelling; a caller rewrites the `CellRef`. Over MCP: `import
+what=model`, and `create what=libraryPart refresh=true`. Gate: `tests/Ui.Tests/VendorLibraries/VendorModelEditTests.cs`,
+including a source scan of both shells.
