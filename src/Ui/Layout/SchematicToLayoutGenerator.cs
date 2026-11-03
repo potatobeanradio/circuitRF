@@ -83,12 +83,13 @@ public static class SchematicToLayoutGenerator
         ICellResolver? cellResolver,
         string? targetLayoutPath = null,
         bool linkOrientation = true,
-        double pourMarginHeights = GroundPourPlanner.DefaultMarginHeights)
+        double pourMarginHeights = GroundPourPlanner.DefaultMarginHeights,
+        bool connectParts = true)
     {
         var plan = SchematicLayoutPlanner.Plan(
             model, target, schematicDir, workspaceRootDir, targetLayoutBaseDir, technology, techIdentity,
             cellResolver, targetLayoutPath, linkOrientation, pourMarginHeights,
-            kitLayoutGenerator: KitLayoutGenerators.For);
+            kitLayoutGenerator: KitLayoutGenerators.For, connectParts: connectParts);
 
         plan.ApplyBookkeeping(target);
 

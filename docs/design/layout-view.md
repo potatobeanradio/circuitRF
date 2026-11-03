@@ -1099,6 +1099,39 @@ schematic joins it. These rules hold for every brief in it.
 parameter edited in the layout, with a warning. S3 keeps the layout's value instead. The overwrite remains the
 behaviour until the brief that implements S3 (SDL-4) lands.
 
+#### Joints and chains (SDL-1)
+
+`JointGraph` and `ChainPlacer` in `src/Design/Layout/SchematicSync/`, run by the planner when the **Connect parts on
+Update Layout from Schematic** setting is on (the default; off, every new part goes into the rows exactly as before).
+
+- **D1 — A joint is a net with exactly two layout pins**, both on one layer, neither on the ground net, and neither a
+  footprint pad nor a via (whose joint points SDL-2 and SDL-3 define). Every other net with two or more pins keeps
+  its ratsnest and gets a report line naming its reason: three or more pins, the ground net, two layers, or a pad
+  or via. A part's terminals are matched to its cell's pins by `SchematicLayoutOrientation.CellPinFor`, the rule
+  the orientation alignment already reads. The connected components of the joints are **chains**.
+- **D2 — Mirror comes from the schematic; rotation is solved.** Which way a bend turns or a tee's stub leaves is
+  chirality, and pin geometry cannot decide it, so each new part keeps the mirror its symbol gives it (the symbol's
+  mirror composed with its pin alignment, the same facing the orientation link places a lone part at). Its angle is
+  then the one that makes its joining pin face its parent's: `θ = θ_parent_out + 180° − θ_child_local_out`, the
+  mirror applied to the local direction first. The orientation link is rewritten to the solved facing.
+- **D3 — Poses are exact until the last step.** Origins and angles travel down the chain as doubles and are rounded
+  to DBU once, when each instance is written; rounding at every link would add a DBU per part.
+- **D4 — A loop that does not close is reported, never forced.** A closing joint within 1 DBU in each axis and
+  1e-6° of facing is joined. Anything more is a warning naming the loop's parts, the gap in x and y and the angle
+  error, and the parts stay where the chain put them.
+- **D5 — Existing parts are anchors.** A part already in the layout is not moved; new parts chain onto it, and a
+  joint between two existing parts is a closing joint. Otherwise the anchor is the part joined to the
+  lowest-numbered schematic Port, else the first in schematic-id order. A new chain's anchor takes the facing its
+  symbol gives it at the origin, and the row packer then places the whole chain as one rigid group by its bounding
+  box.
+
+A part made from artwork that a chain places is placed by the chain, not at its artwork anchor, and the run says so
+once. The run's summary is one line, *Joined N of M connections; K left as ratsnest*.
+
+**Every generated pin sits on its own copper.** MBEND, MCURVE and MMITER build pin 2's end cap round the rounded pin,
+so the pin is the exact midpoint of its cap at any angle. Before SDL-1 an oblique bend's pin could land a fraction of
+a DBU outside its copper, and LVS read whatever was joined to it as open.
+
 **A unit after a unit-bearing variable is skipped.** A parameter written `W = w50 mm` with `w50 = 280.152 um` is
 280.152 µm, the same as `W = w50`, in the circuit and in the artwork, because the evaluation site's unit applies
 only when the expression names nothing that carries its own unit (`expressions.md` §8).

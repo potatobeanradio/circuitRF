@@ -14,9 +14,11 @@ namespace CircuitRF.Ui.Tests.SchematicSync;
 ///   the ones <c>expect.txt</c> names (<c>lvs &lt;finding id&gt;</c>);</item>
 ///   <item><b>open nets</b> — a ratsnest line, read as the layout editor reads it, on a net the design marks
 ///   joinable (<c>joinable &lt;net&gt;</c>): none;</item>
-///   <item><b>overlaps</b> — copper joining pins of two different nets: none, unless <c>expect.txt</c> says
-///   <c>overlap</c>. Edge contact counts as joining (<see cref="CopperPieces"/>: "overlap or share an edge"),
-///   which is what lets abutted parts join without overlapping;</item>
+///   <item><b>overlaps</b> — the copper of two parts that share no net touching: none, unless <c>expect.txt</c>
+///   says <c>overlap</c>. Edge contact counts as touching (<see cref="CopperPieces"/>: "overlap or share an edge"),
+///   which is what lets abutted parts join without overlapping. It is asked PART BY PART, not piece by piece: a
+///   line's own copper joins its two nets, so a chain of distributed parts is one piece carrying every net on it
+///   (brief-sdl-1);</item>
 ///   <item><b>report lines</b> — exactly <c>expect.txt</c>'s <c>&lt;severity&gt; &lt;schematic id&gt; &lt;text
 ///   fragment&gt;</c> lines, no extra and none missing. A run-level line's id is <c>-</c>; a component with no
 ///   layout view (the plan's <c>NoLayoutWarnings</c>) reads as a <c>Warning</c> under its own id.</item>
@@ -40,7 +42,25 @@ internal static class SdlChecker
             .Select(l => l.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
             .Select(p => (p[0], p.Length > 1 ? p[1] : ""));
 
-    public static Result Check(string design, string scratchRoot)
+    /// <summary>A design copied into a scratch workspace, read, and ready to plan onto <see cref="Target"/> (empty).</summary>
+    public sealed record Prepared(
+        SchematicEditModel Model, LayoutView Target, string Workspace, string CellDir, string SchematicDir,
+        string SchematicPath, string LayoutDir, string ClayPath, Technology Tech, string TechPath)
+    {
+        public SchematicLayoutPlan Plan(bool connectParts = true) =>
+            SchematicLayoutPlanner.Plan(Model, Target, SchematicDir, Workspace, LayoutDir, Tech, TechPath,
+                                        cellResolver: null, targetLayoutPath: ClayPath, connectParts: connectParts);
+
+        /// <summary><paramref name="plan"/> applied to a copy of the target, as the checker applies it.</summary>
+        public LayoutView Applied(SchematicLayoutPlan plan)
+        {
+            var layout = LayoutPersistence.Deserialize(LayoutPersistence.Serialize(Target));
+            plan.ApplyTo(layout);
+            return layout;
+        }
+    }
+
+    public static Prepared Prepare(string design, string scratchRoot)
     {
         string source = Path.Combine(DesignsRoot, design);
         string ws = Path.Combine(scratchRoot, "ws");
@@ -62,11 +82,16 @@ internal static class SdlChecker
         var (model, _, _) = SchematicPersistence.LoadFromFile(cschPath);
         var tech = TechPersistence.LoadFromFile(techPath);
         var target = new LayoutView { TechRef = RefPathOf(layoutDir, techPath) };
+        return new Prepared(model, target, ws, cellDir, schematicDir, cschPath, layoutDir, clayPath, tech, techPath);
+    }
 
-        var plan = SchematicLayoutPlanner.Plan(model, target, schematicDir, ws, layoutDir, tech, techPath,
-                                               cellResolver: null, targetLayoutPath: clayPath);
-        var layout = LayoutPersistence.Deserialize(LayoutPersistence.Serialize(target));
-        plan.ApplyTo(layout);
+    public static Result Check(string design, string scratchRoot)
+    {
+        var p = Prepare(design, scratchRoot);
+        var (model, cellDir, cschPath, layoutDir, clayPath, tech) = (p.Model, p.CellDir, p.SchematicPath, p.LayoutDir, p.ClayPath, p.Tech);
+        string source = Path.Combine(DesignsRoot, design);
+        var plan = p.Plan();
+        var layout = p.Applied(plan);
         LayoutPersistence.SaveToFile(clayPath, layout);
 
         var expect = ReadExpect(Path.Combine(source, "expect.txt"), out var joinable, out var lvsAllowed, out bool overlapAllowed);
@@ -77,14 +102,17 @@ internal static class SdlChecker
             if (!lvsAllowed.Contains(f.Id)) problems.Add($"LVS error {f.Id}: {f.Render()}");
 
         // 2 and 3. Open nets and overlaps, from the pins as the ratsnest reads them.
-        var pins = ReadPins(layout, clayPath, cellDir, tech, PdnSchematicNets.Of(model, cschPath));
+        var nets = PdnSchematicNets.Of(model, cschPath);
+        var pins = ReadPins(layout, clayPath, cellDir, tech, nets, out var netsByInstance);
+        foreach (string net in joinable.Where(n => !pins.Any(p => p.Net == n)).Order(StringComparer.Ordinal))
+            problems.Add($"joinable net {net} has no placed pin: the design names a net the layout does not carry");
         foreach (var line in Ratsnest.Build(pins))
             if (joinable.Contains(line.Net))
                 problems.Add($"open net {line.Net}: ratsnest ({line.X0}, {line.Y0}) to ({line.X1}, {line.Y1})");
         if (!overlapAllowed)
-            foreach (var group in pins.GroupBy(p => p.Group).Where(g => g.Key >= 0))
-                if (group.Select(p => p.Net).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList() is { Count: > 1 } nets)
-                    problems.Add($"overlap: copper joins nets {string.Join(", ", nets)} at ({group.First().X}, {group.First().Y})");
+            foreach (var (a, b) in TouchingStrangers(layout, cellDir, layoutDir, tech, netsByInstance))
+                problems.Add($"overlap: {layout.Instances[a].SchematicId} and {layout.Instances[b].SchematicId} share no net " +
+                             "and their copper touches");
 
         // 4. Report lines, exactly.
         var actual = plan.Lines.Select(l => (Severity: l.Severity.ToString(), Id: l.InstanceName.Length == 0 ? "-" : l.InstanceName, l.Text))
@@ -129,8 +157,10 @@ internal static class SdlChecker
     /// <summary>The placed pins on a net and the copper piece each lands on — the layout editor's own ratsnest read
     /// (<c>LayoutEditorViewModel.ReadRatsnestPins</c>), with no canvas.</summary>
     private static List<RatsnestPin> ReadPins(LayoutView layout, string clayPath, string cellDir,
-                                                Technology tech, PdnSchematicNets nets)
+                                                Technology tech, PdnSchematicNets nets,
+                                                out Dictionary<int, HashSet<string>> netsByInstance)
     {
+        netsByInstance = [];
         if (layout.Instances.Count == 0) return [];
         var flat = LayoutDesignFlatten.Flatten(layout, cellDir, tech, null, resolvedCrossTechMappings: null);
         var copper = CopperPieces.Build(flat.Shapes, tech, layout.Shapes);
@@ -145,10 +175,47 @@ internal static class SdlChecker
         for (int i = 0; i < placed.Count && i < origins.Count; i++)
         {
             if (placed[i].Net is not { Length: > 0 } net) continue;
+            if (!netsByInstance.TryGetValue(origins[i].Instance, out var set)) netsByInstance[origins[i].Instance] = set = [];
+            set.Add(net);
             int group = copper.PieceAt(placed[i].X, placed[i].Y, origins[i].Layer);
             pins.Add(new RatsnestPin(net, placed[i].X, placed[i].Y, group >= 0 ? group : unjoined--));
         }
         return pins;
+    }
+
+    /// <summary>Every pair of placed parts with no net in common whose copper touches: flattened two at a time, the
+    /// pair's copper is fewer pieces than the two parts' own counted apart. Pairs whose boxes are apart are skipped, and
+    /// so are two parts joined to one part between them: the lines on a tee's two arms meet corner to corner at its
+    /// junction, which is copper they are both joined to anyway.</summary>
+    private static List<(int A, int B)> TouchingStrangers(LayoutView layout, string cellDir, string layoutDir,
+                                                          Technology tech, Dictionary<int, HashSet<string>> netsByInstance)
+    {
+        int Pieces(params int[] which)
+        {
+            var view = new LayoutView { DbuPerMicron = layout.DbuPerMicron, TechRef = layout.TechRef };
+            foreach (int i in which) view.Instances.Add(layout.Instances[i]);
+            var flat = LayoutDesignFlatten.Flatten(view, cellDir, tech, null, resolvedCrossTechMappings: null);
+            return CopperPieces.Build(flat.Shapes, tech).Count;
+        }
+
+        var alone = new Dictionary<int, int>();
+        int Alone(int i) => alone.TryGetValue(i, out int n) ? n : alone[i] = Pieces(i);
+        long reach = layout.DbuPerMicron;   // the partition reads copper closer than a micrometre as joined
+        var boxes = layout.Instances.Select(inst => CellHierarchy.InstanceBbox(inst, layoutDir)).ToList();
+        var found = new List<(int, int)>();
+        for (int a = 0; a < layout.Instances.Count; a++)
+            for (int b = a + 1; b < layout.Instances.Count; b++)
+            {
+                var (ba, bb) = (boxes[a], boxes[b]);
+                if (ba.IsEmpty || bb.IsEmpty || ba.MaxX + reach < bb.MinX || bb.MaxX + reach < ba.MinX
+                    || ba.MaxY + reach < bb.MinY || bb.MaxY + reach < ba.MinY) continue;
+                var na = netsByInstance.GetValueOrDefault(a) ?? [];
+                var nb = netsByInstance.GetValueOrDefault(b) ?? [];
+                if (na.Overlaps(nb)) continue;
+                if (netsByInstance.Any(e => e.Key != a && e.Key != b && e.Value.Overlaps(na) && e.Value.Overlaps(nb))) continue;
+                if (Pieces(a, b) < Alone(a) + Alone(b)) found.Add((a, b));
+            }
+        return found;
     }
 
     private static string RefPathOf(string fromDir, string toFile) =>

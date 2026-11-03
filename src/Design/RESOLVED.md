@@ -26499,3 +26499,54 @@ No defect.
 **The test technology is a neutral copy.** `testdata/schematic-to-layout/microstrip-0508.ctech` is the shipped 20 mil
 two-layer board technology with the dielectric and its material renamed to `Substrate`/`Laminate` and the material
 library reference dropped (copper and the laminate are both inline), so the set names no product.
+
+## Connected placement: joints, chains and the generators' own pins (brief SDL-1, 2026-11-03)
+
+`JointGraph` and `ChainPlacer` (`Layout/SchematicSync/`), run by the planner's `ConnectChains`
+(`SchematicLayoutPlanner.Chains.cs`). The setting is `Plan(…, connectParts:)`; off, the plan is byte for byte the
+SDL-0 planner's (`testdata/schematic-to-layout/golden/C2-branch-line.rows.clay` was written by the SDL-0 code itself,
+built from the commit before this brief, and the test compares against it).
+
+**Footprints and vias are not chained here.** A footprint pin sits at the pad centre and a board-read pad's direction
+can be backwards, so joining one at its pin would put half the pad under the line (SDL-2 defines the pad joint). A
+net with one of them on it is reported as left to the ratsnest with its own reason (`PadOrVia`), a fifth beside the
+brief's four. A VIAGND placed beside its pad is out of the graph entirely.
+
+**A new chain's anchor takes the facing its symbol gives it, not 0°.** It is what a lone part gets from the
+orientation link, so a chain drawn upright in the schematic is upright on the board; with the link off the facing is
+the identity, which is the brief's 0°. Its mirror is the schematic's either way (D2).
+
+**The row packer now places groups.** An item is a lone part or a chain, and every member moves by one whole-DBU
+offset, so the joints the chain made stay made. A lone part is a group of one and the arithmetic is unchanged: the
+offsets are applied as shifts from where the part was, which for a new part is the origin.
+
+**`PinAlignment` lost a bend's handedness below about 60°.** It chooses between the rotation and the mirror that
+line the pins up by testing each pin's facing within 45° of the symbol port's bearing. A bend symbol is always drawn
+as a quarter turn, so a 30° MCURVE or 45° MMITER failed BOTH tests and fell back to the unmirrored rotation, and the
+curve turned the opposite way to its symbol. When neither passes, the one with the smaller summed facing error wins
+now. The chain reads its mirror from this, so C4 would have zigzagged the wrong way without it.
+
+**MBEND, MCURVE and MMITER put pin 2 off their own copper** at about 40% of angles (a sweep of 1-179° at three widths
+found 438 such pins on MBEND and 408 on MCURVE; MMITER's was found by C4, at 45°). Each rounded the pin and built the end cap from the exact point, so the cap
+missed the pin by a fraction of a DBU; LVS reads a pin by point-in-copper, so the pin had "no copper under it" and
+whatever was joined to it was open. Each now builds pin 2's cap symmetric about the rounded pin. MBEND also dropped its
+computed pin-2 inner corner whenever it was within a DBU of pin 1's, which moved the cap off the pin again; it keeps
+both unless they are the same point. Same-layer copper closer than 1 µm is already one piece (`LayerRegions`'
+hairline join), so the sub-DBU slit between two parts at an oblique joint was never the problem. Versions bumped
+(MBEND 4, MCURVE 3, MMITER 2); the recorded geometry moved one vertex by 1 DBU, and the fingerprints are unchanged.
+
+**LVS compared a generated bend's Angle in two units.** A built-in generator takes angles in degrees and its
+`PCellOrigin` snapshot records what it took; the schematic side is SI radians. Every bend read "schematic 1.5708 rad,
+layout 90 rad". `LvsProperties` converts an Angle drawn by a built-in generator before comparing.
+
+**`SdlChecker`'s overlap test was wrong for any distributed part.** It flagged a copper piece carrying pins of two
+nets, but a line's own copper joins its two nets, so every MLIN failed it; SDL-0's designs were resistors only. It
+now asks part by part: two parts with no net in common whose copper touches (flattened as a pair, fewer pieces than
+apart). Two parts joined to one part between them are exempt, because lines on a tee's two arms meet corner to
+corner at its junction. A `joinable` net with no placed pin is now a failure rather than a silent pass.
+
+**Ports report "no layout view — skipped".** A schematic Port (`Term`) is physical to the planner and has no
+generator, so every design's `expect.txt` lists one warning per port. SDL-5 is where ports get layout meaning.
+
+The test designs C1-C7 were generated from the symbols' own port tables (wires end on the computed port positions),
+checked with `NetExtractor`, and committed as ordinary `.csch` files.

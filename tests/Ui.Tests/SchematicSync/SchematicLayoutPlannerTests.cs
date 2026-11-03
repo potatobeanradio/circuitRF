@@ -202,8 +202,11 @@ public sealed class SchematicLayoutPlannerTests : IDisposable
         Run(f, f.Target).Command!.Execute();
 
         Assert.Equal(["ML1", "ML2"], f.Target.GeneratedPlacements.Keys.Order(StringComparer.Ordinal));
+        // Both symbols sit on the origin, so their pins coincide and the two lines are joined at both ends — one
+        // chain, anchored on the first in schematic-id order (brief-sdl-1), which its record says.
         foreach (var inst in f.Target.Instances)
-            Assert.Equal(GeneratedPlacement.Of(inst), f.Target.GeneratedPlacements[inst.SchematicId!]);
+            Assert.Equal(GeneratedPlacement.Of(inst, chainAnchor: inst.SchematicId == "ML1"),
+                         f.Target.GeneratedPlacements[inst.SchematicId!]);
 
         string json = LayoutPersistence.Serialize(f.Target);
         string table = json[json.IndexOf("\"GeneratedPlacements\"", StringComparison.Ordinal)..];

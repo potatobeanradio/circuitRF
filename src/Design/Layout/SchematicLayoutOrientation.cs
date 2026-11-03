@@ -143,7 +143,15 @@ public static class SchematicLayoutOrientation
             // that lines the pins' POSITIONS up then points both pins the wrong way: the copper is
             // the mirror image of the drawing. Mirrored, the pins face the way the symbol's do.
             var mirrored = new VisualOrientation(true, Snap(Math.Atan2(sy, sx) - Math.Atan2(cy, -cx)));
-            return PinsFace(mirrored, symbolPorts[0], symbolPorts[k - 1], c1, ck) == true ? mirrored : rotated;
+            if (PinsFace(mirrored, symbolPorts[0], symbolPorts[k - 1], c1, ck) == true) return mirrored;
+
+            // Neither faces within 45°: a bend drawn at less than a right angle (an MCURVE at 30°, an MMITER at
+            // 45°) under a symbol that is always drawn as a quarter turn. The handedness is still the symbol's,
+            // and the facing closer to it is the one that keeps it (brief-sdl-1 D2: falling back to the
+            // rotation alone turned a 30° curve the opposite way to its symbol).
+            double? r = FacingError(rotated, symbolPorts[0], symbolPorts[k - 1], c1, ck);
+            double? m = FacingError(mirrored, symbolPorts[0], symbolPorts[k - 1], c1, ck);
+            return r is { } re && m is { } me && me < re ? mirrored : rotated;
         }
         return identity;
 
@@ -173,6 +181,23 @@ public static class SchematicLayoutOrientation
             (true, true) => true,
             _ => null,
         };
+    }
+
+    /// <summary>How far, in degrees summed over both pins, <paramref name="v"/> leaves the cell pins from facing the
+    /// way the symbol's ports point — <see cref="PinsFace"/>'s measure without its threshold. Null when a port sits
+    /// on the symbol's origin.</summary>
+    private static double? FacingError(VisualOrientation v, (double X, double Y) port1, (double X, double Y) portK,
+                                       LayoutPin pin1, LayoutPin pinK)
+    {
+        double? Error((double X, double Y) port, LayoutPin pin)
+        {
+            if (port.X == 0 && port.Y == 0) return null;
+            double symbolDeg = Math.Atan2(-port.Y, port.X) * 180.0 / Math.PI;
+            double cellDeg = (v.Mirror ? 180.0 - pin.OutwardDeg : pin.OutwardDeg) + v.Deg;
+            double d = Math.Abs(LayoutAngle.Normalize(symbolDeg - cellDeg));
+            return Math.Min(d, 360.0 - d);
+        }
+        return Error(port1, pin1) is { } a && Error(portK, pinK) is { } b ? a + b : null;
     }
 
     /// <summary>

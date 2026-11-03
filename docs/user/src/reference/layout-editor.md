@@ -441,7 +441,8 @@ layout:
    rather than stored (see [PCells](pcells.html)).
 2. Components with no layout view at all — VAR, MEAS, Ground, and any un-laid-out cell — are **reported
    to Messages and skipped**, not silently omitted.
-3. Instances are placed in a packed, non-overlapping arrangement, roughly following schematic order.
+3. Parts the schematic **joins pin to pin are placed so their pins meet** (see *Joined parts* below). Everything
+   else is placed in a packed, non-overlapping arrangement, roughly following schematic order.
 4. A **ratsnest** is shown: thin straight lines between pins that share a net and are not yet joined by
    copper, each net drawn as the shortest set of lines that connects it. It follows a part as you drag,
    rotate, mirror or flip it, a deleted part's lines go with it, and a net's lines disappear once copper
@@ -458,6 +459,32 @@ layout:
 <p>Step 3 places parts. It does not route them. Auto-routing is a separate multi-month product and
 pretending otherwise would set the wrong expectation.</p>
 </div>
+
+#### Joined parts
+
+When two parts with layouts share a net and nothing else does, Update Layout places them so the two pins meet: same
+point, facing each other. Lines, tees, bends, curves and crosses come out as one connected piece of copper, so a
+branch-line coupler drawn from MTEEs and MLINs is a closed ring with its four launches rather than a row of loose
+strips. The first part of each connected group keeps the way its symbol faces; every other part is turned to meet its
+neighbour, and a bend or tee turns the way its symbol does, so **mirror a symbol to make a bend turn the other way**.
+A group that touches nothing already in the layout is placed as one piece, beside the rest. A part that is already in
+the layout is never moved: new parts join onto it.
+
+A net that cannot be joined this way keeps its ratsnest line, and Messages says why, one line per net: three or more
+pins meet on it, it is the ground net, its two pins are on different layers, or one end is a footprint pad or a via.
+The run ends with a count, for example *Joined 12 of 12 connections; 0 left as ratsnest*.
+
+**A loop that does not close is reported, not closed.** If the lengths in a loop do not add up, say one arm of a
+coupler is 50 µm longer than the arm opposite, Messages warns:
+
+> Loop ML1, MT1, ML3, MT3, ML2, MT4, ML4, MT2 does not close: MT4 pin 1 is 50 µm from ML2 pin 2 (x 0, y -50 µm), angle 0°.
+
+The parts stay where the joints that did close put them, and the open joint keeps its ratsnest line. Nothing is
+stretched or nudged to hide the gap: the copper is exactly what the schematic's values say, so fix the values and
+run Update Layout again.
+
+**Connect parts on Update Layout from Schematic** in Settings turns this off; off, every new part is placed in rows
+and the ratsnest shows what joins what.
 
 **The ground is drawn too.** A pad whose schematic pin sits on a ground symbol gets a **ground via**
 beside it, on the side away from the part, tied to the pad with a short trace and drilled to the

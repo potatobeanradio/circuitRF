@@ -265,7 +265,10 @@ public static class PCellRegistry
             // and a generated cell already on disk was written by the old algorithm.
             // v3: each arm ends at the model's reference plane, (W/2)·tan(θ/2) from the corner, instead of
             // 2.5·W out — the extra line was artwork the L-C-L model never simulated.
-            { "MBEND", 3 },
+            // v4: pin 2's end cap is built round the rounded pin, so an oblique bend's pin is on its own copper.
+            { "MBEND", 4 },
+            // v2: the same for the miter's pin 2 (brief-sdl-1).
+            { "MMITER", 2 },
             // SmoothSteps' end blend is CLAMPED to half the taper instead of being skipped outright
             // when 3x the end width exceeds the taper's own length. Every taper short relative to its
             // end widths — an ordinary impedance transformer on a low-permittivity board — was
@@ -277,7 +280,8 @@ public static class PCellRegistry
             // A turn past 180 deg is two arcs meeting at mid-turn instead of one, so a full 360 deg
             // turn draws (one arc between coincident ends has no circle). Same copper below 360 deg,
             // but a different outline, and a cell on disk carries the single arc.
-            { "MCURVE", 2 },
+            // v3: pin 2's end cap is built round the rounded pin, so an oblique curve's pin is on its own copper.
+            { "MCURVE", 3 },
         };
 
     public static int GeneratorVersion(string generatorId)

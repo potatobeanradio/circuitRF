@@ -198,6 +198,13 @@ public sealed class AppPreferences
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? LinkSchematicLayoutOrientation { get; set; }
 
+    // brief-sdl-1 R-sdl1-4: whether Update Layout from Schematic places parts the schematic joins so their pins meet.
+    // Null means ON. OFF, every new part goes into the packed rows, as before connected placement existed. Per USER,
+    // like the orientation link beside it: a way of working, not a property of a design.
+    [JsonPropertyName("connect_parts_on_update_layout")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? ConnectPartsOnUpdateLayout { get; set; }
+
     // R-rf3-7. Whether importing artwork turns a PAINTED pour — a copper fill expressed as thousands
     // of abutting scanline strokes — back into the region it paints. Null means the default, which is
     // ON: the region is the shape the renderer, the mesher, the DRC engine and every writer want, and

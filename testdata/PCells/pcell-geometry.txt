@@ -10,23 +10,23 @@
   pin 1 at (0,0) w=1200000 dir=180 layer=LayerKey { Layer = 1, Datatype = 0 }
   pin 2 at (250000,0) w=1200000 dir=0 layer=LayerKey { Layer = 1, Datatype = 0 }
 
-== MBEND v3 Angle=90 Miter=0 W=0.0003
+== MBEND v4 Angle=90 Miter=0 W=0.0003
   poly   layer=LayerKey { Layer = 1, Datatype = 0 } [0,-150000,300000,-150000,300000,150000,0,150000]
   pin 1 at (0,0) w=300000 dir=180 layer=LayerKey { Layer = 1, Datatype = 0 }
   pin 2 at (150000,150000) w=300000 dir=90 layer=LayerKey { Layer = 1, Datatype = 0 }
 
-== MBEND v3 Angle=90 Miter=1 W=0.0003
+== MBEND v4 Angle=90 Miter=1 W=0.0003
   poly   layer=LayerKey { Layer = 1, Datatype = 0 } [0,-150000,150000,-150000,300000,0,300000,150000,0,150000]
   pin 1 at (0,0) w=300000 dir=180 layer=LayerKey { Layer = 1, Datatype = 0 }
   pin 2 at (150000,150000) w=300000 dir=90 layer=LayerKey { Layer = 1, Datatype = 0 }
 
-== MBEND v3 Angle=90 Miter=2 W=0.0003
+== MBEND v4 Angle=90 Miter=2 W=0.0003
   poly   layer=LayerKey { Layer = 1, Datatype = 0 } [0,-150000,144000,-150000,300000,6000,300000,150000,0,150000]
   pin 1 at (0,0) w=300000 dir=180 layer=LayerKey { Layer = 1, Datatype = 0 }
   pin 2 at (150000,150000) w=300000 dir=90 layer=LayerKey { Layer = 1, Datatype = 0 }
 
-== MBEND v3 Angle=45 Miter=2 W=0.0005
-  poly   layer=LayerKey { Layer = 1, Datatype = 0 } [0,-250000,627695,10000,274142,363553,160589,250000,0,250000]
+== MBEND v4 Angle=45 Miter=2 W=0.0005
+  poly   layer=LayerKey { Layer = 1, Datatype = 0 } [0,-250000,627696,10000,274142,363554,160589,250000,0,250000]
   pin 1 at (0,0) w=500000 dir=180 layer=LayerKey { Layer = 1, Datatype = 0 }
   pin 2 at (450919,186777) w=500000 dir=45 layer=LayerKey { Layer = 1, Datatype = 0 }
   ! MBend: no published optimum-miter fit exists for a 45° bend (Douville & James 1978 is a right-angle formula) — the corner is chamfered by the same FRACTION of the corner that formula removes at 90°, which is an engineering extrapolation, not a validated fit.

@@ -132,6 +132,11 @@ the way its symbol does, and **Create Schematic from Artwork** draws each shunt 
 copper is on. Off, the schematic and the layout are arranged independently &mdash; a resistor drawn across the page
 has no reason to sit across the board.
 
+**Connect parts on Update Layout from Schematic**, on by default, places the parts the schematic joins pin to pin so
+their pins meet, and reports a loop whose lengths do not close (see
+{{anchor: layout-editor.html#schematic-flow|Update Layout from Schematic}}). Off, every new part is placed in rows and
+the ratsnest shows what joins what.
+
 **Default Ruler Size Mode**, Fixed by default, is the size mode a ruler starts in when it is placed. A Fixed
 ruler's readout is the same size on screen at every zoom; a Scaled one is a height in the layout and grows and
 shrinks with the artwork. Rulers already placed keep their own mode, which the Properties panel changes.

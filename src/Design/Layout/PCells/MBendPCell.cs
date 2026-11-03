@@ -190,13 +190,18 @@ public static class MBendPCell
         var (d2X, d2Y, n1X, n1Y, n2X, n2Y, outerX, outerY, innerX, innerY) = Corners(cornerX, cornerY, halfW, angleRad);
 
         double pin1X = 0, pin1Y = 0;
-        double pin2X = cornerX + stubLen * d2X, pin2Y = cornerY + stubLen * d2Y;
+        // Rounded as the pin itself is, so the pin sits on the midpoint of its own end cap at any angle (brief-sdl-1:
+        // round the cap from the exact point and the pin of an oblique bend lands a fraction of a DBU outside its copper).
+        double pin2X = Math.Round(cornerX + stubLen * d2X, MidpointRounding.AwayFromZero);
+        double pin2Y = Math.Round(cornerY + stubLen * d2Y, MidpointRounding.AwayFromZero);
 
         // End caps, perpendicular to each arm's own direction at its own pin.
         double a1X = pin1X + n1X * halfW, a1Y = pin1Y + n1Y * halfW;   // pin1, outer side
         double b1X = pin1X - n1X * halfW, b1Y = pin1Y - n1Y * halfW;   // pin1, inner side
-        double a2X = pin2X + n2X * halfW, a2Y = pin2Y + n2Y * halfW;   // pin2, outer side
-        double b2X = pin2X - n2X * halfW, b2Y = pin2Y - n2Y * halfW;   // pin2, inner side
+        // Pin 2's cap is offset by one whole-DBU vector either way from the rounded pin, so the pin is its exact midpoint.
+        double cap2X = Math.Round(n2X * halfW, MidpointRounding.AwayFromZero), cap2Y = Math.Round(n2Y * halfW, MidpointRounding.AwayFromZero);
+        double a2X = pin2X + cap2X, a2Y = pin2Y + cap2Y;   // pin2, outer side
+        double b2X = pin2X - cap2X, b2Y = pin2Y - cap2Y;   // pin2, inner side
 
         // Never cut past the end of either outer edge — that would fold the outline through itself.
         // The arms are sized so the chamfer fits, so this only guards rounding.
@@ -241,8 +246,9 @@ public static class MBendPCell
         }
         Add(a2X, a2Y);
         // Pin 2's corners are rotated and so rounded; pin 1's lie on the axes and are exact. Where an
-        // arm ends at its plane all three inner points are one, and pin 1's is the one kept.
-        if (!Near(b2X, b2Y, b1X, b1Y)) Add(b2X, b2Y);
+        // arm ends at its plane all three inner points are one. Pin 2's is kept unless it IS pin 1's: dropping it
+        // for a neighbour a DBU away moved pin 2's cap off pin 2, and LVS read the pin as on no copper (brief-sdl-1).
+        if (Math.Round(b2X) != b1X || Math.Round(b2Y) != b1Y) Add(b2X, b2Y);
         if (!Near(innerX, innerY, b2X, b2Y) && !Near(innerX, innerY, b1X, b1Y)) Add(innerX, innerY);
         Add(b1X, b1Y);
 

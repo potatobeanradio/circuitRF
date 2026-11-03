@@ -1,0 +1,31 @@
+# The branch-line coupler: four MTEEs, four quarter-wave arms and four launches. The loop closes,
+# so every joint is made and the copper is one connected ring with its four launches.
+Info MT1 added
+Info MT2 added
+Info MT3 added
+Info MT4 added
+Info ML1 added
+Info ML2 added
+Info ML3 added
+Info ML4 added
+Info TL1 added
+Info TL2 added
+Info TL3 added
+Info TL4 added
+Warning P1 no layout view — skipped
+Warning P2 no layout view — skipped
+Warning P3 no layout view — skipped
+Warning P4 no layout view — skipped
+Info - Joined 12 of 12 connections; 0 left as ratsnest
+joinable n1
+joinable n2
+joinable n3
+joinable n4
+joinable n5
+joinable n6
+joinable n7
+joinable n8
+joinable n9
+joinable n10
+joinable n11
+joinable n12

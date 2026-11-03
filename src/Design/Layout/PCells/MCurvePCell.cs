@@ -67,8 +67,16 @@ public static class MCurvePCell
             ((long)Math.Round(rho * Math.Sin(t), MidpointRounding.AwayFromZero),
              (long)Math.Round(cy - s * rho * Math.Cos(t), MidpointRounding.AwayFromZero));
 
-        var a0 = At(ro, 0); var a1 = At(ro, theta);
-        var b1 = At(ri, theta); var b0 = At(ri, 0);
+        // Pin 2's end cap is built round the ROUNDED pin, half a width either way along the radius, so the pin is the
+        // exact midpoint of its own cap at any angle. Rounding the three points independently left an oblique curve's pin
+        // a fraction of a DBU outside its copper, and LVS read what was joined to it as open (brief-sdl-1).
+        var p2 = At(r, theta);
+        var (capX, capY) = (w / 2.0 * Math.Sin(theta), -s * w / 2.0 * Math.Cos(theta));
+        (long X, long Y) Cap(double sign) =>
+            (p2.X + (long)Math.Round(sign * capX, MidpointRounding.AwayFromZero),
+             p2.Y + (long)Math.Round(sign * capY, MidpointRounding.AwayFromZero));
+        var a0 = At(ro, 0); var a1 = Cap(1.0);
+        var b1 = Cap(-1.0); var b0 = At(ri, 0);
         // tan(sweep/4) of each arc, +ve = counter-clockwise. Rounded to 12 decimals because Math.Tan is the
         // platform's libm and is not correctly rounded: tan(pi/8) differs by one ulp between Windows
         // and macOS, which made the artwork (and PCellGeneratorVersioningTests' fingerprint) depend on
@@ -111,7 +119,6 @@ public static class MCurvePCell
 
         var outline = new CurveShape { Layer = signalLayer, Xy = [.. xy], Edges = edges };
 
-        var p2 = At(r, theta);
         var pins = new[]
         {
             new PCellPin("1", 0, 0, signalLayer, w, 180.0),

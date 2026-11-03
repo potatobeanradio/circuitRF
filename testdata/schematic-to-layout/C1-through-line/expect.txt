@@ -1,0 +1,9 @@
+# Three MLINs in series between two ports: one straight line, every joint made.
+Info TL1 added
+Info TL2 added
+Info TL3 added
+Warning P1 no layout view — skipped
+Warning P2 no layout view — skipped
+Info - Joined 2 of 2 connections; 0 left as ratsnest
+joinable n2
+joinable n3

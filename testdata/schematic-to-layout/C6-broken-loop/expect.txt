@@ -1,0 +1,32 @@
+# C2 with ML4 50 µm too long: the loop cannot close, so exactly one loop-gap warning, with the gap
+# in y, and LVS sees the one open joint.
+Info MT1 added
+Info MT2 added
+Info MT3 added
+Info MT4 added
+Info ML1 added
+Info ML2 added
+Info ML3 added
+Info ML4 added
+Info TL1 added
+Info TL2 added
+Info TL3 added
+Info TL4 added
+Warning P1 no layout view — skipped
+Warning P2 no layout view — skipped
+Warning P3 no layout view — skipped
+Warning P4 no layout view — skipped
+Info - Joined 11 of 12 connections; 1 left as ratsnest
+Warning - does not close: MT4 pin 1 is 50 µm from ML2 pin 2 (x 0, y -50 µm), angle 0°
+lvs lvs.net.open
+joinable n1
+joinable n2
+joinable n3
+joinable n4
+joinable n5
+joinable n6
+joinable n7
+joinable n8
+joinable n9
+joinable n11
+joinable n12

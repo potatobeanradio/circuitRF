@@ -189,6 +189,7 @@ public partial class SettingsView : Window
             CheckLvsOnExportCheck.IsChecked = prefs.CheckLvsOnExport ?? false;
 
             LinkOrientationCheck.IsChecked = prefs.LinkSchematicLayoutOrientation ?? true;
+            ConnectPartsCheck.IsChecked = prefs.ConnectPartsOnUpdateLayout ?? true;
 
             CoalesceRasterFillCheck.IsChecked = prefs.CoalesceRasterFillOnImport ?? true;
 
@@ -311,6 +312,12 @@ public partial class SettingsView : Window
     {
         if (_updatingGeneral) return;
         AppPreferencesIo.Update(p => p.LinkSchematicLayoutOrientation = LinkOrientationCheck.IsChecked);
+    }
+
+    private void OnConnectPartsChanged(object? sender, RoutedEventArgs e)
+    {
+        if (_updatingGeneral) return;
+        AppPreferencesIo.Update(p => p.ConnectPartsOnUpdateLayout = ConnectPartsCheck.IsChecked);
     }
 
     private void OnCoalesceRasterFillChanged(object? sender, RoutedEventArgs e)

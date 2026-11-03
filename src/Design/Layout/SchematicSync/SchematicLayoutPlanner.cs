@@ -36,7 +36,7 @@ public delegate string? KitLayoutGeneratorLookup(string? workspaceRootDir, strin
 /// <para>Framework-free, and side-effect-free on the SCHEMATIC side — it reads <c>model</c> but never
 /// mutates it.</para>
 /// </summary>
-public static class SchematicLayoutPlanner
+public static partial class SchematicLayoutPlanner
 {
     public enum ReportSeverity { Info, Warning }
 
@@ -108,7 +108,9 @@ public static class SchematicLayoutPlanner
     /// What a run would do to <paramref name="target"/> — see the class note. Takes what the GUI command
     /// takes; <paramref name="linkOrientation"/> and <paramref name="pourMarginHeights"/> are preferences and
     /// therefore arguments (<c>src/Design/CLAUDE.md</c>), and <paramref name="kitLayoutGenerator"/> is the
-    /// palette's kit-part answer (<see cref="KitLayoutGeneratorLookup"/>).
+    /// palette's kit-part answer (<see cref="KitLayoutGeneratorLookup"/>). <paramref name="connectParts"/> is the
+    /// Connect parts setting (brief-sdl-1 R-sdl1-4): on, parts the schematic joins are placed so their pins meet
+    /// (<see cref="ConnectChains"/>); off, every new part goes into the rows exactly as before the setting existed.
     /// </summary>
     public static SchematicLayoutPlan Plan(
         SchematicEditModel model,
@@ -122,7 +124,8 @@ public static class SchematicLayoutPlanner
         string? targetLayoutPath = null,
         bool linkOrientation = true,
         double pourMarginHeights = GroundPourPlanner.DefaultMarginHeights,
-        KitLayoutGeneratorLookup? kitLayoutGenerator = null)
+        KitLayoutGeneratorLookup? kitLayoutGenerator = null,
+        bool connectParts = true)
     {
         var extraction = NetExtractor.Extract(model, "tb", cellResolver);
         var ledger = new Ledger(target, kitLayoutGenerator);
@@ -176,6 +179,9 @@ public static class SchematicLayoutPlanner
         // deletions, then the ground ties. Placement records are attached at the end, once every part is where
         // it finally goes.
         var steps = new List<Step>();
+        // The facing each NEW part's symbol gives it, whether or not the orientation link places it so — the chain
+        // takes its mirror from here (brief-sdl-1 D2), because which way a bend turns is the drawing's to say.
+        var schematicFacing = new Dictionary<LayoutInstance, VisualOrientation>(ReferenceEqualityComparer.Instance);
         int added = 0, updated = 0, unchanged = 0, overwritten = 0;
         int unlinkedDiffering = 0;
         bool linksRecorded = false;
@@ -252,10 +258,10 @@ public static class SchematicLayoutPlanner
                 // from here on is carried across by the next run.
                 // With the orientations unlinked (Settings, designer report round 15) it is placed as the cell is
                 // drawn, and the link records that facing so turning the setting back on carries nothing.
-                var facing = linkOrientation
-                    ? SchematicLayoutOrientation.FromSchematic((int)comp.Rotation, comp.MirrorX)
-                        .Compose(PinAlignment(comp, schematicDir, resolvedCellRef, targetLayoutBaseDir, technology))
-                    : new VisualOrientation(false, 0);
+                VisualOrientation FromSymbol() => SchematicLayoutOrientation.FromSchematic((int)comp.Rotation, comp.MirrorX)
+                    .Compose(PinAlignment(comp, schematicDir, resolvedCellRef, targetLayoutBaseDir, technology));
+                var facing = linkOrientation ? FromSymbol() : new VisualOrientation(false, 0);
+                if (connectParts) schematicFacing[inst] = linkOrientation ? facing : FromSymbol();
                 inst.MirrorX = facing.Mirror;
                 inst.RotationDegrees = facing.Deg;
                 inst.OrientationLink = SchematicLayoutOrientation.Link((int)comp.Rotation, comp.MirrorX, facing);
@@ -398,10 +404,21 @@ public static class SchematicLayoutPlanner
         // via that pad's ground runs through, and a via a row-width away from its part grounds nothing.
         var beside = ViaGndPartners(newInstances, physical, extraction, target, existingBySchematicId, replacedAt,
                                     schematicDir, targetLayoutBaseDir, technology);
-        var unplaced = newInstances.Where(n => !beside.ContainsKey(n.Instance)).ToList();
+        var chained = connectParts
+            ? ConnectChains(extraction, model, physical, newInstances, beside, schematicFacing, target, existingBySchematicId,
+                            replacedAt, new HashSet<int>(deleteIndices), schematicDir, targetLayoutBaseDir, technology, lines)
+            : ChainOutcome.None;
+        var unplaced = newInstances.Where(n => !beside.ContainsKey(n.Instance) && !chained.Placed.Contains(n.Instance)).ToList();
         var atArtwork = overArtwork ? Bbox.Empty
             : PlaceAtArtwork(unplaced, physical, model, schematicDir, target, targetLayoutBaseDir, technology);
-        var addedRegion = PlaceNewInstances(unplaced, targetLayoutBaseDir, below: atArtwork).Union(atArtwork);
+        if (!overArtwork && chained.Placed.Count > 0)
+            ReportChainedOverArtwork(newInstances, physical, chained, model, lines);
+        // A chain joined to nothing already placed is one rigid group, packed into the rows by its bounding box at
+        // the place its first part would have taken (R-sdl1-3); parts in no chain are packed exactly as before.
+        var rowItems = unplaced.Select(n => (n.Slot, Members: (IReadOnlyList<LayoutInstance>)[n.Instance]))
+                               .Concat(chained.Groups).OrderBy(g => g.Slot).ToList();
+        var addedRegion = PlaceNewInstances(rowItems, targetLayoutBaseDir, below: atArtwork).Union(atArtwork)
+                              .Union(chained.FixedRegion);
         foreach (var (via, partner) in beside)
         {
             var origin = CellHierarchy.InstanceBbox(via, targetLayoutBaseDir);
@@ -433,7 +450,7 @@ public static class SchematicLayoutPlanner
 
         // R-sdl0-2c: the placement record, for every part this run adds and every part whose transform it changes
         // (or whose name it carries over a rename). Taken last, from where each part finally is.
-        var edits = steps.Select(s => s.ToEdit()).ToList();
+        var edits = steps.Select(s => s.ToEdit(chained.Anchors)).ToList();
 
         return new SchematicLayoutPlan
         {
@@ -482,9 +499,9 @@ public static class SchematicLayoutPlanner
         public static Step Delete(IReadOnlyList<int> indices) => new() { _kind = 2, _indices = [.. indices] };
         public static Step Shape(LayoutShape shape) => new() { _kind = 3, _shape = shape };
 
-        public SchematicLayoutEdit ToEdit() => _kind switch
+        public SchematicLayoutEdit ToEdit(IReadOnlySet<LayoutInstance> chainAnchors) => _kind switch
         {
-            0 => new SchematicLayoutEdit.AddInstance(_instance!, GeneratedPlacement.Of(_instance!)),
+            0 => new SchematicLayoutEdit.AddInstance(_instance!, GeneratedPlacement.Of(_instance!, chainAnchors.Contains(_instance!))),
             1 => new SchematicLayoutEdit.ReplaceInstance(_index, _before!, _instance!,
                      TransformChanged(_before!, _instance!) || _renamedFrom is not null ? GeneratedPlacement.Of(_instance!) : null,
                      _renamedFrom),
@@ -894,11 +911,19 @@ public static class SchematicLayoutPlanner
     /// <para>The returned region is what the caller brings on screen. Instances are the only thing a
     /// user cannot find by looking — they land wherever this puts them rather than where the user
     /// clicked — so saying where they went is part of writing them.</para>
+    ///
+    /// <para><b>An item is a part or a chain</b> (brief-sdl-1 R-sdl1-3). A chain is placed as one rigid group by its
+    /// members' joint bounding box, and every member moves by the same whole-DBU offset, so the joints the chain
+    /// made stay made. A lone part is a group of one, and is placed exactly as it was before chains existed.</para>
     /// </summary>
     private static Bbox PlaceNewInstances(
-        List<(int Slot, LayoutInstance Instance)> placed, string targetLayoutBaseDir, Bbox? below = null)
+        List<(int Slot, IReadOnlyList<LayoutInstance> Members)> placed, string targetLayoutBaseDir, Bbox? below = null)
     {
         if (placed.Count == 0) return Bbox.Empty;
+        static void Shift((int Slot, IReadOnlyList<LayoutInstance> Members) item, long dx, long dy)
+        {
+            foreach (var inst in item.Members) { inst.X += dx; inst.Y += dy; }
+        }
         if (below is { IsEmpty: false } board)
         {
             // What the artwork placed is the board; the rest is laid out in rows under it, never over it.
@@ -906,13 +931,15 @@ public static class SchematicLayoutPlanner
             if (rows.IsEmpty) return rows;
             long clear = Math.Max(1, (board.MaxY - board.MinY) / 10);
             long dx = board.MinX - rows.MinX, dy = board.MinY - clear - rows.MaxY;
-            foreach (var (_, inst) in placed) { inst.X += dx; inst.Y += dy; }
+            foreach (var item in placed) Shift(item, dx, dy);
             return new Bbox(rows.MinX + dx, rows.MinY + dy, rows.MaxX + dx, rows.MaxY + dy);
         }
 
-        // Measured at the origin, which is where they still are: an instance's box includes its own
-        // placement — the rotation Run gave it included — so the offset below is exact.
-        var extents = placed.Select(p => CellHierarchy.InstanceBbox(p.Instance, targetLayoutBaseDir)).ToList();
+        // Measured where they are — a lone part still at the origin, a chain where its anchor at the origin put it:
+        // an instance's box includes its own placement — the rotation Run gave it included — so every offset below
+        // is exact, and it is applied as a SHIFT so a chain's members keep where they are relative to each other.
+        var extents = placed.Select(p => p.Members.Aggregate(Bbox.Empty,
+                                         (b, inst) => b.Union(CellHierarchy.InstanceBbox(inst, targetLayoutBaseDir)))).ToList();
         var sizes = extents.Where(b => !b.IsEmpty).Select(b => Math.Max(b.MaxX - b.MinX, b.MaxY - b.MinY))
                            .Where(d => d > 0).Order().ToList();
 
@@ -920,10 +947,7 @@ public static class SchematicLayoutPlanner
         {
             // Nothing measurable: the fixed grid, which is still better than stacking everything on the origin.
             for (int i = 0; i < placed.Count; i++)
-            {
-                placed[i].Instance.X = (i % GridCols) * GridPitchDbu;
-                placed[i].Instance.Y = -(i / GridCols) * GridPitchDbu;
-            }
+                Shift(placed[i], (i % GridCols) * GridPitchDbu, -(i / GridCols) * GridPitchDbu);
             return Bbox.Empty;
         }
 
@@ -946,19 +970,17 @@ public static class SchematicLayoutPlanner
             long cursor = 0;
             for (int i = first; i < last; i++)
             {
-                var (_, inst) = placed[i];
                 var bb = extents[i];
                 if (bb.IsEmpty)
                 {
-                    inst.X = cursor;
-                    inst.Y = rowCentre;
+                    Shift(placed[i], cursor, rowCentre);
                     cursor += gap;
                     continue;
                 }
-                inst.X = cursor - bb.MinX;
-                inst.Y = rowCentre - (bb.MinY + bb.MaxY) / 2;
+                long dx = cursor - bb.MinX, dy = rowCentre - (bb.MinY + bb.MaxY) / 2;
+                Shift(placed[i], dx, dy);
                 cursor += bb.MaxX - bb.MinX + gap;
-                region = region.Union(new Bbox(bb.MinX + inst.X, bb.MinY + inst.Y, bb.MaxX + inst.X, bb.MaxY + inst.Y));
+                region = region.Union(new Bbox(bb.MinX + dx, bb.MinY + dy, bb.MaxX + dx, bb.MaxY + dy));
             }
             rowCentre -= rowHeight / 2 + gap;
         }

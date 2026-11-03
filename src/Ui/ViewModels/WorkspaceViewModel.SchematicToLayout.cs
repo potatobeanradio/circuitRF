@@ -227,11 +227,13 @@ public partial class WorkspaceViewModel
             // so — see ReportTechnologyDivergence.
             ReportTechnologyDivergence(doc.ViewModel.EditModel, schematicDir, layoutVm);
 
+            var prefs = CircuitRF.Ui.Theming.AppPreferencesIo.Load();
             var result = SchematicToLayoutGenerator.Run(
                 doc.ViewModel.EditModel, layoutVm.Model, schematicDir, workspaceRoot, layoutDir,
                 layoutVm.Technology, layoutVm.ResolvedTechPath, this, targetLayoutPath: targetPath,
-                linkOrientation: CircuitRF.Ui.Theming.AppPreferencesIo.Load().LinkSchematicLayoutOrientation ?? true,
-                pourMarginHeights: ReadGroundPourMarginHeights(Path.Combine(workspaceRoot, ".cws")));
+                linkOrientation: prefs.LinkSchematicLayoutOrientation ?? true,
+                pourMarginHeights: ReadGroundPourMarginHeights(Path.Combine(workspaceRoot, ".cws")),
+                connectParts: prefs.ConnectPartsOnUpdateLayout ?? true);
 
             if (result.Command is not null)
                 layoutVm.Execute(result.Command);

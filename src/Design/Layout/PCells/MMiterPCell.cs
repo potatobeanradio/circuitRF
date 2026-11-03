@@ -95,7 +95,11 @@ public static class MMiterPCell
         double outerX = pX + oX1 * half + d1X * s, outerY = pY + oY1 * half + d1Y * s;
         double innerX = pX - oX1 * half - d1X * s, innerY = pY - oY1 * half - d1Y * s;
 
-        double pin2X = pX + d2X * r, pin2Y = pY + d2Y * r;
+        // Pin 2 is rounded FIRST and its end edge is built round the rounded point, so the pin sits exactly on the
+        // midpoint of its own copper's edge at any angle. Rounded the other way round, a 45° miter's pin landed a third
+        // of a DBU outside its copper and LVS read whatever was joined to it as open (brief-sdl-1).
+        double pin2X = Math.Round(pX + d2X * r, MidpointRounding.AwayFromZero);
+        double pin2Y = Math.Round(pY + d2Y * r, MidpointRounding.AwayFromZero);
         var xy = new List<long>(16);
         void Add(double x, double y)
         {

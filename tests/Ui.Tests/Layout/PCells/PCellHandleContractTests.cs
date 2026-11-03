@@ -66,7 +66,7 @@ public sealed class PCellHandleContractTests : IDisposable
         // to a generator must never bump its content key.
         //
         // MTEE (branch direction), MBEND (the hexagon outline, then arms ending at the model's reference
-        // planes) and MKLOPF (SmoothSteps' end blend
+        // planes, then pin 2's cap built round the rounded pin) and MKLOPF (SmoothSteps' end blend
         // clamped rather than skipped) are each >1 for their own pre-existing reason — a fix that
         // genuinely moved geometry, which is exactly what the field is for. They are asserted here by
         // NAME so that a bump for a real geometry change stays deliberate and visible, rather than
@@ -75,7 +75,7 @@ public sealed class PCellHandleContractTests : IDisposable
         Assert.Equal("1", PCellRegistry.GeneratorContentKey("MTAPER"));
         Assert.Equal("1", PCellRegistry.GeneratorContentKey("MCROSS"));
         Assert.Equal("2", PCellRegistry.GeneratorContentKey("MTEE"));
-        Assert.Equal("3", PCellRegistry.GeneratorContentKey("MBEND"));
+        Assert.Equal("4", PCellRegistry.GeneratorContentKey("MBEND"));
         Assert.Equal("2", PCellRegistry.GeneratorContentKey("MKLOPF"));
     }
 

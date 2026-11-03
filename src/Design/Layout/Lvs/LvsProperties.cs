@@ -344,6 +344,11 @@ internal static class LvsProperties
                 }
 
                 var dimension = Dimension(s, l, name);
+                // A built-in generator takes an angle in DEGREES (the planner's TryResolveSiValue converts to them, the
+                // one divergence from SI there is), and its snapshot records what it took; the schematic side is SI
+                // radians. Compared raw, every bend read "schematic 1.5708 rad, layout 90 rad" (brief-sdl-1).
+                if (dimension == UnitDimension.Angle && l.Generator.Length > 0 && Number(drawn) is { } degrees)
+                    drawn = degrees * Math.PI / 180.0;
                 var tolerance = tolerances.Of(dimension);
                 if (!tolerance.Established)
                     unestablished[dimension] = unestablished.GetValueOrDefault(dimension) + 1;
