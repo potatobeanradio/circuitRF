@@ -93,6 +93,8 @@ public sealed class CornerRun
         var map = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var (k, v) in corner.Values) map[k] = v;
         if (corner.Temp is { } t) map[Temperature.AmbientGlobalName] = t;
+        // A library part's corner (brief vendorlib-13 R-vl13-2e) travels as its own key; TunableOverrides applies it.
+        foreach (var (part, c) in corner.PartCorners ?? []) map[CellCorner.PartPrefix + part] = c;
         return map;
     }
 

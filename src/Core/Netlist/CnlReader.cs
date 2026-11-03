@@ -163,6 +163,25 @@ public sealed class CnlReader
             return true;
         }
 
+        // Inside a define (brief vendorlib-13 R-vl13-2a): "corner <name> <param>=<value> [unit] …" — a named set of the
+        // cell's own parameter values — and "part <number>", the library part a placed model came from. Read here,
+        // before the tuning keywords, because at top level "corner" is the BENCH's corner line.
+        if (_currentCell is not null && FirstWordIs(line, "corner"))
+        {
+            ParseCellCorner(line, StripInlineComment(line["corner".Length..]).Trim());
+            return true;
+        }
+        if (_currentCell is not null && FirstWordIs(line, "part"))
+        {
+            string number = StripInlineComment(line["part".Length..]).Trim();
+            if (number.Length == 0 || number.Any(char.IsWhiteSpace))
+                throw new CnlReadException(_lineNumber, line, "'part' names one part number — part TSTFET100.");
+            if (_currentCell.Part is { } first)
+                throw new CnlReadException(_lineNumber, line, $"a second 'part' line; this define already names part {first}.");
+            _currentCell.Part = number;
+            return true;
+        }
+
         // Tuning and optimization: "tune …", "preset …", "goal …", "optimize …" (TuningDirectiveText).
         // A line whose next token is '=' is an ASSIGNMENT to a variable that happens to share the
         // word ("tune = 3"), never a directive.
@@ -226,6 +245,7 @@ public sealed class CnlReader
         {
             if (_currentCell is null)
                 throw new CnlReadException(_lineNumber, line, "'end' without matching 'define'");
+            CheckCellCorners();
             _library.Cells.Add(_currentCell);
             _currentCell = null;
             return true;
@@ -373,6 +393,70 @@ public sealed class CnlReader
         _currentCell.Ports.AddRange(ports);
     }
 
+    private static bool FirstWordIs(string line, string word)
+        => line.StartsWith(word, StringComparison.Ordinal)
+           && (line.Length == word.Length || char.IsWhiteSpace(line[word.Length]))
+           && !line[word.Length..].TrimStart().StartsWith('=');   // "corner = 3" is a variable
+
+    /// <summary>Where each corner of the open define was written, so a binding that names no parameter — known only
+    /// once the whole block is read — is refused naming its own line.</summary>
+    private readonly List<(CellCorner Corner, int Line, string Text)> _cornerLines = [];
+
+    /// <summary>
+    /// <c>corner &lt;name&gt; &lt;param&gt;=&lt;value&gt; [unit] …</c> inside a define. Refused, naming the line: no name,
+    /// the reserved name <c>nominal</c>, a second corner of one name, <c>temp=</c> (a part does not choose its
+    /// temperature — the bench does), a parameter bound twice, and (at <c>end</c>) a name the cell does not declare.
+    /// </summary>
+    private void ParseCellCorner(string line, string rest)
+    {
+        var tokens = MergeSpacedAssignments(MergeParenthesised(TokeniseLine(rest)));
+        if (tokens.Count == 0 || tokens[0].Contains('='))
+            throw new CnlReadException(_lineNumber, line, "a corner's name comes first — corner min Cg=0.9 pF.");
+        string name = tokens[0];
+        if (!IsIdentifier(name))
+            throw new CnlReadException(_lineNumber, line, $"'{name}' is not a corner name; a corner's name is one word.");
+        if (name.Equals(CellCorner.Nominal, StringComparison.OrdinalIgnoreCase))
+            throw new CnlReadException(_lineNumber, line,
+                "'nominal' is reserved: it is the cell's own defaults, which every cell has. Name the corner something else.");
+        if (_currentCell!.Corners.Any(c => c.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
+            throw new CnlReadException(_lineNumber, line, $"a second corner named '{name}' in cell '{_currentCell.Name}'.");
+
+        var corner = new CellCorner(name);
+        for (int i = 1; i < tokens.Count; i++)
+        {
+            string token = tokens[i];
+            int eq = token.IndexOf('=');
+            if (eq <= 0)
+                throw new CnlReadException(_lineNumber, line, $"'{token}' on a corner line is not a parameter=value binding.");
+            string key = token[..eq].Trim(), expr = token[(eq + 1)..].Trim();
+            if (key.Equals("temp", StringComparison.OrdinalIgnoreCase))
+                throw new CnlReadException(_lineNumber, line,
+                    $"corner '{name}' sets temp: a part does not choose its temperature — the bench's corner does.");
+            if (expr.Length == 0)
+                throw new CnlReadException(_lineNumber, line, $"corner '{name}' gives {key} no value.");
+            if (corner.Bindings.Any(b => b.Name == key))
+                throw new CnlReadException(_lineNumber, line, $"corner '{name}' binds {key} twice.");
+            string? unit = null;
+            if (i + 1 < tokens.Count && !tokens[i + 1].Contains('=') && Units.IsRecognizedUnit(tokens[i + 1]))
+                unit = tokens[++i];
+            corner.Bindings.Add(new ParameterAssignment(key, expr, unit));
+        }
+        _currentCell.Corners.Add(corner);
+        _cornerLines.Add((corner, _lineNumber, line));
+    }
+
+    private void CheckCellCorners()
+    {
+        foreach (var (corner, lineNo, text) in _cornerLines)
+            foreach (var b in corner.Bindings)
+                if (!_currentCell!.Parameters.Any(p => p.Name == b.Name))
+                    throw new CnlReadException(lineNo, text,
+                        $"corner '{corner.Name}' binds {b.Name}, which is not a parameter of cell '{_currentCell.Name}'" +
+                        (_currentCell.Parameters.Count == 0 ? " (it declares none)." :
+                            $"; it declares {string.Join(", ", _currentCell.Parameters.Select(p => p.Name))}."));
+        _cornerLines.Clear();
+    }
+
     private void ParseParameterDeclarations(string rest)
     {
         // "name=expr [unit] name2=expr2 [unit2] ..."
@@ -385,7 +469,7 @@ public sealed class CnlReader
         // not unit-bearing, so a site unit that names it scaled it where a variable `Vds = 3 V` would
         // not, and a reader of the cell could not get its unit back. A `;` comment is stripped first
         // and spaces around `=` are rejoined, as on an instance line; any other bare word is SAID.
-        var tokens = MergeSpacedAssignments(TokeniseLine(StripInlineComment(rest)));
+        var tokens = MergeSpacedAssignments(MergeParenthesised(TokeniseLine(StripInlineComment(rest))));
         int i = 0;
         while (i < tokens.Count)
         {
@@ -2045,6 +2129,32 @@ public sealed class CnlReader
         value = number;
         unit  = u;
         return true;
+    }
+
+    /// <summary>
+    /// Rejoins tokens a space split inside parentheses, so a value written <c>gauss(10, 0.05, 3)</c> stays one value
+    /// (brief vendorlib-13 R-vl13-1a): a distribution's arguments are what a published tolerance is written with, and
+    /// on a <c>parameters</c> or <c>corner</c> line the bare word after a value is its UNIT, so a split argument list
+    /// would otherwise have been read as a value, a skipped word and a lost spread. Applied only there — an instance
+    /// line keeps its own rule that a value carries no spaces.
+    /// </summary>
+    private static List<string> MergeParenthesised(List<string> tokens)
+    {
+        var merged = new List<string>(tokens.Count);
+        int depth = 0;
+        foreach (var t in tokens)
+        {
+            if (depth > 0) merged[^1] += " " + t;
+            else merged.Add(t);
+            bool quoted = false;
+            foreach (char c in t)
+            {
+                if (c == '"') quoted = !quoted;
+                else if (!quoted) depth += c == '(' ? 1 : c == ')' ? -1 : 0;
+            }
+            if (depth < 0) depth = 0;
+        }
+        return merged;
     }
 
     private static List<string> MergeSpacedAssignments(List<string> tokens)

@@ -127,9 +127,21 @@ public static class CnlWriter
         sb.Append("define ").Append(cell.Name)
           .Append(" (").Append(string.Join(' ', cell.Ports)).Append(')').AppendLine();
 
+        if (cell.Part is { } part)
+            sb.Append("  part ").AppendLine(part);
+
         if (cell.Parameters.Count > 0)
             sb.Append("  parameters ")
               .AppendLine(string.Join("  ", cell.Parameters.Select(FormatParamDecl)));
+
+        // Named parameter sets (brief vendorlib-13 R-vl13-2a): `corner <name> <param>=<value> [unit] …`.
+        foreach (var corner in cell.Corners)
+        {
+            sb.Append("  corner ").Append(corner.Name);
+            foreach (var b in corner.Bindings)
+                sb.Append(' ').Append(string.IsNullOrEmpty(b.Unit) ? $"{b.Name}={b.Expression}" : $"{b.Name}={b.Expression} {b.Unit}");
+            sb.AppendLine();
+        }
 
         // Cell-local VAR definitions (CnlReader routes in-block assignments to Cell.Variables).
         foreach (var v in cell.Variables)

@@ -99,6 +99,9 @@ public partial class WorkspaceViewModel
         panel.SourcePathFor  = YieldSourcePathFor;
         panel.DisplayFor     = path => new YieldDisplaySink(path, OpenDataDisplayLibraries, RefreshOpenDataDisplaysAsync);
         panel.KitStatisticsFor = YieldKitStatisticsFor;
+        // brief vendorlib-13 R-vl13-1c/2f: the placed library parts, from the netlist a run of the design extracts.
+        panel.LibraryPartsFor = tuned => PrepareTunedCircuit(tuned) is { Circuit: { Tb: { } tb, Lib: { } lib } }
+            ? LibraryParts.Placed(tb, lib) : null;
         panel.KitAxesFor     = _ => AvailableCornerAxes;
         panel.OpenCornerPicker = () => ShowToolPanelCore(DockPanelIds.Analyses);
         panel.EditGoalInOptimizer = goal => EditGoalInOptimizer(panel, goal);

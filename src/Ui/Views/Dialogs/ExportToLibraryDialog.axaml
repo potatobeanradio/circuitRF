@@ -75,6 +75,97 @@
                                PlaceholderText="1005M(0402)"/>
                 </Grid>
 
+                <!-- Parameters (brief vendorlib-13 R-vl13-1b): each parameter's tolerance, typed in the Yield panel's own
+                     grammar after the distribution is chosen, written as the distribution function on its default in
+                     the SOURCE cell's .ccell. Only Gaussian and Uniform have a function, so only they are offered. -->
+                <TextBlock Text="Parameters" FontWeight="SemiBold" FontSize="12" IsVisible="{Binding HasParameters}"/>
+                <StackPanel Spacing="4" IsVisible="{Binding HasParameters}">
+                    <Grid ColumnDefinitions="90,100,96,*" ColumnSpacing="6">
+                        <TextBlock Grid.Column="0" Text="Name" FontSize="11" Opacity="0.7"/>
+                        <TextBlock Grid.Column="1" Text="Nominal" FontSize="11" Opacity="0.7"/>
+                        <TextBlock Grid.Column="2" Grid.ColumnSpan="2" Text="Tolerance" FontSize="11" Opacity="0.7"
+                                   ToolTip.Tip="{x:Static vm:ExportToLibraryDialogText.ToleranceTip}"/>
+                    </Grid>
+                    <ItemsControl x:Name="ParameterTable" ItemsSource="{Binding ParameterRows}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:ExportParameterRowViewModel">
+                                <StackPanel Spacing="2" Margin="0,0,0,4">
+                                    <Grid ColumnDefinitions="90,100,96,*" ColumnSpacing="6">
+                                        <TextBlock Grid.Column="0" Text="{Binding Name}" FontSize="12" VerticalAlignment="Center"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Grid.Column="1" Text="{Binding Nominal}" FontSize="12" VerticalAlignment="Center"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                        <ComboBox  Grid.Column="2" ItemsSource="{x:Static vm:ExportParameterRowViewModel.DistributionLabels}"
+                                                   SelectedIndex="{Binding DistributionIndex}" FontSize="12"
+                                                   HorizontalAlignment="Stretch" ToolTip.Tip="{Binding DistributionTip}"/>
+                                        <TextBox   Grid.Column="3" Text="{Binding Spread, UpdateSourceTrigger=LostFocus}" FontSize="12"
+                                                   IsEnabled="{Binding HasSpread}" PlaceholderText="± 5 % at 3σ"
+                                                   ToolTip.Tip="± 2 %, ± 2 % at 2σ, σ 1 Ω, or 45 … 55 Ω on a Uniform"/>
+                                    </Grid>
+                                    <TextBlock Text="{Binding Error}" FontSize="11" TextWrapping="Wrap"
+                                               Foreground="{DynamicResource CrfWarningBrush}"
+                                               IsVisible="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+
+                <!-- Corners (brief vendorlib-13 R-vl13-2c): rows are corner names, columns the cell's parameters; a blank
+                     value is nominal. Written to the source cell's .ccell, as the tolerances are. -->
+                <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding HasParameters}">
+                    <TextBlock Grid.Column="0" Text="Corners" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center"/>
+                    <Button Grid.Column="1" Content="Add corner" FontSize="12" Command="{Binding AddCornerCommand}"
+                            ToolTip.Tip="A named set of this part's own parameter values — its stated min / typ / max."/>
+                </Grid>
+                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
+                              IsVisible="{Binding !!CornerRows.Count}">
+                    <StackPanel Spacing="4">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <TextBlock Text="Corner" Width="80" FontSize="11" Opacity="0.7"/>
+                            <ItemsControl ItemsSource="{Binding ParameterNames}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="6"/></ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="x:String">
+                                        <TextBlock Text="{Binding}" Width="80" FontSize="11" Opacity="0.7" TextTrimming="CharacterEllipsis"/>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                        <ItemsControl x:Name="CornerTable" ItemsSource="{Binding CornerRows}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:ExportCornerRowViewModel">
+                                    <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,0,4">
+                                        <TextBox Text="{Binding Name, UpdateSourceTrigger=LostFocus}" Width="80" FontSize="12"/>
+                                        <ItemsControl ItemsSource="{Binding Cells}">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="6"/></ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="vm:ExportCornerCellViewModel">
+                                                    <TextBox Text="{Binding Value, UpdateSourceTrigger=LostFocus}" Width="80" FontSize="12"
+                                                             PlaceholderText="nominal"/>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                        <Button Padding="4,2" Background="Transparent" ToolTip.Tip="Remove this corner"
+                                                Command="{Binding $parent[Window].((vm:ExportToLibraryViewModel)DataContext).RemoveCornerCommand}"
+                                                CommandParameter="{Binding}">
+                                            <mi:MaterialIcon Kind="Close" Width="14" Height="14"/>
+                                        </Button>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </ScrollViewer>
+                <TextBlock Text="{Binding CornerProblem}" FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource CrfWarningBrush}"
+                           IsVisible="{Binding CornerProblem, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                <TextBlock Text="{Binding CellEditNote}" FontSize="11" TextWrapping="Wrap" Opacity="0.8"
+                           IsVisible="{Binding CellEditNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+
                 <!-- Frequency (brief vendorlib-11 R-vl11-4): the plan technology-bound parts are sampled over — the EM
                      Setup's own plan editor. Greyed when nothing uses the technology. -->
                 <TextBlock Text="Frequency" FontWeight="SemiBold" FontSize="12"/>

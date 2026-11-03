@@ -47,6 +47,7 @@ public sealed class StatisticalRun
     private readonly IReadOnlyList<Tunable> _nominals = [];
     private readonly TunableCatalog? _catalog;
     private readonly IReadOnlyDictionary<string, string> _bindings = new Dictionary<string, string>();
+    private readonly IReadOnlyList<string> _heldPaths = [];
     private readonly Dictionary<string, Tunable> _byKey = new(StringComparer.Ordinal);
     private readonly StatisticalSampler? _sampler;
     private readonly List<string> _streams = [];
@@ -91,6 +92,12 @@ public sealed class StatisticalRun
         // A corner's bindings (brief-yield-6 R-ya6-3) are the nominal every spread is drawn around: a percent
         // spread on a value the corner moves follows it, as it follows a value centering moves.
         _bindings = options.Bindings ?? _bindings;
+        // Library parts whose own draws stay at nominal (brief vendorlib-13): those the statistics line holds
+        // (R-vl13-1c), and those a corner sets the corner of — the corner is that part's limit (R-vl13-2g).
+        var heldParts = _settings.NominalPartList.Concat(_bindings.Keys
+            .Where(k => k.StartsWith(CellCorner.PartPrefix, StringComparison.OrdinalIgnoreCase))
+            .Select(k => k[CellCorner.PartPrefix.Length..]));
+        _heldPaths = LibraryParts.HeldPaths(tb, lib, heldParts);
         _catalog  = TunableCatalog.FromNetlist(bench, lib, parts: circuit.PartTunables);
         _nominals = SampleValues.Nominals(_catalog, _bindings);
         foreach (var t in _nominals) _byKey.TryAdd(t.Key, t);
@@ -393,7 +400,7 @@ public sealed class StatisticalRun
                 continue;
             }
             var draws = new ExpressionDraws(_settings.EffectiveSeed, 1, _settings.Process ?? true, _settings.Mismatch ?? true,
-                                            scale, kitZ, unplannedAtNominal: true);
+                                            scale, kitZ, unplannedAtNominal: true, held: _heldPaths);
             slots.Add((i, values, sample, draws));
             string tag = "z " + string.Join(",", x.Select(v => v.ToString("R", System.Globalization.CultureInfo.InvariantCulture)));
             batch.Add(new ValuePoint(PointValues(values.Values, at), draws, tag));
@@ -460,7 +467,7 @@ public sealed class StatisticalRun
         }
         var entrySample = new StatisticalSample(t, entryZ);
         return (SampleValues.Apply(_entries, nominals ?? _nominals, entrySample, scale), entrySample,
-                ExpressionDraws.For(_settings, t, kitZ.Count == 0 ? null : kitZ));
+                ExpressionDraws.For(_settings, t, kitZ.Count == 0 ? null : kitZ, held: _heldPaths));
     }
 
     /// <summary>The value map a point evaluates: the moved design's values, the corner's bindings over them, then the
@@ -520,7 +527,7 @@ public sealed class StatisticalRun
         var sample = new StatisticalSample(trial, recorded.EntryZ);
         var drawn = SampleValues.Apply(kept, nominals, sample, scale);
         var replayDraws = new ExpressionDraws(_settings.EffectiveSeed, trial, _settings.Process ?? true, _settings.Mismatch ?? true,
-                                              scale, recorded.KitZ, unplannedAtNominal: true);
+                                              scale, recorded.KitZ, unplannedAtNominal: true, held: _heldPaths);
         return new StatisticalReplay(trial, PointValues(drawn.Values, at), replayDraws, notes, drawn.Refusal);
     }
 

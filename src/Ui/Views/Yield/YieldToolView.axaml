@@ -590,6 +590,36 @@
                                 ToolTip.Tip="{Binding KitNote}"/>
                     </Grid>
 
+                    <!-- Library parts (brief vendorlib-13 R-vl13-1c): each placed part whose model holds a distribution, its
+                         spreads read-only; unticked, its draws are held at nominal (statistics nominalparts=). They are
+                         mismatch draws, so the Mismatch switch above holds them too. -->
+                    <StackPanel Margin="6,1,4,1" Spacing="1">
+                        <StackPanel.IsVisible>
+                            <MultiBinding Converter="{x:Static BoolConverters.And}">
+                                <Binding Path="HasLibraryParts"/>
+                                <Binding Path="ShowVariableTolerances"/>
+                            </MultiBinding>
+                        </StackPanel.IsVisible>
+                        <TextBlock Text="Library parts" FontSize="11" Margin="0,2,0,0"
+                                   ToolTip.Tip="Tolerances written in a library part's own model. Unticked, that part is held at nominal; the Mismatch switch holds every part's."/>
+                        <ItemsControl x:Name="LibraryPartList" ItemsSource="{Binding LibraryPartRows}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="yld:LibraryPartRowViewModel">
+                                    <Grid ColumnDefinitions="Auto,Auto,*" Margin="0,1,0,1">
+                                        <CheckBox Grid.Column="0" IsChecked="{Binding IsDrawn}" FontSize="12" Margin="0,0,6,0"
+                                                  Content="{Binding Part}"
+                                                  ToolTip.Tip="Draw this part's own tolerances; unticked, they are held at nominal."/>
+                                        <TextBlock Grid.Column="1" Text="{Binding InstancesText}" Classes="muted" FontSize="11"
+                                                   VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                        <TextBlock Grid.Column="2" Text="{Binding SpreadsText}" Classes="muted" FontSize="11"
+                                                   VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                                   ToolTip.Tip="{Binding SpreadsText}"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+
                     <!-- Centering: the designable nominals with their ranges and the tolerances beside them, start → best. -->
                     <ItemsControl ItemsSource="{Binding CenterRows}" IsVisible="{Binding IsCentering}">
                         <ItemsControl.ItemTemplate>

@@ -128,6 +128,17 @@ independently — to see how much of the spread each one causes. When a kit offe
 that is not selected, **Choose a corner…** opens the corner picker in the Analyses panel. How a kit
 writes its statistics is in [PDK authoring](pdk-authoring.html#statistics).
 
+## Library parts {#library-parts}
+
+A [library part](model-library-format.html#tolerances) can carry its own spread: its model's values written as
+distributions. A **Library parts** group lists each placed part whose model has one, with every spread shown in
+the panel's own notation (`C0  ± 5 % at 3σ`). Each part draws once per placed instance. Untick a part to hold its
+own tolerances at nominal while every other spread keeps drawing; the statistics line records the parts held as
+`nominalparts=TSTCAP,TSTRES`. A part's draws are mismatch draws, so the Kit statistics' **Mismatch** switch holds
+them too.
+
+A tolerance you add to a part's value in the Variables list (`tol=part`) is separate, and works as before.
+
 ## Specs {#specs}
 
 A spec is a [goal](optimization.html#goals). Every goal is listed with its **Use**: two ticks, the same ones
@@ -270,6 +281,20 @@ temperature and the values each binds; a statistical corner shows the trial it r
 and the values you type, and shows how many before it writes them. **▶** evaluates every enabled corner
 and shows a grid of corner × spec: the margin in each cell, failing cells red, each spec's worst corner
 in bold. With **MC at each corner**, the grid shows each spec's yield at each corner instead.
+
+**A library part's corners.** A part whose model declares [corners](model-library-format.html#corners) — its
+min and max, say — offers them in two places. On the placed part, the Parameter Editor's **Corner** chooses one
+for that instance; a value you set on the same instance still wins, and its row reads *overrides corner min*. In
+a bench corner, `part:<part number>=<corner>` sets the corner of **every** instance of that part, as parts from
+one lot, overriding each instance's own choice:
+
+```netlist
+corner slow temp=85 part:TSTCAP=max
+```
+
+**Generate…** lists each placed part with corners as an axis, a tick box per corner, crossed with everything else.
+With **MC at each corner**, a part whose corner the corner sets holds its own tolerances at nominal there — the
+corner is its limit — while every other spread draws.
 
 **A statistical corner** replays one trial. **Save as corner…** on a trial's row (or on a plot) makes a
 corner that applies that trial's draws — the offset of each toleranced value from its nominal, and the

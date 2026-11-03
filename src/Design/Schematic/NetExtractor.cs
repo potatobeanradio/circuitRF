@@ -1850,11 +1850,33 @@ public static class NetExtractor
         foreach (var p in comp.Parameters)
         {
             if (p.Name == VendorLibraries.ModelLibrary.VendorModelRefs.GlyphParameter) continue;
+            // The Corner row (brief vendorlib-13 R-vl13-2d): a selector, never a parameter of the model. It rides the
+            // instance as written and the elaborator applies it, so an explicit value on the same instance still wins.
+            if (p.Name == CellCorner.SelectorParameter)
+            {
+                string chosen = (p.Expression ?? "").Trim();
+                if (chosen.Length == 0 || chosen.Equals(CellCorner.Nominal, StringComparison.OrdinalIgnoreCase)) continue;
+                if (!top.Corners.Any(c => c.Name.Equals(chosen, StringComparison.OrdinalIgnoreCase)))
+                {
+                    Refuse($"the corner '{chosen}' is not one the model '{r.Entry.Part}' in the vendor library '{r.Library}' " +
+                           $"declares; it offers {string.Join(", ", new[] { CellCorner.Nominal }.Concat(top.Corners.Select(c => c.Name)))}.");
+                    return null;
+                }
+                overrides.Add(new ParameterAssignment(CellCorner.SelectorParameter, chosen));
+                continue;
+            }
             if (string.IsNullOrWhiteSpace(p.Name) || string.IsNullOrWhiteSpace(p.Expression)) continue;
             string? name = declared.FirstOrDefault(d => d == p.Name)
                         ?? declared.SingleOrDefault(d => d.Equals(p.Name, StringComparison.OrdinalIgnoreCase));
             if (name is null) continue;
             var unit = UnitNormalizer.ToEngineUnit(p.Unit);
+            // A row that repeats the model's own default is not an override (brief vendorlib-13): written as one it
+            // would beat the instance's corner, and a distribution in the default would be re-evaluated in the
+            // PARENT's scope — a process draw shared by every instance instead of one per instance.
+            var decl = top.Parameters.First(d => d.Name == name);
+            if (p.Expression.Trim() == decl.DefaultExpression.Trim()
+                && (unit.Length > 0 ? unit : null) == (string.IsNullOrEmpty(decl.Unit) ? null : UnitNormalizer.ToEngineUnit(decl.Unit)))
+                continue;
             overrides.Add(new ParameterAssignment(name, p.Expression, unit.Length > 0 ? unit : null));
         }
 
@@ -1887,6 +1909,11 @@ public static class NetExtractor
             copy.Ports.AddRange(cell.Ports);
             copy.Parameters.AddRange(cell.Parameters);
             copy.Variables.AddRange(cell.Variables);
+            // The model's corners travel with it, and its top cell is marked with the part number so a bench corner's
+            // part: axis and the held parts of a statistics line find this part's instances in the run's netlist
+            // (brief vendorlib-13 R-vl13-2e, R-vl13-1c).
+            copy.Corners.AddRange(cell.Corners);
+            if (cell.Name == topName) copy.Part = part;
             foreach (var inst in cell.Instances)
             {
                 var overrides = inst.Overrides.Select(o =>
@@ -2414,6 +2441,7 @@ public static class NetExtractor
         cell.Instances.AddRange(RebaseFileReferences(subInstances, res.Schematic.SchematicDirectory, scope.RunBase));
         cell.Variables.AddRange(subVars);
         foreach (var p in res.Parameters) cell.Parameters.Add(p);
+        if (res.Corners is { } corners) cell.Corners.AddRange(corners);   // brief vendorlib-13 R-vl13-2b
         lib.Cells.Add(cell);
         scope.InProgress.Remove(cellKey);
     }
@@ -2450,7 +2478,7 @@ public static class NetExtractor
         schematic.SchematicDirectory = Path.GetDirectoryName(csch);
 
         string cellName = Path.GetFileName(dir);
-        var res = new CellResolution(cellName, schematic, DiskCellResolver.ParametersOf(dir), dir);
+        var res = new CellResolution(cellName, schematic, DiskCellResolver.ParametersOf(dir), dir, CellCorners.Of(dir));
         var lib = new Library("cell");
         var conflicts = new List<string>();
         var scope = new CellScope { RunBase = SchematicCircuit.ReferenceBaseOfDirectory(schematic.SchematicDirectory) };

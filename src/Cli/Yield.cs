@@ -89,7 +89,7 @@ internal static partial class Yield
         ("--save-corner",  "name",               [NTrial],                                    "A .csch, with --trial: add a statistical corner naming that trial."),
         ("--corners",      "c,c",                [NMc, NEst, NCorners, NCornersMc],           "Only these enabled corners (mc/estimate: a run at each)."),
         ("--mc",           "",                   [NCorners, NCornersMc],                      "corners: a Monte Carlo (a yield, when the design has a yield goal) at each corner, process draws off there."),
-        ("--generate",     "spec",               [NGenerate],                                 "corners: print the corners a cross product makes, e.g. \"axis=tt,ss;temp=-40,25,85;Vdd=3.0,3.6\"; writes nothing."),
+        ("--generate",     "spec",               [NGenerate],                                 "corners: print the corners a cross product makes, e.g. \"axis=tt,ss;temp=-40,25,85;Vdd=3.0,3.6;part:TSTFET100=min,max\"; writes nothing."),
         ("--write",        "",                   [NGenerate],                                 "corners --generate, a .csch: append the generated corners, after a history checkpoint."),
         ("--algorithm",    "id",                 [NCenter],                                   "center: the search, one of " + string.Join(", ", OptimizerAlgorithms.ForNoisyObjective) + " (default cmaes)."),
         ("--verify",       "n",                  [NCenter],                                   "center: fresh trials the start and the best point are each verified on."),

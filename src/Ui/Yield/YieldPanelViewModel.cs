@@ -499,6 +499,7 @@ public sealed partial class YieldPanelViewModel : ObservableObject, ITunableAddH
         KitNote         = report?.Notes.FirstOrDefault()?.Render();
         OnPropertyChanged(nameof(KitProcess));
         OnPropertyChanged(nameof(KitMismatch));
+        RefreshLibraryParts();
     }
 
     private KitStatisticsReport? SafeKit(SchematicViewModel tuned)
@@ -660,7 +661,7 @@ public sealed partial class YieldPanelViewModel : ObservableObject, ITunableAddH
 
     private static string Describe(StatisticsSettings s)
         => string.Join("|", s.Trials, s.Seed, s.Sampling, s.Target, s.Confidence, s.AutoStop, s.NonConverged, s.Save,
-                       s.Process, s.Mismatch, s.SigmaScale, s.Parallelism, s.Scope, s.Corners);
+                       s.Process, s.Mismatch, s.SigmaScale, s.Parallelism, s.Scope, s.Corners, s.NominalParts);
 
     private void RefreshSettings()
     {
@@ -671,6 +672,7 @@ public sealed partial class YieldPanelViewModel : ObservableObject, ITunableAddH
                      nameof(ParallelText), nameof(KitProcess), nameof(KitMismatch), nameof(TargetFraction),
                  })
             OnPropertyChanged(name);
+        SyncLibraryPartTicks();
     }
 
     internal static string Number(double v) => v.ToString("G4", CultureInfo.InvariantCulture);

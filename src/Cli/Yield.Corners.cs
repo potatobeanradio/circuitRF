@@ -65,7 +65,9 @@ internal static partial class Yield
         JsonRun.Corners = new CornerReportJson(input, "finished", [], [], [], 0,
             Generated: [.. corners.Select(c => new CornerDefinitionJson(
                 c.Name, CornerRun.TempOf(c),
-                new SortedDictionary<string, string>(c.Values.ToDictionary(), StringComparer.Ordinal),
+                // A library part's corner (brief vendorlib-13 R-vl13-2f) reads as the line spells it: part:<number>.
+                new SortedDictionary<string, string>(c.Values.Concat((c.PartCorners ?? []).Select(kv =>
+                    new KeyValuePair<string, string>(CellCorner.PartPrefix + kv.Key, kv.Value))).ToDictionary(), StringComparer.Ordinal),
                 c.AxisSelections is { Count: > 0 } axes ? new SortedDictionary<string, string>(axes.ToDictionary(), StringComparer.Ordinal) : null,
                 kind == DocumentKind.Schematic ? null : TuningDirectiveText.CornerLine(c)))]);
         return 0;

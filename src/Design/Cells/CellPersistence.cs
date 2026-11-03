@@ -368,6 +368,25 @@ public sealed class CcellFile
     /// The primary symbol's ExternalPortCount is fed from this value, not the other way around.
     /// </summary>
     public int NumPorts { get; set; }
+
+    /// <summary>
+    /// The cell's named parameter sets (brief vendorlib-13 R-vl13-2b): every extraction of the cell writes them as
+    /// <c>corner</c> lines inside its <c>define</c>. Null = none, and never written.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<CcellCorner>? Corners { get; set; }
+}
+
+/// <summary>
+/// One named parameter set of a cell (brief vendorlib-13 R-vl13-2b): a name, and a value text per parameter — an
+/// expression with an optional unit after a space (<c>0.9 pF</c>); a parameter it leaves out, or blank, is nominal.
+/// </summary>
+public sealed class CcellCorner
+{
+    public string Name { get; set; } = "";
+
+    /// <summary>Parameter name → value text, in the order written.</summary>
+    public Dictionary<string, string> Values { get; set; } = new(StringComparer.Ordinal);
 }
 
 /// <summary>

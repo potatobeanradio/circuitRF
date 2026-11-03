@@ -697,8 +697,8 @@
                                                      VerticalAlignment="Center"
                                                      Margin="8,0,0,0"
                                                      ToolTip.Tip="The numeric value this mode stores — the schematic label and inline text edit both show this raw number"/>
-                                <SelectableTextBlock Grid.Column="3"
-                                                     Text="{Binding ValuePreview}"
+                                <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
+                                <SelectableTextBlock Text="{Binding ValuePreview}"
                                                      IsVisible="{Binding HasValuePreview}"
                                                      Foreground="{DynamicResource SystemBaseMediumColor}"
                                                      FontSize="11"
@@ -706,6 +706,16 @@
                                                      VerticalAlignment="Center"
                                                      Margin="8,0,4,0"
                                                      ToolTip.Tip="Approximate value at current schematic state (pre-simulation)"/>
+                                <!-- brief vendorlib-13 R-vl13-2d: this value beats the placed part's chosen corner. -->
+                                <TextBlock Text="{Binding CornerNote}"
+                                           IsVisible="{Binding HasCornerNote}"
+                                           FontSize="11"
+                                           FontStyle="Italic"
+                                           Opacity="0.8"
+                                           VerticalAlignment="Center"
+                                           Margin="4,0,4,0"
+                                           ToolTip.Tip="The part's chosen corner sets this parameter too; the value written here wins."/>
+                                </StackPanel>
                                 <StackPanel Grid.Column="4" Orientation="Horizontal" VerticalAlignment="Center">
                                     <CheckBox IsChecked="{Binding ShowOnSchematic}"
                                               ToolTip.Tip="Show on schematic"
@@ -1114,6 +1124,16 @@
                                    FontSize="11" VerticalAlignment="Top"/>
                         <SelectableTextBlock Grid.Column="1" Text="{Binding VendorPartRange}"
                                              FontSize="11"/>
+                    </Grid>
+                    <!-- brief vendorlib-13 R-vl13-2d: the model's corners, read from its netlist when the part is selected. -->
+                    <Grid ColumnDefinitions="60,*" IsVisible="{Binding HasVendorPartCorners}">
+                        <TextBlock Grid.Column="0" Text="Corner"
+                                   FontSize="11" VerticalAlignment="Center"/>
+                        <ComboBox Grid.Column="1" x:Name="VendorCornerCombo"
+                                  ItemsSource="{Binding VendorPartCorners}"
+                                  SelectedItem="{Binding VendorPartCorner}"
+                                  FontSize="11" HorizontalAlignment="Stretch"
+                                  ToolTip.Tip="One of the part's stated limits, from its model. A value set below on this part still wins."/>
                     </Grid>
                     <SelectableTextBlock Text="{Binding VendorPartDescription}"
                                          IsVisible="{Binding HasVendorPartDescription}"

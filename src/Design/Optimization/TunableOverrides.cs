@@ -57,6 +57,21 @@ public static class TunableOverrides
         library.Cells.AddRange(lib.Cells);
         var copied  = new HashSet<string>(StringComparer.Ordinal);
 
+        // A library part's corner as a bench axis (brief vendorlib-13 R-vl13-2e): part:<number>=<corner> selects that corner
+        // on EVERY instance of the part, wherever it sits — the one-lot convention — replacing each instance's own Corner.
+        // An instance's explicit value still wins, because the elaborator applies a corner as the cell's defaults.
+        var partCorners = values.Where(kv => kv.Key.StartsWith(CellCorner.PartPrefix, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (partCorners.Count > 0)
+        {
+            var plain = values.Where(kv => !kv.Key.StartsWith(CellCorner.PartPrefix, StringComparison.OrdinalIgnoreCase))
+                              .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal);
+            var applied = Apply(tb, lib, plain, setVariables, parts);
+            if (applied.Refusal is not null) return applied;
+            var allNotes = applied.Notes.ToList();
+            var (ptb, plib) = CircuitRF.Design.Statistics.LibraryPartCorners.Apply(applied.TestBench!, applied.Library!, partCorners, allNotes);
+            return new TunedDesign(ptb, plib, allNotes, null);
+        }
+
         // A part's value is bound against the part the instance ends up bound to, so its Part key goes first.
         var ordered = WholeValues(tb, lib, values, notes)
             .OrderBy(kv => partOfValue.ContainsKey(kv.Key) ? 1 : 0).ToList();
@@ -282,13 +297,5 @@ public static class TunableOverrides
         return c;
     }
 
-    private static Cell CopyOf(Cell cell)
-    {
-        var c = new Cell(cell.Name);
-        c.Ports.AddRange(cell.Ports);
-        c.Parameters.AddRange(cell.Parameters);
-        c.Variables.AddRange(cell.Variables);
-        c.Instances.AddRange(cell.Instances);
-        return c;
-    }
+    private static Cell CopyOf(Cell cell) => cell.CopyShallow(cell.Name);
 }

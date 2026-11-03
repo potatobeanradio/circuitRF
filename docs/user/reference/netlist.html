@@ -150,6 +150,15 @@ parent's scope, then used inside the cell.</p>
 <li><p><code>Sv = -0.837</code>, <code>Sc = 0.71</code>, … — <strong>local variables</strong> (model coefficients) scoped to this cell.
 They feed the device equations.</p>
 </li>
+<li><p><code>corner &lt;name&gt; &lt;param&gt;=&lt;value&gt; [unit] …</code> (not in this example) — a <strong>named set of the cell's own
+parameter values</strong>, such as a part's min and max. An instance chooses one with <code>Corner=&lt;name&gt;</code>, and the
+corner's values replace the cell's defaults for that instance, so a value the instance sets itself still
+wins. A corner binds only declared parameters; <code>temp=</code>, an undeclared name, a second corner of one name and
+the name <code>nominal</code> are refused. See <a href="model-library-format.html#corners">Model libraries › Corners</a>.</p>
+</li>
+<li><p><code>part &lt;number&gt;</code> — written by extraction into the <code>define</code> of a placed library part, so a bench corner's
+<code>part:&lt;number&gt;=&lt;corner&gt;</code> and the statistics line's <code>nominalparts=</code> can find that part's instances.</p>
+</li>
 <li><p><code>SDD:X1 gate 0 drain 0 …</code> — a <strong>Symbolically-Defined Device</strong>: you write the port currents as
 equations and circuitRF differentiates them automatically for the solver. The four nets are two
 differential ports: port 1 = <code>gate</code>–<code>0</code>, port 2 = <code>drain</code>–<code>0</code>. In the equations, <strong>_v1</strong>

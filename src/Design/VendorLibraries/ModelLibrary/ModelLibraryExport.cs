@@ -221,6 +221,11 @@ public static partial class ModelLibraryExport
             refusals.Add($"'{cellName}' is a test bench; a model is a cell with pins that another design places.");
         if (ccell.ExternalProvider is { Length: > 0 } kit)
             refusals.Add($"'{cellName}' is a part of the kit '{kit}'; a kit part cannot be exported, because a model must run on a machine that does not have the kit.");
+        // Brief vendorlib-13 R-vl13-2d: a placed part's Corner row selects one of the model's corners and is never
+        // forwarded, so a model cannot declare a parameter of that name.
+        if (ccell.Parameters.Any(p => p.Name.Equals(CellCorner.SelectorParameter, StringComparison.OrdinalIgnoreCase)))
+            refusals.Add($"'{cellName}' declares a parameter named {CellCorner.SelectorParameter}, which is reserved: on a placed library " +
+                         "part it chooses one of the model's corners. Rename the parameter.");
 
         string? schPath = PrimaryPath(dir, ViewType.Schematic);
         string? symPath = PrimaryPath(dir, ViewType.Symbol);

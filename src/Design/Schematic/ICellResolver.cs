@@ -33,7 +33,8 @@ public sealed record CellResolution(
     string CellName,
     SchematicEditModel Schematic,
     IReadOnlyList<ParameterDeclaration> Parameters,
-    string? CellKey = null)
+    string? CellKey = null,
+    IReadOnlyList<CellCorner>? Corners = null)
 {
     /// <summary>The identity the elaborator keys on — the cell folder, or the name when no caller
     /// supplied one.</summary>

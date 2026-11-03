@@ -194,7 +194,8 @@ public static partial class AnalysisDirectiveSchema
 
         new("statistics", StatisticsTopic,
             "statistics [trials=<n>] [seed=<n>] [sampling=…] [target=<p>%] [confidence=<p>%] [autostop=1] " +
-            "[nonconverged=…] [save=…] [process=0] [mismatch=0] [sigmascale=<k>] [parallel=<n>] [analyses=…] [corners=…]",
+            "[nonconverged=…] [save=…] [process=0] [mismatch=0] [sigmascale=<k>] [parallel=<n>] [analyses=…] [corners=…] " +
+            "[nominalparts=<part>,<part>]",
             "The Monte Carlo and yield settings. At most one line, and a default is never written.",
             [
                 new("trials",       Default: CircuitRF.Core.Design.StatisticsSettings.DefaultTrials.ToString(System.Globalization.CultureInfo.InvariantCulture),
@@ -212,6 +213,9 @@ public static partial class AnalysisDirectiveSchema
                 new("parallel",     Summary: "How many trials may run at once."),
                 new("analyses",     Default: "goals", Summary: "goals (only the analyses a yield goal names) | all."),
                 new("corners",      Default: "none", Summary: "none | all | <name>,<name> — the corners each trial runs at."),
+                new("nominalparts", Default: "none", Summary: "Library part numbers, separated by commas, whose own " +
+                                    "distributions are held at their nominal (the Yield panel's Library parts group, unticked). " +
+                                    "mismatch=0 holds every part's too: a draw inside a part's model is a mismatch draw."),
             ],
             [],
             "statistics trials=500 seed=7 sampling=lhs target=95%"),
@@ -305,12 +309,15 @@ public static partial class AnalysisDirectiveSchema
             "sensitivity factors=stat sigma=2"),
 
         new("corner", StatisticsTopic,
-            "corner <Name> [enabled=0] [trial=<n> seed=<n> sampling=… trials=<n>] [temp=<v>] <key>=<v> [unit] ...",
+            "corner <Name> [enabled=0] [trial=<n> seed=<n> sampling=… trials=<n>] [temp=<v>] [part:<part>=<corner>] <key>=<v> [unit] ...",
             "A named corner: a value for the ambient temperature (temp, in degC) and for any global variable or " +
             "tunable key. A schematic's corner also selects the kit's own corner sections, and netlisting it writes " +
             "the values those sections bind. A statistical corner names a trial of a Monte Carlo run instead — " +
             "trial= with that run's seed, sampling and trials — and replays its draws around the current nominal. " +
-            "enabled and the trial keys come before the values.",
+            "enabled and the trial keys come before the values. part:<part number>=<corner> sets a library part's own " +
+            "corner (a corner line inside its model's define) on EVERY instance of that part — one lot — overriding " +
+            "each instance's Corner; an instance's explicit value still wins, and in a Monte Carlo at this corner that " +
+            "part's own distributions are held at nominal (the corner is its limit).",
             [
                 new("enabled",  Default: "1", Summary: "0 keeps the corner without running it."),
                 new("trial",    Summary: "A statistical corner: the trial to replay, from 1."),
@@ -320,7 +327,7 @@ public static partial class AnalysisDirectiveSchema
                 new("temp",     Summary: "The ambient temperature, in degC."),
             ],
             [],
-            "corner SS_hot temp=85 Vdd=3.0 V R1.R=47 Ohm"),
+            "corner SS_hot temp=85 part:TSTFET100=min Vdd=3.0 V R1.R=47 Ohm"),
     ];
 
     /// <summary>The ten directives, in the order a <c>.cnl</c> writes them.</summary>

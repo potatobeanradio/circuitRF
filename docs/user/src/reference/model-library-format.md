@@ -164,6 +164,50 @@ define TSTFET100 (g d s)
 end TSTFET100
 ```
 
+### Tolerances {#tolerances}
+
+A model states its spread with the expression engine's distribution functions, written in a value:
+
+| Function | Draws |
+|---|---|
+| `gauss(nom, rel, k)` | Gaussian, `rel` a fraction of the nominal at `k` σ |
+| `agauss(nom, dev, k)` | Gaussian, `dev` an absolute deviation at `k` σ |
+| `unif(nom, rel)` | uniform on nom·(1 ± rel) |
+| `aunif(nom, dev)` | uniform on nom ± dev |
+
+Outside a Monte Carlo or yield trial each one is exactly its first argument, so an ordinary run of the model is
+unchanged. Inside a trial it draws once per **instance**: two placed copies of a part vary independently. A
+parameter's default carries it, and so does any value inside the model that is not a parameter:
+
+```netlist
+define TSTCAP (in out)
+  parameters C0=gauss(10, 0.05, 3) pF  Rs=0.1 Ohm
+  C:C1 in mid C=C0
+  R:R1 mid out R=agauss(0.1,0.01,1)
+end TSTCAP
+```
+
+An absolute width is in the value's own unit: `agauss(0.1,0.01,1)` on a resistance in Ω is 0.01 Ω at 1 σ.
+
+### Corners {#corners}
+
+`corner <name> <parameter>=<value> [unit] …` inside a `define` names a set of the cell's own parameter values —
+the part's stated limits. A parameter the corner leaves out keeps its nominal default.
+
+```netlist
+define TSTCAP (in out)
+  parameters C0=gauss(10, 0.05, 3) pF
+  corner min C0=9 pF
+  corner max C0=11 pF
+  C:C1 in out C=C0
+end TSTCAP
+```
+
+A corner binds only parameters the cell declares. `temp=` is refused (a part does not choose its temperature; the
+bench does), and so are a name that is not a parameter, two corners of one name, and the name `nominal`, which is
+the cell's own defaults. A cell that declares a parameter named `Corner` cannot be exported: on a placed part that
+name chooses the corner.
+
 **A model never carries a technology.** A part whose substrate would come from a technology — a microstrip line,
 a placed layout — is an S-parameter file in `models/` instead.
 
@@ -288,6 +332,23 @@ The dialog asks for:
   pins whose names read as gate, drain and source on an active part; otherwise R, C or L for a two-pin passive
   whose value is a resistance, capacitance or inductance; otherwise a box. A built-in glyph is written into the
   model as `symbol/<part>.csym`, with its pins named after the cell's, and recorded as `Glyph`.
+
+- The **Parameters** table: each of the cell's parameters with its nominal and a **Tolerance**. Choose Gaussian or
+  Uniform, then type the spread as the Yield panel takes it: `± 2 %`, `± 2 % at 2σ`, `σ 0.1 pF`, or `9 … 11 pF` on a
+  Uniform. It is written into the parameter's default as a [distribution function](#tolerances):
+
+  | Spread | Default written |
+  |---|---|
+  | Gaussian `± 5 % at 3σ` on 10 pF | `gauss(10,0.05,3)` |
+  | Gaussian `σ 0.1 pF` | `agauss(10,0.1,1)` |
+  | Uniform `± 2 %` | `unif(10,0.02)` |
+  | Uniform `9 … 11 pF` | `aunif(10,1)` |
+
+  Lognormal, Discrete and truncation have no distribution function, so they are not offered.
+- The **Corners** table: one row per corner, one column per parameter, and a blank cell is nominal. **Add corner**
+  and the row's × add and remove one.
+
+  Both tables write the **source cell's** `.ccell`, so the next export keeps them; the dialog says so when it has.
 
 While you fill it in, the dialog lists what will be copied in — every file, every sub-cell, every vendor part
 and the library it came from — and every reason the export cannot go ahead. **Export** stays greyed while any

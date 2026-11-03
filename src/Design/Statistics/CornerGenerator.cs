@@ -27,9 +27,13 @@ public static class CornerGenerator
     /// <summary>The most corners one cross product makes; more is a refusal naming the count.</summary>
     public const int Cap = 256;
 
+    /// <param name="parts">Library parts' corners as axes (brief vendorlib-13 R-vl13-2f): a part number and the corner
+    /// names to take; each lands on the corner as <c>part:&lt;number&gt;=&lt;corner&gt;</c>.</param>
     public static CornerGeneration CrossProduct(
-        IReadOnlyList<GeneratorAxis> axes, IReadOnlyList<string> temps, IReadOnlyList<GeneratorValues> values)
+        IReadOnlyList<GeneratorAxis> axes, IReadOnlyList<string> temps, IReadOnlyList<GeneratorValues> values,
+        IReadOnlyList<GeneratorValues>? parts = null)
     {
+        parts ??= [];
         // Multiplied only while it is a count the refusal can state: past int.MaxValue it is refused anyway, and a long
         // could otherwise wrap to a small number and pass the cap (brief-yield-15 R-ya15-9).
         long count = 1;
@@ -37,6 +41,7 @@ public static class CornerGenerator
         foreach (var a in axes) Times(a.Options.Count);
         Times(temps.Count);
         foreach (var v in values) Times(v.Values.Count);
+        foreach (var p in parts) Times(p.Values.Count);
         if (count > Cap) return new CornerGeneration([], StatisticsDiagnostics.GeneratorTooMany((int)Math.Min(count, int.MaxValue), Cap));
 
         // Each dimension is a list of (name part, apply) choices; an empty dimension is left out of the product.
@@ -44,6 +49,9 @@ public static class CornerGenerator
         foreach (var a in axes.Where(a => a.Options.Count > 0))
             dims.Add([.. a.Options.Distinct(StringComparer.Ordinal).Select(o => (Word(o),
                 (Action<CornerDefinition>)(c => (c.AxisSelections ??= new(StringComparer.Ordinal))[a.Key] = o)))]);
+        foreach (var p in parts.Where(p => p.Values.Count > 0))
+            dims.Add([.. p.Values.Distinct(StringComparer.OrdinalIgnoreCase).Select(x => (Word(p.Name) + Word(x),
+                (Action<CornerDefinition>)(c => (c.PartCorners ??= new(StringComparer.Ordinal))[p.Name] = x)))]);
         // A temperature that would start the name reads t25, tm40; after a kit option, tt_25.
         string lead = dims.Count == 0 ? "t" : "";
         if (temps.Count > 0)
@@ -61,16 +69,16 @@ public static class CornerGenerator
         while (true)
         {
             var c = new CornerDefinition();
-            var parts = new List<string>();
+            var nameParts = new List<string>();
             for (int d = 0; d < dims.Count; d++)
             {
                 var (part, apply) = dims[d][index[d]];
                 apply(c);
-                parts.Add(part);
+                nameParts.Add(part);
             }
             if (bindings.Add(Signature(c)))
             {
-                string name = string.Join("_", parts.Where(p => p.Length > 0));
+                string name = string.Join("_", nameParts.Where(p => p.Length > 0));
                 if (name.Length == 0 || !(char.IsLetter(name[0]) || name[0] == '_')) name = "c" + name;   // a key spelled with a leading digit
                 string unique = name;
                 for (int k = 2; !names.Add(unique); k++) unique = $"{name}_{k}";
@@ -91,11 +99,16 @@ public static class CornerGenerator
     /// and anything else a global variable or tunable key; each binding is checked when the corners are, by
     /// <c>check</c>.
     /// </summary>
-    public static CornerGeneration Parse(string spec, IReadOnlyList<WorkspaceCornerAxis> kitAxes)
+    /// <param name="partCorners">The design's library parts with corners (part number → its corner names), when known:
+    /// a <c>part:</c> axis naming another part, or a corner its part does not declare, is then refused. Null checks
+    /// neither, leaving it to the run.</param>
+    public static CornerGeneration Parse(string spec, IReadOnlyList<WorkspaceCornerAxis> kitAxes,
+                                         IReadOnlyList<GeneratorValues>? partCorners = null)
     {
         var axes = new List<GeneratorAxis>();
         var temps = new List<string>();
         var values = new List<GeneratorValues>();
+        var parts = new List<GeneratorValues>();
         foreach (var raw in spec.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
             int eq = raw.IndexOf('=');
@@ -104,6 +117,26 @@ public static class CornerGenerator
             var list = raw[(eq + 1)..].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
             if (list.Count == 0) return new CornerGeneration([], StatisticsDiagnostics.GeneratorMalformed(raw, "no values are given"));
 
+            if (name.StartsWith(CellCorner.PartPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                string part = name[CellCorner.PartPrefix.Length..];
+                if (part.Length == 0) return new CornerGeneration([], StatisticsDiagnostics.GeneratorMalformed(raw, "'part:' names no part — part:TSTFET100=min,max"));
+                var known = partCorners?.FirstOrDefault(p => p.Name.Equals(part, StringComparison.Ordinal));
+                if (partCorners is not null && known is null)
+                    return new CornerGeneration([], StatisticsDiagnostics.GeneratorMalformed(raw,
+                        partCorners.Count == 0 ? "the design places no library part with corners"
+                            : $"the design places no part {part} with corners; it places {string.Join(", ", partCorners.Select(p => p.Name))}"));
+                if (known is not null)
+                {
+                    var unknown = list.Where(o => !o.Equals(CellCorner.Nominal, StringComparison.OrdinalIgnoreCase)
+                                                  && !known.Values.Contains(o, StringComparer.OrdinalIgnoreCase)).ToList();
+                    if (unknown.Count > 0)
+                        return new CornerGeneration([], StatisticsDiagnostics.GeneratorMalformed(raw,
+                            $"part {part} offers {string.Join(", ", known.Values)}, not {string.Join(", ", unknown)}"));
+                }
+                parts.Add(new GeneratorValues(part, list));
+                continue;
+            }
             if (name.Equals("temp", StringComparison.OrdinalIgnoreCase))
             {
                 foreach (var t in list)
@@ -127,7 +160,7 @@ public static class CornerGenerator
             }
             values.Add(new GeneratorValues(name, list));
         }
-        return CrossProduct(axes, temps, values);
+        return CrossProduct(axes, temps, values, parts);
     }
 
     /// <summary>What makes two corners the same corner: every binding, in a fixed order.</summary>
@@ -136,6 +169,7 @@ public static class CornerGenerator
         var sb = new StringBuilder();
         foreach (var (k, v) in (c.AxisSelections ?? []).OrderBy(kv => kv.Key, StringComparer.Ordinal)) sb.Append(k).Append('=').Append(v).Append('\n');
         sb.Append("temp=").Append(c.Temp).Append('\n');
+        foreach (var (k, v) in (c.PartCorners ?? []).OrderBy(kv => kv.Key, StringComparer.Ordinal)) sb.Append("part:").Append(k).Append('=').Append(v).Append('\n');
         foreach (var (k, v) in c.Values.OrderBy(kv => kv.Key, StringComparer.Ordinal)) sb.Append(k).Append('=').Append(v).Append('\n');
         return sb.ToString();
     }

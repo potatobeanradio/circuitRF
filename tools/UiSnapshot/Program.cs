@@ -110,6 +110,7 @@ using CircuitRF.Design.Layout;
 //   --manage-libraries <workspace>                            File ▸ Manage Libraries… (written to <out>.dialog.png)
 //   --add-vendor-library <folder>                             Add Vendor Library's confirm step (<out>.dialog.png)
 //   --export-to-library <cell> [--export-library <dir>]       Export to Library's dialog on a cell (<out>.dialog.png)
+//   --yield <csch> --generate-corners                         the Yield panel's Generate Corners dialog (<out>.dialog.png)
 //   --import-schematic <file>                                 File ▸ Import ▸ Schematic…'s dialog on a design file (<out>.dialog.png)
 //   --repoint-question <part>                                 Copy to Workspace…'s re-point question (<out>.dialog.png)
 // With --schematic, a step point written #<instance> is the middle of that part's pins, so --rclick #X1 opens the
@@ -150,7 +151,7 @@ bool componentPortsCheck = false;
 CircuitRF.Ui.ThreeD.C3dEditorViewModel? c3dShown = null;
 string? optimizer = null;
 string? yieldCsch = null, yieldMode = null, yieldBy = null, yieldExpand = null;
-bool yieldRun = false, yieldSnpOff = false, yieldDisplay = false;
+bool yieldRun = false, yieldSnpOff = false, yieldDisplay = false, yieldGenerate = false;
 var yieldExclude = new List<string>();
 string? ctech = null;
 bool optimize = false;
@@ -209,6 +210,7 @@ for (int i = 0; i < args.Length; i++)
         case "--exclude" when i + 1 < args.Length: yieldExclude.Add(args[++i]); break;
         case "--snp-off": yieldSnpOff = true; break;
         case "--sens-display": yieldDisplay = true; break;
+        case "--generate-corners": yieldGenerate = true; break;
         case "--clay" when i + 1 < args.Length: clay = Path.GetFullPath(args[++i]); break;
         case "--cem" when i + 1 < args.Length: cem = Path.GetFullPath(args[++i]); break;
         case "--ctech" when i + 1 < args.Length: ctech = Path.GetFullPath(args[++i]); break;
@@ -750,6 +752,9 @@ else if (yieldCsch is not null)
         return CircuitRF.Design.Circuit.PreparedCircuit.FromText(text, ws ?? Path.GetDirectoryName(yieldCsch), ws, name, extracted);
     };
     panel.SourcePathFor = _ => yieldCsch;
+    // The placed library parts, as the shell asks for them (brief vendorlib-13).
+    panel.LibraryPartsFor = t => panel.PrepareCircuit!(t) is { Tb: { } ltb, Lib: { } llib }
+        ? CircuitRF.Design.Statistics.LibraryParts.Placed(ltb, llib) : null;
     // The shell's doors that open another panel: present, so their buttons show as the shell shows them.
     panel.OpenYieldOnRanked = n => Console.WriteLine($"Run Yield on these: {n} untoleranced");
     // The display button writes <design>.sens.cdd as the shell does; snapshot that file with the .cdd mode.
@@ -791,6 +796,7 @@ else if (yieldCsch is not null)
             _ => CircuitRF.Ui.Yield.SensitivityLevel.Entry,
         };
     if (yieldDisplay) panel.OpenDisplayCommand.Execute(null);
+    if (yieldGenerate) { panel.GenerateCornersCommand.Execute(null); Pump(); }
     if (yieldExpand is not null && panel.SensRows.FirstOrDefault(r => r.Label == yieldExpand) is { CanExpand: true } open)
         open.ToggleExpandCommand.Execute(null);
     if (select is not null)   // --select, shared with the schematic branch

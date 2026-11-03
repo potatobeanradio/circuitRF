@@ -924,7 +924,7 @@ you tune it.
 |---|---|
 | `--corners name,name` | Only these corners. On `mc` and `estimate`, a run at each of them. |
 | `--mc` | A Monte Carlo — a yield, when the design has a yield goal — at each corner, with the kit's process draws off there: the corner is the process. The table is then a yield per corner. |
-| `--generate "spec"` | Print the corners a cross product makes and write nothing, e.g. `"proc=tt,ss;temp=-40,25,85;Vdd=3.0,3.6"` — a kit axis by its name, `temp`, any variable or tunable value. With `--json`, each corner's name, temperature and values. |
+| `--generate "spec"` | Print the corners a cross product makes and write nothing, e.g. `"proc=tt,ss;temp=-40,25,85;Vdd=3.0,3.6"` — a kit axis by its name, `temp`, any variable or tunable value, and `part:<part number>=min,max` for a placed library part's own corners. With `--json`, each corner's name, temperature and values (a part's corner as `part:<part number>`). |
 | `--write` | With `--generate`, on a schematic: add the generated corners to it. |
 
 ```text

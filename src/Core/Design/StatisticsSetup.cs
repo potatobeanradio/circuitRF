@@ -84,6 +84,15 @@ public sealed class StatisticsSettings
     /// <summary>The corners a run covers: <c>all</c>, or names separated by commas; null for none.</summary>
     public string? Corners { get; set; }
 
+    /// <summary>Library parts whose own distributions are held at nominal (brief vendorlib-13 R-vl13-1c): part numbers
+    /// separated by commas, as written on the <c>nominalparts=</c> key; null holds none.</summary>
+    public string? NominalParts { get; set; }
+
+    /// <summary>The part numbers <see cref="NominalParts"/> lists; empty for none.</summary>
+    [JsonIgnore]
+    public IReadOnlyList<string> NominalPartList => NominalParts is null ? []
+        : NominalParts.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
     /// <summary>Keys this build does not know, kept verbatim.</summary>
     public OrderedDictionary<string, string>? Extra { get; set; }
 
@@ -101,7 +110,7 @@ public sealed class StatisticsSettings
     {
         Trials = Trials, Seed = Seed, Sampling = Sampling, Target = Target, Confidence = Confidence,
         AutoStop = AutoStop, NonConverged = NonConverged, Save = Save, Process = Process, Mismatch = Mismatch,
-        SigmaScale = SigmaScale, Parallelism = Parallelism, Scope = Scope, Corners = Corners,
+        SigmaScale = SigmaScale, Parallelism = Parallelism, Scope = Scope, Corners = Corners, NominalParts = NominalParts,
         Extra = TunableEntry.CloneMap(Extra),
     };
 }
@@ -379,6 +388,12 @@ public sealed class CornerDefinition
     /// <summary>The ambient temperature as value text, in °C.</summary>
     public string? Temp { get; set; }
 
+    /// <summary>Library parts' corners as axes (brief vendorlib-13 R-vl13-2e): part number → corner name, written
+    /// <c>part:&lt;part number&gt;=&lt;corner&gt;</c>. Applies to every instance of the part in the design — the
+    /// one-lot convention — overriding each instance's own <c>Corner</c>, and holds that part's own draws at
+    /// nominal in a Monte Carlo at this corner (R-vl13-2g).</summary>
+    public OrderedDictionary<string, string>? PartCorners { get; set; }
+
     /// <summary>Global-variable names and tunable keys → value text, in the order written.</summary>
     public OrderedDictionary<string, string> Values { get; set; } = new(StringComparer.Ordinal);
 
@@ -400,6 +415,7 @@ public sealed class CornerDefinition
     public CornerDefinition Clone() => new()
     {
         Name = Name, Enabled = Enabled, AxisSelections = TunableEntry.CloneMap(AxisSelections), Temp = Temp,
+        PartCorners = TunableEntry.CloneMap(PartCorners),
         Values = TunableEntry.CloneMap(Values)!, Trial = Trial, Seed = Seed, Sampling = Sampling, Trials = Trials,
     };
 }

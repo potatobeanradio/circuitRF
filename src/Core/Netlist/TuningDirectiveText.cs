@@ -161,6 +161,15 @@ public static class TuningDirectiveText
                 case "parallel":     s.Parallelism = StatInt(key, value); break;
                 case "analyses":     s.Scope = StatEnum<OptimizerScope>(key, value, AnalysisDirectiveSchema.ScopeTokens); break;
                 case "corners":      s.Corners = CornersValue(key, value); break;
+                case "nominalparts":
+                {
+                    var parts = value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                    if (value.Equals("none", StringComparison.OrdinalIgnoreCase)) { s.NominalParts = null; break; }
+                    if (parts.Length == 0 || parts.Any(p => p.Any(char.IsWhiteSpace)))
+                        throw Refuse(TuningDirectiveDiagnostics.StatisticsValueInvalid(key, value, "none or part numbers separated by commas"));
+                    s.NominalParts = string.Join(',', parts);
+                    break;
+                }
                 default:
                     (s.Extra ??= new(StringComparer.Ordinal))[key] = value;
                     unknown(key);
@@ -388,6 +397,19 @@ public static class TuningDirectiveText
                                "one of " + string.Join(", ", AnalysisDirectiveSchema.SamplingTokens)));
                     break;
                 default:
+                    // A library part's corner as an axis (brief vendorlib-13 R-vl13-2e): part:<part number>=<corner>.
+                    // The prefix cannot be a variable's name or an instance.param key, so it collides with neither.
+                    if (key.StartsWith(CellCorner.PartPrefix, StringComparison.OrdinalIgnoreCase))
+                    {
+                        string part = key[CellCorner.PartPrefix.Length..];
+                        if (part.Length == 0)
+                            throw Refuse(TuningDirectiveDiagnostics.CornerMalformed(name, "'part:' names no part — part:TSTFET100=min."));
+                        if (!IsIdentifier(value))
+                            throw Refuse(TuningDirectiveDiagnostics.CornerValueInvalid(name, key, value, "one of the part's corner names"));
+                        if (!(c.PartCorners ??= new(StringComparer.Ordinal)).TryAdd(part, value))
+                            throw Refuse(TuningDirectiveDiagnostics.CornerMalformed(name, $"it sets part {part}'s corner twice."));
+                        break;
+                    }
                     if (!IsIdentifier(key) && !TunableKey.TryParse(key, out _))
                         throw Refuse(TuningDirectiveDiagnostics.CornerMalformed(name,
                             $"'{key}' is neither a variable's name nor a tunable key."));
@@ -618,6 +640,7 @@ public static class TuningDirectiveText
         if (s.Parallelism is { } p)   sb.Append(" parallel=").Append(p.ToString(CultureInfo.InvariantCulture));
         if (s.Scope != OptimizerScope.GoalAnalyses) sb.Append(" analyses=").Append(AnalysisDirectiveSchema.ScopeTokens[(int)s.Scope]);
         Opt(sb, "corners", s.Corners);
+        Opt(sb, "nominalparts", s.NominalParts);
         Extra(sb, s.Extra, "");
         return sb.ToString();
     }
@@ -693,6 +716,7 @@ public static class TuningDirectiveText
         if (c.Sampling is { } smp) sb.Append(" sampling=").Append(AnalysisDirectiveSchema.SamplingTokens[(int)smp]);
         if (c.Trials is { } n)     sb.Append(" trials=").Append(n.ToString(CultureInfo.InvariantCulture));
         Opt(sb, "temp", c.Temp);
+        foreach (var (part, corner) in c.PartCorners ?? []) Opt(sb, CellCorner.PartPrefix + part, corner);
         foreach (var (k, v) in c.Values) Opt(sb, k, v);
         return sb.ToString();
     }

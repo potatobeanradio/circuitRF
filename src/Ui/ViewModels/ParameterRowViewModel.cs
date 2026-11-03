@@ -569,6 +569,12 @@ public sealed partial class ParameterRowViewModel : ObservableObject
 
     [ObservableProperty] private string _valuePreview = "";
 
+    /// <summary>"overrides corner min" on a placed library part's row whose value beats the part's chosen corner
+    /// (brief vendorlib-13 R-vl13-2d); empty otherwise.</summary>
+    [ObservableProperty] private string _cornerNote = "";
+    public bool HasCornerNote => CornerNote.Length > 0;
+    partial void OnCornerNoteChanged(string value) => OnPropertyChanged(nameof(HasCornerNote));
+
     public bool HasValuePreview => ValuePreview.Length > 0;
     partial void OnValuePreviewChanged(string? oldValue, string newValue)
         => OnPropertyChanged(nameof(HasValuePreview));

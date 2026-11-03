@@ -1035,6 +1035,8 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
                     && SpiceModelSymbolProvider.IsPanelParameter(param.Name)) continue;
                 // A placed library model's Glyph is its symbol's, carried for a missing library (brief vendorlib-9).
                 if (IsVendorModelComponent(comp) && param.Name == VendorModelRefs.GlyphParameter) continue;
+                // …and its Corner, a choice from the model's corners, offered in the part panel (brief vendorlib-13).
+                if (IsVendorModelComponent(comp) && param.Name == CellCorner.SelectorParameter) continue;
 
                 var row = new ParameterRowViewModel(param, _schematicVm, comp.Symbol, comp);
                 if (row.IsFilePathParam) row.PickFileAsync = PickModelFileAsync;

@@ -786,6 +786,7 @@ public sealed class Elaborator
         foreach (var ov in inst.Overrides)
         {
             if (ov.Name.StartsWith("__", StringComparison.Ordinal)) continue;
+            if (ov.Name == CellCorner.SelectorParameter) continue;   // consumed by CellCorner.Apply
             if (cell.Parameters.Any(p => p.Name == ov.Name) || cell.Variables.Any(v => v.Name == ov.Name)) continue;
             read ??= NamesReadIn(cell, []);
             if (read is null || read.Contains(ov.Name)) continue;
@@ -1265,15 +1266,18 @@ public sealed class Elaborator
                 for (int i = 0; i < Math.Min(subCell.Ports.Count, inst.NetBindings.Count); i++)
                     subPortMap[subCell.Ports[i]] = ResolveNet(inst.NetBindings[i]);
 
+                // A corner selection (brief vendorlib-13 R-vl13-2d): the corner's values become the cell's defaults
+                // for this instance, so an explicit override still wins; the selector itself binds nothing.
+                var (cornered, cornerOverrides) = CellCorner.Apply(subCell, inst.Overrides, childPath);
                 var subScope = BuildCellScope(
-                    subCell,
+                    cornered,
                     parentScope: currentScope,
-                    overrides:   inst.Overrides,
+                    overrides:   cornerOverrides,
                     scopeName:   childPath,
                     instanceName: inst.InstanceName);
                 WarnUnreadOverrides(inst, subCell, childPath, netlist);
 
-                FlattenCell(subCell, childPath, subPortMap, subScope, globalScope, netlist);
+                FlattenCell(cornered, childPath, subPortMap, subScope, globalScope, netlist);
             }
         }
     }

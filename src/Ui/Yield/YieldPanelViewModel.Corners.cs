@@ -95,7 +95,10 @@ public sealed partial class YieldPanelViewModel
     {
         if (_tuned is null) return null;
         var axes = KitAxesFor?.Invoke(_tuned) ?? [];
-        var editor = new CornerGeneratorViewModel(axes);
+        // Each placed library part with corners is an axis too (brief vendorlib-13 R-vl13-2f).
+        var parts = (SafeLibraryParts(_tuned) ?? []).Where(p => p.Corners.Count > 0)
+            .Select(p => new GeneratorValues(p.Part, [CellCorner.Nominal, .. p.Corners.Select(c => c.Name)])).ToList();
+        var editor = new CornerGeneratorViewModel(axes, parts);
         editor.Written += generated => editor.Refusal = AddCorners(generated);
         GeneratorRequested?.Invoke(this, editor);
         return editor;
@@ -303,15 +306,20 @@ public sealed record CornerGridCell(string Text, bool Fails, bool IsWorst);
 /// </summary>
 public sealed partial class CornerGeneratorViewModel : ObservableObject
 {
-    public CornerGeneratorViewModel(IReadOnlyList<WorkspaceCornerAxis> axes)
+    public CornerGeneratorViewModel(IReadOnlyList<WorkspaceCornerAxis> axes, IReadOnlyList<GeneratorValues>? partCorners = null)
     {
         foreach (var a in axes) Axes.Add(new GeneratorAxisRow(this, a));
+        foreach (var p in partCorners ?? []) PartAxes.Add(new GeneratorAxisRow(this, p.Name, p.Values));
         Recompute();
     }
 
     public ObservableCollection<GeneratorAxisRow> Axes { get; } = [];
 
+    /// <summary>Placed library parts with corners, one axis each, a tick box per corner (brief vendorlib-13 R-vl13-2f).</summary>
+    public ObservableCollection<GeneratorAxisRow> PartAxes { get; } = [];
+
     public bool HasAxes => Axes.Count > 0;
+    public bool HasPartAxes => PartAxes.Count > 0;
 
     /// <summary><c>-40, 25, 85</c> (°C).</summary>
     [ObservableProperty] private string _temperatures = "";
@@ -333,8 +341,10 @@ public sealed partial class CornerGeneratorViewModel : ObservableObject
 
     internal void Recompute()
     {
-        var axes = Axes.Select(a => new GeneratorAxis(a.Axis.Key, a.Axis.Label,
+        var axes = Axes.Select(a => new GeneratorAxis(a.Axis!.Key, a.Axis.Label,
             [.. a.Options.Where(o => o.IsChecked).Select(o => o.Name)])).Where(a => a.Options.Count > 0).ToList();
+        var parts = PartAxes.Select(a => new GeneratorValues(a.Part!, [.. a.Options.Where(o => o.IsChecked).Select(o => o.Name)]))
+                            .Where(p => p.Values.Count > 0).ToList();
         var temps = Split(Temperatures, ',');
         var values = new List<GeneratorValues>();
         foreach (var part in Split(Values, ';'))
@@ -343,7 +353,7 @@ public sealed partial class CornerGeneratorViewModel : ObservableObject
             if (eq <= 0) { CountText = $"'{part}' is not name=value,value"; _generated = []; WriteCommand.NotifyCanExecuteChanged(); return; }
             values.Add(new GeneratorValues(part[..eq].Trim(), Split(part[(eq + 1)..], ',')));
         }
-        var gen = CornerGenerator.CrossProduct(axes, temps, values);
+        var gen = CornerGenerator.CrossProduct(axes, temps, values, parts);
         _generated = gen.Corners;
         CountText = gen.Refusal is { } r ? r.Render() : $"{gen.Corners.Count} corner{(gen.Corners.Count == 1 ? "" : "s")}";
         WriteCommand.NotifyCanExecuteChanged();
@@ -366,11 +376,25 @@ public sealed class GeneratorAxisRow
     internal GeneratorAxisRow(CornerGeneratorViewModel owner, WorkspaceCornerAxis axis)
     {
         Axis = axis;
+        Label = axis.Label;
         foreach (var o in axis.Options) Options.Add(new GeneratorOption(owner, o));
     }
 
-    public WorkspaceCornerAxis Axis { get; }
-    public string Label => Axis.Label;
+    /// <summary>A library part's corners as an axis (brief vendorlib-13 R-vl13-2f).</summary>
+    internal GeneratorAxisRow(CornerGeneratorViewModel owner, string part, IReadOnlyList<string> corners)
+    {
+        Part = part;
+        Label = $"Part {part}";
+        foreach (var c in corners) Options.Add(new GeneratorOption(owner, c));
+    }
+
+    /// <summary>The kit axis; null for a library part's.</summary>
+    public WorkspaceCornerAxis? Axis { get; }
+
+    /// <summary>The library part number; null for a kit axis.</summary>
+    public string? Part { get; }
+
+    public string Label { get; }
     public ObservableCollection<GeneratorOption> Options { get; } = [];
 }
 

@@ -47,6 +47,7 @@ public sealed partial class ExportToLibraryViewModel : ObservableObject
         _partNumber = CellName;
         _libraryPath = initialLibrary ?? knownLibraries.FirstOrDefault()?.Root ?? "";
         foreach (var segment in ModelLibraryExport.DefaultSweep) AddFrequencyRow(segment);
+        LoadTables();
         Replan();
     }
 

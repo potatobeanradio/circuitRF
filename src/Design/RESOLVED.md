@@ -26422,3 +26422,37 @@ Gate: `tests/Ui.Tests/VendorLibraries/TechnologyPartConversionTests.cs` (5 tests
 - **`import model` is a noun of its own**, not `import part`; why is in `docs/design/cli.md` §35.
 
 Gate: `tests/Ui.Tests/VendorLibraries/VendorModelEditTests.cs` (6 tests, 11 cases).
+
+## Model tolerances and corners (brief vendorlib-13)
+
+`Statistics/ModelTolerance.cs`, `Statistics/LibraryParts.cs`, `Cells/CellCorners.cs`,
+`VendorLibraries/ModelLibrary/ModelCellEdits.cs`; in Core, `Design/CellCorner.cs` and the `corner`/`part` lines inside
+a `define`.
+
+- **R-vl13-1a, verified: the scope rule already made a model's distribution a per-instance draw**, nominal outside a
+  trial, bit for bit (`gauss(10, 0.05, 3) pF` reads exactly as `10 pF`). Two things stood in the way of it working
+  through a placed library part, and both are fixed:
+  - **A spaced argument list split on a `parameters` line.** `gauss(10, 0.05, 3)` typed into a `.ccell` was written
+    as-is and read back as `C0=gauss(10,`, then a skipped word, then a lost spread. The `parameters` and cell-`corner`
+    lines now rejoin tokens a space split inside parentheses (`CnlReader.MergeParenthesised`); an instance line keeps
+    its own no-spaces rule. The Export dialog writes the functions with no spaces anyway.
+  - **A row that repeats the model's default is no longer emitted as an override** (`EmitVendorModelInstance`). As an
+    override it would beat the instance's corner, and a distribution in it would be re-evaluated in the PARENT'S
+    scope — at the top level that is a process draw shared by every instance, silently. A row the user changed is
+    still an override.
+- **A corner is an alternative set of DEFAULTS, applied by the elaborator** (`CellCorner.Apply`, called where a
+  sub-cell instance is flattened). Evaluated where a default is, in the cell's own scope, so an explicit override on
+  the instance wins with no special case, and a hand-written `.cnl` with `Corner=min` behaves as a placed part does.
+- **A placed model's top `define` is marked `part <number>`** at extraction. A bench corner's `part:` axis and
+  `statistics nominalparts=` are about part NUMBERS, and the run's netlist otherwise no longer says which cell is
+  which part (the cell's name is a fresh one, and a part number may hold characters a name cannot). The mark is what
+  `LibraryParts` finds instances by, so a `.cnl` run finds them as a schematic run does.
+- **`part:` corners ride the corner's value map** (`CornerRun.BindingsOf`), and `TunableOverrides.Apply` sets the
+  `Corner` selector on every instance of that part, wherever it sits — the one-lot convention — so every corner path
+  (single evaluation, MC at each corner, optimizer across corners) applies them with no change of its own.
+- **Held draws are a prefix test on the stream name** (`ExpressionDraws.IsHeld`): a part's draws are named under its
+  instance path (`U1.C0`), so the parts held by `nominalparts=` and by the current corner's `part:` keys become a list
+  of instance paths once per run (`StatisticalRun`). Being mismatch draws, they also follow `mismatch=0`.
+
+Gate: `tests/Ui.Tests/VendorLibraries/ModelTolerancesAndCornersTests.cs` (6 tests, 9 cases) and
+`tests/Core.Tests/Netlist/CellCornerGrammarTests.cs` (2 tests, 5 cases).

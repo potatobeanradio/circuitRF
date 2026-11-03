@@ -29,11 +29,14 @@ public sealed class ExpressionDraws : IStatisticalDraws
     private readonly ulong _seed;
     private readonly IReadOnlyDictionary<string, double>? _planned;
     private readonly bool _unplannedAtNominal;
+    private readonly string[] _held;
     private readonly ConcurrentDictionary<string, (StatisticalKind Kind, double Z)> _drawn = new(StringComparer.Ordinal);
 
     public ExpressionDraws(int seed, int trial, bool process = true, bool mismatch = true, double sigmaScale = 1.0,
-                           IReadOnlyDictionary<string, double>? planned = null, bool unplannedAtNominal = false)
+                           IReadOnlyDictionary<string, double>? planned = null, bool unplannedAtNominal = false,
+                           IReadOnlyList<string>? held = null)
     {
+        _held = held is { Count: > 0 } ? [.. held.Select(h => h + ".")] : [];
         if (trial < 1) throw new ArgumentOutOfRangeException(nameof(trial), "Trials are numbered from 1.");
         _seed      = unchecked((ulong)seed);
         Trial      = trial;
@@ -46,11 +49,22 @@ public sealed class ExpressionDraws : IStatisticalDraws
 
     /// <summary>The draws of <paramref name="trial"/> under a setup's <c>statistics</c> settings.</summary>
     public static ExpressionDraws For(StatisticsSettings? settings, int trial,
-                                      IReadOnlyDictionary<string, double>? planned = null, bool unplannedAtNominal = false)
+                                      IReadOnlyDictionary<string, double>? planned = null, bool unplannedAtNominal = false,
+                                      IReadOnlyList<string>? held = null)
     {
         var s = settings ?? new StatisticsSettings();
         return new ExpressionDraws(s.EffectiveSeed, trial, s.Process ?? true, s.Mismatch ?? true,
-                                   s.SigmaScale ?? 1.0, planned, unplannedAtNominal);
+                                   s.SigmaScale ?? 1.0, planned, unplannedAtNominal, held);
+    }
+
+    /// <summary>
+    /// Whether <paramref name="stream"/> is inside a held instance (brief vendorlib-13): a library part unticked in the
+    /// Yield panel's Library parts group, or one a corner sets the corner of. Its draws evaluate at their nominal.
+    /// </summary>
+    public bool IsHeld(string stream)
+    {
+        foreach (var h in _held) if (stream.StartsWith(h, StringComparison.Ordinal)) return true;
+        return false;
     }
 
     public int    Trial      { get; }
@@ -64,6 +78,7 @@ public sealed class ExpressionDraws : IStatisticalDraws
     public StatisticalDraw? Draw(StatisticalKind kind, string stream)
     {
         if (kind == StatisticalKind.Process ? !Process : !Mismatch) return null;
+        if (_held.Length > 0 && IsHeld(stream)) return null;
         // A replayed trial (brief-yield-6 R-ya6-4): a stream the recording has no draw for is one the run never had.
         if (_unplannedAtNominal && (_planned is null || !_planned.ContainsKey(stream))) return null;
 

@@ -132,6 +132,15 @@ A `define` block declares a reusable **cell** — here a GaN FET model named `My
 - `Sv = -0.837`, `Sc = 0.71`, … — **local variables** (model coefficients) scoped to this cell.
   They feed the device equations.
 
+- `corner <name> <param>=<value> [unit] …` (not in this example) — a **named set of the cell's own
+  parameter values**, such as a part's min and max. An instance chooses one with `Corner=<name>`, and the
+  corner's values replace the cell's defaults for that instance, so a value the instance sets itself still
+  wins. A corner binds only declared parameters; `temp=`, an undeclared name, a second corner of one name and
+  the name `nominal` are refused. See [Model libraries › Corners](model-library-format.html#corners).
+
+- `part <number>` — written by extraction into the `define` of a placed library part, so a bench corner's
+  `part:<number>=<corner>` and the statistics line's `nominalparts=` can find that part's instances.
+
 - `SDD:X1 gate 0 drain 0 …` — a **Symbolically-Defined Device**: you write the port currents as
   equations and circuitRF differentiates them automatically for the solver. The four nets are two
   differential ports: port&nbsp;1 = `gate`–`0`, port&nbsp;2 = `drain`–`0`. In the equations, **_v1**

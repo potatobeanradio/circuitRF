@@ -69,7 +69,7 @@ public sealed class DiskCellResolver : ICellResolver
         string cellDir  = Path.GetDirectoryName(Path.GetDirectoryName(primaryPath))!;
         string cellName = Path.GetFileName(cellDir);
 
-        return new CellResolution(cellName, schematic, ParametersOf(cellDir), Path.GetFullPath(cellDir));
+        return new CellResolution(cellName, schematic, ParametersOf(cellDir), Path.GetFullPath(cellDir), CellCorners.Of(cellDir));
     }
 
     /// <summary>The cell's declared parameter interface, from its <c>.ccell</c>.</summary>

@@ -332,6 +332,58 @@ model never names a file outside itself, another library, or a kit</li>
   SnP:S1 g d s NumPorts=3 File=&quot;models/TSTFET100.s3p&quot;
 end TSTFET100
 </code></pre>
+<h3 id="tolerances">Tolerances</h3>
+<p>A model states its spread with the expression engine's distribution functions, written in a value:</p>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Draws</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>gauss(nom, rel, k)</code></td>
+<td>Gaussian, <code>rel</code> a fraction of the nominal at <code>k</code> σ</td>
+</tr>
+<tr>
+<td><code>agauss(nom, dev, k)</code></td>
+<td>Gaussian, <code>dev</code> an absolute deviation at <code>k</code> σ</td>
+</tr>
+<tr>
+<td><code>unif(nom, rel)</code></td>
+<td>uniform on nom·(1 ± rel)</td>
+</tr>
+<tr>
+<td><code>aunif(nom, dev)</code></td>
+<td>uniform on nom ± dev</td>
+</tr>
+</tbody>
+</table>
+<p>Outside a Monte Carlo or yield trial each one is exactly its first argument, so an ordinary run of the model is
+unchanged. Inside a trial it draws once per <strong>instance</strong>: two placed copies of a part vary independently. A
+parameter's default carries it, and so does any value inside the model that is not a parameter:</p>
+<pre><code class="language-netlist">define TSTCAP (in out)
+  parameters C0=gauss(10, 0.05, 3) pF  Rs=0.1 Ohm
+  C:C1 in mid C=C0
+  R:R1 mid out R=agauss(0.1,0.01,1)
+end TSTCAP
+</code></pre>
+<p>An absolute width is in the value's own unit: <code>agauss(0.1,0.01,1)</code> on a resistance in Ω is 0.01 Ω at 1 σ.</p>
+<h3 id="corners">Corners</h3>
+<p><code>corner &lt;name&gt; &lt;parameter&gt;=&lt;value&gt; [unit] …</code> inside a <code>define</code> names a set of the cell's own parameter values —
+the part's stated limits. A parameter the corner leaves out keeps its nominal default.</p>
+<pre><code class="language-netlist">define TSTCAP (in out)
+  parameters C0=gauss(10, 0.05, 3) pF
+  corner min C0=9 pF
+  corner max C0=11 pF
+  C:C1 in out C=C0
+end TSTCAP
+</code></pre>
+<p>A corner binds only parameters the cell declares. <code>temp=</code> is refused (a part does not choose its temperature; the
+bench does), and so are a name that is not a parameter, two corners of one name, and the name <code>nominal</code>, which is
+the cell's own defaults. A cell that declares a parameter named <code>Corner</code> cannot be exported: on a placed part that
+name chooses the corner.</p>
 <p><strong>A model never carries a technology.</strong> A part whose substrate would come from a technology — a microstrip line,
 a placed layout — is an S-parameter file in <code>models/</code> instead.</p>
 <p><strong>Verilog-A needs a compiler wherever it runs.</strong> A <code>.va</code> ships as source; anyone who places the model needs a
@@ -451,19 +503,58 @@ toolbar, and it is available when the active document is a saved cell's primary 
 folder chosen as the library starts a new library.</p>
 <p>The dialog asks for:</p>
 <ul>
-<li><strong>Library</strong> and <strong>Category</strong>. Pick a folder, or one of the libraries the workspace already references. A
+<li><p><strong>Library</strong> and <strong>Category</strong>. Pick a folder, or one of the libraries the workspace already references. A
 category is a folder in the library, and so a sub-menu in the palette; typing <code>Amplifiers/LNA</code> creates both
-folders.</li>
-<li>The <strong>library's</strong> Name, Publisher, Version and License, written to <code>library.clib</code>. They are asked only when
-the folder has no <code>library.clib</code> yet.</li>
-<li>The <strong>part</strong>: its number (the cell's name by default), Description, <strong>Kind</strong> (Active when any component is
+folders.</p>
+</li>
+<li><p>The <strong>library's</strong> Name, Publisher, Version and License, written to <code>library.clib</code>. They are asked only when
+the folder has no <code>library.clib</code> yet.</p>
+</li>
+<li><p>The <strong>part</strong>: its number (the cell's name by default), Description, <strong>Kind</strong> (Active when any component is
 nonlinear — Verilog-A, ComposedFET, a FET, a diode, SDD or an external device — Passive otherwise), a passive's
 <strong>Value</strong>, the <strong>Frequency</strong> range it is valid over, <strong>Conditions</strong>, <strong>Footprint</strong>, and any <strong>Documents</strong> to copy
-into <code>docs/</code>.</li>
-<li>The <strong>symbol</strong>. The default is the cell's own symbol when it has one; otherwise the FET glyph for three or four
+into <code>docs/</code>.</p>
+</li>
+<li><p>The <strong>symbol</strong>. The default is the cell's own symbol when it has one; otherwise the FET glyph for three or four
 pins whose names read as gate, drain and source on an active part; otherwise R, C or L for a two-pin passive
 whose value is a resistance, capacitance or inductance; otherwise a box. A built-in glyph is written into the
-model as <code>symbol/&lt;part&gt;.csym</code>, with its pins named after the cell's, and recorded as <code>Glyph</code>.</li>
+model as <code>symbol/&lt;part&gt;.csym</code>, with its pins named after the cell's, and recorded as <code>Glyph</code>.</p>
+</li>
+<li><p>The <strong>Parameters</strong> table: each of the cell's parameters with its nominal and a <strong>Tolerance</strong>. Choose Gaussian or
+Uniform, then type the spread as the Yield panel takes it: <code>± 2 %</code>, <code>± 2 % at 2σ</code>, <code>σ 0.1 pF</code>, or <code>9 … 11 pF</code> on a
+Uniform. It is written into the parameter's default as a <a href="#tolerances">distribution function</a>:</p>
+<table>
+<thead>
+<tr>
+<th>Spread</th>
+<th>Default written</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Gaussian <code>± 5 % at 3σ</code> on 10 pF</td>
+<td><code>gauss(10,0.05,3)</code></td>
+</tr>
+<tr>
+<td>Gaussian <code>σ 0.1 pF</code></td>
+<td><code>agauss(10,0.1,1)</code></td>
+</tr>
+<tr>
+<td>Uniform <code>± 2 %</code></td>
+<td><code>unif(10,0.02)</code></td>
+</tr>
+<tr>
+<td>Uniform <code>9 … 11 pF</code></td>
+<td><code>aunif(10,1)</code></td>
+</tr>
+</tbody>
+</table>
+<p>Lognormal, Discrete and truncation have no distribution function, so they are not offered.</p>
+</li>
+<li><p>The <strong>Corners</strong> table: one row per corner, one column per parameter, and a blank cell is nominal. <strong>Add corner</strong>
+and the row's × add and remove one.</p>
+<p>Both tables write the <strong>source cell's</strong> <code>.ccell</code>, so the next export keeps them; the dialog says so when it has.</p>
+</li>
 </ul>
 <p>While you fill it in, the dialog lists what will be copied in — every file, every sub-cell, every vendor part
 and the library it came from — and every reason the export cannot go ahead. <strong>Export</strong> stays greyed while any

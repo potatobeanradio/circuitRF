@@ -309,6 +309,7 @@ public sealed partial class ParameterEditorViewModel
         StepVendorValueUpCommand.NotifyCanExecuteChanged();
         StepVendorValueDownCommand.NotifyCanExecuteChanged();
         NotifyVendorPartFlags();
+        RefreshVendorModelCorners();
     }
 
     partial void OnVendorPartQueryChanged(string value)

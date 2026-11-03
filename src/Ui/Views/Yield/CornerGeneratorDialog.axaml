@@ -32,6 +32,29 @@
                 </DataTemplate>
             </ItemsControl.ItemTemplate>
         </ItemsControl>
+        <!-- brief vendorlib-13 R-vl13-2f: each placed library part with corners, a tick box per corner. A part's
+             corner applies to every instance of it in the design. -->
+        <TextBlock Text="Library part corners" FontWeight="SemiBold" FontSize="12" IsVisible="{Binding HasPartAxes}"
+                   ToolTip.Tip="A part's corner applies to every instance of that part in the design, as parts from one lot."/>
+        <ItemsControl x:Name="PartAxesList" ItemsSource="{Binding PartAxes}">
+            <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="yld:GeneratorAxisRow">
+                    <StackPanel Margin="0,0,0,4">
+                        <TextBlock Text="{Binding Label}" FontSize="11" Opacity="0.8"/>
+                        <ItemsControl ItemsSource="{Binding Options}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="yld:GeneratorOption">
+                                    <CheckBox Content="{Binding Name}" IsChecked="{Binding IsChecked}" FontSize="11" Margin="0,0,8,0"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
         <TextBlock Text="Temperatures (°C)" FontWeight="SemiBold" FontSize="12"/>
         <TextBox Text="{Binding Temperatures}" PlaceholderText="-40, 25, 85" FontSize="12"/>
         <TextBlock Text="Values" FontWeight="SemiBold" FontSize="12"/>
