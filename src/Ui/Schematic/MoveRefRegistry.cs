@@ -218,6 +218,7 @@ public static class MoveRefRegistry
         if (WBondSymbolProvider.IsWBondRef(stored)) return null;
         if (SpiceModelSymbolProvider.IsSpiceModelRef(stored)) return null;
         if (ComposedFetSymbolProvider.IsComposedFetRef(stored)) return null;
+        if (VerilogASymbolProvider.IsVerilogARef(stored)) return null;
         return ExternalCellRef.ResolveCellDir(stored, baseDir);
     }
 

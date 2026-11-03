@@ -471,7 +471,8 @@ public static class SchematicPersistence
             if (comp.CellRef is not { Length: > 0 } cellRef) continue;
             if (cellRef.Contains("://", StringComparison.Ordinal) || Path.IsPathRooted(cellRef)) continue;
             if (PdkKitRegistry.IsKitRef(cellRef) || WBondSymbolProvider.IsWBondRef(cellRef)
-                || SpiceModelSymbolProvider.IsSpiceModelRef(cellRef) || ComposedFetSymbolProvider.IsComposedFetRef(cellRef))
+                || SpiceModelSymbolProvider.IsSpiceModelRef(cellRef) || ComposedFetSymbolProvider.IsComposedFetRef(cellRef)
+                || VerilogASymbolProvider.IsVerilogARef(cellRef))
                 continue;
 
             if (Workspace.ExternalCellRef.ResolveCellDir(cellRef, oldDirectory, out _, out bool exists) is not { } cellDir

@@ -148,9 +148,26 @@ terminal is wired the wrong way, shows it as a bias point that will not converge
 easier to read at DC than in the middle of a harmonic-balance sweep.</p>
 </div>
 <h2 id="terminals">Terminals, <code>Pins</code>, and the thermal one</h2>
-<p>The symbol is a <strong>plain box</strong>, deliberately. circuitRF does not know what your model is — it could be
-a transistor, a diode or a whole subcircuit — so drawing a transistor glyph would assert something
-the file has not said.</p>
+<p>circuitRF does not know what your model is — it could be a transistor, a diode or a whole subcircuit —
+so it draws a transistor only when the <strong>model's own terminal names</strong> say it is one. With <code>Symbol</code>
+left blank, a model whose connected terminals are named <code>g</code>, <code>d</code> and <code>s</code> (or <code>gate</code>, <code>drain</code>,
+<code>source</code>, in any order) is drawn with the FET symbol. A fourth terminal draws the FET symbol's
+fourth pin when it is a thermal node (declared thermal by the model, or named <code>t</code>, <code>dt</code>, <code>tj</code> or
+<code>thermal</code>) or a bulk (<code>b</code>, <code>bulk</code>). Anything else, including a model that names its terminals
+<code>a b c</code>, is drawn as a <strong>box</strong>.</p>
+<p>The symbol is a choice you can change. Click it in the Parameter Editor to choose the box, another
+transistor symbol, or a <code>.csym</code> of your own (Browse…). A <code>.csym</code> path is stored the same way as
+<code>File</code>, so a model and its symbol move together. Whatever the symbol, each pin connects to the model
+terminal it names. The netlist lists the terminals in the model's order, so <code>d g s</code> in the model and
+<code>g d s</code> on the symbol give the same circuit.</p>
+<p>The terminal names the symbol binds to are stored on the instance as <code>Terminals</code> (for example
+<code>Terminals = d g s dt:thermal</code>) when the Parameter Editor reads the model file. The symbol therefore
+draws the same way on any machine and in a headless run, whether or not the file has been read there.
+An instance saved before <code>Symbol</code> existed has no <code>Symbol</code> parameter and keeps the box its wires were
+drawn on. Changing the symbol moves the pins; wires stay where they were drawn.</p>
+<p>If you choose a transistor symbol for a model whose names do not identify the gate, drain and source,
+the symbol's pins take the terminals <strong>in order</strong>. Each pin is then labelled with the model's terminal
+name, so you can see which is which, and the netlist reports a warning once.</p>
 <p>The <strong>leads are named by the model</strong>. Once circuitRF has read the file, each lead is labelled with the
 model's own name for that terminal — <code>d</code>, <code>g</code>, <code>s</code>, <code>b</code>, <code>dt</code> — rather than <code>1..5</code>. On a five-terminal
 part with five identical leads, numbers are the single largest source of mis-wiring, and the model has
@@ -299,6 +316,7 @@ builds the file, circuitRF will run it.</li>
 <tr><td>Model</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Which device type inside that file to place. A file usually declares one, and then this can be left blank; when it declares several, pick the one you want.</td></tr>
 <tr><td>Pins</td><td><code>2</code></td><td>&mdash;</td><td>&mdash;</td><td>How many terminals the symbol draws. It is the model&#39;s own terminal count, filled in from the file — change it only if you are drawing before choosing one.</td></tr>
 <tr><td>OpVars</td><td><code>true</code></td><td>&mdash;</td><td>&mdash;</td><td>Whether this instance publishes the operating-point variables its model computes — transconductances, capacitances, node temperatures. On by default; turn it off on devices you are not studying to keep a swept result small.</td></tr>
+<tr><td>Symbol</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The symbol drawn: blank is the FET symbol when the model&#39;s terminal names say which is the gate, drain and source, and the box otherwise; VerilogA is the box; a transistor symbol&#39;s name, or a .csym path, chooses one. Its pins take the model&#39;s terminals by name.</td></tr>
 </tbody></table>
 
 <nav class="page-nav">

@@ -1380,6 +1380,10 @@ public static class ComponentTypeRegistry
                      + "then this can be left blank; when it declares several, pick the one you want.",
             "Pins"  => "How many terminals the symbol draws. It is the model's own terminal count, "
                      + "filled in from the file — change it only if you are drawing before choosing one.",
+            "Symbol" => "The symbol drawn: blank is the FET symbol when the model's terminal names say which is the gate, "
+                      + "drain and source, and the box otherwise; VerilogA is the box; a transistor symbol's name, or a "
+                      + ".csym path, chooses one. Its pins take the model's terminals by name.",
+            "Terminals" => "The model's own terminal names, as last read from its file — what a FET symbol's pins are bound to.",
             "OpVars" => "Whether this instance publishes the operating-point variables its model "
                       + "computes — transconductances, capacitances, node temperatures. On by "
                       + "default; turn it off on devices you are not studying to keep a swept "
@@ -2424,6 +2428,9 @@ public static class ComponentTypeRegistry
                     new("Model",  "",     "", false, UnitDimension.None),
                     new("Pins",   "2",    "", false, UnitDimension.None),
                     new("OpVars", "true", "", false, UnitDimension.None),
+                    // Blank is the default symbol (brief-vendorlib-7): the FET glyph when the model's terminal
+                    // names bind, the box otherwise. An instance with no Symbol at all predates it and is the box.
+                    new("Symbol", "",     "", false, UnitDimension.None),
                 ];
 
             // wBond: `Design` CARRIES the wires (WBondEmbedding) — it does not name a file. A .wBond

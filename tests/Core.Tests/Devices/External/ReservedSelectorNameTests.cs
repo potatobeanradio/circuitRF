@@ -112,4 +112,43 @@ public sealed class ReservedSelectorNameTests : IDisposable
         // …and the selector itself is still not offered to the model, which never declared it.
         Assert.DoesNotContain("Type", given.Keys);
     }
+
+    // ── a VerilogA's artwork names (brief-vendorlib-7 R-vl7-1a) ──────────────
+
+    /// <summary>
+    /// <c>Symbol</c> and <c>Terminals</c> say how the instance is DRAWN. Elaborated from a netlist that carries them —
+    /// a hand-written one; the extractor never writes them — the model is handed neither; and which keys those are
+    /// follows <see cref="ComponentModelFactory.ReservedKey"/>'s exact-spelling rule.
+    /// </summary>
+    [Fact]
+    public void AVerilogAsSymbol_NeverReachesTheModel()
+    {
+        string file   = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "vl7-synthetic.osdi");
+        var    worker = new FakeDeviceWorker();
+        ExternalDeviceRegistry.Register(new DeviceWorkerProvider(VerilogAFileResolver.ProviderNameFor(file), worker));
+
+        var inst = new Instance("X1", "VerilogA", ["a", "b", "c", "d"],
+        [
+            new ParameterAssignment("File",      $"\"{file}\""),
+            new ParameterAssignment("Model",     FakeDeviceWorker.NonlinearType),
+            new ParameterAssignment("Symbol",    "FetCurtice"),
+            new ParameterAssignment("Terminals", "\"d g s b\""),
+        ]);
+        var tb = new TestBench("tb");
+        tb.Instances.Add(inst);
+        new Elaborator(new Library("lib")).Elaborate(tb);
+
+        var given = Assert.Single(worker.Instances).Value;
+        Assert.DoesNotContain("Symbol",    given.Keys);
+        Assert.DoesNotContain("Terminals", given.Keys);
+
+        // Which keys are artwork is decided over the whole instance, as for Type: the exact spelling wins, so a
+        // model's own SYMBOL beside circuitRF's Symbol is forwarded — and alone, a loose spelling still selects.
+        Assert.Equal(["Symbol"], ComponentModelFactory.VerilogAArtworkKeys(["SYMBOL", "Symbol", "Scale"]));
+        Assert.Equal(["SYMBOL"], ComponentModelFactory.VerilogAArtworkKeys(["SYMBOL", "Scale"]));
+
+        // The predicate the parameter editor asks: circuitRF's spelling only.
+        Assert.True(ComponentModelFactory.IsVerilogAHostParameter("Symbol"));
+        Assert.False(ComponentModelFactory.IsVerilogAHostParameter("symbol"));
+    }
 }

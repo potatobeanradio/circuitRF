@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:CircuitRF.Ui.ViewModels"
              xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:ctl="using:CircuitRF.Ui.Controls"
              x:Class="CircuitRF.Ui.Views.ParameterEditor.ParameterEditorView"
              x:DataType="vm:ParameterEditorViewModel"
              Background="{DynamicResource SystemChromeLowColor}">
@@ -1231,6 +1232,23 @@
                               Content="Report operating-point variables"
                               FontSize="11"
                               ToolTip.Tip="Publish the quantities this model computes at each operating point — transconductances, capacitances, node temperatures — as an OP result. On by default; turn it off on devices you are not studying to keep a swept result small."/>
+                    <!-- The symbol (brief-vendorlib-7): one picture; a click opens the menu of every symbol this model
+                         can take, each row its own glyph — the Model Composer's Export picker. Transparent, as that one
+                         is: the button's default fill washes the glyph grey. -->
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="Symbol" FontSize="11"/>
+                        <Button Name="VerilogASymbolButton" Background="Transparent" HorizontalAlignment="Stretch"
+                                HorizontalContentAlignment="Stretch" Padding="4" ToolTip.Tip="Choose the symbol">
+                            <StackPanel Spacing="2">
+                                <ctl:PaletteGlyphControl Kind="VerilogA" SymbolCellDir="{Binding VerilogASymbolGlyphRef}" Height="90"/>
+                                <StackPanel Orientation="Horizontal" Spacing="2" HorizontalAlignment="Center">
+                                    <TextBlock FontSize="11" Text="{Binding VerilogASymbolLabel}" TextTrimming="CharacterEllipsis"
+                                               VerticalAlignment="Center"/>
+                                    <mi:MaterialIcon Kind="MenuDown" Width="14" Height="14" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
                 </StackPanel>
 
                 <!-- SnP custom panel: file picker + layout controls -->

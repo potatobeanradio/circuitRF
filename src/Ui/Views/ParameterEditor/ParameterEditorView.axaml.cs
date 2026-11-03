@@ -26,6 +26,45 @@ public partial class ParameterEditorView : UserControl
         // Tunnel: the ListBox claims Enter for itself on the way back up.
         VendorPartList.AddHandler(KeyDownEvent, OnVendorPartListKeyDown, RoutingStrategies.Tunnel);
         VendorPartList.AddHandler(PointerReleasedEvent, OnVendorPartListPointerReleased, handledEventsToo: true);
+        VerilogASymbolButton.Click += (_, _) => OpenVerilogASymbolMenu();
+    }
+
+    /// <summary>
+    /// A Verilog-A model's symbol menu (brief-vendorlib-7 R-vl7-3a), built when it opens: one row per symbol, its glyph
+    /// and its name as the row's own header — the Model Composer's Export menu — and Browse… for a <c>.csym</c>.
+    /// </summary>
+    private void OpenVerilogASymbolMenu()
+    {
+        if (DataContext is not ParameterEditorViewModel vm || vm.VerilogASymbols.Count == 0) return;
+        var menu = new MenuFlyout();
+        foreach (var symbol in vm.VerilogASymbols)
+        {
+            var row = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 10 };
+            row.Children.Add(new CircuitRF.Ui.Controls.PaletteGlyphControl
+            {
+                Kind = Design.Schematic.SymbolKind.VerilogA, SymbolCellDir = symbol.GlyphRef, Width = 48, Height = 39,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            });
+            row.Children.Add(new TextBlock { Text = symbol.Label, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center });
+            menu.Items.Add(new MenuItem { Header = row, Command = vm.ChooseVerilogASymbolCommand, CommandParameter = symbol });
+        }
+        menu.Items.Add(new Separator());
+        menu.Items.Add(new MenuItem { Header = "Browse…", Command = vm.BrowseVerilogASymbolCommand });
+        menu.ShowAt(VerilogASymbolButton);
+    }
+
+    /// <summary>Picks a <c>.csym</c> for a Verilog-A model's symbol.</summary>
+    private async Task<string?> PickVerilogASymbolFileAsync()
+    {
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is null) return null;
+        var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title          = "Choose Symbol",
+            AllowMultiple  = false,
+            FileTypeFilter = [new FilePickerFileType("Symbol (*.csym)") { Patterns = ["*.csym", "*.CSYM"] }],
+        });
+        return files.Count == 1 ? files[0].TryGetLocalPath() : null;
     }
 
     /// <summary>
@@ -140,6 +179,7 @@ public partial class ParameterEditorView : UserControl
             vm.PickSpiceFileAsync     = PickSpiceFileAsync;
             vm.PickFootprintFileAsync = PickFootprintFileAsync;
             vm.PickModelFileAsync     = PickModelFileAsync;
+            vm.PickVerilogASymbolFileAsync = PickVerilogASymbolFileAsync;
             vm.PickModelParameterAsync = PickModelParameterAsync;
             vm.PickParameterSetFileAsync = PickParameterSetFileAsync;
             vm.PickSddEquationAsync   = PickSddEquationAsync;

@@ -217,6 +217,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         _isRefreshing = true;
         VerilogAOpVars = on;
         _isRefreshing = false;
+        RefreshVerilogASymbolPicker();
     }
 
     /// <summary>
@@ -1023,6 +1024,8 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
                 if (comp.Symbol == SymbolKind.VerilogA &&
                     param.Name.Equals(ComponentModelFactory.VerilogAOpVarsParam,
                                       StringComparison.OrdinalIgnoreCase)) continue;
+                // …and its symbol picker owns `Symbol` and `Terminals` (brief-vendorlib-7).
+                if (comp.Symbol == SymbolKind.VerilogA && IsVerilogASymbolPanelParameter(param.Name)) continue;
 
                 // A SpiceModel's own panel owns File, Name, PinConfig and Pitch — the file it runs
                 // and how the box is drawn. What is left as a generic row is exactly the chosen
@@ -1318,11 +1321,18 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         // than one type. Leaving it blank stores a component that cannot run.
         string desiredModel = selected.TypeId;
         string desiredPins  = selected.PinCount.ToString(CultureInfo.InvariantCulture);
+        // The model's terminal names, STORED — the symbol binds its pins to them, and a binding read from a per-user
+        // cache would wire one way here and another in a headless run (brief-vendorlib-7). Written only when the
+        // model names its terminals; an unnamed model has nothing to bind.
+        string desiredTerminals = selected.TerminalLabels.Count == 0 ? ""
+            : VerilogASymbolProvider.FormatTerminals(selected.TerminalLabels, selected.ThermalTerminals);
 
         bool modelDiffers = !modelValue.Equals(desiredModel, StringComparison.Ordinal);
         bool pinsDiffers  = !ParamValue(_target, ComponentModelFactory.VerilogAPinsParam)
                                 .Equals(desiredPins, StringComparison.Ordinal);
-        if (!modelDiffers && !pinsDiffers) return;
+        bool terminalsDiffers = desiredTerminals.Length > 0
+            && !ParamValue(_target, ComponentModelFactory.VerilogATerminalsParam).Equals(desiredTerminals, StringComparison.Ordinal);
+        if (!modelDiffers && !pinsDiffers && !terminalsDiffers) return;
 
         var updated = _target.Parameters.Select(p => p.Clone()).ToList();
         foreach (var p in updated)
@@ -1331,7 +1341,15 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
                 p.Expression = desiredModel;
             else if (pinsDiffers && p.Name.Equals(ComponentModelFactory.VerilogAPinsParam, StringComparison.Ordinal))
                 p.Expression = desiredPins;
+            else if (terminalsDiffers && p.Name.Equals(ComponentModelFactory.VerilogATerminalsParam, StringComparison.Ordinal))
+            {
+                p.Expression = desiredTerminals;
+                terminalsDiffers = false;
+            }
         }
+        if (terminalsDiffers)
+            updated.Add(new EditableParameter
+                { Name = ComponentModelFactory.VerilogATerminalsParam, Expression = desiredTerminals, ShowOnSchematic = false });
 
         // The rows this replaces are rebuilt by OnModelChanged's own stale-binding check — see there
         // for why a same-name SetParametersCommand needs one. The guard below only stops THIS method

@@ -1836,6 +1836,8 @@ public sealed class Elaborator
             if (Devices.ComponentModelFactory.ReservedKey(names, reserved) is { } key) selectors.Add(key);
 
         bool verilogA = inst.Reference.Equals("VerilogA", StringComparison.OrdinalIgnoreCase);
+        // A VerilogA's artwork names (brief-vendorlib-7) are taken verbatim too: a .csym path is not an expression.
+        if (verilogA) selectors.UnionWith(Devices.ComponentModelFactory.VerilogAArtworkKeys(names));
         foreach (var ov in inst.Overrides)
         {
             if (selectors.Contains(ov.Name))

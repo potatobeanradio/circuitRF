@@ -697,6 +697,15 @@ public sealed class EditableComponent
                 ? ComposedFetSymbolProvider.RefFor(
                       Parameters.FirstOrDefault(p => p.Name == ComposedFetSymbolProvider.FileParameter)?.Expression,
                       Parameters.FirstOrDefault(p => p.Name == ComposedFetSymbolProvider.SymbolParameter)?.Expression)
+                : null)
+        // A Verilog-A model draws through here only when it is NOT the box (brief-vendorlib-7): a FET glyph whose
+        // pins are bound to the model's own terminals by name. The box stays on its built-in path, unchanged.
+        // Everything the reference holds is stored on the instance, so the canvas and a headless run agree.
+        ?? (Symbol == SymbolKind.VerilogA
+                ? VerilogASymbolProvider.RefFor(
+                      PortCount,
+                      Parameters.FirstOrDefault(p => p.Name == VerilogASymbolProvider.TerminalsParameter)?.Expression,
+                      Parameters.FirstOrDefault(p => p.Name == VerilogASymbolProvider.SymbolParameter)?.Expression)
                 : null);
 
     public double         X            { get; set; }

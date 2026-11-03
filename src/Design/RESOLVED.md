@@ -26187,3 +26187,34 @@ Choices made where the brief left room:
   placement must honour that.
 
 Gate: `tests/Ui.Tests/VendorLibraries/ModelLibraryFormatTests.cs` (15).
+
+## VL-7 — a Verilog-A model's Symbol (2026-11-03)
+
+`Symbol` on a `VerilogA` instance picks how it is drawn: blank is the FET glyph when the model's own terminal names
+bind (`FetPinBinding`), the box otherwise; `VerilogA` is the box; a transistor kind's name or a `.csym` chooses one.
+`VerilogASymbolProvider` (`veriloga://`) draws it; the box stays on its built-in path, so a box instance is unchanged.
+
+- **The binding is STORED, not looked up.** The brief bound the glyph to `VerilogAModelIntrospection`'s terminal
+  labels, but those come from a per-user cache that a headless process does not have (`CacheDirectory` is null
+  there) and that drops an entry when the model file's mtime changes. The binding decides which pin a wire lands on,
+  so geometry read from that cache would wire one way on the canvas and another in `circuitrf netlist`/`run`, or
+  move the pins after a recompile. The Parameter Editor now writes the model's names onto the instance as
+  `Terminals` (`d g s dt:thermal` — `:thermal` marks a terminal the model DECLARES thermal, which the name does not
+  always say) in the same command that fills in `Model` and `Pins`. Glyph and extractor read only `Pins`,
+  `Terminals` and `Symbol`.
+- **No `Symbol` parameter at all is the box.** An instance saved before VL-7 has its wires on the box's pins; a
+  default that turned it into a FET on first open would detach them. New placements are seeded with `Symbol = ""`.
+- **The netlist needs nothing special.** Each glyph pin's `PortIndex` is the MODEL TERMINAL it binds to, and the
+  extractor already lists a built-in component's nets in PortIndex order. Box and FET wired to the same terminals
+  extract byte-identical lines (`VerilogASymbolTests`).
+- **Artwork names follow `ReservedKey`'s exact-spelling rule** (`ComponentModelFactory.VerilogAArtworkKeys`), shared
+  by the forwarding filter and the elaborator's selector list. `IsVerilogAHostParameter` matches the two by exact
+  case only, unlike the four older names: `symbol` is a plausible name for a model's own parameter.
+- **A four-terminal default with a BULK draws the MOS glyph** (`Mos1N`, bulk on the right), not the ComposedFET
+  glyph, whose fourth lead is drawn with a `T` and says "thermal".
+- **R-vl7-3b was not built.** No command keeps wires attached by pin on a symbol change — not for ComposedFET
+  either (its picker is a `SetParametersCommand`). Per the brief, reported rather than written; a symbol change moves
+  the pins and leaves the wires where they were drawn.
+
+Gate: `tests/Ui.Tests/VendorLibraries/VerilogASymbolTests.cs` (9),
+`tests/Core.Tests/Devices/External/ReservedSelectorNameTests.AVerilogAsSymbol_NeverReachesTheModel`.

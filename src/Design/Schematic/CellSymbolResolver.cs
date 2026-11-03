@@ -128,7 +128,9 @@ public static class CellSymbolResolver
                         && VendorLibraries.VendorLibraryRefs.IsVendorRef(r.File))))
         // A composed FET always draws SOMETHING — its fallback is the standard FET glyph — so an
         // unsaved schematic must still get its pins.
-        || ComposedFetSymbolProvider.IsComposedFetRef(cellRef);
+        || ComposedFetSymbolProvider.IsComposedFetRef(cellRef)
+        // A Verilog-A model's chosen symbol always draws something too — its fallback is the default glyph or the box.
+        || VerilogASymbolProvider.IsVerilogARef(cellRef);
 
     /// <summary>
     /// Resolves <paramref name="cellRef"/> relative to <paramref name="baseDir"/> and returns
@@ -170,6 +172,8 @@ public static class CellSymbolResolver
             return SpiceModelSymbolProvider.Resolve(cellRef, baseDir);
         if (ComposedFetSymbolProvider.IsComposedFetRef(cellRef))
             return ComposedFetSymbolProvider.Resolve(cellRef, baseDir);
+        if (VerilogASymbolProvider.IsVerilogARef(cellRef))
+            return VerilogASymbolProvider.Resolve(cellRef, baseDir);
 
         // 1. Resolve path. A cell reference is relative to the schematic's own directory, so an
         //    unsaved schematic has nothing to resolve it against — NotFound, not a crash. A ws://
@@ -330,6 +334,7 @@ public static class CellSymbolResolver
         // through, so the path branch is never handed a reference that is not a path.
         if (WBondSymbolProvider.IsWBondRef(cellRef)) return null;
         if (ComposedFetSymbolProvider.IsComposedFetRef(cellRef)) return null;
+        if (VerilogASymbolProvider.IsVerilogARef(cellRef)) return null;
 
         try
         {

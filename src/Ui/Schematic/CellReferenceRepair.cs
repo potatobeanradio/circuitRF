@@ -53,7 +53,8 @@ public static class CellReferenceRepair
         && !PdkKitRegistry.IsKitRef(cellRef!)
         && !WBondSymbolProvider.IsWBondRef(cellRef!)
         && SpiceModelSymbolProvider.Parse(cellRef!) is null
-        && !ComposedFetSymbolProvider.IsComposedFetRef(cellRef);
+        && !ComposedFetSymbolProvider.IsComposedFetRef(cellRef)
+        && !VerilogASymbolProvider.IsVerilogARef(cellRef);
 
     /// <summary>
     /// Looks for the cell <paramref name="cellRef"/> names, without asking the user anything.

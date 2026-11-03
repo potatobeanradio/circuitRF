@@ -388,8 +388,11 @@ public static class ComponentModelFactory
         // failing every device it serves. The strict behaviour is the correct one: it is what turns
         // a user's misspelled parameter into an error instead of a silently defaulted device.
         var forwarded = new Dictionary<string, string>(StringComparer.Ordinal);
+        var artwork   = VerilogAArtworkKeys(parameters.Keys);
         foreach (var (key, val) in parameters)
         {
+            // How the instance is DRAWN — never a model parameter (brief-vendorlib-7 R-vl7-1a).
+            if (artwork.Contains(key)) continue;
             if (key.StartsWith("__", StringComparison.Ordinal)) continue;
             if (string.Equals(key, providerKey, StringComparison.Ordinal) ||
                 string.Equals(key, typeKey,     StringComparison.Ordinal)) continue;
@@ -450,6 +453,25 @@ public static class ComponentModelFactory
     public const string VerilogAOpVarsParam = "OpVars";
 
     /// <summary>
+    /// The symbol a placed instance is drawn with (brief-vendorlib-7 R-vl7-1). ARTWORK ONLY — the
+    /// extractor drops it, and the forwarding filter and the elaborator's selector list keep it from
+    /// a model even when a hand-written netlist carries it.
+    ///
+    /// <para><b>Exact spelling, by <see cref="ReservedKey"/>'s rule</b>, not case-blind like the four
+    /// above: <c>symbol</c> is a plausible name for a model's OWN parameter, which is the <c>TYPE</c>
+    /// case that rule exists for.</para>
+    /// </summary>
+    public const string VerilogASymbolParam = "Symbol";
+
+    /// <summary>
+    /// The model's own terminal names, as the editor last read them from the file — what a FET symbol's
+    /// pins are bound to (<c>FetPinBinding</c>). Artwork only, exactly as <see cref="VerilogASymbolParam"/>.
+    /// It is STORED, not looked up, because the binding decides which pin a wire lands on: geometry that
+    /// depended on a per-user cache would wire one way in the editor and another in a headless run.
+    /// </summary>
+    public const string VerilogATerminalsParam = "Terminals";
+
+    /// <summary>
     /// True for a parameter name circuitRF itself owns on a VerilogA component — the ones it
     /// CONSUMES and never forwards to the model.
     ///
@@ -471,7 +493,25 @@ public static class ComponentModelFactory
            && (name.Equals(VerilogAFileParam,   StringComparison.OrdinalIgnoreCase)
             || name.Equals(VerilogAModelParam,  StringComparison.OrdinalIgnoreCase)
             || name.Equals(VerilogAPinsParam,   StringComparison.OrdinalIgnoreCase)
-            || name.Equals(VerilogAOpVarsParam, StringComparison.OrdinalIgnoreCase));
+            || name.Equals(VerilogAOpVarsParam, StringComparison.OrdinalIgnoreCase)
+            // The two artwork names, by their exact spelling only — see VerilogASymbolParam.
+            || name.Equals(VerilogASymbolParam,    StringComparison.Ordinal)
+            || name.Equals(VerilogATerminalsParam, StringComparison.Ordinal));
+
+    /// <summary>
+    /// The keys on one instance that are its ARTWORK parameters — <see cref="VerilogASymbolParam"/> and
+    /// <see cref="VerilogATerminalsParam"/> — chosen by <see cref="ReservedKey"/> over the whole instance, so a
+    /// model's own <c>SYMBOL</c> beside circuitRF's <c>Symbol</c> is still forwarded. The forwarding filter and
+    /// the elaborator both ask here.
+    /// </summary>
+    public static IReadOnlySet<string> VerilogAArtworkKeys(IEnumerable<string> names)
+    {
+        var list = names as IReadOnlyCollection<string> ?? [.. names];
+        var keys = new HashSet<string>(StringComparer.Ordinal);
+        foreach (string reserved in new[] { VerilogASymbolParam, VerilogATerminalsParam })
+            if (ReservedKey(list, reserved) is { } key) keys.Add(key);
+        return keys;
+    }
 
     /// <summary>
     /// A compiled compact model a user placed on a schematic and pointed at their own file.
@@ -493,8 +533,8 @@ public static class ComponentModelFactory
         if (!parameters.TryGetValue(VerilogAFileParam, out var fv) ||
             fv.Kind != ValueKind.String || fv.AsString().Trim().Length == 0)
             throw new ExternalDeviceException(
-                "VerilogA: no model file. Set the component's 'File' parameter to a compiled model — " +
-                "circuitRF loads one you built, it does not compile Verilog-A itself.");
+                "VerilogA: no model file. Set the component's 'File' parameter to a compiled model (.osdi) " +
+                "or to Verilog-A source (.va, .vams), which circuitRF builds with the compiler installed on this machine.");
 
         string modelFile   = fv.AsString().Trim();
         string providerName = VerilogAFileResolver.ProviderNameFor(modelFile);

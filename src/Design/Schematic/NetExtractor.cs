@@ -3032,6 +3032,20 @@ public static class NetExtractor
             })
             .ToList();
 
+        // VerilogA (brief-vendorlib-7): `Symbol` and `Terminals` say how the instance is DRAWN and never reach the
+        // model. The nets need nothing special — a FET glyph's pins carry the model terminal they bind to as their
+        // PortIndex, so the generic PortIndex-order emission below lists them in the model's own order.
+        if (comp.Symbol == SymbolKind.VerilogA)
+        {
+            string? Param(string name) => comp.Parameters.FirstOrDefault(p => p.Name == name)?.Expression;
+            overrides2.RemoveAll(o => o.Name is VerilogASymbolProvider.SymbolParameter
+                                             or VerilogASymbolProvider.TerminalsParameter);
+            if (warningsOut is not null)
+                warningsOut.AddRange(VerilogASymbolProvider.Diagnose(
+                    comp.InstanceName, comp.PortCount, Param(VerilogASymbolProvider.TerminalsParameter),
+                    Param(VerilogASymbolProvider.SymbolParameter), model.SchematicDirectory));
+        }
+
         // Tuner family: 1 symbol pin (DUT-facing) but the engine TunerModel needs 2 declared nets.
         // All three tiles emit Reference "Tuner" with the SAME net ordering (loadpull.md §1, §9):
         // Nodes[0] = pin (DUT-facing), Nodes[1] = "0" (reference, hard-coded ground; exposing it as a

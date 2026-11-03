@@ -121,9 +121,29 @@ easier to read at DC than in the middle of a harmonic-balance sweep.</p>
 
 ## Terminals, `Pins`, and the thermal one {#terminals}
 
-The symbol is a **plain box**, deliberately. circuitRF does not know what your model is — it could be
-a transistor, a diode or a whole subcircuit — so drawing a transistor glyph would assert something
-the file has not said.
+circuitRF does not know what your model is — it could be a transistor, a diode or a whole subcircuit —
+so it draws a transistor only when the **model's own terminal names** say it is one. With `Symbol`
+left blank, a model whose connected terminals are named `g`, `d` and `s` (or `gate`, `drain`,
+`source`, in any order) is drawn with the FET symbol. A fourth terminal draws the FET symbol's
+fourth pin when it is a thermal node (declared thermal by the model, or named `t`, `dt`, `tj` or
+`thermal`) or a bulk (`b`, `bulk`). Anything else, including a model that names its terminals
+`a b c`, is drawn as a **box**.
+
+The symbol is a choice you can change. Click it in the Parameter Editor to choose the box, another
+transistor symbol, or a `.csym` of your own (Browse…). A `.csym` path is stored the same way as
+`File`, so a model and its symbol move together. Whatever the symbol, each pin connects to the model
+terminal it names. The netlist lists the terminals in the model's order, so `d g s` in the model and
+`g d s` on the symbol give the same circuit.
+
+The terminal names the symbol binds to are stored on the instance as `Terminals` (for example
+`Terminals = d g s dt:thermal`) when the Parameter Editor reads the model file. The symbol therefore
+draws the same way on any machine and in a headless run, whether or not the file has been read there.
+An instance saved before `Symbol` existed has no `Symbol` parameter and keeps the box its wires were
+drawn on. Changing the symbol moves the pins; wires stay where they were drawn.
+
+If you choose a transistor symbol for a model whose names do not identify the gate, drain and source,
+the symbol's pins take the terminals **in order**. Each pin is then labelled with the model's terminal
+name, so you can see which is which, and the netlist reports a warning once.
 
 The **leads are named by the model**. Once circuitRF has read the file, each lead is labelled with the
 model's own name for that terminal — `d`, `g`, `s`, `b`, `dt` — rather than `1..5`. On a five-terminal
