@@ -531,6 +531,15 @@ your settings, not the document's. Hold <strong>Alt</strong> (<strong>Option</st
 drawing; the grid still applies. The <strong>Snap</strong> box beside <strong>Unit</strong> sets the grid step (the example uses
 0.5 mil); changing it moves nothing already drawn. A <strong>≈</strong> before a coordinate means the point is not
 exactly on the database-unit grid (a corner of something rotated by an odd angle).</p>
+<p><strong>Tracking from a point.</strong> While a tool is armed, rest the cursor on a snap point (a vertex, a midpoint, a centre) for
+half a second: a small green <strong>+</strong> marks it as a reference. Move away and the cursor locks onto the lines through it
+along x, y and z, drawn dashed in the axis's colour, with a diamond marker on the line. Near an edge the point stops
+where the line meets that edge; elsewhere it moves along the line in grid steps. Two references give the point where
+their lines cross, such as the x of one corner and the y of another. This lets you draw a sheet from a trace's corner
+straight down to a ground plane that has no vertex beneath it: rest on the corner, then move down to the ground's
+edge. A vertex under the cursor still wins. Resting on a reference again removes it. A reference is forgotten after
+ten seconds unused, and when the object is finished or the tool is put away. Alt (Option) suspends tracking along
+with geometry snapping.</p>
 <h2 id="drawing">Drawing</h2>
 <p><strong>The drawing plane.</strong> Shapes are drawn on a plane — <strong>XY</strong>, <strong>YZ</strong> or <strong>XZ</strong> at an offset along its
 normal — chosen from the toolbar's plane box and offset field (a bare number is the display unit; <code>25um</code>
@@ -711,6 +720,10 @@ through the alumina base: they are gold, so they win.</li>
 it, so a pushed box is still a box. It stops before a neighbour would vanish, and says which.</li>
 <li><strong>G</strong> moves a face freely (its neighbours tilt to follow), or a vertex in Vertex mode; Properties' <em>Set
 coordinates</em> types where a vertex goes.</li>
+<li><strong>A polygon sheet, a prism or a polyline</strong> lists every point in Properties as x, y and z in the display unit,
+with the length of the edge to the next point; type one and press Enter. A sheet's or a prism's points stay
+on its plane, so the coordinate across the plane is greyed (<em>Offset</em> moves the whole outline), and a prism's
+list is its bottom, with the top following. A polyline's point may leave its plane.</li>
 <li><strong>Shift+E</strong> grows a new solid out of a face along its normal — a bump on a pad, a wall on a floor. <em>Align to
 Face…</em> moves an object until two faces meet (<strong>T</strong> switches between <em>Touching</em> and <em>Flush</em>). <em>Copy as
 Sheet</em> makes a sheet on a face. <em>Measure</em> reports a face's area, perimeter and normal.</li>

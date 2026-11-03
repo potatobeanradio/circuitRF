@@ -773,6 +773,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     partial void OnActiveToolChanged(Tool value)
     {
         CancelDrawOp();
+        ClearSnapReferences();   // snap tracking: a new tool starts with no references
 
         // One canvas, two tool sets, and the overlay gives an armed LAYOUT tool first refusal on every
         // press — so they cannot both be armed or the wire tool would look armed and never see a click.
@@ -4306,6 +4307,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         _typedWidthDbu  = null;
         _typedHeightDbu = null;
         if (shape is not null) Execute(new AddShapeCommand(Model, shape));
+        ClearSnapReferences();   // the references were for this shape
         OnPropertyChanged(nameof(IsDrawingRect));
         RebuildOverlay();
     }
@@ -4319,6 +4321,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             if (shape is not null) Execute(new AddShapeCommand(Model, shape));
         }
         _drawPoints.Clear();
+        ClearSnapReferences();   // the references were for this shape
         RebuildOverlay();
     }
 
@@ -4742,6 +4745,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
                 ? (ghostView, pt.X, pt.Y) : null,
             ShowScaleHandles = ShowScaleHandles,
             SnapMarker = _currentSnapCandidate,
+            SnapTracking = BuildSnapTrackingOverlay(),
             DrcMarkers = BuildDrcMarkers(),
             LvsMarkers = BuildLvsMarkers(),
             Impedance = BuildImpedanceOverlay(),

@@ -229,6 +229,7 @@ capture. Coordinates are window DIPs — take them from a first capture.
 | `--drag x0,y0:x1,y1` | Left press, ten moves (so it crosses a click threshold), release. |
 | `--key K` | Press and release a key: `Back`, `Delete`, `Escape`, or with modifiers, `Meta+Z`, `Ctrl+Shift+A`. |
 | `--shot out.png` | Capture an intermediate frame. |
+| `--wait ms` | Let that much real time pass with the dispatcher running, so a view's own timer fires (snap tracking's dwell after a `--hover`). |
 
 Set `CRF_STATE_DIR` to a scratch folder so the run neither reads nor writes your own preferences.
 

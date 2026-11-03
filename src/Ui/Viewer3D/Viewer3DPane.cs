@@ -235,6 +235,7 @@ public sealed class Viewer3DPane : Control
     private void Teardown()
     {
         _catchUp?.Stop();
+        _tracking?.Stop();
         _stop = true;
         _go.Set();
         if (_thread is null || _thread.Join(2000)) _thread = null;
@@ -365,6 +366,26 @@ public sealed class Viewer3DPane : Control
         _catchUp.Start();
     }
 
+    /// <summary>Snap tracking's clock: a point held under a still cursor is acquired with no mouse move to trigger a frame, and
+    /// an unused reference is forgotten. Ticks only while the tracker has something pending, so an idle view stays idle.</summary>
+    private Avalonia.Threading.DispatcherTimer? _tracking;
+
+    private void SyncTrackingTimer()
+    {
+        if (_vm is not { TrackingNeedsTick: true })
+        {
+            _tracking?.Stop();
+            return;
+        }
+        _tracking ??= new Avalonia.Threading.DispatcherTimer(TimeSpan.FromMilliseconds(100), Avalonia.Threading.DispatcherPriority.Background,
+            (_, _) =>
+            {
+                _vm?.TickSnapTracking();
+                if (_vm is not { TrackingNeedsTick: true }) _tracking!.Stop();
+            });
+        if (!_tracking.IsEnabled) _tracking.Start();
+    }
+
     /// <summary>The window moved to a monitor of another scale: the images are re-sized on the next frame.</summary>
     private void OnScalingChanged(object? sender, EventArgs e) => RequestFrame();
 
@@ -433,6 +454,7 @@ public sealed class Viewer3DPane : Control
         _done = false;
         _busy = false;
         _vm!.OnPicked(backend.PickedId, backend.PickedFace, backend.PickedPoint, backend.PickedSomething, backend.PickPatch);
+        SyncTrackingTimer();
         FramePresented?.Invoke();
     }
 

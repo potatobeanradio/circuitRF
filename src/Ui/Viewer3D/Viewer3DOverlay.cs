@@ -209,6 +209,7 @@ public sealed class Viewer3DOverlay : Control
         if (picture) return;
         if (vm.GizmoNow() is { } gizmo) Gizmo(ctx, gizmo, vm.GizmoHover, vm.GizmoActive, dark);
 
+        Tracking(ctx, vm, w, h, dark);
         if (vm.Snap.IsSnap) SnapMarker(ctx, vm.Snap.Kind, new Point(vm.Snap.ScreenX, vm.Snap.ScreenY), dark, SnapColour(vm.Scene, vm.Snap));
 
         if (vm.HoverText.Length > 0 && vm.View.CursorX >= 0)
@@ -629,6 +630,46 @@ public sealed class Viewer3DOverlay : Control
         if (!dragging) ctx.DrawEllipse(dark ? Brushes.WhiteSmoke : Brushes.DimGray, null, c, 3, 3);
     }
 
+    /// <summary>Snap tracking's reference marks — a small plus at each acquired point — and, when the snap in force is on a
+    /// tracking line, that line from its reference to the snap, dashed in its axis's colour.</summary>
+    private static void Tracking(DrawingContext ctx, Viewer3DViewModel vm, double w, double h, bool dark)
+    {
+        var refs = vm.Tracker.References;
+        if (!vm.SnapTrackingActive || refs.Count == 0) return;
+        var cam = vm.View.Camera;
+        var halo = new Pen(dark ? Brushes.Black : Brushes.White, 3.5, lineCap: PenLineCap.Round);
+        if (vm.Snap.Kind == CircuitRF.Render.Scene3D.Edit.Snap3DKind.Track)
+        {
+            var to = new Point(vm.Snap.ScreenX, vm.Snap.ScreenY);
+            foreach (var line in new[] { vm.Tracker.LineA, vm.Tracker.LineB })
+            {
+                if (line is not { } l || l.Reference >= refs.Count) continue;
+                var r = refs[l.Reference].Point.World;
+                if (cam.Project(vm.Scene.ToLocal(r.X, r.Y, r.Z), (float)w, (float)h) is not (var rx, var ry, true)) continue;
+                var from = new Point(rx, ry);
+                var end = to;                                  // the line ends where the click will land
+                var brush = l.Axis switch { 0 => XBrush, 1 => YBrush, _ => ZBrush };
+                var pen = new Pen(brush, 1.5) { DashStyle = new DashStyle([5, 4], 0) };
+                ctx.DrawLine(halo, from, end);
+                ctx.DrawLine(pen, from, end);
+            }
+        }
+        var mark = new Pen(new SolidColorBrush(TrackColour), 2, lineCap: PenLineCap.Round);
+        const double m = 5;
+        foreach (var r in refs)
+        {
+            if (cam.Project(vm.Scene.ToLocal(r.Point.World.X, r.Point.World.Y, r.Point.World.Z), (float)w, (float)h) is not (var x, var y, true)) continue;
+            foreach (var pen in new[] { halo, mark })
+            {
+                ctx.DrawLine(pen, new Point(x - m, y), new Point(x + m, y));
+                ctx.DrawLine(pen, new Point(x, y - m), new Point(x, y + m));
+            }
+        }
+    }
+
+    /// <summary>Snap tracking's colour — its reference marks and its snap glyph: a green no material or selection uses.</summary>
+    internal static readonly Color TrackColour = Color.FromRgb(40, 200, 120);
+
     /// <summary>The snap marker's colour when there is no material to take one from: an amber no material or selection
     /// uses, over a contrasting halo.</summary>
     internal static readonly Color SnapAmber = Color.FromRgb(255, 176, 0);
@@ -641,6 +682,7 @@ public sealed class Viewer3DOverlay : Control
     /// </summary>
     internal static Color SnapColour(Scene3DModel scene, CircuitRF.Render.Scene3D.Edit.Snap3DResult snap)
     {
+        if (snap.Kind == CircuitRF.Render.Scene3D.Edit.Snap3DKind.Track) return TrackColour;
         if (snap.Kind == CircuitRF.Render.Scene3D.Edit.Snap3DKind.Grid || scene.Object(snap.Object) is not { } o
             || o.Wireframe || o.Material is not { Length: > 0 })
             return SnapAmber;
@@ -690,6 +732,21 @@ public sealed class Viewer3DOverlay : Control
                     ctx.DrawLine(stroke, new Point(p.X - r * 0.6, p.Y), new Point(p.X + r * 0.6, p.Y));
                     ctx.DrawLine(stroke, new Point(p.X, p.Y - r * 0.6), new Point(p.X, p.Y + r * 0.6));
                     break;
+                // Snap tracking — a point on a tracking line: a small diamond.
+                case CircuitRF.Render.Scene3D.Edit.Snap3DKind.Track:
+                {
+                    var g = new StreamGeometry();
+                    using (var c = g.Open())
+                    {
+                        c.BeginFigure(new Point(p.X, p.Y - r), false);
+                        c.LineTo(new Point(p.X + r, p.Y));
+                        c.LineTo(new Point(p.X, p.Y + r));
+                        c.LineTo(new Point(p.X - r, p.Y));
+                        c.EndFigure(true);
+                    }
+                    ctx.DrawGeometry(null, stroke, g);
+                    break;
+                }
             }
         }
     }

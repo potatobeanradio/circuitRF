@@ -220,6 +220,16 @@ drawing; the grid still applies. The **Snap** box beside **Unit** sets the grid 
 0.5 mil); changing it moves nothing already drawn. A **≈** before a coordinate means the point is not
 exactly on the database-unit grid (a corner of something rotated by an odd angle).
 
+**Tracking from a point.** While a tool is armed, rest the cursor on a snap point (a vertex, a midpoint, a centre) for
+half a second: a small green **+** marks it as a reference. Move away and the cursor locks onto the lines through it
+along x, y and z, drawn dashed in the axis's colour, with a diamond marker on the line. Near an edge the point stops
+where the line meets that edge; elsewhere it moves along the line in grid steps. Two references give the point where
+their lines cross, such as the x of one corner and the y of another. This lets you draw a sheet from a trace's corner
+straight down to a ground plane that has no vertex beneath it: rest on the corner, then move down to the ground's
+edge. A vertex under the cursor still wins. Resting on a reference again removes it. A reference is forgotten after
+ten seconds unused, and when the object is finished or the tool is put away. Alt (Option) suspends tracking along
+with geometry snapping.
+
 ## Drawing {#drawing}
 
 **The drawing plane.** Shapes are drawn on a plane — **XY**, **YZ** or **XZ** at an offset along its
@@ -325,6 +335,10 @@ follows, where a greyed-out item's tooltip says why:
   it, so a pushed box is still a box. It stops before a neighbour would vanish, and says which.
 - **G** moves a face freely (its neighbours tilt to follow), or a vertex in Vertex mode; Properties' *Set
   coordinates* types where a vertex goes.
+- **A polygon sheet, a prism or a polyline** lists every point in Properties as x, y and z in the display unit,
+  with the length of the edge to the next point; type one and press Enter. A sheet's or a prism's points stay
+  on its plane, so the coordinate across the plane is greyed (*Offset* moves the whole outline), and a prism's
+  list is its bottom, with the top following. A polyline's point may leave its plane.
 - **Shift+E** grows a new solid out of a face along its normal — a bump on a pad, a wall on a floor. *Align to
   Face…* moves an object until two faces meet (**T** switches between *Touching* and *Flush*). *Copy as
   Sheet* makes a sheet on a face. *Measure* reports a face's area, perimeter and normal.

@@ -1,7 +1,7 @@
 # Brief 134 — Expressions in a polyline's points: the editor
 
 **Series:** [131 overview](brief-em3d-131-point-expressions-overview.md) · **Tag:** `R-em3d134-n`
-**Status:** Written 2026-10-09, not started.
+**Status:** Written 2026-10-09. Partly done 2026-11-02: Properties lists a polyline's points as world x, y, z numbers, and a point typed off the plane converts it to `Points3` (refused while its planar points hold expressions). u/v rows, expressions in the rows, and add/remove are still open.
 **Area:** `src/Ui/ThreeD/` (the Inspector: `C3dPropertiesViewModel` / `C3dPropertiesView.axaml`, the polyline's
 summary row), `src/Design/ThreeD/` (the 2D↔3D forms). Findings in `src/Ui/ThreeD/RESOLVED.md`.
 **Depends on:** 132. Independent of 133.

@@ -171,14 +171,15 @@ public static class LayoutSnapQuery
     /// Bounded by the same L2b spatial index <see cref="FindCandidates"/> uses (no second search structure), filtered
     /// to <paramref name="layers"/> (contact is a same-layer question: a plane under a line is not an edge it meets),
     /// and capped at <paramref name="cap"/> edges. An instance contributes its own cell's shapes, one level deep.
+    /// <paramref name="layers"/> null is every visible layer — what snap tracking's line meets.
     /// </summary>
     public static IReadOnlyList<SnapEdge> EdgesNear(
-        LayoutView view, Technology? tech, string baseDir, Bbox region, IReadOnlySet<LayerKey> layers,
+        LayoutView view, Technology? tech, string baseDir, Bbox region, IReadOnlySet<LayerKey>? layers,
         IReadOnlySet<int>? excludeShapeIndices, IReadOnlySet<int>? excludeInstanceIndices, int cap,
         ref SnapQueryCounters counters)
     {
         var edges = new List<SnapEdge>();
-        if (region.IsEmpty || layers.Count == 0) return edges;
+        if (region.IsEmpty || layers is { Count: 0 }) return edges;
         var layerVisible = new LayerVisibility(tech);
         Bbox InstanceBboxFor(LayoutInstance inst) => CellHierarchy.InstanceBbox(inst, baseDir);
         foreach (var entry in view.SpatialIndex.QueryIntersecting(
@@ -190,7 +191,7 @@ public static class LayoutSnapQuery
                 if (entry.Index < 0 || entry.Index >= view.Shapes.Count) continue;
                 if (excludeShapeIndices is not null && excludeShapeIndices.Contains(entry.Index)) continue;
                 var shape = view.Shapes[entry.Index];
-                if (!layers.Contains(shape.Layer) || !layerVisible[shape.Layer]) continue;
+                if ((layers is not null && !layers.Contains(shape.Layer)) || !layerVisible[shape.Layer]) continue;
                 counters.FeaturesExamined++;
                 AppendOutlineEdges(shape, tech, null, 0, 0, edges, cap);
             }

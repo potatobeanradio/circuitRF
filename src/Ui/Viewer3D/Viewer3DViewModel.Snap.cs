@@ -204,14 +204,66 @@ public sealed partial class Viewer3DViewModel
         SnapUsedCpuPatch = _lastSnapWasCpu;
         SnapQueries++;
         var settings = new Snap3DSettings(SnapKinds, radius, GeometrySnapSuspended, SnapGrid);
-        SetSnap(SnapQuery.Query(Scene, patch, settings, SnapExclusion, PickVisible, View.Clip));
+        SetSnap(Tracked(SnapQuery.Query(Scene, patch, settings, SnapExclusion, PickVisible, View.Clip), radius));
+    }
+
+    // ── snap tracking (SnapTracker3D) ───────────────────────────────────────────────────────
+
+    /// <summary>The references a held point snap has acquired, and the tracking line the snap in force is on.</summary>
+    public SnapTracker3D Tracker { get; } = new();
+
+    /// <summary>The clock the tracker's dwell and forgetting read, milliseconds — replaceable by a test.</summary>
+    public Func<long> TrackingClock { get; set; } = () => Environment.TickCount64;
+
+    /// <summary>Tracking applies while a tool is armed (the editor sets it); off, every reference is dropped.</summary>
+    public bool SnapTrackingActive
+    {
+        get => _snapTrackingActive;
+        set
+        {
+            if (value == _snapTrackingActive) return;
+            _snapTrackingActive = value;
+            if (!value && Tracker.Clear()) FrameRequested?.Invoke();
+        }
+    }
+    private bool _snapTrackingActive;
+
+    /// <summary>Whether the pane should keep the tracker's clock ticking (a dwell pending, a reference to forget).</summary>
+    public bool TrackingNeedsTick => _snapTrackingActive && Tracker.NeedsTick;
+
+    /// <summary>Every reference dropped — the gesture they were made for has finished.</summary>
+    public void ClearSnapReferences()
+    {
+        if (!Tracker.Clear()) return;
+        if (Snap.Kind == Snap3DKind.Track) ResolveSnap(null);
+        FrameRequested?.Invoke();
+    }
+
+    /// <summary>The pane's tick: a dwell completed or a reference was forgotten — the marker and the snap follow at once.</summary>
+    public void TickSnapTracking()
+    {
+        if (!_snapTrackingActive || !Tracker.Tick(TrackingClock())) return;
+        if (Snap.Kind == Snap3DKind.Track) ResolveSnap(null);
+        FrameRequested?.Invoke();
+    }
+
+    /// <summary>The raw query's answer, tracked: a point snap starts a dwell; anything else may lock onto a reference's line.</summary>
+    private Snap3DResult Tracked(Snap3DResult raw, float radius)
+    {
+        if (!_snapTrackingActive || GeometrySnapSuspended) return raw;
+        long now = TrackingClock();
+        Tracker.Observe(raw, now);
+        if (Tracker.Tick(now)) FrameRequested?.Invoke();
+        if (Tracker.References.Count == 0 || CursorRay() is not { } ray) return raw;
+        var view = new Snap3DTrackView(Scene, View.Camera, _viewW, _viewH, View.CursorX, View.CursorY, ray.Origin, ray.Direction, radius, SnapGrid);
+        return Tracker.Apply(raw, view, now);
     }
 
     private void SetSnap(Snap3DResult snap)
     {
         if (snap == Snap) return;
         Snap = snap;
-        SnapText = snap.IsSnap ? SnapKindName(snap.Kind) + " · " + (EditHost?.SnapPointText(snap) ?? WorldText(snap.World)) : "";
+        SnapText = snap.IsSnap ? SnapKindName(snap.Kind) + TrackText(snap) + " · " + (EditHost?.SnapPointText(snap) ?? WorldText(snap.World)) : "";
         FrameRequested?.Invoke();
     }
 
@@ -219,8 +271,16 @@ public sealed partial class Viewer3DViewModel
     public static string SnapKindName(Snap3DKind kind) => kind switch
     {
         Snap3DKind.Vertex => "Vertex", Snap3DKind.Midpoint => "Midpoint", Snap3DKind.Edge => "Edge",
-        Snap3DKind.FaceCentre => "Face centre", Snap3DKind.Grid => "Grid", Snap3DKind.Centre => "Centre", _ => "",
+        Snap3DKind.FaceCentre => "Face centre", Snap3DKind.Grid => "Grid", Snap3DKind.Centre => "Centre", Snap3DKind.Track => "Tracking", _ => "",
     };
+
+    /// <summary>A tracked snap's line(s), as the status line names them: <c> along z</c>, or <c> x × y</c> at a crossing.</summary>
+    private string TrackText(Snap3DResult snap)
+    {
+        if (snap.Kind != Snap3DKind.Track || Tracker.LineA is not { } a) return "";
+        static string Axis(int k) => k switch { 0 => "x", 1 => "y", _ => "z" };
+        return Tracker.LineB is { } b ? $" {Axis(a.Axis)} × {Axis(b.Axis)}" : $" along {Axis(a.Axis)}";
+    }
 
     private string WorldText(Point3 p)
         => $"({FormatLength(p.X)}, {FormatLength(p.Y)}, {FormatLength(p.Z)})";

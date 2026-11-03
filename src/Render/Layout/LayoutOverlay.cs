@@ -155,6 +155,10 @@ public sealed record class LayoutOverlay
     /// click-time concern, not a rendering one).</summary>
     public SnapCandidate? SnapMarker { get; init; }
 
+    /// <summary>Snap tracking (LayoutSnapTracker): the held references, drawn as small pluses, and the tracking line(s) the
+    /// snap in force is on, from the reference to the snap. Null when no reference is held.</summary>
+    public LayoutSnapTrackingOverlay? SnapTracking { get; init; }
+
     // ── Parameter handles (docs/design/pcell-parameter-handles.md) ──────────────────────────────
 
     /// <summary>
@@ -392,3 +396,9 @@ public readonly record struct LvsFindingMarker(
     CircuitRF.Diagnostics.DiagnosticSeverity Severity,
     bool                               Waived,
     bool                               Selected);
+
+/// <summary>What snap tracking draws: each reference, and each tracking line in force — <c>Vertical</c> true for a line of
+/// constant x — from its reference to the tracked point.</summary>
+public sealed record LayoutSnapTrackingOverlay(
+    IReadOnlyList<(long X, long Y)> References,
+    IReadOnlyList<(long X0, long Y0, long X1, long Y1, bool Vertical)> Lines);

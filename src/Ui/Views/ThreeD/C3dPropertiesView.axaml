@@ -12,6 +12,10 @@
         <Style Selector="TextBox.error">
             <Setter Property="BorderBrush" Value="IndianRed"/>
         </Style>
+        <!-- A point list's held coordinate (a sheet's normal): shown, dimmed, not typed. -->
+        <Style Selector="TextBox.dim[IsReadOnly=True]">
+            <Setter Property="Opacity" Value="0.55"/>
+        </Style>
         <!-- 3D editor round 4 — a dimension's box: narrow enough for x, y and z to share a line. -->
         <Style Selector="TextBox.dim">
             <Setter Property="MinWidth" Value="0"/>
@@ -274,6 +278,44 @@
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
+            </StackPanel>
+
+            <!-- A polygon sheet's, a prism's or a polyline's points, as the layout editor's Inspector lists a polygon's vertices:
+                 world x, y, z in the display unit, each row committing on Enter or lost focus (one undo entry). Its OWN bounded,
+                 scrolling list — a polygon of hundreds of points must not stretch the panel. The coordinate along a sheet's or
+                 prism's normal is read-only: the point stays on its plane, and the Offset field moves the whole outline. -->
+            <StackPanel Spacing="2" IsVisible="{Binding HasOutlinePoints}">
+                <TextBlock Text="{Binding OutlinePointsTitle}" FontSize="11" Opacity="0.7" Margin="0,4,0,0"
+                           ToolTip.Tip="Each point in world coordinates. Type a number (a unit suffix may name another) and press Enter or leave the box. The last column is the edge to the next point."/>
+                <ListBox ItemsSource="{Binding OutlinePoints}" MaxHeight="260"
+                         Background="Transparent" BorderThickness="0" Padding="0"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListBox.Styles>
+                        <Style Selector="ListBoxItem">
+                            <Setter Property="Padding" Value="0"/>
+                            <Setter Property="MinHeight" Value="0"/>
+                        </Style>
+                    </ListBox.Styles>
+                    <ListBox.DataTemplates>
+                        <DataTemplate DataType="t3:C3dOutlineRingHeader">
+                            <TextBlock Text="{Binding Text}" FontSize="10" FontWeight="SemiBold" Opacity="0.7" Margin="0,5,0,1"/>
+                        </DataTemplate>
+                        <DataTemplate DataType="t3:C3dOutlinePointRow">
+                            <Grid ColumnDefinitions="22,*,3,*,3,*,46" Margin="0,1">
+                                <TextBlock Grid.Column="0" Text="{Binding Label}" FontSize="10" Opacity="0.6" VerticalAlignment="Center"/>
+                                <TextBox Grid.Column="1" Text="{Binding X}" Classes="dim" Padding="3,1" IsReadOnly="{Binding XReadOnly}"
+                                         KeyDown="OnOutlinePointKey" LostFocus="OnOutlinePointLostFocus"/>
+                                <TextBox Grid.Column="3" Text="{Binding Y}" Classes="dim" Padding="3,1" IsReadOnly="{Binding YReadOnly}"
+                                         KeyDown="OnOutlinePointKey" LostFocus="OnOutlinePointLostFocus"/>
+                                <TextBox Grid.Column="5" Text="{Binding Z}" Classes="dim" Padding="3,1" IsReadOnly="{Binding ZReadOnly}"
+                                         KeyDown="OnOutlinePointKey" LostFocus="OnOutlinePointLostFocus"/>
+                                <TextBlock Grid.Column="6" Text="{Binding EdgeText}" FontSize="9" Opacity="0.6"
+                                           VerticalAlignment="Center" Margin="4,0,0,0" TextTrimming="CharacterEllipsis"/>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.DataTemplates>
+                </ListBox>
             </StackPanel>
 
             <!-- brief-em3d-47 R-em3d47-3e — Set Coordinates: the typed Vertex Move, world, in the display unit. -->

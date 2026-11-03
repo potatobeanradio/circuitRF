@@ -1049,6 +1049,8 @@ public static partial class LayoutRenderer
 
                 // Unless the host has taken it on itself to draw the glyph LAST, above whatever it
                 // paints after this call — see LayoutRenderOptions.DeferSnapMarker.
+                if (!opts.DeferSnapMarker && opts.Overlay?.SnapTracking is { } tracking)
+                    DrawSnapTracking(canvas, tracking, ps, scaleUm, theme);
                 if (!opts.DeferSnapMarker && opts.Overlay?.SnapMarker is { } snapMarker)
                     DrawSnapMarker(canvas, snapMarker, layerMap, ps, scaleUm, theme);
 

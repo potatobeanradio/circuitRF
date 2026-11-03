@@ -551,23 +551,56 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
         var local = new C3dPoint3(R(x), R(y), R(z));
         var editor = new C3dFaceEditor(v.Obj);
         var r = editor.MoveVertex(v.Vertex, local, aspect: v.Obj is C3dSheet { Image: not null } img ? ImageAspectOf(img) : null);
+        return CommitVertexEdit(v.Index, v.Obj, editor, r, "Set a vertex", "Moved a vertex");
+    }
+
+    /// <summary>An edited object put back at <paramref name="index"/> as one undo entry — an operand through its operation, a
+    /// filleted target inside its chain. Null on success (or no change), else why not.</summary>
+    private string? CommitVertexEdit(int index, C3dObject source, C3dFaceEditor editor, C3dFaceEditResult r, string undo, string done)
+    {
         if (r is not { Object: { } obj }) return r.Refusal;
-        string before = C3dPersistence.SerializeObject(v.Obj), after = C3dPersistence.SerializeObject(obj);
+        string before = C3dPersistence.SerializeObject(source), after = C3dPersistence.SerializeObject(obj);
         if (before == after) return null;
-        bool operand = IsOperandIndex(v.Index);
-        if (!operand && C3dFillets.DisabledCore(Document.Objects[v.Index]) is not null)
+        bool operand = IsOperandIndex(index);
+        if (!operand && C3dFillets.DisabledCore(Document.Objects[index]) is not null)
         {
             // brief-em3d-67 R-em3d67-6e — the slot replaces the chain, with the edited target inside it.
-            before = C3dPersistence.SerializeObject(Document.Objects[v.Index]);
-            obj = Rewrapped(v.Index, obj);
+            before = C3dPersistence.SerializeObject(Document.Objects[index]);
+            obj = Rewrapped(index, obj);
             after = C3dPersistence.SerializeObject(obj);
         }
-        if (!Push(new C3dEdit($"Set a vertex of {ObjectLabel(v.Index)}", operand ? ReplacementSlots([(v.Index, obj)]) : [new C3dEditSlot(false, v.Index, before, after)],
+        if (!Push(new C3dEdit($"{undo} of {ObjectLabel(index)}", operand ? ReplacementSlots([(index, obj)]) : [new C3dEditSlot(false, index, before, after)],
                               ApplySlots, faceBoundaries: operand ? null : BoundariesFollowing(obj, r.Folds), setBoundaries: SetBoundaries)))
             return StatusMessage;
         FaceEdits++;
-        StatusMessage = r.Converted ? $"'{obj.Name}' is now a polyhedron (undo to keep it a {editor.Kind})." : $"Moved a vertex of '{obj.Name}'.";
+        StatusMessage = r.Converted ? $"'{obj.Name}' is now a polyhedron (undo to keep it a {editor.Kind})." : $"{done} of '{obj.Name}'.";
         return null;
+    }
+
+    /// <summary>
+    /// The Inspector's point list for a polygon sheet, a prism or a polyline: each point in world coordinates (DBU), through
+    /// the object's placement, in <see cref="C3dFaceEditor.OutlinePoints"/>'s order. Empty for any other object.
+    /// </summary>
+    public IReadOnlyList<C3dPoint3> OutlineWorldPoints(C3dObject obj)
+    {
+        var t = obj.Placement.ToTransform();
+        return [.. C3dFaceEditor.OutlinePoints(obj).Select(p => { var (x, y, z) = t.Apply(p); return new C3dPoint3(R(x), R(y), R(z)); })];
+    }
+
+    /// <summary>
+    /// The Inspector's typed point: point <paramref name="vertex"/> of the object at <paramref name="index"/> moved to
+    /// <paramref name="world"/> (DBU), taken into the object's frame by the inverse placement, as one undo entry. A sheet's or
+    /// a prism's point stays on its plane; a polyline's may leave it (C3dFaceEditor.MoveOutlinePoint). Null on success, else
+    /// why not.
+    /// </summary>
+    public string? SetOutlinePoint(int index, int vertex, C3dPoint3 world)
+    {
+        if (ObjectAt(index) is not { } obj) return "Select one object of this document.";
+        if (obj is C3dSheet { Locked: true } locked) return LockedRefusal(locked.Name);
+        var (x, y, z) = obj.Placement.ToTransform().Inverse().Apply(world);
+        var editor = new C3dFaceEditor(obj);
+        var r = editor.MoveOutlinePoint(vertex, new C3dPoint3(R(x), R(y), R(z)));
+        return CommitVertexEdit(index, obj, editor, r, $"Set point {vertex + 1}", $"Moved point {vertex + 1}");
     }
 
     /// <summary>R-em3d47-2 — Convert to Polyhedron (Object mode): the selected box, prism or cylinder — a cylinder cut into

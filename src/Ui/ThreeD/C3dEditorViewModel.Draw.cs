@@ -355,6 +355,9 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
         }
         // brief-em3d-46 — one gesture at a time: arming a tool ends a measurement.
         if (tool is not null) Viewer.EndMeasure();
+        // Snap tracking (SnapTracker3D) works while a tool is armed; a new tool starts with no references.
+        Viewer.ClearSnapReferences();
+        Viewer.SnapTrackingActive = tool is not null;
         foreach (string p in new[] { nameof(ArmedTool), nameof(Tool), nameof(IsBoxArmed), nameof(IsSheetArmed), nameof(IsPolygonArmed),
                                      nameof(IsPolylineArmed), nameof(IsCylinderArmed), nameof(IsSphereArmed), nameof(IsEllipsoidArmed), nameof(IsLumpedElementArmed), nameof(IsPortArmed), nameof(IsWireArmed), nameof(ToolPrompt),
                                      nameof(IsHeatSourceArmed), nameof(IsProbeArmed), nameof(IsMeshRegionArmed) })
@@ -487,6 +490,8 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
             if (step.Crossing is { } x && _tool is PolygonTool pt) _crossing = pt.CrossingSegments(x);
         }
         else if (step.Advanced) StatusMessage = "";
+        // A finished gesture's tracking references were for it: the next one starts with none.
+        if (step.Result is not null || step.Finished) Viewer.ClearSnapReferences();
         if (step.Finished && _tool is Hierarchy.PlaceInstanceTool place) { CommitPlacement(place); return; }
         // brief-em3d-75 — a thermal place is a record, inserted as a port is; Temperature Along makes nothing but a plot.
         if (step.Finished && _tool is IC3dRecordTool recordTool)

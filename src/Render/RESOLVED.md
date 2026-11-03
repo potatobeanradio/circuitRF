@@ -5789,3 +5789,25 @@ hover, context menu) and `LayoutRenderer.DrawSelectionOutlines` (the highlight),
   a filled via or a strap in the Object Tree leaves its hole or notch in the copper. The plated and edge-cut vias already
   behaved this way.
 - Gate: `PlatedViaAndPerspectiveTests.AFilledViaAndAConductorBox_CarveThePadTheyPassThrough`.
+
+## Snap tracking in the layout editor; one reference store for both editors (2026-11-02)
+
+- **What:** the 3D view's snap tracking (rest on a snap point to make it a reference, then lock onto the lines through
+  it) now works in the layout editor too. `LayoutSnapTracker` (`src/Render/Layout`) tracks the horizontal and vertical
+  lines through each reference. The point lands where a line crosses an outline edge near the cursor
+  (`LayoutSnapQuery.EdgesNear`, whose `layers` may now be null for every visible layer), else on the grid. Two
+  references' vertical and horizontal lines give their crossing. A point candidate (every kind but `Nearest`) always
+  wins. A tracked point is `SnapFeatureKind.Tracking`, appended last so no query priority moves, with its own glyph
+  (circled plus) and the overlay's `SnapTracking` (references and dashed lines), drawn in the 3D view's colours.
+- **One store:** the dwell (500 ms), the second dwell that releases, the 10 s forgetting and the cap of 2 live once, in
+  `SnapReferences<T>` (`src/Render/SnapReferences.cs`). `SnapTracker3D` was moved onto it, so the two editors cannot
+  drift apart on timing.
+- **Where it plugs in:** `LayoutEditorViewModel.UpdateSnapMarkerCore` ends with `ApplySnapTracking`, which replaces
+  `_currentSnapCandidate` with the tracked point and marks it a real target. Every drawing tool reads that one
+  candidate (`SnapDrawPoint`, the ruler, port and via paths), so none needed a change. Active only with a tool other than
+  Select armed and geometry snap on. Hovering in Select would acquire references nobody asked for. References clear on
+  a tool change and when a two-point or multi-point shape is finished. `LayoutCanvas` ticks a 100 ms timer only while a
+  dwell is pending or a reference is held.
+- `tools/UiSnapshot` gained `--wait ms` (real time with the dispatcher pumped) so a dwell can be shown headlessly.
+- Gates: `LayoutSnapTrackingTests` (end to end through the Rect tool, and the pure crossing/grid/point-wins rules),
+  `SnapTrackingTests`.

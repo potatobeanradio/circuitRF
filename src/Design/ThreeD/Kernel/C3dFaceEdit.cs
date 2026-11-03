@@ -262,6 +262,104 @@ public sealed class C3dFaceEditor
         return Restate(C3dKernel.MoveVertex(b, vertex, to));
     }
 
+    /// <summary>
+    /// The points the Inspector lists for an outlined object, own frame, in <see cref="MoveOutlinePoint"/>'s order: a sheet's
+    /// outline then each hole (its rectangle's four corners when it has one), a prism's bottom outline then each hole (at its
+    /// Offset), a polyline's vertices. <see cref="Rings"/> gives each ring's length, outline first. Empty for anything else.
+    /// </summary>
+    public static IReadOnlyList<C3dPoint3> OutlinePoints(C3dObject o) => o switch
+    {
+        C3dSheet s => SheetCorners(s),
+        C3dPrism p => [.. p.Outline.Concat(p.Holes.SelectMany(h => h)).Select(q => C3dBrepBuild.OnPlane(p.Plane, q.U, q.V, p.Offset))],
+        C3dPolyline l => l.Points3 is { } p3 ? [.. p3] : [.. l.Points.Select(q => C3dBrepBuild.OnPlane(l.Plane, q.U, q.V, l.Offset))],
+        _ => [],
+    };
+
+    /// <summary>The ring lengths behind <see cref="OutlinePoints"/>: the outline, then each hole.</summary>
+    public static IReadOnlyList<int> Rings(C3dObject o) => o switch
+    {
+        C3dSheet { Rect: not null } => [4],
+        C3dSheet s => [s.Outline.Count, .. s.Holes.Select(h => h.Count)],
+        C3dPrism p => [p.Outline.Count, .. p.Holes.Select(h => h.Count)],
+        C3dPolyline l => [l.VertexCount],
+        _ => [],
+    };
+
+    /// <summary>The drawing plane an outlined object's points must stay on, or null when they may go anywhere (a polyline).</summary>
+    public static C3dPlane? PlaneOf(C3dObject o) => o switch { C3dSheet s => s.Plane, C3dPrism p => p.Plane, _ => null };
+
+    /// <summary>
+    /// The Inspector's typed point: point <paramref name="vertex"/> of <see cref="OutlinePoints"/> moved to <paramref name="to"/>
+    /// (own frame). A sheet's and a prism's stay on their plane — a prism's bottom moves and its top follows, so it stays a
+    /// prism — and their outline must not cross itself. A polyline's may leave its plane: it is then stored in 3D form, which
+    /// is refused while its planar points hold expressions (they would have nothing to bind to). A typed number replaces any
+    /// expression that point held.
+    /// </summary>
+    public C3dFaceEditResult MoveOutlinePoint(int vertex, C3dPoint3 to)
+    {
+        switch (Source)
+        {
+            case C3dSheet s: return SheetVertex(s, vertex, to);
+            case C3dPrism p:
+            {
+                var (u, v, w) = C3dBrepBuild.ToPlane(p.Plane, to);
+                if (w != p.Offset)
+                    return C3dFaceEditResult.Refuse($"A prism's outline is its bottom, on its {p.Plane} plane: change its Offset or Height to move it along the normal.");
+                var copy = Copy(p);
+                if (!SetRingPoint(copy.Outline, copy.Holes, vertex, new C3dPoint2(u, v))) return C3dFaceEditResult.Refuse("There is no such vertex.");
+                foreach (var ring in copy.Holes.Prepend(copy.Outline))
+                    if (SelfCrossing(ring)) return C3dFaceEditResult.Refuse($"'{p.Name}''s outline would cross itself.");
+                return Done(copy);
+            }
+            case C3dPolyline l:
+            {
+                if (vertex < 0 || vertex >= l.VertexCount) return C3dFaceEditResult.Refuse("There is no such vertex.");
+                var copy = Copy(l);
+                if (copy.Points3 is { } p3)
+                {
+                    p3[vertex] = to;
+                    Unbind(copy, nameof(C3dPolyline.Points3), vertex, 3);
+                    return Done(copy);
+                }
+                var (u, v, w) = C3dBrepBuild.ToPlane(copy.Plane, to);
+                if (w == copy.Offset)
+                {
+                    copy.Points[vertex] = new C3dPoint2(u, v);
+                    Unbind(copy, nameof(C3dPolyline.Points), vertex, 2);
+                    return Done(copy);
+                }
+                if (copy.Exprs?.Keys.Any(k => k.StartsWith(nameof(C3dPolyline.Points) + "[", StringComparison.Ordinal)) == true)
+                    return C3dFaceEditResult.Refuse($"'{l.Name}''s points hold expressions in its {l.Plane} plane: a point off the plane would leave them nothing to bind to. Type a point on the plane, or replace the expressions with numbers first.");
+                copy.Points3 = [.. copy.Points.Select(q => C3dBrepBuild.OnPlane(copy.Plane, q.U, q.V, copy.Offset))];
+                copy.Points3[vertex] = to;
+                copy.Points = [];
+                return Done(copy);
+            }
+        }
+        return C3dFaceEditResult.Refuse($"A {Kind}'s points are not edited one by one.");
+    }
+
+    /// <summary>Point <paramref name="k"/> counted through the outline, then each hole, set to <paramref name="p"/>.</summary>
+    private static bool SetRingPoint(List<C3dPoint2> outline, List<List<C3dPoint2>> holes, int k, C3dPoint2 p)
+    {
+        if (k < 0) return false;
+        if (k < outline.Count) { outline[k] = p; return true; }
+        k -= outline.Count;
+        int h = 0;
+        while (h < holes.Count && k >= holes[h].Count) k -= holes[h++].Count;
+        if (h >= holes.Count) return false;
+        holes[h][k] = p;
+        return true;
+    }
+
+    /// <summary>Every component of point <paramref name="k"/> of the list <paramref name="property"/> made a number.</summary>
+    private static void Unbind(C3dPolyline l, string property, int k, int components)
+    {
+        if (C3dBindings.SpecOf(typeof(C3dPolyline), property) is not { } spec) return;
+        var element = spec.ElementAt(k);
+        for (int c = 0; c < components; c++) C3dBindings.SetExpr(l, element, c, null);
+    }
+
     private static List<C3dPoint3> SheetCorners(C3dSheet s)
     {
         IEnumerable<C3dPoint2> uv = s.Rect is { } r

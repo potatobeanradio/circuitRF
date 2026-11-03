@@ -483,3 +483,30 @@ for each instance that is still not drawn: "invalid wBond geometry" when the lay
   prototype.
 - Gate: `ComponentPortBuildTests.TheEditor_DrawsTheLandingsTheRunSolves` (fails before: the drawn conductor has no vertex
   at either corner of the landing's face).
+
+## Polygon and polyline points in the Inspector; snap tracking from a held point (2026-11-02)
+
+- **Symptom:** a polygon drawn in the 3D view (stored as a `C3dSheet` with an `Outline`) showed only "Outline: *n* points"
+  in Properties, and a polyline only "Points: *n*". Neither could be read or typed point by point, which the layout
+  editor's Inspector does for a polygon. Separately, a point could be snapped only where geometry has a feature, so a
+  port sheet from a trace's corner down to a ground plane had no point to snap to on the plane.
+- **Points:** `C3dFaceEditor.OutlinePoints`/`Rings`/`MoveOutlinePoint` (in `src/Design`) list and move a polygon
+  sheet's, a prism's (its bottom, with the top following) and a polyline's points. Properties shows them as world x, y,
+  z through the placement, in their own bounded list (`MaxHeight` 260, so a large outline cannot stretch the panel),
+  with the edge length to the next point. A sheet's and prism's normal coordinate is read-only when unrotated.
+  `SetOutlinePoint` commits one undo entry through the same `CommitVertexEdit` that *Set coordinates* now uses (operand
+  and fillet-chain handling included). A rectangle sheet keeps its corner/size fields and gets no list. The values are
+  numbers only: a typed number clears an expression that point held; a polyline point leaving its plane converts it to
+  `Points3`, and that is refused while its planar points hold expressions. Brief 134's u/v rows, expressions and
+  add/remove buttons remain open.
+- **Tracking:** `SnapTracker3D` (`src/Render/Scene3D/Edit`, pure) acquires a point snap held for 500 ms, releases it on
+  a second dwell, forgets it after 10 s unused, and holds at most 2. When the raw snap is not a point, an axis line
+  through a reference within the snap radius on screen gives a `Snap3DKind.Track` point: an edge snap's own coordinate
+  along the line, else the line's nearest point to the ray in grid steps from the reference. Two references' lines
+  that cross give their crossing. The viewer applies it in `ResolveSnap`, only while a tool is armed
+  (`SnapTrackingActive`, set by `SetTool`) and not under Alt. References are cleared when a tool step finishes an
+  object. The pane ticks a 100 ms timer only while a dwell is pending or a reference is held, so a still cursor
+  acquires without a mouse move and an idle view stays idle.
+- **Trap:** `Camera3D.Ray` adds half a pixel. A test that projects a point and casts the ray back must pass
+  `x − 0.5, y − 0.5` as `CursorRay` does, or the point lands a grid step off.
+- Gates: `OutlinePointRowsTests`, `SnapTrackingTests`.

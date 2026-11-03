@@ -113,6 +113,18 @@ public partial class C3dPropertiesView : UserControl
 
     private void OnRotateLostFocus(object? sender, RoutedEventArgs e) => _vm?.CommitRotate();
 
+    private void OnOutlinePointKey(object? sender, KeyEventArgs e)
+    {
+        if (sender is not TextBox { DataContext: C3dOutlinePointRow row }) return;
+        if (e.Key == Key.Enter) { _vm?.CommitOutlinePoint(row); e.Handled = true; }
+        else if (e.Key == Key.Escape) { _vm?.Reload(); e.Handled = true; }
+    }
+
+    private void OnOutlinePointLostFocus(object? sender, RoutedEventArgs e)
+    {
+        if (sender is TextBox { DataContext: C3dOutlinePointRow row }) _vm?.CommitOutlinePoint(row);
+    }
+
     private void OnVertexKey(object? sender, KeyEventArgs e)
     {
         if (e.Key == Key.Enter) { _vm?.CommitVertex(); e.Handled = true; }

@@ -1959,6 +1959,7 @@ public sealed class LayoutCanvas : Control
 
         EditTarget?.OnPointerMoved(wx, wy, leftDown, e.KeyModifiers, HitTolDbu(), OnePixelDbu(), SnapTolDbu(),
                                    GripLockTolDbu());
+        SyncTrackingTimer();
 
         // …and the mirror: the LAYOUT is driving, so the overlay's half follows its delta.
         if (EditTarget?.MoveDragDelta is { } layoutDelta)
@@ -1972,6 +1973,27 @@ public sealed class LayoutCanvas : Control
     }
 
     private void OnPointerExited(object? _, PointerEventArgs e) => CursorWorldChanged?.Invoke(this, null);
+
+    /// <summary>Snap tracking's clock: a point held under a still cursor is acquired with no mouse move to ask, and an
+    /// unused reference is forgotten. Ticks only while the tracker has something pending, so an idle canvas stays idle.</summary>
+    private Avalonia.Threading.DispatcherTimer? _trackingTimer;
+
+    private void SyncTrackingTimer()
+    {
+        if (EditTarget is not { SnapTrackingNeedsTick: true })
+        {
+            _trackingTimer?.Stop();
+            return;
+        }
+        _trackingTimer ??= new Avalonia.Threading.DispatcherTimer(TimeSpan.FromMilliseconds(100), Avalonia.Threading.DispatcherPriority.Background,
+            (_, _) =>
+            {
+                EditTarget?.TickSnapTracking();
+                InvalidateVisual();
+                if (EditTarget is not { SnapTrackingNeedsTick: true }) _trackingTimer!.Stop();
+            });
+        if (!_trackingTimer.IsEnabled) _trackingTimer.Start();
+    }
 
     // ── R-dfr33-1-2: a port whose name the last frame shortened or left out shows it on hover ──────
 

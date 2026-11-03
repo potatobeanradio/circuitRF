@@ -328,6 +328,71 @@ public sealed partial class LayoutEditorViewModel
         RefreshCursorReadout();
     }
 
+    // ── Snap tracking (LayoutSnapTracker) ─────────────────────────────────────────────────────
+
+    /// <summary>The references a held snap point has acquired, and the tracking line the snap in force is on.</summary>
+    internal LayoutSnapTracker Tracker { get; } = new();
+
+    /// <summary>The clock the tracker's dwell and forgetting read, milliseconds — replaceable by a test.</summary>
+    internal Func<long> TrackingClock { get; set; } = () => Environment.TickCount64;
+
+    /// <summary>Tracking applies while a drawing tool is armed — the 3D view's rule. In Select, hovering about would
+    /// acquire references nobody asked for.</summary>
+    public bool SnapTrackingActive => ActiveTool != Tool.Select && GeometrySnapEnabled;
+
+    /// <summary>Whether the canvas should keep the tracker's clock ticking (a dwell pending, a reference to forget).</summary>
+    public bool SnapTrackingNeedsTick => SnapTrackingActive && Tracker.NeedsTick;
+
+    /// <summary>The canvas's tick: a dwell completed (the cursor still) or a reference was forgotten — the marks and the
+    /// snap follow at once.</summary>
+    public void TickSnapTracking()
+    {
+        if (!SnapTrackingActive || !Tracker.Tick(TrackingClock())) return;
+        RecomputeSnapStateImmediate();
+        RebuildOverlay();
+    }
+
+    /// <summary>Every reference dropped — the drawing they were for is finished, or its tool put away.</summary>
+    private void ClearSnapReferences()
+    {
+        if (Tracker.Clear()) RebuildOverlay();
+    }
+
+    /// <summary>The geometry snap's answer, tracked: a point starts a dwell; anything else may lock onto a reference's
+    /// line, which then IS the snap — a drawing tool lands on it as on any real feature.</summary>
+    private void ApplySnapTracking(long px, long py, long snapTolDbu)
+    {
+        if (!SnapTrackingActive) return;
+        long now = TrackingClock();
+        var raw = _snapCandidateIsRealTarget ? _currentSnapCandidate : null;
+        Tracker.Observe(raw, now);
+        Tracker.Tick(now);
+        if (Tracker.References.Count == 0) return;
+        var tracked = Tracker.Apply(raw, px, py, snapTolDbu, SnapDbu, box =>
+        {
+            var counters = new SnapQueryCounters();
+            return LayoutSnapQuery.EdgesNear(Model, DrawTechnology, InstanceBaseDir, box, null, null, null, 256, ref counters);
+        }, now);
+        if (tracked is { Kind: SnapFeatureKind.Tracking })
+        {
+            _currentSnapCandidate = tracked;
+            _snapCandidateIsRealTarget = true;
+        }
+    }
+
+    /// <summary>What the overlay draws for tracking: every reference, and the line(s) from reference to tracked point.</summary>
+    private LayoutSnapTrackingOverlay? BuildSnapTrackingOverlay()
+    {
+        var refs = Tracker.References;
+        if (!SnapTrackingActive || refs.Count == 0) return null;
+        var lines = new List<(long, long, long, long, bool)>();
+        if (_currentSnapCandidate is { Kind: SnapFeatureKind.Tracking } at)
+            foreach (var line in new[] { Tracker.LineA, Tracker.LineB })
+                if (line is { } l && l.Reference < refs.Count)
+                    lines.Add((refs[l.Reference].Point.X, refs[l.Reference].Point.Y, at.X, at.Y, l.Vertical));
+        return new LayoutSnapTrackingOverlay([.. refs.Select(r => (r.Point.X, r.Point.Y))], lines);
+    }
+
     private void UpdateSnapMarkerCore(long px, long py, KeyModifiers mods, long snapTolDbu, long pixelDbu)
     {
         var previousMods = _snapLastMods;
@@ -429,6 +494,8 @@ public sealed partial class LayoutEditorViewModel
             : _snapDragActive && !(_selectDragKind == SelectDragKind.Move && (mods & KeyModifiers.Shift) != 0)
                 ? MakeGrabEcho(px, py)
                 : null;
+
+        ApplySnapTracking(px, py, snapTolDbu);
     }
 
     /// <summary>

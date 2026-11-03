@@ -269,7 +269,7 @@ for (int i = 0; i < args.Length; i++)
             width = double.Parse(wh[0]); height = double.Parse(wh[1]);
             sizeGiven = true;
             break;
-        case "--click" or "--drag" or "--key" or "--shot" or "--rclick" or "--menu" or "--type" or "--button" or "--hover"
+        case "--click" or "--drag" or "--key" or "--shot" or "--rclick" or "--menu" or "--type" or "--button" or "--hover" or "--wait"
             or "--unit" or "--rename-stackup" or "--rename-tech" or "--kit-row" or "--c3d-pick"
             when i + 1 < args.Length:
             steps.Add((args[i], args[++i]));
@@ -943,6 +943,13 @@ foreach (var (kind, arg) in steps)
         case "--hover":
             host.MouseMove(PointOf(arg), RawInputModifiers.None);
             break;
+        case "--wait":
+        {
+            // Real time passes with the dispatcher pumped, so a timer the view runs (snap tracking's dwell) fires.
+            var until = DateTime.UtcNow.AddMilliseconds(int.Parse(arg, System.Globalization.CultureInfo.InvariantCulture));
+            while (DateTime.UtcNow < until) { Thread.Sleep(20); Pump(); }
+            break;
+        }
         case "--rclick":
         {
             var p = PointOf(arg);

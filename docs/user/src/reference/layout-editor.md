@@ -613,6 +613,24 @@ Two consequences you will notice:
 Turning either toggle recomputes the marker at the **last known cursor position immediately** — you do
 not have to jiggle the mouse to see the mode change take effect.
 
+### Tracking from a point {#snap-tracking}
+
+While a drawing tool is armed (Rect, Polygon, Path, Via, Port, Ruler and the rest), rest the cursor on a
+snap point (a corner, a pin, a midpoint) for half a second. A small green **+** marks it as a reference.
+Move away, and the cursor locks onto the horizontal and vertical lines through it, drawn dashed, with a
+circled plus on the line where the point will land:
+
+- **Near an edge**, the point lands exactly where the line crosses it. For example, rest on a trace's
+  corner, then move down to a ground plane: the point stops on the ground's edge directly below the
+  corner, though no corner is there.
+- **Elsewhere**, it moves along the line on the grid.
+- **With two references**, the point where one's vertical meets the other's horizontal is a target
+  too: the x of one corner and the y of another.
+
+A corner or pin under the cursor still wins. Resting on a reference again removes it. A reference is
+forgotten after ten seconds unused, after the shape is finished, and when you change tools. The
+3D view tracks the same way ([Drawing in 3D](drawing-in-3d.html#snapping)).
+
 ### Dragging a part by its body
 
 A drag started anywhere on a part or shape, not only on a snap marker, snaps what you are dragging

@@ -20,6 +20,8 @@ public enum SnapFeatureKind
     Midpoint,
     Centroid,
     Nearest,
+    /// <summary>A point on a tracking line through a held reference (LayoutSnapTracker) — never a query result.</summary>
+    Tracking,
 }
 
 /// <summary>One snap candidate, already in WORLD-space coordinates (after any instance transform has

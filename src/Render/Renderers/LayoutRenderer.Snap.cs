@@ -43,7 +43,7 @@ public static partial class LayoutRenderer
                                            LayoutViewport vp, LayoutRenderOptions opts)
     {
         if (canvas is null || view is null) return;
-        if (opts.Overlay?.SnapMarker is not { } candidate) return;
+        if (opts.Overlay is not { } overlay || (overlay.SnapMarker is null && overlay.SnapTracking is null)) return;
 
         double centerX = vp.PanX + vp.Width  / (2.0 * vp.Zoom);
         double centerY = vp.PanY + vp.Height / (2.0 * vp.Zoom);
@@ -61,8 +61,10 @@ public static partial class LayoutRenderer
                 (float)((originX - vp.PanX) * vp.Zoom),
                 (float)(vp.Height - (originY - vp.PanY) * vp.Zoom)));
 
-            DrawSnapMarker(canvas, candidate, LayerCanvasContrast.DrawnLayerMap(tech, opts.Theme.Background),
-                           new PathSpace(originX, originY, dbuToUm), scaleUm, opts.Theme);
+            var ps = new PathSpace(originX, originY, dbuToUm);
+            if (overlay.SnapTracking is { } tracking) DrawSnapTracking(canvas, tracking, ps, scaleUm, opts.Theme);
+            if (overlay.SnapMarker is { } candidate)
+                DrawSnapMarker(canvas, candidate, LayerCanvasContrast.DrawnLayerMap(tech, opts.Theme.Background), ps, scaleUm, opts.Theme);
         }
         finally
         {
@@ -84,13 +86,52 @@ public static partial class LayoutRenderer
         LayerDef def = layerMap is not null && layerMap.TryGetValue(candidate.Layer, out var found)
             ? found
             : FallbackPalette.For(candidate.Layer);
-        var color = TintForContrast(new SKColor(def.Color.R, def.Color.G, def.Color.B), theme.Background);
+        // A tracked point is drawn in tracking's own colour, as its line and its reference are: it is the line's answer,
+        // not a feature of the layer it came from.
+        var color = TintForContrast(candidate.Kind == SnapFeatureKind.Tracking ? TrackColour : new SKColor(def.Color.R, def.Color.G, def.Color.B),
+                                    theme.Background);
 
         float cx = ps.X(candidate.X), cy = ps.Y(candidate.Y);
         float half = DevicePixelsToPathSpace(scaleUm, SnapMarkerSizeDevicePixels) / 2f;
         float strokeWidth = DevicePixelsToPathSpace(scaleUm, SnapMarkerStrokeDevicePixels);
 
         DrawSnapGlyph(canvas, candidate.Kind, cx, cy, half, strokeWidth, color);
+    }
+
+    /// <summary>Snap tracking's colour — its reference marks and its tracked glyph (the 3D view's, so the two editors agree).</summary>
+    internal static readonly SKColor TrackColour = new(40, 200, 120);
+
+    /// <summary>The colours of a line of constant y (along x) and of constant x (along y): the 3D view's x and y axes.</summary>
+    private static readonly SKColor TrackAlongX = new(220, 60, 60), TrackAlongY = new(60, 170, 70);
+
+    /// <summary>Snap tracking: each tracking line in force, dashed in its axis's colour from its reference to the tracked
+    /// point — ending there, where the click will land — then a small plus at every reference, a fixed size on screen.</summary>
+    private static void DrawSnapTracking(SKCanvas canvas, LayoutSnapTrackingOverlay tracking, PathSpace ps, double scaleUm, LayoutRenderTheme theme)
+    {
+        float px1 = DevicePixelsToPathSpace(scaleUm, 1);
+        foreach (var (x0, y0, x1, y1, vertical) in tracking.Lines)
+        {
+            float ax = ps.X(x0), ay = ps.Y(y0), bx = ps.X(x1), by = ps.Y(y1);
+            using var line = new SKPaint
+            {
+                IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 1.4f * px1,
+                Color = TintForContrast(vertical ? TrackAlongY : TrackAlongX, theme.Background),
+                PathEffect = SKPathEffect.CreateDash([5 * px1, 4 * px1], 0),
+            };
+            canvas.DrawLine(ax, ay, bx, by, line);
+        }
+        using var mark = new SKPaint
+        {
+            IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 2 * px1, StrokeCap = SKStrokeCap.Round,
+            Color = TintForContrast(TrackColour, theme.Background),
+        };
+        float m = 5 * px1;
+        foreach (var (x, y) in tracking.References)
+        {
+            float cx = ps.X(x), cy = ps.Y(y);
+            canvas.DrawLine(cx - m, cy, cx + m, cy, mark);
+            canvas.DrawLine(cx, cy - m, cx, cy + m, mark);
+        }
     }
 
     /// <summary>
@@ -128,6 +169,12 @@ public static partial class LayoutRenderer
                 break;
             case SnapFeatureKind.Nearest:
                 DrawSnapBowtie(canvas, cx, cy, half, stroke);
+                break;
+            // Snap tracking: a plus inside a circle — the reference mark (a plus) on the line it came from.
+            case SnapFeatureKind.Tracking:
+                canvas.DrawCircle(cx, cy, half, stroke);
+                canvas.DrawLine(cx - half * 0.6f, cy, cx + half * 0.6f, cy, stroke);
+                canvas.DrawLine(cx, cy - half * 0.6f, cx, cy + half * 0.6f, stroke);
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(kind), kind,

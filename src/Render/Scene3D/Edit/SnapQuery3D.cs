@@ -41,8 +41,9 @@ using CircuitRF.Engine.Em3d;
 
 namespace CircuitRF.Render.Scene3D.Edit;
 
-/// <summary>What a snap landed on.</summary>
-public enum Snap3DKind { None, Vertex, Midpoint, FaceCentre, Edge, Grid, Centre }
+/// <summary>What a snap landed on. <see cref="Track"/> is a point on a tracking line through an acquired reference
+/// (SnapTracker3D), never a result of this query.</summary>
+public enum Snap3DKind { None, Vertex, Midpoint, FaceCentre, Edge, Grid, Centre, Track }
 
 /// <summary>The kinds a user has switched on (R-em3d44-5's toggles).</summary>
 [Flags]

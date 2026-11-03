@@ -15,6 +15,7 @@ using System.Globalization;
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.Em;
 using CircuitRF.Design.ThreeD;
+using CircuitRF.Design.ThreeD.Kernel;
 using CircuitRF.Engine.Em3d;
 using CircuitRF.Render.Scene3D;
 using CircuitRF.Render.Scene3D.Edit;
@@ -121,6 +122,31 @@ public sealed class C3dWirePointRow(IReadOnlyList<C3dDimensionField> fields)
     public string Errors { get; } = string.Join("\n", fields.Where(f => !string.IsNullOrEmpty(f.Error)).Select(f => f.Axis + ": " + f.Error));
 }
 
+/// <summary>
+/// One point of a polygon sheet's, a prism's or a polyline's outline in the Inspector's point list: its world coordinates in
+/// the display unit, editable, and the length of the edge to the next point. The coordinate along a sheet's or prism's
+/// normal is read-only when the plane is a world plane — the point stays on it; the Offset field moves the whole outline.
+/// </summary>
+public sealed class C3dOutlinePointRow
+{
+    public required int Index { get; init; }
+    public required string Label { get; init; }
+    public string X { get; set; } = "";
+    public string Y { get; set; } = "";
+    public string Z { get; set; } = "";
+    public string LoadedX { get; init; } = "";
+    public string LoadedY { get; init; } = "";
+    public string LoadedZ { get; init; } = "";
+    public bool XReadOnly { get; init; }
+    public bool YReadOnly { get; init; }
+    public bool ZReadOnly { get; init; }
+    public string EdgeText { get; init; } = "";
+    public bool Changed => X != LoadedX || Y != LoadedY || Z != LoadedZ;
+}
+
+/// <summary>A ring's heading in the point list — "Hole 1", between the outline's points and the hole's.</summary>
+public sealed record C3dOutlineRingHeader(string Text);
+
 public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : ObservableObject
 {
     /// <summary>The editor, for the partial declarations (a primary constructor's parameter is this declaration's alone).</summary>
@@ -193,6 +219,13 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
 
     /// <summary>The selected wire's points, start to end.</summary>
     public ObservableCollection<C3dWirePointRow> WirePoints { get; } = [];
+
+    // ── a polygon sheet's, a prism's or a polyline's points ─────────────────────────────────
+
+    /// <summary>The outline's points (<see cref="C3dOutlinePointRow"/>), a <see cref="C3dOutlineRingHeader"/> before each hole's.</summary>
+    public ObservableCollection<object> OutlinePoints { get; } = [];
+    [ObservableProperty] private bool _hasOutlinePoints;
+    [ObservableProperty] private string _outlinePointsTitle = "";
 
     // ── a boolean (brief-em3d-66 R-em3d66-4) ────────────────────────────────────────────────
 
@@ -375,6 +408,8 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         IsPlaced = false;
         IsWire = false;
         WirePoints.Clear();
+        OutlinePoints.Clear();
+        HasOutlinePoints = false;
         WireShapeNotes = WireShapeErrors = "";
         WireLoopHeightRefused = WireSpanRefused = false;
         MaterialPlaceholder = NoMaterialPlaceholder;
@@ -633,6 +668,7 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         }
         if (obj is C3dBoolean b) { LoadBoolean(index, b); return; }
         foreach (var row in Dimensions(obj)) Rows.Add(row);
+        if (obj is C3dSheet { Rect: null } or C3dPrism or C3dPolyline) LoadOutlinePoints(obj);
         foreach (var f in editor.DimensionFields(obj).Where(f => obj is not C3dPhantom ph || PhantomUses(ph, f.Path))) Fields.Add(f);
         foreach (var row in RowsOf(Fields)) FieldRows.Add(row);
         if (obj is C3dPhantom phantom && !operand) LoadPhantomLayers(index, phantom);
@@ -998,6 +1034,65 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
                 Index = k, Label = label, CanAddAbove = k > 0, CanAddBelow = k < last, CanRemove = k > 0 && k < last,
             });
         }
+    }
+
+    /// <summary>The point list of a polygon sheet, a prism (its bottom) or a polyline: world coordinates, as the layout
+    /// editor's Inspector lists a polygon's vertices.</summary>
+    private void LoadOutlinePoints(C3dObject obj)
+    {
+        var doc = editor.Document;
+        var world = editor.OutlineWorldPoints(obj);
+        var rings = C3dFaceEditor.Rings(obj);
+        if (world.Count == 0) return;
+        string L(long dbu) => Tools.C3dDimension.Spell(dbu, doc.DisplayUnit, doc.DbuPerMicron);
+        // Held to its plane: the normal's coordinate is the plane's, so it is shown and not typed — when the plane is still a
+        // world plane after the placement (an unrotated object).
+        int normal = C3dFaceEditor.PlaneOf(obj) is { } plane && obj.Placement.Rotate.Count == 0
+            ? plane switch { C3dPlane.YZ => 0, C3dPlane.XZ => 1, _ => 2 } : -1;
+        bool closed = obj is not C3dPolyline { Closed: false };
+        int start = 0;
+        for (int ring = 0; ring < rings.Count; ring++)
+        {
+            int n = rings[ring];
+            if (ring > 0) OutlinePoints.Add(new C3dOutlineRingHeader($"Hole {ring}"));
+            for (int k = 0; k < n; k++)
+            {
+                var p = world[start + k];
+                string edge = "";
+                if (k + 1 < n || (closed && n > 2))
+                {
+                    var q = world[start + (k + 1) % n];
+                    double dx = q.X - p.X, dy = q.Y - p.Y, dz = q.Z - p.Z;
+                    edge = LayoutUnits.Format((long)Math.Round(Math.Sqrt(dx * dx + dy * dy + dz * dz)), doc.DisplayUnit, doc.DbuPerMicron);
+                }
+                string x = L(p.X), y = L(p.Y), z = L(p.Z);
+                OutlinePoints.Add(new C3dOutlinePointRow
+                {
+                    Index = start + k, Label = (k + 1).ToString(CultureInfo.InvariantCulture),
+                    X = x, Y = y, Z = z, LoadedX = x, LoadedY = y, LoadedZ = z,
+                    XReadOnly = normal == 0, YReadOnly = normal == 1, ZReadOnly = normal == 2, EdgeText = edge,
+                });
+            }
+            start += n;
+        }
+        HasOutlinePoints = true;
+        OutlinePointsTitle = obj is C3dPrism ? $"Points (x, y, z) — its bottom, {LengthUnit}" : $"Points (x, y, z), {LengthUnit}";
+    }
+
+    /// <summary>A point's Enter or lost focus: three lengths in the display unit (a suffix may name another), the point moved
+    /// there as one undo entry — or the refusal, the fields kept for correcting.</summary>
+    public void CommitOutlinePoint(C3dOutlinePointRow row)
+    {
+        if (!HasOutlinePoints || ObjectIndex < 0 || !row.Changed) return;
+        var doc = editor.Document;
+        if (!LayoutUnits.TryParse(row.X, doc.DisplayUnit, doc.DbuPerMicron, out long x) ||
+            !LayoutUnits.TryParse(row.Y, doc.DisplayUnit, doc.DbuPerMicron, out long y) ||
+            !LayoutUnits.TryParse(row.Z, doc.DisplayUnit, doc.DbuPerMicron, out long z))
+        {
+            Error = $"A point is three lengths, in {LengthUnit} unless a unit is written.";
+            return;
+        }
+        Error = editor.SetOutlinePoint(ObjectIndex, row.Index, new C3dPoint3(x, y, z)) ?? "";
     }
 
     /// <summary>3D editor round 3 — a wire point's Enter or lost focus: the point moved and the feet re-seated exactly as a
