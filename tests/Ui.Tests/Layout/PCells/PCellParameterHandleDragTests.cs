@@ -47,7 +47,7 @@ public sealed class PCellParameterHandleDragTests : IDisposable
         long x = 0, long y = 0)
     {
         var vm = MakeVm();
-        var defaults = SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.Mlin, 0);
+        var defaults = SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.Mlin, 0);
         string cellDir = GeneratedCellStore.GetOrCreate(
             _workspaceDir, "MLIN", defaults, null, null, PCellLayerSelection.Default);
         string cellRef = Path.GetRelativePath(vm.InstanceBaseDir, cellDir);
@@ -430,7 +430,7 @@ public sealed class PCellParameterHandleDragTests : IDisposable
     public void MTee_ShowsAGripPerArmWidth_AndDraggingOneEditsOnlyThatWidth()
     {
         var vm = MakeVm();
-        var defaults = SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.MTee, 0);
+        var defaults = SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.MTee, 0);
         string cellDir = GeneratedCellStore.GetOrCreate(
             _workspaceDir, "MTEE", defaults, null, null, PCellLayerSelection.Default);
         vm.Model.Instances.Add(new LayoutInstance
@@ -462,7 +462,7 @@ public sealed class PCellParameterHandleDragTests : IDisposable
     private (LayoutEditorViewModel Vm, string CellRef) PlaceMklopf()
     {
         var vm = MakeVm();
-        var defaults = SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.Mklopf, 0);
+        var defaults = SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.Mklopf, 0);
         string cellDir = GeneratedCellStore.GetOrCreate(
             _workspaceDir, "MKLOPF", defaults, null, null, PCellLayerSelection.Default);
         string cellRef = Path.GetRelativePath(vm.InstanceBaseDir, cellDir);
@@ -697,7 +697,7 @@ public sealed class PCellParameterHandleDragTests : IDisposable
     public void MBendsAngleGrip_SwingsAboutThePivot_AndCommitsTheAngle()
     {
         var vm = MakeVm();
-        var defaults = SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.MBend, 0);
+        var defaults = SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.MBend, 0);
         string cellDir = GeneratedCellStore.GetOrCreate(
             _workspaceDir, "MBEND", defaults, null, null, PCellLayerSelection.Default);
         vm.Model.Instances.Add(new LayoutInstance
@@ -724,7 +724,7 @@ public sealed class PCellParameterHandleDragTests : IDisposable
     private (LayoutEditorViewModel Vm, string CellRef) PlaceMBend()
     {
         var vm = MakeVm();
-        var defaults = SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.MBend, 0);
+        var defaults = SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.MBend, 0);
         string cellDir = GeneratedCellStore.GetOrCreate(
             _workspaceDir, "MBEND", defaults, null, null, PCellLayerSelection.Default);
         string cellRef = Path.GetRelativePath(vm.InstanceBaseDir, cellDir);
@@ -846,7 +846,7 @@ public sealed class PCellParameterHandleDragTests : IDisposable
     private (LayoutEditorViewModel Vm, string CellRef) PlaceMCurve()
     {
         var vm = MakeVm();
-        var defaults = SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.MCurve, 0);
+        var defaults = SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.MCurve, 0);
         string cellDir = GeneratedCellStore.GetOrCreate(
             _workspaceDir, "MCURVE", defaults, null, null, PCellLayerSelection.Default);
         string cellRef = Path.GetRelativePath(vm.InstanceBaseDir, cellDir);

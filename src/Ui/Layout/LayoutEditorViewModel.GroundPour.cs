@@ -33,7 +33,7 @@ public sealed partial class LayoutEditorViewModel
         var plan = PlanGroundArtwork();
         if (SchematicToLayoutGenerator.GroundArtworkCommand(Model, plan) is { } command) Execute(command);
 
-        var lines = SchematicToLayoutGenerator.GroundArtworkReport(plan, Model, DisplayUnit);
+        var lines = SchematicLayoutPlanner.GroundArtworkReport(plan, Model, DisplayUnit);
         if (lines.Count == 0)
         {
             _messageSink?.Info("Draw Ground Pour: nothing to draw or redraw. It pours the plane placed microstrip lines " +
@@ -44,7 +44,7 @@ public sealed partial class LayoutEditorViewModel
         }
         foreach (var line in lines)
         {
-            if (line.Severity == SchematicToLayoutGenerator.ReportSeverity.Warning) _messageSink?.Warning("Draw Ground Pour: " + line.Text);
+            if (line.Severity == SchematicLayoutPlanner.ReportSeverity.Warning) _messageSink?.Warning("Draw Ground Pour: " + line.Text);
             else _messageSink?.Success("Draw Ground Pour: " + line.Text);
         }
     }

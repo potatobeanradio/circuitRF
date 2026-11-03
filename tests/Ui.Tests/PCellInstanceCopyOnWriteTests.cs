@@ -41,7 +41,7 @@ public sealed class PCellInstanceCopyOnWriteTests : IDisposable
     public void TwoInstances_SameParameters_ShareOneGeneratedCell_R_L5_1()
     {
         var vm = MakeVmAt("Doc");
-        var defaults = SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.Mlin, 0);
+        var defaults = SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.Mlin, 0);
         string cellDir1 = GeneratedCellStore.GetOrCreate(_workspaceDir, "MLIN", defaults, null, null, PCellLayerSelection.Default);
         string cellDir2 = GeneratedCellStore.GetOrCreate(_workspaceDir, "MLIN", defaults, null, null, PCellLayerSelection.Default);
 
@@ -51,7 +51,7 @@ public sealed class PCellInstanceCopyOnWriteTests : IDisposable
     [Fact]
     public void DifferentParameters_TwoInstances_GetDifferentGeneratedCells_R_L5_1()
     {
-        var defaultsA = SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.Mlin, 0);
+        var defaultsA = SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.Mlin, 0);
         var defaultsB = new Dictionary<string, PCellValue>(defaultsA) { ["W"] = defaultsA.Real("W") * 2 };
 
         string cellDirA = GeneratedCellStore.GetOrCreate(_workspaceDir, "MLIN", defaultsA, null, null, PCellLayerSelection.Default);
@@ -64,7 +64,7 @@ public sealed class PCellInstanceCopyOnWriteTests : IDisposable
     public void EditInstancePCellParameters_ForksToNewCell_LeavesSiblingInstanceUnchanged_R_L5_2()
     {
         var vm = MakeVmAt("Doc");
-        var defaults = SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.Mlin, 0);
+        var defaults = SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.Mlin, 0);
         string cellDir = GeneratedCellStore.GetOrCreate(_workspaceDir, "MLIN", defaults, null, null, PCellLayerSelection.Default);
         string cellRef = Path.GetRelativePath(vm.InstanceBaseDir, cellDir);
 
@@ -102,7 +102,7 @@ public sealed class PCellInstanceCopyOnWriteTests : IDisposable
         var inner = new PCellLayerSelection("Inner 2", "Inner 1 (Ground Plane)");
         var innerKey = tech.Layers.First(l => l.Name == "Inner 2").Key;
 
-        var defaults = SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.Mlin, 0);
+        var defaults = SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.Mlin, 0);
         string cellDir = GeneratedCellStore.GetOrCreate(_workspaceDir, "MLIN", defaults, tech, null, inner);
         GeneratedCellStore.RecordSnapshot(vm.Model, cellDir, "MLIN", defaults, null, inner, _workspaceDir);
         vm.Model.Instances.Add(new LayoutInstance { CellRef = Path.GetRelativePath(vm.InstanceBaseDir, cellDir), Mag = 1.0 });

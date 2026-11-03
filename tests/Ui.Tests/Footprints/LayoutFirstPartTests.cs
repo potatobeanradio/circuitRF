@@ -45,7 +45,7 @@ public sealed class LayoutFirstPartTests : IDisposable
 
         // HEAD's own predicate — the reason the cursor used to say no. Stated rather than described,
         // because "false before" is otherwise unassertable once the change is in (R-fp6-2a).
-        Assert.False(SchematicToLayoutGenerator.HasPCellGenerator(SymbolKind.Resistor, 2, out _));
+        Assert.False(SchematicLayoutPlanner.HasPCellGenerator(SymbolKind.Resistor, 2, out _));
 
         Assert.True(cell.Vm.CanDropPaletteComponent(SymbolKind.Resistor, 2));
         Assert.True(cell.Vm.CanDropPaletteComponent(SymbolKind.Capacitor, 2));
@@ -151,7 +151,7 @@ public sealed class LayoutFirstPartTests : IDisposable
         // a hand-authored board can hold a hundred of these; Info because nothing is wrong — the user
         // placed artwork and got artwork.
         var line = Assert.Single(result.Lines);
-        Assert.Equal(SchematicToLayoutGenerator.ReportSeverity.Info, line.Severity);
+        Assert.Equal(SchematicLayoutPlanner.ReportSeverity.Info, line.Severity);
         Assert.Contains("3 placements", line.Text, StringComparison.Ordinal);
         Assert.Contains("Library palette", line.Text, StringComparison.Ordinal);
 
@@ -242,7 +242,7 @@ public sealed class LayoutFirstPartTests : IDisposable
         // R-fp6-3f: a BOM round trip, not yet a design flow — and the user is told rather than left to
         // discover it. Deriving nets from copper belongs to brief-authored-board-2.
         var closing = result.Lines[^1];
-        Assert.Equal(SchematicToLayoutGenerator.ReportSeverity.Info, closing.Severity);
+        Assert.Equal(SchematicLayoutPlanner.ReportSeverity.Info, closing.Severity);
         Assert.Equal("", closing.InstanceName);
         Assert.Contains("3 components", closing.Text, StringComparison.Ordinal);
         Assert.Contains("No nets were derived", closing.Text, StringComparison.Ordinal);
@@ -521,7 +521,7 @@ public sealed class LayoutFirstPartTests : IDisposable
 
         var result = Run(cell);
         Assert.Equal(2, result.CreatedCount);
-        Assert.Contains(result.Lines, l => l.Severity == SchematicToLayoutGenerator.ReportSeverity.Warning
+        Assert.Contains(result.Lines, l => l.Severity == SchematicLayoutPlanner.ReportSeverity.Warning
                                         && l.Text.StartsWith("R1 — created from layout as a resistor, guessed from its name"));
         Assert.Contains(result.Lines, l => l.Text.StartsWith("C1 — created from layout as a capacitor"));
         Assert.Contains(result.Lines, l => l.Text.StartsWith("FB1 is linked to a component this schematic does not have"));
@@ -549,7 +549,7 @@ public sealed class LayoutFirstPartTests : IDisposable
         Assert.True(layoutTold > 0);
         var again = Run(cell);
         Assert.Equal(3, again.CreatedCount);
-        Assert.DoesNotContain(again.Lines, l => l.Severity == SchematicToLayoutGenerator.ReportSeverity.Warning);
+        Assert.DoesNotContain(again.Lines, l => l.Severity == SchematicLayoutPlanner.ReportSeverity.Warning);
 
         first.Command.Execute();   // redo
         Assert.Equal(["R1", "R2", "C1"], cell.Vm.Model.Instances.Select(i => i.SchematicId));

@@ -50,7 +50,7 @@ public sealed class PCellDoubleClickDispatchTests : IDisposable
     public void IsPCellInstance_TrueForAResolvedPCellInstance()
     {
         var vm = MakeVm();
-        var defaults = SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.Mlin, 0);
+        var defaults = SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.Mlin, 0);
         string cellDir = GeneratedCellStore.GetOrCreate(_root, "MLIN", defaults, null, null, PCellLayerSelection.Default);
         var inst = new LayoutInstance { CellRef = Path.GetRelativePath(vm.InstanceBaseDir, cellDir), X = 0, Y = 0, Mag = 1.0 };
 
@@ -98,7 +98,7 @@ public sealed class PCellDoubleClickDispatchTests : IDisposable
     public void SelectInstance_SelectsExactlyThatIndex()
     {
         var vm = MakeVm();
-        var defaults = SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.Mlin, 0);
+        var defaults = SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.Mlin, 0);
         string cellDir = GeneratedCellStore.GetOrCreate(_root, "MLIN", defaults, null, null, PCellLayerSelection.Default);
         vm.Model.Instances.Add(new LayoutInstance { CellRef = Path.GetRelativePath(vm.InstanceBaseDir, cellDir), X = 0, Y = 0, Mag = 1.0 });
         vm.Model.Instances.Add(new LayoutInstance { CellRef = Path.GetRelativePath(vm.InstanceBaseDir, cellDir), X = 20_000_000, Y = 0, Mag = 1.0 });

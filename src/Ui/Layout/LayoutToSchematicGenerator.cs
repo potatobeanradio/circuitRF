@@ -38,7 +38,7 @@ public static class LayoutToSchematicGenerator
 {
     public sealed record GenerationResult(
         IUiCommand? Command,
-        IReadOnlyList<SchematicToLayoutGenerator.ReportLine> Lines,
+        IReadOnlyList<SchematicLayoutPlanner.ReportLine> Lines,
         int CreatedCount,
         int UpdatedCount,
         int UnchangedCount,
@@ -110,7 +110,7 @@ public static class LayoutToSchematicGenerator
                                        Technology? technology = null, Action? layoutChanged = null)
     {
         var linksBefore = CaptureLinks(source);
-        var lines = new List<SchematicToLayoutGenerator.ReportLine>();
+        var lines = new List<SchematicLayoutPlanner.ReportLine>();
         var noSymbol = new List<string>();
 
         // Which workspace's kits this run resolves against (MW1 R-mw1-5): the one the documents
@@ -180,10 +180,10 @@ public static class LayoutToSchematicGenerator
                     p.Name.Equals(ArtworkParameters.FootprintName, StringComparison.OrdinalIgnoreCase)) is not { } param)
                 return false;
             chain = Chain(chain, new Commands.Schematic.EditParameterCommand(schematic, param, generatorId, param.Unit));
-            lines.Add(new SchematicToLayoutGenerator.ReportLine(c.InstanceName,
+            lines.Add(new SchematicLayoutPlanner.ReportLine(c.InstanceName,
                 $"{c.InstanceName} — footprint changed from {EditableComponent.FootprintDisplayName(stated)} " +
                 $"to {EditableComponent.FootprintDisplayName(generatorId)} (from layout)",
-                SchematicToLayoutGenerator.ReportSeverity.Info));
+                SchematicLayoutPlanner.ReportSeverity.Info));
             return true;
         }
 
@@ -225,8 +225,8 @@ public static class LayoutToSchematicGenerator
                 && (inst.SchematicId is { Length: > 0 } sidA && fromArtwork.Contains(sidA) ? sidA
                     : inst.RefDes is { Length: > 0 } rdA && fromArtwork.Contains(rdA) ? rdA : null) is { } modelled)
             {
-                lines.Add(new SchematicToLayoutGenerator.ReportLine(modelled,
-                    $"{modelled} is modelled from artwork — unchanged", SchematicToLayoutGenerator.ReportSeverity.Info));
+                lines.Add(new SchematicLayoutPlanner.ReportLine(modelled,
+                    $"{modelled} is modelled from artwork — unchanged", SchematicLayoutPlanner.ReportSeverity.Info));
                 unchanged++;
                 continue;
             }
@@ -259,8 +259,8 @@ public static class LayoutToSchematicGenerator
                 inst.SchematicId = placed.InstanceName;
                 bySchematicId[placed.InstanceName] = placed;
                 created++;
-                lines.Add(new SchematicToLayoutGenerator.ReportLine(placed.InstanceName,
-                    $"{placed.InstanceName} — created from layout", SchematicToLayoutGenerator.ReportSeverity.Info));
+                lines.Add(new SchematicLayoutPlanner.ReportLine(placed.InstanceName,
+                    $"{placed.InstanceName} — created from layout", SchematicLayoutPlanner.ReportSeverity.Info));
                 continue;
             }
 
@@ -331,10 +331,10 @@ public static class LayoutToSchematicGenerator
                 if (kitRef is not null && PdkKitRegistry.Find(kitRef, wsRoot) is null)
                 {
                     PdkKitRegistry.TryParse(kitRef, out string kitName, out string partId);
-                    lines.Add(new SchematicToLayoutGenerator.ReportLine(inst.CellRef,
+                    lines.Add(new SchematicLayoutPlanner.ReportLine(inst.CellRef,
                         $"\"{partId}\" was left alone — the kit \"{kitName}\" is not loaded in this " +
                         "workspace, so there is no part to create.",
-                        SchematicToLayoutGenerator.ReportSeverity.Warning));
+                        SchematicLayoutPlanner.ReportSeverity.Warning));
                     continue;
                 }
 
@@ -348,11 +348,11 @@ public static class LayoutToSchematicGenerator
                 {
                     if (bySchematicId.ContainsKey(ownName) || claimed.Contains(ownName))
                     {
-                        lines.Add(new SchematicToLayoutGenerator.ReportLine(ownName,
+                        lines.Add(new SchematicLayoutPlanner.ReportLine(ownName,
                             $"{ownName} is already a component in this schematic, so the part drawn as " +
                             $"{ownName} on the board was left alone — nothing was created and nothing " +
                             "was renamed. Rename one of the two and run this again.",
-                            SchematicToLayoutGenerator.ReportSeverity.Warning));
+                            SchematicLayoutPlanner.ReportSeverity.Warning));
                         continue;
                     }
                     claimed.Add(ownName);
@@ -409,12 +409,12 @@ public static class LayoutToSchematicGenerator
                 if (layoutFirstPart is not null) inst.PartKind = null;
                 created++;
                 lines.Add(guessedName is null
-                    ? new SchematicToLayoutGenerator.ReportLine(comp.InstanceName,
-                          $"{comp.InstanceName} — created from layout", SchematicToLayoutGenerator.ReportSeverity.Info)
-                    : new SchematicToLayoutGenerator.ReportLine(comp.InstanceName,
+                    ? new SchematicLayoutPlanner.ReportLine(comp.InstanceName,
+                          $"{comp.InstanceName} — created from layout", SchematicLayoutPlanner.ReportSeverity.Info)
+                    : new SchematicLayoutPlanner.ReportLine(comp.InstanceName,
                           $"{comp.InstanceName} — created from layout as a {kind.ToString().ToLowerInvariant()}, " +
                           "guessed from its name, because the schematic had lost the part it was linked to. " +
-                          "Its value is the default; set it.", SchematicToLayoutGenerator.ReportSeverity.Warning));
+                          "Its value is the default; set it.", SchematicLayoutPlanner.ReportSeverity.Warning));
                 source.SchematicPCellSnapshots[comp.InstanceName] = new Dictionary<string, PCellValue>(origin.Parameters);
                 continue;
             }
@@ -439,13 +439,13 @@ public static class LayoutToSchematicGenerator
                     // beside the E it already states would leave the two disagreeing (designer feedback round 21).
                     chain = Chain(chain, new Commands.Schematic.EditParameterCommand(schematic, eRow, eDeg, "deg"));
                     anyChanged = true;
-                    lines.Add(new SchematicToLayoutGenerator.ReportLine(comp.InstanceName,
+                    lines.Add(new SchematicLayoutPlanner.ReportLine(comp.InstanceName,
                         $"{comp.InstanceName} — E changed from {eRow.Expression} {eRow.Unit} to {eDeg} deg (from layout)",
-                        SchematicToLayoutGenerator.ReportSeverity.Info));
+                        SchematicLayoutPlanner.ReportSeverity.Info));
                     continue;
                 }
                 if (param is null) continue;
-                if (!SchematicToLayoutGenerator.TryResolveSiValue(param.Expression, param.Unit, scope, evaluator, out var schematicVal, out _))
+                if (!SchematicLayoutPlanner.TryResolveSiValue(param.Expression, param.Unit, scope, evaluator, out var schematicVal, out _))
                     continue;
 
                 // The schematic side can only ever produce a number (a parameter is an expression),
@@ -453,12 +453,12 @@ public static class LayoutToSchematicGenerator
                 // kind therefore always reads as changed, which is correct: it cannot be expressed by
                 // the schematic value it is being compared against.
                 PCellValue schematicValue = schematicVal;
-                if (SchematicToLayoutGenerator.SameParamValue(schematicValue, layoutVal)) continue;
+                if (SchematicLayoutPlanner.SameParamValue(schematicValue, layoutVal)) continue;
 
                 bool hadSnapshot    = snapshot is not null && snapshot.ContainsKey(name);
                 PCellValue snap     = hadSnapshot ? snapshot![name] : schematicValue;
-                bool schematicMoved = hadSnapshot && !SchematicToLayoutGenerator.SameParamValue(snap, schematicValue);
-                bool layoutMoved    = !hadSnapshot || !SchematicToLayoutGenerator.SameParamValue(snap, layoutVal);
+                bool schematicMoved = hadSnapshot && !SchematicLayoutPlanner.SameParamValue(snap, schematicValue);
+                bool layoutMoved    = !hadSnapshot || !SchematicLayoutPlanner.SameParamValue(snap, layoutVal);
 
                 bool isWarning = schematicMoved; // the schematic's own edit is what's about to be lost
                 if (!schematicMoved && !layoutMoved) continue;
@@ -468,11 +468,11 @@ public static class LayoutToSchematicGenerator
                 anyChanged = true;
 
                 string unitSuffix = string.IsNullOrEmpty(param.Unit) ? "" : $" {param.Unit}";
-                lines.Add(new SchematicToLayoutGenerator.ReportLine(comp.InstanceName,
-                    $"{comp.InstanceName} — {name} changed from {SchematicToLayoutGenerator.FormatParamValue(param.Unit, schematicValue)}{unitSuffix} " +
-                    $"to {SchematicToLayoutGenerator.FormatParamValue(param.Unit, layoutVal)}{unitSuffix}" +
+                lines.Add(new SchematicLayoutPlanner.ReportLine(comp.InstanceName,
+                    $"{comp.InstanceName} — {name} changed from {SchematicLayoutPlanner.FormatParamValue(param.Unit, schematicValue)}{unitSuffix} " +
+                    $"to {SchematicLayoutPlanner.FormatParamValue(param.Unit, layoutVal)}{unitSuffix}" +
                     (isWarning ? " (a schematic edit is being overwritten)" : " (from layout)"),
-                    isWarning ? SchematicToLayoutGenerator.ReportSeverity.Warning : SchematicToLayoutGenerator.ReportSeverity.Info));
+                    isWarning ? SchematicLayoutPlanner.ReportSeverity.Warning : SchematicLayoutPlanner.ReportSeverity.Info));
                 reportedThisInstance = true;
                 if (isWarning) overwritten++;
             }
@@ -485,7 +485,7 @@ public static class LayoutToSchematicGenerator
             {
                 updated++;
                 if (!reportedThisInstance)
-                    lines.Add(new SchematicToLayoutGenerator.ReportLine(comp.InstanceName, $"{comp.InstanceName} — updated", SchematicToLayoutGenerator.ReportSeverity.Info));
+                    lines.Add(new SchematicLayoutPlanner.ReportLine(comp.InstanceName, $"{comp.InstanceName} — updated", SchematicLayoutPlanner.ReportSeverity.Info));
             }
             else
             {
@@ -498,11 +498,11 @@ public static class LayoutToSchematicGenerator
         // command, which is the failure the forward direction's own skip report already exists to
         // prevent.
         if (landPatterns > 0)
-            lines.Add(new SchematicToLayoutGenerator.ReportLine("",
+            lines.Add(new SchematicLayoutPlanner.ReportLine("",
                 $"{landPatterns} placement{(landPatterns == 1 ? " is a land pattern" : "s are land patterns")} " +
                 "with no part behind them, so no components were created for them. Drop a component from " +
                 "the Library palette to place a part that has one.",
-                SchematicToLayoutGenerator.ReportSeverity.Info));
+                SchematicLayoutPlanner.ReportSeverity.Info));
 
         // Named, and a Warning: unlike a bare land pattern, this is two documents disagreeing. The
         // usual cause is a schematic closed without saving while the layout was saved; a C/R/L name is
@@ -512,7 +512,7 @@ public static class LayoutToSchematicGenerator
             const int shown = 12;
             string names = string.Join(", ", danglingLinks.Take(shown))
                          + (danglingLinks.Count > shown ? $" and {danglingLinks.Count - shown} more" : "");
-            lines.Add(new SchematicToLayoutGenerator.ReportLine("",
+            lines.Add(new SchematicLayoutPlanner.ReportLine("",
                 $"{names} {(danglingLinks.Count == 1 ? "is" : "are")} linked to " +
                 $"{(danglingLinks.Count == 1 ? "a component" : "components")} this schematic does not have, " +
                 "so nothing was created for " + (danglingLinks.Count == 1 ? "it" : "them") +
@@ -520,7 +520,7 @@ public static class LayoutToSchematicGenerator
                 (danglingLinks.Count == 1 ? "it" : "them") + " in the schematic under the same name " +
                 "and run this again to relink — or, if the schematic was not saved, reopen the version " +
                 "that has them.",
-                SchematicToLayoutGenerator.ReportSeverity.Warning));
+                SchematicLayoutPlanner.ReportSeverity.Warning));
         }
 
         // R-fp6-3f: R-L5-19 stands — this command places and updates components and draws no wires, so
@@ -528,11 +528,11 @@ public static class LayoutToSchematicGenerator
         // parts. That is a BOM round trip, not yet a design flow, and the user is told rather than left
         // to discover it. Deriving nets from copper belongs to brief-authored-board-2.
         if (created > 0)
-            lines.Add(new SchematicToLayoutGenerator.ReportLine("",
+            lines.Add(new SchematicLayoutPlanner.ReportLine("",
                 $"{created} component{(created == 1 ? " was" : "s were")} created from this layout. " +
                 "No nets were derived from the copper — this command places and updates components and " +
                 "draws no wires, so the parts it created are unconnected.",
-                SchematicToLayoutGenerator.ReportSeverity.Info));
+                SchematicLayoutPlanner.ReportSeverity.Info));
 
         // Only when there IS a schematic edit to undo: a run that merely advanced orientation baselines
         // changed nothing a user would undo, and stays NothingChanged.
@@ -563,15 +563,15 @@ public static class LayoutToSchematicGenerator
     /// </summary>
     private static EditableComponent? CreatePlainCellComponent(
         LayoutInstance inst, CellLayoutResolution res, SchematicEditModel schematic,
-        List<SchematicToLayoutGenerator.ReportLine> lines, List<string> noSymbol,
+        List<SchematicLayoutPlanner.ReportLine> lines, List<string> noSymbol,
         Func<string, string> claimName)
     {
         if (schematic.SchematicDirectory is not { Length: > 0 } schematicDir)
         {
-            lines.Add(new SchematicToLayoutGenerator.ReportLine(inst.CellRef,
+            lines.Add(new SchematicLayoutPlanner.ReportLine(inst.CellRef,
                 $"\"{Path.GetFileName(res.ResolvedCellDir)}\" was left alone — save the schematic first, " +
                 "so a cell reference has somewhere to be relative to.",
-                SchematicToLayoutGenerator.ReportSeverity.Warning));
+                SchematicLayoutPlanner.ReportSeverity.Warning));
             return null;
         }
 
@@ -584,10 +584,10 @@ public static class LayoutToSchematicGenerator
             if (CellFolder.ResolvePrimary(res.ResolvedCellDir!, ViewType.Symbol).State == PrimaryState.NoView)
                 noSymbol.Add(res.ResolvedCellDir!);
             else
-                lines.Add(new SchematicToLayoutGenerator.ReportLine(inst.CellRef,
+                lines.Add(new SchematicLayoutPlanner.ReportLine(inst.CellRef,
                     $"\"{cellName}\" has several symbols and no primary chosen — placed with a placeholder " +
                     "until one is made primary.",
-                    SchematicToLayoutGenerator.ReportSeverity.Warning));
+                    SchematicLayoutPlanner.ReportSeverity.Warning));
         }
 
         return NewCellComponent(cellRef, schematic, claimName("X"));
@@ -648,7 +648,7 @@ public static class LayoutToSchematicGenerator
         }
     }
 
-    /// <summary>Schematic Expression string for a PCell-SI value — <see cref="SchematicToLayoutGenerator.ToDisplayValue"/>
+    /// <summary>Schematic Expression string for a PCell-SI value — <see cref="SchematicLayoutPlanner.ToDisplayValue"/>
     /// (the shared inverse conversion) formatted the way an <see cref="EditableParameter.Expression"/>
     /// is stored: a bare number in the parameter's own unit.</summary>
     /// <summary>
@@ -666,9 +666,9 @@ public static class LayoutToSchematicGenerator
     /// </summary>
     private static string ToDisplayExpression(string? unit, PCellValue value)
     {
-        if (!SchematicToLayoutGenerator.TryAsNumber(value, out double n)) return value.AsText();
+        if (!SchematicLayoutPlanner.TryAsNumber(value, out double n)) return value.AsText();
 
-        double display = SchematicToLayoutGenerator.ToDisplayValue(unit, n);
+        double display = SchematicLayoutPlanner.ToDisplayValue(unit, n);
         string rounded = display.ToString("0.######", CultureInfo.InvariantCulture);
 
         // Six decimal places is a readable number in the unit a row is normally edited in — 42 mil,
@@ -677,7 +677,7 @@ public static class LayoutToSchematicGenerator
         // with the artwork it was just generated from. So the readable form is used only when it
         // still means the same number, and the value itself is written when it does not.
         return double.TryParse(rounded, NumberStyles.Float, CultureInfo.InvariantCulture, out double back)
-            && SchematicToLayoutGenerator.NearlyEqual(back, display)
+            && SchematicLayoutPlanner.NearlyEqual(back, display)
                 ? rounded
                 : display.ToString("R", CultureInfo.InvariantCulture);
     }

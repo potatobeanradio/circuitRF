@@ -107,7 +107,7 @@ public sealed class PCellGripSnapAndOverlapTests : IDisposable
         const long targetX = 3_333_000;    // 3,333 µm — not a multiple of the snap step
         const long targetY = 0;
 
-        var vm = Place("MLIN", SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.Mlin, 0), snap);
+        var vm = Place("MLIN", SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.Mlin, 0), snap);
 
         // A separate shape whose corner is the thing to snap to.
         vm.Model.Shapes.Add(new RectShape
@@ -135,7 +135,7 @@ public sealed class PCellGripSnapAndOverlapTests : IDisposable
     public void GripDrag_WithNoGeometryNearby_StillLandsOnTheGrid()
     {
         const long snap = 10_000;
-        var vm = Place("MLIN", SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.Mlin, 0), snap);
+        var vm = Place("MLIN", SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.Mlin, 0), snap);
 
         Drag(vm, Grip(vm, "L", 1, 0), 3_333_000, 0);
 
@@ -152,7 +152,7 @@ public sealed class PCellGripSnapAndOverlapTests : IDisposable
     public void GripDrag_ExcludesItsOwnInstanceFromSnapCandidates()
     {
         const long snap = 10_000;
-        var vm = Place("MLIN", SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.Mlin, 0), snap);
+        var vm = Place("MLIN", SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.Mlin, 0), snap);
 
         var grip = Grip(vm, "L", 1, 0);
         vm.OnPointerPressed(grip.X, grip.Y, KeyModifiers.None, hitTolDbu: 200_000, snapTolDbu: 50_000);
@@ -175,7 +175,7 @@ public sealed class PCellGripSnapAndOverlapTests : IDisposable
         const long snap = 10_000;
         const long targetX = 3_333_000;
 
-        var vm = Place("MLIN", SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.Mlin, 0), snap);
+        var vm = Place("MLIN", SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.Mlin, 0), snap);
         vm.GeometrySnapEnabled = false;
         vm.Model.Shapes.Add(new RectShape
         {
@@ -194,7 +194,7 @@ public sealed class PCellGripSnapAndOverlapTests : IDisposable
         const long snap = 10_000;
         const long targetX = 3_333_000;
 
-        var vm = Place("MLIN", SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.Mlin, 0), snap);
+        var vm = Place("MLIN", SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.Mlin, 0), snap);
         vm.Model.Shapes.Add(new RectShape
         {
             Layer = new LayerKey(1, 0),

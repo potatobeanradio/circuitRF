@@ -45,7 +45,7 @@ public sealed class PCellPropertiesInspectorParameterListTests : IDisposable
     public void PCellInstance_ListsParameters_Gate8()
     {
         var (vm, props) = Setup("Doc");
-        var defaults = SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.Mklopf, 0);
+        var defaults = SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.Mklopf, 0);
         string cellDir = GeneratedCellStore.GetOrCreate(_root, "MKLOPF", defaults, null, null, PCellLayerSelection.Default);
         var inst = new LayoutInstance { CellRef = Path.GetRelativePath(vm.InstanceBaseDir, cellDir), X = 3_000_000, Y = 0, Mag = 1.0 };
         vm.Model.Instances.Add(inst);
@@ -66,7 +66,7 @@ public sealed class PCellPropertiesInspectorParameterListTests : IDisposable
     public void EditingParameter_ForksNewCell_LeavesSiblingUnchanged_Gate9()
     {
         var (vm, props) = Setup("Doc2");
-        var defaults = SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.Mlin, 0);
+        var defaults = SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.Mlin, 0);
         string cellDir = GeneratedCellStore.GetOrCreate(_root, "MLIN", defaults, null, null, PCellLayerSelection.Default);
         string cellRef = Path.GetRelativePath(vm.InstanceBaseDir, cellDir);
 
@@ -103,7 +103,7 @@ public sealed class PCellPropertiesInspectorParameterListTests : IDisposable
     {
         var (vm, props) = Setup("Doc3");
         var parameters = new Dictionary<string, PCellValue>(
-            SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.Mlin, 0))
+            SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.Mlin, 0))
         {
             ["Fingers"] = PCellValue.Int(4),
             ["Model"]   = PCellValue.Text("nch_lvt"),
@@ -128,7 +128,7 @@ public sealed class PCellPropertiesInspectorParameterListTests : IDisposable
     {
         var (vm, props) = Setup("Doc4");
         var parameters = new Dictionary<string, PCellValue>(
-            SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.Mlin, 0))
+            SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.Mlin, 0))
             { ["Fingers"] = PCellValue.Int(4) };
         string cellDir = GeneratedCellStore.GetOrCreate(_root, "MLIN", parameters, null, null, PCellLayerSelection.Default);
         vm.Model.Instances.Add(new LayoutInstance
@@ -241,7 +241,7 @@ public sealed class PCellPropertiesInspectorParameterListTests : IDisposable
     public void AnMmicPartsMicronRow_TakesABareNumberAsMicrons(SymbolKind kind, string generatorId)
     {
         var (vm, props) = Setup("Mmic" + generatorId);
-        var defaults = SchematicToLayoutGenerator.ResolveDefaultParameters(kind, 0);
+        var defaults = SchematicLayoutPlanner.ResolveDefaultParameters(kind, 0);
         string cellDir = GeneratedCellStore.GetOrCreate(_root, generatorId, defaults, null, null, PCellLayerSelection.Default);
         vm.Model.Instances.Add(new LayoutInstance
             { CellRef = Path.GetRelativePath(vm.InstanceBaseDir, cellDir), X = 0, Y = 0, Mag = 1.0 });
@@ -275,7 +275,7 @@ public sealed class PCellPropertiesInspectorParameterListTests : IDisposable
     public void AnMmicReadoutRow_IsComputedAndFollowsTheGeometry(SymbolKind kind, string generatorId, string readout)
     {
         var (vm, props) = Setup("Readout" + generatorId);
-        var defaults = SchematicToLayoutGenerator.ResolveDefaultParameters(kind, 0);
+        var defaults = SchematicLayoutPlanner.ResolveDefaultParameters(kind, 0);
         string cellDir = GeneratedCellStore.GetOrCreate(_root, generatorId, defaults, null, null, PCellLayerSelection.Default);
         vm.Model.Instances.Add(new LayoutInstance
             { CellRef = Path.GetRelativePath(vm.InstanceBaseDir, cellDir), X = 0, Y = 0, Mag = 1.0 });

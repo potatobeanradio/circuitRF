@@ -199,7 +199,7 @@ public partial class WorkspaceViewModel
         // OWNER REPORT (2026-09-15): three kit cells written into a layout and only one of them
         // visible. All three were there and all three resolved — they were at x = 0, 10 mm and 20 mm,
         // forty cell-widths apart, because the generator's placement pitch was a fixed 10 mm. That is
-        // fixed at its source (SchematicToLayoutGenerator.GridPitchDbu), and this is the other half:
+        // fixed at its source (SchematicLayoutPlanner.GridPitchDbu), and this is the other half:
         // **an instance is the one thing a user cannot find by looking.** It lands where the command
         // puts it, not where they clicked, so saying where it went is part of writing it.
         //
@@ -250,9 +250,9 @@ public partial class WorkspaceViewModel
             OnPropertyChanged(nameof(IsRatsnestShown));
 
             // Designer feedback round 11: the ground vias and the pour, drawn by the run itself (inside its command).
-            foreach (var line in SchematicToLayoutGenerator.GroundArtworkReport(result.GroundArtwork, layoutVm.Model,
+            foreach (var line in SchematicLayoutPlanner.GroundArtworkReport(result.GroundArtwork, layoutVm.Model,
                                                                                 layoutVm.DisplayUnit))
-                Messages.Post(line.Severity == SchematicToLayoutGenerator.ReportSeverity.Warning
+                Messages.Post(line.Severity == SchematicLayoutPlanner.ReportSeverity.Warning
                                   ? MessageLevel.Warning : MessageLevel.Info, line.Text);
         }
 
@@ -721,7 +721,7 @@ public partial class WorkspaceViewModel
     /// </summary>
     private void ReportGenerationResult(
         Commands.IUiCommand? command,
-        IReadOnlyList<SchematicToLayoutGenerator.ReportLine> lines,
+        IReadOnlyList<SchematicLayoutPlanner.ReportLine> lines,
         IReadOnlyList<string> extraWarnings,
         int addedOrCreated, int updated, int unchanged, int removed, int overwrittenParamCount,
         string commandLabel, int cap = 20, string overwrittenNoun = "layout edits", int deleted = 0)
@@ -735,7 +735,7 @@ public partial class WorkspaceViewModel
         // says nothing at all is indistinguishable from a command that is broken.
         foreach (var line in lines)
             if (string.IsNullOrEmpty(line.InstanceName))
-                Messages.Post(line.Severity == SchematicToLayoutGenerator.ReportSeverity.Warning
+                Messages.Post(line.Severity == SchematicLayoutPlanner.ReportSeverity.Warning
                                   ? MessageLevel.Warning : MessageLevel.Info, line.Text);
 
         if (command is null)
@@ -750,7 +750,7 @@ public partial class WorkspaceViewModel
         int shown = Math.Min(cap, byInstance.Count);
         for (int i = 0; i < shown; i++)
             foreach (var line in byInstance[i])
-                Messages.Post(line.Severity == SchematicToLayoutGenerator.ReportSeverity.Warning ? MessageLevel.Warning : MessageLevel.Info, line.Text);
+                Messages.Post(line.Severity == SchematicLayoutPlanner.ReportSeverity.Warning ? MessageLevel.Warning : MessageLevel.Info, line.Text);
 
         if (byInstance.Count > cap)
         {

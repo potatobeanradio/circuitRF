@@ -2268,7 +2268,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             // Live during a W/L grip drag, like every other row.
             var geometry = new Dictionary<string, double>(StringComparer.Ordinal);
             foreach (var (pname, pvalue) in ParametersForDisplay(origin.Parameters))
-                if (SchematicToLayoutGenerator.TryAsNumber(pvalue, out double v)) geometry[pname] = v;
+                if (SchematicLayoutPlanner.TryAsNumber(pvalue, out double v)) geometry[pname] = v;
             string? readout = MmicPassiveInjection.Readout(_vm.Technology, _mmicReadoutKind!.Value, geometry, out string? note);
             row.Error = note;
             row.ShowValue(readout ?? "—", null);
@@ -2417,7 +2417,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         // and the row's text is what an edit commits, so showing it that way invites storing a zero.
         if (string.IsNullOrEmpty(unit) && siValue != 0 && (Math.Abs(siValue) < 1e-3 || Math.Abs(siValue) >= 1e9))
             return siValue.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
-        string display = SchematicToLayoutGenerator.Fmt(SchematicToLayoutGenerator.ToDisplayValue(unit, siValue));
+        string display = SchematicLayoutPlanner.Fmt(SchematicLayoutPlanner.ToDisplayValue(unit, siValue));
         return string.IsNullOrEmpty(unit) ? display : $"{display} {unit}";
     }
 

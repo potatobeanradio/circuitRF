@@ -48,7 +48,7 @@ public sealed class LayoutZoomToFitInstancesTests : IDisposable
     [Fact]
     public void InstanceBbox_ForAPlacedPCellInstance_ReturnsTheGeneratedCellsRealExtent_NotEmpty()
     {
-        var defaults = SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.Mlin, 0);
+        var defaults = SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.Mlin, 0);
         string cellDir = GeneratedCellStore.GetOrCreate(_root, "MLIN", defaults, null, null, PCellLayerSelection.Default);
 
         var docBaseDir = Path.Combine(_root, "Doc", "layout");
@@ -69,7 +69,7 @@ public sealed class LayoutZoomToFitInstancesTests : IDisposable
     [Fact]
     public void InstanceBbox_ForAPCellInstance_TranslatesWithPosition()
     {
-        var defaults = SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.Mlin, 0);
+        var defaults = SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.Mlin, 0);
         string cellDir = GeneratedCellStore.GetOrCreate(_root, "MLIN", defaults, null, null, PCellLayerSelection.Default);
 
         var docBaseDir = Path.Combine(_root, "Doc", "layout");

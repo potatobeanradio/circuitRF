@@ -67,6 +67,11 @@ public sealed class ClayFile
     /// <summary>L5 R-L5-11: see <see cref="LayoutView.SchematicPCellSnapshots"/>.</summary>
     public Dictionary<string, Dictionary<string, PCellValue>>? SchematicPCellSnapshots { get; set; }
 
+    /// <summary>brief-sdl-0 R-sdl0-2b: see <see cref="LayoutView.GeneratedPlacements"/>. Additive — omitted when
+    /// empty, so every existing <c>.clay</c> re-serializes byte-for-byte and needs no <see cref="FormatVersion"/>
+    /// bump; written in key order so the file does not churn with the order parts were placed in.</summary>
+    public Dictionary<string, GeneratedPlacement>? GeneratedPlacements { get; set; }
+
     /// <summary>brief-L5-followups-2.md §4.2/R-L5g-6: see <see cref="LayoutView.PCellSnapshots"/>.</summary>
     public Dictionary<string, ClayPCellSnapshot>? PCellSnapshots { get; set; }
 
@@ -432,6 +437,9 @@ public static class LayoutPersistence
         SchematicPCellSnapshots = view.SchematicPCellSnapshots.Count > 0
             ? view.SchematicPCellSnapshots.ToDictionary(kv => kv.Key, kv => new Dictionary<string, PCellValue>(kv.Value))
             : null,
+        GeneratedPlacements = view.GeneratedPlacements.Count > 0
+            ? view.GeneratedPlacements.OrderBy(kv => kv.Key, StringComparer.Ordinal).ToDictionary(kv => kv.Key, kv => kv.Value)
+            : null,
         PCellSnapshots = view.PCellSnapshots.Count > 0
             ? view.PCellSnapshots.ToDictionary(kv => kv.Key, kv => new ClayPCellSnapshot
             {
@@ -478,6 +486,9 @@ public static class LayoutPersistence
 
         if (file.GroundViaKeys is not null)
             foreach (string key in file.GroundViaKeys) view.GroundViaKeys.Add(key);
+
+        if (file.GeneratedPlacements is not null)
+            foreach (var kv in file.GeneratedPlacements) view.GeneratedPlacements[kv.Key] = kv.Value;
 
         if (file.PCellSnapshots is not null)
             foreach (var kv in file.PCellSnapshots)

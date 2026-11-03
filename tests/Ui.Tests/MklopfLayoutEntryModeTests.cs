@@ -46,7 +46,7 @@ public sealed class MklopfLayoutEntryModeTests : IDisposable
         var props = new LayoutShapePropertiesViewModel();
         props.SetContext(vm);
 
-        var defaults = SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.Mklopf, 0);
+        var defaults = SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.Mklopf, 0);
         string cellDir = GeneratedCellStore.GetOrCreate(_root, "MKLOPF", defaults, null, null, PCellLayerSelection.Default);
         var inst = new LayoutInstance { CellRef = Path.GetRelativePath(vm.InstanceBaseDir, cellDir), X = 3_000_000, Y = 0, Mag = 1.0 };
         vm.Model.Instances.Add(inst);
@@ -73,7 +73,7 @@ public sealed class MklopfLayoutEntryModeTests : IDisposable
         var props = new LayoutShapePropertiesViewModel();
         props.SetContext(vm);
 
-        var defaults = SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.Mlin, 0);
+        var defaults = SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.Mlin, 0);
         string cellDir = GeneratedCellStore.GetOrCreate(_root, "MLIN", defaults, null, null, PCellLayerSelection.Default);
         var inst = new LayoutInstance { CellRef = Path.GetRelativePath(vm.InstanceBaseDir, cellDir), X = 0, Y = 0, Mag = 1.0 };
         vm.Model.Instances.Add(inst);
@@ -212,7 +212,7 @@ public sealed class MklopfLayoutEntryModeTests : IDisposable
 
         var f3dbRow = props.PCellParamRows[names.IndexOf("F3db")];
         Assert.Null(f3dbRow.Error);
-        string expectedText = SchematicToLayoutGenerator.Fmt(SchematicToLayoutGenerator.ToDisplayValue("GHz", expectedF3db));
+        string expectedText = SchematicLayoutPlanner.Fmt(SchematicLayoutPlanner.ToDisplayValue("GHz", expectedF3db));
         Assert.Equal($"{expectedText} GHz", f3dbRow.ValueText);
     }
 
@@ -303,7 +303,7 @@ public sealed class MklopfLayoutEntryModeTests : IDisposable
         double expectedL = MicrostripKlopfEntryConversion.F3dbToLength(
             50.0, 100.0, 0.05, f3dbNew, substrate.HeightMeters, substrate.ThicknessMeters, substrate.RelativePermittivity, reporter);
 
-        string f3dbText = $"{SchematicToLayoutGenerator.Fmt(SchematicToLayoutGenerator.ToDisplayValue("GHz", f3dbNew))} GHz";
+        string f3dbText = $"{SchematicLayoutPlanner.Fmt(SchematicLayoutPlanner.ToDisplayValue("GHz", f3dbNew))} GHz";
         f3dbRow.Commit(f3dbText);
         Assert.Null(f3dbRow.Error);
 
@@ -326,7 +326,7 @@ public sealed class MklopfLayoutEntryModeTests : IDisposable
         var props = new LayoutShapePropertiesViewModel();
         props.SetContext(vm);
 
-        var defaults = SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.Mklopf, 0);
+        var defaults = SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.Mklopf, 0);
         string cellDirA = GeneratedCellStore.GetOrCreate(_root, "MKLOPF", defaults, null, null, PCellLayerSelection.Default);
         var instA = new LayoutInstance { CellRef = Path.GetRelativePath(vm.InstanceBaseDir, cellDirA), X = 0, Y = 0, Mag = 1.0 };
         vm.Model.Instances.Add(instA);

@@ -49,7 +49,7 @@ public sealed class LayoutToSchematicGeneratorTests : IDisposable
     public void LayoutFirstInstance_CreatesSchematicComponent_AndStampsSchematicId_Gate20()
     {
         var layoutDir = MakeLayoutDir("Amp");
-        var defaults = SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.Mlin, 0);
+        var defaults = SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.Mlin, 0);
         string cellDir = GeneratedCellStore.GetOrCreate(_root, "MLIN", defaults, null, null, PCellLayerSelection.Default);
 
         var source = new LayoutView();
@@ -131,7 +131,7 @@ public sealed class LayoutToSchematicGeneratorTests : IDisposable
         var rev = LayoutToSchematicGenerator.Run(source, schematic, layoutDir);
         Assert.NotNull(rev.Command);
         var wLine = rev.Lines.First(l => l.Text.Contains("W changed"));
-        Assert.Equal(SchematicToLayoutGenerator.ReportSeverity.Warning, wLine.Severity);
+        Assert.Equal(SchematicLayoutPlanner.ReportSeverity.Warning, wLine.Severity);
     }
 
     [Fact]
@@ -355,7 +355,7 @@ public sealed class LayoutToSchematicGeneratorTests : IDisposable
 
         Assert.Single(schematic.Components);
         Assert.Empty(result.CellsWithoutSymbols);
-        Assert.Contains(result.Lines, l => l.Severity == SchematicToLayoutGenerator.ReportSeverity.Warning
+        Assert.Contains(result.Lines, l => l.Severity == SchematicLayoutPlanner.ReportSeverity.Warning
                                         && l.Text.Contains("no primary chosen"));
     }
 
@@ -382,7 +382,7 @@ public sealed class LayoutToSchematicGeneratorTests : IDisposable
         var result = LayoutToSchematicGenerator.Run(source, new SchematicEditModel(), layoutDir);
 
         Assert.Equal(0, result.CreatedCount);
-        Assert.Contains(result.Lines, l => l.Severity == SchematicToLayoutGenerator.ReportSeverity.Warning
+        Assert.Contains(result.Lines, l => l.Severity == SchematicLayoutPlanner.ReportSeverity.Warning
                                         && l.Text.Contains("save the schematic first"));
     }
 
@@ -390,7 +390,7 @@ public sealed class LayoutToSchematicGeneratorTests : IDisposable
     public void PlainCellInstance_AlongsideAPCell_BothArePlaced()
     {
         string plainDir = MakePlainCell("Pad", withSymbol: true);
-        var defaults = SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.Mlin, 0);
+        var defaults = SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.Mlin, 0);
         string pcellDir = GeneratedCellStore.GetOrCreate(_root, "MLIN", defaults, null, null, PCellLayerSelection.Default);
 
         var (source, schematic, layoutDir) = MakeTop("TopE");

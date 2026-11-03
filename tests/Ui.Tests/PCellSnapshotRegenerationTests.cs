@@ -80,7 +80,7 @@ public sealed class PCellSnapshotRegenerationTests : IDisposable
         // ── Origin 3: layout-authored copy-on-write (EditInstancePCellParameters forks a NEW cell) ──
         var editVm = MakeVmAt("Edited");
         Assert.True(editVm.CommitPaletteDrop(SymbolKind.Mlin, 0, 0, 0));
-        var defaults = SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.Mlin, 0);
+        var defaults = SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.Mlin, 0);
         double newW = defaults.Real("W") * 3;
         Assert.True(editVm.EditInstancePCellParameters(0, new Dictionary<string, PCellValue> { ["W"] = newW }));
         string editedCellRef = editVm.Model.Instances[0].CellRef;

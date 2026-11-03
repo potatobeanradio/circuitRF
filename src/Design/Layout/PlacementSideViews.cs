@@ -78,6 +78,7 @@ internal static class PlacementSideViews
         foreach (var key in source.GroundViaKeys) clone.GroundViaKeys.Add(key);
         foreach (var kv in source.PCellSnapshots) clone.PCellSnapshots[kv.Key] = kv.Value;
         foreach (var kv in source.SchematicPCellSnapshots) clone.SchematicPCellSnapshots[kv.Key] = kv.Value;
+        foreach (var kv in source.GeneratedPlacements) clone.GeneratedPlacements[kv.Key] = kv.Value;
 
         var omitted = new List<SurfaceRole>();
         void Omit(LayerKey key)

@@ -1,0 +1,4 @@
+# The schematic-driven layout test designs (brief-sdl-0 R-sdl0-3c): <folder> <brief that makes it pass>.
+# A brief adds its own designs here; every design listed must pass SdlChecker.
+C0-rows SDL-0
+C0-unresolved SDL-0

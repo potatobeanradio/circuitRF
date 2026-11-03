@@ -49,7 +49,7 @@ public sealed class PCellHandleFixesTests : IDisposable
         var vm = new LayoutEditorViewModel(
             new LayoutView { DbuPerMicron = 1000, SnapDbu = snapDbu },
             Path.Combine(_workspaceDir, "Doc", "layout", "main.clay"));
-        var defaults = SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.Mlin, 0);
+        var defaults = SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.Mlin, 0);
         string cellDir = GeneratedCellStore.GetOrCreate(
             _workspaceDir, "MLIN", defaults, null, null, PCellLayerSelection.Default);
         vm.Model.Instances.Add(new LayoutInstance
@@ -181,7 +181,7 @@ public sealed class PCellHandleFixesTests : IDisposable
         var vm = new LayoutEditorViewModel(
             new LayoutView { DbuPerMicron = 1000, SnapDbu = OneMilDbu, DisplayUnit = LayoutUnit.Mil },
             Path.Combine(_workspaceDir, "Doc", "layout", "main.clay"));
-        var defaults = SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.MBend, 0);
+        var defaults = SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.MBend, 0);
         string cellDir = GeneratedCellStore.GetOrCreate(
             _workspaceDir, "MBEND", defaults, null, null, PCellLayerSelection.Default);
         vm.Model.Instances.Add(new LayoutInstance
@@ -261,7 +261,7 @@ public sealed class PCellHandleFixesTests : IDisposable
         var vm = new LayoutEditorViewModel(
             new LayoutView { DbuPerMicron = 1000, SnapDbu = OneMilDbu },
             Path.Combine(_workspaceDir, "Doc", "layout", "main.clay"));
-        var defaults = SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.Mklopf, 0);
+        var defaults = SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.Mklopf, 0);
         string cellDir = GeneratedCellStore.GetOrCreate(
             _workspaceDir, "MKLOPF", defaults, null, null, PCellLayerSelection.Default);
         vm.Model.Instances.Add(new LayoutInstance
@@ -345,7 +345,7 @@ public sealed class PCellHandleFixesTests : IDisposable
         var vm = new LayoutEditorViewModel(
             new LayoutView { DbuPerMicron = 1000, SnapDbu = 1000 },
             Path.Combine(_workspaceDir, "Doc", "layout", "main.clay"));
-        var defaults = SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.Mklopf, 0);
+        var defaults = SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.Mklopf, 0);
         string cellDir = GeneratedCellStore.GetOrCreate(
             _workspaceDir, "MKLOPF", defaults, null, null, PCellLayerSelection.Default);
         vm.Model.Instances.Add(new LayoutInstance

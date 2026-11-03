@@ -13,6 +13,8 @@ global using CircuitRF.Design.Layout.Extraction;
 global using CircuitRF.Design.Layout.Em;
 global using CircuitRF.Design.Layout.PCells;
 global using CircuitRF.Design.Layout.Footprints;
+// brief-sdl-0: Update Layout from Schematic's planner, moved out of SchematicToLayoutGenerator.
+global using CircuitRF.Design.Layout.SchematicSync;
 global using CircuitRF.Design.Results;
 global using CircuitRF.Design.Theming;
 global using CircuitRF.Design.Workspace;

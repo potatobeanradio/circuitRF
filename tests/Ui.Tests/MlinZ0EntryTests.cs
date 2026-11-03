@@ -105,7 +105,7 @@ public sealed class MlinZ0EntryTests : IDisposable
         var props = new LayoutShapePropertiesViewModel();
         props.SetContext(vm);
 
-        var defaults = SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.Mlin, 0);
+        var defaults = SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.Mlin, 0);
         string cellDir = GeneratedCellStore.GetOrCreate(_root, "MLIN", defaults, null, null, PCellLayerSelection.Default);
         vm.Model.Instances.Add(new LayoutInstance
             { CellRef = Path.GetRelativePath(vm.InstanceBaseDir, cellDir), X = 0, Y = 0, Mag = 1.0 });
@@ -149,7 +149,7 @@ public sealed class MlinZ0EntryTests : IDisposable
         string clayPath = Path.Combine(_root, "Doc", "layout", "main.clay");
         var vm = new LayoutEditorViewModel(new LayoutView { DbuPerMicron = 1000, SnapDbu = 1000 }, clayPath)
             { ActiveTool = LayoutEditorViewModel.Tool.Select, Technology = tech };
-        var defaults = SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.Mlin, 0);
+        var defaults = SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.Mlin, 0);
         string cellDir = GeneratedCellStore.GetOrCreate(_root, "MLIN", defaults, null, null, PCellLayerSelection.Default);
         vm.Model.Instances.Add(new LayoutInstance
             { CellRef = Path.GetRelativePath(vm.InstanceBaseDir, cellDir), X = 0, Y = 0, Mag = 1.0 });

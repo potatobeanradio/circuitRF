@@ -42,7 +42,7 @@ public sealed class PCellPinOverlayTests : IDisposable
 
     private (LayoutView View, LayoutInstance Inst, double LMeters) BuildMlinInstance(string vmBaseDir)
     {
-        var defaults = SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.Mlin, 0);
+        var defaults = SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.Mlin, 0);
         string cellDir = GeneratedCellStore.GetOrCreate(_root, "MLIN", defaults, null, null, PCellLayerSelection.Default);
 
         var view = new LayoutView { DbuPerMicron = 1000, SnapDbu = 1000, AngleMode = AngleMode.AnyAngle };

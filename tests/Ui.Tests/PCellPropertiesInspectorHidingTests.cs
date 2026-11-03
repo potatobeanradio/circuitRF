@@ -47,7 +47,7 @@ public sealed class PCellPropertiesInspectorHidingTests : IDisposable
     public void PCellInstance_HidesCellRefField()
     {
         var (vm, props) = Setup("Doc");
-        var defaults = SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.Mlin, 0);
+        var defaults = SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.Mlin, 0);
         string cellDir = GeneratedCellStore.GetOrCreate(_root, "MLIN", defaults, null, null, PCellLayerSelection.Default);
         var inst = new LayoutInstance { CellRef = Path.GetRelativePath(vm.InstanceBaseDir, cellDir), X = 3_000_000, Y = 0, Mag = 1.0 };
         vm.Model.Instances.Add(inst);

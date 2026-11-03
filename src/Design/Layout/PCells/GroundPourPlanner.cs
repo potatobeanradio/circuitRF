@@ -93,9 +93,11 @@ public static class GroundPourPlanner
     public static GroundPourOutcome Plan(LayoutView view, Technology? technology, string layoutBaseDir,
                                          IReadOnlyList<LayoutShape> shapes, IEnumerable<LayoutInstance> instances,
                                          IEnumerable<GroundPourRegion> extra, bool onlyUndrawn = true,
-                                         double marginHeights = DefaultMarginHeights)
+                                         double marginHeights = DefaultMarginHeights,
+                                         IReadOnlyDictionary<string, PCellSnapshot>? snapshots = null)
     {
         if (technology is null) return new([], []);
+        snapshots ??= view.PCellSnapshots;
         if (!(marginHeights >= 0) || !double.IsFinite(marginHeights)) marginHeights = DefaultMarginHeights;
 
         var byGround = new Dictionary<string, (StackupLayer Ground, Bbox Region, double MaxH, int Lines)>(StringComparer.Ordinal);
@@ -113,7 +115,7 @@ public static class GroundPourPlanner
         foreach (var inst in instances)
         {
             string cell = Path.GetFileName(inst.CellRef.TrimEnd('/', '\\'));
-            if (!view.PCellSnapshots.TryGetValue(cell, out var snap) || !MicrostripGenerators.Contains(snap.GeneratorId))
+            if (!snapshots.TryGetValue(cell, out var snap) || !MicrostripGenerators.Contains(snap.GeneratorId))
                 continue;
             var selection = new PCellLayerSelection(snap.SignalLayerNameOverride, snap.GroundLayerNameOverride);
             var (substrate, _, _) = SubstrateResolver.ResolveElectrical(technology, selection);
@@ -143,7 +145,7 @@ public static class GroundPourPlanner
 
             long margin = (long)Math.Ceiling(marginHeights * maxH * 1e6 * view.DbuPerMicron);
             var outer = outline ?? new Bbox(region.MinX - margin, region.MinY - margin, region.MaxX + margin, region.MaxY + margin);
-            var (clearances, joined, groundVias) = Clearances(view, shapes, instances, technology, ground, outer);
+            var (clearances, joined, groundVias) = Clearances(view, snapshots, shapes, instances, technology, ground, outer);
 
             var layer = ground.DrawingLayers[0];
             var subject = new Paths64 { Rect(outer) };
@@ -177,8 +179,8 @@ public static class GroundPourPlanner
     /// <summary>A disc around every layout via whose barrel passes THROUGH <paramref name="ground"/> inside
     /// <paramref name="outer"/>. A via whose span is unstated goes through every layer, as everywhere else.</summary>
     private static (Paths64 Discs, int Joined, int GroundVias) Clearances(
-        LayoutView view, IReadOnlyList<LayoutShape> shapes, IEnumerable<LayoutInstance> instances,
-        Technology technology, StackupLayer ground, Bbox outer)
+        LayoutView view, IReadOnlyDictionary<string, PCellSnapshot> snapshots, IReadOnlyList<LayoutShape> shapes,
+        IEnumerable<LayoutInstance> instances, Technology technology, StackupLayer ground, Bbox outer)
     {
         var layers = technology.Stackup.Layers;
         int g = IndexOf(layers, ground);
@@ -192,7 +194,7 @@ public static class GroundPourPlanner
         foreach (var inst in instances)
         {
             string cell = Path.GetFileName(inst.CellRef.TrimEnd('/', '\\'));
-            if (!view.PCellSnapshots.TryGetValue(cell, out var snap)) continue;
+            if (!snapshots.TryGetValue(cell, out var snap)) continue;
             if (string.Equals(snap.GeneratorId, TestPadPCell.GeneratorId, StringComparison.OrdinalIgnoreCase))
             {
                 if (TestPadClearance(TestPadPCell.Resolve(snap.Parameters, technology), technology, ground, view.DbuPerMicron) is { } tr

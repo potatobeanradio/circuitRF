@@ -25,6 +25,8 @@ global using CircuitRF.Design.Layout.Interchange;
 global using CircuitRF.Design.Layout.Em;
 global using CircuitRF.Design.Layout.PCells;
 global using CircuitRF.Design.Layout.Footprints;
+// brief-sdl-0: Update Layout from Schematic's planner, moved out of SchematicToLayoutGenerator.
+global using CircuitRF.Design.Layout.SchematicSync;
 // The stroke font every layout label is drawn in (brief-silkscreen-stroke-font.md).
 global using CircuitRF.Design.Layout.Text;
 // The technology importers — the stack/layer-table/rule-deck readers and the ONE ProcessTechnologyBuilder —

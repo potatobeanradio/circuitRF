@@ -1,0 +1,3 @@
+# A resistor with no footprint has no layout view: reported and skipped, so LVS finds it missing.
+Warning R1 no layout view — skipped
+lvs lvs.device.unmatched-schematic

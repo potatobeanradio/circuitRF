@@ -796,6 +796,39 @@ public sealed class BitmapShape : LayoutShape
     public bool Locked { get; set; }
 }
 
+// ── Placement record ────────────────────────────────────────────────────────
+
+/// <summary>
+/// brief-sdl-0 R-sdl0-2a: one part's placement as Update Layout from Schematic last wrote it — the origin
+/// in DBU, the rotation in degrees, the mirror, the board face — plus two flags a later run reads.
+/// <see cref="ChainAnchor"/> says this part anchored its chain of joined parts; <see cref="Removed"/> says
+/// the user deleted the part, so a re-run does not put it back. Both are omitted from the file when false,
+/// on the additive convention <see cref="LayoutInstance.RotDeg"/> follows.
+/// </summary>
+public sealed record GeneratedPlacement
+{
+    public long X { get; init; }
+    public long Y { get; init; }
+    public double RotationDeg { get; init; }
+    public bool Mirror { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public PlacementSide Side { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool ChainAnchor { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Removed { get; init; }
+
+    /// <summary>The placement <paramref name="inst"/> is at now.</summary>
+    public static GeneratedPlacement Of(LayoutInstance inst, bool chainAnchor = false) => new()
+    {
+        X = inst.X, Y = inst.Y, RotationDeg = inst.RotationDegrees, Mirror = inst.MirrorX, Side = inst.Side,
+        ChainAnchor = chainAnchor,
+    };
+}
+
 // ── Instance ────────────────────────────────────────────────────────────────
 
 /// <summary>The board face a <see cref="LayoutInstance"/> is placed on. <c>Top</c> is the default and
@@ -1201,6 +1234,16 @@ public sealed class LayoutView
     /// layout context. Covers every PCell instance this layout references, regardless of whether it
     /// arrived via schematic generation, a palette drop, or a layout-authored copy-on-write edit.</summary>
     public Dictionary<string, PCellSnapshot> PCellSnapshots { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// brief-sdl-0 R-sdl0-2: where Update Layout from Schematic last put each part it placed, keyed by
+    /// <see cref="LayoutInstance.SchematicId"/> — see <see cref="GeneratedPlacement"/>. Beside
+    /// <see cref="SchematicPCellSnapshots"/> and for the same kind of reason: a re-run has to know what it
+    /// did last time, and the instance itself only says where the part is NOW. Written by every run for
+    /// every part it adds and every part whose transform it changes, inside that run's own undoable
+    /// command, so an Undo of the run also forgets what it placed.
+    /// </summary>
+    public Dictionary<string, GeneratedPlacement> GeneratedPlacements { get; } = new(StringComparer.Ordinal);
 
     /// <summary>
     /// Designer feedback round 11: every ground via Update Layout from Schematic has ever placed in this view, by

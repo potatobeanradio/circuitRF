@@ -98,9 +98,13 @@ public static class GroundArtwork
     public static GroundArtworkPlan Plan(LayoutView view, Technology? technology, string layoutBaseDir,
                                          IReadOnlyList<LayoutInstance> instances,
                                          IReadOnlyList<GroundPin>? grounded, IReadOnlySet<string>? inSchematic,
-                                         double marginHeights = GroundPourPlanner.DefaultMarginHeights)
+                                         double marginHeights = GroundPourPlanner.DefaultMarginHeights,
+                                         IReadOnlyDictionary<string, PCellSnapshot>? snapshots = null)
     {
         if (technology is null) return GroundArtworkPlan.None;
+        // The regeneration records to read cells by: the view's own, or — for a planner that has not written its
+        // records into the view yet (SchematicLayoutPlanner) — the set as it will be once it has.
+        snapshots ??= view.PCellSnapshots;
 
         var bySchematicId = new Dictionary<string, LayoutInstance>(StringComparer.Ordinal);
         foreach (var inst in instances)
@@ -217,7 +221,7 @@ public static class GroundArtwork
         foreach (var inst in instances)
         {
             string cellName = Path.GetFileName(inst.CellRef.TrimEnd('/', '\\'));
-            if (!view.PCellSnapshots.TryGetValue(cellName, out var snap) ||
+            if (!snapshots.TryGetValue(cellName, out var snap) ||
                 !string.Equals(snap.GeneratorId, ViaPCell.GroundGeneratorId, StringComparison.OrdinalIgnoreCase)) continue;
             if (ViaPCell.Resolve(snap.Parameters, technology, grounded: true).Span is not { } span) continue;
             var box = CellHierarchy.InstanceBbox(inst, layoutBaseDir);
@@ -228,7 +232,7 @@ public static class GroundArtwork
         var removing = new HashSet<LayoutShape>(remove, ReferenceEqualityComparer.Instance);
         var after = view.Shapes.Where(s => !removing.Contains(s)).Concat(add).ToList();
         var pours = GroundPourPlanner.Plan(view, technology, layoutBaseDir, after, instances, regions,
-                                           marginHeights: marginHeights);
+                                           marginHeights: marginHeights, snapshots: snapshots);
         var planned = new HashSet<string>(pours.Pours.Select(p => p.Ground.Name), StringComparer.Ordinal);
         foreach (var pour in pours.Pours)
         {

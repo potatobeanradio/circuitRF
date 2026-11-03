@@ -41,7 +41,7 @@ public sealed class PCellDoubleClickSecondEntryPointTests : IDisposable
     [Fact]
     public void GeneratedCellClayPath_IsDetected_RegardlessOfWorkspaceRoot()
     {
-        var defaults = SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.Mlin, 0);
+        var defaults = SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.Mlin, 0);
         string cellDir = GeneratedCellStore.GetOrCreate(_root, "MLIN", defaults, null, null, PCellLayerSelection.Default);
         string clayPath = Path.Combine(cellDir, "layout", Path.GetFileName(cellDir) + ".clay");
 
@@ -75,7 +75,7 @@ public sealed class PCellDoubleClickSecondEntryPointTests : IDisposable
         // brief investigates was never in CanPushInto itself.
         var vm = new LayoutEditorViewModel(new LayoutView { DbuPerMicron = 1000, SnapDbu = 1000 },
             Path.Combine(_root, "Doc", "layout", "main.clay"));
-        var defaults = SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.Mlin, 0);
+        var defaults = SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.Mlin, 0);
         string cellDir = GeneratedCellStore.GetOrCreate(_root, "MLIN", defaults, null, null, PCellLayerSelection.Default);
         var inst = new LayoutInstance { CellRef = Path.GetRelativePath(vm.InstanceBaseDir, cellDir), X = 0, Y = 0, Mag = 1.0 };
 

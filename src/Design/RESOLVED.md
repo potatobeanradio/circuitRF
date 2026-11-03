@@ -26456,3 +26456,46 @@ a `define`.
 
 Gate: `tests/Ui.Tests/VendorLibraries/ModelTolerancesAndCornersTests.cs` (6 tests, 9 cases) and
 `tests/Core.Tests/Netlist/CellCornerGrammarTests.cs` (2 tests, 5 cases).
+
+## Update Layout from Schematic's planner moved to src/Design (brief SDL-0, 2026-11-03)
+
+`SchematicLayoutPlanner.Plan` (`Layout/SchematicSync/`) is the old `SchematicToLayoutGenerator.Run` body. The GUI's
+`Run` is now plan-to-command translation only, held by a comment-stripped source scan in
+`tests/Ui.Tests/SchematicSync/SchematicLayoutPlannerTests`.
+
+**The old Run wrote into the target in four places, and two of them were read back later in the same run.** The
+direct writes were the parameter snapshots (`SchematicPCellSnapshots`), the regeneration records
+(`GeneratedCellStore.RecordSnapshot` into `PCellSnapshots`), the orientation baseline of a part that otherwise did not
+change, and the snapshot carried over a rename. The rename's carried snapshot is read a few lines later by the
+overwrite classification, and the regeneration records are read by `GroundArtwork.Plan` and `GroundPourPlanner`, which
+look a cell up by its folder name to tell a microstrip line or a VIAGND from anything else. So a pure planner cannot
+simply drop the writes. It keeps a ledger: its own reads go through overlays (the target's tables plus this run's
+writes), and the writes come back in the plan, in the order they were made. Both ground planners take an optional
+`snapshots` table for this; without it they read the view's own, as before.
+
+**The writes are replayed in order because a `.clay` writes those tables in dictionary order.** Replacing a table's
+contents with the final state would put a renamed part's snapshot in a different place in the file. Replaying the
+same sequence of sets and removes reproduces the old dictionary exactly, and the equivalence theory compares the
+bytes.
+
+**Bookkeeping stays outside the undo, as it was.** The GUI applies the plan's bookkeeping straight into the target
+before it returns the command, which is exactly when the old code had written it. Only the instance edits, the ground
+tie and pour shapes, the ground-via keys and the new placement records are inside the command.
+
+**The kit-part generator lookup is an argument** (`KitLayoutGeneratorLookup`). `KitLayoutGenerators` is filled by the
+palette, a UI object, so it stays in `src/Ui` and the GUI passes `KitLayoutGenerators.For`. With no lookup, a headless
+caller resolves a kit part to its part id, which is what the GUI did before a palette had read the kit.
+
+**`GeneratedPlacements` sorts on write.** Unlike `SchematicPCellSnapshots` it is written in key order, so the file
+does not depend on the order parts were placed in (series rule S5). The record is written for every add and for every
+replacement whose transform changed or whose part was renamed (the rename moves the record to the new name).
+
+**A unit after a unit-bearing variable (R-sdl0-3e).** `W = w50 mm` with `w50 = 280.152 um` is 280.152 µm on both
+sides, the same as `W = w50`: the elaborator and the PCell path both evaluate through `Evaluator.Eval(expr, scope,
+unit)`, which skips the site unit when the expression names a unit-bearing variable. Pinned by
+`UnitAfterUnitBearingVariableTests` (Core) and `AUnitAfterAUnitBearingVariable_GivesTheGeneratorTheSameWidth` (Ui).
+No defect.
+
+**The test technology is a neutral copy.** `testdata/schematic-to-layout/microstrip-0508.ctech` is the shipped 20 mil
+two-layer board technology with the dielectric and its material renamed to `Substrate`/`Laminate` and the material
+library reference dropped (copper and the laminate are both inline), so the set names no product.

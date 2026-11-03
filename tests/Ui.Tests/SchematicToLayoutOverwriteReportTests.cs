@@ -78,7 +78,7 @@ public sealed class SchematicToLayoutOverwriteReportTests : IDisposable
         r2.Command!.Execute();
 
         var wLine = r2.Lines.First(l => l.Text.Contains("W changed"));
-        Assert.Equal(SchematicToLayoutGenerator.ReportSeverity.Warning, wLine.Severity);
+        Assert.Equal(SchematicLayoutPlanner.ReportSeverity.Warning, wLine.Severity);
         Assert.Contains("20 mm", wLine.Text);
         Assert.Contains("10 mm", wLine.Text);
         // "from 20 mm ... to 10 mm" — the LAYOUT's current (about-to-be-discarded) value comes first.
@@ -106,6 +106,6 @@ public sealed class SchematicToLayoutOverwriteReportTests : IDisposable
         Assert.NotNull(r2.Command);
 
         var wLine = r2.Lines.First(l => l.Text.Contains("W changed"));
-        Assert.Equal(SchematicToLayoutGenerator.ReportSeverity.Info, wLine.Severity);
+        Assert.Equal(SchematicLayoutPlanner.ReportSeverity.Info, wLine.Severity);
     }
 }

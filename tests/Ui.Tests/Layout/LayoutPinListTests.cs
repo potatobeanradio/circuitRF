@@ -104,7 +104,7 @@ public sealed class LayoutPinListTests : IDisposable
     [Fact]
     public void AGeneratedCell_PersistsItsPins_WithWidthAndDirection_NotJustPortLabels()
     {
-        var defaults = SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.Mlin, 0);
+        var defaults = SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.Mlin, 0);
         string cellDir = GeneratedCellStore.GetOrCreate(
             _root, "MLIN", defaults, null, null, PCellLayerSelection.Default);
 

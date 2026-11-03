@@ -538,7 +538,7 @@ public class WBondRound5Tests
     [Fact]
     public void TheGeneratorNoLongerTreatsAWBondAsAnInstance()
     {
-        var code = Read("src", "Ui", "Layout", "SchematicToLayoutGenerator.cs");
+        var code = Read("src", "Design", "Layout", "SchematicSync", "SchematicLayoutPlanner.cs");
 
         int at = code.IndexOf("private static bool IsPhysical", StringComparison.Ordinal);
         Assert.True(at >= 0);

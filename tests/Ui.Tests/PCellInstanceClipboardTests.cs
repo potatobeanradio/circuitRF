@@ -37,7 +37,7 @@ public sealed class PCellInstanceClipboardTests : IDisposable
 
     private string CreatePCellCell()
     {
-        var defaults = SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.Mlin, 0);
+        var defaults = SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.Mlin, 0);
         return GeneratedCellStore.GetOrCreate(_workspaceDir, "MLIN", defaults, null, null, PCellLayerSelection.Default);
     }
 

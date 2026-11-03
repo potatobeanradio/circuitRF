@@ -1,0 +1,4 @@
+# Three unconnected 0603 resistors: placed in a row, nothing joined, LVS clean.
+Info R1 added
+Info R2 added
+Info R3 added

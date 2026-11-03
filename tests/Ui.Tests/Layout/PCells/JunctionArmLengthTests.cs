@@ -328,7 +328,7 @@ public sealed class JunctionArmLengthTests : IDisposable
             new LayoutView { DbuPerMicron = 1000, SnapDbu = 1000 },
             Path.Combine(_workspaceDir, "Doc", "layout", "main.clay"));
 
-        var defaults = SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.MTee, 0);
+        var defaults = SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.MTee, 0);
         string cellDir = GeneratedCellStore.GetOrCreate(
             _workspaceDir, "MTEE", defaults, null, null, PCellLayerSelection.Default);
         vm.Model.Instances.Add(new LayoutInstance
@@ -522,7 +522,7 @@ public sealed class JunctionArmLengthTests : IDisposable
         var vm = new LayoutEditorViewModel(
             new LayoutView { DbuPerMicron = 1000, SnapDbu = 1000 },
             Path.Combine(_workspaceDir, "Doc", "layout", "main.clay"));
-        var defaults = SchematicToLayoutGenerator.ResolveDefaultParameters(kind, 0);
+        var defaults = SchematicLayoutPlanner.ResolveDefaultParameters(kind, 0);
         string cellDir = GeneratedCellStore.GetOrCreate(
             _workspaceDir, generatorId, defaults, null, null, PCellLayerSelection.Default);
         vm.Model.Instances.Add(new LayoutInstance

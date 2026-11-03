@@ -252,11 +252,22 @@ public static class GeneratedCellStore
         IReadOnlyDictionary<string, PCellValue> parameters, string? techIdentity, PCellLayerSelection layerSelection,
         string? workspaceRootDir = null)
     {
+        var (cellName, snapshot) = SnapshotFor(cellDir, generatorId, parameters, techIdentity, layerSelection, workspaceRootDir);
+        view.PCellSnapshots[cellName] = snapshot;
+    }
+
+    /// <summary>The record <see cref="RecordSnapshot"/> writes, and the key it writes it under, without writing it —
+    /// for a planner that returns its changes rather than making them (brief-sdl-0 R-sdl0-1a).</summary>
+    public static (string CellName, PCellSnapshot Snapshot) SnapshotFor(
+        string cellDir, string generatorId,
+        IReadOnlyDictionary<string, PCellValue> parameters, string? techIdentity, PCellLayerSelection layerSelection,
+        string? workspaceRootDir = null)
+    {
         string cellName = Path.GetFileName(cellDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
         if (workspaceRootDir is not null) techIdentity = CanonicalTechIdentity(workspaceRootDir, techIdentity);
-        view.PCellSnapshots[cellName] = new PCellSnapshot(
+        return (cellName, new PCellSnapshot(
             generatorId, new Dictionary<string, PCellValue>(parameters), techIdentity,
-            layerSelection.SignalLayerNameOverride, layerSelection.GroundLayerNameOverride);
+            layerSelection.SignalLayerNameOverride, layerSelection.GroundLayerNameOverride));
     }
 
     // ── The technology identity is WORKSPACE-RELATIVE (field report, 2026-09-23) ─────────────

@@ -47,7 +47,7 @@ public sealed class FootprintRowVisibilityAndDragTests : IDisposable
         Assert.Equal(reference.Case.Code, vm.SelectedInstanceFootprint?.Case.Code);
 
         (_, props) = PanelOver(GeneratedCellStore.GetOrCreate(
-            _root, "MLIN", SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.Mlin, 0),
+            _root, "MLIN", SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.Mlin, 0),
             null, null, PCellLayerSelection.Default));
         Assert.False(props.ShowInstanceFootprintRow);
     }

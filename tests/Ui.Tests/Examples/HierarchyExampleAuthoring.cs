@@ -359,7 +359,7 @@ public sealed class HierarchyExampleAuthoring(ITestOutputHelper output)
         var r = Run(m, view, cellDir, ws, tech);
         foreach (var w in r.NoLayoutWarnings) output.WriteLine($"{Path.GetFileName(cellDir)} no-layout: {w}");
         foreach (var l in r.Lines) output.WriteLine($"{Path.GetFileName(cellDir)} {l.InstanceName}: {l.Text}");
-        foreach (var l in SchematicToLayoutGenerator.GroundArtworkReport(r.GroundArtwork, view, LayoutUnit.Mil))
+        foreach (var l in SchematicLayoutPlanner.GroundArtworkReport(r.GroundArtwork, view, LayoutUnit.Mil))
             output.WriteLine($"{Path.GetFileName(cellDir)} ground: {l.Text}");
         Assert.Empty(r.NoLayoutWarnings);
         r.Command?.Execute();

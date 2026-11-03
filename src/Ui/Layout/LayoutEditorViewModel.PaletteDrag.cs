@@ -51,7 +51,7 @@ public sealed partial class LayoutEditorViewModel
     /// </summary>
     private bool TryResolveDropGenerator(SymbolKind kind, int portCount, out string generatorId, out bool isPart)
     {
-        if (SchematicToLayoutGenerator.HasPCellGenerator(kind, portCount, out generatorId))
+        if (SchematicLayoutPlanner.HasPCellGenerator(kind, portCount, out generatorId))
         {
             isPart = false;
             return true;
@@ -128,8 +128,8 @@ public sealed partial class LayoutEditorViewModel
         var byId = new SortedDictionary<string, IReadOnlyDictionary<string, PCellValue>>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var kind in Enum.GetValues<SymbolKind>())
-            if (SchematicToLayoutGenerator.HasPCellGenerator(kind, 0, out var builtInId))
-                byId[builtInId] = SchematicToLayoutGenerator.ResolveDefaultParameters(kind, 0, Technology);
+            if (SchematicLayoutPlanner.HasPCellGenerator(kind, 0, out var builtInId))
+                byId[builtInId] = SchematicLayoutPlanner.ResolveDefaultParameters(kind, 0, Technology);
 
         foreach (string id in PCellRegistry.AllKnownGeneratorIds())
             if (!byId.ContainsKey(id))
@@ -159,7 +159,7 @@ public sealed partial class LayoutEditorViewModel
             // same case show the same ghost because they are the same artwork.
             var defaults = isPart
                 ? PaletteDropParameters(generatorId)
-                : SchematicToLayoutGenerator.ResolveDefaultParameters(kind, portCount, Technology);
+                : SchematicLayoutPlanner.ResolveDefaultParameters(kind, portCount, Technology);
             var result = _paletteDragGeometryCache.GetOrGenerate(generatorId, generator, defaults, Technology, PCellLayerSelection.Default);
 
             var ghostView = new LayoutView();
@@ -202,7 +202,7 @@ public sealed partial class LayoutEditorViewModel
         // Nothing in this brief mints a per-component cell; what the part IS rides on the placement.
         var defaults = isPart
             ? PaletteDropParameters(generatorId)
-            : SchematicToLayoutGenerator.ResolveDefaultParameters(kind, portCount, Technology);
+            : SchematicLayoutPlanner.ResolveDefaultParameters(kind, portCount, Technology);
 
         return PlacePCell(generatorId, defaults, x, y, isPart ? kind : null);
     }

@@ -289,7 +289,7 @@ public sealed class KitPartLayoutParametersTests : IDisposable
         Assert.Equal("60meg", Assert.Single(_seen)["w"].AsText());
 
         var line = Assert.Single(result.Lines, l => l.Text.Contains("60meg"));
-        Assert.Equal(SchematicToLayoutGenerator.ReportSeverity.Warning, line.Severity);
+        Assert.Equal(SchematicLayoutPlanner.ReportSeverity.Warning, line.Severity);
         Assert.Contains("not a unit it knows", line.Text);
         Assert.Contains("simulated", line.Text);
     }

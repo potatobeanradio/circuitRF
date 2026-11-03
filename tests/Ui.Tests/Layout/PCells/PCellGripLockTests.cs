@@ -55,7 +55,7 @@ public sealed class PCellGripLockTests : IDisposable
             new LayoutView { DbuPerMicron = 1000, SnapDbu = snapDbu },
             Path.Combine(_workspaceDir, "Doc", "layout", "main.clay"));
 
-        var defaults = SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.Mlin, 0);
+        var defaults = SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.Mlin, 0);
         string cellDir = GeneratedCellStore.GetOrCreate(
             _workspaceDir, "MLIN", defaults, null, null, PCellLayerSelection.Default);
 

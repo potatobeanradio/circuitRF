@@ -14,7 +14,7 @@ namespace CircuitRF.Ui.Tests;
 /// <para>The placement is not prevented (nothing can tell drawn metal that IS this component from
 /// drawn metal that merely sits where it was put), so it is REPORTED — and reported on the mutual
 /// coverage rule, which is the half that keeps the line from becoming noise on every part placed
-/// over a pour. See <c>SchematicToLayoutGenerator.ReportPlacementOntoDrawnArtwork</c>.</para>
+/// over a pour. See <c>SchematicLayoutPlanner.ReportPlacementOntoDrawnArtwork</c>.</para>
 /// </summary>
 public sealed class SchematicToLayoutDrawnArtworkOverlapTests : IDisposable
 {
@@ -79,7 +79,7 @@ public sealed class SchematicToLayoutDrawnArtworkOverlapTests : IDisposable
         var result = SchematicToLayoutGenerator.Run(model, target, schematicDir, _root, layoutDir, null, null, null);
 
         Assert.Equal(1, result.AddedCount);             // still placed — reported, never refused
-        Assert.Contains(result.Lines, l => l.Severity == SchematicToLayoutGenerator.ReportSeverity.Warning
+        Assert.Contains(result.Lines, l => l.Severity == SchematicLayoutPlanner.ReportSeverity.Warning
                                         && l.Text.Contains("already drawn in this layout", StringComparison.Ordinal));
     }
 

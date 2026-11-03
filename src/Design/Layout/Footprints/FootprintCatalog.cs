@@ -147,7 +147,7 @@ public static class FootprintCatalog
     /// built-ins and Custom only, which is the honest answer for a document belonging to no
     /// workspace.</param>
     /// <param name="referenceDir">What a stored reference is resolved RELATIVE TO — the schematic's
-    /// own directory, because that is what <c>SchematicToLayoutGenerator.ResolveFootprintPath</c>
+    /// own directory, because that is what <c>SchematicLayoutPlanner.ResolveFootprintPath</c>
     /// hands <c>ExternalCellRef.ResolveCellDir</c>. A row spelled against anything else produces a
     /// reference that does not resolve.</param>
     /// <param name="portCount">

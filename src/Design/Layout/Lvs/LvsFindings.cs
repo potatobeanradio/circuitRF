@@ -87,7 +87,7 @@ public sealed record LvsFinding(
 
     /// <summary>
     /// A line about the RUN rather than about an object — <b>no objects, and so no marker</b>
-    /// (R-lvs8-2c). This is <c>SchematicToLayoutGenerator.ReportLine</c>'s own convention, where an
+    /// (R-lvs8-2c). This is <c>SchematicLayoutPlanner.ReportLine</c>'s own convention, where an
     /// empty instance name means the line is about the run.
     /// </summary>
     public bool IsRunLevel => Objects.Count == 0;

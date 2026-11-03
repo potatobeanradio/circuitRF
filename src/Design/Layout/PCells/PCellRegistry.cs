@@ -170,7 +170,7 @@ public static class PCellRegistry
     ///
     /// <para><b>Only script-backed generators answer here.</b> A built-in's defaults live with the
     /// component that declares it (<c>ComponentTypeRegistry.DefaultParameters</c>, reached through
-    /// <c>SchematicToLayoutGenerator.ResolveDefaultParameters</c>) and are keyed by
+    /// <c>SchematicLayoutPlanner.ResolveDefaultParameters</c>) and are keyed by
     /// <c>SymbolKind</c>, not by generator id — asking for them here would mean a second, reverse
     /// mapping that could disagree with the forward one.</para>
     /// </summary>

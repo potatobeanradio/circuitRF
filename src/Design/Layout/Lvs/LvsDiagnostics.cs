@@ -611,7 +611,7 @@ public static class LvsDiagnostics
             ("reduction", reduction == Lvs.ReductionMode.On ? "ON" : "OFF (--no-reduce)"));
 
     /// <summary>
-    /// R-lvs8-6a. The trailing count when a cap bit — <c>SchematicToLayoutGenerator.ReportLine</c>'s
+    /// R-lvs8-6a. The trailing count when a cap bit — <c>SchematicLayoutPlanner.ReportLine</c>'s
     /// own convention, where a line about the run carries no object.
     /// </summary>
     /// <remarks>

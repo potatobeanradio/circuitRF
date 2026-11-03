@@ -89,7 +89,7 @@ public sealed class MicrostripLayoutIssuesTests : IDisposable
     [Fact]
     public void PaletteDropDefaults_OnRo4350B20Mil_Give42MilWidth_NotTheMmBaseline()
     {
-        var resolved = SchematicToLayoutGenerator.ResolveDefaultParameters(
+        var resolved = SchematicLayoutPlanner.ResolveDefaultParameters(
             SymbolKind.Mlin, 0, Ro4350B20Mil());
 
         double w = resolved["W"].AsReal();
@@ -103,7 +103,7 @@ public sealed class MicrostripLayoutIssuesTests : IDisposable
     [Fact]
     public void PaletteDropDefaults_LengthIsARoundNumberInTheTechnologysOwnUnit()
     {
-        var resolved = SchematicToLayoutGenerator.ResolveDefaultParameters(
+        var resolved = SchematicLayoutPlanner.ResolveDefaultParameters(
             SymbolKind.Mlin, 0, Ro4350B20Mil());
 
         Assert.Equal(400.0 * MetresPerMil, resolved["L"].AsReal(), 12);
@@ -120,7 +120,7 @@ public sealed class MicrostripLayoutIssuesTests : IDisposable
     [InlineData(SymbolKind.MBend,  new[] { "W" })]
     public void PaletteDropDefaults_EveryWidthParameter_IsTheFiftyOhmLine(SymbolKind kind, string[] widths)
     {
-        var resolved = SchematicToLayoutGenerator.ResolveDefaultParameters(kind, 0, Ro4350B20Mil());
+        var resolved = SchematicLayoutPlanner.ResolveDefaultParameters(kind, 0, Ro4350B20Mil());
         foreach (string name in widths)
             Assert.Equal(42.0 * MetresPerMil, resolved[name].AsReal(), 12);
     }
@@ -128,7 +128,7 @@ public sealed class MicrostripLayoutIssuesTests : IDisposable
     [Fact]
     public void PaletteDropDefaults_MTaper_KeepsItsNarrowEnd()
     {
-        var resolved = SchematicToLayoutGenerator.ResolveDefaultParameters(
+        var resolved = SchematicLayoutPlanner.ResolveDefaultParameters(
             SymbolKind.Mtaper, 0, Ro4350B20Mil());
 
         Assert.Equal(42.0 * MetresPerMil, resolved["W1"].AsReal(), 12);
@@ -143,8 +143,8 @@ public sealed class MicrostripLayoutIssuesTests : IDisposable
     [Fact]
     public void PaletteDropDefaults_WithNoTechnology_KeepTheMmBaselineUnchanged()
     {
-        var withNull = SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.Mlin, 0, null);
-        var twoArg   = SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.Mlin, 0);
+        var withNull = SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.Mlin, 0, null);
+        var twoArg   = SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.Mlin, 0);
 
         Assert.Equal(0.0029, withNull["W"].AsReal(), 12);
         Assert.Equal(withNull["W"].AsReal(), twoArg["W"].AsReal(), 12);
@@ -175,7 +175,7 @@ public sealed class MicrostripLayoutIssuesTests : IDisposable
             * MetresPerMil;
 
         double layoutMetres =
-            SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.Mlin, 0, tech)["W"].AsReal();
+            SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.Mlin, 0, tech)["W"].AsReal();
 
         Assert.Equal("mil", schematicW.Unit);
         Assert.Equal(schematicMetres, layoutMetres, 12);
@@ -203,7 +203,7 @@ public sealed class MicrostripLayoutIssuesTests : IDisposable
 
     private (LayoutEditorViewModel Vm, LayoutShapePropertiesViewModel Props) PlaceMTee(Technology? tech = null)
     {
-        var vm = Place("MTEE", SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.MTee, 0, tech), tech);
+        var vm = Place("MTEE", SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.MTee, 0, tech), tech);
         var props = new LayoutShapePropertiesViewModel();
         props.SetContext(vm);
         vm.SelectInstance(0);
@@ -239,7 +239,7 @@ public sealed class MicrostripLayoutIssuesTests : IDisposable
     {
         var tech = Ro4350B20Mil();
         var parameters = new Dictionary<string, PCellValue>(
-            SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.MTee, 0, tech))
+            SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.MTee, 0, tech))
         {
             ["W1"] = PCellValue.Real(0.001),
             ["W2"] = PCellValue.Real(0.002),
@@ -287,7 +287,7 @@ public sealed class MicrostripLayoutIssuesTests : IDisposable
     public void WidthEntryMicrostrips_ShowNoMklopfPseudoRows(SymbolKind kind, string generatorId)
     {
         var tech = Ro4350B20Mil();
-        var vm = Place(generatorId, SchematicToLayoutGenerator.ResolveDefaultParameters(kind, 0, tech), tech);
+        var vm = Place(generatorId, SchematicLayoutPlanner.ResolveDefaultParameters(kind, 0, tech), tech);
         var props = new LayoutShapePropertiesViewModel();
         props.SetContext(vm);
         vm.SelectInstance(0);
@@ -308,7 +308,7 @@ public sealed class MicrostripLayoutIssuesTests : IDisposable
     public void Mklopf_EntryModeToggle_StillSwapsZ1Z2ForW1W2()
     {
         var tech = Ro4350B20Mil();
-        var vm = Place("MKLOPF", SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.Mklopf, 0, tech), tech);
+        var vm = Place("MKLOPF", SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.Mklopf, 0, tech), tech);
         var props = new LayoutShapePropertiesViewModel();
         props.SetContext(vm);
         vm.SelectInstance(0);
@@ -338,7 +338,7 @@ public sealed class MicrostripLayoutIssuesTests : IDisposable
     /// <summary>An MLIN plus a separate rect whose corner is something to snap to.</summary>
     private LayoutEditorViewModel PlaceMlinWithSnapTarget(long targetX, long targetY)
     {
-        var vm = Place("MLIN", SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.Mlin, 0),
+        var vm = Place("MLIN", SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.Mlin, 0),
                        snapDbu: 10_000);
         vm.Model.Shapes.Add(new RectShape
         {

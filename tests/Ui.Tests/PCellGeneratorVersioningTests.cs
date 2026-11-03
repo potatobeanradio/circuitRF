@@ -141,7 +141,7 @@ public sealed class PCellGeneratorVersioningTests : IDisposable
         {
             Assert.True(LayoutToSchematicGenerator.TryGetSymbolKind(id, out var kind), id);
             Assert.True(PCellRegistry.TryGet(id, out var generate), id);
-            var art = generate(SchematicToLayoutGenerator.ResolveDefaultParameters(kind, 0), null, PCellLayerSelection.Default);
+            var art = generate(SchematicLayoutPlanner.ResolveDefaultParameters(kind, 0), null, PCellLayerSelection.Default);
             string fingerprint = Fingerprint(art);
             int version = PCellRegistry.GeneratorVersion(id);
             if (!recorded.TryGetValue(id, out var r) || r.Version != version || r.Fingerprint != fingerprint)

@@ -1035,9 +1035,11 @@ layout.
    `pcell-contract.md`, whose R1 makes a PCell an ordinary cell in every respect except that
    `ResolvePrimary(…, ViewType.Layout)` answers "generated". The pins that step 4 stamps nets onto are
    part of that contract's output (its R3), not something this step infers from geometry.
-3. Place instances in a packed, non-overlapping arrangement — rows by bounding box, roughly following
-   schematic order. **No auto-routing. Say so loudly.** Auto-routing is a separate multi-month product,
-   and pretending otherwise sets a bad expectation.
+3. Place parts so their pins meet where the schematic joins them (§9.1), and everything that joins nothing in a
+   packed, non-overlapping arrangement — rows by bounding box, roughly following schematic order. A net the
+   placement cannot join keeps its ratsnest line (step 4) and a report line saying why. **No auto-routing. Say
+   so loudly.** Placement moves and turns parts; it never draws a trace. Auto-routing is a separate
+   multi-month product, and pretending otherwise sets a bad expectation.
 4. Carry net names onto instance pins, and draw a **ratsnest**: thin straight lines between pins sharing a
    net that copper has not yet joined. This is the guide that makes manual routing tractable. **It is an
    OVERLAY** (R-dfr22-3-5) &mdash; drawn by the canvas from the pins' nets and `DrcConnectivity`'s partition,
@@ -1048,6 +1050,58 @@ layout.
    present, add what's new, and report (never auto-delete) what no longer exists in the schematic.
    Users hand-place after the first generation and will run it again after a schematic edit; a
    generator that stomps their placement is one they use exactly once.
+
+**Where it lives.** The planner is `SchematicLayoutPlanner.Plan` in `src/Design/Layout/SchematicSync/`. It reads
+the schematic and the target layout, mutates neither, and returns a `SchematicLayoutPlan`: the instances to add,
+replace and delete, the shapes to add (ground ties and pour), the placement-record writes, the bookkeeping writes
+(parameter snapshots, regeneration records, orientation baselines) and the report lines. The GUI's
+`SchematicToLayoutGenerator.Run` turns that plan into one undoable command and holds no placement arithmetic of
+its own; a headless caller applies it with `SchematicLayoutPlan.ApplyTo`. A preference the GUI stores (the
+orientation link, the pour margin) is an argument, and so is the palette's kit-part answer
+(`KitLayoutGeneratorLookup`), because the palette is a UI object.
+
+**The placement record.** `LayoutView.GeneratedPlacements`, keyed by schematic id, holds where the planner last
+put each part it placed: origin in DBU, rotation in degrees, mirror, board face, and two flags — `ChainAnchor`
+(this part anchored its chain on the last run) and `Removed` (the user deleted it). It is written for every part
+a run adds and every part whose transform it changes, inside the run's own undoable command, and persisted in
+`.clay` only when non-empty, in key order. It exists because a re-run that moves parts (§9.1, S3) has to know
+what it placed last time; the instance itself only says where the part is now.
+
+### 9.1 Connected placement
+
+The schematic-driven layout series (`docs/briefs/brief-sdl-0-overview-and-groundwork.md` and SDL-1 to SDL-10)
+places parts so that a schematic of distributed parts and footprints becomes copper that is joined where the
+schematic joins it. These rules hold for every brief in it.
+
+- **S1 — Never distort to close.** Copper is exactly what the schematic's values say. A joint that cannot be made
+  is reported with its size and location; nothing is stretched, bent, shortened or nudged to hide it. A layout
+  that looks connected but has the wrong lengths is worse than one with a visible gap.
+- **S2 — No auto-routing.** Connected placement moves and turns parts so their pins meet; no trace, tee or bend is
+  ever invented. A net the placement cannot join stays as a ratsnest line with a report line saying why.
+- **S3 — Hand edits win, and copper stays joined.** A re-run starts from the layout as the user left it and
+  applies only what the schematic changed. When a part changes size, everything joined beyond it moves as one
+  rigid body by exactly the change, so the arrangement is kept and the copper stays connected. A parameter edited
+  in the layout is never overwritten.
+- **S4 — One function, two callers.** The planner lives in `src/Design`; the GUI wraps its plan in undoable
+  commands, and the EM evaluation of a schematic by its own layout calls the same planner headlessly. There is
+  no second copy in a view model.
+- **S5 — Deterministic.** The same schematic, layout and technology give the same plan, byte for byte. Iteration
+  is in schematic-id order, never hash-set order.
+- **S6 — Robustness is measured, not asserted.** Every behaviour is gated on the designs in
+  `testdata/schematic-to-layout/` through one checker (`tests/Ui.Tests/SchematicSync/SdlChecker.cs`): LVS clean,
+  no ratsnest line on a joinable net, no copper joining two different nets, and exactly the expected report lines.
+- **S7 — Joint and conflict.** Where a line meets a footprint pad, the line's end sits on the middle of the pad's
+  outer edge, so the line's length is the exposed line the circuit simulation counts. When the schematic and the
+  layout both changed one parameter since the last run, the layout's value is kept and the conflict is reported
+  as a warning.
+
+**R-L5-11 is superseded by S3** (2026-11-03, SDL series). Under R-L5-11 the schematic's value overwrote a
+parameter edited in the layout, with a warning. S3 keeps the layout's value instead. The overwrite remains the
+behaviour until the brief that implements S3 (SDL-4) lands.
+
+**A unit after a unit-bearing variable is skipped.** A parameter written `W = w50 mm` with `w50 = 280.152 um` is
+280.152 µm, the same as `W = w50`, in the circuit and in the artwork, because the evaluation site's unit applies
+only when the expression names nothing that carries its own unit (`expressions.md` §8).
 
 ---
 

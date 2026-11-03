@@ -136,7 +136,7 @@ public sealed class MKlopfGripAndProfileTests : IDisposable
         var vm = new LayoutEditorViewModel(
             new LayoutView { DbuPerMicron = 1000, SnapDbu = 1_000 },
             Path.Combine(_workspaceDir, "Doc", "layout", "main.clay"));
-        var defaults = SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.Mklopf, 0);
+        var defaults = SchematicLayoutPlanner.ResolveDefaultParameters(SymbolKind.Mklopf, 0);
         string cellDir = GeneratedCellStore.GetOrCreate(
             _workspaceDir, "MKLOPF", defaults, null, null, PCellLayerSelection.Default);
         vm.Model.Instances.Add(new LayoutInstance
