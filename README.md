@@ -1,4 +1,6 @@
-# circuitRF
+<p align="center">
+  <img src="docs/images/circuitRF_title.png" alt="circuitRF — schematic, layout, electromagnetic, thermal" width="100%">
+</p>
 
 **EDA tool for RF design — for the RF community, by the RF community.**
 
