@@ -115,3 +115,41 @@ internal sealed class SetParameterNameCommand : IUiCommand
     public void Execute() { _param.Name = _newName; _model.NotifyChanged(); }
     public void Undo()    { _param.Name = _oldName; _model.NotifyChanged(); }
 }
+
+/// <summary>
+/// A placed library model pointed at another model (brief vendorlib-9 R-vl9-2c): its <c>CellRef</c> and its whole
+/// parameter list in ONE undo entry, since the two models' parameters are not the same list.
+/// </summary>
+internal sealed class SetCellRefCommand : IUiCommand
+{
+    private readonly SchematicEditModel      _model;
+    private readonly EditableComponent       _comp;
+    private readonly string?                 _oldRef;
+    private readonly string                  _newRef;
+    private readonly List<EditableParameter> _oldParams;
+    private readonly List<EditableParameter> _newParams;
+
+    public string Description => "Change part";
+
+    public SetCellRefCommand(SchematicEditModel model, EditableComponent comp, string cellRef,
+                             IEnumerable<EditableParameter> parameters)
+    {
+        _model     = model;
+        _comp      = comp;
+        _oldRef    = comp.CellRef;
+        _newRef    = cellRef;
+        _oldParams = comp.Parameters.Select(p => p.Clone()).ToList();
+        _newParams = parameters.Select(p => p.Clone()).ToList();
+    }
+
+    public void Execute() => Apply(_newRef, _newParams);
+    public void Undo()    => Apply(_oldRef, _oldParams);
+
+    private void Apply(string? cellRef, List<EditableParameter> src)
+    {
+        _comp.CellRef = cellRef;
+        _comp.Parameters.Clear();
+        foreach (var p in src) _comp.Parameters.Add(p.Clone());
+        _model.NotifyChanged();
+    }
+}

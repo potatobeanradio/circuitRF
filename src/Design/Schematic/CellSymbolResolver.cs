@@ -130,7 +130,10 @@ public static class CellSymbolResolver
         // unsaved schematic must still get its pins.
         || ComposedFetSymbolProvider.IsComposedFetRef(cellRef)
         // A Verilog-A model's chosen symbol always draws something too — its fallback is the default glyph or the box.
-        || VerilogASymbolProvider.IsVerilogARef(cellRef);
+        || VerilogASymbolProvider.IsVerilogARef(cellRef)
+        // A placed library MODEL (brief vendorlib-9 R-vl9-2a) is not a path in any form: it resolves through the
+        // workspace's vendor libraries, and with a stored glyph it draws with no base at all.
+        || VendorLibraries.ModelLibrary.VendorModelRefs.IsRef(cellRef);
 
     /// <summary>
     /// Resolves <paramref name="cellRef"/> relative to <paramref name="baseDir"/> and returns
@@ -174,6 +177,8 @@ public static class CellSymbolResolver
             return ComposedFetSymbolProvider.Resolve(cellRef, baseDir);
         if (VerilogASymbolProvider.IsVerilogARef(cellRef))
             return VerilogASymbolProvider.Resolve(cellRef, baseDir);
+        if (VendorLibraries.ModelLibrary.VendorModelRefs.IsRef(cellRef))
+            return VendorLibraries.ModelLibrary.VendorModelSymbolProvider.Resolve(cellRef, baseDir, workspaceRoot);
 
         // 1. Resolve path. A cell reference is relative to the schematic's own directory, so an
         //    unsaved schematic has nothing to resolve it against — NotFound, not a crash. A ws://
@@ -335,6 +340,8 @@ public static class CellSymbolResolver
         if (WBondSymbolProvider.IsWBondRef(cellRef)) return null;
         if (ComposedFetSymbolProvider.IsComposedFetRef(cellRef)) return null;
         if (VerilogASymbolProvider.IsVerilogARef(cellRef)) return null;
+        if (VendorLibraries.ModelLibrary.VendorModelRefs.IsRef(cellRef))
+            return VendorLibraries.ModelLibrary.VendorModelSymbolProvider.Ccell(cellRef, baseDir, workspaceRoot);
 
         try
         {

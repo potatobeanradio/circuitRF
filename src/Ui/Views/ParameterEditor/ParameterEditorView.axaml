@@ -983,12 +983,13 @@
                     <!-- The checkbox is the SAME "Show on schematic" every generic parameter row carries:
                          File has no generic row on this panel, so it is carried here, as Part's is below. -->
                     <Grid ColumnDefinitions="60,*,Auto">
-                        <TextBlock Grid.Column="0" Text="File"
+                        <TextBlock Grid.Column="0" Text="{Binding VendorFileLabel}"
                                    FontSize="11" VerticalAlignment="Center"/>
                         <SelectableTextBlock Grid.Column="1" Text="{Binding VendorLibraryFile}"
                                              FontSize="11" VerticalAlignment="Center"
                                              TextWrapping="Wrap"/>
                         <CheckBox Grid.Column="2"
+                                  IsVisible="{Binding IsVendorSpicePart}"
                                   IsChecked="{Binding SpiceModelShowFileOnSchematic}"
                                   ToolTip.Tip="Show on schematic"
                                   Margin="6,0,2,0"
@@ -1002,16 +1003,17 @@
                                  FontSize="11"
                                  Padding="4,3"
                                  VerticalAlignment="Center"
-                                 ToolTip.Tip="Type to search this file's parts by name, value (10p, 4n7) or description"/>
+                                 ToolTip.Tip="Type to search by name, value (10p, 4n7) or description: a SPICE part's file, or the library's models with the same pins"/>
                         <Button Grid.Column="2"
                                 Content="▾"
                                 FontSize="11"
                                 Padding="6,3"
                                 Margin="2,0,0,0"
                                 VerticalAlignment="Stretch"
-                                ToolTip.Tip="Show every part in this file"
+                                ToolTip.Tip="Show every part this one can be changed to"
                                 Command="{Binding ShowAllVendorPartsCommand}"/>
                         <CheckBox Grid.Column="3"
+                                  IsVisible="{Binding IsVendorSpicePart}"
                                   IsChecked="{Binding SpiceModelShowNameOnSchematic}"
                                   ToolTip.Tip="Show on schematic"
                                   Margin="6,0,2,0"
@@ -1101,7 +1103,7 @@
                         </StackPanel>
                     </Grid>
                     <!-- brief vendorlib-5 R-vl5-4a: always present, so nothing shifts when the part changes. -->
-                    <Grid ColumnDefinitions="60,*" IsVisible="{Binding HasVendorPartDetail}">
+                    <Grid ColumnDefinitions="60,*" IsVisible="{Binding ShowVendorPartTolerance}">
                         <TextBlock Grid.Column="0" Text="Tolerance"
                                    FontSize="11" VerticalAlignment="Center"/>
                         <SelectableTextBlock Grid.Column="1" Text="{Binding VendorPartTolerance}"

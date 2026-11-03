@@ -1032,6 +1032,8 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
                 // .subckt's declared parameters, which is what a row is FOR.
                 if (comp.Symbol == SymbolKind.SpiceModel
                     && SpiceModelSymbolProvider.IsPanelParameter(param.Name)) continue;
+                // A placed library model's Glyph is its symbol's, carried for a missing library (brief vendorlib-9).
+                if (IsVendorModelComponent(comp) && param.Name == VendorModelRefs.GlyphParameter) continue;
 
                 var row = new ParameterRowViewModel(param, _schematicVm, comp.Symbol, comp);
                 if (row.IsFilePathParam) row.PickFileAsync = PickModelFileAsync;
@@ -1083,7 +1085,8 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         OnPropertyChanged(nameof(ShowModelSwitches));
         OnPropertyChanged(nameof(IsSnp));
         OnPropertyChanged(nameof(IsSpiceModel));
-        if (comp.Symbol != SymbolKind.SpiceModel) IsVendorPart = false;
+        if (comp.Symbol != SymbolKind.SpiceModel && !IsVendorModelComponent(comp)) IsVendorPart = false;
+        OnPropertyChanged(nameof(IsVendorModel));
         OnPropertyChanged(nameof(IsFileSpiceModel));
         OnPropertyChanged(nameof(ShowVendorPartPanel));
         OnPropertyChanged(nameof(IsWBond));
@@ -1101,6 +1104,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         RefreshFootprintPanel();
         if (comp.Symbol == SymbolKind.Snp) RefreshSnpProperties();
         if (comp.Symbol == SymbolKind.SpiceModel) RefreshSpiceModelProperties();
+        if (IsVendorModelComponent(comp)) RefreshVendorModel();
         if (comp.Symbol == SymbolKind.WBond) RefreshWBondProperties();
         RefreshMatchProperties();
         RefreshVerilogAPanel();
@@ -1190,11 +1194,11 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         // One accessor for both reference forms — a kit part resolves from memory and needs no
         // schematic directory, a cell folder resolves from disk and does.
         string dir = _schematicVm.EditModel.SchematicDirectory ?? "";
-        if (dir.Length == 0 && !PdkKitRegistry.IsKitRef(cellRef)) return;
+        if (dir.Length == 0 && !PdkKitRegistry.IsKitRef(cellRef) && !VendorModelRefs.IsRef(cellRef)) return;
 
         try
         {
-            if (CellSymbolResolver.ResolveCcell(cellRef, dir) is not { } cell) return;
+            if (CellSymbolResolver.ResolveCcell(cellRef, dir, _schematicVm.KitWorkspaceRoot) is not { } cell) return;
 
             var declared = cell.Parameters;
             for (int i = 0; i < declared.Count; i++)
@@ -2323,6 +2327,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
             // everything, which is not an answer.
             .Where(p => comp.Symbol != SymbolKind.SpiceModel
                         || !SpiceModelSymbolProvider.IsPanelParameter(p.Name))
+            .Where(p => !IsVendorModelComponent(comp) || p.Name != VendorModelRefs.GlyphParameter)
             .ToList();
     }
 

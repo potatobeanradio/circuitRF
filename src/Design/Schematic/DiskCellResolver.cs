@@ -76,7 +76,7 @@ public sealed class DiskCellResolver : ICellResolver
     /// <remarks>A malformed or absent <c>.ccell</c> yields no declared parameters rather than a
     /// refusal — the instance's own overrides still apply, which is exactly what the window does with
     /// the same file.</remarks>
-    private static IReadOnlyList<ParameterDeclaration> ParametersOf(string cellDir)
+    internal static IReadOnlyList<ParameterDeclaration> ParametersOf(string cellDir)
     {
         string ccellPath = Path.Combine(cellDir, CellFolder.CcellFileName);
         if (!File.Exists(ccellPath)) return [];

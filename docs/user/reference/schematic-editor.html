@@ -586,6 +586,13 @@ draws as the ordinary C or L symbol, is named C1, L1, …, and is labelled with 
 and, on a line of its own, its value (<code>C = 10 pF</code>). It arrives with the
 <a href="footprints.html#imported">footprint</a> of the case size its library states, also in a workspace that has
 no technology yet.</p>
+<p>A library can also hold <a href="model-library-format.html">model folders</a>, listed in the same rows. The
+search, sort and <strong>?</strong> button work as they do for SPICE parts, and a model's <strong>?</strong> opens the documents
+in its own <code>docs/</code> folder. In the Type menu, a folder of models is one entry that lists them all. A model places as a
+cell: it draws the glyph its <code>part.cpart</code> names (R, C, L or a transistor, with the transistor's pins
+matched to the model's pin names), or the model's own symbol when it names none. It is named R1, C1, L1
+or Q1 for those glyphs, and arrives with the model's parameters at their defaults. If the library goes
+missing, the part keeps drawing its glyph with the not-found mark.</p>
 <h2 id="placing">Placing a component</h2>
 <p>There are two gestures, and they place the identical thing — a kit part in particular resolves
 through the same path either way, so a drag and a click can never disagree about what you get.</p>

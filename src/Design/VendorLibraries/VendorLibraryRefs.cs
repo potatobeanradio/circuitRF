@@ -243,7 +243,7 @@ public static class VendorLibraryRefs
         ArgumentNullException.ThrowIfNull(refs);
         ArgumentNullException.ThrowIfNull(placedFiles);
         refs.RemoveAll(r => string.Equals(r.Name, name, StringComparison.OrdinalIgnoreCase));
-        return placedFiles.Count(f => TryParse(f, out string n, out _)
+        return placedFiles.Count(f => (TryParse(f, out string n, out _) || ModelLibrary.VendorModelRefs.TryParse(f, out n, out _, out _))
                                    && string.Equals(n, name, StringComparison.OrdinalIgnoreCase));
     }
 
@@ -301,7 +301,7 @@ public static class VendorLibraryRefs
         var spice = new HashSet<string>(Schematic.SpiceModelPeek.FileExtensions, StringComparer.OrdinalIgnoreCase);
         try
         {
-            foreach (string f in Directory.EnumerateFiles(folder, "*", SearchOption.AllDirectories))
+            foreach (string f in FilesOutsideModelFolders(folder))
             {
                 string name = Path.GetFileName(f);
                 if (name.StartsWith('.')) continue;
@@ -313,6 +313,26 @@ public static class VendorLibraryRefs
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
         return false;
+    }
+
+    /// <summary>
+    /// Every file under <paramref name="folder"/> except those inside a model folder (brief vendorlib-9 R-vl9-1a). A
+    /// model's <c>.csch</c>, <c>.cnl</c>, <c>.va</c> and <c>.s2p</c> are its own files, not kit structure: judging
+    /// them would send every model library to the kit import. A <c>library.clib</c> is the library's own manifest.
+    /// </summary>
+    private static IEnumerable<string> FilesOutsideModelFolders(string folder)
+    {
+        var stack = new Stack<string>();
+        stack.Push(folder);
+        while (stack.Count > 0)
+        {
+            string dir = stack.Pop();
+            if (ModelLibrary.ModelFolder.Is(dir)) continue;
+            foreach (string f in Directory.EnumerateFiles(dir))
+                if (!Path.GetFileName(f).Equals(ModelLibrary.ModelFolder.LibraryFileName, StringComparison.OrdinalIgnoreCase))
+                    yield return f;
+            foreach (string d in Directory.EnumerateDirectories(dir)) stack.Push(d);
+        }
     }
 
     // ── Validate ──────────────────────────────────────────────────────────────
@@ -356,7 +376,8 @@ public static class VendorLibraryRefs
         ArgumentNullException.ThrowIfNull(placedParts);
 
         var placed = placedParts
-            .Where(p => TryParse(p.File, out string n, out _)
+            .Where(p => (TryParse(p.File, out string n, out _)
+                         || ModelLibrary.VendorModelRefs.TryParse(p.File, out n, out _, out _))
                      && string.Equals(n, reference.Name, StringComparison.OrdinalIgnoreCase))
             .Distinct()
             .ToList();
@@ -380,11 +401,28 @@ public static class VendorLibraryRefs
         int missing = 0;
         foreach (var (file, part) in placed)
         {
+            // A placed model is its vendormodel:// reference with an empty Name: the reference names the folder.
+            if (ModelLibrary.VendorModelRefs.TryParse(file, out _, out string modelRel, out _))
+            {
+                if (build.Entries.Any(e => e.IsModel && e.File.Equals(modelRel, StringComparison.OrdinalIgnoreCase))) continue;
+                missing++;
+                problems.Add($"The model {modelRel} is placed in this workspace but the library no longer holds it.");
+                continue;
+            }
             TryParse(file, out _, out string rel);
             if (held.Contains((rel.Replace('\\', '/').ToLowerInvariant(), part.Trim().ToLowerInvariant()))) continue;
             missing++;
             problems.Add($"'{part}' in {rel} is placed in this workspace but the library no longer holds it.");
         }
+
+        // The model folders (brief vendorlib-9 R-vl9-4a): brief 6's checks and D1's — the one function check runs.
+        foreach (var (folder, reason) in build.UnreadableModels)
+            problems.Add($"{folder}: {reason}");
+        foreach (var e in build.Entries.Where(e => e.IsModel))
+            foreach (var d in ModelLibrary.ModelFolderCheck.Validate(Path.Combine(root, CircuitRF.Core.RefPath.ToNative(e.File))))
+                (d.Severity == CircuitRF.Diagnostics.DiagnosticSeverity.Error ? problems : notes).Add($"{e.File}: {d.Render()}");
+        foreach (var d in ModelLibrary.ModelLibraryCheck.Validate(root))
+            problems.Add(d.Render());
 
         if (build.UnreadableSentence is { } s) notes.Add(s);
         if (build.Duplicates.Count > 0)

@@ -171,10 +171,13 @@ internal static class VendorLibraryVerbs
         {
             var row = ToJson(lib, e, technology);
             rows.Add(row);
+            // The Kind column (brief vendorlib-9 R-vl9-4b), and for a model the CellRef an agent writes into a
+            // .csch by hand, before the parameters a drop writes beside it.
             Console.WriteLine(string.Join('\t',
-                lib, e.Part, e.Header.ValueText(), ToleranceColumn(e), e.Header.Description ?? e.FileStem,
+                lib, e.KindWord, e.Part, e.Header.ValueText(), ToleranceColumn(e), e.Header.Description ?? e.FileStem,
                 e.Header.FrequencyRangeText(),
-                string.Join(' ', row.Parameters.Select(p => $"{p.Key}={p.Value}"))));
+                string.Join(' ', (row.CellRef is { } cellRef ? [$"CellRef={cellRef}"] : Array.Empty<string>())
+                                 .Concat(row.Parameters.Select(p => $"{p.Key}={p.Value}")))));
         }
 
         Console.Error.WriteLine($"[circuitRF] {hits.Count} part(s) match in {refs.Count} librar{(refs.Count == 1 ? "y" : "ies")}");
@@ -189,7 +192,9 @@ internal static class VendorLibraryVerbs
     internal const string PlacedBy =
         "Each part's parameters are written on a .csch component with Symbol \"SpiceModel\" (as Parameters rows), or on a "
       + ".cnl line: SpiceModel:C1 <net> <net> File=\"vendorlib://<library>/<file>\" Name=<part>. Either way the reference "
-      + "resolves through the workspace's vendor libraries, and tune C1.Part parts=\"…\" searches it.";
+      + "resolves through the workspace's vendor libraries, and tune C1.Part parts=\"…\" searches it. A part whose Kind "
+      + "is model is a cell instead: a .csch component whose CellRef is the vendormodel://<library>/<model folder> "
+      + "reference printed with it, carrying its Glyph row and the model's own parameters as rows; it runs the model's .cnl.";
 
     private static FoundPartJson ToJson(string library, VendorLibraryEntry e, CircuitRF.Design.Layout.Technology? technology)
     {
@@ -211,7 +216,7 @@ internal static class VendorLibraryVerbs
                e.Header.Description, e.Header.FrequencyLowHz, e.Header.FrequencyHighHz,
                e.Header.CaseMetric, e.Header.CaseImperial, parameters,
                e.Tolerance is { } t ? new(t.SpreadText, t.KindWord, t.SourceWord) : null,
-               e.ToleranceNote);
+               e.ToleranceNote, e.KindWord, part.ModelRef);
     }
 
     /// <summary>The tolerance column (R-vl5-5a): <c>±0.1 pF</c>, <c>not known</c>, or empty for a part with no C or L

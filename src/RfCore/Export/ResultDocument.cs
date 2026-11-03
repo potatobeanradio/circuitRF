@@ -710,7 +710,12 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.Never)]
         FoundPartToleranceJson? Tolerance = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        string? ToleranceNote = null);
+        string? ToleranceNote = null,
+        // brief vendorlib-9 R-vl9-4b: "spice" for a .subckt part, "model" for a model folder; and a model's cell
+        // reference, the CellRef a .csch component places it by.
+        string Kind = "spice",
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? CellRef = null);
 
     /// <summary>A vendor part's tolerance: its text as a spread (<c>0.1 pF</c>, <c>5%</c>), <c>absolute</c> or
     /// <c>percent</c>, and <c>part-number</c> or <c>header</c>.</summary>

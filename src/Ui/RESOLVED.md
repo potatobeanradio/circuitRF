@@ -41730,3 +41730,25 @@ filter and search leave, as expanded; the pane's chrome is its height less the v
 first version read: the TreeView is stretched to fill the viewport, so a tree shorter than its pane (any filtered one)
 reported the pane's own height and the pane never shrank, which is the half of the gesture that matters. Only the two panes the splitter divides move, the other keeps 40 %
 of them and at least 120 px, and the proportion is written on the PRESENTER at local value, `PaletteColumnPin`'s rule.
+
+## Model folders in the palette and the Parameter Editor (VL-9, 2026-11-03)
+
+- **Menu:** a folder holding only model folders is ONE leaf (`Caps (n)`) that lists them. A real model library is
+  hundreds of one-part folders, and a sub-menu each would be unusable. A model beside SPICE files or sub-folders gets a
+  leaf of its own, because otherwise the menu does not show it exists. It was first built without those leaves, and the
+  UiSnapshot of a mixed folder showed only the SPICE file.
+- **Placement:** `CommitVendorPlacement` hands a model to `CommitVendorModelPlacement`, which places a cell instance
+  of the `vendormodel://` reference with no saved schematic required, because the reference is not relative. It seeds
+  the model's parameters and the `Glyph` row. A model is named R/C/L/Q from its glyph, otherwise by the cell's
+  prefix. The ghost (click and drag) resolves the model's real glyph through `VendorPartPlacement.GhostSymbol(part,
+  workspace)`.
+- **`VendorPartRef.IsModel`** rides an eighth tab-separated field (`model`). A seven-field line from before still
+  parses as a SPICE part, so Recently Used and drag payloads carry the kind.
+- **The vendor panel serves both kinds** (`ShowVendorPartPanel` = SpiceModel or model, plus vendor). For a model, the
+  File row reads "Folder", the two Show-on-schematic boxes and the Tolerance row are hidden (they belong to SpiceModel
+  rows), and Tune/Optimize/Yield are not offered. Part searches the library's models with the same pins, and Value ▼/▲
+  steps through `VendorPartChange.SameKind`'s model rule: the same category folder, quantity and pins, passive with a
+  Value. A change of model is ONE undo entry (`SetCellRefCommand`: the reference and the whole row list). A value the
+  user changed from the old model's default survives if the new model declares that parameter. **?** opens the
+  model folder's own documents.
+- The `Glyph` row is hidden from the generic rows and from the row-set comparison, as a SpiceModel's panel rows are.

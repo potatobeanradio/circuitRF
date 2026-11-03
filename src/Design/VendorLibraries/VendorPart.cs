@@ -18,17 +18,24 @@ namespace CircuitRF.Design.VendorLibraries;
 /// <param name="Part">The subcircuit's name.</param>
 /// <param name="File">The file, relative to the library root, with <c>/</c> separators.</param>
 /// <param name="Glyph"><c>C</c>, <c>L</c> or empty — see <see cref="VendorPartPlacement.GlyphOf"/>.</param>
+/// <param name="IsModel">A model folder (brief vendorlib-9 R-vl9-2d): <see cref="File"/> is then the model folder and the
+/// part places as a cell instance of its <c>vendormodel://</c> reference, not as a SpiceModel.</param>
 public sealed record VendorPartRef(
     string Library,
     string Part,
     string File,
     string Glyph,
     string? CaseMetric = null,
-    string? CaseImperial = null)
+    string? CaseImperial = null,
+    bool IsModel = false)
 {
     /// <summary>The part for one index entry of the library named <paramref name="library"/>.</summary>
     public static VendorPartRef For(string library, VendorLibraryEntry e)
-        => new(library, e.Part, e.File, VendorPartPlacement.GlyphOf(e), e.Header.CaseMetric, e.Header.CaseImperial);
+        => new(library, e.Part, e.File, VendorPartPlacement.GlyphOf(e), e.Header.CaseMetric, e.Header.CaseImperial,
+               e.IsModel);
+
+    /// <summary>A placed model's cell reference, <c>vendormodel://&lt;library&gt;/&lt;folder&gt;</c>; null for a SPICE part.</summary>
+    public string? ModelRef => IsModel ? ModelLibrary.VendorModelRefs.RefFor(Library, File) : null;
 
     /// <summary>True when <paramref name="other"/> is the same part of the same library. Case-insensitive,
     /// as the index and the <c>.cws</c> look names up.</summary>
@@ -50,16 +57,22 @@ public sealed record VendorPartRef(
     /// field can hold a tab (a library name, a SPICE name, a case code), while a path can hold almost
     /// anything else.
     /// </summary>
+    /// <remarks>A model carries an eighth field, its kind word (<see cref="VendorModelInfo.KindWord"/>); a SPICE
+    /// part's line is unchanged, so a Recently Used list written before models existed still reads.</remarks>
     public string Serialize()
-        => string.Join('\t', Marker, Library, Part, File, Glyph, CaseMetric ?? "", CaseImperial ?? "");
+        => string.Join('\t', IsModel
+            ? [Marker, Library, Part, File, Glyph, CaseMetric ?? "", CaseImperial ?? "", VendorModelInfo.KindWord]
+            : new[] { Marker, Library, Part, File, Glyph, CaseMetric ?? "", CaseImperial ?? "" });
 
     public static bool TryParse(string? text, out VendorPartRef result)
     {
         result = null!;
         if (text is null) return false;
         var f = text.Split('\t');
-        if (f.Length != 7 || f[0] != Marker || f[1].Length == 0 || f[2].Length == 0 || f[3].Length == 0) return false;
-        result = new VendorPartRef(f[1], f[2], f[3], f[4], f[5].Length == 0 ? null : f[5], f[6].Length == 0 ? null : f[6]);
+        if (f.Length is not (7 or 8) || f[0] != Marker || f[1].Length == 0 || f[2].Length == 0 || f[3].Length == 0) return false;
+        bool model = f.Length == 8 && f[7] == VendorModelInfo.KindWord;
+        if (f.Length == 8 && !model) return false;
+        result = new VendorPartRef(f[1], f[2], f[3], f[4], f[5].Length == 0 ? null : f[5], f[6].Length == 0 ? null : f[6], model);
         return true;
     }
 }
@@ -79,8 +92,10 @@ public static class VendorPartPlacement
     /// two-terminal part. That is what lets the symbol be drawn from the instance alone when the
     /// library is missing — there is then no index to ask for the port count.</para>
     /// </summary>
+    /// <remarks>A model's glyph is the one its <c>part.cpart</c> names, whatever it is (brief vendorlib-9 R-vl9-2b).</remarks>
     public static string GlyphOf(VendorLibraryEntry e)
-        => e.PortCount != 2 ? "" : e.Header.Quantity switch
+        => e.Model is { } m ? m.Glyph
+        : e.PortCount != 2 ? "" : e.Header.Quantity switch
         {
             VendorPartQuantity.Capacitance => "C",
             VendorPartQuantity.Inductance  => "L",
@@ -101,6 +116,18 @@ public static class VendorPartPlacement
     /// through <see cref="SpiceModelSymbolProvider"/>.
     /// </summary>
     public static Symbol.Symbol GhostSymbol(string? glyph)
+        => GlyphGhost(glyph);
+
+    /// <summary>The ghost of <paramref name="part"/>: a model's glyph bound to its pins, or its own symbol; a SPICE
+    /// part's C, L or box.</summary>
+    public static Symbol.Symbol GhostSymbol(VendorPartRef part, string? workspaceRoot)
+    {
+        if (!part.IsModel) return GhostSymbol(part.Glyph);
+        var r = ModelLibrary.VendorModelSymbolProvider.Resolve(part.ModelRef!, null, workspaceRoot);
+        return r.Symbol ?? ModelLibrary.VendorModelSymbolProvider.GlyphSymbol(part.Glyph, null);
+    }
+
+    private static Symbol.Symbol GlyphGhost(string? glyph)
         => GlyphKind(glyph) is { } kind
             ? BuiltInSymbols.Primitives(kind, 2)
             : SpiceModelSymbolProvider.UnconfiguredSymbol(Symbol.SnpPinConfig.Standard, Symbol.SnpPitch.Loose);
@@ -115,13 +142,27 @@ public static class VendorPartPlacement
     };
 
     /// <summary>The instance parameters a placed part carries, in the order they are written.</summary>
+    /// <remarks>A model's are its <c>Glyph</c> alone: its reference is the instance's <c>CellRef</c>
+    /// (<see cref="VendorPartRef.ModelRef"/>), and its cell parameters are seeded from <c>part.cpart</c>.</remarks>
     public static IReadOnlyList<KeyValuePair<string, string>> Parameters(VendorPartRef part)
-        =>
+        => part.IsModel
+        ? [new(ModelLibrary.VendorModelRefs.GlyphParameter, part.Glyph)]
+        :
         [
             new(SpiceModelSymbolProvider.FileParameter,  part.FileRef),
             new(SpiceModelSymbolProvider.NameParameter,  part.Part),
             new(SpiceModelSymbolProvider.GlyphParameter, part.Glyph),
         ];
+
+    /// <summary>The instance-name prefix a part is placed under: a SPICE part's <see cref="InstancePrefix(string?)"/>; a
+    /// model's from its glyph — <c>R</c>/<c>C</c>/<c>L</c>, <c>Q</c> for a FET — else null for a cell's own.</summary>
+    public static string? InstancePrefix(VendorPartRef part)
+        => !part.IsModel ? InstancePrefix(part.Glyph)
+         : part.Glyph.Trim().ToUpperInvariant() switch
+           {
+               "R" => "R", "C" => "C", "L" => "L", "FET" => "Q",
+               _   => null,
+           };
 
     /// <summary>The <c>Footprint</c> a placed part takes on <paramref name="technology"/>, or null for
     /// None — <see cref="FootprintDefaults.ForCaseCodes"/>.</summary>
@@ -166,6 +207,21 @@ public static class VendorPartChange
     {
         ArgumentNullException.ThrowIfNull(fileEntries);
         ArgumentNullException.ThrowIfNull(current);
+        if (current.IsModel)
+        {
+            // A model steps within its CATEGORY folder, among passive models of its quantity that state a Value, with
+            // the same pins (brief vendorlib-9 R-vl9-2c) — the folder standing where a SPICE part's file stands.
+            if (current.Header.Value is null || current.Model!.Kind != ModelLibrary.ModelPartManifest.KindPassive) return [current];
+            string category = VendorModelInfo.CategoryOf(current);
+            return [.. fileEntries
+                .Where(e => e.IsModel && e.Header.Value is not null && e.Header.Quantity == current.Header.Quantity
+                         && e.Model!.Kind == ModelLibrary.ModelPartManifest.KindPassive
+                         && string.Equals(VendorModelInfo.CategoryOf(e), category, StringComparison.OrdinalIgnoreCase)
+                         && e.Ports.SequenceEqual(current.Ports, StringComparer.Ordinal))
+                .OrderBy(e => e.Header.Value)
+                .ThenBy(e => e.Part, StringComparer.OrdinalIgnoreCase)];
+        }
+
         string? key = KindKey(current);
         return [.. fileEntries
             .Where(e => string.Equals(e.File, current.File, StringComparison.OrdinalIgnoreCase)

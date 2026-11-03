@@ -96,7 +96,13 @@ public static class VendorPartRange
     {
         ArgumentNullException.ThrowIfNull(parts);
         var list = parts.ToList();
-        if (list.Count == 0 || Reach(tb) is not { } reach) return [];
+        if (list.Count == 0) return [];
+        var reached = Reach(tb);
+        // A MODEL is not exempt at 0 Hz unless it says it holds there (brief vendorlib-9 R-vl9-3d): a model built on
+        // S-parameters measured from 100 MHz has no exact DC answer the way a passive R/L/C network has.
+        bool dc = list.Any(e => e.IsModel) && ReachesDc(tb);
+        if (reached is null && !dc) return [];
+        var reach = reached ?? (double.PositiveInfinity, 0.0);
 
         var said = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var warnings = new List<string>();
@@ -109,8 +115,9 @@ public static class VendorPartRange
             // through rounding in the unit conversion.
             const double slack = 1e-9;
             var beyond = new List<double>();
-            if (reach.Low  < low  * (1 - slack)) beyond.Add(reach.Low);
-            if (reach.High > high * (1 + slack)) beyond.Add(reach.High);
+            if (e.IsModel && dc && low > 0) beyond.Add(0);
+            if (reached is not null && reach.Low < low * (1 - slack)) beyond.Add(reach.Low);
+            if (reached is not null && reach.High > high * (1 + slack)) beyond.Add(reach.High);
             if (beyond.Count == 0) continue;
 
             warnings.Add($"{e.Part} is characterised from {Hz(low)} to {Hz(high)}; this run reaches " +
@@ -119,8 +126,33 @@ public static class VendorPartRange
         return warnings;
     }
 
+    /// <summary>
+    /// Whether an enabled analysis of <paramref name="tb"/> solves at 0 Hz: a DC operating point, a harmonic-balance,
+    /// loadpull or envelope run (each solves its DC term), or an S-parameter sweep holding a 0 Hz point.
+    /// </summary>
+    public static bool ReachesDc(TestBench tb)
+    {
+        ArgumentNullException.ThrowIfNull(tb);
+        var (globals, withUnit) = Globals(tb);
+        foreach (var a in tb.Analyses)
+        {
+            if (!a.Enabled) continue;
+            switch (a)
+            {
+                case DcAnalysis or HarmonicBalanceAnalysis or LoadpullAnalysis or LoadpullPursuitAnalysis or EnvelopeAnalysis:
+                    return true;
+                case SParameterAnalysis sp:
+                    try { if (sp.Expand(globals, withUnit).Any(f => f == 0)) return true; }
+                    catch { /* the run reports it */ }
+                    break;
+            }
+        }
+        return false;
+    }
+
     private static string Hz(double f)
     {
+        if (f == 0) return "0 Hz (DC)";
         (double Scale, string Prefix)[] steps = [(1e9, "G"), (1e6, "M"), (1e3, "k"), (1, "")];
         foreach (var (scale, prefix) in steps)
             if (f >= scale * 0.9995)

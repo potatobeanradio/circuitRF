@@ -54,6 +54,7 @@ global using CircuitRF.Design.ThreeD;
 // Vendor part libraries (brief vendorlib-1/2): the index, the references and the part identity the
 // palette arms, born below the firewall so `circuitrf find --parts` shares them.
 global using CircuitRF.Design.VendorLibraries;
+global using CircuitRF.Design.VendorLibraries.ModelLibrary;
 
 // The Skia renderers and the small framework-free types they read, which crossed the same wall in
 // RND-1 (brief-render-1-render-layer-below-the-firewall.md R-rnd1-1) so `circuitrf render` can draw

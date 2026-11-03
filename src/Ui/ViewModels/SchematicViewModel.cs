@@ -3993,7 +3993,7 @@ public sealed partial class SchematicViewModel : ObservableObject
         {
             // A vendor part's ghost is the glyph it will land as — the built-in C or L, or the
             // unconfigured SPICE box for a part with no glyph — never resolved from its file.
-            var glyph = VendorPartPlacement.GhostSymbol(vendor.Glyph);
+            var glyph = VendorPartPlacement.GhostSymbol(vendor, KitWorkspaceRoot);
             prims = glyph.Primitives;
             pins  = glyph.Pins;
         }
@@ -4080,6 +4080,7 @@ public sealed partial class SchematicViewModel : ObservableObject
     public void CommitVendorPlacement(VendorPartRef part, SymbolRotation rotation,
                                       double worldX, double worldY, bool mirrorX = false)
     {
+        if (part.IsModel) { CommitVendorModelPlacement(part, rotation, worldX, worldY, mirrorX); return; }
         var comp = BuildPlacedComponent(SymbolKind.SpiceModel, 2, rotation, worldX, worldY, mirrorX);
 
         foreach (var (name, value) in VendorPartPlacement.Parameters(part))
@@ -4097,6 +4098,54 @@ public sealed partial class SchematicViewModel : ObservableObject
         // offered no default by For, so this is the only footprint the part arrives with.
         if (VendorPartPlacement.Footprint(part, SchematicTechnology.Of(EditModel)) is { } footprint
             && !comp.Parameters.Any(p => p.Name.Equals(ArtworkParameters.FootprintName, StringComparison.OrdinalIgnoreCase)))
+            comp.Parameters.Add(new EditableParameter
+                { Name = ArtworkParameters.FootprintName, Expression = footprint, ShowOnSchematic = false });
+
+        Execute(WithSeriesWireCuts(new PlaceComponentCommand(EditModel, comp), comp));
+        SelectPlacedPart(comp.Id);
+        VendorPartPlaced?.Invoke(part);
+    }
+
+    /// <summary>
+    /// Places a library MODEL (brief vendorlib-9 R-vl9-2a/2c): a cell instance of its <c>vendormodel://</c> reference,
+    /// seeded with the model's parameters at <c>part.cpart</c>'s defaults and carrying its <c>Glyph</c>, so it draws
+    /// its shape with the library missing. Needs no saved schematic — the reference is not a path — only a workspace
+    /// to look the library up in.
+    /// </summary>
+    private void CommitVendorModelPlacement(VendorPartRef part, SymbolRotation rotation,
+                                            double worldX, double worldY, bool mirrorX)
+    {
+        string cellRef = part.ModelRef!;
+        var ccell = CellSymbolResolver.ResolveCcell(cellRef, EditModel.SchematicDirectory ?? "", KitWorkspaceRoot);
+        if (ccell is null)
+        {
+            VendorModelRefs.Resolve(cellRef, EditModel.SchematicDirectory, KitWorkspaceRoot, out string? why);
+            _messageSink?.Warning($"\"{part.Part}\" cannot be placed: {why}");
+            return;
+        }
+
+        var comp = new EditableComponent
+        {
+            InstanceName = SchematicEditModel.NextAvailableName(TakenInstanceNames(),
+                               VendorPartPlacement.InstancePrefix(part) ?? CellReferenceDesignator.PrefixFor(ccell)),
+            Symbol       = SymbolKind.Generic, // placeholder; rendering uses CellRef when set
+            CellRef      = cellRef,
+            X = EditModel.SnapToGrid(worldX), Y = EditModel.SnapToGrid(worldY),
+            Rotation     = rotation,
+            MirrorX      = mirrorX,
+            ShowTypeLabel    = true,
+            ShowInstanceName = true,
+        };
+        foreach (var cp in ccell.Parameters)
+            comp.Parameters.Add(new EditableParameter
+            {
+                Name = cp.Name, Expression = cp.DefaultExpression, Unit = cp.Unit, Dimension = cp.Dimension,
+                ShowOnSchematic = cp.ShowOnSchematic,
+            });
+        foreach (var (name, value) in VendorPartPlacement.Parameters(part))
+            comp.Parameters.Add(new EditableParameter { Name = name, Expression = value, ShowOnSchematic = false });
+
+        if (VendorPartPlacement.Footprint(part, SchematicTechnology.Of(EditModel)) is { } footprint)
             comp.Parameters.Add(new EditableParameter
                 { Name = ArtworkParameters.FootprintName, Expression = footprint, ShowOnSchematic = false });
 
@@ -4132,6 +4181,9 @@ public sealed partial class SchematicViewModel : ObservableObject
         ArgumentNullException.ThrowIfNull(model);
         ArgumentNullException.ThrowIfNull(comp);
         ArgumentNullException.ThrowIfNull(chosen);
+        if (comp.CellRef is { } modelRef && VendorModelRefs.TryParse(modelRef, out string modelLibrary, out _, out _))
+            return VendorModelChangeCommand(model, comp, modelLibrary, old, chosen);
+
         string file = comp.Parameters.FirstOrDefault(p => p.Name == SpiceModelSymbolProvider.FileParameter)?.Expression ?? "";
         if (!VendorLibraryRefs.TryParse(file, out string library, out _)) return null;
 
@@ -4162,6 +4214,44 @@ public sealed partial class SchematicViewModel : ObservableObject
             if (p is null) updated.Add(p = new EditableParameter { Name = name, ShowOnSchematic = false });
             p.Expression = value;
         }
+    }
+
+    /// <summary>
+    /// A placed model pointed at another model of its library (brief vendorlib-9 R-vl9-2c): its reference and glyph,
+    /// the footprint by <see cref="VendorPartChange.FootprintAfter"/>'s rule, and the new model's parameters — a value
+    /// the user set on a parameter both models declare is kept, every other row takes the new model's default.
+    /// One undo entry.
+    /// </summary>
+    private static IUiCommand VendorModelChangeCommand(SchematicEditModel model, EditableComponent comp, string library,
+                                                       VendorLibraryEntry? old, VendorLibraryEntry chosen)
+    {
+        var next = VendorPartRef.For(library, chosen);
+        var before = comp.Parameters.ToList();
+        var updated = new List<EditableParameter>();
+        var oldDefaults = old?.Model?.Parameters.ToDictionary(p => p.Name, p => p.Default, StringComparer.Ordinal) ?? [];
+        foreach (var p in chosen.Model!.Parameters)
+        {
+            var cp = VendorModelSymbolProvider.ParameterOf(p);
+            var row = new EditableParameter { Name = p.Name, Expression = cp.DefaultExpression, Unit = cp.Unit, Dimension = cp.Dimension };
+            // Kept only when the user changed it from the old model's default: a default is the old model's, not theirs.
+            if (before.FirstOrDefault(b => b.Name == p.Name) is { } mine
+                && oldDefaults.TryGetValue(p.Name, out string? oldDefault)
+                && !SameValue(mine, VendorModelSymbolProvider.ParameterOf(new ModelPartParameter { Name = p.Name, Default = oldDefault })))
+            { row.Expression = mine.Expression; row.Unit = mine.Unit; row.ShowOnSchematic = mine.ShowOnSchematic; }
+            updated.Add(row);
+        }
+        updated.Add(new EditableParameter { Name = VendorModelRefs.GlyphParameter, Expression = next.Glyph, ShowOnSchematic = false });
+
+        var fpRow = before.FirstOrDefault(p => p.Name.Equals(ArtworkParameters.FootprintName, StringComparison.OrdinalIgnoreCase));
+        string? footprint = old is null ? fpRow?.Expression
+            : VendorPartChange.FootprintAfter(fpRow?.Expression, VendorPartRef.For(library, old), next, SchematicTechnology.Of(model));
+        if (!string.IsNullOrWhiteSpace(footprint))
+            updated.Add(new EditableParameter { Name = ArtworkParameters.FootprintName, Expression = footprint, ShowOnSchematic = false });
+
+        return new SetCellRefCommand(model, comp, next.ModelRef!, updated);
+
+        static bool SameValue(EditableParameter mine, CircuitRF.Design.Cells.CcellParameter old)
+            => mine.Expression.Trim() == old.DefaultExpression.Trim() && (mine.Unit ?? "").Trim() == old.Unit.Trim();
     }
 
     /// <summary>

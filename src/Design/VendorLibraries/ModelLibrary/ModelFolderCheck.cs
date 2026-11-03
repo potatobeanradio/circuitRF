@@ -1,4 +1,5 @@
 using CircuitRF.Core.Design;
+using CircuitRF.Design.Cells;
 using CircuitRF.Core.Netlist;
 using CircuitRF.Diagnostics;
 
@@ -97,6 +98,7 @@ public static class ModelFolderCheck
                 "{path}: {message}", ("path", cnlPath), ("message", w)));
 
         CheckTopCell(cnlPath, lib, part, found);
+        CheckAgainstSchematic(cnlPath, text, dir, part, found);
 
         foreach (var cell in lib.Cells)
             foreach (var inst in cell.Instances)
@@ -111,6 +113,26 @@ public static class ModelFolderCheck
                             "{path}: {instance} in {cell} names \"{file}\", which is not inside the model folder; every file a model uses travels with it.",
                             ("path", cnlPath), ("cell", cell.Name), ("instance", inst.InstanceName), ("file", value)));
                 }
+    }
+
+    /// <summary>
+    /// D1's gate (brief vendorlib-9 R-vl9-4a): when the model ships its schematic, the <c>.cnl</c> is exactly what
+    /// that schematic extracts to (<see cref="ModelNetlist.FromCell"/>), judged by meaning rather than layout. A
+    /// model written by hand or by script with no schematic has nothing to be held to, and is not.
+    /// </summary>
+    private static void CheckAgainstSchematic(string cnlPath, string text, string dir, ModelPartManifest part, List<Diagnostic> found)
+    {
+        PrimaryResolution primary;
+        try { primary = CellFolder.ResolvePrimary(dir, ViewType.Schematic); }
+        catch (Exception) { return; }
+        if (primary.State == PrimaryState.NoView) return;
+
+        string? extracted = ModelNetlist.FromCell(dir, out string? why);
+        bool? same = extracted is null ? null : ModelNetlist.SameDefinitions(text, extracted);
+        if (same == true) return;
+        found.Add(Diagnostic.Create("check.model.netlist-not-schematic", DiagnosticSeverity.Error,
+            "{part}: its netlist is not what its schematic extracts to; the part runs its netlist. Export it again, or Edit Vendor Model and save.",
+            ("path", cnlPath), ("part", part.Part), ("reason", why ?? "")));
     }
 
     private static void CheckTopCell(string cnlPath, Library lib, ModelPartManifest part, List<Diagnostic> found)

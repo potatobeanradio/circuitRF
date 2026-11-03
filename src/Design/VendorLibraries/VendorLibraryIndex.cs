@@ -40,6 +40,41 @@ public sealed record VendorLibraryEntry(
 
     /// <summary>The part has a C or L value, so a tolerance is asked of it.</summary>
     public bool HasToleranceQuestion => Tolerance is not null || ToleranceNote is not null;
+
+    /// <summary>
+    /// Non-null when this part is a MODEL FOLDER rather than a <c>.subckt</c> block (brief vendorlib-9 R-vl9-1c).
+    /// <see cref="File"/> is then the model folder, library-relative; <see cref="Folders"/> the category folders
+    /// above it; <see cref="FileStem"/> its name; <see cref="Ports"/> its pins; <see cref="Header"/> what
+    /// <c>part.cpart</c> states; and <see cref="Offset"/>/<see cref="Length"/> are unused.
+    /// </summary>
+    public VendorModelInfo? Model { get; init; }
+
+    /// <summary>True for a model folder, false for a SPICE <c>.subckt</c> part.</summary>
+    public bool IsModel => Model is not null;
+
+    /// <summary>The kind word <c>find --parts</c> prints and a drag payload carries: <c>model</c> or <c>spice</c>.</summary>
+    public string KindWord => IsModel ? VendorModelInfo.KindWord : "spice";
+}
+
+/// <summary>
+/// What the index keeps of a model folder's <c>part.cpart</c> (brief vendorlib-9 R-vl9-1c) — what finds, describes
+/// and places it. Nothing here runs: the model's <c>.cnl</c> is read only by a run (D1, D7).
+/// </summary>
+/// <param name="Cell">The top <c>define</c> the <c>.cnl</c> holds.</param>
+/// <param name="Kind"><c>Active</c> or <c>Passive</c>.</param>
+/// <param name="Glyph"><c>R</c>, <c>C</c>, <c>L</c>, <c>FET</c>, or empty for the model's own symbol.</param>
+/// <param name="Parameters">The top cell's parameters, each with its default as written.</param>
+public sealed record VendorModelInfo(
+    string Cell,
+    string Kind,
+    string Glyph,
+    IReadOnlyList<ModelLibrary.ModelPartParameter> Parameters)
+{
+    public const string KindWord = "model";
+
+    /// <summary>The category folder a model sits in, library-relative (<c>""</c> for the root): what Value ▲/▼
+    /// steps within, the way a SPICE part steps within its file.</summary>
+    public static string CategoryOf(VendorLibraryEntry e) => string.Join('/', e.Folders);
 }
 
 /// <summary>A library file whose tolerance letters were all refused by the one-offset guard (R-vl5-1d), and why.</summary>
@@ -66,6 +101,13 @@ public sealed record VendorLibraryBuild(
 {
     /// <summary>Files whose part-number tolerances were all refused by the one-offset guard, each said once.</summary>
     public IReadOnlyList<VendorLibraryToleranceRefusal> ToleranceRefusals { get; init; } = [];
+
+    /// <summary>Model folders found (brief vendorlib-9 R-vl9-1b), readable or not.</summary>
+    public int ModelFolders { get; init; }
+
+    /// <summary>Model folders whose <c>part.cpart</c> could not be read, each library-relative with the reader's
+    /// sentence (R-vl9-1d). They are left out of <see cref="Entries"/> and never stop the rest of the index.</summary>
+    public IReadOnlyList<(string Folder, string Reason)> UnreadableModels { get; init; } = [];
 
     /// <summary>The parts with a C or L value, and of those the ones whose tolerance is known.</summary>
     public int ToleranceAsked => Entries.Count(e => e.HasToleranceQuestion);
@@ -113,13 +155,22 @@ public sealed record VendorLibraryBuild(
     {
         var lines = new List<string>
         {
-            $"{Plural(Entries.Count, "part", "parts")} in {Plural(FilesScanned, "file", "files")}.",
+            ModelFolders == 0
+                ? $"{Plural(Entries.Count, "part", "parts")} in {Plural(FilesScanned, "file", "files")}."
+                : FilesScanned == 0
+                    ? $"{Plural(Entries.Count, "part", "parts")} in {Plural(ModelFolders, "model folder", "model folders")}."
+                    : $"{Plural(Entries.Count, "part", "parts")} in {Plural(FilesScanned, "file", "files")} and " +
+                      $"{Plural(ModelFolders, "model folder", "model folders")}.",
         };
         var groups = Groups;
         if (groups.Count > 1 || (groups.Count == 1 && groups[0].Folder.Length > 0))
             lines.Add("Folders: " + string.Join(", ",
                 groups.Select(g => $"{(g.Folder.Length == 0 ? "(top level)" : g.Folder)} ({g.Parts:N0})")) + ".");
         if (UnreadableSentence is { } s) lines.Add(s);
+        if (UnreadableModels.Count > 0)
+            lines.Add($"{Plural(UnreadableModels.Count, "model folder", "model folders")} could not be read: " +
+                      string.Join("; ", UnreadableModels.Take(5).Select(m => $"{m.Folder} ({m.Reason})")) +
+                      (UnreadableModels.Count > 5 ? "; …" : "") + ".");
         if (ToleranceAsked > 0)
             lines.Add($"Tolerance known for {ToleranceKnown:N0} of {Plural(ToleranceAsked, "part", "parts")}.");
         foreach (var r in ToleranceRefusals)
@@ -187,7 +238,7 @@ public static class VendorLibraryIndex
     }
 
     /// <summary>Drops every cached file scan.</summary>
-    public static void InvalidateAll() { lock (_gate) { _files.Clear(); _latest.Clear(); } }
+    public static void InvalidateAll() { lock (_gate) { _files.Clear(); _models.Clear(); _latest.Clear(); } }
 
     // ── Build ─────────────────────────────────────────────────────────────────
 
@@ -205,7 +256,7 @@ public static class VendorLibraryIndex
 
         if (!Directory.Exists(full)) return Refused(full, $"'{full}' is not a folder.");
 
-        var files = EnumerateLibraryFiles(full);
+        var files = EnumerateLibraryFiles(full, out var modelDirs);
 
         var entries    = new List<VendorLibraryEntry>();
         var duplicates = new List<VendorLibraryDuplicate>();
@@ -242,6 +293,22 @@ public static class VendorLibraryIndex
             }
         }
 
+        // The model folders (brief vendorlib-9 R-vl9-1b): one part.cpart each, and nothing else opened there.
+        var unreadableModels = new List<(string, string)>();
+        foreach (var (abs, rel) in modelDirs)
+        {
+            control?.Token.ThrowIfCancellationRequested();
+            var (entry, why) = ScanModelCached(full, abs, rel);
+            if (entry is null) { unreadableModels.Add((rel, why ?? "unreadable")); continue; }
+            if (seen.TryGetValue(entry.Part, out string? first))
+            {
+                duplicates.Add(new VendorLibraryDuplicate(entry.Part, first, entry.File));
+                continue;
+            }
+            seen[entry.Part] = entry.File;
+            entries.Add(entry);
+        }
+
         string? refusal = null;
         if (entries.Count == 0)
             refusal = encrypted > 0
@@ -249,13 +316,20 @@ public static class VendorLibraryIndex
                 // Said with what a readable library looks like: the usual way here is picking a
                 // manufacturer's design-kit edition for a schematic-capture tool, whose circuits sit in
                 // that tool's own database and look nothing like a SPICE file.
-                : $"'{full}' holds no readable .subckt part. A vendor library is the plain-text SPICE " +
-                  "edition: a folder of model files (.lib, .sub, .cir …) with one .subckt per part. A " +
+                : unreadableModels.Count > 0
+                    ? $"'{full}' holds {VendorLibraryBuild.Plural(unreadableModels.Count, "model folder", "model folders")} " +
+                      "and none could be read: " + string.Join("; ", unreadableModels.Take(5).Select(m => $"{m.Item1} ({m.Item2})")) + "."
+                : $"'{full}' holds no readable .subckt part and no model folder. A vendor library is the plain-text SPICE " +
+                  "edition — a folder of model files (.lib, .sub, .cir …) with one .subckt per part — or a model " +
+                  "library, a folder of model folders each holding a part.cpart. A " +
                   "design kit made for another tool keeps its circuits in that tool's own format and " +
                   "cannot be read.";
 
         return new VendorLibraryBuild(full, entries, files.Count, read, encrypted, empty, unreadable,
-                                      unparsed, duplicates, refusal) { ToleranceRefusals = tolRefused };
+                                      unparsed, duplicates, refusal)
+        {
+            ToleranceRefusals = tolRefused, ModelFolders = modelDirs.Count, UnreadableModels = unreadableModels,
+        };
     }
 
     private static VendorLibraryBuild Refused(string root, string why)
@@ -283,17 +357,25 @@ public static class VendorLibraryIndex
         return scan.Kind == FileKind.Readable ? scan.Entries : null;
     }
 
-    /// <summary>Every library file under <paramref name="root"/>, in ordinal relative-path order.
-    /// Hidden files and folders (a leading dot) are skipped.</summary>
-    private static List<(string Abs, string Rel)> EnumerateLibraryFiles(string root)
+    /// <summary>Every library file under <paramref name="root"/>, in ordinal relative-path order, and every model
+    /// folder. Hidden files and folders (a leading dot) are skipped. A model folder is a LEAF (brief vendorlib-9
+    /// R-vl9-1b): it is listed, and nothing inside it is — its <c>models/</c> hold the model's own files, never
+    /// parts.</summary>
+    private static List<(string Abs, string Rel)> EnumerateLibraryFiles(string root, out List<(string Abs, string Rel)> modelDirs)
     {
         var exts = new HashSet<string>(SpiceModelPeek.FileExtensions, StringComparer.OrdinalIgnoreCase);
         var list = new List<(string, string)>();
+        var models = new List<(string, string)>();
         var stack = new Stack<string>();
         stack.Push(root);
         while (stack.Count > 0)
         {
             string dir = stack.Pop();
+            if (ModelLibrary.ModelFolder.Is(dir))
+            {
+                models.Add((dir, dir.Length == root.Length ? "" : Path.GetRelativePath(root, dir).Replace('\\', '/')));
+                continue;
+            }
             IEnumerable<string> subdirs, here;
             try
             {
@@ -311,7 +393,128 @@ public static class VendorLibraryIndex
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
         }
         list.Sort((a, b) => string.CompareOrdinal(a.Item2, b.Item2));
+        models.Sort((a, b) => string.CompareOrdinal(a.Item2, b.Item2));
+        modelDirs = models;
         return list;
+    }
+
+    // ── Model folders ─────────────────────────────────────────────────────────
+
+    private sealed record ModelScan(DateTime Mtime, long Length, VendorLibraryEntry? Entry, string? Reason);
+    private static readonly Dictionary<string, ModelScan> _models = new(StringComparer.Ordinal);
+    private static readonly Dictionary<string, long> _manifestReads = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// How many <c>part.cpart</c> files this process has read for the library at <paramref name="root"/> —
+    /// the counter brief vendorlib-9 R-vl9-1e gates the index on: one per model folder per change, and no
+    /// <c>.cnl</c>, <c>.csch</c> or <c>.csym</c> at all (those are not counted here because nothing here opens
+    /// them; <see cref="FileReads"/> counts SPICE files only).
+    /// </summary>
+    public static long ManifestReads(string root)
+    {
+        lock (_gate) return _manifestReads.GetValueOrDefault(KeyOf(root));
+    }
+
+    /// <summary>
+    /// The entry of ONE model folder of the library at <paramref name="root"/> — what a placed model's symbol, its
+    /// parameter interface and a run ask, served from the cache a build fills (keyed on <c>part.cpart</c>'s time and
+    /// length). Null when the folder holds no readable <c>part.cpart</c>.
+    /// </summary>
+    public static VendorLibraryEntry? ModelEntry(string root, string modelFolderRel)
+    {
+        string full = KeyOf(root);
+        string rel  = modelFolderRel.Replace('\\', '/').Trim('/');
+        string dir;
+        try { dir = Path.GetFullPath(Path.Combine(full, CircuitRF.Core.RefPath.ToNative(rel))); }
+        catch { return null; }
+        return ModelLibrary.ModelFolder.Is(dir) ? ScanModelCached(full, dir, rel).Entry : null;
+    }
+
+    /// <summary>One model folder's entry, from its <c>part.cpart</c>, re-read only when that file's time or
+    /// length changed. Null with the reader's sentence when it cannot be read.</summary>
+    private static (VendorLibraryEntry? Entry, string? Reason) ScanModelCached(string root, string dir, string rel)
+    {
+        string path = Path.Combine(dir, ModelLibrary.ModelFolder.PartFileName);
+        DateTime mtime; long length;
+        try
+        {
+            var info = new FileInfo(path);
+            (mtime, length) = (info.LastWriteTimeUtc, info.Length);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return (null, ex.Message); }
+
+        string key = root + "\n" + path;
+        lock (_gate)
+            if (_models.TryGetValue(key, out var hit) && hit.Mtime == mtime && hit.Length == length)
+                return (hit.Entry, hit.Reason);
+
+        lock (_gate) _manifestReads[root] = _manifestReads.GetValueOrDefault(root) + 1;
+        var (manifest, refusal) = ModelLibrary.ModelPartManifest.Read(path);
+        var scan = manifest is null
+            ? new ModelScan(mtime, length, null, refusal)
+            : new ModelScan(mtime, length, EntryOf(manifest, rel), null);
+        lock (_gate) _models[key] = scan;
+        return (scan.Entry, scan.Reason);
+    }
+
+    /// <summary>
+    /// A model folder as an index entry: <c>part.cpart</c>'s Description, Value, Frequency and case codes fill the
+    /// fields a SPICE header fills (R-vl9-1c), so value-aware search, the range warning and the case footprint
+    /// treat both kinds alike. The part is named by its FOLDER, which is how a placed model refers to it; check
+    /// says so when Part disagrees.
+    /// </summary>
+    internal static VendorLibraryEntry EntryOf(ModelLibrary.ModelPartManifest m, string rel)
+    {
+        string[] segs = rel.Length == 0 ? [] : rel.Split('/');
+        string folder = segs.Length == 0 ? m.Part : segs[^1];
+        string[] categories = segs.Length == 0 ? [] : segs[..^1];
+
+        string? description = m.Description.Trim().Length > 0 ? m.Description.Trim() : null;
+        double? value = null;
+        var quantity = VendorPartQuantity.None;
+        string v = m.Value.Replace(" ", "");
+        if (v.Length > 0 && VendorLibrarySearch.TryReadValue(v, out double read, out var unit))
+            (value, quantity) = (read, unit);
+
+        double? lo = null, hi = null;
+        if (m.Frequency is { } f)
+        {
+            lo = HzOf(f.Low);
+            hi = HzOf(f.High);
+        }
+
+        var header = new VendorLibraryHeader
+        {
+            Description       = description,
+            DescriptionPlain  = description,
+            DescriptionFields = description is null ? [] : [.. description.Split('/').Select(x => x.Trim())],
+            PartNumber        = m.Part,
+            Quantity          = quantity,
+            Value             = value,
+            FrequencyLowHz    = lo,
+            FrequencyHighHz   = hi,
+            CaseMetric        = m.CaseMetric.Trim().Length > 0 ? m.CaseMetric.Trim() : null,
+            CaseImperial      = m.CaseImperial.Trim().Length > 0 ? m.CaseImperial.Trim() : null,
+        };
+        return new VendorLibraryEntry(folder, rel, categories, folder, 0, 0, [.. m.Pins], header)
+        {
+            Model = new VendorModelInfo(m.Cell, m.Kind, m.Glyph, [.. m.Parameters]),
+        };
+    }
+
+    /// <summary><c>"20 GHz"</c> → 2e10, through the expression engine's own unit table; null when it does not read.</summary>
+    private static double? HzOf(string text)
+    {
+        string t = (text ?? "").Trim();
+        if (t.Length == 0) return null;
+        var (expr, unit) = CircuitRF.Core.Expressions.Units.LiftInlineUnit(t);
+        try
+        {
+            double x = new CircuitRF.Core.Expressions.Evaluator()
+                .Eval(expr, new CircuitRF.Core.Expressions.Scope("hz"), unit).AsReal();
+            return double.IsFinite(x) ? x : null;
+        }
+        catch { return null; }
     }
 
     private static FileScan ScanCached(string root, string abs, string rel, ref int read)

@@ -3239,6 +3239,10 @@ same Validate the Manage Libraries dialog runs. A library that is missing or hol
 an error (<code>check.workspace.vendor-library.missing</code>), and so is a part placed in one of the workspace's
 schematics that the library no longer holds (<code>check.workspace.vendor-library.part-missing</code>). Files in
 the library that could not be read are a warning (<code>check.workspace.vendor-library.unreadable</code>).</p>
+<p>A <a href="model-library-format.html#checking">model library</a>, a model folder, a <code>part.cpart</code> or a <code>library.clib</code> is checked
+against the model-library format: each model folder gets the cell checks and then its own (<code>check.model.*</code>), and a
+library adds one part number in two folders (<code>check.model.duplicate-part</code>). A folder holding model folders is walked to
+its full depth without <code>--recursive</code>.</p>
 <div class="callout note">
 <span class="label">Warnings are reported and still exit 0</span>
 <p><code>--severity</code> decides the exit code, and it defaults to <code>error</code>. Warnings are
@@ -3917,11 +3921,16 @@ the part's stated value within 0.5 % instead, and a unit, when given, must be th
 finds inductors only). A case size matches the stated size exactly: <code>0603</code> the imperial code, <code>1608M</code>
 the metric one. The palette's search box and the Parameter Editor's Part field use the same rules.</p>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf find ~/designs/Amp --parts "10p C0G"
-<span class="output">Caps	TSTC0402A0018	10 pF	1005M(0402)/C0G(-55~125degC)/10[pF]/50[V]	100 MHz – 30 GHz	File=vendorlib://Caps/capacitors/series-a.lib Name=TSTC0402A0018 Glyph=C Footprint=smt:0402@N</span></code></pre>
-<p>Each row ends with <strong>the instance parameters to write</strong> for a SpiceModel component in a <code>.csch</code>, so a
-part found here can be placed without another question. They are the parameters the palette writes
-when the part is dropped, <code>Footprint</code> included when the workspace's technology is a board and the part
-states its case size in both systems. Rows are sorted by library, then by value.
+<span class="output">Caps	spice	TSTC0402A0018	10 pF	±0.5 pF	1005M(0402)/C0G(-55~125degC)/10[pF]/50[V]	100 MHz – 30 GHz	File=vendorlib://Caps/capacitors/series-a.lib Name=TSTC0402A0018 Glyph=C Footprint=smt:0402@N
+Caps	model	TSTCAP0402	10 pF		Thin-film capacitor, measured	0 Hz – 20 GHz	CellRef=vendormodel://Caps/Passives/TSTCAP0402 Glyph=C Footprint=smt:0402@N</span></code></pre>
+<p>The second column is the part's <strong>kind</strong>: <code>spice</code> for a part in a SPICE file, <code>model</code> for a
+<a href="model-library-format.html">model folder</a>. Each row ends with <strong>what to write</strong> in a <code>.csch</code> so a part
+found here can be placed without another question — the parameters the palette writes when the part is
+dropped, <code>Footprint</code> included when the workspace's technology is a board and the part states its case
+size in both systems. A <code>spice</code> part is a SpiceModel component carrying those parameters. A <code>model</code> part
+is a cell instance: its <code>CellRef</code> is the <code>vendormodel://&lt;library&gt;/&lt;model folder&gt;</code> reference shown, it
+carries the <code>Glyph</code> row, and its other rows are the model's own parameters. It runs the model's <code>.cnl</code>.
+<code>--json</code> gives each part's <code>kind</code>, and a model's <code>cellRef</code>. Rows are sorted by library, then by value.
 At most <code>--limit</code> rows are printed (50 by default), and a note says how many matched in all.</p>
 <div class="callout">
 <span class="label">The walk is bounded, and it says when it stopped</span>

@@ -662,7 +662,11 @@ public sealed class EditableComponent
     /// none of.</para>
     /// </summary>
     public string? ExternalSymbolRef =>
-        CellRef
+        // A placed library model draws with the glyph it stores, so its symbol reference carries it (brief vendorlib-9).
+        (CellRef is { } cellRef && VendorLibraries.ModelLibrary.VendorModelRefs.IsRef(cellRef)
+            ? VendorLibraries.ModelLibrary.VendorModelRefs.SymbolRef(cellRef,
+                  Parameters.FirstOrDefault(p => p.Name == VendorLibraries.ModelLibrary.VendorModelRefs.GlyphParameter)?.Expression)
+            : CellRef)
         ?? (Symbol == SymbolKind.WBond
                 ? WBondSymbolProvider.RefFor(
                       Parameters.FirstOrDefault(p => p.Name == WBondEmbedding.DesignParameter)?.Expression,

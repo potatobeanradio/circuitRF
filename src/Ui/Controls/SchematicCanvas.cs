@@ -1288,7 +1288,7 @@ public sealed class SchematicCanvas : Control
             // generic box while the DROP places the kit's real symbol — the drag showing one thing
             // and the result another. Resolve the cell's own symbol so both agree.
             var (ghostPrims, ghostPins) = p.Vendor is { } vendor
-                ? VendorGhostSymbol(vendor)
+                ? VendorGhostSymbol(vendor, _editContext.KitWorkspaceRoot)
                 : ResolveGhostSymbol(p.CellDir);
 
             _editContext.Overlay = _editContext.Overlay with
@@ -1316,9 +1316,9 @@ public sealed class SchematicCanvas : Control
 
     /// <summary>A dragged vendor part's ghost: its glyph (the built-in C or L), or the unconfigured SPICE
     /// box for a part with none — the same choice the click's ghost makes.</summary>
-    private static (IReadOnlyList<SymbolPrimitive>?, IReadOnlyList<SymbolPin>?) VendorGhostSymbol(VendorPartRef vendor)
+    private static (IReadOnlyList<SymbolPrimitive>?, IReadOnlyList<SymbolPin>?) VendorGhostSymbol(VendorPartRef vendor, string? workspaceRoot)
     {
-        var glyph = VendorPartPlacement.GhostSymbol(vendor.Glyph);
+        var glyph = VendorPartPlacement.GhostSymbol(vendor, workspaceRoot);
         return (glyph.Primitives, glyph.Pins);
     }
 

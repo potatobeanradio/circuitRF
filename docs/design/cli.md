@@ -2863,8 +2863,10 @@ Solved section is; the detail (when, how long, what changed) is `explain`'s. In 
 ```
 
 **`find <workspace> --parts "<query>"` lists vendor library parts** (brief vendorlib-1 R-vl1-5b), one tab-separated
-row per part: library, part, value, **tolerance** (brief vendorlib-5 R-vl5-5a), description, frequency range and the
-instance parameters a placement writes. The tolerance column is `±0.1 pF` / `±5 %`, `not known`, or empty for a part
+row per part: library, **kind** (`spice` or `model`, brief vendorlib-9 R-vl9-4b), part, value, **tolerance** (brief
+vendorlib-5 R-vl5-5a), description, frequency range and the instance parameters a placement writes — for a model,
+`CellRef=vendormodel://<library>/<model folder>` first, the reference a `.csch` cell instance places it by, and
+`--json`'s `kind`/`cellRef` per part. The tolerance column is `±0.1 pF` / `±5 %`, `not known`, or empty for a part
 with no C or L value. `--json` carries it per part as `"tolerance": {"text": "0.1 pF", "kind": "absolute", "source":
 "part-number"}` — `text` is what `tol=part` resolves to, `kind` is `absolute` or `percent`, `source` is `part-number`
 or `header` — and `"tolerance": null` beside `"toleranceNote": "<reason>"` when it is not known. The index's own count

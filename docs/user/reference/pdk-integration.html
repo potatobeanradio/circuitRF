@@ -473,8 +473,27 @@ workspace opens and one of its libraries is missing, the Messages pane says so o
 have that library somewhere else under the same name, the message offers <strong>Repair</strong>.</p>
 <p><strong>Validate</strong> on a vendor library re-reads it and reports parts indexed, files it could not read, placed
 parts checked, and any placed part the library no longer holds.</p>
+<p>A library can also hold <strong>model folders</strong>: parts drawn in circuitRF and packaged with every file they need.
+Their format is <a href="model-library-format.html">Model Library Format</a>. <strong>Add Vendor Library…</strong> takes a folder of
+model folders, or a folder mixing them with SPICE files, the same way. Each model folder is one part. Its
+<code>part.cpart</code> gives the description, value, frequency range and case size that a SPICE part's header gives,
+so search, the palette and the Parameter Editor treat both kinds alike. Indexing reads that one file per
+model and nothing else in the folder. A <code>.lib</code> inside a model's <code>models/</code> folder belongs to that model and
+is never listed as a part. A model folder whose <code>part.cpart</code> cannot be read is named in the library's
+summary, and the rest of the library is still indexed.</p>
+<p><strong>A placed model runs its netlist.</strong> It is a cell instance whose reference is
+<code>vendormodel://&lt;library&gt;/&lt;model folder&gt;</code>. A run reads the model's <code>.cnl</code> once, however many instances
+place it, and never reads its schematic. Its parameters are the model's cell parameters, edited in the
+Parameter Editor like any cell's, starting at the defaults its <code>part.cpart</code> states. A model's frequency
+range is checked as a SPICE part's is, with one difference: a DC operating point, a harmonic-balance run
+or a sweep from 0 Hz is outside the range unless the range starts at 0 Hz. A model built on S-parameters
+measured from 100 MHz has no exact DC answer, which a network of R, L and C has.</p>
+<p><strong>Validate</strong> and <a href="cli.html#check"><code>circuitrf check</code></a> check every model folder too. A model that ships
+its schematic must also have a netlist that is exactly what that schematic extracts to. If it is not,
+that is an error: the part runs its netlist, so a difference means it does not run what its schematic
+shows.</p>
 <h3 id="vendor-placed">A placed part</h3>
-<p>Selecting a placed vendor part shows its library and file, a <strong>Part</strong> field and the part's value,
+<p>Selecting a placed vendor part shows its library and file (a model's folder), a <strong>Part</strong> field and the part's value,
 <a href="#vendor-tolerance">tolerance</a>, frequency range and description in the Parameter Editor. The editor's title is the part number.
 The check boxes beside <strong>File</strong> and <strong>Part</strong> say whether each one is drawn on the schematic, as the
 check box on every other parameter does; File is off when a part is placed.</p>
@@ -486,6 +505,11 @@ palette's search, and <kbd>↓</kbd>/<kbd>↑</kbd> move through the matches whi
 </li>
 <li><p><strong>Value ▼ / ▲</strong> step to the next lower or higher value of the same kind: the same file and the same
 description except the value, so the size, dielectric and voltage stay as they are.</p>
+</li>
+<li><p><strong>For a model</strong>, the Part field searches the library's models with the same pin names, since those are
+the ones that take its wires. Value ▼ / ▲ step among passive models that state a value of the same
+quantity in the same folder. Changing the model keeps a parameter value you set when the new model
+has that parameter too. The model's other parameters take the new model's defaults.</p>
 </li>
 <li><p><strong>On the schematic</strong>, double-click the value line (<code>C = 10 pF</code>). The value opens for editing with
 the parts of the same kind listed under it, in value order, and the placed part highlighted:

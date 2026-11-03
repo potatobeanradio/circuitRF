@@ -355,6 +355,12 @@ internal static class Check
                 var (model, _, _) = SchematicPersistence.LoadFromFile(csch);
                 foreach (var c in model.Components)
                 {
+                    // A placed library model is its reference, with no part name of its own (brief vendorlib-9).
+                    if (c.CellRef is { } cellRef && CircuitRF.Design.VendorLibraries.ModelLibrary.VendorModelRefs.IsRef(cellRef))
+                    {
+                        placed.Add((CircuitRF.Design.VendorLibraries.ModelLibrary.VendorModelRefs.Bare(cellRef), ""));
+                        continue;
+                    }
                     if (c.Symbol != SymbolKind.SpiceModel) continue;
                     string file = (c.Parameters.FirstOrDefault(p => p.Name == SpiceModelSymbolProvider.FileParameter)?.Expression ?? "").Trim();
                     if (!VendorLibraryRefs.IsVendorRef(file)) continue;

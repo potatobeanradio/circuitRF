@@ -3103,12 +3103,17 @@ finds inductors only). A case size matches the stated size exactly: `0603` the i
 the metric one. The palette's search box and the Parameter Editor's Part field use the same rules.
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf find ~/designs/Amp --parts "10p C0G"
-<span class="output">Caps	TSTC0402A0018	10 pF	1005M(0402)/C0G(-55~125degC)/10[pF]/50[V]	100 MHz – 30 GHz	File=vendorlib://Caps/capacitors/series-a.lib Name=TSTC0402A0018 Glyph=C Footprint=smt:0402@N</span></code></pre>
+<span class="output">Caps	spice	TSTC0402A0018	10 pF	±0.5 pF	1005M(0402)/C0G(-55~125degC)/10[pF]/50[V]	100 MHz – 30 GHz	File=vendorlib://Caps/capacitors/series-a.lib Name=TSTC0402A0018 Glyph=C Footprint=smt:0402@N
+Caps	model	TSTCAP0402	10 pF		Thin-film capacitor, measured	0 Hz – 20 GHz	CellRef=vendormodel://Caps/Passives/TSTCAP0402 Glyph=C Footprint=smt:0402@N</span></code></pre>
 
-Each row ends with **the instance parameters to write** for a SpiceModel component in a `.csch`, so a
-part found here can be placed without another question. They are the parameters the palette writes
-when the part is dropped, `Footprint` included when the workspace's technology is a board and the part
-states its case size in both systems. Rows are sorted by library, then by value.
+The second column is the part's **kind**: `spice` for a part in a SPICE file, `model` for a
+[model folder](model-library-format.html). Each row ends with **what to write** in a `.csch` so a part
+found here can be placed without another question — the parameters the palette writes when the part is
+dropped, `Footprint` included when the workspace's technology is a board and the part states its case
+size in both systems. A `spice` part is a SpiceModel component carrying those parameters. A `model` part
+is a cell instance: its `CellRef` is the `vendormodel://<library>/<model folder>` reference shown, it
+carries the `Glyph` row, and its other rows are the model's own parameters. It runs the model's `.cnl`.
+`--json` gives each part's `kind`, and a model's `cellRef`. Rows are sorted by library, then by value.
 At most `--limit` rows are printed (50 by default), and a note says how many matched in all.
 
 <div class="callout">

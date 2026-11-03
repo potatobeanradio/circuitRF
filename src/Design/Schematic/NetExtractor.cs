@@ -611,6 +611,18 @@ public static class NetExtractor
                 continue;
             }
 
+            // A placed library MODEL (brief vendorlib-9 R-vl9-3b) runs its .cnl, read once per distinct part per
+            // run; it is never descended into as a schematic and never falls through to the paths below.
+            if (comp.CellRef is not null && VendorLibraries.ModelLibrary.VendorModelRefs.IsRef(comp.CellRef))
+            {
+                int before = conflicts.Count;
+                var vm = EmitVendorModelInstance(comp, model, uf, QK, netNames, detachedKeys, cellRefResolutions,
+                                                 lib, imports, scope, conflicts);
+                if (vm is not null) instances.Add(vm);
+                else NoteDropped(comp, before, conflicts, imports);
+                continue;
+            }
+
             if (comp.CellRef is not null)
             {
                 NoteHostWorkspaceCell(model, comp, scope.HostCellChoices);
@@ -982,6 +994,10 @@ public static class NetExtractor
 
         /// <summary>The vendor parts this extraction refused, each as the conflict it added.</summary>
         public List<string> VendorRefusals { get; } = [];
+
+        /// <summary>Each placed library model's emitted top cell, or why it could not be, keyed on its model folder —
+        /// so two instances of one part read its <c>.cnl</c> once (brief vendorlib-9 R-vl9-3b).</summary>
+        public Dictionary<string, (string? Top, string? Problem)> Models { get; } = new(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>Every cell instance this extraction LEFT OUT, at any level, each as the conflict that says why.
         /// <see cref="ExtractionResult.DroppedInstances"/>.</summary>
@@ -1776,6 +1792,123 @@ public static class NetExtractor
         }
     }
 
+    /// <summary>
+    /// A placed library model (brief vendorlib-9 R-vl9-3b): its <c>.cnl</c> read ONCE per distinct model folder per
+    /// extraction, its file references made absolute against the model folder (brief vendorlib-8), its cells renamed
+    /// to names nothing else in the run holds, and the instance emitted with its parameter overrides. A library the
+    /// workspace does not name, a missing library folder, a part it no longer holds and an unreadable <c>.cnl</c> are
+    /// each a refusal naming the part and the library (R-vl9-3c) — never a silent skip. The <c>.csch</c> beside it
+    /// is never read (D1).
+    /// </summary>
+    private static Instance? EmitVendorModelInstance(
+        EditableComponent comp,
+        SchematicEditModel model,
+        UnionFind uf,
+        Func<double, double, (long, long)> QK,
+        Dictionary<(long, long), string> netNames,
+        Dictionary<(string CompId, int PortIndex), (long, long)> detachedKeys,
+        Dictionary<string, CellSymbolResolution>? cellRefResolutions,
+        Library lib,
+        NetlistImports imports,
+        CellScope scope,
+        List<string> conflicts)
+    {
+        string? Refuse(string why)
+        {
+            conflicts.Add($"Instance '{comp.InstanceName}': {why}");
+            imports.VendorRefusals.Add(conflicts[^1]);
+            return null;
+        }
+
+        if (VendorLibraries.ModelLibrary.VendorModelRefs.Resolve(comp.CellRef, model.SchematicDirectory,
+                model.HostWorkspaceRoot, out string? refusal) is not { } r)
+        { Refuse(refusal!); return null; }
+
+        if (!imports.Models.TryGetValue(r.ModelDir, out var emitted))
+            imports.Models[r.ModelDir] = emitted = EmitModelCells(r, lib, scope);
+        if (emitted.Problem is { } problem) { Refuse(problem); return null; }
+
+        var top = lib.Find(emitted.Top!)!;
+        var pinDefs = GetEffectivePortDefs(model, comp, cellRefResolutions).OrderBy(d => d.PortIndex).ToList();
+        if (pinDefs.Count != top.Ports.Count)
+        {
+            Refuse($"the symbol exposes {pinDefs.Count} pin(s) but the model '{r.Entry.Part}' in the vendor library " +
+                   $"'{r.Library}' has {top.Ports.Count} ({string.Join(" ", top.Ports)}).");
+            return null;
+        }
+        var nets = new List<string>(pinDefs.Count);
+        foreach (var def in pinDefs)
+        {
+            var (px, py) = model.PortWorldOf(comp, def);
+            nets.Add(NetForPort(comp, def.PortIndex, px, py, uf, QK, netNames, detachedKeys));
+        }
+
+        // The instance's rows, the glyph aside: only what the model declares, in the model's own spelling, and a
+        // blank row leaves the model's default standing.
+        var declared = top.Parameters.Select(p => p.Name).ToList();
+        var overrides = new List<ParameterAssignment>();
+        foreach (var p in comp.Parameters)
+        {
+            if (p.Name == VendorLibraries.ModelLibrary.VendorModelRefs.GlyphParameter) continue;
+            if (string.IsNullOrWhiteSpace(p.Name) || string.IsNullOrWhiteSpace(p.Expression)) continue;
+            string? name = declared.FirstOrDefault(d => d == p.Name)
+                        ?? declared.SingleOrDefault(d => d.Equals(p.Name, StringComparison.OrdinalIgnoreCase));
+            if (name is null) continue;
+            var unit = UnitNormalizer.ToEngineUnit(p.Unit);
+            overrides.Add(new ParameterAssignment(name, p.Expression, unit.Length > 0 ? unit : null));
+        }
+
+        imports.VendorParts.Add(r.Entry);
+        return new Instance(comp.InstanceName, top.Name, nets, overrides);
+    }
+
+    /// <summary>One model folder's cells, added to the run's library under fresh names — or why they could not be.</summary>
+    private static (string? Top, string? Problem) EmitModelCells(
+        VendorLibraries.ModelLibrary.VendorModelRefs.Resolved r, Library lib, CellScope scope)
+    {
+        string part = r.Entry.Part;
+        var read = VendorLibraries.ModelLibrary.ModelNetlist.Read(r.ModelDir, out string? problem);
+        if (read is null)
+            return (null, $"the model '{part}' in the vendor library '{r.Library}' cannot run: its netlist {problem}.");
+        string topName = r.Entry.Model!.Cell;
+        if (read.Find(topName) is null)
+            return (null, $"the model '{part}' in the vendor library '{r.Library}' cannot run: its netlist defines no " +
+                          $"cell '{topName}'.");
+
+        // Every cell under a name the run does not already hold, chosen before any is added so a call inside one
+        // model cell to another is rewritten consistently.
+        var names = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var cell in read.Cells)
+            names[cell.Name] = scope.Fresh(Identifier(cell.Name == topName ? part : part + "__" + cell.Name), lib);
+
+        foreach (var cell in read.Cells)
+        {
+            var copy = new Cell(names[cell.Name]);
+            copy.Ports.AddRange(cell.Ports);
+            copy.Parameters.AddRange(cell.Parameters);
+            copy.Variables.AddRange(cell.Variables);
+            foreach (var inst in cell.Instances)
+            {
+                var overrides = inst.Overrides.Select(o =>
+                    FileReferences.Rebase(inst.Reference, o.Name, o.Expression, r.ModelDir) is { } rebased
+                        ? new ParameterAssignment(o.Name, rebased, o.Unit) : o).ToList();
+                copy.Instances.Add(new Instance(inst.InstanceName,
+                    names.GetValueOrDefault(inst.Reference, inst.Reference), inst.NetBindings, overrides)
+                    { RefNetBinding = inst.RefNetBinding });
+            }
+            lib.Cells.Add(copy);
+        }
+        return (names[topName], null);
+
+        static string Identifier(string name)
+        {
+            var sb = new System.Text.StringBuilder(name.Length);
+            foreach (char c in name) sb.Append(char.IsAsciiLetterOrDigit(c) || c == '_' ? c : '_');
+            if (sb.Length == 0 || char.IsAsciiDigit(sb[0])) sb.Insert(0, '_');
+            return sb.ToString();
+        }
+    }
+
     /// <summary>Emitted reference for a device an external provider evaluates.</summary>
     private const string ExtDeviceReference = "ExtDevice";
 
@@ -2160,6 +2293,18 @@ public static class NetExtractor
             return name;
         }
 
+        /// <summary>A library name no cell of this extraction holds or has chosen — <paramref name="leafName"/>, else
+        /// the first free <c>_2</c>, <c>_3</c>… — reserved at once. For cells that come from a library model's netlist,
+        /// which have no folder key of their own (brief vendorlib-9 R-vl9-3b).</summary>
+        public string Fresh(string leafName, Library lib)
+        {
+            string name = leafName;
+            for (int n = 2; lib.Find(name) is not null || _taken.Contains(name); n++)
+                name = $"{leafName}_{n}";
+            _taken.Add(name);
+            return name;
+        }
+
         /// <summary>Library name → cell key, for every cell named during this extraction.</summary>
         public Dictionary<string, string> LibraryNameToKey()
             => _names.ToDictionary(kv => kv.Value, kv => kv.Key, StringComparer.Ordinal);
@@ -2212,20 +2357,7 @@ public static class NetExtractor
         }
 
         // Build the cell once (dedupe by key); children are added before parents → leaf-first lib.
-        if (lib.Find(cellName) is null)
-        {
-            scope.InProgress.Add(cellKey);
-            var (subInstances, subPorts, subVars, subMeas) = ExtractModel(res.Schematic, cells, lib, imports, scope, conflicts);
-            if (subMeas.Count > 0)
-                conflicts.Add($"Cell '{cellName}': MEAS components are ignored inside a cell; measurements attach to the top testbench only.");
-            var cell = new Cell(cellName);
-            cell.Ports.AddRange(subPorts);
-            cell.Instances.AddRange(RebaseFileReferences(subInstances, res.Schematic.SchematicDirectory, scope.RunBase));
-            cell.Variables.AddRange(subVars);
-            foreach (var p in res.Parameters) cell.Parameters.Add(p);
-            lib.Cells.Add(cell);
-            scope.InProgress.Remove(cellKey);
-        }
+        if (lib.Find(cellName) is null) BuildCellDefinition(res, cellKey, cellName, cells, lib, imports, scope, conflicts);
 
         var cellDef = lib.Find(cellName)!;
 
@@ -2266,6 +2398,65 @@ public static class NetExtractor
             .ToList();
 
         return new Instance(comp.InstanceName, cellName, nets, overrides);
+    }
+
+    /// <summary>The one build of a cell's definition from its schematic — what an instance of it descends into, and
+    /// what <see cref="ExtractCell"/> extracts a cell as on its own.</summary>
+    private static void BuildCellDefinition(CellResolution res, string cellKey, string cellName, ICellResolver? cells,
+                                            Library lib, NetlistImports imports, CellScope scope, List<string> conflicts)
+    {
+        scope.InProgress.Add(cellKey);
+        var (subInstances, subPorts, subVars, subMeas) = ExtractModel(res.Schematic, cells, lib, imports, scope, conflicts);
+        if (subMeas.Count > 0)
+            conflicts.Add($"Cell '{cellName}': MEAS components are ignored inside a cell; measurements attach to the top testbench only.");
+        var cell = new Cell(cellName);
+        cell.Ports.AddRange(subPorts);
+        cell.Instances.AddRange(RebaseFileReferences(subInstances, res.Schematic.SchematicDirectory, scope.RunBase));
+        cell.Variables.AddRange(subVars);
+        foreach (var p in res.Parameters) cell.Parameters.Add(p);
+        lib.Cells.Add(cell);
+        scope.InProgress.Remove(cellKey);
+    }
+
+    /// <summary>
+    /// A cell extracted as DEFINE BLOCKS only (brief vendorlib-9 R-vl9-3a): the cell itself, named after its folder,
+    /// and every sub-cell and translated SPICE definition it places, leaf-first — exactly the definitions an instance
+    /// of the cell would add to a run's library, through the same build. Relative file references stay relative to
+    /// the cell's own owning root, which is the base the run is made against here. Null with the reason when the
+    /// cell has no primary schematic that reads.
+    /// </summary>
+    public static (Library Library, string CellName, IReadOnlyList<string> Conflicts)? ExtractCell(
+        string cellDir, out string? refusal, ICellResolver? cells = null)
+    {
+        refusal = null;
+        string dir = Path.TrimEndingDirectorySeparator(Path.GetFullPath(cellDir));
+        PrimaryResolution primary;
+        try { primary = CellFolder.ResolvePrimary(dir, ViewType.Schematic); }
+        catch (Exception ex) { refusal = ex.Message; return null; }
+        if (primary.State is not (PrimaryState.SoleFile or PrimaryState.NamedPresent) || primary.ResolvedName is null)
+        {
+            refusal = $"'{Path.GetFileName(dir)}' has no primary schematic.";
+            return null;
+        }
+        string csch = Path.Combine(CellFolder.SubFolderPath(dir, ViewType.Schematic), primary.ResolvedName);
+
+        SchematicEditModel schematic;
+        try { schematic = SchematicPersistence.LoadFromFile(csch).model; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+        {
+            refusal = $"{csch} could not be read ({ex.Message}).";
+            return null;
+        }
+        schematic.SchematicDirectory = Path.GetDirectoryName(csch);
+
+        string cellName = Path.GetFileName(dir);
+        var res = new CellResolution(cellName, schematic, DiskCellResolver.ParametersOf(dir), dir);
+        var lib = new Library("cell");
+        var conflicts = new List<string>();
+        var scope = new CellScope { RunBase = SchematicCircuit.ReferenceBaseOfDirectory(schematic.SchematicDirectory) };
+        string name = scope.NameFor(res.Key, cellName, lib);
+        BuildCellDefinition(res, res.Key, name, cells ?? DiskCellResolver.Instance, lib, new NetlistImports(), scope, conflicts);
+        return (lib, name, conflicts);
     }
 
     /// <summary>

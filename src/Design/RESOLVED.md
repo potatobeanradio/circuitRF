@@ -26257,3 +26257,46 @@ all take it; the elaborator is unchanged.
   `.csch` run does.
 
 Gate: `tests/Ui.Tests/VendorLibraries/OwningRootPathTests.cs` (3).
+
+## Model folders in a vendor library (VL-9, 2026-11-03)
+
+- **One entry type.** `VendorLibraryEntry.Model` (a `VendorModelInfo`: top cell, kind, glyph, parameters) marks a model
+  folder. `File` is then the folder, library-relative; `Folders` are its category folders; `Ports` its pins. Its
+  `Header` is synthesised from `part.cpart`: Description, Value (read by the search grammar's own value reader),
+  Frequency (through the expression engine's unit table) and the case codes. So `VendorLibrarySearch`, the range
+  warning and the case footprint need no second path. A model is named by its FOLDER, which is what a placed reference
+  names; `check` already says when `Part` disagrees.
+- **The index walk treats a model folder as a leaf.** `EnumerateLibraryFiles` lists it and never descends, so a `.lib`
+  in `models/` is never a part and is never scanned. `part.cpart` is the one file read, through a stat-keyed cache like
+  the SPICE files'. `VendorLibraryIndex.ManifestReads` counts those reads; `FileReads` still counts SPICE files only.
+  An unreadable `part.cpart` is listed in `UnreadableModels` and named in the summary, and does not stop the build.
+- **`Classify`'s kit test skips model folders** (`FilesOutsideModelFolders`) and `library.clib`. Without that, a
+  model's `.csch`, `.csym` and `.va` read as kit structure and every model library went to the kit import.
+- **`vendormodel://<library>/<folder>` is a cell reference, not a path.** `NeedsNoBaseDirectory` is true for EVERY
+  such reference, not only one with a glyph. Push-in, the interface hash and the paste ghost all ask it before
+  treating a reference as a folder, and a model reference must never be split into a directory. The glyph is stored
+  as an instance `Glyph` row (as a SPICE part's is). `EditableComponent.ExternalSymbolRef` appends it after `|`, so
+  the canvas draws the glyph when the library is missing. Sites that resolve the bare `CellRef` get the same state
+  with no fallback glyph.
+- **The symbol:** with a glyph, R/C/L are the built-in two-terminal parts, and FET is the Verilog-A FET glyph bound to
+  the model's pin NAMES (`VerilogASymbolProvider`, so there is one binding rule). With no glyph, it is the model folder's
+  primary `.csym` through the ordinary cell resolver. The parameter interface (`ResolveCcell`) comes from `part.cpart`
+  through the index, with R/L/C units given the Parameter Editor's spelling and dimension (`BomTablePaste.ParseUnit`).
+- **A run reads the `.cnl`, once per model folder per extraction** (`NetlistImports.Models`, `ModelNetlist.Reads`). It
+  never reads the `.csch`. Cells are renamed through `CellScope.Fresh`, which checks the library and the names already
+  chosen but not yet built: the top cell is the part number, and sub-cells are `<part>__<cell>`. A call inside one model
+  cell to another is rewritten with the same map. File references are rebased by `FileReferences.Rebase` against the
+  model folder, which is brief 8's rule. The refusal for a missing library, a vanished part or an unreadable netlist is
+  a `PartRefusals` entry and a dropped instance, so the run refuses.
+- **`NetExtractor.ExtractCell`** is the cell-build half of `EmitCellInstance`, factored out (`BuildCellDefinition`)
+  rather than copied. `ModelNetlist.FromCell` is `ExtractCell` written by `CnlWriter` with a constant header.
+  `ModelNetlist.SameDefinitions` compares two netlists by reading and rewriting both, so layout and comments are not a
+  difference. That is D1's gate in `ModelFolderCheck` (`check.model.netlist-not-schematic`), applied only when the
+  model ships a schematic.
+- **The range warning's DC rule** (`VendorPartRange.ReachesDc`): DC, HB, loadpull, pursuit and envelope runs solve at
+  0 Hz, and so does an S-parameter sweep holding a 0 Hz point. A MODEL whose range starts above 0 Hz is warned for
+  that; a SPICE part still is not.
+- Tuning a SPICE part's `Part` over `parts="…"` leaves model entries out: a model places as a cell, not as a subcircuit
+  candidate.
+
+Gate: `tests/Ui.Tests/VendorLibraries/VendorModelLibraryTests.cs` (7).

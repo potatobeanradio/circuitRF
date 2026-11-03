@@ -212,7 +212,8 @@ public static class VendorPartCandidates
                 if (build.IsUsable) VendorLibraryIndex.Remember(build);
             }
             var parsed = VendorLibrarySearch.Parse(query);
-            found = build.Entries.Where(e => VendorLibrarySearch.Match(e, parsed));
+            // A model folder is not a candidate for a SPICE part's Part (brief vendorlib-9): it places as a cell.
+            found = build.Entries.Where(e => !e.IsModel && VendorLibrarySearch.Match(e, parsed));
         }
         else
         {

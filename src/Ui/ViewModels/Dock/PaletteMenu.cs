@@ -51,6 +51,10 @@ public static class VendorMenuTree
         public string Path { get; } = path;
         public SortedDictionary<string, Folder> Subs { get; } = new(StringComparer.OrdinalIgnoreCase);
         public SortedDictionary<string, (string Stem, int Parts)> Files { get; } = new(StringComparer.OrdinalIgnoreCase);
+        /// <summary>Model folders directly here (brief vendorlib-9), by path, with their names. A folder of models
+        /// and nothing else is one leaf listing them; beside files or sub-folders, each model is a leaf of its own.</summary>
+        public SortedDictionary<string, string> ModelFolders { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public int Models => ModelFolders.Count;
         public int ChildCount => Subs.Count + Files.Count;
     }
 
@@ -68,12 +72,15 @@ public static class VendorMenuTree
                     at.Subs[seg] = sub = new Folder(seg, at.Path.Length == 0 ? seg : at.Path + "/" + seg);
                 at = sub;
             }
-            at.Files[file.Key] = (e.FileStem, file.Count());
+            // A model folder is ONE part, and a category of models is the menu's unit: the folder it sits in lists
+            // it, as a SPICE file lists its parts, rather than each model becoming a sub-menu of one.
+            if (e.IsModel) at.ModelFolders[file.Key] = e.FileStem;
+            else at.Files[file.Key] = (e.FileStem, file.Count());
         }
 
         // A tree that starts with a single folder skips it: the library itself is that folder.
         var top = root;
-        while (top.Files.Count == 0 && top.Subs.Count == 1) top = top.Subs.Values.First();
+        while (top.Files.Count == 0 && top.Models == 0 && top.Subs.Count == 1) top = top.Subs.Values.First();
 
         return new PaletteMenuNode
         {
@@ -87,11 +94,22 @@ public static class VendorMenuTree
         foreach (var sub in f.Subs.Values) yield return FolderNode(library, sub, sub.Name);
         foreach (var (path, file) in f.Files.OrderBy(kv => kv.Value.Stem, StringComparer.OrdinalIgnoreCase))
             yield return Leaf(library, path, file.Stem, file.Parts);
+        // Models beside files or sub-folders are leaves too, so the menu shows they are there.
+        if (f.ChildCount > 0)
+            foreach (var (path, name) in f.ModelFolders.OrderBy(kv => kv.Value, StringComparer.OrdinalIgnoreCase))
+                yield return Leaf(library, path, name, 1);
     }
 
     private static PaletteMenuNode FolderNode(string library, Folder f, string header)
     {
-        if (f.ChildCount == 1)
+        // A folder of models and nothing else is a leaf: choosing it lists its models.
+        if (f.ChildCount == 0)
+            return new PaletteMenuNode
+            {
+                Header = $"{header} ({f.Models:N0})",
+                Entry  = PaletteCategoryEntry.ForVendor(library, f.Path, BreadcrumbFor(library, f.Path)),
+            };
+        if (f.ChildCount == 1 && f.Models == 0)
         {
             if (f.Subs.Count == 1)
             {

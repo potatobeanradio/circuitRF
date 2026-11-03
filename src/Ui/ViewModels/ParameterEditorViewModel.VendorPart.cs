@@ -43,18 +43,39 @@ public sealed partial class ParameterEditorViewModel
 {
     /// <summary>True for a placed SpiceModel whose <c>File</c> names a vendor library part.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsFileSpiceModel), nameof(ShowVendorPartPanel))]
+    [NotifyPropertyChangedFor(nameof(IsFileSpiceModel), nameof(ShowVendorPartPanel), nameof(IsVendorSpicePart),
+                              nameof(ShowVendorPartTolerance), nameof(VendorFileLabel))]
     private bool _isVendorPart;
 
     /// <summary>The file-based SpiceModel panel — every SpiceModel that is not a vendor part. Unchanged
     /// from before vendor libraries (R-vl3-1c).</summary>
     public bool IsFileSpiceModel => IsSpiceModel && !IsVendorPart;
 
-    /// <summary>The vendor part panel.</summary>
-    public bool ShowVendorPartPanel => IsSpiceModel && IsVendorPart;
+    /// <summary>The vendor part panel — a SPICE part's, or a placed library model's (brief vendorlib-9 R-vl9-2c).</summary>
+    public bool ShowVendorPartPanel => (IsSpiceModel || IsVendorModel) && IsVendorPart;
+
+    /// <summary>True for a placed library MODEL — a cell instance of a <c>vendormodel://</c> reference.</summary>
+    public bool IsVendorModel => _target is { } t && IsVendorModelComponent(t);
+
+    /// <summary>A SPICE part's rows the model panel does not have: File and Part's Show-on-schematic boxes and the
+    /// Tolerance row, which belong to a SpiceModel's own parameters.</summary>
+    public bool IsVendorSpicePart => IsSpiceModel && IsVendorPart;
+
+    /// <summary>The second row's label: a SPICE part's file, or a model's folder.</summary>
+    public string VendorFileLabel => IsVendorModel ? "Folder" : "File";
+
+    /// <summary>The Tolerance row shows for a SPICE part with something to say.</summary>
+    public bool ShowVendorPartTolerance => HasVendorPartDetail && IsVendorSpicePart;
+
+    internal static bool IsVendorModelComponent(EditableComponent c) => c.CellRef is { } r && VendorModelRefs.IsRef(r);
 
     /// <summary>The library's folder, or null when it does not resolve — where Help looks for documents.</summary>
     public string? VendorLibraryRoot { get; private set; }
+
+    /// <summary>Where Help looks for documents: a model's own folder (its <c>docs/</c>), a SPICE part's library.</summary>
+    public string? VendorHelpRoot => IsVendorModel && VendorLibraryRoot is { } root
+        ? System.IO.Path.Combine(root, CircuitRF.Core.RefPath.ToNative(VendorLibraryFile))
+        : VendorLibraryRoot;
 
     /// <summary>The library's name, as the workspace references it.</summary>
     [ObservableProperty] private string _vendorLibraryName = "";
@@ -96,7 +117,9 @@ public sealed partial class ParameterEditorViewModel
     public bool HasVendorPartStatus => VendorPartStatus.Length > 0;
 
     /// <summary>True while the part's own lines (value, description, range) have something to say.</summary>
-    [ObservableProperty] private bool _hasVendorPartDetail;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowVendorPartTolerance))]
+    private bool _hasVendorPartDetail;
 
     public IRelayCommand StepVendorValueUpCommand   { get; private set; } = null!;
     public IRelayCommand StepVendorValueDownCommand { get; private set; } = null!;
@@ -110,10 +133,10 @@ public sealed partial class ParameterEditorViewModel
     // session has no such panel or the part is not resolved.
 
     /// <summary>The part carries the Tune toggle.</summary>
-    public bool CanTuneVendorPart => IsVendorPart && _vendorCurrent is not null && _schematicVm?.Tuning is not null;
+    public bool CanTuneVendorPart => IsVendorSpicePart && _vendorCurrent is not null && _schematicVm?.Tuning is not null;
 
     /// <summary>The part carries the Optimize toggle.</summary>
-    public bool CanOptimizeVendorPart => IsVendorPart && _vendorCurrent is not null && _schematicVm?.Optimize is not null;
+    public bool CanOptimizeVendorPart => IsVendorSpicePart && _vendorCurrent is not null && _schematicVm?.Optimize is not null;
 
     /// <summary>The Tune toggle: the part's Part entry has its tune flag — its slider in the Tuning panel steps
     /// through the candidates.</summary>
@@ -154,7 +177,7 @@ public sealed partial class ParameterEditorViewModel
     // shifts when the part changes; disabled, with the reason as its tooltip, when the tolerance is not known.
 
     /// <summary>The part carries the Yield toggle.</summary>
-    public bool CanYieldVendorPart => IsVendorPart && VendorValueKey is not null && _schematicVm?.Tolerance is not null;
+    public bool CanYieldVendorPart => IsVendorSpicePart && VendorValueKey is not null && _schematicVm?.Tolerance is not null;
 
     /// <summary>The Yield toggle can be switched on: the part's tolerance is known (or it is already on, to switch off).</summary>
     public bool IsVendorPartYieldEnabled => _vendorCurrent?.Tolerance is not null || IsVendorPartToleranced;
@@ -216,6 +239,76 @@ public sealed partial class ParameterEditorViewModel
     {
         if (IsVendorPart && _vendorCurrent is null && _target?.Symbol == SymbolKind.SpiceModel)
             RefreshSpiceModelProperties();
+        else if (IsVendorPart && _vendorCurrent is null && IsVendorModel)
+            RefreshVendorModel();
+    }
+
+    /// <summary>The panel's refresh for whichever kind the target is.</summary>
+    private void RefreshVendorPanel()
+    {
+        if (IsVendorModel) RefreshVendorModel();
+        else RefreshSpiceModelProperties();
+    }
+
+    /// <summary>
+    /// The panel for a placed library model (brief vendorlib-9 R-vl9-2c): the library, the model folder, the part,
+    /// its description and range — all from the index, nothing from the model's files. The Part field searches the
+    /// library's models with the SAME PIN NAMES, since a model with other pins cannot take this one's wires; Value
+    /// ▼/▲ steps among passive models of the same quantity in the same category folder.
+    /// </summary>
+    private void RefreshVendorModel()
+    {
+        if (_target?.CellRef is not { } cellRef || !VendorModelRefs.TryParse(cellRef, out string library, out string rel, out _))
+            return;
+
+        _isRefreshing = true;
+        IsVendorPart       = true;
+        VendorLibraryName  = library;
+        VendorLibraryFile  = rel;
+        string part = rel.Contains('/') ? rel[(rel.LastIndexOf('/') + 1)..] : rel;
+        VendorPartQuery    = part;
+        IsVendorPartListOpen = false;
+        VendorPartMatches.Clear();
+
+        string? root = null, reason = null;
+        IReadOnlyList<VendorLibraryEntry>? entries = null;
+        string? dir = _schematicVm?.EditModel.SchematicDirectory;
+        string? ws = CircuitRF.Design.Workspace.WorkspaceRootFinder.WorkspaceDirOf(dir) ?? _schematicVm?.KitWorkspaceRoot;
+        if (ws is null) reason = $"This part comes from the vendor library '{library}', and this document belongs to no workspace to look the library up in.";
+        else if ((root = VendorLibraryRefs.ResolveLibraryRoot(ws, library, out reason)) is not null)
+        {
+            if (VendorLibraryIndex.Latest(root) is { } build) entries = [.. build.Entries.Where(e => e.IsModel)];
+            else _ = VendorLibraryIndex.StartBuild(root);
+        }
+        VendorLibraryRoot = root;
+        var current = entries?.FirstOrDefault(e => e.File.Equals(rel, StringComparison.OrdinalIgnoreCase));
+        // The Part field's list: models with this one's pins. Value stepping: VendorPartChange's own rule.
+        _vendorFileEntries = current is null ? entries ?? []
+            : [.. entries!.Where(e => e.Ports.SequenceEqual(current.Ports, StringComparer.Ordinal))];
+        _vendorCurrent = current;
+
+        var h = current?.Header;
+        VendorPartValue       = h?.ValueText() ?? "";
+        VendorPartDescription = h?.Description ?? "";
+        VendorPartRange       = h?.FrequencyRangeText() ?? "";
+        VendorPartTolerance   = "";
+        HasVendorPartDetail   = current is not null;
+
+        (VendorPartStatus, VendorPartStatusIsProblem) =
+            root is null       ? (reason ?? "This library does not resolve.", true)
+            : entries is null  ? ("Indexing the library…", false)
+            : current is null  ? ($"The library no longer holds the model {rel}.", true)
+            : ("", false);
+        _isRefreshing = false;
+
+        OnPropertyChanged(nameof(IsVendorModel));
+        OnPropertyChanged(nameof(IsVendorSpicePart));
+        OnPropertyChanged(nameof(VendorFileLabel));
+        OnPropertyChanged(nameof(ShowVendorPartTolerance));
+        OnPropertyChanged(nameof(ShowVendorPartPanel));
+        StepVendorValueUpCommand.NotifyCanExecuteChanged();
+        StepVendorValueDownCommand.NotifyCanExecuteChanged();
+        NotifyVendorPartFlags();
     }
 
     partial void OnVendorPartQueryChanged(string value)
@@ -267,18 +360,18 @@ public sealed partial class ParameterEditorViewModel
         if (choice is null || _target is null || _schematicVm is null) return;
         if (_vendorCurrent is not null && choice.Entry.Part.Equals(_vendorCurrent.Part, StringComparison.OrdinalIgnoreCase))
         {
-            RefreshSpiceModelProperties();   // puts the field's text back to the placed part
+            RefreshVendorPanel();   // puts the field's text back to the placed part
             return;
         }
         _schematicVm.ChangeVendorPart(_target, _vendorCurrent, choice.Entry);
-        RefreshSpiceModelProperties();
+        RefreshVendorPanel();
     }
 
     /// <summary>Escape in the Part field: close the drop-down and put the placed part's name back.</summary>
     public void CancelVendorPartQuery()
     {
         IsVendorPartListOpen = false;
-        RefreshSpiceModelProperties();
+        RefreshVendorPanel();
     }
 
     private bool CanStepVendorValue(int direction)
@@ -290,7 +383,7 @@ public sealed partial class ParameterEditorViewModel
         if (_target is null || _schematicVm is null || _vendorCurrent is null) return;
         if (VendorPartChange.Step(_vendorFileEntries, _vendorCurrent, direction) is not { } next) return;
         _schematicVm.ChangeVendorPart(_target, _vendorCurrent, next);
-        RefreshSpiceModelProperties();
+        RefreshVendorPanel();
     }
 
     /// <summary>

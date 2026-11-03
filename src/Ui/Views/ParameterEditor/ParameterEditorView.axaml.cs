@@ -485,7 +485,7 @@ public partial class ParameterEditorView : UserControl
     {
         // A vendor library part's Help is its LIBRARY's: the documents it came with (brief vendorlib-3).
         if (DataContext is ParameterEditorViewModel { ShowVendorPartPanel: true } vendor && sender is Control anchor)
-            CircuitRF.Ui.Schematic.VendorLibraryHelp.Open(anchor, vendor.VendorLibraryRoot);
+            CircuitRF.Ui.Schematic.VendorLibraryHelp.Open(anchor, vendor.VendorHelpRoot);
         // Open the Reference Guide section for this component (offline, bundled docs).
         else if (DataContext is ParameterEditorViewModel { Target: { } target })
             DocLauncher.OpenComponent(target.Symbol);

@@ -117,6 +117,14 @@ and, on a line of its own, its value (`C = 10 pF`). It arrives with the
 [footprint](footprints.html#imported) of the case size its library states, also in a workspace that has
 no technology yet.
 
+A library can also hold [model folders](model-library-format.html), listed in the same rows. The
+search, sort and **?** button work as they do for SPICE parts, and a model's **?** opens the documents
+in its own `docs/` folder. In the Type menu, a folder of models is one entry that lists them all. A model places as a
+cell: it draws the glyph its `part.cpart` names (R, C, L or a transistor, with the transistor's pins
+matched to the model's pin names), or the model's own symbol when it names none. It is named R1, C1, L1
+or Q1 for those glyphs, and arrives with the model's parameters at their defaults. If the library goes
+missing, the part keeps drawing its glyph with the not-found mark.
+
 ## Placing a component {#placing}
 
 There are two gestures, and they place the identical thing — a kit part in particular resolves
