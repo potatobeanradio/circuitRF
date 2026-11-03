@@ -254,10 +254,13 @@ internal static class Explain
             case DocumentKind.ComposedModel:
             case DocumentKind.ComposerDocument:
             case DocumentKind.Folder:
+            case DocumentKind.ModelPart:
+            case DocumentKind.ModelLibraryManifest:
                 // Nothing but the workspace walk to report: none of these resolves a second
                 // reference of its own. Reported anyway, because "which workspace" is the context
                 // every other answer is read against.
                 Workspace(path, walks);
+                ModelFolderStep(path, walks);
                 if (kind is DocumentKind.Netlist or DocumentKind.Schematic) CircuitTechnology(path, kind, walks);
                 if (kind is DocumentKind.Netlist or DocumentKind.Schematic) PhysicalLines(path, kind, walks);
                 if (kind is DocumentKind.Netlist or DocumentKind.Schematic) ComposedSwitchSteps(path, kind, walks);
@@ -512,6 +515,18 @@ internal static class Explain
     // ── the walks ────────────────────────────────────────────────────────────
 
     /// <summary>The ancestor-workspace walk every document-relative reference resolves through.</summary>
+    /// <summary>
+    /// Brief vendorlib-6 R-vl6-1c — the model folder a document belongs to, when it belongs to one: the
+    /// nearest folder at or above it holding a <c>part.cpart</c>. Said only when there is one, since
+    /// almost nothing is inside a model.
+    /// </summary>
+    private static void ModelFolderStep(string path, List<ResolutionStepJson> walks)
+    {
+        string full = Path.GetFullPath(path);
+        if (CircuitRF.Design.VendorLibraries.ModelLibrary.ModelFolder.OwningModelFolder(full) is { } owner)
+            walks.Add(new ResolutionStepJson("model-folder", full, owner, "nearest folder at or above holding a part.cpart"));
+    }
+
     private static string? Workspace(string path, List<ResolutionStepJson> walks)
     {
         string full = Path.GetFullPath(path);

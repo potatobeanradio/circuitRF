@@ -4242,3 +4242,19 @@ Three traps found on the way:
 - The tie rule needs the file, so the factory loads it (through `TouchstoneCache`) only when an offset is stated —
   an upper-triangle key on a tied block is then refused at ELABORATION, which is how `check` names it; with no
   offset stated nothing is read there and a missing file stays `SnpModel`'s own refusal, naming the instance.
+
+## A `parameters` line dropped V, A, W, dB, dBm and % (2026-11-03)
+
+`CnlReader.ParseParameterDeclarations` took the word after `name=value` as a unit only when `Units.IsKnown` said so.
+That table holds the linear-scale units and leaves out the scale-1 base symbols and the measurement units, so
+`parameters Vds=3 V` read as `Vds=3` with the `V` skipped and nothing said. The number was the same, but the
+parameter was not unit-bearing: under var-unit-wins a site unit that names it (`Vdc=Vds mV`) scaled it, where the
+variable `Vds = 3 V` is left alone. Found by brief vendorlib-6, whose check compares a model's declared parameters
+with its manifest's.
+
+The line now follows the instance line and the variable assignment: `Units.IsRecognizedUnit`. It also strips a `;`
+comment first (`parameters L=5 ; Y=1` used to declare `Y`), rejoins spaces around `=` with the instance line's
+`MergeSpacedAssignments` (`L = 5` used to lose `L`), and puts any other bare word in `ReadWarnings` instead of
+dropping it (`W=5 mils` was 5 in base units, unannounced). `VendorAReader`'s own `parameters` parser had the same
+`IsKnown` test and takes the same fix. No `.cnl` in the repo carried such a word. Gate:
+`tests/Core.Tests/Netlist/ParameterDeclarationUnitTests.cs`.

@@ -26149,3 +26149,41 @@ until circuitRF first opens it.
 The same sweep found `.c3d` and `.cmc` declared to no operating system (and `.c3d` absent from both halves of the open
 dispatcher), and the Linux tarball's own desktop entry missing the rail and Smith types. Gate:
 `tests/Ui.Tests/WorkspaceOpenWithTests.cs` plus the three dispatcher parity tests in `WBondStandaloneTests`.
+
+## Model-library folder format: readers, hash, check (brief vendorlib-6, 2026-11-03)
+
+`src/Design/VendorLibraries/ModelLibrary/` holds the two manifests (`ModelLibraryManifest`, `ModelPartManifest`),
+`ModelFolder` (names, `Is`, `OwningModelFolder`, `Under`), `ModelPartHash` and `ModelFolderCheck`/`ModelLibraryCheck`.
+The checks live here, not in `src/Cli/Check.cs`, so brief 9's Validate and brief 10's self-check call the same rules.
+The published spec is `docs/user/src/reference/model-library-format.md`, served as the reference topic `model-library`
+(the second topic whose name is not its file's stem; `ReferenceLibrary.FileStem` maps both).
+
+Choices made where the brief left room:
+
+- **A model folder classifies as `Cell`, not as a kind of its own.** About fifteen verbs switch on `DocumentKind.Cell`
+  (render, netlist, lvs, explain's queries, …), and a new folder kind would have made every one of them refuse a model
+  folder that is, by the format's own rule, a cell folder. `DocumentKinds.Classify` returns `Cell` for any folder
+  holding a `part.cpart` (even with no `.ccell`), and the verbs that care ask `ModelFolder.Is`. The two manifest FILES
+  do get kinds: `model-part` and `model-library`.
+- **Required `part.cpart` keys** are `Format`, `FormatVersion`, `Part`, `Cell`, `Kind` and `Pins`. Key matching is
+  exact, so a misspelt key lands among the kept unknown keys and the required one is reported missing.
+- **`PublishedHash`** is a list of per-file lines `<sha256 hex>  <path>\n` hashed as UTF-8 — a concatenation of
+  contents would hash two different splits alike, and would not see a rename. `.DS_Store`, `Thumbs.db`,
+  `desktop.ini` and anything under `.git` are left out, or opening the folder in a file browser would read as an edit.
+- **Parameters agree when the reader takes them as one value.** `part.cpart`'s defaults are read back through
+  `CnlReader`'s own `parameters` parser before comparing, so two spellings it takes as one value agree. Comparing
+  text first exposed a reader bug: `parameters Vds=3 V` dropped the `V` (fixed the same day in `src/Core`; see
+  `src/Core/RESOLVED.md`).
+- **`File=` references are read with no source directory.** With one, `CnlReader` rebases them to absolute paths and
+  every reference looks as if it left the folder. A reference leaves the folder when it is absolute, carries a scheme
+  (`vendorlib://`, a kit's), or climbs out. Only the `.cnl` is scanned; a `.va`'s `` `include `` is brief 8's.
+- **A folder holding model folders anywhere below is checked to its full depth without `--recursive`.** A library
+  needs no `library.clib`, and its parts sit two category levels down, so the top-level-only walk a plain folder gets
+  checked nothing and exited 0.
+- **The format page's example is a test fixture.** It sits between `<!-- example:begin -->` and
+  `<!-- example:end -->`; each file is a `` `path` `` line followed by a fenced block, and
+  `ModelLibraryFormatTests.TheFormatPagesExample_ChecksClean` writes those files and runs `check --severity warning`
+  as a process. A model written by hand may omit `schematic/`, and `symbol/` when `Glyph` names a glyph; brief 9's
+  placement must honour that.
+
+Gate: `tests/Ui.Tests/VendorLibraries/ModelLibraryFormatTests.cs` (15).

@@ -65,6 +65,7 @@ public static class ReferenceLibrary
         "file-formats",
         "cmodel",
         "model-data",
+        ModelLibraryTopic,
         ComponentNotesTopic,
     ];
 
@@ -78,6 +79,13 @@ public static class ReferenceLibrary
     /// both, and each says so in its own first line.</para>
     /// </summary>
     public const string ComponentNotesTopic = "component-notes";
+
+    /// <summary>
+    /// What <c>model-library-format.md</c> is served as (brief vendorlib-6 R-vl6-3b). The page's name says
+    /// what it is among the user docs, where "model library" alone would read as a page about using one;
+    /// a caller asking the reference tool is already asking about a format.
+    /// </summary>
+    public const string ModelLibraryTopic = "model-library";
 
     private static readonly Lazy<IReadOnlyList<ReferenceTopic>> _topics = new(Discover);
 
@@ -213,10 +221,14 @@ public static class ReferenceLibrary
     /// </summary>
     private const string ResourcePrefix = "CircuitRF.Design.Reference.";
 
-    /// <summary>The authored file behind a topic. Only one differs from its own name, and
-    /// <see cref="ComponentNotesTopic"/> says why.</summary>
-    private static string FileStem(string topic)
-        => topic == ComponentNotesTopic ? "components" : topic;
+    /// <summary>The authored file behind a topic. Two differ from their own names, and
+    /// <see cref="ComponentNotesTopic"/> and <see cref="ModelLibraryTopic"/> say why.</summary>
+    public static string FileStem(string topic) => topic switch
+    {
+        ComponentNotesTopic => "components",
+        ModelLibraryTopic   => "model-library-format",
+        _                   => topic,
+    };
 
     private static IReadOnlyList<ReferenceTopic> Discover()
     {

@@ -19,6 +19,7 @@ using CircuitRF.Design.Schematic;
 using CircuitRF.Design.Smith;
 using CircuitRF.Design.ThreeD;
 using CircuitRF.Design.VendorLibraries;
+using CircuitRF.Design.VendorLibraries.ModelLibrary;
 using CircuitRF.Design.Workspace;
 using CircuitRF.Diagnostics;
 using CircuitRF.Engine.Mom;
@@ -210,8 +211,13 @@ internal static class Check
         switch (kind)
         {
             case DocumentKind.Workspace:  CheckWorkspace(path, f, cache); break;
+            case DocumentKind.Cell when ModelFolder.Is(path):
+                                          CheckModelFolder(path, f, cache); break;
             case DocumentKind.Cell:       CheckCell(path, f, cache);      break;
             case DocumentKind.Folder:     CheckFolder(path, f, cache, recursive); break;
+            case DocumentKind.ModelPart:  Scoped(path, kind, f, () => CheckModelPart(path, f)); break;
+            case DocumentKind.ModelLibraryManifest:
+                                          Scoped(path, kind, f, () => CheckModelLibraryManifest(path, f)); break;
 
             case DocumentKind.Schematic:  Scoped(path, kind, f, () => CheckSchematic(path, f)); break;
             case DocumentKind.Symbol:     Scoped(path, kind, f, () => CheckViewFile(path, ViewType.Symbol, f)); break;
@@ -360,8 +366,25 @@ internal static class Check
         return [.. placed];
     }
 
+    /// <summary>
+    /// A folder, and — when it holds model folders — a model library (brief vendorlib-6 R-vl6-2c): every
+    /// model folder through the walk, then what the library must hold together. A folder holding a
+    /// model folder anywhere below it is walked whole without <c>--recursive</c>, because a library's
+    /// categories are sub-folders and needs no <c>library.clib</c> to be one — a `check` of a library
+    /// that stopped at its top level would check nothing and report a clean run. Only the folder that
+    /// was NAMED is looked at this way; finding out walks directories and opens no file.
+    /// </summary>
     private static void CheckFolder(string path, Findings f, TechnologyCache cache, bool recursive)
-        => WalkFolder(path, f, cache, recursive);
+    {
+        bool library = ModelFolder.Under(path).Count > 0;
+        WalkFolder(path, f, cache, recursive || library);
+        if (!library) return;
+        var findings = ModelLibraryCheck.Validate(path);
+        if (findings.Count == 0) return;
+        f.Begin(path, DocumentKind.Folder);
+        foreach (var d in findings) f.Add(d);
+        f.End();
+    }
 
     private static void WalkFolder(string dir, Findings f, TechnologyCache cache, bool recursive)
     {
@@ -388,7 +411,7 @@ internal static class Check
         foreach (var sub in Enumerate(() => Directory.EnumerateDirectories(dir), f, dir).Order(StringComparer.Ordinal))
         {
             var kind = DocumentKinds.Classify(sub);
-            if (kind == DocumentKind.Cell) { CheckCell(sub, f, cache); continue; }
+            if (kind == DocumentKind.Cell) { CheckPath(sub, kind, f, cache, recursive: false); continue; }
 
             // A nested workspace is somebody else's tree. It is walked when it is what was asked for,
             // never dragged in by an enclosing folder — the two have different default technologies
@@ -450,6 +473,36 @@ internal static class Check
                                  .Order(StringComparer.Ordinal))
                 CheckPath(file, DocumentKinds.Classify(file), f, cache, recursive: false);
         }
+    }
+
+    /// <summary>
+    /// A model folder (brief vendorlib-6 R-vl6-2b): the cell-folder checks every cell gets, then
+    /// <see cref="ModelFolderCheck"/>'s — the function Validate and Export's self-check call — under the
+    /// <c>part.cpart</c>, then the sub-cells the model carries in <c>cells/</c>.
+    /// </summary>
+    private static void CheckModelFolder(string dir, Findings f, TechnologyCache cache)
+    {
+        CheckCell(dir, f, cache);
+        CheckModelPart(Path.Combine(dir, ModelFolder.PartFileName), f, scoped: true);
+        string cells = Path.Combine(dir, ModelFolder.CellsFolder);
+        if (Directory.Exists(cells)) WalkFolder(cells, f, cache, recursive: true);
+    }
+
+    /// <summary>A <c>part.cpart</c> is checked as the model folder it describes, less the cell half.</summary>
+    private static void CheckModelPart(string partPath, Findings f, bool scoped = false)
+    {
+        if (scoped) f.Begin(partPath, DocumentKind.ModelPart);
+        foreach (var d in ModelFolderCheck.Validate(Path.GetDirectoryName(Path.GetFullPath(partPath))!)) f.Add(d);
+        if (scoped) f.End();
+    }
+
+    private static void CheckModelLibraryManifest(string path, Findings f)
+    {
+        var (manifest, refusal) = ModelLibraryManifest.Read(path);
+        if (manifest is null) { f.Add(CliDiagnostics.CheckModelLibraryRefused(path, refusal!)); return; }
+        string dir = Path.GetFileName(Path.GetDirectoryName(Path.GetFullPath(path))) ?? "";
+        f.Add(CliDiagnostics.CheckModelLibrarySummary(path, manifest.Name.Length > 0 ? manifest.Name : dir,
+            ModelFolder.Under(Path.GetDirectoryName(Path.GetFullPath(path))!).Count));
     }
 
     /// <summary>

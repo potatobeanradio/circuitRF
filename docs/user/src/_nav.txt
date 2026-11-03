@@ -69,6 +69,7 @@ reference/create-from-image.html | A picture of a layout traced into a layout, o
 reference/pcells.html          | Parameterised cells — placing one, driving it, and its parameter handles.
 reference/pdk-integration.html | Importing a kit and simulating the parts it supplies.
 reference/pdk-authoring.html   | Authoring a kit: the OpenPDK layout, Python PCells, models and artwork.
+reference/model-library-format.html | A model library's folder format: every key, what a reader must do, and an example.
 reference/gdsfactory-kits.html | Using a gdsfactory kit: layout cells, ports and a technology from an open kit's Python package.
 reference/stackup.html         | The layers your board is made of - and which conductor is ground.
 reference/materials.html       | Where materials are kept - a technology's own list or a .cmat library it names - and entering one, thermal and anisotropic values included.

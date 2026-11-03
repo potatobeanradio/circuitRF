@@ -377,18 +377,33 @@ public sealed class CnlReader
     {
         // "name=expr [unit] name2=expr2 [unit2] ..."
         // Parse left-to-right: each "name=expr" token, then optionally a unit identifier.
-        var tokens = TokeniseLine(rest);
+        //
+        // The trailing word is a unit when Units.IsRecognizedUnit says so — the rule the instance-line
+        // and variable-assignment sites already follow. This site alone tested Units.IsKnown, which
+        // leaves out the scale-1 base symbols and the measurement units (V, A, W, dB, dBm, %), so
+        // `parameters Vds=3 V` silently lost its `V`: the value was the same, but the parameter was
+        // not unit-bearing, so a site unit that names it scaled it where a variable `Vds = 3 V` would
+        // not, and a reader of the cell could not get its unit back. A `;` comment is stripped first
+        // and spaces around `=` are rejoined, as on an instance line; any other bare word is SAID.
+        var tokens = MergeSpacedAssignments(TokeniseLine(StripInlineComment(rest)));
         int i = 0;
         while (i < tokens.Count)
         {
             var token = tokens[i];
             int eq = token.IndexOf('=');
-            if (eq <= 0) { i++; continue; }
+            if (eq <= 0)
+            {
+                _testBench!.ReadWarnings.Add(
+                    $"line {_lineNumber}: '{token}' on a 'parameters' line is neither a name=value " +
+                    "declaration nor a unit, and was skipped.");
+                i++;
+                continue;
+            }
             var name = token[..eq].Trim();
             var expr = token[(eq + 1)..].Trim();
             string? unit = null;
-            // peek next token: if it looks like a unit suffix, consume it
-            if (i + 1 < tokens.Count && Units.IsKnown(tokens[i + 1]))
+            // peek next token: if it is a unit, consume it
+            if (i + 1 < tokens.Count && !tokens[i + 1].Contains('=') && Units.IsRecognizedUnit(tokens[i + 1]))
             {
                 unit = tokens[i + 1];
                 i++;

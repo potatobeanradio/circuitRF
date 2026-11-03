@@ -1,6 +1,7 @@
 using CircuitRF.Design.Cells;
 using CircuitRF.Design.Imaging;
 using CircuitRF.Design.ThreeD;
+using CircuitRF.Design.VendorLibraries.ModelLibrary;
 using CircuitRF.Design.Workspace;
 using RfCore;
 
@@ -35,6 +36,11 @@ internal enum DocumentKind
     /// <summary>A bitmapped picture — PNG, JPEG, BMP, GIF or WebP (brief-img-2 R-im2-6). Named by its kind of drawing,
     /// never called unreadable.</summary>
     Picture,
+    /// <summary>A model's <c>part.cpart</c> (brief vendorlib-6 R-vl6-2a). The model FOLDER classifies as
+    /// <see cref="Cell"/> — it is one — and <see cref="ModelFolder.Is"/> says it is a model as well.</summary>
+    ModelPart,
+    /// <summary>A model library's <c>library.clib</c> (brief vendorlib-6 R-vl6-2a).</summary>
+    ModelLibraryManifest,
     /// <summary>A file with one of circuitRF's extensions whose CONTENT is another program's — the
     /// motion-capture format that also uses <c>.c3d</c> (overview §1c). Named, never reported as a
     /// broken circuitRF document.</summary>
@@ -78,6 +84,8 @@ internal static class DocumentKinds
         DocumentKind.Touchstone    => "touchstone",
         DocumentKind.Interchange   => "interchange",
         DocumentKind.Picture       => "picture",
+        DocumentKind.ModelPart     => "model-part",
+        DocumentKind.ModelLibraryManifest => "model-library",
         DocumentKind.Foreign       => "foreign",
         _                          => "unknown",
     };
@@ -89,7 +97,9 @@ internal static class DocumentKinds
     /// <summary>
     /// Classifies <paramref name="path"/>. A directory is a workspace when it holds a
     /// <c>.cws</c>, a cell when it holds a <c>.ccell</c> or one of the three view sub-folders, and a
-    /// plain folder otherwise. A file goes by extension, and an extension circuitRF does not own is
+    /// plain folder otherwise. A model folder (one holding a <c>part.cpart</c>) is a cell folder and
+    /// classifies as one even with no <c>.ccell</c>, so every verb that reads a cell reads a model; the
+    /// verbs to which the difference matters ask <see cref="ModelFolder.Is"/>. A file goes by extension, and an extension circuitRF does not own is
     /// offered to <c>convert</c>'s classifier — which reads CONTENT — before being called unknown.
     /// </summary>
     /// <param name="contentSniff">
@@ -104,13 +114,18 @@ internal static class DocumentKinds
         if (Directory.Exists(path))
         {
             if (File.Exists(Path.Combine(path, CwsFileName))) return DocumentKind.Workspace;
-            if (LooksLikeCellFolder(path))                    return DocumentKind.Cell;
+            if (LooksLikeCellFolder(path) || ModelFolder.Is(path)) return DocumentKind.Cell;
             return DocumentKind.Folder;
         }
 
         string name = Path.GetFileName(path);
         if (string.Equals(name, CwsFileName, StringComparison.OrdinalIgnoreCase))
             return DocumentKind.Workspace;
+        // By NAME: both manifests have a fixed name, and their extensions belong to nothing else.
+        if (string.Equals(name, ModelFolder.PartFileName, StringComparison.OrdinalIgnoreCase))
+            return DocumentKind.ModelPart;
+        if (string.Equals(name, ModelFolder.LibraryFileName, StringComparison.OrdinalIgnoreCase))
+            return DocumentKind.ModelLibraryManifest;
 
         var byExtension = Path.GetExtension(path).ToLowerInvariant() switch
         {

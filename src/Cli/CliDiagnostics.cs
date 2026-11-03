@@ -1216,6 +1216,19 @@ internal static class CliDiagnostics
             "{path}: a composed FET model of {fingers} finger(s) × {unitWidth}, valid at {temperature}.",
             ("path", path), ("fingers", fingers), ("unitWidth", unitWidth), ("temperature", temperature));
 
+    // ── Model library (`library.clib`) — brief vendorlib-6 ────────────────────
+
+    /// <summary>The manifest reader's own sentence.</summary>
+    public static Diagnostic CheckModelLibraryRefused(string path, string message) => Diagnostic.Create(
+        "check.model.library-unreadable", DiagnosticSeverity.Error,
+        "{path}: {message}", ("path", path), ("message", message));
+
+    /// <summary>What a valid <c>library.clib</c> heads: the library's name and how many models it holds.</summary>
+    public static Diagnostic CheckModelLibrarySummary(string path, string name, int models) => Diagnostic.Create(
+        "check.model.library-summary", DiagnosticSeverity.Info,
+        "{path}: model library '{name}', {models} model folder(s).",
+        ("path", path), ("name", name), ("models", models));
+
     // ── Model Composer document (`.cmc`) ─────────────────────────────────────
 
     /// <summary>The <c>.cmc</c> validator's own sentence, which names the field.</summary>

@@ -289,6 +289,9 @@ have that library somewhere else under the same name, the message offers **Repai
 **Validate** on a vendor library re-reads it and reports parts indexed, files it could not read, placed
 parts checked, and any placed part the library no longer holds.
 
+A library can also hold **model folders**: parts drawn in circuitRF and packaged with every file they need.
+Their format is [Model Library Format](model-library-format.html).
+
 ### A placed part {#vendor-placed}
 
 Selecting a placed vendor part shows its library and file, a **Part** field and the part's value,

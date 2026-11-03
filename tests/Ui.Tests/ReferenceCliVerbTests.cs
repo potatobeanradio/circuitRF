@@ -65,7 +65,7 @@ public sealed class ReferenceCliVerbTests(ITestOutputHelper output)
             string raw = ReferenceLibrary.Raw(topic);
             Assert.False(raw.Length == 0, $"'{topic.Topic}' resolved to an empty stream.");
 
-            string stem = topic.Topic == ReferenceLibrary.ComponentNotesTopic ? "components" : topic.Topic;
+            string stem = ReferenceLibrary.FileStem(topic.Topic);
             string authored = Path.Combine(RepoRoot(), "docs", "user", "src", "reference", stem + ".md");
             Assert.True(File.Exists(authored), $"'{topic.Topic}' names no authored page at {authored}");
 

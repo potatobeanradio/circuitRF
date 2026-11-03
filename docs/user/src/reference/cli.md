@@ -2420,6 +2420,11 @@ an error (`check.workspace.vendor-library.missing`), and so is a part placed in 
 schematics that the library no longer holds (`check.workspace.vendor-library.part-missing`). Files in
 the library that could not be read are a warning (`check.workspace.vendor-library.unreadable`).
 
+A [model library](model-library-format.html#checking), a model folder, a `part.cpart` or a `library.clib` is checked
+against the model-library format: each model folder gets the cell checks and then its own (`check.model.*`), and a
+library adds one part number in two folders (`check.model.duplicate-part`). A folder holding model folders is walked to
+its full depth without `--recursive`.
+
 <div class="callout note">
 <span class="label">Warnings are reported and still exit 0</span>
 <p><code>--severity</code> decides the exit code, and it defaults to <code>error</code>. Warnings are

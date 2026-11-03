@@ -219,7 +219,9 @@ public sealed class VendorAReader
             var name = token[..eq].Trim();
             var expr = token[(eq + 1)..].Trim();
             string? unit = null;
-            if (i + 1 < tokens.Count && Units.IsKnown(tokens[i + 1]))
+            // IsRecognizedUnit, not IsKnown: the base symbols and measurement units (V, A, W, dBm)
+            // are units too, and IsKnown dropped them silently (CnlReader's parameters line, same fix).
+            if (i + 1 < tokens.Count && Units.IsRecognizedUnit(tokens[i + 1]))
             {
                 unit = tokens[i + 1];
                 i++;
