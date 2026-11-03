@@ -49,4 +49,8 @@ public interface IHierarchyHost
     /// <summary>brief-artsch-8 R-as8-5: Show in Artwork for a <c>FromArtwork</c> component — opens the layout its
     /// schematic was created from and marks the component's anchor there. A host with no layouts does nothing.</summary>
     void ShowInArtwork(SchematicDocument doc, EditableComponent comp) { }
+
+    /// <summary>brief vendorlib-10 R-vl10-1a: the schematic toolbar's Export to Library… — File ▸ Export to Library… on
+    /// this document. A host with no workspace does nothing.</summary>
+    Task ExportToLibraryAsync(SchematicDocument doc) => Task.CompletedTask;
 }

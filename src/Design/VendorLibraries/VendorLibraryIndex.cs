@@ -503,7 +503,7 @@ public static class VendorLibraryIndex
     }
 
     /// <summary><c>"20 GHz"</c> → 2e10, through the expression engine's own unit table; null when it does not read.</summary>
-    private static double? HzOf(string text)
+    internal static double? HzOf(string text)
     {
         string t = (text ?? "").Trim();
         if (t.Length == 0) return null;

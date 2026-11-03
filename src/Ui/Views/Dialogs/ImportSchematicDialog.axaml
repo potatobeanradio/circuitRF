@@ -51,7 +51,7 @@
                     <TextBlock Grid.Column="3" Text="Becomes" FontSize="11" Opacity="0.7"/>
                     <TextBlock Grid.Column="4" Text="Symbol cell" FontSize="11" Opacity="0.7" HorizontalAlignment="Center"/>
                 </Grid>
-                <Border BorderBrush="{DynamicResource CrfBorderBrush}" BorderThickness="1" CornerRadius="3">
+                <Border BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="1" CornerRadius="3">
                     <ScrollViewer>
                         <ItemsControl ItemsSource="{Binding Parts}">
                             <ItemsControl.ItemTemplate>
@@ -76,7 +76,7 @@
             </DockPanel>
 
             <TextBlock Grid.Row="3" Text="Ports" FontSize="11" Opacity="0.7" Margin="0,10,0,2"/>
-            <Border Grid.Row="4" BorderBrush="{DynamicResource CrfBorderBrush}" BorderThickness="1" CornerRadius="3" MaxHeight="130">
+            <Border Grid.Row="4" BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="1" CornerRadius="3" MaxHeight="130">
                 <ScrollViewer>
                     <StackPanel>
                         <TextBlock Text="The design draws no connector or global port." FontSize="11" Opacity="0.6" Margin="6,4"
@@ -97,7 +97,7 @@
         </Grid>
 
         <Grid Grid.Row="0" Grid.Column="2" RowDefinitions="*,Auto,Auto">
-            <Border Grid.Row="0" x:Name="PreviewPane" BorderBrush="{DynamicResource CrfBorderBrush}" BorderThickness="1" CornerRadius="3"
+            <Border Grid.Row="0" x:Name="PreviewPane" BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="1" CornerRadius="3"
                     ClipToBounds="True">
                 <!-- The editor's own canvas with no edit session: the wheel zooms, a drag pans, Z draws a zoom box and
                      F fits, as in the schematic editor. Nothing is editable and nothing may be dropped on it. -->

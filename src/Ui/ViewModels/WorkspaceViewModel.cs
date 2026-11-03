@@ -16913,6 +16913,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         // Export GDSII/DXF (item 8) are enabled only when a layout document is active.
         ExportGdsiiCommand.NotifyCanExecuteChanged();
+        // brief vendorlib-10: Export to Library is gated on the active schematic, its saved state and its Pins.
+        ExportToLibraryCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(ExportToLibraryTip));
         ExportGdsiiGdstkCommand.NotifyCanExecuteChanged();
         ExportOasisGdstkCommand.NotifyCanExecuteChanged();
         // Standing gotcha (see this file's own L5 note): a [RelayCommand(CanExecute=...)] gated on
@@ -17249,6 +17252,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         if (doc is IEditHistoryDocument focusedHistory) SetActiveUndoTarget(focusedHistory);
 
         ExportGdsiiCommand.NotifyCanExecuteChanged();
+        // brief vendorlib-10: Export to Library is gated on the active schematic, its saved state and its Pins.
+        ExportToLibraryCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(ExportToLibraryTip));
         ExportGdsiiGdstkCommand.NotifyCanExecuteChanged();
         ExportOasisGdstkCommand.NotifyCanExecuteChanged();
         PlaceCellInstanceCommand.NotifyCanExecuteChanged();

@@ -929,6 +929,47 @@ internal static class CliDiagnostics
     public static Diagnostic ImportLibraryRefused(string reason) => Diagnostic.Create(
         "import.library.refused", DiagnosticSeverity.Error, "{reason}", ("reason", reason));
 
+    // ── export part (brief vendorlib-10 R-vl10-4) ──────────────────────────────────────────────
+
+    public static Diagnostic ExportNounRequired() => new(
+        "export.args.noun-required", DiagnosticSeverity.Error,
+        "export: say what to export — 'export part <cell folder> --library <dir>'.");
+
+    public static Diagnostic ExportUnknownNoun(string noun) => Diagnostic.Create(
+        "export.args.unknown-noun", DiagnosticSeverity.Error,
+        "export: there is nothing called '{noun}' to export. Known: part. "
+        + "For layout interchange (GDSII, DXF, Gerber, boards) use `convert`.", ("noun", noun));
+
+    public static Diagnostic ExportUnknownOption(string option) => Diagnostic.Create(
+        "export.args.unknown-option", DiagnosticSeverity.Error,
+        "export part: '{option}' is not an option of this verb.", ("option", option));
+
+    public static Diagnostic ExportBadValue(string option, string value, string allowed) => Diagnostic.Create(
+        "export.args.bad-value", DiagnosticSeverity.Error,
+        "export part: {option} takes {allowed}, not '{value}'.", ("option", option), ("value", value), ("allowed", allowed));
+
+    public static Diagnostic ExportCellRequired() => new(
+        "export.args.cell-required", DiagnosticSeverity.Error,
+        "export part: name the cell folder to export.");
+
+    public static Diagnostic ExportCellNotFound(string path) => Diagnostic.Create(
+        "export.cell.not-found", DiagnosticSeverity.Error,
+        "export part: '{path}' is not a cell folder.", ("path", path));
+
+    public static Diagnostic ExportLibraryRequired() => new(
+        "export.args.library-required", DiagnosticSeverity.Error,
+        "export part: --library <dir> says which model library the part goes into (an empty folder starts a new one).");
+
+    /// <summary>One of <c>ModelLibraryExport</c>'s refusals, whole, with the flag that answers it when one does.</summary>
+    public static Diagnostic ExportRefused(string reason) => Diagnostic.Create(
+        "export.refused", DiagnosticSeverity.Error, "{reason}", ("reason", reason));
+
+    public static Diagnostic ExportWarning(string text) => Diagnostic.Create(
+        "export.warning", DiagnosticSeverity.Warning, "{text}", ("text", text));
+
+    public static Diagnostic ExportCancelled() => new(
+        "export.cancelled", DiagnosticSeverity.Error, "export part: cancelled; nothing was written.");
+
     /// <summary>A placed vendor part the run's analyses take outside its characterised frequency range
     /// (brief vendorlib-3 R-vl3-3) — <c>VendorPartRange</c>'s sentence, whole.</summary>
     public static Diagnostic VendorPartOutOfRange(string text) => Diagnostic.Create(

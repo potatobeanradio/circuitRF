@@ -170,6 +170,8 @@
                                 </NativeMenu>
                             </NativeMenuItem.Menu>
                         </NativeMenuItem>
+                        <!-- brief vendorlib-10: a cell as a model in a model library; mirrored below and on the schematic toolbar. -->
+                        <NativeMenuItem Header="Export to Library…" ToolTip="{Binding ExportToLibraryTip}" Command="{Binding ExportToLibraryCommand}" CommandParameter="{Binding $parent[Window]}"/>
                         <NativeMenuItem Header="Add Vendor Library…" Command="{Binding AddVendorLibraryCommand}" CommandParameter="{Binding $parent[Window]}"/>
                         <NativeMenuItem Header="Manage Libraries…" Command="{Binding ManagePdksCommand}" CommandParameter="{Binding $parent[Window]}" Gesture="Meta+P"/>
                         <NativeMenuItemSeparator/>
@@ -1083,6 +1085,15 @@
                     <MenuItem Header="Bill of _materials…"
                               Command="{Binding ExportBomCommand}"
                               ToolTip.Tip="Write one row per placement: reference, value, footprint and type. No part numbers — a part number is a purchasing decision circuitRF does not hold. Requires an active layout document."/>
+                </MenuItem>
+                <!-- brief vendorlib-10 R-vl10-1a: greyed with the reason as its tooltip unless the active document is a
+                     saved cell's primary schematic with a Pin. -->
+                <MenuItem Header="Export to _Library…"
+                          Command="{Binding ExportToLibraryCommand}"
+                          CommandParameter="{Binding $parent[Window]}"
+                          ToolTip.Tip="{Binding ExportToLibraryTip}"
+                          ToolTip.ShowOnDisabled="True">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="PackageVariantClosedPlus" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
                 <MenuItem Header="Add _Vendor Library…"
                           Command="{Binding AddVendorLibraryCommand}"

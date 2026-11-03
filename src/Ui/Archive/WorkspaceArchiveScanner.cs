@@ -24,7 +24,7 @@ public static class WorkspaceArchiveScanner
     public const string ExternalFolder = "external";
 
     /// <summary>The workspace's own results folder, which is the one branch the dialog itemises.</summary>
-    public const string ResultsFolder = "results";
+    public const string ResultsFolder = DocumentFileRefs.ResultsFolder;
 
     // ── Skip rules ────────────────────────────────────────────────────────────
 

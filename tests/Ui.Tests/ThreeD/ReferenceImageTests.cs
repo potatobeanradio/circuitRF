@@ -449,10 +449,10 @@ public sealed class ReferenceImageTests : IDisposable
         string c3d = Write(dir, [Sheet("image1", C3dPlane.XY, 0, 0, 10, 10, C3dImages.Store(Path.Combine(dir, "cell.c3d"), inside)),
                                  Sheet("image2", C3dPlane.XY, 20, 0, 10, 10, C3dImages.Store(Path.Combine(dir, "cell.c3d"), outside))]);
         Assert.True(Path.IsPathRooted(((C3dSheet)C3dPersistence.LoadFromFile(c3d).Objects[1]).Image!.Path), "outside the workspace is absolute");
-        var found = CircuitRF.Ui.Archive.DocumentFileRefs.Find(c3d, ws).Select(Path.GetFullPath).ToList();
+        var found = CircuitRF.Design.Workspace.DocumentFileRefs.Find(c3d, ws).Select(Path.GetFullPath).ToList();
         Assert.Contains(Path.GetFullPath(inside), found);
         Assert.Contains(Path.GetFullPath(outside), found);
-        string? text = CircuitRF.Ui.Archive.DocumentFileRefs.Rewrite(c3d, ws, (stored, _) => stored.EndsWith("in.png") ? "moved/in.png" : stored.EndsWith("out.png") ? "moved/out.png" : null);
+        string? text = CircuitRF.Design.Workspace.DocumentFileRefs.Rewrite(c3d, ws, (stored, _) => stored.EndsWith("in.png") ? "moved/in.png" : stored.EndsWith("out.png") ? "moved/out.png" : null);
         Assert.NotNull(text);
         File.WriteAllText(c3d, text);
         var back = C3dPersistence.LoadFromFile(c3d);

@@ -358,6 +358,22 @@
                     <mi:MaterialIcon Kind="ArrowUp" Width="16" Height="16"/>
                 </Button>
 
+                <!-- Separator -->
+                <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
+                        Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                <!-- Export to Library… (brief vendorlib-10 R-vl10-1a). Greyed with the reason as its tooltip unless this
+                     is a saved cell's primary schematic with a Pin; the code-behind keeps both current. -->
+                <Button x:Name="ExportToLibraryBtn"
+                        Classes="SelectionBtn"
+                        Click="OnToolbarExportToLibrary"
+                        ToolTip.Tip="Export to Library…"
+                        ToolTip.ShowOnDisabled="True"
+                        IsEnabled="False"
+                        Padding="6,3">
+                    <mi:MaterialIcon Kind="PackageVariantClosedPlus" Width="16" Height="16"/>
+                </Button>
+
             </StackPanel>
         </Border>
 

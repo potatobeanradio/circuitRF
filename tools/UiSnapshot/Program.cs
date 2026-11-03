@@ -109,6 +109,8 @@ using CircuitRF.Design.Layout;
 //   --archive <workspace>                                     the Archive Workspace dialog
 //   --manage-libraries <workspace>                            File ▸ Manage Libraries… (written to <out>.dialog.png)
 //   --add-vendor-library <folder>                             Add Vendor Library's confirm step (<out>.dialog.png)
+//   --export-to-library <cell> [--export-library <dir>]       Export to Library's dialog on a cell (<out>.dialog.png)
+//   --import-schematic <file>                                 File ▸ Import ▸ Schematic…'s dialog on a design file (<out>.dialog.png)
 // A list drop-down, a context menu and a button's menu flyout are drawn in the window's own frame; a popup that opens
 // as a top level of its own instead is written to <out>.popup.png.
 
@@ -158,7 +160,7 @@ string? imageScalePoints = null;
 int cmcMarkers = 0;
 string? palette = null, paletteCategory = null, paletteSearch = null, schematic = null, select = null;
 bool parameterDialog = false;
-string? archive = null, manageLibraries = null, addVendorLibrary = null;
+string? archive = null, manageLibraries = null, addVendorLibrary = null, exportToLibrary = null, exportLibrary = null, importSchematic = null;
 // --project-tree <workspace> [--reveal <file>] [--filter-open] [--filter-all-off]: the Workspace Tree panel; --reveal runs
 // a document tab's Reveal in Workspace Tree on that file, --filter-open opens the category filter's flyout.
 string? projectTree = null, revealPath = null;
@@ -257,6 +259,10 @@ for (int i = 0; i < args.Length; i++)
         case "--filter-open": filterOpen = true; break;
         case "--filter-all-off": filterAllOff = true; break;
         case "--add-vendor-library" when i + 1 < args.Length: addVendorLibrary = Path.GetFullPath(args[++i]); break;
+        // brief vendorlib-10: Export to Library's dialog on a cell folder, its Library field set to --export-library.
+        case "--export-to-library" when i + 1 < args.Length: exportToLibrary = Path.GetFullPath(args[++i]); break;
+        case "--export-library" when i + 1 < args.Length: exportLibrary = Path.GetFullPath(args[++i]); break;
+        case "--import-schematic" when i + 1 < args.Length: importSchematic = Path.GetFullPath(args[++i]); break;
         // brief-gdf-2: the gdsfactory views — trust | pick | interpreter | report | prompt | permissions — with the
         // interpreter that has gdsfactory and (for trust/interpreter/report) a kit source tree.
         case "--gdsfactory" when i + 1 < args.Length: gdsfactory = args[++i]; break;
@@ -296,7 +302,7 @@ if (reviewPanel is not null && output is not null)
         .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
     return ShowReviewPanel(reviewPanel, output, sizeGiven ? width : 420, sizeGiven ? height : 760);
 }
-bool vendorMode = projectTree is not null || palette is not null || schematic is not null || archive is not null || manageLibraries is not null || addVendorLibrary is not null || gdsfactory is not null || csym is not null;
+bool vendorMode = projectTree is not null || palette is not null || schematic is not null || archive is not null || manageLibraries is not null || addVendorLibrary is not null || exportToLibrary is not null || importSchematic is not null || gdsfactory is not null || csym is not null;
 if ((cdd is null && c3dSetups is null && c3dSetupPanel is null && signal.Count == 0 && snp is null && !standalone && tuning is null && optimizer is null && yieldCsch is null && clay is null && cem is null && ctech is null && cmc is null && image is null && exportData is null && !vendorMode) || output is null || view is not ("canvas" or "inspector" or "display"))
 {
     Console.Error.WriteLine("usage: UiSnapshot <file.cdd> -o <out.png> [--view canvas|inspector|display] [--plot n] [--size WxH] "
@@ -343,6 +349,8 @@ if (vendorMode)
     Pump();
     if (manageLibraries is not null) OpenManageLibraries(manageLibraries);
     if (addVendorLibrary is not null) OpenAddVendorLibrary(addVendorLibrary);
+    if (exportToLibrary is not null) OpenExportToLibrary(exportToLibrary, exportLibrary);
+    if (importSchematic is not null) OpenImportSchematic(importSchematic);
     if (gdsfactory is not null && !OpenGdsfactory(gdsfactory)) return 2;
     if (projectTreeTool is { } treeTool)
     {
@@ -1738,6 +1746,29 @@ void OpenAddVendorLibrary(string folder)
     _ = CircuitRF.Ui.Views.Dialogs.AddVendorLibraryDialog.AskAsync(host, folder,
             CircuitRF.Design.VendorLibraries.VendorLibraryRefs.DefaultName(folder), build.SummaryLines());
     Pump();
+}
+
+void OpenExportToLibrary(string cell, string? library)
+{
+    var vm = new CircuitRF.Ui.ViewModels.ExportToLibraryViewModel(cell, [], library);
+    _ = CircuitRF.Ui.Views.Dialogs.ExportToLibraryDialog.AskAsync(host, vm);
+    Pump();
+    // The plan's continuation runs on this dispatcher, so it is pumped for, never waited on.
+    for (int k = 0; k < 1500 && (vm.IsPlanning || !vm.Replanned.IsCompleted); k++) { Pump(); Thread.Sleep(20); }
+    Pump();
+    Console.WriteLine($"plan: {vm.RefusalLines.Count} refusal(s), {vm.CopyLines.Count} copy line(s), symbol {vm.CurrentSymbol?.Value}, can export {vm.CanExport}");
+    foreach (var r in vm.RefusalLines) Console.WriteLine($"  refusal: {r}");
+}
+
+void OpenImportSchematic(string file)
+{
+    // Into a throwaway folder: the dialog only reads until Import is pressed.
+    string into = Path.Combine(Path.GetTempPath(), "crf-snap-import-" + Guid.NewGuid().ToString("N")[..8]);
+    Directory.CreateDirectory(into);
+    var vm = new CircuitRF.Ui.ViewModels.ImportSchematicViewModel(file, into);
+    _ = new CircuitRF.Ui.Views.Dialogs.ImportSchematicDialog(vm).ShowDialog<object?>(host);
+    for (int k = 0; k < 1500 && !vm.Loaded.IsCompleted; k++) { Pump(); Thread.Sleep(20); }
+    for (int k = 0; k < 50; k++) { Pump(); Thread.Sleep(20); }
 }
 
 static IReadOnlyList<(string Name, string? Root)> VendorLibrariesOf(string ws)

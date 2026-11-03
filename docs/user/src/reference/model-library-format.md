@@ -266,13 +266,68 @@ A folder holding model folders is checked to its full depth without `--recursive
 
 ## Making a library {#making}
 
-**Export to Library…** on a cell packages it as a model folder: it copies in every file the cell uses, converts
-each part that needs a technology to an S-parameter file, writes `part.cpart`, the `.cnl` and the hash, and
-checks the result. The command line spelling is
+**Export to Library…** packages a cell as a model folder. It is on the **File** menu and on the schematic
+toolbar, and it is available when the active document is a saved cell's primary schematic with at least one
+**Pin**; otherwise it is greyed, and its tooltip says why (a test bench, unsaved changes, no Pin). An empty
+folder chosen as the library starts a new library.
+
+The dialog asks for:
+
+- **Library** and **Category**. Pick a folder, or one of the libraries the workspace already references. A
+  category is a folder in the library, and so a sub-menu in the palette; typing `Amplifiers/LNA` creates both
+  folders.
+- The **library's** Name, Publisher, Version and License, written to `library.clib`. They are asked only when
+  the folder has no `library.clib` yet.
+- The **part**: its number (the cell's name by default), Description, **Kind** (Active when any component is
+  nonlinear — Verilog-A, ComposedFET, a FET, a diode, SDD or an external device — Passive otherwise), a passive's
+  **Value**, the **Frequency** range it is valid over, **Conditions**, **Footprint**, and any **Documents** to copy
+  into `docs/`.
+- The **symbol**. The default is the cell's own symbol when it has one; otherwise the FET glyph for three or four
+  pins whose names read as gate, drain and source on an active part; otherwise R, C or L for a two-pin passive
+  whose value is a resistance, capacitance or inductance; otherwise a box. A built-in glyph is written into the
+  model as `symbol/<part>.csym`, with its pins named after the cell's, and recorded as `Glyph`.
+
+While you fill it in, the dialog lists what will be copied in — every file, every sub-cell, every vendor part
+and the library it came from — and every reason the export cannot go ahead. **Export** stays greyed while any
+reason stands. **Add this library to the workspace** puts the part in the palette as soon as the export
+finishes.
+
+What Export does, in order:
+
+1. **Refuses before writing anything** when the cell places a kit (`pdk://`) part, a file reference that does
+   not resolve, or a part that takes its substrate from the technology (`TL1 (MLIN) takes its substrate from
+   the technology; a model cannot carry one.`), or when it has no Pin.
+2. **Copies the cell** into a temporary folder beside the destination: `.ccell`, the schematic and the symbol,
+   renamed to the part number. Sub-cells, including any from a referenced workspace, go to `cells/<name>/`.
+   Every file a document references goes to `models/`, and its reference is rewritten relative to the model
+   folder. A `.va` brings every file it `` `include ``s, laid out as before so the include still resolves. A
+   name already taken in `models/` gets a numeric suffix. A vendor part is copied in as well: a SPICE part's
+   own `.subckt` block into `models/`, a model part as a sub-cell.
+3. **Writes the netlist** by extracting the copied cell, so every reference in it is model-relative, then
+   `part.cpart` (pins and parameters from the cell, so they agree with the `.cnl`), `library.clib` for a new
+   library, and the `PublishedHash` last.
+4. **Checks** the folder as `circuitrf check` does, and then **self-checks** it: the source cell and the model,
+   each with a 50 Ω port from every pin to ground at the default parameters, must give the same S-parameters at
+   eleven frequencies (DC, then ten log-spaced over the stated range, or 1 MHz to 10 GHz) and the same DC voltage
+   at every pin, to 1e-9 relative. A difference is a refusal naming the worst entry and frequency.
+5. **Renames** the folder into place. A refusal or **Cancel** at any step leaves nothing behind.
+
+Exporting a part number that is already in the library asks first, and replaces it with `Revision` one higher.
+Messages says *Exported TSTFET100 to MyLib/Amplifiers (revision 1).*
+
+On the command line:
 
 ```
 circuitrf export part <cell folder> --library <dir> [--category a/b] [--part PN] [--description …]
+    [--kind active|passive] [--value …] [--freq-low … --freq-high …] [--conditions …] [--footprint …]
+    [--doc <file>]… [--symbol own|fet|r|c|l|box] [--replace] [--include-vendor-parts]
+    [--library-name … --publisher … --license … --library-version …] [--json]
 ```
+
+The defaults are the dialog's. What the dialog would have asked about is a refusal naming the flag that
+answers it: `--replace` for a part already exported, and `--include-vendor-parts` for a cell that places vendor
+parts, whose libraries' terms then travel with the model. The paths created are printed, and listed in
+`--json`. Over MCP it is `create what=libraryPart cell=<cell folder> library=<dir>`.
 
 A library can also be written by hand or by a script: the [example](#example) is the smallest one. Check it
 with `circuitrf check <library>`.

@@ -537,6 +537,9 @@ Grouped by what you are doing, left to right:
   circuit without deleting it, which is what you want when you are bracketing a problem.
 - **Save**.
 - **Hierarchy** — push into the selected cell, or pop back out.
+- **Export to Library…** — package this cell as a model in a [model library](model-library-format.html#making),
+  for others to place. Greyed, with the reason in its tooltip, unless this is a saved cell's primary schematic
+  with at least one Pin. Also on the **File** menu.
 
 ---
 

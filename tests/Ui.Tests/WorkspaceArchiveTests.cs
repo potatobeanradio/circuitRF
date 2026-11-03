@@ -3,6 +3,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Text.Json.Nodes;
+using CircuitRF.Design.Workspace;
 using CircuitRF.Ui.Archive;
 using Xunit;
 

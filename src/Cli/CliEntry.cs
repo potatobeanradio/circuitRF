@@ -254,6 +254,9 @@ return JsonRun.Finish(exit);
     // adding `new schematic` later is a noun rather than a fourth top-level verb.
     "new"    => CircuitRF.Cli.Authoring.RunNew,
     "import" => CircuitRF.Cli.Authoring.RunImport,
+    // brief vendorlib-10 R-vl10-4: Export to Library, headlessly. A verb with a noun, as `new` and `import` are,
+    // so a later export is a noun. It owns no export — every step is ModelLibraryExport's, which the dialog calls.
+    "export" => CircuitRF.Cli.ExportPart.Run,
     // R-aut4-1/R-aut4-6: neither runs an analysis and neither writes. They are what closes a
     // headless client's loop — it writes a document, asks whether the document is sound, and asks
     // what circuitRF made of it, without paying for a run.
@@ -2859,6 +2862,7 @@ static int PrintHelp()
     Console.WriteLine("  new cell <ws> <name>   (a cell folder with its view files)");
     Console.WriteLine("  import part <file>     (a footprint and its symbol, as a cell)");
     Console.WriteLine("  import schematic <file> (a .kicad_sch, EDIF or binary .DSN design, as a new cell)");
+    Console.WriteLine("  export part <cell> --library <dir>  (a cell as a model in a model library)");
     Console.WriteLine("  check   <path>         (is it well formed, does it resolve, is it sound)");
     Console.WriteLine("  explain <path>         (what did circuitRF resolve it to, and by which walk)");
     Console.WriteLine("  lvs     <path>         (does the artwork implement the drawing?)");

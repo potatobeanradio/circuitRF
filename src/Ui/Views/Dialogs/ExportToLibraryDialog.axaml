@@ -1,0 +1,149 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:CircuitRF.Ui.ViewModels"
+        xmlns:ctl="using:CircuitRF.Ui.Controls"
+        xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+        x:Class="CircuitRF.Ui.Views.Dialogs.ExportToLibraryDialog"
+        x:DataType="vm:ExportToLibraryViewModel"
+        Title="Export to Library"
+        Width="900" Height="640"
+        MinWidth="760" MinHeight="520"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <!-- brief vendorlib-10 R-vl10-3: the target and the fields on the left; the symbol, what will be copied in and every
+         refusal on the right, live, before Export is pressed. -->
+    <Grid RowDefinitions="*,Auto" ColumnDefinitions="430,16,*" Margin="16,14,16,14">
+
+        <ScrollViewer Grid.Row="0" Grid.Column="0" VerticalScrollBarVisibility="Auto">
+            <StackPanel Spacing="10" Margin="0,0,8,0">
+
+                <!-- Target -->
+                <TextBlock Text="Target" FontWeight="SemiBold" FontSize="12"/>
+                <Grid ColumnDefinitions="90,*,Auto" RowDefinitions="Auto,Auto,Auto" RowSpacing="6">
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Library" FontSize="12" VerticalAlignment="Center"/>
+                    <TextBox   Grid.Row="0" Grid.Column="1" x:Name="LibraryBox" Text="{Binding LibraryPath}" FontSize="12"
+                               ToolTip.Tip="The model library's folder. An empty folder starts a new library."/>
+                    <Button    Grid.Row="0" Grid.Column="2" Content="Browse…" FontSize="12" Margin="6,0,0,0" Click="OnBrowseLibrary"/>
+                    <ComboBox  Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" x:Name="KnownLibraryCombo"
+                               ItemsSource="{Binding KnownLibraries}" PlaceholderText="Libraries this workspace references"
+                               FontSize="12" HorizontalAlignment="Stretch" SelectionChanged="OnKnownLibraryChosen"
+                               IsEnabled="{Binding !!KnownLibraries.Count}"/>
+                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Category" FontSize="12" VerticalAlignment="Center"/>
+                    <AutoCompleteBox Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Text="{Binding Category}"
+                                     ItemsSource="{Binding Categories}" FilterMode="StartsWith" MinimumPrefixLength="0"
+                                     FontSize="12"
+                                     ToolTip.Tip="A folder in the library, which is a palette sub-menu. Typing Amplifiers/LNA creates both."/>
+                </Grid>
+
+                <!-- Library: only for a new one -->
+                <TextBlock Text="Library" FontWeight="SemiBold" FontSize="12"/>
+                <Grid ColumnDefinitions="90,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="6" IsEnabled="{Binding LibraryIsNew}">
+                    <TextBlock Grid.Row="0" Text="Name" FontSize="12" VerticalAlignment="Center"/>
+                    <TextBox   Grid.Row="0" Grid.Column="1" Text="{Binding LibraryName}" FontSize="12"/>
+                    <TextBlock Grid.Row="1" Text="Publisher" FontSize="12" VerticalAlignment="Center"/>
+                    <TextBox   Grid.Row="1" Grid.Column="1" Text="{Binding Publisher}" FontSize="12"/>
+                    <TextBlock Grid.Row="2" Text="Version" FontSize="12" VerticalAlignment="Center"/>
+                    <TextBox   Grid.Row="2" Grid.Column="1" Text="{Binding LibraryVersion}" FontSize="12"/>
+                    <TextBlock Grid.Row="3" Text="License" FontSize="12" VerticalAlignment="Center"/>
+                    <TextBox   Grid.Row="3" Grid.Column="1" Text="{Binding License}" FontSize="12"/>
+                </Grid>
+
+                <!-- Part -->
+                <TextBlock Text="Part" FontWeight="SemiBold" FontSize="12"/>
+                <Grid ColumnDefinitions="90,*,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="6" ColumnSpacing="6">
+                    <TextBlock Grid.Row="0" Text="Part number" FontSize="12" VerticalAlignment="Center"/>
+                    <TextBox   Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="2" x:Name="PartBox" Text="{Binding PartNumber}" FontSize="12"/>
+                    <TextBlock Grid.Row="1" Text="Description" FontSize="12" VerticalAlignment="Center"/>
+                    <TextBox   Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Text="{Binding Description}" FontSize="12"/>
+                    <TextBlock Grid.Row="2" Text="Kind" FontSize="12" VerticalAlignment="Center"/>
+                    <ComboBox  Grid.Row="2" Grid.Column="1" x:Name="KindCombo" ItemsSource="{Binding Kinds}"
+                               SelectedItem="{Binding EffectiveKind, Mode=OneWay}" SelectionChanged="OnKindChosen" FontSize="12"
+                               HorizontalAlignment="Stretch"
+                               ToolTip.Tip="Active when any component is nonlinear (Verilog-A, ComposedFET, a FET, a diode, SDD, an external device); Passive otherwise."/>
+                    <TextBlock Grid.Row="3" Text="Value" FontSize="12" VerticalAlignment="Center"/>
+                    <TextBox   Grid.Row="3" Grid.Column="1" Text="{Binding Value}" FontSize="12" IsEnabled="{Binding IsPassive}"
+                               PlaceholderText="10 pF" ToolTip.Tip="A passive's value. Optional; it makes the part findable by value."/>
+                    <TextBlock Grid.Row="4" Text="Frequency" FontSize="12" VerticalAlignment="Center"/>
+                    <TextBox   Grid.Row="4" Grid.Column="1" Text="{Binding FrequencyLow}" FontSize="12" PlaceholderText="0 Hz"/>
+                    <TextBox   Grid.Row="4" Grid.Column="2" Text="{Binding FrequencyHigh}" FontSize="12" PlaceholderText="20 GHz"/>
+                    <TextBlock Grid.Row="5" Text="Conditions" FontSize="12" VerticalAlignment="Center"/>
+                    <TextBox   Grid.Row="5" Grid.Column="1" Grid.ColumnSpan="2" Text="{Binding Conditions}" FontSize="12"
+                               PlaceholderText="Vds = 3 V, 25 °C"/>
+                    <TextBlock Grid.Row="6" Text="Footprint" FontSize="12" VerticalAlignment="Center"/>
+                    <TextBox   Grid.Row="6" Grid.Column="1" Grid.ColumnSpan="2" Text="{Binding Footprint}" FontSize="12"
+                               PlaceholderText="1005M(0402)"/>
+                </Grid>
+
+                <Grid ColumnDefinitions="90,*,Auto">
+                    <TextBlock Grid.Column="0" Text="Documents" FontSize="12" VerticalAlignment="Top" Margin="0,4,0,0"/>
+                    <Border Grid.Column="1" BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="1" CornerRadius="3" MinHeight="44">
+                        <ListBox x:Name="DocumentsList" ItemsSource="{Binding Documents}" FontSize="11" MaxHeight="80" Background="Transparent"/>
+                    </Border>
+                    <StackPanel Grid.Column="2" Spacing="4" Margin="6,0,0,0">
+                        <Button Content="Add…" FontSize="12" Click="OnAddDocument" HorizontalAlignment="Stretch"/>
+                        <Button Content="Remove" FontSize="12" Click="OnRemoveDocument" HorizontalAlignment="Stretch"/>
+                    </StackPanel>
+                </Grid>
+            </StackPanel>
+        </ScrollViewer>
+
+        <Grid Grid.Row="0" Grid.Column="2" RowDefinitions="Auto,Auto,*,Auto,Auto,Auto">
+            <!-- The symbol (R-vl10-3d): one picture; a click opens the menu of every symbol this model can take. -->
+            <StackPanel Grid.Row="0" Spacing="2" HorizontalAlignment="Left">
+                <TextBlock Text="Symbol" FontWeight="SemiBold" FontSize="12"/>
+                <Button x:Name="SymbolButton" Background="Transparent" Width="170" Padding="4"
+                        HorizontalContentAlignment="Stretch" ToolTip.Tip="Choose the symbol" Click="OnSymbolButton">
+                    <StackPanel Spacing="2">
+                        <ctl:PaletteGlyphControl x:Name="SymbolGlyph" Height="90"/>
+                        <StackPanel Orientation="Horizontal" Spacing="2" HorizontalAlignment="Center">
+                            <TextBlock FontSize="11" Text="{Binding CurrentSymbol.Label, FallbackValue=''}" VerticalAlignment="Center"/>
+                            <mi:MaterialIcon Kind="MenuDown" Width="14" Height="14" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+
+            <TextBlock Grid.Row="1" Text="Copied into the model" FontWeight="SemiBold" FontSize="12" Margin="0,12,0,4"/>
+            <Border Grid.Row="2" BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="1" CornerRadius="3">
+                <ScrollViewer>
+                    <StackPanel Margin="6,4">
+                        <TextBlock Text="The cell's own schematic and pins, and nothing else." FontSize="11" Opacity="0.6"
+                                   IsVisible="{Binding !CopyLines.Count}"/>
+                        <ItemsControl ItemsSource="{Binding CopyLines}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="x:String">
+                                    <SelectableTextBlock Text="{Binding}" FontSize="11" TextWrapping="Wrap"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+
+            <ItemsControl Grid.Row="3" ItemsSource="{Binding RefusalLines}" Margin="0,8,0,0">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="x:String">
+                        <SelectableTextBlock Text="{Binding}" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,4"
+                                             Foreground="{DynamicResource CrfWarningBrush}"/>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <TextBlock Grid.Row="4" Text="{Binding ReplaceNote}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"
+                       IsVisible="{Binding ReplaceNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+            <CheckBox Grid.Row="5" IsChecked="{Binding AddToWorkspace}" IsEnabled="{Binding AddToWorkspaceEnabled}" Margin="0,8,0,0"
+                      ToolTip.Tip="Reference this library from the workspace, so the part is in the palette as soon as the export finishes.">
+                <TextBlock Text="Add this library to the workspace" FontSize="12"/>
+            </CheckBox>
+        </Grid>
+
+        <Grid Grid.Row="1" Grid.ColumnSpan="3" ColumnDefinitions="*,Auto" Margin="0,12,0,0">
+            <TextBlock Grid.Column="0" Text="{Binding Status}" FontSize="12" TextWrapping="Wrap" VerticalAlignment="Center" Opacity="0.8"/>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                <Button Content="Cancel" Width="80" HorizontalContentAlignment="Center" IsCancel="True" Click="OnCancel"/>
+                <Button Content="Export" Width="80" HorizontalContentAlignment="Center" IsDefault="True"
+                        IsEnabled="{Binding CanExport}" Click="OnExport"/>
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Window>

@@ -41752,3 +41752,32 @@ of them and at least 120 px, and the proportion is written on the PRESENTER at l
   user changed from the old model's default survives if the new model declares that parameter. **?** opens the
   model folder's own documents.
 - The `Glyph` row is hidden from the generic rows and from the row-set comparison, as a SpiceModel's panel rows are.
+
+## Export to Library: dialog, toolbar and File menu (VL-10, 2026-11-03)
+
+- **Where it is offered.** `WorkspaceViewModel.ExportToLibraryBlockedReason` is the one test, for the File menu
+  item (both the native and the in-window menu), its tooltip, and the schematic toolbar's button: a saved, clean,
+  top-level primary schematic of a cell that is not a test bench and has a Pin. The menu command rides both
+  active-document fan-outs (with `ExportToLibraryTip`). The toolbar button refreshes from the document's own
+  `PropertyChanged` (IsDirty, Title) and on push in/out: a Pin added makes the document dirty and a save makes it
+  clean, so the pin test is re-asked when it matters. Both set `ToolTip.ShowOnDisabled` so the reason is readable
+  on a greyed control.
+- **The toolbar reaches the workspace through `IHierarchyHost.ExportToLibraryAsync`** (a default-implemented
+  member), as Save does.
+- **The dialog is a shell.** `ExportToLibraryViewModel` re-asks `ModelLibraryExport.Plan` off the UI thread on every
+  field that changes the plan (latest wins by generation) and lists the copies and refusals live. It plans with
+  Replace set, so an existing part is a note and a confirmation at Export, not a refusal. Vendor parts are always
+  included, since the dialog lists each with its library. Export runs on a `RunControl`; Cancel during an export
+  stops it with nothing left behind.
+- **Trap:** a `SelectionChanged` handler wired in XAML fires during `InitializeComponent`, before the named
+  fields are assigned. Read the sender, not the `x:Name` field.
+- **Borders:** `CrfBorderBrush` was defined nowhere, so a border naming it drew nothing and nothing said so. The
+  Import Schematic dialog's three borders (parts table, ports, preview) were invisible for that reason; they now
+  use `CrfTileBorderBrush`, the dialog border brush every other dialog uses. `CrfResourceKeysDefinedTests` fails
+  when a view names a `Crf…` resource that no file defines.
+- After a successful export: one Messages line, check's warnings if any, and, when asked, the library added to the
+  `.cws` through `VendorLibraryRefs.AddOrRepair` with no second confirmation (the checkbox was the question).
+  A library the workspace already references is re-indexed so the part is listed at once.
+- UiSnapshot: `--export-to-library <cell> [--export-library <dir>]` opens the dialog over an empty window
+  (`<out>.dialog.png`) and prints the plan; `--import-schematic <file>` does the same for File ▸ Import ▸
+  Schematic…, importing nothing.

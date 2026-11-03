@@ -101,6 +101,7 @@ public partial class SchematicView : UserControl
             _subscribedDoc.ZoomToFitRequested       -= OnZoomToFitRequestedFromMenu;
             _subscribedDoc.ZoomToWorldRectRequested -= OnZoomToWorldRectRequested;
             _subscribedDoc.PlaceCellInstanceRequested -= OnPlaceCellInstanceRequestedFromMenu;
+            _subscribedDoc.PropertyChanged          -= OnDocPropertyChanged;
             _subscribedDoc = null;
         }
 
@@ -115,9 +116,34 @@ public partial class SchematicView : UserControl
             doc.ZoomToFitRequested       += OnZoomToFitRequestedFromMenu;
             doc.ZoomToWorldRectRequested += OnZoomToWorldRectRequested;
             doc.PlaceCellInstanceRequested += OnPlaceCellInstanceRequestedFromMenu;
+            doc.PropertyChanged          += OnDocPropertyChanged;
             // If this tab was activated before the view bound (first open), the request is pending.
             if (doc.ConsumeActivationFocus()) FocusCanvasDeferred();
         }
+        RefreshExportToLibrary();
+    }
+
+    // brief vendorlib-10 R-vl10-1a — the toolbar's Export to Library… follows the document's saved state: a Pin added
+    // makes the document dirty and a save makes it clean, and both arrive here as IsDirty.
+    private void OnDocPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is null or nameof(SchematicDocument.IsDirty) or nameof(SchematicDocument.Title))
+            RefreshExportToLibrary();
+    }
+
+    private void RefreshExportToLibrary()
+    {
+        string? why = _subscribedDoc?.Hierarchy is null ? "Export to Library needs an open workspace."
+                    : ViewModels.WorkspaceViewModel.ExportToLibraryBlockedReason(_subscribedDoc);
+        ExportToLibraryBtn.IsEnabled = why is null;
+        ToolTip.SetTip(ExportToLibraryBtn, why is null
+            ? "Export to Library… — package this cell as a self-contained model in a model library"
+            : $"Export to Library… — {why}");
+    }
+
+    private void OnToolbarExportToLibrary(object? sender, RoutedEventArgs e)
+    {
+        if (_subscribedDoc is { Hierarchy: { } host } doc) _ = host.ExportToLibraryAsync(doc);
     }
 
     // View->Zoom to Fit dispatches here from WorkspaceViewModel via SchematicDocument.RequestZoomToFit().
@@ -190,6 +216,7 @@ public partial class SchematicView : UserControl
     {
         RebindActiveViewModel();
         SchematicCanvasCtrl.InvalidateVisual();
+        RefreshExportToLibrary();   // pushed in, the export is of the top schematic only
     }
 
     private void RebindActiveViewModel()

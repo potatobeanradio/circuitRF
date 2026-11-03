@@ -4745,3 +4745,22 @@ imported), an archive against its unpacked folder, a folder name that would spli
 consent seam (`ImportPdk.InterpreterFinder` is never asked for an interpreter without consent), and a
 placed kit part netlisted with no window. On-demand loading: `tests/Ui.Tests/Cli/KitsLoadedOnDemandTests.cs`
 (counts, never timings).
+
+## 35. `export part` — Export to Library, headless (brief vendorlib-10)
+
+`circuitrf export part <cell folder> --library <dir> [...]` is **File ▸ Export to Library…** with no display. It
+is a verb with a noun, as `new` and `import` are, so a later export is a noun rather than another verb. It owns
+no export: `ModelLibraryExport.Plan` and `.Export` in `src/Design/VendorLibraries/ModelLibrary` are the functions
+the dialog calls, and `src/Cli/ExportPart.cs` is argument parsing, refusals and reporting. A comment-stripped
+source scan holds both shells to that.
+
+- **Every default is the dialog's**; what the dialog ASKS is a refusal naming its flag: `--replace` (a part number
+  already exported; the replacement's `Revision` is the old one plus one) and `--include-vendor-parts` (the
+  dialog lists each vendor part with its library, which is its way of asking).
+- **Nothing is written on a refusal or a cancel** (exit 1 / 130): the model is built in
+  `<category>/.<part>.tmp-<id>/<part>` and renamed into place only after `check` and the self-check pass.
+- **The created paths are the result**, on stdout and in `--json` (`model`, `library`, `file`).
+- Over MCP it is a mode of `create` (`what=libraryPart`), not an eighteenth tool.
+
+Gate: `tests/Ui.Tests/VendorLibraries/ModelLibraryExportTests.cs` — the CLI as a process against the in-process
+call, byte for byte over the whole library folder, `part.cpart` included.

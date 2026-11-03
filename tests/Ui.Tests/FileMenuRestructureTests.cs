@@ -146,7 +146,7 @@ public class FileMenuRestructureTests
         "Add _Cell to Workspace…", "_Reference Workspace…", "---",
         "_Clone Workspace…", "_Pull Changes", "P_ush Changes", "---",
         "_Archive Workspace…", "_Unarchive Workspace…", "---",
-        "_Import", "_Export", "Add _Vendor Library…", "_Manage Libraries…", "---",
+        "_Import", "_Export", "Export to _Library…", "Add _Vendor Library…", "_Manage Libraries…", "---",
         // "Close Workspace Window", not "Close Window": that name is already taken by the item
         // above, which closes the active DOCUMENT tab (MW1 §1's own deviation, recorded there).
         "Close _Window", "Close Wor_kspace", "Close Workspace Window", "---",
@@ -162,7 +162,7 @@ public class FileMenuRestructureTests
         "Add Cell to Workspace…", "Reference Workspace…", "---",
         "Clone Workspace…", "Pull Changes", "Push Changes", "---",
         "Archive Workspace…", "Unarchive Workspace…", "---",
-        "Import", "Export", "Add Vendor Library…", "Manage Libraries…", "---",
+        "Import", "Export", "Export to Library…", "Add Vendor Library…", "Manage Libraries…", "---",
         "Close Window", "Close Workspace", "Close Workspace Window",
     ];
 

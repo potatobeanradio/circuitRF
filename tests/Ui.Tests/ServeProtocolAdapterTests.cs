@@ -978,6 +978,7 @@ public sealed class ServeProtocolAdapterTests(ITestOutputHelper output) : IDispo
             ["create/workspace"]  = ["path"],
             ["create/cell"]       = ["workspace", "name"],
             ["create/view3d"]     = ["cell"],          // brief-emb-1 R-emb1-1
+            ["create/libraryPart"] = ["cell"],         // brief vendorlib-10 R-vl10-4 — `export part`
             // `import` and `convert` were one tool with a `what` selector until an export was found
             // filed under "import"; `convert` stays single-mode. brief-sar-11 gave `import` its CLI nouns
             // back as modes — every one of them brings something in.

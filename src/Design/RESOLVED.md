@@ -26300,3 +26300,49 @@ Gate: `tests/Ui.Tests/VendorLibraries/OwningRootPathTests.cs` (3).
   candidate.
 
 Gate: `tests/Ui.Tests/VendorLibraries/VendorModelLibraryTests.cs` (7).
+
+## Export to Library (VL-10, 2026-11-03)
+
+- **One implementation.** `ModelLibraryExport.Plan` (reads, never writes: every refusal, the copy list, the default
+  kind and symbol) and `.Export` (in `VendorLibraries/ModelLibrary/`). The dialog's view model and
+  `src/Cli/ExportPart.cs` call them and hold no copy; a comment-stripped source scan holds that.
+- **`DocumentFileRefs` moved here from `src/Ui/Archive`** (namespace `CircuitRF.Design.Workspace`), so Export finds
+  and rewrites a cell's file references with the archive's own walk. `RefBase` moved with it. It took the
+  `results` folder name as its own constant (`DocumentFileRefs.ResultsFolder`, which
+  `WorkspaceArchiveScanner.ResultsFolder` now is), and `PathComparer` became public because the scanner uses it.
+- **The temporary folder is `<category>/.<part>.tmp-<id>/<part>`, not the brief's `<part>.tmp-*`.** A model folder
+  must carry its part number as its name (`check.model.part-not-folder`, and the netlist is named after the folder),
+  so the check that has to pass before the rename can only pass on a folder already named `<part>`. The leading dot
+  keeps `ModelFolder.Under` and the library index from listing it meanwhile. A replaced model is moved to
+  `.<part>.old-<id>` first and deleted only once the new one is in place.
+- **A provisional `part.cpart` is written before the netlist.** `ModelNetlist.FromCell` resolves every relative
+  reference against the owning root, and the copy is a model folder (so its references are model-relative and
+  are not rebased to absolute paths) only once `part.cpart` exists. The root caches (`OwningRoot`,
+  `WorkspaceRootFinder`, `ExternalCellRef`, `CellStat`) are invalidated after each folder appears or moves.
+- **References are rewritten in two passes.** `DocumentFileRefs.Rewrite` on the SOURCE document copies each file
+  into `models/` and returns the new reference (document-relative for a Document-base reference, model-relative
+  otherwise); a file inside a cell being copied maps to that cell's copy instead. Then a JSON pass re-points each
+  `CellRef` at `cells/<name>` (dropping `CellInterfaceHash`, and a vendor model's stored `Glyph`), and each vendor
+  SPICE part's `File` at its `.subckt` block, copied from `VendorLibraryIndex.ReadBlock` into `models/<PART>.lib`.
+  A `.va` with includes goes to `models/<stem>/`, rooted at the deepest folder holding it and every file it
+  includes, so each include resolves as before. A standard header that resolves nowhere beside the source is left
+  to the compiler.
+- **`part.cpart`'s pins and parameters come from the extracted `.cnl` top cell**, spelled as `ModelFolderCheck`
+  reads them (`Spell`), so the D7 agreement holds by construction.
+- **The self-check** builds a bench in `.cnl` text (`Port:SCPk __sc_nk 0 Num=k Z=50 Ohm` plus one instance of the
+  top cell), reads it with the base the run would use (the source's `ReferenceBaseOfDirectory`, the model folder),
+  and compares S at DC plus ten log-spaced points and the DC node voltage at each pin. The tolerance is 1e-9
+  relative with a 1e-12 floor, so an entry that is zero on both sides (an unbiased node) does not fail on
+  round-off. `SParameterEngine` takes f = 0 directly.
+- **Kind** is Active when an extracted instance reference is nonlinear (`IsNonlinearReference`: Verilog-A,
+  ComposedFET, the FET/BJT/MOS/VDMOS/IGBT/JFET families, Diode, SDD, ExtDevice, NonlinearC) or a schematic component
+  is. **Technology-bound** is `PlanarLineSubstrateInjection.IsStackupLineKind` plus the vias, TESTPAD and the MMIC
+  passives. Brief 11 replaces that refusal.
+- **The glyph's value test strips spaces** before `VendorLibrarySearch.TryReadValue`, as the index does for a
+  model's `Value`. `10 pF` with the space does not read otherwise, and C would never be the default.
+- **Not built:** nothing in the brief. A Verilog-A model is exported and self-checked like any other part, so
+  exporting one needs the Verilog-A compiler the source cell already needs to run. The end-to-end test's
+  Verilog-A instance is disabled so the gate runs on a machine with no compiler, and still checks the `.va`, its
+  include and the rewritten reference.
+
+Gate: `tests/Ui.Tests/VendorLibraries/ModelLibraryExportTests.cs` (7 tests, 11 cases).

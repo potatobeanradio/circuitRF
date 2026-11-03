@@ -63,7 +63,7 @@ src/Core/Devices/ComponentModelFactory.cs|Tuner '{instanceName}': harmonic {k} h
 src/Core/Devices/ComponentModelFactory.cs|VerilogA: '{modelFile}' declares no device type. It loaded, so it is a compiled 
 src/Core/Devices/ComponentModelFactory.cs|VerilogA: '{modelFile}' declares {offered.Count} device types, so which one to 
 src/Core/Devices/ComponentModelFactory.cs|VerilogA: '{modelFile}' has no device type '{typeId}'. It offers: 
-src/Core/Devices/ComponentModelFactory.cs|VerilogA: no model file. Set the component's 'File' parameter to a compiled model — 
+src/Core/Devices/ComponentModelFactory.cs|VerilogA: no model file. Set the component's 'File' parameter to a compiled model (.osdi) 
 src/Core/Devices/ComponentModelFactory.cs|Z_Port: ZPortCount is required
 src/Core/Devices/ComponentModelFactory.cs|wBond: its wirebond file was not found: '{path}'. Either restore the file, 
 src/Core/Devices/ComponentModelFactory.cs|wBond: neither 'Design' (the embedded wires) nor 'File' (a .wBond to load) is set.

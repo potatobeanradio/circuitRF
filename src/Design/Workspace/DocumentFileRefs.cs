@@ -3,9 +3,10 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json.Nodes;
-using CircuitRF.Ui.Layout;
+using CircuitRF.Core;
+using CircuitRF.Design.Layout;
 
-namespace CircuitRF.Ui.Archive;
+namespace CircuitRF.Design.Workspace;
 
 /// <summary>
 /// Which directory a stored reference is written against. circuitRF has three conventions, and a
@@ -52,9 +53,17 @@ public enum RefBase
 /// <para><b>Object KEYS are walked as well as values.</b> A <c>.cdd</c> stores its
 /// <c>SourceAliases</c> as a map KEYED by each data source's path, so a values-only walk is blind to
 /// exactly the references a Data Display needs in order to render anything.</para>
+///
+/// <para><b>Below the UI firewall since brief vendorlib-10</b> (it lived in <c>src/Ui/Archive</c>): Export to
+/// Library finds and rewrites a cell's references with this same walk, from the GUI and from
+/// <c>circuitrf export part</c>, and two walks would disagree. The archive calls it from here.</para>
 /// </summary>
 public static class DocumentFileRefs
 {
+    /// <summary>A workspace's run-results folder, the base a Data Display's sources are written against.
+    /// <c>WorkspaceArchiveScanner.ResultsFolder</c> is this constant.</summary>
+    public const string ResultsFolder = "results";
+
     /// <summary>Document types whose contents this understands.</summary>
     /// <remarks>
     /// <b><c>.crail</c> joined them on 2026-09-21</b>, and it is the same omission this class's own
@@ -105,7 +114,7 @@ public static class DocumentFileRefs
             Path.GetExtension(documentPath));
 
         public string? ResultsDir =>
-            WorkspaceDir is null ? null : Path.Combine(WorkspaceDir, WorkspaceArchiveScanner.ResultsFolder);
+            WorkspaceDir is null ? null : Path.Combine(WorkspaceDir, ResultsFolder);
 
         public string? DirFor(RefBase which) => which switch
         {
@@ -202,7 +211,7 @@ public static class DocumentFileRefs
     private static readonly RefBase[] WorkspaceFirst = [RefBase.Workspace, RefBase.Document, RefBase.Results];
     private static readonly RefBase[] ResultsFirst   = [RefBase.Results,   RefBase.Document, RefBase.Workspace];
 
-    internal static readonly StringComparer PathComparer =
+    public static readonly StringComparer PathComparer =
         OperatingSystem.IsLinux() ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase;
 
     /// <summary>

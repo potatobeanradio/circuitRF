@@ -378,7 +378,7 @@ public sealed class MaterialLibraryTests(ITestOutputHelper output) : IDisposable
     {
         string lib = Lib(Path.Combine(_tmp, "elsewhere", "lab.cmat"), Alumina());
         string ctech = Tech(Path.Combine(_tmp, "ws", "tech"), "Alumina", [], "../../elsewhere/lab.cmat");
-        Assert.Contains(Path.GetFullPath(lib), CircuitRF.Ui.Archive.DocumentFileRefs.Find(ctech, Path.Combine(_tmp, "ws")).Select(Path.GetFullPath));
+        Assert.Contains(Path.GetFullPath(lib), CircuitRF.Design.Workspace.DocumentFileRefs.Find(ctech, Path.Combine(_tmp, "ws")).Select(Path.GetFullPath));
     }
 
     // ── 13. The CLI, as a process ────────────────────────────────────────────────────────────

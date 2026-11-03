@@ -784,7 +784,8 @@ internal static class ToolCatalog
             ]),
 
         new("create",
-            "Create a correct initial document — a workspace, a cell folder with its view files, or a 3D view of a cell's layout.",
+            "Create a correct initial document — a workspace, a cell folder with its view files, a 3D view of a cell's layout, "
+          + "or a model in a model library exported from a cell (Export to Library).",
             "what",
             "What to create.",
             [
@@ -812,6 +813,32 @@ internal static class ToolCatalog
                         new("name", "--name", OptKind.Str, "The .c3d's name. Default: the cell's."),
                     ],
                     "A .c3d of the cell's layout, ready for component ports and a 3D run."),
+                // brief vendorlib-10 R-vl10-4 — Export to Library. A mode of `create` rather than an eighteenth tool: what
+                // it makes is a new document (a model folder), and the surface is a standing cost (R-aut5-4).
+                new("libraryPart", ["export", "part"],
+                    [new("cell", true, "The cell folder to export: a saved cell whose primary schematic has at least one Pin.")],
+                    [
+                        new("library",            "--library",              OptKind.Path,       "The model library folder. An empty or new folder starts a new library."),
+                        new("category",           "--category",             OptKind.Str,        "Category folders under the library, a/b; created as needed."),
+                        new("part",               "--part",                 OptKind.Str,        "The part number. Default: the cell's name."),
+                        new("description",        "--description",          OptKind.Str,        "The part's description."),
+                        new("kind",               "--kind",                 OptKind.Str,        "active or passive. Default: active when any component is nonlinear."),
+                        new("value",              "--value",                OptKind.Str,        "A passive's value (10 pF); makes it findable by value."),
+                        new("freqLow",            "--freq-low",             OptKind.Str,        "The low end of the range the model is valid over (0 Hz)."),
+                        new("freqHigh",           "--freq-high",            OptKind.Str,        "The high end of that range (20 GHz)."),
+                        new("conditions",         "--conditions",           OptKind.Str,        "Free text: bias, temperature."),
+                        new("footprint",          "--footprint",            OptKind.Str,        "The footprint's case pair."),
+                        new("doc",                "--doc",                  OptKind.PathRepeat, "A document copied into the model's docs/."),
+                        new("symbol",             "--symbol",               OptKind.Str,        "own, fet, r, c, l or box. Default: own when the cell has a symbol, else the glyph its pins and value imply, else box."),
+                        new("replace",            "--replace",              OptKind.Flag,       "Replace a part already exported under this number; its revision goes up by one."),
+                        new("includeVendorParts", "--include-vendor-parts", OptKind.Flag,       "Copy vendor parts the cell places into the model, with their libraries' terms."),
+                        new("libraryName",        "--library-name",         OptKind.Str,        "A new library's name. Default: its folder's."),
+                        new("publisher",          "--publisher",            OptKind.Str,        "A new library's publisher."),
+                        new("license",            "--license",              OptKind.Str,        "A new library's license."),
+                        new("libraryVersion",     "--library-version",      OptKind.Str,        "A new library's version. Default 1.0.0."),
+                    ],
+                    "A self-contained model folder: the cell, its sub-cells and every file it uses copied in, its netlist, part.cpart, "
+                  + "checked and self-checked against the source before it appears. Prints every path created."),
             ]),
 
         // `import` and `convert` are two tools because they are two verbs. They were one tool with a

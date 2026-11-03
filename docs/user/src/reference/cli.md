@@ -24,6 +24,7 @@ keywords: CLI, command line, command-line, terminal, shell, console, headless, b
 <li><a href="#new"><code>new</code> — a workspace or a cell</a></li>
 <li><a href="#import"><code>import part</code> — a footprint and its symbol</a></li>
 <li><a href="#import-schematic"><code>import schematic</code> — another editor's schematic, as a cell</a></li>
+<li><a href="#export-part"><code>export part</code> — a cell as a model in a model library</a></li>
 <li><a href="#render"><code>render</code> — a picture of a document</a>
   <ol>
   <li><a href="#render-viewport">The viewport, and the unit rule</a></li>
@@ -1943,6 +1944,33 @@ the exit code alone: a placed part that could not be read (`run.vendor-part.unre
 and the library; the run goes without it), and a part the run's analyses take outside its stated
 frequency range (`run.vendor-part.out-of-range`, once per part number). A DC operating point never
 warns about range.
+
+---
+
+## `export part` — a cell as a model in a model library {#export-part}
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf export part &lt;cell folder&gt; --library &lt;dir&gt; [--category a/b] [--part PN] [--description …]
+    [--kind active|passive] [--value …] [--freq-low … --freq-high …] [--conditions …] [--footprint …]
+    [--doc &lt;file&gt;]… [--symbol own|fet|r|c|l|box] [--replace] [--include-vendor-parts]
+    [--library-name … --publisher … --license … --library-version …]</code></pre>
+
+The same code **File ▸ Export to Library…** runs: the cell, its sub-cells and every file they use are copied
+into a new [model folder](model-library-format.html#making), its netlist and `part.cpart` are written, and the
+folder is checked and self-checked against the source cell before it appears under `--library`. An empty or
+new folder starts a new library, with `--library-name`, `--publisher`, `--license` and `--library-version`
+(1.0.0) written to its `library.clib`.
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf export part ~/designs/Amp/TSTLNA100 --library ~/libraries/devices --category Amplifiers
+<span class="output">/home/you/libraries/devices/Amplifiers/TSTLNA100
+/home/you/libraries/devices/library.clib
+/home/you/libraries/devices/Amplifiers/TSTLNA100/.ccell
+…</span></code></pre>
+
+Every default is the dialog's. A refusal exits 1 and writes nothing: a kit part, a file that does not resolve,
+a part that takes its substrate from the technology, a cell with no Pin, or a self-check that does not match.
+A part number already in the library needs `--replace` (its `Revision` goes up by one), and a cell that places
+vendor parts needs `--include-vendor-parts`, because their libraries' terms travel with the model. A
+cancelled export exits 130. `--json` lists every path created.
 
 ---
 
