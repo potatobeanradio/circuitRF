@@ -52,6 +52,14 @@ public sealed record ExportOptions
     /// <summary>The frequency plan technology-bound parts are sampled over (brief vendorlib-11 R-vl11-4); null is
     /// <see cref="ModelLibraryExport.DefaultSweep"/>. Stating one when nothing is converted is a refusal.</summary>
     public IReadOnlyList<FrequencySpec>? Sweep { get; init; }
+    /// <summary>Compile each Verilog-A source the cell places and ship the compiled build in its place, without the
+    /// source (brief vendorlib-15): a protected model. OFF unless asked for — the dialog's checkbox starts unticked
+    /// and headless it is <c>--compile-models</c>.</summary>
+    public bool CompileModels { get; init; }
+    /// <summary>Builds of the compiled device made on other platforms, runtime identifier → file (brief vendorlib-15
+    /// R-vl15-1d); headless <c>--build &lt;rid&gt;=&lt;path&gt;</c>. This platform's build is the one the export runs
+    /// with and is never listed here.</summary>
+    public IReadOnlyDictionary<string, string> Builds { get; init; } = new Dictionary<string, string>();
 
     // library.clib, used only when the library has none
     public string LibraryName { get; init; } = "";
@@ -118,6 +126,16 @@ public sealed record ExportPlan
     public IReadOnlyList<ExportConversion> Conversions { get; init; } = [];
     /// <summary>The frequencies those parts are sampled at, 0 Hz first; empty when nothing is converted.</summary>
     public double[] Frequencies { get; init; } = [];
+    /// <summary>The compiled models the cell places with no source (<c>.osdi</c>), absolute — each is shipped as
+    /// this platform's build in <c>models/&lt;rid&gt;/</c> (brief vendorlib-15 R-vl15-1d).</summary>
+    public IReadOnlyList<string> CompiledModels { get; init; } = [];
+    /// <summary>The Verilog-A sources the cell places, absolute: what Compile Verilog-A models would compile.</summary>
+    public IReadOnlyList<string> CompilableSources { get; init; } = [];
+    /// <summary>Why the compile option cannot be used here, or null when it can: no source to compile, or no
+    /// compiler on this machine.</summary>
+    public string? CompileUnavailable { get; init; }
+    /// <summary>The export will ship at least one compiled-only device, so builds for other platforms apply.</summary>
+    public bool ShipsCompiled { get; init; }
     /// <summary>Every reason the export cannot go ahead. Nothing is written while any stands.</summary>
     public IReadOnlyList<string> Refusals { get; init; } = [];
 
@@ -274,6 +292,15 @@ public static partial class ModelLibraryExport
             foreach (var v in walk.Copies.Where(c => c.Kind is ExportCopyKind.VendorSpicePart or ExportCopyKind.VendorModel))
                 refusals.Add($"{v.Part} comes from the vendor library '{v.Library}', and exporting copies it into this model, so that library's terms travel with it. Include vendor parts to accept that.");
 
+        // Brief vendorlib-15: compiled models, and the compile option.
+        string? compileUnavailable = walk.Sources.Count == 0
+            ? "The cell places no Verilog-A source to compile."
+            : CompilerMissing();
+        if (options.CompileModels && compileUnavailable is not null)
+            refusals.Add($"Compile Verilog-A models is on, and it cannot be used: {compileUnavailable}");
+        bool shipsCompiled = walk.Compiled.Count > 0 || (options.CompileModels && walk.Sources.Count > 0);
+        PlanBuilds(options, walk, shipsCompiled, refusals);
+
         // What the export would replace.
         int revision = 0;
         if (Directory.Exists(modelDir))
@@ -312,6 +339,8 @@ public static partial class ModelLibraryExport
             ExistingRevision = revision,
             LibraryIsNew = !File.Exists(Path.Combine(libraryDir, ModelFolder.LibraryFileName)),
             Copies = walk.Copies, Conversions = walk.Conversions, Frequencies = freqs,
+            CompiledModels = walk.Compiled, CompilableSources = walk.Sources,
+            CompileUnavailable = compileUnavailable, ShipsCompiled = shipsCompiled,
             Refusals = refusals.Distinct(StringComparer.Ordinal).ToList(),
         };
     }
@@ -364,6 +393,7 @@ public static partial class ModelLibraryExport
             Built built;
             try { built = Build(plan, options, tmp, control); }
             catch (ConversionRefused refused) { return Refuse(wrapper, refused.Message); }
+            catch (CircuitRF.Core.Devices.External.ExternalDeviceException compile) { return Refuse(wrapper, compile.Message); }
             if (Cancelled(control)) return Cancel(wrapper);
 
             control?.BeginStage("Writing the netlist");
@@ -401,6 +431,7 @@ public static partial class ModelLibraryExport
                 CaseMetric = options.CaseMetric, CaseImperial = options.CaseImperial,
                 Revision = plan.ExistingRevision + 1,
                 Converted = [.. built.Converted],
+                Builds = built.Builds.Count == 0 ? null : [.. built.Builds],
             };
             ModelPartManifest.Write(partPath, manifest);
 
@@ -454,7 +485,8 @@ public static partial class ModelLibraryExport
                 Message = $"Exported {plan.PartNumber} to {where} (revision {manifest.Revision})."
                           + (plan.Conversions.Count == 0 ? ""
                              : $" {plan.Conversions.Count} part{(plan.Conversions.Count == 1 ? "" : "s")} converted to S-parameters, {plan.Frequencies.Length} points"
-                               + (betweenDb is { } db ? $"; between samples, within {db.ToString("G2", CultureInfo.InvariantCulture)} dB." : ".")),
+                               + (betweenDb is { } db ? $"; between samples, within {db.ToString("G2", CultureInfo.InvariantCulture)} dB." : "."))
+                          + BuildsNote(built.Builds),
                 Warnings = [.. findings.Where(f => f.Severity != DiagnosticSeverity.Error).Select(f => f.Render()).Concat(built.Warnings)],
             };
         }
@@ -465,6 +497,16 @@ public static partial class ModelLibraryExport
                 try { Directory.Move(backup, modelDir); } catch { }
             return Refuse(wrapper, $"The export could not be written: {ex.Message}");
         }
+    }
+
+    /// <summary>R-vl15-1d: the self-check runs this platform's build only, and says so.</summary>
+    internal static string BuildsNote(IReadOnlyList<string> builds)
+    {
+        if (builds.Count == 0) return "";
+        int others = builds.Count(b => b != CircuitRF.Core.Devices.External.OsdiBuilds.CurrentRid);
+        string here = $" Checked on {CircuitRF.Core.Devices.External.OsdiBuilds.CurrentRid}.";
+        return others == 0 ? here
+             : here + $" The other {others} build{(others == 1 ? " was" : "s were")} copied, not run.";
     }
 
     private static bool Cancelled(RunControl? c)
@@ -507,6 +549,8 @@ public static partial class ModelLibraryExport
     {
         public readonly List<ExportCopy> Copies = [];
         public readonly List<ExportConversion> Conversions = [];
+        /// <summary>Placed compiled models (<c>.osdi</c>) and Verilog-A sources, absolute, each once.</summary>
+        public readonly List<string> Compiled = [], Sources = [];
         public int TopPinCount;
         public bool Nonlinear;
         private readonly HashSet<string> _visited = new(DocumentFileRefs.PathComparer);
@@ -557,6 +601,12 @@ public static partial class ModelLibraryExport
                     else refusals.Add($"{name}: {refusal}");
                 }
                 else CheckFileParameters(comp, schDir, name, refusals);
+                if (comp.Symbol == SymbolKind.VerilogA && VerilogAFile(comp, schDir) is { } va)
+                {
+                    var list = CircuitRF.Core.Devices.External.OsdiBuilds.IsCompiled(va) ? Compiled
+                             : CircuitRF.Core.Devices.External.VerilogASourceCompiler.IsSourceFile(va) ? Sources : null;
+                    if (list is not null && !list.Contains(va, DocumentFileRefs.PathComparer)) list.Add(va);
+                }
 
                 if (comp.CellRef is not { Length: > 0 } cellRef) continue;
                 if (VendorModelRefs.IsRef(cellRef))
@@ -606,10 +656,72 @@ public static partial class ModelLibraryExport
             // A VerilogA's bare word may name a variable the elaborator binds in scope.
             if (comp.Symbol == SymbolKind.VerilogA && Regex.IsMatch(v, @"^[A-Za-z_][A-Za-z0-9_]*$")) continue;
             string? resolved = SnpPathPolicy.Resolve(v, OwningRoot.Of(schDir), schDir);
+            if (resolved is not null) resolved = CircuitRF.Core.Devices.External.OsdiBuilds.Resolve(resolved);
             if (resolved is null || !File.Exists(resolved))
                 refusals.Add($"{name}: its {p.Name} '{v}' does not resolve to a file.");
         }
     }
+
+    /// <summary>The file a placed Verilog-A component loads on this machine, absolute, or null when its File names
+    /// none (empty, a variable, or nothing on disk).</summary>
+    private static string? VerilogAFile(EditableComponent comp, string schDir)
+    {
+        string v = (comp.Parameters.FirstOrDefault(p => p.Name == "File")?.Expression ?? "").Trim();
+        if (v.Length >= 2 && v[0] == '"' && v[^1] == '"') v = v[1..^1].Trim();
+        if (v.Length == 0 || Regex.IsMatch(v, @"^[A-Za-z_][A-Za-z0-9_]*$")) return null;
+        string? resolved = SnpPathPolicy.Resolve(v, OwningRoot.Of(schDir), schDir);
+        if (resolved is null) return null;
+        resolved = CircuitRF.Core.Devices.External.OsdiBuilds.Resolve(resolved);
+        return File.Exists(resolved) ? Path.GetFullPath(resolved) : null;
+    }
+
+    /// <summary>Why no Verilog-A compiler can be used here, or null when one is found — the lookup Settings ▸ Security
+    /// &amp; Permissions configures, unchanged.</summary>
+    private static string? CompilerMissing()
+    {
+        try
+        {
+            return CircuitRF.Core.Devices.External.VerilogACompilerDiscovery.Find(out var rejected) is null
+                ? CircuitRF.Core.Devices.External.VerilogACompilerDiscovery.DescribeFailure(rejected)
+                : null;
+        }
+        catch (Exception ex) { return ex.Message; }
+    }
+
+    /// <summary>R-vl15-1d's other-platform builds: each a known runtime identifier other than this one, a file that
+    /// exists and whose own header (when it carries one) says that platform, and a compiled device to be a build of.
+    /// </summary>
+    private static void PlanBuilds(ExportOptions options, Walk walk, bool shipsCompiled, List<string> refusals)
+    {
+        if (options.Builds.Count == 0) return;
+        if (!shipsCompiled)
+        {
+            refusals.Add("Builds for other platforms are builds of a compiled model, and this export ships none: the cell places no " +
+                         ".osdi, and Compile Verilog-A models is off.");
+            return;
+        }
+        string here = CircuitRF.Core.Devices.External.OsdiBuilds.CurrentRid;
+        var names = ShippedNames(options, walk);
+        foreach (var (rid, path) in options.Builds.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+        {
+            if (!CircuitRF.Core.Devices.External.OsdiBuilds.IsKnownRid(rid))
+            { refusals.Add($"'{rid}' is not a platform circuitRF runs on; it is one of {string.Join(", ", CircuitRF.Core.Devices.External.OsdiBuilds.Rids)}."); continue; }
+            if (rid == here)
+            { refusals.Add($"The {rid} build is the one this export runs with and copies; list only builds made on other platforms."); continue; }
+            if (!File.Exists(path)) { refusals.Add($"The {rid} build '{path}' does not exist."); continue; }
+            var says = CircuitRF.Core.Devices.External.OsdiBuilds.PlatformsOf(path);
+            if (says.Count > 0 && !says.Contains(rid))
+                refusals.Add($"'{path}' is a build for {string.Join(", ", says)}, not {rid}.");
+            if (names.Count > 1 && !names.Contains(Path.GetFileNameWithoutExtension(path), StringComparer.OrdinalIgnoreCase))
+                refusals.Add($"The cell ships {names.Count} compiled models ({string.Join(", ", names)}), so each build is matched to one " +
+                             $"by its file name, and '{Path.GetFileName(path)}' names none of them.");
+        }
+    }
+
+    /// <summary>The file stems the shipped compiled models will have, in walk order.</summary>
+    private static List<string> ShippedNames(ExportOptions options, Walk walk)
+        => [.. walk.Compiled.Concat(options.CompileModels ? walk.Sources : [])
+                .Select(Path.GetFileNameWithoutExtension).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase)];
 
     private static bool IsKitPart(EditableComponent comp)
         => PdkKitRegistry.IsKitRef(comp.CellRef)
@@ -629,7 +741,7 @@ public static partial class ModelLibraryExport
 
     // ── The copy (Export's half) ─────────────────────────────────────────────────────────────────
 
-    private sealed record Built(IReadOnlyList<string> Warnings, IReadOnlyList<ModelPartConversion> Converted);
+    private sealed record Built(IReadOnlyList<string> Warnings, IReadOnlyList<ModelPartConversion> Converted, IReadOnlyList<string> Builds);
 
     /// <summary>
     /// R-vl10-2c: the cell, its sub-cells, every file they reference and every vendor part, copied into
@@ -638,7 +750,7 @@ public static partial class ModelLibraryExport
     private static Built Build(ExportPlan plan, ExportOptions options, string modelDir, RunControl? control)
     {
         var warnings = new List<string>();
-        var files = new FileCopier(modelDir);
+        var files = new FileCopier(modelDir, options.CompileModels);
         var converted = Convert(plan, options, files, control);
 
         // Sub-cell folders, named by their leaf; a second cell of the same name takes a numeric suffix.
@@ -665,9 +777,17 @@ public static partial class ModelLibraryExport
             Directory.CreateDirectory(docs);
             File.Copy(doc, Unique(Path.Combine(docs, Path.GetFileName(doc))));
         }
+        files.CopyOtherBuilds(options.Builds);
         warnings.AddRange(converted.Warnings);
-        return new Built(warnings, converted.Records);
+        return new Built(warnings, converted.Records, BuildsIn(modelDir, files.Compiled));
     }
+
+    /// <summary>The platforms every shipped compiled model has a build for, in <see cref="CircuitRF.Core.Devices.External.OsdiBuilds.Rids"/>
+    /// order — <c>part.cpart</c>'s <c>Builds</c> (R-vl15-1b). Empty when the model ships none.</summary>
+    private static List<string> BuildsIn(string modelDir, IReadOnlyList<string> compiled)
+        => compiled.Count == 0 ? []
+         : [.. CircuitRF.Core.Devices.External.OsdiBuilds.Rids.Where(rid => compiled.All(c =>
+                File.Exists(CircuitRF.Core.Devices.External.OsdiBuilds.PlatformPath(c, rid))))];
 
     private static void CopyCell(string src, string dst, string name, bool top, ExportPlan plan, ExportOptions options,
                                  Dictionary<string, string> cellMap, FileCopier files, Converted converted, List<string> warnings)
@@ -855,12 +975,17 @@ public static partial class ModelLibraryExport
     /// suffix and the reference follows it; a <c>.va</c> brings every file it <c>`include</c>s, keeping their
     /// relative layout so the include still resolves.
     /// </summary>
-    private sealed partial class FileCopier(string modelDir)
+    private sealed partial class FileCopier(string modelDir, bool compileSources = false)
     {
         public string ModelDir { get; } = modelDir;
         private readonly Dictionary<string, string> _copied = new(DocumentFileRefs.PathComparer);
         /// <summary>Every file this copier wrote, absolute.</summary>
         public List<string> Written { get; } = [];
+        /// <summary>The platform-neutral path of every compiled model shipped, absolute — <c>models/X.osdi</c>, whose
+        /// builds sit in <c>models/&lt;rid&gt;/X.osdi</c> (brief vendorlib-15 D1, D2).</summary>
+        public List<string> Compiled { get; } = [];
+        /// <summary>Notes the compiler left, one per source compiled.</summary>
+        public List<string> CompileNotes { get; } = [];
 
         public string Copy(string abs)
         {
@@ -868,6 +993,12 @@ public static partial class ModelLibraryExport
             if (_copied.TryGetValue(full, out string? done)) return done;
             string models = Path.Combine(ModelDir, ModelFolder.ModelsFolder);
             Directory.CreateDirectory(models);
+
+            // A compiled model is this platform's build: it goes into models/<rid>/ and the reference names no platform.
+            // With Compile Verilog-A models on, a source is compiled first and ships the same way, without the source.
+            if (CircuitRF.Core.Devices.External.OsdiBuilds.IsCompiled(full)
+                || compileSources && CircuitRF.Core.Devices.External.VerilogASourceCompiler.IsSourceFile(full))
+                return _copied[full] = CopyBuild(full, models);
 
             var includes = IsVerilogA(full) ? Includes(full) : [];
             if (includes.Count == 0)
@@ -891,6 +1022,50 @@ public static partial class ModelLibraryExport
                 if (!File.Exists(dst)) { File.Copy(f, dst); Written.Add(dst); }
             }
             return _copied[full] = Path.Combine(folder, Path.GetRelativePath(root, full));
+        }
+
+        private string CopyBuild(string full, string models)
+        {
+            string build = CircuitRF.Core.Devices.External.OsdiBuilds.Resolve(full);
+            if (!CircuitRF.Core.Devices.External.OsdiBuilds.IsCompiled(full))
+            {
+                build = CircuitRF.Core.Devices.External.VerilogASourceCompiler.Compile(full, out string note);
+                CompileNotes.Add(note);
+            }
+            string rid = CircuitRF.Core.Devices.External.OsdiBuilds.CurrentRid;
+            string stem = Path.GetFileNameWithoutExtension(full), name = stem;
+            for (int n = 2; Taken(name); n++) name = $"{stem}_{n}";
+            string neutral = Path.Combine(models, name + CircuitRF.Core.Devices.External.OsdiBuilds.Extension);
+            string dst = CircuitRF.Core.Devices.External.OsdiBuilds.PlatformPath(neutral, rid);
+            Directory.CreateDirectory(Path.GetDirectoryName(dst)!);
+            File.Copy(build, dst);
+            Written.Add(dst);
+            Compiled.Add(neutral);
+            return neutral;
+
+            bool Taken(string n)
+            {
+                string flat = Path.Combine(models, n + CircuitRF.Core.Devices.External.OsdiBuilds.Extension);
+                return File.Exists(flat) || Compiled.Contains(flat, DocumentFileRefs.PathComparer)
+                       || CircuitRF.Core.Devices.External.OsdiBuilds.BuildsBeside(flat).Count > 0;
+            }
+        }
+
+        /// <summary>R-vl15-1d: each other platform's build copied in beside this one's, under the name of the compiled
+        /// model it is a build of — the only one, or the one its own file name names.</summary>
+        public void CopyOtherBuilds(IReadOnlyDictionary<string, string> builds)
+        {
+            foreach (var (rid, path) in builds.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+            {
+                string? neutral = Compiled.Count == 1 ? Compiled[0]
+                    : Compiled.FirstOrDefault(c => string.Equals(Path.GetFileNameWithoutExtension(c), Path.GetFileNameWithoutExtension(path),
+                                                                 StringComparison.OrdinalIgnoreCase));
+                if (neutral is null) continue;   // the plan refused this already
+                string dst = CircuitRF.Core.Devices.External.OsdiBuilds.PlatformPath(neutral, rid);
+                Directory.CreateDirectory(Path.GetDirectoryName(dst)!);
+                File.Copy(path, dst, overwrite: true);
+                Written.Add(dst);
+            }
         }
 
         /// <summary>Text written into <c>models/</c> under <paramref name="fileName"/> (made unique), once per

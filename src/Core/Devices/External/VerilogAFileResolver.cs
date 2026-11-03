@@ -36,9 +36,14 @@ public sealed class VerilogAFileResolver : IExternalProviderResolver
     /// <summary>The worker circuitRF ships for this ABI, resolved in its own tools folder.</summary>
     private const string WorkerCommand = "osdi-worker";
 
-    /// <summary>Composes the provider name a device instance asks for.</summary>
+    /// <summary>
+    /// Composes the provider name a device instance asks for. A compiled model's reference names no platform, and
+    /// this platform's build in <c>&lt;dir&gt;/&lt;rid&gt;/</c> is chosen here when it exists (brief vendorlib-15
+    /// R-vl15-1a, <see cref="OsdiBuilds.Resolve"/>) — every placed model composes its name here, so the dialog, a
+    /// run and harmonicaRF all load the same file.
+    /// </summary>
     public static string ProviderNameFor(string modelFilePath)
-        => Prefix + Path.GetFullPath(modelFilePath);
+        => Prefix + OsdiBuilds.Resolve(Path.GetFullPath(modelFilePath));
 
     /// <summary>The model file a composed provider name refers to, or null for any other name.</summary>
     public static string? ModelFileIn(string providerName)
@@ -65,6 +70,8 @@ public sealed class VerilogAFileResolver : IExternalProviderResolver
         // Absence is reported as a REFUSAL, not by returning null. Null means "this resolver has no
         // opinion", which would send the caller on to report that no provider answered to the name —
         // and the name is a file path, so the useful message is that the file is not there.
+        if (!File.Exists(modelFile) && OsdiBuilds.MissingSentence(modelFile) is { } noBuild)
+            throw new ExternalDeviceException(noBuild);
         if (!File.Exists(modelFile))
             throw new ExternalDeviceException(
                 $"The model file '{modelFile}' does not exist. Point the component's model file at " +

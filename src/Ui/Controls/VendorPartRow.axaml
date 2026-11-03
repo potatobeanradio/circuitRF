@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:dockVm="using:CircuitRF.Ui.ViewModels.Dock"
+             xmlns:ctl="using:CircuitRF.Ui.Controls"
              x:Class="CircuitRF.Ui.Controls.VendorPartRow"
              x:DataType="dockVm:VendorPartRowVm">
 
@@ -37,6 +38,7 @@
             Height="32"
             Padding="4,2"
             Cursor="Hand"
+            Opacity="{Binding IsPlaceable, Converter={x:Static ctl:VendorPartRow.PlaceableOpacity}}"
             Classes.armed="{Binding IsArmed}"
             ToolTip.Tip="{Binding ToolTipText}">
         <StackPanel>

@@ -385,7 +385,9 @@ internal static class Check
         bool library = ModelFolder.Under(path).Count > 0;
         WalkFolder(path, f, cache, recursive || library);
         if (!library) return;
-        var findings = ModelLibraryCheck.Validate(path);
+        // Brief vendorlib-15 §5c: the signature, judged against this user's own trust store, read-only.
+        var findings = ModelLibraryCheck.Validate(path)
+            .Concat(LibrarySignature.Findings(path, PublisherTrust.FromRecordedPreferences())).ToList();
         if (findings.Count == 0) return;
         f.Begin(path, DocumentKind.Folder);
         foreach (var d in findings) f.Add(d);

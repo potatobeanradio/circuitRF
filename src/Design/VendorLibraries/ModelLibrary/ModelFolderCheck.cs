@@ -1,4 +1,5 @@
 using CircuitRF.Core.Design;
+using CircuitRF.Core.Devices.External;
 using CircuitRF.Design.Cells;
 using CircuitRF.Core.Netlist;
 using CircuitRF.Diagnostics;
@@ -100,6 +101,7 @@ public static class ModelFolderCheck
         CheckTopCell(cnlPath, lib, part, found);
         CheckAgainstSchematic(cnlPath, text, dir, part, found);
 
+        var compiled = new List<string>();
         foreach (var cell in lib.Cells)
             foreach (var inst in cell.Instances)
                 foreach (var ov in inst.Overrides)
@@ -112,7 +114,94 @@ public static class ModelFolderCheck
                         found.Add(Diagnostic.Create("check.model.reference-leaves-folder", DiagnosticSeverity.Error,
                             "{path}: {instance} in {cell} names \"{file}\", which is not inside the model folder; every file a model uses travels with it.",
                             ("path", cnlPath), ("cell", cell.Name), ("instance", inst.InstanceName), ("file", value)));
+                    else if (OsdiBuilds.IsCompiled(value))
+                    {
+                        string abs = Path.GetFullPath(Path.Combine(dir, value.Replace('\\', '/')));
+                        if (!compiled.Contains(abs, StringComparer.Ordinal)) compiled.Add(abs);
+                    }
                 }
+        CheckBuilds(dir, part, compiled, found);
+    }
+
+    /// <summary>
+    /// Brief vendorlib-15 R-vl15-1b/1c: a model's compiled devices against its platform folders and its
+    /// <c>Builds</c> list. A compiled device with no source of the same name anywhere in the folder is
+    /// compiled-only — recognised from the files, never declared — and for one of those <c>Builds</c> must say
+    /// exactly which <c>models/&lt;rid&gt;/</c> folders hold a build, and each build must be for the platform its
+    /// folder names.
+    /// </summary>
+    private static void CheckBuilds(string dir, ModelPartManifest part, List<string> compiled, List<Diagnostic> found)
+    {
+        string partPath = Path.Combine(dir, ModelFolder.PartFileName);
+        var listed = part.Builds ?? [];
+        foreach (string rid in listed.Where(r => !OsdiBuilds.IsKnownRid(r)).Distinct(StringComparer.Ordinal))
+            found.Add(Diagnostic.Create("check.model.build-unknown-platform", DiagnosticSeverity.Error,
+                "{path}: \"Builds\" lists \"{rid}\", which is not a platform circuitRF runs on; it is one of {rids}.",
+                ("path", partPath), ("rid", rid), ("rids", string.Join(", ", OsdiBuilds.Rids))));
+        if (compiled.Count == 0)
+        {
+            if (listed.Count > 0)
+                found.Add(Diagnostic.Create("check.model.builds-without-compiled", DiagnosticSeverity.Error,
+                    "{path}: \"Builds\" lists {rids}, and the netlist places no compiled model (.osdi) to have builds of.",
+                    ("path", partPath), ("rids", string.Join(", ", listed))));
+            return;
+        }
+
+        var sources = SourceStems(dir);
+        foreach (string abs in compiled)
+        {
+            string rel = Path.GetRelativePath(dir, abs).Replace('\\', '/');
+            var present = OsdiBuilds.BuildsBeside(abs);
+            bool compiledOnly = !sources.Contains(Path.GetFileNameWithoutExtension(abs));
+
+            foreach (string rid in present)
+            {
+                string build = OsdiBuilds.PlatformPath(abs, rid);
+                var says = OsdiBuilds.PlatformsOf(build);
+                if (says.Count > 0 && !says.Contains(rid))
+                    found.Add(Diagnostic.Create("check.model.build-wrong-platform", DiagnosticSeverity.Error,
+                        "{path}: {build} is in the {rid} folder and is a build for {says}.",
+                        ("path", build), ("build", Path.GetRelativePath(dir, build).Replace('\\', '/')), ("rid", rid),
+                        ("says", string.Join(", ", says))));
+            }
+            if (!compiledOnly) continue;
+
+            if (listed.Count == 0)
+            {
+                found.Add(Diagnostic.Create("check.model.builds-unlisted", DiagnosticSeverity.Warning,
+                    "{path}: {file} is compiled with no source, and \"Builds\" lists no platforms, so a palette cannot say where it runs" +
+                    (present.Count > 0 ? "; the folder holds builds for {present}." : "."),
+                    ("path", partPath), ("file", rel), ("present", string.Join(", ", present))));
+                continue;
+            }
+            foreach (string rid in listed.Where(OsdiBuilds.IsKnownRid).Where(r => !present.Contains(r)))
+                found.Add(Diagnostic.Create("check.model.build-missing", DiagnosticSeverity.Error,
+                    "{path}: \"Builds\" lists {rid}, and {build} is not there.",
+                    ("path", partPath), ("rid", rid),
+                    ("build", Path.GetRelativePath(dir, OsdiBuilds.PlatformPath(abs, rid)).Replace('\\', '/'))));
+            foreach (string rid in present.Where(r => !listed.Contains(r)))
+                found.Add(Diagnostic.Create("check.model.build-not-listed", DiagnosticSeverity.Warning,
+                    "{path}: the folder holds a {rid} build of {file}, and \"Builds\" does not list {rid}.",
+                    ("path", partPath), ("rid", rid), ("file", rel)));
+            if (!present.Contains(OsdiBuilds.CurrentRid) && !File.Exists(abs))
+                found.Add(Diagnostic.Create("check.model.no-build-here", DiagnosticSeverity.Info,
+                    "{path}: there is no build of {file} for {rid}, this machine's platform; the publisher ships it for {present}.",
+                    ("path", partPath), ("file", rel), ("rid", OsdiBuilds.CurrentRid),
+                    ("present", present.Count == 0 ? "no platform" : string.Join(", ", present))));
+        }
+    }
+
+    /// <summary>The file stems of every Verilog-A source anywhere in the model folder.</summary>
+    private static HashSet<string> SourceStems(string dir)
+    {
+        var stems = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            foreach (string f in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
+                if (VerilogASourceCompiler.IsSourceFile(f)) stems.Add(Path.GetFileNameWithoutExtension(f));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        return stems;
     }
 
     /// <summary>

@@ -4783,3 +4783,17 @@ mean nothing for a folder that is already a cell. `import part` handed a model f
 model`. The GUI's re-point question has no headless spelling; a caller rewrites the `CellRef`. Over MCP: `import
 what=model`, and `create what=libraryPart refresh=true`. Gate: `tests/Ui.Tests/VendorLibraries/VendorModelEditTests.cs`,
 including a source scan of both shells.
+
+**Compiled models and `sign` (brief vendorlib-15).** `export part --compile-models` is the dialog's **Compile
+Verilog-A models** checkbox, off unless given; `--build <rid>=<path>` (repeatable) is one row of **Builds for other
+platforms…**. Both are `ExportOptions` fields read by `ModelLibraryExport.Plan`, which refuses an unknown runtime
+identifier, this platform's own, a missing file, and a file whose header names another platform. `circuitrf sign
+<library> --key <pem>` and `sign --new-key <pem>` are a verb of their own, not a noun of `export`: they change a
+library rather than make a part. `src/Cli/Sign.cs` is argument parsing and reporting; `LibrarySignature` in
+`src/Design/VendorLibraries/ModelLibrary` is the signing, and `check` and the GUI's library rows verify with the
+same class. No GUI command signs. `check` on a library adds the signature's findings, judged against the per-user
+trust store read-only (`PublisherTrust`, the `trusted_publishers` preference); a headless run never prompts. Over MCP
+the two export options are `create what=libraryPart`'s `compileModels` (a flag) and `builds`, an object of runtime
+identifier to file emitted as one `--build` per entry; it is the `PathMap` option kind, a `StrMap` whose values are
+confined to the server root like any other path. Gate:
+`tests/Ui.Tests/VendorLibraries/ProtectedModelTests.cs`.

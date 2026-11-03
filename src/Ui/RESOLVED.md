@@ -41802,3 +41802,21 @@ menu items in `SchematicView.axaml`. Every rule and every write is in `src/Desig
   library reference. The copy's own `.csym` is the symbol the model drew, so the pins land where the wires end.
 - UiSnapshot: `--schematic` now hosts a hierarchy host (so the library items are offered), `--menu` reaches the
   schematic canvas's menu, a step point `#X1` is the middle of that part's pins, and `--repoint-question <part>`.
+
+## Protected models: the palette's greyed row, Export's compiled-model rows, the signature line (VL-15, 2026-11-03)
+
+- **A compiled-only model with no build for this platform is listed, greyed, never hidden** (D3). `VendorPartRowVm`
+  shows `VendorModelInfo.NoBuildSentence()` as its second line and in its tooltip, at 0.45 opacity; it neither arms
+  (`PaletteTool.ArmRow`) nor drags (`VendorPartRow`), and `SchematicViewModel.CommitVendorModelPlacement` refuses with
+  the same sentence, so a placement that arrives another way is refused too.
+- **Export to Library's Compiled models group** sits below Frequency and above Documents. Both rows are always shown
+  and greyed when they do not apply, so nothing below them moves as the plan changes. The checkbox starts unticked
+  (owner's request) and its note says why it is greyed. Each build row's platform is a ComboBox of the platforms
+  circuitRF runs on, this one excluded (a picker, not a text box). The rows are `ExportToLibraryViewModel.Builds.cs`.
+- **The signature line** (`Controls/LibrarySignatureLine`) is shared by Add Vendor Library and Manage Libraries' vendor
+  row. **Trust** writes `trusted_publishers` in preferences.json and nothing else; **Not now** greys the buttons
+  in place rather than removing them.
+- UiSnapshot: `--add-vendor-library` now passes the index's signature, and `--export-to-library` takes
+  `--export-build <rid>=<path>` (repeatable) to show build rows. The Export dialog's fixed 860 px height keeps the new
+  group below the fold, and `--size` does not reach a dialog; the renders looked at were taken with the height
+  raised temporarily.

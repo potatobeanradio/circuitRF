@@ -59,3 +59,45 @@ reaches the user as the model's own sentence. Three details:
 
 `EVAL_RET_FLAG_FATAL` was already read: the point's status is 0 and its block is left empty. Gate:
 `tests/Ui.Tests/ModelComposer/VerilogA/CompiledVerilogATests.ANonFiniteConstituent_IsRefusedNamingItAndThePoint`.
+
+## A model that refuses to run stops the run with its own sentence (brief vendorlib-15 R-vl15-2, 2026-11-03)
+
+A maker who restricts use (an expiry date, a node lock, a licence file) builds that check into the compiled model. What
+circuitRF owes them is that a model which refuses to start stops the run, and the user reads the model's own sentence.
+The fake library gained a device for this, `crf_refuse`, whose model parameter `mode` picks how it refuses: `1` logs an
+error and reports `num_errors` from `setup_model`, `2` logs a fatal and returns `EVAL_RET_FLAG_FATAL` from every `eval`,
+`3` logs a fatal and calls `exit(3)` inside `setup_model`. The library now exports `osdi_log`, as a compiled model does.
+
+The worker itself needed no change. The proof found three defects on the host side:
+
+- **An all-refused DC solve was returned as an operating point.** `NonlinearDcEngine` takes a refused point as a step
+  to shorten, which is right while some point has succeeded. When a model refuses the FIRST point and every one after
+  it, the solve gave up after about a dozen tries and returned a non-converged result. Headless, that printed a node
+  table of zeros and exited 2. In the GUI it was a convergence warning. Such a solve now raises the model's refusal as
+  an `ExternalDeviceException` ("DC stopped: a model refused every point it was asked to evaluate …"). A model that
+  refuses SOME points behaves as before. Two existing tests asserted `Converged == false` for this all-refused shape
+  and now assert the refusal: `ThermalNodeRobustnessTests.AStartingPointTheModelRefuses_IsStillAFailure` and
+  `VerilogALinearChargeTests.AnUnsetBiasPoint_IsRefusedWithTheSentence`.
+- **The model's sentence came last.** It reached the user only inside `Worker output:`, after the worker's own clause
+  ("create: model setup reported errors") or after a failed point's list of three possible causes. Both are true and
+  add nothing the sentence does not say. `WorkerOutputDiagnosis.LedByModelsOwnWords` now puts
+  `The model refused to run: <sentence>` first, for a channel refusal, a worker exit, and a failed point alike. Only
+  `model error:` and `model fatal:` lines lead. A warning never does, so it cannot be mistaken for the reason.
+- **An in-band refusal read the worker's stderr without waiting.** `DeviceWorkerChannel.Failed` used
+  `RecentErrorOutput` for a refusal sent in-band. The model's sentence is flushed before the reply, but on a different
+  pipe read by a different thread, so under load the refusal could be composed before the sentence arrived. It now uses
+  `ErrorOutputAfterRefusal`, the bounded (100 ms) settle wait a failed point already used.
+
+Smaller fix: a `$fatal` is printed on every point it refuses, so the attached output repeated one sentence a dozen
+times. Consecutive identical lines are now written once with `(N times)` (`WorkerOutputDiagnosis.CollapseRepeats`).
+
+**Found on the way, not fixed:** `src/Cli/bin/<config>/net10.0/osdi-worker` is not refreshed by building `src/Cli`.
+Only the application's build runs `build.sh --dest`. A stale copy there predated the `osdi_log` hook, so it printed a
+model's text with no `model fatal:` prefix. `VerilogARefusingModelCliTests` moves the checkout's own worker in by
+rename before it runs.
+
+Gates: `tests/Core.Tests/Devices/External/OsdiRefusingModelTests.cs` (the provider over a real worker, all three cases)
+and `tests/Engine.Tests/External/VerilogARefusingModelCliTests.cs` (the `dc` verb as a process: exit 1, the model's
+sentence on stderr's first line, no node table, a 60 s bound). In the GUI the same exception text reaches the Messages
+panel as an Error through `CircuitEvaluation`'s per-analysis catch: elaboration failure, or `'<analysis>': <message>`,
+then `RunStatus.EngineError` and `WorkspaceViewModel`'s `live.Finish(MessageLevel.Error, …)`.

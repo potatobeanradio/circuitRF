@@ -277,6 +277,13 @@ public sealed class AppPreferences
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public List<UserVendorLibrary>? VendorLibraries { get; set; }
 
+    // brief vendorlib-15 D6, §5c: the library publishers this user trusts, name → key fingerprint. Per user and never in
+    // a workspace, which would let anyone who sends one vouch for themselves. src/Design reads the same key read-only
+    // (PublisherTrust.PreferenceKey) so a headless check judges against the trust given here.
+    [JsonPropertyName("trusted_publishers")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Dictionary<string, string>? TrustedPublishers { get; set; }
+
     // Message timestamp display — null means default (Time). Serialized as a number, like the others.
     [JsonPropertyName("message_timestamp")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

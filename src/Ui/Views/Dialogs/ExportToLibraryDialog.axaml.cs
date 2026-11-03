@@ -110,6 +110,17 @@ public partial class ExportToLibraryDialog : Window
         _vm.Replan();
     }
 
+    private async void OnBrowseBuild(object? sender, RoutedEventArgs e)
+    {
+        if ((sender as Control)?.DataContext is not ExportBuildRowViewModel row) return;
+        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = $"Export to Library — the {row.Rid} build", AllowMultiple = false,
+            FileTypeFilter = [new FilePickerFileType("Compiled model") { Patterns = ["*.osdi"] }],
+        });
+        if (files.FirstOrDefault()?.TryGetLocalPath() is { Length: > 0 } path) row.Path = path;
+    }
+
     private void OnRemoveDocument(object? sender, RoutedEventArgs e)
     {
         if (_vm is null || DocumentsList.SelectedItem is not string path) return;

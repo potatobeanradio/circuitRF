@@ -4,7 +4,7 @@ slug: reference/model-library-format.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Model Library Format
 lede: The folder format a model library is written in — every file and key, what a reader must do, and a complete example — for writing a library by hand or by script, or reading one in another tool.
-keywords: model library, model folder, library.clib, part.cpart, vendor library, part library, Export to Library, share a model, Verilog-A part, library format, PublishedHash, agent
+keywords: model library, model folder, library.clib, part.cpart, vendor library, part library, Export to Library, share a model, Verilog-A part, library format, PublishedHash, compiled model, osdi, platform build, Builds, signed library, library.sig, library.sums, circuitrf sign, agent
 ---
 
 <nav class="toc">
@@ -15,7 +15,9 @@ keywords: model library, model folder, library.clib, part.cpart, vendor library,
 <li><a href="#clib">library.clib</a></li>
 <li><a href="#cpart">part.cpart</a></li>
 <li><a href="#cnl">The model's netlist</a></li>
+<li><a href="#compiled">Compiled-only models</a></li>
 <li><a href="#hash">PublishedHash</a></li>
+<li><a href="#signing">Signed libraries</a></li>
 <li><a href="#reader">What a reader must do</a></li>
 <li><a href="#example">A complete example</a></li>
 <li><a href="#checking">Checking a library</a></li>
@@ -41,6 +43,8 @@ sits beside it, so a tool that does not read `.cnl` can take a `.va` directly.
 ```
 <library>/
   library.clib                 optional
+  library.sums                 optional; what a signature covers (see Signed libraries)
+  library.sig                  optional; who signed it, and the signature
   <Category>/<Sub>/            ordinary folders: the palette's sub-menus
     <PartNumber>/              a model folder
       part.cpart               required; its presence makes this a model folder
@@ -49,6 +53,7 @@ sits beside it, so a tool that does not read `.cnl` can take a `.va` directly.
       schematic/<PartNumber>.csch
       symbol/<PartNumber>.csym
       models/                  .va and every file it includes, .cmodel, .sNp, SPICE files a SpiceModel names
+        <rid>/                 one platform's build of a compiled model (osx-arm64, win-x64, …)
       cells/<Sub>/             sub-cell folders the model's schematic places
       docs/                    optional; the palette's ? button opens these
 ```
@@ -141,6 +146,7 @@ A key circuitRF does not know is kept when it rewrites the file.
 | `CaseMetric`, `CaseImperial` | No | The case size (`1005`, `0402`), which also gives the footprint. |
 | `Revision` | No | How many times this part number has been exported. |
 | `PublishedHash` | No | Written by Export ([below](#hash)). Empty or absent in a hand-made model. |
+| `Builds` | No | For a [compiled-only](#compiled) model, the platforms it has a build for, as runtime identifiers (`["osx-arm64", "win-x64"]`). Absent for a model with source. |
 | `Converted` | No | The parts Export replaced by S-parameter files ([below](#converted)): each one's instance, the cell that placed it, its type, its file, its parameters as written, the technology's name, the frequency plan and the circuitRF version. Provenance; nothing reads it to run. |
 
 **Nothing in `part.cpart` changes a result.** What runs is the `.cnl`. `Pins` and `Parameters` repeat what the
@@ -211,9 +217,59 @@ name chooses the corner.
 **A model never carries a technology.** A part whose substrate would come from a technology — a microstrip line,
 a placed layout — is an S-parameter file in `models/` instead.
 
-**Verilog-A needs a compiler wherever it runs.** A `.va` ships as source; anyone who places the model needs a
-Verilog-A compiler, as for any [Verilog-A part](components.html#veriloga). Precompiled models are not part of the
-format.
+**Verilog-A source needs a compiler wherever it runs.** A `.va` ships as source; anyone who places the model
+needs a Verilog-A compiler, as for any [Verilog-A part](components.html#veriloga). A model can ship compiled
+instead, with no source, as the next section describes.
+
+## Compiled-only models {#compiled}
+
+A model folder may place a compiled model (`.osdi`) with **no Verilog-A source beside it**. That is how a device
+maker publishes a model whose inside stays private: [Protected Models](protected-models.html) says what to compile
+and what such a model still reveals. Nothing else about the folder changes. The `.cnl` stays plain text and is
+still what runs, and an SnP the model uses stays an ordinary `.sNp` in `models/`.
+
+**The `.cnl` names no platform.** It says `File="models/TSTFET100.osdi"`, however many platforms there are builds
+for. Each build sits in a folder named for its platform's runtime identifier:
+
+```
+TSTFET100/
+  part.cpart                   "Builds": ["osx-arm64", "win-x64", "linux-x64"]
+  TSTFET100.cnl                VerilogA:D1 g d s File="models/TSTFET100.osdi"
+  models/
+    osx-arm64/TSTFET100.osdi
+    win-x64/TSTFET100.osdi
+    linux-x64/TSTFET100.osdi
+    pkg.s2p
+```
+
+The runtime identifiers are the platforms circuitRF is packaged for: `win-x64`, `win-arm64`, `win-x86`,
+`osx-arm64`, `osx-x64`, `linux-x64` and `linux-arm64`.
+
+**Resolution.** A reference `<dir>/<name>.osdi` loads `<dir>/<rid>/<name>.osdi` for the running platform when
+that file exists, and `<dir>/<name>.osdi` otherwise. The platform folder comes first because a plain
+`<name>.osdi` beside it is usually one platform's build copied up. When neither exists, the run is refused with a
+sentence naming the running platform and the platforms the folder does hold builds for. The rule applies to every
+`.osdi` reference, in a model library or not.
+
+**A model is compiled-only when it is.** A `.osdi` the `.cnl` names with no `.va` or `.vams` of the same name
+anywhere in the folder is compiled-only. There is no flag to set, because a flag could disagree with the files.
+
+**`Builds`** lists the platforms a compiled-only model has a build for. It is a describing fact, like `Pins`: the
+palette reads it, and `check` proves it matches the folders. On a platform not in `Builds` the part is still
+listed, greyed, with *No build of this model for linux-arm64. The publisher ships it for: osx-arm64, win-x64,
+linux-x64.* Placing it is refused with the same sentence.
+
+`check` reports, for compiled models:
+
+| Finding | Severity |
+|---|---|
+| `Builds` names a platform with no build in its folder | Error |
+| `Builds` names something that is not one of the runtime identifiers above | Error |
+| A build in a platform folder is, by its own header, a build for another platform | Error |
+| `Builds` lists platforms and the `.cnl` places no compiled model | Error |
+| A compiled-only model with no `Builds` | Warning |
+| A platform folder holds a build that `Builds` does not list | Warning |
+| No build for the running platform | Info |
 
 ## PublishedHash {#hash}
 
@@ -230,6 +286,98 @@ lower-case hex SHA-256 of a list of lines, one per file:
 
 A model with no `PublishedHash` is never reported as edited. A script that makes a library may write the hash
 too; it then gets the same warning when someone edits its output.
+
+## Signed libraries {#signing}
+
+A library can say who published it. `PublishedHash` shows that a part changed, but anyone who edits a part can
+work out the new hash. A signature cannot be remade without the publisher's private key, so it answers "is this the
+publisher's library, unmodified". That matters most for a library holding compiled models, which are native code
+that runs on your machine.
+
+**Signing is information. It never stops a run.** An unsigned library behaves as it always has.
+
+### The files {#sig-files}
+
+`library.sums` is the list of what was signed. It is UTF-8 text with LF line endings and one line per signed item:
+
+```
+sha256:<64 lower-case hex digits>  <path>
+```
+
+with two spaces between the hash and the path.
+
+- Each **model folder** has one line. The hash is the folder's [PublishedHash](#hash), computed by the rule
+  above whatever `part.cpart` says. The path is the folder's, relative to the library with `/` separators.
+  Because that hash covers every file in the folder, every platform's `.osdi` is covered.
+- **`library.clib`** has one line, path `library.clib`. Its hash is the SHA-256 of the file's content after every
+  CR LF is replaced with LF.
+- The lines are sorted by path, comparing bytes, and each ends with LF, the last one included.
+
+`library.sig` is JSON:
+
+```json
+{
+  "Format": "circuitrf-library-signature",
+  "Publisher": "Example Devices",
+  "PublicKey": "<base64>",
+  "Signature": "<base64>"
+}
+```
+
+| Key | Meaning |
+|---|---|
+| `Format` | Always `circuitrf-library-signature`. |
+| `Publisher` | The publisher. It must equal `library.clib`'s `Publisher`. |
+| `PublicKey` | The signer's ECDSA P-256 public key as a DER-encoded SubjectPublicKeyInfo, base64. |
+| `Signature` | ECDSA P-256 with SHA-256 over the exact bytes of `library.sums`, in the IEEE P1363 form (r then s, 32 bytes each, 64 in all), base64. |
+
+To verify a library with no circuitRF code: decode `PublicKey` and `Signature`, verify the signature over the bytes
+of `library.sums` as they are on disk, check that `Publisher` equals `library.clib`'s, then compute every line of
+`library.sums` again from the library and compare.
+
+The key's **fingerprint** is the SHA-256 of the SubjectPublicKeyInfo bytes, its first 16 bytes written as
+lower-case hex pairs joined by colons (`3f:a0:…:9c`). That is what a user is shown to decide whether to trust it.
+
+### What you see {#sig-states}
+
+Add Vendor Library and the library's row in **File ▸ Manage Libraries** say what the signature means for you:
+
+| The library is | The row says | `check` |
+|---|---|---|
+| Unsigned | nothing | nothing |
+| Signed by a publisher you trust, and unchanged | *Signed by Example Devices* | Info |
+| Signed with a key you have not trusted yet | *Signed by Example Devices, key 3f:a0:…. Trust this publisher?* with **Trust** and **Not now** | Info |
+| Signed, and some parts changed since | *Signed by Example Devices. 2 parts changed since signing: TSTFET100, TSTCAP0402* | Warning, one per part |
+| Signed, and the signature does not verify | *The signature does not match this library's contents.* | Error |
+| Signed by a publisher you trusted with a different key | *Example Devices was trusted with a different key. This library may not come from them.* | Error |
+
+A changed `library.clib` counts as a signature that does not verify, since it is the publisher's own statement.
+
+**Trust is yours alone.** circuitRF ships no list of trusted publishers. Pressing **Trust** records the publisher's
+name and key fingerprint in your own preferences on this machine, never in a workspace, so a workspace someone
+sends you cannot vouch for its own libraries. A later library naming the same publisher with a different key gets
+the last row of the table. `circuitrf check` judges against the same preferences and never asks.
+
+Editing a signed library you received, with **Edit Vendor Model**, shows as *changed since signing* on its row.
+That is correct, and it is not an error.
+
+### Signing a library {#sign}
+
+```
+circuitrf sign --new-key <private.pem>          make a key; prints its fingerprint
+circuitrf sign <library> --key <private.pem>    write library.sums and library.sig
+```
+
+- `--new-key` writes a new P-256 private key as PKCS#8 PEM and prints its path and fingerprint. It never
+  overwrites a file.
+- `sign` recomputes every model folder's hash, writes `library.sums`, and signs it. It refuses a library whose
+  `library.clib` names no `Publisher`, and a library any model folder of which fails `check` with an error,
+  because a signature over a broken library certifies the breakage.
+- Both refuse a key path **inside the library folder**. A private key published with a library cannot be taken
+  back. Keep it somewhere else.
+
+Sign again after every change. There is no signing command in the application, because publishing a library is
+the publisher's own build step.
 
 ## What a reader must do {#reader}
 
@@ -307,6 +455,8 @@ The part has no symbol, because `Glyph` draws a capacitor, and no schematic, bec
 | A file parameter naming a file outside the model folder | Error |
 | Two model folders with one part number | Error |
 | The folder no longer matching `PublishedHash` — edited since exported | Warning |
+| A compiled model's builds not matching `Builds` ([above](#compiled)) | Error, Warning or Info |
+| A library's signature ([above](#sig-states)) | Info, Warning or Error |
 
 A folder holding model folders is checked to its full depth without `--recursive`.
 
@@ -349,6 +499,14 @@ The dialog asks for:
   and the row's × add and remove one.
 
   Both tables write the **source cell's** `.ccell`, so the next export keeps them; the dialog says so when it has.
+- **Compiled models.** **Compile Verilog-A models (ship the build, not the source)** compiles each Verilog-A
+  source the cell places with the Verilog-A compiler on this machine and ships the build in `models/<rid>/`
+  instead of the source. It is **off** until you tick it, and greyed, saying why, when the cell places no
+  Verilog-A source or no compiler is found. A cell that places a compiled `.osdi` with no source ships that
+  build in `models/<rid>/` either way. **Builds for other platforms…** lists builds of the compiled model made on
+  other platforms, each a platform chosen from the list and a file; **Add build** adds a row. It is greyed when
+  the export ships no compiled model. With more than one compiled model, each build is matched to one by its file
+  name.
 
 While you fill it in, the dialog lists what will be copied in — every file, every sub-cell, every vendor part
 and the library it came from — and every reason the export cannot go ahead. **Export** stays greyed while any
@@ -377,6 +535,10 @@ What Export does, in order:
    at every pin, to 1e-9 relative. A difference is a refusal naming the worst entry and frequency. A model with
    converted parts is checked harder, as [below](#converted) says.
 5. **Renames** the folder into place. A refusal or **Cancel** at any step leaves nothing behind.
+
+The self-check runs this platform's build only. For a compiled model the message says so: *Checked on
+osx-arm64. The other 2 builds were copied, not run.* A build listed for another platform is refused when its own
+header says it is for a different one.
 
 ### Parts that use the technology {#converted}
 
@@ -424,6 +586,7 @@ On the command line:
 circuitrf export part <cell folder> --library <dir> [--category a/b] [--part PN] [--description …]
     [--kind active|passive] [--value …] [--freq-low … --freq-high …] [--conditions …] [--footprint …]
     [--doc <file>]… [--symbol own|fet|r|c|l|box] [--replace] [--include-vendor-parts]
+    [--compile-models] [--build <rid>=<path>]…
     [--sweep start=… stop=… npts=…|step=… [unit=GHz] [log]]…
     [--library-name … --publisher … --license … --library-version …] [--json]
 ```
@@ -432,12 +595,15 @@ The defaults are the dialog's. What the dialog would have asked about is a refus
 answers it: `--replace` for a part already exported, and `--include-vendor-parts` for a cell that places vendor
 parts, whose libraries' terms then travel with the model. `--sweep` is one segment of the frequency plan, in
 the `sparam` directive's own keys (`unit=` defaults to Hz, as it does there), repeated for more; the default is
-the dialog's. With no part to convert, `--sweep` is refused rather than ignored. The paths created are printed, and listed in
+the dialog's. With no part to convert, `--sweep` is refused rather than ignored. `--compile-models` is the
+Compile Verilog-A models checkbox, off unless given, and each `--build <rid>=<path>` is one row of Builds for other
+platforms. The paths created are printed, and listed in
 `--json`. Over MCP it is `create what=libraryPart cell=<cell folder> library=<dir>`, with `sweep` a list of
-segments (`["start=1 stop=20 npts=101 unit=GHz"]`). What a converted part's model says about itself, such as a
+segments (`["start=1 stop=20 npts=101 unit=GHz"]`), `compileModels` for `--compile-models`, and `builds` an object
+of platform to file (`{"win-x64": "builds/TSTFET100.osdi"}`), each file inside the server's root. What a converted part's model says about itself, such as a
 junction used outside its calibration, is reported once per part as a warning.
 
 A library can also be written by hand or by a script: the [example](#example) is the smallest one. Check it
-with `circuitrf check <library>`.
+with `circuitrf check <library>`, and sign it with [`circuitrf sign`](#sign).
 
 The MCP server's `reference` tool serves this page as the topic `model-library`.

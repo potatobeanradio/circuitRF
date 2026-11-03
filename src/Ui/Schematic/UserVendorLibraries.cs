@@ -46,6 +46,27 @@ public static class UserVendorLibraries
         => All().FirstOrDefault(l => string.Equals(l.Name, name, StringComparison.OrdinalIgnoreCase)
                                   && Directory.Exists(l.Path))?.Path;
 
+    /// <summary>The publishers this user trusts, name → key fingerprint (brief vendorlib-15 D6).</summary>
+    public static IReadOnlyDictionary<string, string> TrustedPublishers()
+        => AppPreferencesIo.Load().TrustedPublishers is { } t
+            ? new Dictionary<string, string>(t, StringComparer.Ordinal)
+            : new Dictionary<string, string>(StringComparer.Ordinal);
+
+    /// <summary>Trusts <paramref name="publisher"/> with the key <paramref name="fingerprint"/> — the user's answer to
+    /// a signed library's "Trust this publisher?".</summary>
+    public static void TrustPublisher(string publisher, string fingerprint)
+        => AppPreferencesIo.Update(p =>
+        {
+            var t = p.TrustedPublishers ?? new Dictionary<string, string>(StringComparer.Ordinal);
+            t[publisher] = fingerprint;
+            p.TrustedPublishers = t;
+        });
+
+    /// <summary>A library's signature on this user's terms.</summary>
+    public static CircuitRF.Design.VendorLibraries.ModelLibrary.LibrarySignatureVerdict Judge(
+        CircuitRF.Design.VendorLibraries.ModelLibrary.LibrarySignatureInspection inspection)
+        => CircuitRF.Design.VendorLibraries.ModelLibrary.LibrarySignature.Judge(inspection, TrustedPublishers());
+
     public static bool? UseInNewWorkspaces(string name)
         => All().FirstOrDefault(l => string.Equals(l.Name, name, StringComparison.OrdinalIgnoreCase))?.UseInNewWorkspaces;
 }

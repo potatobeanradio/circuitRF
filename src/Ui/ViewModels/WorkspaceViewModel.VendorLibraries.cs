@@ -65,7 +65,7 @@ public partial class WorkspaceViewModel
         string wsRoot = Path.GetDirectoryName(CurrentWorkspacePath)!;
 
         string? name = await Views.Dialogs.AddVendorLibraryDialog.AskAsync(
-            owner, folder, VendorLibraryRefs.DefaultName(folder), build.SummaryLines());
+            owner, folder, VendorLibraryRefs.DefaultName(folder), build.SummaryLines(), build.Signature);
         if (name is null) return null;
 
         var added = await Task.Run(() => VendorLibraryRefs.AddOrRepair(wsRoot, refs, folder, name, out string? p)

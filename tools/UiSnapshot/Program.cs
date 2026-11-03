@@ -110,6 +110,7 @@ using CircuitRF.Design.Layout;
 //   --manage-libraries <workspace>                            File ▸ Manage Libraries… (written to <out>.dialog.png)
 //   --add-vendor-library <folder>                             Add Vendor Library's confirm step (<out>.dialog.png)
 //   --export-to-library <cell> [--export-library <dir>]       Export to Library's dialog on a cell (<out>.dialog.png)
+//       [--export-build <rid>=<path>]…                        with rows of Builds for other platforms
 //   --yield <csch> --generate-corners                         the Yield panel's Generate Corners dialog (<out>.dialog.png)
 //   --import-schematic <file>                                 File ▸ Import ▸ Schematic…'s dialog on a design file (<out>.dialog.png)
 //   --repoint-question <part>                                 Copy to Workspace…'s re-point question (<out>.dialog.png)
@@ -165,6 +166,7 @@ int cmcMarkers = 0;
 string? palette = null, paletteCategory = null, paletteSearch = null, schematic = null, select = null;
 bool parameterDialog = false;
 string? archive = null, manageLibraries = null, addVendorLibrary = null, exportToLibrary = null, exportLibrary = null, importSchematic = null;
+var exportBuilds = new List<(string Rid, string Path)>();
 string? repointQuestion = null;
 // --project-tree <workspace> [--reveal <file>] [--filter-open] [--filter-all-off]: the Workspace Tree panel; --reveal runs
 // a document tab's Reveal in Workspace Tree on that file, --filter-open opens the category filter's flyout.
@@ -268,6 +270,13 @@ for (int i = 0; i < args.Length; i++)
         // brief vendorlib-10: Export to Library's dialog on a cell folder, its Library field set to --export-library.
         case "--export-to-library" when i + 1 < args.Length: exportToLibrary = Path.GetFullPath(args[++i]); break;
         case "--export-library" when i + 1 < args.Length: exportLibrary = Path.GetFullPath(args[++i]); break;
+        case "--export-build" when i + 1 < args.Length:
+        {
+            string spec = args[++i];
+            int eq = spec.IndexOf('=');
+            if (eq > 0) exportBuilds.Add((spec[..eq], Path.GetFullPath(spec[(eq + 1)..])));
+            break;
+        }
         case "--import-schematic" when i + 1 < args.Length: importSchematic = Path.GetFullPath(args[++i]); break;
         case "--repoint-question" when i + 1 < args.Length: repointQuestion = args[++i]; break;
         // brief-gdf-2: the gdsfactory views — trust | pick | interpreter | report | prompt | permissions — with the
@@ -1761,13 +1770,20 @@ void OpenAddVendorLibrary(string folder)
 {
     var build = CircuitRF.Design.VendorLibraries.VendorLibraryIndex.Build(folder);
     _ = CircuitRF.Ui.Views.Dialogs.AddVendorLibraryDialog.AskAsync(host, folder,
-            CircuitRF.Design.VendorLibraries.VendorLibraryRefs.DefaultName(folder), build.SummaryLines());
+            CircuitRF.Design.VendorLibraries.VendorLibraryRefs.DefaultName(folder), build.SummaryLines(), build.Signature);
     Pump();
 }
 
 void OpenExportToLibrary(string cell, string? library)
 {
     var vm = new CircuitRF.Ui.ViewModels.ExportToLibraryViewModel(cell, [], library);
+    // brief vendorlib-15: rows of Builds for other platforms, each added through the dialog's own command.
+    foreach (var (rid, path) in exportBuilds)
+    {
+        vm.AddBuildCommand.Execute(null);
+        vm.BuildRows[^1].Rid = rid;
+        vm.BuildRows[^1].Path = path;
+    }
     _ = CircuitRF.Ui.Views.Dialogs.ExportToLibraryDialog.AskAsync(host, vm);
     Pump();
     // The plan's continuation runs on this dispatcher, so it is pumped for, never waited on.

@@ -26,6 +26,7 @@ keywords: CLI, command line, command-line, terminal, shell, console, headless, b
 <li><a href="#import-schematic"><code>import schematic</code> — another editor's schematic, as a cell</a></li>
 <li><a href="#export-part"><code>export part</code> — a cell as a model in a model library</a></li>
 <li><a href="#import-model"><code>import model</code> — a library model, as a workspace cell</a></li>
+<li><a href="#sign"><code>sign</code> — sign a model library</a></li>
 <li><a href="#render"><code>render</code> — a picture of a document</a>
   <ol>
   <li><a href="#render-viewport">The viewport, and the unit rule</a></li>
@@ -143,6 +144,7 @@ convention behind both.</p>
 | `new cell` | a workspace + a name | The same code **New Cell** runs | A cell folder and one empty-but-valid file per view |
 | `import part` | a component file or folder | The same code **Import Component** runs | A cell folder holding the land patterns and the symbol |
 | `import model` | a library model folder | The same code **Copy to Workspace…** runs | A cell folder: the model as an ordinary, editable cell |
+| `sign` | a model library folder | The same signing `check` and the library rows verify with | `library.sums` and `library.sig` in the library; `--new-key` writes a key file |
 | `import schematic` | a `.kicad_sch`, EDIF 2.0.0 or binary `.DSN` design | The same code **File ▸ Import ▸ Schematic…** runs | A cell folder with its schematic, and a folder of symbol cells beside it |
 | `render` | a `.csch`, `.csym`, `.clay` or `.cdd`, a cell folder, or a workspace | The same Skia renderers the editors draw every frame with | A `.svg`, `.pdf` or `.png`, where `-o` says |
 | `check` | a workspace, a cell folder, or one document | Every validator the application already uses | **Nothing** — findings to stdout |
@@ -1954,6 +1956,7 @@ warns about range.
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf export part &lt;cell folder&gt; --library &lt;dir&gt; [--category a/b] [--part PN] [--description …]
     [--kind active|passive] [--value …] [--freq-low … --freq-high …] [--conditions …] [--footprint …]
     [--doc &lt;file&gt;]… [--symbol own|fet|r|c|l|box] [--replace] [--include-vendor-parts]
+    [--compile-models] [--build &lt;rid&gt;=&lt;path&gt;]…
     [--library-name … --publisher … --license … --library-version …]</code></pre>
 
 The same code **File ▸ Export to Library…** runs: the cell, its sub-cells and every file they use are copied
@@ -1973,6 +1976,12 @@ a part that takes its substrate from the technology, a cell with no Pin, or a se
 A part number already in the library needs `--replace` (its `Revision` goes up by one), and a cell that places
 vendor parts needs `--include-vendor-parts`, because their libraries' terms travel with the model. A
 cancelled export exits 130. `--json` lists every path created.
+
+A compiled `.osdi` the cell places ships as this platform's build in `models/<rid>/`
+([Compiled-only models](model-library-format.html#compiled)). `--compile-models` compiles each Verilog-A source the
+cell places and ships the build instead of the source; it is off unless given, as the dialog's checkbox is. Each
+`--build <rid>=<path>` adds a build made on another platform, such as `--build win-x64=builds/TSTFET100.osdi`. The
+self-check runs this platform's build only, and the last line says so.
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf export part &lt;model folder&gt; --refresh</code></pre>
 
@@ -1995,6 +2004,20 @@ number (`TSTFET100_2` when the name is taken), its file references rewritten to 
 folder. Placed parts are not pointed at the copy: change the part's `CellRef` in the `.csch` to do that.
 `import part` handed a model folder refuses and names this command, because a model is already a cell rather
 than a symbol and footprint to read.
+
+---
+
+## `sign` — sign a model library {#sign}
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf sign --new-key &lt;private.pem&gt;
+<span class="prompt">$ </span>circuitrf sign &lt;library&gt; --key &lt;private.pem&gt;</code></pre>
+
+`--new-key` writes a new P-256 private key and prints its path and fingerprint; it never overwrites a file. With a
+library, `sign` recomputes every model folder's hash, writes `library.sums` and signs it into `library.sig`, as
+[Signed libraries](model-library-format.html#signing) describes. It exits 1 and writes nothing for a key path inside
+the library, a library whose `library.clib` names no `Publisher`, or a library that fails `check` with an error.
+`--json` lists the two files and the fingerprint. `check` on a signed library reports what the signature means for
+you.
 
 ---
 

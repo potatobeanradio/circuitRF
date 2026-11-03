@@ -170,6 +170,7 @@ public sealed partial class ExportToLibraryViewModel : ObservableObject
         Replace = replace, IncludeVendorParts = true,
         // The plan is stated only while something is converted: with nothing to sample, a plan is a refusal.
         Sweep = IsFrequencyPlanEnabled ? [.. FrequencySegments.Select(r => r.Build())] : null,
+        CompileModels = CompileModels, Builds = BuildsOption(),
         LibraryName = LibraryName, Publisher = Publisher, LibraryVersion = LibraryVersion, License = License,
     };
 
@@ -210,6 +211,7 @@ public sealed partial class ExportToLibraryViewModel : ObservableObject
         if (plan is null) { RefusalLines.Add(error ?? "The export could not be planned."); OnPropertyChanged(nameof(CanExport)); return; }
 
         foreach (string r in plan.Refusals) RefusalLines.Add(r);
+        RaiseBuildState();
         ConversionLine = ModelLibraryExport.ConversionLine(plan);
         OnPropertyChanged(nameof(IsFrequencyPlanEnabled));
         // R-vl11-4d: the part's range follows the plan until the user types one of their own.

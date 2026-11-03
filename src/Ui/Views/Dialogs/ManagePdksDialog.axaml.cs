@@ -135,6 +135,10 @@ public partial class ManagePdksDialog : Window
         var name = new StackPanel { Spacing = 1 };
         name.Children.Add(new TextBlock { Text = row.Line1, FontSize = 12, TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis });
         name.Children.Add(new TextBlock { Text = row.Line2, FontSize = 10, Opacity = 0.65, TextTrimming = Avalonia.Media.TextTrimming.PrefixCharacterEllipsis });
+        // brief vendorlib-15 §5c: a signed library's row says who signed it, and asks about a key not yet trusted.
+        if (row.IsVendor && row.ResolvedPath is { } root && VendorLibraryIndex.Latest(root)?.Signature is { } signature
+            && Controls.LibrarySignatureLine.For(signature) is { } signed)
+            name.Children.Add(signed);
         Grid.SetColumn(name, 1);
         grid.Children.Add(name);
         var state = new TextBlock { Text = row.State, FontSize = 11, Margin = new Avalonia.Thickness(10, 0, 0, 0) };

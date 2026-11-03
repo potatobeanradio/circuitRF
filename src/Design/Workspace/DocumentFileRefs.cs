@@ -187,8 +187,8 @@ public static class DocumentFileRefs
         {
             if (Path.IsPathRooted(native))
             {
-                var rooted = Path.GetFullPath(native);
-                return File.Exists(rooted) ? (rooted, RefBase.Document) : null;
+                var rooted = Existing(Path.GetFullPath(native));
+                return rooted is null ? null : (rooted, RefBase.Document);
             }
         }
         catch { return null; }
@@ -198,13 +198,25 @@ public static class DocumentFileRefs
             if (ctx.DirFor(which) is not { Length: > 0 } dir) continue;
             try
             {
-                var abs = Path.GetFullPath(Path.Combine(dir, native));
-                if (File.Exists(abs)) return (abs, which);
+                if (Existing(Path.GetFullPath(Path.Combine(dir, native))) is { } abs) return (abs, which);
             }
             catch { }
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// <paramref name="abs"/> when it exists; for a compiled model that has no file of that name, this platform's
+    /// build in <c>&lt;dir&gt;/&lt;rid&gt;/</c> (brief vendorlib-15 R-vl15-1a), since its reference names no
+    /// platform. Only a fallback here: a reference that names an existing file keeps naming it, so a document's
+    /// stored references are not turned into one platform's by being walked.
+    /// </summary>
+    private static string? Existing(string abs)
+    {
+        if (File.Exists(abs)) return abs;
+        string platform = CircuitRF.Core.Devices.External.OsdiBuilds.Resolve(abs);
+        return platform != abs && File.Exists(platform) ? platform : null;
     }
 
     private static readonly RefBase[] DefaultOrder   = [RefBase.Document, RefBase.Workspace, RefBase.Results];

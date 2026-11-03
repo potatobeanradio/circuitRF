@@ -17,6 +17,10 @@ public partial class VendorPartRow : UserControl
     private bool                     _dragOccurred;
     private const double             DragThreshold = 5.0;
 
+    /// <summary>A part with no build for this platform is drawn greyed (brief vendorlib-15 D3), never hidden.</summary>
+    public static readonly Avalonia.Data.Converters.IValueConverter PlaceableOpacity =
+        new Avalonia.Data.Converters.FuncValueConverter<bool, double>(placeable => placeable ? 1.0 : 0.45);
+
     public VendorPartRow()
     {
         InitializeComponent();
@@ -38,6 +42,7 @@ public partial class VendorPartRow : UserControl
     private async void OnRowPointerMoved(object? sender, PointerEventArgs e)
     {
         if (_pressArgs is null || DataContext is not VendorPartRowVm vm) return;
+        if (!vm.IsPlaceable) { _pressArgs = null; return; }   // no build here: nothing to drop
         if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
         {
             _pressArgs = null;

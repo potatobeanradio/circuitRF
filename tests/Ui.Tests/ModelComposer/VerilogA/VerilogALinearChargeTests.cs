@@ -85,8 +85,9 @@ public sealed class VerilogALinearChargeTests : IDisposable
     {
         var (_, va) = Files("LinearSelfHeating", Models["SelfHeating"]);
         var nl = Elaborate(Bench(-0.6, 6) + VaBench.VerilogA(va, "LinearCgs=1 VdsQ=6"));
-        Assert.False(NonlinearDcEngine.Run(nl, Tight).Converged);
-        string report = string.Join("\n", nl.Warnings);
+        // Refused at every point, so a refusal rather than an unconverged operating point (brief vendorlib-15 R-vl15-2).
+        string report = Assert.ThrowsAny<CircuitRF.Core.Devices.External.ExternalDeviceException>(
+            () => NonlinearDcEngine.Run(nl, Tight)).Message;
         Assert.True(report.Contains("model fatal: LinearSelfHeating.cmodel: LinearCgs=1 needs the bias point, and VgsQ or VdsQ is not set; " +
                                     "set VgsQ and VdsQ to the intrinsic gate-source and drain-source voltages at the bias point, in V.",
                                     StringComparison.Ordinal), report);

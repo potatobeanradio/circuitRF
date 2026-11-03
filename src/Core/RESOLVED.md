@@ -4258,3 +4258,12 @@ comment first (`parameters L=5 ; Y=1` used to declare `Y`), rejoins spaces aroun
 dropping it (`W=5 mils` was 5 in base units, unannounced). `VendorAReader`'s own `parameters` parser had the same
 `IsKnown` test and takes the same fix. No `.cnl` in the repo carried such a word. Gate:
 `tests/Core.Tests/Netlist/ParameterDeclarationUnitTests.cs`.
+
+## A VerilogA's relative `File=` in a `.cnl` resolved against the process's directory (brief vendorlib-15, 2026-11-03)
+
+`CnlReader` rebased a quoted relative `File` against the netlist's source directory for SnP and wBond only. A VerilogA
+`File="models/X.osdi"` reached the elaborator as written, and `ProviderNameFor`'s `Path.GetFullPath` resolved it
+against the current directory, so a `.cnl` with a model-relative device ran from its own folder and failed from
+anywhere else. Found by Export to Library's self-check on a model with a compiled device. The reader now rebases a
+VerilogA `File` through `FileReferences.Rebase`, which leaves an unquoted bare word alone, since that may be a
+variable the elaborator binds in scope. Gate: `ProtectedModelTests.Export_ShipsThisBuildAndTheOthers_AndCompileStartsOff`.

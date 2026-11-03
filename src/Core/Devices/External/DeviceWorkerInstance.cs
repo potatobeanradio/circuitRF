@@ -193,7 +193,9 @@ public sealed class DeviceWorkerInstance : IExternalDeviceInstance
 
         if (string.IsNullOrWhiteSpace(errors)) return message;
 
-        string withOutput = message + Environment.NewLine + "Worker output:" + Environment.NewLine + errors;
+        string withOutput = WorkerOutputDiagnosis.LedByModelsOwnWords(message, errors)
+                          + Environment.NewLine + "Worker output:" + Environment.NewLine
+                          + WorkerOutputDiagnosis.CollapseRepeats(errors);
 
         // Same reason as DeviceWorkerChannel.Failed: a recognised failure gets its explanation
         // appended, so the actionable sentence is the last thing read rather than something buried

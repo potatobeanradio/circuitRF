@@ -149,8 +149,13 @@ public sealed class DeviceWorkerChannel(IDeviceWorkerTransport transport) : IDis
         // case the worker is gone or going and its own last line is the whole report, so waiting for
         // it is right; on an in-band refusal the worker is alive and must not be blocked on.
         // Read BEFORE asking whether it is alive: the wait is what lets a dying worker be reaped.
+        //
+        // An in-band refusal waits for the error stream to go briefly quiet (ErrorOutputAfterRefusal, bounded at
+        // 100 ms): the worker flushes a model's own sentence before it writes the refusal, but the two pipes are read
+        // by different threads, and reading without the wait could compose "model setup reported errors" with the
+        // sentence explaining it still in flight (brief vendorlib-15 R-vl15-2).
         string errors = inner is null
-            ? transport.RecentErrorOutput
+            ? transport.ErrorOutputAfterRefusal()
             : transport.ErrorOutputAfterConnectionFailure();
 
         bool exited = !transport.IsAlive;
@@ -158,7 +163,8 @@ public sealed class DeviceWorkerChannel(IDeviceWorkerTransport transport) : IDis
         if (exited) message.Append(" The worker process has exited").Append(exitCode is { } c ? $" with code {c}." : ".");
 
         if (!string.IsNullOrWhiteSpace(errors))
-            message.Append(Environment.NewLine).Append("Worker output:").Append(Environment.NewLine).Append(errors);
+            message.Append(Environment.NewLine).Append("Worker output:").Append(Environment.NewLine)
+                   .Append(WorkerOutputDiagnosis.CollapseRepeats(errors));
 
         // BEFORE the raw output would be read, not after: the one failure this recognises buries its
         // actual cause in the third clause of 400 characters of dyld search-path noise, and a reader
@@ -167,12 +173,14 @@ public sealed class DeviceWorkerChannel(IDeviceWorkerTransport transport) : IDis
         if (diagnosis is not null)
             message.Append(Environment.NewLine).Append(Environment.NewLine).Append(diagnosis);
 
+        // A model that refused to run said why in its own words, and those lead (brief vendorlib-15 R-vl15-2).
+        string text = WorkerOutputDiagnosis.LedByModelsOwnWords(message.ToString(), errors);
         if (exited)
         {
             string last = errors.Split('\n').Select(l => l.Trim()).LastOrDefault(l => l.Length > 0) ?? "";
-            return new DeviceWorkerExitedException(message.ToString(), transport.Origin, exitCode, last, inner);
+            return new DeviceWorkerExitedException(text, transport.Origin, exitCode, last, inner);
         }
-        return new ExternalDeviceException(message.ToString(), inner);
+        return new ExternalDeviceException(text, inner);
     }
 
     public void Dispose()

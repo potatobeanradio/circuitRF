@@ -65,6 +65,63 @@ public static class WorkerOutputDiagnosis
         return null;
     }
 
+    /// <summary>The worker's spelling of a model's own <c>$error</c>/<c>$fatal</c> text (<c>osdi_log</c>).</summary>
+    private static readonly Regex ModelLine =
+        new(@"^osdi-worker: model (?:fatal|error): (?<text>.+?)\s*$", RegexOptions.Compiled | RegexOptions.Multiline | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// The model's OWN error and fatal sentences in <paramref name="workerOutput"/>, each once and in order, joined by a
+    /// space — or null when the model said nothing at those levels (brief vendorlib-15 R-vl15-2).
+    ///
+    /// <para><b>Why a refusal leads with them.</b> A model that declines to run — an expiry date, a node lock, a licence
+    /// file it cannot find — says why in its own sentence, and that sentence is the only part of the report the user can
+    /// act on. The worker's own clause ("model setup reported errors") and a failed point's list of three possible causes
+    /// are true and say nothing the sentence does not; read first, they bury it. Warnings and notes are never promoted:
+    /// a model that warns and then fails for another reason must not have its warning read as the reason.</para>
+    /// </summary>
+    public static string? ModelsOwnWords(string? workerOutput)
+    {
+        if (string.IsNullOrWhiteSpace(workerOutput)) return null;
+        var said = new List<string>();
+        foreach (Match m in ModelLine.Matches(workerOutput.Replace("\r\n", "\n")))
+        {
+            string text = m.Groups["text"].Value.Trim();
+            if (text.Length > 0 && !said.Contains(text, StringComparer.Ordinal)) said.Add(text);
+        }
+        return said.Count == 0 ? null : string.Join(" ", said);
+    }
+
+    /// <summary>
+    /// <paramref name="message"/> led by the model's own words when <paramref name="workerOutput"/> carries any
+    /// (<see cref="ModelsOwnWords"/>); <paramref name="message"/> unchanged otherwise.
+    /// </summary>
+    public static string LedByModelsOwnWords(string message, string? workerOutput)
+        => ModelsOwnWords(workerOutput) is { } words
+            ? "The model refused to run: " + words + Environment.NewLine + message
+            : message;
+
+    /// <summary>
+    /// <paramref name="workerOutput"/> with each run of identical consecutive lines written once, followed by
+    /// <c>(N times)</c>. A model's <c>$fatal</c> is printed on every point it refuses, so a solve that tried a dozen
+    /// biases attached the same sentence a dozen times; the count is kept because it is information, the copies are not.
+    /// </summary>
+    public static string CollapseRepeats(string workerOutput)
+    {
+        if (string.IsNullOrEmpty(workerOutput)) return workerOutput;
+        string[] lines = workerOutput.Replace("\r\n", "\n").Split('\n');
+        var sb = new System.Text.StringBuilder();
+        for (int i = 0; i < lines.Length;)
+        {
+            int run = 1;
+            while (i + run < lines.Length && lines[i + run] == lines[i]) run++;
+            if (sb.Length > 0) sb.Append(Environment.NewLine);
+            sb.Append(lines[i]);
+            if (run > 1 && lines[i].Length > 0) sb.Append(" (").Append(run).Append(" times)");
+            i += run;
+        }
+        return sb.ToString();
+    }
+
     private static string? PathFrom(string workerOutput)
     {
         var match = DlopenPath.Match(workerOutput);

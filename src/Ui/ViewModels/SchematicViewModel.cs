@@ -4116,6 +4116,13 @@ public sealed partial class SchematicViewModel : ObservableObject
                                             double worldX, double worldY, bool mirrorX)
     {
         string cellRef = part.ModelRef!;
+        // Brief vendorlib-15 D3: a compiled-only model with no build for this platform is listed, and refused here.
+        if (VendorModelRefs.Resolve(cellRef, EditModel.SchematicDirectory, KitWorkspaceRoot, out _) is { } resolved
+            && resolved.Entry.Model?.NoBuildSentence() is { } noBuild)
+        {
+            _messageSink?.Warning($"\"{part.Part}\" cannot be placed: {noBuild}");
+            return;
+        }
         var ccell = CellSymbolResolver.ResolveCcell(cellRef, EditModel.SchematicDirectory ?? "", KitWorkspaceRoot);
         if (ccell is null)
         {

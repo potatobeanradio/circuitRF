@@ -72,6 +72,23 @@ public sealed record VendorModelInfo(
 {
     public const string KindWord = "model";
 
+    /// <summary><c>part.cpart</c>'s <c>Builds</c>: the platforms a compiled-only model has a build for (brief
+    /// vendorlib-15 R-vl15-1b). Empty for a model with source, which runs anywhere.</summary>
+    public IReadOnlyList<string> Builds { get; init; } = [];
+
+    /// <summary>
+    /// Why this model cannot be placed on this machine — it is compiled-only and the publisher ships no build for
+    /// this platform (D3) — or null when it can. The palette shows the part greyed with this sentence rather than
+    /// hiding it, and placement refuses with it.
+    /// </summary>
+    public string? NoBuildSentence()
+    {
+        if (Builds.Count == 0) return null;
+        string rid = CircuitRF.Core.Devices.External.OsdiBuilds.CurrentRid;
+        return Builds.Contains(rid, StringComparer.Ordinal) ? null
+            : $"No build of this model for {rid}. The publisher ships it for: {string.Join(", ", Builds)}.";
+    }
+
     /// <summary>The category folder a model sits in, library-relative (<c>""</c> for the root): what Value ▲/▼
     /// steps within, the way a SPICE part steps within its file.</summary>
     public static string CategoryOf(VendorLibraryEntry e) => string.Join('/', e.Folders);
@@ -108,6 +125,11 @@ public sealed record VendorLibraryBuild(
     /// <summary>Model folders whose <c>part.cpart</c> could not be read, each library-relative with the reader's
     /// sentence (R-vl9-1d). They are left out of <see cref="Entries"/> and never stop the rest of the index.</summary>
     public IReadOnlyList<(string Folder, string Reason)> UnreadableModels { get; init; } = [];
+
+    /// <summary>What the library's signature files say (brief vendorlib-15 §5c), read where the index is built; the
+    /// caller judges it against its own user's trust store with <see cref="ModelLibrary.LibrarySignature.Judge"/>.
+    /// <see cref="ModelLibrary.LibrarySignatureInspection.None"/> for an unsigned library, at no cost.</summary>
+    public ModelLibrary.LibrarySignatureInspection Signature { get; init; } = ModelLibrary.LibrarySignatureInspection.None;
 
     /// <summary>The parts with a C or L value, and of those the ones whose tolerance is known.</summary>
     public int ToleranceAsked => Entries.Count(e => e.HasToleranceQuestion);
@@ -329,6 +351,7 @@ public static class VendorLibraryIndex
                                       unparsed, duplicates, refusal)
         {
             ToleranceRefusals = tolRefused, ModelFolders = modelDirs.Count, UnreadableModels = unreadableModels,
+            Signature = modelDirs.Count == 0 ? ModelLibrary.LibrarySignatureInspection.None : ModelLibrary.LibrarySignature.Inspect(full),
         };
     }
 
@@ -498,7 +521,7 @@ public static class VendorLibraryIndex
         };
         return new VendorLibraryEntry(folder, rel, categories, folder, 0, 0, [.. m.Pins], header)
         {
-            Model = new VendorModelInfo(m.Cell, m.Kind, m.Glyph, [.. m.Parameters]),
+            Model = new VendorModelInfo(m.Cell, m.Kind, m.Glyph, [.. m.Parameters]) { Builds = [.. m.Builds ?? []] },
         };
     }
 

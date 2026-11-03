@@ -257,6 +257,9 @@ return JsonRun.Finish(exit);
     // brief vendorlib-10 R-vl10-4: Export to Library, headlessly. A verb with a noun, as `new` and `import` are,
     // so a later export is a noun. It owns no export — every step is ModelLibraryExport's, which the dialog calls.
     "export" => CircuitRF.Cli.ExportPart.Run,
+    // brief vendorlib-15 R-vl15-3a: sign a model library, or make the key. It owns no signing — LibrarySignature does,
+    // which check and the library rows verify with. No GUI command signs; publishing is a maker's build step.
+    "sign"   => CircuitRF.Cli.Sign.Run,
     // R-aut4-1/R-aut4-6: neither runs an analysis and neither writes. They are what closes a
     // headless client's loop — it writes a document, asks whether the document is sound, and asks
     // what circuitRF made of it, without paying for a run.

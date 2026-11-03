@@ -17,7 +17,8 @@ public static class AddVendorLibraryDialog
 {
     /// <summary>The name to add the library under, or null when the user cancelled.</summary>
     public static async Task<string?> AskAsync(Window owner, string folder, string defaultName,
-                                               IReadOnlyList<string> found)
+                                               IReadOnlyList<string> found,
+                                               CircuitRF.Design.VendorLibraries.ModelLibrary.LibrarySignatureInspection? signature = null)
     {
         string? result = null;
         var dialog = new Window
@@ -51,6 +52,9 @@ public static class AddVendorLibraryDialog
         var lines = new StackPanel { Spacing = 3 };
         foreach (string line in found)
             lines.Children.Add(new SelectableTextBlock { Text = line, FontSize = 12, TextWrapping = TextWrapping.Wrap });
+        // brief vendorlib-15 §5c: a signed library says who signed it, and asks once about a key not yet trusted.
+        if (signature is not null && Controls.LibrarySignatureLine.For(signature) is { } signed)
+            lines.Children.Add(signed);
 
         dialog.Content = new StackPanel
         {

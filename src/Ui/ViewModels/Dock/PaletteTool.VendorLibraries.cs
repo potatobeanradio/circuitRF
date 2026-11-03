@@ -45,17 +45,23 @@ public sealed partial class VendorPartRowVm : ObservableObject
     public string Range => _range ??= Entry.Header.FrequencyRangeText();
     private string? _range;
 
-    /// <summary>The row's second line: the description, then the frequency range.</summary>
-    public string Detail => _detail ??= Range.Length == 0 ? Description : $"{Description} · {Range}";
+    /// <summary>The row's second line: the description, then the frequency range — or, for a part with no build for
+    /// this platform, the sentence saying so.</summary>
+    public string Detail => _detail ??= Unavailable ?? (Range.Length == 0 ? Description : $"{Description} · {Range}");
     private string? _detail;
 
     public VendorPartRef Ref => _ref ??= VendorPartRef.For(Library, Entry);
     private VendorPartRef? _ref;
 
-    /// <summary>The tooltip: everything the row abbreviates.</summary>
+    /// <summary>Why the part cannot be placed on this platform (brief vendorlib-15 D3), or null. Such a row is
+    /// listed, greyed, and neither arms nor drags.</summary>
+    public string? Unavailable => Entry.Model?.NoBuildSentence();
+    public bool IsPlaceable => Unavailable is null;
+
+    /// <summary>The tooltip: everything the row abbreviates, and for a part with no build here, why it is grey.</summary>
     public string ToolTipText => string.Join("\n", new[]
     {
-        Part, Value, Entry.Header.Description ?? "", Range, Entry.File,
+        Part, Value, Entry.Header.Description ?? "", Range, Entry.File, Unavailable ?? "",
     }.Where(t => t.Length > 0));
 }
 
@@ -300,7 +306,11 @@ public sealed partial class PaletteTool
 
     // ── Arming ────────────────────────────────────────────────────────────────
 
-    private void ArmRow(VendorPartRowVm row) => _svc?.Toggle(row.Ref);
+    private void ArmRow(VendorPartRowVm row)
+    {
+        if (!row.IsPlaceable) return;   // greyed with its sentence (brief vendorlib-15 D3); placement would refuse
+        _svc?.Toggle(row.Ref);
+    }
 
     /// <summary>
     /// ↑/↓ in a library's part list (from the Search box or the list itself): arms the next or

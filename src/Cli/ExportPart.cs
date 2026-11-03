@@ -40,7 +40,8 @@ public static class ExportPart
         string libraryName = "", publisher = "", license = "", libraryVersion = "1.0.0";
         var docs = new List<string>();
         var sweeps = new List<CircuitRF.Core.Design.FrequencySpec>();
-        bool replace = false, includeVendor = false;
+        bool replace = false, includeVendor = false, compile = false;
+        var builds = new Dictionary<string, string>(StringComparer.Ordinal);
 
         for (int i = 1; i < args.Length; i++)
         {
@@ -78,6 +79,17 @@ public static class ExportPart
                 }
                 case "--replace":                   replace = true; break;
                 case "--include-vendor-parts":      includeVendor = true; break;
+                // brief vendorlib-15: off unless asked for, as the dialog's checkbox is.
+                case "--compile-models":            compile = true; break;
+                case "--build" when more:
+                {
+                    string spec = args[++i];
+                    int eq = spec.IndexOf('=');
+                    if (eq <= 0 || eq == spec.Length - 1)
+                        return JsonRun.Fail(CliDiagnostics.ExportBadValue("--build", spec, "<rid>=<path>, e.g. win-x64=build/TSTFET100.osdi"));
+                    builds[spec[..eq]] = Path.GetFullPath(spec[(eq + 1)..]);
+                    break;
+                }
                 default:
                     if (a.StartsWith('-')) { JsonRun.Report(CliDiagnostics.ExportUnknownOption(a)); return Usage(); }
                     if (cell is not null) { JsonRun.Report(CliDiagnostics.ExportCellRequired()); return Usage(); }
@@ -114,6 +126,7 @@ public static class ExportPart
             IncludeVendorParts = includeVendor, LibraryName = libraryName, Publisher = publisher,
             LibraryVersion = libraryVersion, License = license,
             Sweep = sweeps.Count == 0 ? null : sweeps,
+            CompileModels = compile, Builds = builds,
         };
 
         // The plan first, so a refusal the dialog would have ASKED about can name the flag that answers it.
@@ -207,6 +220,8 @@ public static class ExportPart
             "         [--conditions …] [--footprint …] [--doc <file>]… [--symbol own|fet|r|c|l|box]\n" +
             "         [--sweep start=… stop=… npts=…|step=… [unit=GHz] [log]]…   (technology parts; default 0-20 GHz, 1001 points)\n" +
             "         [--replace] [--include-vendor-parts]\n" +
+            "         [--compile-models]   (ship each Verilog-A source compiled, without the source)\n" +
+            "         [--build <rid>=<path>]…   (a compiled model's builds made on other platforms)\n" +
             "         [--library-name … --publisher … --license … --library-version …]   (a new library only)\n" +
             "         [--json]\n" +
             "       circuitrf export part <model folder> --refresh   (after its schematic was edited)");

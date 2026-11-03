@@ -17,6 +17,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
 #include <string.h>
@@ -838,11 +839,149 @@ static OsdiNodePair th_collapsible[] = {
     { 2, UINT32_MAX },   /* T to ground, when the terminal is not connected */
 };
 
+/* ── device 5: "crf_refuse" — a model that declines to run ─────────────────────
+ *
+ * WHY. A maker who restricts use (an expiry date, a node lock, a licence file) does it INSIDE the
+ * compiled model, and the host owes them one thing: a model that refuses to start stops the run, and
+ * the user reads the model's own sentence (brief vendorlib-15 R-vl15-2). Which restriction is checked
+ * is none of the host's business, so this device has none — the model parameter `mode` says how it
+ * refuses, and a test places it the way a user would.
+ *
+ *   mode = 0   a plain conductance:   I[0] = +g0*v   I[1] = -g0*v,   v = V(A) - V(B)
+ *   mode = 1   setup_model logs REFUSE_SETUP (an error) and reports num_errors = 1
+ *   mode = 2   the first eval logs REFUSE_EVAL (a fatal) and returns EVAL_RET_FLAG_FATAL
+ *   mode = 3   setup_model logs REFUSE_EXIT (a fatal) and exits the PROCESS with status 3
+ *
+ * The sentences are what a test asserts on, so they are fixed strings here and nowhere else.
+ */
+
+#define REFUSE_SETUP "TSTFET100 licence check failed: this build expired on 2020-01-01."
+#define REFUSE_EVAL  "TSTFET100 stopped: this build is locked to another machine."
+#define REFUSE_EXIT  "TSTFET100 cannot start: no licence file was found beside the model."
+
+/* The host fills this in; the ABI's only route for a model's text. Null when nothing installed it. */
+void (*osdi_log)(void *handle, char *msg, uint32_t lvl) = NULL;
+
+static void refuse_log(const char *msg, uint32_t lvl) {
+    if (osdi_log) {
+        /* The host frees what it is given (the compiler hands over a malloc'd string). */
+        size_t n = strlen(msg) + 1;
+        char *copy = (char *)malloc(n);
+        if (copy) { memcpy(copy, msg, n); osdi_log(NULL, copy, lvl); }
+    } else {
+        fprintf(stderr, "%s\n", msg);
+        fflush(stderr);
+    }
+}
+
+typedef struct {
+    double  g0;     /* model param, S */
+    int32_t mode;   /* model param    */
+} RefModel;
+
+typedef struct {
+    uint32_t node_mapping[2];
+    double  *jac_resist[4];
+    bool     collapsed[1];
+    double   resid_resist[2];
+    double   g_eff;
+    int32_t  mode;
+} RefInst;
+
+static OsdiInitError ref_error = { 0, { 0 } };
+
+static void *ref_access(void *inst, void *model, uint32_t id, uint32_t flags) {
+    (void)flags; (void)inst;
+    RefModel *m = (RefModel *)model;
+    switch (id) {
+        case 0: return m ? (void *)&m->g0   : NULL;
+        case 1: return m ? (void *)&m->mode : NULL;
+        default: return NULL;
+    }
+}
+
+static void ref_setup_model(void *handle, void *model, OsdiSimParas *sim, OsdiInitInfo *res) {
+    (void)handle; (void)sim;
+    RefModel *m = (RefModel *)model;
+    if (m->g0 == 0.0) m->g0 = 0.001;
+    res->flags = 0; res->num_errors = 0; res->errors = NULL;
+    if (m->mode == 1) {
+        refuse_log(REFUSE_SETUP, LOG_LVL_ERR);
+        res->num_errors = 1; res->errors = &ref_error;
+    } else if (m->mode == 3) {
+        refuse_log(REFUSE_EXIT, LOG_LVL_FATAL);
+        exit(3);
+    }
+}
+
+static void ref_setup_instance(void *handle, void *inst, void *model, double temperature,
+                               uint32_t num_terminals, OsdiSimParas *sim, OsdiInitInfo *res) {
+    (void)handle; (void)temperature; (void)num_terminals; (void)sim;
+    RefModel *m = (RefModel *)model;
+    RefInst  *i = (RefInst *)inst;
+    i->g_eff = m->g0;
+    i->mode  = m->mode;
+    res->flags = 0; res->num_errors = 0; res->errors = NULL;
+}
+
+static uint32_t ref_eval(void *handle, void *inst, const void *model, const OsdiSimInfo *info) {
+    (void)handle; (void)model;
+    RefInst *i = (RefInst *)inst;
+    if (i->mode == 2) {
+        refuse_log(REFUSE_EVAL, LOG_LVL_FATAL);
+        return EVAL_RET_FLAG_FATAL;
+    }
+    double v = info->prev_solve[i->node_mapping[0]] - info->prev_solve[i->node_mapping[1]];
+    i->resid_resist[0] =  i->g_eff * v;
+    i->resid_resist[1] = -i->g_eff * v;
+    return 0;
+}
+
+/* Entries, in the order declared below:  (0,0) (0,1) (1,0) (1,1) */
+static void ref_load_jacobian_resist(void *inst, void *model) {
+    (void)model;
+    RefInst *i = (RefInst *)inst;
+    double g = i->g_eff;
+    if (i->jac_resist[0]) *i->jac_resist[0] +=  g;
+    if (i->jac_resist[1]) *i->jac_resist[1] += -g;
+    if (i->jac_resist[2]) *i->jac_resist[2] += -g;
+    if (i->jac_resist[3]) *i->jac_resist[3] +=  g;
+}
+
+static void ref_load_residual_resist(void *inst, void *model, double *dst) {
+    (void)model;
+    RefInst *i = (RefInst *)inst;
+    dst[i->node_mapping[0]] += i->resid_resist[0];
+    dst[i->node_mapping[1]] += i->resid_resist[1];
+}
+
+static char *ref_name_g0[]   = { (char *)"g0"   };
+static char *ref_name_mode[] = { (char *)"mode" };
+
+static OsdiParamOpvar ref_params[] = {
+    { ref_name_g0,   0, (char *)"conductance",             (char *)"S", PARA_TY_REAL | PARA_KIND_MODEL, 1 },
+    { ref_name_mode, 0, (char *)"how the model refuses",   (char *)"",  PARA_TY_INT  | PARA_KIND_MODEL, 1 },
+};
+
+static OsdiNode ref_nodes[] = {
+    { (char *)"A", (char *)"V", (char *)"A",
+      (uint32_t)offsetof(RefInst, resid_resist[0]), UINT32_MAX, UINT32_MAX, UINT32_MAX, false },
+    { (char *)"B", (char *)"V", (char *)"A",
+      (uint32_t)offsetof(RefInst, resid_resist[1]), UINT32_MAX, UINT32_MAX, UINT32_MAX, false },
+};
+
+static OsdiJacobianEntry ref_jacobian[] = {
+    { { 0, 0 }, UINT32_MAX, JACOBIAN_ENTRY_RESIST },
+    { { 0, 1 }, UINT32_MAX, JACOBIAN_ENTRY_RESIST },
+    { { 1, 0 }, UINT32_MAX, JACOBIAN_ENTRY_RESIST },
+    { { 1, 1 }, UINT32_MAX, JACOBIAN_ENTRY_RESIST },
+};
+
 /* ── the exports the ABI is discovered through ───────────────────────────────── */
 
 uint32_t OSDI_VERSION_MAJOR = OSDI_VERSION_MAJOR_CURR;
 uint32_t OSDI_VERSION_MINOR = OSDI_VERSION_MINOR_CURR;
-uint32_t OSDI_NUM_DESCRIPTORS = 4;
+uint32_t OSDI_NUM_DESCRIPTORS = 5;
 uint32_t OSDI_DESCRIPTOR_SIZE = sizeof(OsdiDescriptor);
 
 OsdiDescriptor OSDI_DESCRIPTORS[] = {
@@ -1047,6 +1186,57 @@ OsdiDescriptor OSDI_DESCRIPTORS[] = {
         .load_spice_rhs_dc     = NULL,
         .load_spice_rhs_tran   = NULL,
         .load_jacobian_resist  = th_load_jacobian_resist,
+        .load_jacobian_react   = NULL,
+        .load_jacobian_tran    = NULL,
+    },
+    {
+        .name = (char *)"crf_refuse",
+
+        .num_nodes     = 2,
+        .num_terminals = 2,
+        .nodes         = ref_nodes,
+
+        .num_jacobian_entries = 4,
+        .jacobian_entries     = ref_jacobian,
+
+        .num_collapsible  = 0,
+        .collapsible      = NULL,
+        .collapsed_offset = (uint32_t)offsetof(RefInst, collapsed),
+
+        .noise_sources  = NULL,
+        .num_noise_src  = 0,
+
+        .num_params          = 2,   /* g0, mode */
+        .num_instance_params = 0,
+        .num_opvars          = 0,
+        .param_opvar         = ref_params,
+
+        .node_mapping_offset        = (uint32_t)offsetof(RefInst, node_mapping),
+        .jacobian_ptr_resist_offset = (uint32_t)offsetof(RefInst, jac_resist),
+
+        .num_states    = 0,
+        .state_idx_off = 0,
+
+        .bound_step_offset = 0,
+
+        .instance_size = sizeof(RefInst),
+        .model_size    = sizeof(RefModel),
+
+        .access = ref_access,
+
+        .setup_model    = ref_setup_model,
+        .setup_instance = ref_setup_instance,
+
+        .eval = ref_eval,
+
+        .load_noise            = NULL,
+        .load_residual_resist  = ref_load_residual_resist,
+        .load_residual_react   = NULL,
+        .load_limit_rhs_resist = NULL,
+        .load_limit_rhs_react  = NULL,
+        .load_spice_rhs_dc     = NULL,
+        .load_spice_rhs_tran   = NULL,
+        .load_jacobian_resist  = ref_load_jacobian_resist,
         .load_jacobian_react   = NULL,
         .load_jacobian_tran    = NULL,
     },

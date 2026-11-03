@@ -115,6 +115,11 @@ public sealed record ModelPartManifest
     /// <summary>Written by Export only: <see cref="ModelPartHash.Compute"/> of the folder as exported.</summary>
     public string PublishedHash { get; init; } = "";
     public List<ModelPartConversion> Converted { get; init; } = [];
+    /// <summary>The platforms a compiled-only model has a build for, as runtime identifiers (brief vendorlib-15
+    /// R-vl15-1b). A describing fact only (D7): the palette reads it to grey a part this platform has no build of,
+    /// and check proves it matches <c>models/&lt;rid&gt;/</c>. Absent for a model with source.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? Builds { get; init; }
 
     [JsonExtensionData] public Dictionary<string, JsonElement>? Unknown { get; init; }
 

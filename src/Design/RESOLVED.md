@@ -26550,3 +26550,63 @@ generator, so every design's `expect.txt` lists one warning per port. SDL-5 is w
 
 The test designs C1-C7 were generated from the symbols' own port tables (wires end on the computed port positions),
 checked with `NetExtractor`, and committed as ordinary `.csch` files.
+
+## Protected models: compiled-only model folders and signed libraries (brief vendorlib-15, 2026-11-03)
+
+**Platform builds** (`src/Core/Devices/External/OsdiBuilds.cs`). A `.osdi` reference loads `<dir>/<rid>/<name>.osdi`
+first, then `<dir>/<name>.osdi`. It is applied in `VerilogAFileResolver.ProviderNameFor`, the one place every placed
+model composes its provider name, so the parameter dialog, a run and harmonicaRF load the same file. The missing-file
+refusal names this platform and the platform folders that hold builds. `DocumentFileRefs.TryResolve` uses the
+platform build only as a FALLBACK, when no file of the written name exists: walking a document (Find, an archive's
+repoint) must not turn a platform-neutral reference into one platform's. The runtime identifier is composed from the
+OS and `ProcessArchitecture`, not read from `RuntimeInformation.RuntimeIdentifier`, which can report a
+distribution-specific spelling. `PlatformsOf` reads a PE, a Mach-O (thin or universal) or an ELF header, so check and
+Export can say a build is in the wrong platform's folder.
+
+**A gap the self-check exposed: a VerilogA's relative `File=` in a `.cnl` resolved against the PROCESS's directory.**
+`CnlReader` rebased SnP and wBond files against its source directory and not VerilogA's. No earlier test reached it,
+because VL-10's exported Verilog-A instance was disabled. A model's `.cnl` names its device model-relative, so the
+self-check (which reads it with the model folder as the source directory) failed with "no build" pointing into the
+test runner's own `bin`. The reader now rebases a VerilogA `File` through `FileReferences.Rebase`, which leaves an
+unquoted bare word alone (it may be a variable in scope). Entry in `src/Core/RESOLVED.md` too.
+
+**Compiled-only is recognised, by file stem.** The brief says "no `.va`/`.vams` of the same module". The module
+name lives inside the binary, and reading it needs the worker, so check compares file stems instead. A maker who
+names the source differently from the build is reported as compiled-only, which errs towards asking for `Builds`.
+
+**`Builds` is written only when there is something to list** (`JsonIgnore WhenWritingNull`), so every model with
+source writes the same `part.cpart` bytes as before. Export lists the platforms where EVERY shipped compiled model has
+a build.
+
+**Export.** A placed `.osdi` (no source) is copied to `models/<rid>/<name>.osdi` and the reference rewritten to the
+neutral `models/<name>.osdi`. `--build <rid>=<path>` / the dialog's rows add the others. With one compiled model the
+build takes its name; with several, a build is matched by file stem and an unmatched one is refused. Compile Verilog-A
+models is OFF by default in the dialog and the CLI, at the owner's request: shipping only the build is the maker's
+choice to make. When on, each placed source is compiled through `VerilogASourceCompiler.Compile` (the cache the
+compile-on-place path uses) and only the build ships. **Not done here: a generic-CPU build.** The compile uses the
+compiler's default CPU, which is the compiling machine's own; VL-16 R-vl16-2h owns passing a generic CPU for a shipped
+build, and until then a build compiled on a new machine may not run on an older one.
+
+**Signatures** (`LibrarySignature.cs`). `Inspect` reads the files alone (no trust store) and is what the index build
+records on `VendorLibraryBuild.Signature`; `Judge` applies one user's trust store, so the GUI judges against
+preferences and `check` against the same preferences read-only (`PublisherTrust`, preference key
+`trusted_publishers`, read like `GdsfactoryInterpreterPreferences`). A changed `library.clib` is "does not verify", not
+a changed part: it is the publisher's own statement and holds the `Publisher` the signature is bound to, since
+`library.sig`'s own `Publisher` field is not covered by the signature. `sign` refuses a library whose model folders fail
+`ModelFolderCheck`/`ModelLibraryCheck` at error severity; the cell-folder half of `circuitrf check` lives in `src/Cli`
+and is not consulted.
+
+**Measured: brief 9's index build does NOT already hash model folders.** The brief assumed verification would ride a
+hash pass the index makes, but the index reads only `part.cpart`. So verification is a new cost, paid only by a signed
+library (`Inspect` returns at once when there is no `library.sig`). Debug build, scratch harness, 100 model folders
+holding a 200 kB `.osdi` each (20 MB): `Inspect` 20–56 ms, the whole index build including it 25–31 ms after a cold
+first pass. No cache added (overview D5).
+
+**Over MCP**, `create what=libraryPart` takes `compileModels` and `builds` (platform → file). `builds` needed a new
+option kind, `PathMap`: a `StrMap` passes its values as written, which would have let a client name a build outside
+the server root.
+
+**§4, refusing models**, was proved in `tools/osdi-worker/RESOLVED.md`'s VL-15 entry; the fixes were host-side.
+
+Gate: `tests/Ui.Tests/VendorLibraries/ProtectedModelTests.cs` (9), `tests/Core.Tests/Devices/External/OsdiRefusingModelTests.cs`,
+`tests/Engine.Tests/External/VerilogARefusingModelCliTests.cs`.

@@ -275,9 +275,10 @@ public sealed class ThermalNodeRobustnessTests : IDisposable
         // Backing off is only meaningful when there is a point already known good to back off
         // TOWARD. A model refusing from the very first evaluation is saying this bias is outside its
         // range, and reporting that is right — retrying it forever is not.
-        var (r, _) = Run(Netlist(rThermal: 20_000.0, maxTemp: -1.0));
-
-        Assert.False(r.Converged);
+        // Refused at EVERY point, so since brief vendorlib-15 R-vl15-2 it is raised as the model's refusal rather than
+        // returned as an unconverged operating point of zeros — still a failure, now one that names its cause.
+        Assert.ThrowsAny<CircuitRF.Core.Devices.External.ExternalDeviceException>(
+            () => Run(Netlist(rThermal: 20_000.0, maxTemp: -1.0)));
     }
 
     // ── 2. A thermal node is never stepped below absolute zero ────────────────

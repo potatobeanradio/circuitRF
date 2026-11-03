@@ -943,13 +943,41 @@ public sealed class NonlinearDcEngine
     }
 
     private DcResult Solve()
-        => _settings.DcBiasStepping switch
+    {
+        DcResult result;
+        try
         {
-            DcBiasSteppingMode.Always      => SolveRamped(),
-            DcBiasSteppingMode.Never       => SolveDirect(throwOnFailure: true),
-            DcBiasSteppingMode.IfNecessary => SolveIfNecessary(),
-            _                              => throw new ArgumentOutOfRangeException(nameof(_settings))
-        };
+            result = _settings.DcBiasStepping switch
+            {
+                DcBiasSteppingMode.Always      => SolveRamped(),
+                DcBiasSteppingMode.Never       => SolveDirect(throwOnFailure: true),
+                DcBiasSteppingMode.IfNecessary => SolveIfNecessary(),
+                _                              => throw new ArgumentOutOfRangeException(nameof(_settings))
+            };
+        }
+        catch (NonlinearDcNotConvergedException) when (RefusedThroughout() is { } refusal)
+        {
+            throw refusal;
+        }
+        return !result.Converged && RefusedThroughout() is { } stopped ? throw stopped : result;
+    }
+
+    /// <summary>
+    /// Brief vendorlib-15 R-vl15-2: a solve in which a model refused EVERY point it was asked to evaluate has no operating
+    /// point to give, not a poor one — a compiled model that declines to run (an expiry date, a node lock, a licence file
+    /// it cannot find) refuses the first point and every one after it. Returned as a non-converged result it reached the
+    /// user as a node table of zeros and, headlessly, exit code 2, so it is raised as the model's own refusal instead.
+    /// A model that refuses SOME points is untouched: a refusal is still an ordinary outcome of trying a bias, and the
+    /// step is shortened as before. Null when any evaluation succeeded or nothing was refused.
+    /// </summary>
+    private ExternalDeviceException? RefusedThroughout()
+        => _evaluations == 0 && _lastRefusal is { } refusal
+            ? new ExternalDeviceException(
+                "DC stopped: a model refused every point it was asked to evaluate, so there is no operating point. " + refusal)
+            : null;
+
+    /// <summary>How many residual-and-Jacobian builds evaluated every device without a refusal.</summary>
+    private long _evaluations;
 
     /// <summary>
     /// IfNecessary: try direct cold-start first; fall back to ramp if it fails.
@@ -1523,6 +1551,7 @@ public sealed class NonlinearDcEngine
             }
         }
 
+        _evaluations++;
         return (f, j);
     }
 

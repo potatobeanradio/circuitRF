@@ -66,6 +66,8 @@ public static class ReferenceLibrary
         "cmodel",
         "model-data",
         ModelLibraryTopic,
+        // brief vendorlib-15 R-vl15-4b: for a device maker deciding whether to publish a protected model.
+        "protected-models",
         ComponentNotesTopic,
     ];
 

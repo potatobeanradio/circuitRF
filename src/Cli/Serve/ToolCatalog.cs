@@ -53,6 +53,13 @@ internal enum OptKind
     /// two names that resolve to nothing. The verb accepts both spellings.</para>
     /// </summary>
     StrMap,
+    /// <summary>
+    /// As <see cref="StrMap"/>, with every VALUE a file resolved and confined by <see cref="PathRoot"/> —
+    /// <c>export part --build win-x64=&lt;root&gt;/builds/x.osdi</c> (brief vendorlib-15). The key is a name and is
+    /// passed as written; only the value names a file, and a file outside the root is a refusal as for
+    /// <see cref="Path"/>.
+    /// </summary>
+    PathMap,
 }
 
 /// <param name="Json">The argument's name in the tool call.</param>
@@ -842,6 +849,16 @@ internal static class ToolCatalog
                           + "over, in the sparam directive's keys: 'start=1 stop=20 npts=101 unit=GHz', or step= for npts=, with log "
                           + "optional; unit defaults to Hz, as in the directive. One item per segment. Default: 0 to 20 GHz, 1001 points. "
                           + "Refused when no part uses the technology."),
+                        // brief vendorlib-15 R-vl15-1d — compiled models.
+                        new("compileModels",      "--compile-models",       OptKind.Flag,
+                            "Compile each Verilog-A source the cell places and ship the build in models/<platform>/ instead of the "
+                          + "source: a protected model. Off unless true. Refused when the cell places no source or no Verilog-A "
+                          + "compiler is found. A placed .osdi with no source ships as this platform's build either way."),
+                        new("builds",             "--build",                OptKind.PathMap,
+                            "Builds of the compiled model made on OTHER platforms, runtime identifier to file: "
+                          + "{\"win-x64\": \"builds/TSTFET100.osdi\"}. Each is copied into models/<rid>/, not run; this platform's "
+                          + "build is the one the export runs. Identifiers: win-x64, win-arm64, win-x86, osx-arm64, osx-x64, "
+                          + "linux-x64, linux-arm64. With several compiled models, a build is matched to one by its file name."),
                         // brief vendorlib-12 R-vl12-4 — after a model's .csch was edited by writing it.
                         new("refresh",            "--refresh",              OptKind.Flag,
                             "cell is a library MODEL folder whose schematic was edited in place: copy in what it newly references, "
@@ -1980,7 +1997,7 @@ internal static class ToolCatalog
                 return true;
             }
 
-            case OptKind.StrMap:
+            case OptKind.StrMap or OptKind.PathMap:
             {
                 if (node is not JsonObject map)
                 {
@@ -1994,6 +2011,11 @@ internal static class ToolCatalog
                     {
                         refusal ??= CliDiagnostics.ServeArgumentWrongType(tool, opt.Json, "an object of name to value");
                         return false;
+                    }
+                    if (opt.Kind == OptKind.PathMap)
+                    {
+                        text = root.Resolve(text, out refusal);
+                        if (text is null) return false;
                     }
                     argv?.Add(opt.Cli);
                     argv?.Add(key + "=" + text);
@@ -2139,7 +2161,7 @@ internal static class ToolCatalog
             ["items"]       = new JsonObject { ["type"] = "string" },
             ["description"] = o.Description,
         },
-        OptKind.StrMap => new JsonObject
+        OptKind.StrMap or OptKind.PathMap => new JsonObject
         {
             ["type"]                 = "object",
             ["additionalProperties"] = new JsonObject { ["type"] = "string" },
