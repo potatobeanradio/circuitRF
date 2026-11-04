@@ -198,6 +198,13 @@ public abstract class C3dObject : IC3dBindable
     [JsonPropertyOrder(14)]
     public List<C3dFaceImage>? FaceImages { get; set; }
 
+    /// <summary>brief-sdl-8 D2 — the cell reference of the placed layout this object was flattened out of. A flattened body is a
+    /// COPY: its dimensions are this document's numbers, and a schematic's values reach it only through VARs linked to them, so
+    /// an EM evaluation of the cell says so for each group of such objects. Reporting only: no solver reads it, and a run's
+    /// document never holds it. Omitted: drawn here, or brought in before it was recorded.</summary>
+    [JsonPropertyOrder(15)]
+    public string? FlattenedFrom { get; set; }
+
     /// <summary>Keys this build does not read. Kept, and written back, so a document from a later build
     /// does not lose them by being opened here; <c>check</c> names each one.</summary>
     [JsonExtensionData]

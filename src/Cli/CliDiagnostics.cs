@@ -1426,6 +1426,10 @@ internal static class CliDiagnostics
     public static Diagnostic EmUnreached(string sentence) => Diagnostic.Create(
         "em.variable-unreached", DiagnosticSeverity.Warning, "{message}", ("message", sentence));
 
+    /// <summary>brief-sdl-8 D2/D7 — what a 3D EM view says of its evaluations.</summary>
+    public static Diagnostic EmThreeDNote(string sentence) => Diagnostic.Create(
+        "em.3d-note", DiagnosticSeverity.Info, "{message}", ("message", sentence));
+
     /// <summary><c>--em</c> takes <c>on</c> or <c>off</c>.</summary>
     public static Diagnostic EmSwitchMalformed(string verb, string value) => Diagnostic.Create(
         "cli.args.em-malformed", DiagnosticSeverity.Error,

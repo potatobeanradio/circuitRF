@@ -4861,3 +4861,20 @@ first. A run by circuit models applies nothing and says so (`cli.opt.apply-not-e
 
 Gate: `tests/Ui.Tests/SchematicSync/EmOptimizationTests.cs`, every solve a stub (the circuit model with a known
 error) written where a real solve writes.
+
+## 38. A 3D view's setup as the EM view (brief-sdl-8)
+
+`emSetup=` (and an instance's `EmSetup`) names a `.cem` or a driven setup embedded in the cell's 3D view, spelled
+`<view stem>#<setup>` — `EmCapability.SetupLabel`, the spelling the Analysis dialog's picker writes — or by the `.c3d`'s
+path when the netlist is not the cell's own. With no name, one EM view in all is used and several are a refusal listing
+them. Nothing else in the run verbs changes: the 3D evaluation is `EmEvaluation`'s, the solve `EmRunService.RunThreeDView`
+on the point's document with the regenerated layout in memory (`C3dElaborator.LayoutsInMemory`).
+
+What a 3D view says of its evaluations — each group flattened from the layout, what the held mesh holds — is
+`em.3d-note` on a run's stderr and in `--json`, `check.em.note` from `check`, and `analysis[].em.notes` in
+`explain --analysis`. `explain --tunables` adds `threeDOnly`: the 3D view's VARs the schematic does not define. An
+optimisation's default budgets for a 3D view are 6 (`correct`) and 15 (`direct`), said in `opt.em.budget-3d`; its
+length step floor is raised to the held mesh's smallest element (`opt.em.mesh-step`). MCP `run` with a 3D EM view takes
+`async=true`; nothing makes it a job on its own.
+
+Gate: `tests/Ui.Tests/SchematicSync/EmThreeDCellTests.cs`, no solve: geometry, keys, signatures and solver input.

@@ -199,7 +199,8 @@ internal static class ToolCatalog
           + "everything by circuit models. Absent: as each analysis's model= and each instance's Model= say."),
         new("emMaxSolves", "--em-max-solves", OptKind.Str,
             "The most uncached EM solves the run may start (default 20). The solves are counted before any starts; a run "
-          + "needing more is refused with the count and solves nothing."),
+          + "needing more is refused with the count and solves nothing. When the EM view is a setup of the cell's 3D view "
+          + "(emSetup=board#Driven1) each solve takes minutes to hours: start such a run with async=true."),
     ];
 
     private static readonly ToolOption Analysis = new("name", "-a", OptKind.Str,
@@ -840,7 +841,7 @@ internal static class ToolCatalog
                 new("view3d", ["new", "view3d"],
                     [new("cell", true, "The cell folder whose layout the 3D view places.")],
                     [
-                        new("fromLayout", "--from-layout", OptKind.Flag, "Place the cell's own layout as an instance with View Layout, its 3D setups copied in as embedded setups and its port labels as ports. Required."),
+                        new("fromLayout", "--from-layout", OptKind.Flag, "Place the cell's own layout as an instance with View Layout, its 3D setups copied in as embedded setups and its port labels as ports; a layout made from the cell's schematic also brings one VAR per cell parameter and schematic VAR, linked by name. Required."),
                         new("name", "--name", OptKind.Str, "The .c3d's name. Default: the cell's."),
                     ],
                     "A .c3d of the cell's layout, ready for component ports and a 3D run."),
@@ -890,6 +891,16 @@ internal static class ToolCatalog
                           + "{\"win-x64\": \"builds/TSTFET100.osdi\"}. Each is copied into models/<rid>/, not run; this platform's "
                           + "build is the one the export runs. Identifiers: win-x64, win-arm64, win-x86, osx-arm64, osx-x64, "
                           + "linux-x64, linux-arm64. With several compiled models, a build is matched to one by its file name."),
+                        // brief vendorlib-19 — the way the model is protected.
+                        new("protect",            "--protect",              OptKind.Str,
+                            "Protect the model: 'encapsulate' or 'compile'. encapsulate (Encapsulated netlist) samples EVERY linear "
+                          + "element of the flattened cell — R, L, C, mutuals, transmission lines, technology parts and the SnPs it "
+                          + "places — into ONE N-port S-parameter block over the sweep plan (0 Hz always included, as the DC "
+                          + "solution); devices, sources and probes stay outside as instances. Ports: the pins the block touches, "
+                          + "then each net where it meets a device. A cell parameter that reaches the block is frozen at its default "
+                          + "and dropped from the part (a spread or corner on one is refused); one reaching only devices stays. No "
+                          + "compiler needed. Proved against the cell (DC currents and Y at three sampled frequencies) or nothing is "
+                          + "written. compile is compileNetlist. Off when absent."),
                         // brief vendorlib-16 — Compile netlist.
                         new("compileNetlist",     "--compile-netlist",      OptKind.Flag,
                             "Compile the whole cell into ONE protected Verilog-A module and publish the compiled build in place of "
@@ -897,12 +908,12 @@ internal static class ToolCatalog
                           + "external models stay outside in a wrapper netlist, each joining net an extra terminal. The generated source "
                           + "is written outside the library (sourceOut). Every platform the compiler can reach is tried; the export is "
                           + "proved against the cell (DC currents and Y at three frequencies, 1e-6 relative) or nothing is written. Off "
-                          + "unless true; needs a Verilog-A compiler."),
+                          + "unless true; needs a Verilog-A compiler. The same as protect=compile."),
                         new("sourceOut",          "--source-out",           OptKind.Path,
                             "With compileNetlist: where the generated .va goes. Default protected-source/<Part>/<Part>.va beside the "
                           + "workspace. Refused inside the library."),
                         new("checkBias",          "--check-bias",           OptKind.StrRepeat,
-                            "With compileNetlist, or compileModels converting a ComposedFET: one bias point of the proof per item, 'g=-0.5 d=5' (pins not named are at 0 V). "
+                            "With protect, compileNetlist, or compileModels converting a ComposedFET: one bias point of the proof per item, 'g=-0.5 d=5' (pins not named are at 0 V). "
                           + "Default: every pin at 0 V, then each pair of pins at +1 V and -1 V across them."),
                         // brief vendorlib-12 R-vl12-4 — after a model's .csch was edited by writing it.
                         new("refresh",            "--refresh",              OptKind.Flag,

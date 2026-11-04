@@ -31,6 +31,10 @@ public sealed record EmSolveCountResult(
 
     public bool Any => Evaluations > 0 || Refusals.Count > 0;
 
+    /// <summary>brief-sdl-8 D2/D7 — what a 3D EM view says of its evaluations (each flattened group, what the mesh holds),
+    /// once each.</summary>
+    public IReadOnlyList<string> Notes { get; init; } = [];
+
     /// <summary>One sentence: "3 EM solves needed (2 geometries already cached), about 4 min, 1.2 GB".</summary>
     public string Sentence
     {
@@ -119,6 +123,9 @@ public static class EmSolveCount
             records.Count(r => r.Key is not null), byKey.Count, byKey.Count(r => r.Cached), toSolve.Count, seconds, memory,
             records.Select(r => r.Refusal).Where(r => r is not null).Cast<string>().Distinct().ToList(),
             records.SelectMany(r => r.Unreached).Distinct().ToList(),
-            records);
+            records)
+        {
+            Notes = records.SelectMany(r => r.ThreeDNotes).Distinct().ToList(),
+        };
     }
 }

@@ -470,6 +470,10 @@ internal static partial class Reference
         sb.AppendLine("EM-verified point. A length is never stepped by less than two database units of the layout. Every candidate");
         sb.AppendLine("is planned first and refused, with no solve, when its copper would open a joint or touch copper of another");
         sb.AppendLine("net; each variable's connected range is reported before the first solve.");
+        sb.AppendLine($"When the EM view is a setup of the cell's 3D view (emSetup=C1#Driven1) the defaults are {OptimizationRun.DefaultCorrectBudget3D} and {OptimizationRun.DefaultDirectBudget3D}, the");
+        sb.AppendLine("mesh is held (every refinement pass the setup allows, at every point), no length steps by less than the held");
+        sb.AppendLine("mesh's smallest element, and a body of the 3D view's own (a bond wire, a pin, a lid) that leaves what it touched at");
+        sb.AppendLine("the start, or touches something new, makes the point infeasible. Run it with async=true.");
         sb.AppendLine();
         sb.AppendLine("    optimize algorithm=pattern em=direct emBudget=20");
         sb.AppendLine();

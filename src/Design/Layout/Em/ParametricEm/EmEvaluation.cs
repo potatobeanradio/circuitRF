@@ -31,7 +31,11 @@ namespace CircuitRF.Design.Layout.Em.ParametricEm;
 public sealed record EmCellGeometry(
     EmCellTarget Target, EmLayoutSource Source, string Key, string? CachedSnp,
     IReadOnlyList<string> Unreached, IReadOnlyList<string> Notes, IReadOnlyDictionary<string, Value> Applied,
-    ConnectivitySignature? Connectivity = null);
+    ConnectivitySignature? Connectivity = null)
+{
+    /// <summary>brief-sdl-8 — for a cell solved through its 3D view, the point's 3D problem; null for a <c>.cem</c>.</summary>
+    public EmThreeDGeometry? ThreeD { get; init; }
+}
 
 /// <summary>What one evaluation came to.</summary>
 /// <param name="SnpPath">The Touchstone at this geometry; null when refused or only counted.</param>
@@ -48,7 +52,7 @@ public sealed record EmEvaluationResult(
 /// numbers <c>em --dry-run</c> gives for the same setup.</summary>
 public sealed record EmSolveEstimate(int Unknowns, long MemoryBytes, double? Seconds, int Points, string Kernel);
 
-public static class EmEvaluation
+public static partial class EmEvaluation
 {
     /// <summary>The name of the VAR row an evaluation adds to carry values the schematic has no VAR row for (a cell's
     /// declared parameters). Never saved: it lives in the in-memory copy the planner reads.</summary>
@@ -91,6 +95,8 @@ public static class EmEvaluation
             return null;
         }
 
+        // brief-sdl-8 D7 — the design's own values, before this point's are applied: what the held mesh is held at.
+        var saved = target.Is3D ? CellVariables.Values(model) : null;
         var applied = Apply(model, values);
 
         LayoutView layout;
@@ -128,13 +134,15 @@ public static class EmEvaluation
         plan.ApplyTo(layout);
 
         var source = new EmLayoutSource(target.ClayPath, layout, tech.Tech, layout.DbuPerMicron);
-        string key = EmCellCache.KeyOf(source, target.Setup);
         var notes = plan.Lines.Where(l => l.Severity == SchematicLayoutPlanner.ReportSeverity.Warning)
                               .Select(l => l.Text).Concat(plan.NoLayoutWarnings).ToList();
         IReadOnlyList<string>? partGroups = null;
         try { partGroups = ConnectivitySignature.PartGroups(layout, target.ClayPath, tech.Tech); }
         catch (Exception e) when (e is not OperationCanceledException) { /* the joints and overlaps still hold it */ }
         var connectivity = ConnectivitySignature.Of(plan.Lines, partGroups);
+        if (target.Is3D)
+            return ThreeDGeometry(target, model, saved!, source, applied, notes, Unreached(model, plan), connectivity, out refusal);
+        string key = EmCellCache.KeyOf(source, target.Setup);
         return new EmCellGeometry(target, source, key, EmCellCache.Find(target.WorkspaceDir, target.CellName, key),
                               Unreached(model, plan), notes, applied, connectivity);
     }
@@ -183,6 +191,13 @@ public static class EmEvaluation
         if (Geometry(target, values, out var refusal) is not { } g)
             return new EmEvaluationResult(null, null, false, refusal);
         if (g.CachedSnp is { } hit) return new EmEvaluationResult(g, hit, true, null);
+        // brief-sdl-8 D8 — a 3D solve whose estimate is past this machine's memory is refused before any solve, counted or not.
+        if (g.ThreeD?.Estimate is { MemoryBytes: > 0 } big && big.MemoryBytes > CircuitRF.Design.Em3d.MachineMemory.PhysicalBytes
+            && CircuitRF.Design.Em3d.MachineMemory.PhysicalBytes > 0)
+            return new EmEvaluationResult(g, null, false,
+                $"the EM solve of '{target.CellName}' needs about {CircuitRF.Design.Em3d.MachineMemory.Format(big.MemoryBytes)} " +
+                $"({big.Kernel}'s estimate), more than this machine's {CircuitRF.Design.Em3d.MachineMemory.Format(CircuitRF.Design.Em3d.MachineMemory.PhysicalBytes)}",
+                big);
         if (countOnly) return new EmEvaluationResult(g, null, false, null, estimate ? Estimate(g) : null);
 
         lock (KeyLock(g.Key))
@@ -203,10 +218,14 @@ public static class EmEvaluation
                 EmCellCache.WriteProvenance(written, target, values);
                 return new EmEvaluationResult(g, written, false, null);
             }
-            var setup = target.Setup.Clone();
+            var setup = (g.ThreeD?.Setup ?? target.Setup).Clone();
             setup.SnpOutputPathOverride = Path.Combine(dir, g.Key);
             setup.CreateSnpSchematic = false;      // a cache entry makes no _sim cell in the user's workspace
-            var run = EmRunService.Run(setup, g.Source, Path.Combine(dir, g.Key), control?.Token ?? default, control, maxCores);
+            var run = g.ThreeD is { } three
+                // brief-sdl-8 R-sdl8-2 — the 3D view's run, on the point's document and its regenerated layout, in memory.
+                ? EmRunService.RunThreeDView(setup, three.Document, target.C3dPath!, target.CwsPath, Path.Combine(dir, g.Key),
+                                             control?.Token ?? default, control, maxCores, elaborator: three.Elaborator)
+                : EmRunService.Run(setup, g.Source, Path.Combine(dir, g.Key), control?.Token ?? default, control, maxCores);
             if (run.Status == EmRunStatus.Cancelled) throw new OperationCanceledException(run.Error);
             if (run.Status != EmRunStatus.Ok || run.SnpPath is not { } snp)
                 return new EmEvaluationResult(g, null, false,
@@ -220,6 +239,7 @@ public static class EmEvaluation
     /// (the run would then refuse with the same sentence).</summary>
     public static EmSolveEstimate? Estimate(EmCellGeometry g)
     {
+        if (g.ThreeD is { } three) return three.Estimate;
         try
         {
             var pre = EmRunService.Preflight(g.Target.Setup, g.Source);

@@ -24,6 +24,15 @@ public sealed record EmEvaluationRecord(
 {
     public CircuitRF.Design.Layout.SchematicSync.ConnectivitySignature? Connectivity { get; init; }
 
+    /// <summary>brief-sdl-8 — true when the cell is solved through a setup of its 3D view.</summary>
+    public bool ThreeD { get; init; }
+
+    /// <summary>brief-sdl-8 D7 — the smallest element the held 3D mesh makes, metres; null for a planar setup.</summary>
+    public double? SmallestElementM { get; init; }
+
+    /// <summary>brief-sdl-8 D2/D7 — what the 3D view says about this evaluation: each flattened group, what is held.</summary>
+    public IReadOnlyList<string> ThreeDNotes { get; init; } = [];
+
     /// <summary>The values that made this geometry differ from the schematic's own, as <c>L90 = 0.005</c>; empty at the
     /// schematic's own values.</summary>
     public string At { get; init; } = "";
@@ -118,17 +127,21 @@ public sealed class ParametricEmProvider : IParametricModelProvider
         var result = EmEvaluation.Evaluate(target, request.Values, scope?.CountOnly ?? false,
                                            scope?.Control?.Child(), scope?.MaxCores, scope?.Estimate ?? true);
         var unreached = result.Geometry?.Unreached ?? [];
-        string setupName = Path.GetFileNameWithoutExtension(target.CemPath);
+        string setupName = target.SetupName;
         scope?.Record(new EmEvaluationRecord(request.InstancePath, target.CellName, result.Key, result.Cached, result.Refusal,
                                              result.Estimate, unreached, setupName)
         {
             Connectivity = result.Geometry?.Connectivity,
+            ThreeD = target.Is3D,
+            SmallestElementM = result.Geometry?.ThreeD?.SmallestElementM,
+            ThreeDNotes = result.Geometry?.ThreeD?.Notes ?? [],
             At = result.Geometry is { } g ? string.Join(", ", g.Applied.OrderBy(kv => kv.Key, StringComparer.Ordinal)
                                                                 .Select(kv => $"{kv.Key} = {EmCellCache.Format(kv.Value)}")) : "",
         });
         if (result.Refusal is { } why) return ParametricModelAnswer.Refused(why);
 
         string d4 = unreached.Count == 0 ? "" : " " + string.Join(" ", unreached);
+        if (result.Geometry?.ThreeD is { Notes.Count: > 0 } three) d4 += " " + string.Join(" ", three.Notes);
         if (result.SnpPath is not { } snp)
             return ParametricModelAnswer.Counted(unreached.Count == 0 ? null : d4.Trim());
 

@@ -1234,7 +1234,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
 
         if (!CircuitRF.Design.Layout.Em.ParametricEm.EmCapability.IsCapable(cellDir)) return (vars, null);
         var setups = CircuitRF.Design.Layout.Em.ParametricEm.EmCapability.SetupsFor(cellDir)
-                         .Select(Path.GetFileNameWithoutExtension).Cast<string>().ToList();
+                         .Select(CircuitRF.Design.Layout.Em.ParametricEm.EmCapability.SetupLabel).ToList();
         if (!comp.Parameters.Any(p => p.Name == ParametricModelRegistry.ModelParameter))
             comp.Parameters.Insert(0, new EditableParameter
             {

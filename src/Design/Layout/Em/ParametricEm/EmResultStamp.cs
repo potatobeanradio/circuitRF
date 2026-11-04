@@ -22,7 +22,7 @@ public static class EmResultStamp
         if (em.PathA is { } a)
         {
             labels.Add("cell = " + a.CellName);
-            labels.Add("setup = " + Path.GetFileNameWithoutExtension(a.CemPath));
+            labels.Add("setup = " + a.SetupName);
         }
         foreach (var r in records.Where(r => r.Key is not null).GroupBy(r => (r.InstancePath, r.Key)).Select(g => g.First()))
             labels.Add($"{r.InstancePath} = {r.Key}{(r.Cached ? " (cached)" : "")}");

@@ -51,6 +51,7 @@
 <li><a href="#count">The solve count</a></li>
 <li><a href="#unreached">A variable that does not reach the copper</a></li>
 <li><a href="#optimise">Optimising geometry</a></li>
+<li><a href="#in-3d">By EM in 3D</a></li>
 <li><a href="#headless">From the command line</a></li>
 </ol>
 </nav>
@@ -204,6 +205,39 @@ exactly the geometry EM solved. The status line says so, or says that it is not.
 A point whose copper connects differently from the first point's is solved as drawn, and the run says so. A yield,
 Monte Carlo or sensitivity run needs too many evaluations to make each one an EM solve, so it is refused with its
 count. Run it by circuit models with <code>--em off</code>, or set the analysis to simulate by circuit models.</p>
+<h2 id="in-3d">By EM in 3D</h2>
+<p>An enclosure, a connector launch, bond wires, a lid or a patterned dielectric need a full 3D solve. The cell's
+<strong>3D view</strong> (<code>&lt;cell&gt;/3d/&lt;cell&gt;.c3d</code>) can be its EM view instead of a <code>.cem</code>: any <strong>driven</strong> setup embedded in it is
+offered in the <strong>EM setup</strong> box beside <strong>Simulate by</strong>, spelled <code>&lt;view&gt;.c3d#&lt;setup&gt;</code>. Palace, EMerge or openEMS solves
+it, as the setup says. With one EM view in all, it is used; with a <code>.cem</code> and a 3D setup, or several of either, pick
+one. The <code>.cnl</code> key is <code>emSetup=C1#Driven1</code> on an analysis of the cell's own schematic; a netlist that is not the cell's names the view by its path, <code>emSetup=C1/3d/C1.c3d#Driven1</code>.</p>
+<p><strong>Making the 3D view.</strong> On a layout made from its schematic, <strong>New 3D View from Layout</strong> places the layout live, takes
+its port labels as the 3D view's ports, and adds one VAR per name that drives the layout — each cell parameter and
+each VAR of the schematic, at its current value. Add the enclosure, connector or lid around it, and use those VARs
+in their dimensions.</p>
+<p><strong>Live or flattened.</strong> A layout placed <strong>live</strong> follows the schematic with no extra work: at each point it is
+re-planned exactly as for a <code>.cem</code>, and the 3D view's ports are refreshed from its port labels before the solve. A
+layout <strong>flattened</strong> into 3D bodies is a copy: its dimensions are the 3D view's numbers now, and it follows the
+schematic only where they use a linked VAR. Each run says so for each flattened group, and a schematic VAR that no
+dimension of the 3D view uses is reported as not reaching it.</p>
+<p><strong>Linked VARs.</strong> A 3D VAR named like a cell parameter or a VAR of the cell's schematic takes that value at every
+point, so <code>w50</code> in the schematic sizes the copper and any enclosure height or connector offset written with it. A
+3D VAR whose name the schematic does not define stays the 3D view's own and cannot be tuned from the schematic;
+<code>circuitrf explain &lt;schematic&gt; --tunables</code> lists such VARs. A 3D VAR whose <code>Linked</code> is <code>false</code> keeps its own value.</p>
+<p><strong>The mesh is held.</strong> A 3D mesh changes with the geometry, and that change is noise between nearby points that an
+optimiser would read as a slope. Every evaluation of the cell is meshed by the same rule: the setup's sizes, every
+refinement pass the setup allows (Palace and EMerge stop early otherwise, a different number of passes at different
+points), openEMS's merge distance and each mesh region's element size at the values the saved design gives. The run
+says what it held. An optimisation does not step a length by less than the held mesh's smallest element.</p>
+<p><strong>Connectivity in 3D.</strong> Besides the layout's own joints, every body of the 3D view's own — a bond wire, a connector
+pin, a lid — is checked against what it touches at the start. A point where one leaves its pad or touches copper it
+did not touch is infeasible, says which, and costs no solve.</p>
+<p><strong>Budgets.</strong> A 3D solve takes minutes to hours, so the counts use each solver's own size estimate, a solve whose
+estimate is past this machine's memory is refused before any solve starts, and an optimisation's default budgets are
+smaller: <code>em=correct</code> stops at 6 solves and <code>em=direct</code> at 15 unless <code>emBudget=</code> says otherwise. From an agent, start
+such a run with <code>async=true</code>.</p>
+<p>The cache key covers the whole 3D problem: the copper, every body at its evaluated size, the materials, the setup's
+solve settings and the solvers' versions. A VAR change that moves nothing still reads the cached result.</p>
 <h2 id="headless">From the command line</h2>
 <p>The analysis's choice is the <code>.cnl</code> key <code>model=em</code> (and <code>emSetup=</code> when the layout has several setups); a
 schematic run headless honours it. Every run verb also takes:</p>

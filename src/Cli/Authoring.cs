@@ -344,6 +344,10 @@ public static class Authoring
             Note($"Copied {made.SetupsCopied.Count} 3D setup(s) as embedded setups: {string.Join(", ", made.SetupsCopied)}.");
         if (made.PortsNote is { } portsNote) Note(portsNote);
         foreach (string moved in made.PortsMoved) Note(moved);
+        // brief-sdl-8 D4 — the names that drive a schematic-made layout, as VARs of the view linked to them.
+        if (made.LinkedVariables.Count > 0)
+            Note($"Added {made.LinkedVariables.Count} VAR(s) linked by name to the cell's schematic: {string.Join(", ", made.LinkedVariables)}. " +
+                 "A dimension written with one follows the schematic's value when the cell is simulated by EM through a setup of this view.");
         if (made.PortsLeftOut.Count > 0)
         {
             string left = string.Join("; ", made.PortsLeftOut);

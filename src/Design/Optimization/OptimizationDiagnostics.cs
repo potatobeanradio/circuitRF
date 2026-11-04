@@ -232,6 +232,18 @@ public static class OptimizationDiagnostics
         "opt.em.connectivity-unchecked", DiagnosticSeverity.Info,
         "The layout's connectivity could not be measured, so candidate points are not checked for gaps or shorts.");
 
+    /// <summary>brief-sdl-8 D8 — the default budget a 3D EM view takes.</summary>
+    public static Diagnostic EmThreeDBudget(string mode, int budget) => Diagnostic.Create(
+        "opt.em.budget-3d", DiagnosticSeverity.Info,
+        "The EM view is a 3D setup, whose solves take minutes to hours: em={mode} stops at {budget} EM solves unless emBudget= " +
+        "says otherwise.", ("mode", mode), ("budget", budget.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+
+    /// <summary>brief-sdl-8 D7 — the step floor raised to the held 3D mesh's smallest element.</summary>
+    public static Diagnostic EmMeshStepFloor(double metres) => Diagnostic.Create(
+        "opt.em.mesh-step", DiagnosticSeverity.Info,
+        "No length steps by less than {size}, the smallest element of the held 3D mesh: a smaller change is meshing noise, " +
+        "not a slope.", ("size", CircuitRF.Engine.Em3d.FdtdGrid.FormatLength(metres)));
+
     /// <summary>D10.</summary>
     public static Diagnostic EmConnectedRange(string sentence) => Diagnostic.Create(
         "opt.em.connected-range", DiagnosticSeverity.Info, "{sentence}", ("sentence", sentence));

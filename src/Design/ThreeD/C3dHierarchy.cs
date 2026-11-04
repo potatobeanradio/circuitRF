@@ -60,6 +60,10 @@ public sealed record C3dFromLayout(C3dDocument? Document, string? Refusal, IRead
 
     /// <summary>The ports moved in from their line's end to where a pulled-back return plane begins, each in a sentence.</summary>
     public IReadOnlyList<string> PortsMoved { get; init; } = [];
+
+    /// <summary>brief-sdl-8 D4 — the VARs added because the layout was made from the cell's schematic, each linked by name to
+    /// a cell parameter or a schematic VAR: what drives the layout drives any 3D-only body that uses one of them.</summary>
+    public IReadOnlyList<string> LinkedVariables { get; init; } = [];
 }
 
 /// <summary>One placed layout's port label, translated into the <c>.c3d</c>'s frame: the instance, the label's own port
@@ -503,6 +507,7 @@ public static class C3dHierarchy
             made.Name = Unique(Flat(NameOf(item)), used);
             made.Material = rename[made.Material!];
             made.DrawingLayer = e.Origins.GetValueOrDefault(NameOf(item))?.DrawingLayer;   // drawn in its layer's colour, as it was
+            made.FlattenedFrom = inst.CellRef;                                               // brief-sdl-8 D2: a copy, said so
             objects.Add(made);
         }
         var notes = new List<string>();
@@ -926,7 +931,60 @@ public static class C3dHierarchy
         }
         foreach (var (n, p) in ports) p.FromLayout = new C3dPortSource { Instance = doc.Instances[0].Name, Port = n };
         doc.Ports = [.. ports.OrderBy(p => p.Key).Select(p => p.Value)];
-        return new C3dFromLayout(doc, null, copied, leftOut) { PortsNote = portsNote, PortsMoved = moved };
+        // brief-sdl-8 D4 — a layout made from the cell's schematic brings one linked VAR per name that drives it.
+        var linked = view.GeneratedPlacements.Count > 0 ? AddLinkedVariables(doc, cellDir) : [];
+        return new C3dFromLayout(doc, null, copied, leftOut) { PortsNote = portsNote, PortsMoved = moved, LinkedVariables = linked };
+    }
+
+    /// <summary>
+    /// brief-sdl-8 D3/D4 — one VAR per cell parameter (its default as the expression, linked by name as every VAR named like
+    /// a parameter is) and one per VAR of the cell's schematic, linked by the same rule. A schematic VAR's expression may read
+    /// names this view cannot see, so it is written as its VALUE in its row's unit: the view resolves on its own, and an EM
+    /// evaluation of the cell replaces it with the schematic's value at the point. A row whose unit this view cannot state
+    /// is left out. Returns the names added.
+    /// </summary>
+    internal static List<string> AddLinkedVariables(C3dDocument doc, string cellDir)
+    {
+        var added = new List<string>();
+        var taken = doc.Variables.Select(v => v.Name).ToHashSet(StringComparer.Ordinal);
+        foreach (var p in C3dCell.OfFolder(cellDir).Parameters)
+        {
+            if (C3dResolver.ValidateName(p.Name) is not null || !taken.Add(p.Name)) continue;
+            doc.Variables.Add(new C3dVariable { Name = p.Name, Expression = p.DefaultExpression, Unit = p.Unit is { Length: > 0 } u ? u : null });
+            added.Add(p.Name);
+        }
+        var primary = CellFolder.ResolvePrimary(cellDir, ViewType.Schematic);
+        if (primary.State is not (PrimaryState.SoleFile or PrimaryState.NamedPresent) || primary.ResolvedName is null) return added;
+        CircuitRF.Design.Schematic.SchematicEditModel model;
+        try
+        {
+            string csch = Path.Combine(CellFolder.SubFolderPath(cellDir, ViewType.Schematic), primary.ResolvedName);
+            model = CircuitRF.Design.Schematic.SchematicPersistence.LoadFromFile(csch).model;
+            model.SchematicDirectory = Path.GetDirectoryName(csch);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException or InvalidDataException
+                                       or ArgumentException or InvalidOperationException) { return added; }
+        var values = CircuitRF.Design.Schematic.CellVariables.Values(model);
+        foreach (var row in CircuitRF.Design.Schematic.CellVariables.Of(cellDir))
+        {
+            if (C3dResolver.ValidateName(row.Name) is not null || taken.Contains(row.Name)) continue;
+            if (!values.TryGetValue(row.Name, out var v)) continue;
+            string? unit = row.Unit is { Length: > 0 } ru ? ru.Trim() : null;
+            double scale = 1;
+            if (unit is not null)
+            {
+                if (C3dUnits.Engine(unit, out string? bad) is not { } engine || bad is not null) continue;
+                scale = CircuitRF.Core.Expressions.Units.Scale(engine) is { } sc && sc != 0 ? sc : 1;
+            }
+            taken.Add(row.Name);
+            doc.Variables.Add(new C3dVariable
+            {
+                Name = row.Name, Unit = unit,
+                Expression = (v.Value / scale).ToString("R", CultureInfo.InvariantCulture),
+            });
+            added.Add(row.Name);
+        }
+        return added;
     }
 
     /// <summary>R-pw1-6 — the setup a layout's port labels are translated with when no 3D <c>.cem</c> names it: the
@@ -946,8 +1004,11 @@ public static class C3dHierarchy
     /// (R-pw1-6). Every instance's labels, numbered as the labels number them: two instances may both state a port 1, and
     /// <see cref="UpdatePorts"/> is what gives the later one a free number. Writes nothing.
     /// </summary>
+    /// <param name="layoutsInMemory">brief-sdl-8 D4 — layouts to translate from memory rather than their file, by full path:
+    /// an EM evaluation's regenerated layout, whose port labels moved with its copper.</param>
     public static C3dLayoutPorts PortsFromLayouts(C3dDocument doc, string c3dPath, string? workspaceCws,
-                                                  TechnologyCache? cache = null)
+                                                  TechnologyCache? cache = null,
+                                                  IReadOnlyDictionary<string, LayoutView>? layoutsInMemory = null)
     {
         cache ??= new TechnologyCache();
         string baseDir = Path.GetDirectoryName(Path.GetFullPath(c3dPath))!;
@@ -960,7 +1021,8 @@ public static class C3dHierarchy
             if (ExternalCellRef.ResolveCellDir(inst.CellRef, baseDir) is not { } cellDir ||
                 ViewFile(cellDir, C3dInstanceView.Layout) is not { } clay) continue;
             LayoutView view;
-            try { view = LayoutPersistence.LoadFromFile(clay); }
+            var memory = layoutsInMemory?.GetValueOrDefault(Path.GetFullPath(clay));
+            try { view = memory ?? LayoutPersistence.LoadFromFile(clay); }
             catch (Exception e) { leftOut.Add($"{inst.Name}: '{clay}' cannot be read ({e.Message})"); continue; }
             if (!view.Shapes.OfType<LabelShape>().Any(l => l.IsPort)) continue;
 
@@ -977,7 +1039,13 @@ public static class C3dHierarchy
             {
                 var setup = EmSetupPersistence.LoadFromFile(cem);
                 if (setup.Name.Length == 0) setup.Name = Path.GetFileNameWithoutExtension(cem);
-                TranslatePorts(setup, cem, workspaceCws, cache, view, mine, leftOut, notes, placement);
+                if (memory is null) TranslatePorts(setup, cem, workspaceCws, cache, view, mine, leftOut, notes, placement);
+                else
+                {
+                    var (mt, _) = TechnologyResolver.ResolveForDocument(view.TechRef, clay, workspaceCws, cache);
+                    if (mt.Tech is not { } t1) { leftOut.Add($"{inst.Name}: its layout's technology does not resolve"); continue; }
+                    TranslateWith(setup, new EmLayoutSource(clay, view, t1, view.DbuPerMicron), t1, view, placement, mine, leftOut, notes);
+                }
             }
             else
             {

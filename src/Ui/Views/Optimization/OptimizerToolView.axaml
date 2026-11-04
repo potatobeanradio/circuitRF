@@ -202,7 +202,7 @@
                                         <TextBlock Text="Most EM solves" FontSize="12" VerticalAlignment="Center"/>
                                         <TextBox Grid.Column="1" Text="{Binding EmBudget}" Width="90" FontSize="12"
                                                  PlaceholderText="{Binding EmBudgetDefault}" Padding="4,1" MinHeight="0"
-                                                 ToolTip.Tip="The run stops at this many EM solves and keeps its best EM-verified point; geometries already in the EM cache are free"/>
+                                                 ToolTip.Tip="The run stops at this many EM solves and keeps its best EM-verified point; geometries already in the EM cache are free. Left empty, a 3D EM view takes the smaller default"/>
                                     </Grid>
                                     <Separator Margin="0,2"/>
                                     <TextBlock Text="{Binding AlgorithmLabel}" Classes="section" IsVisible="{Binding HasOptions}"/>

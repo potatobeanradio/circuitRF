@@ -1573,11 +1573,14 @@ internal static class Explain
         var count = EmSolveCount.Count(switched.Tb, switched.Lib, top, refBase);
         return new ExplainEmJson(model,
             switched.PathA?.CellName,
-            switched.PathA is { } a ? Path.GetFileNameWithoutExtension(a.CemPath) : count.Records.FirstOrDefault(r => r.Setup is not null)?.Setup,
+            switched.PathA is { } a ? a.SetupName : count.Records.FirstOrDefault(r => r.Setup is not null)?.Setup,
             count.Evaluations, count.Geometries, count.Cached, count.ToSolve,
             [.. count.Records.Where(r => r.Key is not null).Select(r => new ExplainEmPointJson(r.InstancePath, r.Key, r.Cached))],
             count.Unreached,
-            count.Refusals.Count > 0 ? string.Join(" ", count.Refusals) : null);
+            count.Refusals.Count > 0 ? string.Join(" ", count.Refusals) : null)
+        {
+            Notes = count.Notes.Count > 0 ? count.Notes : null,
+        };
     }
 
     /// <summary>
@@ -2069,6 +2072,7 @@ internal static class Explain
                     foreach (var pt in em.Points)
                         Console.WriteLine($"        point {++k,-4} {pt.Instance,-16} {pt.Key}  {(pt.Cached ? "cached" : "to solve")}");
                     foreach (var u in em.Unreached) Console.WriteLine($"      warning: {u}");
+                    foreach (var n in em.Notes ?? []) Console.WriteLine($"      note: {n}");
                 }
 
                 // brief ENV-MEAS-3: what an envelope run records, voltages and powers.

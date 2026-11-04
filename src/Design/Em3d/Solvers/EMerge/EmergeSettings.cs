@@ -41,6 +41,13 @@ public sealed class CemEmerge
     public int? AdaptiveMesh { get; set; }
 
     /// <summary>
+    /// brief-sdl-8 D7 — every one of <see cref="AdaptiveMesh"/>'s passes is made, whatever the change between two of them, so
+    /// two geometries evaluated for one optimisation are meshed by the same number of passes. An EM-cell evaluation sets it;
+    /// omitted, EMerge stops refining once S has converged, as it does by default.
+    /// </summary>
+    public bool? HoldMeshPasses { get; set; }
+
+    /// <summary>
     /// brief-emi-7 — the frequencies, GHz, whose fields EMerge saves for the 3D view, as Palace's key means it: omitted saves
     /// the sweep's centre only, <c>[]</c> saves none, a list saves those. Each is a direct solve of its own after the sweep (the
     /// adaptive sweep fits S between its own samples and holds no field elsewhere), so a frequency outside the sweep changes
@@ -61,7 +68,8 @@ public sealed class CemEmerge
     [JsonIgnore]
     public bool IsEmpty =>
         Quality is null && MaxElementWavelengths is null && EdgeRefinement is null && ElementOrder is null &&
-        AdaptiveSweep is null && Tolerance is null && MaxSamples is null && AdaptiveMesh is null && SaveFieldsGHz is null;
+        AdaptiveSweep is null && Tolerance is null && MaxSamples is null && AdaptiveMesh is null && SaveFieldsGHz is null &&
+        HoldMeshPasses is null;
 }
 
 /// <summary>
@@ -82,6 +90,9 @@ public sealed record EmergeSettings(
 {
     /// <summary>EMerge's own number of initial adaptive-sweep samples (<c>run_adaptive_sweep(n_initial=5)</c>).</summary>
     public const int EmergeInitialSamples = 5;
+
+    /// <summary>brief-sdl-8 D7 — <see cref="CemEmerge.HoldMeshPasses"/>, resolved.</summary>
+    public bool HoldMeshPasses { get; init; }
 
     /// <summary>
     /// A preset's values. Second order everywhere (EMerge's default; its first-order elements are for checks, not answers).
@@ -112,7 +123,7 @@ public sealed record EmergeSettings(
             section.AdaptiveSweep         ?? p.AdaptiveSweep,
             section.Tolerance             ?? p.Tolerance,
             section.MaxSamples            ?? p.MaxSamples,
-            section.AdaptiveMesh          ?? p.AdaptiveMesh);
+            section.AdaptiveMesh          ?? p.AdaptiveMesh) { HoldMeshPasses = section.HoldMeshPasses == true };
     }
 
     /// <summary>Every value that cannot be run, as sentences naming the field — empty when all can.</summary>

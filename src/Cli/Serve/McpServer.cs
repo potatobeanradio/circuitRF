@@ -270,6 +270,14 @@ internal sealed class McpServer
                 "('solver capability=gpu' says whether this one can), and EMerge on its GPU sparse solver ('solver' says whether " +
                 "GPU solving is enabled); device=auto, the default, picks for EMerge by the problem's size.\n" +
                 // EMB-5 R-emb5-1/2: the cost before committing, and a long run that does not hold the session.
+                // brief-sdl-6/7/8: a schematic simulated by EM of its own layout, at its variables' values.
+                "EM cells: an analysis line with model=em runs a schematic by EM of the layout Update Layout from Schematic made " +
+                "from it, re-planned at the variables' values in memory and cached by geometry (run em=on|off emMaxSolves=N; " +
+                "explain analysis=\"\" lists every evaluation, cached or to solve). Its EM view is a .cem or a driven setup of the " +
+                "cell's 3D view, named emSetup=<cem> or emSetup=<view>#<setup>; 'create what=view3d fromLayout' makes that view " +
+                "with the layout live, its ports and one VAR linked to each schematic VAR, and explain tunables=true lists the " +
+                "view's VARs the schematic does not drive. 'reference analyses' holds the model and emSetup keys, " +
+                "'reference optimizers' the optimize line's em=correct|direct.\n" +
                 "Before an EM run, run analysis=em dryRun=true: its unknowns, memory and time, and every refusal, " +
                 "with nothing solved. A long run or check takes async=true and returns a job id at once; " +
                 "job action=status|cancel|result id=<id> follows it. Reading tools (find, check, explain, read, " +

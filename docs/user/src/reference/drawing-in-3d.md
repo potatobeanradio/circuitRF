@@ -56,6 +56,11 @@ for EM into 3D. It brings in the layout's port labels as the 3D view's own ports
 layout would build: with the layout's 3D setup when it has one, else with a default driven setup, which a message
 says. A port you do not want is deleted like any other.
 
+When the layout was made from the cell's schematic (Update Layout from Schematic), the new 3D view also gets one VAR
+per name that drives it — each cell parameter, and each VAR of the schematic at its current value — linked by name,
+so a dimension written with `w50` follows the schematic's `w50` when the cell is simulated by EM in 3D. See
+[EM cells](em-cells.html#in-3d).
+
 The 3D view's ports are its own from then on, each remembering which placed layout and which of its port labels it
 came from. When a placed layout's port changes afterwards (its **Width** or **Use edge width**), opening the 3D view,
 or saving the layout while it is open, posts one message per port that no longer matches, with both widths; nothing

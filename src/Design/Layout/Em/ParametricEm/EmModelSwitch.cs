@@ -28,7 +28,7 @@ public sealed record EmSwitched(TestBench Tb, Library Lib, EmCellTarget? PathA, 
     /// <summary>One line for the run's notes: what simulates the analysis.</summary>
     public string Describe(string analysis) =>
         PathA is { } a
-            ? $"'{analysis}' runs on the EM result of {a.CellName}'s layout ({Path.GetFileNameWithoutExtension(a.CemPath)})" +
+            ? $"'{analysis}' runs on the EM result of {a.CellName}'s layout ({a.SetupName})" +
               (Switched.Count > 0 ? $", and {string.Join(", ", Switched)} by EM" : "") + "."
             : $"'{analysis}' runs with {string.Join(", ", Switched)} simulated by EM.";
 }
@@ -301,6 +301,17 @@ public static class EmModelSwitch
             return EmCapability.CellDirOfSchematic(sourcePath);
         if (emSetup is not { Length: > 0 }) return null;
         string dir = Path.GetDirectoryName(Path.GetFullPath(sourcePath))!;
+        // brief-sdl-8 D1 — <cell>/3d/<view>.c3d#<setup>: the cell is the 3D view's folder's parent.
+        if (emSetup.LastIndexOf('#') is int hash and > 0)
+        {
+            string c3d = emSetup[..hash];
+            foreach (var root in new[] { dir, baseDirectory }.Where(r => r is { Length: > 0 }).Cast<string>())
+            {
+                string full = Path.IsPathRooted(c3d) ? c3d : Path.Combine(root, c3d);
+                if (File.Exists(full)) return Path.GetDirectoryName(Path.GetDirectoryName(Path.GetFullPath(full)));
+            }
+            return null;
+        }
         foreach (var root in new[] { dir, baseDirectory }.Where(r => r is { Length: > 0 }).Cast<string>())
         {
             string cem = Path.IsPathRooted(emSetup) ? emSetup : Path.Combine(root, emSetup);

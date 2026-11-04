@@ -4,7 +4,7 @@ slug: reference/em-cells.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > EM cells
 lede: Simulating a schematic by EM of its own layout, at whatever values its variables have — and reusing it as a part.
-keywords: EM, model=em, parametric EM, EM cell, EM cache, solve count, Simulate by, layout from schematic, sweep, optimize
+keywords: EM, model=em, parametric EM, EM cell, EM cache, solve count, Simulate by, layout from schematic, sweep, optimize, 3D EM, .c3d, Palace, EMerge, openEMS, mesh
 ---
 
 <nav class="toc">
@@ -19,6 +19,7 @@ keywords: EM, model=em, parametric EM, EM cell, EM cache, solve count, Simulate 
 <li><a href="#count">The solve count</a></li>
 <li><a href="#unreached">A variable that does not reach the copper</a></li>
 <li><a href="#optimise">Optimising geometry</a></li>
+<li><a href="#in-3d">By EM in 3D</a></li>
 <li><a href="#headless">From the command line</a></li>
 </ol>
 </nav>
@@ -204,6 +205,48 @@ A parametric sweep over the variables of an analysis run by EM solves (or reads 
 A point whose copper connects differently from the first point's is solved as drawn, and the run says so. A yield,
 Monte Carlo or sensitivity run needs too many evaluations to make each one an EM solve, so it is refused with its
 count. Run it by circuit models with `--em off`, or set the analysis to simulate by circuit models.
+
+## By EM in 3D {#in-3d}
+
+An enclosure, a connector launch, bond wires, a lid or a patterned dielectric need a full 3D solve. The cell's
+**3D view** (`<cell>/3d/<cell>.c3d`) can be its EM view instead of a `.cem`: any **driven** setup embedded in it is
+offered in the **EM setup** box beside **Simulate by**, spelled `<view>.c3d#<setup>`. Palace, EMerge or openEMS solves
+it, as the setup says. With one EM view in all, it is used; with a `.cem` and a 3D setup, or several of either, pick
+one. The `.cnl` key is `emSetup=C1#Driven1` on an analysis of the cell's own schematic; a netlist that is not the cell's names the view by its path, `emSetup=C1/3d/C1.c3d#Driven1`.
+
+**Making the 3D view.** On a layout made from its schematic, **New 3D View from Layout** places the layout live, takes
+its port labels as the 3D view's ports, and adds one VAR per name that drives the layout — each cell parameter and
+each VAR of the schematic, at its current value. Add the enclosure, connector or lid around it, and use those VARs
+in their dimensions.
+
+**Live or flattened.** A layout placed **live** follows the schematic with no extra work: at each point it is
+re-planned exactly as for a `.cem`, and the 3D view's ports are refreshed from its port labels before the solve. A
+layout **flattened** into 3D bodies is a copy: its dimensions are the 3D view's numbers now, and it follows the
+schematic only where they use a linked VAR. Each run says so for each flattened group, and a schematic VAR that no
+dimension of the 3D view uses is reported as not reaching it.
+
+**Linked VARs.** A 3D VAR named like a cell parameter or a VAR of the cell's schematic takes that value at every
+point, so `w50` in the schematic sizes the copper and any enclosure height or connector offset written with it. A
+3D VAR whose name the schematic does not define stays the 3D view's own and cannot be tuned from the schematic;
+`circuitrf explain <schematic> --tunables` lists such VARs. A 3D VAR whose `Linked` is `false` keeps its own value.
+
+**The mesh is held.** A 3D mesh changes with the geometry, and that change is noise between nearby points that an
+optimiser would read as a slope. Every evaluation of the cell is meshed by the same rule: the setup's sizes, every
+refinement pass the setup allows (Palace and EMerge stop early otherwise, a different number of passes at different
+points), openEMS's merge distance and each mesh region's element size at the values the saved design gives. The run
+says what it held. An optimisation does not step a length by less than the held mesh's smallest element.
+
+**Connectivity in 3D.** Besides the layout's own joints, every body of the 3D view's own — a bond wire, a connector
+pin, a lid — is checked against what it touches at the start. A point where one leaves its pad or touches copper it
+did not touch is infeasible, says which, and costs no solve.
+
+**Budgets.** A 3D solve takes minutes to hours, so the counts use each solver's own size estimate, a solve whose
+estimate is past this machine's memory is refused before any solve starts, and an optimisation's default budgets are
+smaller: `em=correct` stops at 6 solves and `em=direct` at 15 unless `emBudget=` says otherwise. From an agent, start
+such a run with `async=true`.
+
+The cache key covers the whole 3D problem: the copper, every body at its evaluated size, the materials, the setup's
+solve settings and the solvers' versions. A VAR change that moves nothing still reads the cached result.
 
 ## From the command line {#headless}
 

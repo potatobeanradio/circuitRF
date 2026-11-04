@@ -97,8 +97,10 @@ public static partial class EmergeScriptWriter
          .Key("tolerance").Number(settings.Tolerance)
          .Key("initialSamples").Int(settings.InitialSamples)
          .Key("maxSamples").Int(settings.MaxSamples)
-         .Key("adaptiveMesh").Int(settings.AdaptiveMesh)
-         .EndObject();
+         .Key("adaptiveMesh").Int(settings.AdaptiveMesh);
+        // brief-sdl-8 D7 — written only when held, so every other run's problem.json is the bytes it was.
+        if (settings.HoldMeshPasses) e.Key("holdMesh").Bool(true);
+        e.EndObject();
 
         if (fields is not null)
         {

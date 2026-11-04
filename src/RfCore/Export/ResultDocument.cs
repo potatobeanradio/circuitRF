@@ -2417,7 +2417,12 @@ namespace RfCore.Export
         int Evaluations, int Geometries, int Cached, int ToSolve,
         IReadOnlyList<ExplainEmPointJson> Points,
         IReadOnlyList<string> Unreached,
-        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Refusal);
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Refusal)
+    {
+        /// <summary>brief-sdl-8 D2/D7 — for a 3D EM view: each group flattened from the layout, and what the held mesh holds.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public IReadOnlyList<string>? Notes { get; init; }
+    }
 
     /// <summary>One EM evaluation, in the order the run makes them: the instance, its geometry's cache key, and whether
     /// the cache holds it.</summary>
@@ -2779,7 +2784,13 @@ namespace RfCore.Export
         IReadOnlyList<ExplainTunableJson> Tunables,
         IReadOnlyList<string>             Unresolved,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        IReadOnlyList<ExplainSnpJson>?    Snp = null);
+        IReadOnlyList<ExplainSnpJson>?    Snp = null)
+    {
+        /// <summary>brief-sdl-8 D3 — the cell's 3D view's VARs that the schematic does not define: the view's own, not tunable
+        /// from the schematic, each with the hint that a schematic VAR of its name links it. Null when there are none.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public IReadOnlyList<string>? ThreeDOnly { get; init; }
+    }
 
     /// <summary>One SnP instance's S-parameter entries (brief-sens-2 R-sens2-4): its port count, whether one offset moves
     /// S(i,j) and S(j,i) together and why, and how many keys it offers — or why its file did not load.</summary>

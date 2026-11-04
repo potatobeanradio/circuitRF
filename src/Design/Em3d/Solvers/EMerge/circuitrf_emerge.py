@@ -825,8 +825,13 @@ def solve(problem, folder, sim, model, heard, warnings):
         return out
 
     if settings["adaptiveMesh"] > 0:
-        # Up to adaptiveMesh refinements: EMerge counts solve passes, the first on the initial mesh.
-        sim.adaptive_mesh_refinement(max_steps=settings["adaptiveMesh"] + 1)
+        # Up to adaptiveMesh refinements: EMerge counts solve passes, the first on the initial mesh. Held (brief-sdl-8 D7),
+        # every pass is made: no run of converged passes can be as long as the passes there are.
+        if settings.get("holdMesh"):
+            sim.adaptive_mesh_refinement(max_steps=settings["adaptiveMesh"] + 1,
+                                         min_refined_passes=settings["adaptiveMesh"] + 2)
+        else:
+            sim.adaptive_mesh_refinement(max_steps=settings["adaptiveMesh"] + 1)
     freqs = np.array(problem["frequenciesHz"], dtype=np.float64)
     sim.mw.set_frequency(list(freqs))
     adaptive = settings["adaptiveSweep"] and len(freqs) > settings["initialSamples"]

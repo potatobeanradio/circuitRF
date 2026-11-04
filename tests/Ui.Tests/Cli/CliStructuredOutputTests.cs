@@ -669,6 +669,7 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "dc.export.unsupported-format",
         "elab.note",
         "elab.warning",
+        "em.3d-note",             // brief-sdl-8 D2/D7
         "em.c3d.setup",
         // brief-emb-1 R-emb1-8: `em --component-ports` that cannot be applied.
         "em.component-ports.refused",

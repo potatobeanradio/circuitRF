@@ -635,7 +635,8 @@ public static class EmRunService
         IReadOnlyList<(string Name, string Expr)>? circuitSets = null,
         CircuitRF.Design.Em3d.PalaceDevice device = CircuitRF.Design.Em3d.PalaceDevice.Cpu,
         long?              memoryCeilingBytes = null,
-        CircuitRF.Design.Em3d.EmergeDevice emergeDevice = CircuitRF.Design.Em3d.EmergeDevice.Auto)
+        CircuitRF.Design.Em3d.EmergeDevice emergeDevice = CircuitRF.Design.Em3d.EmergeDevice.Auto,
+        CircuitRF.Design.ThreeD.C3dElaborator? elaborator = null)
     {
         if (control is { Token: var t } && t.CanBeCanceled) ct = t;
         // brief-em3d-73 R-em3d73-5a — a thermal setup is never run as an EM one: from a .cem it is refused outright (D1).
@@ -663,7 +664,8 @@ public static class EmRunService
             var d = EmDiagnostics.Forwarded(CircuitRF.Design.Em3d.Em3dRunService.TerminalPortsSource, terminalPorts);
             return new EmRunResult(EmRunStatus.Refused, null, null, null, null, null, d.Render(), [], Diagnostic: d);
         }
-        var elaborator = new CircuitRF.Design.ThreeD.C3dElaborator();
+        // brief-sdl-8 R-sdl8-2 — an EM-cell evaluation hands its own: placed layouts regenerated in memory, VARs at the point.
+        elaborator ??= new CircuitRF.Design.ThreeD.C3dElaborator();
         try
         {
             // brief-em3d-87 R-em3d87-2 — the inputs are hashed when the problem is assembled (an edit during the solve makes its

@@ -17,6 +17,7 @@ internal static class ExplainTunables
     {
         TunableCatalog catalog;
         Core.Design.TuningSetup? setup;
+        IReadOnlyList<string>? threeDOnly = null;
         try
         {
             switch (kind)
@@ -33,6 +34,7 @@ internal static class ExplainTunables
                                                       cws is null ? null : Path.GetDirectoryName(cws),
                                                       SchematicCircuit.ReferenceBaseOf(csch));
                     setup = model.Tuning;
+                    threeDOnly = ThreeDOnly(csch, model);
                     break;
                 }
                 case DocumentKind.Netlist:
@@ -83,7 +85,36 @@ internal static class ExplainTunables
         var snp = catalog.SnpInstances.Select(s => new ExplainSnpJson(
             s.Instance, s.Location, s.Ports, s.Tied is { } tied ? (tied ? "tied" : "untied") : null, s.TieReason, s.Entries, s.LoadError,
             folded.Contains(s.Instance) && s.Entries > 0 ? true : null)).ToList();
-        return (new ExplainTunablesJson(rows, catalog.UnresolvedKeys, snp.Count > 0 ? snp : null), 0);
+        return (new ExplainTunablesJson(rows, catalog.UnresolvedKeys, snp.Count > 0 ? snp : null) { ThreeDOnly = threeDOnly }, 0);
+    }
+
+    /// <summary>
+    /// brief-sdl-8 D3 — the VARs of the cell's 3D view that neither the schematic nor the cell's parameters define: they stay
+    /// the view's own and are not tunable from the schematic. Null when the schematic is in no cell, the cell has no 3D view,
+    /// or every VAR is linked.
+    /// </summary>
+    private static IReadOnlyList<string>? ThreeDOnly(string csch, Design.Schematic.SchematicEditModel model)
+    {
+        try
+        {
+            if (Design.Layout.Em.ParametricEm.EmCapability.CellDirOfSchematic(csch) is not { } cellDir) return null;
+            var primary = CellFolder.ResolvePrimary(cellDir, ViewType.ThreeD);
+            if (primary.State is not (PrimaryState.SoleFile or PrimaryState.NamedPresent) || primary.ResolvedName is null) return null;
+            string c3d = Path.Combine(CellFolder.SubFolderPath(cellDir, ViewType.ThreeD), primary.ResolvedName);
+            var doc = Design.ThreeD.C3dPersistence.LoadFromFile(c3d);
+            model.SchematicDirectory ??= Path.GetDirectoryName(Path.GetFullPath(csch));
+            var names = Design.Schematic.CellVariables.Values(model).Keys.ToHashSet(StringComparer.Ordinal);
+            foreach (var p in Design.ThreeD.C3dCell.OfFolder(cellDir).Parameters) names.Add(p.Name);
+            var own = doc.Variables.Where(v => !names.Contains(v.Name)).Select(v =>
+                $"VAR '{v.Name}' of the 3D view {Path.GetFileName(c3d)} is the view's own and is not tunable from the schematic; " +
+                $"add a VAR named {v.Name} to the schematic to link it.").ToList();
+            return own.Count > 0 ? own : null;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException
+                                       or InvalidDataException or ArgumentException or InvalidOperationException)
+        {
+            return null;
+        }
     }
 
     public static void Print(ExplainTunablesJson report)
@@ -142,6 +173,12 @@ internal static class ExplainTunables
                       + (b.Folded == true ? $" (folded: --snp-entries {b.Instance} lists them)" : ""));
         }
 
+        if (report.ThreeDOnly is { Count: > 0 } own)
+        {
+            Console.WriteLine();
+            Console.WriteLine("3D view VARs the schematic does not define (not tunable here):");
+            foreach (var line in own) Console.WriteLine("  " + line);
+        }
         if (report.Unresolved.Count > 0)
         {
             Console.WriteLine();

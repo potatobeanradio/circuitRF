@@ -131,6 +131,12 @@ public sealed partial class OptimizationRun
     /// <summary>The default solve budget of em=direct (D4).</summary>
     public const int DefaultDirectBudget = 30;
 
+    /// <summary>brief-sdl-8 D8 — em=correct's default budget when the EM view is a 3D setup: a 3D solve takes minutes to hours.</summary>
+    public const int DefaultCorrectBudget3D = 6;
+
+    /// <summary>brief-sdl-8 D8 — em=direct's default budget when the EM view is a 3D setup.</summary>
+    public const int DefaultDirectBudget3D = 15;
+
     /// <summary>D2 — the first step around each accepted point, as a fraction of each variable's range.</summary>
     internal const double FirstCorrectionStep = 0.1;
 
@@ -302,11 +308,27 @@ public sealed partial class OptimizationRun
             return OptimizationDiagnostics.EmStartDisagrees(string.Join(" ", made));
         if (_startSignatures.Count == 0) _notes.Add(OptimizationDiagnostics.EmConnectivityUnchecked());
 
-        // D5 — two database units, as a fraction of each length variable's range.
+        // brief-sdl-8 D8 — a 3D EM view's budgets, where the setup states none.
+        if (_settings.EmBudget is null && start.Records.Any(r => r.ThreeD))
+        {
+            _emBudget = EmMode == OptimizerEmMode.Correct ? DefaultCorrectBudget3D : DefaultDirectBudget3D;
+            _notes.Add(OptimizationDiagnostics.EmThreeDBudget(EmToken(EmMode), _emBudget));
+        }
+
+        // D5 — two database units, as a fraction of each length variable's range. brief-sdl-8 D7 — for a 3D EM view, the
+        // larger of that and the smallest element the held mesh makes: a step under one element is meshing noise.
         _dbuStep = new double[vars.Coordinates.Count];
         if (start.PathA is { } target && DbuMetres(target) is { } dbu)
+        {
+            double stepM = 2 * dbu;
+            if (start.Records.Select(r => r.SmallestElementM).OfType<double>().DefaultIfEmpty(0).Max() is var mesh && mesh > stepM)
+            {
+                stepM = mesh;
+                _notes.Add(OptimizationDiagnostics.EmMeshStepFloor(mesh));
+            }
             for (int i = 0; i < vars.Coordinates.Count; i++)
-                _dbuStep[i] = LengthStepFraction(vars.Coordinates[i], dbu, vars.Start[i]);
+                _dbuStep[i] = LengthStepFraction(vars.Coordinates[i], stepM / 2, vars.Start[i]);
+        }
 
         // D10 — each variable alone across its range; one that never changes the geometry is refused (D6).
         _ranges = [];

@@ -89,10 +89,10 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
         string? cellDir = _model.SchematicDirectory is { Length: > 0 } d ? Path.GetDirectoryName(Path.GetFullPath(d)) : null;
         _emSetupPaths = cellDir is null ? [] : CircuitRF.Design.Layout.Em.ParametricEm.EmCapability.SetupsFor(cellDir);
         EmSetupOptions = [_emSetupPaths.Count switch { 0 => "(no EM setup for this layout)", 1 => "(its one EM setup)", _ => "(choose a setup)" },
-                          .. _emSetupPaths.Select(Path.GetFileNameWithoutExtension).Cast<string>()];
+                          .. _emSetupPaths.Select(CircuitRF.Design.Layout.Em.ParametricEm.EmCapability.SetupLabel)];
         int at = existingSetup is { Length: > 0 }
-            ? _emSetupPaths.ToList().FindIndex(p => string.Equals(Path.GetFileNameWithoutExtension(p),
-                                                                 Path.GetFileNameWithoutExtension(existingSetup), StringComparison.OrdinalIgnoreCase))
+            ? _emSetupPaths.ToList().FindIndex(p => string.Equals(CircuitRF.Design.Layout.Em.ParametricEm.EmCapability.SetupLabel(p),
+                                                                 CircuitRF.Design.Layout.Em.ParametricEm.EmCapability.SetupLabel(existingSetup), StringComparison.OrdinalIgnoreCase))
             : -1;
         EmSetupIndex = at + 1;
     }
@@ -102,7 +102,7 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
     {
         inner.Model = SimulateByIndex == 1 ? AnalysisModel.Em : AnalysisModel.Circuit;
         inner.EmSetup = inner.Model == AnalysisModel.Em && EmSetupIndex > 0 && EmSetupIndex <= _emSetupPaths.Count
-            ? Path.GetFileNameWithoutExtension(_emSetupPaths[EmSetupIndex - 1]) : null;
+            ? CircuitRF.Design.Layout.Em.ParametricEm.EmCapability.SetupLabel(_emSetupPaths[EmSetupIndex - 1]) : null;
     }
 
     /// <summary>Non-null when the current Name is invalid or conflicts with an existing analysis.</summary>

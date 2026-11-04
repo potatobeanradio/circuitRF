@@ -63,7 +63,7 @@ public sealed partial class OptimizerSettingsViewModel(OptimizerPanelViewModel p
     [ObservableProperty] private string _emBudget = "";
 
     /// <summary>The budget box's placeholder: what an empty box means under the chosen mode.</summary>
-    public string EmBudgetDefault => EmModeIndex == 2 ? "30" : EmModeIndex == 3 ? "—" : "12";
+    public string EmBudgetDefault => EmModeIndex == 2 ? "30 · 3D 15" : EmModeIndex == 3 ? "—" : "12 · 3D 6";
 
     private static readonly OptimizerEmMode?[] EmModeValues = [null, OptimizerEmMode.Correct, OptimizerEmMode.Direct, OptimizerEmMode.Off];
 

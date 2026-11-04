@@ -83,6 +83,10 @@ holding the cell's own layout, ready to extend — the quickest way to take a la
 for EM into 3D. It brings in the layout's port labels as the 3D view's own ports, each the sheet a 3D run of the
 layout would build: with the layout's 3D setup when it has one, else with a default driven setup, which a message
 says. A port you do not want is deleted like any other.</p>
+<p>When the layout was made from the cell's schematic (Update Layout from Schematic), the new 3D view also gets one VAR
+per name that drives it — each cell parameter, and each VAR of the schematic at its current value — linked by name,
+so a dimension written with <code>w50</code> follows the schematic's <code>w50</code> when the cell is simulated by EM in 3D. See
+<a href="em-cells.html#in-3d">EM cells</a>.</p>
 <p>The 3D view's ports are its own from then on, each remembering which placed layout and which of its port labels it
 came from. When a placed layout's port changes afterwards (its <strong>Width</strong> or <strong>Use edge width</strong>), opening the 3D view,
 or saving the layout while it is open, posts one message per port that no longer matches, with both widths; nothing

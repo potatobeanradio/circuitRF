@@ -41,10 +41,72 @@ public static class EmCellCache
     {
         var sb = new StringBuilder(Scheme).Append('\n');
         var tech = source.Technology;
-        var solved = SolvedLayers(tech);
 
         sb.Append("dbu\t").Append(source.DbuPerMicron.ToString(CultureInfo.InvariantCulture)).Append('\n');
 
+        AppendLayout(sb, source);
+
+        sb.Append("setup\n").Append(SolveSettings(setup)).Append('\n');
+        sb.Append("stackup\n").Append(Stackup(tech)).Append('\n');
+        sb.Append("solver\t").Append(SolverIdentity(setup)).Append('\n');
+
+        return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString())))[..KeyLength];
+    }
+
+    /// <summary>Bumped when the 3D canonical form changes shape.</summary>
+    private const string Scheme3D = "crf-emcell3d-1";
+
+    /// <summary>
+    /// brief-sdl-8 D5 — the key of a cell solved through its 3D view: the regenerated layout's copper and port labels (as
+    /// <see cref="KeyOf"/> reads them), the 3D document AFTER its VARs are evaluated — every body by its numbers, the
+    /// ports, mesh regions, face boundaries and the document's air-box fill, with drawing-only state and the VAR block itself
+    /// left out, so a VAR change that moves nothing still hits — the technologies' physics, the held setup's
+    /// solve-affecting settings and the solver's identity and version.
+    /// </summary>
+    public static string KeyOf3D(EmLayoutSource source, CircuitRF.Design.ThreeD.C3dDocument resolved, EmSetup setup,
+                                 Technology? documentTech, string solverVersion)
+    {
+        var sb = new StringBuilder(Scheme3D).Append('\n');
+        sb.Append("dbu\t").Append(source.DbuPerMicron.ToString(CultureInfo.InvariantCulture)).Append('\n');
+        AppendLayout(sb, source);
+        sb.Append("c3d\n").Append(ResolvedText(resolved)).Append('\n');
+        sb.Append("setup\n").Append(SolveSettings(setup)).Append('\n');
+        sb.Append("stackup\n").Append(Stackup(source.Technology)).Append('\n');
+        sb.Append("tech3d\n").Append(documentTech is null ? "none" : CircuitRF.Design.ThreeD.C3dRunDocument.PhysicsText(documentTech)).Append('\n');
+        sb.Append("solver\t").Append(SolverIdentity(setup)).Append('|').Append(solverVersion).Append('\n');
+        return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString())))[..KeyLength];
+    }
+
+    /// <summary>
+    /// <paramref name="resolved"/> as its numbers: a file spells a bound field as its EXPRESSION and never writes the number
+    /// (C3dBindings), so every expression is set aside while the document is written, then put back. The VAR block and the
+    /// embedded setups are left out (the setup is keyed on its own), with every drawing-only field the run form drops.
+    /// </summary>
+    internal static string ResolvedText(CircuitRF.Design.ThreeD.C3dDocument resolved)
+    {
+        var owners = CircuitRF.Design.ThreeD.C3dBindings.ItemsOf(resolved)
+            .SelectMany(it => CircuitRF.Design.ThreeD.C3dBindings.OwnersOf(it.Item)).Select(o => o.Owner)
+            .Where(o => o.Exprs is not null).Distinct().ToList();
+        var exprs = owners.Select(o => o.Exprs).ToList();
+        var (vars, setups) = (resolved.Variables, resolved.Setups);
+        try
+        {
+            foreach (var o in owners) o.Exprs = null;
+            (resolved.Variables, resolved.Setups) = ([], []);
+            return CircuitRF.Design.ThreeD.C3dPersistence.SerializeForRun(resolved);
+        }
+        finally
+        {
+            for (int i = 0; i < owners.Count; i++) owners[i].Exprs = exprs[i];
+            (resolved.Variables, resolved.Setups) = (vars, setups);
+        }
+    }
+
+    /// <summary>The copper on every solved layer, flattened, then the port labels — the part of a key a layout makes.</summary>
+    private static void AppendLayout(StringBuilder sb, EmLayoutSource source)
+    {
+        var tech = source.Technology;
+        var solved = SolvedLayers(tech);
         // The copper: top-level shapes, then each instance flattened at every level, in the layout's own order (the
         // planner is deterministic, SDL-0 S5). A label is never copper; a port label is listed below.
         var copper = new LayoutView { DbuPerMicron = source.DbuPerMicron };
@@ -60,12 +122,6 @@ public static class EmCellCache
         foreach (var s in EmComponentPorts.Collect(source).Shapes)
             if (s is LabelShape { IsPort: true }) ports.Shapes.Add(s);
         sb.Append("ports\n").Append(LayoutPersistence.Serialize(ports)).Append('\n');
-
-        sb.Append("setup\n").Append(SolveSettings(setup)).Append('\n');
-        sb.Append("stackup\n").Append(Stackup(tech)).Append('\n');
-        sb.Append("solver\t").Append(SolverIdentity(setup)).Append('\n');
-
-        return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString())))[..KeyLength];
     }
 
     /// <summary>The cached Touchstone for <paramref name="key"/>, or null when this geometry has not been solved.</summary>

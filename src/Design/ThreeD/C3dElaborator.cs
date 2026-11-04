@@ -366,6 +366,21 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
 
     private readonly Dictionary<string, (C3dDocument Doc, C3dResolution Res)> _resolvedChildren = new(StringComparer.Ordinal);
 
+    /// <summary>
+    /// brief-sdl-8 R-sdl8-2 — layouts this elaborator reads from MEMORY instead of their file, by full path: a placed
+    /// layout regenerated at one parameter point (SDL-6 D2) is elaborated without its <c>.clay</c> being written. Each
+    /// view is keyed by its own identity, so two points' layouts never share a cache entry. Null reads every file.
+    /// </summary>
+    public IReadOnlyDictionary<string, LayoutView>? LayoutsInMemory { get; init; }
+
+    /// <summary>brief-sdl-8 D3 — the top document's cell as an EM evaluation states it (its parameters, and each schematic
+    /// VAR a 3D VAR is linked to by name), with <see cref="TopOverrides"/> their values at this point. Null reads the cell
+    /// from disk and binds no override, as the editor and a plain run do.</summary>
+    public C3dCell? TopCell { get; init; }
+
+    /// <summary>brief-sdl-8 D3 — the values <see cref="TopCell"/>'s names take at this point.</summary>
+    public IReadOnlyDictionary<string, C3dOverride>? TopOverrides { get; init; }
+
     /// <summary>One elaboration with no cache kept.</summary>
     public static C3dElaboration ElaborateOnce(C3dDocument document, string path, string? workspaceCws,
                                                C3dElaborationOptions? options = null, GeometryKernel? kernel = null)
@@ -634,14 +649,16 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
     {
         // The paired .wBond is in the key: wire edits are saved to it alone, so the .clay's stamp did not move and the
         // view kept drawing the old wires. The sub-cells the flatten read are checked on a hit, for the same reason.
+        LayoutView? inMemory = LayoutsInMemory?.GetValueOrDefault(Path.GetFullPath(path));
+        string stamp = inMemory is null ? Stamp(path) : "memory:" + System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(inMemory);
         string key = string.Create(CultureInfo.InvariantCulture,
-            $"layout|{path}|{Stamp(path)}|{Stamp(WBondCell.FindFor(path))}|{options.FMaxHz:R}|{options.TempC:R}|{options.RobustMeshing}|{options.SolidVias}|{options.PadsOptional}");
+            $"layout|{path}|{stamp}|{Stamp(WBondCell.FindFor(path))}|{options.FMaxHz:R}|{options.TempC:R}|{options.RobustMeshing}|{options.SolidVias}|{options.PadsOptional}");
         if (_children.TryGetValue(key, out var hit) && hit is ChildLayout c && Stamp(c.Tech.ResolvedPath) == TechStampOf(key)
             && Current(c.Tech) && c.FilesStamp == FilesStamp(c.Files))
             return c;
         ChildrenElaborated++;
         LayoutView view;
-        try { view = LayoutPersistence.LoadFromFile(path); }
+        try { view = inMemory ?? LayoutPersistence.LoadFromFile(path); }
         catch (Exception e)
         {
             var bad = new ChildLayout(null, new TechResolution(null, null, TechResolutionSource.None, []), "", e.Message);
@@ -814,7 +831,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
             var (tech, _) = TechnologyResolver.ResolveForDocument(doc.TechRef, path, workspaceCws, owner._tech);
             foreach (string d in tech.Diagnostics) _notes.Add(d);
             _topDbu = doc.DbuPerMicron;
-            var cell = options.Cell ?? C3dCell.Of(path);
+            var cell = options.Cell ?? owner.TopCell ?? C3dCell.Of(path);
             Read(path);
             Read(cell.CcellPath);
             ReadTech(tech);
@@ -825,7 +842,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
             // one wire's span blanked the whole drawing, so the one place the mistake was could not be seen either. An item
             // holding a field that did not resolve is left out (its numbers are not its expression's), except a wire whose only
             // such fields are its held loop height or span: its points are numbers of their own, so it is drawn as it stands.
-            var resolution = C3dResolver.Resolve(doc, cell, null, options.Sets);
+            var resolution = C3dResolver.Resolve(doc, cell, owner.TopOverrides, options.Sets);
             _refusals.AddRange(resolution.Errors);
             _warnings.AddRange(resolution.Warnings);
             _notes.AddRange(resolution.Notes);

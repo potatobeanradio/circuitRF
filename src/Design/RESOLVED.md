@@ -27163,3 +27163,46 @@ schematic places a `VerilogA` of that build with the FET's values, and the `.cmo
 - **Trap: a part's stored port count is not the model's.** A ComposedFET placed in memory reports 4 ports whatever the
   model; a model that does not self-heat has a 3-terminal module, and `Pins=4` is refused by the worker. Pins follow the
   model: 4 only when it self-heats.
+
+## SDL-8: simulating an EM cell through its 3D view (2026-11-03)
+
+A schematic-driven cell's EM view may be a DRIVEN setup embedded in its primary 3D view, besides a `.cem`
+(`EmCapability.Choices`; spelled `<view stem>#<setup>`, `EmCapability.SetupLabel`). An eigenmode, static or thermal
+setup makes no N-port and is not offered. Each evaluation (`EmEvaluation.ThreeD.cs`) re-plans the layout as SDL-6 does,
+then elaborates the 3D view with that layout IN MEMORY (`C3dElaborator.LayoutsInMemory`, keyed by the view's identity so
+two points never share a child-cache entry) and the point's values bound to the top document (`TopCell`/`TopOverrides`).
+
+- **Linking to a schematic VAR is a synthetic cell parameter.** `C3dResolver` already links a VAR to a cell parameter of
+  its name (em3d-51 D12). D3's schematic VARs reuse that path: each 3D VAR named like a schematic value (and not
+  `Linked: false`) gets a parameter of the same name for the evaluation, overridden with the point's value in base SI
+  (marked with the base unit, so a field's site unit is skipped). Nothing on disk records the link; outside an evaluation
+  the VAR's own expression is used, which is why New 3D View from Layout writes a schematic VAR's VALUE, not its
+  expression — the expression can read names the 3D view cannot see, and an unresolvable VAR refuses the whole view.
+- **Trap: a `.c3d` writes a bound field as its EXPRESSION and never its number.** A key made from the document's text
+  would not move when a VAR's value did. `EmCellCache.ResolvedText` sets every expression aside while the resolved
+  document is written, so the key holds the numbers; the VAR block and the setups are left out, so a VAR that moves
+  nothing keeps the key (D5). The planar key's bytes are unchanged (`AppendLayout` is the old text, moved).
+- **"Flattened from the layout" had no record.** `C3dObject.FlattenedFrom` (the layout's cell ref) is set by
+  `FlattenLayout`; it rides undo, copy and save with the object, and the run form drops it. Objects flattened before
+  this existed are not reported. D2's line names the object's group, which the flatten makes after the instance.
+- **D6 uses `Em3dBodies`, not `C3dBooleans`.** The brief pointed at `C3dBooleans`, which builds kernel booleans and has
+  no contact query. `Em3dBodies.Group` is the existing conductor-contact grouping (the one terminals and DC rows use).
+  The signature holds each body containing an object of the view's own, by its members; bodies of placed-layout copper
+  alone are left to the planar signature. Layout pieces are named by the elaboration in plan order, which is stable
+  while the planner places the same parts.
+- **D7 deviates on WHICH pass count and WHICH start.** The brief asked for the number of passes the start point needed;
+  that is known only after a solve, and a key that depends on it cannot be computed before one (the count needs every
+  key first). The passes are held at the setup's MAXIMUM, the tolerance made unreachable (Palace: `Tol` 1e-30, its schema
+  needs it positive; EMerge: `min_refined_passes` longer than the passes there are, via `CemEmerge.HoldMeshPasses`).
+  "Start values" are the design's own (saved) values rather than the run's first point, so a sweep and a later
+  optimisation share cache entries; openEMS's default merge distance (geometry-derived) and every mesh region's size
+  are held at those. Every 3D evaluation is held, a single Simulate included, for the same reason. No solver lacked a
+  way to hold its mesh: openEMS has no refinement passes to hold.
+- **D7's step floor is one length**, the least of the held mesh's conductor edge element (Palace, EMerge), openEMS's
+  merge distance and the mesh regions' sizes, rather than one per dimension.
+- **D8.** The 3D estimate is the solver's own (`EstimatePalace`, `FdtdGrid.Build` + `OpenEmsTimeEstimate`; EMerge has
+  none). A geometry whose estimate exceeds `MachineMemory.PhysicalBytes` is refused in the count, before any solve.
+  Default budgets 6/15 apply when an optimisation's start records say 3D. MCP `run` documents `async=true` for such a
+  run; nothing makes it a job automatically.
+- **No real 3D solve was added.** Every test reads geometry, keys, signatures or the solver input a held setup writes
+  (`tests/Ui.Tests/SchematicSync/EmThreeDCellTests.cs`).

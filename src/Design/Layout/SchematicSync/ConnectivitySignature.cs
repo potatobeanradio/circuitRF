@@ -35,9 +35,14 @@ public sealed record ConnectivitySignature(
     IReadOnlyList<string> Open, IReadOnlyList<string> Touching, IReadOnlyList<string> Lines,
     IReadOnlyList<string>? Parts = null)
 {
+    /// <summary>brief-sdl-8 D6 — for a cell solved through its 3D view, each conductor body after elaboration that holds a body
+    /// of the view's own (a bond wire, a connector pin, a lid), by its members joined with <c>+</c>, sorted. Null for a
+    /// planar setup.</summary>
+    public IReadOnlyList<string>? Bodies { get; init; }
+
     /// <summary>The signature as one comparable string.</summary>
     public string Text => "open:" + string.Join(",", Open) + ";touch:" + string.Join(",", Touching) +
-                          ";parts:" + string.Join(",", Parts ?? []);
+                          ";parts:" + string.Join(",", Parts ?? []) + (Bodies is null ? "" : ";bodies:" + string.Join(",", Bodies));
 
     /// <summary>Whether two signatures say the same about every joint and every pair of parts.</summary>
     public bool SameAs(ConnectivitySignature other) => Text == other.Text;
@@ -68,7 +73,49 @@ public sealed record ConnectivitySignature(
         foreach (var added in (Parts ?? []).Where(p => !(start.Parts ?? []).Contains(p, StringComparer.Ordinal)
                                                        && !(start.Parts ?? []).Any(h => h[..h.IndexOf(':')] == p[..p.IndexOf(':')])))
             parts.Add($"{added[..added.IndexOf(':')]}'s own copper no longer joins all its pins");
+        parts.AddRange(BodyChanges(start.Bodies, Bodies));
         return string.Join("; ", parts);
+    }
+
+    /// <summary>brief-sdl-8 D6 — for every member of a body at the start, what it no longer touches and what it touches now.</summary>
+    private static IEnumerable<string> BodyChanges(IReadOnlyList<string>? start, IReadOnlyList<string>? now)
+    {
+        if (start is null || now is null) yield break;
+        static Dictionary<string, HashSet<string>> ByMember(IEnumerable<string> bodies)
+        {
+            var map = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+            foreach (var b in bodies)
+            {
+                var members = b.Split('+').ToHashSet(StringComparer.Ordinal);
+                foreach (var m in members) map[m] = members;
+            }
+            return map;
+        }
+        var was = ByMember(start);
+        var isNow = ByMember(now);
+        var said = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var body in start)
+        {
+            // The body is named by its first member that is not a placed layout's piece, else its first.
+            var members = body.Split('+');
+            string who = members.FirstOrDefault(m => !m.Contains('/')) ?? members[0];
+            var nowSet = isNow.GetValueOrDefault(who) ?? [who];
+            var lost = members.Where(m => m != who && !nowSet.Contains(m)).ToList();
+            if (lost.Count > 0 && said.Add(who + "-"))
+                yield return $"'{who}' no longer touches {Names(lost)}";
+        }
+        foreach (var body in now)
+        {
+            var members = body.Split('+');
+            string who = members.FirstOrDefault(m => !m.Contains('/')) ?? members[0];
+            var wasSet = was.GetValueOrDefault(who) ?? [who];
+            var gained = members.Where(m => m != who && !wasSet.Contains(m)).ToList();
+            if (gained.Count > 0 && said.Add(who + "+"))
+                yield return $"'{who}' now touches {Names(gained)}";
+        }
+
+        static string Names(List<string> n) =>
+            string.Join(", ", n.Take(3).Select(x => $"'{x}'")) + (n.Count > 3 ? $" and {n.Count - 3} more" : "");
     }
 
     /// <summary>

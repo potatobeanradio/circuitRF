@@ -695,6 +695,7 @@ internal static class Check
             var count = EmSolveCount.Count(switched.Tb, switched.Lib, top, refBase);
             foreach (var r in count.Refusals) f.Add(CliDiagnostics.CheckEmRefused(path, top.Name, r));
             foreach (var u in count.Unreached) f.Add(CliDiagnostics.CheckEmUnreached(path, u));
+            foreach (var n in count.Notes) f.Add(CliDiagnostics.CheckEmNote(path, n));
             if (count.Any && count.Refusals.Count == 0) f.Add(CliDiagnostics.CheckEmCount(path, top.Name, count.Sentence));
         }
     }

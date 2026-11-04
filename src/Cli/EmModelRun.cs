@@ -85,6 +85,11 @@ internal sealed class EmModelRun
             Console.Error.WriteLine("Warning: " + line);
             JsonRun.Note(CliDiagnostics.EmUnreached(line));
         }
+        foreach (var line in count.Notes)
+        {
+            Console.Error.WriteLine("EM: " + line);
+            JsonRun.Note(CliDiagnostics.EmThreeDNote(line));
+        }
         if (CircuitEvaluation.EmLimitRefusal(count, MaxSolves) is { } over)
         {
             exit = count.Refusals.Count > 0
