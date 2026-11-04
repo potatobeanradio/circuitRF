@@ -16,6 +16,7 @@ keywords: tuning, tune, slider, live, sweep by hand, preset, push, snapshot, gho
 <li><a href="#complex">Complex values: tuned by their parts</a></li>
 <li><a href="#running">Start, Stop, and when the display is behind</a></li>
 <li><a href="#snapshot">Snapshot: before and after on one plot</a></li>
+<li><a href="#em">Tuning a schematic simulated by EM</a></li>
 <li><a href="#push">Push and Revert</a></li>
 <li><a href="#presets">Presets</a></li>
 <li><a href="#stored">What is stored, and where</a></li>
@@ -167,6 +168,18 @@ as coming from tuned values and which ones. Closing the schematic, Revert and Pu
 **Snapshot** keeps what every display is currently showing for this schematic as faded copies of its
 traces. Keep tuning and the live traces move away from them. **Clear snapshot** removes them.
 Snapshots last for the session and are never saved. A table has no ghosts.
+
+## Tuning a schematic simulated by EM {#em}
+
+When an analysis is [simulated by EM of the schematic's layout](em-cells.html), the sliders still drive the
+**circuit models**: a move costs milliseconds, not an EM solve.
+
+- **Solve EM here** (the cube button) runs one EM solve at the sliders' current values and draws its traces faded
+  under the live ones, where a snapshot would be. A geometry already in the EM cache costs no solve. Move a slider
+  and the line under the toolbar says the EM traces are stale. They stay where they were solved.
+- **Circuit + EM correction** (the button beside it) adds the last solve's difference between EM and the circuit
+  model to the live traces. It is exact at the values that were solved and an estimate elsewhere, and the
+  display's chip says *circuit + EM correction (estimate)* while it is on.
 
 ## Push and Revert {#push}
 

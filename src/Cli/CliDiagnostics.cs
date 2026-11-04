@@ -4845,6 +4845,17 @@ internal static class CliDiagnostics
 
     /// <summary><c>--save-preset</c> on a netlist: a <c>.cnl</c> is text the caller writes, so the
     /// preset is a line the caller adds (overview D14).</summary>
+    /// <summary>brief-sdl-7 R-sdl7-8.</summary>
+    public static Diagnostic OptApplyNeedsSchematic(string path) => Diagnostic.Create(
+        "cli.opt.apply-needs-schematic", DiagnosticSeverity.Error,
+        "opt: --apply writes the best values into a schematic's VAR block and updates its layout, and '{path}' is a netlist.",
+        ("path", path));
+
+    public static Diagnostic OptApplyNotEm() => Diagnostic.Create(
+        "cli.opt.apply-not-em", DiagnosticSeverity.Warning,
+        "opt: --apply writes an EM-verified result into the schematic and its layout; this run was by circuit models, so " +
+        "nothing was applied. Write the values back with the Optimizer's Push, or --save-preset.");
+
     public static Diagnostic OptSavePresetNeedsSchematic(string path) => Diagnostic.Create(
         "cli.opt.preset-needs-schematic", DiagnosticSeverity.Error,
         "opt: --save-preset adds a preset to a schematic's tuning block, and '{path}' is a netlist. " +

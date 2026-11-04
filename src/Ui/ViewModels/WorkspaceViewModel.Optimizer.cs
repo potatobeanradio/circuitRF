@@ -70,6 +70,7 @@ public partial class WorkspaceViewModel
         panel.GoalContext       = GoalContextFor;
         panel.PreviewSource     = GoalPreviewFor;
         panel.SendToTuningTarget = SendToTuning;
+        panel.UpdateLayoutAfterEm = UpdateLayoutAfterEmPush;   // brief-sdl-7 R-sdl7-8
         panel.OpenSensitivityPanel = OpenSensitivityPanelOn;   // brief-sens-3 R-sens3-8: the button with no run
         panel.TakingDisplay     = tuned => _factory.TuningTool?.Panel.EndSessionFor(tuned, "the Optimizer is running");
         panel.ReportProblem     = text => Messages.Error($"Optimizer: {text}");   // issue #33

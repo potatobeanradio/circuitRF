@@ -182,6 +182,13 @@ public static class StatisticsDiagnostics
 
     // ── YA-4: the run ──────────────────────────────────────────────────────
 
+    /// <summary>brief-sdl-7 D8.</summary>
+    public static Diagnostic EmTrials(string what, long trials, string analyses) => Diagnostic.Create(
+        "yield.run.em", DiagnosticSeverity.Error,
+        "{what} needs {trials} evaluations, and {analyses} would make each an EM solve. Run it by circuit models with " +
+        "--em off (MCP: em=off; in the panel, set the analysis to Simulate by circuit models).",
+        ("what", what), ("trials", trials.ToString(System.Globalization.CultureInfo.InvariantCulture)), ("analyses", analyses));
+
     public static Diagnostic RunNoYieldGoal() => Diagnostic.Create(
         "yield.run.no-yield-goal", DiagnosticSeverity.Error,
         "A yield run needs an enabled goal with use=yield or use=both to pass or fail each trial against; run a Monte Carlo to see the spread alone.");

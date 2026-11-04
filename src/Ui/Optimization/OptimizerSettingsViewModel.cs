@@ -46,6 +46,27 @@ public sealed partial class OptimizerSettingsViewModel(OptimizerPanelViewModel p
     /// <summary>With corners, whether the nominal is evaluated too.</summary>
     [ObservableProperty] private bool _includeNominal = true;
 
+    /// <summary>brief-sdl-7 D1 — the em= choices, in <see cref="EmModeIndex"/>'s order: unset (the default), then the three modes.</summary>
+    public string[] EmModes { get; } =
+    [
+        "Automatic — correct when a goal is simulated by EM",
+        "Correct the circuit models with EM",
+        "Every evaluation by EM",
+        "Circuit models only",
+    ];
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(EmBudgetDefault))]
+    private int _emModeIndex;
+
+    /// <summary>brief-sdl-7 D4 — the solve budget; empty is the mode's default.</summary>
+    [ObservableProperty] private string _emBudget = "";
+
+    /// <summary>The budget box's placeholder: what an empty box means under the chosen mode.</summary>
+    public string EmBudgetDefault => EmModeIndex == 2 ? "30" : EmModeIndex == 3 ? "—" : "12";
+
+    private static readonly OptimizerEmMode?[] EmModeValues = [null, OptimizerEmMode.Correct, OptimizerEmMode.Direct, OptimizerEmMode.Off];
+
     /// <summary>The algorithm accepts one cost form only, which it sets (TO-7 R-to7-6).</summary>
     [ObservableProperty] private bool _costLocked;
 
@@ -92,6 +113,8 @@ public sealed partial class OptimizerSettingsViewModel(OptimizerPanelViewModel p
         AllAnalyses    = s.Scope == OptimizerScope.All;
         Corners        = s.Corners ?? "";
         IncludeNominal = s.Nominal != false;
+        EmModeIndex    = Math.Max(0, Array.IndexOf(EmModeValues, s.Em));
+        EmBudget       = s.EmBudget?.ToString(CultureInfo.InvariantCulture) ?? "";
         CostLocked     = alg.Costs.Count == 1;
         IsMinimax      = CostLocked ? alg.Costs[0] == OptimizerCost.Minimax : s.Cost == OptimizerCost.Minimax;
         AlgorithmLabel = alg.Label;
@@ -119,6 +142,8 @@ public sealed partial class OptimizerSettingsViewModel(OptimizerPanelViewModel p
         s.Corners        = corners.Length == 0 || corners is ["none" or "None"] ? null
                          : corners is ["all" or "All"] ? "all" : string.Join(',', corners);
         s.Nominal        = IncludeNominal ? null : false;
+        s.Em             = EmModeValues[Math.Clamp(EmModeIndex, 0, EmModeValues.Length - 1)];
+        s.EmBudget       = Int(EmBudget);
         // A one-form algorithm sets its form when it runs; the file keeps the user's own choice.
         if (!CostLocked) s.Cost = IsMinimax ? OptimizerCost.Minimax : OptimizerCost.LeastSquares;
 

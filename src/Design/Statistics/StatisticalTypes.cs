@@ -27,6 +27,10 @@ public sealed record StatisticalOptions
     /// <summary><c>--set name=expr</c> overrides, applied before the trial's values as a run verb applies them.</summary>
     public IReadOnlyList<(string Name, string Expression)> Sets { get; init; } = [];
 
+    /// <summary>brief-sdl-7 D8 — false runs every trial by circuit models (<c>--em off</c>); null as the design says, which
+    /// for an analysis simulated by EM is a refusal: a trial count of EM solves is not a run anyone waits for.</summary>
+    public bool? Em { get; init; }
+
     /// <summary>Told after every batch.</summary>
     public IProgress<StatisticalProgress>? Progress { get; init; }
 

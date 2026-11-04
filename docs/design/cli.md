@@ -4830,3 +4830,34 @@ workspace's generated-cell store, as Update Layout would; nothing a user authore
 
 Gates: `tests/Ui.Tests/SchematicSync/ParametricEmStubTests.cs` (no solver) and `ParametricEmCellTests.cs` (one coarse
 real solve, Benchmark tier), `tests/Core.Tests/Elaboration/ParametricModelSeamTests.cs`.
+
+## 37. Optimising geometry by EM: `--em`, `--em-budget`, `--apply` on `opt` (brief-sdl-7)
+
+The `optimize` line takes `em=off|correct|direct` and `emBudget=N`; `opt` overrides them for one run with `--em` and
+`--em-budget` (MCP `run analysis=optimize`: `emMode`, `emBudget`). With neither, a run whose goals read an analysis
+run by EM (or that places a part set to EM) uses `correct`, and any other uses `off`. Everything is
+`OptimizationRun`'s; the verb only reads flags and reports. `correct` searches the circuit model (every evaluation
+`CircuitEvaluationRequest.Em = false`), solves EM at the proposed point, and adds each goal's offset EM − circuit to the
+next search, in goal space, inside `GoalResiduals`' scoring, never in the goal text. `direct` makes every evaluation an
+EM solve and accepts pattern, simplex, trust_region and bayes (`tuning.optimize.em-direct-algorithm`; auto runs
+pattern). The budget counts uncached solves; a run at it stops and keeps its best **EM-verified** point
+(`result.optimize.em.stoppedByBudget`).
+
+Before the first solve the run checks its start (`opt.em.start`, `opt.em.start-connectivity`), refuses a value that
+cannot reach the copper (`opt.em.unreached`, `opt.em.not-variable`, `opt.em.no-effect`) and scans each variable's
+range for connectivity (`opt.em.connected-range`, `result.optimize.em.connectedRanges`). Every candidate is planned and
+its `ConnectivitySignature` compared with the start's; a different one is an infeasible point with no solve, its
+reason in `EvaluationRecord.Why`. `result.optimize.em.solves` is one row per EM evaluation: its values, geometry
+key, whether the cache held it, cost and per-goal margins. The `.npy` history adds them over axis `em_solve`, labelled
+by key.
+
+`--apply` (MCP `apply`) on a `.csch` writes the best values into the VAR block as Push spells them, runs Update Layout
+from Schematic headlessly (`EmApply`, the planner, hand edits kept), and compares the saved layout's EM cache key with
+the best point's (`result.optimize.em.applied`). A mismatch, or a refusal, exits 1. A history checkpoint is taken
+first. A run by circuit models applies nothing and says so (`cli.opt.apply-not-em`).
+
+`yield` (mc, estimate, trial) and `yield sens` refuse a run whose analyses go through EM, giving the trial count
+(`yield.run.em`). `--em off` (MCP `em=off`) runs them by circuit models.
+
+Gate: `tests/Ui.Tests/SchematicSync/EmOptimizationTests.cs`, every solve a stub (the circuit model with a known
+error) written where a real solve writes.

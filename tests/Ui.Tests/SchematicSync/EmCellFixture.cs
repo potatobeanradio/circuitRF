@@ -18,9 +18,10 @@ internal sealed record EmCellFixture(SdlChecker.Prepared P, string Cem)
     public string Csch => P.SchematicPath;
 
     public static EmCellFixture Create(string design, string scratch, AnalysisModel sparamModel = AnalysisModel.Circuit,
-                                       ParametricSweepAnalysis? sweep = null)
+                                       ParametricSweepAnalysis? sweep = null, Action<SchematicEditModel>? edit = null)
     {
         var p = SdlChecker.Prepare(design, Path.Combine(scratch, design));
+        edit?.Invoke(p.Model);   // before the layout is planned, so the layout is made from the edited schematic
         var layout = p.Applied(p.Plan());
         LayoutPersistence.SaveToFile(p.ClayPath, layout);
         var created = EmSetupCreate.Create(p.Workspace, design, EmSetupCreate.LayoutRefOf(p.Workspace, p.ClayPath), s =>

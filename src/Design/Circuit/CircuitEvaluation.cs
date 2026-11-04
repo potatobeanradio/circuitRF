@@ -525,14 +525,35 @@ public static class CircuitEvaluation
         nl.MergeDiagnosticsFrom(emNl);
         if (em.PathA is not null) notes.Add(em.Describe(pa.ResultName));
         foreach (var line in scope.Records.SelectMany(r => r.Unreached).Distinct()) nl.AddWarningOnce("em-unreached:" + line, line);
+        // brief-sdl-7 R-sdl7-7: a sweep may be studying exactly where the copper joins or parts, so such points are solved —
+        // and said, against the first point's connectivity.
+        foreach (var line in EmConnectivityChanges(scope.Records)) nl.AddWarningOnce("em-connectivity:" + line, line);
         return ds is null ? null : EmResultStamp.Stamp(ds, em, scope.Records);
+    }
+
+    /// <summary>brief-sdl-7 R-sdl7-7 — one sentence per evaluation whose copper connects differently from the first
+    /// evaluation of the same instance.</summary>
+    internal static IEnumerable<string> EmConnectivityChanges(IReadOnlyList<EmEvaluationRecord> records)
+    {
+        var first = new Dictionary<string, EmEvaluationRecord>(StringComparer.Ordinal);
+        var said = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var r in records)
+        {
+            if (r.Connectivity is not { } sig) continue;
+            if (!first.TryGetValue(r.InstancePath, out var f)) { first[r.InstancePath] = r; continue; }
+            if (sig.DifferenceFrom(f.Connectivity!) is { } diff && said.Add(r.Key ?? r.At))
+                yield return $"{r.Cell} at {(r.At.Length == 0 ? "its own values" : r.At)}: the copper connects differently from the " +
+                             $"first point{(f.At.Length == 0 ? "" : $" ({f.At})")} — {diff}. Solved as drawn.";
+        }
     }
 
     /// <summary>
     /// brief-sdl-6 D5 — the EM evaluations a plan will make, at every point, solving nothing: one count over every
     /// chain the plan runs by EM. <see cref="EmSolveCountResult.None"/> when it runs nothing by EM.
     /// </summary>
-    public static EmSolveCountResult CountEmSolves(RunPlan plan, RunControl? control = null)
+    /// <param name="estimate">Whether each unsolved geometry's cost is estimated; a probe of geometry and connectivity
+    /// alone (brief-sdl-7) says no, since the estimate meshes the layout.</param>
+    public static EmSolveCountResult CountEmSolves(RunPlan plan, RunControl? control = null, bool estimate = true)
     {
         var records = new List<EmEvaluationRecord>();
         foreach (var pa in plan.Analyses)
@@ -540,7 +561,7 @@ public static class CircuitEvaluation
             if (pa.EmRefusal is { } refusal)
                 records.Add(new EmEvaluationRecord(pa.ResultName, "", null, false, refusal, null, []));
             else if (pa.Em is { } em && pa.Typed is not null)
-                records.AddRange(EmSolveCount.CountRecords(em.Tb, em.Lib, pa.Typed, plan.BaseDirectory, control));
+                records.AddRange(EmSolveCount.CountRecords(em.Tb, em.Lib, pa.Typed, plan.BaseDirectory, control, estimate));
         }
         return EmSolveCount.Summarise(records);
     }

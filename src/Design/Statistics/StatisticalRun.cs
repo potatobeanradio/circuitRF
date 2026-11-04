@@ -66,7 +66,7 @@ public sealed class StatisticalRun
         Mode = options.Mode;
 
         _eval = OptimizationRun.ForEvaluation(circuit,
-            new OptimizationOptions { Setup = options.Setup, Sets = options.Sets, Cancellation = options.Cancellation },
+            new OptimizationOptions { Setup = options.Setup, Sets = options.Sets, Cancellation = options.Cancellation, EvaluateEm = options.Em },
             options.Mode == StatisticalMode.Yield ? GoalUse.Yield : GoalUse.Both);
         if (_eval.Refusal is { } refused) { Refusal = refused; return; }
         if (circuit.Lib is not { } lib || circuit.Tb is not { } tb) { Refusal = OptimizationDiagnostics.EvaluationFailed(circuit.ReadError ?? ""); return; }
@@ -174,6 +174,10 @@ public sealed class StatisticalRun
     public StatisticalResult Run()
     {
         if (Refusal is { } refused) return Result = Refused(refused);
+        // brief-sdl-7 D8: asked at the run, not at construction, which is also what check does.
+        if (_eval?.EmAnalyses() is { Count: > 0 } byEm)
+            return Result = Refused(StatisticsDiagnostics.EmTrials(Mode == StatisticalMode.Yield ? "A yield run" : "A Monte Carlo run",
+                                                                   _settings.EffectiveTrials, string.Join(", ", byEm)));
 
         var ct = _options.Cancellation;
         var sw = Stopwatch.StartNew();

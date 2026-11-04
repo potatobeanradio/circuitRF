@@ -50,6 +50,7 @@
 <li><a href="#cache">The EM cache</a></li>
 <li><a href="#count">The solve count</a></li>
 <li><a href="#unreached">A variable that does not reach the copper</a></li>
+<li><a href="#optimise">Optimising geometry</a></li>
 <li><a href="#headless">From the command line</a></li>
 </ol>
 </nav>
@@ -150,6 +151,59 @@ part, and the run says so:</p>
 <p>w50 does not reach ML3.W, which is set in the layout.</p>
 </blockquote>
 <p><code>circuitrf check</code> says it too. Sweeping or optimising such a variable moves nothing on that part.</p>
+<h2 id="optimise">Optimising geometry</h2>
+<p>The VAR block's variables are already tunables, so an analysis run by EM can be optimised in the schematic you
+drew: tick the variables in the Optimizer, add goals on that analysis, and run. What an EM solve costs decides how,
+and the <strong>EM</strong> section of the Optimizer's ⚙ settings (the <code>.cnl</code> keys <code>em=</code> and <code>emBudget=</code> on the <code>optimize</code> line)
+offers three ways:</p>
+<ul>
+<li><strong>Correct the circuit models with EM</strong> (<code>em=correct</code>, the default when a goal reads an analysis run by EM). The
+same schematic, its analysis run by circuit models, does the searching: it costs nothing and is usually close. Each
+EM solve records, for every goal at every point of its trace, how far EM is from the circuit model, and the next
+search adds that difference while staying within a step of the solved point. A worse EM result halves the step.
+It stops when EM meets every goal, when the next point would be the same copper as the last, when the step is
+smaller than the layout's database unit, or at the budget. A handful of solves is typical.</li>
+<li><strong>Every evaluation by EM</strong> (<code>em=direct</code>). The search runs on EM itself, each distinct geometry solved once and
+then read from the EM cache. Only algorithms that work in few evaluations are accepted: pattern search, simplex,
+the trust-region model and Bayesian (Automatic runs pattern search).</li>
+<li><strong>Circuit models only</strong> (<code>em=off</code>).</li>
+</ul>
+<p><strong>Most EM solves</strong> (<code>emBudget=</code>, 12 by default when correcting, 30 when every evaluation is EM) caps the solves the
+run may make; geometries already in the cache are free. The run stops there and keeps its best point. <strong>The best
+point is always one EM has scored</strong>: what Push writes back is never a circuit-model answer.</p>
+<p>Correcting lifts or lowers the circuit model's response by what EM says. When EM moves a response in
+frequency instead, say a resonance a few percent lower, that correction is slow. The run says so when it ends
+short of its goals; then run a short pass with every evaluation by EM, starting from where it stopped.</p>
+<p>A length is never stepped by less than two database units of the layout, because a smaller step leaves the
+copper unchanged. A variable that cannot change the copper (one that <a href="#unreached">does not reach it</a>, or a part's
+value rather than a variable) is refused before anything is solved.</p>
+<h3 id="the-copper-stays-connected">The copper stays connected</h3>
+<p>Optimising changes lengths, widths and gaps, never which pieces of metal touch. Before the first solve the run
+plans the layout at the start values and records which joints close, which parts' copper is kept apart, and, for a
+part such as a coupled line, which of its own pins its copper joins. A start whose loop does not close, or whose
+copper overlaps where the schematic does not join it, is refused, quoting Update Layout's report. A joint you
+opened by hand is part of the design and is kept open.</p>
+<p>Every candidate point is planned first, which takes milliseconds. One that would open a joint or make two
+parts on different nets touch is not solved. The run's history says why, for example:</p>
+<blockquote>
+<p>L90 = 0.05 mm: ML3 overlaps ML4 (nets n3/n9, n6/n12): the schematic's lengths make these cross</p>
+</blockquote>
+<p>A gap you designed, such as a coupled line's spacing, may vary freely as long as its two sides stay apart.</p>
+<p>Before the first solve each variable is also scanned alone across its range, and the run says where its copper
+stays connected:</p>
+<blockquote>
+<p>L90: connected from 0.144 mm to 6 mm (range 0.05 mm to 6 mm).</p>
+</blockquote>
+<p>The Optimizer's <strong>Tighten to the connected ranges</strong> button sets each such variable's range to that interval.</p>
+<h3 id="applying-the-result">Applying the result</h3>
+<p>Push writes the best values into the VAR block, as values you typed, in one undo step. With a result from EM it
+then runs <strong>Update Layout from Schematic</strong>, which keeps your hand edits, and checks that the layout now drawn is
+exactly the geometry EM solved. The status line says so, or says that it is not.</p>
+<h3 id="sweeps-yield-and-sensitivity">Sweeps, yield and sensitivity</h3>
+<p>A parametric sweep over the variables of an analysis run by EM solves (or reads from the cache) each of its points.
+A point whose copper connects differently from the first point's is solved as drawn, and the run says so. A yield,
+Monte Carlo or sensitivity run needs too many evaluations to make each one an EM solve, so it is refused with its
+count. Run it by circuit models with <code>--em off</code>, or set the analysis to simulate by circuit models.</p>
 <h2 id="headless">From the command line</h2>
 <p>The analysis's choice is the <code>.cnl</code> key <code>model=em</code> (and <code>emSetup=</code> when the layout has several setups); a
 schematic run headless honours it. Every run verb also takes:</p>
@@ -158,6 +212,11 @@ schematic run headless honours it. Every run verb also takes:</p>
 <li><code>--em off</code> — run everything by circuit models;</li>
 <li><code>--em-max-solves N</code> — the most uncached solves the run may start (default 20).</li>
 </ul>
+<p><code>circuitrf opt</code> takes <code>--em off|correct|direct</code> and <code>--em-budget N</code> for one run, and <code>--apply</code>: the best
+EM-verified values are written into the schematic's VAR block, its layout is updated from the schematic, and the
+saved layout's geometry is checked against the one EM solved. A mismatch is an error, exit 1. The report's <code>em</code> object
+lists every EM evaluation (its values, its geometry, whether the cache held it, each goal's margin) and each
+variable's connected range. <code>yield</code> and <code>yield sens</code> take <code>--em off</code>.</p>
 <p><code>circuitrf explain &lt;file&gt; --analysis</code> lists, for each analysis run by EM, every evaluation in run order and
 whether the cache holds it. The details are in <a href="cli.html">the command line reference</a>.</p>
 

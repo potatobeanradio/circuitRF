@@ -457,6 +457,22 @@ internal static partial class Reference
         sb.AppendLine("Every algorithm also takes:");
         foreach (var o in OptimizerAlgorithms.CommonOptions) sb.AppendLine($"  {o.Name,-16} {o.Default,-8} {o.Summary}".TrimEnd());
         sb.AppendLine();
+        // brief-sdl-7: optimizing geometry by EM.
+        sb.AppendLine("Optimizing by EM — when a goal reads an analysis with model=em (the schematic simulated by EM of its own");
+        sb.AppendLine("layout), em= on the optimize line says how:");
+        sb.AppendLine($"  {"correct",-16} {"default",-8} The algorithm above searches the circuit models; each EM solve records every goal's offset");
+        sb.AppendLine($"  {"",-16} {"",-8} (EM minus circuit, sample by sample) and the next search adds it, within a step of the last EM point.");
+        sb.AppendLine($"  {"",-16} {"",-8} A response EM shifts in frequency, rather than lifts, is corrected slowly: then run a short direct pass.");
+        sb.AppendLine($"  {"direct",-16} {"",-8} Every evaluation is an EM solve, cached by geometry. Only {string.Join(", ", OptimizerAlgorithms.ForEmDirect)};");
+        sb.AppendLine($"  {"",-16} {"",-8} auto runs {OptimizerAlgorithms.EmDirectAuto}.");
+        sb.AppendLine($"  {"off",-16} {"",-8} Circuit models only.");
+        sb.AppendLine("emBudget= caps the uncached solves (12 for correct, 30 for direct); the run stops there and returns its best");
+        sb.AppendLine("EM-verified point. A length is never stepped by less than two database units of the layout. Every candidate");
+        sb.AppendLine("is planned first and refused, with no solve, when its copper would open a joint or touch copper of another");
+        sb.AppendLine("net; each variable's connected range is reported before the first solve.");
+        sb.AppendLine();
+        sb.AppendLine("    optimize algorithm=pattern em=direct emBudget=20");
+        sb.AppendLine();
         sb.AppendLine("See also: reference tuning (the optimize line's other keys), reference goals (what it minimizes).");
         return sb.ToString();
     }

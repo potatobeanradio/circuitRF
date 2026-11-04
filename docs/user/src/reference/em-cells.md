@@ -18,6 +18,7 @@ keywords: EM, model=em, parametric EM, EM cell, EM cache, solve count, Simulate 
 <li><a href="#cache">The EM cache</a></li>
 <li><a href="#count">The solve count</a></li>
 <li><a href="#unreached">A variable that does not reach the copper</a></li>
+<li><a href="#optimise">Optimising geometry</a></li>
 <li><a href="#headless">From the command line</a></li>
 </ol>
 </nav>
@@ -139,6 +140,71 @@ part, and the run says so:
 
 `circuitrf check` says it too. Sweeping or optimising such a variable moves nothing on that part.
 
+## Optimising geometry {#optimise}
+
+The VAR block's variables are already tunables, so an analysis run by EM can be optimised in the schematic you
+drew: tick the variables in the Optimizer, add goals on that analysis, and run. What an EM solve costs decides how,
+and the **EM** section of the Optimizer's ⚙ settings (the `.cnl` keys `em=` and `emBudget=` on the `optimize` line)
+offers three ways:
+
+- **Correct the circuit models with EM** (`em=correct`, the default when a goal reads an analysis run by EM). The
+  same schematic, its analysis run by circuit models, does the searching: it costs nothing and is usually close. Each
+  EM solve records, for every goal at every point of its trace, how far EM is from the circuit model, and the next
+  search adds that difference while staying within a step of the solved point. A worse EM result halves the step.
+  It stops when EM meets every goal, when the next point would be the same copper as the last, when the step is
+  smaller than the layout's database unit, or at the budget. A handful of solves is typical.
+- **Every evaluation by EM** (`em=direct`). The search runs on EM itself, each distinct geometry solved once and
+  then read from the EM cache. Only algorithms that work in few evaluations are accepted: pattern search, simplex,
+  the trust-region model and Bayesian (Automatic runs pattern search).
+- **Circuit models only** (`em=off`).
+
+**Most EM solves** (`emBudget=`, 12 by default when correcting, 30 when every evaluation is EM) caps the solves the
+run may make; geometries already in the cache are free. The run stops there and keeps its best point. **The best
+point is always one EM has scored**: what Push writes back is never a circuit-model answer.
+
+Correcting lifts or lowers the circuit model's response by what EM says. When EM moves a response in
+frequency instead, say a resonance a few percent lower, that correction is slow. The run says so when it ends
+short of its goals; then run a short pass with every evaluation by EM, starting from where it stopped.
+
+A length is never stepped by less than two database units of the layout, because a smaller step leaves the
+copper unchanged. A variable that cannot change the copper (one that [does not reach it](#unreached), or a part's
+value rather than a variable) is refused before anything is solved.
+
+### The copper stays connected
+
+Optimising changes lengths, widths and gaps, never which pieces of metal touch. Before the first solve the run
+plans the layout at the start values and records which joints close, which parts' copper is kept apart, and, for a
+part such as a coupled line, which of its own pins its copper joins. A start whose loop does not close, or whose
+copper overlaps where the schematic does not join it, is refused, quoting Update Layout's report. A joint you
+opened by hand is part of the design and is kept open.
+
+Every candidate point is planned first, which takes milliseconds. One that would open a joint or make two
+parts on different nets touch is not solved. The run's history says why, for example:
+
+> L90 = 0.05 mm: ML3 overlaps ML4 (nets n3/n9, n6/n12): the schematic's lengths make these cross
+
+A gap you designed, such as a coupled line's spacing, may vary freely as long as its two sides stay apart.
+
+Before the first solve each variable is also scanned alone across its range, and the run says where its copper
+stays connected:
+
+> L90: connected from 0.144 mm to 6 mm (range 0.05 mm to 6 mm).
+
+The Optimizer's **Tighten to the connected ranges** button sets each such variable's range to that interval.
+
+### Applying the result
+
+Push writes the best values into the VAR block, as values you typed, in one undo step. With a result from EM it
+then runs **Update Layout from Schematic**, which keeps your hand edits, and checks that the layout now drawn is
+exactly the geometry EM solved. The status line says so, or says that it is not.
+
+### Sweeps, yield and sensitivity
+
+A parametric sweep over the variables of an analysis run by EM solves (or reads from the cache) each of its points.
+A point whose copper connects differently from the first point's is solved as drawn, and the run says so. A yield,
+Monte Carlo or sensitivity run needs too many evaluations to make each one an EM solve, so it is refused with its
+count. Run it by circuit models with `--em off`, or set the analysis to simulate by circuit models.
+
 ## From the command line {#headless}
 
 The analysis's choice is the `.cnl` key `model=em` (and `emSetup=` when the layout has several setups); a
@@ -147,6 +213,12 @@ schematic run headless honours it. Every run verb also takes:
 - `--em on` — run every analysis by EM, and every EM-capable part by EM;
 - `--em off` — run everything by circuit models;
 - `--em-max-solves N` — the most uncached solves the run may start (default 20).
+
+`circuitrf opt` takes `--em off|correct|direct` and `--em-budget N` for one run, and `--apply`: the best
+EM-verified values are written into the schematic's VAR block, its layout is updated from the schematic, and the
+saved layout's geometry is checked against the one EM solved. A mismatch is an error, exit 1. The report's `em` object
+lists every EM evaluation (its values, its geometry, whether the cache held it, each goal's margin) and each
+variable's connected range. `yield` and `yield sens` take `--em off`.
 
 `circuitrf explain <file> --analysis` lists, for each analysis run by EM, every evaluation in run order and
 whether the cache holds it. The details are in [the command line reference](cli.html).

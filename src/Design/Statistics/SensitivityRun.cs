@@ -20,6 +20,10 @@ public sealed record SensitivityOptions
     /// <summary><c>--set name=expr</c> overrides, applied before each evaluation's values as a run verb applies them.</summary>
     public IReadOnlyList<(string Name, string Expression)> Sets { get; init; } = [];
 
+    /// <summary>brief-sdl-7 D8 — false runs every evaluation by circuit models (<c>--em off</c>); null as the design
+    /// says, which for an analysis simulated by EM is a refusal.</summary>
+    public bool? Em { get; init; }
+
     /// <summary><c>--vars</c>: only these of the factors the run would step; null steps them all.</summary>
     public IReadOnlyList<string>? Vars { get; init; }
 
@@ -359,7 +363,8 @@ public sealed class SensitivityRun
         if (_settings.Parallelism is { } p) st.Parallelism = p;
         evalSetup.Statistics = st;
         _eval = OptimizationRun.ForEvaluation(circuit,
-            new OptimizationOptions { Setup = evalSetup, Sets = options.Sets, Cancellation = options.Cancellation }, GoalUse.Both);
+            new OptimizationOptions { Setup = evalSetup, Sets = options.Sets, Cancellation = options.Cancellation, EvaluateEm = options.Em },
+            GoalUse.Both);
         if (_eval.Refusal is { } refused) { Refusal = refused; return; }
         // A yield run's warning that nothing varies is about trials; a sensitivity run moves the values itself.
         _notes.AddRange(_eval.Notes.Where(n => n.Id != "yield.goal.nothing-varies"));
@@ -561,6 +566,12 @@ public sealed class SensitivityRun
     {
         if (Refusal is { } refused)
             return Result = new SensitivityResult { Outcome = SensitivityOutcome.Refused, Refusal = refused, FinishReason = refused.Render(), Notes = _notes };
+        // brief-sdl-7 D8: asked at the run, not at construction, which is also what check does.
+        if (_eval?.EmAnalyses() is { Count: > 0 } byEm)
+        {
+            var em = StatisticsDiagnostics.EmTrials("A sensitivity run", PlannedEvaluations, string.Join(", ", byEm));
+            return Result = new SensitivityResult { Outcome = SensitivityOutcome.Refused, Refusal = em, FinishReason = em.Render(), Notes = _notes };
+        }
 
         var ct = _options.Cancellation;
         var sw = Stopwatch.StartNew();

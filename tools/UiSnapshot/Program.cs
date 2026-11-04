@@ -735,6 +735,11 @@ else if (tuning is not null)
     // The Tuning window as the shell hosts it: a TuningTool whose panel follows one schematic.
     var (model, _, _) = SchematicPersistence.LoadFromFile(tuning);
     tuningTool = new TuningTool();
+    // Start runs a real session on the file's circuit, with no display to publish to (brief-sdl-7: so a running
+    // session's toolbar — Solve EM here — can be looked at).
+    string tuningFile = tuning;
+    tuningTool.Panel.CreateSession = (_, analyses) => CircuitRF.Ui.Tuning.TuneSession.ForCircuit(
+        CircuitRF.Design.Circuit.PreparedCircuit.FromSchematic(tuningFile), null, a => Dispatcher.UIThread.Post(a), analyses);
     tuningTool.Panel.SetActiveSchematic(new SchematicViewModel(model, messageSink: null), Path.GetFileName(tuning));
     host = new Window { Width = sizeGiven ? width : 420, Height = sizeGiven ? height : 500,
                         Content = new TuningToolView { DataContext = tuningTool } };

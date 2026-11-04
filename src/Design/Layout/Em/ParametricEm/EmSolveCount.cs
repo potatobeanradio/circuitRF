@@ -64,10 +64,10 @@ public static class EmSolveCount
 
     /// <summary>The records of one chain's count, for a caller summing several chains.</summary>
     public static IReadOnlyList<EmEvaluationRecord> CountRecords(TestBench tb, Library lib, Analysis top, string? baseDirectory,
-                                                                 RunControl? control = null)
+                                                                 RunControl? control = null, bool estimate = true)
     {
         ParametricEmProvider.Register();
-        using var scope = EmEvaluationScope.Begin(countOnly: true, control: control);
+        using var scope = EmEvaluationScope.Begin(countOnly: true, control: control, estimate: estimate);
         try { Walk(top); }
         catch (Exception e) when (e is not OperationCanceledException)
         {

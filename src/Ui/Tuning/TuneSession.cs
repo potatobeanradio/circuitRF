@@ -51,6 +51,15 @@ public interface ITuneResultSink
     /// <summary>brief-sar-10 R-sar10-3 — a displayed result's fields analyses rewrote their recombined SAR and B1 beside the
     /// field set: a 3D view showing one draws it again (UI thread).</summary>
     void FieldsWritten(IReadOnlyList<FieldsArtifact> fields) { }
+
+    /// <summary>brief-sdl-7 D7 — shows <paramref name="data"/> (an EM solve's result) as the faded traces under the live
+    /// ones; null removes them.</summary>
+    void ShowOverlay(DataSet? data) { }
+
+    /// <summary>brief-sdl-7 D7 — every later <see cref="Publish(DataSet)"/> goes through <paramref name="correct"/> (the
+    /// last EM solve's offset added), and the display's chip says <paramref name="label"/>; null for both returns to the
+    /// circuit model as it is.</summary>
+    void Correct(Func<DataSet, DataSet>? correct, string? label) { }
 }
 
 public sealed class TuneSession : IDisposable
@@ -115,6 +124,7 @@ public sealed class TuneSession : IDisposable
                                          IReadOnlyList<string>? analyses = null, Func<RfCore.Data.DataSet?>? recorded = null)
     {
         var plan = CircuitEvaluation.Plan(circuit, new CircuitEvaluationRequest { Analyses = analyses });
+        plan.Nl?.Dispose();
         TuneSession? session = null;
         session = new TuneSession(
             (values, scope, control, final) =>
@@ -126,12 +136,17 @@ public sealed class TuneSession : IDisposable
                 return CircuitEvaluation.Evaluate(circuit, new CircuitEvaluationRequest
                 {
                     Tunables = at.Values, Statistics = at.Draws, Analyses = scope, Control = control,
+                    // brief-sdl-7 D7: the sliders drive the circuit model — an EM solve per slider move is a run nobody
+                    // waits for. Solve EM here is the one EM evaluation a session makes, on request.
+                    Em = false,
                     // brief-sar-10 R-sar10-3 — a fields analysis draws local SAR and B1 while the knob moves; its averaged
                     // SAR waits for the release
                     Fields = final ? FieldsOutput.Written : FieldsOutput.Local,
                 });
             },
             sink, postToUi, analyses, plan.SweepPoints);
+        session._circuit = circuit;
+        session.HasEm = plan.HasEm;
         session._cornerFor = name =>
         {
             var (point, _, refusal) = CornerPoint.For(circuit, name, recorded?.Invoke());
@@ -351,6 +366,44 @@ public sealed class TuneSession : IDisposable
 
     /// <summary>Freezes the displayed result as ghosts (R-to3-9).</summary>
     public void Snapshot() => _sink?.Snapshot();
+
+    // ---- EM here (brief-sdl-7 D7) ---------------------------------------------
+
+    private PreparedCircuit? _circuit;
+
+    /// <summary>Whether an analysis in scope is simulated by EM (an analysis with model=em, or a part set to EM) — what
+    /// Solve EM here needs. The sliders still drive the circuit model.</summary>
+    public bool HasEm { get; private set; }
+
+    /// <summary>
+    /// One EM evaluation at <paramref name="values"/> (the analyses in scope as the design says, so by EM where it says
+    /// so) and the circuit model at the same values — the pair the correction's offset is made of. Off the UI thread;
+    /// a geometry already in the EM cache costs no solve.
+    /// </summary>
+    public Task<(RunResult Em, RunResult Circuit)> SolveEmAsync(IReadOnlyDictionary<string, string> values, CancellationToken ct = default)
+    {
+        var circuit = _circuit ?? throw new InvalidOperationException("this session has no prepared design to solve");
+        var analyses = Analyses;
+        return Task.Run(() =>
+        {
+            var control = new RunControl { Token = ct };
+            var em = CircuitEvaluation.Evaluate(circuit, new CircuitEvaluationRequest { Tunables = values, Analyses = analyses, Control = control });
+            var model = CircuitEvaluation.Evaluate(circuit, new CircuitEvaluationRequest
+                { Tunables = values, Analyses = analyses, Control = control, Em = false });
+            return (em, model);
+        }, ct);
+    }
+
+    /// <summary>The EM result as faded traces under the live ones (null: none).</summary>
+    public void ShowOverlay(DataSet? data) => _sink?.ShowOverlay(data);
+
+    /// <summary>Publishes the live circuit model corrected by <paramref name="correct"/> from now on (null: as it is),
+    /// re-publishing what is shown at once.</summary>
+    public void Correct(Func<DataSet, DataSet>? correct, string? label)
+    {
+        _sink?.Correct(correct, label);
+        if (DisplayedResult?.GroupedResults is { } data) _sink?.Publish(data);
+    }
 
     /// <summary>Removes the ghosts.</summary>
     public void ClearSnapshot() => _sink?.ClearSnapshot();

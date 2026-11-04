@@ -65,6 +65,18 @@ public enum OptimizerScope
     All,
 }
 
+/// <summary>
+/// How an optimization treats analyses simulated by EM (brief-sdl-7 D1). <see cref="Off"/> runs every evaluation on
+/// circuit models; <see cref="Correct"/> searches on circuit models and corrects them with a few EM solves;
+/// <see cref="Direct"/> makes every evaluation an (often cached) EM solve.
+/// </summary>
+public enum OptimizerEmMode
+{
+    Off,
+    Correct,
+    Direct,
+}
+
 /// <summary>The distribution a statistical entry draws from (docs/design/yield.md, overview D2).</summary>
 public enum StatDistribution
 {
@@ -355,6 +367,14 @@ public sealed class OptimizerSettings
     /// is yes.</summary>
     public bool? Nominal { get; set; }
 
+    /// <summary>brief-sdl-7 D1 — how analyses simulated by EM are optimized; null is the default (<c>correct</c> when a
+    /// goal reads an analysis run by EM or an instance is set to EM, else <c>off</c>).</summary>
+    public OptimizerEmMode? Em { get; set; }
+
+    /// <summary>brief-sdl-7 D4 — the most uncached EM solves the run may make; null is the mode's default (12 for
+    /// <c>correct</c>, 30 for <c>direct</c>).</summary>
+    public int? EmBudget { get; set; }
+
     /// <summary>Keys this build does not know, kept verbatim.</summary>
     public OrderedDictionary<string, string>? Extra { get; set; }
 
@@ -368,7 +388,8 @@ public sealed class OptimizerSettings
     {
         Algorithm = Algorithm, Options = TunableEntry.CloneMap(Options), MaxIterations = MaxIterations,
         MaxEvaluations = MaxEvaluations, TimeLimit = TimeLimit, Cost = Cost, Scope = Scope, Seed = Seed,
-        Parallelism = Parallelism, Corners = Corners, Nominal = Nominal, Extra = TunableEntry.CloneMap(Extra),
+        Parallelism = Parallelism, Corners = Corners, Nominal = Nominal, Em = Em, EmBudget = EmBudget,
+        Extra = TunableEntry.CloneMap(Extra),
     };
 }
 

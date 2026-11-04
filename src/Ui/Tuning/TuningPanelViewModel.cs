@@ -483,6 +483,7 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
         if (IsRunning) Request(final);
         UpdateCanvas();
         UpdateLag();
+        MarkEmStale();
     }
 
     private void Request(bool final) => _session?.Request(CurrentValues(), final);
@@ -721,6 +722,89 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
         s.Changed               -= OnSessionChanged;
         s.RunOnReleaseSuggested -= OnRunOnReleaseSuggested;
         _session = null;
+        ForgetEm();
+    }
+
+    // ---- Solve EM here (brief-sdl-7 D7) -----------------------------------------
+
+    /// <summary>Whether the live session has an analysis simulated by EM — Solve EM here is offered only then. The
+    /// sliders always drive the circuit model.</summary>
+    public bool HasEm => _session?.HasEm == true;
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(SolveEmHereCommand))]
+    private bool _isSolvingEm;
+
+    /// <summary>What the EM traces are: solving, shown at these values, or stale. Empty with none.</summary>
+    [ObservableProperty] private string _emText = "";
+
+    /// <summary>The values have moved since the EM solve: its faded traces are no longer at the sliders' values.</summary>
+    [ObservableProperty] private bool _emStale;
+
+    /// <summary>The live circuit traces with the last EM solve's offset added, labelled as an estimate.</summary>
+    [ObservableProperty] private bool _showEmCorrection;
+
+    private IReadOnlyDictionary<string, string>? _emValues;
+    private EmTraceCorrection? _emCorrection;
+
+    private bool CanSolveEmHere() => IsRunning && HasEm && !IsSolvingEm;
+
+    /// <summary>One EM solve at the sliders' values; its traces are drawn faded under the live ones.</summary>
+    [RelayCommand(CanExecute = nameof(CanSolveEmHere))]
+    private async System.Threading.Tasks.Task SolveEmHere()
+    {
+        if (_session is not { } s) return;
+        var values = CurrentValues();
+        IsSolvingEm = true;
+        EmText = "Solving EM at these values…";
+        try
+        {
+            var (em, model) = await s.SolveEmAsync(values);
+            if (!ReferenceEquals(s, _session)) return;
+            if (em.Status != CircuitRF.Design.Circuit.RunStatus.Success || em.GroupedResults is not { } emData)
+            {
+                EmText = "";
+                Problem($"Solve EM here: {em.StatusMessage}");
+                return;
+            }
+            _emValues = values;
+            _emCorrection = model.GroupedResults is { } circuit ? EmTraceCorrection.Of(emData, circuit) : null;
+            s.ShowOverlay(emData);
+            EmStale = false;
+            EmText = "EM at these values — the faded traces";
+            if (ShowEmCorrection) s.Correct(_emCorrection is { } c ? c.Apply : null, CorrectionLabel);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            EmText = "";
+            Problem($"Solve EM here: {ex.Message}");
+        }
+        finally { IsSolvingEm = false; }
+    }
+
+    /// <summary>The display chip's words while the correction is on.</summary>
+    public const string CorrectionLabel = "circuit + EM correction (estimate)";
+
+    partial void OnShowEmCorrectionChanged(bool value) =>
+        _session?.Correct(value && _emCorrection is { } c ? c.Apply : null, CorrectionLabel);
+
+    /// <summary>A slider moved: the EM traces are no longer at the sliders' values.</summary>
+    private void MarkEmStale()
+    {
+        if (_emValues is null) return;
+        var now = CurrentValues();
+        bool same = now.Count == _emValues.Count && now.All(kv => _emValues.TryGetValue(kv.Key, out var v) && v == kv.Value);
+        EmStale = !same;
+        EmText = same ? "EM at these values — the faded traces" : "EM traces are stale — the values moved since the solve";
+    }
+
+    private void ForgetEm()
+    {
+        _emValues = null;
+        _emCorrection = null;
+        EmStale = false;
+        EmText = "";
+        ShowEmCorrection = false;
     }
 
     private void AfterSessionChange()
@@ -740,6 +824,8 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
         PushCommand.NotifyCanExecuteChanged();
         SnapshotCommand.NotifyCanExecuteChanged();
         ClearSnapshotCommand.NotifyCanExecuteChanged();
+        SolveEmHereCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(HasEm));
         LockInCommand.NotifyCanExecuteChanged();
         SetDigitsCommand.NotifyCanExecuteChanged();
     }

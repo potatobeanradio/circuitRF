@@ -39,6 +39,8 @@ public static partial class AnalysisDirectiveSchema
     public static readonly IReadOnlyList<string> GoalTypeTokens = ["le", "ge", "eq", "in", "out"];
     public static readonly IReadOnlyList<string> CostTokens     = ["lsq", "minimax"];
     public static readonly IReadOnlyList<string> ScopeTokens    = ["goals", "all"];
+    /// <summary>brief-sdl-7 D1 — <c>em=</c> on <c>optimize</c>, in <see cref="CircuitRF.Core.Design.OptimizerEmMode"/>'s order.</summary>
+    public static readonly IReadOnlyList<string> EmModeTokens   = ["off", "correct", "direct"];
     public static readonly IReadOnlyList<string> DistTokens     = ["none", "gauss", "unif", "lognorm", "discrete"];
     public static readonly IReadOnlyList<string> UseTokens      = ["both", "opt", "yield"];
     public static readonly IReadOnlyList<string> SamplingTokens = ["random", "lhs", "sobol"];
@@ -161,7 +163,7 @@ public static partial class AnalysisDirectiveSchema
 
         new("optimize", TuningTopic,
             "optimize [algorithm=<id>] [maxiter=<n>] [maxevals=<n>] [timelimit=<v> [unit]] [cost=…] [analyses=…] " +
-            "[seed=<n>] [parallel=<n>] [corners=…] [nominal=0] [alg.<option>=<v>] ...",
+            "[seed=<n>] [parallel=<n>] [corners=…] [nominal=0] [em=off|correct|direct] [emBudget=<n>] [alg.<option>=<v>] ...",
             "The optimizer's settings. At most one line. Keys starting alg. are the chosen algorithm's own options.",
             [
                 new("algorithm", Default: "auto", Summary: "One of: " + string.Join(", ", CircuitRF.Core.Design.OptimizerAlgorithms.Ids) + ". reference optimizers describes each."),
@@ -175,6 +177,13 @@ public static partial class AnalysisDirectiveSchema
                 new("corners",   Default: "none", Summary: "none | all | corner names separated by commas: every goal must be met at the " +
                                                            "nominal and at each of these corners at once — one evaluation per corner per point."),
                 new("nominal",   Default: "1", Summary: "With corners, 0 leaves the nominal out: the corners alone are scored."),
+                new("em",        Default: "correct when a goal reads an analysis run by EM, else off",
+                                 Summary: "off | correct | direct. off: every evaluation by circuit models. correct: search on the " +
+                                          "circuit models, then correct them with a few EM solves of the layout. direct: every " +
+                                          "evaluation is an EM solve (cached by geometry); pattern, simplex, trust_region or bayes only."),
+                new("emBudget",  Default: "12 for correct, 30 for direct",
+                                 Summary: "The most EM solves the run may make (cached geometries are free); it stops there and keeps " +
+                                          "its best EM-verified point."),
                 new(AlgorithmOptionPrefix + "<option>", Summary: "An option of the chosen algorithm."),
             ],
             [],

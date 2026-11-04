@@ -17,9 +17,17 @@ namespace CircuitRF.Design.Layout.Em.ParametricEm;
 /// <param name="Refusal">Why it has no result, or null.</param>
 /// <param name="Estimate">For a geometry still to solve, what solving it costs.</param>
 /// <param name="Unreached">D4's sentences for this cell.</param>
+/// <param name="Connectivity">brief-sdl-7 D9 — the geometry's connectivity signature; null when refused or unmeasured.</param>
 public sealed record EmEvaluationRecord(
     string InstancePath, string Cell, string? Key, bool Cached, string? Refusal, EmSolveEstimate? Estimate,
-    IReadOnlyList<string> Unreached, string? Setup = null);
+    IReadOnlyList<string> Unreached, string? Setup = null)
+{
+    public CircuitRF.Design.Layout.SchematicSync.ConnectivitySignature? Connectivity { get; init; }
+
+    /// <summary>The values that made this geometry differ from the schematic's own, as <c>L90 = 0.005</c>; empty at the
+    /// schematic's own values.</summary>
+    public string At { get; init; } = "";
+}
 
 /// <summary>
 /// The run an elaboration belongs to, as far as EM evaluations are concerned: whether it only counts (D5), the run's
@@ -35,9 +43,10 @@ public sealed class EmEvaluationScope : IDisposable
     private readonly List<EmEvaluationRecord> _records = [];
     private readonly Lock _gate = new();
 
-    private EmEvaluationScope(bool countOnly, RunControl? control, int? maxCores)
+    private EmEvaluationScope(bool countOnly, RunControl? control, int? maxCores, bool estimate = true)
     {
         CountOnly = countOnly;
+        Estimate  = estimate;
         Control   = control;
         MaxCores  = maxCores;
         _previous = _current.Value;
@@ -48,10 +57,14 @@ public sealed class EmEvaluationScope : IDisposable
     public static EmEvaluationScope? Current => _current.Value;
 
     /// <summary>Starts a scope for the calling flow; disposing it restores the one before.</summary>
-    public static EmEvaluationScope Begin(bool countOnly = false, RunControl? control = null, int? maxCores = null) =>
-        new(countOnly, control, maxCores);
+    public static EmEvaluationScope Begin(bool countOnly = false, RunControl? control = null, int? maxCores = null,
+                                          bool estimate = true) =>
+        new(countOnly, control, maxCores, estimate);
 
     public bool CountOnly { get; }
+
+    /// <summary>brief-sdl-7 — counting, whether an unsolved geometry's cost is estimated (false for a connectivity probe).</summary>
+    public bool Estimate { get; }
     public RunControl? Control { get; }
     public int? MaxCores { get; }
 
@@ -103,11 +116,16 @@ public sealed class ParametricEmProvider : IParametricModelProvider
         }
 
         var result = EmEvaluation.Evaluate(target, request.Values, scope?.CountOnly ?? false,
-                                           scope?.Control?.Child(), scope?.MaxCores);
+                                           scope?.Control?.Child(), scope?.MaxCores, scope?.Estimate ?? true);
         var unreached = result.Geometry?.Unreached ?? [];
         string setupName = Path.GetFileNameWithoutExtension(target.CemPath);
         scope?.Record(new EmEvaluationRecord(request.InstancePath, target.CellName, result.Key, result.Cached, result.Refusal,
-                                             result.Estimate, unreached, setupName));
+                                             result.Estimate, unreached, setupName)
+        {
+            Connectivity = result.Geometry?.Connectivity,
+            At = result.Geometry is { } g ? string.Join(", ", g.Applied.OrderBy(kv => kv.Key, StringComparer.Ordinal)
+                                                                .Select(kv => $"{kv.Key} = {EmCellCache.Format(kv.Value)}")) : "",
+        });
         if (result.Refusal is { } why) return ParametricModelAnswer.Refused(why);
 
         string d4 = unreached.Count == 0 ? "" : " " + string.Join(" ", unreached);

@@ -53,6 +53,30 @@
         <Style Selector="Button.tb:disabled /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="Transparent"/>
         </Style>
+        <!-- brief-sdl-7: the Circuit + EM correction toggle, drawn as the toolbar's buttons are; on, its icon takes the accent. -->
+        <Style Selector="ToggleButton.tb">
+            <Setter Property="Padding" Value="3,2"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Margin" Value="0,0,1,0"/>
+        </Style>
+        <Style Selector="ToggleButton.tb mi|MaterialIcon">
+            <Setter Property="Width" Value="14"/>
+            <Setter Property="Height" Value="14"/>
+            <Setter Property="Foreground" Value="{DynamicResource SystemBaseMediumColor}"/>
+        </Style>
+        <Style Selector="ToggleButton.tb:disabled mi|MaterialIcon">
+            <Setter Property="Opacity" Value="0.35"/>
+        </Style>
+        <Style Selector="ToggleButton.tb:disabled /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+        <Style Selector="ToggleButton.tb:checked /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+        <Style Selector="ToggleButton.tb:checked mi|MaterialIcon">
+            <Setter Property="Foreground" Value="{DynamicResource SystemAccentColor}"/>
+        </Style>
         <Style Selector="Border.row.lagging">
             <Setter Property="Background" Value="#14FFA000"/>
         </Style>
@@ -135,6 +159,19 @@
                             ToolTip.Tip="Clear snapshot">
                         <mi:MaterialIcon Kind="CameraOffOutline"/>
                     </Button>
+
+                    <Border Width="1" Height="12" Margin="2,0,3,0" VerticalAlignment="Center"
+                            Background="{DynamicResource SystemBaseLowColor}"/>
+
+                    <!-- brief-sdl-7 D7: the sliders drive the circuit model; EM is one solve, on request. -->
+                    <Button Classes="tb" Command="{Binding SolveEmHereCommand}"
+                            ToolTip.Tip="Solve EM here — one EM solve of the layout at these values, drawn as faded traces under the circuit model">
+                        <mi:MaterialIcon Kind="CubeScan"/>
+                    </Button>
+                    <ToggleButton Classes="tb" IsChecked="{Binding ShowEmCorrection}" IsEnabled="{Binding HasEm}"
+                                  ToolTip.Tip="Circuit + EM correction — add the last EM solve's difference to the live circuit traces (an estimate away from the solved values)">
+                        <mi:MaterialIcon Kind="VectorLink"/>
+                    </ToggleButton>
 
                     <Border Width="1" Height="12" Margin="2,0,3,0" VerticalAlignment="Center"
                             Background="{DynamicResource SystemBaseLowColor}"/>
@@ -310,11 +347,15 @@
                 </Button>
             </Grid>
 
-            <!-- What the last action did. -->
-            <TextBlock Grid.Row="2" Text="{Binding StatusText}" FontSize="11" Opacity="0.75"
-                       Margin="6,0,6,2" TextTrimming="CharacterEllipsis"
-                       ToolTip.Tip="{Binding StatusDetail}"
-                       IsVisible="{Binding StatusText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+            <!-- What the last action did; under it, what the EM traces are (brief-sdl-7 D7). -->
+            <StackPanel Grid.Row="2">
+                <TextBlock Text="{Binding StatusText}" FontSize="11" Opacity="0.75"
+                           Margin="6,0,6,2" TextTrimming="CharacterEllipsis"
+                           ToolTip.Tip="{Binding StatusDetail}"
+                           IsVisible="{Binding StatusText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                <TextBlock Text="{Binding EmText}" FontSize="11" Margin="6,0,6,2" TextTrimming="CharacterEllipsis" Opacity="0.75"
+                           IsVisible="{Binding EmText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+            </StackPanel>
 
             <!-- Compare (R-to5-6): both values of every key and the difference. No simulation. -->
             <Border Grid.Row="3" IsVisible="{Binding HasComparison}" Margin="4,0,4,4" Padding="4,2"

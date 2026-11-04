@@ -174,6 +174,7 @@ internal static partial class Yield
         bool? ports = null;
         int? top = null;
         string? snp = null, snpExclude = null, by = null;
+        bool? em = null;   // brief-sdl-7 D8: --em off runs every trial by circuit models
         var given = new List<string>();
         var sets = new List<(string Name, string Expr)>();
 
@@ -184,6 +185,13 @@ internal static partial class Yield
             switch (a)
             {
                 case "--trials" when hasValue:      if (!Int(a, args[++i], 1, out trials, out int r1)) return r1; break;
+                case "--em" when hasValue:
+                {
+                    string text = args[++i].Trim().ToLowerInvariant();
+                    if (text is not ("on" or "off")) return JsonRun.Fail(CliDiagnostics.YieldFlagValue(a, text, "on or off"));
+                    em = text == "off" ? false : null;
+                    break;
+                }
                 case "--seed" when hasValue:        if (!Int(a, args[++i], 0, out seed, out int r2)) return r2; break;
                 case "--parallel" when hasValue:    if (!Int(a, args[++i], 1, out parallel, out int r3)) return r3; break;
                 case "--trial" when hasValue:       if (!Int(a, args[++i], 1, out trial, out int r4)) return r4; break;
@@ -334,7 +342,7 @@ internal static partial class Yield
             return JsonRun.Fail(CliDiagnostics.RunFailed(circuit.ReadError ?? "the design could not be read"));
 
         if (noun == "sens")
-            return RunSens(input, full, circuit, tb, sets, output, quiet, vars, goals, new SensFlags(factors, step, sigma, ports, responses, parallel, top, snp, snpExclude, by));
+            return RunSens(input, full, circuit, tb, sets, output, quiet, vars, goals, new SensFlags(factors, step, sigma, ports, responses, parallel, top, snp, snpExclude, by, em));
 
         if (noun == "doe")
             return RunDoe(input, full, circuit, tb, sets, output, quiet, goals, optimum, new DoeFlags(design, resolution, factors, levels, centre, responses, parallel));
@@ -408,6 +416,7 @@ internal static partial class Yield
         run = StatisticalRun.Create(circuit, new StatisticalOptions
         {
             Mode         = mode,
+            Em           = em,
             Setup        = changed ? setup : null,
             Sets         = sets,
             Cancellation = ct,
@@ -891,6 +900,7 @@ internal static partial class Yield
         Console.Error.WriteLine("                     [--nonconverged fail|warn] [--save scalars|all|n|auto] [--process 0|1] [--mismatch 0|1]");
         Console.Error.WriteLine("                     [--sigma-scale k] [--parallel n] [--analyses goals|all] [--set var=expr]");
         Console.Error.WriteLine("                     [--vars k,k] [--goals g,g] [--trial n] [--contributions] [-o out.npy] [-q]");
+        Console.Error.WriteLine("                     [--em off]   (mc, estimate, trial, sens: run by circuit models what an analysis runs by EM)");
         Console.Error.WriteLine("                     [--save-preset name --trial n] [--save-corner name --trial n]");
         Console.Error.WriteLine("                     corners: [--corners c,c] [--mc] [--generate \"axis=a,b;temp=-40,25;Vdd=3.0,3.6\" [--write]]");
         Console.Error.WriteLine("                     center: [--algorithm id] [--trials M] [--verify n] [--max-iter n] [--max-evals n]");

@@ -26,9 +26,12 @@ namespace CircuitRF.Design.Layout.Em.ParametricEm;
 /// that part's value was set in the layout.</param>
 /// <param name="Notes">What the plan reported that a reader of an EM result should know (gaps it could not close).</param>
 /// <param name="Applied">The values that differed from the schematic's own and were applied.</param>
+/// <param name="Connectivity">brief-sdl-7 D9 — which nets the copper joins and which it lets touch; null when it could not
+/// be measured.</param>
 public sealed record EmCellGeometry(
     EmCellTarget Target, EmLayoutSource Source, string Key, string? CachedSnp,
-    IReadOnlyList<string> Unreached, IReadOnlyList<string> Notes, IReadOnlyDictionary<string, Value> Applied);
+    IReadOnlyList<string> Unreached, IReadOnlyList<string> Notes, IReadOnlyDictionary<string, Value> Applied,
+    ConnectivitySignature? Connectivity = null);
 
 /// <summary>What one evaluation came to.</summary>
 /// <param name="SnpPath">The Touchstone at this geometry; null when refused or only counted.</param>
@@ -50,6 +53,20 @@ public static class EmEvaluation
     /// <summary>The name of the VAR row an evaluation adds to carry values the schematic has no VAR row for (a cell's
     /// declared parameters). Never saved: it lives in the in-memory copy the planner reads.</summary>
     public const string ValuesRow = "__EMVALUES";
+
+    /// <summary>
+    /// A stand-in for the EM solver, for tests (brief-sdl-7 §3's stub provider): given the geometry and the values that
+    /// produced it, write the Touchstone to the path it is handed (no extension; the stand-in adds <c>.sNp</c>) and
+    /// return that file, or null with nothing written for a failed solve. Null runs the real solver. Flow-local, so a
+    /// test that sets it never reaches a real solve another test runs at the same time.
+    /// </summary>
+    internal static Func<EmCellGeometry, IReadOnlyDictionary<string, Value>, string, string?>? SolverStandIn
+    {
+        get => _standIn.Value;
+        set => _standIn.Value = value;
+    }
+
+    private static readonly AsyncLocal<Func<EmCellGeometry, IReadOnlyDictionary<string, Value>, string, string?>?> _standIn = new();
 
     private static readonly Lock _keysGate = new();
     private static readonly Dictionary<string, object> _keyLocks = new(StringComparer.Ordinal);
@@ -114,8 +131,42 @@ public static class EmEvaluation
         string key = EmCellCache.KeyOf(source, target.Setup);
         var notes = plan.Lines.Where(l => l.Severity == SchematicLayoutPlanner.ReportSeverity.Warning)
                               .Select(l => l.Text).Concat(plan.NoLayoutWarnings).ToList();
+        IReadOnlyList<string>? partGroups = null;
+        try { partGroups = ConnectivitySignature.PartGroups(layout, target.ClayPath, tech.Tech); }
+        catch (Exception e) when (e is not OperationCanceledException) { /* the joints and overlaps still hold it */ }
+        var connectivity = ConnectivitySignature.Of(plan.Lines, partGroups);
         return new EmCellGeometry(target, source, key, EmCellCache.Find(target.WorkspaceDir, target.CellName, key),
-                              Unreached(model, plan), notes, applied);
+                              Unreached(model, plan), notes, applied, connectivity);
+    }
+
+    /// <summary>
+    /// brief-sdl-7 D9 — what the schematic's own lengths do to the copper, with no hand edit in the way: the planner run
+    /// at <paramref name="values"/> onto an EMPTY layout, and its warnings (loops that do not close, connections not
+    /// joined, overlaps). A re-plan of the saved layout cannot say this: there, every open joint between parts already
+    /// placed reads as one the user opened (SDL-4 D6), whatever opened it. A joint the user opened closes here; a gap the
+    /// lengths make does not.
+    /// </summary>
+    public static IReadOnlyList<string> SchematicDisagreements(EmCellTarget target, IReadOnlyDictionary<string, Value> values)
+    {
+        try
+        {
+            var model = SchematicPersistence.LoadFromFile(target.SchematicPath).model;
+            model.SchematicDirectory = Path.GetDirectoryName(target.SchematicPath);
+            Apply(model, values);
+            var saved = LayoutPersistence.LoadFromFile(target.ClayPath);
+            var (tech, _) = TechnologyResolver.ResolveForDocument(saved.TechRef, target.ClayPath, target.CwsPath, new TechnologyCache());
+            if (tech.Tech is null) return [];
+            var empty = new LayoutView { DbuPerMicron = saved.DbuPerMicron, TechRef = saved.TechRef, DisplayUnit = saved.DisplayUnit };
+            var plan = SchematicLayoutPlanner.Plan(model, empty, model.SchematicDirectory!, target.WorkspaceDir,
+                                                   Path.GetDirectoryName(target.ClayPath)!, tech.Tech, tech.ResolvedPath,
+                                                   DiskCellResolver.Instance, targetLayoutPath: target.ClayPath, connectParts: true);
+            return ConnectivitySignature.Of(plan.Lines).Lines;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException
+                                       or InvalidDataException or ArgumentException or InvalidOperationException)
+        {
+            return [];
+        }
     }
 
     /// <summary>
@@ -123,13 +174,16 @@ public static class EmEvaluation
     /// solved, else solved now and cached. <paramref name="countOnly"/> stops before solving and returns the estimate.
     /// Never throws for a refusal; a cancelled solve throws <see cref="OperationCanceledException"/>.
     /// </summary>
+    /// <param name="estimate">With <paramref name="countOnly"/>, whether an unsolved geometry's cost is estimated (the
+    /// planar preflight, which meshes it). A probe that only asks which geometry and whether it connects says no.</param>
     public static EmEvaluationResult Evaluate(EmCellTarget target, IReadOnlyDictionary<string, Value> values,
-                                              bool countOnly = false, RunControl? control = null, int? maxCores = null)
+                                              bool countOnly = false, RunControl? control = null, int? maxCores = null,
+                                              bool estimate = true)
     {
         if (Geometry(target, values, out var refusal) is not { } g)
             return new EmEvaluationResult(null, null, false, refusal);
         if (g.CachedSnp is { } hit) return new EmEvaluationResult(g, hit, true, null);
-        if (countOnly) return new EmEvaluationResult(g, null, false, null, Estimate(g));
+        if (countOnly) return new EmEvaluationResult(g, null, false, null, estimate ? Estimate(g) : null);
 
         lock (KeyLock(g.Key))
         {
@@ -142,6 +196,13 @@ public static class EmEvaluation
             // The setup keeps its own name, so the Touchstone is the one `em` writes for it byte for byte but the write
             // time. Only where it goes changes: <key>.sNp in the cache, and the run's other output (the .npy with the
             // diagnostics group) in a <key>/ folder beside it.
+            if (SolverStandIn is { } standIn)
+            {
+                if (standIn(g, values, Path.Combine(dir, g.Key)) is not { } written)
+                    return new EmEvaluationResult(g, null, false, $"the EM solve of '{target.CellName}' failed: the stand-in wrote nothing");
+                EmCellCache.WriteProvenance(written, target, values);
+                return new EmEvaluationResult(g, written, false, null);
+            }
             var setup = target.Setup.Clone();
             setup.SnpOutputPathOverride = Path.Combine(dir, g.Key);
             setup.CreateSnpSchematic = false;      // a cache entry makes no _sim cell in the user's workspace

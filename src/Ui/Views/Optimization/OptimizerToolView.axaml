@@ -193,6 +193,18 @@
                                              ToolTip.Tip="Every goal must be met at each of these corners — one evaluation per corner per point"/>
                                     <CheckBox Content="Include the nominal" FontSize="12" IsChecked="{Binding IncludeNominal}"/>
                                     <Separator Margin="0,2"/>
+                                    <!-- brief-sdl-7 D1/D4: how an analysis simulated by EM is optimized, and the solve budget. -->
+                                    <TextBlock Text="EM" Classes="section"/>
+                                    <ComboBox ItemsSource="{Binding EmModes}" SelectedIndex="{Binding EmModeIndex}"
+                                              FontSize="12" HorizontalAlignment="Stretch" MinHeight="0" Padding="4,1"
+                                              ToolTip.Tip="When a goal reads an analysis simulated by EM of the layout: correct searches on the circuit models and corrects them with a few EM solves; direct makes every evaluation an EM solve (cached by geometry)"/>
+                                    <Grid ColumnDefinitions="*,Auto" Margin="0,1">
+                                        <TextBlock Text="Most EM solves" FontSize="12" VerticalAlignment="Center"/>
+                                        <TextBox Grid.Column="1" Text="{Binding EmBudget}" Width="90" FontSize="12"
+                                                 PlaceholderText="{Binding EmBudgetDefault}" Padding="4,1" MinHeight="0"
+                                                 ToolTip.Tip="The run stops at this many EM solves and keeps its best EM-verified point; geometries already in the EM cache are free"/>
+                                    </Grid>
+                                    <Separator Margin="0,2"/>
                                     <TextBlock Text="{Binding AlgorithmLabel}" Classes="section" IsVisible="{Binding HasOptions}"/>
                                     <ItemsControl ItemsSource="{Binding Options}">
                                         <ItemsControl.ItemTemplate>
@@ -238,6 +250,10 @@
                 <Button Classes="tb" Command="{Binding SnapAndPolishCommand}"
                         ToolTip.Tip="Snap and polish — snap integer, stepped and preferred values, then re-optimize the rest">
                     <mi:MaterialIcon Kind="Magnet"/>
+                </Button>
+                <Button Classes="tb" Command="{Binding TightenToConnectedCommand}"
+                        ToolTip.Tip="Tighten each value's range to where its layout stays connected (from the last EM run's range scan)">
+                    <mi:MaterialIcon Kind="ArrowCollapseHorizontal"/>
                 </Button>
 
                 <Button Classes="tb" Click="OnHelp" ToolTip.Tip="Help">

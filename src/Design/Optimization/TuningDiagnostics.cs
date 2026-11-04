@@ -92,6 +92,18 @@ public static class TuningDiagnostics
         "tuning.optimize.option-value", DiagnosticSeverity.Error,
         "optimize: alg.{option}={value} is not {choices}.", ("option", option), ("value", value), ("choices", choices));
 
+    /// <summary>brief-sdl-7 D3.</summary>
+    public static Diagnostic EmDirectAlgorithm(string algorithm, string accepted) => Diagnostic.Create(
+        "tuning.optimize.em-direct-algorithm", DiagnosticSeverity.Error,
+        "optimize: em=direct makes every evaluation an EM solve, so it takes an algorithm that works in few evaluations: " +
+        "{accepted} (or auto, which runs pattern). {algorithm} is not one of them; choose one, or use em=correct.",
+        ("algorithm", algorithm), ("accepted", accepted));
+
+    /// <summary>brief-sdl-7 D4.</summary>
+    public static Diagnostic EmBudgetNotPositive(string budget) => Diagnostic.Create(
+        "tuning.optimize.em-budget", DiagnosticSeverity.Error,
+        "optimize: emBudget={budget} must be at least 1.", ("budget", budget));
+
     public static Diagnostic TimeLimitInvalid(string limit) => Diagnostic.Create(
         "tuning.optimize.timelimit", DiagnosticSeverity.Error,
         "optimize: timelimit={limit} is not a duration; write " + TuningValidator.TimeLimitSpelling + ".", ("limit", limit));

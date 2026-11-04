@@ -65,6 +65,13 @@ public sealed partial class OptimizerPanelViewModel
     /// <summary>Starts the run's thread.</summary>
     public Func<Action, Task> StartBackground { get; set; } = a => Task.Run(a);
 
+    /// <summary>
+    /// brief-sdl-7 R-sdl7-8 — after Push writes an EM-verified best into the schematic: run Update Layout from Schematic
+    /// (the menu command, so it is undoable in the layout) and check the layout is the geometry EM verified, given the
+    /// best point's key. Returns the sentence for the status line; null when there is nothing to say.
+    /// </summary>
+    public Func<SchematicViewModel, string?, string?>? UpdateLayoutAfterEm { get; set; }
+
     /// <summary>The preferred-value ladders <c>discrete=preferred</c> snaps to (the user's).</summary>
     public Func<PreferredLadders?>? Ladders { get; set; }
 
@@ -487,7 +494,33 @@ public sealed partial class OptimizerPanelViewModel
         _catalog = null;
         RefreshNow();
         StatusText = report.StatusLine;
+        // brief-sdl-7 R-sdl7-8: an EM-verified result is applied to the layout too, and checked against what was solved.
+        if (report.Written > 0 && Result is { EmMode: not OptimizerEmMode.Off } em && UpdateLayoutAfterEm?.Invoke(_tuned, em.BestEmKey) is { } layout)
+            StatusText = report.StatusLine + " · " + layout;
         ResetCommand.NotifyCanExecuteChanged();
+    }
+
+    /// <summary>brief-sdl-7 D10 — the last run scanned at least one variable whose layout keeps its connectivity over only
+    /// part of its range.</summary>
+    private bool HasNarrowConnectedRanges() => !IsRunActive && Result?.ConnectedRanges.Any(r => !r.Whole) == true;
+
+    /// <summary>D10 — sets each such variable's min and max to its connected interval (one undo step).</summary>
+    [RelayCommand(CanExecute = nameof(HasNarrowConnectedRanges))]
+    private void TightenToConnected()
+    {
+        if (Setup is not { } current || Result is not { } r) return;
+        var next = current.Clone();
+        int n = 0;
+        foreach (var range in r.ConnectedRanges.Where(c => !c.Whole))
+        {
+            if (next.Variables.FirstOrDefault(e => e.Key == range.Key) is not { } entry) continue;
+            entry.Min = TunableValue.Format(range.Lo, range.Unit);
+            entry.Max = TunableValue.Format(range.Hi, range.Unit);
+            n++;
+        }
+        if (n == 0) return;
+        Execute(next, "Tighten bounds to the connected ranges");
+        StatusText = $"Bounds of {n} value{(n == 1 ? "" : "s")} tightened to where the layout stays connected";
     }
 
     // Key → the value text the schematic held before this panel first pushed it (Reset puts it back).
@@ -621,6 +654,7 @@ public sealed partial class OptimizerPanelViewModel
         PushCommand.NotifyCanExecuteChanged();
         SendToTuningCommand.NotifyCanExecuteChanged();
         SnapAndPolishCommand.NotifyCanExecuteChanged();
+        TightenToConnectedCommand.NotifyCanExecuteChanged();
         SensitivityCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(SensitivityTip));
         ResetCommand.NotifyCanExecuteChanged();

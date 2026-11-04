@@ -27083,3 +27083,64 @@ drawn as a FET (or anything with an `ExternalSymbolRef`) it is not where the lea
 and its one editor caller (`WireGeometry.FindConnectedPorts`) has no callers; a headless caller wiring a part has to
 resolve the drawn symbol. The empty Value/Range rows on a placed model's panel stay, as hiding them per part would move
 the Corner and Footprint rows when the part changes.
+
+## Compile netlist from Model Composer: library holding the workspace, picoamp proof (2026-11-03)
+
+Exporting the shipped `gan_4x125` example with Compile netlist failed twice in a row; the second review pass had walked
+Compile netlist only on a Verilog-A FET cell into a library outside the workspace, so neither path was exercised.
+
+- **A target library that is the workspace (or above it) was a dead end.** The generated source's default folder is
+  `<workspace>/protected-source/`, so such a library contains it, and the refusal said only that the source "would be
+  inside the library" — the dialog has no source-folder field, so nothing on screen answered it. The refusal now names
+  the target library and says to move it outside the workspace (an explicit `--source-out` keeps its own sentence).
+- **The proof failed a ComposedFET on solver noise.** Its floors (1e-12 A, 1e-12 S) were the smallest DENOMINATOR of a
+  relative error, so a 6.7 pA gate current had to agree to ~1e-18 A — a million times finer than the DC solve's own
+  1e-12 A tolerance; it differed by 1e-17 A and was refused. A floor is now an absolute allowance: pass when
+  |Δ| ≤ max(1e-6·|x|, floor), which is what the user docs already said. A corrupted build still fails the proof
+  (`CompileNetlistTests.Export_ProvesTheCompiledPart_…`). After the fix gan_4x125 proves at 26 points, worst 1.1e-9.
+- The greyed Compile Verilog-A models note now points a ComposedFET cell at Compile netlist, which is what turns a
+  ComposedFET into Verilog-A; Compile Verilog-A models compiles only `.va` files a cell already places. The success line
+  names the source folder in full instead of a bare `protected-source/`.
+
+## SDL-7: optimising geometry by EM in the designer's own schematic (2026-11-03)
+
+`em=off|correct|direct` and `emBudget=` on the `optimize` line; the modes live in `OptimizationRun.Em.cs`. `correct`
+runs each inner search as its own `OptimizationRun` on the circuit model (`EmInner`: a sub-box of ±step around the
+accepted point, its start, the per-goal offsets, the connectivity check), so the inner cache and best never mix
+with EM evaluations. Stop and Pause reach inner runs through `Ctl` (the parent's pause machinery). The offset is a
+`Value` per goal (`Value.Sub` of the EM and circuit expression values), added in scoring through `WithOffset`. A goal
+whose two values do not line up is not corrected and is said (`opt.em.offset`).
+
+- **A whole-layout copper partition cannot hold connectivity in a distributed circuit.** In a microstrip circuit a
+  line's copper joins its own two nets, so the whole circuit is one piece and "do nets a and b touch" is always yes;
+  a ring with one joint open is still one piece. The first signature, measured that way, said every net of C2
+  touches every other. `ConnectivitySignature` is the planner's findings instead: joints that do not close,
+  connections not joined, and pairs of parts that share no net whose copper meets (`PlacementOverlaps`, on the
+  DrcConnectivity partition), plus one thing the planner does not check, each part's own pins grouped by its own
+  copper (`PartGroups`, one tagged flatten per layout). The last is what catches a coupled line driven to S ≤ 0:
+  `PlacementOverlaps` compares different parts only, and `MCLIN` accepts any spacing.
+- **A re-plan cannot tell a hand-opened joint from a gap the schematic's lengths make.** Between two parts already
+  placed, every open joint is reported as Info ("open in the layout", SDL-4 D6), so C6's 50 µm gap was held as a
+  user's choice and the run went ahead. `EmEvaluation.SchematicDisagreements` plans the same schematic onto an empty
+  layout: a joint the user opened closes there, a gap from the lengths does not. The start is refused on that.
+- **The count's estimate is the expensive part of a probe.** Each candidate is checked by planning the run and counting
+  its EM evaluations; with the planar preflight estimate (it meshes the layout) a probe took 0.3 to 2.4 s, without it
+  about 10 ms. `CountEmSolves(..., estimate: false)` and `EmEvaluationScope.Estimate` let a probe skip it. The 64-point
+  range scan is then well under a second per variable.
+- **The scan's edge is a grid point, not the edge.** D10 scans 64 points per variable; a search can find connected
+  copper between the last overlapping grid point and the first clean one (C2: 0.1411 mm against the scan's 0.1444 mm).
+  Every solved point is checked on its own, so this is only a reporting resolution.
+- **D6 for a schematic simulated by EM of its own layout:** only the schematic's variables reach the geometry (Path A
+  replaces the parts by the EM N-port), so a tuned part parameter is refused (`opt.em.not-variable`). A variable that
+  leaves every scanned geometry's key unchanged is refused too (`opt.em.no-effect`).
+- **No technology minimum spacing is checked.** D9 asks for a gap below the technology's minimum spacing to be
+  infeasible "when the technology declares one"; the technology model has no per-layer minimum spacing the run can
+  read (design rules are in the DRC deck), so only touching is checked.
+- **Tuning drives the circuit model** (`TuneSession` sets `Em = false`): before this, a live session on a `model=em`
+  analysis solved EM on every slider move. Solve EM here shows its result through the Data Display's snapshot ghost
+  (`ShowSnapshot`, which yield's trial re-run already uses). The correction traces are `EmTraceCorrection`, cube by
+  cube EM − circuit, applied by the sink to what it publishes. A cube whose shape differs passes through unchanged.
+- **Path B** (a placed EM part, Model = EM) runs through the same modes with the probe, but its connectivity, write-back
+  and Apply are SDL-10's. Apply here writes VAR rows only and says so for any other key.
+- **No real end-to-end solve was added.** Every SDL-7 test uses the stub (`EmEvaluation.SolverStandIn`, flow-local so it
+  never reaches a concurrent real-solve test); SDL-6's `ParametricEmCellTests` already holds the real solve path.

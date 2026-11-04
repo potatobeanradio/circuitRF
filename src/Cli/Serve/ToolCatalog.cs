@@ -279,6 +279,8 @@ internal static class ToolCatalog
         new("saveCorner",   "--save-corner",  OptKind.Str,     "A .csch only, with trial: add a statistical corner of this name naming that trial."),
         new("output",       "-o",             OptKind.Path,    "The result .npy; default <design>.yield.npy beside the design. With trial: that trial's results."),
         new("corners",      "--corners",      OptKind.StrList, "Run at each of these enabled corners (the statistics line's corners= otherwise), process draws off there; result.corners."),
+        // brief-sdl-7 D8: a trial count of EM solves is refused; em=off runs the trials by circuit models.
+        EmOptions[0],
     ];
 
     // brief-img-11 R-im11-5 — a picture source's flags, the same on convert and recognize. Every one is read by
@@ -456,6 +458,9 @@ internal static class ToolCatalog
           + "no Touchstone, Thermal temperatures. optimize runs the design's tune, goal and optimize lines "
           + "and returns result.optimize — the best values as the text to write into the file, each goal's "
           + "margin. With showIterations it also returns each iteration and sends a progress notification per iteration. "
+          + "When a goal reads an analysis run by EM, optimize checks the layout's connectivity at every candidate, reports "
+          + "each variable's connected range, spends at most emBudget EM solves and returns only an EM-verified best point "
+          + "(result.optimize.em); apply writes it into the schematic and its layout. "
           + "montecarlo and yield run the tolerances on the tune lines (and a kit's statistics) and return result.yield — "
           + "the yield with its interval, each goal's yield and worst trial, the spread of every margin and measurement; "
           + "trial=<n> re-runs one trial. corners evaluates every enabled corner and returns result.corners — a corner × goal "
@@ -546,9 +551,17 @@ internal static class ToolCatalog
                      new("showIterations","--show-iterations",OptKind.Flag, "Also return each iteration's state (result.optimize.perIteration) and send a progress notification per iteration. Default: the final result only."),
                      new("output",     "-o",           OptKind.Path,    "A .npy for the best point's full results plus the opt history group."),
                      new("history",    "--history",    OptKind.Path,    "A .npy for the opt history group alone."),
-                     new("savePreset", "--save-preset",OptKind.Str,     "A .csch only: add the best values as a preset of this name. The only write to the design.")],
+                     new("savePreset", "--save-preset",OptKind.Str,     "A .csch only: add the best values as a preset of this name."),
+                     // brief-sdl-7: the optimize line's em= and emBudget=, and Apply (R-sdl7-8).
+                     new("emMode",     "--em",         OptKind.Str,     "off, correct or direct: how analyses simulated by EM are optimized. correct (the default when a goal "
+                                                                     + "reads one) searches on the circuit models and corrects them with a few EM solves; direct makes every "
+                                                                     + "evaluation an EM solve (pattern, simplex, trust_region or bayes); off uses circuit models alone."),
+                     new("emBudget",   "--em-budget",  OptKind.Integer, "The most EM solves the run may make (default 12 for correct, 30 for direct); cached geometries are free. "
+                                                                     + "It stops there and keeps its best EM-verified point."),
+                     new("apply",      "--apply",      OptKind.Flag,    "A .csch run by EM only: write the best values into the schematic's VAR block, update its layout from the "
+                                                                     + "schematic, and check the saved layout is the geometry EM verified (result.optimize.em.applied).")],
                     "Optimization. These arguments override the file's optimize line for this run only; nothing is "
-                  + "written to the design's values. Exit 0: every goal met. Exit 3: it ran and a goal is unmet — "
+                  + "written to the design's values unless apply or savePreset is given. Exit 0: every goal met. Exit 3: it ran and a goal is unmet — "
                   + "result.optimize.goals says which, by how much and where. Exit 2: no evaluation converged."),
                 // brief-yield-5 R-ya5-5: the `yield` verb's two run nouns, so the document is the verb's `--json`
                 // object and nothing here reshapes it. `trial` re-runs one trial in place of the run.
@@ -625,7 +638,7 @@ internal static class ToolCatalog
                 // brief-sens-1 R-sens1-7: `yield sens`, the same verb's seventh noun. A progress notification per batch.
                 new("sensitivity", ["yield", "sens"],
                     [new("path", true, "The .csch or .cnl whose tunables, tolerances, goals, measures and sensitivity line to run.")],
-                    [Set,
+                    [Set, EmOptions[0],
                      new("factors",   "--factors",   OptKind.Str,     "all (default: every tunable — at +-k sigma when it has a tolerance, at +-step otherwise), stat (the stat=1 entries) or opt (the opt=1 entries, at +-step of their value)."),
                      new("step",      "--step",      OptKind.Str,     "The +- step of a value with no tolerance, as a percent of its value (default 1%). A phase steps +-1 deg."),
                      new("sigma",     "--sigma",     OptKind.Number,  "k: a toleranced value steps +-k sigma through its own distribution (default 1)."),

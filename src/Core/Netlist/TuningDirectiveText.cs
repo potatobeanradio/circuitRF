@@ -573,6 +573,16 @@ public static class TuningDirectiveText
                 case "parallel":  o.Parallelism = Int(key, value); break;
                 case "corners":   o.Corners = CornersValue(key, value); break;
                 case "nominal":   o.Nominal = Bool(key, value) ? null : false; break;
+                case "embudget":  o.EmBudget = Int(key, value); break;
+                case "em":
+                    o.Em = value.ToLowerInvariant() switch
+                    {
+                        "off"     => OptimizerEmMode.Off,
+                        "correct" => OptimizerEmMode.Correct,
+                        "direct"  => OptimizerEmMode.Direct,
+                        _ => throw Refuse(TuningDirectiveDiagnostics.ValueInvalid(key, value, "one of " + string.Join(", ", AnalysisDirectiveSchema.EmModeTokens))),
+                    };
+                    break;
                 case "cost":
                     o.Cost = value.ToLowerInvariant() switch
                     {
@@ -827,6 +837,8 @@ public static class TuningDirectiveText
         if (o.Parallelism is { } n) sb.Append(" parallel=").Append(n.ToString(CultureInfo.InvariantCulture));
         Opt(sb, "corners", o.Corners);
         if (o.Nominal == false) sb.Append(" nominal=0");
+        if (o.Em is { } em) sb.Append(" em=").Append(AnalysisDirectiveSchema.EmModeTokens[(int)em]);
+        if (o.EmBudget is { } budget) sb.Append(" emBudget=").Append(budget.ToString(CultureInfo.InvariantCulture));
         Extra(sb, o.Options, AnalysisDirectiveSchema.AlgorithmOptionPrefix);
         Extra(sb, o.Extra, "");
         return sb.ToString();

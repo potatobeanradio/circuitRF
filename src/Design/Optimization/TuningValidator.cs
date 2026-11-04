@@ -134,6 +134,12 @@ public static class TuningValidator
             }
             if (o.TimeLimit is { } limit && TimeLimitSeconds(limit) is null)
                 f.Add(TuningDiagnostics.TimeLimitInvalid(limit));
+            // brief-sdl-7 D3/D4.
+            if (o.Em == OptimizerEmMode.Direct && o.Algorithm != OptimizerAlgorithms.Auto
+                && !OptimizerAlgorithms.ForEmDirect.Contains(o.Algorithm))
+                f.Add(TuningDiagnostics.EmDirectAlgorithm(o.Algorithm, string.Join(", ", OptimizerAlgorithms.ForEmDirect)));
+            if (o.EmBudget is { } budget && budget < 1)
+                f.Add(TuningDiagnostics.EmBudgetNotPositive(budget.ToString(System.Globalization.CultureInfo.InvariantCulture)));
         }
 
         // The statistical part — tolerances, correlations, statistics settings, corners (docs/design/yield.md).

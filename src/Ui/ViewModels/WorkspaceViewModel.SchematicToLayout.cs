@@ -79,6 +79,29 @@ public partial class WorkspaceViewModel
         RunLayoutUpdate(doc, onlyWBond: comp);
     }
 
+    /// <summary>
+    /// brief-sdl-7 R-sdl7-8 — the Optimizer's Push has written an EM-verified best point into this schematic's VAR block
+    /// (one undo step there); this runs Update Layout from Schematic as the menu does (one undo step in the layout,
+    /// hand edits kept) and checks that the layout is now the geometry EM solved, by its EM cache key. A mismatch is said.
+    /// </summary>
+    internal string? UpdateLayoutAfterEmPush(SchematicViewModel schematic, string? expectedKey)
+    {
+        if (!FindSchematicDocumentWithFrame(schematic, out var doc, out _) || doc.FilePath is not { } path)
+            return "the layout was not updated: the schematic is not open from a file";
+        RunLayoutUpdate(doc, onlyWBond: null);
+        var sibling = CellFolder.SiblingView(path, ViewType.Schematic, ViewType.Layout);
+        if (sibling.CellDir is not { } cellDir
+            || CircuitRF.Design.Layout.Em.ParametricEm.EmCapability.Resolve(cellDir, null, Path.GetDirectoryName(path), out var why) is not { } target)
+            return "layout updated; its geometry could not be checked";
+        var layoutVm = GetOrCreateLayoutSession(Path.GetFullPath(sibling.TargetPath));
+        string key = CircuitRF.Design.Optimization.EmApply.KeyOfLayout(target, layoutVm.Model, layoutVm.Technology);
+        bool same = expectedKey is null || expectedKey.Split('+').Contains(key, StringComparer.Ordinal);
+        if (!same)
+            Messages.Warning($"Optimizer: the updated layout's geometry {key} is not the one EM verified ({expectedKey}); what is drawn " +
+                             "was not solved. Re-run the optimisation from these values, or simulate the analysis by EM.", sibling.TargetPath);
+        return same ? $"layout updated to the geometry EM verified ({key})" : $"layout updated, but it is NOT the geometry EM verified";
+    }
+
     /// <param name="onlyWBond">
     /// When non-null, ONLY this wBond component is written — the instance generator does not run at all.
     /// Null is the ordinary whole-schematic command.

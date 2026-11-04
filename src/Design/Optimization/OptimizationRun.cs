@@ -39,6 +39,16 @@ public sealed record OptimizationOptions
     /// <summary>The run statistical corners came from (<c>&lt;design&gt;.yield.npy</c>), when at hand: their recorded
     /// z-vectors are replayed as they stand (brief-yield-7 R-ya7-3). Null draws them afresh, with a note.</summary>
     public DataSet? Recorded { get; init; }
+
+    /// <summary>brief-sdl-7 D8 — for an evaluator of value maps (yield, Monte Carlo, sensitivity): false runs every
+    /// evaluation by circuit models (<c>--em off</c>); null as each analysis and instance says.</summary>
+    public bool? EvaluateEm { get; init; }
+
+    /// <summary>brief-sdl-7 — an inner run of em=correct: its box, start, offsets and connectivity check.</summary>
+    internal EmInner? Inner { get; init; }
+
+    /// <summary>brief-sdl-7 — the em=correct run an inner run belongs to; its Stop and Pause hold the inner run too.</summary>
+    internal OptimizationRun? Parent { get; init; }
 }
 
 /// <summary>The stages a run names in its progress (brief-tuneopt-8 R-to8-5). A run of one named
@@ -52,6 +62,8 @@ public static class OptimizationStages
     /// <summary>Auto on a problem of vendor parts alone (brief vendorlib-4 R-vl4-3c).</summary>
     public const string PartSearch = "discrete search over the candidate parts";
     public const string SnapPolish = "polish the continuous values";
+    /// <summary>brief-sdl-7 D2 — em=correct: the circuit model searches, a few EM solves correct it.</summary>
+    public const string EmCorrect  = "circuit model corrected by EM";
 }
 
 /// <summary>
@@ -139,7 +151,12 @@ public sealed record OptimizationProgress(
 
 /// <summary>One point the algorithm was told about, in order.</summary>
 public sealed record EvaluationRecord(
-    double[] Point, DecodedPoint Decoded, double Cost, bool Failed, bool Infeasible, bool Cached);
+    double[] Point, DecodedPoint Decoded, double Cost, bool Failed, bool Infeasible, bool Cached)
+{
+    /// <summary>brief-sdl-7 D9 — why an infeasible point was not simulated, when the reason is its connectivity
+    /// (<c>L90 = 3.912 mm: ML7 overlaps MT2 (nets n4, n9 touch)</c>); null otherwise.</summary>
+    public string? Why { get; init; }
+}
 
 /// <summary>Whether a point evaluated (yield overview D7).</summary>
 public enum PointStatus
@@ -173,6 +190,10 @@ public sealed record PointEvaluation(
 {
     /// <summary>It evaluated and every goal is met (yield overview D4) — vacuously, with no goals.</summary>
     public bool Pass => Status == PointStatus.Evaluated && Goals.All(g => g.Met);
+
+    /// <summary>brief-sdl-7 — each goal's expression value, before scoring; null when it did not evaluate or the cache
+    /// answered. What em=correct's goal-space offset is made of.</summary>
+    public IReadOnlyList<Value?>? GoalValues { get; init; }
 }
 
 /// <summary>
@@ -247,6 +268,26 @@ public sealed class OptimizationResult
     /// <summary>R-to6-10: group <c>opt</c> — cubes over <c>eval</c> and over <c>iter</c>. The caller
     /// decides whether to write it.</summary>
     public DataSet? History { get; init; }
+
+    // ── brief-sdl-7 ──────────────────────────────────────────────────────────
+
+    /// <summary>How analyses simulated by EM were treated.</summary>
+    public OptimizerEmMode EmMode { get; init; }
+
+    /// <summary>Every EM evaluation the run made, in order (R-sdl7-4); empty under em=off.</summary>
+    public IReadOnlyList<EmSolveRow> EmSolves { get; init; } = [];
+
+    /// <summary>The uncached EM solves the run spent.</summary>
+    public int EmBudgetUsed { get; init; }
+
+    /// <summary>The run stopped at its EM budget; its best point is the best EM-verified one.</summary>
+    public bool StoppedByBudget { get; init; }
+
+    /// <summary>The geometry key of the best EM-verified point — what Apply checks the saved layout against.</summary>
+    public string? BestEmKey { get; init; }
+
+    /// <summary>D10 — each variable's connected interval around its start.</summary>
+    public IReadOnlyList<ConnectedRange> ConnectedRanges { get; init; } = [];
 }
 
 /// <summary>
@@ -269,7 +310,7 @@ public sealed class OptimizationResult
 /// normalized distance to the region, so ranking pushes toward feasibility. Penalties are assigned
 /// after the whole batch, in batch order, so concurrency cannot change them.</para>
 /// </summary>
-public sealed class OptimizationRun
+public sealed partial class OptimizationRun
 {
     /// <summary>The default iteration limit when the setup states none.</summary>
     public const int DefaultMaxIterations = 100;
@@ -289,6 +330,9 @@ public sealed class OptimizationRun
 
         /// <summary>Across corners: each corner's goal scores, in evaluation order.</summary>
         public IReadOnlyList<(string Corner, IReadOnlyList<GoalScore> Scores)>? PerCorner { get; init; }
+
+        /// <summary>brief-sdl-7 — each goal's value before scoring (and before any EM offset).</summary>
+        public Value?[]? GoalValues { get; init; }
     }
 
     private readonly PreparedCircuit _circuit;
@@ -345,7 +389,7 @@ public sealed class OptimizationRun
     private double _stallTol;
     private int _stallIters;
 
-    private OptimizationRun(PreparedCircuit circuit, OptimizationOptions options, GoalUse? evaluateFor = null)
+    internal OptimizationRun(PreparedCircuit circuit, OptimizationOptions options, GoalUse? evaluateFor = null)
     {
         _circuit = circuit;
         _options = options;
@@ -393,6 +437,7 @@ public sealed class OptimizationRun
             _analyses  = all ? null : goalAnalyses;
             _cost      = _settings.Cost;
             _parallelism = Math.Max(1, (use == GoalUse.Opt ? null : _setup.Statistics?.Parallelism) ?? _settings.Parallelism ?? cores);
+            _evalEm = options.EvaluateEm;
             return;
         }
 
@@ -438,6 +483,7 @@ public sealed class OptimizationRun
             return;
         }
         _cost = info.Accepts(_settings.Cost) ? _settings.Cost : info.Costs[0];
+        if (InitEm(bench, lib, options) is { } emRefusal) { Refusal = emRefusal; return; }
 
         var named = _goals.Select(g => g.Analysis).OfType<string>().Distinct(StringComparer.Ordinal).ToList();
         _simulates = named.Count > 0;
@@ -534,7 +580,7 @@ public sealed class OptimizationRun
     public OptimizationVariables? Variables { get; }
 
     /// <summary>The algorithm the setup names (<c>auto</c> runs the stages <see cref="OptimizationStages"/> lists).</summary>
-    public string AlgorithmId { get; } = "";
+    public string AlgorithmId { get; private set; } = "";
 
     /// <summary>What the run noted: a key that names nothing, a start moved into range, one point at a
     /// time and why.</summary>
@@ -549,7 +595,7 @@ public sealed class OptimizationRun
     public long Infeasible  => _infeasible;
     public long CacheHits   => _cacheHits;
 
-    /// <summary>Holds the run after the batch in flight (D16).</summary>
+    /// <summary>Holds the run after the batch in flight (D16). An em=correct run's inner runs hold with it.</summary>
     public void Pause() => _resume.Reset();
 
     public void Resume() => _resume.Set();
@@ -595,6 +641,16 @@ public sealed class OptimizationRun
         string reason;
         try
         {
+            // brief-sdl-7: an EM run checks its start, its variables and their ranges before anything is solved.
+            if (EmMode != OptimizerEmMode.Off && _inner is null)
+            {
+                if (PrepareEm(ct) is { } emRefusal) return Refused(emRefusal);
+                if (EmMode == OptimizerEmMode.Correct) return RunEmCorrect(ct);
+                FloorSteps(AlgorithmId, _dbuStep.DefaultIfEmpty(0).Max());
+            }
+            if (_inner is { MinStep: > 0 } inner)
+                foreach (var id in new[] { AlgorithmId, LevenbergMarquardt.AlgorithmId, Minimax.AlgorithmId }) FloorSteps(id, inner.MinStep);
+
             if (AlgorithmId == OptimizerAlgorithms.Auto)
             {
                 var (why, refused) = RunAuto(ct);
@@ -607,14 +663,14 @@ public sealed class OptimizationRun
                 // A vendor part is a real candidate for Discrete, and its ideal stand-in for every continuous search,
                 // which then ends on real parts (brief vendorlib-4 R-vl4-3b, owner decision D3).
                 _snapParts = AlgorithmId == Discrete.AlgorithmId;
-                var alg = Create(AlgorithmId, Variables.Start, sub: null);
+                var alg = Create(AlgorithmId, StartPoint, sub: null);
                 var end = RunStage(alg, null, null, null, firstOfRun: true, ct);
                 if (end.Refusal is { } r) return Refused(r);
                 reason = end.Reason;
                 // A standard-value row is searched continuously and must still END on a rung, whatever the
                 // algorithm: a result between rungs is not the value the row asked for. An ideal stand-in for a
                 // vendor part is not a part anyone can buy, so the same holds for it.
-                bool snap = _options.SnapAndPolish || SeriesRows || PartRows;
+                bool snap = (_options.SnapAndPolish || SeriesRows || PartRows) && _inner is null;
                 if (snap && AlgorithmId != Discrete.AlgorithmId && (end.Kind != StageEnd.Stopped || SeriesRows || PartRows)
                     && _bestIndex >= 0 && Variables.DiscreteCoordinates.Any())
                     reason = SnapStage(ct) ?? reason;
@@ -690,7 +746,7 @@ public sealed class OptimizationRun
     /// snapped. What the Optimizer asks before it lets a paused best be kept.</summary>
     public bool BestOffSeries =>
         Variables is not null && (SeriesRows || PartRows) && _bestIndex >= 0 && _bestIndex < _log.Count &&
-        Variables.Decode(_log[_bestIndex].Point, snapPreferred: true, snapParts: true).CacheKey != _log[_bestIndex].Decoded.CacheKey;
+        DecodeAt(_log[_bestIndex].Point, snapPreferred: true, snapParts: true).CacheKey != _log[_bestIndex].Decoded.CacheKey;
 
     internal static bool SearchesOnSeries(string algorithmId) =>
         algorithmId == Discrete.AlgorithmId ||
@@ -728,7 +784,7 @@ public sealed class OptimizationRun
         if (Variables.PartCoordinates.Any() && Variables.DiscreteUnavailable() is null)
         {
             _snapPreferred = _snapParts = true;
-            var parts = RunStage(Create(Discrete.AlgorithmId, Variables.Start, null), null, OptimizationStages.PartSearch,
+            var parts = RunStage(Create(Discrete.AlgorithmId, StartPoint, null), null, OptimizationStages.PartSearch,
                                  null, firstOfRun: true, ct);
             return parts.Refusal is { } pr ? ("refused", pr) : (parts.Reason, null);
         }
@@ -739,7 +795,7 @@ public sealed class OptimizationRun
         if (_settings.MaxEvaluations is { } me) budget = Math.Min(budget, Math.Max(1, me / 2));
 
         _snapPreferred = SearchesOnSeries(CmaEs.AlgorithmId);
-        var global = RunStage(Create(CmaEs.AlgorithmId, Variables.Start, null), null, OptimizationStages.Global,
+        var global = RunStage(Create(CmaEs.AlgorithmId, StartPoint, null), null, OptimizationStages.Global,
                               budget, firstOfRun: true, ct);
         if (global.Refusal is { } r) return ("refused", r);
         var last = global;
@@ -756,7 +812,8 @@ public sealed class OptimizationRun
         }
 
         string reason = last.Reason;
-        if ((last.Kind != StageEnd.Stopped || SeriesRows || PartRows) && _bestIndex >= 0 && Variables.DiscreteCoordinates.Any())
+        if ((last.Kind != StageEnd.Stopped || SeriesRows || PartRows) && _bestIndex >= 0 && Variables.DiscreteCoordinates.Any()
+            && _inner is null)
             reason = SnapStage(ct) ?? reason;
         return (reason, null);
     }
@@ -876,15 +933,16 @@ public sealed class OptimizationRun
         int algIterations = 0;
         bool first = firstOfRun;
 
+        var ctl = Ctl;
         while (true)
         {
-            if (_stop) return new(StageEnd.Stopped, "stopped");
-            if (!_resume.IsSet)
+            if (ctl._stop) return new(StageEnd.Stopped, "stopped");
+            if (!ctl._resume.IsSet)
             {
-                _held.Set();
-                _resume.Wait(ct);
-                _held.Reset();
-                if (_stop) return new(StageEnd.Stopped, "stopped");
+                ctl._held.Set();
+                ctl._resume.Wait(ct);
+                ctl._held.Reset();
+                if (ctl._stop) return new(StageEnd.Stopped, "stopped");
             }
             ct.ThrowIfCancellationRequested();
 
@@ -893,6 +951,8 @@ public sealed class OptimizationRun
             var batch = sub is { } e ? asked.Select(x => Embed(x, e.Coords, e.Base)).ToList() : asked;
             int before = _log.Count;
             var results = EvaluateBatch(batch, ct);
+            // brief-sdl-7 D4: em=direct stops at its budget, keeping its best EM point.
+            if (_budgetHit) return new(StageEnd.Limit, $"its EM budget of {_emBudget} solve{(_emBudget == 1 ? "" : "s")} was spent");
 
             // A goal that cannot be scored at the start point (a complex value, an axis it does not
             // have) will not be scored anywhere: that is a refusal, not 100 failed evaluations.
@@ -973,7 +1033,7 @@ public sealed class OptimizationRun
         }
         EvaluateBatch(points, ct, record: false);
 
-        var keys = points.Select(p => Variables.Decode(p, _snapPreferred, _snapParts)).ToArray();
+        var keys = points.Select(p => DecodeAt(p, _snapPreferred, _snapParts)).ToArray();
         if (keys[0].Infeasible || !TryOutcome(keys[0].CacheKey, out var o0) || o0.Failed) return null;
 
         double GoalCost(PointOutcome o, int g)
@@ -1041,7 +1101,8 @@ public sealed class OptimizationRun
             var (o, data, cached, _) = core[k];
             result[k] = o.Failed
                 ? new PointEvaluation(points[k].Values, PointStatus.DidNotEvaluate, o.Error, o.Scores, double.NaN, null, cached)
-                : new PointEvaluation(points[k].Values, PointStatus.Evaluated, null, o.Scores, o.Cost, data, cached);
+                : new PointEvaluation(points[k].Values, PointStatus.Evaluated, null, o.Scores, o.Cost, data, cached)
+                  { GoalValues = o.GoalValues };
         }
         return result;
     }
@@ -1069,10 +1130,28 @@ public sealed class OptimizationRun
     internal IReadOnlyList<Evaluation> EvaluateBatch(IReadOnlyList<double[]> batch, CancellationToken ct = default,
                                                      bool record = true)
     {
-        var decoded = batch.Select(u => Variables!.Decode(u, _snapPreferred, _snapParts)).ToArray();
-        foreach (var d in decoded) if (d.Infeasible) _infeasible++;
+        var decoded = batch.Select(u => DecodeAt(u, _snapPreferred, _snapParts)).ToArray();
+
+        // brief-sdl-7 D9: a candidate whose copper would join or part different nets is infeasible, and nothing is
+        // simulated for it — under em=direct, and in em=correct's inner search, whose circuit model knows no geometry.
+        var check = _inner?.Feasibility ?? (EmMode == OptimizerEmMode.Direct && _startSignatures.Count > 0 ? Feasible : null);
+        if (check is not null)
+            for (int k = 0; k < decoded.Length; k++)
+                if (!decoded[k].Infeasible && check(decoded[k]) is { } why)
+                {
+                    _infeasibleWhy[decoded[k].CacheKey] = why;
+                    decoded[k] = decoded[k] with { Infeasible = true, Distance = 0 };
+                }
+        // brief-sdl-7 D4: under em=direct only the points within the solve budget are simulated.
+        var cachedBefore = new Dictionary<string, bool>(StringComparer.Ordinal);
+        if (EmMode == OptimizerEmMode.Direct && _probe is not null)
+            foreach (var d in decoded)
+                if (!d.Infeasible) cachedBefore[d.CacheKey] = !_probe.Fresh(d.Values).Uncached.Any();
+        int keep = BudgetPrefix(decoded);
+
+        foreach (var d in decoded.Take(keep)) if (d.Infeasible) _infeasible++;
         var core = _corners is null
-            ? EvaluateKeyed([.. decoded.Select(d => d.Infeasible ? null : (KeyedPoint?)new KeyedPoint(d.CacheKey, d.Values))],
+            ? EvaluateKeyed([.. decoded.Select((d, k) => d.Infeasible || k >= keep ? null : (KeyedPoint?)new KeyedPoint(d.CacheKey, d.Values))],
                             keepData: true, ct)
             : EvaluateAtCorners(decoded, ct);
 
@@ -1082,15 +1161,23 @@ public sealed class OptimizationRun
         for (int k = 0; k < batch.Count; k++)
         {
             var d = decoded[k];
+            if (k >= keep)
+            {
+                results[k] = new Evaluation(penalty, null, Failed: true);
+                continue;
+            }
             if (d.Infeasible)
             {
                 results[k] = new Evaluation(penalty + d.Distance, null, Failed: true);
-                _log.Add(new EvaluationRecord(batch[k], d, results[k].Cost, false, true, false));
+                _log.Add(new EvaluationRecord(batch[k], d, results[k].Cost, false, true, false)
+                         { Why = _infeasibleWhy.GetValueOrDefault(d.CacheKey) });
                 continue;
             }
             var (o, data, cached, ranHere) = core[k];
             results[k] = o.Failed ? new Evaluation(penalty, null, Failed: true) : new Evaluation(o.Cost, o.Residuals);
             _log.Add(new EvaluationRecord(batch[k], d, results[k].Cost, o.Failed, false, cached));
+            if (EmMode == OptimizerEmMode.Direct && _probe is not null && ranHere && !cached)
+                RecordDirectRow(d, o, cachedBefore.GetValueOrDefault(d.CacheKey));
 
             if (!o.Failed && (_bestIndex < 0 || o.Cost < _log[_bestIndex].Cost))
             {
@@ -1269,7 +1356,8 @@ public sealed class OptimizationRun
                 return (new PointOutcome(true, failure, 0, [], [], false), null);
             }
 
-            var scores = _goals.Select((g, i) => GoalResiduals.Score(g, goalValues[i], errors[i])).ToList();
+            // brief-sdl-7 D2: em=correct's inner search scores the circuit model plus each goal's fixed EM offset.
+            var scores = _goals.Select((g, i) => GoalResiduals.Score(g, WithOffset(i, goalValues[i]), errors[i])).ToList();
             if (scores.FirstOrDefault(s => s.Error is not null) is { } bad)
             {
                 Interlocked.Increment(ref _failures);
@@ -1277,7 +1365,7 @@ public sealed class OptimizationRun
             }
             double[] residuals = [.. scores.SelectMany(s => s.Residuals)];
             double cost = GoalResiduals.Cost(residuals, _cost);
-            return (new PointOutcome(false, null, cost, residuals, scores, false), data);
+            return (new PointOutcome(false, null, cost, residuals, scores, false) { GoalValues = goalValues }, data);
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception ex)
@@ -1300,6 +1388,7 @@ public sealed class OptimizationRun
             Sets         = _options.Sets,
             Tunables     = tuned,
             Analyses     = _analyses,
+            Em           = _evalEm,
             Measurements = true,
             Expressions  = [.. _goals.Select(g => g.Expression)],
             Control      = new RunControl { Token = ct },
@@ -1379,7 +1468,7 @@ public sealed class OptimizationRun
         progress(new OptimizationProgress(
             iteration, Evaluations, Failures, _infeasible, _cacheHits, elapsed, current, BestCost(),
             _bestIndex < 0 ? new Dictionary<string, string>() : _log[_bestIndex].Decoded.Values,
-            goals, _bestIndex < 0 ? [] : Variables!.Railed(_log[_bestIndex].Point), _bestData, _stage));
+            goals, _bestIndex < 0 ? [] : Variables!.Railed(Box(_log[_bestIndex].Point)), _bestData, _stage));
     }
 
     private OptimizationResult Refused(Diagnostic why) => new()
@@ -1406,10 +1495,10 @@ public sealed class OptimizationRun
             Parts        = parts,
             Notes        = _notes,
             BestValues   = bestRecord?.Decoded.Values ?? new Dictionary<string, string>(),
-            BestPoint    = bestRecord?.Point,
+            BestPoint    = bestRecord is null ? null : Box(bestRecord.Point),
             BestCost     = bestRecord?.Cost,
             Goals        = cancelled ? [] : BestGoals(),
-            Railed       = bestRecord is null ? [] : Variables!.Railed(bestRecord.Point),
+            Railed       = bestRecord is null ? [] : Variables!.Railed(Box(bestRecord.Point)),
             BestData     = cancelled ? null : _bestData,
             Iterations   = iterations,
             Evaluations  = Evaluations,
@@ -1417,7 +1506,14 @@ public sealed class OptimizationRun
             Infeasible   = _infeasible,
             CacheHits    = _cacheHits,
             Log          = _log,
-            History      = cancelled ? null : History(),
+            History      = cancelled ? null : History(_log, _iterHistory),
+            EmMode       = EmMode,
+            EmSolves     = _emRows,
+            EmBudgetUsed = _solvedKeys.Count,
+            StoppedByBudget = _emStop == EmStop.Budget,
+            BestEmKey    = EmMode == OptimizerEmMode.Direct && bestRecord is not null && _probe is not null
+                               ? _probe.At(bestRecord.Decoded.Values).KeyText : null,
+            ConnectedRanges = _ranges,
         };
     }
 
@@ -1447,10 +1543,13 @@ public sealed class OptimizationRun
 
     /// <summary>R-to6-10: the run as a <c>DataSet</c> group <c>opt</c>, so a convergence plot is an
     /// ordinary trace. Values are in base SI with their base unit.</summary>
-    private DataSet History()
+    private DataSet History(IReadOnlyList<EvaluationRecord> log, IReadOnlyList<(double Best, double[] Worst)> iterHistory)
     {
         var ds = new DataSet();
         const string group = "opt";
+        AddEmHistory(ds, group);
+        var _log = log;
+        var _iterHistory = iterHistory;
         int e = _log.Count;
         var evalAxis = new Axis("eval", [.. Enumerable.Range(1, e).Select(i => (double)i)]);
         ds.AddToGroup(group, "cost", new DataCube([evalAxis], [.. _log.Select(r => r.Cost)]));

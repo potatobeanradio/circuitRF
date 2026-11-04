@@ -188,4 +188,63 @@ public static class OptimizationDiagnostics
 
     public static Diagnostic EvaluationFailed(string message) => Diagnostic.Create(
         "opt.evaluation.failed", DiagnosticSeverity.Error, "{message}", ("message", message));
+    // ── brief-sdl-7: optimising geometry by EM ──────────────────────────────
+
+    public static Diagnostic EmNotInvolved(string mode) => Diagnostic.Create(
+        "opt.em.not-involved", DiagnosticSeverity.Info,
+        "em={mode}: no goal reads an analysis simulated by EM and no part is set to EM, so the run uses circuit models.",
+        ("mode", mode));
+
+    public static Diagnostic EmWithCorners(string mode) => Diagnostic.Create(
+        "opt.em.corners", DiagnosticSeverity.Error,
+        "em={mode} with corners: every corner of every point would be an EM solve. Optimise at the nominal by EM, or set em=off " +
+        "to optimise across corners by circuit models.", ("mode", mode));
+
+    public static Diagnostic EmStartRefused(string why) => Diagnostic.Create(
+        "opt.em.start", DiagnosticSeverity.Error,
+        "The EM evaluation at the start values cannot be made: {why} Nothing was solved.", ("why", why));
+
+    /// <summary>D6 — a value the EM result never reads.</summary>
+    public static Diagnostic EmNotThroughVariable(string key, string cell) => Diagnostic.Create(
+        "opt.em.not-variable", DiagnosticSeverity.Error,
+        "{key} does not reach the copper: the EM result of {cell}'s layout is built from the schematic's variables, and {key} " +
+        "is not one. Give the part a variable (a VAR row) and optimise that, or set em=off.", ("key", key), ("cell", cell));
+
+    /// <summary>D6 — SDL-6 D4's finding, as a refusal.</summary>
+    public static Diagnostic EmUnreached(string key, string sentence) => Diagnostic.Create(
+        "opt.em.unreached", DiagnosticSeverity.Error,
+        "{key} cannot be optimised by EM: {sentence} Varying it would spend EM solves on no change. Take it out of the " +
+        "optimisation, or restore the part's value from the schematic.", ("key", key), ("sentence", sentence));
+
+    /// <summary>D6 — a variable whose whole range leaves the geometry unchanged.</summary>
+    public static Diagnostic EmNoEffect(string key) => Diagnostic.Create(
+        "opt.em.no-effect", DiagnosticSeverity.Error,
+        "{key} does not change the copper anywhere in its range, so EM cannot see it vary. Take it out of the optimisation.",
+        ("key", key));
+
+    /// <summary>D9 — the start already disagrees with the schematic.</summary>
+    public static Diagnostic EmStartDisagrees(string lines) => Diagnostic.Create(
+        "opt.em.start-connectivity", DiagnosticSeverity.Error,
+        "The layout at the start values does not agree with the schematic: {lines} Optimising its geometry would hold that " +
+        "fixed. Correct the values or the layout first; nothing was solved.", ("lines", lines));
+
+    public static Diagnostic EmConnectivityUnchecked() => Diagnostic.Create(
+        "opt.em.connectivity-unchecked", DiagnosticSeverity.Info,
+        "The layout's connectivity could not be measured, so candidate points are not checked for gaps or shorts.");
+
+    /// <summary>D10.</summary>
+    public static Diagnostic EmConnectedRange(string sentence) => Diagnostic.Create(
+        "opt.em.connected-range", DiagnosticSeverity.Info, "{sentence}", ("sentence", sentence));
+
+    public static Diagnostic EmOffsetMismatch(string goal) => Diagnostic.Create(
+        "opt.em.offset", DiagnosticSeverity.Warning,
+        "Goal '{goal}': its EM and circuit-model values do not line up sample for sample, so it is not corrected; the EM " +
+        "solves still score it.", ("goal", goal));
+
+    /// <summary>D2's limit, said where it bites.</summary>
+    public static Diagnostic EmCorrectionShort(bool budget) => Diagnostic.Create(
+        "opt.em.correction-short", DiagnosticSeverity.Info,
+        (budget ? "The EM budget ran out before every goal was met. " : "The correction stopped before every goal was met on EM. ") +
+        "em=correct lifts the circuit model's response by EM's offset; a response that EM moves in frequency is corrected " +
+        "slowly. A short em=direct pass from this point (algorithm=pattern) searches on EM itself.");
 }

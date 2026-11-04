@@ -71,7 +71,8 @@ dotnet run --project tools/UiSnapshot --no-build -- --tuning <file.csch> -o out.
 ```
 
 After every step it prints which control holds the keyboard and each row's value, so what a key did is read
-rather than guessed from pixels. Default size 420x500.
+rather than guessed from pixels. Start (the ▶ at `--click 13,31`) runs a real session on the file's circuit, with no
+Data Display to publish to — enough to see a running session's toolbar. Default size 420x500.
 
 **The Optimizer window** opens on a schematic the way the shell hosts it, its circuit prepared as the workspace prepares
 it (the extraction, its netlist and the extraction's vendor parts):

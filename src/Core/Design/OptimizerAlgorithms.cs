@@ -186,4 +186,12 @@ public static class OptimizerAlgorithms
 
     /// <summary>The entry for <paramref name="id"/>, or null.</summary>
     public static OptimizerAlgorithmInfo? Find(string id) => All.FirstOrDefault(a => a.Id == id);
+
+    /// <summary>brief-sdl-7 D3 — the algorithms <c>em=direct</c> accepts: each works in few evaluations, and every
+    /// evaluation there is an EM solve. A population method would spend the budget on its first generation.</summary>
+    public static IReadOnlyList<string> ForEmDirect { get; } = ["pattern", "simplex", "trust_region", "bayes"];
+
+    /// <summary>What <c>auto</c> runs under <c>em=direct</c>: pattern search, which tolerates the steps a geometry
+    /// rounded to its database unit takes.</summary>
+    public const string EmDirectAuto = "pattern";
 }

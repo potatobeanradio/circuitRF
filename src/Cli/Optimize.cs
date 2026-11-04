@@ -1,5 +1,6 @@
 using System.Globalization;
 using CircuitRF.Core.Design;
+using CircuitRF.Core.Netlist;
 using CircuitRF.Design.Circuit;
 using CircuitRF.Design.Optimization;
 using CircuitRF.Design.Results;
@@ -43,8 +44,9 @@ internal static class Optimize
         string? algorithm = null, cost = null, analyses = null, time = null;
         int? maxIter = null, maxEvals = null, parallel = null, seed = null;
         List<string>? vars = null, goals = null;
-        string? corners = null;
-        bool snap = false, sensitivity = false, showIterations = false;
+        string? corners = null, em = null;
+        int? emBudget = null;
+        bool snap = false, sensitivity = false, showIterations = false, apply = false;
         var sets = new List<(string Name, string Expr)>();
 
         for (int i = 0; i < args.Length; i++)
@@ -65,6 +67,10 @@ internal static class Optimize
                 case "--goals" when hasValue:      goals = List(args[++i]); break;
                 case "--corners" when hasValue:    corners = args[++i]; break;
                 case "--snap":                     snap = true; break;
+                // brief-sdl-7: the optimize line's em= and emBudget=, and Apply (R-sdl7-8).
+                case "--em" when hasValue:         em = args[++i].Trim().ToLowerInvariant(); break;
+                case "--em-budget" when hasValue:  if (!Int(a, args[++i], out emBudget, out int r5)) return r5; break;
+                case "--apply":                    apply = true; break;
                 case "--sensitivity":              sensitivity = true; break;
                 case "--show-iterations":          showIterations = true; break;
                 case "-o" or "--output" when hasValue: output = args[++i]; break;
@@ -100,6 +106,8 @@ internal static class Optimize
             return JsonRun.Fail(CliDiagnostics.RunWrongDocumentKind(Verb, input, DocumentKinds.Name(kind)));
         if (presetName is not null && kind != DocumentKind.Schematic)
             return JsonRun.Fail(CliDiagnostics.OptSavePresetNeedsSchematic(input));
+        if (apply && kind != DocumentKind.Schematic)
+            return JsonRun.Fail(CliDiagnostics.OptApplyNeedsSchematic(input));
         foreach (var (flag, path) in new[] { ("-o", output), ("--history", historyPath) })
             if (path is not null && !path.EndsWith(".npy", StringComparison.OrdinalIgnoreCase))
                 return JsonRun.Fail(CliDiagnostics.OptOutputNotNpy(flag, path));
@@ -154,6 +162,14 @@ internal static class Optimize
             };
         }
 
+        if (em is not null)
+        {
+            int at = Array.IndexOf([.. AnalysisDirectiveSchema.EmModeTokens], em);
+            if (at < 0) return JsonRun.Fail(CliDiagnostics.OptFlagValue("--em", em, string.Join(", ", AnalysisDirectiveSchema.EmModeTokens)));
+            settings.Em = (OptimizerEmMode)at;
+        }
+        if (emBudget is not null) settings.EmBudget = emBudget;
+
         var catalog = TunableCatalog.FromNetlist(tb, lib, parts: circuit.PartTunables);
         if (vars is not null && NarrowVariables(setup, catalog, vars) is { } varRefusal) return JsonRun.Fail(varRefusal);
         if (goals is not null && NarrowGoals(setup, goals) is { } goalRefusal) return JsonRun.Fail(goalRefusal);
@@ -202,6 +218,9 @@ internal static class Optimize
                                 $"{enabledGoals} goal(s) with {run.AlgorithmId}" +
                                 (run.EvaluationsPerPoint > 1
                                     ? $" at {string.Join(", ", run.CornerNames)} ({run.EvaluationsPerPoint} evaluations per point)" : ""));
+        if (run.EmMode != OptimizerEmMode.Off)
+            Console.Error.WriteLine($"[circuitRF] by EM ({AnalysisDirectiveSchema.EmModeTokens[(int)run.EmMode]}): at most {run.EmBudget} " +
+                                    $"EM solve{(run.EmBudget == 1 ? "" : "s")}; geometries already in the EM cache are free");
         var result = run.Run();
         foreach (var note in result.Notes.Skip(run.Notes.Count)) Report(note);
 
@@ -234,6 +253,21 @@ internal static class Optimize
         }
         if (historyPath is not null && result.History is { } history) Write(history, historyPath);
 
+        // brief-sdl-7 R-sdl7-8: Apply — only an EM-verified best, into the schematic and its layout, after a checkpoint.
+        EmApplyResult? applied = null;
+        if (apply && result.BestValues.Count > 0)
+        {
+            if (result.EmMode == OptimizerEmMode.Off) JsonRun.Report(CliDiagnostics.OptApplyNotEm());
+            else if (CheckpointBefore(full, "opt --apply") is { } failed) { JsonRun.Report(failed); exit = 1; }
+            else
+            {
+                applied = EmApply.Apply(full, result.BestValues, result.BestEmKey);
+                Console.Error.WriteLine($"[circuitRF] {applied.Sentence}");
+                if (applied.Refusal is not null || !applied.KeyMatches) exit = 1;
+                else JsonRun.AddOutput("schematic", full);
+            }
+        }
+
         string? saved = null;
         if (presetName is not null && result.BestValues.Count > 0)
         {
@@ -242,7 +276,7 @@ internal static class Optimize
         }
 
         // ── 5. The report ─────────────────────────────────────────────────────
-        var report = Project(input, run, result, catalog, sens, saved, showIterations ? perIteration : null);
+        var report = Project(input, run, result, catalog, sens, saved, showIterations ? perIteration : null, applied);
         JsonRun.Optimize = report;
         Print(report);
         return exit;
@@ -364,7 +398,7 @@ internal static class Optimize
 
     private static OptimizeReportJson Project(string input, OptimizationRun run, OptimizationResult r,
                                               TunableCatalog catalog, SensitivityReport? sens, string? saved,
-                                              IReadOnlyList<OptimizeIterationJson>? perIteration)
+                                              IReadOnlyList<OptimizeIterationJson>? perIteration, EmApplyResult? applied = null)
     {
         var rows = new List<OptimizeVariableJson>();
         foreach (var c in run.Variables!.Coordinates)
@@ -413,7 +447,15 @@ internal static class Optimize
             across ? run.CornerNames : null, across ? run.EvaluationsPerPoint : null,
             r.Parts.Count == 0 ? null : [.. r.Parts.Select(p => new OptimizePartJson(
                 p.Key, catalog.Find(p.Key)?.ValueText ?? "", p.Part, p.ValueText, p.Description,
-                Design.VendorLibraries.VendorLibraryRefs.RefFor(p.Library, p.File), p.Changed))]);
+                Design.VendorLibraries.VendorLibraryRefs.RefFor(p.Library, p.File), p.Changed))],
+            r.EmMode == OptimizerEmMode.Off ? null : new OptimizeEmJson(
+                AnalysisDirectiveSchema.EmModeTokens[(int)r.EmMode], run.EmBudget, r.EmBudgetUsed, r.StoppedByBudget, r.BestEmKey,
+                [.. r.EmSolves.Select(s => new OptimizeEmSolveJson(s.Values, s.Key, s.Cached, s.Failed, Finite(s.Cost), s.Met,
+                    s.Goals.ToDictionary(g => g.Name, g => Finite(g.Margin), StringComparer.Ordinal)))],
+                [.. r.ConnectedRanges.Select(c => new OptimizeConnectedRangeJson(c.Key, TunableValue.Format(c.Lo, c.Unit),
+                    TunableValue.Format(c.Hi, c.Unit), TunableValue.Format(c.Min, c.Unit), TunableValue.Format(c.Max, c.Unit), c.Whole, c.Sentence))],
+                applied is null ? null : new OptimizeApplyJson(applied.Written, applied.NotWritten, applied.LayoutKey, applied.KeyMatches,
+                                                               applied.LayoutLines, applied.Sentence)));
     }
 
     private static double? Finite(double v) => double.IsFinite(v) ? v : null;
@@ -478,6 +520,22 @@ internal static class Optimize
                   $" → with the real parts {G(s.CostSnapped)}" + (s.Polished ? $" → {G(s.CostAfter)} after polishing" : "")
                 : $"\nSnap: {s.Snapped} value(s) snapped, cost {G(s.CostBefore)} → {G(s.CostSnapped)}" +
                   (s.Polished ? $" → {G(s.CostAfter)} after polishing" : ""));
+        if (r.Em is { } em)
+        {
+            // brief-sdl-7: the EM solves, the best one marked — what was written back is always one of these.
+            Console.WriteLine();
+            Console.WriteLine($"EM ({em.Mode}): {em.Solved} of at most {em.Budget} solve{(em.Budget == 1 ? "" : "s")}" +
+                              (em.StoppedByBudget ? ", stopped at the budget" : "") + (em.BestKey is { } k ? $"; best geometry {k}" : ""));
+            int n = 0;
+            Table(["#", "values", "geometry", "cost", "met"],
+                  em.Solves.Select(s => new[]
+                  {
+                      (++n).ToString(CultureInfo.InvariantCulture), string.Join(", ", s.Values.Select(kv => $"{kv.Key}={kv.Value}")),
+                      (s.Key ?? "—") + (s.Cached ? " (cached)" : ""), s.Cost is { } c ? G(c) : "failed", s.Met ? "yes" : "no",
+                  }));
+            foreach (var range in em.ConnectedRanges) Console.WriteLine("  " + range.Sentence);
+            if (em.Applied is { } ap) Console.WriteLine("Applied: " + ap.Sentence);
+        }
         if (r.Sensitivity is { } sens)
         {
             Console.WriteLine();
@@ -501,7 +559,7 @@ internal static class Optimize
         Console.Error.WriteLine("Usage: circuitrf opt <file.csch|file.cnl> [--algorithm id] [--max-iter n] [--max-evals n] [--time s]");
         Console.Error.WriteLine("                     [--cost lsq|minimax] [--analyses goals|all] [--parallel n] [--seed n] [--set var=expr]");
         Console.Error.WriteLine("                     [--vars key,key] [--goals name,name] [--corners all|none|c,c] [--snap] [--sensitivity]");
-        Console.Error.WriteLine("                     [--show-iterations]");
+        Console.Error.WriteLine("                     [--show-iterations] [--em off|correct|direct] [--em-budget n] [--apply]");
         Console.Error.WriteLine("                     [-o out.npy] [--history out.npy] [--save-preset name]");
     }
 }

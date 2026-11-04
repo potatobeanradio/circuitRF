@@ -987,7 +987,47 @@ namespace RfCore.Export
         /// <summary>The part chosen for each optimized vendor part entry (brief vendorlib-4 R-vl4-6b); null when
         /// none is optimized.</summary>
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        IReadOnlyList<OptimizePartJson>?  Parts = null);
+        IReadOnlyList<OptimizePartJson>?  Parts = null,
+        /// <summary>brief-sdl-7 — how analyses simulated by EM were optimized, every EM evaluation, each variable's
+        /// connected interval and what Apply did; null under em=off.</summary>
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        OptimizeEmJson?                   Em = null);
+
+    /// <summary>brief-sdl-7 — an optimization by EM.</summary>
+    /// <param name="Mode"><c>correct</c> or <c>direct</c>.</param>
+    /// <param name="Budget">The most uncached EM solves it could make.</param>
+    /// <param name="Solved">The uncached EM solves it made.</param>
+    /// <param name="StoppedByBudget">It stopped at the budget, keeping its best EM-verified point.</param>
+    /// <param name="BestKey">The best point's geometry key — the EM cache entry its result is.</param>
+    /// <param name="Solves">Every EM evaluation, in order.</param>
+    /// <param name="ConnectedRanges">Each variable's connected interval around its start (D10).</param>
+    /// <param name="Applied">What <c>--apply</c> did; null without it.</param>
+    public sealed record OptimizeEmJson(
+        string                                  Mode,
+        int                                     Budget,
+        int                                     Solved,
+        bool                                    StoppedByBudget,
+        string?                                 BestKey,
+        IReadOnlyList<OptimizeEmSolveJson>      Solves,
+        IReadOnlyList<OptimizeConnectedRangeJson> ConnectedRanges,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        OptimizeApplyJson?                      Applied = null);
+
+    /// <summary>One EM evaluation: the values, the geometry key, whether the cache held it, the cost and each goal's
+    /// margin on EM.</summary>
+    public sealed record OptimizeEmSolveJson(
+        IReadOnlyDictionary<string, string> Values, string? Key, bool Cached, bool Failed, double? Cost, bool Met,
+        IReadOnlyDictionary<string, double?> Margins);
+
+    /// <summary>D10 — <c>L90: connected from 3.95 mm to 6.20 mm (range 3.00-8.00 mm).</c></summary>
+    public sealed record OptimizeConnectedRangeJson(string Key, string From, string To, string Min, string Max, bool Whole,
+                                                    string Sentence);
+
+    /// <summary>R-sdl7-8 — Apply: the values written into the schematic, the saved layout's geometry key afterwards, and
+    /// whether it is the geometry EM verified.</summary>
+    public sealed record OptimizeApplyJson(
+        IReadOnlyList<string> Written, IReadOnlyList<string> NotWritten, string? LayoutKey, bool KeyMatches,
+        IReadOnlyList<string> LayoutWarnings, string Sentence);
 
     /// <summary>The part an optimization chose for one vendor part entry.</summary>
     /// <param name="Key">The entry (<c>C1.Part</c>).</param>

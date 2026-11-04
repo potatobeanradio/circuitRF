@@ -19,7 +19,7 @@ internal static partial class Yield
 {
     /// <summary>The sensitivity line's settings as flags, and the text table's length.</summary>
     private sealed record SensFlags(string? Factors, double? Step, double? Sigma, bool? Ports, string? Responses, int? Parallel, int? Top,
-                                    string? Snp = null, string? SnpExclude = null, string? By = null);
+                                    string? Snp = null, string? SnpExclude = null, string? By = null, bool? Em = null);
 
     /// <summary>What the text table ranks (<c>--by</c>, brief-sens-2 R-sens2-6); <c>--json</c> carries all four.</summary>
     private static readonly string[] SensLevels = ["key", "entry", "port", "instance"];
@@ -70,6 +70,7 @@ internal static partial class Yield
         var observer = RunHost.Observer;
         var run = SensitivityRun.Create(circuit, new SensitivityOptions
         {
+            Em           = f.Em,
             Setup        = changed ? setup : null,
             Sets         = sets,
             Vars         = vars,
