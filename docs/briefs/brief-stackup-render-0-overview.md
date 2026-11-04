@@ -78,7 +78,7 @@ same way: a comment-stripped source scan (`R-stk6-7`).
 | [6 — context menus](brief-stackup-render-6-context-menu.md) | Delete, Add Via, Plated hole / Fill, and the one-write-path source scan | `StackupContextMenuTests.cs` |
 | [7 — copy](brief-stackup-render-7-copy.md) | `StackupGraphicExport` on `PlotExporter.SetClipboardDataAsync` | `StackupCopyTests.cs` |
 | [8 — docs, figures, closeout](brief-stackup-render-8-docs-and-figures.md) | `layout-view.md` §10.4, `stackup.md`, the `tech-editor-stackup` figure, and the doc-figure repoint decision | DocGen, reported |
-| [9 — resistor films](brief-stackup-render-9-resistor-films.md) | A bound film drawn on its band's face; select, inline-edit R_s, drag to rebind / change face / bind from a tray; context menu. Needs EM-TFR §1 | `StackupSceneTests`, `StackupDragTests`, `StackupContextMenuTests` (extended) |
+| [9 — resistor films](brief-stackup-render-9-resistor-films.md) | A film defined on its conductor (moved from the drawing layer) and drawn on its band's face; the conductor card's film rows; select, inline-edit R_s, drag to another conductor or face; context menu. Needs EM-TFR | `StackupSceneTests`, `StackupDragTests`, `StackupContextMenuTests` (extended) |
 
 Briefs 3–7 each depend on 2, and 2 depends on 1. **3, 4, 5, 6 and 7 are otherwise independent of each
 other** and can be taken in any order once 2 has landed.
