@@ -251,7 +251,8 @@
               "Layer": 4,
               "Datatype": 0
             },
-            "SheetResistanceOhmPerSq": 50
+            "SheetResistanceOhmPerSq": 50,
+            "At": "Bottom"
           }
         ],
         "IsGroundReference": false,

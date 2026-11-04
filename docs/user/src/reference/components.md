@@ -1204,7 +1204,7 @@ two ends on opposite sides, and an even `N` on the same side.
 
 Its resistance is the film's sheet resistance times its squares: the straight film between the bends, plus 0.559 of a square for
 each corner. The contacts and their overlap of the film are not included. A technology [states its film on a
-conductor](stackup.md#film).
+conductor](stackup.md#film), which models an overlap-contact resistor, with metal lapping the film's ends.
 
 {{table: components/Tfr}}
 

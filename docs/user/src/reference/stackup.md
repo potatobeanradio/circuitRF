@@ -623,13 +623,24 @@ drawing. **Add Resistor Film** makes an existing drawing layer a film and asks f
 asks for a name as well and creates the drawing layer with it. On the Layers tab a film's layer is an ordinary row: name,
 colour, pattern and order.
 
+**A film models an overlap-contact resistor.** Thin-film resistors are contacted in one of two ways, and a film here is the first:
+
+- **Overlap contact**, common on GaAs. The film lies on the substrate or a passivation layer, on the same surface the metal is
+  deposited on, and the metal laps over its ends. The contact is the metal's underside on the film's top surface, across the
+  overlap.
+- **Via contact**, common in a silicon back-end. The film has a level of its own in the dielectric, and dedicated vias join it to
+  a metal level. Metal can cross such a film without touching it, and the via openings set the resistor's length.
+
+A film cannot state the second kind: any metal drawn over a film on its own level is a contact. Contact resistance is not
+modelled either, so the overlap is an ideal short. Where it matters, as on a low-value resistor, add it in the schematic.
+
 Each film states:
 
 | | |
 |---|---|
 | **Sheet resistance** | Ω/sq, positive. What a `TFR` on it is worth per square. |
 | **Thickness** | Read by a 3D solve only, whose sheet takes σ = 1/(R_s·t). Left empty, the generator picks one well under a skin depth and says which. |
-| **Face** | Which face of the conductor the film sits on when the metal is a solid in a 3D solve. Unstated, it follows the level's own sheet. |
+| **Face** | Which face of the conductor the film sits on when the metal is a solid in a 3D solve. An overlap-contact film is normally on the bottom, the surface the metal is deposited on. Unstated, it follows the level's own sheet. |
 
 The drawing shows a film as a strip on its conductor, against its face, in its layer's colour.
 
@@ -649,7 +660,7 @@ length is the distance between its contacts' edges rather than the length of the
 
 **The film and the metal share one sheet, at one height.** A planar solve meshes a conductor as a zero-thickness sheet
 at one z, and the film is a surface impedance of `R_s` on the part of that sheet it covers. A film's height above its
-metal's bottom is not a quantity this model has, so a 50 nm film sharing the top surface of a 1 µm metal solves the
+metal's bottom is not a quantity this model has, so a 50 nm film on the bottom face of a 1 µm metal solves the
 same as one at any other height. A 3D setup can see the difference: with `Conductors: Solids` the metal keeps its
 thickness and the film sits on the face it states.
 
@@ -661,7 +672,7 @@ their Z0 as a sheet of the drawn width does.
 them, and a run that meets one names the layer. A film stays out of connectivity, so LVS and DRC read the resistor as a device
 rather than a short.
 
-The technology **MMIC GaAs (2 Layer Metal + MIM, 100um)** states a film: `Resistor` on Metal1, 50 Ω/sq, with width and spacing rules
+The technology **MMIC GaAs (2 Layer Metal + MIM, 100um)** states a film: `Resistor` on the bottom face of Metal1, 50 Ω/sq, with width and spacing rules
 on its layer. The **PDK PCells** example draws a resistor on it.
 
 ## What the EM engine does not read {#ignored}

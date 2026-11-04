@@ -208,8 +208,8 @@ public class StackupFilmTests
     {
         var tech = ShippedTechnologies.Load(GaAs);
         var metal1 = tech.Stackup.Layers.First(l => l.Name == "Metal1");
-        metal1.Films!.Add(new StackupFilm { Layer = new LayerKey(5, 0), SheetResistanceOhmPerSq = 10 });
-        metal1.Films!.Add(new StackupFilm { Layer = new LayerKey(20, 0), SheetResistanceOhmPerSq = 5, At = ConductorSheetSurface.Bottom });
+        metal1.Films!.Add(new StackupFilm { Layer = new LayerKey(5, 0), SheetResistanceOhmPerSq = 10, At = ConductorSheetSurface.Bottom });
+        metal1.Films!.Add(new StackupFilm { Layer = new LayerKey(20, 0), SheetResistanceOhmPerSq = 5, At = ConductorSheetSurface.Top });
         var scene = StackupScene.Build(tech, (float)PaneWidth);
         var band = scene.Bands.First(b => b.Name == "Metal1").Rect;
         var (a, b, c) = (scene.FilmRectOf(Resistor)!.Value, scene.FilmRectOf(new LayerKey(5, 0))!.Value, scene.FilmRectOf(new LayerKey(20, 0))!.Value);
@@ -217,7 +217,7 @@ public class StackupFilmTests
         Assert.Equal(band.Width / 2, a.Width, 2);
         Assert.Equal(a.Right, b.Left, 2);
         Assert.Equal(band.Width, c.Width, 2);
-        Assert.Equal(band.Bottom, c.Bottom, 3);
+        Assert.Equal(band.Top, c.Top, 3);
     }
 
     /// <summary>R-stk9-1 — a film's pieces say only what is stated. R-stk9-2 — strip before band, and the values carry fields.</summary>
@@ -226,7 +226,7 @@ public class StackupFilmTests
     {
         var scene = StackupScene.Build(ShippedTechnologies.Load(GaAs), (float)PaneWidth);
         string Sentence(StackupScene s) => string.Join(" ", s.Labels.Where(l => l.FilmLayer == Resistor).Select(l => l.Text));
-        Assert.Equal("Resistor · 50 Ω/sq", Sentence(scene));
+        Assert.Equal("Resistor · 50 Ω/sq · bottom", Sentence(scene));
 
         var stated = StackupScene.Build(Stated(), (float)PaneWidth);
         Assert.Equal("Resistor · 50 Ω/sq · 0.05 µm · top", Sentence(stated));
@@ -352,12 +352,12 @@ public class StackupFilmTests
         string start = Json(vm);
         var from = OnStrip(SceneOf(canvas), Resistor);
 
-        // Back to the face it came from: the level's SheetAt is Top, and a gesture changing nothing states nothing.
-        Assert.False(Drag(canvas, from, OnBand(SceneOf(canvas), "Metal1", r => r.Top + 1)));
+        // Back to the face it came from: the film states Bottom, and a gesture changing nothing writes nothing.
+        Assert.False(Drag(canvas, from, OnBand(SceneOf(canvas), "Metal1", r => r.Bottom - 1)));
         Assert.Equal(start, Json(vm));
 
-        Assert.True(Drag(canvas, from, OnBand(SceneOf(canvas), "Metal1", r => r.Bottom - 1)));
-        Assert.Equal(ConductorSheetSurface.Bottom, ResistiveFilms.Of(vm.Working, Resistor)!.At);
+        Assert.True(Drag(canvas, from, OnBand(SceneOf(canvas), "Metal1", r => r.Top + 1)));
+        Assert.Equal(ConductorSheetSurface.Top, ResistiveFilms.Of(vm.Working, Resistor)!.At);
         vm.UndoCommand.Execute(null);
         Assert.Equal(start, Json(vm));
     }
@@ -414,14 +414,14 @@ public class StackupFilmTests
         Assert.Equal(["Face", "Move to", "Remove Film", "Copy"], menu.Select(m => (string)m.Header!));
 
         var faces = ((IEnumerable<object>)menu[0].ItemsSource!).OfType<MenuItem>().ToList();
-        Assert.True(faces.Single(f => (string)f.Header! == "Top").IsChecked);
+        Assert.True(faces.Single(f => (string)f.Header! == "Bottom").IsChecked);
         var targets = ((IEnumerable<object>)menu[1].ItemsSource!).OfType<MenuItem>().Select(m => (string)m.Header!).ToList();
         Assert.DoesNotContain("Metal1", targets);
         Assert.DoesNotContain("Backside Metal", targets);
         Assert.Contains("Metal2", targets);
 
-        Click(faces.Single(f => (string)f.Header! == "Bottom"));
-        Assert.Equal(ConductorSheetSurface.Bottom, ResistiveFilms.Of(vm.Working, Resistor)!.At);
+        Click(faces.Single(f => (string)f.Header! == "Top"));
+        Assert.Equal(ConductorSheetSurface.Top, ResistiveFilms.Of(vm.Working, Resistor)!.At);
         Assert.Equal(50, ResistiveFilms.Of(vm.Working, Resistor)!.SheetResistanceOhmPerSq);
 
         var again = Items(canvas.BuildContextMenuItems(OnStrip(SceneOf(canvas), Resistor)));

@@ -27788,3 +27788,11 @@ an older install keeps**, so `install_thin_conductor_split` does the same from t
 Checked on the thru at 1, 10 and 40 GHz: b2 with the repair against the b3 wheel, pinned hash, on one and two passes, gave the same
 15,911 tetrahedra and S within 1.1e-10. Refining moved S by up to 1.1e-2 at 40 GHz against the unrefined mesh, which is the refinement
 working, not a difference between versions. Gate: `EmergeRunTests.ALossySheet_SolvesOnARefinedMesh`.
+
+
+## A film is the overlap-contact style; the MMIC technology's film moves to Metal1's bottom face (2026-11-04)
+
+- **Thin-film resistors are contacted in two ways, and `StackupFilm` is only the first.** Overlap contact: the film lies on the surface the metal is deposited on and the metal laps its ends, which is what "metal wins" models. Via contact: the film has its own level in the dielectric and dedicated vias, so metal may cross it without touching it and the via openings set the length. A film cannot state the second, because any metal over it on its level is a contact. Via contact is deferred.
+- **The MMIC film inherited its face by accident.** It stated no `At`, so it took Metal1's `SheetAt: Top`, which exists for the MIM plate gap. With solid metal that put it 3 µm above the GaAs with GaAs filled beneath it. The three shipped copies and the starter now state `Bottom`. Planar runs do not read the face, nor does `Conductors: Sheets`.
+- **`testdata/em-tfr/zigzag/tech` stays on Top on purpose.** Its PB and HC references were solved with the film on the top face and its README says so. `EveryCopyStatesTheOneFilm` checks level and R_s, not face. No 3D run was made at `Bottom`. Run HC against HA bounds what the raised film and the 3 µm of metal change together, at most 0.008 in |ΔS| at 40 GHz.
+- **Stating the face makes the label one piece longer**, `Resistor · 50 Ω/sq · bottom`. It wraps in the MIM figure's narrower layout, so that figure's catalog height goes from 280 to 288. The committed `stackup-mmic` and `stackup-mim` figures still draw the strip on top until figures are next regenerated.

@@ -236,9 +236,9 @@ public static class FigureCatalog
         // MIM-7 — the capacitor module on its own, for the chapter's MIM section. A WINDOW on the
         // figure above, from the same real Technology object, because seven bands at reading size
         // make the 0.2 um film and its tie the two least legible things in the picture.
-        // 280 is the scene's own height at 960 (248) plus the footer line under it - see
+        // 288 is the scene's own height at 960 (about 256) plus the footer line under it - see
         // stackup-mmic above for why neither number is a frame chosen here.
-        new("stackup-mim", DocStackupFixtures.MimModuleCrossSection, 960, 280, null,
+        new("stackup-mim", DocStackupFixtures.MimModuleCrossSection, 960, 288, null,
             "The thin-film capacitor module in cross-section: the plate metal, the capacitor "
           + "dielectric under it - marked with the plate it is patterned with, which is what keeps "
           + "it out of runs that analyse no plate - and the plate via up to the routing metal. It "
