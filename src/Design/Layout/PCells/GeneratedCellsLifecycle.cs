@@ -126,6 +126,9 @@ public static class GeneratedCellsLifecycle
             // Read AFTER the rebuild, so a cell whose generator/technology changed contributes its
             // NEW name — the old one is exactly what the prune is there to collect.
             foreach (var name in view.PCellSnapshots.Keys) live.Add(name);
+            // A placed generated cell that has no snapshot — an EM component's variant (brief-sdl-10 D3) — is
+            // kept because an instance names it.
+            foreach (var name in GeneratedCellRefs(view)) live.Add(name);
 
             if (moved == 0) return;
 
@@ -157,15 +160,20 @@ public static class GeneratedCellsLifecycle
         var cells = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         bool? walked = WalkSnapshotLayouts(workspaceRootDir, skipPaths: null, (_, view) =>
         {
+            // A variant (brief-sdl-10 D3) has no generator: it is named by an instance, with an empty id.
+            foreach (var name in GeneratedCellRefs(view)) cells.TryAdd(name, "");
             foreach (var (name, snap) in view.PCellSnapshots) cells[name] = snap.GeneratorId;
         });
         return new LiveGeneratedCells(cells, walked == true);
     }
 
     /// <summary>
-    /// Every <c>.clay</c> under <paramref name="workspaceRootDir"/> that carries PCell snapshots,
-    /// loaded and handed to <paramref name="visit"/>. Returns whether every layout was read (false
-    /// when one would not parse or <paramref name="skipPaths"/> held some out), or null when the
+    /// Every <c>.clay</c> under <paramref name="workspaceRootDir"/> that carries PCell snapshots or places a
+    /// generated cell, loaded and handed to <paramref name="visit"/> — then the layout of every VARIANT those
+    /// layouts place (brief-sdl-10 D3), and of every variant a variant places. A variant lives in the
+    /// generated-cells folder but is placed like a cell: its own layout's snapshots name the PCells drawn at
+    /// that placement's values, which no layout outside the folder names. Returns whether every layout was
+    /// read (false when one would not parse or <paramref name="skipPaths"/> held some out), or null when the
     /// workspace could not be walked at all.
     /// </summary>
     private static bool? WalkSnapshotLayouts(
@@ -179,6 +187,7 @@ public static class GeneratedCellsLifecycle
         catch { return null; }
 
         bool sawEverything = skipPaths is null || skipPaths.Count == 0;
+        var variants = new Queue<string>();
 
         foreach (var clayPath in clayFiles)
         {
@@ -203,16 +212,70 @@ public static class GeneratedCellsLifecycle
                 // definite no still loads the file and asks it properly, and a file that does not
                 // parse throws, which is what keeps `sawEverything` — and therefore the prune — honest
                 // about a layout nobody could read.
-                if (!LayoutPersistence.MightCarryPCellSnapshots(clayPath)) continue;
+                if (!LayoutPersistence.MightCarryPCellSnapshots(clayPath) && !MightPlaceGeneratedCell(clayPath)) continue;
                 view = LayoutPersistence.LoadFromFile(clayPath);
             }
             catch { sawEverything = false; continue; }
-            if (view.PCellSnapshots.Count == 0) continue;
+            if (view.PCellSnapshots.Count == 0 && !GeneratedCellRefs(view).Any()) continue;
 
             visit(clayPath, view);
+            foreach (var name in GeneratedCellRefs(view))
+                if (name.Contains(GeneratedCellStore.VariantSeparator, StringComparison.Ordinal)) variants.Enqueue(name);
+        }
+
+        // brief-sdl-10 D3 — the variants, transitively. A variant whose folder is missing has nothing to keep.
+        var walkedVariants = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        while (variants.TryDequeue(out var name))
+        {
+            if (!walkedVariants.Add(name)) continue;
+            string cellDir = Path.Combine(genRootPrefix, name);
+            string clay;
+            try
+            {
+                if (!Directory.Exists(cellDir)
+                    || CellFolder.ResolvePrimary(cellDir, ViewType.Layout).ResolvedName is not { Length: > 0 } file) continue;
+                clay = Path.Combine(CellFolder.SubFolderPath(cellDir, ViewType.Layout), file);
+            }
+            catch { sawEverything = false; continue; }
+            if (skipPaths is not null && skipPaths.Contains(Path.GetFullPath(clay))) continue;
+            LayoutView view;
+            try { view = LayoutPersistence.LoadFromFile(clay); }
+            catch { sawEverything = false; continue; }
+            visit(clay, view);
+            foreach (var inner in GeneratedCellRefs(view))
+                if (inner.Contains(GeneratedCellStore.VariantSeparator, StringComparison.Ordinal)) variants.Enqueue(inner);
         }
 
         return sawEverything;
+    }
+
+    /// <summary>
+    /// The generated-cell folders <paramref name="view"/>'s instances name: the segment after the reserved folder's
+    /// name in each <c>CellRef</c>, read with either separator. Distinct, in instance order.
+    /// </summary>
+    internal static IEnumerable<string> GeneratedCellRefs(LayoutView view)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var inst in view.Instances)
+        {
+            if (inst.CellRef is not { Length: > 0 } r) continue;
+            var segments = r.Split(new[] { '/', '\\' }, StringSplitOptions.RemoveEmptyEntries);
+            for (int i = 0; i < segments.Length - 1; i++)
+                if (string.Equals(segments[i], GeneratedCellStore.ReservedFolderName, StringComparison.OrdinalIgnoreCase))
+                {
+                    if (seen.Add(segments[i + 1])) yield return segments[i + 1];
+                    break;
+                }
+        }
+    }
+
+    /// <summary>Whether the file's text names the generated-cells folder at all — the cheap test that lets a layout
+    /// with no snapshots and no generated cell skip its full load. True over-reports, as the snapshot sniff does.</summary>
+    private static bool MightPlaceGeneratedCell(string clayPath)
+    {
+        ReadOnlySpan<byte> text = GzipTextFile.ReadAllBytesAutoGzip(clayPath);
+        ReadOnlySpan<byte> folder = System.Text.Encoding.UTF8.GetBytes(GeneratedCellStore.ReservedFolderName);
+        return text.IndexOf(folder) >= 0;
     }
 
     /// <summary>

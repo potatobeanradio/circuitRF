@@ -28,9 +28,9 @@ public sealed class EmThreeDCellTests : IDisposable
     private const string Design = "C1-through-line";
 
     /// <summary>C1 with a VAR block: w50 drives every line's width, Lx the last line's length, and spare drives nothing.</summary>
-    private EmCellFixture Fixture(string tag) => EmCellFixture.Create(Design, Path.Combine(_scratch, tag), AnalysisModel.Em, edit: m =>
+    private EmCellFixture Fixture(string tag, params EditableParameter[] moreVars) => EmCellFixture.Create(Design, Path.Combine(_scratch, tag), AnalysisModel.Em, edit: m =>
     {
-        m.Components.Add(new EditableComponent
+        var vars = new EditableComponent
         {
             InstanceName = "VAR1", Symbol = SymbolKind.Var,
             Parameters =
@@ -39,7 +39,9 @@ public sealed class EmThreeDCellTests : IDisposable
                 new EditableParameter { Name = "Lx", Expression = "7", Unit = "mm" },
                 new EditableParameter { Name = "spare", Expression = "2", Unit = "mm" },
             },
-        });
+        };
+        vars.Parameters.AddRange(moreVars);
+        m.Components.Add(vars);
         foreach (var tl in m.Components.Where(c => c.InstanceName.StartsWith("TL", StringComparison.Ordinal)))
         {
             var w = tl.Parameters.Single(p => p.Name == "W");
@@ -281,5 +283,110 @@ public sealed class EmThreeDCellTests : IDisposable
 
         foreach (var s in new[] { "P", "E", "O" })
             Assert.Equal(Inputs(s, 6e-3), Inputs(s, 8e-3));
+    }
+
+    /// <summary>D1: a '#' in a folder of the workspace's path, or in a .cem's own name, is part of the path — the picker's
+    /// label of the planar setup resolves back to it — and a 3D view with two driven setups, named without one, is asked for
+    /// one rather than said to have none.</summary>
+    [Fact]
+    public void ASetupSpelling_KeepsAHashInItsPath_AndAViewWithTwoSetupsAsksForOne()
+    {
+        Assert.Equal("amp#2", EmCapability.SetupLabel("/w/C#x/amp/em/amp#2.cem"));
+        Assert.Equal("board#Driven1", EmCapability.SetupLabel("/w/C#x/amp/3d/board.c3d#Driven1"));
+
+        var fx = Fixture("C#ws");
+        var (path, _) = ThreeDView(fx, null, Driven("Driven1", Em3dSolverId.Palace), Driven("Driven2", Em3dSolverId.Palace));
+        string cem = Assert.Single(EmCapability.SetupsFor(fx.P.CellDir), s => s.EndsWith(EmSetupPersistence.Extension, StringComparison.OrdinalIgnoreCase));
+        Assert.Contains("C#ws", cem, StringComparison.Ordinal);
+        Assert.Equal(Path.GetFileNameWithoutExtension(fx.Cem), EmCapability.SetupLabel(cem));
+        var planar = EmCapability.Resolve(fx.P.CellDir, EmCapability.SetupLabel(cem), null, out var why);
+        Assert.True(planar is { Is3D: false }, why);
+        var three = EmCapability.Resolve(fx.P.CellDir, Design + "#Driven2", null, out why);
+        Assert.True(three is { Is3D: true, C3dSetup: "Driven2" }, why);
+
+        Assert.Null(EmCapability.Resolve(fx.P.CellDir, path, null, out var ask));
+        Assert.Contains("has 2 driven setups", ask);
+        Assert.Contains("#Driven1", ask);
+    }
+
+    /// <summary>D5: a file the elaboration reads that the top document only references — here a placed part's own 3D
+    /// view — is in the key by its content: editing it misses, though the cell's own files are unchanged.</summary>
+    [Fact]
+    public void TheKey_MovesWhenAPlacedPartsOwnFileChanges()
+    {
+        var fx = Fixture("child");
+        File.Delete(fx.Cem);
+        string lidDir = CellFolder.CreateCellFolder(fx.Workspace, "Lid");
+        string? lid = null;
+        ThreeDView(fx, (doc, p) =>
+        {
+            var (tech, _) = TechnologyResolver.ResolveForDocument(doc.TechRef, p, fx.Cws, new TechnologyCache());
+            var part = new C3dDocument
+            {
+                TechRef = Path.GetRelativePath(CellFolder.SubFolderPath(lidDir, ViewType.ThreeD), tech.ResolvedPath!).Replace('\\', '/'),
+                Objects = [new C3dBox { Name = "Lid", Material = "Laminate", Min = new C3dPoint3(0, 0, 2_000_000), Size = new C3dPoint3(1_000_000, 1_000_000, 1_000_000) }],
+            };
+            lid = CellCreate.WriteThreeDView(lidDir, "Lid", part);
+            doc.Instances.Add(new C3dInstance
+            {
+                Name = "L1", View = C3dInstanceView.ThreeD,
+                CellRef = Path.GetRelativePath(Path.GetDirectoryName(p)!, lidDir).Replace('\\', '/'),
+            });
+        });
+        var t = EmCapability.Resolve(fx.P.CellDir, null, null, out var why);
+        Assert.True(t is not null, why);
+
+        string before = Geometry(t!, At()).Key;
+        Assert.Equal(before, Geometry(t!, At()).Key);
+        var lidDoc = C3dPersistence.LoadFromFile(lid!);
+        ((C3dBox)lidDoc.Objects.Single()).Size = new C3dPoint3(1_000_000, 1_000_000, 10_000_000);
+        C3dPersistence.SaveToFile(lid!, lidDoc);
+        Assert.NotEqual(before, Geometry(t!, At()).Key);
+    }
+
+    /// <summary>D3/D4: a schematic VAR that states no unit but whose value is a length (w50/4) is a length in the 3D view —
+    /// written in the view's unit by New 3D View from Layout, so the view alone resolves it as one, and bound as base SI at
+    /// an evaluation's point.</summary>
+    [Fact]
+    public void AUnitlessVarWhoseValueIsALength_IsALengthInTheView_AndAtAPoint()
+    {
+        var fx = Fixture("gap", new EditableParameter { Name = "gap", Expression = "w50/4", Unit = "" });
+        File.Delete(fx.Cem);
+        var (path, made) = ThreeDView(fx, (doc, _) =>
+        {
+            var spacer = new C3dBox { Name = "Spacer", Material = "Laminate", Min = new C3dPoint3(0, 0, 2_000_000), Size = new C3dPoint3(1_000_000, 1_000_000, 0) };
+            spacer.Exprs = new() { ["Size"] = [null, null, new C3dExpr("gap", "Mm")] };
+            doc.Objects.Add(spacer);
+        });
+        Assert.Equal(C3dUnits.Stored(made.Document!.DisplayUnit), made.Document.Variables.Single(v => v.Name == "gap").Unit);
+        static long Z(C3dDocument d) => ((C3dBox)d.Objects.Single(o => o.Name == "Spacer")).Size.Z;
+
+        var alone = C3dPersistence.LoadFromFile(path);
+        var resolution = C3dResolver.Resolve(alone, C3dCell.Of(path));
+        Assert.True(resolution.Errors.Count == 0, string.Join(" ", resolution.Errors));
+        Assert.Equal(1.1e-3 / 4 * 1e6 * alone.DbuPerMicron, Z(alone), 0);
+
+        var t = EmCapability.Resolve(fx.P.CellDir, null, null, out var why);
+        Assert.True(t is not null, why);
+        var g = Geometry(t!, At(("w50", 2e-3)));
+        Assert.Equal(2e-3 / 4 * 1e6 * g.ThreeD!.Document.DbuPerMicron, Z(g.ThreeD.Document), 0);
+    }
+
+    /// <summary>D4: a port linked to a layout label but rotated in the 3D view stays where it is drawn, so a point that
+    /// moves its label is refused rather than solved with the port off the line; at the design's own values it is not.</summary>
+    [Fact]
+    public void ARotatedPortWhoseLabelMoves_RefusesThePoint()
+    {
+        var fx = Fixture("rot");
+        File.Delete(fx.Cem);
+        ThreeDView(fx, (doc, _) => { foreach (var p in doc.Ports) p.Angle = 10; });
+        var t = EmCapability.Resolve(fx.P.CellDir, null, null, out var why);
+        Assert.True(t is not null, why);
+
+        EmEvaluation.Geometry(t!, At(), out var atSaved);
+        Assert.DoesNotContain("cannot follow", atSaved ?? "", StringComparison.Ordinal);
+        Assert.Null(EmEvaluation.Geometry(t!, At(("Lx", 8e-3)), out var refusal));
+        Assert.Contains("cannot follow its layout's ports", refusal);
+        Assert.Contains("is rotated in the 3D view", refusal);
     }
 }

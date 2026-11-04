@@ -54,7 +54,7 @@ public static class EmCellCache
     }
 
     /// <summary>Bumped when the 3D canonical form changes shape.</summary>
-    private const string Scheme3D = "crf-emcell3d-1";
+    private const string Scheme3D = "crf-emcell3d-2";
 
     /// <summary>
     /// brief-sdl-8 D5 — the key of a cell solved through its 3D view: the regenerated layout's copper and port labels (as
@@ -63,19 +63,62 @@ public static class EmCellCache
     /// left out, so a VAR change that moves nothing still hits — the technologies' physics, the held setup's
     /// solve-affecting settings and the solver's identity and version.
     /// </summary>
+    /// <param name="inputs">Every other file the elaboration read — a placed 3D view, another cell's layout, the wire-bond
+    /// file paired with a layout, a technology or library a placed part resolves — each keyed by its CONTENT, so an edit of
+    /// one of them misses where the top document's text alone would not move. The caller leaves out what is keyed above
+    /// it (the regenerated layout, which is in memory, and the top document, its cell and its technology).</param>
+    /// <param name="workspaceDir">What each input's path is spelled relative to, so a moved workspace keeps its keys.</param>
     public static string KeyOf3D(EmLayoutSource source, CircuitRF.Design.ThreeD.C3dDocument resolved, EmSetup setup,
-                                 Technology? documentTech, string solverVersion)
+                                 Technology? documentTech, string solverVersion,
+                                 IEnumerable<string>? inputs = null, string? workspaceDir = null)
     {
         var sb = new StringBuilder(Scheme3D).Append('\n');
         sb.Append("dbu\t").Append(source.DbuPerMicron.ToString(CultureInfo.InvariantCulture)).Append('\n');
         AppendLayout(sb, source);
         sb.Append("c3d\n").Append(ResolvedText(resolved)).Append('\n');
+        sb.Append("inputs\n").Append(InputsText(inputs ?? [], workspaceDir)).Append('\n');
         sb.Append("setup\n").Append(SolveSettings(setup)).Append('\n');
         sb.Append("stackup\n").Append(Stackup(source.Technology)).Append('\n');
         sb.Append("tech3d\n").Append(documentTech is null ? "none" : CircuitRF.Design.ThreeD.C3dRunDocument.PhysicsText(documentTech)).Append('\n');
         sb.Append("solver\t").Append(SolverIdentity(setup)).Append('|').Append(solverVersion).Append('\n');
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString())))[..KeyLength];
     }
+
+    /// <summary>brief-sdl-8 D5 — one line per input file, sorted: its path (workspace-relative where it can be) and the
+    /// SHA-256 of its bytes, or <c>-</c> when it cannot be read.</summary>
+    internal static string InputsText(IEnumerable<string> files, string? workspaceDir)
+    {
+        var lines = new List<string>();
+        foreach (string f in files.Select(Path.GetFullPath).Distinct(StringComparer.Ordinal))
+        {
+            string name = workspaceDir is { Length: > 0 } ws ? Path.GetRelativePath(ws, f).Replace('\\', '/') : f;
+            lines.Add(name + "\t" + (ContentHash(f) ?? "-"));
+        }
+        lines.Sort(StringComparer.Ordinal);
+        return string.Join("\n", lines);
+    }
+
+    /// <summary>The SHA-256 of a file's bytes, memoised on its length and write time (a sweep reads the same files at every
+    /// point); null when it cannot be read.</summary>
+    private static string? ContentHash(string path)
+    {
+        try
+        {
+            var info = new FileInfo(path);
+            if (!info.Exists) return null;
+            string stamp = path + "|" + info.Length.ToString(CultureInfo.InvariantCulture) + "|" +
+                           info.LastWriteTimeUtc.Ticks.ToString(CultureInfo.InvariantCulture);
+            lock (_hashGate) if (_hashes.TryGetValue(stamp, out var hit)) return hit;
+            string hash;
+            using (var s = File.OpenRead(path)) hash = Convert.ToHexStringLower(SHA256.HashData(s));
+            lock (_hashGate) _hashes[stamp] = hash;
+            return hash;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return null; }
+    }
+
+    private static readonly Dictionary<string, string> _hashes = new(StringComparer.Ordinal);
+    private static readonly Lock _hashGate = new();
 
     /// <summary>
     /// <paramref name="resolved"/> as its numbers: a file spells a bound field as its EXPRESSION and never writes the number
@@ -189,15 +232,18 @@ public static class EmCellCache
         _ => v.ToString() ?? "",
     };
 
-    /// <summary>The drawing layers the stackup's conductors and vias are drawn on; null when there is no stackup to ask
-    /// (every layer then counts, which can only make the key stricter).</summary>
+    /// <summary>The drawing layers a solve reads artwork on: every layer a stackup entry is drawn on (its conductors and
+    /// vias above all), and every MASK layer a patterned dielectric is tied to — whether the layout draws on that mask
+    /// decides whether the film is in the run's medium (<see cref="PatternedDielectric"/>), so two layouts that differ only
+    /// there must not share a result. Null when there is no stackup to ask (every layer then counts, which can only make
+    /// the key stricter).</summary>
     private static HashSet<LayerKey>? SolvedLayers(Technology? tech)
     {
         if (tech?.Stackup.Layers is not { Count: > 0 } layers) return null;
         var set = new HashSet<LayerKey>();
         foreach (var l in layers)
-            if (l.Kind is StackupKind.Conductor or StackupKind.Via)
-                foreach (var k in l.DrawingLayers) set.Add(k);
+            foreach (var k in l.DrawingLayers) set.Add(k);
+        foreach (var k in PatternedDielectric.MaskLayers(tech).Keys) set.Add(k);
         return set.Count == 0 ? null : set;
     }
 

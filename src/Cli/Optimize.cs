@@ -198,6 +198,11 @@ internal static class Optimize
         {
             Setup         = setup,
             Recorded      = recorded,
+            // brief-sdl-7 D4 — the budget in force is said once the run has checked its start: a 3D EM view's lower
+            // default is only known then.
+            EmBudgetKnown = (mode, budget) =>
+                Console.Error.WriteLine($"[circuitRF] by EM ({AnalysisDirectiveSchema.EmModeTokens[(int)mode]}): at most {budget} " +
+                                        $"EM solve{(budget == 1 ? "" : "s")}; geometries already in the EM cache are free"),
             Sets          = sets,
             Cancellation  = ct,
             SnapAndPolish = snap,
@@ -218,9 +223,6 @@ internal static class Optimize
                                 $"{enabledGoals} goal(s) with {run.AlgorithmId}" +
                                 (run.EvaluationsPerPoint > 1
                                     ? $" at {string.Join(", ", run.CornerNames)} ({run.EvaluationsPerPoint} evaluations per point)" : ""));
-        if (run.EmMode != OptimizerEmMode.Off)
-            Console.Error.WriteLine($"[circuitRF] by EM ({AnalysisDirectiveSchema.EmModeTokens[(int)run.EmMode]}): at most {run.EmBudget} " +
-                                    $"EM solve{(run.EmBudget == 1 ? "" : "s")}; geometries already in the EM cache are free");
         var result = run.Run();
         foreach (var note in result.Notes.Skip(run.Notes.Count)) Report(note);
 
@@ -245,7 +247,8 @@ internal static class Optimize
 
         if (output is not null && result.BestValues.Count > 0)
         {
-            var rr = CircuitEvaluation.Evaluate(circuit, new CircuitEvaluationRequest { Tunables = result.BestValues, Sets = sets });
+            // As the run evaluated: an em=off run's best point is written by circuit models, not solved by EM afterwards.
+            var rr = CircuitEvaluation.Evaluate(circuit, new CircuitEvaluationRequest { Tunables = result.BestValues, Sets = sets, Em = run.EvaluatesEm });
             if (ct.IsCancellationRequested) { JsonRun.Report(CliDiagnostics.OptCancelled()); return 130; }
             var data = rr.Status == RunStatus.Success && rr.GroupedResults is { } grouped ? grouped : new DataSet();
             if (rr.Status != RunStatus.Success) JsonRun.Report(CliDiagnostics.RunFailed(rr.StatusMessage));
@@ -261,9 +264,9 @@ internal static class Optimize
             else if (CheckpointBefore(full, "opt --apply") is { } failed) { JsonRun.Report(failed); exit = 1; }
             else
             {
-                applied = EmApply.Apply(full, result.BestValues, result.BestEmKey);
+                applied = EmApply.Apply(full, result.BestValues, result.BestEmKey, result.EmSetup);
                 Console.Error.WriteLine($"[circuitRF] {applied.Sentence}");
-                if (applied.Refusal is not null || !applied.KeyMatches) exit = 1;
+                if (!applied.Succeeded) exit = 1;   // brief-sdl-10: nothing laid out to check is a success
                 else JsonRun.AddOutput("schematic", full);
             }
         }

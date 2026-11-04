@@ -90,13 +90,11 @@ public static class CellPins
     public static IReadOnlyList<LayoutPin> Resolve(LayoutView view, Technology? tech)
     {
         if (view.Pins.Count > 0) return view.Pins;
+        // Not cached: a layout made from its schematic is edited in place — its labels move in the editor, and Update
+        // Layout from Schematic re-plans the open view itself — so a cached answer would hold the pins where they were.
+        // The cache is for a generated cell, whose view never changes. The scan is one pass over the shapes.
+        if (view.PCellOrigin is not { } origin) return FromSchematicPorts(view);
         if (Cache.TryGetValue(view, out var cached)) return cached.Pins;
-        if (view.PCellOrigin is not { } origin)
-        {
-            var fromPorts = FromSchematicPorts(view);
-            Cache.AddOrUpdate(view, new PinCacheEntry { Pins = fromPorts });
-            return fromPorts;
-        }
 
         IReadOnlyList<LayoutPin> pins = [];
         if (GeneratorSource?.Invoke(origin.GeneratorId) is { } generator)

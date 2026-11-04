@@ -45,7 +45,8 @@ public sealed record ConnectedRange(string Key, string Unit, double Lo, double H
         ? $"{Key}: connected across its whole range ({Text(Min)} to {Text(Max)})."
         : $"{Key}: connected from {Text(Lo)} to {Text(Hi)} (range {Text(Min)} to {Text(Max)}).";
 
-    private string Text(double v) => TunableValue.Format(v, Unit);
+    // Six significant figures: the scan's edge is a grid point, so more digits would claim a precision it does not have.
+    private string Text(double v) => TunableValue.Format(v, Unit, "G6");
 }
 
 /// <summary>How an em=correct or em=direct run stopped short of its own algorithm's finish.</summary>
@@ -78,6 +79,10 @@ internal sealed class EmGeometryProbe(PreparedCircuit circuit, IReadOnlyList<(st
         /// at its own geometry; null when the schematic is not laid out, or is itself the EM cell (Path A).</summary>
         public ConnectivitySignature? Parent { get; init; }
 
+        /// <summary>brief-sdl-10 D5 — why the parent's layout could not be planned at these values, when it is laid out and
+        /// the plan failed; null otherwise.</summary>
+        public string? ParentUnchecked { get; init; }
+
         /// <summary>The geometry keys, in record order.</summary>
         public IEnumerable<string> Keys => Records.Select(r => r.Key).OfType<string>();
 
@@ -93,36 +98,39 @@ internal sealed class EmGeometryProbe(PreparedCircuit circuit, IReadOnlyList<(st
     /// brief-sdl-10 D5 — the parent schematic laid out at <paramref name="values"/>: its saved layout re-planned in memory
     /// with the values written where they are defined (EmApply's rule), so each placed EM component takes its own geometry
     /// (a variant, D3) and the parent's lines follow its pins (D4). The planner's own report is the signature. Null when the
-    /// run's schematic has no layout made from it.
+    /// run's schematic has no layout made from it; null with <c>Why</c> when it has one and the plan failed. A variant the
+    /// plan needs is held in memory for the plan and dropped after it (<see cref="EmVariantCells.HeldInMemory"/>): probing
+    /// a candidate writes no variant folder into the workspace.
     /// </summary>
-    private ConnectivitySignature? ParentSignature(IReadOnlyDictionary<string, string> values)
+    private (ConnectivitySignature? Sig, string? Why) ParentSignature(IReadOnlyDictionary<string, string> values)
     {
-        if (circuit.SourcePath is not { } csch || !csch.EndsWith(".csch", StringComparison.OrdinalIgnoreCase)) return null;
+        if (circuit.SourcePath is not { } csch || !csch.EndsWith(".csch", StringComparison.OrdinalIgnoreCase)) return (null, null);
         if (EmCapability.CellDirOfSchematic(csch) is not { } cellDir
-            || CircuitRF.Design.Workspace.WorkspaceRootFinder.WorkspaceDirOf(cellDir) is not { } ws) return null;
+            || CircuitRF.Design.Workspace.WorkspaceRootFinder.WorkspaceDirOf(cellDir) is not { } ws) return (null, null);
         var primary = CircuitRF.Design.Cells.CellFolder.ResolvePrimary(cellDir, CircuitRF.Design.Cells.ViewType.Layout);
         if (primary.State is not (CircuitRF.Design.Cells.PrimaryState.SoleFile or CircuitRF.Design.Cells.PrimaryState.NamedPresent)
-            || primary.ResolvedName is null) return null;
+            || primary.ResolvedName is null) return (null, null);
         string clay = Path.Combine(CircuitRF.Design.Cells.CellFolder.SubFolderPath(cellDir, CircuitRF.Design.Cells.ViewType.Layout),
                                    primary.ResolvedName);
         try
         {
             var layout = CircuitRF.Design.Layout.LayoutPersistence.LoadFromFile(clay);
-            if (layout.GeneratedPlacements.Count == 0) return null;
+            if (layout.GeneratedPlacements.Count == 0) return (null, null);
             var model = CircuitRF.Design.Schematic.SchematicPersistence.LoadFromFile(csch).model;
             model.SchematicDirectory = Path.GetDirectoryName(csch);
             EmApply.WriteValues(model, values, out _);
             var (tech, _) = CircuitRF.Design.Layout.TechnologyResolver.ResolveForDocument(
                 layout.TechRef, clay, Path.Combine(ws, ".cws"), new CircuitRF.Design.Layout.TechnologyCache());
+            using var held = EmVariantCells.HeldInMemory();
             var plan = SchematicLayoutPlanner.Plan(model, layout, model.SchematicDirectory!, ws, Path.GetDirectoryName(clay)!,
                                                    tech.Tech, tech.ResolvedPath, CircuitRF.Design.Schematic.DiskCellResolver.Instance,
                                                    targetLayoutPath: clay, connectParts: true);
-            return ConnectivitySignature.Of(plan.Lines);
+            return (ConnectivitySignature.Of(plan.Lines), null);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException
                                        or InvalidDataException or ArgumentException or InvalidOperationException)
         {
-            return null;
+            return (null, $"{Path.GetFileName(clay)} could not be planned ({e.Message})");
         }
     }
     private readonly Lock _gate = new();
@@ -154,10 +162,8 @@ internal sealed class EmGeometryProbe(PreparedCircuit circuit, IReadOnlyList<(st
             if (plan.Status != RunStatus.Success) return new Answer([], plan.StatusMessage, null);
             var count = CircuitEvaluation.CountEmSolves(plan, estimate: false);
             var pathA = plan.Analyses.Select(a => a.Em?.PathA).FirstOrDefault(a => a is not null);
-            return new Answer(count.Records, count.Refusals.FirstOrDefault(), pathA)
-            {
-                Parent = pathA is null && count.Records.Count > 0 ? ParentSignature(values) : null,
-            };
+            var (parent, parentWhy) = pathA is null && count.Records.Count > 0 ? ParentSignature(values) : (null, null);
+            return new Answer(count.Records, count.Refusals.FirstOrDefault(), pathA) { Parent = parent, ParentUnchecked = parentWhy };
         }
         catch (Exception e) when (e is not OperationCanceledException)
         {
@@ -197,7 +203,11 @@ public sealed partial class OptimizationRun
 
     private EmGeometryProbe? _probe;
     private int _emBudget;
+    // Geometries solved or in hand (a failed one is dropped again, since nothing was cached for it), and the uncached
+    // solves made — every attempt, so a failed geometry solved twice counts twice against the budget (D4).
     private readonly HashSet<string> _solvedKeys = new(StringComparer.Ordinal);
+    private int _solves;
+    private string? _emSetupRef;
     private bool _budgetHit;
     private readonly Dictionary<string, string?> _feasibility = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _infeasibleWhy = new(StringComparer.Ordinal);
@@ -212,8 +222,31 @@ public sealed partial class OptimizationRun
     /// <summary>brief-sdl-7 D1 — how this run treats analyses simulated by EM, as resolved from the setup and the design.</summary>
     public OptimizerEmMode EmMode { get; private set; } = OptimizerEmMode.Off;
 
-    /// <summary>The solve budget in force; 0 when no EM mode runs.</summary>
+    /// <summary>The solve budget in force; 0 when no EM mode runs. A 3D EM view lowers the default when the run starts
+    /// (<see cref="OptimizationOptions.EmBudgetKnown"/> reports the final one).</summary>
     public int EmBudget => EmMode == OptimizerEmMode.Off ? 0 : _emBudget;
+
+    /// <summary>
+    /// The evaluation model this run's own simulations use: false is circuit models only (em=off on a design with EM in
+    /// it), null is as the design says. A caller that re-evaluates the best point afterwards passes it on, so an em=off run
+    /// does not end with an EM solve it never budgeted.
+    /// </summary>
+    public bool? EvaluatesEm => _evalEm;
+
+    /// <summary>The EM view the start's geometry is solved by (Path A), as a setup reference Apply resolves; null when the
+    /// run has not started, or the geometry is a placed part's (Path B).</summary>
+    public string? EmSetup => _emSetupRef;
+
+    /// <summary>The geometry key of the best EM-verified point so far — what a Push while paused checks the layout
+    /// against.</summary>
+    public string? BestEmKeySoFar => EmMode switch
+    {
+        OptimizerEmMode.Correct => _bestEmKey,
+        OptimizerEmMode.Direct when _bestIndex >= 0 && _probe is not null => _probe.At(_log[_bestIndex].Decoded.Values).KeyText,
+        _ => null,
+    };
+
+    private static readonly IReadOnlyDictionary<string, string> NoValues = new Dictionary<string, string>();
 
     /// <summary>The run whose Stop and Pause this one obeys: the em=correct run an inner run belongs to, else itself.</summary>
     private OptimizationRun Ctl => _parent ?? this;
@@ -253,6 +286,11 @@ public sealed partial class OptimizationRun
         }
 
         bool involved = EmInvolved(tb, lib);
+        // analyses=all simulates every runnable analysis whether a goal reads it or not, so one run by EM would be solved
+        // by EM at every evaluation, with no budget and no connectivity check, unless the run says circuit models — and
+        // em=off has to say it for that analysis too.
+        bool simulatesEm = _settings.Scope == OptimizerScope.All
+                           && AnalysisChain.RunnableTops(tb).Any(t => EmModelSwitch.IsEm(t, tb));
         var asked = _settings.Em;
         var mode = asked ?? (involved ? OptimizerEmMode.Correct : OptimizerEmMode.Off);
 
@@ -275,7 +313,7 @@ public sealed partial class OptimizationRun
             mode = OptimizerEmMode.Off;
         }
         EmMode = mode;
-        _evalEm = mode == OptimizerEmMode.Off && involved ? false : null;
+        _evalEm = mode == OptimizerEmMode.Off && (involved || simulatesEm) ? false : null;
         if (mode == OptimizerEmMode.Off) return null;
 
         if (_settings.CornerNames is not { Count: 0 })
@@ -341,6 +379,7 @@ public sealed partial class OptimizationRun
         var start = _probe.Fresh(startValues);
         if (start.Refusal is { } why) return OptimizationDiagnostics.EmStartRefused(why);
         if (!start.Records.Any(r => r.Key is not null)) return OptimizationDiagnostics.EmStartRefused("no EM evaluation is made at the start values.");
+        _emSetupRef = start.PathA?.CemPath;
 
         // D6 — through the schematic's variables only (Path A), and never into a part whose value the layout holds.
         var catalog = TunableCatalog.FromNetlist(_circuit.Tb!, _circuit.Lib!, parts: _circuit.PartTunables);
@@ -365,7 +404,8 @@ public sealed partial class OptimizationRun
         }
         // brief-sdl-10 D5 — and the parent's own layout, when it is laid out: held at both levels.
         if (start.Parent is { } parentSig) _startParent = parentSig;
-        if (start.PathA is { } own && EmEvaluation.SchematicDisagreements(own, new Dictionary<string, Value>()) is { Count: > 0 } made)
+        else if (start.ParentUnchecked is { } parentWhy) _notes.Add(OptimizationDiagnostics.EmParentUnchecked(parentWhy));
+        if (start.PathA is { } own && EmEvaluation.SchematicDisagreements(own, StartNumbers(startValues)) is { Count: > 0 } made)
             return OptimizationDiagnostics.EmStartDisagrees(string.Join(" ", made));
         if (_startSignatures.Count == 0) _notes.Add(OptimizationDiagnostics.EmConnectivityUnchecked());
 
@@ -392,8 +432,29 @@ public sealed partial class OptimizationRun
         }
 
         // D10 — each variable alone across its range; one that never changes the geometry is refused (D6).
-        _ranges = [];
-        string startKey = start.KeyText;
+        _ranges = ScanRanges(vars, _probe, start.KeyText, a => ConnectivityProblem(a), ct, out string? noEffect);
+        if (noEffect is { } still && start.PathA is not null) return OptimizationDiagnostics.EmNoEffect(still);
+        foreach (var range in _ranges) _notes.Add(OptimizationDiagnostics.EmConnectedRange(range.Sentence));
+        _options.EmBudgetKnown?.Invoke(EmMode, _emBudget);
+        return null;
+    }
+
+    /// <summary>
+    /// D10 — each variable alone across its range (<see cref="ScanPoints"/> points, every other variable at its start
+    /// value): the interval around its start over which <paramref name="problem"/> finds nothing. Shared by the optimizer
+    /// and the tuning panel (<see cref="TuningConnectivity"/>). The interval grows from the start value itself — connected,
+    /// since it is the start — out through the grid points either side of it that are, so a connected stretch narrower than
+    /// one grid step is still reported (as the start alone). <paramref name="noEffect"/> names the first variable none of
+    /// whose BUILT geometries differs from the start's: one whose other geometries all break connectivity still reaches the
+    /// copper and is not named.
+    /// </summary>
+    internal static List<ConnectedRange> ScanRanges(OptimizationVariables vars, EmGeometryProbe probe, string startKey,
+                                                    Func<EmGeometryProbe.Answer, string?> problem, CancellationToken ct,
+                                                    out string? noEffect)
+    {
+        noEffect = null;
+        var ranges = new List<ConnectedRange>();
+        const double last = ScanPoints - 1;
         for (int i = 0; i < vars.Coordinates.Count; i++)
         {
             ct.ThrowIfCancellationRequested();
@@ -404,39 +465,55 @@ public sealed partial class OptimizationRun
             for (int j = 0; j < ScanPoints; j++)
             {
                 var u = (double[])vars.Start.Clone();
-                u[i] = j / (double)(ScanPoints - 1);
+                u[i] = j / last;
                 var d = vars.Decode(u);
-                var answer = _probe.At(d.Values);
-                feasible[j] = !d.Infeasible && ConnectivityProblem(answer) is null;
-                if (feasible[j] && answer.KeyText != startKey) moves = true;
+                var answer = probe.At(d.Values);
+                feasible[j] = !d.Infeasible && problem(answer) is null;
+                if (!d.Infeasible && answer.Refusal is null && answer.Keys.Any() && answer.KeyText != startKey) moves = true;
             }
-            if (!moves && start.PathA is not null) return OptimizationDiagnostics.EmNoEffect(c.Key);
-            int at = (int)Math.Round(vars.Start[i] * (ScanPoints - 1));
-            if (!feasible[at]) continue;
-            int lo = at, hi = at;
-            while (lo > 0 && feasible[lo - 1]) lo--;
-            while (hi < ScanPoints - 1 && feasible[hi + 1]) hi++;
-            double Value(int j) => c.Decode(j / (double)(ScanPoints - 1));
-            var range = new ConnectedRange(c.Key, c.Unit, lo == 0 ? c.Min : Value(lo), hi == ScanPoints - 1 ? c.Max : Value(hi), c.Min, c.Max);
-            _ranges.Add(range);
-            _notes.Add(OptimizationDiagnostics.EmConnectedRange(range.Sentence));
+            if (!moves) noEffect ??= c.Key;
+            double s = Math.Clamp(vars.Start[i], 0, 1) * last;
+            double lo = vars.Start[i], hi = vars.Start[i];
+            for (int j = (int)Math.Floor(s); j >= 0 && feasible[j]; j--) lo = j / last;
+            for (int j = (int)Math.Ceiling(s); j < ScanPoints && feasible[j]; j++) hi = j / last;
+            ranges.Add(new ConnectedRange(c.Key, c.Unit, lo <= 0 ? c.Min : c.Decode(lo), hi >= 1 ? c.Max : c.Decode(hi), c.Min, c.Max));
         }
-        return null;
+        return ranges;
+    }
+
+    /// <summary>
+    /// D9 — the start's values as the planner takes them (each a number in base SI, by name): the start the run solves,
+    /// clamped into its range, over the run's --set overrides that are plain values — not the schematic's saved values.
+    /// </summary>
+    private Dictionary<string, Value> StartNumbers(IReadOnlyDictionary<string, string> startValues)
+    {
+        var numbers = new Dictionary<string, Value>(StringComparer.Ordinal);
+        foreach (var (name, expression) in _options.Sets)
+            if (TunableValue.TryParse(expression, out _, out _, out double si)) numbers[name] = new Value(si);
+        foreach (var (key, text) in startValues)
+            if (TunableValue.TryParse(text, out _, out _, out double si)) numbers[key] = new Value(si);
+        return numbers;
     }
 
     /// <summary>D9 — why a candidate is infeasible: it cannot be built, or its connectivity is not the start's.</summary>
-    private string? ConnectivityProblem(EmGeometryProbe.Answer answer)
+    private string? ConnectivityProblem(EmGeometryProbe.Answer answer) => ConnectivityProblem(answer, _startSignatures, _startParent);
+
+    /// <summary>D9 — why <paramref name="answer"/> is infeasible against the start's signatures (<paramref name="starts"/>,
+    /// by instance path) and, for placed EM components, the parent's.</summary>
+    internal static string? ConnectivityProblem(EmGeometryProbe.Answer answer,
+                                                IReadOnlyDictionary<string, ConnectivitySignature> starts,
+                                                ConnectivitySignature? startParent)
     {
         if (answer.Refusal is { } refused) return refused;
         foreach (var r in answer.Records)
         {
             if (r.Refusal is { } why) return why;
-            if (!_startSignatures.TryGetValue(r.InstancePath, out var held)) continue;
+            if (!starts.TryGetValue(r.InstancePath, out var held)) continue;
             if (r.Connectivity is not { } sig) return "its connectivity could not be measured";
             if (sig.DifferenceFrom(held) is { } diff) return diff;
         }
         // brief-sdl-10 D5 — a component intact in itself whose port leaves the parent's line is infeasible too.
-        if (_startParent is { } parentHeld)
+        if (startParent is { } parentHeld)
         {
             if (answer.Parent is not { } parentNow) return "the parent's layout could not be planned at these values";
             if (parentNow.DifferenceFrom(parentHeld) is { } diff) return "in the parent's layout, " + diff;
@@ -527,15 +604,23 @@ public sealed partial class OptimizationRun
             if (decoded[k].Infeasible) continue;
             var fresh = _probe.Fresh(decoded[k].Values);
             var add = fresh.Uncached.Where(key => !_solvedKeys.Contains(key)).ToList();
-            if (_solvedKeys.Count + add.Count > _emBudget)
+            if (_solves + add.Count > _emBudget)
             {
                 _budgetHit = true;
                 _emStop = EmStop.Budget;
                 return k;
             }
             foreach (var key in add) _solvedKeys.Add(key);
+            _solves += add.Count;
         }
         return decoded.Count;
+    }
+
+    /// <summary>D4 — a solve that failed wrote nothing to the cache, so the next point with its geometry solves it again:
+    /// its keys stop counting as solved, and that next attempt is charged to the budget like the first.</summary>
+    private void ForgetFailedSolves(IReadOnlyDictionary<string, string> values)
+    {
+        foreach (var key in _probe!.Fresh(values).Uncached) _solvedKeys.Remove(key);
     }
 
     /// <summary>em=direct — one row per point that was simulated (its EM geometry solved or read from the cache).</summary>
@@ -586,8 +671,18 @@ public sealed partial class OptimizationRun
         int guard = 4 * _emBudget + 16;   // every pass either solves, halves the step or stops; this only bounds a bug
         while (guard-- > 0)
         {
+            // A Pause holds here too, before the next EM solve — not only inside the circuit-model searches, which would
+            // let the expensive step go ahead under a run that says it is pausing.
+            if (!_resume.IsSet)
+            {
+                _held.Set();
+                _resume.Wait(ct);
+                _held.Reset();
+            }
             if (Ctl._stop) { reason = "stopped"; break; }
             ct.ThrowIfCancellationRequested();
+            // The run's limits span the whole loop. The first EM solve is always made, so there is a verified point to return.
+            if (accepted is not null && EmLimitReached(out var limit)) { reason = limit!; break; }
 
             var at = vars.Decode(pk);
             var answer = _probe!.Fresh(at.Values);
@@ -599,7 +694,7 @@ public sealed partial class OptimizationRun
                 break;
             }
             var uncached = answer.Uncached.Where(k => !_solvedKeys.Contains(k)).ToList();
-            if (_solvedKeys.Count + uncached.Count > _emBudget)
+            if (_solves + uncached.Count > _emBudget)
             {
                 _emStop = EmStop.Budget;
                 reason = $"its EM budget of {_emBudget} solve{(_emBudget == 1 ? "" : "s")} was spent";
@@ -608,6 +703,8 @@ public sealed partial class OptimizationRun
 
             var em = emEval.EvaluateValues([at.Values], keepData: true, ct)[0];
             foreach (var k in uncached) _solvedKeys.Add(k);
+            _solves += uncached.Count;
+            if (em.Status != PointStatus.Evaluated) ForgetFailedSolves(at.Values);
             iterations++;
             var row = new EmSolveRow(at.Values, key, uncached.Count == 0, em.Status != PointStatus.Evaluated,
                                      em.Status == PointStatus.Evaluated ? em.Cost : double.NaN,
@@ -711,10 +808,17 @@ public sealed partial class OptimizationRun
             Inner  = inner,
             Parent = this,
             SnapAndPolish = false,
+            // The circuit model only proposes: the best a caller is shown — and what Push, Lock in and Send to Tuning may
+            // write while the run is paused — is the best point EM has scored, and none before the first EM solve.
             Progress = _options.Progress is not { } progress ? null : p => progress(p with
             {
                 Stage = $"circuit model{(offsets is null ? "" : " + EM correction")}, before EM solve {solveNo}",
                 Iteration = _iterations + p.Iteration,
+                BestCost   = _bestEm?.Row.Cost ?? double.NaN,
+                BestValues = _bestEm?.Row.Values ?? NoValues,
+                Goals      = _bestEm?.Row.Goals ?? [],
+                Railed     = _bestEm is { } b ? Variables!.Railed(b.U) : [],
+                BestData   = null,
             }),
         });
         if (run.Refusal is { } refusal)
@@ -771,7 +875,8 @@ public sealed partial class OptimizationRun
             {
                 Outcome = OptimizationOutcome.NoConvergence, FinishReason = reason,
                 Refusal = OptimizationDiagnostics.NoneConverged(_emRows.Count, reason), Algorithm = AlgorithmId,
-                Notes = _notes, EmMode = EmMode, EmBudgetUsed = _solvedKeys.Count, EmSolves = _emRows, ConnectedRanges = _ranges,
+                Notes = _notes, EmMode = EmMode, EmBudgetUsed = _solves, EmSolves = _emRows, ConnectedRanges = _ranges,
+                EmSetup = _emSetupRef,
                 Evaluations = _innerCounts.Evals + _emRows.Count, Failures = _innerCounts.Failures,
                 Infeasible = _innerCounts.Infeasible, CacheHits = _innerCounts.Hits, Log = _innerLog ?? [],
             };
@@ -799,11 +904,24 @@ public sealed partial class OptimizationRun
             History      = History(_innerLog ?? [], []),
             EmMode       = EmMode,
             EmSolves     = _emRows,
-            EmBudgetUsed = _solvedKeys.Count,
+            EmBudgetUsed = _solves,
             StoppedByBudget = _emStop == EmStop.Budget,
             BestEmKey    = _bestEmKey,
+            EmSetup      = _emSetupRef,
             ConnectedRanges = _ranges,
         };
+    }
+
+    /// <summary>D2 under the limits the setup states — iterations and evaluations summed over every circuit-model search
+    /// and EM solve so far, time from the run's start — rather than each inner search's limits afresh. The default
+    /// iteration limit is a search's own, not the loop's, which the EM budget bounds.</summary>
+    private bool EmLimitReached(out string? reason)
+    {
+        reason = null;
+        if (_settings.MaxIterations is not null && _iterations >= _maxIter) reason = $"the iteration limit ({_maxIter}) was reached";
+        else if (_maxEvals is { } me && _innerCounts.Evals + _emRows.Count >= me) reason = $"the evaluation limit ({me}) was reached";
+        else if (_limitS is { } s && _sw.Elapsed.TotalSeconds >= s) reason = $"the time limit ({_settings.TimeLimit}) was reached";
+        return reason is not null;
     }
 
     /// <summary>The opt group's EM rows (R-sdl7-4): one per EM evaluation, over axis <c>em_solve</c>, whose labels are the
@@ -828,6 +946,71 @@ public sealed partial class OptimizationRun
         foreach (var g in _goals)
             ds.AddToGroup(group, "em_margin_" + g.Name,
                 new DataCube([axis], [.. _emRows.Select(r => r.Goals.FirstOrDefault(x => x.Name == g.Name)?.Margin ?? double.NaN)]));
+    }
+}
+
+/// <summary>
+/// brief-sdl-7 D10 for the Tuning panel: the optimizer's own connectivity hold and range scan, over the rows being tuned —
+/// each row's connected interval (every other row at its start value), and what the copper does wrong at any other set of
+/// values. It plans geometries only; nothing is solved. Built off the UI thread; the slider is never held by it.
+/// </summary>
+public sealed class TuningConnectivity
+{
+    private readonly EmGeometryProbe _probe;
+    private readonly IReadOnlyDictionary<string, ConnectivitySignature> _starts;
+    private readonly ConnectivitySignature? _parent;
+
+    private TuningConnectivity(EmGeometryProbe probe, IReadOnlyDictionary<string, ConnectivitySignature> starts,
+                               ConnectivitySignature? parent, IReadOnlyList<ConnectedRange> ranges, string? startProblem)
+    {
+        _probe = probe;
+        _starts = starts;
+        _parent = parent;
+        Ranges = ranges;
+        StartProblem = startProblem;
+    }
+
+    /// <summary>Each tuned row's connected interval, by its key, in its own unit.</summary>
+    public IReadOnlyList<ConnectedRange> Ranges { get; }
+
+    /// <summary>Where the copper at the schematic's own values already disagrees with the schematic (the planner's report);
+    /// no interval is scanned around such a start.</summary>
+    public string? StartProblem { get; }
+
+    /// <summary>What is wrong with the copper at <paramref name="values"/> (tuned value key → value text) against the
+    /// start — a gap that opens, parts that touch — or null when it connects as the start does.</summary>
+    public string? ProblemAt(IReadOnlyDictionary<string, string> values) =>
+        StartProblem ?? OptimizationRun.ConnectivityProblem(_probe.At(values), _starts, _parent);
+
+    /// <summary>
+    /// The scan over <paramref name="setup"/>'s tuned rows (those ticked Tune) on <paramref name="circuit"/>, through the
+    /// analyses in scope. Null when nothing in scope is simulated by EM, or the rows give nothing to scan.
+    /// </summary>
+    public static TuningConnectivity? Scan(PreparedCircuit circuit, TuningSetup setup, IReadOnlyList<string>? analyses,
+                                           CancellationToken ct = default)
+    {
+        if (circuit.Tb is not { } tb || circuit.Lib is not { } lib) return null;
+        var rows = setup.Clone();
+        foreach (var e in rows.Variables) e.Opt = e.Tune;
+        var catalog = TunableCatalog.FromNetlist(tb, lib, parts: circuit.PartTunables);
+        if (OptimizationVariables.Build(rows, catalog, out _) is not { Coordinates.Count: > 0 } vars) return null;
+
+        var probe = new EmGeometryProbe(circuit, [], analyses);
+        var start = probe.Fresh(vars.Decode(vars.Start).Values);
+        if (start.Refusal is not null || !start.Keys.Any()) return null;
+        var starts = new Dictionary<string, ConnectivitySignature>(StringComparer.Ordinal);
+        string? startProblem = null;
+        foreach (var r in start.Records)
+        {
+            if (r.Connectivity is not { } sig) continue;
+            startProblem ??= sig.Disagreement;
+            starts[r.InstancePath] = sig;
+        }
+        if (startProblem is not null) return new TuningConnectivity(probe, starts, start.Parent, [], startProblem);
+        ct.ThrowIfCancellationRequested();
+        var ranges = OptimizationRun.ScanRanges(vars, probe, start.KeyText,
+                                                a => OptimizationRun.ConnectivityProblem(a, starts, start.Parent), ct, out _);
+        return new TuningConnectivity(probe, starts, start.Parent, ranges, null);
     }
 }
 

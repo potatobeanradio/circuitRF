@@ -252,6 +252,10 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
         if (followed && IsRunning) Request(final: true);
         UpdateLag();
         UpdateCanvas();
+        // brief-sdl-7 D7/D10 — a value that followed the schematic (an undo, a typed edit, a Push) has moved as surely as a
+        // dragged one: the EM traces may be stale, and the value may have left its connected interval.
+        MarkEmStale();
+        CheckConnectivity();
         OnPropertyChanged(nameof(Digits));
         OnPropertyChanged(nameof(DigitsChoices));
         if (Add.IsOpen) Add.Refresh();
@@ -484,6 +488,7 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
         UpdateCanvas();
         UpdateLag();
         MarkEmStale();
+        CheckConnectivity();
     }
 
     private void Request(bool final) => _session?.Request(CurrentValues(), final);
@@ -508,6 +513,7 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
         session.RunOnReleaseSuggested += OnRunOnReleaseSuggested;
         _session = session;
         StatusText = "";
+        _ = ScanConnectivity(session);
         Request(final: true);
         AfterSessionChange();
     }
@@ -723,6 +729,7 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
         s.RunOnReleaseSuggested -= OnRunOnReleaseSuggested;
         _session = null;
         ForgetEm();
+        ForgetConnectivity();
     }
 
     // ---- Solve EM here (brief-sdl-7 D7) -----------------------------------------
@@ -770,8 +777,8 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
             _emValues = values;
             _emCorrection = model.GroupedResults is { } circuit ? EmTraceCorrection.Of(emData, circuit) : null;
             s.ShowOverlay(emData);
-            EmStale = false;
-            EmText = "EM at these values — the faded traces";
+            // The solve is at the values it was asked at; a slider moved while it ran has already left them.
+            MarkEmStale();
             if (ShowEmCorrection) s.Correct(_emCorrection is { } c ? c.Apply : null, CorrectionLabel);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -796,6 +803,103 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
         bool same = now.Count == _emValues.Count && now.All(kv => _emValues.TryGetValue(kv.Key, out var v) && v == kv.Value);
         EmStale = !same;
         EmText = same ? "EM at these values — the faded traces" : "EM traces are stale — the values moved since the solve";
+    }
+
+    // ---- Connected intervals (brief-sdl-7 D10) -----------------------------------
+
+    /// <summary>The session simulates something by EM, so its rows carry connected intervals: the status line under the
+    /// toolbar is kept for the session's whole life rather than appearing and vanishing as a value crosses an edge.</summary>
+    [ObservableProperty] private bool _hasConnectivity;
+
+    /// <summary>The scan's progress, or — when a value is outside its row's interval — the gap or short the planner finds
+    /// at the sliders' values. Empty while every value is inside.</summary>
+    [ObservableProperty] private string _connectivityText = "";
+
+    private CircuitRF.Design.Optimization.TuningConnectivity? _connectivity;
+    private System.Threading.CancellationTokenSource? _connectivityCts;
+    private IReadOnlyDictionary<string, string>? _connectivityAsk;
+    private bool _explaining;
+
+    /// <summary>The scan the optimizer runs before its first solve, over the rows tuned here, off the UI thread.</summary>
+    private async System.Threading.Tasks.Task ScanConnectivity(TuneSession s)
+    {
+        ForgetConnectivity();
+        if (!s.HasEm || _tuned?.EditModel.Tuning is not { } setup) return;
+        var cts = new System.Threading.CancellationTokenSource();
+        _connectivityCts = cts;
+        HasConnectivity = true;
+        ConnectivityText = "Scanning where the layout stays connected…";
+        CircuitRF.Design.Optimization.TuningConnectivity? scan;
+        try { scan = await s.ScanConnectivityAsync(setup.Clone(), cts.Token); }
+        catch (OperationCanceledException) { return; }
+        catch (Exception) { scan = null; }
+        if (cts.IsCancellationRequested || !ReferenceEquals(s, _session)) return;
+        _connectivity = scan;
+        ConnectivityText = "";
+        if (scan is null) { HasConnectivity = false; return; }
+        CheckConnectivity();
+    }
+
+    /// <summary>Each row's interval, and when a value is outside one, the planner's own words for what the copper does
+    /// there. Never holds a slider back.</summary>
+    private void CheckConnectivity()
+    {
+        if (_connectivity is not { } scan) return;
+        bool outside = false;
+        foreach (var row in Rows)
+        {
+            row.ShowConnected(scan.Ranges.FirstOrDefault(r => r.Key == row.Key));
+            outside |= row.IsOutsideConnected;
+        }
+        if (scan.StartProblem is { } start)
+        {
+            ConnectivityText = $"The layout at the schematic's values does not agree with it: {start}";
+            return;
+        }
+        if (!outside)
+        {
+            _connectivityAsk = null;
+            ConnectivityText = "";
+            return;
+        }
+        _ = ExplainConnectivity(scan, CurrentValues());
+    }
+
+    /// <summary>One plan at a time, at the latest values asked: a drag asks at every step, and only its last answer is
+    /// worth showing.</summary>
+    private async System.Threading.Tasks.Task ExplainConnectivity(CircuitRF.Design.Optimization.TuningConnectivity scan,
+                                                                  IReadOnlyDictionary<string, string> values)
+    {
+        _connectivityAsk = values;
+        if (_explaining) return;
+        _explaining = true;
+        try
+        {
+            while (_connectivityAsk is { } ask && ReferenceEquals(scan, _connectivity))
+            {
+                _connectivityAsk = null;
+                string? why;
+                try { why = await System.Threading.Tasks.Task.Run(() => scan.ProblemAt(ask)); }
+                catch (Exception) { why = null; }
+                if (!ReferenceEquals(scan, _connectivity) || _connectivityAsk is not null) continue;
+                if (!Rows.Any(r => r.IsOutsideConnected)) { ConnectivityText = ""; break; }
+                ConnectivityText = why is null
+                    ? "Outside the connected interval the scan found, but the layout at these values connects as drawn"
+                    : $"Not connected as drawn at these values: {why}";
+            }
+        }
+        finally { _explaining = false; }
+    }
+
+    private void ForgetConnectivity()
+    {
+        _connectivityCts?.Cancel();
+        _connectivityCts = null;
+        _connectivity = null;
+        _connectivityAsk = null;
+        HasConnectivity = false;
+        ConnectivityText = "";
+        foreach (var row in Rows) row.ShowConnected(null);
     }
 
     private void ForgetEm()

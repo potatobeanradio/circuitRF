@@ -23,6 +23,34 @@ public sealed record EmVariant(string CellDir, string Key, string At);
 
 public static class EmVariantCells
 {
+    private static readonly AsyncLocal<HeldScope?> _held = new();
+
+    /// <summary>
+    /// brief-sdl-10 D5 — within the returned scope a variant is held in memory (<see cref="GeneratedCellOverlay"/>) rather
+    /// than written to the workspace, and dropped when the scope ends: what an optimisation's probe of a candidate uses to
+    /// plan the parent's layout, which it never saves. Scopes nest; each drops what it held.
+    /// </summary>
+    public static IDisposable HeldInMemory()
+    {
+        var scope = new HeldScope(_held.Value);
+        _held.Value = scope;
+        return scope;
+    }
+
+    private sealed class HeldScope(HeldScope? outer) : IDisposable
+    {
+        private readonly List<string> _dirs = [];
+        private readonly Lock _gate = new();
+
+        public void Add(string dir) { lock (_gate) _dirs.Add(dir); }
+
+        public void Dispose()
+        {
+            lock (_gate) GeneratedCellOverlay.Remove(_dirs);
+            _held.Value = outer;
+        }
+    }
+
     /// <summary>
     /// What <paramref name="comp"/>, an instance of <paramref name="cellDir"/>, is placed as in its parent's layout: a
     /// variant when its overrides, evaluated in the parent's <paramref name="scope"/>, give the cell other copper; null when
@@ -75,9 +103,12 @@ public static class EmVariantCells
         }
         if (g.Applied.Count == 0) return null;   // the instance's values are the cell's own
 
+        var held = _held.Value;
         string variant = GeneratedCellStore.GetOrCreateVariant(workspaceRootDir, target.CellName, g.Key, g.Source.View,
                                                                Path.GetDirectoryName(target.ClayPath)!, g.Schematic,
-                                                               Path.GetDirectoryName(target.SchematicPath));
+                                                               Path.GetDirectoryName(target.SchematicPath),
+                                                               held is null ? GeneratedCellTarget.Disk : GeneratedCellTarget.Memory);
+        held?.Add(variant);
         string at = string.Join(", ", g.Applied.OrderBy(kv => kv.Key, StringComparer.Ordinal)
                                                .Select(kv => $"{kv.Key} = {Shown(kv.Key, kv.Value, overrides)}"));
         return new EmVariant(variant, g.Key, at);

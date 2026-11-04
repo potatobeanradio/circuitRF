@@ -84,7 +84,9 @@ public partial class WorkspaceViewModel
     /// (one undo step there); this runs Update Layout from Schematic as the menu does (one undo step in the layout,
     /// hand edits kept) and checks that the layout is now the geometry EM solved, by its EM cache key. A mismatch is said.
     /// </summary>
-    internal string? UpdateLayoutAfterEmPush(SchematicViewModel schematic, string? expectedKey)
+    /// <param name="emSetup">The EM setup that solved the verified point (the run's), so a cell with several setups is
+    /// keyed by the one it was solved with; null resolves the cell's only setup.</param>
+    internal string? UpdateLayoutAfterEmPush(SchematicViewModel schematic, string? expectedKey, string? emSetup = null)
     {
         if (!FindSchematicDocumentWithFrame(schematic, out var doc, out _) || doc.FilePath is not { } path)
             return "the layout was not updated: the schematic is not open from a file";
@@ -93,18 +95,28 @@ public partial class WorkspaceViewModel
         if (sibling.CellDir is not { } cellDir) return "layout updated; its geometry could not be checked";
         var layoutVm = GetOrCreateLayoutSession(Path.GetFullPath(sibling.TargetPath));
         string key;
-        if (CircuitRF.Design.Layout.Em.ParametricEm.EmCapability.Resolve(cellDir, null, Path.GetDirectoryName(path), out _) is { } target)
+        if (CircuitRF.Design.Layout.Em.ParametricEm.EmCapability.Resolve(cellDir, emSetup, Path.GetDirectoryName(path), out _) is { } target)
             key = CircuitRF.Design.Optimization.EmApply.KeyOfLayout(target, layoutVm.Model, layoutVm.Technology);
         else
         {
             // brief-sdl-10 D7 — a schematic placing EM components: each placement's geometry, its variant's or its cell's own.
-            var placed = CircuitRF.Design.Optimization.EmApply.PlacedKeys(layoutVm.Model, Path.GetDirectoryName(Path.GetFullPath(sibling.TargetPath))!);
-            if (placed.Count == 0) return "layout updated; its geometry could not be checked";
+            string layoutDir = Path.GetDirectoryName(Path.GetFullPath(sibling.TargetPath))!;
+            var placed = CircuitRF.Design.Optimization.EmApply.PlacedKeys(layoutVm.Model, layoutDir);
+            var nested = CircuitRF.Design.Optimization.EmApply.NestedEmComponents(layoutVm.Model, layoutDir);
+            string notChecked = "";
+            if (nested.Count > 0)
+            {
+                string sentence = CircuitRF.Design.Optimization.EmApply.UncheckedSentence(nested);
+                Messages.Info("Optimizer: " + sentence, sibling.TargetPath);
+                notChecked = $" ({nested.Count} nested EM component{(nested.Count == 1 ? "" : "s")} not checked)";
+            }
+            // brief-sdl-10 — nothing schematic-driven is placed: there is no geometry to compare, which is not a mismatch.
+            if (placed.Count == 0) return "layout updated; it places no schematic-driven EM component, so there is no geometry to check" + notChecked;
             bool all = expectedKey is null || placed.All(k => expectedKey.Split('+').Contains(k, StringComparer.Ordinal));
             if (!all)
                 Messages.Warning($"Optimizer: a placed EM component's geometry in the updated layout ({string.Join("+", placed)}) is not one " +
                                  $"EM verified ({expectedKey}); what is drawn was not solved.", sibling.TargetPath);
-            return all ? "layout updated: every placed EM component is the geometry EM verified" : "layout updated, but it is NOT the geometry EM verified";
+            return (all ? "layout updated: every placed EM component is the geometry EM verified" : "layout updated, but it is NOT the geometry EM verified") + notChecked;
         }
         bool same = expectedKey is null || expectedKey.Split('+').Contains(key, StringComparer.Ordinal);
         if (!same)

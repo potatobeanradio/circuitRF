@@ -526,11 +526,17 @@ public static class CircuitEvaluation
     {
         ParametricEmProvider.Register();
         using var scope = EmEvaluationScope.Begin(control: control);
-        using var emNl = new Elaborator(em.Lib) { BaseDirectory = baseDirectory }.Elaborate(em.Tb);
+        // D5 — a sweep elaborates (and solves) at each of its own points, and this netlist only collects diagnostics; so it
+        // is elaborated in counting mode, else the bench's own values would be solved once more than the count said.
+        ElaboratedNetlist emNlBuilt;
+        using (pa.Typed is ParametricSweepAnalysis ? EmEvaluationScope.Begin(countOnly: true, control: control, estimate: false) : null)
+            emNlBuilt = new Elaborator(em.Lib) { BaseDirectory = baseDirectory }.Elaborate(em.Tb);
+        using var emNl = emNlBuilt;
         var ds = RunTypedAnalysis(pa.Typed!, emNl, em.Tb, em.Lib, notes, baseDirectory, control, out converged, fieldsRun, pa.ResultName);
         nl.MergeDiagnosticsFrom(emNl);
         if (em.PathA is not null) notes.Add(em.Describe(pa.ResultName));
         foreach (var line in scope.Records.SelectMany(r => r.Unreached).Distinct()) nl.AddWarningOnce("em-unreached:" + line, line);
+        foreach (var line in scope.Records.SelectMany(r => r.PlanNotes).Distinct()) nl.AddWarningOnce("em-plan:" + line, line);
         // brief-sdl-7 R-sdl7-7: a sweep may be studying exactly where the copper joins or parts, so such points are solved —
         // and said, against the first point's connectivity.
         foreach (var line in EmConnectivityChanges(scope.Records)) nl.AddWarningOnce("em-connectivity:" + line, line);

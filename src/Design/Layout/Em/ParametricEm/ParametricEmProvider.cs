@@ -33,6 +33,10 @@ public sealed record EmEvaluationRecord(
     /// <summary>brief-sdl-8 D2/D7 — what the 3D view says about this evaluation: each flattened group, what is held.</summary>
     public IReadOnlyList<string> ThreeDNotes { get; init; } = [];
 
+    /// <summary>What the re-plan of the layout reported at this geometry that a reader of the EM result should know — a
+    /// joint it could not close, a part it placed apart (<see cref="EmCellGeometry.Notes"/>).</summary>
+    public IReadOnlyList<string> PlanNotes { get; init; } = [];
+
     /// <summary>The values that made this geometry differ from the schematic's own, as <c>L90 = 0.005</c>; empty at the
     /// schematic's own values.</summary>
     public string At { get; init; } = "";
@@ -135,6 +139,7 @@ public sealed class ParametricEmProvider : IParametricModelProvider
             ThreeD = target.Is3D,
             SmallestElementM = result.Geometry?.ThreeD?.SmallestElementM,
             ThreeDNotes = result.Geometry?.ThreeD?.Notes ?? [],
+            PlanNotes = result.Geometry?.Notes ?? [],
             At = result.Geometry is { } g ? string.Join(", ", g.Applied.OrderBy(kv => kv.Key, StringComparer.Ordinal)
                                                                 .Select(kv => $"{kv.Key} = {EmCellCache.Format(kv.Value)}")) : "",
         });

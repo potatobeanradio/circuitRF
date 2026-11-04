@@ -35,12 +35,27 @@ public sealed record EmApplyResult(
     public bool KeyMatches => Refusal is null && LayoutKey is not null &&
                               (ExpectedKey is null || LayoutKey.Split('+').All(k => ExpectedKey.Split('+').Contains(k, StringComparer.Ordinal)));
 
+    /// <summary>brief-sdl-10 D7 — a schematic placing EM components with no layout geometry to check them in: it has no layout
+    /// made from it, or its layout places no schematic-driven EM component. The clause saying which; null otherwise. Apply
+    /// then succeeds with nothing compared (<see cref="Succeeded"/>), rather than failing a comparison that has no layout.</summary>
+    public string? NothingToVerify { get; init; }
+
+    /// <summary>brief-sdl-10 — EM components placed inside another placed cell (<c>Y1.X1</c>): the parent's layout shows that
+    /// cell's own layout, so their copper there was not checked against what EM verified.</summary>
+    public IReadOnlyList<string> Unchecked { get; init; } = [];
+
+    /// <summary>Whether Apply did what it should: nothing refused, and the saved layout is the geometry EM verified, or there
+    /// was no layout geometry to check.</summary>
+    public bool Succeeded => Refusal is null && (NothingToVerify is not null || KeyMatches);
+
     /// <summary>One sentence for a status line or the CLI.</summary>
-    public string Sentence => Refusal is { } why ? why
+    public string Sentence => (Refusal is { } why ? why
+        : NothingToVerify is { } nothing ? $"Applied {Written.Count} value{(Written.Count == 1 ? "" : "s")}; {nothing}."
         : $"Applied {Written.Count} value{(Written.Count == 1 ? "" : "s")} and updated the layout; " +
           (KeyMatches ? $"the saved layout is the geometry EM verified ({LayoutKey})."
                       : $"the saved layout's geometry {LayoutKey} is NOT the one EM verified ({ExpectedKey}): what is on disk was " +
-                        "not solved. Re-run the optimisation from these values, or simulate the analysis by EM to solve it.");
+                        "not solved. Re-run the optimisation from these values, or simulate the analysis by EM to solve it."))
+        + (Unchecked.Count > 0 ? " " + EmApply.UncheckedSentence(Unchecked) : "");
 }
 
 public static class EmApply
@@ -139,8 +154,11 @@ public static class EmApply
         var written = WriteValues(model, values, out var notWritten);
         if (written.Count > 0) SchematicPersistence.SaveToFile(full, model, cellName, view.PanX, view.PanY, view.Zoom);
 
-        var (layoutKey, lines, refusal) = UpdateParentLayout(cellDir, full);
-        return new EmApplyResult(written, notWritten, layoutKey, expectedKey, refusal, lines);
+        var updated = UpdateParentLayout(cellDir, full);
+        return new EmApplyResult(written, notWritten, updated.Key, expectedKey, updated.Refusal, updated.Lines)
+        {
+            NothingToVerify = updated.NothingToVerify, Unchecked = updated.Unchecked,
+        };
     }
 
     /// <summary>Whether <paramref name="model"/> places an instance of an EM component that varies (D1's first two kinds).</summary>
@@ -151,23 +169,27 @@ public static class EmApply
 
     /// <summary>
     /// Update Layout from Schematic, headless, on a parent's saved layout — then the geometry key of every EM component it
-    /// places, joined with <c>+</c>. Refused when the schematic has no layout made from it.
+    /// places, joined with <c>+</c>. With no layout made from the schematic, or none of its placements schematic-driven,
+    /// <c>NothingToVerify</c> says so: the values are written and there is no layout geometry to check. <c>Unchecked</c>
+    /// names the EM components placed inside another placed cell, which the key check does not reach.
     /// </summary>
-    public static (string? Key, IReadOnlyList<string> Lines, string? Refusal) UpdateParentLayout(string cellDir, string schematicPath)
+    public static (string? Key, IReadOnlyList<string> Lines, string? Refusal, string? NothingToVerify, IReadOnlyList<string> Unchecked)
+        UpdateParentLayout(string cellDir, string schematicPath)
     {
+        const string NotLaidOut = "the schematic has no layout made from it, so there is no layout geometry to check against EM";
         var primary = CircuitRF.Design.Cells.CellFolder.ResolvePrimary(cellDir, CircuitRF.Design.Cells.ViewType.Layout);
         if (primary.State is not (CircuitRF.Design.Cells.PrimaryState.SoleFile or CircuitRF.Design.Cells.PrimaryState.NamedPresent)
             || primary.ResolvedName is null)
-            return (null, [], null);   // nothing laid out: the values are written and there is no layout to keep in step
+            return (null, [], null, NotLaidOut, []);
         string clay = Path.Combine(CircuitRF.Design.Cells.CellFolder.SubFolderPath(cellDir, CircuitRF.Design.Cells.ViewType.Layout),
                                    primary.ResolvedName);
-        if (Workspace.WorkspaceRootFinder.WorkspaceDirOf(cellDir) is not { } ws) return (null, [], "the schematic belongs to no workspace.");
+        if (Workspace.WorkspaceRootFinder.WorkspaceDirOf(cellDir) is not { } ws) return (null, [], "the schematic belongs to no workspace.", null, []);
         try
         {
             var model = SchematicPersistence.LoadFromFile(schematicPath).model;
             model.SchematicDirectory = Path.GetDirectoryName(schematicPath);
             var layout = LayoutPersistence.LoadFromFile(clay);
-            if (layout.GeneratedPlacements.Count == 0) return (null, [], null);
+            if (layout.GeneratedPlacements.Count == 0) return (null, [], null, NotLaidOut, []);
             var (tech, _) = TechnologyResolver.ResolveForDocument(layout.TechRef, clay, Path.Combine(ws, ".cws"), new TechnologyCache());
             var plan = SchematicLayoutPlanner.Plan(model, layout, model.SchematicDirectory!, ws, Path.GetDirectoryName(clay)!,
                                                    tech.Tech, tech.ResolvedPath, DiskCellResolver.Instance,
@@ -176,12 +198,76 @@ public static class EmApply
             LayoutPersistence.SaveToFile(clay, layout);
             var lines = plan.Lines.Where(l => l.Severity == SchematicLayoutPlanner.ReportSeverity.Warning).Select(l => l.Text).ToList();
             var keys = PlacedKeys(layout, Path.GetDirectoryName(clay)!);
-            return (keys.Count == 0 ? null : string.Join("+", keys), lines, null);
+            var nested = NestedEmComponents(layout, Path.GetDirectoryName(clay)!);
+            return keys.Count == 0
+                ? (null, lines, null, "the layout was updated, and it places no schematic-driven EM component, so there is no " +
+                                      "geometry to check against EM", nested)
+                : (string.Join("+", keys), lines, null, null, nested);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException
                                        or InvalidDataException or ArgumentException or InvalidOperationException)
         {
-            return (null, [], $"the layout could not be updated: {e.Message}");
+            return (null, [], $"the layout could not be updated: {e.Message}", null, []);
+        }
+    }
+
+    /// <summary>The sentence for EM components the key check does not reach (<see cref="NestedEmComponents"/>).</summary>
+    public static string UncheckedSentence(IReadOnlyList<string> nested) =>
+        $"Not checked: {string.Join(", ", nested)} {(nested.Count == 1 ? "is an EM component" : "are EM components")} placed " +
+        "inside another placed cell, whose own layout the parent's layout shows, so that copper was not compared with what " +
+        "EM verified.";
+
+    /// <summary>
+    /// brief-sdl-10 — the EM components (D1's first two kinds) placed INSIDE a cell that <paramref name="layout"/> places, as
+    /// <c>Y1.X1</c>: a placed cell that is not itself an EM component is drawn as its own layout, at its own values, so
+    /// an EM component in it is not placed at the values the parent gives it and has no key in <see cref="PlacedKeys"/>.
+    /// Read from each placed cell's schematic, through cells that are not EM components, to a bounded depth.
+    /// </summary>
+    public static IReadOnlyList<string> NestedEmComponents(LayoutView layout, string layoutDir)
+    {
+        var found = new List<string>();
+        foreach (var inst in layout.Instances)
+        {
+            if (inst.SchematicId is not { Length: > 0 } id || inst.CellRef is not { Length: > 0 } r) continue;
+            if (CellDirOf(r, layoutDir) is not { } d || CircuitRF.Design.Layout.PCells.GeneratedCellStore.IsUnderGeneratedCellsFolder(d)) continue;
+            if (EmComponentKinds.Of(d).Kind != EmComponentKind.None) continue;   // itself an EM component: checked, or fixed
+            EmInside(d, id, new HashSet<string>(StringComparer.Ordinal), 0, found);
+        }
+        return found;
+
+        // seen holds the cells on the way down (a cycle guard), not every cell visited: two placements of one cell are two paths.
+        static void EmInside(string cellDir, string path, HashSet<string> seen, int depth, List<string> found)
+        {
+            string key = Path.GetFullPath(cellDir);
+            if (depth > 8 || !seen.Add(key)) return;
+            try
+            {
+                if (EmComponentKinds.Primary(cellDir, CircuitRF.Design.Cells.ViewType.Schematic) is not { } csch) return;
+                SchematicEditModel model;
+                try { model = SchematicPersistence.LoadFromFile(csch).model; }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException
+                                               or InvalidDataException or ArgumentException or InvalidOperationException) { return; }
+                string dir = Path.GetDirectoryName(csch)!;
+                foreach (var c in model.Components)
+                {
+                    if (c.InstanceName.Length == 0 || c.CellRef is not { Length: > 0 } r || PdkKitRegistry.IsKitRef(r)) continue;
+                    if (CellDirOf(r, dir) is not { } inner) continue;
+                    var kind = EmComponentKinds.Of(inner);
+                    if (kind.Varies) found.Add($"{path}.{c.InstanceName}");
+                    else if (kind.Kind == EmComponentKind.None) EmInside(inner, $"{path}.{c.InstanceName}", seen, depth + 1, found);
+                }
+            }
+            finally { seen.Remove(key); }
+        }
+
+        static string? CellDirOf(string cellRef, string fromDir)
+        {
+            try
+            {
+                return Workspace.ExternalCellRef.ResolveCellDir(cellRef, fromDir) is { } d && Directory.Exists(d)
+                    ? Path.TrimEndingDirectorySeparator(Path.GetFullPath(d)) : null;
+            }
+            catch (Exception) { return null; }
         }
     }
 

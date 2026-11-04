@@ -240,6 +240,12 @@ public static class OptimizationDiagnostics
         "The layout at the start values does not agree with the schematic: {lines} Optimising its geometry would hold that " +
         "fixed. Correct the values or the layout first; nothing was solved.", ("lines", lines));
 
+    /// <summary>brief-sdl-10 D5 — the parent schematic is laid out, and its layout could not be planned at the start.</summary>
+    public static Diagnostic EmParentUnchecked(string why) => Diagnostic.Create(
+        "opt.em.parent-unchecked", DiagnosticSeverity.Warning,
+        "The parent's layout {why}, so candidate points are checked against each EM component's own layout only, not against " +
+        "the parent's feed lines.", ("why", why));
+
     public static Diagnostic EmConnectivityUnchecked() => Diagnostic.Create(
         "opt.em.connectivity-unchecked", DiagnosticSeverity.Info,
         "The layout's connectivity could not be measured, so candidate points are not checked for gaps or shorts.");

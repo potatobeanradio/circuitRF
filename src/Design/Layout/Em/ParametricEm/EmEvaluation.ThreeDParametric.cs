@@ -63,7 +63,8 @@ public static partial class EmEvaluation
         var connectivity = new ConnectivitySignature([], [], []) { Bodies = bodies };
         var (techDoc, _) = TechnologyResolver.ResolveForDocument(doc.TechRef, c3dPath, target.CwsPath, cache);
         var empty = new EmLayoutSource(c3dPath, new LayoutView(), null, LayoutUnits.DefaultDbuPerMicron);
-        string key = EmCellCache.KeyOf3D(empty, doc, held, techDoc.Tech, SolverVersion(held));
+        string key = EmCellCache.KeyOf3D(empty, doc, held, techDoc.Tech, SolverVersion(held),
+                                         KeyInputs(generated, c3dPath, cell.CcellPath, techDoc.ResolvedPath), target.WorkspaceDir);
 
         var notes = new List<string>();
         if (doc.Instances.Any(i => i.View == C3dInstanceView.Layout))

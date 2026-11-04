@@ -394,6 +394,19 @@ public sealed class TuneSession : IDisposable
         }, ct);
     }
 
+    /// <summary>
+    /// brief-sdl-7 D10 — the optimizer's connectivity scan over the rows <paramref name="setup"/> tunes, through the
+    /// analyses in scope, off the UI thread: each row's connected interval and the check of any other values. Planning
+    /// only, nothing solved. Null when nothing in scope is simulated by EM.
+    /// </summary>
+    public Task<CircuitRF.Design.Optimization.TuningConnectivity?> ScanConnectivityAsync(CircuitRF.Core.Design.TuningSetup setup,
+                                                                                         CancellationToken ct = default)
+    {
+        if (_circuit is not { } circuit || !HasEm) return Task.FromResult<CircuitRF.Design.Optimization.TuningConnectivity?>(null);
+        var analyses = Analyses;
+        return Task.Run(() => CircuitRF.Design.Optimization.TuningConnectivity.Scan(circuit, setup, analyses, ct), ct);
+    }
+
     /// <summary>The EM result as faded traces under the live ones (null: none).</summary>
     public void ShowOverlay(DataSet? data) => _sink?.ShowOverlay(data);
 

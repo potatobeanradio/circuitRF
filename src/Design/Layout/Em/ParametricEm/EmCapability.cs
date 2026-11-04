@@ -147,7 +147,14 @@ public static class EmCapability
         EmViewChoice? chosen;
         if (emSetup is { Length: > 0 } wanted)
         {
-            chosen = Named(wanted, setups, baseDirectory, ws);
+            chosen = Named(wanted, setups, baseDirectory, ws, out var several);
+            if (chosen is null && several is { Count: > 1 })
+            {
+                string stem = Path.GetFileNameWithoutExtension(several[0].Path);
+                refusal = $"{name}'s 3D view {Path.GetFileName(several[0].Path)} has {several.Count} driven setups " +
+                          $"({string.Join(", ", several.Select(s => $"'{s.SetupName}'"))}); name the one to use, as {stem}#{several[0].SetupName}.";
+                return null;
+            }
             if (chosen is null)
             {
                 refusal = $"{name}'s layout has no EM setup '{wanted}'" +
@@ -280,10 +287,46 @@ public static class EmCapability
 
     /// <summary>brief-sdl-8 D1 — how a picker and <c>emSetup=</c> name one of <see cref="SetupsFor"/>'s entries: a <c>.cem</c>'s
     /// file stem, or <c>&lt;view stem&gt;#&lt;setup&gt;</c> for a setup of the 3D view. Both resolve back to the same entry.</summary>
+    /// <remarks>A <c>#</c> elsewhere — in a folder of the workspace's path, or in a <c>.cem</c>'s own file name — is part of
+    /// the file. A spelling that is already a label (no folder, no <c>.cem</c> extension) is returned as it is.</remarks>
     public static string SetupLabel(string setup)
     {
-        int hash = setup.LastIndexOf('#');
-        return hash > 0 ? Path.GetFileNameWithoutExtension(setup[..hash]) + setup[hash..] : Path.GetFileNameWithoutExtension(setup);
+        int c3d = setup.LastIndexOf(ThreeDSeparator, StringComparison.OrdinalIgnoreCase);
+        if (c3d >= 0)
+        {
+            int hash = c3d + C3dPersistence.Extension.Length;
+            return Path.GetFileNameWithoutExtension(setup[..hash]) + setup[hash..];
+        }
+        bool isFile = setup.IndexOfAny(['/', '\\']) >= 0 ||
+                      Path.GetExtension(setup).Equals(EmSetupPersistence.Extension, StringComparison.OrdinalIgnoreCase);
+        return isFile ? Path.GetFileNameWithoutExtension(setup) : setup.Trim();
+    }
+
+    /// <summary>What joins a 3D view's path to one of its setups' names.</summary>
+    private const string ThreeDSeparator = C3dPersistence.Extension + "#";
+
+    /// <summary>
+    /// brief-sdl-8 D1 — <paramref name="spelling"/> split into a 3D view and one of its setups: at <c>.c3d#</c>, or — for the
+    /// label form <c>&lt;view stem&gt;#&lt;setup&gt;</c> — at a <c>#</c> after the last folder separator whose left side has
+    /// no extension. False when neither applies, and the whole spelling then names a file. <paramref name="ambiguous"/> is
+    /// true for the second form: a <c>.cem</c> whose file name holds a <c>#</c> reads the same way, so a caller that finds
+    /// nothing by the split tries the whole spelling too.
+    /// </summary>
+    internal static bool SplitSetup(string spelling, out string file, out string setup, out bool ambiguous)
+    {
+        (file, setup, ambiguous) = (spelling, "", false);
+        int c3d = spelling.LastIndexOf(ThreeDSeparator, StringComparison.OrdinalIgnoreCase);
+        if (c3d >= 0)
+        {
+            int at = c3d + C3dPersistence.Extension.Length;
+            (file, setup) = (spelling[..at], spelling[(at + 1)..]);
+            return true;
+        }
+        int sep = spelling.LastIndexOfAny(['/', '\\']);
+        int hash = spelling.IndexOf('#', sep + 1);
+        if (hash < 0 || Path.GetExtension(spelling[..hash]).Length > 0) return false;
+        (file, setup, ambiguous) = (spelling[..hash], spelling[(hash + 1)..], true);
+        return true;
     }
 
     // ── brief-sdl-10 D1: 3D-parametric ───────────────────────────────────────
@@ -440,13 +483,24 @@ public static class EmCapability
     /// <c>&lt;c3d&gt;#&lt;setup&gt;</c> (brief-sdl-8 D1; the left side may be empty for the cell's own 3D view), or an embedded
     /// setup's bare name when exactly one choice has it.
     /// </summary>
-    private static EmViewChoice? Named(string wanted, IReadOnlyList<EmViewChoice> setups, string? baseDirectory, string ws)
+    /// <param name="several">Set when <paramref name="wanted"/> names a 3D view, with no setup, that has more than one driven
+    /// setup: those setups, so the refusal can ask for one rather than say there is none.</param>
+    private static EmViewChoice? Named(string wanted, IReadOnlyList<EmViewChoice> setups, string? baseDirectory, string ws,
+                                       out List<EmViewChoice>? several)
     {
-        string file = wanted;
-        string? setupName = null;
-        int hash = wanted.LastIndexOf('#');
-        if (hash >= 0) { file = wanted[..hash].Trim(); setupName = wanted[(hash + 1)..].Trim(); }
+        several = null;
+        if (SplitSetup(wanted, out string file, out string setupName, out bool ambiguous))
+        {
+            var hit = NamedCore(wanted, file.Trim(), setupName.Trim(), setups, baseDirectory, ws, out several);
+            if (hit is not null || !ambiguous) return hit;
+        }
+        return NamedCore(wanted, wanted.Trim(), null, setups, baseDirectory, ws, out several);
+    }
 
+    private static EmViewChoice? NamedCore(string wanted, string file, string? setupName, IReadOnlyList<EmViewChoice> setups,
+                                           string? baseDirectory, string ws, out List<EmViewChoice>? several)
+    {
+        several = null;
         IEnumerable<EmViewChoice> pool = setupName is null ? setups : setups.Where(s => s.SetupName == setupName);
         if (setupName is not null && file.Length == 0) return pool.Count() == 1 ? pool.First() : null;
 
@@ -466,6 +520,8 @@ public static class EmCapability
                 var byName = setups.Where(s => s.SetupName == wanted.Trim()).ToList();
                 if (byName.Count == 1) return byName[0];
             }
+            else if (byFile.All(s => s.Is3D) && byFile.Select(s => s.Path).Distinct(StringComparer.OrdinalIgnoreCase).Count() == 1)
+                several = byFile;
             return null;
         }
         return byFile.Count == 1 ? byFile[0] : null;

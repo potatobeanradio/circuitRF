@@ -84,6 +84,11 @@
             <Setter Property="FontSize" Value="10"/>
             <Setter Property="Opacity" Value="0.6"/>
         </Style>
+        <!-- brief-sdl-7 D10: a value outside its connected interval. -->
+        <Style Selector="TextBlock.muted.outside">
+            <Setter Property="Foreground" Value="#FFD07000"/>
+            <Setter Property="Opacity" Value="1"/>
+        </Style>
         <Style Selector="TextBlock.bound">
             <Setter Property="FontSize" Value="10"/>
             <Setter Property="Opacity" Value="0.6"/>
@@ -355,6 +360,11 @@
                            IsVisible="{Binding StatusText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                 <TextBlock Text="{Binding EmText}" FontSize="11" Margin="6,0,6,2" TextTrimming="CharacterEllipsis" Opacity="0.75"
                            IsVisible="{Binding EmText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                <!-- brief-sdl-7 D10: the gap or short at the sliders' values. Kept for the session (empty while every
+                     value is inside its interval), so the rows under it do not jump as a value crosses an edge. -->
+                <TextBlock Text="{Binding ConnectivityText}" FontSize="11" Margin="6,0,6,2" MinHeight="15"
+                           TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding ConnectivityText}" Opacity="0.85"
+                           IsVisible="{Binding HasConnectivity}"/>
             </StackPanel>
 
             <!-- Compare (R-to5-6): both values of every key and the difference. No simulation. -->
@@ -497,6 +507,11 @@
                                             <TextBox Text="{Binding MaxText}" IsVisible="{Binding IsEditingMax}" Classes="tuningBound"
                                                      Tag="max" Width="64" FontSize="10" Padding="2,0" MinHeight="0"/>
                                         </Panel>
+                                        <!-- brief-sdl-7 D10: where the layout stays connected, in the space between min and max. -->
+                                        <TextBlock Grid.Column="1" Text="{Binding ConnectedText}" Classes="muted"
+                                                   Classes.outside="{Binding IsOutsideConnected}"
+                                                   HorizontalAlignment="Center" Margin="6,0" TextTrimming="CharacterEllipsis"
+                                                   ToolTip.Tip="Where this value keeps the layout's connectivity, every other value at its start (the optimizer's scan). A value outside it is allowed; the line under the toolbar says what the copper does there."/>
                                         <TextBlock Grid.Column="3" Text="{Binding ScaleLabel}" Classes="muted" Margin="6,0,0,0"/>
                                     </Grid>
 

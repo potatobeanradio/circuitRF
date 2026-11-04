@@ -46,21 +46,23 @@ internal sealed class EmModelRun
     }
 
     /// <summary>
-    /// Applies the switch to <paramref name="lib"/>/<paramref name="tb"/> for the chain whose base satisfies
-    /// <paramref name="isKind"/> — the analysis the verb will dispatch. Returns the scope the verb runs in (dispose it when
+    /// Applies the switch to <paramref name="lib"/>/<paramref name="tb"/> for the chain the verb will dispatch: the one
+    /// <see cref="ChainSelector"/> selects for <paramref name="analysisName"/> (the verb's <c>--analysis</c>, or null) among
+    /// chains whose base satisfies <paramref name="isBase"/> — the same selection the verb's own dispatch makes, so a named
+    /// sweep or a name in another case is switched exactly as it is run. Returns the scope the verb runs in (dispose it when
     /// the run ends), or null with <paramref name="exit"/> set when the run stops here.
     /// </summary>
-    public IDisposable? Prepare(string input, string? refBase, ref Library lib, ref TestBench tb, Func<Analysis, bool> isKind,
-                                out int exit)
+    public IDisposable? Prepare(string input, string? refBase, ref Library lib, ref TestBench tb, Func<Analysis, bool> isBase,
+                                string? analysisName, out int exit)
     {
         exit = 0;
+        _sweepTop = false;
         ParametricEmProvider.Register();
         if (Em == false) (tb, lib) = EmModelSwitch.CircuitOnly(tb, lib);
 
-        var bench = tb;
-        var analysis = tb.Analyses.FirstOrDefault(a => a.Enabled && isKind(a));
-        if (analysis is null || Em == false) return EmEvaluationScope.Begin(control: RunHost.Control);
-        var top = AnalysisChain.PromoteToRunnableTop(analysis, bench);
+        var top = ChainSelector.Select(tb, analysisName, isBase, "", "").Selected;
+        if (top is null || Em == false || ChainSelector.BaseOfChain(top, tb) is not { } chainBase || !isBase(chainBase))
+            return EmEvaluationScope.Begin(control: RunHost.Control);   // the verb refuses a chain of another kind itself
 
         bool whole = EmModelSwitch.IsEm(top, tb, Em);
         if (!whole && !EmModelSwitch.HasInstancesSetToEm(tb, lib)) return EmEvaluationScope.Begin(control: RunHost.Control);
@@ -100,6 +102,18 @@ internal sealed class EmModelRun
 
         lib = switched.Lib;
         tb = switched.Tb;
+        _sweepTop = top is ParametricSweepAnalysis;
         return EmEvaluationScope.Begin(control: RunHost.Control);
     }
+
+    private bool _sweepTop;
+
+    /// <summary>
+    /// D5 — wrap the verb's one elaboration of the whole bench in this. When the chain is a sweep run with EM evaluations,
+    /// every point elaborates (and solves) for itself and that netlist only collects diagnostics, so it is elaborated in
+    /// counting mode: else the bench's own values would be solved once more than the count said, even when no sweep point
+    /// is at them. Null — nothing to wrap — otherwise.
+    /// </summary>
+    public IDisposable? BaseElaboration() =>
+        _sweepTop ? EmEvaluationScope.Begin(countOnly: true, control: RunHost.Control, estimate: false) : null;
 }

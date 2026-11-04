@@ -44,6 +44,10 @@ public sealed record OptimizationOptions
     /// evaluation by circuit models (<c>--em off</c>); null as each analysis and instance says.</summary>
     public bool? EvaluateEm { get; init; }
 
+    /// <summary>brief-sdl-7 D4 — called once an em=correct or em=direct run has checked its start, with its mode and the
+    /// solve budget in force, before the first solve. A 3D EM view's lower default is only known then.</summary>
+    public Action<OptimizerEmMode, int>? EmBudgetKnown { get; init; }
+
     /// <summary>brief-sdl-7 — an inner run of em=correct: its box, start, offsets and connectivity check.</summary>
     internal EmInner? Inner { get; init; }
 
@@ -286,6 +290,10 @@ public sealed class OptimizationResult
     /// <summary>The geometry key of the best EM-verified point — what Apply checks the saved layout against.</summary>
     public string? BestEmKey { get; init; }
 
+    /// <summary>The EM view that solved the geometry (Path A): the setup Apply must key the saved layout by, since a cell
+    /// with several setups names none by itself. Null for a placed part's geometry (Path B) or em=off.</summary>
+    public string? EmSetup { get; init; }
+
     /// <summary>D10 — each variable's connected interval around its start.</summary>
     public IReadOnlyList<ConnectedRange> ConnectedRanges { get; init; } = [];
 }
@@ -385,6 +393,7 @@ public sealed partial class OptimizationRun
     private ulong _seed = 1;
     private int _maxIter = DefaultMaxIterations, _iterBase;
     private long _evalBase;
+    private long? _maxEvals;
     private double? _limitS;
     private double _stallTol;
     private int _stallIters;
@@ -633,6 +642,16 @@ public sealed partial class OptimizationRun
 
         _maxIter    = _settings.MaxIterations ?? DefaultMaxIterations;
         _limitS     = _settings.TimeLimit is { } tl ? TuningValidator.TimeLimitSeconds(tl) : null;
+        _maxEvals   = _settings.MaxEvaluations;
+        // brief-sdl-7 D2 — an inner search of em=correct spends what is left of the limits the setup states, not limits of
+        // its own: otherwise every inner search would get the run's whole time, iteration and evaluation allowance afresh.
+        // With no iteration limit stated, each inner search keeps the default one, as a search of its own would.
+        if (_parent is { } parent)
+        {
+            if (_settings.MaxIterations is not null) _maxIter = Math.Max(1, parent._maxIter - parent._iterations);
+            if (parent._limitS is { } ps) _limitS = Math.Max(0, ps - parent._sw.Elapsed.TotalSeconds);
+            if (parent._maxEvals is { } pm) _maxEvals = Math.Max(1, pm - (parent._innerCounts.Evals + parent._emRows.Count));
+        }
         _stallTol   = Option(_algOptions, "stall_tol");
         _stallIters = (int)Option(_algOptions, "stall_iters");
         _iterBase   = 0;
@@ -993,7 +1012,7 @@ public sealed partial class OptimizationRun
     {
         reason = null;
         if (_iterations - _iterBase >= _maxIter) reason = $"the iteration limit ({_maxIter}) was reached";
-        else if (_settings.MaxEvaluations is { } me && Evaluations - _evalBase >= me) reason = $"the evaluation limit ({me}) was reached";
+        else if (_maxEvals is { } me && Evaluations - _evalBase >= me) reason = $"the evaluation limit ({me}) was reached";
         else if (_limitS is { } s && _sw.Elapsed.TotalSeconds >= s) reason = $"the time limit ({_settings.TimeLimit}) was reached";
         return reason is not null;
     }
@@ -1178,6 +1197,7 @@ public sealed partial class OptimizationRun
             _log.Add(new EvaluationRecord(batch[k], d, results[k].Cost, o.Failed, false, cached));
             if (EmMode == OptimizerEmMode.Direct && _probe is not null && ranHere && !cached)
                 RecordDirectRow(d, o, cachedBefore.GetValueOrDefault(d.CacheKey));
+            if (EmMode == OptimizerEmMode.Direct && _probe is not null && ranHere && o.Failed) ForgetFailedSolves(d.Values);
 
             if (!o.Failed && (_bestIndex < 0 || o.Cost < _log[_bestIndex].Cost))
             {
@@ -1509,8 +1529,9 @@ public sealed partial class OptimizationRun
             History      = cancelled ? null : History(_log, _iterHistory),
             EmMode       = EmMode,
             EmSolves     = _emRows,
-            EmBudgetUsed = _solvedKeys.Count,
+            EmBudgetUsed = _solves,
             StoppedByBudget = _emStop == EmStop.Budget,
+            EmSetup      = _emSetupRef,
             BestEmKey    = EmMode == OptimizerEmMode.Direct && bestRecord is not null && _probe is not null
                                ? _probe.At(bestRecord.Decoded.Values).KeyText : null,
             ConnectedRanges = _ranges,

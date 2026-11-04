@@ -969,7 +969,12 @@ public static class C3dHierarchy
         {
             if (C3dResolver.ValidateName(row.Name) is not null || taken.Contains(row.Name)) continue;
             if (!values.TryGetValue(row.Name, out var v)) continue;
-            string? unit = row.Unit is { Length: > 0 } ru ? ru.Trim() : null;
+            // A row with no unit whose value carries a length (w/4, 0.5 mm) is base SI (CellVariables.Values says so with
+            // "metre"): it is written in the view's own display unit, so a field reads it as a length and not as a number
+            // in that field's unit.
+            string? unit = row.Unit is { Length: > 0 } ru ? ru.Trim()
+                         : v.Unit == C3dResolver.BaseUnit ? C3dUnits.Stored(doc.DisplayUnit)
+                         : v.Unit is { Length: > 0 } vu ? vu : null;
             double scale = 1;
             if (unit is not null)
             {

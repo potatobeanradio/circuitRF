@@ -61,8 +61,14 @@ public static partial class EmEvaluation
         var layouts = new Dictionary<string, LayoutView>(StringComparer.Ordinal) { [Path.GetFullPath(target.ClayPath)] = source.View };
         var cache = new TechnologyCache();
 
-        // D4 — the ports follow the regenerated layout's labels.
-        C3dHierarchy.UpdatePorts(doc, C3dHierarchy.PortsFromLayouts(doc, c3dPath, target.CwsPath, cache, layouts));
+        // D4 — the ports follow the regenerated layout's labels. A port that cannot follow is a refusal, not a stale port.
+        var translated = C3dHierarchy.PortsFromLayouts(doc, c3dPath, target.CwsPath, cache, layouts);
+        if (PortsThatCannotFollow(doc, c3dPath, target, translated, cache) is { } stuck)
+        {
+            refusal = $"{target.CellName}'s 3D view cannot follow its layout's ports at these values: {stuck}";
+            return null;
+        }
+        C3dHierarchy.UpdatePorts(doc, translated);
 
         // D3 — the names the 3D view takes from the cell at this point, and at the design's own values (D7's anchor).
         var (cell, overrides, linked) = LinkedNames(doc, c3dPath, now);
@@ -103,7 +109,9 @@ public static partial class EmEvaluation
                                 $"and no VAR of the view linked to {row.Name} is used by a dimension.");
 
         var (techDoc, _) = TechnologyResolver.ResolveForDocument(doc.TechRef, c3dPath, target.CwsPath, cache);
-        string key = EmCellCache.KeyOf3D(source, doc, held, techDoc.Tech, SolverVersion(held));
+        string key = EmCellCache.KeyOf3D(source, doc, held, techDoc.Tech, SolverVersion(held),
+                                         KeyInputs(generated, target.ClayPath, c3dPath, cell.CcellPath, techDoc.ResolvedPath),
+                                         target.WorkspaceDir);
         var three = new EmThreeDGeometry(doc, elaborator, held, Estimate3D(held, problem), EmMeshHold.SmallestElementM(held, problem),
                                          bodies, [.. lines, .. holdNotes]);
         return new EmCellGeometry(target, source, key, EmCellCache.Find(target.WorkspaceDir, target.CellName, key),
@@ -205,6 +213,52 @@ public static partial class EmEvaluation
     }
 
     private static C3dDocument CopyOf(C3dDocument d) => C3dPersistence.Deserialize(C3dPersistence.Serialize(d));
+
+    /// <summary>
+    /// D5 — the files the elaboration read that the key does not already hold: everything but <paramref name="keyedAbove"/>
+    /// (the regenerated layout, which the elaboration took from memory, and the top document, its cell and its technology,
+    /// whose effect the key holds as resolved numbers and physics).
+    /// </summary>
+    internal static IReadOnlyList<string> KeyInputs(CircuitRF.Design.Layout.Em3d.Em3dGenerationResult generated, params string?[] keyedAbove)
+    {
+        var skip = keyedAbove.Where(p => p is { Length: > 0 }).Select(p => Path.GetFullPath(p!)).ToHashSet(StringComparer.Ordinal);
+        return [.. generated.FilesRead.Where(f => !skip.Contains(Path.GetFullPath(f)))];
+    }
+
+    /// <summary>
+    /// D4 — why the 3D view's ports cannot be refreshed from the layout at this point, or null when they can. Compared
+    /// with the same translation of the saved layout: a port label that translates there but is left out here would leave
+    /// its port where the saved layout put it; and a port linked to a label that moves here, but rotated in the 3D view,
+    /// is one Update Ports from Layout does not move. Either way the solve would put a port where the copper no longer is.
+    /// </summary>
+    internal static string? PortsThatCannotFollow(C3dDocument doc, string c3dPath, EmCellTarget target, C3dLayoutPorts translated,
+                                                  TechnologyCache cache)
+    {
+        var rotated = doc.Ports.Where(p => p.Angle != 0 && p.FromLayout is not null).ToList();
+        if (translated.LeftOut.Count == 0 && rotated.Count == 0) return null;
+        var saved = C3dHierarchy.PortsFromLayouts(doc, c3dPath, target.CwsPath, cache);
+        static string Key(string instance, int number) => instance + "\u0001" + number.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var now = new Dictionary<string, C3dPort>(StringComparer.Ordinal);
+        foreach (var p in translated.Ports) now.TryAdd(Key(p.Instance, p.LayoutNumber), p.Port);
+        var before = new Dictionary<string, C3dPort>(StringComparer.Ordinal);
+        foreach (var p in saved.Ports) before.TryAdd(Key(p.Instance, p.LayoutNumber), p.Port);
+
+        var reasons = new List<string>();
+        var lost = saved.Ports.Where(p => !now.ContainsKey(Key(p.Instance, p.LayoutNumber)))
+                              .Select(p => $"{p.Instance}'s label {p.LayoutNumber}").ToList();
+        if (lost.Count > 0)
+            reasons.Add($"port {(lost.Count == 1 ? "label" : "labels")} {string.Join(", ", lost)} could not be placed " +
+                        $"({string.Join("; ", translated.LeftOut)})");
+        foreach (var p in rotated)
+        {
+            string k = Key(p.FromLayout!.Instance, p.FromLayout.Port);
+            if (now.TryGetValue(k, out var here) && before.TryGetValue(k, out var there) &&
+                !(here.Plane == there.Plane && here.Offset == there.Offset && here.Rect.Min == there.Rect.Min && here.Rect.Size == there.Rect.Size))
+                reasons.Add($"port {p.Number} is rotated in the 3D view, so it stays where it is drawn while {p.FromLayout.Instance}'s " +
+                            $"label {p.FromLayout.Port} moves");
+        }
+        return reasons.Count == 0 ? null : string.Join("; ", reasons) + ".";
+    }
 
     /// <summary>D5 — the solvers' identities and versions, as this machine has them; memoised per choice. A stand-in solver is
     /// its own version.</summary>

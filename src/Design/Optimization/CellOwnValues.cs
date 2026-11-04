@@ -107,15 +107,27 @@ public static class CellOwnValues
         }
 
         var others = new List<CellPlacementChange>();
-        if (WorkspaceRootFinder.WorkspaceDirOf(cellDir) is { } ws)
+        void Add(string path, EditableComponent other)
+        {
+            var lines = moved.Select(v => other.Parameters.FirstOrDefault(q => q.Name == v.Name) is { Expression.Length: > 0 } own
+                                              && !string.IsNullOrWhiteSpace(own.Expression)
+                ? $"{v.Name}: keeps its own {Shown(own.Expression, own.Unit)}"
+                : $"{v.Name}: {v.From} → {Shown(v.To, v.Unit)}").ToList();
+            others.Add(new CellPlacementChange(path, other.InstanceName, lines));
+        }
+        // The parent's own other placements as it stands (its unsaved edits included), then every other schematic in the
+        // parent's workspace and in the cell's: a cell taken from another workspace is placed in both.
+        foreach (var other in model.Components.Where(c => c.InstanceName != instance && c.CellRef is { Length: > 0 }))
+            if (SameCell(other.CellRef!, model.SchematicDirectory!, cellDir)) Add(full, other);
+        var roots = new[] { WorkspaceRootFinder.WorkspaceDirOf(Path.GetDirectoryName(full)!), WorkspaceRootFinder.WorkspaceDirOf(cellDir) }
+            .OfType<string>().Select(r => Path.TrimEndingDirectorySeparator(Path.GetFullPath(r))).Distinct(StringComparer.Ordinal);
+        var seen = new HashSet<(string, string)>();
+        foreach (string ws in roots)
             foreach (var (path, other) in Placements(ws, cellDir))
             {
-                if (string.Equals(Path.GetFullPath(path), full, StringComparison.Ordinal) && other.InstanceName == instance) continue;
-                var lines = moved.Select(v => other.Parameters.FirstOrDefault(q => q.Name == v.Name) is { Expression.Length: > 0 } own
-                                                  && !string.IsNullOrWhiteSpace(own.Expression)
-                    ? $"{v.Name}: keeps its own {Shown(own.Expression, own.Unit)}"
-                    : $"{v.Name}: {v.From} → {Shown(v.To, v.Unit)}").ToList();
-                others.Add(new CellPlacementChange(path, other.InstanceName, lines));
+                string at = Path.GetFullPath(path);
+                if (string.Equals(at, full, StringComparison.Ordinal) || !seen.Add((at, other.InstanceName))) continue;
+                Add(path, other);
             }
         moved = moved.Select(v => v with { To = Shown(v.To, v.Unit) }).ToList();
         return new CellOwnValuesPlan(full, instance, cellDir, cellName, moved, others, null);
@@ -125,40 +137,74 @@ public static class CellOwnValues
     /// The cell half of the command: each moved value written into <paramref name="plan"/>'s cell — its VAR row, or its
     /// <c>.ccell</c> parameter default — on disk. The instance half (clearing its overrides) is
     /// <see cref="ClearInstance"/>, which the GUI runs through the open schematic's own session so it is one undo step there.
-    /// Returns the names written.
+    /// The GUI writes the VAR rows through the cell schematic's session instead (<see cref="VarChanges"/>), so the copy it
+    /// holds in memory, which its next Simulate reads, is the one that changes. Returns the names written.
     /// </summary>
     public static IReadOnlyList<string> WriteCell(CellOwnValuesPlan plan)
     {
         if (plan.Refusal is not null) return [];
         var written = new List<string>();
-        var asVars = plan.Values.Where(v => !v.IsParameter).ToList();
-        if (asVars.Count > 0 && EmComponentKinds.Primary(plan.CellDir, ViewType.Schematic) is { } csch)
+        if (plan.Values.Any(v => !v.IsParameter) && EmComponentKinds.Primary(plan.CellDir, ViewType.Schematic) is { } csch)
         {
             var (cellModel, view, name) = SchematicPersistence.LoadFromFile(csch);
-            foreach (var v in asVars)
-                foreach (var row in cellModel.Components.Where(c => c.Symbol == SymbolKind.Var).SelectMany(c => c.Parameters)
-                                             .Where(r => r.Name.Trim() == v.Name))
-                {
-                    (row.Expression, row.Unit) = (Number(v.To), v.Unit);
-                    written.Add(v.Name);
-                }
+            var (changes, names) = VarChanges(cellModel, plan);
+            foreach (var (row, after) in changes)
+            {
+                row.Parameters.Clear();
+                foreach (var p in after) row.Parameters.Add(p);
+            }
+            written.AddRange(names);
             SchematicPersistence.SaveToFile(csch, cellModel, name, view.PanX, view.PanY, view.Zoom);
         }
+        written.AddRange(WriteCellParameters(plan));
+        return written.Distinct(StringComparer.Ordinal).ToList();
+    }
+
+    /// <summary>
+    /// The VAR components of <paramref name="cellModel"/> (the cell's schematic) that the moved VARs change, each with the
+    /// whole parameter list it has after; and the names changed. Nothing is changed: the caller applies each list, on disk
+    /// (<see cref="WriteCell"/>) or as a command in an open session.
+    /// </summary>
+    public static (IReadOnlyList<(EditableComponent Var, List<EditableParameter> After)> Changes, IReadOnlyList<string> Names)
+        VarChanges(SchematicEditModel cellModel, CellOwnValuesPlan plan)
+    {
+        var changes = new List<(EditableComponent, List<EditableParameter>)>();
+        var names = new List<string>();
+        var asVars = plan.Values.Where(v => !v.IsParameter).ToList();
+        if (plan.Refusal is not null || asVars.Count == 0) return (changes, names);
+        foreach (var comp in cellModel.Components.Where(c => c.Symbol == SymbolKind.Var))
+        {
+            var after = comp.Parameters.Select(p => p.Clone()).ToList();
+            bool any = false;
+            foreach (var row in after)
+                if (asVars.FirstOrDefault(v => v.Name == row.Name.Trim()) is { } v)
+                {
+                    (row.Expression, row.Unit) = (Number(v.To), v.Unit);
+                    names.Add(v.Name);
+                    any = true;
+                }
+            if (any) changes.Add((comp, after));
+        }
+        return (changes, names.Distinct(StringComparer.Ordinal).ToList());
+    }
+
+    /// <summary>The moved parameters written as the <c>.ccell</c>'s defaults, on disk. Returns the names written.</summary>
+    public static IReadOnlyList<string> WriteCellParameters(CellOwnValuesPlan plan)
+    {
+        var written = new List<string>();
         var asParams = plan.Values.Where(v => v.IsParameter).ToList();
         string ccellPath = Path.Combine(plan.CellDir, CellFolder.CcellFileName);
-        if (asParams.Count > 0 && File.Exists(ccellPath))
-        {
-            var ccell = CellPersistence.LoadFromFile(ccellPath);
-            foreach (var v in asParams)
-                if (ccell.Parameters.FirstOrDefault(p => p.Name == v.Name) is { } p)
-                {
-                    p.DefaultExpression = Number(v.To);
-                    p.Unit = v.Unit;
-                    written.Add(v.Name);
-                }
-            CellPersistence.SaveToFile(ccellPath, ccell);
-        }
-        return written.Distinct(StringComparer.Ordinal).ToList();
+        if (plan.Refusal is not null || asParams.Count == 0 || !File.Exists(ccellPath)) return written;
+        var ccell = CellPersistence.LoadFromFile(ccellPath);
+        foreach (var v in asParams)
+            if (ccell.Parameters.FirstOrDefault(p => p.Name == v.Name) is { } p)
+            {
+                p.DefaultExpression = Number(v.To);
+                p.Unit = v.Unit;
+                written.Add(v.Name);
+            }
+        CellPersistence.SaveToFile(ccellPath, ccell);
+        return written;
     }
 
     /// <summary>The instance half: the moved values cleared from <paramref name="model"/>'s instance — blank, which is the
@@ -211,6 +257,16 @@ public static class CellOwnValues
                     yield return (file, c);
             }
         }
+    }
+
+    private static bool SameCell(string cellRef, string fromDir, string cellDir)
+    {
+        try
+        {
+            return ExternalCellRef.ResolveCellDir(cellRef, fromDir) is { } d
+                && string.Equals(Path.TrimEndingDirectorySeparator(Path.GetFullPath(d)), cellDir, StringComparison.Ordinal);
+        }
+        catch (Exception) { return false; }
     }
 
     private static bool IsReserved(string name) =>

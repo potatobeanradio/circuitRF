@@ -319,6 +319,12 @@ and the line under the toolbar says the EM traces are stale. They stay where the
 <li><strong>Circuit + EM correction</strong> (the button beside it) adds the last solve's difference between EM and the circuit
 model to the live traces. It is exact at the values that were solved and an estimate elsewhere, and the
 display's chip says <em>circuit + EM correction (estimate)</em> while it is on.</li>
+<li><strong>Where the copper stays connected.</strong> When the session starts, each slider's range is scanned by laying out the
+design at points across it, with the other values where they are; no EM solve is run. Under the slider,
+<em>connected 3.95 to 6.2</em> is the stretch around the starting value over which every joint still closes and no two
+parts that should be apart touch (<em>connected throughout</em> when that is the whole range). A value outside it turns
+the text orange and the line under the toolbar names the gap or overlap at the sliders' values. The slider is
+never held back: the circuit model still answers there, but no layout can be built at that value.</li>
 </ul>
 <h2 id="push">Push and Revert</h2>
 <p><strong>Push</strong> writes the tuned values into the schematic as <strong>one undo step per document</strong>: the tuned

@@ -160,6 +160,28 @@ public sealed partial class TuningRowViewModel : ObservableObject
     /// <summary>The sliders are ahead of the display for this row (R-to4-6).</summary>
     [ObservableProperty] private bool _isLagging;
 
+    // ---- Connected interval (brief-sdl-7 D10) -----------------------------------
+
+    /// <summary>Where this row's layout keeps its connectivity, every other row at its start value — the optimizer's own
+    /// scan; null when the session has none (nothing simulated by EM, or still scanning).</summary>
+    public ConnectedRange? Connected { get; private set; }
+
+    /// <summary>The interval as the row shows it between min and max: <c>connected 3.95 mm to 6.2 mm</c>.</summary>
+    [ObservableProperty] private string _connectedText = "";
+
+    /// <summary>The value is outside the connected interval. Shown, never enforced: the slider moves freely.</summary>
+    [ObservableProperty] private bool _isOutsideConnected;
+
+    internal void ShowConnected(ConnectedRange? range)
+    {
+        Connected = range;
+        ConnectedText = range is null ? ""
+            : range.Whole ? "connected throughout"
+            : $"connected {Spell(range.Lo, "")} to {Spell(range.Hi, "")}";   // in the row's unit, as its min and max are
+        double tol = range is null ? 0 : 1e-9 * Math.Max(Math.Abs(range.Max - range.Min), 1e-300);
+        IsOutsideConnected = range is { Whole: false } r && !IsDisabled && (_value < r.Lo - tol || _value > r.Hi + tol);
+    }
+
     private double _value;
 
     /// <summary>The tuned value, in <see cref="Unit"/>.</summary>

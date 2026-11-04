@@ -103,6 +103,9 @@ public static partial class EmEvaluation
 
         // brief-sdl-8 D7 — the design's own values, before this point's are applied: what the held mesh is held at.
         var saved = target.Is3D ? CellVariables.Values(model) : null;
+        // D4 follows a part's expression through the VAR rows AS DRAWN: Apply turns each row whose value moved into a literal,
+        // which would cut the chain at the first variable and never name the one actually being varied.
+        var drawnVars = VarExpressions(model);
         var applied = Apply(model, values);
 
         LayoutView layout;
@@ -137,6 +140,15 @@ public static partial class EmEvaluation
             refusal = $"{target.CellName}'s layout could not be planned at these values: {e.Message}";
             return null;
         }
+        // R-sdl6-2 — a part the planner could not place (no layout view, a footprint it cannot resolve) is missing from the
+        // copper, so the EM result would not be the circuit the schematic draws. A refusal naming each, never an omission.
+        // A 3D view's setup is left to its own evaluation, which decides what its parts are.
+        if (!target.Is3D && plan.NoLayoutWarnings.Count > 0)
+        {
+            refusal = $"{target.CellName}'s layout cannot hold every part its schematic places, so its EM result would leave " +
+                      $"them out: {string.Join(" ", plan.NoLayoutWarnings)}";
+            return null;
+        }
         plan.ApplyTo(layout);
 
         var source = new EmLayoutSource(target.ClayPath, layout, tech.Tech, layout.DbuPerMicron);
@@ -147,11 +159,11 @@ public static partial class EmEvaluation
         catch (Exception e) when (e is not OperationCanceledException) { /* the joints and overlaps still hold it */ }
         var connectivity = ConnectivitySignature.Of(plan.Lines, partGroups);
         if (target.Is3D)
-            return ThreeDGeometry(target, model, saved!, source, applied, notes, Unreached(model, plan), connectivity, out refusal) is { } g3
+            return ThreeDGeometry(target, model, saved!, source, applied, notes, Unreached(model, plan, drawnVars), connectivity, out refusal) is { } g3
                 ? g3 with { Schematic = model } : null;
         string key = EmCellCache.KeyOf(source, target.Setup);
         return new EmCellGeometry(target, source, key, EmCellCache.Find(target.WorkspaceDir, target.CellName, key),
-                              Unreached(model, plan), notes, applied, connectivity) { Schematic = model };
+                              Unreached(model, plan, drawnVars), notes, applied, connectivity) { Schematic = model };
     }
 
     /// <summary>
@@ -214,7 +226,12 @@ public static partial class EmEvaluation
                 return new EmEvaluationResult(g with { CachedSnp = now }, now, true, null);
 
             string dir = EmCellCache.CellFolder(target.WorkspaceDir, target.CellName);
-            Directory.CreateDirectory(dir);
+            try { Directory.CreateDirectory(dir); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException or NotSupportedException or ArgumentException)
+            {
+                return new EmEvaluationResult(g, null, false,
+                    $"the EM result of '{target.CellName}' has nowhere to be kept: its EM cache folder {dir} cannot be made ({e.Message}).");
+            }
             // The setup keeps its own name, so the Touchstone is the one `em` writes for it byte for byte but the write
             // time. Only where it goes changes: <key>.sNp in the cache, and the run's other output (the .npy with the
             // diagnostics group) in a <key>/ folder beside it.
@@ -226,17 +243,34 @@ public static partial class EmEvaluation
                 return new EmEvaluationResult(g, written, false, null);
             }
             var setup = (g.ThreeD?.Setup ?? target.Setup).Clone();
-            setup.SnpOutputPathOverride = Path.Combine(dir, g.Key);
+            // Written under a name Find never matches, then renamed onto <key>.sNp: a solve stopped mid-write (a crash, a
+            // killed process) leaves a file the cache ignores, never a truncated Touchstone read back as solved.
+            setup.SnpOutputPathOverride = Path.Combine(dir, g.Key + ".partial-" + Guid.NewGuid().ToString("N")[..8]);
             setup.CreateSnpSchematic = false;      // a cache entry makes no _sim cell in the user's workspace
             var run = g.ThreeD is { } three
                 // brief-sdl-8 R-sdl8-2 — the 3D view's run, on the point's document and its regenerated layout, in memory.
                 ? EmRunService.RunThreeDView(setup, three.Document, target.C3dPath!, target.CwsPath, Path.Combine(dir, g.Key),
                                              control?.Token ?? default, control, maxCores, elaborator: three.Elaborator)
                 : EmRunService.Run(setup, g.Source, Path.Combine(dir, g.Key), control?.Token ?? default, control, maxCores);
-            if (run.Status == EmRunStatus.Cancelled) throw new OperationCanceledException(run.Error);
-            if (run.Status != EmRunStatus.Ok || run.SnpPath is not { } snp)
+            if (run.Status == EmRunStatus.Cancelled)
+            {
+                TryDelete(run.SnpPath);
+                throw new OperationCanceledException(run.Error);
+            }
+            if (run.Status != EmRunStatus.Ok || run.SnpPath is not { } solvedAt)
+            {
+                TryDelete(run.SnpPath);
                 return new EmEvaluationResult(g, null, false,
                     $"the EM solve of '{target.CellName}' failed: {run.Error ?? "it wrote no Touchstone"}");
+            }
+            string snp = Path.Combine(dir, g.Key + Path.GetExtension(solvedAt));
+            try { File.Move(solvedAt, snp, overwrite: true); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                TryDelete(solvedAt);
+                return new EmEvaluationResult(g, null, false,
+                    $"the EM result of '{target.CellName}' was solved but could not be kept in the EM cache ({e.Message}).");
+            }
             EmCellCache.WriteProvenance(snp, target, values);
             return new EmEvaluationResult(g, snp, false, null);
         }
@@ -324,14 +358,14 @@ public static partial class EmEvaluation
     /// <summary>
     /// D4 — for every part whose parameter is set in the layout and kept over the schematic's (SDL-4), the variables that
     /// would have driven it: the names its schematic expression reads, followed through the VAR rows they are defined by.
+    /// <paramref name="drawnVars"/> is those rows as drawn (<see cref="VarExpressions"/> taken before any value was
+    /// applied); null reads them off <paramref name="model"/>.
     /// </summary>
-    internal static IReadOnlyList<string> Unreached(SchematicEditModel model, SchematicLayoutPlan plan)
+    internal static IReadOnlyList<string> Unreached(SchematicEditModel model, SchematicLayoutPlan plan,
+                                                    IReadOnlyDictionary<string, string>? drawnVars = null)
     {
         if (plan.LayoutKept.Count == 0) return [];
-        var vars = model.Components.Where(c => c.Symbol == SymbolKind.Var && c.InstanceName != ValuesRow)
-                        .SelectMany(c => c.Parameters).Where(p => p.Name.Trim().Length > 0)
-                        .GroupBy(p => p.Name.Trim(), StringComparer.Ordinal)
-                        .ToDictionary(g => g.Key, g => g.First().Expression, StringComparer.Ordinal);
+        var vars = drawnVars ?? VarExpressions(model);
         var lines = new List<string>();
         foreach (var (id, param) in plan.LayoutKept)
         {
@@ -350,6 +384,14 @@ public static partial class EmEvaluation
         return lines.Distinct(StringComparer.Ordinal).ToList();
     }
 
+    /// <summary>Each VAR row's name and expression as <paramref name="model"/> holds them (the first row of a name wins;
+    /// the evaluation's own added row is not one of the schematic's).</summary>
+    internal static IReadOnlyDictionary<string, string> VarExpressions(SchematicEditModel model) =>
+        model.Components.Where(c => c.Symbol == SymbolKind.Var && c.InstanceName != ValuesRow)
+             .SelectMany(c => c.Parameters).Where(p => p.Name.Trim().Length > 0)
+             .GroupBy(p => p.Name.Trim(), StringComparer.Ordinal)
+             .ToDictionary(g => g.Key, g => g.First().Expression, StringComparer.Ordinal);
+
     private static IEnumerable<string> Names(string? expression)
     {
         if (string.IsNullOrWhiteSpace(expression)) return [];
@@ -358,6 +400,13 @@ public static partial class EmEvaluation
             return new Tokenizer(expression).Tokenize().Where(t => t.Kind == TokenKind.Identifier).Select(t => t.Text).ToList();
         }
         catch (Exception) { return []; }
+    }
+
+    private static void TryDelete(string? path)
+    {
+        if (path is not { Length: > 0 }) return;
+        try { File.Delete(path); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { /* a leftover partial is never read */ }
     }
 
     private static object KeyLock(string key)

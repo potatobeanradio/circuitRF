@@ -2136,7 +2136,7 @@ static int ShowCellOwnValues(string csch, string instance, string path)
     var plan = CircuitRF.Design.Optimization.CellOwnValues.Plan(csch, instance);
     Console.WriteLine(plan.Summary());
     var dialog = CircuitRF.Ui.Views.Dialogs.TextConfirmDialog.Build("Make These the Cell's Own Values",
-        plan.Refusal is null ? $"Make {plan.Instance}'s values {plan.CellName}'s own?" : "Nothing to move",
+        plan.Refusal is null ? $"Make {plan.Instance}'s values {plan.CellName}'s own?" : "Nothing was changed",
         plan.Summary(), plan.Refusal is null ? "Make Them the Cell's Own" : null, _ => { }, centerOnOwner: false);
     dialog.Show();
     for (int k = 0; k < 6; k++) { Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); dialog.UpdateLayout(); }

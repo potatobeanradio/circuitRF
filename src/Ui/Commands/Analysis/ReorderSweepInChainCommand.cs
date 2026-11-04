@@ -61,8 +61,9 @@ internal sealed class ReorderSweepInChainCommand : IUiCommand
         _model.NotifyChanged();
     }
 
+    // What the sweep is simulated by (brief-sdl-6 model=/emSetup=) travels with it: a reorder changes only the links.
     private static ParametricSweepAnalysis Relink(ParametricSweepAnalysis s, string inner)
         => s.Spec is { } spec
-            ? new ParametricSweepAnalysis(s.Name, s.SweepVarName, spec, inner)        { Enabled = s.Enabled }
-            : new ParametricSweepAnalysis(s.Name, s.SweepVarName, s.SweepValues, inner) { Enabled = s.Enabled };
+            ? new ParametricSweepAnalysis(s.Name, s.SweepVarName, spec, inner)        { Enabled = s.Enabled, Model = s.Model, EmSetup = s.EmSetup }
+            : new ParametricSweepAnalysis(s.Name, s.SweepVarName, s.SweepValues, inner) { Enabled = s.Enabled, Model = s.Model, EmSetup = s.EmSetup };
 }

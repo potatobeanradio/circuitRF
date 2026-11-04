@@ -31,8 +31,8 @@ public sealed record EmSolveCountResult(
 
     public bool Any => Evaluations > 0 || Refusals.Count > 0;
 
-    /// <summary>brief-sdl-8 D2/D7 — what a 3D EM view says of its evaluations (each flattened group, what the mesh holds),
-    /// once each.</summary>
+    /// <summary>What the layout's re-plan reported at the evaluated geometries (a joint it could not close), then — brief-sdl-8
+    /// D2/D7 — what a 3D EM view says of its evaluations (each flattened group, what the mesh holds), once each.</summary>
     public IReadOnlyList<string> Notes { get; init; } = [];
 
     /// <summary>One sentence: "3 EM solves needed (2 geometries already cached), about 4 min, 1.2 GB".</summary>
@@ -125,7 +125,7 @@ public static class EmSolveCount
             records.SelectMany(r => r.Unreached).Distinct().ToList(),
             records)
         {
-            Notes = records.SelectMany(r => r.ThreeDNotes).Distinct().ToList(),
+            Notes = records.SelectMany(r => r.PlanNotes.Concat(r.ThreeDNotes)).Distinct().ToList(),
         };
     }
 }

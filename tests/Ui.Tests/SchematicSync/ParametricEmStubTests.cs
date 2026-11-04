@@ -220,6 +220,226 @@ public sealed class ParametricEmStubTests : IDisposable
         Assert.DoesNotContain("(EM)", TraceOf(Run(em: false)).ShortDescription);
     }
 
+    // ── Review fixes ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>A blank row on a cell instance is no override, whatever it names: the Parameter dialog's blank EmSetup row
+    /// and a VAR row left behind by a rename are dropped, so neither reaches the netlist as <c>Key=</c> — which the reader
+    /// would complete with the NEXT parameter, losing that one.</summary>
+    [Fact]
+    public void Extraction_ABlankInstanceRow_IsNoOverride_AndTakesNoNeighbour()
+    {
+        var fx = EmCellFixture.Create("C2-branch-line", _scratch);
+        string symDir = CellFolder.SubFolderPath(fx.P.CellDir, ViewType.Symbol);
+        Directory.CreateDirectory(symDir);
+        SymbolPersistence.SaveToFile(Path.Combine(symDir, "C2-branch-line.csym"), AutoSymbolGenerator.Generate("C2-branch-line", 4));
+        string parentDir = CellFolder.SubFolderPath(CellFolder.CreateCellFolder(fx.Workspace, "Parent"), ViewType.Schematic);
+        var parent = new SchematicEditModel { SchematicDirectory = parentDir };
+        parent.Components.Add(new EditableComponent
+        {
+            InstanceName = "X1", Symbol = SymbolKind.Generic, CellRef = ExternalCellRef.MakeCellRef(parentDir, fx.P.CellDir),
+            Parameters =
+            {
+                new EditableParameter { Name = ParametricModelRegistry.ModelParameter, Expression = ParametricModelRegistry.CircuitValue },
+                new EditableParameter { Name = ParametricModelRegistry.SetupParameter, Expression = "" },
+                new EditableParameter { Name = "w50old", Expression = "" },
+                new EditableParameter { Name = "w50", Expression = "300", Unit = "um" },
+            },
+        });
+
+        var extracted = NetExtractor.Extract(parent, "tb", DiskCellResolver.Instance);
+        Assert.DoesNotContain(extracted.TestBench.Instances.Single(i => i.InstanceName == "X1").Overrides,
+                              o => string.IsNullOrWhiteSpace(o.Expression));
+        var (_, tb) = SchematicCircuit.RoundTrip(SchematicCircuit.CnlTextOf(extracted, "tb"), "tb", fx.Workspace);
+        Assert.Equal("300", tb.Instances.Single(i => i.InstanceName == "X1").Overrides.Single(o => o.Name == "w50").Expression);
+    }
+
+    /// <summary>C1 placing X1, an instance of a cell with a schematic and no layout view. The planner skips it, so it is
+    /// not in the copper.</summary>
+    private EmCellFixture WithSchematicOnlyCell(string tag) => EmCellFixture.Create("C1-through-line", Path.Combine(_scratch, tag),
+        AnalysisModel.Em, edit: model =>
+        {
+            string ws = Path.GetFullPath(Path.Combine(_scratch, tag, "C1-through-line", "ws"));
+            string rc = CellFolder.CreateCellFolder(ws, "RC");
+            var cell = new SchematicEditModel();
+            foreach (int k in new[] { 1, 2 })
+                cell.Components.Add(new EditableComponent
+                {
+                    InstanceName = "Pin" + k, Symbol = SymbolKind.Pin, X = k * 400,
+                    Parameters = { new EditableParameter { Name = "Num", Expression = k.ToString(CultureInfo.InvariantCulture) } },
+                });
+            cell.Components.Add(new EditableComponent
+            {
+                InstanceName = "R1", Symbol = SymbolKind.Resistor, Y = 600,
+                Parameters = { new EditableParameter { Name = "R", Expression = "50", Unit = "Ohm" } },
+            });
+            SchematicPersistence.SaveToFile(Path.Combine(CellFolder.SubFolderPath(rc, ViewType.Schematic), "RC.csch"), cell, "RC");
+            SymbolPersistence.SaveToFile(Path.Combine(CellFolder.SubFolderPath(rc, ViewType.Symbol), "RC.csym"), AutoSymbolGenerator.Generate("RC", 2));
+            string schDir = CellFolder.SubFolderPath(Path.Combine(ws, "C1-through-line"), ViewType.Schematic);
+            model.Components.Add(new EditableComponent
+            {
+                InstanceName = "X1", Symbol = SymbolKind.Generic, X = 0, Y = 5000, CellRef = ExternalCellRef.MakeCellRef(schDir, rc),
+            });
+        });
+
+    /// <summary>R-sdl6-2: a sub-cell with no layout view is not copper — it is refused by name, never left out.</summary>
+    [Fact]
+    public void PathA_ASubCellWithNoLayoutView_IsRefusedByName()
+    {
+        var fx = WithSchematicOnlyCell("nolayout-a");
+        var count = CircuitEvaluation.CountEmSolves(CircuitEvaluation.Plan(PreparedCircuit.FromSchematic(fx.Csch), new CircuitEvaluationRequest()));
+        var refusal = Assert.Single(count.Refusals);
+        Assert.Contains("X1 (", refusal);
+        Assert.Contains("has no layout", refusal);
+    }
+
+    /// <summary>R-sdl6-2: an evaluation whose re-plan skips a part is refused naming it — the copper would not be the
+    /// circuit drawn (the path a placed cell takes, which has no Path A classification ahead of it).</summary>
+    [Fact]
+    public void Evaluation_APartThePlannerSkips_IsARefusal()
+    {
+        var fx = WithSchematicOnlyCell("nolayout-b");
+        var target = EmCapability.Resolve(fx.P.CellDir, null, null, out _)!;
+        Assert.Null(EmEvaluation.Geometry(target, new Dictionary<string, CircuitRF.Core.Expressions.Value>(), out var refusal));
+        Assert.Contains("X1 (", refusal);
+        Assert.Contains("leave them out", refusal);
+    }
+
+    /// <summary>D5: a sweep whose points do not include the schematic's own values solves exactly what the count said —
+    /// its points — and not the saved geometry as well.</summary>
+    [Fact]
+    public void D5_ASweepSolvesItsPointsOnly_NotTheSchematicsOwnValues()
+    {
+        var sweep = new ParametricSweepAnalysis("SW1", "L90", [4.0e-3, 5.0e-3], "SP1");
+        var fx = EmCellFixture.Create("C2-branch-line", _scratch, AnalysisModel.Em, sweep);
+        var count = CircuitEvaluation.CountEmSolves(CircuitEvaluation.Plan(PreparedCircuit.FromSchematic(fx.Csch), new CircuitEvaluationRequest()));
+        Assert.Equal(2, count.ToSolve);
+
+        int solves = 0;
+        EmEvaluation.SolverStandIn = (_, _, path) =>
+        {
+            Interlocked.Increment(ref solves);
+            File.WriteAllText(path + ".s4p", FourPort(0.1));
+            return path + ".s4p";
+        };
+        try
+        {
+            var run = CircuitEvaluation.Evaluate(PreparedCircuit.FromSchematic(fx.Csch), new CircuitEvaluationRequest { EmMaxSolves = 2 });
+            Assert.True(run.Status == RunStatus.Success, run.StatusMessage);
+        }
+        finally { EmEvaluation.SolverStandIn = null; }
+        Assert.Equal(count.ToSolve, solves);
+    }
+
+    /// <summary>The CLI switches the chain its verb dispatches: a sweep named with <c>--analysis</c>, in another case, is
+    /// switched to its EM bench — before, only a base analysis of that exact spelling was looked for, and the run went
+    /// ahead by circuit models.</summary>
+    [Fact]
+    public void Cli_ANamedSweep_InAnotherCase_IsSwitchedToEm()
+    {
+        var sweep = new ParametricSweepAnalysis("SW1", "L90", [4.6604e-3], "SP1");
+        var fx = EmCellFixture.Create("C2-branch-line", _scratch, AnalysisModel.Em, sweep);
+        var circuit = PreparedCircuit.FromSchematic(fx.Csch);
+        var (lib, tb) = (circuit.Lib!, circuit.Tb!);
+        using var json = CircuitRF.Cli.JsonRun.Isolate();
+        using var scope = new CircuitRF.Cli.EmModelRun().Prepare(fx.Csch, SchematicCircuit.ReferenceBaseOf(fx.Csch), ref lib, ref tb,
+                                                                 a => a is SParameterAnalysis, "sw1", out int exit);
+        Assert.Equal(0, exit);
+        Assert.Contains(tb.Instances, i => i.Reference == EmModelSwitch.PathAReference);
+    }
+
+    /// <summary>D4 follows the VAR rows as drawn: with w50 = w0 and ML3.W held in the layout, an evaluation that moves w0
+    /// (and so w50) names w0 too — the variable actually varied — not only the w50 its value was applied to.</summary>
+    [Fact]
+    public void D4_TheRootVariable_IsNamed_AtValuesThatMoveIt()
+    {
+        var fx = EmCellFixture.Create("C2-branch-line", _scratch, edit: m =>
+        {
+            var var1 = m.Components.Single(c => c.InstanceName == "VAR1");
+            var w50 = var1.Parameters.Single(p => p.Name == "w50");
+            var1.Parameters.Add(new EditableParameter { Name = "w0", Expression = w50.Expression, Unit = w50.Unit });
+            w50.Expression = "w0";   // keeps its unit, so the use sites that state one still read it as a length
+        });
+        var layout = LayoutPersistence.LoadFromFile(fx.P.ClayPath);
+        var ml3 = layout.Instances.Single(i => i.SchematicId == "ML3");
+        var origin = CellLayoutResolver.Resolve(ml3.CellRef, fx.P.LayoutDir).View!.PCellOrigin!;
+        string cell = GeneratedCellStore.GetOrCreate(fx.Workspace, "MLIN",
+            new Dictionary<string, PCellValue>(origin.Parameters) { ["W"] = 300e-6 }, fx.P.Tech, fx.P.TechPath, PCellLayerSelection.Default);
+        ml3.CellRef = CircuitRF.Core.RefPath.ToStored(Path.GetRelativePath(fx.P.LayoutDir, cell));
+        LayoutPersistence.SaveToFile(fx.P.ClayPath, layout);
+
+        var target = EmCapability.Resolve(fx.P.CellDir, null, null, out _)!;
+        var values = new Dictionary<string, CircuitRF.Core.Expressions.Value>
+        {
+            ["w0"] = new(320e-6), ["w50"] = new(320e-6),
+        };
+        var g = EmEvaluation.Geometry(target, values, out var why);
+        Assert.True(g is not null, why);
+        Assert.Contains("w0 does not reach ML3.W, which is set in the layout.", g!.Unreached);
+    }
+
+    /// <summary>D3: artwork on a patterned dielectric's MASK layer decides whether the film is in the medium, so it is in
+    /// the key; with no tie to it, the same artwork is not.</summary>
+    [Fact]
+    public void Cache_ArtworkOnAMaskLayer_ChangesTheKey()
+    {
+        var fx = EmCellFixture.Create("C1-through-line", _scratch);
+        var setup = EmSetupPersistence.LoadFromFile(fx.Cem);
+        var layout = LayoutPersistence.LoadFromFile(fx.P.ClayPath);
+        var masked = LayoutPersistence.LoadFromFile(fx.P.ClayPath);
+        masked.Shapes.Add(new RectShape { Layer = new LayerKey(3, 0), X1 = 0, Y1 = 0, X2 = 1000, Y2 = 1000 });
+
+        string KeyOf(LayoutView view, Technology tech) =>
+            EmCellCache.KeyOf(new EmLayoutSource(fx.P.ClayPath, view, tech, view.DbuPerMicron), setup);
+
+        var plain = TechPersistence.LoadFromFile(fx.P.TechPath);
+        Assert.Equal(KeyOf(layout, plain), KeyOf(masked, plain));
+
+        var tied = TechPersistence.LoadFromFile(fx.P.TechPath);
+        tied.Stackup.Layers.Single(l => l.Kind == StackupKind.Dielectric).PresentWithLayer =
+            tied.Layers.Single(l => l.Key == new LayerKey(3, 0)).Name;
+        Assert.NotEqual(KeyOf(layout, tied), KeyOf(masked, tied));
+    }
+
+    /// <summary>D3: the cache reads only a finished result — a Touchstone left under its write-time name by a solve that
+    /// stopped mid-write is never returned as solved.</summary>
+    [Fact]
+    public void Cache_APartialWrite_IsNeverRead()
+    {
+        string dir = EmCellCache.CellFolder(_scratch, "Cell");
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "0123456789abcdef.partial-1a2b3c4d.s4p"), "# GHz S RI R 50\n1");
+        Assert.Null(EmCellCache.Find(_scratch, "Cell", "0123456789abcdef"));
+    }
+
+    /// <summary>An EM cache folder that cannot be made is a refusal sentence, not an exception out of the elaboration.</summary>
+    [Fact]
+    public void Cache_AFolderThatCannotBeMade_IsARefusal()
+    {
+        var fx = EmCellFixture.Create("C1-through-line", _scratch);
+        string root = EmCellCache.Root(fx.Workspace);
+        Directory.CreateDirectory(Path.GetDirectoryName(root)!);
+        File.WriteAllText(root, "a file where the cache folder goes");
+        var target = EmCapability.Resolve(fx.P.CellDir, null, null, out _)!;
+
+        var result = EmEvaluation.Evaluate(target, new Dictionary<string, CircuitRF.Core.Expressions.Value>());
+        Assert.Null(result.SnpPath);
+        Assert.Contains("nowhere to be kept", result.Refusal);
+    }
+
+    /// <summary>Reordering a sweep keeps what it is simulated by.</summary>
+    [Fact]
+    public void ReorderingASweep_KeepsItsModel()
+    {
+        var model = new SchematicEditModel();
+        model.Analyses.Add(new SParameterAnalysis("SP1", [new FrequencySpec("1", "3", 3, SweepKind.Linear, "GHz", "GHz")]));
+        var inner = new ParametricSweepAnalysis("SW1", "a", [1.0, 2.0], "SP1") { Model = AnalysisModel.Em, EmSetup = "Setup" };
+        model.Analyses.Add(inner);
+        model.Analyses.Add(new ParametricSweepAnalysis("SW2", "b", [1.0, 2.0], "SW1"));
+        new CircuitRF.Ui.Commands.Analysis.ReorderSweepInChainCommand(model, inner, moveInner: false).Execute();
+        var moved = model.Analyses.OfType<ParametricSweepAnalysis>().Single(s => s.Name == "SW1");
+        Assert.Equal((AnalysisModel.Em, "Setup"), (moved.Model, moved.EmSetup));
+    }
+
     /// <summary>A four-port Touchstone over the fixture's 1-3 GHz, |S21| set by <paramref name="s21"/> — a stand-in for an
     /// EM result in the cache.</summary>
     private static string FourPort(double s21)

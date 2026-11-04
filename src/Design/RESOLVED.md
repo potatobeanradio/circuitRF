@@ -27488,3 +27488,97 @@ Each face row prints `length — short rule` (`Em3dDefaultPadding.ShortBasis`: "
 content's height", "largest extent"); the full rule stays in the tooltip. Two existing panel tests typed bare
 percentages and asserted the percentage display — the defect itself — and now type `10 %` and assert the length.
 Gate: `tests/Ui.Tests/Em3d/AirBoxDefaultsDfr34Tests.cs`.
+
+## Review of SDL-6, 7, 8 and 10: EM of a schematic's own layout, optimisation, 3D, placed components (2026-11-04)
+
+A code review of the four briefs plus a pass through them as a user would, with the design-set C2 coupler made EM-capable
+and a parent T1 placing two instances: the Edit Analysis dialog, the solve-count question, the instance's Model and
+Variables rows, Make These the Cell's Own Values, the Optimizer's EM fields and the Tuning panel all rendered with
+`tools/UiSnapshot`, and `check` / `explain` / `sparam --em-max-solves` run on both. Each fix below has a test in
+`ParametricEmStubTests`, `EmOptimizationTests`, `EmThreeDCellTests`, `PlacedEmComponentTests` (all under
+`tests/Ui.Tests/SchematicSync/`) or Core's `ParametricModelSeamTests`; all use the solver stand-in.
+
+**Read-only verbs (found exercising the CLI).** `check` on a parent placing an instance set to EM failed with "no
+registered provider serves it": the instance's `EmCell=` is relative to the run's base, and `check`'s own elaboration set
+no `BaseDirectory`, so the cell was looked for under the process's working directory. `explain`'s elaborations (ports
+count, `--expr`, the TLIN walk, distributions) had the same gap and ran outside any counting scope, so from the workspace
+folder the cell was found and SOLVED. `Check.ElaborateReadOnly` sets the base and counts; every one of them uses it.
+
+**SDL-6.**
+- A blank instance row was written as `Key=`, and `CnlReader` takes the next token as that value — so the dialog's blank
+  `EmSetup` row (a cell with several setups), or a VAR row left behind by a rename, swallowed the neighbouring override
+  or `EmCell=`. Every blank row of a cell instance is now no override.
+- A sub-cell with no layout view (or a vendor part with no footprint) counted as copper, the planner skipped it, and
+  the skip went into `EmCellGeometry.Notes`, which nothing read: Path A ran on copper missing the part. Copper is now only
+  a cell ref that resolves to a layout; a part the re-plan skips is a refusal by name; plan notes reach the count's notes.
+- A sweep run elaborated the switched bench once at the saved values before the sweep, outside counting: one solve the
+  count never saw, so `--em-max-solves` could be exceeded by one. That elaboration is counted now (GUI and CLI).
+- `hb`/`lp`/`lpp --analysis` matched the name ordinally against the base analysis only, so a sweep's name, or a name in
+  another case, ran by circuit models in silence. The top is chosen by `ChainSelector`, as the verb dispatches.
+- D4 followed the VAR rows after `Apply` had literalised them, so the root variable being varied (`w0` under
+  `w50 = w0`) was never named; it follows a snapshot of the rows as drawn.
+- The key's copper came only from conductor and via layers; a patterned dielectric's mask layer decides whether its film
+  is in the medium, so it joins the key.
+- A solve wrote `<key>.sNp` in place, so a kill mid-write left a truncated file served as a hit for ever; it writes a
+  partial name and renames. A cache folder that cannot be made is a refusal sentence, not an exception.
+- An unknown `model=` value is a read warning (it still runs by circuit models); reordering a sweep keeps its model.
+
+**SDL-7.**
+- `em=off` with `analyses=all`: involvement was judged on the goals' analyses only, so a `model=em` analysis no goal read
+  was solved at every evaluation with no budget. Off now always means circuit models.
+- Inner `em=correct` searches forwarded their own (circuit + offset) best as the run's best, so Push / Lock in / Send to
+  Tuning while paused wrote a point no EM solve had scored. Progress carries only the EM-verified best.
+- Apply ignored the setup the analysis named (`OptimizationResult.EmSetup` now carries it), and the best point's
+  re-evaluation after the run did not follow the run's model (an `em=off` run ended with one unbudgeted EM solve).
+- `em=correct` gave each inner search the whole time/iteration/evaluation allowance and checked Pause only after the next
+  solve; the limits span the loop and Pause is honoured before each solve.
+- The D10 scan refused as "no effect" a variable whose connected stretch is narrower than one grid step, and silently
+  dropped a range whose nearest grid point was infeasible; it grows from the start value itself and counts any built
+  geometry that differs. The start-agreement check plans at the run's clamped start and `--set` values, not the saved ones.
+- A failed solve stayed among the solved keys but was never cached, so its geometry was re-solved uncharged; each attempt
+  is charged. The CLI's up-front budget line is printed once the budget is known (a 3D view lowers it).
+- Push of an EM result wrote values rounded to the panel's digits, which can land on a neighbouring geometry and read as a
+  key mismatch; it writes them as solved.
+- Tuning: a slider moved during Solve EM here, or a value followed from the schematic, left the EM traces labelled current.
+- **D10 in the Tuning panel was not built.** Each slider now shows the connected interval from the optimiser's own scan
+  (`TuningConnectivity`, run off the UI thread at session start; nothing is solved), orange when the value is outside it,
+  and a status line reserved for the session names the gap or overlap. The slider is never held back. The interval and
+  the optimiser's sentence print at the panel's digits / six figures: the scan's edge is a grid point.
+
+**SDL-8.**
+- `#` was split as the setup separator anywhere in a spelling, so a `.cem` under a folder with `#` in its name (or a
+  `.cem` named with one) got a garbled label and was refused. It separates only after a `.c3d` (or a bare stem in the
+  last path segment); naming a `.c3d` with several driven setups without one asks for one, naming them.
+- D5's 3D key hashed only the top `.c3d` and the regenerated layout: a placed part's own `.c3d`, another cell's layout, a
+  paired `.wBond` or a child's technology could change and every point still hit. The key holds the content hash of each
+  file the elaboration read, except what it already holds resolved (scheme `crf-emcell3d-2`; old 3D entries miss once).
+- A schematic VAR with no unit whose value is a length (`gap = w50/4`) reached the 3D view as a bare number in metres and
+  was read in the site's unit. `CellVariables.Values` reports the base unit the value carries; New 3D View from Layout
+  writes such a VAR in the view's unit.
+- The per-point port refresh dropped its left-out list, and Update Ports never moves a rotated port, so a port could stay
+  off its line while the copper moved. Such a point is refused with the reason (a label already left out at the saved
+  values is not).
+
+**SDL-10.**
+- Variants were deleted on the next workspace open (the prune kept only snapshot names, and a variant records none) and
+  left out of archives. The live set takes every generated-cell folder a layout instance names, and walks the variants'
+  own layouts for the PCells inside them.
+- Make These the Cell's Own Values wrote the cell's `.csch` behind the GUI's registered session for it, so the next
+  Simulate read the old value and a later save of that session undid it. VAR rows are written through that session as one
+  undo step and saved; it refuses while that session has unsaved edits; a `.ccell` default is written on disk and the
+  status line says Undo does not reach it. The listing of other placements searches the parent's workspace too, with the
+  open parent's own placements taken from the model.
+- `opt --apply` on a parent with no layout (or none placing a schematic-driven component) exited 1 with "NOT the geometry
+  EM verified"; nothing to verify is success with its own sentence. EM components nested inside a placed non-EM cell are
+  named as not checked rather than counted as verified.
+- The parent connectivity probe wrote a full variant folder for every candidate (and on a read-only workspace turned the
+  check off in silence). It resolves variants in memory (`EmVariantCells.HeldInMemory`), and a parent check that cannot
+  run is a warning.
+- `CellPins` cached port-label pins on a layout object that is edited in place, so pins stayed where they were after a
+  port moved; only PCell views are cached. A reused variant refreshes its symbol, `.ccell` and schematic.
+- `check.em.kind` (and ids of earlier briefs) were missing from `CliStructuredOutputTests`' committed id set.
+
+**Not changed:** the EM cache of a placed cell from a referenced library still lives in that library's workspace; the
+solver-version memo is per process; D6's 3D body signature names layout pieces, so a parameter that changes a PCell's
+piece count reads as a contact change; a variant missing on a fresh clone returns on the next Update Layout, not on the
+CLI's generated-cell rebuild; the GUI's solve-count pass takes no Stop.

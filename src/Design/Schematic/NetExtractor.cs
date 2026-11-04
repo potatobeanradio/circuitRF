@@ -2424,8 +2424,11 @@ public static class NetExtractor
         }
 
         var overrides = comp.Parameters
-            // brief-sdl-6 D7: a cell VAR row left blank in the instance's Variables group is the cell's own value.
-            .Where(p => !(string.IsNullOrWhiteSpace(p.Expression) && cellDef.Variables.Any(v => v.Name == p.Name)))
+            // brief-sdl-6 D7: a row left blank is no override — the cell's own value stands. Every blank row is dropped, not
+            // only one naming a current cell VAR: the Parameter dialog tops an instance up with blank rows (a VAR per cell
+            // VAR, an EmSetup to pick), a VAR renamed in the cell leaves its old blank row behind, and a blank value written
+            // to a .cnl as `Key=` makes the reader take the NEXT parameter as its value, losing that one.
+            .Where(p => !string.IsNullOrWhiteSpace(p.Expression))
             .Select(p =>
             {
                 var unit = UnitNormalizer.ToEngineUnit(p.Unit);

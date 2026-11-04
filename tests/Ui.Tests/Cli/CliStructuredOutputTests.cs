@@ -445,6 +445,7 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "check.elaboration.note",
         "check.elaboration.warning",
         "check.em.count",   // brief-sdl-6
+        "check.em.kind",    // brief-sdl-10
         "check.em.mesh-auto-kept",
         "check.em.mesh-auto-override",
         "check.em.model-refused",   // brief-sdl-6
@@ -465,6 +466,8 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "check.layout.side-refused",
         "check.layout.side-role-omitted",
         "check.layout.unknown-field",
+        "check.model.library-summary",
+        "check.model.library-unreadable",
         "check.name.invalid",
         // brief-oasis-gdstk.md §10b — an OASIS file's header, read through the gdstk worker.
         "check.oasis.no-worker",
@@ -568,6 +571,8 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         // at — narrow.axis.unknown and its three siblings — are RfCore.Export.NarrowingDiagnostics'
         // own, so they are not in this file's set.
         "cli.narrow.malformed",
+        "cli.opt.apply-needs-schematic",
+        "cli.opt.apply-not-em",
         "cli.opt.cancelled",
         "cli.opt.flag-value",
         "cli.opt.goals-unknown",
@@ -714,6 +719,16 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         // `restore` and RC-7's `commit` add ids here rather than a second verb.
         // AUT-11 R-aut11-3: `find`. What is here — the workspaces, their cells, each cell's views
         // and its analyses. The walk is bounded and says when it stopped short.
+        "export.args.bad-value",
+        "export.args.cell-required",
+        "export.args.library-required",
+        "export.args.noun-required",
+        "export.args.unknown-noun",
+        "export.args.unknown-option",
+        "export.cancelled",
+        "export.cell.not-found",
+        "export.refused",
+        "export.warning",
         "find.args.multiple-roots",
         "find.args.root-required",
         "find.args.unknown-option",

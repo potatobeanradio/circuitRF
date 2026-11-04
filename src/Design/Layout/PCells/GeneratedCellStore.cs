@@ -227,16 +227,22 @@ public static class GeneratedCellStore
     /// brief-sdl-10 D3 — a VARIANT of a schematic-driven cell: <paramref name="view"/>, the cell's saved layout re-planned
     /// at one placement's values, stored beside the PCell cells under the same reserved folder and named
     /// <c>&lt;cell&gt;~&lt;key&gt;</c> by its EM geometry key, so placements whose copper is the same share one folder. The cell's
-    /// own layout is never written. A hit is a plain existence check, as for a PCell: the key IS the content.
+    /// own layout is never written. A hit on the layout is an existence check, as for a PCell: the key IS the copper. The
+    /// rest of the variant — the cell's symbol and <c>.ccell</c>, its schematic at these values, the record naming the cell —
+    /// is not in the key, so it is brought up to date on a hit (each file rewritten only when it differs), and an edit of the
+    /// cell's symbol or interface reaches every variant on the next update.
     /// <paramref name="sourceLayoutDir"/> is the folder the view's relative references (placed parts, technology) were
     /// written against; they are re-written against the variant's own folder, so the variant reads the same parts.
     /// </summary>
     /// <param name="schematic">The cell's schematic at the placement's values — the variant's own schematic, so the variant
     /// is a whole cell (LVS compares it as one); null writes none.</param>
     /// <param name="sourceSchematicDir">The folder <paramref name="schematic"/>'s relative references were written against.</param>
+    /// <param name="target"><see cref="GeneratedCellTarget.Memory"/> holds the variant's layout and <c>.ccell</c> in
+    /// <see cref="GeneratedCellOverlay"/> and writes nothing — a probe planning a layout it will not save. The caller drops
+    /// the entry when it is done.</param>
     public static string GetOrCreateVariant(string workspaceRootDir, string cellName, string key, LayoutView view,
                                             string sourceLayoutDir, SchematicEditModel? schematic = null,
-                                            string? sourceSchematicDir = null)
+                                            string? sourceSchematicDir = null, GeneratedCellTarget target = GeneratedCellTarget.Disk)
     {
         string name = string.Concat(cellName.Select(c => c <= 0x1F || "<>:\"/\\|?*".Contains(c) ? '_' : c))
                       + VariantSeparator + key;
@@ -244,60 +250,108 @@ public static class GeneratedCellStore
         string cellDir = Path.Combine(genRoot, name);
         string layoutDir = CellFolder.SubFolderPath(cellDir, ViewType.Layout);
         string clayPath = Path.Combine(layoutDir, name + CellFolder.ViewExtension(ViewType.Layout));
-        if (File.Exists(clayPath)) return cellDir;
+        string sourceCell = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(Path.GetFullPath(sourceLayoutDir)))!;
+        string sourceCcell = Path.Combine(sourceCell, CellFolder.CcellFileName);
 
-        var copy = LayoutPersistence.Deserialize(LayoutPersistence.Serialize(view));
-        foreach (var inst in copy.Instances) inst.CellRef = Rebase(inst.CellRef, sourceLayoutDir, layoutDir) ?? inst.CellRef;
-        if (copy.TechRef is { Length: > 0 } tech && !Path.IsPathRooted(tech))
-            copy.TechRef = global::CircuitRF.Core.RefPath.ToStored(Path.GetRelativePath(layoutDir, Path.GetFullPath(Path.Combine(sourceLayoutDir, tech))));
-        // A variant is generated: what links it to a schematic is the cell's own layout's business, not its copy's.
-        copy.GeneratedPlacements.Clear();
+        if (target == GeneratedCellTarget.Memory)
+        {
+            // Held whether or not the folder exists, so every plan of one probe reads its variants the same way.
+            var ccell = File.Exists(sourceCcell) ? VariantCcell(sourceCcell) : new CcellFile();
+            GeneratedCellOverlay.Put(cellDir, Rebased(view, sourceLayoutDir, layoutDir), ccell);
+            return cellDir;
+        }
 
+        if (File.Exists(clayPath))
+        {
+            WriteCompanions(cellDir, name, sourceCell, sourceCcell, schematic, sourceSchematicDir);
+            return cellDir;
+        }
+
+        var copy = Rebased(view, sourceLayoutDir, layoutDir);
         Directory.CreateDirectory(genRoot);
         if (!Directory.Exists(cellDir)) CellFolder.CreateCellFolder(genRoot, name);
         _cellsWritten.AddOrUpdate(NormalizeRoot(workspaceRootDir), 1, (_, n) => n + 1);
+        WriteCompanions(cellDir, name, sourceCell, sourceCcell, schematic, sourceSchematicDir);
+        LayoutPersistence.SaveToFile(clayPath, copy);   // last: its existence is what a hit tests
+        return cellDir;
+    }
 
-        // The variant is the same PART as its cell: the cell's symbol and its .ccell (ports, parameters, terminal map), and a
-        // record naming the cell, so LVS compares it as that cell and the project tree never offers it.
-        string sourceCell = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(Path.GetFullPath(sourceLayoutDir)))!;
-        string sourceCcell = Path.Combine(sourceCell, CellFolder.CcellFileName);
+    /// <summary>A copy of <paramref name="view"/> whose relative references read from <paramref name="to"/> as they read
+    /// from <paramref name="from"/>, with no record of a schematic placing it.</summary>
+    private static LayoutView Rebased(LayoutView view, string from, string to)
+    {
+        var copy = LayoutPersistence.Deserialize(LayoutPersistence.Serialize(view));
+        foreach (var inst in copy.Instances) inst.CellRef = RebaseRef(inst.CellRef, from, to) ?? inst.CellRef;
+        if (copy.TechRef is { Length: > 0 } tech && !Path.IsPathRooted(tech))
+            copy.TechRef = global::CircuitRF.Core.RefPath.ToStored(Path.GetRelativePath(to, Path.GetFullPath(Path.Combine(from, tech))));
+        // A variant is generated: what links it to a schematic is the cell's own layout's business, not its copy's.
+        copy.GeneratedPlacements.Clear();
+        return copy;
+    }
+
+    private static string? RebaseRef(string? cellRef, string from, string to)
+    {
+        if (cellRef is not { Length: > 0 } r || Path.IsPathRooted(r) || PdkKitRegistry.IsKitRef(r)
+            || r.StartsWith(ExternalCellRef.Scheme, StringComparison.Ordinal)) return cellRef;
+        try { return global::CircuitRF.Core.RefPath.ToStored(Path.GetRelativePath(to, Path.GetFullPath(Path.Combine(from, r)))); }
+        catch (Exception) { return cellRef; }
+    }
+
+    private static CcellFile VariantCcell(string sourceCcell)
+    {
+        var ccell = CellPersistence.LoadFromFile(sourceCcell);
+        (ccell.PrimarySchematic, ccell.PrimaryLayout) = (null, null);
+        return ccell;
+    }
+
+    /// <summary>
+    /// The variant is the same PART as its cell: the cell's symbol and its .ccell (ports, parameters, terminal map), its
+    /// schematic at the placement's values, and a record naming the cell, so LVS compares it as that cell and the project
+    /// tree never offers it. Each file is written only when its content differs from what is there; a symbol the cell no
+    /// longer has is removed.
+    /// </summary>
+    private static void WriteCompanions(string cellDir, string name, string sourceCell, string sourceCcell,
+                                        SchematicEditModel? schematic, string? sourceSchematicDir)
+    {
         if (File.Exists(sourceCcell))
-        {
-            var ccell = CellPersistence.LoadFromFile(sourceCcell);
-            (ccell.PrimarySchematic, ccell.PrimaryLayout) = (null, null);
-            CellPersistence.SaveToFile(Path.Combine(cellDir, CellFolder.CcellFileName), ccell);
-        }
+            WriteIfChanged(Path.Combine(cellDir, CellFolder.CcellFileName), CellPersistence.Serialize(VariantCcell(sourceCcell)));
+
         string sourceSymbols = CellFolder.SubFolderPath(sourceCell, ViewType.Symbol);
+        string symbols = CellFolder.SubFolderPath(cellDir, ViewType.Symbol);
+        var wanted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         if (Directory.Exists(sourceSymbols))
         {
-            string symbols = CellFolder.SubFolderPath(cellDir, ViewType.Symbol);
             Directory.CreateDirectory(symbols);
             foreach (string f in Directory.EnumerateFiles(sourceSymbols, "*" + CellFolder.ViewExtension(ViewType.Symbol)))
-                File.Copy(f, Path.Combine(symbols, Path.GetFileName(f)), overwrite: true);
+            {
+                string to = Path.Combine(symbols, Path.GetFileName(f));
+                wanted.Add(Path.GetFileName(f));
+                if (!File.Exists(to) || !File.ReadAllBytes(to).AsSpan().SequenceEqual(File.ReadAllBytes(f)))
+                    File.Copy(f, to, overwrite: true);
+            }
         }
+        if (Directory.Exists(symbols))
+            foreach (string f in Directory.EnumerateFiles(symbols, "*" + CellFolder.ViewExtension(ViewType.Symbol)))
+                if (!wanted.Contains(Path.GetFileName(f))) File.Delete(f);
+
         if (schematic is not null && sourceSchematicDir is not null)
         {
             string schDir = CellFolder.SubFolderPath(cellDir, ViewType.Schematic);
             Directory.CreateDirectory(schDir);
-            string json = SchematicPersistence.Serialize(schematic, name);
-            var sch = SchematicPersistence.Deserialize(json).model;
-            foreach (var c in sch.Components) c.CellRef = c.CellRef is { } r ? Rebase(r, sourceSchematicDir, schDir) : null;
+            var sch = SchematicPersistence.Deserialize(SchematicPersistence.Serialize(schematic, name)).model;
+            foreach (var c in sch.Components) c.CellRef = c.CellRef is { } r ? RebaseRef(r, sourceSchematicDir, schDir) : null;
             if (sch.TechRef is { Length: > 0 } st && !Path.IsPathRooted(st))
                 sch.TechRef = global::CircuitRF.Core.RefPath.ToStored(Path.GetRelativePath(schDir, Path.GetFullPath(Path.Combine(sourceSchematicDir, st))));
-            SchematicPersistence.SaveToFile(Path.Combine(schDir, name + CellFolder.ViewExtension(ViewType.Schematic)), sch, name);
+            WriteIfChanged(Path.Combine(schDir, name + CellFolder.ViewExtension(ViewType.Schematic)), SchematicPersistence.Serialize(sch, name));
         }
-        File.WriteAllText(Path.Combine(cellDir, VariantSourceFile),
-                          global::CircuitRF.Core.RefPath.ToStored(Path.GetRelativePath(cellDir, sourceCell)) + "\n");
-        LayoutPersistence.SaveToFile(clayPath, copy);   // last: its existence is what a hit tests
-        return cellDir;
+        WriteIfChanged(Path.Combine(cellDir, VariantSourceFile),
+                       global::CircuitRF.Core.RefPath.ToStored(Path.GetRelativePath(cellDir, sourceCell)) + "\n");
+    }
 
-        static string? Rebase(string? cellRef, string from, string to)
-        {
-            if (cellRef is not { Length: > 0 } r || Path.IsPathRooted(r) || PdkKitRegistry.IsKitRef(r)
-                || r.StartsWith(ExternalCellRef.Scheme, StringComparison.Ordinal)) return cellRef;
-            try { return global::CircuitRF.Core.RefPath.ToStored(Path.GetRelativePath(to, Path.GetFullPath(Path.Combine(from, r)))); }
-            catch (Exception) { return cellRef; }
-        }
+    private static void WriteIfChanged(string path, string text)
+    {
+        if (File.Exists(path) && File.ReadAllText(path) == text) return;
+        AtomicFile.WriteAllText(path, text);
     }
 
     /// <summary>The file in a variant's folder naming the cell it is a variant of, relative to the variant.</summary>

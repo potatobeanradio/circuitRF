@@ -180,6 +180,12 @@ When an analysis is [simulated by EM of the schematic's layout](em-cells.html), 
 - **Circuit + EM correction** (the button beside it) adds the last solve's difference between EM and the circuit
   model to the live traces. It is exact at the values that were solved and an estimate elsewhere, and the
   display's chip says *circuit + EM correction (estimate)* while it is on.
+- **Where the copper stays connected.** When the session starts, each slider's range is scanned by laying out the
+  design at points across it, with the other values where they are; no EM solve is run. Under the slider,
+  *connected 3.95 to 6.2* is the stretch around the starting value over which every joint still closes and no two
+  parts that should be apart touch (*connected throughout* when that is the whole range). A value outside it turns
+  the text orange and the line under the toolbar names the gap or overlap at the sliders' values. The slider is
+  never held back: the circuit model still answers there, but no layout can be built at that value.
 
 ## Push and Revert {#push}
 

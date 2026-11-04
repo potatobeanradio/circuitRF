@@ -1633,13 +1633,25 @@ internal static class Check
     /// exactly the same <c>TestBench</c> and <c>Library</c> on the way (AUT-2), so checking it
     /// differently would mean checking something the run verbs never see.
     /// </summary>
+    /// <summary>
+    /// An elaboration for a read-only verb: against the base a run of <paramref name="path"/> resolves its files against
+    /// (an EM instance's <c>EmCell=</c> is relative to it, as an SnP <c>File=</c> is), and in counting mode (brief-sdl-6
+    /// D5), so an instance set to EM is recorded and never solved. Without the base the cell was looked for under the
+    /// process's working directory: not found, it was an error the run does not have; found, it was solved.
+    /// </summary>
+    internal static ElaboratedNetlist ElaborateReadOnly(Library lib, TestBench tb, string? path)
+    {
+        using (EmEvaluationScope.Begin(countOnly: true))
+            return new Elaborator(lib) { BaseDirectory = path is null ? null : CircuitSource.ReferenceBaseOf(path) }.Elaborate(tb);
+    }
+
     private static void Elaborate(string path, TestBench tb, Library lib, Findings f, TunableCatalog? catalog = null)
     {
         CheckEm(path, tb, lib, f);
 
         ElaboratedNetlist nl;
         // Counting mode (brief-sdl-6 D5): an instance set to EM is recorded, never solved — check solves nothing.
-        try { using (EmEvaluationScope.Begin(countOnly: true)) nl = new Elaborator(lib).Elaborate(tb); }
+        try { nl = ElaborateReadOnly(lib, tb, path); }
         catch (Exception ex)
         {
             f.Add(CliDiagnostics.CheckElaborationFailed(path, ex.Message));

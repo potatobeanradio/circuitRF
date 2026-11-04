@@ -394,9 +394,11 @@ static int RunSparam(string[] args)
         ApplySets(tb, sets);
         string? refBase = CircuitSource.ReferenceBaseOf(input);
         // brief-sdl-6: the chain this verb dispatches, switched to its EM bench when it runs by EM, counted first.
-        using var emScope = em.Prepare(input, refBase, ref lib, ref tb, a => a is SParameterAnalysis, out int emExit);
+        using var emScope = em.Prepare(input, refBase, ref lib, ref tb, a => a is SParameterAnalysis, null, out int emExit);
         if (emScope is null) return emExit;
-        var nl = new Elaborator(lib) { BaseDirectory = refBase }.Elaborate(tb);
+        ElaboratedNetlist nl;
+        using (freqExplicit ? null : em.BaseElaboration())   // a dispatched sweep solves at its own points only (D5)
+            nl = new Elaborator(lib) { BaseDirectory = refBase }.Elaborate(tb);
         var shown = PrintWarnings(nl);
 
         // A parametric_sweep wrapping the S-parameter analysis is dispatched at the SWEEP, as `hb`, `lp`
@@ -608,9 +610,11 @@ static int RunDc(string[] args)
         ApplySets(tb, sets);
         string? refBase = CircuitSource.ReferenceBaseOf(input);
         // brief-sdl-6: the chain this verb dispatches, switched to its EM bench when it runs by EM, counted first.
-        using var emScope = em.Prepare(input, refBase, ref lib, ref tb, a => a is DcAnalysis, out int emExit);
+        using var emScope = em.Prepare(input, refBase, ref lib, ref tb, a => a is DcAnalysis, null, out int emExit);
         if (emScope is null) return emExit;
-        var nl = new Elaborator(lib) { BaseDirectory = refBase }.Elaborate(tb);
+        ElaboratedNetlist nl;
+        using (em.BaseElaboration())   // a dispatched sweep solves at its own points only (D5)
+            nl = new Elaborator(lib) { BaseDirectory = refBase }.Elaborate(tb);
         var shown = PrintWarnings(nl);
 
         // A parametric_sweep wrapping the DC analysis is dispatched at the SWEEP, as `sparam`, `hb`,
@@ -865,9 +869,11 @@ static int RunHb(string[] args)
 
         string? refBase = CircuitSource.ReferenceBaseOf(input);
         // brief-sdl-6: the chain this verb dispatches, switched to its EM bench when it runs by EM, counted first.
-        using var emScope = em.Prepare(input, refBase, ref lib, ref tb, a => a is HarmonicBalanceAnalysis && (analysisName is null || a.Name == analysisName), out int emExit);
+        using var emScope = em.Prepare(input, refBase, ref lib, ref tb, a => a is HarmonicBalanceAnalysis, analysisName, out int emExit);
         if (emScope is null) return emExit;
-        var nl    = new Elaborator(lib) { BaseDirectory = refBase }.Elaborate(tb);
+        ElaboratedNetlist nl;
+        using (em.BaseElaboration())   // a dispatched sweep solves at its own points only (D5)
+            nl = new Elaborator(lib) { BaseDirectory = refBase }.Elaborate(tb);
         var shown = PrintWarnings(nl);
 
         // Pick what to run: the named analysis, else the outermost runnable chain that bottoms out
@@ -1084,9 +1090,12 @@ static int RunLoadpull(string[] args, bool pursuit)
 
         string? refBase = CircuitSource.ReferenceBaseOf(input);
         // brief-sdl-6: the chain this verb dispatches, switched to its EM bench when it runs by EM, counted first.
-        using var emScope = em.Prepare(input, refBase, ref lib, ref tb, a => (pursuit ? a is LoadpullPursuitAnalysis : a is LoadpullAnalysis) && (analysisName is null || a.Name == analysisName), out int emExit);
+        using var emScope = em.Prepare(input, refBase, ref lib, ref tb, a => pursuit ? a is LoadpullPursuitAnalysis : a is LoadpullAnalysis,
+                                       analysisName, out int emExit);
         if (emScope is null) return emExit;
-        var nl    = new Elaborator(lib) { BaseDirectory = refBase }.Elaborate(tb);
+        ElaboratedNetlist nl;
+        using (em.BaseElaboration())   // a dispatched sweep solves at its own points only (D5)
+            nl = new Elaborator(lib) { BaseDirectory = refBase }.Elaborate(tb);
         var shown = PrintWarnings(nl);
 
         var top = SelectTop(

@@ -41,13 +41,13 @@ internal static class ExplainStatistics
     /// it holds none. Elaborated only when the text names a distribution somewhere, so a design without one
     /// pays nothing for the question.
     /// </summary>
-    public static ExplainDistributionsJson? Distributions(Library lib, TestBench tb)
+    public static ExplainDistributionsJson? Distributions(Library lib, TestBench tb, string? path = null)
     {
         if (!MentionsDistribution(lib, tb)) return null;
         IReadOnlyList<StatisticalCall> calls;
         try
         {
-            using var nl = new Elaborator(lib).Elaborate(tb);
+            using var nl = Check.ElaborateReadOnly(lib, tb, path);
             calls = nl.StatisticalCalls;
         }
         catch (Exception) { return null; }   // elaboration failures are check's to report

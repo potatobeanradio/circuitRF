@@ -126,6 +126,18 @@ public sealed class ParametricModelSeamTests : IDisposable
         Assert.DoesNotContain("model=", CnlWriter.Write(new CnlReader().Read(Netlist("Line:X1 in out")).Item2));
     }
 
+    /// <summary>A <c>model=</c> value that is neither circuit nor em runs by circuit models, and the read says so.</summary>
+    [Fact]
+    public void AnUnknownModelValue_IsAReadWarning_AndRunsByCircuit()
+    {
+        var (_, tb) = new CnlReader().Read(Netlist("Line:X1 in out").Replace("Unit=GHz", "Unit=GHz model=emm"));
+        Assert.Equal(AnalysisModel.Circuit, tb.Analyses.Single().Model);
+        Assert.Contains(tb.ReadWarnings, w => w.Contains("model=emm", StringComparison.Ordinal));
+
+        var (_, plain) = new CnlReader().Read(Netlist("Line:X1 in out").Replace("Unit=GHz", "Unit=GHz model=circuit"));
+        Assert.DoesNotContain(plain.ReadWarnings, w => w.Contains("model=", StringComparison.Ordinal));
+    }
+
     private sealed class StubProvider(string cell, string snp) : IParametricModelProvider
     {
         public string Cell { get; } = cell;

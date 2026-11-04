@@ -47,6 +47,9 @@ public static class CellVariables
     /// brief-sdl-8 D3/D4 — every global of <paramref name="model"/> that a VAR row or a declared cell parameter defines,
     /// evaluated in the schematic's own scope (what extraction binds): its value in base SI and the unit its row states.
     /// A name that does not evaluate to a real number is left out. Null scope (the schematic does not extract) gives none.
+    /// A row that states no unit but whose value carries one (it reads a name that has a unit, or holds a literal with one:
+    /// <c>w/4</c>, <c>0.5 mm</c>) is given that unit's scale-1 base (<c>metre</c>, <c>Hz</c>): its value is base SI, and a
+    /// unit-less number would take whatever unit the site reading it applies.
     /// </summary>
     public static IReadOnlyDictionary<string, (double Value, string Unit)> Values(SchematicEditModel model)
     {
@@ -67,10 +70,27 @@ public static class CellVariables
             try
             {
                 var value = evaluator.Eval(v.Name, scope);
-                if (value.Kind == ValueKind.Real) result[v.Name] = (value.AsReal(), units.GetValueOrDefault(v.Name) ?? "");
+                string unit = units.GetValueOrDefault(v.Name) ?? "";
+                if (unit.Trim().Length == 0) unit = CarriedBaseUnit(v.Name, scope, new HashSet<string>(StringComparer.Ordinal)) ?? "";
+                if (value.Kind == ValueKind.Real) result[v.Name] = (value.AsReal(), unit);
             }
             catch (Exception e) when (e is ExpressionException or InvalidCastException or InvalidOperationException) { }
         }
         return result;
+    }
+
+    /// <summary>The scale-1 base of the unit a binding's value carries: its own unit; else a unit literal it reaches through
+    /// unit-less bindings; else the unit of the first name it reads that carries one. Null when it reaches none.</summary>
+    private static string? CarriedBaseUnit(string name, Scope scope, HashSet<string> seen)
+    {
+        if (scope.Lookup(name) is not { } found || !seen.Add(name)) return null;
+        if (!string.IsNullOrEmpty(found.Unit)) return Units.BaseUnit(UnitNormalizer.ToEngineUnit(found.Unit));
+        if (Evaluator.BaseUnitStandIn(name, scope) is { Length: > 0 } literal) return literal;
+        Expr ast;
+        try { ast = Parser.Parse(found.Expression); }
+        catch (Exception e) when (e is not OperationCanceledException) { return null; }
+        foreach (string r in AstWalker.CollectRefs(ast).Order(StringComparer.Ordinal))
+            if (CarriedBaseUnit(r, scope, seen) is { } b) return b;
+        return null;
     }
 }

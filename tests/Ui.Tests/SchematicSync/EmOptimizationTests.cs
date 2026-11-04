@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using CircuitRF.Core.Design;
 using CircuitRF.Core.Expressions;
 using CircuitRF.Core.Netlist;
@@ -7,6 +8,9 @@ using CircuitRF.Design.Optimization;
 using CircuitRF.Design.Statistics;
 using RfCore;
 using RfCore.Data;
+using CircuitRF.Ui.Optimization;
+using CircuitRF.Ui.Tuning;
+using CircuitRF.Ui.ViewModels;
 using Xunit;
 
 namespace CircuitRF.Ui.Tests.SchematicSync;
@@ -208,7 +212,7 @@ public sealed class EmOptimizationTests : IDisposable
             .First(v => EmEvaluation.Geometry(target, new Dictionary<string, Value> { ["L90"] = new(v) }, out _)!.Connectivity!.Touching.Count == 0);
         Assert.Equal(first * 1e3, range.Lo, 6);
         Assert.Equal(6, range.Hi, 9);
-        Assert.Contains($"L90: connected from {TunableValue.Format(range.Lo, "mm")} to 6 mm", range.Sentence);
+        Assert.Contains($"L90: connected from {TunableValue.Format(range.Lo, "mm", "G6")} to 6 mm", range.Sentence);
 
         var infeasible = r.Log.Where(l => l.Infeasible).ToList();
         Assert.NotEmpty(infeasible);
@@ -333,5 +337,291 @@ public sealed class EmOptimizationTests : IDisposable
         var tb = new TestBench("tb") { Tuning = new TuningSetup { Optimizer = new OptimizerSettings { EmBudget = 0 } } };
         var f = TuningValidator.Validate(tb, TunableCatalog.FromNetlist(tb, new Library("l")));
         Assert.Contains(f, d => d.Id == "tuning.optimize.em-budget");
+    }
+
+    // ── Review fixes ─────────────────────────────────────────────────────────
+
+    /// <summary>The stub, counting the solves it is asked for.</summary>
+    private static Func<EmCellGeometry, IReadOnlyDictionary<string, Value>, string, string?> Counting(
+        StrongBox<int> calls, Func<EmCellGeometry, IReadOnlyDictionary<string, Value>, string, string?>? inner = null)
+    {
+        var solve = inner ?? Stub();
+        return (g, values, path) => { Interlocked.Increment(ref calls.Value); return solve(g, values, path); };
+    }
+
+    private static OptimizationGoal At95(string name, string expression, string analysis, GoalType type, string limit) => new()
+    {
+        Name = name, Expression = expression, Analysis = analysis, Type = type, Limit = limit,
+        Range = new GoalRange { Axis = "freq", Lo = "9.5 GHz", Hi = "9.5 GHz" },
+    };
+
+    private static void EditSchematic(EmCellFixture fx, Action<SchematicEditModel> edit)
+    {
+        var (m, v, c) = SchematicPersistence.LoadFromFile(fx.Csch);
+        edit(m);
+        SchematicPersistence.SaveToFile(fx.Csch, m, c, v.PanX, v.PanY, v.Zoom);
+    }
+
+    private static EditableParameter L90Row(SchematicEditModel m) =>
+        m.Components.Single(c => c.Symbol == SymbolKind.Var).Parameters.Single(p => p.Name == "L90");
+
+    /// <summary>D1/D8: analyses=all simulates SP1 (run by EM) though no goal reads it; em=off runs it by circuit models, so
+    /// the run makes no EM solve at all.</summary>
+    [Fact]
+    public void EmOff_WithAnalysesAll_SolvesNothingByEm()
+    {
+        var setup = Setup(OptimizerEmMode.Off, goal: At95("Thru", "dB(SP2.S(2,1))", "SP2", GoalType.Ge, "-3"));
+        setup.Optimizer!.Scope = OptimizerScope.All;
+        setup.Optimizer.MaxIterations = 3;
+        var fx = Fixture(setup);
+        EditSchematic(fx, m => m.Analyses.Add(new SParameterAnalysis("SP2", [new FrequencySpec("8", "11", 7, SweepKind.Linear, "GHz", "GHz")])));
+        var calls = new StrongBox<int>();
+        EmEvaluation.SolverStandIn = Counting(calls);
+
+        var run = OptimizationRun.Create(PreparedCircuit.FromSchematic(fx.Csch));
+        var r = run.Run();
+        Assert.NotEqual(OptimizationOutcome.Refused, r.Outcome);
+        Assert.False(run.EvaluatesEm);
+        Assert.Equal(0, calls.Value);
+    }
+
+    /// <summary>D2: while em=correct's circuit-model searches run, the best a caller is shown (what Push may write while
+    /// paused) is an EM-verified point, or none before the first solve — never the circuit model's own best.</summary>
+    [Fact]
+    public void Correct_ProgressShowsOnlyEmVerifiedBestValues()
+    {
+        var fx = Fixture(Setup(em: null));
+        var seen = new List<IReadOnlyDictionary<string, string>>();
+        var r = OptimizationRun.Create(PreparedCircuit.FromSchematic(fx.Csch),
+            new OptimizationOptions { Progress = p => { lock (seen) seen.Add(p.BestValues); } }).Run();
+        Assert.Equal(OptimizerEmMode.Correct, r.EmMode);
+        Assert.NotEmpty(seen);
+        Assert.All(seen.Where(v => v.Count > 0), v => Assert.Contains(r.EmSolves, s => s.Values.SequenceEqual(v)));
+    }
+
+    /// <summary>R-sdl7-8: a cell with two EM setups, its analysis naming one. The result names the setup that solved it, and
+    /// Apply given it keys the saved layout by that setup — without it, the cell names none by itself.</summary>
+    [Fact]
+    public void Apply_OnACellWithTwoSetups_UsesTheOneTheRunSolvedWith()
+    {
+        var fx = Fixture(Setup(em: null));
+        File.Copy(fx.Cem, Path.Combine(Path.GetDirectoryName(fx.Cem)!, "C2-second" + Path.GetExtension(fx.Cem)));
+        EditSchematic(fx, m => m.Analyses.Single(a => a.Name == "SP1").EmSetup = Path.GetFileNameWithoutExtension(fx.Cem));
+        Assert.Null(EmCapability.Resolve(fx.P.CellDir, null, null, out _));
+
+        var r = Run(fx);
+        Assert.NotNull(r.EmSetup);
+        var applied = EmApply.Apply(fx.Csch, r.BestValues, r.BestEmKey, r.EmSetup);
+        Assert.True(applied.KeyMatches, applied.Sentence);
+    }
+
+    /// <summary>R-sdl7-4: an em=off run on an analysis run by EM, its best point re-evaluated as the run evaluated
+    /// (<see cref="OptimizationRun.EvaluatesEm"/>, what the CLI's -o and the Optimizer's plots pass): no EM solve.</summary>
+    [Fact]
+    public void EmOff_BestPointReEvaluatedAsTheRunEvaluated_SolvesNothing()
+    {
+        var setup = Setup(OptimizerEmMode.Off);
+        setup.Optimizer!.MaxIterations = 3;
+        var fx = Fixture(setup);
+        var calls = new StrongBox<int>();
+        EmEvaluation.SolverStandIn = Counting(calls);
+
+        var run = OptimizationRun.Create(PreparedCircuit.FromSchematic(fx.Csch));
+        var r = run.Run();
+        var rr = CircuitEvaluation.Evaluate(PreparedCircuit.FromSchematic(fx.Csch),
+            new CircuitEvaluationRequest { Tunables = r.BestValues, Em = run.EvaluatesEm });
+        Assert.Equal(RunStatus.Success, rr.Status);
+        Assert.Equal(0, calls.Value);
+    }
+
+    /// <summary>D2 under the run's limits: maxiter=1 spans the whole correct loop — one EM solve at the circuit model's
+    /// first proposal, then the limit — rather than every inner search getting its own.</summary>
+    [Fact]
+    public void Correct_TheRunsIterationLimit_SpansTheWholeLoop()
+    {
+        var setup = Setup(em: null, goal: Coupling("-1", "-0.9"));
+        setup.Optimizer!.MaxIterations = 1;
+        var r = Run(Fixture(setup));
+        Assert.Single(r.EmSolves);
+        Assert.Contains("iteration limit", r.FinishReason);
+    }
+
+    /// <summary>D10: L90's range runs from deep in the overlap to just past the edge where the arms stop overlapping, so its
+    /// connected stretch is narrower than one of the scan's 64 steps. It still reaches the copper: it is scanned and
+    /// reported (the start alone), not refused as having no effect.</summary>
+    [Fact]
+    public void ANarrowConnectedStretch_IsReported_NotRefusedAsNoEffect()
+    {
+        var edgeFx = Fixture(null, tag: "edge");
+        var target = EmCapability.Resolve(edgeFx.P.CellDir, null, null, out _)!;
+        bool Clean(double mm) => EmEvaluation.Geometry(target, new Dictionary<string, Value> { ["L90"] = new(mm * 1e-3) }, out _)!
+                                     .Connectivity!.Disagreement is null;
+        double lo = 0.05, hi = 6;
+        Assert.False(Clean(lo));
+        while (hi - lo > 1e-3) { double mid = (lo + hi) / 2; if (Clean(mid)) hi = mid; else lo = mid; }
+
+        string max = hi.ToString("R", CultureInfo.InvariantCulture) + " mm";
+        var r = Run(Fixture(Setup(em: null, budget: 1, min: "0.05 mm", max: max), tag: "narrow"));
+        Assert.NotEqual("opt.em.no-effect", r.Refusal?.Id);
+        var range = Assert.Single(r.ConnectedRanges);
+        Assert.False(range.Whole);
+        Assert.Equal(hi, range.Hi, 9);
+    }
+
+    /// <summary>D9: the schematic's own L90 overlaps (0.05 mm, written after its layout was made at the old value), and the
+    /// tuned range clamps the start to 4 mm, which does not. The start is checked at the values the run solves, so it is
+    /// not refused for the schematic's.</summary>
+    [Fact]
+    public void TheStartIsCheckedAtItsClampedValues_NotTheSchematicsSaved()
+    {
+        var fx = Fixture(Setup(em: null, budget: 1, min: "4 mm", max: "6 mm"));
+        EditSchematic(fx, m => (L90Row(m).Expression, L90Row(m).Unit) = ("0.05", "mm"));
+        var r = Run(fx);
+        Assert.NotEqual("opt.em.start-connectivity", r.Refusal?.Id);
+        Assert.NotEmpty(r.EmSolves);
+    }
+
+    /// <summary>A Tuning panel on <paramref name="fx"/>'s schematic, L90 ticked Tune over [min, max], its session started on
+    /// the design's own circuit.</summary>
+    private static (TuningPanelViewModel Panel, SchematicViewModel Vm, TuningRowViewModel Row) TuningOn(
+        EmCellFixture fx, string min, string max)
+    {
+        var model = SchematicPersistence.LoadFromFile(fx.Csch).model;
+        model.SchematicDirectory = Path.GetDirectoryName(fx.Csch);
+        model.Tuning = new TuningSetup
+        {
+            Variables = [new TunableEntry { Key = "L90", Tune = true, Min = min, Max = max, Scale = TuneScale.Lin }],
+        };
+        var vm = new SchematicViewModel(model);
+        var panel = new TuningPanelViewModel();
+        panel.SetActiveSchematic(vm, Path.GetFileName(fx.Csch));
+        panel.CreateSession = (_, analyses) => TuneSession.ForCircuit(PreparedCircuit.FromSchematic(fx.Csch), null, a => a(), analyses);
+        panel.StartCommand.Execute(null);
+        Assert.NotNull(panel.Session);
+        Assert.True(panel.HasEm);
+        return (panel, vm, panel.Rows.Single(r => r.Key == "L90"));
+    }
+
+    /// <summary>D7: a slider moved while Solve EM here is solving leaves the solve's traces stale when it lands.</summary>
+    [Fact]
+    public async Task SolveEmHere_ASliderMovedDuringTheSolve_LeavesItsTracesStale()
+    {
+        var (panel, _, row) = TuningOn(Fixture(null), "4 mm", "6 mm");
+        var stub = Stub();
+        EmEvaluation.SolverStandIn = (g, values, path) =>
+        {
+            row.ValueBoxText = "4.31";
+            row.CommitValueText();
+            return stub(g, values, path);
+        };
+        await panel.SolveEmHereCommand.ExecuteAsync(null);
+        Assert.True(panel.EmStale, panel.EmText);
+        panel.StopCommand.Execute(null);
+    }
+
+    /// <summary>D7: a tuned value replaced from outside the panel (an edit of the schematic, which the slider follows) marks
+    /// the EM traces stale as a drag does.</summary>
+    [Fact]
+    public async Task SolveEmHere_AValueTheSliderFollowsFromTheSchematic_LeavesItsTracesStale()
+    {
+        var (panel, vm, row) = TuningOn(Fixture(null), "4 mm", "6 mm");
+        row.ValueBoxText = "4.31";
+        row.CommitValueText();
+        await panel.SolveEmHereCommand.ExecuteAsync(null);
+        Assert.False(panel.EmStale, panel.EmText);
+
+        L90Row(vm.EditModel).Expression = "4.69";
+        vm.EditModel.NotifyChanged();
+        Assert.True(panel.EmStale, panel.EmText);
+        panel.StopCommand.Execute(null);
+    }
+
+    /// <summary>D10 in the Tuning panel: each slider shows the connected interval the optimizer's own scan finds — on C2,
+    /// L90's lower edge is the first of the 64 points whose copper overlaps nothing.</summary>
+    [Fact]
+    public void Tuning_ShowsTheSlidersConnectedInterval()
+    {
+        var fx = Fixture(null);
+        var (panel, _, row) = TuningOn(fx, "0.05 mm", "6 mm");
+        Assert.True(SpinWait.SpinUntil(() => row.Connected is not null, TimeSpan.FromSeconds(60)), panel.ConnectivityText);
+
+        var target = EmCapability.Resolve(fx.P.CellDir, null, null, out _)!;
+        double first = Enumerable.Range(0, OptimizationRun.ScanPoints)
+            .Select(j => (0.05 + j / (double)(OptimizationRun.ScanPoints - 1) * (6 - 0.05)) * 1e-3)
+            .First(v => EmEvaluation.Geometry(target, new Dictionary<string, Value> { ["L90"] = new(v) }, out _)!.Connectivity!.Touching.Count == 0);
+        Assert.Equal(first * 1e3, row.Connected!.Lo, 6);
+        Assert.Equal(6, row.Connected.Hi, 9);
+        Assert.StartsWith("connected ", row.ConnectedText);
+        Assert.True(panel.HasConnectivity);
+        panel.StopCommand.Execute(null);
+    }
+
+    /// <summary>D10 in the Tuning panel: a value moved outside its interval is taken (the slider is never held), and the
+    /// status line names what the copper does there in the planner's words.</summary>
+    [Fact]
+    public void Tuning_AValueOutsideItsInterval_IsTaken_AndTheStatusLineNamesTheOverlap()
+    {
+        var (panel, _, row) = TuningOn(Fixture(null), "0.05 mm", "6 mm");
+        Assert.True(SpinWait.SpinUntil(() => row.Connected is not null, TimeSpan.FromSeconds(60)), panel.ConnectivityText);
+
+        row.ValueBoxText = "0.05";
+        row.CommitValueText();
+        Assert.Equal(0.05, row.Value, 9);
+        Assert.True(row.IsOutsideConnected);
+        Assert.True(SpinWait.SpinUntil(() => panel.ConnectivityText.StartsWith("Not connected", StringComparison.Ordinal),
+                                       TimeSpan.FromSeconds(60)), panel.ConnectivityText);
+        Assert.Matches("ML\\d (overlaps|touches) ", panel.ConnectivityText);
+        panel.StopCommand.Execute(null);
+    }
+
+    /// <summary>R-sdl7-8: the Optimizer's Push writes an EM-verified best as it was solved, not rounded to the panel's
+    /// digits (two here), which could put it on a neighbouring geometry.</summary>
+    [Fact]
+    public async Task OptimizerPush_WritesTheEmVerifiedBest_Unrounded()
+    {
+        var setup = Setup(em: null);
+        setup.Digits = 2;
+        var fx = Fixture(setup);
+        var model = SchematicPersistence.LoadFromFile(fx.Csch).model;
+        model.SchematicDirectory = Path.GetDirectoryName(fx.Csch);
+        var vm = new SchematicViewModel(model);
+        var panel = new OptimizerPanelViewModel { PrepareCircuit = _ => PreparedCircuit.FromSchematic(fx.Csch) };
+        panel.SetActiveSchematic(vm, Path.GetFileName(fx.Csch));
+        panel.RunCommand.Execute(null);
+        await panel.RunTask!.WaitAsync(TimeSpan.FromMinutes(2));
+
+        var best = panel.Result!.BestValues;
+        Assert.NotEqual(best["L90"], TuningDigits.Round(best, 2)["L90"]);
+        panel.PushCommand.Execute(null);
+        var row = L90Row(model);
+        Assert.True(TunableValue.TryParse(row.Expression + " " + row.Unit, out _, out _, out double written), row.Expression);
+        Assert.Equal(Mm(best, "L90") * 1e-3, written, 12);
+    }
+
+    /// <summary>D4: a failed EM solve is charged every time it is attempted — the solves asked of the solver never exceed
+    /// the budget, and the run counts each one.</summary>
+    [Fact]
+    public void FailedSolves_AreChargedEachAttempt_AndNeverExceedTheBudget()
+    {
+        var calls = new StrongBox<int>();
+        EmEvaluation.SolverStandIn = Counting(calls, (_, _, _) => null);
+        var r = Run(Fixture(Setup(OptimizerEmMode.Direct, algorithm: "pattern", budget: 3)));
+        Assert.InRange(calls.Value, 1, 3);
+        Assert.Equal(calls.Value, r.EmBudgetUsed);
+    }
+
+    /// <summary>D4: the budget in force is reported once the start is checked and before the first solve — what the CLI
+    /// prints up front, now that a 3D EM view's lower default is known only then.</summary>
+    [Fact]
+    public void TheBudgetInForce_IsReportedBeforeTheFirstSolve()
+    {
+        var fx = Fixture(Setup(OptimizerEmMode.Direct, algorithm: "pattern", budget: 2));
+        var calls = new StrongBox<int>();
+        EmEvaluation.SolverStandIn = Counting(calls);
+        (OptimizerEmMode Mode, int Budget, int SolvesSoFar)? said = null;
+        OptimizationRun.Create(PreparedCircuit.FromSchematic(fx.Csch),
+            new OptimizationOptions { EmBudgetKnown = (mode, budget) => said = (mode, budget, calls.Value) }).Run();
+        Assert.NotNull(said);
+        Assert.Equal((OptimizerEmMode.Direct, 2, 0), said.Value);
     }
 }

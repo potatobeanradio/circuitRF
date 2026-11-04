@@ -381,9 +381,9 @@ internal static class Explain
                     analyses = rows;
                     exit    |= analysisExit;
                     statistics    = ExplainStatistics.Collect(lib, tb, path, parts);
-                    distributions = ExplainStatistics.Distributions(lib, tb);
+                    distributions = ExplainStatistics.Distributions(lib, tb, path);
                 }
-                if (expr is not null) exit |= ExplainExpression(lib, tb, expr, out value);
+                if (expr is not null) exit |= ExplainExpression(lib, tb, expr, path, out value);
             }
         }
 
@@ -1424,7 +1424,7 @@ internal static class Explain
         {
             try
             {
-                using var nl = new Elaborator(lib).Elaborate(tb);
+                using var nl = Check.ElaborateReadOnly(lib, tb, sourcePath);
                 ports = nl.Components.Count(ec =>
                     (ec.Model is PortModel or TermModel or P1ToneModel) && !ec.InstancePath.Contains('.'));
                 if (nl.WspProbes.Count > 0)
@@ -1794,13 +1794,14 @@ internal static class Explain
     /// <c>--set</c>-style replacement that already landed in <c>GlobalVariables</c>.
     /// </summary>
     private static int ExplainExpression(
-        Library lib, TestBench tb, string expression, out ExplainExpressionJson? value)
+        Library lib, TestBench tb, string expression, string path, out ExplainExpressionJson? value)
     {
         value = null;
 
-        var elaborator = new Elaborator(lib);
+        var elaborator = new Elaborator(lib) { BaseDirectory = CircuitSource.ReferenceBaseOf(path) };
         ElaboratedNetlist nl;
-        try { nl = elaborator.Elaborate(tb); }
+        // Counting mode (brief-sdl-6 D5): an instance set to EM is recorded, never solved — explain solves nothing.
+        try { using (EmEvaluationScope.Begin(countOnly: true)) nl = elaborator.Elaborate(tb); }
         catch (Exception ex)
         { return JsonRun.Fail(CliDiagnostics.ExplainExpressionFailed(expression, ex.Message)); }
 
@@ -1844,7 +1845,7 @@ internal static class Explain
         if (!any) return;
 
         ElaboratedNetlist nl;
-        try { nl = new Elaborator(lib).Elaborate(tb); }
+        try { nl = Check.ElaborateReadOnly(lib, tb, path); }
         catch (Exception) { return; }
 
         foreach (var c in nl.Components)

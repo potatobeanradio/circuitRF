@@ -922,20 +922,70 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         return primary.ResolvedName is { } name ? Path.Combine(dir, name) : null;
     }
 
-    /// <summary>brief-sdl-10 D7 — what Make These the Cell's Own Values would do for the instance shown; nothing written.</summary>
-    public CircuitRF.Design.Optimization.CellOwnValuesPlan? PlanCellOwnValues() =>
-        _target is { } t && SchematicPathForCommand() is { } path
-            ? CircuitRF.Design.Optimization.CellOwnValues.Plan(path, t.InstanceName, _schematicVm?.EditModel)
-            : null;
+    /// <summary>brief-sdl-10 D7 — the workspace's sessions, through which a cell's VAR rows are written; the workspace
+    /// itself unless set (a test sets it). Null when the schematic has no workspace host: the cell is then written on disk.</summary>
+    internal ICellSchematicSessions? CellSessions
+    {
+        get => _cellSessions ?? _schematicVm?.CellResolver as ICellSchematicSessions;
+        set => _cellSessions = value;
+    }
+    private ICellSchematicSessions? _cellSessions;
+
+    /// <summary>The cell's schematic, when the plan moves a VAR of it and the workspace holds a session for it.</summary>
+    private (string Csch, SchematicViewModel Session)? CellVarSession(CircuitRF.Design.Optimization.CellOwnValuesPlan plan)
+    {
+        if (plan.Refusal is not null || !plan.Values.Any(v => !v.IsParameter) || CellSessions is not { } sessions) return null;
+        if (CircuitRF.Design.Layout.Em.ParametricEm.EmComponentKinds.Primary(plan.CellDir, ViewType.Schematic) is not { } csch) return null;
+        return (csch, sessions.CellSession(csch));
+    }
+
+    private static string UnsavedCellRefusal(string cellName) =>
+        $"Nothing was changed: {cellName}'s schematic has edits that are not saved. Save or undo them, then make these the " +
+        "cell's own values.";
+
+    /// <summary>brief-sdl-10 D7 — what Make These the Cell's Own Values would do for the instance shown; nothing written.
+    /// Refused when the cell's schematic is open with unsaved edits, since the command saves it.</summary>
+    public CircuitRF.Design.Optimization.CellOwnValuesPlan? PlanCellOwnValues()
+    {
+        if (_target is not { } t || SchematicPathForCommand() is not { } path) return null;
+        var plan = CircuitRF.Design.Optimization.CellOwnValues.Plan(path, t.InstanceName, _schematicVm?.EditModel);
+        return CellVarSession(plan) is { } cell && cell.Session.UndoRedo.IsModified
+            ? plan with { Refusal = UnsavedCellRefusal(plan.CellName) } : plan;
+    }
 
     /// <summary>
-    /// brief-sdl-10 D7 — confirmed: the values written into the cell (its VAR block or <c>.ccell</c> defaults, on disk), then
-    /// cleared from this instance as one undo step in this schematic. Returns the status sentence.
+    /// brief-sdl-10 D7 — confirmed: the values written into the cell, then cleared from this instance as one undo step in
+    /// this schematic. A VAR is written through the workspace's session for the cell's schematic, as one undo step there,
+    /// and that session saved — the workspace resolves the cell through it, so the next Simulate reads the new value and a
+    /// later save cannot put the old one back. A parameter default is written to the <c>.ccell</c>, which has no undo.
+    /// Returns the status sentence, which says what Undo here does and does not restore.
     /// </summary>
     public string ApplyCellOwnValues(CircuitRF.Design.Optimization.CellOwnValuesPlan plan)
     {
         if (plan.Refusal is { } why || _target is not { } comp || _schematicVm is null) return plan.Refusal ?? "Nothing to do.";
-        var written = CircuitRF.Design.Optimization.CellOwnValues.WriteCell(plan);
+        var written = new List<string>();
+        bool varsInSession = false;
+        if (CellVarSession(plan) is { } cell)
+        {
+            if (cell.Session.UndoRedo.IsModified) return UnsavedCellRefusal(plan.CellName);
+            var (changes, names) = CircuitRF.Design.Optimization.CellOwnValues.VarChanges(cell.Session.EditModel, plan);
+            IUiCommand? command = null;
+            foreach (var (row, after) in changes)
+            {
+                IUiCommand one = new SetParametersCommand(cell.Session.EditModel, row, after);
+                command = command is null ? one : new CompositeCommand(command, one);
+            }
+            if (command is not null)
+            {
+                cell.Session.Execute(command);
+                CellSessions!.SaveCellSession(cell.Csch);
+                varsInSession = true;
+            }
+            written.AddRange(names);
+            written.AddRange(CircuitRF.Design.Optimization.CellOwnValues.WriteCellParameters(plan));
+        }
+        else written.AddRange(CircuitRF.Design.Optimization.CellOwnValues.WriteCell(plan));
+
         var moved = plan.Values.Select(v => v.Name).ToHashSet(StringComparer.Ordinal);
         var cleared = comp.Parameters.Select(p => moved.Contains(p.Name) ? new EditableParameter
         {
@@ -944,8 +994,13 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         _schematicVm.Execute(new SetParametersCommand(_schematicVm.EditModel, comp, cleared));
         CellSymbolResolver.Invalidate(plan.CellDir);
         SetTarget(comp);
+        written = written.Distinct(StringComparer.Ordinal).ToList();
+        string undo = $" Undo here restores {comp.InstanceName}'s values only" +
+                      (varsInSession ? $"; the VAR change is undone in {plan.CellName}'s schematic" : "") +
+                      (plan.Values.Any(v => v.IsParameter) ? $"; a parameter default written to {plan.CellName}'s .ccell is not undone" : "") +
+                      ".";
         return $"{string.Join(", ", written)} {(written.Count == 1 ? "is" : "are")} now {plan.CellName}'s own " +
-               $"value{(written.Count == 1 ? "" : "s")}; {comp.InstanceName} no longer states {(written.Count == 1 ? "it" : "them")}.";
+               $"value{(written.Count == 1 ? "" : "s")}; {comp.InstanceName} no longer states {(written.Count == 1 ? "it" : "them")}." + undo;
     }
 
     /// <summary>Whether the Model switches group is open. Collapsed by default: the switches are a debugging view, and an

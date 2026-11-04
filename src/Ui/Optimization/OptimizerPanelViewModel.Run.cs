@@ -68,9 +68,10 @@ public sealed partial class OptimizerPanelViewModel
     /// <summary>
     /// brief-sdl-7 R-sdl7-8 — after Push writes an EM-verified best into the schematic: run Update Layout from Schematic
     /// (the menu command, so it is undoable in the layout) and check the layout is the geometry EM verified, given the
-    /// best point's key. Returns the sentence for the status line; null when there is nothing to say.
+    /// best point's key and the EM setup that solved it (a cell with several setups names none by itself). Returns the
+    /// sentence for the status line; null when there is nothing to say.
     /// </summary>
-    public Func<SchematicViewModel, string?, string?>? UpdateLayoutAfterEm { get; set; }
+    public Func<SchematicViewModel, string?, string?, string?>? UpdateLayoutAfterEm { get; set; }
 
     /// <summary>The preferred-value ladders <c>discrete=preferred</c> snaps to (the user's).</summary>
     public Func<PreferredLadders?>? Ladders { get; set; }
@@ -246,7 +247,8 @@ public sealed partial class OptimizerPanelViewModel
             Interlocked.Increment(ref _finalEvaluations);
             try
             {
-                var rr = CircuitEvaluation.Evaluate(circuit, new CircuitEvaluationRequest { Tunables = result.BestValues });
+                // As the run evaluated (brief-sdl-7): an em=off run's best point is plotted by circuit models, not solved by EM.
+                var rr = CircuitEvaluation.Evaluate(circuit, new CircuitEvaluationRequest { Tunables = result.BestValues, Em = run.EvaluatesEm });
                 if (rr.Status == RunStatus.Success) full = rr.GroupedResults;
             }
             catch { /* the result stands without its plots */ }
@@ -483,7 +485,11 @@ public sealed partial class OptimizerPanelViewModel
     [RelayCommand(CanExecute = nameof(CanKeepValues))]
     private void Push()
     {
-        if (_tuned is null || KeptValues() is not { } values || Catalog is not { } catalog) return;
+        // brief-sdl-7 R-sdl7-8 — an EM-verified point is written as it was solved: rounding it to the panel's digits could
+        // land it on a neighbouring geometry, which the layout check would then report as not the one EM verified.
+        bool byEm = _run is { EmMode: not OptimizerEmMode.Off };
+        var values = byEm ? _bestValues : KeptValues();
+        if (_tuned is null || values is null || Catalog is not { } catalog) return;
         var drawn = AsDrawn(catalog, values.Keys);
         var report = TuningPush.Push(catalog, values, _tuned, SessionForDrawing ?? (_ => null));
         if (report.UndoSession(_tuned) is { } undo) EditCommitted?.Invoke(undo);
@@ -495,7 +501,9 @@ public sealed partial class OptimizerPanelViewModel
         RefreshNow();
         StatusText = report.StatusLine;
         // brief-sdl-7 R-sdl7-8: an EM-verified result is applied to the layout too, and checked against what was solved.
-        if (report.Written > 0 && Result is { EmMode: not OptimizerEmMode.Off } em && UpdateLayoutAfterEm?.Invoke(_tuned, em.BestEmKey) is { } layout)
+        // A paused EM run's best is EM-verified too (the circuit model only proposes), checked against the key so far.
+        if (report.Written > 0 && byEm && _run is { } emRun
+            && UpdateLayoutAfterEm?.Invoke(_tuned, Result?.BestEmKey ?? emRun.BestEmKeySoFar, Result?.EmSetup ?? emRun.EmSetup) is { } layout)
             StatusText = report.StatusLine + " · " + layout;
         ResetCommand.NotifyCanExecuteChanged();
     }
@@ -511,7 +519,8 @@ public sealed partial class OptimizerPanelViewModel
         if (Setup is not { } current || Result is not { } r) return;
         var next = current.Clone();
         int n = 0;
-        foreach (var range in r.ConnectedRanges.Where(c => !c.Whole))
+        // An interval the scan found no wider than the start itself would leave nothing to vary: such a row is kept.
+        foreach (var range in r.ConnectedRanges.Where(c => !c.Whole && c.Hi > c.Lo))
         {
             if (next.Variables.FirstOrDefault(e => e.Key == range.Key) is not { } entry) continue;
             entry.Min = TunableValue.Format(range.Lo, range.Unit);

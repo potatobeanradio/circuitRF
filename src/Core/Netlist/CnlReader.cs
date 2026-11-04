@@ -1139,6 +1139,11 @@ public sealed class CnlReader
         }
         if (model is null && emSetup is null) return;
         if (tb.Analyses.LastOrDefault(a => a.Name == tokens[0]) is not { } analysis) return;
+        // A value that is neither spelling still runs by circuit models (a mistyped switch must not start EM solves), but
+        // it is said: EM is never left out without a word.
+        if (model is not null && Unquote(model).Trim() is var spelled
+            && !spelled.Equals("em", StringComparison.OrdinalIgnoreCase) && !spelled.Equals("circuit", StringComparison.OrdinalIgnoreCase))
+            tb.ReadWarnings.Add($"analysis '{analysis.Name}': model={spelled} is neither circuit nor em; it runs by circuit models.");
         if (model is not null) analysis.Model = Analysis.ParseModel(model);
         if (emSetup is { Length: > 0 }) analysis.EmSetup = emSetup;
     }

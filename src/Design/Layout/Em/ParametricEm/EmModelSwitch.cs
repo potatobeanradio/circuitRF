@@ -167,12 +167,13 @@ public static class EmModelSwitch
         // R-sdl6-2: what each part is to the EM result.
         var noLayout = new List<string>();
         var notCopper = new List<string>();
+        string? schematicDir = Path.GetDirectoryName(target.SchematicPath);
         // brief-sdl-10 D1 — a 3D-parametric cell's schematic is a circuit model only: none of its parts is in the EM view's
         // geometry, so none is asked to be copper.
         foreach (var c in target.ThreeDOnly ? Enumerable.Empty<EditableComponent>() : model.Components)
         {
             if (!SchematicLayoutPlanner.IsPhysical(c) || PortPlacement.IsPort(c) || c.InstanceName.Length == 0) continue;
-            switch (KindOf(c))
+            switch (KindOf(c, schematicDir))
             {
                 case PartKind.Copper: break;
                 case PartKind.Part:     notCopper.Add(Label(c)); break;
@@ -182,8 +183,8 @@ public static class EmModelSwitch
         if (noLayout.Count > 0)
         {
             refusal = $"{Join(noLayout)} {(noLayout.Count == 1 ? "has" : "have")} no layout, so {(noLayout.Count == 1 ? "it" : "they")} " +
-                      $"cannot be connected to the EM result of {target.CellName}'s layout. Give each a footprint or a line " +
-                      "model, or run this analysis by circuit models.";
+                      $"cannot be connected to the EM result of {target.CellName}'s layout. Give each a footprint, a line " +
+                      "model or a layout view, or run this analysis by circuit models.";
             return null;
         }
         if (notCopper.Count > 0)
@@ -251,13 +252,35 @@ public static class EmModelSwitch
     /// microstrip family) or a sub-cell's drawn layout; a part when a footprint or a kit's artwork stands for it (its pads
     /// are copper, the part itself is not); nothing when it has no layout at all.
     /// </summary>
-    private static PartKind KindOf(EditableComponent c)
+    /// <remarks>A sub-cell is copper only when its reference resolves to a cell folder with a layout view — the test the
+    /// planner places it by. A schematic-only sub-cell, or a model-library part (<c>vendormodel://</c>, never a folder),
+    /// would be skipped by the planner and so be missing from the EM result; it has no layout, and is refused by name.</remarks>
+    private static PartKind KindOf(EditableComponent c, string? schematicDir)
     {
         if (c.Footprint is { Length: > 0 }) return PartKind.Part;
         if (SchematicLayoutPlanner.HasPCellGenerator(c.Symbol, c.PortCount, out _)) return PartKind.Copper;
         if (c.CellRef is { Length: > 0 } cellRef)
-            return cellRef.StartsWith("pdk://", StringComparison.OrdinalIgnoreCase) ? PartKind.Part : PartKind.Copper;
+        {
+            if (cellRef.StartsWith("pdk://", StringComparison.OrdinalIgnoreCase)) return PartKind.Part;
+            return HasLayoutView(cellRef, schematicDir) ? PartKind.Copper : PartKind.NoLayout;
+        }
         return PartKind.NoLayout;
+    }
+
+    private static bool HasLayoutView(string cellRef, string? schematicDir)
+    {
+        if (CircuitRF.Design.VendorLibraries.ModelLibrary.VendorModelRefs.IsRef(cellRef) || schematicDir is not { Length: > 0 }) return false;
+        try
+        {
+            if (CircuitRF.Design.Workspace.ExternalCellRef.ResolveCellDir(cellRef, schematicDir) is not { } dir || !Directory.Exists(dir))
+                return false;
+            var primary = CircuitRF.Design.Cells.CellFolder.ResolvePrimary(dir, CircuitRF.Design.Cells.ViewType.Layout);
+            return primary.State is CircuitRF.Design.Cells.PrimaryState.SoleFile or CircuitRF.Design.Cells.PrimaryState.NamedPresent;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            return false;
+        }
     }
 
     private static string Label(EditableComponent c) => $"{c.InstanceName} ({ComponentTypeRegistry.DisplayName(c.Symbol, c.PortCount)})";
@@ -321,16 +344,17 @@ public static class EmModelSwitch
             return EmCapability.CellDirOfSchematic(sourcePath);
         if (emSetup is not { Length: > 0 }) return null;
         string dir = Path.GetDirectoryName(Path.GetFullPath(sourcePath))!;
-        // brief-sdl-8 D1 — <cell>/3d/<view>.c3d#<setup>: the cell is the 3D view's folder's parent.
-        if (emSetup.LastIndexOf('#') is int hash and > 0)
+        // brief-sdl-8 D1 — <cell>/3d/<view>.c3d#<setup>: the cell is the 3D view's folder's parent. A '#' in a folder name or
+        // in a .cem's own name is part of that path (EmCapability.SplitSetup), so such a .cem is looked for below.
+        if (EmCapability.SplitSetup(emSetup, out string c3d, out _, out bool ambiguous) && c3d.Length > 0)
         {
-            string c3d = emSetup[..hash];
+            if (!c3d.EndsWith(CircuitRF.Design.ThreeD.C3dPersistence.Extension, StringComparison.OrdinalIgnoreCase)) c3d += CircuitRF.Design.ThreeD.C3dPersistence.Extension;
             foreach (var root in new[] { dir, baseDirectory }.Where(r => r is { Length: > 0 }).Cast<string>())
             {
                 string full = Path.IsPathRooted(c3d) ? c3d : Path.Combine(root, c3d);
                 if (File.Exists(full)) return Path.GetDirectoryName(Path.GetDirectoryName(Path.GetFullPath(full)));
             }
-            return null;
+            if (!ambiguous) return null;
         }
         foreach (var root in new[] { dir, baseDirectory }.Where(r => r is { Length: > 0 }).Cast<string>())
         {

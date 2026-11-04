@@ -471,7 +471,7 @@ public partial class ParameterEditorView : UserControl
         var owner = TopLevel.GetTopLevel(this) as Window;
         if (plan.Refusal is { } why)
         {
-            await TextConfirmDialog.AskAsync(owner, "Make These the Cell's Own Values", "Nothing to move", why, null);
+            await TextConfirmDialog.AskAsync(owner, "Make These the Cell's Own Values", "Nothing was changed", why, null);
             return;
         }
         if (!await TextConfirmDialog.AskAsync(owner, "Make These the Cell's Own Values",

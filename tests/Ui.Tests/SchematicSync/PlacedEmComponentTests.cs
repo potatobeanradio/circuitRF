@@ -415,4 +415,212 @@ public sealed class PlacedEmComponentTests : IDisposable
         Assert.Contains(report.EmComponents!, l => l.StartsWith("X1: Schematic-driven", StringComparison.Ordinal));
         Assert.DoesNotContain(report.Tunables, x => x.Key.StartsWith("X9.", StringComparison.Ordinal));
     }
+
+    // ── Review fixes ─────────────────────────────────────────────────────────
+
+    /// <summary>A variant and the PCells drawn inside it are live: the generated-cell prune a workspace open runs keeps
+    /// them, and the live set an archive takes names them.</summary>
+    [Fact]
+    public void Variants_AreLive_SoThePruneOnOpenKeepsThem()
+    {
+        var t = T1("prune", em: false, ("X1", []), ("X2", [("L90", "5.2", "mm")]));
+        var model = t.Load();
+        LayoutPersistence.SaveToFile(t.Clay, t.Prepared(model, t.NewTarget()).Applied(t.Plan(model, t.NewTarget())));
+        string v2 = CellDirOf(LayoutPersistence.LoadFromFile(t.Clay), "X2", t.LayoutDir);
+        string variantClay = Path.Combine(CellFolder.SubFolderPath(v2, ViewType.Layout), Path.GetFileName(v2) + CellFolder.ViewExtension(ViewType.Layout));
+        var inner = GeneratedCellsLifecycle.GeneratedCellRefs(LayoutPersistence.LoadFromFile(variantClay)).ToList();
+
+        var live = GeneratedCellsLifecycle.LiveCells(t.Fx.Workspace);
+        Assert.True(live.Complete);
+        Assert.Contains(Path.GetFileName(v2), live.Cells.Keys);
+        Assert.All(inner, n => Assert.Contains(n, live.Cells.Keys));
+
+        GeneratedCellsLifecycle.RegenerateAll(t.Fx.Workspace, p => p is not null && File.Exists(p) ? TechPersistence.LoadFromFile(p) : null);
+        Assert.True(File.Exists(variantClay));
+        // Read again: a rebuild may have renamed a PCell, and the variant then names the new one.
+        Assert.All(GeneratedCellsLifecycle.GeneratedCellRefs(LayoutPersistence.LoadFromFile(variantClay)),
+                   n => Assert.True(Directory.Exists(Path.Combine(t.Fx.Workspace, GeneratedCellStore.ReservedFolderName, n)), n));
+    }
+
+    /// <summary>The workspace's session for the one cell schematic the test edits.</summary>
+    private sealed class CellSessions(CircuitRF.Ui.ViewModels.SchematicViewModel session) : CircuitRF.Ui.Schematic.ICellSchematicSessions
+    {
+        public int Saved;
+
+        public CircuitRF.Ui.ViewModels.SchematicViewModel CellSession(string cschPath) => session;
+
+        public void SaveCellSession(string cschPath)
+        {
+            SchematicPersistence.SaveToFile(cschPath, session.EditModel, Path.GetFileNameWithoutExtension(cschPath));
+            session.UndoRedo.MarkSaved();
+            Saved++;
+        }
+    }
+
+    /// <summary>In the GUI, Make These the Cell's Own Values writes a VAR through the session the workspace resolves the cell
+    /// through, as an undo step there, and saves it; it refuses while that session has unsaved edits.</summary>
+    [Fact]
+    public void MakeTheseTheCellsOwn_InTheGui_WritesThroughTheCellsSession()
+    {
+        var t = T1("vm", em: false, ("X1", [("w50", "300", "um")]));
+        var parentModel = t.Load();
+        var parentVm = new CircuitRF.Ui.ViewModels.SchematicViewModel(parentModel);
+        var cellModel = SchematicPersistence.LoadFromFile(t.Fx.Csch).model;
+        cellModel.SchematicDirectory = Path.GetDirectoryName(t.Fx.Csch);
+        var cellVm = new CircuitRF.Ui.ViewModels.SchematicViewModel(cellModel);
+        var sessions = new CellSessions(cellVm);
+        var editor = new CircuitRF.Ui.ViewModels.ParameterEditorViewModel { CellSessions = sessions };
+        editor.SetTargetDirect(parentVm, parentModel.Components.Single(c => c.InstanceName == "X1"), showClose: false);
+
+        var var1 = cellModel.Components.Single(c => c.Symbol == SymbolKind.Var);
+        cellVm.Execute(new CircuitRF.Ui.Commands.Schematic.SetParametersCommand(cellModel, var1, var1.Parameters));
+        Assert.Contains("not saved", editor.PlanCellOwnValues()!.Refusal);
+        cellVm.UndoRedo.Undo();
+
+        var plan = editor.PlanCellOwnValues()!;
+        Assert.Null(plan.Refusal);
+        string status = editor.ApplyCellOwnValues(plan);
+        var w50 = var1.Parameters.Single(p => p.Name == "w50");
+        Assert.Equal(("300", "um"), (w50.Expression, w50.Unit));
+        Assert.Equal(1, sessions.Saved);
+        Assert.Equal("300", SchematicPersistence.LoadFromFile(t.Fx.Csch).model.Components.Single(c => c.Symbol == SymbolKind.Var)
+                                                .Parameters.Single(p => p.Name == "w50").Expression);
+        Assert.Equal("", parentModel.Components.Single(c => c.InstanceName == "X1").Parameters.Single(p => p.Name == "w50").Expression);
+        Assert.Contains($"Undo here restores X1's values only; the VAR change is undone in {Cell}'s schematic", status);
+        cellVm.UndoRedo.Undo();
+        Assert.Equal("280.152", var1.Parameters.Single(p => p.Name == "w50").Expression);
+    }
+
+    /// <summary>Apply in a parent that has no layout made from it writes the values and succeeds, saying there was no layout
+    /// geometry to check, instead of failing a key comparison that has no layout.</summary>
+    [Fact]
+    public void Apply_InAParentWithNoLayout_SucceedsWithNothingToVerify()
+    {
+        var t = T1("nolayout", em: true, ("X1", []));
+        var applied = EmApply.Apply(t.Csch, new Dictionary<string, string> { ["X1.w50"] = "300 um" }, "0123456789abcdef");
+        Assert.Null(applied.Refusal);
+        Assert.Equal(["X1.w50"], applied.Written);
+        Assert.NotNull(applied.NothingToVerify);
+        Assert.True(applied.Succeeded, applied.Sentence);
+        Assert.Contains("no layout made from it", applied.Sentence);
+    }
+
+    /// <summary>The parent's connectivity probe holds the variants a candidate needs in memory: it writes no variant folder.</summary>
+    [Fact]
+    public void ParentProbe_WritesNoVariantFolder()
+    {
+        var t = T1("probe", em: true, ("X1", []), ("X2", [("L90", "4.6604", "mm")]));
+        var model = t.Load();
+        LayoutPersistence.SaveToFile(t.Clay, t.Prepared(model, t.NewTarget()).Applied(t.Plan(model, t.NewTarget())));
+        string gen = Path.Combine(t.Fx.Workspace, GeneratedCellStore.ReservedFolderName);
+        string[] Variants() => Directory.Exists(gen)
+            ? [.. Directory.GetDirectories(gen).Where(GeneratedCellStore.IsVariant).Select(d => Path.GetFileName(d)).Order(StringComparer.Ordinal)]
+            : [];
+        var before = Variants();
+
+        var probe = new EmGeometryProbe(PreparedCircuit.FromSchematic(t.Csch), [], null);
+        var at = probe.At(new Dictionary<string, string> { ["X2.L90"] = "5.4 mm" });
+        Assert.Null(at.Refusal);
+        Assert.NotNull(at.Parent);
+        Assert.Null(at.ParentUnchecked);
+        Assert.Equal(before, Variants());
+    }
+
+    /// <summary>An EM component placed inside another placed cell is named as not checked: the parent's layout shows that
+    /// cell's own layout.</summary>
+    [Fact]
+    public void NestedEmComponents_AreNamed()
+    {
+        var t = T1("nest", em: false, ("X1", []));
+        string y = CellFolder.CreateCellFolder(t.Fx.Workspace, "Y");
+        string ySch = CellFolder.SubFolderPath(y, ViewType.Schematic);
+        Directory.CreateDirectory(ySch);
+        var ym = new SchematicEditModel { SchematicDirectory = ySch };
+        ym.Components.Add(new EditableComponent
+        {
+            InstanceName = "X1", Symbol = SymbolKind.Generic, CellRef = ExternalCellRef.MakeCellRef(ySch, t.Fx.P.CellDir),
+        });
+        SchematicPersistence.SaveToFile(Path.Combine(ySch, "Y.csch"), ym, "Y");
+        var layout = new LayoutView();
+        layout.Instances.Add(new LayoutInstance { SchematicId = "Y1", CellRef = ExternalCellRef.MakeCellRef(t.LayoutDir, y) });
+        Assert.Equal(["Y1.X1"], EmApply.NestedEmComponents(layout, t.LayoutDir));
+    }
+
+    /// <summary>A layout's port-label pins follow the label when the view is edited in place: they are not cached on it.</summary>
+    [Fact]
+    public void PortLabelPins_FollowAnInPlaceEdit()
+    {
+        var view = new LayoutView();
+        var label = new LabelShape { X = 1000, Y = 0, Text = "1", Height = 500, IsPort = true, SchematicId = "P1", PortDirection = LayoutRotation.R0 };
+        view.Shapes.Add(label);
+        Assert.Equal(1000, CellPins.Resolve(view, null).Single().X);
+        label.X = 4000;
+        Assert.Equal(4000, CellPins.Resolve(view, null).Single().X);
+    }
+
+    /// <summary>A variant found already on disk takes the cell's current symbol: what is not in its key is refreshed.</summary>
+    [Fact]
+    public void Variant_OnAHit_TakesTheCellsCurrentSymbol()
+    {
+        var t = T1("fresh", em: false, ("X2", [("L90", "5.2", "mm")]));
+        var model = t.Load();
+        var layout = t.Prepared(model, t.NewTarget()).Applied(t.Plan(model, t.NewTarget()));
+        string v2 = CellDirOf(layout, "X2", t.LayoutDir);
+        string cellSym = Path.Combine(CellFolder.SubFolderPath(t.Fx.P.CellDir, ViewType.Symbol), Cell + ".csym");
+        string variantSym = Path.Combine(CellFolder.SubFolderPath(v2, ViewType.Symbol), Cell + ".csym");
+        File.AppendAllText(cellSym, "\n");
+        Assert.NotEqual(File.ReadAllBytes(cellSym), File.ReadAllBytes(variantSym));
+
+        t.Plan(model, layout);
+        Assert.Equal(File.ReadAllBytes(cellSym), File.ReadAllBytes(variantSym));
+    }
+
+    /// <summary>Make These the Cell's Own Values lists placements in the parent's workspace as well as the cell's, when the
+    /// cell is taken from another workspace.</summary>
+    [Fact]
+    public void MakeTheseTheCellsOwn_ListsPlacementsInTheParentsWorkspaceToo()
+    {
+        var t = T1("ws", em: false, ("X1", []));
+        var consumer = EmCellFixture.Create("C1-through-line", Path.Combine(_scratch, "ws-consumer"));
+        string Place(string name, string inst, string? w50)
+        {
+            string dir = CellFolder.CreateCellFolder(consumer.Workspace, name);
+            string sch = CellFolder.SubFolderPath(dir, ViewType.Schematic);
+            Directory.CreateDirectory(sch);
+            var m = new SchematicEditModel { SchematicDirectory = sch };
+            var c = new EditableComponent { InstanceName = inst, Symbol = SymbolKind.Generic, CellRef = ExternalCellRef.MakeCellRef(sch, t.Fx.P.CellDir) };
+            if (w50 is not null) c.Parameters.Add(new EditableParameter { Name = "w50", Expression = w50, Unit = "um" });
+            m.Components.Add(c);
+            string path = Path.Combine(sch, name + ".csch");
+            SchematicPersistence.SaveToFile(path, m, name);
+            return path;
+        }
+        string parent = Place("P", "X7", "300");
+        Place("Q", "X8", null);
+
+        var plan = CellOwnValues.Plan(parent, "X7");
+        Assert.Null(plan.Refusal);
+        Assert.Equal(["X1", "X8"], plan.Others.Select(o => o.Instance).Order(StringComparer.Ordinal));
+    }
+
+    /// <summary>
+    /// check and explain on a parent placing EM components: the instance's EmCell= is relative to the run's base, so a
+    /// read-only verb that elaborated without it reported an error the run does not have (or, run from the workspace
+    /// folder, found the cell and solved it). Both resolve it now and solve nothing.
+    /// </summary>
+    [Fact]
+    public void CheckAndExplain_OnAParentPlacingEmComponents_ResolveTheCell_AndSolveNothing()
+    {
+        var t = T1("check", em: true, ("X1", []), ("X2", [("L90", "5.2", "mm")]));
+        int solves = 0;
+        EmEvaluation.SolverStandIn = (_, _, _) => { Interlocked.Increment(ref solves); return null; };
+        try
+        {
+            Assert.Equal(0, CircuitRF.Cli.Check.Run([t.Csch]));
+            CircuitRF.Cli.Explain.Run([t.Csch, "--analysis"]);
+            CircuitRF.Cli.Explain.Run([t.Csch, "--expr", "w50p*2"]);
+            Assert.Equal(0, solves);
+        }
+        finally { EmEvaluation.SolverStandIn = null; }
+    }
 }

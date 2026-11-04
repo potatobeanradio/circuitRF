@@ -358,7 +358,8 @@ public static class WorkspaceArchiveScanner
         if (members.Count == 0) return;
 
         plan.KitGeneratedCellCount = cells.Count(d =>
-            live.Cells.TryGetValue(Path.GetFileName(d), out var generator) && !PCellRegistry.IsBuiltIn(generator));
+            live.Cells.TryGetValue(Path.GetFileName(d), out var generator) && generator.Length > 0 && !PCellRegistry.IsBuiltIn(generator));
+        // A variant of an EM component (brief-sdl-10 D3) is live with no generator: it travels, and is no kit's.
         plan.GeneratedCellsLiveSetIncomplete = !live.Complete;
 
         int left = present.Length - cells.Count;
