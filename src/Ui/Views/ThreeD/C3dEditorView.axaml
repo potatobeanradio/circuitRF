@@ -704,7 +704,7 @@
                                 <!-- brief-em3d-93 R-em3d93-3 — a row that is not modelled is greyed, and its tooltip says why. -->
                                 <TextBlock Text="{Binding Label}" VerticalAlignment="Center" ToolTip.Tip="{Binding OrderTip}"
                                            Opacity="{Binding NameOpacity}"/>
-                                <TextBlock Text="{Binding Detail}" Opacity="0.6" FontSize="11" VerticalAlignment="Center" ToolTip.Tip="{Binding Refusal}"/>
+                                <TextBlock Text="{Binding Detail}" Opacity="0.6" FontSize="11" VerticalAlignment="Center" ToolTip.Tip="{Binding DetailTip}"/>
                                 <!-- brief-em3d-50 R-em3d50-4 — a wire whose end is on no pad: flagged, with the refusal's words. -->
                                 <mi:MaterialIcon Kind="AlertOutline" Width="12" Height="12" VerticalAlignment="Center"
                                                  Foreground="{DynamicResource CrfWarningBrush}"

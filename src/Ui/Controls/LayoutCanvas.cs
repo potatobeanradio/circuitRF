@@ -966,10 +966,16 @@ public sealed class LayoutCanvas : Control
                 string s                        => s,
                 _                                => null,
             };
-            if (path is not null) return path;
+            // Images only, as SchematicCanvas does: any other file (a .cws, a .clay) is not a picture,
+            // and placing it as one drew a broken bitmap where a workspace drop should open it.
+            if (path is not null && IsImageExtension(path)) return path;
         }
         return null;
     }
+
+    private static bool IsImageExtension(string path) =>
+        System.IO.Path.GetExtension(path).ToLowerInvariant()
+            is ".png" or ".jpg" or ".jpeg" or ".bmp" or ".gif" or ".tiff" or ".tif" or ".webp";
 
     // ── Cell DnD drop target (brief-L3a-followups.md §4) — mirrors SchematicCanvas.OnCellDragOver/
     // OnCellDrop, with two substitutions per R-fix-5: resolves through CellLayoutResolver (via the VM's

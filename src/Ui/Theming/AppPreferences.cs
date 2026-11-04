@@ -42,6 +42,11 @@ public enum LaunchAction
     /// <summary>A scratch <c>.c3d</c> to draw in at once, written by its first Save As (3D editor bugs round 2). APPENDED —
     /// see this type's own remarks.</summary>
     New3DDesign,
+
+    /// <summary>No document at all: the shell opens with an empty document area. APPENDED — see this
+    /// type's own remarks; the Settings combobox lists it directly under Welcome through its explicit
+    /// row table, which is what lets display order differ from ordinal order.</summary>
+    DoNothing,
 }
 
 /// <summary>

@@ -57,6 +57,8 @@ public partial class WorkspaceWindow : Window
             OwningWorkspace = DataContext as WorkspaceViewModel,
         };
         AddHandler(InputElement.KeyDownEvent, OnWindowKeyDownTunnel, RoutingStrategies.Tunnel);
+        // A .cws dropped on any document opens that workspace in a new window, as on the Project Tree.
+        WorkspaceFileDrop.Attach(this);
         // A DOCKED tool panel's ✕ is the same dead Dock button as a floated one's, and the first fix
         // reached only the float (owner, 2026-09-02). Same helper, registered on this TopLevel too; no
         // window fallback, because the shell must never close itself over an unidentifiable panel.

@@ -65,7 +65,7 @@ slider.
 
 | Control | What it does |
 |---|---|
-| **Action** | What circuitRF does with no file to open: show the Welcome screen, or go straight to a new Schematic, Workspace, Data Display, Symbol or Layout, open a workspace, start harmonicaRF or a Smith Chart, or open a new **3D Design** to draw in at once. A new 3D Design is not a file until you save it — its first save asks where, and **Simulate** asks for that save before it runs; until then it uses the open workspace's technology, or the default one when no workspace is open. The default is **Welcome**. |
+| **Action** | What circuitRF does with no file to open: show the Welcome screen, show nothing at all (**Do Nothing** leaves the document area empty), or go straight to a new Schematic, Workspace, Data Display, Symbol or Layout, open a workspace, start harmonicaRF or a Smith Chart, or open a new **3D Design** to draw in at once. A new 3D Design is not a file until you save it — its first save asks where, and **Simulate** asks for that save before it runs; until then it uses the open workspace's technology, or the default one when no workspace is open. The default is **Welcome**. |
 | **Window Layout** | The dock arrangement the shell opens with — *Project Tree Focus* and *Library Focus* tab the two panels together on the left and differ only in which tab is on top; *Project Tree &amp; Library* (the default) puts the Project Tree on the left and the Library in its own column to the right of the documents. |
 | **Show Dockers** | Whether the tool panels are open at launch and when a new workspace is created. Turn it off and they start collapsed, exactly as **View ▸ Hide Dockers** collapses them. |
 

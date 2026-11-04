@@ -252,48 +252,38 @@ public sealed class SmithWindowTests
     /// <b>The test that stops the next person getting it wrong quietly.</b>
     /// </summary>
     /// <remarks>
-    /// <see cref="LaunchAction"/> is serialized as an ORDINAL, and
-    /// <c>SettingsView.LoadGeneralPrefs</c> fills the combobox from a bare <c>string[]</c> whose index
-    /// is cast straight back to the enum. Reordering or inserting into EITHER silently changes what
-    /// every already-saved <c>preferences.json</c> means: no error, no migration, and a user's chosen
-    /// launch action becomes a different one. So the array's LENGTH and its ORDER are both asserted
-    /// against the enum, and <c>NewSmithChart</c> is asserted to be LAST — appended, never inserted.
+    /// <see cref="LaunchAction"/> is serialized as an ORDINAL, so the enum is only ever appended to.
+    /// The Settings combobox lists explicit (label, member) rows in display order and saves the
+    /// MEMBER, so a row may be shown anywhere — "Do Nothing" directly under "Welcome" — without
+    /// changing what an existing <c>preferences.json</c> means. Asserted: every member has exactly one
+    /// row, the appended members are last in the enum, and both switches carry them.
     /// </remarks>
     [Fact]
-    public void TheLaunchActionComboboxArray_MatchesTheEnumInLengthAndOrder()
+    public void TheLaunchActionRows_CoverEveryMemberOnce_AndAppendedMembersStayLast()
     {
-        string source = ReadRepoFile("src/Ui/Views/Dialogs/SettingsView.axaml.cs");
-        int    at     = source.IndexOf("LaunchActionCombo.ItemsSource", StringComparison.Ordinal);
-        Assert.True(at > 0, "LaunchActionCombo.ItemsSource is gone — this contract has no other home.");
+        var rows = CircuitRF.Ui.Views.Dialogs.SettingsView.LaunchActionRows;
 
-        int open  = source.IndexOf('{', at);
-        int close = source.IndexOf("};", open, StringComparison.Ordinal);
-        Assert.True(close > open, "Could not read the launch-action array literal.");
+        Assert.Equal(Enum.GetValues<LaunchAction>().OrderBy(a => a),
+                     rows.Select(r => r.Action).OrderBy(a => a));
 
-        var labels = Regex.Matches(source[open..close], "\"([^\"]*)\"")
-                          .Select(m => m.Groups[1].Value)
-                          .ToArray();
+        Assert.Equal(("Welcome", LaunchAction.Welcome),       rows[0]);
+        Assert.Equal(("Do Nothing", LaunchAction.DoNothing),  rows[1]);
+        Assert.Contains(("Smith Chart", LaunchAction.NewSmithChart), rows);
+        Assert.Contains(("New 3D Design", LaunchAction.New3DDesign), rows);
 
-        var members = Enum.GetNames<LaunchAction>();
+        // Ordinals of already-shipped members are pinned: changing any of them reinterprets saved files.
+        Assert.Equal(0,  (int)LaunchAction.Welcome);
+        Assert.Equal(7,  (int)LaunchAction.NewHarmonica);
+        Assert.Equal(8,  (int)LaunchAction.NewSmithChart);
+        Assert.Equal(9,  (int)LaunchAction.New3DDesign);
+        Assert.Equal(LaunchAction.DoNothing, Enum.GetValues<LaunchAction>()[^1]);
 
-        Assert.Equal(members.Length, labels.Length);
-
-        // Order: the LAST member is the one this brief appended, and it is last in both. A member
-        // inserted anywhere else would leave the lengths equal and the meanings shifted, which is
-        // exactly the silent failure — so the pairing is checked position by position.
-        // New3DDesign (3D editor bugs round 2) was appended after it, the same way.
-        Assert.Equal(LaunchAction.New3DDesign, Enum.GetValues<LaunchAction>()[^1]);
-        Assert.Equal("New 3D Design", labels[^1]);
-        Assert.Equal("Smith Chart", labels[(int)LaunchAction.NewSmithChart]);
-        Assert.Equal("Welcome",     labels[0]);
-        Assert.Equal("harmonicaRF", labels[(int)LaunchAction.NewHarmonica]);
-        Assert.Equal("New Layout",  labels[(int)LaunchAction.NewLayout]);
-
-        // And both switches that act on the preference carry the new case; one without the other is
+        // Both switches that act on the preference carry each appended case; one without the other is
         // a launch action that does nothing on one of the two paths and nothing reports it.
         string vm = StripComments(ReadRepoFile("src/Ui/ViewModels/WorkspaceViewModel.cs"));
         Assert.Equal(2, Regex.Matches(vm, @"case LaunchAction\.NewSmithChart:").Count);
         Assert.Equal(2, Regex.Matches(vm, @"case LaunchAction\.New3DDesign:").Count);
+        Assert.Equal(2, Regex.Matches(vm, @"case LaunchAction\.DoNothing:").Count);
     }
 
     // ── 6. both Tools menus carry the entry (gate 6, R-smith4-9) ─────────────

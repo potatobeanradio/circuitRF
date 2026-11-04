@@ -468,6 +468,9 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
             // (its fields are where the refusal is put right), or the air box.
             if (editor.TreeOnlyObjectIndex() is >= 0 and var only) { LoadObject(only, inScene: false); return; }
             if (editor.SelectedTreeItem is { IsGroup: true, GroupPath: { } undrawn }) { LoadGroup(undrawn); return; }
+            // An instance's row when nothing of it is drawn (its reference resolves to nothing): its page all the same, which
+            // names the reference — the thing to put right.
+            if (SelectedInstanceRow() is { } missing) { LoadInstance(missing); return; }
             if (editor.SelectedTreeItem is { IsAirBox: true }) { LoadAirBox(); return; }
             // A drawn port's row with no sheet (a port that does not resolve): its page all the same — its place is what to fix.
             if (editor.SelectedTreeItem is { Kind: "Port" } portRow && editor.PortOfRow(portRow) is { } unresolved)
@@ -512,6 +515,19 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         if (sel.Count == 2 && viewer.SelectMode == Scene3DSelectMode.Face && sel[0].Face >= 0 && sel[1].Face >= 0) { TwoFaces(sel[0], sel[1]); return; }
         // 3D editor groups — a group selected whole is one thing here, however many objects it is.
         if (viewer.SelectMode == Scene3DSelectMode.Object && editor.SelectedGroupPath() is { } group) { LoadGroup(group); return; }
+        // An instance's row selects every part it placed: that is the instance, and its page says what it places.
+        if (viewer.SelectMode == Scene3DSelectMode.Object && SelectedInstanceRow() is { } whole && SelectsWholeInstance(sel, whole))
+        {
+            LoadInstance(whole);
+            // An instance of one part is that part too: what it is called there, and its material.
+            if (sel.Count == 1 && viewer.Scene.Object(sel[0].Object) is { } only)
+            {
+                if (editor.Elaboration?.Provenance.TryGetValue(only.Name, out var p) == true)
+                    Rows.Add(new C3dPropertyRow("Its name there", p.ObjectName));
+                if (only.Material is { } m) Rows.Add(new C3dPropertyRow("Material", m));
+            }
+            return;
+        }
         // 3D editor round 4 — every element of one wire row selected (the tree selects them all) is that one wire.
         if (sel.Count > 1 && !OneDocumentObject(sel))
         {
@@ -592,6 +608,37 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         int index = editor.EditableIndex(o);
         if (index < 0) return;
         LoadObject(index, inScene: true);
+    }
+
+    /// <summary>The document index of the instance whose tree row is selected, or null.</summary>
+    private int? SelectedInstanceRow()
+        => editor.SelectedTreeItem is { InstanceIndex: >= 0 and var i, IsReadOnly: false } && i < editor.Document.Instances.Count ? i : null;
+
+    /// <summary>Whether <paramref name="sel"/> is exactly the parts instance <paramref name="index"/> placed — the selection
+    /// its row makes — rather than one part of it picked in the view.</summary>
+    private bool SelectsWholeInstance(IReadOnlyList<Scene3DItem> sel, int index)
+    {
+        string name = editor.Document.Instances[index].Name;
+        bool Mine(Scene3DObject o) => editor.InstanceOf(o) is { } path && InstanceIndex(path) == index;
+        var picked = sel.Select(i => editor.Viewer.Scene.Object(i.Object)).ToList();
+        if (picked.Count == 0 || picked.Any(o => o is null || !Mine(o))) return false;
+        return picked.Distinct().Count() == editor.Viewer.Scene.Objects.Count(Mine);
+    }
+
+    /// <summary>A placed instance: the reference as written, the file it resolved to — or why it did not, which is shown
+    /// for an instance that draws nothing as much as for one that draws — and the fields this document gives it.</summary>
+    private void LoadInstance(int index)
+    {
+        var inst = editor.Document.Instances[index];
+        Heading = inst.Name;
+        var (file, problem) = editor.InstanceSource(inst);
+        Rows.Add(new C3dPropertyRow("Places", inst.CellRef));
+        Rows.Add(new C3dPropertyRow("From", file
+            ?? (problem is null ? "Not resolved yet"
+                : problem == "not found" ? "Not found" : $"Not drawn: {problem}")));
+        LoadTransparency([], [index], inst.Name);
+        LoadAppearance([], [index], inst.Name);
+        LoadModel([], [index], inst.Name);
     }
 
     /// <summary>brief-em3d-92 — the index of the instance a part's instance path starts with (<c>U1[0,1,0]/U3</c> is U1's), or −1.</summary>

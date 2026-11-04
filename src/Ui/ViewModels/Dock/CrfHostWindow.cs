@@ -83,6 +83,9 @@ public class CrfHostWindow : HostWindow
         // at half opacity until some later click happens to release inside it. See HostWindowDragLatch.
         Views.HostWindowDragLatch.Attach(this);
 
+        // A .cws dropped on a torn-off document opens that workspace in a new window, as in the shell.
+        Views.WorkspaceFileDrop.Attach(this);
+
         Activated += (_, _) => RaiseToolWindowsAboveThisDocument();
 
         // Undo/Redo from a floating TOOL panel: the shell's KeyBindings live on the WORKSPACE window, so

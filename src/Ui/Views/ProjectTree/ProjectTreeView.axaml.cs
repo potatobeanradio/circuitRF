@@ -638,6 +638,9 @@ public partial class ProjectTreeView : UserControl
         if (DataContext is not ProjectTreeTool tool) return;
 
         ShowDropTarget(null);
+        // This panel decides every drop that lands on it — WorkspaceFileDrop on the window must not
+        // open a dropped .cws a second time.
+        e.Handled = true;
 
         var intent = PayloadIntent(e);
         if (intent.Action == TreeDropAction.Move)

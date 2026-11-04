@@ -1316,6 +1316,59 @@ public class CircuitRfDockFactory : Factory
     /// the workspace window can no longer be placed on top of a floating tool panel. That is standard
     /// tool-palette behaviour and is what was asked for.</para>
     /// </summary>
+    /// <summary>
+    /// A document dropped on a window's ROOT joins the documents already showing there.
+    ///
+    /// <para>A document dropped on a torn-off document window can resolve to that window's root
+    /// rather than its tab strip, and Dock's <c>DockManager.DockDockableIntoRoot</c> (decompiled,
+    /// Dock 12.0.0.2) then ADDS a fresh document dock to the root, moves the document into it, and
+    /// sets the root's active dockable only when it had none. A root shows exactly its active dockable,
+    /// so the new dock is never drawn: the window kept the first document's tab alone and the dropped
+    /// document was in the model and on no screen. The new dock's documents are folded into the dock
+    /// the root shows, after the last tab, and the dropped one is made active.</para>
+    /// </summary>
+    public override void MoveDockable(IDock sourceDock, IDock targetDock, IDockable sourceDockable, IDockable? targetDockable)
+    {
+        base.MoveDockable(sourceDock, targetDock, sourceDockable, targetDockable);
+        if (!_foldingStrayDocumentDock) FoldStrayDocumentDock(targetDock);
+    }
+
+    private bool _foldingStrayDocumentDock;
+
+    /// <summary>Folds <paramref name="dock"/> into its root's shown document dock when it is a document dock
+    /// sitting directly under a root that does not show it. Returns true when it folded.</summary>
+    internal bool FoldStrayDocumentDock(IDock dock)
+    {
+        if (dock is not IDocumentDock stray || stray.Owner is not IRootDock root) return false;
+        if (ReferenceEquals(root.ActiveDockable, stray)) return false;
+        if (FirstDocumentDockIn(root.ActiveDockable) is not { } shown || ReferenceEquals(shown, stray)) return false;
+
+        var moving = stray.VisibleDockables?.ToList() ?? [];
+        if (moving.Count == 0) return false;
+
+        _foldingStrayDocumentDock = true;
+        try
+        {
+            foreach (var doc in moving)
+                base.MoveDockable(stray, shown, doc, shown.VisibleDockables?.LastOrDefault());
+            if (root.VisibleDockables?.Contains(stray) == true)
+                RemoveDockable(stray, collapse: false);
+        }
+        finally { _foldingStrayDocumentDock = false; }
+
+        var dropped = moving[^1];
+        SetActiveDockable(dropped);
+        SetFocusedDockable(shown, dropped);
+        return true;
+    }
+
+    private static IDocumentDock? FirstDocumentDockIn(IDockable? dockable) => dockable switch
+    {
+        IDocumentDock d => d,
+        IDock { VisibleDockables: { } children } => children.Select(FirstDocumentDockIn).FirstOrDefault(d => d is not null),
+        _ => null,
+    };
+
     public override IDockWindow? CreateWindowFrom(IDockable dockable)
     {
         var window = base.CreateWindowFrom(dockable);

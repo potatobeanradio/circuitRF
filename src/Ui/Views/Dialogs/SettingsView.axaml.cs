@@ -32,6 +32,24 @@ public partial class SettingsView : Window
     // Guard: prevents recursive writes during programmatic ComboBox population.
     private bool _updatingGeneral;
 
+    /// <summary>The On Launch ▸ Action rows, in the order the combobox shows them. Each row names its
+    /// <see cref="LaunchAction"/> member explicitly, so the saved value never depends on a row's
+    /// position.</summary>
+    internal static readonly (string Label, LaunchAction Action)[] LaunchActionRows =
+    [
+        ("Welcome",          LaunchAction.Welcome),
+        ("Do Nothing",       LaunchAction.DoNothing),
+        ("New Schematic",    LaunchAction.NewSchematic),
+        ("New Workspace",    LaunchAction.NewWorkspace),
+        ("Open Workspace",   LaunchAction.OpenWorkspace),
+        ("New Data Display", LaunchAction.NewDataDisplay),
+        ("New Symbol",       LaunchAction.NewSymbol),
+        ("New Layout",       LaunchAction.NewLayout),
+        ("harmonicaRF",      LaunchAction.NewHarmonica),
+        ("Smith Chart",      LaunchAction.NewSmithChart),
+        ("New 3D Design",    LaunchAction.New3DDesign),
+    ];
+
     // Snapshot of ThemeService.Active taken on open — restored by Cancel/Revert.
     private ColorTheme _originalTheme;
 
@@ -152,20 +170,15 @@ public partial class SettingsView : Window
         {
             var prefs = AppPreferencesIo.Load();
 
-            // Index == LaunchAction ordinal, and the ordinals are a FILE FORMAT (see WindowLayout
-            // below, and LaunchAction's own remarks). A row is APPENDED and never inserted or
-            // reordered: doing either silently changes what every already-saved preferences.json
-            // means. "Smith Chart" was appended with LaunchAction.NewSmithChart in one change
-            // (smith-chart.md §5.9), and "New 3D Design" with LaunchAction.New3DDesign (3D editor
-            // bugs round 2); SmithWindowTests asserts this array against the enum so the pairing
-            // cannot come apart quietly.
-            LaunchActionCombo.ItemsSource = new[]
-            {
-                "Welcome", "New Schematic", "New Workspace", "Open Workspace",
-                "New Data Display", "New Symbol", "New Layout", "harmonicaRF",
-                "Smith Chart", "New 3D Design",
-            };
-            LaunchActionCombo.SelectedIndex = (int)(prefs.LaunchAction ?? LaunchAction.Welcome);
+            // Rows are (label, member) pairs in DISPLAY order; the member, never the row index, is
+            // what is saved. LaunchAction's ordinals are a FILE FORMAT (see its own remarks), so the
+            // enum is only ever appended to — but a row can be shown anywhere, which is how
+            // "Do Nothing" sits directly under "Welcome" while DoNothing is the last member.
+            // SmithWindowTests asserts every member appears exactly once.
+            LaunchActionCombo.ItemsSource = LaunchActionRows.Select(r => r.Label).ToArray();
+            int launchRow = Array.FindIndex(LaunchActionRows,
+                r => r.Action == (prefs.LaunchAction ?? LaunchAction.Welcome));
+            LaunchActionCombo.SelectedIndex = launchRow >= 0 ? launchRow : 0;
 
             // Index == enum ordinal, and the ordinals are a FILE FORMAT (see WindowLayout) —
             // reordering these strings silently changes what every saved preference means.
@@ -236,8 +249,8 @@ public partial class SettingsView : Window
         if (_updatingGeneral) return;
         AppPreferencesIo.Update(p =>
         {
-            if (LaunchActionCombo.SelectedIndex >= 0)
-                p.LaunchAction = (LaunchAction)LaunchActionCombo.SelectedIndex;
+            if (LaunchActionCombo.SelectedIndex >= 0 && LaunchActionCombo.SelectedIndex < LaunchActionRows.Length)
+                p.LaunchAction = LaunchActionRows[LaunchActionCombo.SelectedIndex].Action;
             if (WindowLayoutCombo.SelectedIndex >= 0)
                 p.WindowLayout = (WindowLayout)WindowLayoutCombo.SelectedIndex;
         });

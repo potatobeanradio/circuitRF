@@ -545,6 +545,45 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     public string? InstanceOf(Scene3DObject o)
         => Elaboration?.Provenance.TryGetValue(o.Name, out var p) == true && p.InstancePath.Length > 0 ? p.InstancePath : null;
 
+    /// <summary>
+    /// What a placed instance places, from the last elaboration: the file its reference resolved to, or — for one that
+    /// resolved to nothing — why. Both null before an elaboration has answered. An array's elements share one reference, so
+    /// its first element answers for it.
+    /// </summary>
+    internal (string? File, string? Problem) InstanceSource(C3dInstance inst)
+    {
+        if (Elaboration is not { } e) return (null, null);
+        bool Top(string path) => path == inst.Name || path.StartsWith(inst.Name + "[", StringComparison.Ordinal);
+        if (e.Instances.FirstOrDefault(f => Top(f.Path)) is { } frame) return (frame.DocumentPath, null);
+        foreach (var (path, _) in e.Unresolved)
+            if (Top(path)) return (null, e.UnresolvedWhy.TryGetValue(path, out var why) ? why : "not found");
+        return (null, null);
+    }
+
+    /// <summary>An instance row's detail and tooltips name what it places: the resolved file's name on the row, its full path
+    /// and the reference as written in the tooltip; a reference that resolves to nothing is flagged on the row.</summary>
+    private void ApplyInstanceSource(C3dTreeItem row, C3dInstance inst)
+    {
+        var (file, problem) = InstanceSource(inst);
+        if (file is not null)
+        {
+            row.Detail = Path.GetFileName(file);
+            row.SourceTip = $"Places {inst.CellRef}\n{file}";
+            row.Refusal = null;
+        }
+        else if (problem is not null)
+        {
+            row.Detail = inst.CellRef;
+            row.SourceTip = $"Places {inst.CellRef}: {problem}";
+            row.Refusal = $"'{inst.CellRef}' {problem}";
+        }
+        else
+        {
+            row.Detail = inst.CellRef;
+            row.SourceTip = $"Places {inst.CellRef}";
+        }
+    }
+
     public IReadOnlyList<string> Materials
         => Elaboration?.Technology?.ResolvedMaterials.Select(m => m.Name).ToList() ?? (IReadOnlyList<string>)[];
 
@@ -1250,6 +1289,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         // An instance in a group is a row under the group's (C3dGroups), not in the Instances section.
         foreach (var inst in AllTreeItems().Where(t => t.InstanceIndex >= 0 && !t.IsReadOnly).ToList())
         {
+            if (inst.InstanceIndex < Document.Instances.Count) ApplyInstanceSource(inst, Document.Instances[inst.InstanceIndex]);
             inst.Children.Clear();
             foreach (var (name, p) in e.Provenance.Where(kv => kv.Value.InstancePath == inst.Name ||
                                                                kv.Value.InstancePath.StartsWith(inst.Name + "/", StringComparison.Ordinal) ||
@@ -1603,7 +1643,17 @@ public sealed partial class C3dTreeItem(C3dEditorViewModel owner, string name, s
 
     public string Name { get; } = name;
     public string Kind { get; } = kind;
-    public string? Detail { get; } = detail;
+    [ObservableProperty] private string? _detail = detail;
+
+    /// <summary>An instance row's tooltip: the reference as written and the file it resolved to (or why it did not); null for
+    /// any other row.</summary>
+    [ObservableProperty] private string? _sourceTip;
+
+    partial void OnSourceTipChanged(string? value) { OnPropertyChanged(nameof(OrderTip)); OnPropertyChanged(nameof(DetailTip)); }
+    partial void OnRefusalChanged(string? value) => OnPropertyChanged(nameof(DetailTip));
+
+    /// <summary>The detail's tooltip: a refusal's words when there is one, else what an instance places.</summary>
+    public string? DetailTip => Refusal ?? SourceTip;
     public int ObjectIndex { get; } = objectIndex;
     public int InstanceIndex { get; } = instanceIndex;
 
@@ -1630,7 +1680,7 @@ public sealed partial class C3dTreeItem(C3dEditorViewModel owner, string name, s
     /// <summary>brief-em3d-46 R-em3d46-4d — a document object's place in construction order (1-based), which decides
     /// which solid wins an overlap; null for an instance and its parts. 3D editor round 3: the row's tooltip, no longer a
     /// "#n" in front of every name — the tree lists in construction order within a group anyway.</summary>
-    public string? OrderTip => !IsModelled ? CircuitRF.Design.ThreeD.C3dModelled.Tip : RowTip ?? (ObjectIndex >= 0 && OperandPath is null && FeaturePath is null
+    public string? OrderTip => !IsModelled ? CircuitRF.Design.ThreeD.C3dModelled.Tip : RowTip ?? SourceTip ?? (ObjectIndex >= 0 && OperandPath is null && FeaturePath is null
         ? $"Construction order {ObjectIndex + 1}: a later object wins where solids overlap (3D ▸ Modify ▸ Order)"
         : null);
 

@@ -235,7 +235,12 @@ public sealed partial class C3dEditorViewModel
     }
 
     /// <summary>One placed instance's row; its parts are filled in from the elaboration.</summary>
-    private C3dTreeItem InstanceRow(C3dInstance inst, int i) => new(this, inst.Name, "Instance", inst.CellRef, -1, i, true) { IsModelled = inst.Model };
+    private C3dTreeItem InstanceRow(C3dInstance inst, int i)
+    {
+        var row = new C3dTreeItem(this, inst.Name, "Instance", inst.CellRef, -1, i, true) { IsModelled = inst.Model };
+        ApplyInstanceSource(row, inst);
+        return row;
+    }
 
     /// <summary>An object's type group header, whatever its Model: what a Not Modeled row's detail names.</summary>
     private static string TypeHeaderOfSolid(C3dObject o)

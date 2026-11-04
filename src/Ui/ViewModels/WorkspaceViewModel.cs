@@ -1473,6 +1473,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 // Leave the Welcome stub showing; add nothing.
                 break;
 
+            // Settings ▸ On Launch ▸ Do Nothing — an empty document area.
+            case LaunchAction.DoNothing:
+                _factory.RemoveWelcomeStub();
+                break;
+
             case LaunchAction.NewSchematic:
                 _factory.RemoveWelcomeStub();
                 OpenScratchSchematic();
@@ -1546,6 +1551,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         {
             case LaunchAction.Welcome:
                 // Leave the fresh Welcome stub (from CreateDefaultLayout) showing.
+                break;
+
+            case LaunchAction.DoNothing:
+                _factory.RemoveWelcomeStub();
                 break;
 
             case LaunchAction.NewSchematic:

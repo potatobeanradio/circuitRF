@@ -17,6 +17,8 @@ using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Threading;
+using Dock.Model.Controls;
+using Dock.Model.Core;
 using CircuitRF.Design.ThreeD;
 using CircuitRF.Ui.ThreeD;
 using CircuitRF.Ui.Views.Dialogs;
@@ -45,6 +47,11 @@ public partial class WorkspaceViewModel
                 Dispatcher.UIThread.Post(RefreshTreeSolveBadges, DispatcherPriority.Background);
         };
         _factory.ActiveDockableChanged += (_, _) => RefreshFloatingTitles();
+        _factory.DockableDocked        += (_, _) => PostRefreshFloatingTitles();
+        _factory.DockableMoved         += (_, _) => PostRefreshFloatingTitles();
+        _factory.DockableRemoved       += (_, _) => PostRefreshFloatingTitles();
+        _factory.DockableClosed        += (_, _) => PostRefreshFloatingTitles();
+        _factory.WindowAdded           += (_, _) => PostRefreshFloatingTitles();
     }
 
     /// <summary>The open 3D editor showing <paramref name="path"/> (as its top document), or null.</summary>
@@ -171,31 +178,64 @@ public partial class WorkspaceViewModel
 
     // ── a floating window's title (R-em3d98-5 item 4) ─────────────────────────────────────────────
 
-    private readonly Dictionary<Window, string> _floatingBaseTitles = [];
+    /// <summary>The longest a torn-off window's title is allowed to grow before the rest of its
+    /// documents are counted rather than named.</summary>
+    internal const int MaxFloatTitleLength = 80;
 
     /// <summary>
-    /// A torn-off window whose active document is a 3D view carries its glyphs as TEXT — the title bar is the operating
-    /// system's: <c>Connector.c3d — solved (FEM, thermal)</c>, only the kinds whose glyph is solid filled, nothing when none
-    /// is. Any other window, and the main one (it names the workspace, which holds many documents), keeps its title.
+    /// A torn-off document window's OS title names every document docked into it, the active one first:
+    /// <c>Amp.clay, Bias.csch</c>. Dock sets the title once, from the first document, when the window is
+    /// presented, so a document docked into the window later was never named. A 3D view carries its glyphs
+    /// as TEXT — the title bar is the operating system's: <c>Connector.c3d — solved (FEM, thermal)</c>.
+    /// Windows holding a tool, and the main one (it names the workspace), keep their titles.
     /// </summary>
     private void RefreshFloatingTitles()
     {
         if (Avalonia.Application.Current?.ApplicationLifetime is not IClassicDesktopStyleApplicationLifetime desktop) return;
-        foreach (var window in desktop.Windows.OfType<Dock.CrfHostWindow>().Where(w => w.PlatformImpl is not null && WindowFloatsNoTool(w)))
+        foreach (var window in desktop.Windows.OfType<Dock.CrfHostWindow>()
+                     .Where(w => w.PlatformImpl is not null && ReferenceEquals(w.OwningWorkspace, this) && !WindowFloatsATool(w)))
         {
-            if (FindAnyDocumentInWindow(window) is C3dEditorDocument c3d)
-            {
-                string name = Path.GetFileName(c3d.FilePath);
-                window.Title = c3d.SolveTitleSuffix is { } suffix ? $"{name} — {suffix}" : name;
-                _floatingBaseTitles.TryAdd(window, name);
-            }
-            else if (_floatingBaseTitles.Remove(window, out _) && FindAnyDocumentInWindow(window) is { Title: { } t })
-                window.Title = t.TrimStart('•', ' ');
+            var docs = DockablesIn(window.Window?.Layout).OfType<IDocument>().Where(d => d is not ITool).Cast<IDockable>().ToList();
+            if (docs.Count == 0) continue;
+            var active = FindAnyDocumentInWindow(window);
+            if (active is not null && docs.Remove(active)) docs.Insert(0, active);
+            string title = FloatTitleFor(docs.Select(FloatTitleName).ToList());
+            if (window.Title != title) window.Title = title;
         }
-        foreach (var gone in _floatingBaseTitles.Keys.Where(w => w.PlatformImpl is null).ToList()) _floatingBaseTitles.Remove(gone);
-
-        static bool WindowFloatsNoTool(Window w) => !WindowFloatsATool(w);
     }
+
+    private static string FloatTitleName(IDockable doc) => doc switch
+    {
+        C3dEditorDocument c3d => c3d.SolveTitleSuffix is { } suffix
+            ? $"{Path.GetFileName(c3d.FilePath)} — {suffix}"
+            : Path.GetFileName(c3d.FilePath),
+        _ => (doc.Title ?? "").TrimStart('•', ' '),
+    };
+
+    /// <summary>
+    /// The names joined with commas while they fit in <see cref="MaxFloatTitleLength"/>; the rest are
+    /// counted — <c>Amp.clay, Bias.csch + 3 more</c>. The first name is always given whole.
+    /// </summary>
+    internal static string FloatTitleFor(IReadOnlyList<string> names)
+    {
+        var shown = names.Where(n => !string.IsNullOrWhiteSpace(n)).ToList();
+        if (shown.Count == 0) return "";
+        var title = new System.Text.StringBuilder(shown[0]);
+        int i = 1;
+        for (; i < shown.Count; i++)
+        {
+            string more = $" + {shown.Count - i - 1} more";
+            int need = 2 + shown[i].Length + (i < shown.Count - 1 ? more.Length : 0);
+            if (title.Length + need > MaxFloatTitleLength) break;
+            title.Append(", ").Append(shown[i]);
+        }
+        if (i < shown.Count) title.Append($" + {shown.Count - i} more");
+        return title.ToString();
+    }
+
+    /// <summary>A dock change settles before its window is re-titled: Dock presents a new float, and sets
+    /// its own title, inside the gesture.</summary>
+    private void PostRefreshFloatingTitles() => Dispatcher.UIThread.Post(RefreshFloatingTitles, DispatcherPriority.Background);
 
     // ── the question before a re-run (R-em3d98-7) ─────────────────────────────────────────────────
 

@@ -41820,3 +41820,27 @@ menu items in `SchematicView.axaml`. Every rule and every write is in `src/Desig
   `--export-build <rid>=<path>` (repeatable) to show build rows. The Export dialog's fixed 860 px height keeps the new
   group below the fold, and `--size` does not reach a dialog; the renders looked at were taken with the height
   raised temporarily.
+
+## Floating document windows, workspace drops, Do Nothing on launch, instance sources in 3D (2026-11-03)
+
+- **A document docked into a torn-off document window showed no tab.** A drop that resolves to the float's ROOT
+  (rather than its tab strip) goes to Dock 12.0.0.2's `DockManager.DockDockableIntoRoot` (decompiled): it ADDS a new
+  document dock to the root, moves the document into it, and sets the root's active dockable only if it had none. A root
+  draws exactly its active dockable, so the document sat in the model and on no screen. Reproduced headlessly with the
+  real `WorkspaceViewModel`; a drop on the tab strip and a window-onto-window drop both worked. Fix:
+  `CircuitRfDockFactory.MoveDockable` folds a document dock left directly under a root that does not show it into the
+  shown document dock (`FoldStrayDocumentDock`). Gate: `FloatingDocumentWindowTests`.
+- **A float's OS title is set once by Dock, at presentation.** `RefreshFloatingTitles` now titles every document float
+  of this workspace with all its documents, active first, on every dock change, and caps the length
+  (`MaxFloatTitleLength`, then "+ N more"). The 3D solve suffix is kept per document.
+- **A `.cws` dropped on a layout drew a broken bitmap.** `LayoutCanvas`'s file drop took any path as an image (the
+  schematic and symbol canvases already filtered by extension). It filters now, and `Views/WorkspaceFileDrop`, on both
+  `WorkspaceWindow` and `CrfHostWindow`, opens a still-unhandled dropped `.cws` in a new window as the Project Tree
+  does. The tree marks its own drop handled so the workspace is not opened twice.
+- **On Launch ▸ Do Nothing.** `LaunchAction.DoNothing` is APPENDED (ordinal 10); the Settings combobox lists explicit
+  (label, member) rows and saves the member, so it is shown directly under Welcome without moving any saved ordinal.
+  `SmithWindowTests` pins the shipped ordinals and that every member has one row.
+- **3D instances name their source.** An instance row's detail is the resolved file's name (from
+  `C3dElaboration.Instances`), its tooltip the reference and full path; an unresolved one keeps the reference and is
+  flagged with the reason. Properties shows an instance's own page (Places / From, then its Transparency, Appearance and
+  Model) when its row is selected — including when it draws nothing, which used to read "Nothing selected".
