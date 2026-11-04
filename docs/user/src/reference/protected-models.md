@@ -198,19 +198,35 @@ With Compile netlist, Export tries every platform in the table above and reports
 compiler's own first error line and what would fix it. A platform that fails never fails the export. Every build put
 in a library is compiled for a generic processor, so it runs on older processors than the one it was built on.
 
-What was measured from a Mac on Apple silicon, with a Verilog-A compiler built for that Mac:
+The platform you export on is built exactly as it always is, with the compiler's own linker. Every other platform is
+linked with **zig**, which circuitRF does not ship: install it and put it on PATH, or name it in **Settings ▸ Security &
+Permissions ▸ Linker (zig)**. A Mac build made on a Mac uses the Mac's own linker and needs no zig. With zig installed,
+and with a Verilog-A compiler that targets every processor, one export from any of the three operating systems
+builds:
 
-| Platform | From this Mac |
+| Platform | Built from any machine |
 |---|---|
-| `osx-arm64` | Built and checked. |
-| `osx-x64`, `linux-x64`, `win-x64` | Not built: the compiler builds only for the processor it runs on. |
-| `win-x86` | Not built: the compiler has no 32-bit Windows target, from any machine. |
-| `linux-arm64` | Not built as installed: the link needs a Linux linker. With one standing in, a build links, and was not run. |
-| `win-arm64` | Not built as installed: the link needs a Windows linker and the Windows import libraries. With both standing in, a build links, and was not run. |
+| `win-x64` | Yes. Not run before it ships. |
+| `win-arm64` | Yes. Not run before it ships. |
+| `win-x86` | No: the compiler has no 32-bit Windows target. |
+| `osx-arm64` | Yes. |
+| `osx-x64` | Yes. Not run before it ships. |
+| `linux-x64` | Yes. |
+| `linux-arm64` | Yes. |
 
-No cross-built file has yet been run on its own platform, so none is offered as a dependable route. **The dependable
-route is to export on each platform**: run the same Export with Compile netlist on a Windows, Linux or Intel Mac
-machine into the same library. When the source's hash matches `CompiledFrom`, that platform's build is added and
+A platform that is not built says why in its row:
+
+| Why | The row says |
+|---|---|
+| zig is not installed | *"Install zig to build for other platforms, or name it in Settings ▸ Security & Permissions."* |
+| The compiler builds only for its own processor | *"The Verilog-A compiler builds only for the processor it runs on (arm64 here). A compiler build that targets every processor builds this platform too."* A compiler built this way on a Mac on Apple silicon builds `linux-arm64` and `win-arm64`, and none of the x86-64 platforms. |
+| `win-x86` | *"The compiler has no 32-bit Windows target, so no machine can build this platform with it."* |
+| zig refused the link | zig's own first line, as zig wrote it. |
+
+Every build made on another machine goes into `Builds` and not `Proved`: it was compiled for that platform and never
+run by you. A Windows or Intel Mac build made elsewhere ships without having been run on its platform. **To have
+every build proved, export on each platform**: run the same Export with Compile netlist on a Windows, Linux or Intel
+Mac machine into the same library. When the source's hash matches `CompiledFrom`, that platform's build is added and
 proved there, and `part.cpart`'s `Proved` lists it. When it differs, nothing is written: *"The cell changed since
 the osx-arm64 build. Rebuild every platform from one source."* A continuous-integration job on each platform does
 this without the GUI; its `--json` output carries the same table as `builds[]` (`rid`, `state`, `reason`, `fix`), and

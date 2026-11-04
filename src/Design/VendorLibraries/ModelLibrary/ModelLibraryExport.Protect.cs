@@ -176,11 +176,12 @@ public static partial class ModelLibraryExport
         {
             string rid = others[k];
             if (TargetTriples.GetValueOrDefault(rid) is not { } triple)
-            { rows[k] = new ExportBuild(rid, ExportBuild.NotBuilt, "The compiler has no target for this platform.", FixFor(rid, crashed: false)); return; }
+            { rows[k] = new ExportBuild(rid, ExportBuild.NotBuilt, "The compiler has no target for this platform.", FixFor(rid, "")); return; }
             string dst = OsdiBuilds.PlatformPath(neutral, rid);
             try
             {
-                VerilogASourceCompiler.Build(protect.SourcePath, dst, triple);
+                // Through circuitRF's link driver (brief vendorlib-18); this platform's own build above never is.
+                VerilogASourceCompiler.Build(protect.SourcePath, dst, triple, rid: rid);
                 var says = OsdiBuilds.PlatformsOf(dst);
                 rows[k] = says.Count > 0 && !says.Contains(rid)
                     ? new ExportBuild(rid, ExportBuild.NotBuilt, $"The compiler wrote a build for {string.Join(", ", says)}.", "")
@@ -188,8 +189,8 @@ public static partial class ModelLibraryExport
             }
             catch (ExternalDeviceException ex)
             {
-                string first = FirstErrorLine(ex.Message);
-                rows[k] = new ExportBuild(rid, ExportBuild.NotBuilt, first, FixFor(rid, first.Contains("crashed", StringComparison.OrdinalIgnoreCase)));
+                string first = VerilogALinkDriver.DriverLine(ex.Message) ?? FirstErrorLine(ex.Message);
+                rows[k] = new ExportBuild(rid, ExportBuild.NotBuilt, first, FixFor(rid, ex.Message));
             }
             if (rows[k].State == ExportBuild.NotBuilt)
                 try { if (File.Exists(dst)) File.Delete(dst); TryDeleteEmpty(Path.GetDirectoryName(dst)!); } catch { }
@@ -215,22 +216,26 @@ public static partial class ModelLibraryExport
         return lines.Skip(1).FirstOrDefault(l => !l.StartsWith("Finished", StringComparison.Ordinal)) ?? lines.FirstOrDefault() ?? "";
     }
 
-    /// <summary>One sentence on what would build <paramref name="rid"/> — taken from what was measured (src/Design/RESOLVED.md,
-    /// VL-16), and saying so when nothing known would.</summary>
-    internal static string FixFor(string rid, bool crashed)
+    /// <summary>The Builds row's sentence when zig is missing (brief vendorlib-18 §3).</summary>
+    public const string InstallZig = "Install zig to build for other platforms, or name it in Settings ▸ Security & Permissions.";
+
+    /// <summary>
+    /// One sentence on what would build <paramref name="rid"/>, from what the attempt said (brief vendorlib-18 §3). Each
+    /// cause is read from the message — the compiler's processor limit from its own crash, never from the platform pair,
+    /// so a compiler that targets every processor is used as soon as one is installed (R-vl18-2a). An empty message is a
+    /// platform this export did not try.
+    /// </summary>
+    internal static string FixFor(string rid, string message)
     {
         if (rid == "win-x86") return "The compiler has no 32-bit Windows target, so no machine can build this platform with it.";
-        // The compiler sets up only the code generator for the processor it runs on, so it can build for another
-        // operating system but never for another processor (measured: src/Design/RESOLVED.md, the VL review).
-        string arch = rid[(rid.IndexOf('-') + 1)..], here = OsdiBuilds.CurrentRid[(OsdiBuilds.CurrentRid.IndexOf('-') + 1)..];
-        if (crashed && arch != here)
-            return $"The compiler builds only for the processor it runs on ({here} here). Export again on an {(arch == "x64" ? "x86-64" : arch)} machine.";
-        if (rid.StartsWith("linux", StringComparison.Ordinal) && !OperatingSystem.IsLinux())
-            return "Install a Linux cross-linker, or export again on a Linux machine.";
-        if (rid.StartsWith("win", StringComparison.Ordinal) && !OperatingSystem.IsWindows())
-            return "The link needs a Windows linker and the Windows import libraries; export again on a Windows machine.";
-        if (rid.StartsWith("osx", StringComparison.Ordinal) && !OperatingSystem.IsMacOS())
-            return "No known way to build this from here. Export again on a Mac.";
+        if (message.Length == 0) return "Export again on that platform to add its build.";
+        if (VerilogASourceCompiler.SaysProcessorLimit(message))
+        {
+            string here = OsdiBuilds.CurrentRid[(OsdiBuilds.CurrentRid.IndexOf('-') + 1)..];
+            return $"The Verilog-A compiler builds only for the processor it runs on ({here} here). A compiler build that targets every processor builds this platform too.";
+        }
+        if (VerilogALinkDriver.SaysZigMissing(message)) return InstallZig;
+        if (VerilogALinkDriver.ZigRefusal(message) is { } zig) return zig;
         return "No known fix; the compiler's message above is all there is.";
     }
 
@@ -395,7 +400,7 @@ public static partial class ModelLibraryExport
                 Message = $"Added the {here} build of {plan.PartNumber}, checked here: {proof.Summary}",
                 Builds = [.. OsdiBuilds.Rids.Select(r => proved.Contains(r) ? new ExportBuild(r, ExportBuild.Checked)
                                                      : builds.Contains(r) ? new ExportBuild(r, ExportBuild.NotRun)
-                                                     : new ExportBuild(r, ExportBuild.NotBuilt, "", FixFor(r, crashed: false)))],
+                                                     : new ExportBuild(r, ExportBuild.NotBuilt, "", FixFor(r, "")))],
                 SourcePath = protect.SourcePath, CompiledFrom = protect.Hash, Proof = proof.Summary,
             };
         }

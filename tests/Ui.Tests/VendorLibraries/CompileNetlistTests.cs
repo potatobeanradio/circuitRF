@@ -160,6 +160,33 @@ public sealed class CompileNetlistTests : IDisposable
         Assert.Contains("does not match the cell", proof.Refusal);
     }
 
+    // Brief vendorlib-18 §5.4: with zig, every platform the compiler can reach is built, each one's header reads as that
+    // platform, and only this machine's is proved. A platform not built is one the compiler cannot target from here.
+    [CompilerZigFact]
+    public void Export_WithZig_BuildsEveryReachablePlatform_AndProvesOnlyThisOne()
+    {
+        ProtectedModelTests.EnsureWorkerBeside(AppContext.BaseDirectory);
+        LinkDriverHost.Ensure();
+        string cmodel = ComposedTestModels.WriteTemp(VaTestModels.AnnModel(AnnActivation.Tanh), "tstfet.cmodel");
+        string cell = WriteAmplifier(cmodel);
+
+        var result = ModelLibraryExport.Export(cell, new ExportOptions { LibraryDir = Path.Combine(_dir, "lib"), CompileNetlist = true });
+        Assert.True(result.Succeeded, result.Refusal);
+
+        var (part, _) = ModelPartManifest.Read(Path.Combine(result.ModelDir!, ModelFolder.PartFileName));
+        Assert.Equal([OsdiBuilds.CurrentRid], part!.Proved);
+        string neutral = Path.Combine(result.ModelDir!, ModelFolder.ModelsFolder, "TSTPA200.osdi");
+        var cross = result.Builds.Where(b => b.State == ExportBuild.NotRun).Select(b => b.Rid).ToList();
+        Assert.NotEmpty(cross);
+        foreach (string rid in cross)
+        {
+            Assert.Equal([rid], OsdiBuilds.PlatformsOf(OsdiBuilds.PlatformPath(neutral, rid)));
+            Assert.Contains(rid, part.Builds!);
+        }
+        Assert.All(result.Builds.Where(b => b.State == ExportBuild.NotBuilt && b.Rid != "win-x86"),
+                   b => Assert.StartsWith("The Verilog-A compiler builds only for the processor it runs on", b.Fix));
+    }
+
     // ── fixtures ────────────────────────────────────────────────────────────────
 
     private static ProtectPlan Partition(string cell)

@@ -54,3 +54,25 @@ internal static class CompilerAvailability
         return built ? dir : null;
     }
 }
+
+/// <summary>
+/// <see cref="CompilerFactAttribute"/> that also needs zig, the linker a build for another platform links with (brief
+/// vendorlib-18 §5.4).
+/// </summary>
+public sealed class CompilerZigFactAttribute : FactAttribute
+{
+    public CompilerZigFactAttribute()
+    {
+        if (CompilerAvailability.SkipReason is { } why) Skip = why;
+        else if (ZigDiscovery.Find(out var rejected) is null) Skip = ZigDiscovery.DescribeFailure(rejected);
+    }
+}
+
+/// <summary>The link driver's host in a test process: the CLI's apphost beside the test assembly, which hands a launcher
+/// call to the driver exactly as the installed executable does (brief vendorlib-18 R-vl18-1b).</summary>
+internal static class LinkDriverHost
+{
+    public static void Ensure()
+        => VerilogALinkDriver.Host ??= VerilogALinkDriver.HostOf(null, AppContext.BaseDirectory, "CircuitRF.Cli")
+                                       ?? throw new InvalidOperationException("No CircuitRF.Cli apphost beside the test assembly.");
+}

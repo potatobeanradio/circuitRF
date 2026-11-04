@@ -45,5 +45,30 @@
                  Opacity="0.75" TextWrapping="Wrap" Margin="0,6,0,0"
                  Name="CompilerStatusText" IsVisible="False" Text=""/>
     </Grid>
+
+    <!-- The linker a build for ANOTHER platform links with (brief vendorlib-18 R-vl18-2c), beside the compiler it serves
+         and on its terms: blank searches PATH, a named one outranks it, and Test says where it was found. -->
+    <TextBlock Text="Linker (zig)" FontSize="11" FontWeight="SemiBold"
+               Opacity="0.55" Margin="0,14,0,6"/>
+    <Grid ColumnDefinitions="*,Auto,Auto" RowDefinitions="Auto,Auto">
+      <TextBox   Grid.Row="0" Grid.Column="0" Name="ZigBox" FontSize="12"
+                 PlaceholderText="Leave blank to use zig on PATH"
+                 LostFocus="OnZigCommitted">
+        <ToolTip.Tip>
+          <TextBlock TextWrapping="Wrap" MaxWidth="360"
+                     Text="Export to Library's Compile netlist builds the model for every platform it can. The build for this machine links as it always has; a build for another operating system links with zig. circuitRF ships no linker — install zig to build for other platforms."/>
+        </ToolTip.Tip>
+      </TextBox>
+      <Button    Grid.Row="0" Grid.Column="1" Content="Browse…" FontSize="11"
+                 Padding="8,3" Margin="6,0,0,0" Click="OnBrowseForZig"
+                 ToolTip.Tip="Pick the zig executable from disk"/>
+      <Button    Grid.Row="0" Grid.Column="2" Content="Test" FontSize="11"
+                 Padding="8,3" Margin="6,0,0,0" Click="OnTestZig"
+                 ToolTip.Tip="Run it and report what it says it is"/>
+
+      <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3" FontSize="11"
+                 Opacity="0.75" TextWrapping="Wrap" Margin="0,6,0,0"
+                 Name="ZigStatusText" IsVisible="False" Text=""/>
+    </Grid>
   </StackPanel>
 </UserControl>

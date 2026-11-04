@@ -6,4 +6,10 @@
 //  call the verbs rather than re-implement them (R-aut-13). CliEntry.cs's header records the rest.
 // ================================================================
 
+// A link-driver launcher first (brief vendorlib-18): see src/Ui/Program.cs, which does the same.
+if (CircuitRF.Core.Devices.External.VerilogALinkDriver.IsInvoked)
+    return CircuitRF.Core.Devices.External.VerilogALinkDriver.Main(args);
+CircuitRF.Core.Devices.External.VerilogALinkDriver.Host =
+    CircuitRF.Core.Devices.External.VerilogALinkDriver.HostOf(Environment.ProcessPath, AppContext.BaseDirectory, "CircuitRF.Cli");
+
 return CircuitRF.Cli.CliEntry.Run(args);

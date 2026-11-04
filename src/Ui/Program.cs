@@ -28,6 +28,14 @@ sealed class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        // A LAUNCHER, before even the command line (brief vendorlib-18 R-vl18-1): a cross-platform Verilog-A build runs
+        // the compiler with links to this executable named clang/ld/link.exe first on its PATH, and the variable says
+        // this process is one. It links and exits; nothing of the application starts.
+        if (CircuitRF.Core.Devices.External.VerilogALinkDriver.IsInvoked)
+            Environment.Exit(CircuitRF.Core.Devices.External.VerilogALinkDriver.Main(args));
+        CircuitRF.Core.Devices.External.VerilogALinkDriver.Host =
+            CircuitRF.Core.Devices.External.VerilogALinkDriver.HostOf(Environment.ProcessPath, AppContext.BaseDirectory, "CircuitRF.Ui");
+
         // THE COMMAND LINE, BEFORE ANYTHING ELSE (brief-automation-13-installed-cli.md R-aut13-1).
         // The installed circuitRF executable IS the CLI: `circuitRF check .` and `circuitRF serve
         // --root <dir>` run the same CliEntry.Run that `dotnet run --project src/Cli` does, and exit.

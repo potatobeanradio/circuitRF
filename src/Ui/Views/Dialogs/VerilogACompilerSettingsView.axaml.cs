@@ -37,7 +37,12 @@ public partial class VerilogACompilerSettingsView : UserControl
     public void Load()
     {
         _loading = true;
-        try { CompilerBox.Text = AppPreferencesIo.Load().VerilogACompiler ?? ""; }
+        try
+        {
+            var prefs = AppPreferencesIo.Load();
+            CompilerBox.Text = prefs.VerilogACompiler ?? "";
+            ZigBox.Text = prefs.ZigLinker ?? "";
+        }
         finally { _loading = false; }
     }
 
@@ -101,6 +106,50 @@ public partial class VerilogACompilerSettingsView : UserControl
                 : $"Found, {found.HowFound}: {found.Identity}");
         }
         catch (Exception ex) { ShowStatus(ex.Message); }
+    }
+
+    // ── Linker (zig), brief vendorlib-18 R-vl18-2c — the compiler row's arrangement, for the linker ─────────────
+
+    private void OnZigCommitted(object? sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        string typed = ZigBox.Text?.Trim() ?? "";
+        AppPreferencesIo.Update(p => p.ZigLinker = typed.Length == 0 ? null : typed);
+        ShowZigStatus("");
+    }
+
+    private async void OnBrowseForZig(object? sender, RoutedEventArgs e)
+    {
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is null) return;
+        try
+        {
+            var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+            {
+                Title = "Choose zig", AllowMultiple = false,
+            });
+            if (files.Count != 1 || files[0].TryGetLocalPath() is not { Length: > 0 } path) return;
+            ZigBox.Text = path;
+            OnZigCommitted(sender, e);
+        }
+        catch (Exception) { /* a cancelled or unavailable picker is not an error */ }
+    }
+
+    /// <summary>Through the discovery a build uses, so a blank box answers what PATH would give.</summary>
+    private void OnTestZig(object? sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var found = ZigDiscovery.Find(out var rejected);
+            ShowZigStatus(found is null ? ZigDiscovery.DescribeFailure(rejected) : $"Found, {found.HowFound}: zig {found.Identity}");
+        }
+        catch (Exception ex) { ShowZigStatus(ex.Message); }
+    }
+
+    private void ShowZigStatus(string text)
+    {
+        ZigStatusText.Text      = text;
+        ZigStatusText.IsVisible = text.Length > 0;
     }
 
     private void ShowStatus(string text)

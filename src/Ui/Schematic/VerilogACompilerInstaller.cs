@@ -26,6 +26,8 @@ internal static class VerilogACompilerInstaller
         // Read through the Func on every call rather than captured once: a user who names a compiler
         // in Settings and compiles again must get the one they just named.
         VerilogACompilerDiscovery.PreferredCommand = () => AppPreferencesIo.Load().VerilogACompiler;
+        // The linker a build for another platform links with (brief vendorlib-18), on the same terms.
+        ZigDiscovery.PreferredCommand = () => AppPreferencesIo.Load().ZigLinker;
 
         // The cache belongs with the rest of circuitRF's per-user state, so a tool that redirects
         // AppDataRoot — the docs factory, a test — moves the compiled models with it rather than

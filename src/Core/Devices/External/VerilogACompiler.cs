@@ -187,6 +187,12 @@ public static class VerilogACompilerDiscovery
     /// </summary>
     public static bool TryProbe(
         string command, string howFound, out VerilogACompilerInfo? compiler, out string? why)
+        => TryProbe(command, howFound, "--version", out compiler, out why);
+
+    /// <summary><see cref="TryProbe(string, string, out VerilogACompilerInfo?, out string?)"/> with the argument that asks
+    /// this program what it is — the linker answers <c>version</c>, not <c>--version</c> (brief vendorlib-18).</summary>
+    public static bool TryProbe(
+        string command, string howFound, string versionArgument, out VerilogACompilerInfo? compiler, out string? why)
     {
         compiler = null;
         why      = null;
@@ -198,7 +204,7 @@ public static class VerilogACompilerDiscovery
             UseShellExecute        = false,
             CreateNoWindow         = true,
         };
-        info.ArgumentList.Add("--version");
+        info.ArgumentList.Add(versionArgument);
 
         string banner;
         try
@@ -534,7 +540,13 @@ public static class VerilogASourceCompiler
     /// </summary>
     /// <exception cref="ExternalDeviceException">No compiler, or the compiler refused; the refusal carries its own text
     /// verbatim.</exception>
-    public static void Build(string sourcePath, string output, string? target, string targetCpu = "generic")
+    /// <remarks>
+    /// <paramref name="rid"/> names ANOTHER platform: the compiler then runs with circuitRF's link driver first on its
+    /// PATH (brief vendorlib-18 R-vl18-1), which links with zig. Null is a build exactly as before — the platform the
+    /// export runs on is never routed through the driver (D2). One method rather than an overload, because a second
+    /// overload ending in a string would silently take a platform as the CPU.
+    /// </remarks>
+    public static void Build(string sourcePath, string output, string? target, string targetCpu = "generic", string? rid = null)
     {
         string source = Path.GetFullPath(sourcePath.Trim());
         if (!File.Exists(source))
@@ -548,12 +560,59 @@ public static class VerilogASourceCompiler
         if (target is { Length: > 0 }) { extra.Add("--target"); extra.Add(target); }
         extra.Add("--target_cpu");
         extra.Add(targetCpu);
-        RunCompiler(compiler, source, Path.GetFullPath(output), included, extra);
+        if (rid is null) { RunCompiler(compiler, source, Path.GetFullPath(output), included, extra); return; }
+
+        string host = VerilogALinkDriver.Host
+            ?? throw new ExternalDeviceException($"circuitRF's link driver is not available in this process, so the {rid} build cannot be linked.");
+        string dir = Path.Combine(Path.GetTempPath(), "crf-link-" + Guid.NewGuid().ToString("N")[..12]);
+        try
+        {
+            VerilogALinkDriver.PrepareLaunchers(dir, host);
+            string? zig = ZigDiscovery.Find(out _)?.Command;
+            RunCompiler(compiler, source, Path.GetFullPath(output), included, extra,
+                        info => VerilogALinkDriver.Configure(info, dir, rid, zig));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            throw new ExternalDeviceException($"The {rid} build's link folder could not be made: {ex.Message}");
+        }
+        finally
+        {
+            try { Directory.Delete(dir, recursive: true); } catch { /* best effort: it is in the temporary folder */ }
+        }
+    }
+
+    /// <summary>What the compiler's crash says when it builds only for its own processor (brief vendorlib-18 R-vl18-2a):
+    /// it sets up only its own processor's code generator, so a target for another one has none.</summary>
+    public const string ProcessorLimitMarker = "No available targets are compatible with triple";
+
+    /// <summary>True when the compiler's message says it builds only for the processor it runs on.</summary>
+    public static bool SaysProcessorLimit(string message) => message.Contains(ProcessorLimitMarker, StringComparison.Ordinal);
+
+    /// <summary>
+    /// The line of a crash log the compiler named that says it has no target for the triple, or null. The compiler's
+    /// crash names only the log on stderr; the reason is in the log, so it is read from there rather than guessed from
+    /// the platform pair (R-vl18-2a).
+    /// </summary>
+    private static string? ProcessorLimitFromCrashLog(string diagnostics)
+    {
+        foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(diagnostics, "\"([^\"\r\n]+\\.log)\""))
+        {
+            try
+            {
+                string log = m.Groups[1].Value;
+                if (!File.Exists(log) || new FileInfo(log).Length > 1 << 20) continue;
+                if (File.ReadLines(log).FirstOrDefault(l => l.Contains(ProcessorLimitMarker, StringComparison.Ordinal)) is { } line)
+                    return line.Trim();
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException) { }
+        }
+        return null;
     }
 
     private static void RunCompiler(
         VerilogACompilerInfo compiler, string source, string output, IReadOnlyList<string> included,
-        IReadOnlyList<string> extraArguments)
+        IReadOnlyList<string> extraArguments, Action<ProcessStartInfo>? configure = null)
     {
         var info = new ProcessStartInfo(compiler.Command)
         {
@@ -581,6 +640,8 @@ public static class VerilogASourceCompiler
             info.ArgumentList.Add("-I");
             info.ArgumentList.Add(dir);
         }
+
+        configure?.Invoke(info);
 
         string stdout, stderr;
         int exitCode;
@@ -622,6 +683,8 @@ public static class VerilogASourceCompiler
             string diagnostics = (stderr.Trim().Length > 0 ? stderr : stdout).TrimEnd();
             if (diagnostics.Length == 0)
                 diagnostics = $"(the compiler exited with code {exitCode} and printed nothing)";
+            if (!SaysProcessorLimit(diagnostics) && ProcessorLimitFromCrashLog(diagnostics) is { } limit)
+                diagnostics += Environment.NewLine + limit;
 
             // A partial artefact must not be left where the cache would find it and treat it as a
             // successful build of this source.

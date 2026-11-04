@@ -26950,3 +26950,41 @@ footprint's is SDL-2's outer-edge joint with no second rule. Findings:
 - Testdata: F1b-port-on-pad (P2's variant) and C3b-port-on-junction (P3) drawn from `.cnl` through
   `netlist --to-schematic`; every design's expect.txt now names its `port` lines.
 
+
+## Every platform's build from one machine (VL-18, 2026-11-03)
+
+Compile netlist's cross builds go through circuitRF's link driver (`VerilogALinkDriver`, `src/Core/Devices/External`);
+the platform the export runs on is built exactly as before. What is worth knowing:
+
+- **The launcher is circuitRF's own executable, not a separate program.** The shipped app is self-contained single-file,
+  so a framework-dependent helper beside it would need a .NET install the user does not have, and a self-contained one
+  is the size of the app. Each launcher name (`clang`, `cc`, `ld`, `gcc`, `link.exe`) is a link to the running
+  executable — a symbolic link on macOS/Linux, where the apphost follows it home, a hard link on Windows (one copy
+  when the temp folder is on another volume). `CRF_LINK_RID` in the environment is what makes a process a launcher;
+  both entry points (`src/Ui/Program.Main`, `src/Cli/Program.cs`) check it before anything else and set
+  `VerilogALinkDriver.Host`. A process with no host (a test that did not call `LinkDriverHost.Ensure`) gets a sentence,
+  not the system linker. **Not covered:** on Windows a framework-dependent Debug apphost hard-linked into the temp
+  folder cannot find its assembly; shipped builds are single-file and unaffected.
+- **Windows hosts (R-vl18-1c), read from the compiler's source, not measured on Windows:** for a Windows target it asks
+  the installed Windows build tools for `link.exe` before PATH, so where those are installed a Windows target links with
+  them as today and never reaches the driver; without them the driver's `link.exe` is found on PATH and zig links it.
+- **The processor limit is in the compiler's crash LOG, not on stderr.** stderr says only that it crashed and names a
+  log; `RunCompiler` reads a named `.log` for `No available targets are compatible with triple` and appends that line,
+  so `FixFor` classifies from the compiler's own words (R-vl18-2a). The old rule — crashed and a different processor —
+  is gone.
+- **A second `Build` overload ending in `string? rid` silently took the platform as the CPU**: `Build(src, out, triple,
+  rid)` binds to `Build(…, string targetCpu = "generic")` because C# prefers the candidate that needs no default. It
+  passed `--target_cpu linux-x64` and ran the system `ld`. `Build` is one method now, with `rid:` named at each call.
+- **zig answers `zig version`, not `--version`** (which exits 1 with its usage), so `TryProbe` takes the argument.
+- **zig writes a `.pdb` and an import library beside a Windows output**, so every link writes into the per-run folder
+  and only the output is moved to where the compiler asked; nothing else reaches `models/<rid>/`.
+- **Measured here (Apple silicon, the compiler as installed, which initialises its own processor only):** `linux-arm64`
+  and `win-arm64` build through zig (glibc pinned at 2.28; the first glibc link costs ~7 s, cached after), the x86-64
+  three report the processor sentence. `zig cc -target aarch64-macos -shared -Wl,-undefined,dynamic_lookup` linked the
+  compiler's `osx-arm64` objects into a dylib carrying zig's ad-hoc linker signature, which loaded — measured on this
+  Mac, so the off-a-Mac `osx-*` route is zig's own linker but has not itself been run off a Mac.
+
+Gates: `tests/Core.Tests/Devices/External/VerilogALinkCommandTests.cs` (the six link lines),
+`tests/Ui.Tests/VendorLibraries/CrossPlatformBuildTests.cs` (missing zig and the processor crash, against a stub compiler
+that runs the real launcher), `CompileNetlistTests.Export_WithZig_BuildsEveryReachablePlatform_AndProvesOnlyThisOne`
+(`[CompilerZigFact]`).

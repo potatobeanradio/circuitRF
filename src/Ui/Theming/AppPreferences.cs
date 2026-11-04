@@ -553,6 +553,15 @@ public sealed class AppPreferences
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? VerilogACompiler { get; set; }
 
+    /// <summary>
+    /// The zig a Verilog-A build for another platform links with (brief vendorlib-18 R-vl18-2c), or null to search the
+    /// environment variable and PATH — <see cref="VerilogACompiler"/>'s shape and its reasons: per USER, a named path
+    /// outranking PATH (<c>ZigDiscovery.Find</c>). circuitRF ships no linker.
+    /// </summary>
+    [JsonPropertyName("zig_linker")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ZigLinker { get; set; }
+
     // ── 3D EM solvers (brief-em3d-6, docs/design/em-3d.md §7.1) ──────────────────────────────────
     //
     // Three paths, one per program, in VerilogACompiler's shape and for its reasons: per USER because
