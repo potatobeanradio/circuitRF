@@ -241,7 +241,11 @@ public sealed class PlanarStaticAim
         _m     = mesh.Cells.Count;
         _order = st.ProjectionOrder;
         _side  = _order + 1;
-        _pulse = new PlanarPulsePotential(entryCores, staticScalar);
+        // R-tfrv-0 — near entries take an unresolved image in closed form, as the dense route does.
+        var split  = staticScalar.StaticShallowSplit(mesh, cores.Settings);
+        _pulse = split.Removed.Count > 0
+               ? new PlanarPulsePotential(entryCores, split.Terms, shallow: split.Removed, termsQFar: staticScalar)
+               : new PlanarPulsePotential(entryCores, staticScalar);
 
         var sw = System.Diagnostics.Stopwatch.StartNew();
 

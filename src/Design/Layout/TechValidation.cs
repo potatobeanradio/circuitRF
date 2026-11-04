@@ -186,7 +186,7 @@ public static class TechValidation
         for (int i = 1; i < conductorEntries.Count - 1; i++)
         {
             var inner = conductorEntries[i];
-            if (inner.DrawingLayers.Count > 0) continue;
+            if (inner.DrawingLayers.Count > 0 || ResistiveFilms.IsFilmLevel(inner)) continue;
 
             // Field report, 2026-09-22: the designer's answer to this message was "I have a gnd
             // layer". He did — a drawing layer named `gnd`, which the conductor `GND` had never been
@@ -237,6 +237,8 @@ public static class TechValidation
         // Where a resistive film may sit, and its value: the rules the stackup canvas asks too.
         foreach (var (id, message) in ResistorFilmBinding.Problems(tech))
             problems.Add(new(TechProblemArea.Stackup, message, Id: id, Severity: DiagnosticSeverity.Error));
+        foreach (var (id, message) in ResistorFilmBinding.Warnings(tech))
+            problems.Add(new(TechProblemArea.Stackup, message, Id: id, Severity: DiagnosticSeverity.Warning));
 
         foreach (var sl in tech.Stackup.Layers)
         {
@@ -247,7 +249,7 @@ public static class TechValidation
                         $"Stackup layer \"{sl.Name}\" references unknown drawing layer ({dl.Layer},{dl.Datatype})."));
             }
 
-            if (sl.Kind == StackupKind.Conductor && sl.SigmaSm <= 0)
+            if (sl.Kind == StackupKind.Conductor && sl.SigmaSm <= 0 && !ResistiveFilms.IsFilmLevel(sl))
                 problems.Add(new(TechProblemArea.Stackup,
                     $"Stackup layer \"{sl.Name}\" is a conductor with non-positive conductivity ({sl.SigmaSm} S/m)."));
 

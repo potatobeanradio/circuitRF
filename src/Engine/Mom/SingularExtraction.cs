@@ -137,7 +137,16 @@ public sealed class PlanarKernelTerms
     /// <summary>The same terms at a different extraction order or floor — the fill sets the floor
     /// from the mesh, and Tier 6 sweeps the order.</summary>
     public PlanarKernelTerms With(PlanarExtractionOrder order, double rhoFloor) =>
-        new(_full, Inverse, Log, Constant, Linear, order, rhoFloor, SmallestImageDepth, _derivative);
+        new(_full, Inverse, Log, Constant, Linear, order, rhoFloor, SmallestImageDepth, _derivative)
+        { StaticModel = StaticModel };
+
+    /// <summary>
+    /// <b>R-tfrv-0 — the interior electrostatic model these terms were built from</b>, and null on
+    /// every other kernel. It is what lets a static solve take an image the mesh cannot resolve out of
+    /// the remainder (<see cref="StaticShallowSplit"/>), which only the mesh can decide, so the terms
+    /// carry the model rather than a split made before there was one.
+    /// </summary>
+    public InteriorStaticModel? StaticModel { get; init; }
 
     /// <summary>Does the assembled entry need the ∫∫dS core? (Always — but the constant is only
     /// EXTRACTED, i.e. moved out of the remainder, from order 1 up.)</summary>
@@ -614,7 +623,60 @@ public sealed class PlanarKernelTerms
         return new PlanarKernelTerms(model.Evaluate,
                                      model.Singular / (4.0 * Math.PI), Complex.Zero,
                                      model.SmoothAtZero, Complex.Zero,
-                                     order, rhoFloor, smallest);
+                                     order, rhoFloor, smallest)
+        { StaticModel = model };
+    }
+
+    /// <summary>
+    /// <b>R-tfrv-0 — MIM-8's split, on the static route.</b> An image whose depth is small against a
+    /// cell is a peak a cell-pair rule integrates straight over, and a thin film under a level puts
+    /// one at twice the film's thickness. So these terms carry none of the images shallower than
+    /// <c>ShallowImageCells</c> of the mesh's largest cell, and <see cref="ShallowImageSplit.Removed"/>
+    /// lists them for <c>ShallowImageCore</c> to put back in closed form.
+    ///
+    /// <para><b>Removed is empty when these terms did not come from an interior model or nothing is
+    /// shallow</b>, and the caller then takes the path it always took, so a level over one uniform
+    /// dielectric is untouched.</para>
+    /// </summary>
+    public ShallowImageSplit StaticShallowSplit(PlanarMesh mesh, PlanarFillSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(mesh);
+        ArgumentNullException.ThrowIfNull(settings);
+        if (StaticModel is not { } model || !(settings.ShallowImageCells > 0)) return new ShallowImageSplit(this, []);
+
+        double largest = 0;
+        foreach (var c in mesh.Cells) largest = Math.Max(largest, Math.Max(c.Width, c.Height));
+        // Never as deep as the level's own height: the plane's round trip is at 2h, which is a rule's ordinary work on any
+        // cell, and a one-layer stack has to keep reading what the one-slab route reads when a long cell would call it shallow.
+        double threshold = Math.Min(settings.ShallowImageCells * largest, model.Z);
+
+        // A fit also returns images far smaller than any real term, and each closed form costs most of a
+        // millisecond per class. They stay in the remainder, where their size is what bounds the rule's
+        // error. Judged against the 1/ρ term, the kernel's own scale, at ThinRegionImagesAtHeights' 1e-4.
+        double floor = 1e-4 * model.Singular.Magnitude;
+
+        var removed = new List<ComplexImage>();
+        Complex constant = Constant;
+        foreach (var im in model.Images)
+        {
+            if (im.Depth.Magnitude >= threshold || im.Amplitude.Magnitude < floor) continue;
+            removed.Add(new ComplexImage(im.Amplitude, im.Depth));
+            constant -= im.Amplitude / (4.0 * Math.PI * im.Depth);
+        }
+        if (removed.Count == 0) return new ShallowImageSplit(this, []);
+
+        var shallow = removed.ToArray();
+        Complex Reduced(double rho)
+        {
+            Complex v = model.Evaluate(rho);
+            foreach (var im in shallow)
+                v -= im.Amplitude / (4.0 * Math.PI * InteriorStaticModel.Root(rho, im.Depth));
+            return v;
+        }
+
+        return new ShallowImageSplit(
+            new PlanarKernelTerms(Reduced, Inverse, Log, constant, Linear, Order, RhoFloor, SmallestImageDepth),
+            removed);
     }
 
     /// <summary>

@@ -491,6 +491,23 @@ public static class PlanarExtractor
                           "conductor it feeds, or list the analysis levels explicitly.");
         }
 
+        // R-tfrv-2 — an unanalysed film level is an open circuit, which reaches the solver as a smooth and plausible
+        // answer. So a drawn film's level is always in the run, and a list that leaves one out is refused by name.
+        foreach (var filmLevel in filmPieces.Select(p => p.Band).Where(b => ResistiveFilms.IsFilmLevel(b.Layer))
+                                            .DistinctBy(b => b.Index).ToList())
+        {
+            if (levels.Any(b => b.Index == filmLevel.Index)) continue;
+            if (settings.AnalysisLevelNames is { Length: > 0 })
+                return PlanarExtractionResult.No(
+                    $"This EM setup's analysis levels leave out '{filmLevel.Layer.Name}', and a resistive film is drawn on " +
+                    "that level. Without it the film is an open circuit. Add it to the setup's analysis levels, or " +
+                    "clear the list.", notes);
+            incidental.RemoveAll(b => b.Index == filmLevel.Index);
+            levels = [.. levels.Append(filmLevel).OrderBy(b => b.SheetM)];
+            notes.Add($"'{filmLevel.Layer.Name}' joined this run's analysis levels because a resistive film is drawn on " +
+                      "it. Without it the film would be an open circuit.");
+        }
+
         if (incidental.Count > 0)
             notes.Add(
                 $"{string.Join(", ", incidental.Select(b => $"'{b.Layer.Name}'"))} " +
@@ -1772,6 +1789,9 @@ public static class PlanarExtractor
             if (!(t > 0) || polysByLevel[i].Count == 0) continue;
             string name = band.Layer.Name;
 
+            // R-tfrv-2 — a film level holds no metal, so there is nothing to correct on it, and nothing to say.
+            if (ResistiveFilms.IsFilmLevel(band.Layer)) continue;
+
             // A film has no thickness to correct for, and its region is not grown with the outline. The growth
             // would be metal running along both its edges, and that metal shorts the resistor.
             if (filmsByLevel[i] is { Count: > 0 })
@@ -1785,8 +1805,21 @@ public static class PlanarExtractor
 
             double w = PlanarThicknessCorrection.ReferenceWidth(polysByLevel[i], portPoints, out bool fromPorts);
             if (!(w > 0)) continue;
+            var calibrationRegions = regions;
+            if (stack.Any(b => ResistiveFilms.IsFilmLevel(b.Layer)))
+            {
+                // R-tfrv-2 — the 2-D kernel misreads a layer much thinner than the strip directly under it: over 250 nm
+                // it gives a 73 µm line 164 pF/m where 192 is the limit, and a thick strip less than a sheet of its own
+                // width. ΔW is the sidewalls' fringe in the air above, which such a layer does not reach, so the layer
+                // takes the material below it for this calibration alone. Only here, so no other stack's hash moves.
+                var merged = dielectrics.ToList();
+                for (int d = 1; d < merged.Count; d++)
+                    if (merged[d].TopM - merged[d].BottomM < PlanarThicknessCorrection.ThinLayerFractionOfWidth * w)
+                        merged[d] = (merged[d].BottomM, merged[d].TopM, merged[d - 1].Item3);
+                calibrationRegions = PlanarThicknessCorrection.RegionsFor(merged, stack[0].BottomM, groundTopM, levels[^1].SheetM);
+            }
             var (cal, refusal) = PlanarThicknessCorrection.Calibrate(
-                regions, band.BottomM - groundTopM, band.TopM - groundTopM, band.SheetM - groundTopM, w);
+                calibrationRegions, band.BottomM - groundTopM, band.TopM - groundTopM, band.SheetM - groundTopM, w);
             if (cal is null)
             {
                 notes.Add(EmFinding.Warn(

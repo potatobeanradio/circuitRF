@@ -823,6 +823,11 @@ public sealed class PlanarFillCores
     /// <summary>Per class: its key (PairClassifier), from which the representative pair and the
     /// rule are re-derived per frequency for the remainder pass.</summary>
     internal readonly long[]? ClassKey;
+
+    /// <summary>R-tfrv-0 — per interior static model, the closed-form shallow images of every near
+    /// class. Weak on the model, so a calibrator that lets its model go lets this go too.</summary>
+    internal readonly System.Runtime.CompilerServices.ConditionalWeakTable<InteriorStaticModel, Complex[]>
+        StaticShallowClosedForms = new();
     /// <summary>Per class, <see cref="ClassStride"/> doubles: the seven P4 primitives — pulse, then
     /// X10 X01 X11, then Y10 Y01 Y11 — each as (Inverse, Log[, Radius]).</summary>
     internal readonly double[]? ClassCores;
@@ -2007,6 +2012,12 @@ public static partial class PlanarFill
         int m = mesh.Cells.Count;
         var st = cores.Settings;
         var terms = termsQ.With(st.Order, cores.RhoFloorM);
+
+        // R-tfrv-0 — an interior static kernel carrying an image the mesh cannot resolve. A second
+        // path rather than a branch in the entry, so nothing else reaches it.
+        var split = terms.StaticShallowSplit(mesh, st);
+        if (split.Removed.Count > 0) return StaticPotentialWithShallowImages(cores, terms, split);
+
         var rem = Remainder(terms, cores);
 
         var p = new Mat<Complex>(m, m);
@@ -2038,6 +2049,90 @@ public static partial class PlanarFill
             for (int b = a; b < m; b++) p[b, a] = pot.At(a, b);
         });
         MirrorLowerToUpper(st, p);
+        return p;
+    }
+
+    /// <summary>
+    /// <b>R-tfrv-0 — <c>P</c> with the shallow images in closed form</b>, tiered as MIM-8's scalar
+    /// block is: a pair past <c>FarRatio</c> never reaches the peak and keeps the whole kernel, and a
+    /// nearer one takes the reduced terms plus <see cref="ShallowImageCore"/>. The two views are
+    /// decompositions of one kernel, so the tier is a cost and not an approximation.
+    /// </summary>
+    private static Mat<Complex> StaticPotentialWithShallowImages(
+        PlanarFillCores cores, PlanarKernelTerms whole, ShallowImageSplit split)
+    {
+        var mesh = cores.Mesh;
+        int m = mesh.Cells.Count;
+        var st = cores.Settings;
+
+        // The far view is this method's starting matrix: near entries overwrite it below.
+        var plain = new PlanarKernelTerms(whole.Evaluate, whole.Inverse, whole.Log, whole.Constant, whole.Linear,
+                                          whole.Order, whole.RhoFloor, whole.SmallestImageDepth);
+        var p = ScalarPotentialMatrix(cores, plain);
+
+        var terms = split.Terms;
+        var rem = Remainder(terms, cores);
+        var removed = split.Removed;
+
+        Complex ClosedForm(PlanarCell a, PlanarCell b)
+        {
+            Complex t = Complex.Zero;
+            foreach (var im in removed)
+                t += im.Amplitude / (4.0 * Math.PI) * ShallowImageCore.CellPairMean(a, b, im.Depth, st);
+            return t;
+        }
+
+        if (cores.Layout == PlanarCoreLayout.Triangles)
+        {
+            ForRows(st, m, a =>
+            {
+                var wa = Pulse(mesh, a);
+                for (int b = a; b < m; b++)
+                {
+                    if (!(SeparationRatio(mesh.Cells[a], mesh.Cells[b]) < st.FarRatio)) continue;
+                    long k = Packed(a, b, m);
+                    Complex v = terms.Inverse * cores.S0![k] + terms.Log * cores.SLog![k];
+                    if (terms.ExtractsConstant) v += terms.Constant;
+                    if (terms.ExtractsLinear && cores.SRad is not null) v += terms.Linear * cores.SRad[k];
+                    v += PairRemainder(mesh, wa, Pulse(mesh, b), PlanarBasisDirection.X, rem, st);
+                    v += ClosedForm(mesh.Cells[a], mesh.Cells[b]);
+                    p[b, a] = v;
+                    p[a, b] = v;
+                }
+            });
+            return p;
+        }
+
+        // Per class, as everything else on this path is: the integral depends on the pair's shape and
+        // offset and on nothing else, so it is exact for a translation class.
+        // Memoised on the cores: a standard's P is built for C and again for its charge, and these
+        // depend only on the mesh and on the model that supplied the images.
+        var keys = cores.ClassKey!;
+        var classClosed = cores.StaticShallowClosedForms.GetValue(whole.StaticModel!, _ =>
+        {
+            var closed = new Complex[keys.Length];
+            ForRows(st, keys.Length, c =>
+            {
+                if (PairClassifier.BandOf(keys[c]) >= 3) return;
+                var (outer, inner) = cores.Classifier.Representative(keys[c]);
+                closed[c] = ClosedForm(outer, inner);
+            });
+            return closed;
+        });
+
+        var pot = new ClassPotential(cores, terms, rem, ClassPulseRemainders(cores, rem));
+        ForRows(st, m, a =>
+        {
+            for (int b = a; b < m; b++)
+            {
+                if (PairClassifier.Band(mesh.Cells[a], mesh.Cells[b], st) >= 3) continue;
+                int c = cores.BandClass![cores.BandIndex(a, b)];
+                Complex v = pot.At(a, b)
+                          + (c >= 0 ? classClosed[c >> 1] : ClosedForm(mesh.Cells[a], mesh.Cells[b]));
+                p[b, a] = v;
+                p[a, b] = v;
+            }
+        });
         return p;
     }
 

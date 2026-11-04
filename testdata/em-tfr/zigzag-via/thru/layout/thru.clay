@@ -1,0 +1,71 @@
+{
+ "FormatVersion": 1,
+ "DbuPerMicron": 1000,
+ "DisplayUnit": "Um",
+ "SnapDbu": 1000,
+ "AngleMode": "AnyAngle",
+ "Shapes": [
+  {
+   "$type": "Rect",
+   "X1": 0,
+   "Y1": -36500,
+   "X2": 300000,
+   "Y2": 36500,
+   "Layer": {
+    "Layer": 1,
+    "Datatype": 0
+   }
+  },
+  {
+   "$type": "Rect",
+   "X1": 300000,
+   "Y1": -20000,
+   "X2": 340000,
+   "Y2": 20000,
+   "Layer": {
+    "Layer": 1,
+    "Datatype": 0
+   }
+  },
+  {
+   "$type": "Rect",
+   "X1": 340000,
+   "Y1": -36500,
+   "X2": 640000,
+   "Y2": 36500,
+   "Layer": {
+    "Layer": 1,
+    "Datatype": 0
+   }
+  },
+  {
+   "$type": "Label",
+   "X": 0,
+   "Y": 0,
+   "Text": "1",
+   "Height": 5000,
+   "Rotation": "R0",
+   "IsPort": true,
+   "Style": "Regular",
+   "Layer": {
+    "Layer": 1,
+    "Datatype": 0
+   }
+  },
+  {
+   "$type": "Label",
+   "X": 640000,
+   "Y": 0,
+   "Text": "2",
+   "Height": 5000,
+   "Rotation": "R0",
+   "IsPort": true,
+   "Style": "Regular",
+   "Layer": {
+    "Layer": 1,
+    "Datatype": 0
+   }
+  }
+ ],
+ "Instances": []
+}

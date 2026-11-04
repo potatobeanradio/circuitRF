@@ -19,6 +19,10 @@ public static class ResistorFilmBinding
         public const string UnknownLayer    = "tech.film.unknown-layer";
         public const string SheetResistance = "tech.film.sheet-resistance";
         public const string NoLevel         = "tech.film.no-level";
+        public const string NoContact       = "tech.film.no-contact";
+        public const string TouchingMetal   = "tech.film.touching-metal";
+        public const string FaceOnLevel     = "tech.film.face-on-level";
+        public const string ThicknessOnLevel = "tech.film.thickness-on-level";
     }
 
     /// <summary>
@@ -62,7 +66,30 @@ public static class ResistorFilmBinding
             reason = $"Drawing layer \"{name}\" is the metal of \"{metal.Name}\", so it cannot also pattern a resistor film: untick it from that level's drawing layers first.";
             return false;
         }
+        if (entry.DrawingLayers.Count == 0 && ConductorTouching(tech, entry) is { } touching)
+        {
+            id = Ids.TouchingMetal;
+            reason = $"Resistor film \"{name}\" cannot sit on \"{conductorName}\": a level with no metal is contacted through vias, and no dielectric separates it from \"{touching.Name}\". Add the dielectric between them.";
+            return false;
+        }
         return true;
+    }
+
+    /// <summary>The conductor directly above or below <paramref name="level"/> with nothing thick between, or null.</summary>
+    private static StackupLayer? ConductorTouching(Technology tech, StackupLayer level)
+    {
+        var layers = tech.Stackup.Layers;
+        int at = layers.IndexOf(level);
+        if (at < 0) return null;
+        foreach (int step in new[] { -1, 1 })
+            for (int i = at + step; i >= 0 && i < layers.Count; i += step)
+            {
+                var next = layers[i];
+                if (next.Kind == StackupKind.Via || next.ThicknessDbu == 0) continue;
+                if (next.Kind == StackupKind.Conductor) return next;
+                break;
+            }
+        return null;
     }
 
     /// <summary>Every rule a technology's films break, for <c>TechValidation</c>.</summary>
@@ -85,6 +112,32 @@ public static class ResistorFilmBinding
             if (!Check(tech, film.Layer, conductor.Name, out string id, out string reason)) yield return (id, reason);
             if (!(film.SheetResistanceOhmPerSq > 0))
                 yield return (Ids.SheetResistance, $"Resistor film \"{name}\" on \"{conductor.Name}\" states a sheet resistance of {film.SheetResistanceOhmPerSq:G4} Ω/sq; it must be positive.");
+        }
+    }
+
+    /// <summary>What a technology's film levels state and do not mean, for <c>TechValidation</c> and the stackup canvas.
+    /// None stops a run: a film level with no contact via is an open, which is a legitimate answer about what was stated.</summary>
+    public static IEnumerable<(string Id, string Message)> Warnings(Technology tech)
+    {
+        ArgumentNullException.ThrowIfNull(tech);
+        foreach (var level in tech.Stackup.Layers)
+        {
+            if (!ResistiveFilms.IsFilmLevel(level)) continue;
+
+            bool contacted = tech.Stackup.Layers.Any(v => v is { Kind: StackupKind.Via, Plated: not false } &&
+                (string.Equals(v.SpanFromLayer, level.Name, StringComparison.Ordinal) ||
+                 string.Equals(v.SpanToLayer, level.Name, StringComparison.Ordinal)));
+            if (!contacted)
+                yield return (Ids.NoContact, $"No via spans to \"{level.Name}\", so a film on it joins nothing and can only ever read as an open. Add a via entry whose span ends on it.");
+
+            foreach (var film in level.Films!)
+            {
+                string name = tech.Layers.FirstOrDefault(l => l.Key == film.Layer)?.Name ?? $"{film.Layer.Layer}/{film.Layer.Datatype}";
+                if (film.At is not null)
+                    yield return (Ids.FaceOnLevel, $"Resistor film \"{name}\" states a face on \"{level.Name}\", which has no metal for it to be on the face of. The value is not used.");
+                if (film.ThicknessDbu is { } t && t != level.ThicknessDbu)
+                    yield return (Ids.ThicknessOnLevel, $"Resistor film \"{name}\" states a thickness of {t} DBU on \"{level.Name}\", which is {level.ThicknessDbu} DBU thick. A film level's thickness is its own, and the film's is not used.");
+            }
         }
     }
 

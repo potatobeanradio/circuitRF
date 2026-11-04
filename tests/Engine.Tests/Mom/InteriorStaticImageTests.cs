@@ -1,5 +1,6 @@
 using System.Numerics;
 using CircuitRF.Engine.Mom;
+using CircuitRF.Engine.Tests.Mom.Support;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -279,5 +280,66 @@ public sealed class InteriorStaticImageTests
         _out.WriteLine(ex.Message);
         Assert.Contains("ORACLE", ex.Message);
         Assert.Contains("InteriorStaticImages.Fit", ex.Message);
+    }
+
+    // ── R-tfrv-0 — a thin film under the level ────────────────────────────────────────────────
+
+    private const double FilmSlab = 100e-6;
+
+    private static LayerStack OverFilm(double d) => new(
+        Termination.Pec,
+        d > 0
+            ? [new MediumLayer(FilmSlab - d, new EmMaterial(12.9, 0.0006)), new MediumLayer(d, new EmMaterial(6.8, 0.001))]
+            : [new MediumLayer(FilmSlab, new EmMaterial(12.9, 0.0006))],
+        Termination.Air);
+
+    /// <summary>C_pul of a 73 µm line through the route a de-embedded run takes on a stratified stack.</summary>
+    private static double LineCapacitance(LayerStack stack, PlanarFillSettings settings)
+    {
+        var problem = PlanarLineFixtures.Line(new GroundedSlab(FilmSlab, new EmMaterial(12.9, 0.0006)), 73e-6, 1.2e-3, 10e9);
+        var (_, ports) = PlanarLineFixtures.MeshAndPorts(problem, PlanarLineFixtures.Coarse);
+        var shortStd = PlanarCalibration.BuildLine(ports[0], 0.3e-3, 1);
+        var longStd = PlanarCalibration.BuildLine(ports[0], shortStd.LengthM + 0.3e-3, 1);
+        return PlanarDeembed.CapacitancePerMetre(shortStd, longStd, stack, FilmSlab, FilmSlab, settings);
+    }
+
+    /// <summary>
+    /// A film a four-hundredth of the substrate cannot move a 100 µm line's capacitance by much, and a rule that steps
+    /// over its image at depth 2d moved it by tens of per cent, by an amount no trend in d explains. The series-capacitance
+    /// estimate is under 0.1 %, and the fringe in the film adds about 1 %, so 2 % bounds both.
+    /// </summary>
+    [Theory]
+    [InlineData(0.2e-6)]
+    [InlineData(0.25e-6)]
+    public void AThinFilmUnderTheLevelBarelyMovesALinesCapacitance(double d)
+    {
+        double bare = LineCapacitance(OverFilm(0), PlanarFillSettings.Default);
+        double film = LineCapacitance(OverFilm(d), PlanarFillSettings.Default);
+        double untreated = LineCapacitance(OverFilm(d), PlanarFillSettings.Default with { ShallowImageCells = 0 });
+        _out.WriteLine($"d = {d * 1e6} um: bare {bare * 1e12:F2}, film {film * 1e12:F2}, rule over the peak {untreated * 1e12:F2} pF/m");
+        Assert.InRange(film / bare, 0.98, 1.0);
+        Assert.True(Math.Abs(untreated / bare - 1) > 0.05, "the fixture must be able to tell the two apart");
+    }
+
+    /// <summary>The accelerated route carries the same images, so it reads what the dense one reads.</summary>
+    [Fact]
+    public void TheAcceleratedStaticSolveTakesTheShallowImagesToo()
+    {
+        double dense = LineCapacitance(OverFilm(0.25e-6), PlanarFillSettings.Default);
+        double aim = LineCapacitance(OverFilm(0.25e-6), PlanarFillSettings.Default with { Aim = PlanarAimSettings.Default });
+        _out.WriteLine($"dense {dense * 1e12:F3}, accelerated {aim * 1e12:F3} pF/m");
+        Assert.InRange(aim / dense, 0.995, 1.005);
+    }
+
+    /// <summary>A level over one uniform dielectric has no shallow image, and its terms come back as the very same object.</summary>
+    [Fact]
+    public void NothingShallowLeavesTheTermsAlone()
+    {
+        var problem = PlanarLineFixtures.Line(new GroundedSlab(FilmSlab, new EmMaterial(12.9, 0.0006)), 73e-6, 1.2e-3, 10e9);
+        var (mesh, _) = PlanarLineFixtures.MeshAndPorts(problem, PlanarLineFixtures.Coarse);
+        var terms = PlanarKernelTerms.StaticScalarAt(OverFilm(0), FilmSlab);
+        var split = terms.StaticShallowSplit(mesh, PlanarFillSettings.Default);
+        Assert.Empty(split.Removed);
+        Assert.Same(terms, split.Terms);
     }
 }

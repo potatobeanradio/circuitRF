@@ -27895,7 +27895,7 @@ any existing run with a thin layer under a level. The kernel's own limit is not 
 **A via-contacted film reads long at DC, by up to half a via cell at each end.** The current reaches a via at its cells' centres,
 where an overlap contact's line is a rooftop edge, which is why the overlap network is exact at any mesh (150.04 Ω at 4 to 32
 cells across). 180 µm of a 40 µm film at 50 Ω/sq is 225 Ω, and via contact reads 233.3, 231.9, 230.9 and 228.6 Ω at 4, 8, 16 and
-32 across. So the brief's 2.3 % holds at the refined mesh and not at the shipping one, where this short film is 3.7 % high.
+32 across. So the brief's 2.3 % holds at the refined mesh and not at the shipping one, where this short film is 3.7 % high. The owner accepted that.
 
 **A drawn film's level joins from every route but a named list.** `SignalStackupLayerName` names one level, and a stated
 `AnalysisLevelNames` is a choice, so leaving a drawn film out of that is the refusal. The join sits after the incidental-metal

@@ -13319,3 +13319,52 @@ on a 200 µm contact did not either, and a mesh with one cell along the contact 
 312.9 Ω at 4, 8, 16 cells across); the conforming FEM of the 3D DC row reads low (308.3 Ω). Four squares of straight
 film plus four 0.559-square corners is 311.8 Ω, between them. The gate is therefore a bracket, not the brief's ~1 %.
 
+## TFR-V — a thin film under a level, on the static route (2026-11-04)
+
+**The cause of the 0.18 thru: the static capacitance solve integrated a shallow image with a rule that steps over it.**
+A level on the roof of a thin film carries an image series at depths 2d, 4d, 6d…: amplitudes −0.138, +0.032, −0.0074, +0.0016
+at 0.5, 1.0, 1.5, 2.0 µm for 250 nm of εᵣ 6.8 on GaAs. `PlanarFill.ScalarPotentialMatrix` treated those as a smooth remainder.
+So a 2 to 40 µm cell's rule saw a peak of half a micron, and what it read depended on where its nodes fell. A plain 73 µm
+line's C_pul read 662 pF/m over 250 nm and −539 pF/m over 200 nm, against 191 bare. The full-wave fill has carried MIM-8's
+closed form since that phase. The static route, which on a stratified stack is `InteriorStaticImages`, never did. Since C_pul
+and the quasi-static conductor term come from it, γ and Z_c were wrong and the peel amplified that.
+
+**Neither the conductor entry nor the feed lead was the cause.** Both looked like it:
+
+- A pure 250 nm dielectric reads 0.18091, the same as 200 nm plus a 50 nm level: `BuildMediumStack` absorbs the band into the
+  dielectric above, so the two media are one. 200 nm and 250 nm differing by 25× was the rule, not the band.
+- The lead differs between those two rows by round-off (below), which is why the rows took different paths. With the height
+  adjusted to cross them: 200 nm without a lead 0.0073, 250 nm with a lead 0.028, 250 nm without 0.18.
+
+| Under the line, 1 GHz | \|S11\| before | C_pul before, pF/m | \|S11\| after | C_pul after, pF/m |
+|---|---|---|---|---|
+| GaAs alone | 0.00144 | 191.5 | 0.00144 | 191.5 |
+| 200 nm | 0.0073 | 225 | 0.0013 | 190.1 |
+| 250 nm | 0.181 | 175 | 0.0013 | 189.8 |
+| 2 µm | 0.0016 | 183.1 | 0.0018 | 181.5 |
+
+**The fix is MIM-8's split, on this route.** `PlanarKernelTerms.StaticShallowSplit` takes the images under `ShallowImageCells`
+of the mesh's largest cell out of the terms, and `ShallowImageCore` puts them back on near pairs. Three limits are measured:
+
+- **Never as deep as the level's height.** The plane's round trip is at 2h, and a long cell would otherwise call it shallow,
+  which moved a one-slab stack against the one-slab route by 1.2e-4 and failed `InteriorCPulTests.M3_1`. With nothing shallow the
+  same object comes back, so a uniform dielectric is bit-identical.
+- **Not under 1e-4 of the 1/ρ coefficient.** The fit returns images of amplitude below 1e-5 at every film thickness, and each
+  closed form costs 0.7 to 0.9 ms per near class.
+- **Memoised per class on the cores, per model**, because a standard's P is built for C and again for its charge.
+
+**A level's position decides which treatment applies.** `ThinRegionImagesAtHeights` answers for a level on a cavity's floor or
+across it, and reports a roof as "no cavity", because the region above is a half-space. The full-wave fit carries a roof's images
+as ordinary fitted ones and MIM-8's split then finds them shallow, which is why only the static route failed.
+
+**A result moves with no hash moving.** No `EmSnpProvenance` hash reads this kernel, so a `.snp` already written on a stratified
+stack with a thin layer under a port's level stays current, reading the old number.
+
+**Cost.** A film-stack thru at 1 GHz used 296 s of CPU before and 760 s after, on a machine under other load. On a run this
+small the closed forms are a large share. It has not been measured on a quiet machine.
+
+**The lead's threshold is a coin flip, and it was left alone.** `PlanarFeedExtension` declines a lead when `add <= wanted / 64`,
+and when uniformity breaks in the scan's last step those two are equal up to round-off: `add` lands above the step at h = 100 and
+100.2 µm and below it at 100.25 µm. It was not the cause of the 0.18, and it is real: one line on plain GaAs differs by up to 0.011 at
+40 GHz, 0.0003 at 1 GHz, according to which way it fell. Fixing it moves existing results, so the owner left it as it is, and
+left the provenance hashes unmoved too.

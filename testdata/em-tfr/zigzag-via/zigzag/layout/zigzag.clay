@@ -1,0 +1,137 @@
+{
+ "FormatVersion": 1,
+ "DbuPerMicron": 1000,
+ "DisplayUnit": "Um",
+ "SnapDbu": 1000,
+ "AngleMode": "AnyAngle",
+ "Shapes": [
+  {
+   "$type": "Rect",
+   "X1": 0,
+   "Y1": -36500,
+   "X2": 300000,
+   "Y2": 36500,
+   "Layer": {
+    "Layer": 1,
+    "Datatype": 0
+   }
+  },
+  {
+   "$type": "Rect",
+   "X1": 300000,
+   "Y1": -20000,
+   "X2": 320000,
+   "Y2": 20000,
+   "Layer": {
+    "Layer": 1,
+    "Datatype": 0
+   }
+  },
+  {
+   "$type": "Rect",
+   "X1": 480000,
+   "Y1": -20000,
+   "X2": 500000,
+   "Y2": 20000,
+   "Layer": {
+    "Layer": 1,
+    "Datatype": 0
+   }
+  },
+  {
+   "$type": "Rect",
+   "X1": 500000,
+   "Y1": -36500,
+   "X2": 800000,
+   "Y2": 36500,
+   "Layer": {
+    "Layer": 1,
+    "Datatype": 0
+   }
+  },
+  {
+   "$type": "Rect",
+   "X1": 480000,
+   "Y1": -20000,
+   "X2": 485000,
+   "Y2": 20000,
+   "Layer": {
+    "Layer": 11,
+    "Datatype": 0
+   }
+  },
+  {
+   "$type": "Rect",
+   "X1": 315000,
+   "Y1": -20000,
+   "X2": 320000,
+   "Y2": 20000,
+   "Layer": {
+    "Layer": 11,
+    "Datatype": 0
+   }
+  },
+  {
+   "$type": "Poly",
+   "Xy": [
+    315000,
+    -20000,
+    380000,
+    -20000,
+    380000,
+    60000,
+    420000,
+    60000,
+    420000,
+    -20000,
+    485000,
+    -20000,
+    485000,
+    20000,
+    460000,
+    20000,
+    460000,
+    100000,
+    340000,
+    100000,
+    340000,
+    20000,
+    315000,
+    20000
+   ],
+   "Layer": {
+    "Layer": 4,
+    "Datatype": 0
+   }
+  },
+  {
+   "$type": "Label",
+   "X": 0,
+   "Y": 0,
+   "Text": "1",
+   "Height": 5000,
+   "Rotation": "R0",
+   "IsPort": true,
+   "Style": "Regular",
+   "Layer": {
+    "Layer": 1,
+    "Datatype": 0
+   }
+  },
+  {
+   "$type": "Label",
+   "X": 800000,
+   "Y": 0,
+   "Text": "2",
+   "Height": 5000,
+   "Rotation": "R0",
+   "IsPort": true,
+   "Style": "Regular",
+   "Layer": {
+    "Layer": 1,
+    "Datatype": 0
+   }
+  }
+ ],
+ "Instances": []
+}

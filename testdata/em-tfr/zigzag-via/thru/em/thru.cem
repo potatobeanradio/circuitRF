@@ -1,0 +1,80 @@
+{
+ "FormatVersion": 1,
+ "Name": "p_thru",
+ "LayoutRef": "thru/layout/thru.clay",
+ "SignalStackupLayerName": "Metal1",
+ "Frequency": {
+  "StartExpr": "0",
+  "StopExpr": "0",
+  "StepExpr": "",
+  "NumPoints": 1,
+  "Mode": "PointCount",
+  "Kind": "Linear",
+  "StartUnit": "GHz",
+  "StopUnit": "GHz",
+  "StepUnit": "GHz"
+ },
+ "AdditionalFrequencies": [
+  {
+   "StartExpr": "1",
+   "StopExpr": "1",
+   "StepExpr": "",
+   "NumPoints": 1,
+   "Mode": "PointCount",
+   "Kind": "Linear",
+   "StartUnit": "GHz",
+   "StopUnit": "GHz",
+   "StepUnit": "GHz"
+  },
+  {
+   "StartExpr": "5",
+   "StopExpr": "5",
+   "StepExpr": "",
+   "NumPoints": 1,
+   "Mode": "PointCount",
+   "Kind": "Linear",
+   "StartUnit": "GHz",
+   "StopUnit": "GHz",
+   "StepUnit": "GHz"
+  },
+  {
+   "StartExpr": "10",
+   "StopExpr": "10",
+   "StepExpr": "",
+   "NumPoints": 1,
+   "Mode": "PointCount",
+   "Kind": "Linear",
+   "StartUnit": "GHz",
+   "StopUnit": "GHz",
+   "StepUnit": "GHz"
+  },
+  {
+   "StartExpr": "20",
+   "StopExpr": "20",
+   "StepExpr": "",
+   "NumPoints": 1,
+   "Mode": "PointCount",
+   "Kind": "Linear",
+   "StartUnit": "GHz",
+   "StopUnit": "GHz",
+   "StepUnit": "GHz"
+  },
+  {
+   "StartExpr": "40",
+   "StopExpr": "40",
+   "StepExpr": "",
+   "NumPoints": 1,
+   "Mode": "PointCount",
+   "Kind": "Linear",
+   "StartUnit": "GHz",
+   "StopUnit": "GHz",
+   "StepUnit": "GHz"
+  }
+ ],
+ "Port1Z0Real": 50,
+ "Port1Z0Imag": 0,
+ "Port2Z0Real": 50,
+ "Port2Z0Imag": 0,
+ "DispersionCorrection": true,
+ "AnalysisKind": "Planar"
+}

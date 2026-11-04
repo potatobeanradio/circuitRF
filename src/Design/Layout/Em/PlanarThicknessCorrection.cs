@@ -63,6 +63,11 @@ public static class PlanarThicknessCorrection
     /// <summary>The kernel-A reference sheet is this fraction of the real thickness.</summary>
     public const double ReferenceSheetFraction = 1.0 / 20.0;
 
+    /// <summary>A dielectric thinner than this fraction of the strip's width is taken as the material below it when
+    /// calibrating on a film-level stack. A judgement and not a measured boundary: the 2-D kernel reads a thick strip below a
+    /// sheet at every layer measured under 73 µm, up to 5 µm, which is 6.8 % of it. A thicker layer declines as before.</summary>
+    public const double ThinLayerFractionOfWidth = 0.05;
+
     /// <summary>Root-find tolerance on Z0, relative.</summary>
     public const double Z0Tolerance = 1e-5;
 

@@ -7,6 +7,17 @@ namespace CircuitRF.Design.Layout;
 
 public static class ResistiveFilms
 {
+    /// <summary>
+    /// True for a level that holds only films: a Conductor with no metal of its own and at least one film, not a
+    /// return plane. A film on one is via-contacted, so metal over it passes without touching it, where a film on a
+    /// level with metal is contacted by that metal's overlap. Every rule that differs between the two asks this.
+    /// </summary>
+    public static bool IsFilmLevel(StackupLayer entry)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+        return entry is { Kind: StackupKind.Conductor, IsGroundReference: false, DrawingLayers.Count: 0, Films.Count: > 0 };
+    }
+
     /// <summary>Every film of a technology in stackup order, with the level it is on.</summary>
     public static IEnumerable<(StackupLayer Conductor, StackupFilm Film)> All(Technology tech)
     {
