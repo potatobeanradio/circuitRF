@@ -96,9 +96,12 @@ public sealed partial class ExportToLibraryViewModel : ObservableObject
 
     /// <summary>What will be converted, or that nothing uses the technology (R-vl11-4c) — the core's sentence.</summary>
     [ObservableProperty] private string _conversionLine = "";
+    /// <summary>Encapsulated netlist's consequence for harmonic balance (brief vendorlib-19 D4); empty otherwise.</summary>
+    [ObservableProperty] private string _harmonicLine = "";
 
-    /// <summary>The Frequency group is live only when something is converted.</summary>
-    public bool IsFrequencyPlanEnabled => Plan is { Conversions.Count: > 0 };
+    /// <summary>The Frequency group is live when something is converted, and whenever Encapsulated netlist is chosen
+    /// (brief vendorlib-19 D4): the block is sampled over the same plan.</summary>
+    public bool IsFrequencyPlanEnabled => Plan is { Conversions.Count: > 0 } || Encapsulate;
 
     [RelayCommand]
     private void AddFrequencySegment()
@@ -175,7 +178,7 @@ public sealed partial class ExportToLibraryViewModel : ObservableObject
         // The plan is stated only while something is converted: with nothing to sample, a plan is a refusal.
         Sweep = IsFrequencyPlanEnabled ? [.. FrequencySegments.Select(r => r.Build())] : null,
         CompileModels = CompileModels, Builds = BuildsOption(),
-        CompileNetlist = CompileNetlist, CheckBias = CheckBiasPoints(),
+        CompileNetlist = CompileNetlist, Encapsulate = Encapsulate, CheckBias = CheckBiasPoints(),
         LibraryName = LibraryName, Publisher = Publisher, LibraryVersion = LibraryVersion, License = License,
     };
 
@@ -217,10 +220,11 @@ public sealed partial class ExportToLibraryViewModel : ObservableObject
 
         foreach (string r in plan.Refusals) RefusalLines.Add(r);
         RaiseBuildState();
-        ConversionLine = ModelLibraryExport.ConversionLine(plan);
+        ConversionLine = plan.BlockLine.Length > 0 ? plan.BlockLine : ModelLibraryExport.ConversionLine(plan);
+        HarmonicLine = plan.HarmonicLine;
         OnPropertyChanged(nameof(IsFrequencyPlanEnabled));
         // R-vl11-4d: the part's range follows the plan until the user types one of their own.
-        if (plan.Conversions.Count > 0 && plan.Frequencies.Length > 0)
+        if ((plan.Conversions.Count > 0 || plan.BlockPorts > 0) && plan.Frequencies.Length > 0)
         {
             string low = ModelLibraryExport.FormatFrequency(plan.Frequencies[0]);
             string high = ModelLibraryExport.FormatFrequency(plan.Frequencies[^1]);

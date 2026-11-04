@@ -2763,7 +2763,7 @@ warns about range.</p>
     [--kind active|passive] [--value …] [--freq-low … --freq-high …] [--conditions …] [--footprint …]
     [--doc &lt;file&gt;]… [--symbol own|fet|r|c|l|box] [--replace] [--include-vendor-parts]
     [--compile-models] [--build &lt;rid&gt;=&lt;path&gt;]…
-    [--compile-netlist [--source-out &lt;file.va&gt;] [--check-bias "pin=V …"]…]
+    [--protect encapsulate|compile] [--compile-netlist] [--source-out &lt;file.va&gt;] [--check-bias "pin=V …"]…
     [--library-name … --publisher … --license … --library-version …]</code></pre>
 <p>The same code <strong>File ▸ Export to Library…</strong> runs: the cell, its sub-cells and every file they use are copied
 into a new <a href="model-library-format.html#making">model folder</a>, its netlist and <code>part.cpart</code> are written, and the
@@ -2799,6 +2799,11 @@ by <em>&quot;This part will be unavailable on: …&quot;</em> when any is missin
 <code>builds[]</code> (<code>rid</code>, <code>state</code>, <code>reason</code>, <code>fix</code>) beside the source path, <code>compiledFrom</code> and the proof's verdict. A
 missing platform does not change the exit code. Run the same command on another platform into the same library to
 add that platform's build: it is added when the source hashes the same, and refused when the cell has changed.</p>
+<p><code>--protect encapsulate</code> publishes the cell's linear network as one S-parameter block, with its devices placed
+against its ports (<a href="protected-models.html#encapsulated">Encapsulated netlist</a>); it needs no compiler and is off unless
+given. The block is sampled over the <code>--sweep</code> plan (0-20 GHz, 1001 points, when none is given), and the proof runs at
+the <code>--check-bias</code> points as Compile netlist's does. <code>--protect compile</code> is <code>--compile-netlist</code>; the two ways cannot be
+combined. <code>--json</code>'s <code>exportPart</code> carries the proof's verdict.</p>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf export part &lt;model folder&gt; --refresh</code></pre>
 <p>After a model's schematic was edited by writing it, <code>--refresh</code> does what saving it in <strong>Edit Vendor Model…</strong>
 does (<a href="pdk-integration.html#vendor-placed">A placed part</a>): a file it newly names is copied into <code>models/</code>, a newly

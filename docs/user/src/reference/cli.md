@@ -1957,7 +1957,7 @@ warns about range.
     [--kind active|passive] [--value …] [--freq-low … --freq-high …] [--conditions …] [--footprint …]
     [--doc &lt;file&gt;]… [--symbol own|fet|r|c|l|box] [--replace] [--include-vendor-parts]
     [--compile-models] [--build &lt;rid&gt;=&lt;path&gt;]…
-    [--compile-netlist [--source-out &lt;file.va&gt;] [--check-bias "pin=V …"]…]
+    [--protect encapsulate|compile] [--compile-netlist] [--source-out &lt;file.va&gt;] [--check-bias "pin=V …"]…
     [--library-name … --publisher … --license … --library-version …]</code></pre>
 
 The same code **File ▸ Export to Library…** runs: the cell, its sub-cells and every file they use are copied
@@ -1999,6 +1999,12 @@ by *"This part will be unavailable on: …"* when any is missing, and `--json` c
 `builds[]` (`rid`, `state`, `reason`, `fix`) beside the source path, `compiledFrom` and the proof's verdict. A
 missing platform does not change the exit code. Run the same command on another platform into the same library to
 add that platform's build: it is added when the source hashes the same, and refused when the cell has changed.
+
+`--protect encapsulate` publishes the cell's linear network as one S-parameter block, with its devices placed
+against its ports ([Encapsulated netlist](protected-models.html#encapsulated)); it needs no compiler and is off unless
+given. The block is sampled over the `--sweep` plan (0-20 GHz, 1001 points, when none is given), and the proof runs at
+the `--check-bias` points as Compile netlist's does. `--protect compile` is `--compile-netlist`; the two ways cannot be
+combined. `--json`'s `exportPart` carries the proof's verdict.
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf export part &lt;model folder&gt; --refresh</code></pre>
 

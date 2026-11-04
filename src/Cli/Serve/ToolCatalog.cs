@@ -879,7 +879,8 @@ internal static class ToolCatalog
                             "One segment of the frequency plan the parts that take their substrate from the technology are sampled "
                           + "over, in the sparam directive's keys: 'start=1 stop=20 npts=101 unit=GHz', or step= for npts=, with log "
                           + "optional; unit defaults to Hz, as in the directive. One item per segment. Default: 0 to 20 GHz, 1001 points. "
-                          + "Refused when no part uses the technology."),
+                          + "With protect=encapsulate it is also the plan the S-parameter block is sampled over: make it reach the highest "
+                          + "harmonic a run will use. Refused when no part uses the technology and nothing is encapsulated."),
                         // brief vendorlib-15 R-vl15-1d — compiled models.
                         new("compileModels",      "--compile-models",       OptKind.Flag,
                             "Compile each Verilog-A source the cell places, and each ComposedFET (converted to Verilog-A first, then "

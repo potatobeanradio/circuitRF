@@ -141,7 +141,8 @@ public partial class ExportToLibraryDialog : Window
         }
         var result = await _vm.Export(replace);
         // A protected export stays open to show its Builds table (brief vendorlib-16 R-vl16-6a); Close returns it.
-        if (result.Succeeded && result.Builds.Count > 0) { _vm.ShowBuilds(result); return; }
+        // An encapsulated one stays open the same way, to show its folder and the proof's summary (brief vendorlib-19 R-vl19-2c).
+        if (result.Succeeded && (result.Builds.Count > 0 || result.Protection is not null)) { _vm.ShowBuilds(result); return; }
         if (result.Succeeded) Close(result);
     }
 

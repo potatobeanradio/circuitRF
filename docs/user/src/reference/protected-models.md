@@ -3,8 +3,8 @@ title: Protected Models
 slug: reference/protected-models.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Protected Models
-lede: For a device maker deciding whether to publish a model here - why circuitRF does not encrypt models, what to compile and what can stay outside, what a compiled model still reveals, how to restrict use from inside it, and how to sign the library.
-keywords: protected model, encrypted model, compiled model, osdi, Verilog-A, device maker, model protection, licence, license check, $fatal, signed library, platform build, publish a model
+lede: For a device maker deciding whether to publish a model here - why circuitRF does not encrypt models, what to compile and what can stay outside, how to publish a cell as one compiled module or as one S-parameter block with its devices, what a protected model still reveals, how to restrict use from inside it, and how to sign the library.
+keywords: protected model, encrypted model, compiled model, osdi, Verilog-A, device maker, model protection, encapsulated netlist, S-parameter block, licence, license check, $fatal, signed library, platform build, publish a model
 ---
 
 <nav class="toc">
@@ -13,6 +13,8 @@ keywords: protected model, encrypted model, compiled model, osdi, Verilog-A, dev
 <li><a href="#why">Why circuitRF does not encrypt models</a></li>
 <li><a href="#split">What to compile, and what can stay outside</a></li>
 <li><a href="#compile-netlist">Compile netlist: publish a cell as one compiled module</a></li>
+<li><a href="#encapsulated">Encapsulated netlist: publish a cell's linear network as one S-parameter block</a></li>
+<li><a href="#which">Which method to use</a></li>
 <li><a href="#reveals">What a compiled model still reveals</a></li>
 <li><a href="#restrict">Restricting use from inside the model</a></li>
 <li><a href="#publish">Signing, and the platforms to build for</a></li>
@@ -52,8 +54,9 @@ protect is a compiled `.osdi` with no source beside it.
 ## Compile netlist: publish a cell as one compiled module {#compile-netlist}
 
 You do not have to write the Verilog-A yourself. If the model is already a circuitRF cell — a ComposedFET with its
-package network, or a matched stage built from lumped parts and a device — tick **Compile netlist (protected
-model)** in **Export to Library** (on the command line, `--compile-netlist`). It is off unless you tick it. Export
+package network, or a matched stage built from lumped parts and a device — tick **Protect the model** in **Export to
+Library** and choose **Compile netlist (one compiled module)** (on the command line, `--protect compile`, or
+`--compile-netlist`). It is off unless you tick it. Export
 writes the whole cell as **one** Verilog-A module, compiles it with your own compiler, and publishes the compiled
 build in place of the cell. The cell's schematic, its sub-cells and any `.cmodel` are not copied into the library.
 
@@ -72,15 +75,17 @@ netlist; what changes with it ticked is noted.
 | **Frequency**, **Conditions**, **Footprint** | The range the model is valid over, the conditions it was made at, and the footprint, as the palette shows them. The proof's three frequencies are spread across this range. |
 | **Parameters** | The cell's parameters, each with a **Tolerance**: a spread here still draws per placed part in a yield run, because the wrapper evaluates it. |
 | **Corners** | Named sets of parameter values a placed part can select. |
-| **Frequency** (sweep) | The plan technology parts are sampled over when they become S-parameter files; greyed when the cell has none. |
+| **Frequency** (sweep) | The plan technology parts are sampled over when they become S-parameter files, and the plan an [encapsulated](#encapsulated) block is sampled over. Greyed when the cell has no technology part and Encapsulated netlist is not chosen. |
 | **Compile Verilog-A models** | Ships each Verilog-A device and ComposedFET the cell places as its compiled build instead of its source (a ComposedFET is written as Verilog-A first). The cell's topology still ships. With Compile netlist, this applies to the Verilog-A devices left outside. |
 | **Builds for other platforms…** | Adds builds of a compiled device made elsewhere. Greyed with Compile netlist, which builds every platform the compiler can reach itself. |
-| **Compile netlist (protected model)** | Publishes the cell as one compiled module, without its schematic. Off until you tick it, and greyed with the reason when no Verilog-A compiler is found. The line under it says where the generated source will be written. |
+| **Protect the model** | Publishes the model without its schematic. Off until you tick it; the two ways under it are greyed until then. |
+| **Encapsulated netlist (one S-parameter block)** | Chosen when you tick the box: the cell's linear network as one S-parameter block, its devices placed against it. Needs no compiler. See [Encapsulated netlist](#encapsulated). |
+| **Compile netlist (one compiled module)** | Publishes the cell as one compiled module, without its schematic. Greyed with the reason when no Verilog-A compiler is found. The line under it says where the generated source will be written. |
 | **Proof bias** | The bias points the proof runs at, one per line (`g=-0.5 d=5`; pins not named are at 0 V). Left empty, the line under it lists the default set. |
-| **Builds** | Appears once a protected export has run: one row per platform, led by the platforms the part will be unavailable on. The dialog stays open to show it; **Close** finishes. |
+| **Builds** | Appears once a compiled export has run: one row per platform, led by the platforms the part will be unavailable on. After an encapsulated export it is **Exported**: the model folder and the proof's summary. The dialog stays open to show it; **Close** finishes. |
 | **Documents** | Files copied into the part's `docs/` folder, such as a data sheet. |
 | **Symbol** | The symbol the part is placed with: the cell's own, the FET glyph, R, C, L or a box. |
-| **Compiled into the model** | With Compile netlist: what is compiled, what stays outside, and the module's terminals. Without it, this list is **Copied into the model**: every sub-cell and file the export copies. |
+| **Compiled into the model** | With Compile netlist: what is compiled, what stays outside, and the module's terminals. With Encapsulated netlist it is **The S-parameter block**. Unprotected, this list is **Copied into the model**: every sub-cell and file the export copies. |
 | Red lines under it | Every reason the export cannot go ahead. **Export** stays greyed while any stands. |
 | **Add this library to the workspace** | References the library from the workspace, so the part is in the palette as soon as the export finishes. |
 | **Export** | Builds, compiles and proves the part; nothing reaches the library unless the proof passes. |
@@ -124,6 +129,80 @@ checked at two ambient temperatures as well. The limit is 1e-6 relative, with fl
 it, nothing is written to the library, the worst point is named with both values, and the source stays in
 `protected-source/` for you to inspect.
 
+## Encapsulated netlist: publish a cell's linear network as one S-parameter block {#encapsulated}
+
+Compile netlist needs a Verilog-A compiler on your machine, refuses a ComposedFET with a table constituent, and leaves
+every SnP, transmission line and technology part in the wrapper, where anyone can read them. **Encapsulated
+netlist** needs nothing installed. Tick **Protect the model** and keep **Encapsulated netlist (one S-parameter
+block)**, which is chosen first (on the command line, `--protect encapsulate`). **Every linear element of the cell
+becomes one N-port S-parameter block**, and the devices are placed against its ports. What ships is the network's
+behaviour at its ports over the frequency plan. Its topology, its element values and its parts list do not.
+
+**What goes into the block, and what stays outside.** Sub-cells are flattened first. Every linear element then goes
+into **one** block: R, L, C, mutual inductances, transmission lines, every technology part, and every SnP the cell
+already places. The engine decides, not a list: an element whose model is linear goes in, so a linear model added to
+circuitRF later goes in too. These stay outside, placed as written:
+
+- **devices**: a ComposedFET, a Verilog-A device, a diode, a FET model, an SDD or an external device;
+- **independent sources and probes**, which are not part of the network. An S-parameter block cannot carry a source.
+  A model cell rarely holds one, and the dialog lists any it finds.
+
+A SPICE subcircuit is flattened too, and its parts are sorted one by one. One that holds both linear parts and devices
+is refused, because the block cannot take part of one placed subcircuit. A model holds exactly one block, never two.
+A cell with nothing linear in it exports with no block: the dialog says *"Nothing in the cell is linear: the model is
+its devices."*
+
+**The ports.** The block has one port for each cell pin it touches, in pin order, then one for each net where it meets
+a device. Ground is the reference. A pin that only devices touch needs no port. A thermal net is a node like any other,
+so linear elements on it go into the block and the thermal network is hidden too. In the wrapper the joining nets are
+called `n1`, `n2`, …, because a flattened name such as `X1.mid` would describe the hierarchy the block hides. The
+dialog lists each port and what it joins before anything is written. There is no limit on the port count. The dialog
+shows the count and the file size first, for example *"14 ports × 1,001 points, about 8.3 MB"*. A block with many
+ports is a large dense matrix at every frequency.
+
+**The frequency plan must reach the highest harmonic a run will use.** The block is sampled over the **Frequency**
+plan, which is live whenever Encapsulated netlist is chosen. It always includes 0 Hz, and the 0 Hz row is the
+network's DC solution. Above the plan's top frequency the block holds its last point and warns. That is harmless for
+an S-parameter run inside the plan. In harmonic balance, though, every harmonic above the top frequency sees the
+network at the top frequency. The line under the plan states the highest fundamental that keeps the default harmonic
+count inside it, for example *"up to a 2.857 GHz fundamental"* for a 20 GHz plan and 7 harmonics. If your users will
+run higher, extend the plan.
+
+**Parameters.** A cell parameter that reaches only devices, such as a FET's `N` or `Temp`, stays a parameter of the
+part and passes through to them. **A parameter that reaches anything inside the block is frozen at its default**,
+because the block is sampled at one set of values. The dialog lists every frozen parameter by name. The published part
+does not have it, and a device it also reached gets the frozen value. A spread or a corner on a frozen parameter is
+refused: *"Lp has a spread and reaches the S-parameter block, which is sampled at one value. Make it reach only a
+device, or use Compile netlist."* The block is sampled at the design's ambient temperature (25 °C unless the design
+says otherwise), so a temperature-dependent linear element is fixed there.
+
+**Devices ship as they are.** Encapsulation hides the linear network only. A ComposedFET's `.cmodel` and a Verilog-A
+source ship readable unless you also tick **Compile Verilog-A models**, which works with Encapsulated netlist as it
+does alone. The dialog names every device that stays readable while that box is unticked.
+
+**Nothing in the library describes the network.** The cell's schematic, its sub-cell folders, the element values and
+every SnP the block absorbed are not copied. The model folder holds `models/<Part>.s<N>p`, the outside devices' own
+files, and the wrapper `.cnl` and `.csch`. The block's Touchstone header carries the part number, the plan and the
+circuitRF version, and no element name, net name or time, so the same cell and plan always give the same bytes.
+`part.cpart` records `"Protection": "encapsulated"` and the plan.
+
+**The proof.** Before anything reaches the library, Export runs the original cell and the wrapper with its block
+through the same engine at the **Proof bias** points (`--check-bias` on the command line). It compares the DC current
+into every pin, and the Y-parameters at three frequencies taken on sampled points, where the block is exact. The limit
+is Compile netlist's: 1e-6 relative, with floors of 1e-12 A and 1e-12 S. Over it, nothing is written and the worst
+point is named with both values. Between samples the block is its interpolation: the worst |S| difference halfway
+between samples is reported in dB, as information. The proof runs at the one ambient the block was sampled at.
+
+## Which method to use {#which}
+
+| | Encapsulated netlist | Compile netlist |
+|---|---|---|
+| **Needs** | nothing | a Verilog-A compiler, and zig for other platforms' builds |
+| **Hides** | every linear element, SnPs, transmission lines and technology parts included | R, C, L, mutuals, shorts and ComposedFETs |
+| **Stays visible** | the devices, unless Compile Verilog-A models is ticked | SnPs, transmission lines, technology parts and outside devices |
+| **Parameters** | only those that reach devices; the rest are frozen | all of them |
+| **Valid over** | the frequency plan | every frequency (an SnP left outside keeps its own range) |
+
 ## What a compiled model still reveals {#reveals}
 
 Know this before publishing, rather than finding it out afterwards. Anyone who has your compiled model can read:
@@ -135,6 +214,7 @@ Know this before publishing, rather than finding it out afterwards. Anyone who h
 - the device's **response to any voltages** someone chooses to apply, to as many points as they like
 - with Compile netlist, **the terminals added for outside elements**, which show where the protected network meets
   the visible one
+- with Encapsulated netlist, the block's **port count**, and the network's **behaviour at those ports** over the plan
 
 Give internal nodes opaque names (`n1`, `n2`) rather than names that describe the circuit. The sparsity pattern
 cannot be hidden, because the simulator has to know it to solve the circuit.

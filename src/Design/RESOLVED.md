@@ -27206,3 +27206,31 @@ two points never share a child-cache entry) and the point's values bound to the 
   run; nothing makes it a job automatically.
 - **No real 3D solve was added.** Every test reads geometry, keys, signatures or the solver input a held setup writes
   (`tests/Ui.Tests/SchematicSync/EmThreeDCellTests.cs`).
+
+## Encapsulated netlist: a cell's linear network as one S-parameter block (VL-19, 2026-11-03)
+
+`ModelLibraryExport.Encapsulate.cs`, `Protect/ProtectClassify.cs`; gate `tests/Ui.Tests/VendorLibraries/EncapsulatedNetlistTests.cs`.
+
+- **An element is sorted by ALL the components it elaborates to, and a composed FET is several.** A ComposedFET builds a
+  nonlinear core (`Q1.core`) plus its own linear parasitics, so "every component linear → inside, every one a device →
+  outside, mixed → refuse" refused every ComposedFET. The rule is: any device among them keeps the element outside whole.
+  Only a SPICE subcircuit (`SpiceModel`) is the exception the brief names — its primitives are sorted one by one — and a
+  mixed one is refused, because the wrapper cannot place part of one subcircuit.
+- **Sources are found by what they stamp, not by type.** A linear component that writes a non-zero right-hand side at DC
+  or at 1 GHz (`AddSourceValue`/`AddCurrentInjection`) is a source; a tone source is `IDriveScalable` (P1Tone stamps no RHS
+  in S-parameter mode); a probe is `SeriesProbeModelBase`. A 0 V `Vdc` writes nothing and goes into the block as the short
+  it is — which breaks an SDD whose control current names it; the proof catches that rather than this guessing.
+- **The block is sampled by elaborating the cell ONCE and putting its inside components in a netlist of their own**, node
+  numbers kept (`Network`): the join nets are internal to the cell, so no bench can reach them with ports from outside.
+  A node only an outside element touched is tied to ground through 1 Ω so it is no floating unknown.
+- **The 0 Hz row is solved by the DC engine, not read off the S-parameter engine at 0 Hz.** The S-parameter engine takes
+  a line's resonance clamp as its DC, and the DC engine keeps only the real part of each stamp, so the two disagree on
+  an absorbed SnP or line. Each port is driven in turn by 2 V through 50 Ω with the others terminated, and
+  S = 2·V/E − δ. The proof's DC currents then agree to ~4e-8 relative on the gate fixture.
+- **A ComposedFET line with its thermal pin unwired has 3 nets and its glyph 4 pins**, so `NetlistSchematic` refuses to
+  draw it. The wrapper wires pin 4 to a neutral net that touches nothing else; re-extraction drops it again (the `.cnl`
+  keeps three nets). Compile netlist never met this because its ComposedFETs go inside the module.
+- **`FinishWrapper` is now shared** by both protections (draw the wrapper, add the pins, delete the original schematic,
+  `cells/` and every unreferenced file in `models/`); `TouchstoneText` is brief 11's SnP writer, shared with the block.
+- **Testing trap:** altering a block entry to prove the proof fails must alter one the network actually uses. S21 of the
+  gate fixture (in → out) is ~0 because the FET separates them, so a 1 % change moved nothing; S11 does.

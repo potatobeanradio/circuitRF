@@ -48,12 +48,12 @@ public sealed record ProtectBias(IReadOnlyDictionary<string, double> Volts)
 }
 
 /// <summary>The proof's verdict: null <see cref="Refusal"/> when the compiled part matches the cell.</summary>
-public sealed record ProtectCheckResult(double WorstError, string Worst, int Points, string? Refusal)
+public sealed record ProtectCheckResult(double WorstError, string Worst, int Points, string? Refusal, string Subject = "compiled")
 {
     public bool Passed => Refusal is null;
 
     /// <summary>One line for the dialog and the CLI.</summary>
-    public string Summary => Refusal ?? $"The compiled part matches the cell at {Points} point{(Points == 1 ? "" : "s")}: worst {Worst}, " +
+    public string Summary => Refusal ?? $"The {Subject} part matches the cell at {Points} point{(Points == 1 ? "" : "s")}: worst {Worst}, " +
                                          $"difference {WorstError.ToString("G3", CultureInfo.InvariantCulture)}.";
 }
 
@@ -87,7 +87,7 @@ public static class ProtectCheck
     public static ProtectCheckResult Run(string sourceText, string sourceCell, string? sourceBase,
                                          string wrapperText, string wrapperCell, string wrapperBase,
                                          IReadOnlyList<string> pins, IReadOnlyList<ProtectBias> bias, double[] freqs,
-                                         bool thermal, RunControl? control = null)
+                                         bool thermal, RunControl? control = null, string subject = "compiled")
     {
         (double Error, string Where) worst = (0, "");
         int points = 0;
@@ -104,7 +104,7 @@ public static class ProtectCheck
                     for (int k = 0; k < pins.Count; k++)
                     {
                         double e = Error(Math.Abs(a.I[k] - w.I[k]), Math.Abs(a.I[k]), Math.Abs(w.I[k]), CurrentFloor);
-                        if (e > worst.Error) worst = (e, $"the DC current into {pins[k]} {at} (cell {G(a.I[k])} A, compiled {G(w.I[k])} A)");
+                        if (e > worst.Error) worst = (e, $"the DC current into {pins[k]} {at} (cell {G(a.I[k])} A, {subject} {G(w.I[k])} A)");
                     }
                     for (int f = 0; f < freqs.Length; f++)
                         for (int i = 0; i < pins.Count; i++)
@@ -112,20 +112,20 @@ public static class ProtectCheck
                             {
                                 Complex ya = a.Y[f][i, j], yw = w.Y[f][i, j];
                                 double e = Error((ya - yw).Magnitude, ya.Magnitude, yw.Magnitude, AdmittanceFloor);
-                                if (e > worst.Error) worst = (e, $"Y({i + 1},{j + 1}) at {FormatHz(freqs[f])} {at} (cell {G(ya)} S, compiled {G(yw)} S)");
+                                if (e > worst.Error) worst = (e, $"Y({i + 1},{j + 1}) at {FormatHz(freqs[f])} {at} (cell {G(ya)} S, {subject} {G(yw)} S)");
                             }
                     points++;
                 }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            return new ProtectCheckResult(double.NaN, "", points, $"The proof could not run: {ex.Message}");
+            return new ProtectCheckResult(double.NaN, "", points, $"The proof could not run: {ex.Message}", subject);
         }
         if (worst.Error > Tolerance)
             return new ProtectCheckResult(worst.Error, worst.Where, points,
-                $"The compiled part does not match the cell: worst {worst.Where}, difference " +
-                $"{worst.Error.ToString("G3", CultureInfo.InvariantCulture)} (allowed {Tolerance:G1} relative, with floors of {CurrentFloor:G1} A and {AdmittanceFloor:G1} S). Nothing was written to the library.");
-        return new ProtectCheckResult(worst.Error, worst.Where, points, null);
+                $"The {subject} part does not match the cell: worst {worst.Where}, difference " +
+                $"{worst.Error.ToString("G3", CultureInfo.InvariantCulture)} (allowed {Tolerance:G1} relative, with floors of {CurrentFloor:G1} A and {AdmittanceFloor:G1} S). Nothing was written to the library.", subject);
+        return new ProtectCheckResult(worst.Error, worst.Where, points, null, subject);
     }
 
     /// <summary>Three frequencies log-spaced across the part's range: its ends and their geometric mean.</summary>

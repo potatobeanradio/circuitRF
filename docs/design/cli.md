@@ -4808,6 +4808,15 @@ table goes to stderr one row per platform, after the "unavailable on" warning, a
 code 0, so a CI job that requires every platform tests the JSON. Over MCP the three are `create what=libraryPart`'s
 `compileNetlist`, `sourceOut` and `checkBias`. Gate: `tests/Ui.Tests/VendorLibraries/CompileNetlistTests.cs`.
 
+**Encapsulated netlist (brief vendorlib-19).** `export part --protect encapsulate|compile` is the dialog's **Protect the
+model** checkbox with its two choices; `compile` is the old `--compile-netlist`, which stays, and the two are refused
+together. Encapsulate is `ExportOptions.Encapsulate`: the partition (`ProtectPartition` under `ProtectRule.Encapsulate`,
+sorted by `ProtectClassify` from the elaborated cell's own `ModelKind`s), the block's sampling, the wrapper and the
+proof are all `ModelLibraryExport.Encapsulate.cs`; `src/Cli` only parses. `--sweep` is the block's plan and
+`--check-bias` the proof's points. `--json`'s `exportPart` is written for an encapsulated export too (its `builds[]`
+empty, `proof` set). Over MCP it is `create what=libraryPart`'s `protect`. Gate:
+`tests/Ui.Tests/VendorLibraries/EncapsulatedNetlistTests.cs`.
+
 ## 36. Simulating by EM of a schematic's own layout: `model=`, `--em`, `--em-max-solves` (brief-sdl-6)
 
 Every `analysis` directive takes `model=circuit|em` (default `circuit`) and, when the layout has several setups,

@@ -148,6 +148,8 @@ A key circuitRF does not know is kept when it rewrites the file.
 | `PublishedHash` | No | Written by Export ([below](#hash)). Empty or absent in a hand-made model. |
 | `Builds` | No | For a [compiled-only](#compiled) model, the platforms it has a build for, as runtime identifiers (`["osx-arm64", "win-x64"]`). Absent for a model with source. |
 | `Converted` | No | The parts Export replaced by S-parameter files ([below](#converted)): each one's instance, the cell that placed it, its type, its file, its parameters as written, the technology's name, the frequency plan and the circuitRF version. Provenance; nothing reads it to run. |
+| `Protection` | No | `encapsulated` for a model Export published as one S-parameter block with its devices ([Encapsulated netlist](protected-models.html#encapsulated)). Absent otherwise. |
+| `Plan` | No | For an encapsulated model, the frequency plan its block was sampled over, spelt as `Converted`'s `Frequency` is. A refresh samples on it. |
 
 **Nothing in `part.cpart` changes a result.** What runs is the `.cnl`. `Pins` and `Parameters` repeat what the
 `.cnl` states so a library can be listed without reading every netlist, and `check` says when the two disagree.

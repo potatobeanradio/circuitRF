@@ -169,13 +169,17 @@
                            IsVisible="{Binding CellEditNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
 
                 <!-- Frequency (brief vendorlib-11 R-vl11-4): the plan technology-bound parts are sampled over — the EM
-                     Setup's own plan editor. Greyed when nothing uses the technology. -->
+                     Setup's own plan editor. Greyed when nothing uses the technology, unless Encapsulated netlist is
+                     chosen (brief vendorlib-19 D4): its block is sampled over this plan, and the line under it says
+                     what that means for harmonic balance. -->
                 <TextBlock Text="Frequency" FontWeight="SemiBold" FontSize="12"/>
                 <TextBlock Text="{Binding ConversionLine}" FontSize="11" TextWrapping="Wrap" Opacity="0.8"/>
                 <StackPanel Spacing="4" IsEnabled="{Binding IsFrequencyPlanEnabled}">
                     <ctl:FrequencyPlanEditor x:Name="FrequencyPlan" Segments="{Binding FrequencySegments}"
                                              AddSegmentCommand="{Binding AddFrequencySegmentCommand}"/>
                     <TextBlock Text="DC is always included." FontSize="11" Opacity="0.6"/>
+                    <TextBlock Text="{Binding HarmonicLine}" FontSize="11" TextWrapping="Wrap" Opacity="0.8"
+                               IsVisible="{Binding HarmonicLine, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                 </StackPanel>
 
                 <!-- Compiled models (brief vendorlib-15 R-vl15-1d). Both rows are always shown and greyed when they do not
@@ -214,15 +218,30 @@
                     <TextBlock Text="{Binding BuildsNote}" FontSize="11" TextWrapping="Wrap" Opacity="0.6"/>
                 </StackPanel>
 
-                <!-- Compile netlist (brief vendorlib-16 R-vl16-2a). Always shown, greyed with a sentence when no compiler is
-                     found; the checkbox starts unticked. Ticked, the list on the right becomes what is compiled, what stays
-                     outside and the terminal count, and the refusals join the list below it. -->
+                <!-- Protected model (brief vendorlib-19 R-vl19-2a): one checkbox, unticked by default, and under it the two
+                     ways, always shown and greyed while it is unticked so nothing moves when it is ticked. Encapsulated
+                     netlist is preselected; Compile netlist (brief vendorlib-16) is greyed with its own sentence when no
+                     compiler is found. Ticked, the list on the right becomes what the model is made of, and the refusals
+                     join the list below it. -->
                 <TextBlock Text="Protected model" FontWeight="SemiBold" FontSize="12"/>
-                <CheckBox x:Name="CompileNetlistBox" IsChecked="{Binding CompileNetlist}" IsEnabled="{Binding IsCompileNetlistEnabled}"
-                          ToolTip.Tip="Compile the cell's netlist into one Verilog-A module and publish the compiled build in place of the cell. The source is written outside the library.">
-                    <TextBlock Text="Compile netlist (protected model)" FontSize="12"/>
+                <CheckBox x:Name="ProtectModelBox" IsChecked="{Binding ProtectModel}"
+                          ToolTip.Tip="Publish the model without its schematic: as one S-parameter block with its devices, or as one compiled module.">
+                    <TextBlock Text="Protect the model" FontSize="12"/>
                 </CheckBox>
-                <TextBlock Text="{Binding CompileNetlistNote}" FontSize="11" TextWrapping="Wrap" Opacity="0.8"/>
+                <TextBlock Text="{Binding ProtectNote}" FontSize="11" TextWrapping="Wrap" Opacity="0.8" MinHeight="14"/>
+                <StackPanel Spacing="2" Margin="20,0,0,0" IsEnabled="{Binding IsProtectChoiceEnabled}">
+                    <RadioButton x:Name="EncapsulateChoice" GroupName="ProtectWay" IsChecked="{Binding EncapsulateChosen}"
+                                 ToolTip.Tip="Every linear element of the cell becomes one N-port S-parameter block, sampled over the Frequency plan; the devices are placed against its ports.">
+                        <TextBlock Text="Encapsulated netlist (one S-parameter block)" FontSize="12"/>
+                    </RadioButton>
+                    <TextBlock Text="{Binding EncapsulateNote}" FontSize="11" TextWrapping="Wrap" Opacity="0.8" Margin="28,0,0,0"/>
+                    <RadioButton x:Name="CompileNetlistBox" GroupName="ProtectWay" IsChecked="{Binding CompileChosen}"
+                                 IsEnabled="{Binding IsCompileNetlistEnabled}"
+                                 ToolTip.Tip="Compile the cell's netlist into one Verilog-A module and publish the compiled build in place of the cell. The source is written outside the library.">
+                        <TextBlock Text="Compile netlist (one compiled module)" FontSize="12"/>
+                    </RadioButton>
+                    <TextBlock Text="{Binding CompileNetlistNote}" FontSize="11" TextWrapping="Wrap" Opacity="0.8" Margin="28,0,0,0"/>
+                </StackPanel>
                 <StackPanel Spacing="4" IsVisible="{Binding ShowsProofBias}">
                     <Grid ColumnDefinitions="90,*">
                         <TextBlock Grid.Column="0" Text="Proof bias" FontSize="12" VerticalAlignment="Top" Margin="0,4,0,0"/>
@@ -233,7 +252,7 @@
                 </StackPanel>
                 <!-- The Builds table (R-vl16-6a), once a protected export has run. -->
                 <StackPanel Spacing="2" IsVisible="{Binding HasBuilds}">
-                    <TextBlock Text="Builds" FontWeight="SemiBold" FontSize="12"/>
+                    <TextBlock Text="{Binding FinishedHeader}" FontWeight="SemiBold" FontSize="12"/>
                     <SelectableTextBlock Text="{Binding UnavailableLine}" FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource CrfWarningBrush}"
                                          IsVisible="{Binding UnavailableLine, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                     <!-- Where the export wrote: each a link that reveals the folder in the file manager. -->

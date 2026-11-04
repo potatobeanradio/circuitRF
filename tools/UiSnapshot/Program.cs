@@ -110,6 +110,7 @@ using CircuitRF.Design.Layout;
 //   --manage-libraries <workspace>                            File ▸ Manage Libraries… (written to <out>.dialog.png)
 //   --add-vendor-library <folder>                             Add Vendor Library's confirm step (<out>.dialog.png)
 //   --export-to-library <cell> [--export-library <dir>]       Export to Library's dialog on a cell (<out>.dialog.png)
+//     [--export-protect [run]] [--export-encapsulate [run]] [--export-protect-view] [--export-compile-models]
 //     [--export-protect [run]] [--export-compile-models]        Compile netlist / Compile Verilog-A models ticked
 //       [--export-build <rid>=<path>]…                        with rows of Builds for other platforms
 //       [--export-protect [run]]                              Compile netlist ticked; run also exports and shows Builds
@@ -173,6 +174,8 @@ string? analysisDialog = null, emSolvesDialog = null;   // brief-sdl-6
 string? archive = null, manageLibraries = null, addVendorLibrary = null, exportToLibrary = null, exportLibrary = null, importSchematic = null;
 var exportBuilds = new List<(string Rid, string Path)>();
 string? exportProtect = null;
+string? exportEncapsulate = null;   // brief vendorlib-19
+bool exportProtectView = false;
 bool exportCompileModels = false;
 string? repointQuestion = null;
 // --project-tree <workspace> [--reveal <file>] [--filter-open] [--filter-all-off]: the Workspace Tree panel; --reveal runs
@@ -294,6 +297,12 @@ for (int i = 0; i < args.Length; i++)
         case "--export-protect":
             exportProtect = i + 1 < args.Length && args[i + 1] == "run" ? args[++i] : "tick";
             break;
+        // brief vendorlib-19: Protect the model ticked with Encapsulated netlist (preselected); "run" also exports.
+        case "--export-encapsulate":
+            exportEncapsulate = i + 1 < args.Length && args[i + 1] == "run" ? args[++i] : "tick";
+            break;
+        // The Protected model section scrolled into view, nothing ticked.
+        case "--export-protect-view": exportProtectView = true; break;
         // Compile Verilog-A models ticked.
         case "--export-compile-models": exportCompileModels = true; break;
         case "--import-schematic" when i + 1 < args.Length: importSchematic = Path.GetFullPath(args[++i]); break;
@@ -1828,31 +1837,33 @@ void OpenExportToLibrary(string cell, string? library)
         vm.BuildRows[^1].Path = path;
     }
     if (exportProtect is not null) vm.CompileNetlist = true;
+    if (exportEncapsulate is not null) vm.ProtectModel = true;
     if (exportCompileModels) vm.CompileModels = true;
     _ = CircuitRF.Ui.Views.Dialogs.ExportToLibraryDialog.AskAsync(host, vm);
     Pump();
     // The plan's continuation runs on this dispatcher, so it is pumped for, never waited on.
     for (int k = 0; k < 1500 && (vm.IsPlanning || !vm.Replanned.IsCompleted); k++) { Pump(); Thread.Sleep(20); }
     Pump();
-    if (exportProtect == "run" && vm.CanExport)
+    bool runs = exportProtect == "run" || exportEncapsulate == "run";
+    if (runs && vm.CanExport)
     {
         var running = vm.Export(replace: false);
         for (int k = 0; k < 6000 && !running.IsCompleted; k++) { Pump(); Thread.Sleep(20); }
         var done = running.Result;
-        if (done.Succeeded && done.Builds.Count > 0) vm.ShowBuilds(done);
+        if (done.Succeeded && (done.Builds.Count > 0 || done.Protection is not null)) vm.ShowBuilds(done);
         Console.WriteLine($"export: {(done.Succeeded ? done.Message : done.Refusal)}");
         Pump();
     }
     foreach (var l in vm.ProtectLines) Console.WriteLine($"  protect: {l}");
-    // The Compile netlist rows sit low in the left column: bring them into view for the capture.
-    if ((exportProtect is not null || exportCompileModels) && TopDialog() is { } shown
-        && shown.GetVisualDescendants().OfType<Avalonia.Controls.CheckBox>().FirstOrDefault(c => c.Name == "CompileNetlistBox") is { } box)
+    // The Protected model rows sit low in the left column: bring them into view for the capture.
+    if ((exportProtect is not null || exportEncapsulate is not null || exportProtectView || exportCompileModels) && TopDialog() is { } shown
+        && shown.GetVisualDescendants().OfType<Avalonia.Controls.CheckBox>().FirstOrDefault(c => c.Name == "ProtectModelBox") is { } box)
     {
         box.BringIntoView();
         Pump();
         if (box.FindAncestorOfType<Avalonia.Controls.ScrollViewer>() is { } sv)
         {
-            if (exportProtect == "run") sv.ScrollToEnd();
+            if (runs) sv.ScrollToEnd();
             else sv.Offset = sv.Offset.WithY(Math.Max(0, sv.Offset.Y + 120));
         }
         Pump();

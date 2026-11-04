@@ -128,6 +128,14 @@ public sealed record ModelPartManifest
     /// here was compiled elsewhere and never run by its publisher.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public List<string>? Proved { get; init; }
+    /// <summary>How the model is protected, when it is: <c>encapsulated</c> for Encapsulated netlist (brief vendorlib-19
+    /// R-vl19-2b), its linear network shipped as one S-parameter block.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Protection { get; init; }
+    /// <summary>The frequency plan an encapsulated model's block was sampled over, as a converted part's
+    /// <see cref="ModelPartConversion.Frequency"/> spells it, so a later refresh samples on the same plan.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Plan { get; init; }
 
     [JsonExtensionData] public Dictionary<string, JsonElement>? Unknown { get; init; }
 

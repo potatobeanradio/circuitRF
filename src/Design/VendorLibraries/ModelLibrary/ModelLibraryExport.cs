@@ -65,6 +65,10 @@ public sealed record ExportOptions
     /// the cell (brief vendorlib-16). OFF unless asked for — the dialog's checkbox starts unticked and headless it is
     /// <c>--compile-netlist</c>.</summary>
     public bool CompileNetlist { get; init; }
+    /// <summary>Encapsulated netlist (brief vendorlib-19): every linear element of the cell sampled into one N-port
+    /// S-parameter block on <see cref="Sweep"/>, with the devices placed against its ports. OFF unless asked for —
+    /// headless it is <c>--protect encapsulate</c>. Needs no compiler; refused together with <see cref="CompileNetlist"/>.</summary>
+    public bool Encapsulate { get; init; }
     /// <summary>Where the generated source is written; null is <c>protected-source/&lt;Part&gt;/&lt;Part&gt;.va</c> beside
     /// the source workspace (R-vl16-2c). Headless <c>--source-out</c>.</summary>
     public string? SourceOut { get; init; }
@@ -174,6 +178,18 @@ public sealed record ExportPlan
     public bool AddsPlatform { get; init; }
     internal ModelLibraryExport.ProtectPlanned? Protect { get; init; }
 
+    /// <summary>Encapsulated netlist's block (brief vendorlib-19 D4): its port count and size, one line; empty when the
+    /// option is off. With no block it is the note that the model is its devices.</summary>
+    public string BlockLine { get; init; } = "";
+    /// <summary>D4's consequence for harmonic balance: the highest fundamental the default harmonic count keeps inside
+    /// the plan.</summary>
+    public string HarmonicLine { get; init; } = "";
+    /// <summary>The block's port count; 0 when the cell has nothing linear (or the option is off).</summary>
+    public int BlockPorts { get; init; }
+    /// <summary>The cell parameters frozen at their defaults because they reach the block (D5), by name.</summary>
+    public IReadOnlyList<string> FrozenParameters { get; init; } = [];
+    internal ModelLibraryExport.EncapsulatePlanned? Encapsulated { get; init; }
+
     public IEnumerable<ExportCopy> VendorParts
         => Copies.Where(c => c.Kind is ExportCopyKind.VendorSpicePart or ExportCopyKind.VendorModel);
 }
@@ -203,6 +219,8 @@ public sealed record ExportResult
     public string? CompiledFrom { get; init; }
     /// <summary>Compile netlist: the proof's verdict, one line.</summary>
     public string? Proof { get; init; }
+    /// <summary><see cref="ModelPartManifest.Protection"/> of the model written, or null.</summary>
+    public string? Protection { get; init; }
 
     public bool Succeeded => ModelDir is not null;
 }
@@ -314,7 +332,8 @@ public static partial class ModelLibraryExport
 
         // Brief vendorlib-11: the parts the technology supplies a substrate to are sampled over the plan.
         double[] freqs = [];
-        if (walk.Conversions.Count > 0)
+        // Brief vendorlib-19 D4: Encapsulated netlist samples its block over the same plan, whatever the cell places.
+        if (walk.Conversions.Count > 0 || options.Encapsulate)
         {
             freqs = PlanFrequencies(options.Sweep ?? DefaultSweep, out string? planRefusal) ?? [];
             if (planRefusal is not null) refusals.Add(planRefusal);
@@ -353,6 +372,11 @@ public static partial class ModelLibraryExport
 
         // Brief vendorlib-16: Compile netlist.
         var protect = schPath is null ? null : PlanProtect(dir, part, options, libraryDir, pins, refusals);
+        // Brief vendorlib-19: Encapsulated netlist.
+        if (options.Encapsulate && options.CompileNetlist)
+            refusals.Add("A model is protected one way: choose Encapsulated netlist or Compile netlist, not both.");
+        var encapsulated = schPath is null || !options.Encapsulate || options.CompileNetlist ? null
+            : PlanEncapsulate(dir, options, pins, freqs, refusals);
 
         // What the export would replace.
         int revision = 0;
@@ -403,10 +427,15 @@ public static partial class ModelLibraryExport
             FetBias = fetBias,
             CompileUnavailable = compileUnavailable, ShipsCompiled = shipsCompiled,
             Refusals = refusals.Distinct(StringComparer.Ordinal).ToList(),
-            ProtectLines = protect is null ? [] : [.. protect.Partition.Describe()],
+            ProtectLines = protect is not null ? [.. protect.Partition.Describe()]
+                         : encapsulated is not null ? [.. encapsulated.Lines] : [],
             CompileNetlistUnavailable = CompilerMissingCached(), SourcePath = protect?.SourcePath,
-            CheckBias = protect is not null ? [.. protect.Bias.Select(b => b.ToString())] : [.. fetBias.Select(b => b.ToString())],
+            CheckBias = protect is not null ? [.. protect.Bias.Select(b => b.ToString())]
+                      : encapsulated is not null ? [.. encapsulated.Bias.Select(b => b.ToString())]
+                      : [.. fetBias.Select(b => b.ToString())],
             AddsPlatform = addsPlatform, Protect = protect,
+            Encapsulated = encapsulated, BlockLine = encapsulated?.BlockLine ?? "", HarmonicLine = encapsulated?.HarmonicLine ?? "",
+            BlockPorts = encapsulated?.PortNets.Count ?? 0, FrozenParameters = encapsulated?.Frozen ?? [],
         };
     }
 
@@ -481,7 +510,17 @@ public static partial class ModelLibraryExport
 
             // Brief vendorlib-16: the copy becomes the wrapper of its compiled module, and the netlist is extracted again.
             IReadOnlyList<ExportBuild> protectedBuilds = [];
-            if (plan.Protect is { } protect)
+            if (plan.Encapsulated is { } enclosing)
+            {
+                // Brief vendorlib-19: the copy becomes the wrapper of its one S-parameter block.
+                try { BuildEncapsulated(enclosing, plan, tmp, cnl, control); }
+                catch (ProtectRefusedException ex) { return Refuse(wrapper, madeFrom, ex.Message); }
+                catch (ConversionRefused ex) { return Refuse(wrapper, madeFrom, ex.Message); }
+                InvalidateResolution();
+                cnl = ModelNetlist.FromCell(tmp, out why);
+                if (cnl is null) return Refuse(wrapper, madeFrom, why ?? "The wrapper could not be extracted.");
+            }
+            else if (plan.Protect is { } protect)
             {
                 try { protectedBuilds = BuildProtected(protect, plan.PartNumber, tmp, cnl, control).Builds; }
                 catch (ProtectRefusedException ex) { return Refuse(wrapper, madeFrom, ex.Message); }
@@ -515,7 +554,10 @@ public static partial class ModelLibraryExport
                 Conditions = options.Conditions, Footprint = options.Footprint,
                 CaseMetric = options.CaseMetric, CaseImperial = options.CaseImperial,
                 Revision = plan.ExistingRevision + 1,
-                Converted = [.. built.Converted],
+                // An encapsulated model's technology parts are inside its block, not shipped as SnPs of their own.
+                Converted = plan.Encapsulated is null ? [.. built.Converted] : [],
+                Protection = plan.Encapsulated is null ? null : ProtectionEncapsulated,
+                Plan = plan.Encapsulated?.PlanText,
                 Builds = plan.Protect is not null ? BuildsOfWrapper(tmp) : built.Builds.Count == 0 ? null : [.. built.Builds],
                 CompiledFrom = plan.Protect?.Hash,
                 Proved = plan.Protect is not null || plan.FetSites.Count > 0 ? [CircuitRF.Core.Devices.External.OsdiBuilds.CurrentRid] : null,
@@ -543,7 +585,14 @@ public static partial class ModelLibraryExport
 
             double? betweenDb = null;
             ProtectCheckResult? proof = null;
-            if (plan.Protect is { } proving)
+            if (plan.Encapsulated is { } sealedIn)
+            {
+                // D7: the encapsulated part proved against the cell, or nothing is written.
+                control?.BeginStage("Proving the encapsulated part");
+                proof = ProveEncapsulated(plan, sealedIn, tmp, manifest, out betweenDb);
+                if (!proof.Passed) return Refuse(wrapper, madeFrom, proof.Refusal!);
+            }
+            else if (plan.Protect is { } proving)
             {
                 // D5: the compiled part proved against the cell, or nothing is written. The source stays with the maker.
                 control?.BeginStage("Proving the compiled part");
@@ -599,16 +648,19 @@ public static partial class ModelLibraryExport
             {
                 ModelDir = modelDir, Revision = manifest.Revision, Created = created, LibraryManifest = clib,
                 Message = $"Exported {plan.PartNumber} to {where} (revision {manifest.Revision})."
-                          + (plan.Conversions.Count == 0 ? ""
+                          + (plan.Encapsulated is { } e ? " " + EncapsulatedMessage(e, plan, proof!, betweenDb) + BuildsNote(built.Builds)
+                             : plan.Conversions.Count == 0 ? ""
                              : $" {plan.Conversions.Count} part{(plan.Conversions.Count == 1 ? "" : "s")} converted to S-parameters, {plan.Frequencies.Length} points"
                                + (betweenDb is { } db ? $"; between samples, within {db.ToString("G2", CultureInfo.InvariantCulture)} dB." : "."))
-                          + (proof is null ? BuildsNote(built.Builds)
+                          + (plan.Encapsulated is not null ? ""
+                             : proof is null ? BuildsNote(built.Builds)
                              : plan.Protect is null ? " " + proof.Summary + BuildsNote(built.Builds)
                              : " " + proof.Summary + " " + SourceKeptLineFor(plan.Protect.SourcePath)),
                 Warnings = [.. findings.Where(f => f.Severity != DiagnosticSeverity.Error).Select(f => f.Render()).Concat(built.Warnings)
                               .Concat(UnavailableLine(protectedBuilds) is { Length: > 0 } gap ? [gap] : [])
                               .Concat(clibWarning is null ? [] : [clibWarning])],
                 Builds = protectedBuilds, SourcePath = plan.Protect?.SourcePath, CompiledFrom = plan.Protect?.Hash, Proof = proof?.Summary,
+                Protection = manifest.Protection,
             };
         }
         catch (OperationCanceledException) { return Cancel(wrapper, madeFrom); }
@@ -1436,7 +1488,7 @@ public static partial class ModelLibraryExport
     private static ModelPartFrequency? FrequencyRange(ExportPlan plan, ExportOptions options)
     {
         string low = options.FrequencyLow.Trim(), high = options.FrequencyHigh.Trim();
-        if (plan.Conversions.Count > 0 && plan.Frequencies.Length > 0)
+        if ((plan.Conversions.Count > 0 || plan.Encapsulated is not null) && plan.Frequencies.Length > 0)
         {
             if (low.Length == 0) low = FormatFrequency(plan.Frequencies[0]);
             if (high.Length == 0) high = FormatFrequency(plan.Frequencies[^1]);

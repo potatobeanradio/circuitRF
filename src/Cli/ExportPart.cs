@@ -40,7 +40,7 @@ public static class ExportPart
         string libraryName = "", publisher = "", license = "", libraryVersion = "1.0.0";
         var docs = new List<string>();
         var sweeps = new List<CircuitRF.Core.Design.FrequencySpec>();
-        bool replace = false, includeVendor = false, compile = false, compileNetlist = false;
+        bool replace = false, includeVendor = false, compile = false, compileNetlist = false, encapsulate = false;
         string? sourceOut = null;
         var checkBias = new List<string>();
         var builds = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -91,6 +91,15 @@ public static class ExportPart
                 case "--compile-models":            compile = true; break;
                 // brief vendorlib-16: off unless asked for, as the dialog's checkbox is.
                 case "--compile-netlist":           compileNetlist = true; break;
+                // brief vendorlib-19: the way the model is protected; --compile-netlist stays as --protect compile.
+                case "--protect" when more:
+                {
+                    string way = args[++i];
+                    if (way.Equals("encapsulate", StringComparison.OrdinalIgnoreCase)) encapsulate = true;
+                    else if (way.Equals("compile", StringComparison.OrdinalIgnoreCase)) compileNetlist = true;
+                    else return JsonRun.Fail(CliDiagnostics.ExportBadValue("--protect", way, "encapsulate or compile"));
+                    break;
+                }
                 case "--source-out" when more:      sourceOut = Path.GetFullPath(args[++i]); break;
                 case "--check-bias" when more:      checkBias.Add(args[++i]); break;
                 case "--build" when more:
@@ -152,7 +161,7 @@ public static class ExportPart
             LibraryVersion = libraryVersion, License = license,
             Sweep = sweeps.Count == 0 ? null : sweeps,
             CompileModels = compile, Builds = builds,
-            CompileNetlist = compileNetlist, SourceOut = sourceOut, CheckBias = checkBias,
+            CompileNetlist = compileNetlist, Encapsulate = encapsulate, SourceOut = sourceOut, CheckBias = checkBias,
         };
 
         if (source is null) return Export(cell, options, replace, includeVendor);
@@ -198,7 +207,7 @@ public static class ExportPart
 
         // R-vl16-6c: the Builds table — one line per platform to stderr (the summary line is already a warning), and the same rows in
         // --json. A missing platform is not an export failure, so the exit code stays 0.
-        if (result.Builds.Count > 0)
+        if (result.Builds.Count > 0 || result.Protection is not null)
         {
             foreach (var b in result.Builds) Console.Error.WriteLine($"[circuitRF]   {b.Describe()}");
             if (result.SourcePath is { } src) JsonRun.AddOutput("source", src);
@@ -265,12 +274,14 @@ public static class ExportPart
             "Usage: circuitrf export part <cell folder|file.cmc|file.cmodel> --library <dir> [--category a/b] [--part PN]\n" +
             "         [--description …] [--kind active|passive] [--value …] [--freq-low … --freq-high …]\n" +
             "         [--conditions …] [--footprint …] [--doc <file>]… [--symbol own|fet|r|c|l|box]\n" +
-            "         [--sweep start=… stop=… npts=…|step=… [unit=GHz] [log]]…   (technology parts; default 0-20 GHz, 1001 points)\n" +
+            "         [--sweep start=… stop=… npts=…|step=… [unit=GHz] [log]]…   (technology parts, and the encapsulated block;\n" +
+            "              default 0-20 GHz, 1001 points)\n" +
             "         [--replace] [--include-vendor-parts]\n" +
             "         [--compile-models]   (ship each Verilog-A source and ComposedFET compiled, without the source)\n" +
             "         [--build <rid>=<path>]…   (a compiled model's builds made on other platforms)\n" +
-            "         [--compile-netlist [--source-out <file.va>] [--check-bias \"pin=V pin=V\"]…]\n" +
-            "              (publish the cell as one compiled, protected module; the source stays with you)\n" +
+            "         [--protect encapsulate|compile] [--compile-netlist] [--source-out <file.va>] [--check-bias \"pin=V pin=V\"]…\n" +
+            "              (encapsulate: the linear network as one S-parameter block, the devices against its ports;\n" +
+            "               compile: the cell as one compiled module, the source staying with you. --compile-netlist = compile)\n" +
             "         [--library-name … --publisher … --license … --library-version …]   (a new library only)\n" +
             "         [--json]\n" +
             "       circuitrf export part <model folder> --refresh   (after its schematic was edited)");

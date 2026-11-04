@@ -183,6 +183,25 @@ public static partial class ModelLibraryExport
         return result;
     }
 
+    /// <summary>An n-port's S (freq-major, then row-major) as Touchstone text with <paramref name="header"/> as its
+    /// comment lines, at full double precision so a check compares the sampled numbers and not their rounding.</summary>
+    internal static string TouchstoneText(int n, double[] freqs, Complex[] s, IEnumerable<string> header)
+    {
+        var matrices = new Mat<Complex>[freqs.Length];
+        for (int f = 0; f < freqs.Length; f++)
+        {
+            var m = new Mat<Complex>(n, n);
+            for (int i = 0; i < n; i++)
+                for (int j = 0; j < n; j++) m[i, j] = s[f * n * n + i * n + j];
+            matrices[f] = m;
+        }
+        var snp = new SNP(freqs, matrices, MatrixType.S, MatrixFormat.RI) { FreqUnit = FrequencyUnit.Hz };
+        foreach (string line in header) snp.Comments.Add(new CommentEntry(-1, line));
+        using var w = new StringWriter(CultureInfo.InvariantCulture);
+        TouchstoneIO.Write(snp, w, MatrixFormat.RI, writeComments: true, precision: "G17");
+        return w.ToString();
+    }
+
     /// <summary>A conversion that cannot be made, with the sentence that says why.</summary>
     private sealed class ConversionRefused(string message) : Exception(message);
 
@@ -267,31 +286,14 @@ public static partial class ModelLibraryExport
                                    string planText)
     {
         int n = conv.Pins;
-        var matrices = new Mat<Complex>[freqs.Length];
-        for (int f = 0; f < freqs.Length; f++)
-        {
-            var m = new Mat<Complex>(n, n);
-            for (int i = 0; i < n; i++)
-                for (int j = 0; j < n; j++) m[i, j] = s[f * n * n + i * n + j];
-            matrices[f] = m;
-        }
-        var snp = new SNP(freqs, matrices, MatrixType.S, MatrixFormat.RI) { FreqUnit = FrequencyUnit.Hz };
-        foreach (string line in new[]
-        {
+        string text = TouchstoneText(n, freqs, s,
+        [
             $"circuitRF Export to Library: {conv.Instance} ({conv.Type}) converted to S-parameters",
             $"Parameters: {conv.Parameters}",
             $"Technology: {conv.Technology}",
             $"Frequency plan: {planText}",
             $"circuitRF {CmodelExport.Version}",
-        })
-            snp.Comments.Add(new CommentEntry(-1, line));
-
-        string text;
-        using (var w = new StringWriter(CultureInfo.InvariantCulture))
-        {
-            TouchstoneIO.Write(snp, w, MatrixFormat.RI, writeComments: true, precision: "G17");
-            text = w.ToString();
-        }
+        ]);
         string copied = files.CopyText($"{conv.Instance}.s{n}p", text, key: "vl11|" + conv.CellDir + "|" + conv.Instance);
         return Path.GetRelativePath(files.ModelDir, copied).Replace('\\', '/');
     }

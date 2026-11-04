@@ -50,8 +50,8 @@ public sealed partial class ExportToLibraryViewModel
         _ => "Verilog-A source",
     };
 
-    /// <summary>The proof's bias points apply to Compile netlist, and to Compile Verilog-A models converting a ComposedFET.</summary>
-    public bool ShowsProofBias => CompileNetlist || CompileModels && Plan is { CompilableFets.Count: > 0 };
+    /// <summary>The proof's bias points apply to Compile netlist, Encapsulated netlist, and to Compile Verilog-A models converting a ComposedFET.</summary>
+    public bool ShowsProofBias => CompileNetlist || Encapsulate || CompileModels && Plan is { CompilableFets.Count: > 0 };
 
     /// <summary>The platforms a build can be listed for: every one circuitRF runs on but this one, whose build is the
     /// one the export runs with.</summary>

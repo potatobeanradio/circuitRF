@@ -322,20 +322,31 @@ public static partial class ModelLibraryExport
         };
         overrides.AddRange(module.Overrides);
         tb.Instances.Add(new Instance(ProtectedInstance, "VerilogA", module.Nets.Select(Net), overrides));
+        foreach (var e in copy.Outside)
+            tb.Instances.Add(new Instance(Name(e.Path), e.Instance.Reference, e.Nets.Select(Net), e.Instance.Overrides));
+        FinishWrapper(tb, copy, part, tmp, f => Path.GetFileNameWithoutExtension(f) == part && OsdiBuilds.IsCompiled(f));
+    }
+
+    /// <summary>
+    /// The tail both protections share: the wrapper's <c>.csch</c> drawn from <paramref name="tb"/> with the cell's pins
+    /// added, the original schematic and every sub-cell folder removed, and every file in <c>models/</c> that neither an
+    /// outside element names nor <paramref name="own"/> claims (the protected module's builds, the S-parameter block)
+    /// deleted.
+    /// </summary>
+    private static void FinishWrapper(TestBench tb, ProtectPlan copy, string part, string tmp, Func<string, bool> own)
+    {
         var keep = new HashSet<string>(DocumentFileRefs.PathComparer);
         foreach (var e in copy.Outside)
-        {
-            tb.Instances.Add(new Instance(Name(e.Path), e.Instance.Reference, e.Nets.Select(Net), e.Instance.Overrides));
             foreach (var ov in e.Instance.Overrides)
             {
                 string v = ov.Expression.Trim().Trim('"');
                 if (v.Length == 0 || Path.IsPathRooted(v)) continue;
                 // A compiled model outside the module (Compile Verilog-A models) is named by its platform-neutral path,
                 // which is never a file: its builds are at models/<rid>/. Kept by that path, or they are deleted below.
-                string full = Path.GetFullPath(Path.Combine(tmp, v));
+                string full;
+                try { full = Path.GetFullPath(Path.Combine(tmp, v)); } catch (ArgumentException) { continue; }
                 if (File.Exists(full) || (OsdiBuilds.IsCompiled(full) && OsdiBuilds.BuildsBeside(full).Count > 0)) keep.Add(full);
             }
-        }
 
         string schDir = CellFolder.SubFolderPath(tmp, ViewType.Schematic);
         var drawn = NetlistSchematic.Build(new Library("wrapper"), tb, schematicDirectory: null);
@@ -353,9 +364,8 @@ public static partial class ModelLibraryExport
         {
             foreach (string f in Directory.EnumerateFiles(models, "*", SearchOption.AllDirectories).ToList())
             {
-                bool build = Path.GetFileNameWithoutExtension(f) == part && OsdiBuilds.IsCompiled(f);
                 bool otherBuild = OsdiBuilds.IsCompiled(f) && keep.Any(k => OsdiBuilds.BuildsBeside(k).Any(rid => DocumentFileRefs.PathComparer.Equals(OsdiBuilds.PlatformPath(k, rid), f)));
-                if (!build && !otherBuild && !keep.Contains(Path.GetFullPath(f))) File.Delete(f);
+                if (!own(f) && !otherBuild && !keep.Contains(Path.GetFullPath(f))) File.Delete(f);
             }
             foreach (string d in Directory.EnumerateDirectories(models, "*", SearchOption.AllDirectories).OrderByDescending(d => d.Length))
                 TryDeleteEmpty(d);

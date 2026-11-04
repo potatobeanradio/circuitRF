@@ -65,10 +65,11 @@ public static partial class ModelLibraryExport
         double[] freqs = [];
         if (walk.Conversions.Count > 0)
         {
-            if (manifest.Converted.FirstOrDefault(c => c.Frequency.Trim().Length > 0) is { } recorded)
+            // An encapsulated model records the plan its block was sampled over (brief vendorlib-19 R-vl19-2b).
+            if ((manifest.Converted.FirstOrDefault(c => c.Frequency.Trim().Length > 0)?.Frequency ?? manifest.Plan) is { Length: > 0 } recorded)
             {
-                if (ParsePlan(recorded.Frequency) is { } plan) sweep = plan;
-                else refusals.Add($"the frequency plan part.cpart records for its converted parts ('{recorded.Frequency}') cannot be read.");
+                if (ParsePlan(recorded) is { } plan) sweep = plan;
+                else refusals.Add($"the frequency plan part.cpart records for its converted parts ('{recorded}') cannot be read.");
             }
             freqs = PlanFrequencies(sweep, out string? planRefusal) ?? [];
             if (planRefusal is not null) refusals.Add(planRefusal);

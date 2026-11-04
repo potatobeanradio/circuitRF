@@ -8,6 +8,14 @@ namespace CircuitRF.Design.VendorLibraries.ModelLibrary.Protect;
 /// <summary>Which side of the compiled module an element lands on (brief vendorlib-16 R-vl16-1a).</summary>
 public enum ProtectSide { Inside, Outside }
 
+/// <summary>
+/// How the partition sorts an element. <see cref="CompileNetlist"/> is brief vendorlib-16's table: what the Verilog-A
+/// writer can translate goes inside. <see cref="Encapsulate"/> is brief vendorlib-19's: the engine decides — every
+/// element whose models are all linear goes inside the one S-parameter block, and a device (a model that reports
+/// <see cref="CircuitRF.Core.ModelKind.Nonlinear"/>), an independent source or a probe stays outside.
+/// </summary>
+public enum ProtectRule { CompileNetlist, Encapsulate }
+
 /// <summary>One level of the flattened hierarchy: the top cell, or one placed sub-cell. Its <see cref="Scope"/> is built
 /// as the elaborator builds a cell's — defaults, variables, and each override bound as a resolved value — so a site unit
 /// is applied to an element's value exactly as a run applies it.</summary>
@@ -48,6 +56,10 @@ public sealed record ProtectPlan
     /// <summary>The folder the netlist's relative file references resolve against.</summary>
     public string? BaseDirectory { get; init; }
     public IReadOnlyList<string> Refusals { get; init; } = [];
+    /// <summary>The netlist text the partition read.</summary>
+    public string? SourceText { get; init; }
+    /// <summary>Encapsulated, from the elaboration: each element's terminal names, by path, as its model names them.</summary>
+    public IReadOnlyDictionary<string, string[]> TerminalNames { get; init; } = new Dictionary<string, string[]>();
 
     /// <summary>Pins then joins: the compiled module's terminals.</summary>
     public IEnumerable<string> Terminals => Pins.Concat(Joins);
@@ -96,8 +108,13 @@ public static class ProtectPartition
         return set;
     });
 
-    /// <summary>The partition of <paramref name="cnlText"/>'s define <paramref name="cell"/>.</summary>
-    public static ProtectPlan Partition(string cnlText, string cell, string? baseDirectory)
+    /// <summary>The partition of <paramref name="cnlText"/>'s define <paramref name="cell"/>. Under
+    /// <see cref="ProtectRule.Encapsulate"/> each element's side comes from <paramref name="sides"/> when it is given (the
+    /// copied cell partitioned as the source cell was), and otherwise from elaborating the cell
+    /// (<see cref="ProtectClassify"/>).</summary>
+    public static ProtectPlan Partition(string cnlText, string cell, string? baseDirectory,
+                                        ProtectRule rule = ProtectRule.CompileNetlist,
+                                        IReadOnlyDictionary<string, ProtectSide>? sides = null)
     {
         var refusals = new List<string>();
         Library lib;
@@ -115,7 +132,18 @@ public static class ProtectPartition
 
         var levels = new List<ProtectLevel> { topLevel };
         var elements = new List<ProtectElement>();
-        Flatten(lib, topLevel, top.Ports.ToDictionary(p => p, p => p, StringComparer.Ordinal), elements, levels, refusals, depth: 0);
+        Flatten(lib, topLevel, top.Ports.ToDictionary(p => p, p => p, StringComparer.Ordinal), elements, levels, refusals, depth: 0, rule);
+        var terminals = new Dictionary<string, string[]>(StringComparer.Ordinal);
+        if (rule == ProtectRule.Encapsulate)
+        {
+            var decided = sides ?? ProtectClassify.Sides(cnlText, cell, top.Ports, elements, baseDirectory, refusals, terminals);
+            for (int k = 0; k < elements.Count; k++)
+            {
+                if (decided.TryGetValue(elements[k].Path, out var side)) elements[k] = elements[k] with { Side = side };
+                else if (sides is not null) refusals.Add($"{elements[k].Path} is not in the cell's partition; the copied cell does not partition as the cell did.");
+            }
+            if (sides is null) elements.RemoveAll(e => !decided.ContainsKey(e.Path));
+        }
 
         var inside = elements.Where(e => e.Side == ProtectSide.Inside).ToList();
         var outside = elements.Where(e => e.Side == ProtectSide.Outside).ToList();
@@ -134,7 +162,7 @@ public static class ProtectPartition
                 try { refs = AstWalker.CollectRefs(Parser.Parse(ov.Expression)); } catch { continue; }
                 foreach (string r in refs)
                     if (BoundBelowTop(e.Level, r) is { } where)
-                        refusals.Add($"{e.Path} ({e.Type}) stays outside the compiled module, and its {ov.Name}={ov.Expression} names {r}, " +
+                        refusals.Add($"{e.Path} ({e.Type}) stays outside the {(rule == ProtectRule.Encapsulate ? "S-parameter block" : "compiled module")}, and its {ov.Name}={ov.Expression} names {r}, " +
                                      $"which only the sub-cell {where} defines. Give it a value the cell itself can state.");
             }
 
@@ -152,6 +180,7 @@ public static class ProtectPartition
         {
             Cell = cell, Top = topLevel, Pins = [.. top.Ports], Inside = inside, Outside = outside, Joins = joins,
             Levels = levels, BaseDirectory = baseDirectory, Refusals = refusals.Distinct(StringComparer.Ordinal).ToList(),
+            SourceText = cnlText, TerminalNames = terminals,
         };
     }
 
@@ -163,7 +192,7 @@ public static class ProtectPartition
     };
 
     private static void Flatten(Library lib, ProtectLevel level, Dictionary<string, string> netMap, List<ProtectElement> elements,
-                                List<ProtectLevel> levels, List<string> refusals, int depth)
+                                List<ProtectLevel> levels, List<string> refusals, int depth, ProtectRule rule)
     {
         if (depth > 64) { refusals.Add($"The hierarchy under {level.Path} is more than 64 levels deep; is a cell placing itself?"); return; }
         string Net(string local)
@@ -193,11 +222,13 @@ public static class ProtectPartition
                 levels.Add(child);
                 var map = new Dictionary<string, string>(StringComparer.Ordinal);
                 for (int k = 0; k < sub.Ports.Count; k++) map[sub.Ports[k]] = nets[k];
-                Flatten(lib, child, map, elements, levels, refusals, depth + 1);
+                Flatten(lib, child, map, elements, levels, refusals, depth + 1, rule);
                 continue;
             }
             ProtectSide side;
-            if (InsideTypes.Contains(inst.Reference)) side = ProtectSide.Inside;
+            // Encapsulated: sorted after the walk, by the models the element elaborates to — no table.
+            if (rule == ProtectRule.Encapsulate) side = ProtectSide.Inside;
+            else if (InsideTypes.Contains(inst.Reference)) side = ProtectSide.Inside;
             else if (OutsideTypes.Contains(inst.Reference)) side = ProtectSide.Outside;
             else
             {
