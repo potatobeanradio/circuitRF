@@ -236,6 +236,7 @@ public sealed class HandEditTests : IDisposable
     {
         var (p, layout) = Placed("C1-through-line");
         Inst(layout, "TL3").X += 2_000_000;
+        Port(layout, "P2").X += 2_000_000;   // the line pulled away with its port (brief-sdl-5)
         var was = Clone(Inst(layout, "TL3"));
 
         Set(p, "TL2", "L", "4");
@@ -403,6 +404,9 @@ public sealed class HandEditTests : IDisposable
         p.Model.Components.Single(c => c.InstanceName == id).Parameters.Single(q => q.Name == param).Expression = expression;
 
     private static LayoutInstance Inst(LayoutView layout, string id) => layout.Instances.Single(i => i.SchematicId == id);
+
+    private static LabelShape Port(LayoutView layout, string id) =>
+        layout.Shapes.OfType<LabelShape>().Single(l => l.IsPort && l.SchematicId == id);
 
     private static LayoutInstance Clone(LayoutInstance inst) => LayoutGeometry.Clone(inst);
 

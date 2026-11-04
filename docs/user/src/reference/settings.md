@@ -135,7 +135,12 @@ has no reason to sit across the board.
 **Connect parts on Update Layout from Schematic**, on by default, places the parts the schematic joins pin to pin so
 their pins meet, and reports a loop whose lengths do not close (see
 {{anchor: layout-editor.html#schematic-flow|Update Layout from Schematic}}). Off, every new part is placed in rows and
-the ratsnest shows what joins what.
+the ratsnest shows what joins what. On, the schematic's ports also become EM ports on the layout.
+
+**Create or update EM setup on Update Layout from Schematic**, off by default, has that command write the layout's
+EM setup as well: a new one with the schematic's port impedances and S-parameter sweep when the layout has none, and
+an impedance for each new port number in the ones it has. An impedance set in a setup by hand is never changed (see
+{{anchor: layout-editor.html#schematic-flow|Update Layout from Schematic}}).
 
 **Default Ruler Size Mode**, Fixed by default, is the size mode a ruler starts in when it is placed. A Fixed
 ruler's readout is the same size on screen at every zoom; a Scaled one is a height in the layout and grows and

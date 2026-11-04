@@ -542,6 +542,16 @@ public sealed class LabelShape : LayoutShape
     public bool IsPort { get; set; }
 
     /// <summary>
+    /// brief-sdl-5 D3: the schematic Port component this port label was placed for by Update Layout from Schematic —
+    /// the link a re-run follows to move it with its pin, renumber it, or leave it where the user put it. Null on a
+    /// label drawn by hand, and cleared on a pasted or duplicated copy, which is the designer's from then on (as
+    /// <see cref="LayoutShape.Generated"/> is). Meaningful only when <see cref="IsPort"/>. Additive: omitted from the
+    /// file when null, no <c>FormatVersion</c> bump.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? SchematicId { get; set; }
+
+    /// <summary>
     /// <b>An EM port's direction — the way current flows INTO the structure — when it is stated
     /// rather than inferred.</b> Meaningful only when <see cref="IsPort"/>; ignored otherwise.
     ///
@@ -820,6 +830,12 @@ public sealed record GeneratedPlacement
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool Removed { get; init; }
+
+    /// <summary>brief-sdl-5 D3: for a port label, the text (the port number) this command last wrote or agreed with —
+    /// the baseline that tells a renumbering in the schematic from an edit to the label in the layout. Null for a part.
+    /// Omitted from the file when null.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Text { get; init; }
 
     /// <summary>The placement <paramref name="inst"/> is at now.</summary>
     public static GeneratedPlacement Of(LayoutInstance inst, bool chainAnchor = false) => new()

@@ -7501,30 +7501,22 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             ? Path.GetFileNameWithoutExtension(layoutRef)
             : "EmSetup";
 
-        var emDir = Path.Combine(workspaceDir, "em");
         var name  = await new Views.Dialogs.InputNameDialog(
-            "New EM Setup", "Name:", NextFreeEmSetupName(emDir, stem)).ShowDialog<string?>(window);
+            "New EM Setup", "Name:", EmSetupCreate.NextFreeName(workspaceDir, stem)).ShowDialog<string?>(window);
         if (name is null) return;
-        if (!NameValidator.IsValid(name))
-        {
-            Messages.Error($"'{name}' is not a usable name. {NameValidator.Validate(name)}");
-            return;
-        }
 
         try
         {
-            Directory.CreateDirectory(emDir);
-            var setup = EmSetup.CreateNew(name, layoutRef);
-            var path  = Path.Combine(emDir, name + EmSetupPersistence.Extension);
-            if (File.Exists(path))
+            // brief-sdl-5 R-sdl5-2a: the setup is made by EmSetupCreate, which Update Layout from Schematic calls too.
+            var created = EmSetupCreate.Create(workspaceDir, name, layoutRef);
+            if (created.Refusal is { } refusal)
             {
-                Messages.Error($"An EM setup named '{name}' already exists.");
+                Messages.Error(refusal);
                 return;
             }
-            EmSetupPersistence.SaveToFile(path, setup);
             _factory.ProjectTreeTool?.Refresh();
-            OpenOrActivateEmSetup(path);
-            Messages.Success("Created EM setup", path);
+            OpenOrActivateEmSetup(created.Path!);
+            Messages.Success("Created EM setup", created.Path!);
         }
         catch (Exception ex)
         {
@@ -7569,8 +7561,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         }
 
         string stem = Path.GetFileNameWithoutExtension(clayPath);
-        var    emDir = Path.Combine(workspaceDir, "em");
-        var    path  = Path.Combine(emDir, stem + EmSetupPersistence.Extension);
+        var    path  = EmSetupCreate.PathOf(workspaceDir, stem);
 
         if (File.Exists(path))
         {
@@ -7611,25 +7602,20 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         try
         {
-            Directory.CreateDirectory(emDir);
-            var layoutRef = Path.GetRelativePath(workspaceDir, clayPath).Replace('\\', '/');
-            EmSetupPersistence.SaveToFile(path, EmSetup.CreateNew(stem, layoutRef));
+            var created = EmSetupCreate.Create(workspaceDir, stem, EmSetupCreate.LayoutRefOf(workspaceDir, clayPath));
+            if (created.Refusal is { } refusal)
+            {
+                Messages.Error($"Failed to create EM setup: {refusal}");
+                return;
+            }
             _factory.ProjectTreeTool?.Refresh();
-            OpenOrActivateEmSetup(path);
-            Messages.Success("Created EM setup", path);
+            OpenOrActivateEmSetup(created.Path!);
+            Messages.Success("Created EM setup", created.Path!);
         }
         catch (Exception ex)
         {
             Messages.Error($"Failed to create EM setup: {ex.Message}");
         }
-    }
-
-    private static string NextFreeEmSetupName(string emDir, string stem)
-    {
-        string candidate = stem;
-        for (int n = 2; File.Exists(Path.Combine(emDir, candidate + EmSetupPersistence.Extension)); n++)
-            candidate = $"{stem}{n}";
-        return candidate;
     }
 
     /// <summary>

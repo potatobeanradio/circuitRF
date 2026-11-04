@@ -1380,7 +1380,8 @@ public partial class LayoutEditorView : UserControl
 
         // brief-sdl-4 R-sdl4-2: on a selection of placements — the lock Update Layout from Schematic respects, and
         // Re-snap, which re-joins the selected linked parts to their neighbours by the schematic's chain rule.
-        if (Vm is { SelectedInstanceIndices.Count: > 0 } selVm)
+        // brief-sdl-5 D3: a port label the run placed is a linked part too — Re-snap puts it back on its pin.
+        if (Vm is { } selVm && (selVm.SelectedInstanceIndices.Count > 0 || selVm.SelectionHasLinkedPort))
             items = [.. items, new Separator(), .. BuildHandEditItems(selVm)];
 
         // Trace Impedance — offered only where there is stackup-bound copper under the click; the
@@ -1434,7 +1435,7 @@ public partial class LayoutEditorView : UserControl
             ToolTip.SetTip(resnap, can
                 ? "Give the selected parts the schematic's values again and join each to its neighbours, closing joints " +
                   "that were pulled open. One undo step."
-                : "Select parts placed by Update Layout from Schematic, in a saved layout.");
+                : "Select parts or port labels placed by Update Layout from Schematic, in a saved layout.");
             if (can) resnap.Click += (_, _) => ((LayoutDocument)DataContext!).Hierarchy!.Resnap((LayoutDocument)DataContext!, ids);
             list.Add(resnap);
             return list;

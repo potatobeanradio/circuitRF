@@ -13,8 +13,8 @@ Info MI1 added
 Info TL6 added
 Info MI2 added
 Info TL7 added
-Warning P1 no layout view — skipped
-Warning P2 no layout view — skipped
+Info P1 port 1 placed at TL1 pin 1
+Info P2 port 2 placed at TL7 pin 2
 Info - Joined 12 of 12 connections; 0 left as ratsnest
 joinable n2
 joinable n3
@@ -28,3 +28,5 @@ joinable n10
 joinable n11
 joinable n12
 joinable n13
+port P1 1
+port P2 2

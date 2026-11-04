@@ -12,10 +12,10 @@ Info TL1 added
 Info TL2 added
 Info TL3 added
 Info TL4 added
-Warning P1 no layout view — skipped
-Warning P2 no layout view — skipped
-Warning P3 no layout view — skipped
-Warning P4 no layout view — skipped
+Info P1 port 1 placed at TL1 pin 1
+Info P2 port 2 placed at TL2 pin 2
+Info P3 port 3 placed at TL3 pin 2
+Info P4 port 4 placed at TL4 pin 1
 Info - Joined 11 of 12 connections; 1 left as ratsnest
 Warning - does not close: MT4 pin 1 is 50 µm from ML2 pin 2 (x 0, y -50 µm), angle 0°
 lvs lvs.net.open
@@ -30,3 +30,7 @@ joinable n8
 joinable n9
 joinable n11
 joinable n12
+port P1 1
+port P2 2
+port P3 3
+port P4 4

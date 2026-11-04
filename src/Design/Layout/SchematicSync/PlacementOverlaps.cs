@@ -196,7 +196,7 @@ public static class PlacementOverlaps
 
         void AddDrawn()
         {
-            foreach (var group in view.Shapes.Where(s => conductors.Contains(s.Layer))
+            foreach (var group in view.Shapes.Where(s => s is not (LabelShape or BitmapShape) && conductors.Contains(s.Layer))
                                              .GroupBy(s => (s.Layer, Net: NetOfDrawn(s))))
                 foreach (var piece in Pieces(group))
                     pieces.Add(new Piece

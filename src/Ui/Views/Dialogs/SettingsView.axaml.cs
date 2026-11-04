@@ -190,6 +190,7 @@ public partial class SettingsView : Window
 
             LinkOrientationCheck.IsChecked = prefs.LinkSchematicLayoutOrientation ?? true;
             ConnectPartsCheck.IsChecked = prefs.ConnectPartsOnUpdateLayout ?? true;
+            EmSetupOnUpdateCheck.IsChecked = prefs.EmSetupOnUpdateLayout ?? false;
 
             CoalesceRasterFillCheck.IsChecked = prefs.CoalesceRasterFillOnImport ?? true;
 
@@ -318,6 +319,12 @@ public partial class SettingsView : Window
     {
         if (_updatingGeneral) return;
         AppPreferencesIo.Update(p => p.ConnectPartsOnUpdateLayout = ConnectPartsCheck.IsChecked);
+    }
+
+    private void OnEmSetupOnUpdateChanged(object? sender, RoutedEventArgs e)
+    {
+        if (_updatingGeneral) return;
+        AppPreferencesIo.Update(p => p.EmSetupOnUpdateLayout = EmSetupOnUpdateCheck.IsChecked);
     }
 
     private void OnCoalesceRasterFillChanged(object? sender, RoutedEventArgs e)

@@ -265,6 +265,25 @@ public partial class WorkspaceViewModel
                                                                                 layoutVm.DisplayUnit))
                 Messages.Post(line.Severity == SchematicLayoutPlanner.ReportSeverity.Warning
                                   ? MessageLevel.Warning : MessageLevel.Info, line.Text);
+
+            // brief-sdl-5 R-sdl5-2b: Create or update EM setup (Settings, off by default). Files, not layout edits, so it
+            // runs after the command and is not part of its undo.
+            if (prefs.EmSetupOnUpdateLayout == true && CurrentWorkspacePath is { } cws)
+            {
+                try
+                {
+                    var em = EmSetupFromSchematic.Run(doc.ViewModel.EditModel, cws, targetPath,
+                                                      cellDir is not null ? Path.GetFileName(cellDir) : schematicName);
+                    foreach (var line in em.Lines)
+                        Messages.Post(line.Severity == SchematicLayoutPlanner.ReportSeverity.Warning
+                                          ? MessageLevel.Warning : MessageLevel.Info, line.Text, em.Written.FirstOrDefault());
+                    if (em.Written.Count > 0) _factory.ProjectTreeTool?.Refresh();
+                }
+                catch (Exception ex)
+                {
+                    Messages.Error($"Update Layout from Schematic: the EM setup could not be written: {ex.Message}");
+                }
+            }
         }
 
         SeedWBondSidecar(doc.ViewModel.EditModel, cellDir ?? layoutDir, schematicName, layoutVm, onlyWBond,

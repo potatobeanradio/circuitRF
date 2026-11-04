@@ -7,8 +7,10 @@ Info R1 added
 Info R2 added
 Info R3 added
 Info TL2 added
-Warning P1 no layout view — skipped
-Warning P2 no layout view — skipped
+Info P1 port 1 placed at TL1 pin 1
+Info P2 port 2 placed at TL2 pin 2
 # The two grounded pads return through their vias; the ground net is the one connection left as ratsnest.
 Info - Net 0 left as ratsnest: the ground net returns through vias and the pour
 Info - Joined 4 of 5 connections; 1 left as ratsnest
+port P1 1
+port P2 2

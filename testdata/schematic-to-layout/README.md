@@ -15,7 +15,8 @@ checks LVS, open nets, overlaps and the exact set of report lines.
 
 | Line | Meaning |
 |---|---|
-| `<Info\|Warning> <schematic id> <text fragment>` | One report line the run must produce. `-` is the id of a run-level line. A component with no layout view reads as a `Warning` under its own id. Every line the run produces must be listed, and nothing more. |
+| `<Info\|Warning> <schematic id> <text fragment>` | One report line the run must produce. `-` is the id of a run-level line. A component with no layout view reads as a `Warning` under its own id; a Port is not one — it becomes a port label. Every line the run produces must be listed, and nothing more. |
 | `joinable <net>` | A net the placement must join: no ratsnest line may remain on it. |
 | `lvs <finding id>` | An LVS error the design is expected to have. Any other LVS error fails it. |
 | `overlap` | Copper joining two different nets is expected. Without it, any such contact fails the design. |
+| `port <schematic id> <number>` | A port label the run must place for that Port, reading that number, as an edge port at the face of the metal it names (SDL-5). Every linked port label must be listed. |

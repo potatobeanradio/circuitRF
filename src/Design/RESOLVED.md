@@ -26914,3 +26914,39 @@ to a local build of it) and `zig` as the linker, every platform but `win-x86` bu
 
 So the stand-in linker is a solved problem and the cross-processor limit is the compiler's, one call away. `FixFor` now
 says the compiler builds only for the processor it runs on, rather than blaming its build.
+
+## SDL-5 — schematic ports become EM ports (2026-11-03)
+
+`PortPlacement` (in `SchematicSync/`) runs inside the planner after chains, rows and side-on parts, over every placed
+part as the run leaves it (and as it was before, for a part already placed), so a port lands on its pin's final place
+and a label still on its pin's OLD place follows it. It reads the pins through `PartTerminals`, the chain's own, so a
+footprint's is SDL-2's outer-edge joint with no second rule. Findings:
+
+- **Ports were "physical" parts until now**, each reporting *no layout view — skipped* in every design's expect.txt.
+  With Connect parts on they are left out of the part list and placed as labels; with it off the plan stays the
+  pre-series one (`ChainPlacementTests.SettingOff_…` holds that against its golden), so ports are not placed there.
+- **A label needed a link of its own.** `LabelShape.SchematicId` (additive, omitted when null) is copied by
+  `LayoutGeometry.Clone` and cleared by `LayoutFragment` on paste and duplicate, as `Generated` is.
+  `GeneratedPlacement.Text` (additive) is the number this command last wrote — the D-conflict baseline for the label.
+- **A line end that does not face along an axis gets no port** (H6's twenty 17° curves end at 20°). `PortDirection`
+  is four-way and `EmPortExtraction` reads a port by its conductor's side, so a seeded direction would be a guess;
+  it is reported for placing by hand, with D2's other cases.
+- **The editor's conductor lookup answered a pad's outer edge with the part's whole box.** `LayoutConductorLookup`
+  answers an instance with the pin at the point, else its box — and a pad joint is not the pin (the pin is the pad's
+  centre), while the box takes in the other pad and the courtyard, so the port's plane bar spanned the whole part. A
+  point on the OUTLINE of the instance's own copper now answers with that copper; a point in the middle of the metal
+  keeps the box (`LayoutPortOnInstancePinTests.APortOnTheMetalButNotAtAPin_StillFallsBackToTheBox` unchanged). The
+  checker's `port` lines resolve against the flattened copper, which is what the EM run meshes.
+- **D4 quotes, it does not check.** `EmPortExtraction`'s duplicate-number sentence is now
+  `DuplicateNumberRefusal`, which `Extract` and the planner both call; `EmComponentPorts.Collect` covers a label
+  against a component's port. Two Ports with one `Num` produce that sentence as a run-level warning.
+- **`EmSetupCreate`** is the creation half of File ▸ New ▸ EM Setup… and the Layout Editor's EM button, both of which
+  now call it; it writes exactly what `EmSetup.CreateNew` serialises (`PortPlacementTests` holds the bytes and scans
+  the view model). **`EmSetupFromSchematic`** is the Create or update EM setup option: a created setup is `Planar`
+  (left at Auto, a straight line goes to the cross-section kernel, which ignores port labels), with each Port's `Z`
+  and the first S-parameter sweep when it is written in numbers. `EmSetup.SchematicPortZ0s` (additive, by port
+  number) records what it wrote, so a later `Z` change overwrites only its own value. A new port's slot is filled
+  with what the slots before it already resolve to, so no other port's impedance changes.
+- Testdata: F1b-port-on-pad (P2's variant) and C3b-port-on-junction (P3) drawn from `.cnl` through
+  `netlist --to-schematic`; every design's expect.txt now names its `port` lines.
+

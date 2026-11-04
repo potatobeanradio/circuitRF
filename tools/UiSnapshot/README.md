@@ -126,6 +126,13 @@ Don't Simulate), with the verdict `PlanarMemoryCheck` gives a de-embedded 36,000
 dotnet run --project tools/UiSnapshot --no-build -- --planar-memory-dialog -o out.png
 ```
 
+**Settings ▸ General** (brief SDL-5), on a throwaway per-user state directory with Create or update EM setup on
+Update Layout from Schematic ticked, scrolled to the Layout group's options:
+
+```
+dotnet run --project tools/UiSnapshot --no-build -- --settings-general -o out.png [--dark] [--size WxH]
+```
+
 **The technology editor** opens on a `.ctech` as the workspace opens one (the file's own content, its libraries
 resolved by the editor — copy a `.cmat` it names beside it). `--tab n` picks the section (0 Layers, 1 Stackup, 2 DRC
 Rules, 3 Interchange, 4 Materials). Two steps drive its real controls: `--unit <unit>` picks "Unit for new layouts",

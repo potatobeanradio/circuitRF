@@ -239,6 +239,10 @@
                                           Content="Connect parts on Update Layout from Schematic" FontSize="12"
                                           IsCheckedChanged="OnConnectPartsChanged"
                                           ToolTip.Tip="On: lines, tees, bends and crosses the schematic joins are placed so their pins meet, and a loop that does not close is reported. Off: every new part is placed in rows, and the ratsnest shows what joins what."/>
+                                <CheckBox  Name="EmSetupOnUpdateCheck"
+                                          Content="Create or update EM setup on Update Layout from Schematic" FontSize="12"
+                                          IsCheckedChanged="OnEmSetupOnUpdateChanged"
+                                          ToolTip.Tip="On: a layout with no EM setup gets one, with the schematic's port impedances and S-parameter sweep; a layout that has setups gets an impedance for each new port number. An impedance set in a setup by hand is never changed."/>
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <TextBlock Text="Default Ruler Size Mode:" FontSize="12" VerticalAlignment="Center"/>
                                     <ComboBox  Name="DefaultRulerSizeModeCombo" FontSize="12" MinWidth="100"

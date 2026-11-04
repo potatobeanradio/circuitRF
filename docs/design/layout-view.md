@@ -1279,6 +1279,45 @@ the chain rule, closing joints that were pulled open. **Design ▸ Restore Remov
 joined. Re-snap and Restore Removed Parts are Update Layout from Schematic run on the layout's own schematic with
 `resnap` / `restoreRemoved`, so nothing in the view model decides a position, and each is one undo step.
 
+#### Schematic ports become EM ports (SDL-5)
+
+With Connect parts on, a schematic's Port components (`Term`, `ZPort`) are not parts to place: each becomes a port
+label on the layout (`PortPlacement` in `src/Design/Layout/SchematicSync/`), placed after every part is where the run
+leaves it, so a port lands on its pin's final place.
+
+- **D1 — Where.** A port goes where its signal net meets exactly one layout pin: on the pin's layer, at the pin
+  point (a line's end midpoint) or, for a footprint pad, at SDL-2's outer-edge joint. Its text is the Port's `Num`;
+  its `PortDirection` points into the metal (the pin's outward direction + 180°, `LayoutPortDirection.FromPinOutward`).
+  Its kind is left null, so it is inferred from the artwork as a hand-placed port's is (`LayoutPortDirection.KindOf`):
+  at a line's open end it is an edge port.
+- **D2 — What is reported instead.** A Port whose net has two or more layout pins (a junction), none, or is the ground
+  net; a Port between two non-ground nets (differential); and a pin that does not face along an axis (a port's
+  direction is four-way, and the EM extractor reads a port by the side of its conductor). One warning each, grouped
+  as *ports to place by hand*; nothing is guessed.
+- **D3 — A port label is a linked part.** It carries the Port's schematic id (`LabelShape.SchematicId`, cleared on a
+  pasted copy) and a `GeneratedPlacement` whose `Text` is the number this command last wrote. A label still on its
+  pin's old position follows the pin, however the pin moved (a propagated length change, a chain re-placed); its arrow
+  turns with the pin unless the user turned it. A label the user pulled off its pin stays where it was put, reported
+  as Info. A deleted label is not put back (Restore Removed Parts puts it back); Re-snap, on a selected label, puts it
+  back on its pin. A `Num` changed in the schematic changes the text; text edited in the layout is a hand edit, and
+  D-conflict applies. A label whose Port is gone from the schematic is reported, never deleted.
+- **D4 — Numbers are checked where they already are.** The layout as the run leaves it is numbered as an EM run
+  numbers it (`EmComponentPorts.Collect`, `EmPortExtraction.DuplicateNumberRefusal`); a duplicate is reported in that
+  check's own words.
+- **D5 — Reference impedance lives in the `.cem`** (`EmSetup.PortZ0s`). The label carries none.
+
+**Create or update EM setup** (Settings, off by default — writing a new file is not something a re-run should start
+doing unasked). After the layout command, `EmSetupFromSchematic` looks for the setups that resolve to this layout
+(`EmSetupResolver.FindSetupsForLayout`). With none, it creates one through `EmSetupCreate` — the function File ▸ New ▸
+EM Setup… and the Layout Editor's EM button call — named after the cell, a planar analysis, each Port's `Z` in
+`PortZ0s`, and the schematic's first S-parameter sweep when it is written in numbers (a sweep written in the
+schematic's variables leaves the setup's default, and says so). With setups, each gains an impedance for a port number
+it has none for and reports a number it was given that the schematic no longer has. A changed `Z` is written only
+while the setup still holds the value this command wrote last (`EmSetup.SchematicPortZ0s`, a provenance note
+omitted from the file when empty); otherwise the setup's value is kept and reported. Nothing is deleted, and no other
+setting — the frequency plan included — is touched. The `.cem` is a file of its own, so this step is not in the
+layout's undo.
+
 ---
 
 ## 9A. Design rule checking (DRC)

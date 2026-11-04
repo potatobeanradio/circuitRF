@@ -191,8 +191,8 @@ public sealed class ChainPlacementTests : IDisposable
 
     // ── One undo step ────────────────────────────────────────────────────────────────────────────
 
-    /// <summary>The GUI's command for C2 places twelve joined parts and records each, the anchor marked; one Undo
-    /// takes every part, every placement record and every ground shape back out.</summary>
+    /// <summary>The GUI's command for C2 places twelve joined parts and four port labels and records each, the anchor
+    /// marked; one Undo takes every part, every port label, every placement record and every ground shape back out.</summary>
     [Fact]
     public void OneUndoRevertsTheWholeRun_PlacementRecordsIncluded()
     {
@@ -202,7 +202,8 @@ public sealed class ChainPlacementTests : IDisposable
         run.Command!.Execute();
 
         Assert.Equal(12, p.Target.Instances.Count);
-        Assert.Equal(12, p.Target.GeneratedPlacements.Count);
+        Assert.Equal(16, p.Target.GeneratedPlacements.Count);   // twelve parts and four port labels (brief-sdl-5)
+        Assert.Equal(4, p.Target.Shapes.OfType<LabelShape>().Count(l => l.IsPort));
         Assert.Equal(["TL1"], p.Target.GeneratedPlacements.Where(e => e.Value.ChainAnchor).Select(e => e.Key));
 
         run.Command.Undo();

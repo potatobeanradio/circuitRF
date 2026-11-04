@@ -272,6 +272,15 @@ public sealed class EmSetup
     public List<Complex> PortZ0s { get; set; } = [];
 
     /// <summary>
+    /// brief-sdl-5 R-sdl5-2b: the reference impedance Update Layout from Schematic last wrote into <see cref="PortZ0s"/>,
+    /// by port NUMBER — a provenance note, not a setting: nothing reads it to analyse anything. A re-run changes a port's
+    /// <see cref="PortZ0s"/> entry to the schematic's new <c>Z</c> only while the entry still holds the value recorded
+    /// here, so an impedance the user set in the setup is never overwritten. Empty for a setup the command never wrote
+    /// to, which is every setup made before it; omitted from the file when empty.
+    /// </summary>
+    public SortedDictionary<int, Complex> SchematicPortZ0s { get; set; } = [];
+
+    /// <summary>
     /// The reference impedance of the port in slot <paramref name="slot"/> — <c>portNumber - 1</c>,
     /// which is D3 order for the contiguous numbering every layout this tool creates has: the
     /// explicit override when one is stored, else the near/far default for that end.
@@ -797,6 +806,7 @@ public sealed class EmSetup
         Port1Z0                = Port1Z0,
         Port2Z0                = Port2Z0,
         PortZ0s                = [.. PortZ0s],   // a fresh list: Complex is immutable, the list is not
+        SchematicPortZ0s       = new(SchematicPortZ0s),
         PortKinds              = [.. PortKinds], // likewise: the enum is a value, the list is not
         Mesh                   = Mesh,           // record, immutable
         DispersionCorrection   = DispersionCorrection,

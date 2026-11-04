@@ -132,7 +132,8 @@ internal static class SdlChecker
         string source = Path.Combine(DesignsRoot, Path.GetFileName(cellDir));
         LayoutPersistence.SaveToFile(clayPath, layout);
 
-        expect = ReadExpect(Path.Combine(source, "expect.txt"), out var joinable, out var lvsAllowed, out bool overlapAllowed);
+        expect = ReadExpect(Path.Combine(source, "expect.txt"), out var joinable, out var lvsAllowed, out bool overlapAllowed,
+                            out var ports);
         if (openAllowed is not null) joinable.ExceptWith(openAllowed);
         if (lvsAllowedToo is not null) lvsAllowed.UnionWith(lvsAllowedToo);
         var problems = new List<string>();
@@ -153,11 +154,48 @@ internal static class SdlChecker
             foreach (var (a, b) in TouchingStrangers(layout, cellDir, layoutDir, tech, netsByInstance))
                 problems.Add($"overlap: {layout.Instances[a].SchematicId} and {layout.Instances[b].SchematicId} share no net " +
                              "and their copper touches");
+
+        // 5. Ports (brief-sdl-5): exactly the expected port labels, each an edge port at the face of the metal it names.
+        problems.AddRange(CheckPorts(layout, cellDir, tech, ports));
         return problems;
     }
 
-    private static List<Expected> ReadExpect(string path, out HashSet<string> joinable, out HashSet<string> lvs, out bool overlap)
+    /// <summary>brief-sdl-5: every <c>port &lt;id&gt; &lt;number&gt;</c> line names a port label linked to that Port, with
+    /// that text, that resolves against the copper an EM run meshes (the layout flattened) to an edge port whose
+    /// reference plane is the label itself and whose arrow points into the metal; and no other label is linked.
+    /// The flattened copper rather than the editor's lookup, which answers a footprint pad that names no pin at the
+    /// label with the whole part's box.</summary>
+    private static IEnumerable<string> CheckPorts(LayoutView layout, string cellDir, Technology tech,
+                                                  IReadOnlyDictionary<string, string> expected)
     {
+        var flat = LayoutDesignFlatten.Flatten(layout, cellDir, tech, null, resolvedCrossTechMappings: null);
+        var lookup = LayoutPortDirection.LookupFor(flat.Shapes.Where(s => s is not LabelShape).ToList());
+        var linked = layout.Shapes.OfType<LabelShape>().Where(l => l is { IsPort: true, SchematicId: { Length: > 0 } }).ToList();
+        foreach (var (id, text) in expected.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+        {
+            var label = linked.FirstOrDefault(l => l.SchematicId == id);
+            if (label is null) { yield return $"port {id}: no port label"; continue; }
+            if (label.Text != text) yield return $"port {id}: label reads '{label.Text}', expected '{text}'";
+            if (LayoutPortDirection.Resolve(lookup, label) is not { } hint)
+            {
+                yield return $"port {id}: label at ({label.X}, {label.Y}) is on no conductor";
+                continue;
+            }
+            if (LayoutPortDirection.KindOf(lookup, label) != CircuitRF.Engine.Mom.PlanarPortKind.Edge)
+                yield return $"port {id}: inferred as {LayoutPortDirection.KindOf(lookup, label)}, not an edge port";
+            if (hint.Direction != label.PortDirection)
+                yield return $"port {id}: points {label.PortDirection}, the metal runs {hint.Direction}";
+            if (Math.Abs(hint.PlaneX - label.X) > 1 || Math.Abs(hint.PlaneY - label.Y) > 1)
+                yield return $"port {id}: label at ({label.X}, {label.Y}), the metal's face at ({hint.PlaneX}, {hint.PlaneY})";
+        }
+        foreach (var extra in linked.Where(l => !expected.ContainsKey(l.SchematicId!)))
+            yield return $"port {extra.SchematicId}: placed, but expect.txt names no such port";
+    }
+
+    private static List<Expected> ReadExpect(string path, out HashSet<string> joinable, out HashSet<string> lvs, out bool overlap,
+                                             out Dictionary<string, string> ports)
+    {
+        ports = new(StringComparer.Ordinal);
         joinable = new(StringComparer.Ordinal);
         lvs = new(StringComparer.Ordinal);
         overlap = false;
@@ -173,6 +211,7 @@ internal static class SdlChecker
                 case "joinable": joinable.Add(parts[1]); break;
                 case "lvs": lvs.Add(parts[1]); break;
                 case "overlap": overlap = true; break;
+                case "port": ports[parts[1]] = parts.Length > 2 ? parts[2] : ""; break;
                 default: expected.Add(new Expected(parts[0], parts[1], parts.Length > 2 ? parts[2] : "")); break;
             }
         }

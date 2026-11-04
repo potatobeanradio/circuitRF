@@ -298,6 +298,15 @@ public static class LayoutConductorLookup
                     var merged = MergedWithOverlapping(own, ownBox, x, y, ownInstance: i);
                     if (!ReferenceEquals(merged, own))
                         return new LayoutPortDirection.ConductorInfo(LayoutGeometry.BboxOf(merged), null, merged);
+                    // brief-sdl-5: a port standing ON the outline of an instance's copper — a footprint pad's outer edge,
+                    // where Update Layout from Schematic puts one — names no pin (the pin is the pad's centre), and the
+                    // instance's box takes in the other pad and the courtyard, so the plane bar was drawn across the
+                    // whole part. The pad's own copper is what the port is on, and what the EM run meshes. A point in
+                    // the middle of the metal keeps the box answer.
+                    var onOwn = new LayoutPortDirection.ConductorInfo(ownBox, null, own);
+                    if (LayoutPortDirection.NearestBoundaryPoint(onOwn, x, y) is { } edge
+                        && System.Math.Abs(edge.X - x) <= 1 && System.Math.Abs(edge.Y - y) <= 1)
+                        return onOwn;
                 }
                 return new LayoutPortDirection.ConductorInfo(bb, pin, null, own?.Layer);
             }

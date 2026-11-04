@@ -141,6 +141,7 @@ var impedanceLayers = new List<string>();
 bool impedancePanel = false;
 string? reviewPanel = null;
 bool planarMemoryDialog = false;
+bool settingsGeneral = false;
 bool reviewRun = false;
 string? place = null;
 string? cdd = null, output = null, view = "canvas", results = null, fc = "2", iq = null, tuning = null, clay = null, cem = null;
@@ -243,6 +244,7 @@ for (int i = 0; i < args.Length; i++)
         case "--impedance-panel": impedancePanel = true; break;
         case "--review-panel" when i + 1 < args.Length: reviewPanel = args[++i]; break;
         case "--planar-memory-dialog": planarMemoryDialog = true; break;
+        case "--settings-general": settingsGeneral = true; break;
         case "--review": reviewRun = true; break;
         case "--place" when i + 1 < args.Length: place = args[++i]; break;
         case "--lock" when i + 1 < args.Length: layerToggles.Add((args[++i], false)); break;
@@ -321,6 +323,13 @@ if (planarMemoryDialog && output is not null)
     AppBuilder.Configure<SnapshotApp>().UseSkia()
         .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
     return ShowPlanarMemoryDialog(output);
+}
+if (settingsGeneral && output is not null)
+{
+    AppBuilder.Configure<SnapshotApp>().UseSkia()
+        .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
+    if (dark && Application.Current is { } darkApp) darkApp.RequestedThemeVariant = Avalonia.Styling.ThemeVariant.Dark;
+    return ShowSettingsGeneral(output, sizeGiven ? width : 0, sizeGiven ? height : 0);
 }
 if (reviewPanel is not null && output is not null)
 {
@@ -2037,6 +2046,24 @@ static int ShowPlanarMemoryDialog(string path)
     dialog.Show();
     for (int k = 0; k < 6; k++) { Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); dialog.UpdateLayout(); }
     dialog.CaptureRenderedFrame()!.Save(path);
+    Console.WriteLine($"wrote {path}");
+    return 0;
+}
+
+// --settings-general: Settings ▸ General on a throwaway per-user state directory, Create or update EM setup on
+// (brief-sdl-5), scrolled to the Update Layout from Schematic options.
+static int ShowSettingsGeneral(string path, double w, double h)
+{
+    CircuitRF.Ui.AppDataRoot.RedirectTo(Path.Combine(Path.GetTempPath(), "crf-settings-" + Guid.NewGuid().ToString("N")[..8]));
+    CircuitRF.Ui.Theming.AppPreferencesIo.Update(p => p.EmSetupOnUpdateLayout = true);
+    var settings = new CircuitRF.Ui.Views.Dialogs.SettingsView(null);
+    if (w > 0) { settings.Width = w; settings.Height = h; }
+    settings.Show();
+    void Settle() { for (int k = 0; k < 6; k++) { Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); settings.UpdateLayout(); } }
+    Settle();
+    settings.FindControl<CheckBox>("EmSetupOnUpdateCheck")?.BringIntoView();
+    Settle();
+    settings.CaptureRenderedFrame()!.Save(path);
     Console.WriteLine($"wrote {path}");
     return 0;
 }

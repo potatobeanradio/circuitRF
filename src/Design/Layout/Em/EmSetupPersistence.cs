@@ -1317,6 +1317,14 @@ public sealed class CemThermal
     public Dictionary<string, JsonElement>? Unread { get; set; }
 }
 
+/// <summary>brief-sdl-5: one entry of <see cref="CemFile.SchematicPortZ0s"/>.</summary>
+public sealed class CemSchematicPortZ0
+{
+    public int Port { get; set; }
+    public double Real { get; set; }
+    public double Imag { get; set; }
+}
+
 public sealed class CemFile
 {
     public int    FormatVersion { get; set; } = 1;
@@ -1350,6 +1358,11 @@ public sealed class CemFile
     /// alongside Port1Z0/Port2Z0 rather than replacing them.
     /// </summary>
     public List<double>? PortZ0s { get; set; }
+
+    /// <summary>brief-sdl-5: <see cref="EmSetup.SchematicPortZ0s"/> — what Update Layout from Schematic last wrote, by
+    /// port number. <b>Null when empty</b> (WhenWritingNull), so a setup it never wrote to is written exactly as
+    /// before.</summary>
+    public List<CemSchematicPortZ0>? SchematicPortZ0s { get; set; }
 
     /// <summary>
     /// Optional per-port TYPE (edge / internal delta gap) in extractor order, written as enum names
@@ -1622,6 +1635,9 @@ public static class EmSetupPersistence
         Port2Z0Real = s.Port2Z0.Real,
         Port2Z0Imag = s.Port2Z0.Imaginary,
         PortZ0s     = FlattenPortZ0s(s.PortZ0s),
+        SchematicPortZ0s = s.SchematicPortZ0s.Count > 0
+            ? [.. s.SchematicPortZ0s.Select(kv => new CemSchematicPortZ0 { Port = kv.Key, Real = kv.Value.Real, Imag = kv.Value.Imaginary })]
+            : null,
         PortKinds   = FlattenPortKinds(s.PortKinds),
         AnalysisLevelNames = s.AnalysisLevelNames.Count > 0 ? [.. s.AnalysisLevelNames] : null,
         Mesh = new CemMesh
@@ -1743,6 +1759,9 @@ public static class EmSetupPersistence
         Port1Z0                = new Complex(f.Port1Z0Real, f.Port1Z0Imag),
         Port2Z0                = new Complex(f.Port2Z0Real, f.Port2Z0Imag),
         PortZ0s                = UnflattenPortZ0s(f.PortZ0s),
+        SchematicPortZ0s       = f.SchematicPortZ0s is { } sz
+            ? new SortedDictionary<int, Complex>(sz.GroupBy(e => e.Port).ToDictionary(g => g.Key, g => new Complex(g.Last().Real, g.Last().Imag)))
+            : [],
         PortKinds              = f.PortKinds is { } pk ? [.. pk] : [],
         AnalysisLevelNames     = f.AnalysisLevelNames is { } lv ? [.. lv] : [],
         Mesh = new EmMeshSettings(

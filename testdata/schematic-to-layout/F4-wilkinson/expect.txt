@@ -14,7 +14,9 @@ Info CV2 added
 Info CV3 added
 Info CV4 added
 Info R1 added
-Warning P1 no layout view — skipped
-Warning P2 no layout view — skipped
-Warning P3 no layout view — skipped
+Info P1 port 1 placed at TL1 pin 1
+# Ports 2 and 3 sit where an arm meets the bridging resistor: a junction, so they are left to place by hand (SDL-5 D2).
+Warning P2 net n5 meets 2 layout pins (CV2 pin 2, R1 pin 1), so the port is at a junction
+Warning P3 net n6 meets 2 layout pins (CV4 pin 2, R1 pin 2), so the port is at a junction
 Info - Joined 7 of 7 connections; 0 left as ratsnest
+port P1 1

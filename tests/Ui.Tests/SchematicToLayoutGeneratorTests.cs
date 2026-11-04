@@ -101,9 +101,10 @@ public class SchematicToLayoutGeneratorTests : IDisposable
         Assert.Equal("MLIN", res.View.PCellOrigin!.GeneratorId);
         Assert.Equal(1, result.AddedCount);
 
-        // Term (no PCell, no CellRef) has no layout view — reported, not placed.
-        Assert.Contains(result.NoLayoutWarnings, w => w.Contains("T1"));
-        Assert.Contains(result.NoLayoutWarnings, w => w.Contains("T2"));
+        // A Term is a port, not a part (brief-sdl-5): connected to nothing here, so it is left to place by hand.
+        Assert.DoesNotContain(result.NoLayoutWarnings, w => w.Contains("T1"));
+        Assert.Contains(result.Lines, l => l.InstanceName == "T1" && l.Text.Contains("place port 1 by hand"));
+        Assert.Contains(result.Lines, l => l.InstanceName == "T2" && l.Text.Contains("place port 2 by hand"));
     }
 
     [Fact]

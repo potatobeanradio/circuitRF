@@ -205,6 +205,13 @@ public sealed class AppPreferences
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? ConnectPartsOnUpdateLayout { get; set; }
 
+    // brief-sdl-5 R-sdl5-2b: whether Update Layout from Schematic creates an EM setup for the layout (or brings the ones
+    // it has up to date with the schematic's Ports). Null means OFF: writing a new file is not something a re-run should
+    // start doing unasked. Per USER, like Connect parts beside it.
+    [JsonPropertyName("em_setup_on_update_layout")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? EmSetupOnUpdateLayout { get; set; }
+
     // R-rf3-7. Whether importing artwork turns a PAINTED pour — a copper fill expressed as thousands
     // of abutting scanline strokes — back into the region it paints. Null means the default, which is
     // ON: the region is the shape the renderer, the mesher, the DRC engine and every writer want, and

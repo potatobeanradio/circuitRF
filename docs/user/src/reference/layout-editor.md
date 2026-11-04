@@ -614,6 +614,36 @@ Three commands put things back when you want the schematic's way:
 Each is one undo step, and so is every run of Update Layout: one **Undo** puts back every part, every
 moved shape and every value it changed.
 
+#### Ports from the schematic
+
+Each **Port** in the schematic becomes an EM port on the layout, numbered as the schematic numbers it. It is
+placed where the port's net meets a part: at the open end of a line, facing into the line, or at the outer
+edge of a footprint pad. It is the same port the **Port** tool places, so an EM setup for the layout drives it
+with nothing more to draw. Messages lists each one: *P1 — port 1 placed at TL1 pin 1.*
+
+Some ports are left for you to place with the Port tool, and Messages lists them under *ports to place by hand*:
+
+- a port on a net where two or more parts meet, such as the junction of a line and a tee, or the ends of a
+  Wilkinson's arms where its resistor joins them;
+- a port connected to nothing, or on the ground net;
+- a port between two signal nets (a differential port);
+- a port on a line end that does not run along an axis, such as the end of a chain of curves.
+
+A port label follows its line end: when the line moves or changes length, the label moves with it. Once
+placed, it is treated like a part. If you drag it off the line end it stays where you put it (**Re-snap** on
+the label puts it back), a label you delete is not put back (**Restore Removed Parts** does), and a number
+changed in the schematic changes the label's number unless you changed the label's number yourself.
+
+Ports are placed when **Connect parts on Update Layout from Schematic** is on.
+
+**An EM setup from the schematic.** With **Create or update EM setup on Update Layout from Schematic** on in
+Settings (it is off until you turn it on), Update Layout also writes the EM setup. A layout with no setup gets
+one in the workspace's `em/` folder, named after the cell. It uses each port's impedance from the schematic and
+the schematic's first S-parameter sweep. A layout that already has setups gets an impedance in each for every new
+port number, and Messages notes a port number the schematic no longer has; nothing is deleted. An impedance you
+set in a setup is never changed, and neither is its sweep or any other setting. Writing the setup is not part of
+the layout's undo.
+
 **Bottom-side parts stay on the bottom.** A part you have flipped to the bottom keeps its side through
 every later run, including one that replaces its footprint. Flipping a part does not touch its symbol,
 and a later run does not read the flip as a change to undo. Mirroring the symbol mirrors the part on the

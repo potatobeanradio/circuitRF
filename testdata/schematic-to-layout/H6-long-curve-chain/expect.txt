@@ -20,8 +20,9 @@ Info CV17 added
 Info CV18 added
 Info CV19 added
 Info CV20 added
-Warning P1 no layout view — skipped
-Warning P2 no layout view — skipped
+Info P1 port 1 placed at CV1 pin 1
+# The chain ends at 20°: a port faces along an axis, so port 2 is left to place by hand (SDL-5 D2).
+Warning P2 CV20 pin 2 faces 20°, and a port faces along an axis
 Info - Joined 19 of 19 connections; 0 left as ratsnest
 joinable n1
 joinable n2
@@ -42,3 +43,4 @@ joinable n16
 joinable n17
 joinable n18
 joinable n19
+port P1 1

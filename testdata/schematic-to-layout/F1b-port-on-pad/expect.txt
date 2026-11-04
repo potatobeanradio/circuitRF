@@ -1,0 +1,9 @@
+# F1 with no line before the capacitor: port 1 is on the capacitor's pad, at its outer edge (brief-sdl-5 P2).
+joinable n3
+Info C1 added
+Info TL2 added
+Info P1 port 1 placed at C1 pin 1
+Info P2 port 2 placed at TL2 pin 2
+Info - Joined 1 of 1 connection; 0 left as ratsnest
+port P1 1
+port P2 2

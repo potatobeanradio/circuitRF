@@ -1,0 +1,21 @@
+# C3 with a third port where MT1 meets TL2. That net joins two layout pins — a junction — so port 3 is reported for
+# placing by hand and no label is placed for it (brief-sdl-5 D2, P3).
+joinable n2
+joinable n3
+joinable n4
+joinable n5
+joinable n6
+joinable n7
+port P1 1
+port P2 2
+Info TL1 added
+Info MT1 added
+Info TL2 added
+Info MT2 added
+Info TL3 added
+Info ST1 added
+Info ST2 added
+Info P1 port 1 placed at TL1 pin 1
+Info P2 port 2 placed at TL3 pin 2
+Warning P3 net n3 meets 2 layout pins (MT1 pin 2, TL2 pin 1), so the port is at a junction
+Info - Joined 6 of 6 connections; 0 left as ratsnest

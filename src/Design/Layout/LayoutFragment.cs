@@ -308,6 +308,7 @@ public static class LayoutFragment
         {
             var clone = LayoutGeometry.Clone(shape);
             clone.Generated = null;   // a pasted copy of generated copper is the designer's
+            if (clone is LabelShape pastedPort) pastedPort.SchematicId = null;   // brief-sdl-5: so is a port label's link
             if (choices is not null && choices.TryGetValue(shape.Layer, out var choice))
             {
                 switch (choice.Action)
@@ -348,6 +349,7 @@ public static class LayoutFragment
         {
             var clone = LayoutGeometry.Clone(s);
             clone.Generated = null;   // a pasted or duplicated copy of generated copper is the designer's
+            if (clone is LabelShape copiedPort) copiedPort.SchematicId = null;   // brief-sdl-5: so is a port label's link
             if (dx != 0 || dy != 0) LayoutGeometry.TranslateBy(clone, dx, dy);
             result.Add(clone);
         }

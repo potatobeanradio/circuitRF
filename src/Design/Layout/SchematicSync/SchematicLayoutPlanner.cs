@@ -83,6 +83,8 @@ public static partial class SchematicLayoutPlanner
         /// <summary>A note about how one part's pins were read: a pad with nothing to face away from, a pin with no
         /// copper under it or no stated width, a third pad at one joint.</summary>
         FootprintNote,
+        /// <summary>brief-sdl-5 D2: a schematic Port the run could not put on the layout, to be placed by hand.</summary>
+        PortByHand,
     }
 
     /// <summary>One group of the connected-placement report: its heading, its severity (the worst of its lines)
@@ -106,6 +108,7 @@ public static partial class SchematicLayoutPlanner
                 ReportKind.LoopGap => n == 1 ? "1 joint does not close" : $"{n} joints do not close",
                 ReportKind.Unjoined => n == 1 ? "1 connection is not joined" : $"{n} connections are not joined",
                 ReportKind.Overlap => n == 1 ? "1 overlap of unconnected copper" : $"{n} overlaps of unconnected copper",
+                ReportKind.PortByHand => n == 1 ? "1 port to place by hand" : $"{n} ports to place by hand",
                 _ => n == 1 ? "1 footprint note" : $"{n} footprint notes",
             };
             var severity = members.Any(l => l.Severity == ReportSeverity.Warning) ? ReportSeverity.Warning : ReportSeverity.Info;
@@ -216,7 +219,11 @@ public static partial class SchematicLayoutPlanner
         // provenance, or a run with no target path, keeps the skip: generating copper over a board is the worse error.
         bool overArtwork = !GeneratesArtworkModels(model, schematicDir, targetLayoutPath);
         var fromArtwork = overArtwork ? model.Components.Where(c => c.FromArtwork && IsPhysical(c)).ToList() : [];
-        var physical = model.Components.Where(c => IsPhysical(c) && !(overArtwork && c.FromArtwork)).ToList();
+        // brief-sdl-5: with Connect parts on, a Port is where the circuit is driven, not a part — it becomes an EM port
+        // label (PortPlacement) once every part is placed, instead of "no layout view — skipped". Off, the plan is the
+        // one from before the series, which reported it.
+        var physical = model.Components.Where(c => IsPhysical(c) && !(overArtwork && c.FromArtwork)
+                                                   && !(connectParts && PortPlacement.IsPort(c))).ToList();
 
         var existingBySchematicId = new Dictionary<string, (int Index, LayoutInstance Instance)>(StringComparer.Ordinal);
         for (int i = 0; i < target.Instances.Count; i++)
@@ -570,6 +577,12 @@ public static partial class SchematicLayoutPlanner
         }
         ReportPlacementOntoDrawnArtwork(target, newInstances, targetLayoutBaseDir, lines);
 
+        // brief-sdl-5 R-sdl5-1: the schematic's Ports become EM port labels at the pins they connect to — after every
+        // part is where the run leaves it, so a port lands on its pin's final place and follows a pin that moved.
+        if (connectParts)
+            PlacePorts(model, extraction, target, physical, existingBySchematicId, replacedAt, deleteIndices, newInstances,
+                       schematicDir, targetLayoutBaseDir, targetLayoutPath, technology, resnap, restoreRemoved, steps, lines);
+
         // Designer feedback round 11: the ground the schematic states, drawn — a via at every ground-symbol pin and
         // the pour under the lines and those vias — planned against the instances as they WILL be once the plan is
         // applied, and applied as part of it, so the whole update stays one undoable action (R-L5-12). Read against
@@ -614,6 +627,51 @@ public static partial class SchematicLayoutPlanner
             lines.AddRange(PlacementOverlaps.Find(plan, target, targetLayoutBaseDir, technology, extraction)
                                             .Select(o => o.ToReportLine()));
         return plan;
+    }
+
+    /// <summary>brief-sdl-5: <see cref="PortPlacement"/> over every placed part as the run leaves it, its labels and
+    /// records added to the run's steps, and — D4 — the numbering check the EM run makes, quoted when it refuses.</summary>
+    private static void PlacePorts(
+        SchematicEditModel model, NetExtractor.ExtractionResult extraction, LayoutView target, List<EditableComponent> physical,
+        Dictionary<string, (int Index, LayoutInstance Instance)> existingBySchematicId, Dictionary<int, LayoutInstance> replacedAt,
+        List<int> deleteIndices, List<(int Slot, LayoutInstance Instance)> newInstances, string schematicDir,
+        string targetLayoutBaseDir, string? targetLayoutPath, Technology? technology, IReadOnlySet<string> resnap,
+        bool restoreRemoved, List<Step> steps, List<ReportLine> lines)
+    {
+        if (!model.Components.Any(PortPlacement.IsPort)
+            && !target.Shapes.Any(s => s is LabelShape { IsPort: true, SchematicId: { Length: > 0 } })) return;
+
+        var compById = new Dictionary<string, EditableComponent>(StringComparer.Ordinal);
+        foreach (var c in physical) if (c.InstanceName is { Length: > 0 } n) compById.TryAdd(n, c);
+        var deleted = new HashSet<int>(deleteIndices);
+        var parts = new List<PortPlacement.PlacedPart>();
+        for (int i = 0; i < target.Instances.Count; i++)
+        {
+            if (deleted.Contains(i)) continue;
+            var after = replacedAt.GetValueOrDefault(i, target.Instances[i]);
+            if (after.SchematicId is { Length: > 0 } sid && compById.TryGetValue(sid, out var comp))
+                parts.Add(new PortPlacement.PlacedPart(comp, after, target.Instances[i]));
+        }
+        foreach (var (_, inst) in newInstances)
+            if (inst.SchematicId is { Length: > 0 } sid && compById.TryGetValue(sid, out var comp))
+                parts.Add(new PortPlacement.PlacedPart(comp, inst, null));
+
+        var outcome = PortPlacement.Plan(new PortPlacement.Input(model, extraction, target, parts, schematicDir,
+                                                                 targetLayoutBaseDir, technology, resnap, restoreRemoved));
+        foreach (var (index, before, after) in outcome.Replaced) steps.Add(Step.ReplaceShape(index, before, after));
+        foreach (var label in outcome.Added) steps.Add(Step.Shape(label));
+        foreach (var (id, record) in outcome.Records) steps.Add(Step.Record(id, record));
+        lines.AddRange(outcome.Lines);
+
+        // D4: the layout as the run leaves it, numbered as an EM run numbers it.
+        var future = new LayoutView { DbuPerMicron = target.DbuPerMicron, DisplayUnit = target.DisplayUnit, TechRef = target.TechRef };
+        future.Instances.AddRange(parts.Select(p => p.After));
+        var replacedShapes = outcome.Replaced.ToDictionary(r => r.Index, r => (LayoutShape)r.After);
+        future.Shapes.AddRange(target.Shapes.Select((s, i) => replacedShapes.GetValueOrDefault(i, s)));
+        future.Shapes.AddRange(outcome.Added);
+        string clayPath = targetLayoutPath ?? Path.Combine(targetLayoutBaseDir, "layout.clay");
+        if (PortPlacement.DuplicateRefusal(future, clayPath, technology) is { } refusal)
+            lines.Add(new ReportLine("", $"Port numbers: {refusal}", ReportSeverity.Warning) { Kind = ReportKind.PortByHand });
     }
 
     /// <summary>brief-sdl-4: the run's existing linked parts — as it replaces them so far — handed to

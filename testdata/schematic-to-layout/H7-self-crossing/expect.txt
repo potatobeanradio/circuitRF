@@ -7,8 +7,8 @@ Info BD2 added
 Info TL3 added
 Info BD3 added
 Info TL4 added
-Warning P1 no layout view — skipped
-Warning P2 no layout view — skipped
+Info P1 port 1 placed at TL1 pin 1
+Info P2 port 2 placed at TL4 pin 2
 Info - Joined 6 of 6 connections; 0 left as ratsnest
 Warning TL1 TL1 overlaps TL4 (nets p1/n1, n6/p2): the schematic's lengths make these cross.
 overlap
@@ -18,3 +18,5 @@ joinable n3
 joinable n4
 joinable n5
 joinable n6
+port P1 1
+port P2 2

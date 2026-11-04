@@ -147,6 +147,28 @@ public static class EmPortExtraction
         return numbered;
     }
 
+    /// <summary>
+    /// The refusal <see cref="Extract"/> raises for the first port number two labels both name, or null when every
+    /// number is named once. brief-sdl-5 D4: Update Layout from Schematic quotes this rather than holding a check of its
+    /// own, so the sentence a run would refuse with is the one the placement reports.
+    /// </summary>
+    public static string? DuplicateNumberRefusal(IReadOnlyList<LayoutShape> shapes, int dbuPerMicron,
+                                                 LayoutUnit displayUnit = LayoutUnit.Um)
+    {
+        ArgumentNullException.ThrowIfNull(shapes);
+        var seen = new Dictionary<int, LabelShape>();
+        foreach (var s in shapes)
+            if (s is LabelShape { IsPort: true } l && TryParseNumber(l.Text, out int n) && !seen.TryAdd(n, l))
+                return DuplicateNumber(n, seen[n], l, dbuPerMicron, displayUnit);
+        return null;
+    }
+
+    private static string DuplicateNumber(int n, LabelShape first, LabelShape second, int dbuPerMicron, LayoutUnit displayUnit) =>
+        $"Two port labels both name port {n}: '{first.Text}' at " +
+        $"{Coord(first.X, first.Y, dbuPerMicron, displayUnit)} and '{second.Text}' at " +
+        $"{Coord(second.X, second.Y, dbuPerMicron, displayUnit)}. Port numbers index the s-parameter matrix, " +
+        "so they have to be distinct — renumber one of them.";
+
     public static bool AnyNonEdgePort(IReadOnlyList<LayoutShape> shapes)
     {
         ArgumentNullException.ThrowIfNull(shapes);
@@ -260,11 +282,7 @@ public static class EmPortExtraction
             if (TryParseNumber(l.Text, out int n))
             {
                 if (explicitNumbers.TryGetValue(n, out var first))
-                    return EmPortExtractionResult.No(
-                        $"Two port labels both name port {n}: '{first.Text}' at " +
-                        $"{Coord(first.X, first.Y, dbuPerMicron, displayUnit)} and '{l.Text}' at " +
-                        $"{Coord(l.X, l.Y, dbuPerMicron, displayUnit)}. Port numbers index the s-parameter matrix, " +
-                        "so they have to be distinct — renumber one of them.");
+                    return EmPortExtractionResult.No(DuplicateNumber(n, first, l, dbuPerMicron, displayUnit));
                 explicitNumbers[n] = l;
             }
             else pending.Add(l);
