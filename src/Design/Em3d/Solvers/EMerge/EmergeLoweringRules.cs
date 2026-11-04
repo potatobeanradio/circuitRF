@@ -23,6 +23,49 @@ internal static class EmergeLoweringRules
     /// </summary>
     public const double SurfaceImpedanceLimitSm = 1e4;
 
+    /// <summary>EM-TFR — the sheet resistance from which a sheet is a resistor rather than metal, Ω/sq, for EMerge's lowering.</summary>
+    public const double ResistiveSheetFromOhmPerSq = 10;
+
+    /// <summary>EM-TFR — the thickness a resistive sheet's volume starts from, metres, thicker where σ would pass the limit.</summary>
+    public const double ResistiveVolumeThicknessM = 3e-6;
+
+    /// <summary>
+    /// <b>EM-TFR — a resistive sheet goes to EMerge as a thin lossy volume of the same σ·t, on the sheet's own outline.</b>
+    /// EMerge's thin conductor keeps an impedance on each side of a surface whose degrees of freedom it has split, top from
+    /// bottom. On metal that is immaterial. On a 50 Ω/sq film it is not: a straight six-square film read 262 Ω on the shipped
+    /// mesh and only 293 Ω at 16 times the elements, where 300 Ω is exact. At or below the surface-impedance limit EMerge solves
+    /// a volume's real current, which read 301 Ω on fewer elements than the sheet's shipped mesh (RESOLVED, EM-TFR).
+    /// Metal, and a slanted sheet, are returned as they came, and a problem with no resistive sheet is the same object.
+    /// </summary>
+    public static Em3dProblem ResistiveSheetsAsVolumes(Em3dProblem problem, out IReadOnlyList<string> notes)
+    {
+        notes = [];
+        var byName = problem.Materials.ToDictionary(m => m.Name, StringComparer.Ordinal);
+        double SheetOhms(Em3dSheet s) => byName[s.Material].SigmaSm is > 0 and var g && double.IsFinite(g) && s.ThicknessM > 0
+            ? 1.0 / (g * s.ThicknessM) : 0;
+        var resistive = problem.Sheets.Where(s => s.Frame is null && SheetOhms(s) >= ResistiveSheetFromOhmPerSq).ToList();
+        if (resistive.Count == 0) return problem;
+
+        var materials = problem.Materials.ToList();
+        var solids = problem.Solids.ToList();
+        var said = new List<string>();
+        foreach (var sheet in resistive)
+        {
+            double rs = SheetOhms(sheet);
+            // σ must end at or below the limit, or EMerge reads the volume as a conductor's surface again.
+            double t = Math.Max(ResistiveVolumeThicknessM, 1.0 / (rs * SurfaceImpedanceLimitSm));
+            string name = $"{sheet.Material} (volume)";
+            if (materials.All(m => m.Name != name))
+                materials.Add(new Em3dMaterial(name, 1, null, 0, 1, 1.0 / (rs * t)));
+            solids.Add(new Em3dSolid(sheet.Name, name, Em3dRole.Dielectric,
+                                     new Em3dExtrudedPolygon(sheet.Outline, sheet.Holes, sheet.Z, sheet.Z + t), sheet.Order));
+            said.Add($"'{sheet.Name}' ({G(rs)} Ω/sq) goes to EMerge as a {G(t * 1e6)} µm volume of σ = {G(1.0 / (rs * t))} S/m, the same " +
+                     "sheet resistance: its thin-conductor boundary reads a film low, and how low depends on the mesh.");
+        }
+        notes = said;
+        return problem with { Materials = materials, Solids = solids, Sheets = [.. problem.Sheets.Except(resistive)] };
+    }
+
     private static string G(double v) => v.ToString("G4", CultureInfo.InvariantCulture);
 
     private static string Mm(double m) => (m * 1e3).ToString("G4", CultureInfo.InvariantCulture) + " mm";

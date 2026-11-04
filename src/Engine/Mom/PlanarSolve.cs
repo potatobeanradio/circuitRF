@@ -2224,6 +2224,10 @@ public static class PlanarSolve
             ConductorLoss          = fillIn.PerfectConductor ? null
                                    : fillIn.ConductorLoss ?? PlanarConductorLoss.For(problem),
         };
+        // EM-TFR — the oracle makes the metal perfect, and a film stays what it is (PlanarConductorLoss.TableFor).
+        if (fillIn.PerfectConductor && problem.Layers.Any(l => l.Films.Count > 0))
+            notes.Add("The metal is a perfect conductor in this run, and the resistive films still carry their " +
+                      "sheet resistance: a film is a circuit element, not a loss in the metal.");
 
         // LFE — a de-embedded run grounds its edge ports below the quasi-static crossover only (see
         // PlanarFillSettings.GroundedEdgePortBelowHz for the measurement that set the boundary). The
@@ -2272,9 +2276,11 @@ public static class PlanarSolve
         // `dut.Cores` is LAZY, so this is a local function rather than a plain local: touching it
         // eagerly on a PEC run would force a core build that run might never need.
         PlanarConductorLossInputs? conductorInputs = null;
+        // EM-TFR — a film carries a term whatever the metal does, so a PEC run with a film has inputs
+        // too; a null Loss on them says the metal's share is the hard zero.
         PlanarConductorLossInputs? ConductorLoss() =>
-            fillSt.ConductorLoss is { } cl
-                ? conductorInputs ??= new PlanarConductorLossInputs(cl, dut.Cores.Gram, dut.Levels)
+            fillSt.ConductorLoss is not null || dut.Mesh.Films.Count > 0
+                ? conductorInputs ??= new PlanarConductorLossInputs(fillSt.ConductorLoss, dut.Cores.Gram, dut.Levels)
                 : null;
 
         // ── R-prt-2/3 + PCAL2: what the ports resolved to, and whether their feeds are clear ─────

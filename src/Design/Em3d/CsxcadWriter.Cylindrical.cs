@@ -192,8 +192,9 @@ public static partial class CsxcadWriter
                 string prim = CylSheet(sh, ctx);
                 if (m.SigmaSm > 0 && double.IsFinite(m.SigmaSm) && sh.ThicknessM > 0)
                 {
+                    var (sheetSigma, sheetThickness) = ConductingSheetValues(m.SigmaSm, sh.ThicknessM, grid.TimeStepEstimateS, problem.Frequency.StopHz, sh.Name, notes);
                     Open(props, "ConductingSheet", id++, sh.Name, Colors.Metal,
-                         $" Conductivity=\"{R(m.SigmaSm)}\" Thickness=\"{R(sh.ThicknessM)}\"");
+                         $" Conductivity=\"{R(sheetSigma)}\" Thickness=\"{R(sheetThickness)}\"");
                     AppendPrimitives(props, prim);
                     props.Append("            </ConductingSheet>\n");
                 }

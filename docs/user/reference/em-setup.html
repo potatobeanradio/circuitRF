@@ -1201,6 +1201,14 @@ and the <strong>radiation pattern</strong>, which a driven 3D run produces too �
 <a href="antennas.html#3d">Antennas ▸ From a 3D solver</a>. Palace, openEMS and EMerge each have their own section below, and a
 setup keeps them all, so switching solver never loses another's settings. A comparison shows the section of every solver
 it runs, each titled with the solver's name.</p>
+<p><a id="conductors-3d"></a><strong>Conductor bands</strong> (<code>Conductors</code> in the <code>.cem</code>, omitted at <code>Auto</code>) say what a 3D setup makes of
+each conductor. <code>Auto</code> takes the sheet rule, a band thinner than three skin depths and a tenth of its width being a sheet.
+<code>Sheets</code> makes every band a sheet, the planar solve's own idealisation. <code>Solids</code> gives every band its real thickness. A
+<a href="stackup.html#film">resistive film</a> stays a sheet in all three, because a film's own thickness is a mesh nobody should be
+asked to pay for.</p>
+<p>Each 3D solver is told about a film in the way it solves accurately, with the same sheet resistance. Palace takes a thin
+conducting boundary. openEMS takes a conducting sheet at a thickness large enough that its model does not bypass the film,
+and a grid at least six cells across it. EMerge takes a thin lossy volume. The run's notes state the values each one used.</p>
 <p><a id="robust-meshing"></a><strong>Robust meshing</strong> (<code>RobustMeshing</code>), below the solvers' sections, applies to every 3D solver,
 because they all mesh the same outlines. It removes each outline point that lies within a fraction of a micrometre of
 the line through its neighbours: at most 0.5 µm, or 1/50 of the layer's thickness where that is less. Artwork imported

@@ -53,7 +53,7 @@ The results land in the `farfield` group of the same result the s-parameters do.
 | `RadiationEfficiencyDb` | freq, port | dB — the same number, 10·log10(η) |
 | `TrpDbm`, `PeakEirpDbm` | freq, port | dBm — see [TRP and EIRP](#trp) |
 | `ReferenceInputPowerDbm` | freq, port | dBm — what those two are referenced to |
-| `PowerAccepted`, `PowerRadiated`, `PowerSurfaceWave`, `PowerDielectricAndGround`, `PowerConductor` | freq, port | W |
+| `PowerAccepted`, `PowerRadiated`, `PowerSurfaceWave`, `PowerDielectricAndGround`, `PowerConductor`, `PowerFilm` | freq, port | W |
 | `BeamwidthDeg` | freq, **cut**, port | deg — the `cut` axis carries each plane's φ |
 | `AxialRatioDb`, `PolarizationSense` | freq, θ, φ, port | dB, and signed Stokes *V* |
 | `CoPolLudwig3Db`, `CrossPolLudwig3Db` | freq, θ, φ, port | dB |

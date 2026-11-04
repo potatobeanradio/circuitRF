@@ -1579,3 +1579,4 @@ src/Core/Devices/External/IParametricModelProvider.cs|'{request.InstancePath}' i
 src/Core/Elaboration/Elaborator.cs|'{childPath}' cannot be simulated by EM: {answer.Failure ?? 
 src/Core/Elaboration/Elaborator.cs|'{childPath}' sets {ov.Name}, which cell '{cell.Name}' declares both as a parameter and as a variable; 
 src/Core/Elaboration/Elaborator.cs|'{childPath}' sets {ov.Name}, which cell '{cell.Name}' neither declares as a parameter or variable nor reads.
+src/Engine/Mom/PlanarGram.cs|Rooftops {bi} and {bj} share cells of three different sheet classes. A 

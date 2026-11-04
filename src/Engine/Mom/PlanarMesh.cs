@@ -47,6 +47,13 @@ public sealed record PlanarCell(
     double YMax,
     PlanarCellRegion? Region = null)
 {
+    /// <summary>
+    /// <b>EM-TFR — which film of <see cref="PlanarMesh.Films"/> this cell is, or −1 for the level's
+    /// own metal.</b> A property rather than a positional field so every existing construction of a
+    /// cell still reads as metal.
+    /// </summary>
+    public int Film { get; init; } = -1;
+
     /// <summary>The GRID rectangle's width — the quadrature's own frame and the λ_g cap's subject.
     /// <b>Not</b> the metal's extent when <see cref="Region"/> is set.</summary>
     public double Width   => XMax - XMin;
@@ -150,7 +157,38 @@ public sealed record PlanarMesh(
     /// </summary>
     public PlanarRooftopMerge? Merge { get; init; }
 
+    /// <summary>
+    /// <b>EM-TFR — the films this mesh's cells can name.</b> Empty on a mesh with no film, on which
+    /// <see cref="SheetClassOf"/> is the cell's level and every table is today's.
+    /// </summary>
+    public IReadOnlyList<PlanarMeshFilm> Films { get; init; } = [];
+
+    /// <summary>
+    /// <b>EM-TFR — the entry of a sheet table this cell reads its Z_s from.</b> The level's metal is
+    /// the level's own index, so a mesh with no film has exactly today's table; film <c>k</c> follows
+    /// the levels at <c>LayerNames.Count + k</c>.
+    /// </summary>
+    public int SheetClassOf(PlanarCell cell)
+        => cell.Film < 0 ? cell.LayerIndex : Math.Max(LayerNames.Count, 1) + cell.Film;
+
+    /// <summary>The number of sheet classes: every level's metal, then every film.</summary>
+    public int SheetClassCount => Math.Max(LayerNames.Count, 1) + Films.Count;
+
+    /// <summary>True when a sheet-class index names a film rather than a level's metal.</summary>
+    public bool IsFilmClass(int sheetClass) => sheetClass >= Math.Max(LayerNames.Count, 1);
+
+    /// <summary>The sheet resistance of a cell's own material, or null when it is the level's metal.</summary>
+    public double? FilmSheetResistanceOf(PlanarCell cell)
+        => cell.Film < 0 ? null : Films[cell.Film].SheetResistanceOhmPerSq;
+
     /// <summary>The size of the matrix the DENSE path holds and factors — the merged count when
     /// <see cref="Merge"/> is set, the basis count otherwise. What every dense ceiling is asked of.</summary>
     public int SolvedUnknownCount => Merge?.Count ?? Bases.Count;
 }
+
+/// <summary>
+/// <b>EM-TFR — one film as the mesh carries it:</b> the level it sits on, the drawing layer a refusal
+/// names, and its sheet resistance. On the mesh rather than only on the problem because a fill with no
+/// loss model at all still owes the film its term: a film is a circuit element, not a loss correction.
+/// </summary>
+public sealed record PlanarMeshFilm(int LayerIndex, string Name, double SheetResistanceOhmPerSq);

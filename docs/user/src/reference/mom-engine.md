@@ -190,6 +190,19 @@ uniform line, and the quasi-static one reads the higher of the two, by the 0.63/
 given above. **The ground plane's own term is in both of them now**, and where the substrate is
 electrically thin the two formulations agree on it to within **6%** — see below.
 
+## Resistive films {#films}
+
+A film bound to a conductor level ([how](stackup.html#film)) is a surface impedance on the cells it covers: the real
+constant `R_s`, frequency-flat, in the same sheet as the metal. Each cell carries its own, so a rooftop that crosses
+the boundary takes each half's value, at 0 Hz as at every other frequency.
+
+- **A port must sit on metal.** Its calibration standard is a line of the port's own metal, so a port on film is
+  refused by name.
+- **The film is not conductor loss.** `PowerFilm` reports what it dissipates, beside `PowerConductor` rather than
+  inside it, and the dielectric residual subtracts both.
+- **A rooftop merge never crosses a film boundary**, and the boundary between a film and its metal is a gridline with
+  no graded fan, because it is not an edge of the conductor. The film's outer edges are graded like any other.
+
 ## For advanced users: how circuitRF implements MoM {#implementation}
 
 Two kernels ship. circuitRF chooses between them from the geometry and tells you which one it picked and

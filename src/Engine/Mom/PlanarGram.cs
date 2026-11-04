@@ -27,6 +27,10 @@
 //   • Two cells on different LEVELS are different cells, so a cross-layer pair contributes nothing
 //     and no level pairing has to be resolved. Every entry's shared cells are on ONE level, which is
 //     the level whose Z_s multiplies it.
+//   • EM-TFR — a rooftop can straddle a film boundary, so its self term has one half on the film and
+//     one on the metal. A same-direction pair shares at most two cells (a basis with itself both,
+//     neighbours one), so one slot holds at most TWO (sheet class, value) contributions. The second
+//     pair of arrays exists only when some slot uses it, so a mesh with no film has exactly today's.
 //   • A VERTICAL (via) basis is deliberately NOT here. Its current crosses a footprint and returns
 //     through a barrel WALL, which is a series impedance in ohms rather than an ohms-per-square
 //     times a Gram entry — PlanarSurfaceImpedance.Barrel, and the via arm of the fill.
@@ -88,6 +92,11 @@ public sealed class PlanarGram
     /// <summary>The conductor LEVEL each entry's shared cells sit on. One per entry, because two
     /// bases that share a cell share that cell's level.</summary>
     internal readonly int[] Layer;
+    /// <summary>EM-TFR — the sheet class of a slot's second contribution, or null on a Gram where no
+    /// slot has one, which is every mesh with no film boundary.</summary>
+    internal readonly int[]? Layer2;
+    /// <summary>EM-TFR — that contribution's value; 0 on a slot whose cells agree.</summary>
+    internal readonly double[]? Value2;
 
     /// <summary>N — the basis count the Gram is indexed by, vertical bases included (as empty rows).</summary>
     public int UnknownCount => RowPtr.Length - 1;
@@ -100,11 +109,12 @@ public sealed class PlanarGram
     public double NonZerosPerUnknown => UnknownCount > 0 ? (double)NonZeros / UnknownCount : 0;
 
     /// <summary>Bytes held. O(N), and reported beside the cores' own for the same P1 reason.</summary>
-    public long Bytes => 4L * RowPtr.Length + 4L * ColIdx.Length + 8L * Value.Length + 4L * Layer.Length;
+    public long Bytes => 4L * RowPtr.Length + 4L * ColIdx.Length + 8L * Value.Length + 4L * Layer.Length
+                       + 4L * (Layer2?.Length ?? 0) + 8L * (Value2?.Length ?? 0);
 
-    private PlanarGram(int[] rowPtr, int[] colIdx, double[] value, int[] layer)
+    private PlanarGram(int[] rowPtr, int[] colIdx, double[] value, int[] layer, int[]? layer2, double[]? value2)
     {
-        RowPtr = rowPtr; ColIdx = colIdx; Value = value; Layer = layer;
+        RowPtr = rowPtr; ColIdx = colIdx; Value = value; Layer = layer; Layer2 = layer2; Value2 = value2;
     }
 
     /// <summary>
@@ -115,7 +125,8 @@ public sealed class PlanarGram
     {
         int a = Math.Min(i, j), b = Math.Max(i, j);
         int k = Slot(a, b);
-        return k < 0 ? 0.0 : Value[k];
+        if (k < 0) return 0.0;
+        return Value2 is { } second ? Value[k] + second[k] : Value[k];
     }
 
     /// <summary>The stored slot of <c>(a, b)</c> with <c>a ≤ b</c>, or −1.</summary>
@@ -184,8 +195,10 @@ public sealed class PlanarGram
             return supports[slot];
         }
 
-        // (i, j) with i ≤ j → the accumulated integral, plus the level it was accumulated on.
-        var acc = new Dictionary<(int I, int J), (double V, int Layer)>();
+        // (i, j) with i ≤ j → the accumulated integral, plus the sheet class it was accumulated on, and
+        // the second class's when the pair's shared cells disagree (EM-TFR, the file header).
+        var acc = new Dictionary<(int I, int J), (double V, int Layer, double V2, int Layer2)>();
+        bool anySecond = false;
 
         for (int c = 0; c < m; c++)
         {
@@ -206,8 +219,19 @@ public sealed class PlanarGram
                 if (g == 0) continue;
 
                 var key = (bi, bj);
-                if (acc.TryGetValue(key, out var prev)) acc[key] = (prev.V + g, prev.Layer);
-                else acc[key] = (g, cell.LayerIndex);
+                int sheetClass = mesh.SheetClassOf(cell);
+                if (!acc.TryGetValue(key, out var prev)) acc[key] = (g, sheetClass, 0.0, -1);
+                else if (prev.Layer == sheetClass) acc[key] = (prev.V + g, prev.Layer, prev.V2, prev.Layer2);
+                else if (prev.Layer2 < 0 || prev.Layer2 == sheetClass)
+                {
+                    acc[key] = (prev.V, prev.Layer, prev.V2 + g, sheetClass);
+                    anySecond = true;
+                }
+                else
+                    throw new InvalidOperationException(
+                        $"Rooftops {bi} and {bj} share cells of three different sheet classes. A " +
+                        "same-direction pair shares at most two cells, so this mesh has produced a " +
+                        "support the two-contribution Gram slot does not cover.");
             }
         }
 
@@ -222,6 +246,8 @@ public sealed class PlanarGram
         var colIdx = new int[nnz];
         var value  = new double[nnz];
         var layer  = new int[nnz];
+        var layer2 = anySecond ? new int[nnz] : null;
+        var value2 = anySecond ? new double[nnz] : null;
         var cursor = (int[])rowPtr.Clone();
 
         // Sorted so the packing is a function of the mesh alone — a dictionary's iteration order is
@@ -234,9 +260,14 @@ public sealed class PlanarGram
             colIdx[at] = k.J;
             value[at]  = acc[k].V;
             layer[at]  = acc[k].Layer;
+            if (anySecond)
+            {
+                layer2![at] = Math.Max(acc[k].Layer2, 0);   // a 0 value makes the index immaterial
+                value2![at] = acc[k].V2;
+            }
         }
 
-        return new PlanarGram(rowPtr, colIdx, value, layer);
+        return new PlanarGram(rowPtr, colIdx, value, layer, layer2, value2);
     }
 
     // ══════════════════════════════════════════════════════════════════════════════════════════

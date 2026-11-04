@@ -1519,6 +1519,9 @@ public sealed class CemFile
     /// does not state it is robust, as every setup the GUI makes already was — so only <c>false</c> is ever written.</summary>
     public bool? RobustMeshing { get; set; }
 
+    /// <summary>EM-TFR — <see cref="EmSetup.Conductors"/>. Omitted at Auto, which is what every setup written before it means.</summary>
+    public Em3dConductorMode? Conductors { get; set; }
+
     /// <summary>Palace's own section. Null takes the defaults.</summary>
     public CemPalace? Palace { get; set; }
 
@@ -1706,6 +1709,7 @@ public static class EmSetupPersistence
         OperatingTempC = s.OperatingTempC,
         AirBox         = ToCem(s.AirBox),
         RobustMeshing  = s.RobustMeshing ? null : false,
+        Conductors     = s.Conductors == Em3dConductorMode.Auto ? null : s.Conductors,
         Palace         = s.Palace,
         OpenEms        = s.OpenEms,
         Emerge         = s.Emerge is { IsEmpty: false } emerge ? emerge : null,
@@ -1812,6 +1816,7 @@ public static class EmSetupPersistence
         OperatingTempC        = f.OperatingTempC,
         AirBox                = FromCem(f.AirBox),
         RobustMeshing         = f.RobustMeshing ?? true,
+        Conductors            = f.Conductors ?? Em3dConductorMode.Auto,
         Palace                = f.Palace,
         OpenEms               = f.OpenEms,
         Emerge                = f.Emerge,

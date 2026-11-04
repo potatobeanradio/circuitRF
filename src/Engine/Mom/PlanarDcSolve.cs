@@ -419,8 +419,15 @@ public static class PlanarDcSolve
 
             var ca = mesh.Cells[b.CellA];
             var cb = mesh.Cells[b.CellB];
-            double rs = SheetResistance(problem, ca.LayerIndex, ref anyPec);
-            return rs * (HalfSquares(ca, b.Direction) + HalfSquares(cb, b.Direction));
+            // EM-TFR — each half takes its own sheet resistance. Two halves of one material keep the
+            // single expression they always had, so a mesh with no film gives today's bits.
+            if (ca.Film == cb.Film)
+            {
+                double rs = CellSheetResistance(problem, mesh, ca, ref anyPec);
+                return rs * (HalfSquares(ca, b.Direction) + HalfSquares(cb, b.Direction));
+            }
+            return CellSheetResistance(problem, mesh, ca, ref anyPec) * HalfSquares(ca, b.Direction)
+                 + CellSheetResistance(problem, mesh, cb, ref anyPec) * HalfSquares(cb, b.Direction);
         }
 
         private static double HalfSquares(PlanarCell c, PlanarBasisDirection d)
@@ -446,6 +453,9 @@ public static class PlanarDcSolve
 
         private static double ViaSigma(PlanarProblem problem, PlanarBasis b, PlanarCell cell)
             => ViaSigmaFor(problem, b, cell);
+
+        private static double CellSheetResistance(PlanarProblem problem, PlanarMesh mesh, PlanarCell cell, ref bool anyPec)
+            => mesh.FilmSheetResistanceOf(cell) ?? SheetResistance(problem, cell.LayerIndex, ref anyPec);
 
         private static double SheetResistance(PlanarProblem problem, int layerIndex, ref bool anyPec)
         {

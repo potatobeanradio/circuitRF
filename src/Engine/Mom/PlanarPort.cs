@@ -1674,6 +1674,8 @@ public static class PlanarPorts
         // label happened to land in — the same determinism an edge port gets from marching its run.
         indices.Sort();
 
+        if (FilmRefusal(mesh, port, indices) is { } onFilm) { refusal = onFilm; return false; }
+
         resolution = new PlanarPortResolution(
             Number:            port.Number,
             Side:              port.Side,
@@ -2097,6 +2099,8 @@ public static class PlanarPorts
             }
         }
 
+        if (FilmRefusal(mesh, port, indices) is { } onFilm) { refusal = onFilm; return false; }
+
         resolution = new PlanarPortResolution(
             Number:            port.Number,
             Side:              port.Side,
@@ -2118,6 +2122,27 @@ public static class PlanarPorts
 
         refusal = null;
         return true;
+    }
+
+    /// <summary>
+    /// <b>EM-TFR — a port may not sit on film.</b> An edge port's cut cells, an internal port's cell and
+    /// a delta gap's cut must be metal: a calibration standard is built from the port's own cross-section
+    /// and contains no film, so a port on film would be de-embedded against a line that is not what it
+    /// feeds. Keeping ports on metal is also what leaves QSC and PCAL untouched.
+    /// </summary>
+    private static string? FilmRefusal(PlanarMesh mesh, PlanarPort port, IReadOnlyList<int> basisIndices)
+    {
+        if (mesh.Films.Count == 0) return null;
+        foreach (int bi in basisIndices)
+        {
+            var b = mesh.Bases[bi];
+            int film = Math.Max(mesh.Cells[b.CellA].Film, mesh.Cells[b.CellB].Film);
+            if (film < 0) continue;
+            return $"Port {port.Number}'s cut lies on the resistive film '{mesh.Films[film].Name}'. A port must sit on " +
+                   "metal, because its calibration standard is a line of the port's own metal. Move the port onto " +
+                   "the metal that contacts the film, or refine the mesh if that metal is shorter than the port's cells.";
+        }
+        return null;
     }
 
     /// <summary>

@@ -64,7 +64,7 @@ internal sealed class TraceStack
         var bands = stack.Where(b => b.Layer.Kind == StackupKind.Conductor).ToList();
         var bandOf = new Dictionary<LayerKey, CrossSectionExtractor.Band>();
         foreach (var b in bands)
-            foreach (var dl in b.Layer.DrawingLayers)
+            foreach (var dl in ResistiveFilms.MetalLayers(tech, b.Layer))
                 bandOf.TryAdd(dl, b);
 
         foreach (var b in stack)

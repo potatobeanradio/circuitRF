@@ -3187,11 +3187,13 @@ public static partial class PlanarFill
     internal static void AddSurfaceImpedance(BlockLowerMatrix z, PlanarFillCores cores,
                                              PlanarLevels? levels, double omega)
     {
-        if (cores.Settings.ConductorLoss is not { } loss) return;
-
         var mesh = cores.Mesh;
+        var loss = cores.Settings.ConductorLoss;
+
+        // EM-TFR — with no loss model the metal contributes nothing, and a film still does: it is a
+        // circuit element rather than a loss correction, so no switch about the METAL may remove it.
+        if (PlanarConductorLoss.TableFor(loss, mesh, omega) is not { } zs) return;
         var gram = cores.Gram;
-        var zs   = loss.SheetTable(mesh, omega);
 
         // The stored triangle is (i ≤ j) and the fill writes z[j, i] with j ≥ i, so this is the
         // triangle the fill filled — no mirroring and no second visit.
@@ -3202,7 +3204,7 @@ public static partial class PlanarFill
                 col[gram.ColIdx[k] - i] += SheetTerm(zs, gram, k);
         }
 
-        if (levels is null) return;
+        if (levels is null || loss is null) return;
         for (int i = 0; i < mesh.Bases.Count; i++)
         {
             var b = mesh.Bases[i];
@@ -3219,7 +3221,9 @@ public static partial class PlanarFill
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static Complex SheetTerm(Complex[] zs, PlanarGram gram, int slot)
-        => zs[gram.Layer[slot]] * gram.Value[slot];
+        => gram.Value2 is { } second && second[slot] != 0
+            ? zs[gram.Layer[slot]] * gram.Value[slot] + zs[gram.Layer2![slot]] * second[slot]
+            : zs[gram.Layer[slot]] * gram.Value[slot];
 
     /// <summary>
     /// <b>CL1 — the term for ONE basis pair, for a caller that fills entry by entry</b> (M5's
@@ -4328,7 +4332,7 @@ public sealed class PlanarEntryFill
 
         _scalarScale = 1.0 / (Complex.ImaginaryOne * omega * EmConstants.Eps0);
         _vectorScale = Complex.ImaginaryOne * omega * EmConstants.Mu0;
-        _zs          = _st.ConductorLoss?.SheetTable(_mesh, omega);
+        _zs          = PlanarConductorLoss.TableFor(_st.ConductorLoss, _mesh, omega);
     }
 
     /// <summary>The on-demand class source <see cref="PlanarFill.WholeVectorEntry{T}"/> reads.</summary>

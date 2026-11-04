@@ -44,6 +44,10 @@ public enum Em3dSection { Hexagon, Circle }
 /// (<see cref="Thermal"/>), which circuitRF's own thermal solver answers and no EM solver ever sees: every lowering
 /// refuses a problem of that type with <see cref="Em3dProblem.ThermalIsNotEm"/>.
 /// </summary>
+/// <summary>EM-TFR — what a 3D setup makes of a conductor band: the sheet rule, every band a sheet (the planar model's
+/// idealisation), or every band its real thickness. A resistive film stays a sheet in all three.</summary>
+public enum Em3dConductorMode { Auto, Sheets, Solids }
+
 public enum Em3dProblemType { Driven, Electrostatic, Magnetostatic, Eigenmode, Thermal }
 
 /// <summary>

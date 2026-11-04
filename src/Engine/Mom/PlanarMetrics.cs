@@ -78,6 +78,7 @@ public enum PlanarMetric
     PowerSurfaceWave,
     PowerDielectricAndGround,
     PowerConductor,
+    PowerFilm,
     RadiationEfficiency,
     RadiationEfficiencyDb,
     DirectivityDbi,
@@ -565,6 +566,15 @@ public static class PlanarMetrics
             // brief-em3d-31 — a 3D solver's budget refuses it by name; kernel B's carries no verdict.
             c => c.Budget.ConductorVerdict ?? EmSuitability.Yes,
             c => [c.Budget.ConductorW]),
+
+        new(PlanarMetric.PowerFilm, "PowerFilm", "W", PlanarMetricAxis.PerPoint,
+            "What the resistive films on the conductor levels dissipated: ½∫R_s|J|²dS over the cells " +
+            "that are film. Beside PowerConductor rather than inside it, because a film is a circuit " +
+            "element and not a loss in the metal: a terminated antenna's conductor loss must not read " +
+            "as most of its budget. Taken out of PowerDielectricAndGround's residual the same way. " +
+            "Zero on a run with no film.",
+            c => c.Budget.ConductorVerdict ?? EmSuitability.Yes,
+            c => [c.Budget.FilmW]),
 
         new(PlanarMetric.RadiationEfficiency, "RadiationEfficiency", "%", PlanarMetricAxis.PerPoint,
             "η_rad = 100 · P_radiated / P_accepted — a PERCENTAGE, and not clamped. The denominator " +

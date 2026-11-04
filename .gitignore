@@ -137,3 +137,7 @@ TK*.pdb
 
 # Written by the passive-neighbour EM test run, not an input
 /testdata/portcal/results/
+
+# EM-TFR campaign: what a run writes. The references kept are testdata/em-tfr/zigzag/refs/.
+/testdata/em-tfr/**/results/
+palace.log

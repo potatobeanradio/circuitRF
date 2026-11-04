@@ -494,7 +494,8 @@ public sealed record PlanarPowerBudget(
     double                   FrequencyHz,
     bool                     ConductorModelled = false,
     PlanarConductorPower?    Conductor         = null,
-    EmSuitability?           ConductorVerdict  = null)
+    EmSuitability?           ConductorVerdict  = null,
+    double                   FilmW             = 0.0)
 {
     /// <summary>P_radiated / P_accepted — a FRACTION, not dB, and deliberately not clamped.</summary>
     public double RadiationEfficiency => AcceptedW > 0 ? RadiatedW / AcceptedW : double.NaN;
@@ -595,7 +596,8 @@ public sealed record PlanarPowerBudget(
                 $"1 V: {SurfaceMesher.Eng(AcceptedW)}W accepted, " +
                 $"{SurfaceMesher.Eng(RadiatedW)}W radiated{pc(RadiatedW)}, {sw}, " +
                 $"{SurfaceMesher.Eng(DielectricAndGroundW)}W dielectric + ground plane" +
-                $"{pc(DielectricAndGroundW)}, {cond}. " +
+                $"{pc(DielectricAndGroundW)}, {cond}" +
+                (FilmW > 0 ? $", {SurfaceMesher.Eng(FilmW)}W resistive film{pc(FilmW)}" : "") + ". " +
                 $"Radiation efficiency {RadiationEfficiency:P2}. " +
                 $"The dielectric + ground-plane term is a RESIDUAL (accepted − radiated − " +
                 $"surface wave − conductor), not a third independent integral: over a laterally " +
@@ -649,10 +651,13 @@ public sealed record PlanarPowerBudget(
         // `accepted` and is silently wrong; the file header names the tell.
         var cond = conductor?.PowerOf(mesh, basisCurrents, pattern.FrequencyHz);
         double condW = cond?.TotalW ?? 0.0;
+        // EM-TFR — so does the film, and on its own line: the residual would otherwise report a
+        // resistor's dissipation as dielectric loss.
+        double filmW = cond?.FilmW ?? 0.0;
 
         return new PlanarPowerBudget(
-            accepted, radiated, swW, accepted - radiated - swW - condW, condW,
+            accepted, radiated, swW, accepted - radiated - swW - condW - filmW, condW,
             verdict, sw, pattern.DrivenPort, pattern.FrequencyHz,
-            ConductorModelled: conductor is not null, Conductor: cond);
+            ConductorModelled: conductor?.Loss is not null, Conductor: cond, FilmW: filmW);
     }
 }

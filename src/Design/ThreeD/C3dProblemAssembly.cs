@@ -454,6 +454,7 @@ public static class C3dProblemAssembly
         {
             MaterialFrequencyHz = materialHz, MaterialFrequencyBasis = sar is null ? "the sweep's centre" : "the SAR frequency",
             RobustMeshing = setup.RobustMeshing,
+            Conductors = setup.Conductors,
             SolidVias = setup.Problem3D != Em3dProblemType.Thermal,
         });
         var e = C3dModelled.Filter(document, drawn);

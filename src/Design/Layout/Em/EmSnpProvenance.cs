@@ -467,6 +467,23 @@ public static class EmSnpProvenance
                 }
                 sb.Append('|');
             }
+            // EM-TFR — omitted with no film, so every existing .snp stays current; a .snp stamped before
+            // a film was bound, or whose R_s changed, describes a different structure and reads as stale.
+            foreach (var film in layer.Films)
+            {
+                sb.Append("F:").Append(film.Name).Append(':').Append(R(film.SheetResistanceOhmPerSq)).Append('|');
+                foreach (var poly in film.Polygons)
+                {
+                    foreach (var pt in poly.Outer) sb.Append(R(pt.X)).Append(',').Append(R(pt.Y)).Append(';');
+                    sb.Append('/');
+                    foreach (var hole in poly.HoleRings)
+                    {
+                        foreach (var pt in hole) sb.Append(R(pt.X)).Append(',').Append(R(pt.Y)).Append(';');
+                        sb.Append('/');
+                    }
+                    sb.Append('|');
+                }
+            }
         }
         return Sha(sb.ToString());
     }

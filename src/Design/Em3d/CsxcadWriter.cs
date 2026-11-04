@@ -167,6 +167,29 @@ public static partial class CsxcadWriter
     /// <param name="farFieldHz">brief-em3d-31 — the frequencies to dump the radiation pattern's equivalence surface
     /// at (<see cref="OpenEmsFarField"/>), or null for no pattern: a null request writes exactly the bytes it
     /// wrote before the pattern existed.</param>
+    /// <summary>How far above the thickness at which the sheet's own capacitor would cut in a sheet must stay.</summary>
+    internal const double SheetStabilityMargin = 25;
+
+    /// <summary>
+    /// <b>EM-TFR — the (σ, t) a <c>ConductingSheet</c> is written with, keeping σ·t.</b> openEMS stabilises every edge of a
+    /// sheet with a capacitance that grows as its stated thickness falls, in parallel with the edge's resistance:
+    /// RC ≈ 45·dT²/(t·μ₀·σt). On metal σt is large and this is nothing. On a resistive film it is a low-pass on the film
+    /// itself: a 300 Ω strip stated at 50 nm read 54 − 72j Ω at 40 GHz. For a sheet only σ·t is physical, so a sheet that would
+    /// cut in below 25 times the top of its sweep is written thicker (RESOLVED, EM-TFR). A thicker statement adds its own
+    /// internal inductance, μ₀t/3 a square, which is why it is not simply made large. Metal keeps its values to the bit.
+    /// </summary>
+    internal static (double Sigma, double ThicknessM) ConductingSheetValues(
+        double sigma, double thicknessM, double dtS, double fMaxHz, string name, List<string> notes)
+    {
+        const double Mu0 = 4e-7 * Math.PI;
+        double needed = SheetStabilityMargin * (2 * Math.PI * fMaxHz) * 45.0 * dtS * dtS / (Mu0 * sigma * thicknessM);
+        if (!(needed > thicknessM)) return (sigma, thicknessM);
+        double conductance = sigma * thicknessM;
+        notes.Add($"Sheet '{name}' is written to openEMS at {needed * 1e6:G3} µm and σ = {conductance / needed:G4} S/m, the same " +
+                  $"{1.0 / conductance:G4} Ω/sq: at its stated thickness, openEMS's sheet model would add a capacitance across the film.");
+        return (conductance / needed, needed);
+    }
+
     public static CsxcadLowering Write(Em3dProblem problem, FdtdGridResult grid, OpenEmsGridSettings gridSettings,
                                       OpenEmsRunSettings run, IReadOnlyList<double>? farFieldHz = null)
     {
@@ -363,8 +386,9 @@ public static partial class CsxcadWriter
                 if (reached) extended.Add(sh.Name);
                 if (m.SigmaSm > 0 && double.IsFinite(m.SigmaSm) && sh.ThicknessM > 0)
                 {
+                    var (sheetSigma, sheetThickness) = ConductingSheetValues(m.SigmaSm, sh.ThicknessM, grid.TimeStepEstimateS, fMax, sh.Name, notes);
                     Open(props, "ConductingSheet", id++, sh.Name, Colors.Metal,
-                         $" Conductivity=\"{R(m.SigmaSm)}\" Thickness=\"{R(sh.ThicknessM)}\"");
+                         $" Conductivity=\"{R(sheetSigma)}\" Thickness=\"{R(sheetThickness)}\"");
                     AppendPrimitives(props, prim);
                     props.Append("            </ConductingSheet>\n");
                 }

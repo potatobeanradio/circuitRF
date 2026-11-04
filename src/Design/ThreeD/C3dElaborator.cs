@@ -66,6 +66,9 @@ public sealed record C3dElaborationOptions(double? FMaxHz = null, double TempC =
     /// for the editor's picture.</summary>
     public bool RobustMeshing { get; init; }
 
+    /// <summary>EM-TFR — the run's setup's <see cref="EmSetup.Conductors"/>, for every placed layout.</summary>
+    public Em3dConductorMode Conductors { get; init; }
+
     /// <summary>brief-emb-2 R-emb2-2 — every placed layout's vias as solid barrels (<see cref="Em3dLayoutSolidsOptions.SolidVias"/>):
     /// an EM run's. Off (the technology's wall) for the editor's picture and a thermal run.</summary>
     public bool SolidVias { get; init; }
@@ -660,7 +663,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
         LayoutView? inMemory = LayoutsInMemory?.GetValueOrDefault(Path.GetFullPath(path));
         string stamp = inMemory is null ? Stamp(path) : "memory:" + System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(inMemory);
         string key = string.Create(CultureInfo.InvariantCulture,
-            $"layout|{path}|{stamp}|{Stamp(WBondCell.FindFor(path))}|{options.FMaxHz:R}|{options.TempC:R}|{options.RobustMeshing}|{options.SolidVias}|{options.PadsOptional}");
+            $"layout|{path}|{stamp}|{Stamp(WBondCell.FindFor(path))}|{options.FMaxHz:R}|{options.TempC:R}|{options.RobustMeshing}|{options.SolidVias}|{options.PadsOptional}|{options.Conductors}");
         if (_children.TryGetValue(key, out var hit) && hit is ChildLayout c && Stamp(c.Tech.ResolvedPath) == TechStampOf(key)
             && Current(c.Tech) && c.FilesStamp == FilesStamp(c.Files))
             return c;
@@ -683,7 +686,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
         {
             var solids = Em3dLayoutSolids.From(new EmLayoutSource(path, view, t, view.DbuPerMicron), t, null,
                                                new Em3dLayoutSolidsOptions(options.FMaxHz, options.TempC, Instance: true)
-                                               { RobustMeshing = options.RobustMeshing, SolidVias = options.SolidVias, PadsOptional = options.PadsOptional });
+                                               { RobustMeshing = options.RobustMeshing, Conductors = options.Conductors, SolidVias = options.SolidVias, PadsOptional = options.PadsOptional });
             made = new ChildLayout(solids, tech, TechName(tech), solids.Refusal, view.DbuPerMicron) { Files = files };
         }
         made = made with { FilesStamp = FilesStamp(made.Files) };

@@ -116,7 +116,31 @@ public sealed record PlanarConductorLayer(
     double                        SigmaSm,
     double                        ThicknessM,
     double                        ZM = double.NaN,
-    double                        RoughnessRmsM = 0.0);
+    double                        RoughnessRmsM = 0.0)
+{
+    /// <summary>
+    /// <b>EM-TFR — the resistive films on this level.</b> Empty on every level with no film, which is
+    /// what keeps every existing mesh, Gram and fill bit-identical. <see cref="Polygons"/> is the
+    /// level's whole conductor outline, film included, because it is what every reader of the outline
+    /// means by "where the current can go"; the films name which part of it is resistive, already
+    /// clipped so that a film never covers metal (metal wins, and the extractor does the clipping).
+    /// </summary>
+    public IReadOnlyList<PlanarFilmRegion> Films { get; init; } = [];
+}
+
+/// <summary>
+/// <b>EM-TFR — one resistive film on a conductor level:</b> the part of the level whose surface
+/// impedance is a real constant <paramref name="SheetResistanceOhmPerSq"/> rather than the level's
+/// metal. A sheet in the same plane as the metal, so nothing about the Green's function, the medium
+/// or the levels changes. See <see cref="PlanarMeshFilm"/> for what the mesher makes of it.
+/// </summary>
+/// <param name="Name">The drawing layer, as a refusal or a note names it.</param>
+/// <param name="Polygons">The film with the metal on its level clipped away.</param>
+/// <param name="SheetResistanceOhmPerSq">R_s, Ω/sq. Positive.</param>
+public sealed record PlanarFilmRegion(
+    string                       Name,
+    IReadOnlyList<PlanarPolygon> Polygons,
+    double                       SheetResistanceOhmPerSq);
 
 /// <summary>
 /// <b>L9c — a via: the metal that carries current from one conductor level to another.</b>

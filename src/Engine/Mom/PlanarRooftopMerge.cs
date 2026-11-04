@@ -324,11 +324,14 @@ public sealed class PlanarRooftopMerge
             int ix2 = ix, iy2 = iy;
             if (ok[c0])
             {
+                // EM-TFR — cells of different sheet class never share a run, unconditionally: a run
+                // half on film and half on metal would make the resistor's length depend on this decision.
+                int film0 = mesh.Cells[c0].Film;
                 double maxW = tx[c0], maxH = ty[c0];
                 while (ix2 + 1 < nx)
                 {
                     int c = at[l][iy * nx + ix2 + 1];
-                    if (c < 0 || blockOf[c] >= 0 || !ok[c]) break;
+                    if (c < 0 || blockOf[c] >= 0 || !ok[c] || mesh.Cells[c].Film != film0) break;
                     double mw = Math.Min(maxW, tx[c]), mh = Math.Min(maxH, ty[c]);
                     if (gx[ix2 + 2] - gx[ix] > mw * slack || gy[iy + 1] - gy[iy] > mh * slack) break;
                     maxW = mw; maxH = mh; ix2++;
@@ -339,7 +342,7 @@ public sealed class PlanarRooftopMerge
                     for (int k = ix; k <= ix2; k++)
                     {
                         int c = at[l][(iy2 + 1) * nx + k];
-                        if (c < 0 || blockOf[c] >= 0 || !ok[c]) { fits = false; break; }
+                        if (c < 0 || blockOf[c] >= 0 || !ok[c] || mesh.Cells[c].Film != film0) { fits = false; break; }
                         mw = Math.Min(mw, tx[c]); mh = Math.Min(mh, ty[c]);
                     }
                     if (!fits || gy[iy2 + 2] - gy[iy] > mh * slack || gx[ix2 + 1] - gx[ix] > mw * slack) break;

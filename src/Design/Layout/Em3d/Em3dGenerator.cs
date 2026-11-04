@@ -348,7 +348,7 @@ public static class Em3dGenerator
             // ── The geometry, up to the bond wires (Em3dLayoutSolids' first stage) ────────────
             var earlier = _notes;
             _g = new Em3dLayoutSolids.Builder(source, tech, wires,
-                new Em3dLayoutSolidsOptions(fMax, _tempC, Instance: false) { RegionSetup = setup, FloorAllowed = !floorStatedAway, DisplaySlabs = displaySlabs, PadsOptional = padsOptional, RobustMeshing = setup.RobustMeshing,
+                new Em3dLayoutSolidsOptions(fMax, _tempC, Instance: false) { RegionSetup = setup, Conductors = setup.Conductors, FloorAllowed = !floorStatedAway, DisplaySlabs = displaySlabs, PadsOptional = padsOptional, RobustMeshing = setup.RobustMeshing,
                   SolidVias = setup.Problem3D != Em3dProblemType.Thermal });
             _g.Notes.AddRange(earlier);
             _notes = _g.Notes;
@@ -523,8 +523,9 @@ public static class Em3dGenerator
                 return "This layout draws metal only on ground-reference conductors, so there is no signal " +
                        "conductor for a port to drive.";
 
+            // EM-TFR — a port sits on metal: a film's piece is not a conductor a port can be resolved onto.
             var layers = signal.Select(b => new PlanarConductorLayer(
-                b.Layer.Name, [.. pieces[b.Index].Select(p => p.Poly)], b.Layer.SigmaSm, b.TopM - b.BottomM)).ToList();
+                b.Layer.Name, [.. pieces[b.Index].Where(p => !p.IsFilm).Select(p => p.Poly)], b.Layer.SigmaSm, b.TopM - b.BottomM)).ToList();
             var portProblem = new PlanarProblem(layers, new GroundedSlab(1, new EmMaterial(1, 0)), 0);
 
             // Every signal conductor is a level here, so a port over copper on another layer is resolved by

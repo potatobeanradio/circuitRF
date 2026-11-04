@@ -529,12 +529,17 @@ public static class CrossSectionExtractor
         int ignoredGround = 0, ignoredVia = 0, ignoredDielectric = 0, ignoredAnnotation = 0;
         var ignoredUnbound = new List<string>();
         string? groundLayerName = null;
+        int ignoredFilm = 0;
 
         foreach (var s in shapes)
         {
             // Annotation is never artwork. A silkscreen label or a tracing bitmap must not make a
             // whole extraction refuse.
             if (s is LabelShape or BitmapShape) { ignoredAnnotation++; continue; }
+
+            // EM-TFR — a resistive film is a sheet the planar solve meshes. It is not a conductor of a
+            // uniform line's cross-section, and its binding must not make it gold here.
+            if (ResistiveFilms.IsFilm(tech, s.Layer)) { ignoredFilm++; continue; }
 
             if (binding.TryGetValue(s.Layer, out var bands))
             {
@@ -611,6 +616,9 @@ public static class CrossSectionExtractor
                       "The full-wave planar kernel (B) carries them: switch this setup's analysis " +
                       "kind to Planar (or leave it on Auto).");
 
+        if (ignoredFilm > 0)
+            notes.Add($"{ignoredFilm} resistive film shape(s) are not in this per-unit-length solve, which is of a uniform " +
+                      "metal line. A planar solve meshes a film bound to a level.");
         if (ignoredDielectric > 0)
             notes.Add($"{ignoredDielectric} shape(s) on a layer bound only to a DIELECTRIC stackup " +
                       "entry were ignored — that binding marks a substrate extent, not metal.");

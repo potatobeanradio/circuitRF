@@ -352,7 +352,7 @@ public static class Regions
 
         var conductors = tech.Stackup.Layers
             .Where(l => l.Kind == StackupKind.Conductor)
-            .SelectMany(l => l.DrawingLayers)
+            .SelectMany(l => ResistiveFilms.MetalLayers(tech, l))      // EM-TFR — a film on a level is not its copper
             .ToHashSet();
 
         var found = new HashSet<LayerKey>();

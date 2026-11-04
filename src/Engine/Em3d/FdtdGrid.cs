@@ -409,6 +409,16 @@ public static partial class FdtdGrid
     /// </summary>
     private const double ThirdsMinCells = 3.0;
 
+    /// <summary>EM-TFR — the sheet resistance from which a sheet is a resistor rather than metal, Ω/sq.</summary>
+    private const double ResistiveSheetFromOhmPerSq = 10;
+
+    /// <summary>
+    /// EM-TFR — cells across a resistive sheet. On a metal strip the grid has only the edge currents to resolve, because the
+    /// current's distribution barely moves the answer. A film's resistance IS the distribution: its corners add 0.56 of a
+    /// square by crowding, and two cells across the shipped zig-zag read 278 Ω where 306 Ω is right (RESOLVED, EM-TFR).
+    /// </summary>
+    private const double ResistiveSheetCellsAcross = 6;
+
     /// <summary>
     /// R-em3d8-2b. The local cell at an edge is at most this fraction of the metal's own width there.
     /// At exactly 3/5 a strip's two inside lines sit a fifth of the width in from each edge and the
@@ -1535,6 +1545,19 @@ public static partial class FdtdGrid
         public readonly double Probe;
         private readonly Em3dProblem _p;
         private readonly OpenEmsGridSettings _settings;
+        private readonly List<(double X0, double X1, double Y0, double Y1, double Cell)> _resistive = [];
+
+        /// <summary>2·Area/Perimeter: a strip's width, however it is folded.</summary>
+        private static double CharacteristicWidth(IReadOnlyList<Point2> ring)
+        {
+            double twice = 0, perimeter = 0;
+            for (int i = 0, j = ring.Count - 1; i < ring.Count; j = i++)
+            {
+                twice += ring[j].X * ring[i].Y - ring[i].X * ring[j].Y;
+                perimeter += Math.Sqrt(Math.Pow(ring[i].X - ring[j].X, 2) + Math.Pow(ring[i].Y - ring[j].Y, 2));
+            }
+            return perimeter > 0 ? Math.Abs(twice) / perimeter : double.PositiveInfinity;
+        }
 
         public Context(Em3dProblem problem, OpenEmsGridSettings settings)
         {
@@ -1616,6 +1639,11 @@ public static partial class FdtdGrid
                     });
                     continue;
                 }
+                // EM-TFR — a resistive sheet's current is the answer, so it is resolved across its width.
+                if (materials.TryGetValue(sh.Material, out var sheetMetal) && sheetMetal.SigmaSm is > 0 and var g && double.IsFinite(g)
+                    && sh.ThicknessM > 0 && 1.0 / (g * sh.ThicknessM) >= ResistiveSheetFromOhmPerSq)
+                    _resistive.Add((sh.Outline.Min(q => q.X), sh.Outline.Max(q => q.X), sh.Outline.Min(q => q.Y), sh.Outline.Max(q => q.Y),
+                                    CharacteristicWidth(sh.Outline) / ResistiveSheetCellsAcross));
                 Shapes.Add(new Shape
                 {
                     Name = sh.Name, Conductor = true, IsSheet = true, Thin = true,
@@ -1656,6 +1684,12 @@ public static partial class FdtdGrid
                 var (s0, s1) = s.Range(a);
                 if (s0 < hi - Tol && s1 > lo + Tol) { n = Math.Max(n, s.Index); cap = Math.Min(cap, s.CellCap); }
             }
+            foreach (var (x0, x1, y0, y1, cell) in _resistive)
+            {
+                if (a == FdtdAxis.Z) break;
+                var (r0, r1) = a == FdtdAxis.X ? (x0, x1) : (y0, y1);
+                if (r0 < hi - Tol && r1 > lo + Tol) cap = Math.Min(cap, cell);
+            }
             return Math.Min(cap, C0 / (_p.Frequency.StopHz * n * _settings.CellsPerWavelength));
         }
 
@@ -1667,6 +1701,12 @@ public static partial class FdtdGrid
                 if (s.Conductor) continue;
                 var (s0, s1) = s.Range(a);
                 if (s0 <= at + Tol && s1 >= at - Tol) { n = Math.Max(n, s.Index); cap = Math.Min(cap, s.CellCap); }
+            }
+            foreach (var (x0, x1, y0, y1, cell) in _resistive)
+            {
+                if (a == FdtdAxis.Z) break;
+                var (r0, r1) = a == FdtdAxis.X ? (x0, x1) : (y0, y1);
+                if (r0 <= at + Tol && r1 >= at - Tol) cap = Math.Min(cap, cell);
             }
             return Math.Min(cap, C0 / (_p.Frequency.StopHz * n * _settings.CellsPerWavelength));
         }

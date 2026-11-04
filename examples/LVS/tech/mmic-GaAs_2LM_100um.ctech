@@ -276,6 +276,10 @@
           {
             "Layer": 1,
             "Datatype": 0
+          },
+          {
+            "Layer": 4,
+            "Datatype": 0
           }
         ],
         "IsGroundReference": false,

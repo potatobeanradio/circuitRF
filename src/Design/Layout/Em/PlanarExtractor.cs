@@ -220,6 +220,11 @@ public static class PlanarExtractor
         var conductorShapes = new List<(LayoutShape Shape, Band Band)>();
         int ignoredAnnotation = 0, ignoredOther = 0;
 
+        // EM-TFR — a resistive film bound to a conductor level (carried on that level, metal wins), and
+        // a film bound to nothing, which is an open between its contacts and is said by name.
+        var filmShapes = new List<(LayoutShape Shape, Band Band)>();
+        var unboundFilm = new Dictionary<LayerKey, int>();
+
         // ANT-11 §2 — artwork on a ground-designated conductor, kept with every ground band its layer
         // binds to so R-fg-2's selection can be made once the return plane is known.
         var groundShapes = new List<(LayoutShape Shape, List<Band> Bands)>();
@@ -305,7 +310,12 @@ public static class PlanarExtractor
             {
                 var signalBand = bands.FirstOrDefault(b =>
                     b.Layer.Kind == StackupKind.Conductor && !b.Layer.IsGroundReference);
-                if (signalBand is not null) { conductorShapes.Add((s, signalBand)); continue; }
+                if (signalBand is not null)
+                {
+                    if (ResistiveFilms.IsFilm(tech, s.Layer)) filmShapes.Add((s, signalBand));
+                    else conductorShapes.Add((s, signalBand));
+                    continue;
+                }
 
                 // ── ANT-11 §2 — THE GROUND POUR IS READ NOW, NOT ONLY COUNTED ─────────────
                 //
@@ -330,8 +340,32 @@ public static class PlanarExtractor
             // neither; it still decided whether a layer of the medium is present.
             if (onAMask) continue;
 
+            if (ResistiveFilms.IsFilm(tech, s.Layer) && !binding.ContainsKey(s.Layer))
+            {
+                unboundFilm[s.Layer] = unboundFilm.GetValueOrDefault(s.Layer) + 1;
+                continue;
+            }
+
             ignoredOther++;
         }
+
+        foreach (var (key, count) in unboundFilm)
+        {
+            var def = tech.Layers.First(l => l.Key == key);
+            notes.Add(EmFinding.Warn(
+                $"{count} shape(s) on '{def.Name}' ({def.SheetResistanceOhmPerSq:G4} Ω/sq) are not in this run: the layer is a " +
+                "resistor film but is not bound to a conductor level, so a resistor drawn on it is an OPEN between " +
+                "its contacts. Bind it to the level it is deposited on (Technology ▸ Stackup) to simulate it."));
+        }
+
+        // EM-TFR — clipped where metal covers it, and joined to its level's outline: every question the
+        // run asks about the outline (the mesh's sizing, a port's feed, what is connected) is about both.
+        var bandByIndex = filmShapes.Select(f => f.Band).DistinctBy(b => b.Index).ToDictionary(b => b.Index);
+        var clipped = ClipFilmsToMetal([.. filmShapes.Select(f => (f.Shape, f.Band.Index))],
+                                       [.. conductorShapes.Select(c => (c.Shape, c.Band.Index))], tech, out int filmsCovered);
+        if (filmsCovered > 0) notes.Add(FilmsCoveredNote(filmsCovered));
+        var filmPieces = clipped.Select(c => (c.Shape, Band: bandByIndex[c.Level])).ToList();
+        foreach (var (shape, band) in filmPieces) conductorShapes.Add((shape, band));
 
         if (conductorShapes.Count == 0)
             // "Bind the layer to a conductor entry" is exactly wrong when the layer IS bound and the
@@ -1061,6 +1095,28 @@ public static class PlanarExtractor
         var polysByLevel = new List<PlanarPolygon>[levels.Count];
         for (int i = 0; i < levels.Count; i++) polysByLevel[i] = [];
 
+        // EM-TFR — the film on each level, by drawing layer in document order.
+        var filmsByLevel = new List<PlanarFilmRegion>?[levels.Count];
+        foreach (var group in filmPieces.GroupBy(p => (p.Band.Index, p.Shape.Layer)))
+        {
+            int li = levels.FindIndex(b => b.Index == group.Key.Index);
+            if (li < 0) continue;                                   // a level the setup left out
+            var def = tech.Layers.First(l => l.Key == group.Key.Layer);
+            var polys = new List<PlanarPolygon>();
+            foreach (var (shape, _) in group)
+                foreach (var region in RegionsToMesh(shape, tech))
+                {
+                    var rings = LayoutFlattener.Flatten(region, LayoutFlattener.ResolveTolDbu(shape, tech));
+                    if (rings.Count == 0 || rings[0].Length < 6) continue;
+                    var holes = new List<IReadOnlyList<EmPoint>>();
+                    for (int r = 1; r < rings.Count; r++)
+                        if (rings[r].Length >= 6) holes.Add(ToPoints(rings[r], perDbu));
+                    polys.Add(new PlanarPolygon(ToPoints(rings[0], perDbu), holes.Count == 0 ? null : holes));
+                }
+            if (polys.Count > 0)
+                (filmsByLevel[li] ??= []).Add(new PlanarFilmRegion(def.Name, polys, def.SheetResistanceOhmPerSq!.Value));
+        }
+
         int flattenedCurves = 0;
         int strokesOutlined = 0;
         double strokeAreaM2 = 0.0;
@@ -1413,7 +1469,10 @@ public static class PlanarExtractor
                 // (PlanarProblem.RequiresGeneralKernel). Naming the height is what turns the general
                 // kernel on, and it must only happen when there is something general to say.
                 levels.Count > 1 ? levelZ[i] : double.NaN,
-                levels[i].Layer.RoughnessRmsM ?? 0.0);
+                levels[i].Layer.RoughnessRmsM ?? 0.0)
+            {
+                Films = filmsByLevel[i] is { } films ? films : [],
+            };
 
         // MIM-4 — a STRATIFIED medium turns the general kernel on even at one level. Before this
         // brief that case could not arise: a stratified region under the lowest level was refused at
@@ -2701,6 +2760,41 @@ public static class PlanarExtractor
     /// Replaces every group of conductor shapes that overlap or touch on one level with their union;
     /// a shape overlapping and touching nothing is returned as the SAME object, in its original order.
     /// </summary>
+    /// <summary>
+    /// <b>EM-TFR — metal wins.</b> Each film shape with the metal on its own level taken away: the current
+    /// in an overlap runs in the metal, and it is what makes a resistor's length the distance between its
+    /// contacts' edges. A film wholly under metal leaves nothing, so its run is the metal's alone, to the bit.
+    /// The 3D generator takes the same pieces, so both models agree on where the film is.
+    /// </summary>
+    internal static List<(LayoutShape Shape, int Level)> ClipFilmsToMetal(
+        List<(LayoutShape Shape, int Level)> films, List<(LayoutShape Shape, int Level)> metal,
+        Technology tech, out int covered)
+    {
+        var kept = new List<(LayoutShape Shape, int Level)>();
+        covered = 0;
+        foreach (var (film, level) in films)
+        {
+            var box = LayoutGeometry.BboxOf(film);
+            var operands = new List<LayoutShape> { film };
+            foreach (var (m, l) in metal)
+            {
+                if (l != level || !LayoutBooleans.IsClipperOperand(m)) continue;
+                var mb = LayoutGeometry.BboxOf(m);
+                if (mb.MaxX < box.MinX || box.MaxX < mb.MinX || mb.MaxY < box.MinY || box.MaxY < mb.MinY) continue;
+                operands.Add(m);
+            }
+            if (operands.Count == 1) { kept.Add((film, level)); continue; }
+            var left = LayoutBooleans.Difference(operands, tech).Shapes;
+            if (left.Count == 0) covered++;
+            foreach (var piece in left) kept.Add((piece, level));
+        }
+        return kept;
+    }
+
+    internal static string FilmsCoveredNote(int covered)
+        => $"{covered} resistive film shape(s) lie entirely under metal on their own level, so they carry no " +
+           "current and are not in this run: where a film and metal overlap, the cell is metal.";
+
     private static List<(LayoutShape Shape, Band Band)> MergeOverlappingCopper(
         List<(LayoutShape Shape, Band Band)> shapes, Technology tech, out int mergedShapes, out int mergedInto)
     {

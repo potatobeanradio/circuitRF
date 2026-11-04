@@ -449,10 +449,16 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
             ? "none"
             : string.Join(", ", Layer.DrawingLayers.Select(NameOf));
 
+    /// <summary>EM-TFR — a drawing layer as a conductor card names it: a film says what it is.</summary>
+    private static string ChipName(LayerDef l)
+        => l.SheetResistanceOhmPerSq is > 0 and var r
+            ? $"{l.Name} · {r.ToString("G4", System.Globalization.CultureInfo.InvariantCulture)} Ω/sq"
+            : l.Name;
+
     private string NameOf(LayerKey k)
     {
         foreach (var l in _owner.Working.Layers)
-            if (l.Key.Equals(k)) return l.Name;
+            if (l.Key.Equals(k)) return ChipName(l);
         return $"{k.Layer}/{k.Datatype}";
     }
 
@@ -749,17 +755,17 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
         // nor the picker grid below it is handed a new list (see Rebind).
         bool layersChanged = DrawingLayerChoices.Count != _owner.Working.Layers.Count + 1 ||
             !DrawingLayerChoices.Skip(1).Select(c => (c.Key, c.Name))
-                .SequenceEqual(_owner.Working.Layers.Select(l => (l.Key, l.Name)));
+                .SequenceEqual(_owner.Working.Layers.Select(l => (l.Key, ChipName(l))));
         if (layersChanged)
         {
             DrawingLayerOptions.Clear();
             foreach (var l in _owner.Working.Layers)
-                DrawingLayerOptions.Add(new DrawingLayerCheckItem(l.Key, l.Name, Layer.DrawingLayers.Contains(l.Key), this));
+                DrawingLayerOptions.Add(new DrawingLayerCheckItem(l.Key, ChipName(l), Layer.DrawingLayers.Contains(l.Key), this));
 
             DrawingLayerChoices.Clear();
             DrawingLayerChoices.Add(DrawingLayerChoice.None);
             foreach (var l in _owner.Working.Layers)
-                DrawingLayerChoices.Add(new DrawingLayerChoice(l.Key, l.Name));
+                DrawingLayerChoices.Add(new DrawingLayerChoice(l.Key, ChipName(l)));
         }
         else
         {

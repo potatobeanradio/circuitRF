@@ -58,6 +58,7 @@ public static partial class Em3dRunService
             if (Stop is not null) return;
             _fields = EmergeFields.Request(run.Setup, problem);
             _lowering = EmergeScriptWriter.Write(problem, _settings!, _fields);
+            run.Log.Notes.AddRange(_lowering.Notes);
             if (_lowering.Refusal is { } refused)
                 Stop = new(EmRunStatus.Refused, EmDiagnostics.Forwarded("emerge-lowering", refused));
             else if (EmergeScriptWriter.RadiationPatternNote(run.Setup, problem) is { } noPattern)

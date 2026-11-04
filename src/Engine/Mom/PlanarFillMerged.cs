@@ -109,7 +109,7 @@ public static partial class PlanarFill
 
         PlanarGram? gram = null;
         Complex[]?  zs   = null;
-        if (st.ConductorLoss is { } loss) { gram = cores.Gram; zs = loss.SheetTable(mesh, omega); }
+        if (PlanarConductorLoss.TableFor(st.ConductorLoss, mesh, omega) is { } sheetTable) { gram = cores.Gram; zs = sheetTable; }
 
         // ScalarPotentialMatrix's class path, for the pair (a ≤ b) its mirror reads.
         Complex PEntry(int a, int b)

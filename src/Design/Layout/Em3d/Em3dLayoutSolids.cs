@@ -68,6 +68,9 @@ public sealed record Em3dLayoutSolidsOptions(double? FMaxHz, double TempC, bool 
     /// Never a via's barrel, an edge-cut drill's cut, a slab or the board outline.</summary>
     public bool RobustMeshing { get; init; }
 
+    /// <summary>EM-TFR — <see cref="EmSetup.Conductors"/>.</summary>
+    public Em3dConductorMode Conductors { get; init; }
+
     /// <summary>brief-emb-2 R-emb2-2 — every via is a SOLID barrel, whatever its entry's <see cref="ViaFillKind"/>: what an EM
     /// problem (driven, eigenmode, electrostatic, magnetostatic) is built with. A hollow barrel's air core, 25 µm inside the
     /// plating, meshed into inverted elements on an imported board and is electrically the same at RF, so only a thermal
@@ -166,9 +169,10 @@ public static class Em3dLayoutSolids
         private readonly Dictionary<LayerKey, List<LayoutShape>> _byLayer = [];
 
         /// <summary>One merged conductor piece: its polygon, its name and what it became.</summary>
+        /// <param name="IsFilm">EM-TFR — a resistive film: always a sheet, and not metal a port can sit on.</param>
         internal sealed record Piece(PlanarPolygon Poly, string Name, string Material, bool IsSheet,
                                      double ZBottom, double ZTop, double SheetZ, LayerKey Layer,
-                                     string? SheetReason, string? Net = null);
+                                     string? SheetReason, string? Net = null, bool IsFilm = false);
 
         private const double StackPerDbu = 1.0 / (LayoutUnits.DefaultDbuPerMicron * 1e6);
         private const double Mu0 = 4e-7 * Math.PI;
@@ -305,6 +309,8 @@ public static class Em3dLayoutSolids
             var byLayer       = _byLayer;
 
             var conductorShapes = new List<(LayoutShape Shape, int Level)>();
+            var filmShapes      = new List<(LayoutShape Shape, int Level)>();
+            var unboundFilm     = new HashSet<LayerKey>();
             var viaShapes       = new List<(LayoutShape Shape, StackupLayer Entry)>();
             var holeShapes      = new List<(LayoutShape Shape, StackupLayer Entry)>();
             var outlineShapes   = new List<LayoutShape>();
@@ -335,9 +341,23 @@ public static class Em3dLayoutSolids
                     if (zxy.Length >= 8 && zxy[0] == zxy[^2] && zxy[1] == zxy[^1]) _closedCentrelines.Add((zp, s.Layer));
                     continue;
                 }
-                if (conductorBinding.TryGetValue(s.Layer, out var band)) { conductorShapes.Add((s, band.Index)); continue; }
+                if (conductorBinding.TryGetValue(s.Layer, out var band))
+                {
+                    // EM-TFR — a film on a level is a sheet of its own, never that level's metal.
+                    if (ResistiveFilms.IsFilm(tech, s.Layer) && !band.Layer.IsGroundReference) filmShapes.Add((s, band.Index));
+                    else conductorShapes.Add((s, band.Index));
+                    continue;
+                }
                 if (viaBinding.TryGetValue(s.Layer, out var regionEntry)) viaShapes.Add((s, regionEntry));
                 else if (holeBinding.TryGetValue(s.Layer, out var regionHole)) holeShapes.Add((s, regionHole));
+                else if (ResistiveFilms.IsFilm(tech, s.Layer)) unboundFilm.Add(s.Layer);
+            }
+            foreach (var key in unboundFilm)
+            {
+                var def = tech.Layers.First(l => l.Key == key);
+                Notes.Add($"The shapes on '{def.Name}' ({def.SheetResistanceOhmPerSq:G4} Ω/sq) are not in this 3D problem: the layer is a " +
+                          "resistor film but is not bound to a conductor level, so a resistor drawn on it is an OPEN between its " +
+                          "contacts. Bind it to the level it is deposited on (Technology ▸ Stackup) to simulate it.");
             }
 
             if (nonPlated > 0)
@@ -380,6 +400,9 @@ public static class Em3dLayoutSolids
                           "no region; only closed shapes there give the board its outline.");
 
             // ── Merge (R-em3d3-5b): the planar extractor's union, per stackup entry ───────────
+            // EM-TFR — clipped against the metal as drawn, before the metal is merged: the same pieces the planar run has.
+            var filmPieces = PlanarExtractor.ClipFilmsToMetal(filmShapes, conductorShapes, tech, out int filmsCovered);
+            if (filmsCovered > 0) Notes.Add(PlanarExtractor.FilmsCoveredNote(filmsCovered));
             var merged = PlanarExtractor.MergeOverlapping(conductorShapes, tech, out int mergedShapes, out int mergedInto, touching: true);
             if (mergedShapes > 0)
                 Notes.Add($"{mergedShapes} overlapping conductor shape(s) were merged into {mergedInto} — " +
@@ -527,7 +550,7 @@ public static class Em3dLayoutSolids
                 double t = band.TopM - band.BottomM;
                 double delta = mat.SigmaSm > 0 && options.FMaxHz is { } fMax
                     ? 1.0 / Math.Sqrt(Math.PI * fMax * Mu0 * mat.Mur * mat.SigmaSm) : 0;
-                double sheetZ = band.Layer.SheetAt == ConductorSheetSurface.Top ? band.TopM : band.BottomM;
+                double sheetZ = SheetZOf(band);
 
                 var netCounts = list.Where(p => p.Net is not null).GroupBy(p => p.Net!, StringComparer.Ordinal)
                                     .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
@@ -552,6 +575,7 @@ public static class Em3dLayoutSolids
                 }
                 Pieces[band.Index] = made;
             }
+            AddFilmPieces(bands, filmPieces);
 
             // ── Board outline (R-em3d3-5c) ────────────────────────────────────────────────────
             if (outlineShapes.Count > 0 || _closedOutlineStrokes.Count > 0)
@@ -591,7 +615,7 @@ public static class Em3dLayoutSolids
                 var below = _inProblem[i - 1];
                 var above = _inProblem[i + 1];
                 if (below.Layer.Kind != StackupKind.Dielectric || above.Layer.Kind != StackupKind.Dielectric) continue;
-                if (c.Layer.SheetAt == ConductorSheetSurface.Top)
+                if (SheetOnTop(c))
                     _dielZ[below.Index] = (_dielZ[below.Index].Bottom, c.TopM);
                 else
                     _dielZ[above.Index] = (c.BottomM, _dielZ[above.Index].Top);
@@ -859,8 +883,11 @@ public static class Em3dLayoutSolids
             }
             if (_robust.Removed > 0 || _robust.Snapped > 0)
                 Notes.Add(RobustNote(_robust));
-            int sheetCount = sheets.Count;
-            if (sheetCount > 0)
+            int sheetCount = Bands.Where(b => Pieces.ContainsKey(b.Index)).Sum(b => Pieces[b.Index].Count(p => p.IsSheet && !p.IsFilm));
+            if (sheetCount > 0 && options.Conductors == Em3dConductorMode.Sheets)
+                Notes.Add($"{sheetCount} conductor piece(s) are sheets because this setup states Conductors: Sheets, the planar " +
+                          "model's own idealisation: each carries its conductivity and thickness rather than a meshed volume.");
+            else if (sheetCount > 0)
                 Notes.Add($"{sheetCount} conductor piece(s) are thinner than {Em3dGenerator.SheetMaxSkinDepths:G} skin depths " +
                           $"at {options.FMaxHz / 1e9:G4} GHz and than {Em3dGenerator.SheetMaxFractionOfWidth:G} of their own width, so " +
                           "they are sheets carrying their conductivity and thickness rather than meshed " +
@@ -1136,10 +1163,80 @@ public static class Em3dLayoutSolids
                                         m.TanD ?? 0, m.Mur ?? 1, sigma), TechnologySource(m.Name));
         }
 
+        /// <summary>
+        /// EM-TFR — true when a band's analysis sheet sits on its top face. <c>Conductors: Sheets</c> is the planar
+        /// model's idealisation, so it applies the planar rule too: <c>SheetAt: Top</c> is for a capacitor's plate gap and
+        /// holds only where the film above the band is drawn (PatternedDielectric). Every other mode keeps the band's own
+        /// statement, which is today's generator to the bit.
+        /// </summary>
+        private bool SheetOnTop(PlanarExtractor.StackBand band)
+        {
+            if (band.Layer.SheetAt != ConductorSheetSurface.Top) return false;
+            if (options.Conductors != Em3dConductorMode.Sheets) return true;
+            int at = -1;
+            for (int i = 0; i < Bands.Count; i++) if (Bands[i].Index == band.Index) at = i;
+            if (at < 0 || at + 1 >= Bands.Count || Bands[at + 1].Layer is not { Kind: StackupKind.Dielectric, PresentWithLayer: { Length: > 0 } tie }) return true;
+            if (Bands.FirstOrDefault(b => b.Layer.Kind == StackupKind.Conductor && b.Layer.Name == tie) is { } plate)
+                return _byLayer.Keys.Any(plate.Layer.DrawingLayers.Contains);
+            return tech.Layers.FirstOrDefault(l => l.Name == tie) is { } mask && _byLayer.ContainsKey(mask.Key);
+        }
+
+        private double SheetZOf(PlanarExtractor.StackBand band) => SheetOnTop(band) ? band.TopM : band.BottomM;
+
+        /// <summary>
+        /// EM-TFR — every film piece as a sheet on its level: σ = 1/(R_s·t), for which only the product is physical. The z
+        /// is the metal's own sheet where the level is a sheet, and the face <see cref="LayerDef.FilmAt"/> names where the
+        /// metal is a solid, so the film joins the clipped metal along the contact edges.
+        /// </summary>
+        private void AddFilmPieces(IReadOnlyList<PlanarExtractor.StackBand> bands, List<(LayoutShape Shape, int Level)> films)
+        {
+            if (films.Count == 0) return;
+            bool volume = options.Conductors == Em3dConductorMode.Solids;
+            var named = new Dictionary<string, int>(StringComparer.Ordinal);
+            foreach (var group in films.GroupBy(f => (f.Level, f.Shape.Layer)))
+            {
+                var band = bands.First(b => b.Index == group.Key.Level);
+                var def = tech.Layers.First(l => l.Key == group.Key.Layer);
+                double rs = def.SheetResistanceOhmPerSq!.Value;
+                bool stated = def.FilmThicknessDbu is > 0;
+                // t < δ exactly when t < 2·R_s/(ωμ₀): σ = 1/(R_s·t) puts t on both sides of the skin depth.
+                double thinLimit = options.FMaxHz is { } f && f > 0 ? 2.0 * rs / (2.0 * Math.PI * f * Mu0) : double.PositiveInfinity;
+                double t = stated ? def.FilmThicknessDbu!.Value * StackPerDbu : Math.Min(DefaultFilmThicknessM, 0.5 * thinLimit);
+                double sigma = 1.0 / (rs * t);
+                string material = Add(new Em3dMaterial($"Film {def.Name}", 1, null, 0, 1, sigma), TechnologySource());
+
+                bool solidMetal = volume || (Pieces.TryGetValue(band.Index, out var metal) && metal.Any(p => !p.IsSheet));
+                double z = solidMetal
+                    ? (def.FilmAt ?? band.Layer.SheetAt ?? ConductorSheetSurface.Bottom) == ConductorSheetSurface.Top ? band.TopM : band.BottomM
+                    : SheetZOf(band);
+
+                Notes.Add($"Resistive film '{def.Name}' on '{band.Layer.Name}' is a sheet at σ = {sigma:G4} S/m × t = {t * 1e9:G4} nm" +
+                          (stated ? "" : " (a thickness well under a skin depth, picked because the layer states none)") +
+                          $", {rs:G4} Ω/sq: for a sheet only the product is physical." +
+                          (solidMetal ? " It stays a sheet beside solid metal, because a film's own thickness is a mesh nobody should be asked to pay for." : ""));
+
+                var made = Pieces.TryGetValue(band.Index, out var list) ? list : Pieces[band.Index] = [];
+                foreach (var (shape, _) in group)
+                    foreach (var poly in PlanarExtractor.ToPolygons(shape, tech, _perDbu))
+                    {
+                        int k = named[def.Name] = named.GetValueOrDefault(def.Name) + 1;
+                        // ZBottom and ZTop are what the sheet's thickness is read from; SheetZ is where it is.
+                        made.Add(new Piece(poly, $"{band.Layer.Name}/{def.Name}/{k}", material, true, z, z + t, z, def.Key,
+                                           $"a resistive film of {rs:G4} Ω/sq", null, IsFilm: true));
+                    }
+            }
+        }
+
+        /// <summary>EM-TFR — the thickness a film states none of gets: thin against any skin depth a resistor film has.</summary>
+        private const double DefaultFilmThicknessM = 50e-9;
+
         /// <summary>R-em3d3-5f — a conductor is a sheet when it has no thickness, or is thinner than both
         /// thresholds. With no sweep there is no skin depth, so only a zero thickness makes a sheet.</summary>
         private (bool Sheet, string? Reason) SheetRule(PlanarExtractor.StackBand band, double t, double delta, double width)
         {
+            // EM-TFR — a setup may state the answer: every band a sheet, or every band its real thickness.
+            if (options.Conductors == Em3dConductorMode.Sheets) return (true, "this setup states Conductors: Sheets");
+            if (options.Conductors == Em3dConductorMode.Solids && t > 0) return (false, null);
             bool sheet = t <= 0 ||
                          (delta > 0 && t < Em3dGenerator.SheetMaxSkinDepths * delta && t < Em3dGenerator.SheetMaxFractionOfWidth * width);
             string? reason = !sheet ? null

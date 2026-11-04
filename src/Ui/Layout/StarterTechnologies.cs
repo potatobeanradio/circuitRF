@@ -257,7 +257,9 @@ public static class StarterTechnologies
                     {
                         Kind = StackupKind.Conductor, Name = "Metal1",
                         ThicknessDbu = Um(3), SigmaSm = ConductorMaterials.Gold.SigmaSm,
-                        DrawingLayers = [metal1],
+                        // EM-TFR — the resistor film is deposited on Metal1's level, so a TFR drawn in a layout
+                        // reaches a planar solve as a sheet between its contacts rather than an open.
+                        DrawingLayers = [metal1, resistor],
                         // MIM-6 — the sheet on the TOP of the band, so a capacitor run's plate gap
                         // is the MIM Dielectric alone rather than that dielectric plus Metal1's own
                         // 3 µm of metal (16x). It applies only where the film does: MIM-7's rule

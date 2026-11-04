@@ -140,6 +140,20 @@ public sealed class LayerDef
     /// every planar run on the technology.</para>
     /// </summary>
     public double? SheetResistanceOhmPerSq { get; set; }
+
+    /// <summary>
+    /// EM-TFR — the film's deposited thickness, DBU, used by a 3D solve only: a sheet's σ is derived as
+    /// 1/(R_s·t), and for a sheet only that product is physical. Null lets the generator pick one well
+    /// under a skin depth and say which. The planar solve reads nothing here, because its sheet sits at
+    /// one z and carries R_s directly. Omitted on write when null.
+    /// </summary>
+    public long? FilmThicknessDbu { get; set; }
+
+    /// <summary>
+    /// EM-TFR — which face of its level's band a film sits on when the metal there is a solid, in a 3D
+    /// solve. Null is the level's own <see cref="StackupLayer.SheetAt"/>. Omitted on write when null.
+    /// </summary>
+    public ConductorSheetSurface? FilmAt { get; set; }
 }
 
 public enum StackupKind { Dielectric, Conductor, Via }

@@ -355,8 +355,13 @@ public sealed class PlanarConductorLoss
     public Complex[] SheetTable(PlanarMesh mesh, double omegaRadS)
     {
         ArgumentNullException.ThrowIfNull(mesh);
-        var t = new Complex[Math.Max(mesh.LayerNames.Count, 1)];
-        for (int i = 0; i < t.Length; i++)
+        // EM-TFR — one entry per sheet CLASS: every level's metal at its own index, as ever, and then
+        // every film's real constant R_s. A mesh with no film has exactly the table it always had.
+        int levelCount = Math.Max(mesh.LayerNames.Count, 1);
+        var t = new Complex[mesh.SheetClassCount];
+        for (int f = 0; f < mesh.Films.Count; f++)
+            t[levelCount + f] = new Complex(mesh.Films[f].SheetResistanceOhmPerSq, 0);
+        for (int i = 0; i < levelCount; i++)
         {
             int resolved = i < mesh.LayerNames.Count ? IndexOfName(mesh.LayerNames[i]) : -1;
             if (resolved < 0) resolved = i;
@@ -376,6 +381,28 @@ public sealed class PlanarConductorLoss
     }
 
     /// <summary>
+    /// <b>EM-TFR — the one spelling of "what does this fill multiply its Gram by"</b>: the loss
+    /// model's table, or, with no loss model, a table that is zero on every level's metal and R_s on
+    /// every film. Null means no term at all, which is a null loss model on a mesh with no film — the
+    /// matrix is then bit-identical to the pre-CL1 one, because nothing is read.
+    ///
+    /// <para><b>A film is a circuit element, not a loss correction,</b> so the PEC oracle makes the
+    /// metal perfect and leaves the film alone. Without this the oracle would silently short every
+    /// resistor in the layout, which is precisely the plausible wrong answer it exists to rule out.</para>
+    /// </summary>
+    public static Complex[]? TableFor(PlanarConductorLoss? loss, PlanarMesh mesh, double omegaRadS)
+    {
+        ArgumentNullException.ThrowIfNull(mesh);
+        if (loss is not null) return loss.SheetTable(mesh, omegaRadS);
+        if (mesh.Films.Count == 0) return null;
+        int levelCount = Math.Max(mesh.LayerNames.Count, 1);
+        var t = new Complex[mesh.SheetClassCount];
+        for (int f = 0; f < mesh.Films.Count; f++)
+            t[levelCount + f] = new Complex(mesh.Films[f].SheetResistanceOhmPerSq, 0);
+        return t;
+    }
+
+    /// <summary>
     /// <b>CL3 — is every conductor level this MESH names a perfect one?</b> Frequency-independent,
     /// because <see cref="PlanarSurfaceImpedance.Sheet"/>'s own PEC test is: σ ≤ 0, σ = +∞ or
     /// t ≤ 0. Asked through <see cref="SheetTable"/>'s exact levels so the name-first resolution is
@@ -391,7 +418,9 @@ public sealed class PlanarConductorLoss
     public bool IsPerfectOn(PlanarMesh mesh)
     {
         ArgumentNullException.ThrowIfNull(mesh);
-        foreach (var z in SheetTable(mesh, 1.0)) if (z != Complex.Zero) return false;
+        var table = SheetTable(mesh, 1.0);
+        for (int i = 0; i < Math.Max(mesh.LayerNames.Count, 1); i++)
+            if (table[i] != Complex.Zero) return false;
         return true;
     }
 

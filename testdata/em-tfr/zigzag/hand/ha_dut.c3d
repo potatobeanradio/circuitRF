@@ -1,0 +1,338 @@
+{
+ "FormatVersion": 1,
+ "DbuPerMicron": 1000,
+ "DisplayUnit": "Um",
+ "SnapDbu": 1000,
+ "TechRef": "../tech/hand-materials.ctech",
+ "Objects": [
+  {
+   "$type": "Box",
+   "Name": "substrate",
+   "Material": "GaAs",
+   "Min": [
+    0,
+    -400000,
+    0
+   ],
+   "Size": [
+    800000,
+    800000,
+    100000
+   ]
+  },
+  {
+   "$type": "Sheet",
+   "Name": "metal1",
+   "Material": "Gold",
+   "Plane": "XY",
+   "Offset": 100000,
+   "Outline": [
+    [
+     0,
+     -36500
+    ],
+    [
+     300000,
+     -36500
+    ],
+    [
+     300000,
+     -20000
+    ],
+    [
+     320000,
+     -20000
+    ],
+    [
+     320000,
+     20000
+    ],
+    [
+     300000,
+     20000
+    ],
+    [
+     300000,
+     36500
+    ],
+    [
+     0,
+     36500
+    ]
+   ],
+   "ThicknessUm": 3.0
+  },
+  {
+   "$type": "Sheet",
+   "Name": "metal2",
+   "Material": "Gold",
+   "Plane": "XY",
+   "Offset": 100000,
+   "Outline": [
+    [
+     800000,
+     -36500
+    ],
+    [
+     800000,
+     36500
+    ],
+    [
+     500000,
+     36500
+    ],
+    [
+     500000,
+     20000
+    ],
+    [
+     480000,
+     20000
+    ],
+    [
+     480000,
+     -20000
+    ],
+    [
+     500000,
+     -20000
+    ],
+    [
+     500000,
+     -36500
+    ]
+   ],
+   "ThicknessUm": 3.0
+  },
+  {
+   "$type": "Sheet",
+   "Name": "film",
+   "Material": "Film",
+   "Plane": "XY",
+   "Offset": 100000,
+   "Outline": [
+    [
+     320000,
+     -20000
+    ],
+    [
+     380000,
+     -20000
+    ],
+    [
+     380000,
+     60000
+    ],
+    [
+     420000,
+     60000
+    ],
+    [
+     420000,
+     -20000
+    ],
+    [
+     480000,
+     -20000
+    ],
+    [
+     480000,
+     20000
+    ],
+    [
+     460000,
+     20000
+    ],
+    [
+     460000,
+     100000
+    ],
+    [
+     340000,
+     100000
+    ],
+    [
+     340000,
+     20000
+    ],
+    [
+     320000,
+     20000
+    ]
+   ],
+   "ThicknessUm": 0.05
+  }
+ ],
+ "Ports": [
+  {
+   "Number": 1,
+   "Name": "P1",
+   "Kind": "Wave",
+   "Plane": "YZ",
+   "Offset": 0,
+   "Rect": {
+    "Min": [
+     -400000,
+     0
+    ],
+    "Size": [
+     800000,
+     700000
+    ]
+   },
+   "Positive": "metal1",
+   "Negative": "airbox/zmin",
+   "VoltagePath": {
+    "From": [
+     0,
+     0
+    ],
+    "To": [
+     0,
+     100000
+    ]
+   },
+   "Z0": "50"
+  },
+  {
+   "Number": 2,
+   "Name": "P2",
+   "Kind": "Wave",
+   "Plane": "YZ",
+   "Offset": 800000,
+   "Rect": {
+    "Min": [
+     -400000,
+     0
+    ],
+    "Size": [
+     800000,
+     700000
+    ]
+   },
+   "Positive": "metal2",
+   "Negative": "airbox/zmin",
+   "VoltagePath": {
+    "From": [
+     0,
+     0
+    ],
+    "To": [
+     0,
+     100000
+    ]
+   },
+   "Z0": "50"
+  }
+ ],
+ "Setups": [
+  {
+   "FormatVersion": 1,
+   "Name": "Palace",
+   "Frequency": {
+    "StartExpr": "0",
+    "StopExpr": "0",
+    "StepExpr": "",
+    "NumPoints": 1,
+    "Mode": "PointCount",
+    "Kind": "Linear",
+    "StartUnit": "GHz",
+    "StopUnit": "GHz",
+    "StepUnit": "GHz"
+   },
+   "AdditionalFrequencies": [
+    {
+     "StartExpr": "1",
+     "StopExpr": "1",
+     "StepExpr": "",
+     "NumPoints": 1,
+     "Mode": "PointCount",
+     "Kind": "Linear",
+     "StartUnit": "GHz",
+     "StopUnit": "GHz",
+     "StepUnit": "GHz"
+    },
+    {
+     "StartExpr": "5",
+     "StopExpr": "5",
+     "StepExpr": "",
+     "NumPoints": 1,
+     "Mode": "PointCount",
+     "Kind": "Linear",
+     "StartUnit": "GHz",
+     "StopUnit": "GHz",
+     "StepUnit": "GHz"
+    },
+    {
+     "StartExpr": "10",
+     "StopExpr": "10",
+     "StepExpr": "",
+     "NumPoints": 1,
+     "Mode": "PointCount",
+     "Kind": "Linear",
+     "StartUnit": "GHz",
+     "StopUnit": "GHz",
+     "StepUnit": "GHz"
+    },
+    {
+     "StartExpr": "20",
+     "StopExpr": "20",
+     "StepExpr": "",
+     "NumPoints": 1,
+     "Mode": "PointCount",
+     "Kind": "Linear",
+     "StartUnit": "GHz",
+     "StopUnit": "GHz",
+     "StepUnit": "GHz"
+    },
+    {
+     "StartExpr": "40",
+     "StopExpr": "40",
+     "StepExpr": "",
+     "NumPoints": 1,
+     "Mode": "PointCount",
+     "Kind": "Linear",
+     "StartUnit": "GHz",
+     "StopUnit": "GHz",
+     "StepUnit": "GHz"
+    }
+   ],
+   "Port1Z0Real": 50,
+   "Port1Z0Imag": 0,
+   "Port2Z0Real": 50,
+   "Port2Z0Imag": 0,
+   "Solver3D": "Palace",
+   "AirBox": {
+    "XMin": {
+     "PaddingUm": 0,
+     "Boundary": "Absorbing"
+    },
+    "XMax": {
+     "PaddingUm": 0,
+     "Boundary": "Absorbing"
+    },
+    "YMin": {
+     "PaddingUm": 0,
+     "Boundary": "Pec"
+    },
+    "YMax": {
+     "PaddingUm": 0,
+     "Boundary": "Pec"
+    },
+    "ZMin": {
+     "PaddingUm": 0,
+     "Boundary": "Pec"
+    },
+    "ZMax": {
+     "PaddingUm": 600.0,
+     "Boundary": "Pec"
+    }
+   },
+   "Palace": {
+    "Quality": "Standard",
+    "AdaptiveMaxIterations": 0,
+    "SaveFieldsGHz": []
+   }
+  }
+ ]
+}

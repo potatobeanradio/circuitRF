@@ -27626,3 +27626,52 @@ CLI's generated-cell rebuild; the GUI's solve-count pass takes no Stop.
   companion move shares, the arrow nudge and the live preview). Only a via still at its tagged `@x,y` follows. Its tag is re-recorded at the new place in the
   same undo entry; otherwise the next Update Layout would read the via as moved by hand and stop re-placing it. Rotate and
   flip do not carry the via; the next Update Layout or Draw Ground Pour re-places it.
+
+## EM-TFR — films in the extractors and the 3D generator (2026-11-04)
+
+**Binding a film into a conductor entry would have made it copper everywhere that reads `DrawingLayers`.** LVS and DRC
+connectivity would have shorted every resistor between its contacts. `ResistiveFilms.MetalLayers` is the one answer, and
+`Conductors.Of`, `LayerRegions`, the DC rail extractor, the cross-section readers and the copper-layer lists go through it, so
+binding changes nothing about what is connected. `LayerRegions` was the one that showed it: its own "claimed" list made the
+film a stray piece of copper in the LVS report, which two MMIC LVS tests caught. `CrossSectionExtractor` skips a film with a note.
+
+**`Conductors: Sheets` applies the planar rule for `SheetAt`, not the band's statement.** The planar extractor puts a
+`SheetAt: Top` sheet back on the band's bottom when the patterned film above it is not drawn; the 3D generator does not,
+so on the MMIC stack `Auto` puts a sheet 3 µm higher than the planar run has it. Keeping `Auto` to the bit, the rule is
+applied only in `Sheets`, which is what makes PA match the hand-built HA to mesh noise.
+
+**Palace on wave ports, two things met building the hand-built references:**
+- **With adaptive refinement on (`AdaptiveMaxIterations` 2, the Standard preset) one wave port of this sheet line read Z_PV
+  near 1 Ω**: port 2 in one run and port 1 in two others, against 47.5 Ω with no refinement at 1, 4 and 10 ranks at 5 GHz.
+  It showed as heavy loss (about 40 % at 1 GHz) and S11 unlike S22 on a symmetric line. Neither covering the whole face
+  with the port nor a perfect-conductor tab at the port plane cleared it; setting the iterations to 0, as the shipped
+  coupled-microstrip example does, did. The cause inside Palace was not found, and only this fixture was measured.
+- **A finite-σ solid is its surface impedance, in the thick-conductor limit.** A 50 nm box of a 50 Ω/sq material read
+  about a third of an ohm at 1 GHz while the DC row read 309 Ω: the setup writes a solid's face with no thickness. So the
+  brief's optional run HF answers a different structure and was dropped, and a film has to be a sheet on this route for
+  that reason as well as for mesh cost.
+
+**The openEMS default grid refuses this fixture.** Six z lines leave the wave port's current probe no clearance from the
+floor. 80 cells per wavelength passes; the fixture's `.cem` states it.
+
+**Each 3D solver needed its own lowering of a film, none of it in the film's definition.** Measured on a straight 6-square
+strip, where 300 Ω is exact, then on the zig-zag. Palace reads 299.96 Ω as written.
+
+- **openEMS, a capacitor across the film.** Its conducting-sheet model stabilises every edge with
+  C = dT²/4·(16/Lmin + 1/L1 + 1/L2) in parallel with the edge's resistance, and its L's scale with the stated thickness
+  (L ∝ t·μ₀/8), so RC ≈ 45·dT²/(t·μ₀·σt). At 50 nm the strip read 300 − 14j, 240 − 111j and 54 − 72j Ω at 1, 10 and 40 GHz. At
+  5 µm it read 301 + 3.7j, 299 + 37j and 271 + 148j Ω. `CsxcadWriter.ConductingSheetValues` writes a sheet at 25 times the
+  thickness where that corner reaches the sweep's top, keeping σ·t. Metal is orders of magnitude clear and keeps its bits.
+- **openEMS, too few cells across.** The thirds rule put two cells across the zig-zag's 40 µm legs, and it read 278 Ω where the
+  other two read 306 Ω: a corner's 0.56 of a square is the current's distribution. A resistive sheet now caps the cell at 1/6 of
+  its width (`FdtdGrid`), and it reads 302 Ω. The geometry did not need segmenting.
+- **EMerge, the thin-conductor boundary.** It splits every degree of freedom on the surface into two copies and puts an impedance
+  on each side. The strip read 262 Ω on the shipped mesh, 283 Ω at 5× the elements and 293 Ω at 16×, where a uniform current should
+  not depend on the mesh at all. The mechanism past that was not established. At or below its 1e4 S/m limit EMerge solves a
+  volume's real current, and a 3 µm volume of the same σ·t read 301 Ω on fewer elements than the sheet's shipped mesh.
+  `EmergeLoweringRules.ResistiveSheetsAsVolumes` does this from 10 Ω/sq; the threshold itself was not measured.
+- **A flagged GPU factorisation still writes its S on a non-adaptive sweep.** On refined meshes EMerge's GPU solver flagged 1 or 2 of
+  3 factorisations unusable, at 1 GHz among them. The run warned, kept the answer and wrote it: 464 − 256j and 202 − 134j Ω of
+  film where 300 Ω is right, with |S21 − S12| of 0.38 and 1.01. The metal-only thru flagged too, so this is not about films. The
+  adaptive path already moves to the CPU at the first flag. `docs/briefs/brief-emerge-gpu-unusable-factorisation.md`.
+

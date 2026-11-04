@@ -241,6 +241,29 @@ public static class TechValidation
                 "unreachable and nothing reports it. Give each entry its own name."));
         }
 
+        // EM-TFR — where a resistive film may be bound. It sits on exactly one conductor level, as a sheet
+        // of that level: a via has no sheet to be, and a return plane is a termination with no cells.
+        foreach (var film in tech.Layers.Where(l => l.SheetResistanceOhmPerSq is > 0))
+        {
+            var boundTo = tech.Stackup.Layers.Where(l => l.DrawingLayers.Contains(film.Key)).ToList();
+            var filmLevels = boundTo.Where(l => l.Kind == StackupKind.Conductor).ToList();
+            if (filmLevels.Count > 1)
+                problems.Add(new(TechProblemArea.Stackup,
+                    $"Resistor film \"{film.Name}\" is bound to both \"{filmLevels[0].Name}\" and \"{filmLevels[1].Name}\". " +
+                    "A film is deposited on one level: unbind it from all but that one.",
+                    Id: "tech.film.two-levels", Severity: DiagnosticSeverity.Error));
+            foreach (var via in boundTo.Where(l => l.Kind == StackupKind.Via))
+                problems.Add(new(TechProblemArea.Stackup,
+                    $"Resistor film \"{film.Name}\" is bound to the via \"{via.Name}\". A film is a sheet on a conductor level, " +
+                    "and a via has none: bind it to the conductor it is deposited on.",
+                    Id: "tech.film.on-via", Severity: DiagnosticSeverity.Error));
+            foreach (var ground in filmLevels.Where(l => l.IsGroundReference))
+                problems.Add(new(TechProblemArea.Stackup,
+                    $"Resistor film \"{film.Name}\" is bound to \"{ground.Name}\", the return plane. The plane is a termination " +
+                    "with no cells for a film to sit on: bind it to a signal level.",
+                    Id: "tech.film.on-ground", Severity: DiagnosticSeverity.Error));
+        }
+
         foreach (var sl in tech.Stackup.Layers)
         {
             foreach (var dl in sl.DrawingLayers)

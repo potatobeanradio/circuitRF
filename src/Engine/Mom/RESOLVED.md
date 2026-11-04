@@ -13287,3 +13287,35 @@ them". `PlanarMeshReport.CoreBytes` carries the figure.
 each `UnionWith` as large as the class count. It now goes through `PlanarFill.ForRowsLocal` (`localInit`/`localFinally`
 over the same three loop shapes and the same budget) and merges once per worker, the larger set absorbing the smaller.
 Gate: identical ascending arrays to a plain serial scan on three meshes (`HonestEstimatesTests`). Not timed.
+
+## EM-TFR — a resistive film on a metal level (2026-11-04)
+
+**The cell carries the sheet class, and the table is what grew.** `PlanarMesh.SheetClassOf` is the cell's level for metal
+and `LayerNames.Count + film` for a film, so a mesh with no film has exactly the table it always had. A rooftop's two
+cells may differ, so a Gram slot holds two (class, value) contributions; the second pair of arrays is null unless some
+slot uses it. **Compared against the build before this work, on one single-level and one two-level fixture: S, the DC
+network and the geometry hash came back identical to the bit.** Only the hash can be pinned in a test (the S bits were
+compared on one machine, and floating point is not portable across the three CI platforms).
+
+**`PlanarConductorLayer.Polygons` is the level's whole outline, film included, and `Films` are clipped to where no metal
+is.** The brief described the metal polygons as unchanged with the union computed for meshing. Doing the union in the
+extractor (Clipper2 is not an Engine dependency) means every reader of the outline (narrowness, the port's feed, the
+feed extension, the conductor check) already asks about the right shape, and "in a film polygon" IS "is film".
+
+**`rs·(a+b)` and `rs·a + rs·b` are different bits.** `PlanarDcSolve.Resistance` keeps the old expression when the two
+halves agree. Writing the general form everywhere would have moved every existing DC row in the last place.
+
+**A film boundary parallel to the current is the case that tests the merge rule.** In a straight strip the current runs
+along x, so only y-runs merge, and a y-run cannot cross a boundary at x = const whatever the rule says: the obvious gate
+passes with the rule deleted. Gate 7 uses a boundary at y = const among a notch's fan rows, and was seen to fail with
+the rule removed.
+
+**A contact shorter than a port's cells is refused as "on film", correctly.** The cut's second cell lies on the film.
+The `TFR` part at its default parameters on `ComponentEmExtraction.ExtractionMesh` does not reach this; a 150 µm-pitch mesh
+on a 200 µm contact did not either, and a mesh with one cell along the contact does.
+
+**DC on the zig-zag: the two methods bracket the answer and do not agree to 1 %.** Numbers in
+`testdata/em-tfr/zigzag/README.md`. The rooftop network reads high and falls as the mesh is refined (315.4, 313.6,
+312.9 Ω at 4, 8, 16 cells across); the conforming FEM of the 3D DC row reads low (308.3 Ω). Four squares of straight
+film plus four 0.559-square corners is 311.8 Ω, between them. The gate is therefore a bracket, not the brief's ~1 %.
+

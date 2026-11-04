@@ -277,16 +277,45 @@ public sealed class MmicPassiveTests(ITestOutputHelper output) : IDisposable
 
     // ── the EM extraction ──────────────────────────────────────────────────────────────────────
 
-    /// <summary>A thin-film resistor's film is a sheet resistance, not a stackup level, so a planar
-    /// solve would see two unconnected contacts: the extraction refuses it by name rather than
-    /// returning a converged answer about a different part.</summary>
+    /// <summary>A film that is not bound to a conductor level is a mask a planar solve cannot see, so it would
+    /// meet two unconnected contacts: the extraction refuses it by name rather than returning a converged answer
+    /// about a different part.</summary>
     [Fact]
-    public void ExtractingATfr_IsRefused_NamingTheFilm()
+    public void ExtractingATfrWhoseFilmIsUnbound_IsRefused_NamingTheFilm()
     {
-        var prepared = ComponentEmExtraction.Prepare("TFR", new Dictionary<string, PCellValue>(), ShippedTechnologies.Load(GaAs),
+        var tech = ShippedTechnologies.Load(GaAs);
+        tech.Stackup.Layers.First(l => l.Name == "Metal1").DrawingLayers.Remove(new LayerKey(4, 0));
+        var prepared = ComponentEmExtraction.Prepare("TFR", new Dictionary<string, PCellValue>(), tech,
             new FrequencySpec("1e9", "2e9", "1e9"), Path.Combine(_root, "r.clay"), out string? refusal);
         Assert.Null(prepared);
         Assert.Contains("'Resistor'", refusal);
+    }
+
+    /// <summary>
+    /// <b>EM-TFR gate 3:</b> the TFR PCell's artwork EM-solved against the TFR circuit model (R between two halves of the
+    /// film's parallel-plate capacitance), judged by |ΔS| at a low frequency. The drawn part adds its contacts, which is
+    /// the difference the tolerance holds.
+    /// </summary>
+    [Fact]
+    public void TfrArtwork_AgreesWithTheCircuitModel_AtLowGHz()
+    {
+        var prepared = ComponentEmExtraction.Prepare("TFR", new Dictionary<string, PCellValue>(), ShippedTechnologies.Load(GaAs),
+            new FrequencySpec("2e9", "2e9", "1e9"), Path.Combine(_root, "r.clay"), out string? refusal);
+        Assert.True(prepared is not null, refusal);
+        var run = EmRunService.Run(prepared!.Setup, prepared.Source, Path.Combine(_root, "results"));
+        Assert.True(run.Status == EmRunStatus.Ok, run.Error);
+
+        var s = run.Data!.Cubes["S"];
+        Complex Em(int i, int j) => s.ComplexValues[i * 2 + j];
+
+        var model = Model<ThinFilmResistorModel>(SymbolKind.Tfr);
+        var (y11, y12, y22) = model.Admittance(2 * Math.PI * 2e9);
+        Complex d = (1 + 50 * y11) * (1 + 50 * y22) - 2500 * y12 * y12;
+        Complex s21 = -2 * 50 * y12 / d, s11 = ((1 - 50 * y11) * (1 + 50 * y22) + 2500 * y12 * y12) / d;
+        output.WriteLine($"S21 EM {Em(1, 0)} model {s21}; S11 EM {Em(0, 0)} model {s11}");
+        // Measured 1.5e-3 and 8e-4 at 2 GHz.
+        Assert.InRange((Em(1, 0) - s21).Magnitude, 0, 0.005);
+        Assert.InRange((Em(0, 0) - s11).Magnitude, 0, 0.005);
     }
 
     /// <summary>

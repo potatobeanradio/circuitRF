@@ -88,8 +88,11 @@ namespace CircuitRF.Engine.Mom;
 /// <param name="Levels">Null on the single-level path, which has no vertical basis to give a barrel
 /// impedance to. Exactly the argument <c>PlanarFill.AddSurfaceImpedance</c> takes, for the same
 /// reason.</param>
+/// <remarks><b>EM-TFR — a null <paramref name="Loss"/> is a run whose METAL is perfect and whose film is
+/// not.</b> The fill then carried the film's term and nothing else, so the film's dissipation is real
+/// and the metal's is the hard zero it always was.</remarks>
 public sealed record PlanarConductorLossInputs(
-    PlanarConductorLoss Loss,
+    PlanarConductorLoss? Loss,
     PlanarGram          Gram,
     PlanarLevels?       Levels)
 {
@@ -115,41 +118,56 @@ public sealed record PlanarConductorLossInputs(
                 "over a different basis from the one the currents belong to.", nameof(mesh));
 
         double omega = 2.0 * Math.PI * fHz;
-        var    zs    = Loss.SheetTable(mesh, omega);
+        var    zs    = PlanarConductorLoss.TableFor(Loss, mesh, omega) ?? [];
 
-        double sheet = 0;
-        for (int i = 0; i < Gram.UnknownCount; i++)
+        // EM-TFR — the same quadratic form restricted by sheet class: a film's dissipation is a
+        // circuit element's and is reported on its own, never folded into the metal's.
+        double sheet = 0, film = 0;
+        for (int i = 0; i < Gram.UnknownCount && zs.Length > 0; i++)
         {
             var xi = basisCurrents[i];
             for (int k = Gram.RowPtr[i]; k < Gram.RowPtr[i + 1]; k++)
             {
-                double rs = zs[Gram.Layer[k]].Real;
-                if (rs == 0) continue;
-
                 int j = Gram.ColIdx[k];
                 var xj = basisCurrents[j];
                 // Re(x_i* x_j), written out rather than through Complex.Conjugate so the diagonal is
                 // literally |x_i|² and cannot pick up a sign from a conjugation the other way round.
                 double re = xi.Real * xj.Real + xi.Imaginary * xj.Imaginary;
                 // Stored triangle: the diagonal once, an off-diagonal PAIR twice. See the header.
-                sheet += rs * Gram.Value[k] * (i == j ? re : 2.0 * re);
+                double pair = i == j ? re : 2.0 * re;
+
+                int first = Gram.Layer[k];
+                double rs = zs[first].Real;
+                if (rs != 0)
+                {
+                    if (mesh.IsFilmClass(first)) film += rs * Gram.Value[k] * pair;
+                    else                         sheet += rs * Gram.Value[k] * pair;
+                }
+                if (Gram.Value2 is { } second && second[k] != 0)
+                {
+                    int other = Gram.Layer2![k];
+                    double rs2 = zs[other].Real;
+                    if (mesh.IsFilmClass(other)) film += rs2 * second[k] * pair;
+                    else                         sheet += rs2 * second[k] * pair;
+                }
             }
         }
         sheet *= 0.5;
+        film  *= 0.5;
 
         double barrel = 0;
-        if (Levels is { } levels)
+        if (Levels is { } levels && Loss is { } loss)
             for (int i = 0; i < mesh.Bases.Count; i++)
             {
                 var b = mesh.Bases[i];
                 if (b.Direction != PlanarBasisDirection.Z) continue;
-                double rz = Loss.BarrelAt(mesh, levels, b, omega).Real;
+                double rz = loss.BarrelAt(mesh, levels, b, omega).Real;
                 if (rz == 0) continue;
                 var x = basisCurrents[i];
                 barrel += 0.5 * rz * (x.Real * x.Real + x.Imaginary * x.Imaginary);
             }
 
-        return new PlanarConductorPower(sheet + barrel, sheet, barrel);
+        return new PlanarConductorPower(sheet + barrel, sheet, barrel, film);
     }
 }
 
@@ -163,4 +181,7 @@ public sealed record PlanarConductorLossInputs(
 /// <param name="SheetW">½∫Re(Z_s)|J|²dS over every horizontal basis.</param>
 /// <param name="BarrelW">Σ½Re(Z_barrel)|I|² over every vertical (via) basis; 0 on a single-level
 /// problem, which has none.</param>
-public sealed record PlanarConductorPower(double TotalW, double SheetW, double BarrelW);
+/// <param name="FilmW">EM-TFR — ½∫R_s|J|²dS over the cells that are resistive film. <b>Not part of
+/// <paramref name="TotalW"/></b>: a terminated antenna's "conductor loss" must not read as most of its
+/// budget because of the resistor it was built with.</param>
+public sealed record PlanarConductorPower(double TotalW, double SheetW, double BarrelW, double FilmW = 0);

@@ -21,6 +21,9 @@ public sealed record EmergeLowering(string? ProblemJson, IReadOnlyList<Em3dKerne
                                     IReadOnlyList<EmergeObjectMapping> Objects, double EdgeSizeM, double LargestSizeM)
 {
     public bool Ok => ProblemJson is not null;
+
+    /// <summary>EM-TFR — what the lowering changed about an object, for the run's notes.</summary>
+    public IReadOnlyList<string> Notes { get; init; } = [];
 }
 
 public static partial class EmergeScriptWriter
@@ -67,6 +70,7 @@ public static partial class EmergeScriptWriter
     {
         ArgumentNullException.ThrowIfNull(problem);
         ArgumentNullException.ThrowIfNull(settings);
+        problem = EmergeLoweringRules.ResistiveSheetsAsVolumes(problem, out var loweringNotes);
         if (EmergeLoweringRules.Refusal(problem, settings) is { } refused) return new(null, [], refused, [], 0, 0);
 
         var materials = new Materials(problem);
@@ -231,7 +235,10 @@ public static partial class EmergeScriptWriter
         e.EndArray();
         e.EndObject();
 
-        return new(e + "\n", files, null, EmergeLoweringRules.Mappings(problem, settings, sizes.Edge), sizes.Edge, sizes.Largest);
+        return new(e + "\n", files, null, EmergeLoweringRules.Mappings(problem, settings, sizes.Edge), sizes.Edge, sizes.Largest)
+        {
+            Notes = loweringNotes,
+        };
     }
 
     /// <summary>Writes the driver, problem.json and the kernel files into <paramref name="runDirectory"/>.</summary>

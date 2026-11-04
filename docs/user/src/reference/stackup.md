@@ -615,6 +615,28 @@ along its whole run, so a via is refused above k·ℓ = 0.3. Through 100 µm of 
 under 40 GHz; the refusal says so and names the number it computed. The series form has no such via
 and no such bound.
 
+## A resistive film on a level {#film}
+
+A thin-film resistor's film belongs to a metal level without being that level's metal. A drawing layer whose `.ctech` entry states
+`SheetResistanceOhmPerSq` is a resistor film. Tick it among the drawing layers of the conductor it is deposited on,
+and the conductor's card lists it as `Resistor · 50 Ω/sq`.
+
+**Where a film and metal overlap, the cell is metal.** The current in an overlap runs in the metal, so a resistor's
+length is the distance between its contacts' edges rather than the length of the film you drew.
+
+**The film and the metal share one sheet, at one height.** A planar solve meshes a conductor as a zero-thickness sheet
+at one z, and the film is a surface impedance of `R_s` on the part of that sheet it covers. A film's height above its
+metal's bottom is not a quantity this model has, so a 50 nm film sharing the top surface of a 1 µm metal solves the
+same as one at any other height in the band. A 3D setup can see the difference: with `Conductors: Solids` the metal
+keeps its thickness and the film sits on the face its layer names.
+
+**A film bound to no level is an open.** It is still a mask the circuit model and LVS read, and a run that meets one
+says so by name: a resistor drawn on it reaches the solver as two contacts with nothing between them. Bind the layer
+to run it.
+
+A film may be bound to one conductor. Binding it to two, to a via, or to a ground-reference conductor is an error. A
+bound film stays out of connectivity, so LVS and DRC read the resistor as a device rather than a short.
+
 ## What the EM engine does not read {#ignored}
 
 Stated plainly, because a field that is carried but unused is worse than one that is absent:

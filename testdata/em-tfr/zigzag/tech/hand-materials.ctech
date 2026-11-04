@@ -1,0 +1,177 @@
+{
+ "FormatVersion": 1,
+ "Name": "EM-TFR hand-built materials",
+ "DefaultDisplayUnit": "Um",
+ "Layers": [],
+ "Stackup": {
+  "Top": "Open",
+  "Bottom": "Ground",
+  "Layers": []
+ },
+ "Materials": [
+  {
+   "Name": "Gold",
+   "Sigma20": 41000000,
+   "Alpha20": 0.0034,
+   "SigmaVsTemp": [
+    {
+     "TempC": 20,
+     "Value": 41000000
+    },
+    {
+     "TempC": 25.05,
+     "Value": 40320210
+    },
+    {
+     "TempC": 26.85,
+     "Value": 40083326
+    },
+    {
+     "TempC": 76.85,
+     "Value": 34378403
+    },
+    {
+     "TempC": 85,
+     "Value": 33584219
+    },
+    {
+     "TempC": 125,
+     "Value": 30164193
+    },
+    {
+     "TempC": 126.85,
+     "Value": 30022791
+    },
+    {
+     "TempC": 226.85,
+     "Value": 23821985
+    },
+    {
+     "TempC": 326.85,
+     "Value": 19612446
+    },
+    {
+     "TempC": 426.85,
+     "Value": 16556832
+    },
+    {
+     "TempC": 526.85,
+     "Value": 14221104
+    },
+    {
+     "TempC": 626.85,
+     "Value": 12367356
+    },
+    {
+     "TempC": 726.85,
+     "Value": 10857996
+    },
+    {
+     "TempC": 826.85,
+     "Value": 9601718
+    },
+    {
+     "TempC": 926.85,
+     "Value": 8539853
+    },
+    {
+     "TempC": 1026.85,
+     "Value": 7646544
+    }
+   ],
+   "ThermalK": 318.202,
+   "ThermalKVsTemp": [
+    {
+     "TempC": 20,
+     "Value": 318.202
+    },
+    {
+     "TempC": 25.05,
+     "Value": 318
+    },
+    {
+     "TempC": 26.85,
+     "Value": 317
+    },
+    {
+     "TempC": 76.85,
+     "Value": 314
+    },
+    {
+     "TempC": 85,
+     "Value": 313.511
+    },
+    {
+     "TempC": 125,
+     "Value": 311.111
+    },
+    {
+     "TempC": 126.85,
+     "Value": 311
+    },
+    {
+     "TempC": 226.85,
+     "Value": 304
+    },
+    {
+     "TempC": 326.85,
+     "Value": 298
+    },
+    {
+     "TempC": 426.85,
+     "Value": 291
+    },
+    {
+     "TempC": 526.85,
+     "Value": 284
+    },
+    {
+     "TempC": 626.85,
+     "Value": 277
+    },
+    {
+     "TempC": 726.85,
+     "Value": 270
+    },
+    {
+     "TempC": 826.85,
+     "Value": 262
+    },
+    {
+     "TempC": 926.85,
+     "Value": 255
+    },
+    {
+     "TempC": 1026.85,
+     "Value": 247
+    }
+   ],
+   "DensityKgM3": 19300,
+   "SpecificHeat": 129,
+   "Appearance": {
+    "BaseColor": "#FFE39D",
+    "Metallic": 1,
+    "Roughness": 0.25
+   }
+  },
+  {
+   "Name": "GaAs",
+   "Epsr": 12.9,
+   "TanD": 0.0006,
+   "Mur": 1,
+   "ThermalK": 46,
+   "DensityKgM3": 5320,
+   "SpecificHeat": 350
+  },
+  {
+   "Name": "Air",
+   "Epsr": 1,
+   "TanD": 0,
+   "Mur": 1
+  },
+  {
+   "Name": "Film",
+   "Sigma20": 400000
+  }
+ ]
+}

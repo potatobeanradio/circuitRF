@@ -563,6 +563,14 @@ public sealed class EmSetup
     public bool RobustMeshing { get; set; } = true;
 
     /// <summary>
+    /// EM-TFR — what a 3D setup makes of every conductor band: <see cref="Em3dConductorMode.Auto"/> takes the
+    /// sheet rule, <see cref="Em3dConductorMode.Sheets"/> is the planar model's own idealisation and
+    /// <see cref="Em3dConductorMode.Solids"/> gives every band its real thickness. A resistive film stays a
+    /// sheet in all three. Part of the geometry, so a change makes an earlier result stale.
+    /// </summary>
+    public Em3dConductorMode Conductors { get; set; }
+
+    /// <summary>
     /// <b>The conducted power TRP and peak EIRP are referenced to, in dBm</b> (owner request,
     /// 2026-09-11). Read only when <see cref="RadiationPattern"/> is on; 0 dBm by default, which is
     /// what an over-the-air report is written against.
@@ -866,6 +874,7 @@ public sealed class EmSetup
         RadiationPattern       = RadiationPattern,
         PatternFrequencyGHz    = PatternFrequencyGHz,
         RobustMeshing          = RobustMeshing,
+        Conductors             = Conductors,
         ReferenceInputPowerDbm = ReferenceInputPowerDbm,
         SnpOutputPathOverride  = SnpOutputPathOverride,
         CreateSnpSchematic     = CreateSnpSchematic,

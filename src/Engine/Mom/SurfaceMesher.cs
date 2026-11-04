@@ -916,7 +916,7 @@ public static class SurfaceMesher
             int firstCell = cells.Count;
             if (s.BoundaryCells == PlanarBoundaryCells.Conformal)
             {
-                BuildConformalCells(layer, li, gx, gy, nx, ny, sliverAreaFraction,
+                BuildConformalCells(problem, layer, li, gx, gy, nx, ny, sliverAreaFraction,
                                     cells, cellAt, conformal, control, diagnostics);
             }
             else
@@ -940,7 +940,10 @@ public static class SurfaceMesher
                         if (xc < spans[si].Lo) continue;
 
                         cellAt[iy * nx + ix] = cells.Count;
-                        cells.Add(new PlanarCell(li, ix, iy, gx[ix], gy[iy], gx[ix + 1], gy[iy + 1]));
+                        cells.Add(new PlanarCell(li, ix, iy, gx[ix], gy[iy], gx[ix + 1], gy[iy + 1])
+                        {
+                            Film = FilmAt(problem, li, xc, yc),
+                        });
                     }
                 }
             }
@@ -1070,7 +1073,14 @@ public static class SurfaceMesher
                           "extent, which is the union of the conductor artwork.");
         }
 
-        var mesh = new PlanarMesh(cells, bases, layerNames, gx, gy);
+        var mesh = new PlanarMesh(cells, bases, layerNames, gx, gy) { Films = MeshFilms(problem) };
+        if (mesh.Films.Count > 0)
+        {
+            int filmCells = cells.Count(c => c.Film >= 0);
+            notes.Add($"{filmCells} of {cells.Count} cell(s) are resistive film (" +
+                      string.Join(", ", mesh.Films.Select(f => $"'{f.Name}' {f.SheetResistanceOhmPerSq:G4} Ω/sq on '{layerNames[f.LayerIndex]}'")) +
+                      "); each carries the film's sheet resistance as its surface impedance.");
+        }
 
         // ── PM-2 — rooftop merging: the same grid, solved in a coarser basis where it is spread ──
         //
@@ -1465,7 +1475,9 @@ public static class SurfaceMesher
             if (conformal.Fallback > 0)
                 notes.Add($"{conformal.Fallback} cell(s) could NOT be cut and are staircased: " +
                           $"{conformal.FallbackMultiPolygon} touched by more than one drawn shape, " +
-                          $"{conformal.FallbackHole} touched by a hole, {conformal.FallbackNotFlowSimple} " +
+                          $"{conformal.FallbackHole} touched by a hole, " +
+                          (conformal.FallbackFilmBoundary > 0 ? $"{conformal.FallbackFilmBoundary} straddling a resistive film's boundary, " : "") +
+                          $"{conformal.FallbackNotFlowSimple} " +
                           "met by the outline in more than one run in BOTH directions at once. A cell " +
                           "crossed twice along every line through it is a mesh that is too coarse for " +
                           "its own artwork, so raise Cells per wavelength and this count falls.");
@@ -2216,13 +2228,16 @@ public static class SurfaceMesher
         /// old <c>FallbackNonConvex</c> became, and it is a strictly smaller set.</summary>
         public int FallbackNotFlowSimple;
 
+        /// <summary>EM-TFR — a cut cell whose metal straddled a film boundary.</summary>
+        public int FallbackFilmBoundary;
+
         /// <summary>R-cvx-2's SECOND count, and a different event: the cell is CUT and kept, but one
         /// of its two directions is refused a basis. A user reading the notes needs the two apart.</summary>
         public int OneDirectionOnly;
 
         public int RefusedFaces;
         public int RefusedFacesNotFlowSimple;
-        public int Fallback => FallbackMultiPolygon + FallbackHole + FallbackNotFlowSimple;
+        public int Fallback => FallbackMultiPolygon + FallbackHole + FallbackNotFlowSimple + FallbackFilmBoundary;
     }
 
     /// <summary>
@@ -2234,7 +2249,7 @@ public static class SurfaceMesher
     /// that had already been numbered.</para>
     /// </summary>
     private static void BuildConformalCells(
-        PlanarConductorLayer layer, int li,
+        PlanarProblem problem, PlanarConductorLayer layer, int li,
         double[] gx, double[] gy, int nx, int ny, double sliverFraction,
         List<PlanarCell> cells, int[] cellAt, ConformalCounts counts, RunControl? control,
         ConformalDiagnostics? diagnostics = null)
@@ -2332,6 +2347,16 @@ public static class SurfaceMesher
                 // is CUT and contributes an x basis, and FaceCarriesABasis declines its y one. Only a
                 // cell simple in NEITHER direction is staircased, and M0 measured zero of those over
                 // three shipping PCells × two starters × three densities.
+                // EM-TFR — one cell takes one sheet class, so a cut cell whose metal straddles a film
+                // boundary cannot be kept as cut: it falls back to the staircase like the other three
+                // configurations, and is counted with them.
+                if (layer.Films.Count > 0 && StraddlesFilmBoundary(problem, li, region, clipped))
+                {
+                    counts.FallbackFilmBoundary++;
+                    kind[q] = InMetal(polys, xc, yc) ? Whole : Absent;
+                    continue;
+                }
+
                 bool xSimple = RooftopSupport.IsFlowSimple(region, alongX: true,  tol);
                 bool ySimple = RooftopSupport.IsFlowSimple(region, alongX: false, tol);
 
@@ -2394,6 +2419,8 @@ public static class SurfaceMesher
                     if (jx < 0 || jy < 0 || jx >= nx || jy >= ny) return;
                     int t = jy * nx + jx;
                     if (kind[t] == Absent) return;
+                    // EM-TFR — a sliver never joins a cell of another sheet class: one cell takes one Z_s.
+                    if (layer.Films.Count > 0 && FilmOfPosition(jx, jy, t) != FilmOfPosition(ix, iy, q)) return;
                     // Only into an ORDINARY cell: a sliver absorbing a sliver is a chain.
                     if (kind[t] == Cut)
                     {
@@ -2404,6 +2431,12 @@ public static class SurfaceMesher
                     if (face > bestFace) { bestFace = face; best = t; }
                 }
             }
+
+        // The film of one grid position: a whole rectangle's at its centre, a cut cell's at its metal's centroid.
+        int FilmOfPosition(int jx, int jy, int t)
+            => regions[t] is { } r
+                ? FilmAt(problem, li, r.CentroidX, r.CentroidY)
+                : FilmAt(problem, li, 0.5 * (gx[jx] + gx[jx + 1]), 0.5 * (gy[jy] + gy[jy + 1]));
 
         // ── Pass 3: emit, in (IY, IX) order ───────────────────────────────────────────────────
         for (int iy = 0; iy < ny; iy++)
@@ -2434,8 +2467,47 @@ public static class SurfaceMesher
                 if (region is not null) counts.Cut++;
 
                 cellAt[q] = cells.Count;
-                cells.Add(new PlanarCell(li, ix, iy, x0, y0, x1, y1, region));
+                cells.Add(new PlanarCell(li, ix, iy, x0, y0, x1, y1, region)
+                {
+                    Film = FilmOfPosition(ix, iy, q),
+                });
             }
+    }
+
+    /// <summary>EM-TFR — every film of the problem, in the order a cell's <see cref="PlanarCell.Film"/> counts them.</summary>
+    private static IReadOnlyList<PlanarMeshFilm> MeshFilms(PlanarProblem problem)
+    {
+        List<PlanarMeshFilm>? films = null;
+        for (int li = 0; li < problem.Layers.Count; li++)
+            foreach (var f in problem.Layers[li].Films)
+                (films ??= []).Add(new PlanarMeshFilm(li, f.Name, f.SheetResistanceOhmPerSq));
+        return films is null ? [] : films;
+    }
+
+    /// <summary>EM-TFR — which film covers a point of one level, as an index into <see cref="MeshFilms"/>, or −1.
+    /// The extractor has clipped the metal away, so being in a film's polygon IS being film.</summary>
+    private static int FilmAt(PlanarProblem problem, int li, double x, double y)
+    {
+        if (problem.Layers[li].Films.Count == 0) return -1;
+        int first = 0;
+        for (int l = 0; l < li; l++) first += problem.Layers[l].Films.Count;
+        var films = problem.Layers[li].Films;
+        for (int f = 0; f < films.Count; f++)
+            foreach (var p in films[f].Polygons)
+                if (p.Contains(x, y)) return first + f;
+        return -1;
+    }
+
+    /// <summary>EM-TFR — true when a cut region is part film and part not, judged at points just inside each of
+    /// its vertices against its centroid.</summary>
+    private static bool StraddlesFilmBoundary(PlanarProblem problem, int li, PlanarCellRegion region,
+                                              IReadOnlyList<EmPoint> ring)
+    {
+        double cx = region.CentroidX, cy = region.CentroidY;
+        int at = FilmAt(problem, li, cx, cy);
+        foreach (var v in ring)
+            if (FilmAt(problem, li, v.X + 0.1 * (cx - v.X), v.Y + 0.1 * (cy - v.Y)) != at) return true;
+        return false;
     }
 
     /// <summary>
@@ -2877,6 +2949,12 @@ public static class SurfaceMesher
         var artwork = new List<(IReadOnlyList<PlanarPolygon> Polys, bool Grade)>();
         foreach (var layer in problem.Layers) artwork.Add((layer.Polygons, true));
         foreach (var via in problem.ViaList) artwork.Add((via.Polygons, false));
+        // EM-TFR — a film's boundary with the metal is the same kind of line a via footprint is: an
+        // interior feature of continuous conductor, with no charge singularity, so hard gridlines and
+        // no graded fan. The film's OUTER edges are conductor edges, and they are graded because they
+        // are in the level's own outline above.
+        foreach (var layer in problem.Layers)
+            foreach (var film in layer.Films) artwork.Add((film.Polygons, false));
 
         foreach (var (group, grade) in artwork)
             foreach (var poly in group)
