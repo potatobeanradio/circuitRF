@@ -220,6 +220,108 @@ public static class GeneratedCellStore
         return cellDir;
     }
 
+    /// <summary>The marker between a cell's name and its geometry key in a variant cell's folder name.</summary>
+    public const string VariantSeparator = "~";
+
+    /// <summary>
+    /// brief-sdl-10 D3 — a VARIANT of a schematic-driven cell: <paramref name="view"/>, the cell's saved layout re-planned
+    /// at one placement's values, stored beside the PCell cells under the same reserved folder and named
+    /// <c>&lt;cell&gt;~&lt;key&gt;</c> by its EM geometry key, so placements whose copper is the same share one folder. The cell's
+    /// own layout is never written. A hit is a plain existence check, as for a PCell: the key IS the content.
+    /// <paramref name="sourceLayoutDir"/> is the folder the view's relative references (placed parts, technology) were
+    /// written against; they are re-written against the variant's own folder, so the variant reads the same parts.
+    /// </summary>
+    /// <param name="schematic">The cell's schematic at the placement's values — the variant's own schematic, so the variant
+    /// is a whole cell (LVS compares it as one); null writes none.</param>
+    /// <param name="sourceSchematicDir">The folder <paramref name="schematic"/>'s relative references were written against.</param>
+    public static string GetOrCreateVariant(string workspaceRootDir, string cellName, string key, LayoutView view,
+                                            string sourceLayoutDir, SchematicEditModel? schematic = null,
+                                            string? sourceSchematicDir = null)
+    {
+        string name = string.Concat(cellName.Select(c => c <= 0x1F || "<>:\"/\\|?*".Contains(c) ? '_' : c))
+                      + VariantSeparator + key;
+        string genRoot = Path.Combine(workspaceRootDir, ReservedFolderName);
+        string cellDir = Path.Combine(genRoot, name);
+        string layoutDir = CellFolder.SubFolderPath(cellDir, ViewType.Layout);
+        string clayPath = Path.Combine(layoutDir, name + CellFolder.ViewExtension(ViewType.Layout));
+        if (File.Exists(clayPath)) return cellDir;
+
+        var copy = LayoutPersistence.Deserialize(LayoutPersistence.Serialize(view));
+        foreach (var inst in copy.Instances) inst.CellRef = Rebase(inst.CellRef, sourceLayoutDir, layoutDir) ?? inst.CellRef;
+        if (copy.TechRef is { Length: > 0 } tech && !Path.IsPathRooted(tech))
+            copy.TechRef = global::CircuitRF.Core.RefPath.ToStored(Path.GetRelativePath(layoutDir, Path.GetFullPath(Path.Combine(sourceLayoutDir, tech))));
+        // A variant is generated: what links it to a schematic is the cell's own layout's business, not its copy's.
+        copy.GeneratedPlacements.Clear();
+
+        Directory.CreateDirectory(genRoot);
+        if (!Directory.Exists(cellDir)) CellFolder.CreateCellFolder(genRoot, name);
+        _cellsWritten.AddOrUpdate(NormalizeRoot(workspaceRootDir), 1, (_, n) => n + 1);
+
+        // The variant is the same PART as its cell: the cell's symbol and its .ccell (ports, parameters, terminal map), and a
+        // record naming the cell, so LVS compares it as that cell and the project tree never offers it.
+        string sourceCell = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(Path.GetFullPath(sourceLayoutDir)))!;
+        string sourceCcell = Path.Combine(sourceCell, CellFolder.CcellFileName);
+        if (File.Exists(sourceCcell))
+        {
+            var ccell = CellPersistence.LoadFromFile(sourceCcell);
+            (ccell.PrimarySchematic, ccell.PrimaryLayout) = (null, null);
+            CellPersistence.SaveToFile(Path.Combine(cellDir, CellFolder.CcellFileName), ccell);
+        }
+        string sourceSymbols = CellFolder.SubFolderPath(sourceCell, ViewType.Symbol);
+        if (Directory.Exists(sourceSymbols))
+        {
+            string symbols = CellFolder.SubFolderPath(cellDir, ViewType.Symbol);
+            Directory.CreateDirectory(symbols);
+            foreach (string f in Directory.EnumerateFiles(sourceSymbols, "*" + CellFolder.ViewExtension(ViewType.Symbol)))
+                File.Copy(f, Path.Combine(symbols, Path.GetFileName(f)), overwrite: true);
+        }
+        if (schematic is not null && sourceSchematicDir is not null)
+        {
+            string schDir = CellFolder.SubFolderPath(cellDir, ViewType.Schematic);
+            Directory.CreateDirectory(schDir);
+            string json = SchematicPersistence.Serialize(schematic, name);
+            var sch = SchematicPersistence.Deserialize(json).model;
+            foreach (var c in sch.Components) c.CellRef = c.CellRef is { } r ? Rebase(r, sourceSchematicDir, schDir) : null;
+            if (sch.TechRef is { Length: > 0 } st && !Path.IsPathRooted(st))
+                sch.TechRef = global::CircuitRF.Core.RefPath.ToStored(Path.GetRelativePath(schDir, Path.GetFullPath(Path.Combine(sourceSchematicDir, st))));
+            SchematicPersistence.SaveToFile(Path.Combine(schDir, name + CellFolder.ViewExtension(ViewType.Schematic)), sch, name);
+        }
+        File.WriteAllText(Path.Combine(cellDir, VariantSourceFile),
+                          global::CircuitRF.Core.RefPath.ToStored(Path.GetRelativePath(cellDir, sourceCell)) + "\n");
+        LayoutPersistence.SaveToFile(clayPath, copy);   // last: its existence is what a hit tests
+        return cellDir;
+
+        static string? Rebase(string? cellRef, string from, string to)
+        {
+            if (cellRef is not { Length: > 0 } r || Path.IsPathRooted(r) || PdkKitRegistry.IsKitRef(r)
+                || r.StartsWith(ExternalCellRef.Scheme, StringComparison.Ordinal)) return cellRef;
+            try { return global::CircuitRF.Core.RefPath.ToStored(Path.GetRelativePath(to, Path.GetFullPath(Path.Combine(from, r)))); }
+            catch (Exception) { return cellRef; }
+        }
+    }
+
+    /// <summary>The file in a variant's folder naming the cell it is a variant of, relative to the variant.</summary>
+    public const string VariantSourceFile = ".variant-of";
+
+    /// <summary>The cell folder <paramref name="cellDir"/> is a variant of; null when it is not a variant.</summary>
+    public static string? VariantSourceOf(string? cellDir)
+    {
+        if (cellDir is not { Length: > 0 }) return null;
+        string file = Path.Combine(cellDir, VariantSourceFile);
+        try
+        {
+            if (!File.Exists(file)) return null;
+            string rel = File.ReadAllText(file).Trim();
+            return rel.Length == 0 ? null
+                : Path.TrimEndingDirectorySeparator(Path.GetFullPath(Path.Combine(cellDir, rel.Replace('/', Path.DirectorySeparatorChar))));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException) { return null; }
+    }
+
+    /// <summary>True when <paramref name="cellDir"/> is a variant cell (<see cref="GetOrCreateVariant"/>).</summary>
+    public static bool IsVariant(string cellDir) =>
+        IsUnderGeneratedCellsFolder(cellDir) && Path.GetFileName(Path.TrimEndingDirectorySeparator(cellDir)).Contains(VariantSeparator);
+
     /// <summary>
     /// The pin names of the symbol <paramref name="generatorId"/> is registered with, in PORT order —
     /// what R-lvs1-5b pairs the generator's own pins against.

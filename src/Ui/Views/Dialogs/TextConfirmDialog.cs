@@ -20,14 +20,34 @@ public static class TextConfirmDialog
     public static async Task<bool> AskAsync(Window? owner, string title, string heading, string text, string? confirmLabel)
     {
         bool yes = false;
+        var dialog = Build(title, heading, text, confirmLabel, answer => yes = answer, centerOnOwner: owner is not null);
+
+        if (owner is not null) await dialog.ShowDialog(owner);
+        else
+        {
+            var closed = new TaskCompletionSource();
+            dialog.Closed += (_, _) => closed.TrySetResult();
+            dialog.Show();
+            await closed.Task;
+        }
+        return yes;
+    }
+
+    /// <summary>The dialog <see cref="AskAsync"/> shows, unshown; <paramref name="answered"/> hears the button pressed
+    /// (true for the confirm button) as the window closes. What a headless snapshot of it renders.</summary>
+    public static Window Build(string title, string heading, string text, string? confirmLabel, System.Action<bool> answered,
+                               bool centerOnOwner = true)
+    {
+        bool yes = false;
         var dialog = new Window
         {
             Title                 = title,
             Width                 = 640,
             SizeToContent         = SizeToContent.Height,
-            WindowStartupLocation = owner is null ? WindowStartupLocation.CenterScreen : WindowStartupLocation.CenterOwner,
+            WindowStartupLocation = centerOnOwner ? WindowStartupLocation.CenterOwner : WindowStartupLocation.CenterScreen,
             CanResize             = false,
         };
+        dialog.Closed += (_, _) => answered(yes);
 
         var cancel  = new Button { Content = confirmLabel is null ? "Close" : "Cancel", IsCancel = true, IsDefault = confirmLabel is null };
         cancel.Click  += (_, _) => { yes = false; dialog.Close(); };
@@ -60,15 +80,6 @@ public static class TextConfirmDialog
                 buttons,
             },
         };
-
-        if (owner is not null) await dialog.ShowDialog(owner);
-        else
-        {
-            var closed = new TaskCompletionSource();
-            dialog.Closed += (_, _) => closed.TrySetResult();
-            dialog.Show();
-            await closed.Task;
-        }
-        return yes;
+        return dialog;
     }
 }

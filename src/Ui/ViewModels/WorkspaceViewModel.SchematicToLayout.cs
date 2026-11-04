@@ -90,11 +90,22 @@ public partial class WorkspaceViewModel
             return "the layout was not updated: the schematic is not open from a file";
         RunLayoutUpdate(doc, onlyWBond: null);
         var sibling = CellFolder.SiblingView(path, ViewType.Schematic, ViewType.Layout);
-        if (sibling.CellDir is not { } cellDir
-            || CircuitRF.Design.Layout.Em.ParametricEm.EmCapability.Resolve(cellDir, null, Path.GetDirectoryName(path), out var why) is not { } target)
-            return "layout updated; its geometry could not be checked";
+        if (sibling.CellDir is not { } cellDir) return "layout updated; its geometry could not be checked";
         var layoutVm = GetOrCreateLayoutSession(Path.GetFullPath(sibling.TargetPath));
-        string key = CircuitRF.Design.Optimization.EmApply.KeyOfLayout(target, layoutVm.Model, layoutVm.Technology);
+        string key;
+        if (CircuitRF.Design.Layout.Em.ParametricEm.EmCapability.Resolve(cellDir, null, Path.GetDirectoryName(path), out _) is { } target)
+            key = CircuitRF.Design.Optimization.EmApply.KeyOfLayout(target, layoutVm.Model, layoutVm.Technology);
+        else
+        {
+            // brief-sdl-10 D7 — a schematic placing EM components: each placement's geometry, its variant's or its cell's own.
+            var placed = CircuitRF.Design.Optimization.EmApply.PlacedKeys(layoutVm.Model, Path.GetDirectoryName(Path.GetFullPath(sibling.TargetPath))!);
+            if (placed.Count == 0) return "layout updated; its geometry could not be checked";
+            bool all = expectedKey is null || placed.All(k => expectedKey.Split('+').Contains(k, StringComparer.Ordinal));
+            if (!all)
+                Messages.Warning($"Optimizer: a placed EM component's geometry in the updated layout ({string.Join("+", placed)}) is not one " +
+                                 $"EM verified ({expectedKey}); what is drawn was not solved.", sibling.TargetPath);
+            return all ? "layout updated: every placed EM component is the geometry EM verified" : "layout updated, but it is NOT the geometry EM verified";
+        }
         bool same = expectedKey is null || expectedKey.Split('+').Contains(key, StringComparer.Ordinal);
         if (!same)
             Messages.Warning($"Optimizer: the updated layout's geometry {key} is not the one EM verified ({expectedKey}); what is drawn " +

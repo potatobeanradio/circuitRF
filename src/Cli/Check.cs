@@ -467,6 +467,10 @@ internal static class Check
             }
         }
 
+        // brief-sdl-10 D1 — an EM component says which kind it is: what its geometry follows.
+        if (EmComponentKinds.Of(cellDir) is { Kind: not EmComponentKind.None } emKind)
+            f.Add(CliDiagnostics.CheckEmKind(cellDir, emKind.Sentence));
+
         CheckTerminals(cellDir, f);
 
         f.End();

@@ -82,11 +82,18 @@ public static class SubCellContact
 
         var found = new List<SubCellContactPoint>();
 
+        // brief-sdl-10 D4 — copper meeting on the stackup's GROUND-REFERENCE conductor is the shared ground plane: a placed
+        // cell's own pour (an EM component carries its ground with it) joins the parent's pour, which is ground in both and
+        // a pin of neither. Every other layer is held to the declared pins as before.
+        var groundLayers = parent.Ground.ReferenceName is { } reference
+            ? Conductors.Of(tech).Where(c => c.StackupName == reference).SelectMany(c => c.DrawingLayers).ToHashSet()
+            : [];
+
         // One union per placement per layer, through the same expansion every other reader uses —
         // so a via decomposes into a barrel and a landing pad here exactly as it does there.
         foreach (var (layer, sub) in LayerRegions.Build(subCellCopper, tech))
         {
-            if (sub.Count == 0) continue;
+            if (sub.Count == 0 || groundLayers.Contains(layer)) continue;
             var box = BoundsOf(sub);
 
             foreach (int piece in parent.PiecesOn(layer))

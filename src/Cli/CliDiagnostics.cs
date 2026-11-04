@@ -1403,6 +1403,10 @@ internal static class CliDiagnostics
     public static Diagnostic CheckEmUnreached(string path, string sentence) => Diagnostic.Create(
         "check.em.unreached", DiagnosticSeverity.Warning, "{path}: {message}", ("path", path), ("message", sentence));
 
+    /// <summary>brief-sdl-10 D1 — <c>check</c>: a cell that is an EM component, and which of the three kinds.</summary>
+    public static Diagnostic CheckEmKind(string path, string sentence) => Diagnostic.Create(
+        "check.em.kind", DiagnosticSeverity.Info, "{path}: {kind}", ("path", path), ("kind", sentence));
+
     /// <summary>brief-sdl-6 D5 — <c>check</c>: the EM evaluations a chain makes, counted.</summary>
     public static Diagnostic CheckEmCount(string path, string analysis, string sentence) => Diagnostic.Create(
         "check.em.count", DiagnosticSeverity.Info,

@@ -1354,6 +1354,25 @@ result of the schematic's own layout at the values its variables have at that po
   not copper (a footprint or a kit part), are refusals by name — the second because only a 3D view's setup makes the
   component ports its model would stand across.
 
+**Placed EM components (brief-sdl-10).**
+
+- **D3 — each placement at its own values.** When a parent is laid out, an instance of a schematic-driven cell whose
+  overrides give it different copper is placed as a **variant**: `EmVariantCells.For` evaluates the instance's overrides
+  in the parent's scope, `EmEvaluation.Geometry` re-plans the cell's SAVED layout at them (so the cell's hand edits are
+  in every variant), and `GeneratedCellStore.GetOrCreateVariant` stores the result under the generated-cells folder as
+  `<cell>~<geometry key>`. Placements with the same copper share one folder; the cell's own layout is never written. A
+  variant is a whole cell: the planned layout, the cell's schematic at those values, its symbol and `.ccell`, and
+  `.variant-of` naming the cell — so LVS compares it as that cell (`DeviceTypes.OfLayout` reads it as its source), and
+  `EmApply.PlacedKeys` reads its geometry key off its name. A 3D-parametric cell's layout cannot follow its variables;
+  its placements show the cell's own layout and the run says so.
+- **D4 — pins of a schematic-driven cell.** Such a layout states no `LayoutPin`s; `CellPins.Resolve` reads each port
+  label the planner placed (linked to a Port, its text a number) as the pin of that number — at the label, facing out of
+  the metal its arrow points into, `2 × Height` wide. A placed cell then joins its parent's lines like any part, and a
+  variant whose pins moved is a part whose pin poses changed, which `DeltaPropagation` carries as it carries any length
+  change. The cell's OWN LVS keeps reading its Ports as it always has (`BoundaryNetsOf` returns no boundary for a layout
+  that states no pins), and copper meeting on the ground-reference conductor is the shared ground plane, not an
+  undeclared contact (`SubCellContact`).
+
 ## 9A. Design rule checking (DRC)
 
 **Decided: DRC is in scope.** Start with minimum width and minimum spacing — not because those two

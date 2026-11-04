@@ -173,7 +173,13 @@ public static class CircuitEvaluation
         tb.StatisticalDraws = request.Statistics;
 
         // brief-sdl-6: --em off puts every instance back on its circuit model before anything elaborates.
-        if (request.Em == false) (tb, lib) = EmModelSwitch.CircuitOnly(tb, lib);
+        if (request.Em == false)
+        {
+            // brief-sdl-10 D2 — a part with no circuit model cannot be run by circuit models: refused, never left open.
+            if (EmModelSwitch.WithoutCircuitModel(tb, lib) is { Count: > 0 } emOnly)
+                return new RunPlan(RunStatus.EngineError, EmModelSwitch.NoCircuitModelSentence(emOnly));
+            (tb, lib) = EmModelSwitch.CircuitOnly(tb, lib);
+        }
 
         // ── 3. Elaborate ───────────────────────────────────────────────────────
         ElaboratedNetlist nl;

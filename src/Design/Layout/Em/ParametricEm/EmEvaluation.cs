@@ -35,6 +35,10 @@ public sealed record EmCellGeometry(
 {
     /// <summary>brief-sdl-8 — for a cell solved through its 3D view, the point's 3D problem; null for a <c>.cem</c>.</summary>
     public EmThreeDGeometry? ThreeD { get; init; }
+
+    /// <summary>brief-sdl-10 D3 — the schematic at this point's values (the in-memory copy the layout was planned from);
+    /// what a variant cell carries as its own schematic. Null for a 3D-parametric cell.</summary>
+    public SchematicEditModel? Schematic { get; init; }
 }
 
 /// <summary>What one evaluation came to.</summary>
@@ -82,6 +86,8 @@ public static partial class EmEvaluation
     public static EmCellGeometry? Geometry(EmCellTarget target, IReadOnlyDictionary<string, Value> values, out string? refusal)
     {
         refusal = null;
+        // brief-sdl-10 D1 — a 3D-parametric cell: nothing to plan, its 3D view at the point.
+        if (target.ThreeDOnly) return ThreeDOnlyGeometry(target, values, out refusal);
         SchematicEditModel model;
         try
         {
@@ -141,10 +147,11 @@ public static partial class EmEvaluation
         catch (Exception e) when (e is not OperationCanceledException) { /* the joints and overlaps still hold it */ }
         var connectivity = ConnectivitySignature.Of(plan.Lines, partGroups);
         if (target.Is3D)
-            return ThreeDGeometry(target, model, saved!, source, applied, notes, Unreached(model, plan), connectivity, out refusal);
+            return ThreeDGeometry(target, model, saved!, source, applied, notes, Unreached(model, plan), connectivity, out refusal) is { } g3
+                ? g3 with { Schematic = model } : null;
         string key = EmCellCache.KeyOf(source, target.Setup);
         return new EmCellGeometry(target, source, key, EmCellCache.Find(target.WorkspaceDir, target.CellName, key),
-                              Unreached(model, plan), notes, applied, connectivity);
+                              Unreached(model, plan), notes, applied, connectivity) { Schematic = model };
     }
 
     /// <summary>

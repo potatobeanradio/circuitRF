@@ -894,6 +894,60 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
 
     public bool ShowVariables => VariableRows.Count > 0;
 
+    /// <summary>brief-sdl-10 D1 — for an instance of an EM component, the line saying which kind it is (what its geometry
+    /// follows); null for anything else.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowEmKind))]
+    private string? _emKindLine;
+
+    public bool ShowEmKind => EmKindLine is not null;
+
+    /// <summary>brief-sdl-10 D7 — the cell folder of the instance shown, when it is a placed cell; what Make These the
+    /// Cell's Own Values acts on.</summary>
+    private string? _instanceCellDir;
+
+    /// <summary>brief-sdl-10 D7 — whether this instance states any of its cell's values of its own.</summary>
+    public bool CanMakeCellOwnValues => _instanceCellDir is { } dir && _target is { } t
+        && CircuitRF.Design.Layout.Em.ParametricEm.EmCapability.CellValueNames(dir) is var names
+        && t.Parameters.Any(p => names.Contains(p.Name) && !string.IsNullOrWhiteSpace(p.Expression)
+                                 && p.Name is not (ParametricModelRegistry.ModelParameter or ParametricModelRegistry.SetupParameter));
+
+    /// <summary>The schematic this panel's instance is in, as a file — its cell folder's primary schematic.</summary>
+    private string? SchematicPathForCommand()
+    {
+        if (_schematicVm?.EditModel.SchematicDirectory is not { Length: > 0 } dir) return null;
+        string? cell = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(dir));
+        if (cell is null) return null;
+        var primary = CellFolder.ResolvePrimary(cell, ViewType.Schematic);
+        return primary.ResolvedName is { } name ? Path.Combine(dir, name) : null;
+    }
+
+    /// <summary>brief-sdl-10 D7 — what Make These the Cell's Own Values would do for the instance shown; nothing written.</summary>
+    public CircuitRF.Design.Optimization.CellOwnValuesPlan? PlanCellOwnValues() =>
+        _target is { } t && SchematicPathForCommand() is { } path
+            ? CircuitRF.Design.Optimization.CellOwnValues.Plan(path, t.InstanceName, _schematicVm?.EditModel)
+            : null;
+
+    /// <summary>
+    /// brief-sdl-10 D7 — confirmed: the values written into the cell (its VAR block or <c>.ccell</c> defaults, on disk), then
+    /// cleared from this instance as one undo step in this schematic. Returns the status sentence.
+    /// </summary>
+    public string ApplyCellOwnValues(CircuitRF.Design.Optimization.CellOwnValuesPlan plan)
+    {
+        if (plan.Refusal is { } why || _target is not { } comp || _schematicVm is null) return plan.Refusal ?? "Nothing to do.";
+        var written = CircuitRF.Design.Optimization.CellOwnValues.WriteCell(plan);
+        var moved = plan.Values.Select(v => v.Name).ToHashSet(StringComparer.Ordinal);
+        var cleared = comp.Parameters.Select(p => moved.Contains(p.Name) ? new EditableParameter
+        {
+            Name = p.Name, Expression = "", Unit = "", ShowOnSchematic = p.ShowOnSchematic, Dimension = p.Dimension,
+        } : p.Clone()).ToList();
+        _schematicVm.Execute(new SetParametersCommand(_schematicVm.EditModel, comp, cleared));
+        CellSymbolResolver.Invalidate(plan.CellDir);
+        SetTarget(comp);
+        return $"{string.Join(", ", written)} {(written.Count == 1 ? "is" : "are")} now {plan.CellName}'s own " +
+               $"value{(written.Count == 1 ? "" : "s")}; {comp.InstanceName} no longer states {(written.Count == 1 ? "it" : "them")}.";
+    }
+
     /// <summary>Whether the Model switches group is open. Collapsed by default: the switches are a debugging view, and an
     /// instance with one off says so on the schematic either way.</summary>
     [ObservableProperty] private bool _modelSwitchesExpanded;
@@ -1216,6 +1270,8 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
     /// </summary>
     private (IReadOnlyList<CellVariable> Vars, IReadOnlyList<string>? Setups) AdoptCellVariablesAndModel(EditableComponent comp)
     {
+        _instanceCellDir = null;
+        EmKindLine = null;
         if (comp.CellRef is not { Length: > 0 } cellRef || _schematicVm is null || PdkKitRegistry.IsKitRef(cellRef)
             || VendorModelRefs.IsRef(cellRef))
             return ([], null);
@@ -1232,6 +1288,11 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
             if (!comp.Parameters.Any(p => p.Name == v.Name))
                 comp.Parameters.Add(new EditableParameter { Name = v.Name, Expression = "", Unit = "", ShowOnSchematic = false });
 
+        _instanceCellDir = cellDir;
+        // brief-sdl-10 D1 — an EM component's instance states its kind.
+        var kind = CircuitRF.Design.Layout.Em.ParametricEm.EmComponentKinds.Of(cellDir);
+        EmKindLine = kind.Kind == CircuitRF.Design.Layout.Em.ParametricEm.EmComponentKind.None ? null : kind.Sentence;
+        OnPropertyChanged(nameof(CanMakeCellOwnValues));
         if (!CircuitRF.Design.Layout.Em.ParametricEm.EmCapability.IsCapable(cellDir)) return (vars, null);
         var setups = CircuitRF.Design.Layout.Em.ParametricEm.EmCapability.SetupsFor(cellDir)
                          .Select(CircuitRF.Design.Layout.Em.ParametricEm.EmCapability.SetupLabel).ToList();

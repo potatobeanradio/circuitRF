@@ -18,6 +18,7 @@ internal static class ExplainTunables
         TunableCatalog catalog;
         Core.Design.TuningSetup? setup;
         IReadOnlyList<string>? threeDOnly = null;
+        IReadOnlyList<string>? emComponents = null;
         try
         {
             switch (kind)
@@ -35,6 +36,7 @@ internal static class ExplainTunables
                                                       SchematicCircuit.ReferenceBaseOf(csch));
                     setup = model.Tuning;
                     threeDOnly = ThreeDOnly(csch, model);
+                    emComponents = EmComponents(csch, model);
                     break;
                 }
                 case DocumentKind.Netlist:
@@ -85,7 +87,26 @@ internal static class ExplainTunables
         var snp = catalog.SnpInstances.Select(s => new ExplainSnpJson(
             s.Instance, s.Location, s.Ports, s.Tied is { } tied ? (tied ? "tied" : "untied") : null, s.TieReason, s.Entries, s.LoadError,
             folded.Contains(s.Instance) && s.Entries > 0 ? true : null)).ToList();
-        return (new ExplainTunablesJson(rows, catalog.UnresolvedKeys, snp.Count > 0 ? snp : null) { ThreeDOnly = threeDOnly }, 0);
+        return (new ExplainTunablesJson(rows, catalog.UnresolvedKeys, snp.Count > 0 ? snp : null) { ThreeDOnly = threeDOnly, EmComponents = emComponents }, 0);
+    }
+
+    /// <summary>brief-sdl-10 D1 — every placed cell that is an EM component, with the line its kind is stated by
+    /// (<see cref="Design.Layout.Em.ParametricEm.EmComponentKinds"/>, the same the instance's properties show). Null for none.</summary>
+    private static IReadOnlyList<string>? EmComponents(string csch, Design.Schematic.SchematicEditModel model)
+    {
+        string dir = Path.GetDirectoryName(Path.GetFullPath(csch))!;
+        var lines = new List<string>();
+        foreach (var c in model.Components.Where(c => c.CellRef is { Length: > 0 } && c.InstanceName.Length > 0))
+        {
+            if (Design.Schematic.PdkKitRegistry.IsKitRef(c.CellRef!)) continue;
+            string? cellDir;
+            try { cellDir = Design.Workspace.ExternalCellRef.ResolveCellDir(c.CellRef, dir); }
+            catch (Exception) { continue; }
+            if (cellDir is null || !Directory.Exists(cellDir)) continue;
+            var kind = Design.Layout.Em.ParametricEm.EmComponentKinds.Of(cellDir);
+            if (kind.Kind != Design.Layout.Em.ParametricEm.EmComponentKind.None) lines.Add($"{c.InstanceName}: {kind.Sentence}");
+        }
+        return lines.Count > 0 ? lines : null;
     }
 
     /// <summary>
@@ -173,6 +194,12 @@ internal static class ExplainTunables
                       + (b.Folded == true ? $" (folded: --snp-entries {b.Instance} lists them)" : ""));
         }
 
+        if (report.EmComponents is { Count: > 0 } em)
+        {
+            Console.WriteLine();
+            Console.WriteLine("EM components placed here:");
+            foreach (var line in em) Console.WriteLine("  " + line);
+        }
         if (report.ThreeDOnly is { Count: > 0 } own)
         {
             Console.WriteLine();

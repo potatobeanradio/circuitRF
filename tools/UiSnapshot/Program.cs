@@ -103,6 +103,7 @@ using CircuitRF.Design.Layout;
 // Vendor libraries (brief vendorlib-1…3). Each indexes the workspace's referenced vendor libraries first, as a
 // workspace open starts them, so captions, counts and lists are filled in:
 //   --palette <workspace> [--category <name>] [--search <q>]   the Library palette, a Type entry and a query chosen
+//   --cell-own-values <file.csch> --select <instance>         brief-sdl-10: Make These the Cell's Own Values' confirmation;
 //   --schematic <file.csch> [--select <instance>]             the schematic beside the Parameter Editor on one part;
 //                                                              --type Name=VendorPartBox types into the Part field
 //                                                              --dialog opens the Component Parameters dialog instead
@@ -171,6 +172,7 @@ int cmcMarkers = 0;
 string? palette = null, paletteCategory = null, paletteSearch = null, schematic = null, select = null;
 bool parameterDialog = false;
 string? analysisDialog = null, emSolvesDialog = null;   // brief-sdl-6
+string? cellOwnValues = null;                            // brief-sdl-10
 string? archive = null, manageLibraries = null, addVendorLibrary = null, exportToLibrary = null, exportLibrary = null, importSchematic = null;
 var exportBuilds = new List<(string Rid, string Path)>();
 string? exportProtect = null;
@@ -253,6 +255,7 @@ for (int i = 0; i < args.Length; i++)
         case "--settings-general": settingsGeneral = true; break;
         case "--analysis-dialog" when i + 1 < args.Length: analysisDialog = Path.GetFullPath(args[++i]); break;
         case "--em-solves-dialog" when i + 1 < args.Length: emSolvesDialog = Path.GetFullPath(args[++i]); break;
+        case "--cell-own-values" when i + 1 < args.Length: cellOwnValues = Path.GetFullPath(args[++i]); break;
         case "--review": reviewRun = true; break;
         case "--place" when i + 1 < args.Length: place = args[++i]; break;
         case "--lock" when i + 1 < args.Length: layerToggles.Add((args[++i], false)); break;
@@ -339,6 +342,12 @@ if (planarMemoryDialog && output is not null)
     AppBuilder.Configure<SnapshotApp>().UseSkia()
         .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
     return ShowPlanarMemoryDialog(output);
+}
+if (cellOwnValues is { } ownCsch && select is { } ownInstance && output is not null)
+{
+    AppBuilder.Configure<SnapshotApp>().UseSkia()
+        .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
+    return ShowCellOwnValues(ownCsch, ownInstance, output);
 }
 if ((analysisDialog ?? emSolvesDialog) is { } sdl6Csch && output is not null)
 {
@@ -2101,6 +2110,22 @@ static int ShowAnalysisDialog(string csch, string? name, string path)
 
 // --em-solves-dialog <csch>: brief-sdl-6 D5 — the question Simulate asks when a run needs more than one uncached EM solve,
 // with the count the run's own function takes of the schematic, in the dialog WorkspaceWindow opens for it.
+// --cell-own-values <csch> --select <instance>: brief-sdl-10 D7 — Make These the Cell's Own Values' confirmation, with the
+// listing of every other placement, built from the plan and the dialog the properties panel's button uses. Nothing written.
+static int ShowCellOwnValues(string csch, string instance, string path)
+{
+    var plan = CircuitRF.Design.Optimization.CellOwnValues.Plan(csch, instance);
+    Console.WriteLine(plan.Summary());
+    var dialog = CircuitRF.Ui.Views.Dialogs.TextConfirmDialog.Build("Make These the Cell's Own Values",
+        plan.Refusal is null ? $"Make {plan.Instance}'s values {plan.CellName}'s own?" : "Nothing to move",
+        plan.Summary(), plan.Refusal is null ? "Make Them the Cell's Own" : null, _ => { }, centerOnOwner: false);
+    dialog.Show();
+    for (int k = 0; k < 6; k++) { Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); dialog.UpdateLayout(); }
+    dialog.CaptureRenderedFrame()!.Save(path);
+    Console.WriteLine($"wrote {path}");
+    return 0;
+}
+
 static int ShowEmSolvesDialog(string csch, string path)
 {
     var plan = CircuitRF.Design.Circuit.CircuitEvaluation.Plan(CircuitRF.Design.Circuit.PreparedCircuit.FromSchematic(csch),

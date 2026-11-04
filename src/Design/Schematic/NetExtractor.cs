@@ -2366,6 +2366,10 @@ public static class NetExtractor
         var res = cells.Resolve(comp, model);
         if (res is null)
         {
+            // brief-sdl-10 D1/D2 — a 3D-parametric cell with no schematic is a part all the same: its 3D view's ports are its
+            // pins, its parameters its interface, and with no circuit model it is simulated by EM whatever it states.
+            if (EmitThreeDOnlyInstance(comp, model, lib, scope, conflicts, cellRefResolutions,
+                    (c, k, x, y) => NetForPort(c, k, x, y, uf, QK, netNames, detachedKeys)) is { } emOnly) return emOnly;
             conflicts.Add($"Cell instance '{comp.InstanceName}' (cell '{comp.CellRef}') has no " +
                           $"primary schematic; skipped.");
             return null;
@@ -2441,6 +2445,82 @@ public static class NetExtractor
             conflicts.Add($"'{comp.InstanceName}' is set to Model = EM, but cell '{cellName}' cannot be simulated by EM: " +
                           $"{EmCapabilityRefusal(res)} It runs on its circuit model.");
 
+        return new Instance(comp.InstanceName, cellName, nets, overrides);
+    }
+
+    /// <summary>
+    /// brief-sdl-10 D1/D2 — the instance of a 3D-parametric cell that has no schematic: a cell of its ports (the 3D view's,
+    /// or the <c>.ccell</c>'s <c>NumPorts</c>) and its declared parameters, with no contents; the instance names the cell's
+    /// folder (<c>EmCell=</c>) and is set to EM, because there is no circuit model to run it on. Null when the cell is not one.
+    /// </summary>
+    private static Instance? EmitThreeDOnlyInstance(EditableComponent comp, SchematicEditModel model, Library lib, CellScope scope,
+                                                    List<string> conflicts, Dictionary<string, CellSymbolResolution>? cellRefResolutions,
+                                                    Func<EditableComponent, int, double, double, string> netFor)
+    {
+        if (comp.CellRef is not { Length: > 0 } cellRef || PdkKitRegistry.IsKitRef(cellRef)) return null;
+        string? dir;
+        try { dir = ExternalCellRef.ResolveCellDir(cellRef, model.SchematicDirectory); }
+        catch (Exception) { return null; }
+        if (dir is null || !Directory.Exists(dir)) return null;
+        if (EmCapability.Resolve(dir, null, null, out _, out bool several) is not { ThreeDOnly: true } target)
+        {
+            if (!several) return null;
+            target = EmCapability.SetupsFor(dir).FirstOrDefault() is { } first ? EmCapability.Resolve(dir, first, null, out _) : null;
+            if (target is not { ThreeDOnly: true }) return null;
+        }
+
+        int ports;
+        try
+        {
+            string ccell = Path.Combine(dir, CellFolder.CcellFileName);
+            int declared = File.Exists(ccell) ? CellPersistence.LoadFromFile(ccell).NumPorts : 0;
+            ports = declared > 0 ? declared : CircuitRF.Design.ThreeD.C3dPersistence.LoadFromFile(target.C3dPath!).Ports.Count;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException
+                                       or InvalidDataException or ArgumentException or InvalidOperationException) { return null; }
+
+        string key = Path.GetFullPath(dir);
+        string cellName = scope.NameFor(key, Path.GetFileName(Path.TrimEndingDirectorySeparator(key)), lib);
+        if (lib.Find(cellName) is null)
+        {
+            var cell = new Cell(cellName);
+            for (int k = 1; k <= ports; k++) cell.Ports.Add("p" + k.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            foreach (var p in DiskCellResolver.ParametersOf(dir)) cell.Parameters.Add(p);
+            lib.Cells.Add(cell);
+        }
+        var cellDef = lib.Find(cellName)!;
+
+        var pinDefs = GetEffectivePortDefs(model, comp, cellRefResolutions).OrderBy(d => d.PortIndex).ToList();
+        if (pinDefs.Count != cellDef.Ports.Count)
+        {
+            conflicts.Add($"Cell '{cellName}' instance '{comp.InstanceName}': its symbol has {pinDefs.Count} pin(s) but its 3D view " +
+                          $"has {cellDef.Ports.Count} port(s); skipped.");
+            return null;
+        }
+        var nets = new List<string>(pinDefs.Count);
+        foreach (var def in pinDefs)
+        {
+            var (px, py) = model.PortWorldOf(comp, def);
+            nets.Add(netFor(comp, def.PortIndex, px, py));
+        }
+
+        var overrides = comp.Parameters
+            .Where(p => !string.IsNullOrWhiteSpace(p.Expression) && p.Name is not (ParametricModelRegistry.ModelParameter
+                        or ParametricModelRegistry.SetupParameter or ParametricModelRegistry.CellParameter))
+            .Select(p =>
+            {
+                var unit = UnitNormalizer.ToEngineUnit(p.Unit);
+                return new ParameterAssignment(p.Name, p.Expression, unit.Length > 0 ? unit : null);
+            })
+            .ToList();
+        if (comp.Parameters.Any(p => p.Name == ParametricModelRegistry.ModelParameter
+                                     && p.Expression.Trim().Equals(ParametricModelRegistry.CircuitValue, StringComparison.OrdinalIgnoreCase)))
+            conflicts.Add($"'{comp.InstanceName}' is set to Model = Circuit, but cell '{cellName}' has no circuit model (no schematic): " +
+                          "it is simulated by EM.");
+        overrides.Add(new ParameterAssignment(ParametricModelRegistry.CellParameter, "\"" + RelativeToRunBase(dir, scope.RunBase) + "\""));
+        overrides.Add(new ParameterAssignment(ParametricModelRegistry.ModelParameter, ParametricModelRegistry.EmValue));
+        if (comp.Parameters.FirstOrDefault(p => p.Name == ParametricModelRegistry.SetupParameter) is { Expression.Length: > 0 } setup)
+            overrides.Add(new ParameterAssignment(ParametricModelRegistry.SetupParameter, setup.Expression));
         return new Instance(comp.InstanceName, cellName, nets, overrides);
     }
 

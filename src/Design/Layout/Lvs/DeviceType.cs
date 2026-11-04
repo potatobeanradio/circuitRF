@@ -185,6 +185,8 @@ public static class DeviceTypes
     public static DeviceType OfLayout(LayoutInstance inst, string? resolvedCellDir, LayoutView? resolvedView)
     {
         ArgumentNullException.ThrowIfNull(inst);
+        // brief-sdl-10 D3 — a variant is its cell at one placement's values: the same part.
+        if (PCells.GeneratedCellStore.VariantSourceOf(resolvedCellDir) is { } source) resolvedCellDir = source;
 
         string? name = resolvedCellDir is { Length: > 0 } dir
             ? new System.IO.DirectoryInfo(dir).Name

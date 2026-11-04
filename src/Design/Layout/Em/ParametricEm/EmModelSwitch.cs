@@ -115,6 +115,24 @@ public static class EmModelSwitch
         return new EmSwitched(bench, switchedLib, null, [.. top, .. inCells]);
     }
 
+    /// <summary>
+    /// brief-sdl-10 D2 — the instances of EM cells that have no circuit model (a 3D-parametric cell with no schematic, whose
+    /// definition has ports and nothing in it), as <c>X1</c> or <c>cell:X1</c>. Such a part is simulated by EM only:
+    /// <c>em=correct</c> has nothing to search on, and a run by circuit models would leave it open.
+    /// </summary>
+    public static IReadOnlyList<string> WithoutCircuitModel(TestBench tb, Library lib)
+    {
+        bool Empty(Instance i) => NamesEmCell(i) && lib.Find(i.Reference) is { Instances.Count: 0 };
+        return tb.Instances.Where(Empty).Select(i => i.InstanceName)
+            .Concat(lib.Cells.SelectMany(c => c.Instances.Where(Empty).Select(i => $"{c.Name}:{i.InstanceName}")))
+            .ToList();
+    }
+
+    /// <summary>The refusal of a run by circuit models of <paramref name="names"/> (<see cref="WithoutCircuitModel"/>).</summary>
+    public static string NoCircuitModelSentence(IReadOnlyList<string> names) =>
+        $"{string.Join(", ", names)} {(names.Count == 1 ? "has" : "have")} no circuit model (a 3D-parametric cell with no " +
+        "schematic), so it cannot be run by circuit models; it is simulated by EM only.";
+
     /// <summary><c>--em off</c>: every instance back on its circuit model, whatever it states.</summary>
     public static (TestBench Tb, Library Lib) CircuitOnly(TestBench tb, Library lib)
     {
@@ -149,7 +167,9 @@ public static class EmModelSwitch
         // R-sdl6-2: what each part is to the EM result.
         var noLayout = new List<string>();
         var notCopper = new List<string>();
-        foreach (var c in model.Components)
+        // brief-sdl-10 D1 — a 3D-parametric cell's schematic is a circuit model only: none of its parts is in the EM view's
+        // geometry, so none is asked to be copper.
+        foreach (var c in target.ThreeDOnly ? Enumerable.Empty<EditableComponent>() : model.Components)
         {
             if (!SchematicLayoutPlanner.IsPhysical(c) || PortPlacement.IsPort(c) || c.InstanceName.Length == 0) continue;
             switch (KindOf(c))

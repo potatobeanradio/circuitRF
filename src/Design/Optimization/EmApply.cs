@@ -30,9 +30,10 @@ public sealed record EmApplyResult(
     IReadOnlyList<string> Written, IReadOnlyList<string> NotWritten, string? LayoutKey, string? ExpectedKey, string? Refusal,
     IReadOnlyList<string> LayoutLines)
 {
-    /// <summary>Whether the saved layout is the geometry that was solved.</summary>
+    /// <summary>Whether the saved layout is the geometry that was solved. brief-sdl-10 — a parent placing several EM
+    /// components has one key per distinct geometry (<c>a+b</c>); each must be one EM verified.</summary>
     public bool KeyMatches => Refusal is null && LayoutKey is not null &&
-                              (ExpectedKey is null || ExpectedKey.Split('+').Contains(LayoutKey, StringComparer.Ordinal));
+                              (ExpectedKey is null || LayoutKey.Split('+').All(k => ExpectedKey.Split('+').Contains(k, StringComparer.Ordinal)));
 
     /// <summary>One sentence for a status line or the CLI.</summary>
     public string Sentence => Refusal is { } why ? why
@@ -59,7 +60,9 @@ public static class EmApply
         foreach (var (key, text) in values)
         {
             var row = rows.FirstOrDefault(p => p.Name.Trim() == key);
-            if (row is null) { notWritten.Add($"{key}: no VAR row defines it in this schematic"); continue; }
+            // brief-sdl-10 D7 — an instance's own value (X1.w50) is written to that instance, never to its cell.
+            if (row is null && InstanceRow(model, key) is { } own) row = own;
+            if (row is null) { notWritten.Add($"{key}: no VAR row or instance of this schematic defines it"); continue; }
             if (!TunableValue.TryParse(text, out double number, out string unit, out _))
             {
                 notWritten.Add($"{key}: '{text}' is not a value");
@@ -73,6 +76,23 @@ public static class EmApply
             written.Add(key);
         }
         return written;
+    }
+
+    /// <summary>
+    /// brief-sdl-10 D7 — the row <c>X1.w50</c> names: instance X1's own value of w50 (a cell VAR it overrides, or a parameter),
+    /// added blank when the instance does not state it yet. Null when no instance of that name exists, or the key is not
+    /// of that form (a nested <c>DUT:X1.w50</c> belongs to another schematic).
+    /// </summary>
+    private static EditableParameter? InstanceRow(SchematicEditModel model, string key)
+    {
+        int dot = key.IndexOf('.');
+        if (dot <= 0 || dot == key.Length - 1 || key.Contains(':')) return null;
+        string inst = key[..dot], name = key[(dot + 1)..];
+        if (model.Components.FirstOrDefault(c => c.InstanceName == inst && c.CellRef is { Length: > 0 }) is not { } comp) return null;
+        if (comp.Parameters.FirstOrDefault(p => p.Name == name) is { } row) return row;
+        var added = new EditableParameter { Name = name, Expression = "", Unit = "", ShowOnSchematic = false };
+        comp.Parameters.Add(added);
+        return added;
     }
 
     /// <summary>The row's own unit spelling when it means the same unit, else the value's — Push's rule.</summary>
@@ -94,7 +114,7 @@ public static class EmApply
         if (EmCapability.CellDirOfSchematic(full) is not { } cellDir)
             return Refused($"{Path.GetFileName(full)} is not a cell's schematic, so it has no layout to update.");
         if (EmCapability.Resolve(cellDir, emSetup, Path.GetDirectoryName(full), out var notCapable) is null)
-            return Refused(notCapable ?? "the cell has no layout and EM setup to update.");
+            return ApplyToParent(full, cellDir, values, expectedKey) ?? Refused(notCapable ?? "the cell has no layout and EM setup to update.");
 
         var (model, view, cellName) = SchematicPersistence.LoadFromFile(full);
         var written = WriteValues(model, values, out var notWritten);
@@ -102,6 +122,92 @@ public static class EmApply
 
         var (layoutKey, lines, refusal) = UpdateLayout(cellDir, emSetup, Path.GetDirectoryName(full));
         return new EmApplyResult(written, notWritten, layoutKey, expectedKey, refusal, lines);
+    }
+
+    /// <summary>
+    /// brief-sdl-10 D7 — Apply in a schematic that PLACES EM components (Path B): each value written where it is defined — a
+    /// VAR in the VAR block, an instance's own value on that instance — and never into a placed cell, which may be placed
+    /// elsewhere with other values. When the schematic has a layout made from it, Update Layout from Schematic runs (each
+    /// placement at its own values, D3-D4) and every placed EM component's geometry is checked against what EM verified.
+    /// Null when the schematic places no EM component (the caller's own refusal then stands).
+    /// </summary>
+    private static EmApplyResult? ApplyToParent(string full, string cellDir, IReadOnlyDictionary<string, string> values, string? expectedKey)
+    {
+        var (model, view, cellName) = SchematicPersistence.LoadFromFile(full);
+        model.SchematicDirectory = Path.GetDirectoryName(full);
+        if (!PlacesEmComponents(model)) return null;
+        var written = WriteValues(model, values, out var notWritten);
+        if (written.Count > 0) SchematicPersistence.SaveToFile(full, model, cellName, view.PanX, view.PanY, view.Zoom);
+
+        var (layoutKey, lines, refusal) = UpdateParentLayout(cellDir, full);
+        return new EmApplyResult(written, notWritten, layoutKey, expectedKey, refusal, lines);
+    }
+
+    /// <summary>Whether <paramref name="model"/> places an instance of an EM component that varies (D1's first two kinds).</summary>
+    public static bool PlacesEmComponents(SchematicEditModel model) =>
+        model.Components.Any(c => c.CellRef is { Length: > 0 } r && !PdkKitRegistry.IsKitRef(r)
+                                  && Workspace.ExternalCellRef.ResolveCellDir(r, model.SchematicDirectory) is { } d && Directory.Exists(d)
+                                  && EmComponentKinds.Of(d).Varies);
+
+    /// <summary>
+    /// Update Layout from Schematic, headless, on a parent's saved layout — then the geometry key of every EM component it
+    /// places, joined with <c>+</c>. Refused when the schematic has no layout made from it.
+    /// </summary>
+    public static (string? Key, IReadOnlyList<string> Lines, string? Refusal) UpdateParentLayout(string cellDir, string schematicPath)
+    {
+        var primary = CircuitRF.Design.Cells.CellFolder.ResolvePrimary(cellDir, CircuitRF.Design.Cells.ViewType.Layout);
+        if (primary.State is not (CircuitRF.Design.Cells.PrimaryState.SoleFile or CircuitRF.Design.Cells.PrimaryState.NamedPresent)
+            || primary.ResolvedName is null)
+            return (null, [], null);   // nothing laid out: the values are written and there is no layout to keep in step
+        string clay = Path.Combine(CircuitRF.Design.Cells.CellFolder.SubFolderPath(cellDir, CircuitRF.Design.Cells.ViewType.Layout),
+                                   primary.ResolvedName);
+        if (Workspace.WorkspaceRootFinder.WorkspaceDirOf(cellDir) is not { } ws) return (null, [], "the schematic belongs to no workspace.");
+        try
+        {
+            var model = SchematicPersistence.LoadFromFile(schematicPath).model;
+            model.SchematicDirectory = Path.GetDirectoryName(schematicPath);
+            var layout = LayoutPersistence.LoadFromFile(clay);
+            if (layout.GeneratedPlacements.Count == 0) return (null, [], null);
+            var (tech, _) = TechnologyResolver.ResolveForDocument(layout.TechRef, clay, Path.Combine(ws, ".cws"), new TechnologyCache());
+            var plan = SchematicLayoutPlanner.Plan(model, layout, model.SchematicDirectory!, ws, Path.GetDirectoryName(clay)!,
+                                                   tech.Tech, tech.ResolvedPath, DiskCellResolver.Instance,
+                                                   targetLayoutPath: clay, connectParts: true);
+            plan.ApplyTo(layout);
+            LayoutPersistence.SaveToFile(clay, layout);
+            var lines = plan.Lines.Where(l => l.Severity == SchematicLayoutPlanner.ReportSeverity.Warning).Select(l => l.Text).ToList();
+            var keys = PlacedKeys(layout, Path.GetDirectoryName(clay)!);
+            return (keys.Count == 0 ? null : string.Join("+", keys), lines, null);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException
+                                       or InvalidDataException or ArgumentException or InvalidOperationException)
+        {
+            return (null, [], $"the layout could not be updated: {e.Message}");
+        }
+    }
+
+    /// <summary>
+    /// brief-sdl-10 D3/D7 — the geometry key of every schematic-driven EM component <paramref name="layout"/> places: a
+    /// variant's own (its folder names it), else the cell's saved layout's. Distinct, sorted.
+    /// </summary>
+    public static IReadOnlyList<string> PlacedKeys(LayoutView layout, string layoutDir)
+    {
+        var keys = new SortedSet<string>(StringComparer.Ordinal);
+        foreach (var inst in layout.Instances)
+        {
+            if (inst.SchematicId is not { Length: > 0 } || inst.CellRef is not { Length: > 0 } r) continue;
+            if (Workspace.ExternalCellRef.ResolveCellDir(r, layoutDir) is not { } d || !Directory.Exists(d)) continue;
+            string folder = Path.GetFileName(Path.TrimEndingDirectorySeparator(d));
+            if (CircuitRF.Design.Layout.PCells.GeneratedCellStore.IsVariant(d))
+            {
+                keys.Add(folder[(folder.LastIndexOf(CircuitRF.Design.Layout.PCells.GeneratedCellStore.VariantSeparator, StringComparison.Ordinal) + 1)..]);
+                continue;
+            }
+            if (EmComponentKinds.Of(d).Kind != EmComponentKind.SchematicDriven) continue;
+            var target = EmCapability.Resolve(d, null, null, out _)
+                         ?? (EmCapability.SetupsFor(d).FirstOrDefault() is { } first ? EmCapability.Resolve(d, first, null, out _) : null);
+            if (target is not null) keys.Add(KeyOfSaved(target));
+        }
+        return [.. keys];
     }
 
     /// <summary>

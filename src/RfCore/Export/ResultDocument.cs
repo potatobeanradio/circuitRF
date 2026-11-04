@@ -2790,6 +2790,11 @@ namespace RfCore.Export
         /// from the schematic, each with the hint that a schematic VAR of its name links it. Null when there are none.</summary>
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public IReadOnlyList<string>? ThreeDOnly { get; init; }
+
+        /// <summary>brief-sdl-10 D1 — each placed EM component and its kind, as <c>X1: &lt;the kind's sentence&gt;</c>: what its
+        /// own values do (a fixed one has none to vary, and the line says why). Null when nothing placed is an EM component.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public IReadOnlyList<string>? EmComponents { get; init; }
     }
 
     /// <summary>One SnP instance's S-parameter entries (brief-sens-2 R-sens2-4): its port count, whether one offset moves

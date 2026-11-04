@@ -74,6 +74,10 @@ internal sealed class EmGeometryProbe(PreparedCircuit circuit, IReadOnlyList<(st
 {
     public sealed record Answer(IReadOnlyList<EmEvaluationRecord> Records, string? Refusal, EmCellTarget? PathA)
     {
+        /// <summary>brief-sdl-10 D5 — the connectivity of the PARENT's layout at these values, with every placed EM component
+        /// at its own geometry; null when the schematic is not laid out, or is itself the EM cell (Path A).</summary>
+        public ConnectivitySignature? Parent { get; init; }
+
         /// <summary>The geometry keys, in record order.</summary>
         public IEnumerable<string> Keys => Records.Select(r => r.Key).OfType<string>();
 
@@ -84,6 +88,43 @@ internal sealed class EmGeometryProbe(PreparedCircuit circuit, IReadOnlyList<(st
     }
 
     private readonly Dictionary<string, Answer> _seen = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// brief-sdl-10 D5 — the parent schematic laid out at <paramref name="values"/>: its saved layout re-planned in memory
+    /// with the values written where they are defined (EmApply's rule), so each placed EM component takes its own geometry
+    /// (a variant, D3) and the parent's lines follow its pins (D4). The planner's own report is the signature. Null when the
+    /// run's schematic has no layout made from it.
+    /// </summary>
+    private ConnectivitySignature? ParentSignature(IReadOnlyDictionary<string, string> values)
+    {
+        if (circuit.SourcePath is not { } csch || !csch.EndsWith(".csch", StringComparison.OrdinalIgnoreCase)) return null;
+        if (EmCapability.CellDirOfSchematic(csch) is not { } cellDir
+            || CircuitRF.Design.Workspace.WorkspaceRootFinder.WorkspaceDirOf(cellDir) is not { } ws) return null;
+        var primary = CircuitRF.Design.Cells.CellFolder.ResolvePrimary(cellDir, CircuitRF.Design.Cells.ViewType.Layout);
+        if (primary.State is not (CircuitRF.Design.Cells.PrimaryState.SoleFile or CircuitRF.Design.Cells.PrimaryState.NamedPresent)
+            || primary.ResolvedName is null) return null;
+        string clay = Path.Combine(CircuitRF.Design.Cells.CellFolder.SubFolderPath(cellDir, CircuitRF.Design.Cells.ViewType.Layout),
+                                   primary.ResolvedName);
+        try
+        {
+            var layout = CircuitRF.Design.Layout.LayoutPersistence.LoadFromFile(clay);
+            if (layout.GeneratedPlacements.Count == 0) return null;
+            var model = CircuitRF.Design.Schematic.SchematicPersistence.LoadFromFile(csch).model;
+            model.SchematicDirectory = Path.GetDirectoryName(csch);
+            EmApply.WriteValues(model, values, out _);
+            var (tech, _) = CircuitRF.Design.Layout.TechnologyResolver.ResolveForDocument(
+                layout.TechRef, clay, Path.Combine(ws, ".cws"), new CircuitRF.Design.Layout.TechnologyCache());
+            var plan = SchematicLayoutPlanner.Plan(model, layout, model.SchematicDirectory!, ws, Path.GetDirectoryName(clay)!,
+                                                   tech.Tech, tech.ResolvedPath, CircuitRF.Design.Schematic.DiskCellResolver.Instance,
+                                                   targetLayoutPath: clay, connectParts: true);
+            return ConnectivitySignature.Of(plan.Lines);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException
+                                       or InvalidDataException or ArgumentException or InvalidOperationException)
+        {
+            return null;
+        }
+    }
     private readonly Lock _gate = new();
 
     public long Probes { get; private set; }
@@ -113,7 +154,10 @@ internal sealed class EmGeometryProbe(PreparedCircuit circuit, IReadOnlyList<(st
             if (plan.Status != RunStatus.Success) return new Answer([], plan.StatusMessage, null);
             var count = CircuitEvaluation.CountEmSolves(plan, estimate: false);
             var pathA = plan.Analyses.Select(a => a.Em?.PathA).FirstOrDefault(a => a is not null);
-            return new Answer(count.Records, count.Refusals.FirstOrDefault(), pathA);
+            return new Answer(count.Records, count.Refusals.FirstOrDefault(), pathA)
+            {
+                Parent = pathA is null && count.Records.Count > 0 ? ParentSignature(values) : null,
+            };
         }
         catch (Exception e) when (e is not OperationCanceledException)
         {
@@ -158,6 +202,7 @@ public sealed partial class OptimizationRun
     private readonly Dictionary<string, string?> _feasibility = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _infeasibleWhy = new(StringComparer.Ordinal);
     private readonly Dictionary<string, ConnectivitySignature> _startSignatures = new(StringComparer.Ordinal);
+    private ConnectivitySignature? _startParent;
     private readonly List<EmSolveRow> _emRows = [];
     private List<ConnectedRange> _ranges = [];
     private double[] _dbuStep = [];
@@ -210,6 +255,20 @@ public sealed partial class OptimizationRun
         bool involved = EmInvolved(tb, lib);
         var asked = _settings.Em;
         var mode = asked ?? (involved ? OptimizerEmMode.Correct : OptimizerEmMode.Off);
+
+        // brief-sdl-10 D2 — a part with no circuit model leaves em=direct the only mode.
+        if (EmModelSwitch.WithoutCircuitModel(tb, lib) is { Count: > 0 } emOnly)
+        {
+            string parts = string.Join(", ", emOnly);
+            if (asked is OptimizerEmMode.Correct or OptimizerEmMode.Off)
+                return OptimizationDiagnostics.EmModeNeedsCircuitModel(EmToken(asked.Value), parts);
+            if (mode == OptimizerEmMode.Correct)
+            {
+                mode = OptimizerEmMode.Direct;
+                _notes.Add(OptimizationDiagnostics.EmDirectForNoCircuitModel(parts));
+            }
+            involved = true;
+        }
         if (mode != OptimizerEmMode.Off && !involved)
         {
             _notes.Add(OptimizationDiagnostics.EmNotInvolved(EmToken(mode)));
@@ -304,6 +363,8 @@ public sealed partial class OptimizationRun
             if (sig.Disagreement is { } lines) return OptimizationDiagnostics.EmStartDisagrees(lines);
             _startSignatures[r.InstancePath] = sig;
         }
+        // brief-sdl-10 D5 — and the parent's own layout, when it is laid out: held at both levels.
+        if (start.Parent is { } parentSig) _startParent = parentSig;
         if (start.PathA is { } own && EmEvaluation.SchematicDisagreements(own, new Dictionary<string, Value>()) is { Count: > 0 } made)
             return OptimizationDiagnostics.EmStartDisagrees(string.Join(" ", made));
         if (_startSignatures.Count == 0) _notes.Add(OptimizationDiagnostics.EmConnectivityUnchecked());
@@ -373,6 +434,12 @@ public sealed partial class OptimizationRun
             if (!_startSignatures.TryGetValue(r.InstancePath, out var held)) continue;
             if (r.Connectivity is not { } sig) return "its connectivity could not be measured";
             if (sig.DifferenceFrom(held) is { } diff) return diff;
+        }
+        // brief-sdl-10 D5 — a component intact in itself whose port leaves the parent's line is infeasible too.
+        if (_startParent is { } parentHeld)
+        {
+            if (answer.Parent is not { } parentNow) return "the parent's layout could not be planned at these values";
+            if (parentNow.DifferenceFrom(parentHeld) is { } diff) return "in the parent's layout, " + diff;
         }
         return null;
     }

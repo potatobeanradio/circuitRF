@@ -463,6 +463,24 @@ public partial class ParameterEditorView : UserControl
 
     // ── Parameter expression TextBox ──────────────────────────────────────────
 
+    /// <summary>brief-sdl-10 D7 — Make These the Cell's Own Values: the listing of every other placement, then, confirmed,
+    /// the cell written and this instance cleared (one undo step here).</summary>
+    private async void OnMakeCellOwnValuesClick(object? sender, RoutedEventArgs e)
+    {
+        if (Vm?.PlanCellOwnValues() is not { } plan) return;
+        var owner = TopLevel.GetTopLevel(this) as Window;
+        if (plan.Refusal is { } why)
+        {
+            await TextConfirmDialog.AskAsync(owner, "Make These the Cell's Own Values", "Nothing to move", why, null);
+            return;
+        }
+        if (!await TextConfirmDialog.AskAsync(owner, "Make These the Cell's Own Values",
+                $"Make {plan.Instance}'s values {plan.CellName}'s own?", plan.Summary(), "Make Them the Cell's Own"))
+            return;
+        string status = Vm.ApplyCellOwnValues(plan);
+        await TextConfirmDialog.AskAsync(owner, "Make These the Cell's Own Values", "Done", status, null);
+    }
+
     private void OnParamExprLostFocus(object? sender, RoutedEventArgs e)
     {
         if (sender is TextBox tb && tb.DataContext is ParameterRowViewModel row)

@@ -594,6 +594,9 @@ public static class LayoutRead
         LayoutView view, string cellDir, Technology? tech, CopperPieces pieces, NetTable nets,
         LvsHierarchyContext? hierarchy = null)
     {
+        // brief-sdl-10 D4 — a layout made from its schematic STATES no pins; the pins CellPins reads off its port labels are
+        // how a PARENT joins to it, while the cell's own comparison reads its Ports as it always has.
+        if (view.Pins.Count == 0 && view.PCellOrigin is null) return [];
         var map = TerminalMap.ResolveCell(cellDir);
         if (map.Origin == TerminalMapOrigin.None || map.Terminals.Count == 0) return [];
 

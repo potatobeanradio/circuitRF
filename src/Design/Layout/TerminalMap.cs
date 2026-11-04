@@ -187,7 +187,7 @@ public static class TerminalMap
             && layoutPins.All(p => p.Name.Length == 0))
             return new TerminalMapResult(
                 [.. Enumerable.Range(0, symbolPins.Count)
-                    .Select(i => new Terminal(PortOf(symbolPins[i], i), "", [PinKey(layoutPins, i)]))],
+                    .Select(i => new Terminal(PortOf(symbolPins, i), "", [PinKey(layoutPins, i)]))],
                 TerminalMapOrigin.ByOrder,
                 [$"No pin on either side is named, and both sides have {symbolPins.Count} of them, so they were read positionally."]);
 
@@ -265,7 +265,7 @@ public static class TerminalMap
 
         var nameByPort = new Dictionary<int, string>();
         for (int i = 0; i < symbolPins.Count; i++)
-            nameByPort.TryAdd(PortOf(symbolPins[i], i), symbolPins[i].Name ?? "");
+            nameByPort.TryAdd(PortOf(symbolPins, i), symbolPins[i].Name ?? "");
 
         var notes = new List<string>
         {
@@ -314,7 +314,7 @@ public static class TerminalMap
         for (int i = 0; i < symbolPins.Count; i++)
         {
             if (!byName.TryGetValue(symbolPins[i].Name!, out var pins)) return null;
-            terminals.Add(new Terminal(PortOf(symbolPins[i], i), symbolPins[i].Name!, [.. pins]));
+            terminals.Add(new Terminal(PortOf(symbolPins, i), symbolPins[i].Name!, [.. pins]));
         }
 
         return new TerminalMapResult(
@@ -336,7 +336,7 @@ public static class TerminalMap
             symbolPins.Where(p => !string.IsNullOrEmpty(p.Name)).Select(p => p.Name!), System.StringComparer.OrdinalIgnoreCase);
 
         var unmatchedSymbol = symbolPins
-            .Select((p, i) => string.IsNullOrEmpty(p.Name) ? $"(unnamed, port {PortOf(p, i)})" : p.Name!)
+            .Select((p, i) => string.IsNullOrEmpty(p.Name) ? $"(unnamed, port {PortOf(symbolPins, i)})" : p.Name!)
             .Where(n => n.StartsWith('(') || !layoutNames.Contains(n))
             .ToList();
         var unmatchedLayout = layoutPins
@@ -510,9 +510,16 @@ public static class TerminalMap
         => CircuitRF.Design.Layout.Extraction.PlacedPins.PinKeyOf(pins, index);
 
     /// <summary>A symbol pin's port number: its own <c>PortIndex</c> when it states one, else its
-    /// 1-based position. A <c>.csym</c> written before port indices were assigned has zeroes.</summary>
-    private static int PortOf(CircuitRF.Design.Symbol.SymbolPin pin, int index)
-        => pin.PortIndex > 0 ? pin.PortIndex : index + 1;
+    /// 1-based position. A <c>.csym</c> written before port indices were assigned has zeroes.
+    /// <para>brief-sdl-10: a symbol numbered from ZERO (every index distinct, one of them 0 — the auto-generated symbol's
+    /// and the built-ins' numbering) is read as such, port = index + 1. Read as 1-based, its pins 0 and 1 both landed on
+    /// port 1 and LVS failed on a placed cell's very first comparison.</para></summary>
+    private static int PortOf(IReadOnlyList<CircuitRF.Design.Symbol.SymbolPin> pins, int index)
+    {
+        var pin = pins[index];
+        bool zeroBased = pins.Any(p => p.PortIndex == 0) && pins.Select(p => p.PortIndex).Distinct().Count() == pins.Count;
+        return zeroBased ? pin.PortIndex + 1 : pin.PortIndex > 0 ? pin.PortIndex : index + 1;
+    }
 
     private static string Join(IReadOnlyList<string> names)
         => names.Count == 0 ? "(none)" : string.Join(", ", names);

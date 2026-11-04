@@ -773,6 +773,9 @@
 
                 <!-- brief-sdl-6 D7: a cell instance's Variables group — the cell's VARs, each blank (the cell's own value,
                      shown as the placeholder) or overridden for this instance. -->
+                <!-- brief-sdl-10 D1: an EM component's instance states which kind it is — what its geometry follows. -->
+                <TextBlock IsVisible="{Binding ShowEmKind}" Text="{Binding EmKindLine}" FontSize="11" Opacity="0.8"
+                           TextWrapping="Wrap" Margin="6,6,4,0"/>
                 <StackPanel IsVisible="{Binding ShowVariables}" Margin="4,6,4,0">
                     <TextBlock Text="Variables" FontSize="11" FontWeight="SemiBold" Margin="2,0,0,2"/>
                     <ItemsControl ItemsSource="{Binding VariableRows}">
@@ -809,6 +812,12 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
+                    <!-- brief-sdl-10 D7: this instance's own values moved into the cell, after a listing of every other
+                         placement. Always present in the group (disabled when there is nothing to move), so nothing shifts. -->
+                    <Button Content="Make These the Cell's Own Values…" FontSize="11" Padding="6,2" Margin="0,4,0,0"
+                            HorizontalAlignment="Left" IsEnabled="{Binding CanMakeCellOwnValues}"
+                            ToolTip.Tip="Write this instance's own values into the cell and stop stating them here. Every other placement is listed first."
+                            Click="OnMakeCellOwnValuesClick"/>
                 </StackPanel>
 
                 <!-- A composed FET's instance switches (brief-modelcomposer-21): collapsed under File/N/Symbol, since they

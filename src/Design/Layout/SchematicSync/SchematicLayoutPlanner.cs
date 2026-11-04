@@ -487,6 +487,7 @@ public static partial class SchematicLayoutPlanner
             }
         }
 
+        lines.AddRange(ledger.Lines);   // brief-sdl-10 D3
         if (unlinkedDiffering > 0)
             lines.Add(new ReportLine("", UnlinkedRotationNote(unlinkedDiffering), ReportSeverity.Info));
         if (fromArtwork.Count > 0)
@@ -772,6 +773,9 @@ public static partial class SchematicLayoutPlanner
     private sealed class Ledger(LayoutView target, KitLayoutGeneratorLookup? kitLayoutGenerator)
     {
         public KitLayoutGeneratorLookup? KitLayoutGenerator { get; } = kitLayoutGenerator;
+
+        /// <summary>brief-sdl-10 D3 — what resolving a part had to say (a variant placed, or why not): reported with the run.</summary>
+        public List<ReportLine> Lines { get; } = [];
 
         private readonly Dictionary<string, Dictionary<string, PCellValue>> _schematic =
             new(target.SchematicPCellSnapshots, StringComparer.Ordinal);
@@ -1506,6 +1510,18 @@ public static partial class SchematicLayoutPlanner
                 resolveWarning = "referenced cell has no layout view";
                 return null;
             }
+
+            // brief-sdl-10 D3 — an instance whose own values give the cell other copper is placed as a variant of it.
+            if (Em.ParametricEm.EmVariantCells.For(comp, cellAbsDir, workspaceRootDir, scope, evaluator, out string? variantNote)
+                    is { } variant)
+            {
+                ledger.Lines.Add(new ReportLine(comp.InstanceName,
+                    $"{comp.InstanceName} — placed as a variant of {Path.GetFileName(Path.TrimEndingDirectorySeparator(cellAbsDir))} " +
+                    $"at its own values ({variant.At}); the cell's own layout is unchanged", ReportSeverity.Info) { Ids = [comp.InstanceName] });
+                return ToRelative(targetLayoutBaseDir, variant.CellDir);
+            }
+            if (variantNote is not null)
+                ledger.Lines.Add(new ReportLine(comp.InstanceName, variantNote, ReportSeverity.Info) { Ids = [comp.InstanceName] });
 
             return ToRelative(targetLayoutBaseDir, cellAbsDir);
         }

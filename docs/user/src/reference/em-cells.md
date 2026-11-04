@@ -248,6 +248,49 @@ such a run with `async=true`.
 The cache key covers the whole 3D problem: the copper, every body at its evaluated size, the materials, the setup's
 solve settings and the solvers' versions. A VAR change that moves nothing still reads the cached result.
 
+## Placing an EM component and optimising it {#placed}
+
+A coupler, a filter or a transition simulated by EM can sit among other circuitry, and an optimisation can vary its
+own values, the circuitry around it, or both.
+
+**Three kinds of EM component.** A placed cell's properties say which it is, and so do `circuitrf check <cell>` and
+`circuitrf explain <schematic> --tunables`:
+
+| Kind | Its geometry follows | What can be varied |
+|---|---|---|
+| **Schematic-driven** | its VARs and parameters: its layout is made from its schematic | the instance's own values |
+| **3D-parametric** | VARs of its 3D view linked to its parameters; no schematic drives it | the instance's own values |
+| **Fixed** | nothing: a drawn layout with an EM setup, or the result of one EM run (`<setup>_sim`) | none of its own; the circuitry around it as usual |
+
+A 3D-parametric cell with no schematic has no circuit model, so it can only be simulated by EM: an optimisation
+with `em=` unstated uses `em=direct` and says why, and `em=correct` or `em=off` is refused naming the part. Give the
+cell a schematic as its circuit model and `em=correct` works.
+
+**Each placement at its own values.** When the larger schematic is laid out (**Update Layout from Schematic**), a
+placement whose own values give it different copper is placed as a **variant**: the cell's layout made at that
+placement's values, with your hand edits to the cell in it. Placements with the same values share one variant, and
+the cell's own layout is not changed. Variants are generated and read-only: make an edit in the cell, and the next
+Update Layout carries it to every variant. A longer coupler's ports move, and the lines joined to them move with them,
+as any length change carries its neighbours.
+
+**Several instances.** `X1.w50` and `X2.w50` are separate variables. The solve count and the budget count distinct
+geometries, so two placements at the same values cost one solve. To keep two placements alike, set both to one VAR of
+the larger schematic.
+
+**Connectivity, at both levels.** During an optimisation each EM component's own copper is held as before, and so is
+the larger schematic's layout when it has one: a point that keeps the coupler intact but pulls its port off the line
+it joins is infeasible, says so, and costs no solve.
+
+**Where results are written.** Apply (Push, or `--apply`) writes each value where it is defined: a VAR of the larger
+schematic to its VAR block, an instance's own value (`X1.w50`) to that instance. The cell itself is never changed by
+Apply, because it may be placed elsewhere with other values. Its layout is then updated and every placed EM
+component's geometry is checked against what EM solved.
+
+**Make These the Cell's Own Values.** In a placed cell's properties, under **Variables**, this writes the instance's
+own values into the cell — its VAR block, or a parameter's default — and clears them from the instance. Before writing
+it lists every other placement of the cell in the workspace and what each will change to: a placement that states its
+own value keeps it, one that does not takes the new one.
+
 ## From the command line {#headless}
 
 The analysis's choice is the `.cnl` key `model=em` (and `emSetup=` when the layout has several setups); a

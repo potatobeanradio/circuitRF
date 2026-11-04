@@ -27285,3 +27285,55 @@ partway through a 363k-unknown solve. The message quoted a GMRES residual line a
 or the wrapper's "Killed" line) is now reported as the run having run out of memory, with the memory the machine or
 VM has and the remedy (`.wslconfig` in the subsystem). The memory pre-check passed this run, so the estimate for
 order-1 driven runs with an adaptive sweep may be low; not investigated.
+
+## SDL-10: placed EM components, per-instance geometry and optimisation (2026-11-03)
+
+**Kinds.** `EmComponentKinds.Of(cellDir)` is the one classifier: schematic-driven (SDL-6's EM-capable cell),
+3D-parametric (a `.c3d` whose dimensions use a VAR linked to a cell parameter or a VAR of the cell's schematic, used by
+at least one dimension, and no generated layout), fixed (an EM view whose geometry follows nothing, or a `<setup>_sim`
+cell, recognised by its suffix plus its SnP `S1`). `check <cell>` (`check.em.kind`), `explain --tunables`
+(`EmComponents`) and the instance properties' kind line all print its sentence. `EmCapability.Resolve` tries
+3D-parametric only when the schematic-driven reading failed for want of a schematic, a layout, or a generated layout;
+the target carries `ThreeDOnly`, an empty `ClayPath`, and a `SchematicPath` that is its circuit model or empty.
+
+**A cell with no schematic is still a part.** `NetExtractor` dropped any cell instance whose cell has no schematic.
+A 3D-parametric cell now extracts as a definition of its ports (the `.ccell`'s `NumPorts`, else the 3D view's port
+count) and its declared parameters, with no contents, and its instance always carries `Model=EM`. An empty definition
+run by circuit models is an open circuit that solves, so `EmModelSwitch.WithoutCircuitModel` (an EM instance whose
+library cell has no instances) is refused under `--em off` and `em=correct`/`em=off`, and `em=` unstated becomes
+`direct` with a note.
+
+**A layout made from its schematic had no pins.** Nothing in a parent could join a placed coupler: `CellPins` found no
+stated pin and no `PCellOrigin`. Its pins are the port labels SDL-5 placed (linked to a Port, text a number), read in
+`CellPins.Resolve` itself so the planner, ratsnest, renderer and LVS agree: at the label, facing out of the metal its
+arrow points into, `2 × Height` wide (`PortPlacement` writes `Height = width / 2`). Labels placed by hand are not pins.
+Two follow-ons in LVS:
+- The cell's own LVS read its Ports as boundary nets through pins it never stated, and failed on every port with
+  an open. `BoundaryNetsOf` returns no boundary for a layout that states no pins, which is what it did before.
+- The placed cell's ground pour touching the parent's was reported as an undeclared contact. Copper meeting on the
+  stackup's ground-reference conductor is the shared plane and is exempt in `SubCellContact.Find`. Every other layer
+  is held to the declared pins as before.
+
+**`TerminalMap.PortOf` read a 0-based symbol as 1-based.** The auto-generated symbol (and the symbol editor, and the
+built-ins) number `PortIndex` from 0. Read as "its own index when > 0, else position", pins 0 and 1 both landed on
+port 1 and LVS threw on a duplicate key in `LvsCompare.Joined`. A symbol whose indices are distinct and include 0 is now
+read as 0-based. A 1-based symbol with one unassigned (0) pin reads the same as a 0-based one and is read as 0-based;
+nothing ships like that.
+
+**Variants are whole cells.** A variant with only a layout was not a comparable cell, so LVS flattened it into the
+parent. Its copper is one piece joining all four ports, which read as a short of every net it touches. A variant
+therefore carries the cell's schematic at the placement's values (the in-memory model the evaluation planned from,
+now `EmCellGeometry.Schematic`), the cell's symbol and `.ccell`, and `.variant-of` naming the cell. `DeviceTypes.OfLayout`
+reads a variant as its source, so `X2` is the same part in both views. Relative references (placed parts, technology)
+are re-written against the variant's folder, because the variant lives under `.generated/` rather than beside the cell.
+
+**Two-level connectivity.** `EmGeometryProbe` plans the parent's saved layout at each candidate, with the values
+written where Apply writes them (`EmApply.WriteValues`, which now writes `X1.w50` to the instance), and holds its
+signature beside each component's own. With the placement and its feed both locked, a longer `L90` leaves X2's own
+copper intact and opens the joint to its feed. The parent's signature is the only place that shows up.
+
+**Deviations from the brief.**
+- The brief spells an instance tunable `X1:w50`; SDL-6 had already fixed `X1.w50` (`:` is a cell's own variable).
+- The independence test asserts on the count rather than running two optimisations: separate tunables, two
+  geometries at different values and one at equal values.
+- No solve anywhere: the stand-in is not even needed.

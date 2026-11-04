@@ -118,15 +118,19 @@ internal static class SdlChecker
     /// <paramref name="lvsAllowed"/> names LVS finding ids it expects (an open net at that gap, a connector placed with
     /// no schematic part).
     public static List<string> Verify(Prepared p, LayoutView layout, IEnumerable<string>? openAllowed = null,
-                                      IEnumerable<string>? lvsAllowed = null)
+                                      IEnumerable<string>? lvsAllowed = null, IEnumerable<string>? joinable = null,
+                                      IReadOnlyDictionary<string, string>? ports = null)
     {
         // The schematic as the scenario changed it is what LVS compares against.
         SchematicPersistence.SaveToFile(p.SchematicPath, p.Model, Path.GetFileNameWithoutExtension(p.SchematicPath));
-        return Verify(p, layout, out _, openAllowed, lvsAllowed);
+        return Verify(p, layout, out _, openAllowed, lvsAllowed, joinable, ports);
     }
 
+    /// <param name="joinableToo">Nets to hold joined beyond the design's expect.txt — for a design built in a test, which
+    /// has none (brief-sdl-10).</param>
     private static List<string> Verify(Prepared p, LayoutView layout, out List<Expected> expect,
-                                       IEnumerable<string>? openAllowed = null, IEnumerable<string>? lvsAllowedToo = null)
+                                       IEnumerable<string>? openAllowed = null, IEnumerable<string>? lvsAllowedToo = null,
+                                       IEnumerable<string>? joinableToo = null, IReadOnlyDictionary<string, string>? portsToo = null)
     {
         var (model, cellDir, cschPath, layoutDir, clayPath, tech) = (p.Model, p.CellDir, p.SchematicPath, p.LayoutDir, p.ClayPath, p.Tech);
         string source = Path.Combine(DesignsRoot, Path.GetFileName(cellDir));
@@ -134,6 +138,8 @@ internal static class SdlChecker
 
         expect = ReadExpect(Path.Combine(source, "expect.txt"), out var joinable, out var lvsAllowed, out bool overlapAllowed,
                             out var ports);
+        if (joinableToo is not null) joinable.UnionWith(joinableToo);
+        foreach (var (id, num) in portsToo ?? new Dictionary<string, string>()) ports[id] = num;
         if (openAllowed is not null) joinable.ExceptWith(openAllowed);
         if (lvsAllowedToo is not null) lvsAllowed.UnionWith(lvsAllowedToo);
         var problems = new List<string>();

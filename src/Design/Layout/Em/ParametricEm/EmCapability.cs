@@ -5,6 +5,7 @@
 // are several. Anything missing is a refusal naming it; EM never falls back to circuit models silently.
 
 using CircuitRF.Design.Cells;
+using CircuitRF.Design.Schematic;
 using CircuitRF.Design.ThreeD;
 using CircuitRF.Design.Workspace;
 
@@ -36,6 +37,14 @@ public sealed record EmCellTarget(
     /// <summary>True when the EM view is a 3D view's setup.</summary>
     public bool Is3D => C3dPath is not null;
 
+    /// <summary>brief-sdl-10 D1 — a 3D-parametric cell: its 3D view's dimensions follow VARs linked to the cell's values and
+    /// no schematic drives its geometry. <see cref="ClayPath"/> is then empty, and <see cref="SchematicPath"/> is its circuit
+    /// model when it has one, else empty.</summary>
+    public bool ThreeDOnly { get; init; }
+
+    /// <summary>brief-sdl-10 D2 — whether the cell has a circuit model for <c>em=correct</c>: its schematic.</summary>
+    public bool HasCircuitModel => SchematicPath.Length > 0;
+
     /// <summary>How a report names the setup: a <c>.cem</c>'s file stem, or <c>&lt;c3d stem&gt;#&lt;setup&gt;</c>.</summary>
     public string SetupName => C3dPath is { } c ? $"{Path.GetFileNameWithoutExtension(c)}#{C3dSetup}" : Path.GetFileNameWithoutExtension(CemPath);
 }
@@ -58,9 +67,29 @@ public static class EmCapability
     public static EmCellTarget? Resolve(string cellDir, string? emSetup, string? baseDirectory, out string? refusal)
         => Resolve(cellDir, emSetup, baseDirectory, out refusal, out _);
 
-    private static EmCellTarget? Resolve(string cellDir, string? emSetup, string? baseDirectory, out string? refusal,
-                                         out bool severalSetups)
+    /// <summary>
+    /// As <see cref="Resolve(string, string?, string?, out string?)"/>; <paramref name="severalSetups"/> says the refusal is
+    /// only that the layout has several setups and none was named. brief-sdl-10 D1 — a cell that is not schematic-driven
+    /// is tried as 3D-parametric before the schematic-driven refusal stands.
+    /// </summary>
+    internal static EmCellTarget? Resolve(string cellDir, string? emSetup, string? baseDirectory, out string? refusal,
+                                          out bool severalSetups)
     {
+        var target = ResolveSchematicDriven(cellDir, emSetup, baseDirectory, out refusal, out severalSetups, out bool tryThreeD);
+        if (target is not null || severalSetups || !tryThreeD) return target;
+        if (ResolveThreeDParametric(cellDir, emSetup, baseDirectory, out var why3, out severalSetups) is { } three)
+        {
+            refusal = null;
+            return three;
+        }
+        if (why3 is not null) refusal = why3;
+        return null;
+    }
+
+    private static EmCellTarget? ResolveSchematicDriven(string cellDir, string? emSetup, string? baseDirectory, out string? refusal,
+                                                        out bool severalSetups, out bool tryThreeD)
+    {
+        tryThreeD = false;
         refusal = null;
         severalSetups = false;
         string dir;
@@ -86,11 +115,13 @@ public static class EmCapability
         if (PrimaryOf(dir, ViewType.Schematic) is not { } csch)
         {
             refusal = $"'{name}' has no schematic, so there is nothing to make its layout from.";
+            tryThreeD = true;
             return null;
         }
         if (PrimaryOf(dir, ViewType.Layout) is not { } clay)
         {
             refusal = $"'{name}' has no layout. Run Layout ▸ Update Layout from Schematic to make one, then add an EM setup.";
+            tryThreeD = true;
             return null;
         }
 
@@ -107,6 +138,7 @@ public static class EmCapability
             refusal = $"{name}'s layout {Path.GetFileName(clay)} was not made from its schematic (Update Layout from " +
                       "Schematic has never placed it), so a change of the schematic's values cannot reach its copper. " +
                       "Run Layout ▸ Update Layout from Schematic.";
+            tryThreeD = true;
             return null;
         }
 
@@ -215,7 +247,8 @@ public static class EmCapability
         long now = Environment.TickCount64;
         lock (_memoGate)
             if (_memo.TryGetValue(key, out var m) && now - m.At < MemoMilliseconds) return m.Capable;
-        bool capable = PrimaryOf(key, ViewType.Layout) is not null
+        // brief-sdl-10 D1 — a 3D-parametric cell needs no layout.
+        bool capable = (PrimaryOf(key, ViewType.Layout) is not null || PrimaryOf(key, ViewType.ThreeD) is not null)
                        && (Resolve(key, null, null, out _, out bool several) is not null || several);
         lock (_memoGate) _memo[key] = (now, capable);
         return capable;
@@ -232,7 +265,13 @@ public static class EmCapability
         try
         {
             string dir = Path.GetFullPath(cellDir);
-            if (WorkspaceRootFinder.WorkspaceDirOf(dir) is not { } ws || PrimaryOf(dir, ViewType.Layout) is not { } clay) return [];
+            if (WorkspaceRootFinder.WorkspaceDirOf(dir) is not { } ws) return [];
+            if (PrimaryOf(dir, ViewType.Layout) is not { } clay || !MadeFromSchematic(clay))
+            {
+                // brief-sdl-10 D1 — a 3D-parametric cell's choices are its 3D view's driven setups.
+                if (PrimaryOf(dir, ViewType.ThreeD) is not { } c3d || LinkedNamesUsed(c3d, dir).Count == 0) return [];
+                return DrivenSetups(c3d).Select(n => c3d + "#" + n).ToList();
+            }
             // brief-sdl-8 D1 — a 3D view's setup is listed as <c3d>#<setup>, the spelling emSetup= takes.
             return Choices(Path.Combine(ws, ".cws"), clay, dir, out _).Select(c => c.SetupName is { } n ? c.Path + "#" + n : c.Path).ToList();
         }
@@ -245,6 +284,118 @@ public static class EmCapability
     {
         int hash = setup.LastIndexOf('#');
         return hash > 0 ? Path.GetFileNameWithoutExtension(setup[..hash]) + setup[hash..] : Path.GetFileNameWithoutExtension(setup);
+    }
+
+    // ── brief-sdl-10 D1: 3D-parametric ───────────────────────────────────────
+
+    /// <summary>
+    /// A cell whose geometry is its 3D view's, with dimensions that use VARs linked to the cell's own values (its declared
+    /// parameters, and its schematic's VARs when it has a schematic that is a circuit model only); null with
+    /// <paramref name="refusal"/> null when the cell is not one, or with a refusal when it is one that cannot be used as
+    /// asked (an <paramref name="emSetup"/> it does not have).
+    /// </summary>
+    private static EmCellTarget? ResolveThreeDParametric(string dir, string? emSetup, string? baseDirectory, out string? refusal,
+                                                         out bool severalSetups)
+    {
+        refusal = null;
+        severalSetups = false;
+        string name = Path.GetFileName(dir);
+        if (WorkspaceRootFinder.WorkspaceDirOf(dir) is not { } ws || PrimaryOf(dir, ViewType.ThreeD) is not { } c3d) return null;
+        if (LinkedNamesUsed(c3d, dir).Count == 0) return null;
+        var setups = DrivenSetups(c3d);
+        string? chosen;
+        if (emSetup is { Length: > 0 } wanted)
+        {
+            int hash = wanted.LastIndexOf('#');
+            string setupName = hash >= 0 ? wanted[(hash + 1)..].Trim() : wanted.Trim();
+            chosen = setups.FirstOrDefault(s => s == setupName);
+            if (chosen is null)
+            {
+                refusal = $"{name}'s 3D view has no driven setup '{setupName}'" +
+                          (setups.Count == 0 ? "." : $"; it has {string.Join(", ", setups.Select(x => $"'{x}'"))}.");
+                return null;
+            }
+        }
+        else if (setups.Count == 1) chosen = setups[0];
+        else if (setups.Count == 0) return null;
+        else
+        {
+            severalSetups = true;
+            refusal = $"{name}'s 3D view has {setups.Count} driven setups ({string.Join(", ", setups.Select(x => $"'{x}'"))}); " +
+                      "name the one to use with emSetup=.";
+            return null;
+        }
+
+        C3dDocument doc;
+        try { doc = C3dPersistence.LoadFromFile(c3d); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException
+                                       or InvalidDataException or ArgumentException or InvalidOperationException)
+        {
+            refusal = $"{name}'s 3D view {Path.GetFileName(c3d)} could not be read ({e.Message}).";
+            return null;
+        }
+        var (embedded, why) = C3dSetups.Select(doc, chosen);
+        if (embedded is null) { refusal = why; return null; }
+        string csch = PrimaryOf(dir, ViewType.Schematic) ?? "";
+        return new EmCellTarget(dir, name, csch, "", c3d + "#" + chosen, ws, C3dSetups.ForRun(embedded, c3d))
+        {
+            C3dPath = c3d, C3dSetup = chosen, ThreeDOnly = true,
+        };
+    }
+
+    /// <summary>The names of the cell's own values — its declared parameters and its schematic's VARs.</summary>
+    internal static IReadOnlyList<string> CellValueNames(string cellDir)
+    {
+        var names = new List<string>();
+        names.AddRange(C3dCell.OfFolder(cellDir).Parameters.Select(p => p.Name));
+        names.AddRange(CellVariables.Of(cellDir).Select(v => v.Name));
+        return names.Distinct(StringComparer.Ordinal).ToList();
+    }
+
+    /// <summary>
+    /// brief-sdl-10 D1 — the VARs of the 3D view at <paramref name="c3d"/> that are linked to a value of
+    /// <paramref name="cellDir"/> (named like one, not unlinked) and used by at least one dimension; sorted. Empty when the
+    /// view cannot be read.
+    /// </summary>
+    public static IReadOnlyList<string> LinkedNamesUsed(string c3d, string cellDir)
+    {
+        try
+        {
+            var doc = C3dPersistence.LoadFromFile(c3d);
+            var own = CellValueNames(cellDir).ToHashSet(StringComparer.Ordinal);
+            var candidates = doc.Variables.Where(v => v.Linked != false && own.Contains(v.Name)).Select(v => v.Name).ToList();
+            if (candidates.Count == 0) return [];
+            var resolution = C3dResolver.Resolve(C3dPersistence.Deserialize(C3dPersistence.Serialize(doc)), C3dCell.OfFolder(cellDir));
+            return candidates.Where(n => !resolution.Infos.Contains($"VAR '{n}' is used by no dimension in this 3D view."))
+                             .Order(StringComparer.Ordinal).ToList();
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException
+                                       or InvalidDataException or ArgumentException or InvalidOperationException)
+        {
+            return [];
+        }
+    }
+
+    private static List<string> DrivenSetups(string c3d)
+    {
+        try
+        {
+            return C3dSetups.Read(C3dPersistence.LoadFromFile(c3d))
+                .Where(r => r.Setup is { Is3D: true, IsThermal: false, Problem3D: CircuitRF.Engine.Em3d.Em3dProblemType.Driven })
+                .Select(r => r.Name).ToList();
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException
+                                       or InvalidDataException or ArgumentException or InvalidOperationException)
+        {
+            return [];
+        }
+    }
+
+    private static bool MadeFromSchematic(string clay)
+    {
+        try { return LayoutPersistence.LoadFromFile(clay).GeneratedPlacements.Count > 0; }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException
+                                       or InvalidDataException or ArgumentException or InvalidOperationException) { return false; }
     }
 
     /// <summary>The cell folder a schematic belongs to — the folder above its <c>schematic/</c> sub-folder — or null when
