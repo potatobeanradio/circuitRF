@@ -652,10 +652,10 @@ public static partial class Em3dRunService
     /// <summary>brief-emi-10 — a process stopped by the memory ceiling or the disk floor, as the leg's refusal: the run's own,
     /// not the solver's failure (the CLI exits 1, not 2).</summary>
     internal static Leg StoppedLeg(Em3dSolverId solver, string name, ProcessStop stop, ProcessLimits limits,
-                                   IReadOnlyList<Em3dMemoryRemedy> remedies, string? logPath)
+                                   IReadOnlyList<Em3dMemoryRemedy> remedies, string? logPath, string? before = null)
         => Leg.Failed(solver, EmRunStatus.Refused, EmDiagnostics.Forwarded(
                stop.Reason == ProcessStopReason.Memory ? MemoryCeilingSource : DiskFloorSource,
-               stop.Sentence(name, limits.CeilingOwner, remedies, logPath)));
+               before + stop.Sentence(name, limits.CeilingOwner, remedies, logPath)));
 
     /// <summary>The diagnostic source of a run stopped at its memory ceiling.</summary>
     public const string MemoryCeilingSource = "memory-ceiling";

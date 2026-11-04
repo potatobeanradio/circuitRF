@@ -66,7 +66,7 @@ import os
 import re
 import sys
 
-DRIVER_VERSION = 7
+DRIVER_VERSION = 8
 FORMAT = "circuitRF EMerge problem"
 FORMAT_VERSION = 2
 C0 = 299792458
@@ -129,6 +129,7 @@ def main(argv):
                         % (version, ", ".join(problem["testedEmerge"])))
 
     install_guard(warnings)
+    install_thin_conductor_split(warnings)
     import time
     started = time.time()
     try:
@@ -158,9 +159,6 @@ def main(argv):
         sys.exit(2)
     except Exception as e:
         fail(named(e))
-    if heard.on_gpu and heard.unusable:
-        warnings.append(f"EMerge's GPU solver found {heard.unusable} of its single-precision factorisations unusable and solved "
-                        "with them anyway, so these S-parameters may be noise. Solve on the CPU: set EMerge's Device to CPU.")
     # The device the solves USED, read back from the solver EMerge's log says it called, never assumed from what was asked.
     device = None if heard.solver is None else ("gpu" if heard.solver == GPU_SOLVER_NAME else "cpu")
     run = dict(emerge=version, warnings=warnings, sparseSolver=heard.solver, device=device, gpuFrom=gpu_from,
@@ -209,6 +207,31 @@ def install_guard(warnings):
     Microwave3D.modal_analysis = modal_analysis
 
 
+# -- the thin-conductor split on a refined mesh ----------------------------------------------------------------------------
+
+def install_thin_conductor_split(warnings):
+    """EMerge 3.0.0b2 splits a lossy sheet's degrees of freedom in its one-time boundary setup, but a mesh refinement builds a new
+    basis, which then has no split: its second pass stops with "'NoneType' object is not subscriptable". 3.0.0b3 splits each new
+    basis, and this does the same on b2; on b3 the basis is already split and nothing happens. A run whose EMerge has moved the
+    method is told so and runs."""
+    try:
+        from emerge._emerge.physics.microwave.microwave_3d import Microwave3D, ThinConductor
+        initialize = Microwave3D._initialize_bc_data
+    except (ImportError, AttributeError):
+        warnings.append("circuitRF could not install its repair of a lossy sheet on a refined mesh (this EMerge has no "
+                        "Microwave3D._initialize_bc_data where circuitRF looks for it); the run goes on without it.")
+        return
+
+    def initialize_bc_data(self):
+        initialize(self)
+        sheets = self.bc.oftype(ThinConductor)
+        if len(sheets) > 0 and not self.basis._partitioned:
+            self.basis.partition_dof([x.tags for x in sheets])
+            self.basis._partitioned = True
+
+    Microwave3D._initialize_bc_data = initialize_bc_data
+
+
 # -- the GPU (brief-emi-9) -------------------------------------------------------------------------------------------------
 
 GPU_SOLVER_NAME = "SPARTA"   # how EMerge 3.0.0b2's log names it: "Calling SPARTA Solver (GPU, 0.2.0)."
@@ -245,6 +268,11 @@ def use_gpu(problem, counts, gpu_from, sim, em, warnings):
 # its best error 3.0e-3 at sample 16, no better by sample 80, where the CPU converged in 9; src/Design/RESOLVED.md, EMW-3).
 GPU_STALL_SAMPLES = 8
 
+# brief EMG-1 — the most a GPU solve may miss its own equations by, as ||Ax - b|| / ||b|| in double precision. The solver's flag
+# below is not enough: it is read before the solve, and points it passed were up to 3.5e-3 from the CPU's S, past the sweep's
+# 1e-3 tolerance. Every point past that read 4.2e-3 or more, and nearly all within it 7.5e-4 or less (src/Design/RESOLVED.md, EMG-1).
+GPU_RESIDUAL_LIMIT = 1e-3
+
 # brief-dfr28-1 follow-up — what EMerge 3.0.0b2 logs when the GPU solver's own check finds its factorisation unusable
 # (factor.quality.usable is false). EMerge solves with it anyway. On the TP149 board (67,712 tets, order 2) it said so at the
 # first frequency and every one after, and the sweep chased noise round 350 MHz: the sweep goes to the CPU at once.
@@ -255,30 +283,44 @@ class GpuStalled(Exception):
     """Raised from the log sink to stop a stalled GPU sweep; the driver solves it again on the CPU."""
 
 
-def adaptive_sweep(sim, settings, heard, freqs):
-    """The adaptive sweep; on the GPU, watched, and solved again on the CPU (EMerge's own choice, in this process and on
-    this mesh) the moment it stalls. Returns the sweep and, after a switch, what the GPU's attempt reached."""
-    def run():
-        return sim.mw.run_adaptive_sweep(n_initial=settings["initialSamples"], tol=settings["tolerance"],
-                                         max_samples=settings["maxSamples"])
+def leave_gpu(sim, heard):
+    """Everything after this solves on the CPU (EMerge's own choice, in this process and on this mesh). The factorisation is
+    freed first: on a machine whose GPU shares its memory, it would otherwise sit under the CPU's. Returns what the GPU reached."""
+    stalled = {"samples": heard.samples, "bestError": heard.best, "bestAt": heard.best_at,
+               "unusable": heard.unusable > 0 or heard.residual is not None}
+    if heard.residual is not None:
+        stalled["residual"] = heard.residual
+    report(stage="gpu-stalled", **stalled)
+    sim.mw.solveroutine.forced_solver = []
+    sim.mw.solveroutine.reset()
+    heard.on_gpu = False
+    return stalled
+
+
+def watched(sim, heard, freqs, folder, attempt):
+    """Runs attempt(stalled), the sweep and everything it writes; on the GPU, watched, and once more on the CPU the moment a solve
+    fails its check or the sweep stalls. The whole sweep moves, whichever solve it was: one result comes from one device. Returns
+    attempt's result."""
     if not heard.on_gpu:
-        return run(), None
+        return attempt(heard.stalled)
+    before = set(os.listdir(folder))
     heard.watch = True
     try:
-        return run(), None
+        return attempt(None)
     except GpuStalled:
-        stalled = {"samples": heard.samples, "bestError": heard.best, "bestAt": heard.best_at, "unusable": heard.unusable > 0}
+        stalled = leave_gpu(sim, heard)
     finally:
         heard.watch = False
-    report(stage="gpu-stalled", **stalled)
     # The interrupted sweep left EMerge's frequency list at its last batch and its samples in the dataset, where the CPU's
-    # fit would read them: the band is restored and the dataset emptied, so the CPU starts as a sweep does.
+    # fit would read them: the band is restored and the dataset emptied, so the CPU starts as a sweep does. A saved field's
+    # solve comes after the arrays are written, so the GPU's go too: a CPU run that does not finish leaves none of them.
     sim.mw.set_frequency(list(freqs))
     sim.mw._state.data.reset()
-    sim.mw.solveroutine.forced_solver = []
-    heard.on_gpu = False
     heard.error = heard.converged = None
-    return run(), stalled
+    for name in set(os.listdir(folder)) - before:
+        if name.endswith(".npy"):
+            os.remove(os.path.join(folder, name))
+    return attempt(stalled)
 
 
 class Heard:
@@ -295,6 +337,8 @@ class Heard:
         self.best = None
         self.best_at = 0
         self.unusable = 0
+        self.residual = None
+        self.stalled = None
 
     def sink(self, message):
         import re
@@ -357,10 +401,33 @@ def guard_solves(sim, model, heard):
                           "and EMerge took it as solved; no S-parameters were written. Its system is singular or the "
                           "solver failed without saying why. Run it again on the other device (EMerge's Device), or "
                           "with EMerge.ElementOrder: 1." % (heard.solver or "unnamed"), NON_FINITE)
+        if heard.on_gpu:
+            worst = gpu_residual(A, b, x, solve_ids)
+            if worst > GPU_RESIDUAL_LIMIT:
+                heard.residual = worst
+            if heard.unusable or heard.residual is not None:
+                if heard.watch:
+                    raise GpuStalled()
+                # A mesh refinement's pass, which cannot be restarted: this system goes to the CPU, and so does the rest.
+                heard.stalled = leave_gpu(sim, heard)
+                return solve(self, A, b, solve_ids, *a, **k)
         return x, report_
 
     SolveRoutine.solve = solve
     return None
+
+
+def gpu_residual(A, b, x, solve_ids):
+    """The worst right-hand side's ||Ax - b|| / ||b|| over the unknowns EMerge solved for."""
+    import numpy as np
+    solved = A[:, solve_ids][solve_ids, :]
+    rhs = np.reshape(b, x.shape)[solve_ids, :]
+    worst = 0.0
+    for j in range(x.shape[1]):
+        size = np.linalg.norm(rhs[:, j])
+        if size > 0:
+            worst = max(worst, float(np.linalg.norm(solved @ x[solve_ids, j] - rhs[:, j]) / size))
+    return worst
 
 
 def non_finite_matrix(sim, model, dofs, entries):
@@ -832,6 +899,8 @@ def solve(problem, folder, sim, model, heard, warnings):
                                          min_refined_passes=settings["adaptiveMesh"] + 2)
         else:
             sim.adaptive_mesh_refinement(max_steps=settings["adaptiveMesh"] + 1)
+        if heard.on_gpu and heard.unusable:     # no check on EMerge's solves was installed, so nothing has moved it yet
+            heard.stalled = leave_gpu(sim, heard)
     freqs = np.array(problem["frequenciesHz"], dtype=np.float64)
     sim.mw.set_frequency(list(freqs))
     adaptive = settings["adaptiveSweep"] and len(freqs) > settings["initialSamples"]
@@ -839,9 +908,17 @@ def solve(problem, folder, sim, model, heard, warnings):
     for w, bc in groups:
         if not w["mixed"]:
             presolve(sim, w, bc, float(freqs[len(freqs) // 2]))
-    stalled = None
+    return watched(sim, heard, freqs, folder,
+                   lambda stalled: sweep(problem, folder, sim, model, heard, freqs, adaptive, groups, stalled))
+
+
+def sweep(problem, folder, sim, model, heard, freqs, adaptive, groups, stalled):
+    """The driven sweep, its arrays and its saved fields; returns run.json's solve fields."""
+    import numpy as np
+    settings = problem["settings"]
     if adaptive:
-        data, stalled = adaptive_sweep(sim, settings, heard, freqs)
+        data = sim.mw.run_adaptive_sweep(n_initial=settings["initialSamples"], tol=settings["tolerance"],
+                                         max_samples=settings["maxSamples"])
     else:
         data = sim.mw.run_sweep()
     grid = data.scalar.grid

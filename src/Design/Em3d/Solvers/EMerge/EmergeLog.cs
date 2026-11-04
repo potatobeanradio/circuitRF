@@ -193,6 +193,9 @@ public sealed class EmergeStageTracker(RunControl? control, bool eigenmode)
     /// <summary>The mesh's tetrahedra, as EMerge last reported them (after any refinement pass).</summary>
     public long? Tetrahedra { get; private set; }
 
+    /// <summary>brief EMG-1 — the driver moved this run off the GPU because a solve could not be trusted.</summary>
+    public bool LeftTheGpuUnusable { get; private set; }
+
     /// <summary>The driver's exact counts, before any solve.</summary>
     public EmergeMeshCounts? Counts { get; private set; }
 
@@ -235,6 +238,7 @@ public sealed class EmergeStageTracker(RunControl? control, bool eigenmode)
                 _adaptive = false;
                 Samples = null;
                 SweepError = null;
+                LeftTheGpuUnusable = g.Unusable;
                 control?.BeginStage(CpuAgainLabel);
                 control?.SetStageDetail(g.Unusable
                     ? "the GPU's single-precision factorisation was unusable"

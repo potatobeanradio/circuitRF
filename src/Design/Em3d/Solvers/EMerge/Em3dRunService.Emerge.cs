@@ -88,6 +88,30 @@ public static partial class Em3dRunService
                                $"solved it again on the CPU, {cpu}. This result is the CPU's.");
     }
 
+    /// <summary>brief EMG-1 R-emg1-4 — what a run says when the CPU that replaced an untrustworthy GPU solve could not finish either:
+    /// a refusal, with no result, because what the GPU produced is not one.</summary>
+    internal const string LeftTheGpuSentence =
+        "EMerge's GPU solver could not solve this problem accurately in single precision, so circuitRF moved the sweep to the CPU, " +
+        "and the CPU could not finish it. ";
+
+    /// <summary>brief-emw-3, brief EMG-1 — the note of a sweep the driver moved to the CPU, and why; null when it stayed.</summary>
+    internal static string? GpuStallNote(EmergeGpuStall? stall) => stall switch
+    {
+        null => null,
+        { Unusable: true, Residual: { } residual } =>
+            $"A solve on EMerge's GPU solver missed its equations by {PalaceStageTracker.Sci(residual)} (‖Ax − b‖/‖b‖, against a limit of " +
+            "1.0e-3), so circuitRF solved the sweep on the CPU, on the same mesh. This result is the CPU's. Set EMerge's Device to CPU in " +
+            "Settings ▸ Solvers to start there.",
+        { Unusable: true } =>
+            "EMerge's GPU solver found its single-precision factorisation of this problem unusable, so circuitRF solved " +
+            "the sweep on the CPU, on the same mesh. This result is the CPU's. Set EMerge's Device to CPU in Settings ▸ " +
+            "Solvers to start there.",
+        _ => $"EMerge's adaptive sweep on the GPU stopped improving: its estimated error was no lower after {Count(stall.Samples)} " +
+             $"frequencies than its best ({(stall.BestError is { } be ? PalaceStageTracker.Sci(be) : "unreported")}, at {Count(stall.BestAt)}), " +
+             "so circuitRF solved it again on the CPU, on the same mesh. This result is the CPU's. The GPU's single precision " +
+             "can leave an adaptive sweep's samples too noisy to fit; set EMerge's Device to CPU in Settings ▸ Solvers to start there.",
+    };
+
     private static Leg ExecuteEmerge(Em3dProblem problem, string snpBase, RunContext run, EmergeSettings settings,
                                      EmergeLowering lowering, SolverInstallation emerge, long? gpuFrom)
     {
@@ -148,16 +172,17 @@ public static partial class Em3dRunService
             if (ran.MemoryNote is not null) log.Warnings.Add(ran.MemoryNote);
             string logPath = Path.Combine(dir, EmergeResults.LogFile);
             if (ran.Stopped is { } stopped)
-                return (StoppedLeg(Me, "EMerge", stopped, limits, stopped.Meshing ? [] : run.Memory.Last?.Remedies ?? [], logPath), null);
+                return (StoppedLeg(Me, "EMerge", stopped, limits, stopped.Meshing ? [] : run.Memory.Last?.Remedies ?? [], logPath,
+                                   tracker.LeftTheGpuUnusable ? LeftTheGpuSentence : null), null);
             // brief-emw-3 R-emw3-4 — a terminal face whose modes cannot be converted is refused by name, as before the solve
             // brief-dfr28-3 R-dfr28-3-1 — and a solve whose matrix or solution is not finite, at the first frequency, by its element
             if (ran.ExitCode != 0 && EmergeLog.DriverRefusal(ran.Tail, out string? cause) is { } refusal)
                 return (Leg.Failed(Me, EmRunStatus.Refused, EmDiagnostics.Forwarded(
                     cause == EmergeLog.NonFiniteSolveCause ? EmergeSolveRefusalSource : TerminalPortsSource, refusal)), null);
             if (ran.ExitCode != 0)
-                return (Failed(EmergeLog.DriverError(ran.Tail) is { } said
+                return (Failed((tracker.LeftTheGpuUnusable ? LeftTheGpuSentence : "") + (EmergeLog.DriverError(ran.Tail) is { } said
                     ? $"EMerge stopped: {said} Its log is {logPath}."
-                    : $"EMerge exited with code {ran.ExitCode}: {PalaceRun.Quote(ran.Tail, "Error")}. Its log is {logPath}."), null);
+                    : $"EMerge exited with code {ran.ExitCode}: {PalaceRun.Quote(ran.Tail, "Error")}. Its log is {logPath}.")), null);
             peak = ran.PeakResident;
             return (null, EmergeResults.ReadFacts(dir));
         }
@@ -246,16 +271,8 @@ public static partial class Em3dRunService
         }
 
         string? notConverged = null;
-        // brief-emw-3 — a GPU sweep that stopped improving was solved again on the CPU in the same run, without waiting for its cap
-        if (facts.GpuStalled is { Unusable: true })
-            log.Notes.Add("EMerge's GPU solver found its single-precision factorisation of this problem unusable, so circuitRF solved " +
-                          "the sweep on the CPU, on the same mesh. This result is the CPU's. Set EMerge's Device to CPU in Settings ▸ " +
-                          "Solvers to start there.");
-        else if (facts.GpuStalled is { } stall)
-            log.Notes.Add($"EMerge's adaptive sweep on the GPU stopped improving: its estimated error was no lower after {Count(stall.Samples)} " +
-                          $"frequencies than its best ({(stall.BestError is { } be ? PalaceStageTracker.Sci(be) : "unreported")}, at {Count(stall.BestAt)}), " +
-                          "so circuitRF solved it again on the CPU, on the same mesh. This result is the CPU's. The GPU's single precision " +
-                          "can leave an adaptive sweep's samples too noisy to fit; set EMerge's Device to CPU in Settings ▸ Solvers to start there.");
+        // brief-emw-3 — a GPU sweep the driver moved was solved again on the CPU in the same run, without waiting for its cap
+        if (GpuStallNote(facts.GpuStalled) is { } moved) log.Notes.Add(moved);
         if (facts.Adaptive)
         {
             log.Notes.Add($"EMerge's adaptive sweep solved the full problem at {Count(facts.Samples)} frequencies and fitted all " +

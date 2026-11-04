@@ -372,6 +372,12 @@ such a case: on the GPU its sweep was no better after 22 solves than after 14, a
 at 1.9 s per solve against the GPU's 7.6 s. A sweep on the GPU that stops at its limit without converging is
 also solved again on the CPU.
 
+**Every solve on the GPU is checked**, whatever the sweep's length and whether Device is Automatic or GPU: when the
+GPU solver reports its factorisation unusable, or its answer misses the equations by more than 1e-3 (‖Ax − b‖/‖b‖), the
+whole sweep is solved on the CPU, on the same mesh, and the Notes say so. Saved fields follow the same rule. If the CPU
+cannot finish, the run is refused and writes no result. This is commonest at low frequencies: on a 12,000-tetrahedron
+line the GPU's S-parameters were up to 0.6 from the CPU's at 1 GHz, and within 2e-4 from 12 GHz up.
+
 **Eigenmode runs do not use the GPU**: EMerge's eigensolver runs on the CPU whatever is installed.
 To choose the device yourself, set **Device** in Settings ▸ Solvers to **CPU** or **GPU**, or pass
 `--device cpu` or `--device gpu` to `circuitrf em`. On other computers there is no GPU solver for EMerge,

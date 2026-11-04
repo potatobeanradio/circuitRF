@@ -135,6 +135,26 @@ public sealed class EmergeRunTests(ITestOutputHelper output) : IDisposable
     }
 
     /// <summary>
+    /// A lossy sheet on a refined mesh: EMerge 3.0.0b2 split the sheet's unknowns only on the first mesh, and its second pass stopped
+    /// with a TypeError. The driver splits each new basis, as 3.0.0b3 does.
+    /// </summary>
+    [EmergeFact]
+    public void ALossySheet_SolvesOnARefinedMesh()
+    {
+        string ws = Path.Combine(_root, "ws");
+        CopyDirectory(Path.Combine(PalaceBackendTests.RepoRoot(), "testdata", "em-tfr", "zigzag"), ws);
+        string cem = Path.Combine(ws, "thru", "em", "sheets.cem");
+        var setup = EmSetupPersistence.LoadFromFile(cem);
+        setup.Solver3D = EmergeSolver.Id;
+        setup.Frequency = new CircuitRF.Core.Design.FrequencySpec("1e9", "1e9", 1);
+        setup.AdditionalFrequencies = [new CircuitRF.Core.Design.FrequencySpec("2e9", "2e9", 1)];
+        setup.Emerge = new CemEmerge { Quality = PalaceQuality.Standard, EdgeRefinement = 0.05, AdaptiveMesh = 1 };
+        var source = EmSetupResolver.Resolve(cem, setup.LayoutRef, Path.Combine(ws, ".cws"), new CircuitRF.Design.Layout.TechnologyCache()).Source;
+        var r = EmRunService.Run(setup, source, Path.Combine(ws, "results"), emergeDevice: EmergeDevice.Cpu);
+        Assert.True(r.Status == EmRunStatus.Ok, r.Error);
+    }
+
+    /// <summary>
     /// brief-dfr28-3 R-dfr28-3-1 — the driver's check on EMerge's solves, with NaN injected: a matrix holding a non-finite
     /// entry is refused before it is solved, naming the one flat tetrahedron that owns those unknowns, where it is and what
     /// it lies in; a finite matrix whose solver returns NaN is refused after. On the TP149 board EMerge solved the first and

@@ -41,8 +41,10 @@ public sealed record EmergeRunFacts(string? Version, string? SparseSolver, long?
 }
 
 /// <summary>brief-emw-3 — a stalled GPU sweep: its frequencies, its best estimated error, and the frequency count it reached it at.
-/// <paramref name="Unusable"/>: it was stopped because EMerge's GPU solver found its own factorisation unusable, not for a stall.</summary>
-public sealed record EmergeGpuStall(int Samples, double? BestError, int BestAt, bool Unusable = false);
+/// <paramref name="Unusable"/>: it was stopped because a solve could not be trusted, not for a stall. <paramref name="Residual"/>:
+/// that solve's relative residual, when the driver's check on it is what stopped the sweep (brief EMG-1); null when EMerge's GPU
+/// solver flagged its own factorisation.</summary>
+public sealed record EmergeGpuStall(int Samples, double? BestError, int BestAt, bool Unusable = false, double? Residual = null);
 
 /// <summary>brief-emw-2 R-emw2-3a — one wave port's second-mode check: the modes EMerge kept at <see cref="FrequencyHz"/>
 /// (it drops evanescent ones, so a second one kept propagates), each one's β, rad/m, the face's own mode first; or why the
@@ -155,7 +157,8 @@ public static class EmergeResults
                            ? new EmergeGpuStall(g.TryGetProperty("samples", out var gs) && gs.ValueKind == JsonValueKind.Number ? gs.GetInt32() : 0,
                                                 g.TryGetProperty("bestError", out var ge) && ge.ValueKind == JsonValueKind.Number ? ge.GetDouble() : null,
                                                 g.TryGetProperty("bestAt", out var ga) && ga.ValueKind == JsonValueKind.Number ? ga.GetInt32() : 0,
-                                                g.TryGetProperty("unusable", out var gu) && gu.ValueKind == JsonValueKind.True)
+                                                g.TryGetProperty("unusable", out var gu) && gu.ValueKind == JsonValueKind.True,
+                                                g.TryGetProperty("residual", out var gr) && gr.ValueKind == JsonValueKind.Number ? gr.GetDouble() : null)
                            : null,
                    };
         }

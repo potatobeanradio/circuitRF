@@ -27697,3 +27697,94 @@ strip, where 300 Ω is exact, then on the zig-zag. Palace reads 299.96 Ω as wri
   N = 5 with these sizes is taller than it is wide. That is the planner's ordinary behaviour and the example keeps what it drew.
 - **The MMIC technology's `Resistor` width and spacing rules are placeholders.** 2 µm each, chosen so a drawn film is checked at all and not
   taken from a process. DRC reads the drawn shapes only; a film's thickness reaches nothing but a 3D solve.
+
+
+## EMG-1: a GPU solve that cannot be trusted moves the sweep to the CPU; the flag alone was not enough (2026-11-04)
+
+Measured before any change, as `brief-emerge-gpu-unusable-factorisation.md` asks. **The brief's stop condition fired**, so the
+work stopped there and went back to the owner, who chose the brief's plan plus a check on the residual (below). Scratch harness, not a test: the shipped driver on its point path with fields off, each GPU solve
+recorded by job id, so a flag belongs to its frequency. One machine, EMerge 3.0.0b2. "Flag" is the line EMerge logs,
+the one the driver reads. |ΔS| is the largest entry of the driver's raw `S.npy` against the same mesh on the CPU, where two CPU
+runs differ by at most 7e-11. "Residual" is ‖Ax − b‖/‖b‖ in double precision, taken outside the solver.
+
+| Problem | Unknowns | f (GHz) | Flag | Residual | max \|ΔS\| | \|S − Sᵀ\| |
+|---|---|---|---|---|---|---|
+| Thru, 3 points, 2 runs | 81,824 | 1 | yes | 0.39, 0.82 | **0.27, 0.59** | 0.38, 0.79 |
+| | | 10 | no | 1.3e-2, 1.5e-2 | 4.1e-4, 3.9e-4 | 2.5e-4, 1.9e-4 |
+| | | 40 | no | 3.0e-7, 4.4e-7 | 1.3e-7, 1.9e-7 | 5.0e-5 |
+| Thru, ladder | 81,824 | 3, 4, 5, 6, 7 | yes | 1.9e-2 to 0.11 | 1.9e-3 to 3.2e-2 | 1.9e-3 to 2.4e-2 |
+| | | 8 | yes | 4.0e-3 | 1.9e-4 | 2.4e-4 |
+| | | **9** | **no** | 4.2e-3 | **1.8e-3** | 6.6e-4 |
+| | | 10 | no | 1.6e-2 | 4.0e-4 | 1.8e-4 |
+| | | 12, 15 | no | 7.5e-4, 4.2e-4 | 1.8e-4, 1.3e-4 | 2.4e-4, 1.3e-4 |
+| Thru, 9 GHz alone, on the 40 GHz mesh | 81,824 | **9** | **no** | 9.5e-3 | **2.5e-3** | 2.2e-3 |
+| Six-square strip | 44,592 | 1 | yes | 0.27 | 1.3 | 0.29 |
+| | | **10** | **no** | 4.5e-3 | **2.2e-3** | 2.6e-4 |
+| | | 40 | no | 2.0e-5 | 7.7e-6 | 3.3e-5 |
+| Six-square strip | 65,462 | 1 | yes | 0.35 | 0.38 | 0.36 |
+| | | **10** | **no** | 5.9e-3 | **3.0e-3** | 7.5e-4 |
+| | | 40 | no | 3.0e-7 | 1.1e-7 | 3.1e-5 |
+| Six-square strip, 2 runs | 93,548 | 1 | yes | 0.25, 0.29 | 0.16, 0.19 | 0.12, 0.22 |
+| | | **10** | **no** | 1.5e-2, 1.4e-2 | **3.5e-3, 2.9e-3** | 9.9e-4, 9.4e-4 |
+| | | 40 | no | 5.9e-7, 9.9e-7 | 5.2e-8, 1.5e-7 | 6.1e-6 |
+| Six-square strip | 161,842 | 1 | yes | 450 | 1.2 | 0.54 |
+| | | 10 | yes | 2.8e-2 | 1.9e-3 | 6.1e-4 |
+| | | 40 | no | 9.4e-7 | 3.1e-7 | 4.0e-5 |
+| Cavity, 6 points in 8-12 | 108,668 | all | no | ≤ 4.5e-9 | ≤ 2.9e-8 | 1.5e-4 to 2.3e-4, as the CPU's |
+
+Every row keeps the mesh a sweep to 40 GHz sizes, since the top frequency sizes it; only the solved frequencies change. The strip is
+scratch geometry: 240 × 40 µm of 50 Ω/sq film between the fixture's feeds. Its meshes are not the brief's 76,870
+and 106,784 unknowns, whose edge settings were not recorded, and the 343,742-unknown mesh was not re-run.
+
+- **6 of the 27 unflagged points are past the 1e-3 line**, on the thru and on three of the four strip meshes, repeatedly. The
+  thru solved at 9 GHz alone is the plain case: no flag, no warning, 2.5e-3 off. Moving a sweep at the first flag would have
+  left this run on the GPU, reporting nothing.
+- **The flag is read before the solve.** EMerge tests `factor.quality.usable` straight after factorising. Read again after the
+  solve, the same factor's quality carries a residual and its verdict can change: the thru's 10 GHz point is usable at the check
+  and `unusable` afterwards. That later verdict is not enough either: the strip at 44,592 and 65,462 unknowns reads `degraded`
+  at 2.2e-3 and 3.0e-3.
+- **|S − Sᵀ| does not separate them.** The smallest unflagged-bad point reads 2.6e-4, and the clean Cavity reads up to 2.3e-4 on
+  either device. Its 5e-5 "good" figure is specific to the thru.
+- **The residual is the candidate that does.** Every point past 1e-3 has a residual of 4.2e-3 or more, flagged or not. Among
+  unflagged points within the line, it reads 7.5e-4 or less, except the thru's 10 GHz at about 1.5e-2, which is 4e-4 off and would
+  only cost a needless CPU solve. A bar of 1e-3 catches all six on this data. That is 44 points on one machine, so it is an
+  observation and not a bound.
+- **The line runs through the band, not just its low end.** The thru is bad to 9 GHz with nothing wrong by 12, and the Cavity, at a
+  similar size in 8-12 GHz, is clean to 1e-8, so unknowns alone do not predict it.
+- **Not measured:** whether an adaptive GPU sweep can converge on samples like these and publish them. The driver's watch reads
+  only the same flag and the sweep's own estimate. The residual check now covers that path too.
+
+**What was built.** `GPU_RESIDUAL_LIMIT` (1e-3) is checked in `guard_solves` after every GPU solve, one sparse product over the
+unknowns solved. `watched` replaces `adaptive_sweep`, so both sweep paths run the same way: on a flag, a failed residual or a stall,
+the band is restored, the dataset emptied, the factorisation freed and the sweep run again on the CPU. `auto` and `gpu` are not told
+apart. The "may be noise" warning is gone. What differs from the brief:
+
+- **The attempt covers the saved fields, not just the sweep.** A field's direct solve runs after the arrays are written, so a flag
+  there restarts everything and removes the GPU's `.npy` files first: one result from one device, and a CPU run that does not
+  finish leaves nothing of the GPU's. Live: the thru at 40 GHz with a field saved at 1 GHz moved, and wrote the CPU's.
+- **A mesh refinement cannot be restarted**, because its passes are part-way through changing the mesh. A pass that fails is solved
+  again on the CPU where it stands, and the rest of the run stays there, so no failed solve steers the mesh. Live, with the limit
+  forced to nothing in a scratch copy of the driver: one GPU call, four on the CPU, and S within 5e-14 of a CPU-only run on the same
+  19,464 tetrahedra. This path has no gate.
+- **The factorisation is freed on leaving the GPU** (`SolveRoutine.reset`), which `adaptive_sweep` did not do. On shared memory it
+  would otherwise sit under the CPU's solve.
+
+**The brief's other two stop conditions did not fire.** A sweep re-run in the same process differs from a fresh CPU run by 1.9e-10 to
+2.6e-10 at worst, and by 2e-12 on the 9 GHz gate. The move costs the GPU attempt: on the thru's three points 16.5 s against 11.4 s,
+and on its six-point adaptive sweep 26.7 s against 24.5 s.
+
+**The refusal (`R-emg1-4`) was not seen end to end.** On the thru, a memory ceiling anywhere from 2.2 to 3.4 GB stopped the run while
+it was still on the GPU, up to 3.9 GB read, so no limit left the GPU's pass running and stopped the CPU's. Those runs were refused and
+wrote no Touchstone and no arrays. The combined sentence is gated on `StoppedLeg` and the tracker, not on a run that reached it.
+
+### A lossy sheet on a refined mesh stopped EMerge 3.0.0b2
+
+`EMerge.AdaptiveMesh` above 0 on `Conductors: Sheets` stopped on the second pass, on either device, with `TypeError: 'NoneType' object
+is not subscriptable`. It first looked like a wave-port fault because the thru has wave ports; the traceback says otherwise. b2 splits a
+lossy sheet's unknowns in its one-time boundary setup, a refinement builds a new basis, and that basis has no second side to read.
+
+3.0.0b3 moved the split so that every new basis gets one, and the recipes already install b3. **b2 stays on the tested list and is what
+an older install keeps**, so `install_thin_conductor_split` does the same from the driver, and on b3 finds the work already done.
+Checked on the thru at 1, 10 and 40 GHz: b2 with the repair against the b3 wheel, pinned hash, on one and two passes, gave the same
+15,911 tetrahedra and S within 1.1e-10. Refining moved S by up to 1.1e-2 at 40 GHz against the unrefined mesh, which is the refinement
+working, not a difference between versions. Gate: `EmergeRunTests.ALossySheet_SolvesOnARefinedMesh`.
