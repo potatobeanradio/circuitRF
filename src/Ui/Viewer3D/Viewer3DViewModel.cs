@@ -183,14 +183,27 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
 
     partial void OnIsFirstSceneStalledChanged(bool value) => OnPropertyChanged(nameof(IsBuildingFirstScene));
 
-    /// <summary>The stalled bar's Retry: builds the first scene again from a fresh snapshot.</summary>
+    /// <summary>Why the pane showing this view cannot draw, or null while it can — the pane sets it.</summary>
+    public string? PaneFault { get; set; }
+
+    /// <summary>brief-dfr34-5 R-dfr34-5-2 — asks the pane to rebuild its surface and device (<see cref="Viewer3DPane.Reconnect"/>).
+    /// Raised on the UI thread.</summary>
+    public event Action? ReconnectRequested;
+
+    /// <summary>The stalled bar's Retry: builds the first scene again from a fresh snapshot, and reconnects a pane that has
+    /// a GPU fault (R-dfr34-5-2), so closing and reopening is never the only way back.</summary>
     [RelayCommand]
     private void RetryFirstScene()
     {
         IsFirstSceneStalled = false;
         _lastFailure = null;
+        if (PaneFault is not null) ReconnectRequested?.Invoke();
         Regenerate();
     }
+
+    /// <summary>The fault text's Reconnect (R-dfr34-5-2).</summary>
+    [RelayCommand]
+    private void ReconnectPane() => ReconnectRequested?.Invoke();
 
     private void ArmStallTimer()
     {
@@ -220,9 +233,10 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
     {
         if (_disposed) return;
         var inputs = _prepare();
+        // Set before the request: a build that ends at once, with a post that runs inline, clears it before Request returns.
+        IsRegenerating = true;
         long gen = Source.Request(inputs);
         if (inputs is Viewer3DInputs vi) _inputs[gen] = vi;
-        IsRegenerating = true;
         ArmStallTimer();
     }
 
@@ -231,8 +245,8 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
     public void RegenerateWith(object state)
     {
         if (_disposed) return;
-        Source.Request(state);
         IsRegenerating = true;
+        Source.Request(state);
         ArmStallTimer();
     }
 

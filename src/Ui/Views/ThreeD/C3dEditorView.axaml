@@ -982,8 +982,13 @@
                         </StackPanel>
                     </Border>
                 </Canvas>
-                <SelectableTextBlock x:Name="FaultText" IsVisible="False" TextWrapping="Wrap" Margin="24"
-                                     HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                <!-- brief-dfr34-5 R-dfr34-5-2 — the pane's fault, with a way back that is not closing the view. -->
+                <StackPanel x:Name="FaultPanel" IsVisible="False" Margin="24" Spacing="8"
+                            HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <SelectableTextBlock x:Name="FaultText" TextWrapping="Wrap" HorizontalAlignment="Center"/>
+                    <Button Content="Reconnect" Padding="8,2" HorizontalAlignment="Center"
+                            Command="{Binding ViewModel.Viewer.ReconnectPaneCommand}"/>
+                </StackPanel>
             </Panel>
 
 

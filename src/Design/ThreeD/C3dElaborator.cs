@@ -74,6 +74,11 @@ public sealed record C3dElaborationOptions(double? FMaxHz = null, double TempC =
     /// before lowering, so each solver sees plain εr and σ. Null: the record's plain numbers (an editor preview, a thermal run).</summary>
     public double? MaterialFrequencyHz { get; init; }
 
+    /// <summary>brief-dfr34-5 R-dfr34-5-1 — the editor's build, which a newer one cancels: checked at each object, each placed
+    /// cell and each kernel build, so a cancelled elaboration gives up its lock instead of running to the end. A throw leaves
+    /// every cache valid: each holds results keyed by their inputs.</summary>
+    public CancellationToken Cancellation { get; init; }
+
     /// <summary>What <see cref="MaterialFrequencyHz"/> is, for the run's one note: <c>the sweep's centre</c>.</summary>
     public string? MaterialFrequencyBasis { get; init; }
 
@@ -967,6 +972,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
             }
             foreach (var obj in doc.Objects)
             {
+                options.Cancellation.ThrowIfCancellationRequested();
                 Steps(obj);
                 if (obj is C3dPolyline) { _polylines++; continue; }
                 if (obj is C3dWire) continue;                       // after the instances: see Wires
@@ -1237,6 +1243,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
 
             var worldUm = world with { Tx = world.Tx * 1e6, Ty = world.Ty * 1e6, Tz = world.Tz * 1e6 };
             var tree = GeometryKernelTree.From(obj, doc.DbuPerMicron, worldUm, Path.GetDirectoryName(path));
+            options.Cancellation.ThrowIfCancellationRequested();
             var built = owner.KernelCached(tree, name);
             if (built.Empty) built = built with { Refusal = C3dBooleans.EmptyResult(obj, name) };
             // brief-em3d-67 R-em3d67-5d / -6c — a fillet's or chamfer's refusal names the edge, in the user's terms.
@@ -1533,6 +1540,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                     _refusals.Add($"The 3D view reaches itself through its instances: {cycle}. A cell cannot contain itself.");
                     return;
                 }
+                options.Cancellation.ThrowIfCancellationRequested();
                 var child = owner.Child3DCached(viewPath, workspaceCws);
                 Read(viewPath);
                 ReadTech(child.Tech);
@@ -1583,6 +1591,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
             }
 
             _anyLayoutInstance = true;
+            options.Cancellation.ThrowIfCancellationRequested();
             var layout = owner.ChildLayoutCached(viewPath, workspaceCws, options);
             Read(viewPath);
             ReadTech(layout.Tech);

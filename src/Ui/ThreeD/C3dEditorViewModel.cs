@@ -238,14 +238,18 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     private Scene3DModel Build(long generation, object? state, CancellationToken ct)
     {
         // brief-em3d-108 R-em3d108-1d — a technology that changed only in how it looks: the scene again from the kept elaboration.
-        if (state is C3dDisplayRebuild display) return Rebuild(generation, display);
+        if (state is C3dDisplayRebuild display) return Rebuild(generation, display, ct);
         var inputs = (C3dSceneInputs)state!;
         var doc = C3dPersistence.Deserialize(inputs.DocumentText);
-        lock (_elaborating)
+        EnterElaborating(ct);
+        try
         {
             ct.ThrowIfCancellationRequested();
             Interlocked.Increment(ref _elaborations_);
-            var e = _elaborator.Elaborate(doc, inputs.Path, inputs.WorkspaceCws, new C3dElaborationOptions { Cell = inputs.Cell, PadsOptional = true });
+            ElaborationStarting?.Invoke(ct);
+            var e = _elaborator.Elaborate(doc, inputs.Path, inputs.WorkspaceCws,
+                                          new C3dElaborationOptions { Cell = inputs.Cell, PadsOptional = true, Cancellation = ct });
+            ct.ThrowIfCancellationRequested();
             _elaborations[generation] = e;
             _readStamps[generation] = (inputs.Path, ReadStamp(e.FilesRead, inputs.Path));
             _frameKeys[generation] = inputs.Path;
@@ -261,9 +265,25 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
                                                        inputs.Ghosts is not { Count: > 0 } && inputs.Cell is null);
             // Pushed in, only the child is drawn — as the layout editor draws only the cell pushed into (owner, 2026-10-04).
             // brief-em3d-48 R-em3d48-4a drew the top document around it, dimmed; that read as part of the child.
+            ct.ThrowIfCancellationRequested();
             return Assemble(generation, doc, e, inputs, records);
         }
+        finally { Monitor.Exit(_elaborating); }
     }
+
+    /// <summary>
+    /// brief-dfr34-5 R-dfr34-5-1 — takes the elaboration lock, giving up when <paramref name="ct"/> is cancelled. A build
+    /// waiting behind a slow one used to wait it out even once a newer build had cancelled it, so every Retry queued behind
+    /// the first; now a cancelled build leaves the queue at once, and only the newest waits.
+    /// </summary>
+    private void EnterElaborating(CancellationToken ct)
+    {
+        while (!Monitor.TryEnter(_elaborating, 50)) ct.ThrowIfCancellationRequested();
+    }
+
+    /// <summary>Test seam (brief-dfr34-5 gate): runs inside the elaboration lock, just before the document is elaborated, with
+    /// the build's token — a test's stand-in for an elaboration that blocks.</summary>
+    internal Action<CancellationToken>? ElaborationStarting { get; set; }
 
     /// <summary>The scene from an elaboration: what <see cref="Build"/> does once the document has been elaborated, and all that a
     /// display-only rebuild does (brief-em3d-108). Called under the elaboration lock: it shares the tessellation cache.</summary>

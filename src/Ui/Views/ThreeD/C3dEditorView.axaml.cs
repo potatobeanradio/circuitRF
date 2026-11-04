@@ -92,7 +92,7 @@ public partial class C3dEditorView : UserControl
         Pane.FaultChanged += why =>
         {
             FaultText.Text = why is null ? "" : "The 3D view cannot draw here: " + why;
-            FaultText.IsVisible = why is not null;
+            FaultPanel.IsVisible = why is not null;
         };
     }
 

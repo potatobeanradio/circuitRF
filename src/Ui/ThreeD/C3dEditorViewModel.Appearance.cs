@@ -105,16 +105,19 @@ public sealed partial class C3dEditorViewModel
     }
 
     /// <summary>Build's display-only branch: the kept elaboration, assembled again. Nothing is elaborated or tessellated.</summary>
-    private Scene3DModel Rebuild(long generation, C3dDisplayRebuild d)
+    private Scene3DModel Rebuild(long generation, C3dDisplayRebuild d, CancellationToken ct)
     {
-        lock (_elaborating)
+        EnterElaborating(ct);
+        try
         {
+            ct.ThrowIfCancellationRequested();
             _elaborations[generation] = d.Elaboration;
             _frameKeys[generation] = d.Inputs.Path + "|";
             _records[generation] = d.Records;
             _built[generation] = d;
             return Assemble(generation, d.Document, d.Elaboration, d.Inputs, d.Records);
         }
+        finally { Monitor.Exit(_elaborating); }
     }
 
     // ── R-em3d108-2 — an object's or an instance's appearance, one field at a time ────────────────────────────────────────

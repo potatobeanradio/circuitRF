@@ -125,9 +125,15 @@ public sealed class Viewer3DPane : Control
     protected override void OnDataContextChanged(EventArgs e)
     {
         base.OnDataContextChanged(e);
-        if (_vm is not null) { _vm.FrameRequested -= RequestFrame; _vm.ShowIn(null); }
+        if (_vm is not null) { _vm.FrameRequested -= RequestFrame; _vm.ReconnectRequested -= Reconnect; _vm.ShowIn(null); }
         _vm = DataContext as Viewer3DViewModel;
-        if (_vm is not null) { _vm.FrameRequested += RequestFrame; _vm.ShowIn(_shown ? _frameClock : null); }
+        if (_vm is not null)
+        {
+            _vm.FrameRequested += RequestFrame;
+            _vm.ReconnectRequested += Reconnect;
+            _vm.PaneFault = _fault;
+            _vm.ShowIn(_shown ? _frameClock : null);
+        }
         RequestFrame();
     }
 
@@ -264,7 +270,8 @@ public sealed class Viewer3DPane : Control
     // until the app was restarted. Now a failure rebuilds the surface, the images and the device; once the rebuilds
     // below are spent, the failure is the pane's fault, said in its place and once in Messages. There is no software
     // renderer to fall back to — every backend presents through the compositor's GPU interop — so the fault stands until
-    // the view is closed and reopened, which attaches afresh with its rebuilds again.
+    // Reconnect (the fault text's, or the stalled bar's Retry: brief-dfr34-5 R-dfr34-5-2) or a reattach, each of which
+    // starts afresh with its rebuilds again.
 
     // Designer feedback round 34 — one rebuild was not enough: docking a laptop changes the display several times in a
     // row, and a rebuild made straight away imported against a context that was still lost, so the second fault was
@@ -299,8 +306,24 @@ public sealed class Viewer3DPane : Control
             return;
         }
         string why = ex.GetBaseException().Message;
-        if (_fault != why) _vm?.PostMessage?.Invoke($"The 3D view cannot draw here: {why} Close and reopen the view to try again.", true);
+        if (_fault != why) _vm?.PostMessage?.Invoke($"The 3D view cannot draw here: {why} Reconnect it from the view to try again.", true);
         SetFault(why);
+    }
+
+    /// <summary>
+    /// brief-dfr34-5 R-dfr34-5-2 — rebuilds the surface, the images and the device now, with the loss rebuilds counted
+    /// afresh: what attaching does, without closing and reopening the view. The fault text's Reconnect and the stalled
+    /// bar's Retry both come here.
+    /// </summary>
+    public void Reconnect()
+    {
+        if (_topLevel is null) return;                       // detached: the next attach starts afresh anyway
+        _lossRebuilds = 0;
+        _lastLossRebuild = DateTime.MinValue;
+        Teardown();
+        _vm?.Session.ResetBackend();
+        SetFault(null);
+        _ = Host(++_attachGen);
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
@@ -412,6 +435,7 @@ public sealed class Viewer3DPane : Control
     {
         if (_fault == why) return;
         _fault = why;
+        if (_vm is not null) _vm.PaneFault = why;
         FaultChanged?.Invoke(why);
     }
 

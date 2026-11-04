@@ -41888,3 +41888,27 @@ records view resolves copies of the document's records, so `HashSet<C3dPort>` ma
 
 UiSnapshot's `--c3d-pick` now handles a port no pixel shows: it hovers the projected centre and lets the viewer's ranking
 decide.
+
+## brief-dfr34-5 §1 — a 3D build Retry cannot queue behind, and a way back from a GPU fault (2026-11-04)
+
+- **Built without the field dump the brief asks for**, so only the parts that help whichever way it reads: a cancelled
+  build gives up its place, and a pane with a fault can be reconnected. The fresh-elaborator fallback (Retry builds with a
+  new elaborator when the old one keeps the lock past 1 s) is held for the dump. It fixes a hang inside elaboration and
+  would only hide a lost wake-up.
+- **Cancellation reaches elaboration.** `C3dElaborationOptions.Cancellation` is checked at each object, each placed cell
+  and each kernel build. The editor's `Build` passes its token and checks again before assembly. The lock is taken with
+  `Monitor.TryEnter` in a loop that watches the token, so a build cancelled while waiting leaves instead of waiting out the
+  slow one. Throwing mid-elaboration leaves the caches valid: each is keyed by its inputs, and `_layoutUsed`'s partial
+  entries survive one extra generation at most.
+- **A late result was already safe**: `Scene3DSource` drops any scene whose generation is not the newest, by number.
+- **Not covered:** a build that never returns still holds `_elaborating`, and the UI-thread users of that lock
+  (`C3dEditorViewModel.Hierarchy.cs`, and the `ObjectsElaborated`/`KernelTreesBuilt`/`ChildrenElaborated` counters) would
+  block on it. The field report described no frozen window, which hints the lock was released, but that is weak evidence.
+- **`Viewer3DPane.Reconnect`** rebuilds the surface, images and device at once and counts the loss rebuilds afresh. The
+  stalled bar's Retry calls it when the pane has a fault (`Viewer3DViewModel.PaneFault`, which the pane keeps current),
+  and the fault text has a Reconnect button. The Messages line now points at Reconnect rather than closing the view.
+- **`Viewer3DViewModel.Regenerate` set `IsRegenerating` after `Source.Request`.** A build that ended at once, with a post
+  that runs inline (every headless test), cleared the flag before it was set, and the building state stayed up for good.
+  `Viewer3DFirstSceneTests` failed on that every time, on the commit before this change too. The flag is set first now. In
+  the app the post goes through the dispatcher, so the race could not happen there.
+- Gate: `tests/Ui.Tests/ThreeD/BuildRetryTests.cs`.
