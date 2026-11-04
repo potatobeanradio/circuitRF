@@ -47,9 +47,10 @@ internal static class SdlChecker
         SchematicEditModel Model, LayoutView Target, string Workspace, string CellDir, string SchematicDir,
         string SchematicPath, string LayoutDir, string ClayPath, Technology Tech, string TechPath)
     {
-        public SchematicLayoutPlan Plan(bool connectParts = true) =>
+        public SchematicLayoutPlan Plan(bool connectParts = true, IReadOnlySet<string>? resnap = null, bool restoreRemoved = false) =>
             SchematicLayoutPlanner.Plan(Model, Target, SchematicDir, Workspace, LayoutDir, Tech, TechPath,
-                                        cellResolver: null, targetLayoutPath: ClayPath, connectParts: connectParts);
+                                        cellResolver: null, targetLayoutPath: ClayPath, connectParts: connectParts,
+                                        resnap: resnap, restoreRemoved: restoreRemoved);
 
         /// <summary><paramref name="plan"/> applied to a copy of the target, as the checker applies it.</summary>
         public LayoutView Applied(SchematicLayoutPlan plan)
@@ -88,13 +89,52 @@ internal static class SdlChecker
     public static Result Check(string design, string scratchRoot)
     {
         var p = Prepare(design, scratchRoot);
-        var (model, cellDir, cschPath, layoutDir, clayPath, tech) = (p.Model, p.CellDir, p.SchematicPath, p.LayoutDir, p.ClayPath, p.Tech);
-        string source = Path.Combine(DesignsRoot, design);
         var plan = p.Plan();
         var layout = p.Applied(plan);
+        var problems = Verify(p, layout, out var expect);
+
+        // 4. Report lines, exactly.
+        var actual = plan.Lines.Select(l => (Severity: l.Severity.ToString(), Id: l.InstanceName.Length == 0 ? "-" : l.InstanceName, l.Text))
+            .Concat(plan.NoLayoutWarnings.Select(w => (Severity: "Warning", Id: w.Split(' ', 2)[0], Text: w)))
+            .ToList();
+        var unmatched = new List<(string Severity, string Id, string Text)>(actual);
+        foreach (var e in expect)
+        {
+            int at = unmatched.FindIndex(a => a.Severity == e.Severity && a.Id == e.Id
+                                            && a.Text.Contains(e.Fragment, StringComparison.Ordinal));
+            if (at < 0) problems.Add($"missing report line: {e.Severity} {e.Id} {e.Fragment}");
+            else unmatched.RemoveAt(at);
+        }
+        foreach (var a in unmatched) problems.Add($"unexpected report line: {a.Severity} {a.Id} {a.Text}");
+
+        return new Result(problems, plan, layout);
+    }
+
+    /// <summary>
+    /// Checks 1-3 on <paramref name="layout"/> — any layout of the prepared design, a re-run's included (brief-sdl-4):
+    /// it is saved as the design's <c>.clay</c> and read back through LVS, the ratsnest and the overlap rule.
+    /// <paramref name="openAllowed"/> names joinable nets a scenario expects left open (a gap it reports).
+    /// </summary>
+    /// <paramref name="lvsAllowed"/> names LVS finding ids it expects (an open net at that gap, a connector placed with
+    /// no schematic part).
+    public static List<string> Verify(Prepared p, LayoutView layout, IEnumerable<string>? openAllowed = null,
+                                      IEnumerable<string>? lvsAllowed = null)
+    {
+        // The schematic as the scenario changed it is what LVS compares against.
+        SchematicPersistence.SaveToFile(p.SchematicPath, p.Model, Path.GetFileNameWithoutExtension(p.SchematicPath));
+        return Verify(p, layout, out _, openAllowed, lvsAllowed);
+    }
+
+    private static List<string> Verify(Prepared p, LayoutView layout, out List<Expected> expect,
+                                       IEnumerable<string>? openAllowed = null, IEnumerable<string>? lvsAllowedToo = null)
+    {
+        var (model, cellDir, cschPath, layoutDir, clayPath, tech) = (p.Model, p.CellDir, p.SchematicPath, p.LayoutDir, p.ClayPath, p.Tech);
+        string source = Path.Combine(DesignsRoot, Path.GetFileName(cellDir));
         LayoutPersistence.SaveToFile(clayPath, layout);
 
-        var expect = ReadExpect(Path.Combine(source, "expect.txt"), out var joinable, out var lvsAllowed, out bool overlapAllowed);
+        expect = ReadExpect(Path.Combine(source, "expect.txt"), out var joinable, out var lvsAllowed, out bool overlapAllowed);
+        if (openAllowed is not null) joinable.ExceptWith(openAllowed);
+        if (lvsAllowedToo is not null) lvsAllowed.UnionWith(lvsAllowedToo);
         var problems = new List<string>();
 
         // 1. LVS.
@@ -113,22 +153,7 @@ internal static class SdlChecker
             foreach (var (a, b) in TouchingStrangers(layout, cellDir, layoutDir, tech, netsByInstance))
                 problems.Add($"overlap: {layout.Instances[a].SchematicId} and {layout.Instances[b].SchematicId} share no net " +
                              "and their copper touches");
-
-        // 4. Report lines, exactly.
-        var actual = plan.Lines.Select(l => (Severity: l.Severity.ToString(), Id: l.InstanceName.Length == 0 ? "-" : l.InstanceName, l.Text))
-            .Concat(plan.NoLayoutWarnings.Select(w => (Severity: "Warning", Id: w.Split(' ', 2)[0], Text: w)))
-            .ToList();
-        var unmatched = new List<(string Severity, string Id, string Text)>(actual);
-        foreach (var e in expect)
-        {
-            int at = unmatched.FindIndex(a => a.Severity == e.Severity && a.Id == e.Id
-                                            && a.Text.Contains(e.Fragment, StringComparison.Ordinal));
-            if (at < 0) problems.Add($"missing report line: {e.Severity} {e.Id} {e.Fragment}");
-            else unmatched.RemoveAt(at);
-        }
-        foreach (var a in unmatched) problems.Add($"unexpected report line: {a.Severity} {a.Id} {a.Text}");
-
-        return new Result(problems, plan, layout);
+        return problems;
     }
 
     private static List<Expected> ReadExpect(string path, out HashSet<string> joinable, out HashSet<string> lvs, out bool overlap)
@@ -206,6 +231,9 @@ internal static class SdlChecker
         for (int a = 0; a < layout.Instances.Count; a++)
             for (int b = a + 1; b < layout.Instances.Count; b++)
             {
+                // A placement no schematic part names (a connector placed by hand) is the user's copper: touching a
+                // part is what it is for (brief-sdl-4).
+                if (layout.Instances[a].SchematicId is not { Length: > 0 } || layout.Instances[b].SchematicId is not { Length: > 0 }) continue;
                 var (ba, bb) = (boxes[a], boxes[b]);
                 if (ba.IsEmpty || bb.IsEmpty || ba.MaxX + reach < bb.MinX || bb.MaxX + reach < ba.MinX
                     || ba.MaxY + reach < bb.MinY || bb.MaxY + reach < ba.MinY) continue;

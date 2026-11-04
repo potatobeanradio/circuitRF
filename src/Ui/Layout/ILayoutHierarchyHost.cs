@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Threading.Tasks;
 
 namespace CircuitRF.Ui.Layout;
@@ -49,4 +50,8 @@ public interface ILayoutHierarchyHost
     /// <summary>False when there is no workspace to take a cell into — the picker then offers its
     /// plain folder-browse instead of the reference flow.</summary>
     bool CanReferenceExternalCell { get; }
+
+    /// <summary>brief-sdl-4 R-sdl4-2: Re-snap — Update Layout from Schematic run on the layout's own schematic with these
+    /// linked parts taking the schematic's values and re-joined to their neighbours. One undo step.</summary>
+    void Resnap(LayoutDocument doc, IReadOnlySet<string> schematicIds) { }
 }

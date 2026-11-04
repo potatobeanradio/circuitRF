@@ -14,10 +14,12 @@ namespace CircuitRF.Ui.Layout;
 /// (<c>SchematicLayoutPlannerTests</c>) holds that shut.
 ///
 /// <para>The plan's BOOKKEEPING (the parameter snapshots, the regeneration records, the orientation baselines of
-/// parts that did not otherwise change) is written straight into the target here, outside the command, exactly
-/// as it was before the planner moved: it is not itself undoable, matching the R-L5-13/14 report's convention
-/// that what is reported is what happened. Every instance add, replacement and deletion, every ground tie and
-/// pour, and every placement record is inside the returned command, never executed here.</para>
+/// parts that did not otherwise change) rides FIRST inside the returned command whenever there is one, so an Undo
+/// of the run restores it with the parts, moved shapes and placement records (brief-sdl-4 D9: a re-run that moved
+/// parts and changed baselines is undone byte for byte). When the run changes nothing undoable there is no command,
+/// and the bookkeeping is written straight into the target, as it always was. Every instance add, replacement and
+/// deletion, every ground tie and pour, and every placement record is inside the returned command, never executed
+/// here.</para>
 /// </summary>
 public static class SchematicToLayoutGenerator
 {
@@ -84,14 +86,15 @@ public static class SchematicToLayoutGenerator
         string? targetLayoutPath = null,
         bool linkOrientation = true,
         double pourMarginHeights = GroundPourPlanner.DefaultMarginHeights,
-        bool connectParts = true)
+        bool connectParts = true,
+        IReadOnlySet<string>? resnap = null,
+        bool restoreRemoved = false)
     {
         var plan = SchematicLayoutPlanner.Plan(
             model, target, schematicDir, workspaceRootDir, targetLayoutBaseDir, technology, techIdentity,
             cellResolver, targetLayoutPath, linkOrientation, pourMarginHeights,
-            kitLayoutGenerator: KitLayoutGenerators.For, connectParts: connectParts);
-
-        plan.ApplyBookkeeping(target);
+            kitLayoutGenerator: KitLayoutGenerators.For, connectParts: connectParts,
+            resnap: resnap, restoreRemoved: restoreRemoved);
 
         // A placement's record rides in one command with it, record FIRST: a composite takes its second command's
         // description, and the run's Undo entry still reads as the placement ("Place Instance"), as it always has.
@@ -108,9 +111,15 @@ public static class SchematicToLayoutGenerator
                 SchematicLayoutEdit.ReplaceInstance rep => new ReplaceInstanceCommand(target, rep.Index, rep.Before, rep.After),
                 SchematicLayoutEdit.DeleteInstances del => new DeleteInstancesCommand(target, del.Indices),
                 SchematicLayoutEdit.AddShape shape => new AddShapeCommand(target, shape.Shape),
+                SchematicLayoutEdit.ReplaceShape moved => new ReplaceShapeCommand(target, moved.Index, moved.Before, moved.After,
+                                                                                  "Move drawn copper"),
+                SchematicLayoutEdit.PlacementRecord record => new PlacementRecordCommand(target, record.SchematicId, record.Placement, null),
                 _ => throw new InvalidOperationException($"Unknown layout edit {edit.GetType().Name}"),
             });
         if (GroundArtworkCommand(target, plan.Ground) is { } groundCommand) chain = Chain(chain, groundCommand);
+
+        if (chain is null) plan.ApplyBookkeeping(target);
+        else chain = new CompositeCommand(new BookkeepingCommand(target, plan), chain);
 
         return new GenerationResult(chain, plan.Lines, plan.AddedCount, plan.UpdatedCount, plan.UnchangedCount,
                                     plan.RemovedCount, plan.OverwrittenParameterCount, plan.NoLayoutWarnings,
@@ -145,6 +154,34 @@ public static class SchematicToLayoutGenerator
         {
             foreach (string k in added) view.GroundViaKeys.Remove(k);
             foreach (string k in removed) view.GroundViaKeys.Add(k);
+        }
+    }
+
+    /// <summary>brief-sdl-4 D9: the plan's bookkeeping, undoable with the run — the two snapshot tables restored to the
+    /// entries (and the order) they had, and every orientation baseline the run wrote put back.</summary>
+    private sealed class BookkeepingCommand(LayoutView view, SchematicLayoutPlan plan) : IUiCommand
+    {
+        private List<KeyValuePair<string, PCellSnapshot>>? _pcell;
+        private List<KeyValuePair<string, Dictionary<string, PCellValue>>>? _schematic;
+        private List<(int Index, OrientationLink? Link)>? _links;
+
+        public string Description => "Placement bookkeeping";
+
+        public void Execute()
+        {
+            _pcell ??= [.. view.PCellSnapshots];
+            _schematic ??= [.. view.SchematicPCellSnapshots];
+            _links ??= plan.OrientationLinkUpdates.Select(u => (u.Key, view.Instances[u.Key].OrientationLink)).ToList();
+            plan.ApplyBookkeeping(view);
+        }
+
+        public void Undo()
+        {
+            view.PCellSnapshots.Clear();
+            foreach (var (k, v) in _pcell!) view.PCellSnapshots[k] = v;
+            view.SchematicPCellSnapshots.Clear();
+            foreach (var (k, v) in _schematic!) view.SchematicPCellSnapshots[k] = v;
+            for (int i = _links!.Count - 1; i >= 0; i--) view.Instances[_links[i].Index].OrientationLink = _links[i].Link;
         }
     }
 

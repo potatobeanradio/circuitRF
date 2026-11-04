@@ -37,7 +37,7 @@ public static partial class SchematicLayoutPlanner
         LayoutView target, Dictionary<string, (int Index, LayoutInstance Instance)> existingBySchematicId,
         Dictionary<int, LayoutInstance> replacedAt, HashSet<int> deleted,
         string schematicDir, string targetLayoutBaseDir, Technology? technology, List<ReportLine> lines,
-        IReadOnlyList<EditableComponent> noLayout)
+        IReadOnlyList<EditableComponent> noLayout, IReadOnlySet<string> resnap, IReadOnlySet<string> opened)
     {
         var compById = new Dictionary<string, EditableComponent>(StringComparer.Ordinal);
         foreach (var c in physical) if (c.InstanceName is { Length: > 0 } n) compById.TryAdd(n, c);
@@ -56,7 +56,8 @@ public static partial class SchematicLayoutPlanner
             if (deleted.Contains(e.Index) || !compById.ContainsKey(sid)) continue;   // an orphan joins nothing
             var inst = replacedAt.GetValueOrDefault(e.Index, e.Instance);
             if (inst.SchematicId is { Length: > 0 } now && now != sid) continue;   // adopted under a new name below
-            if (PartOf(inst, existing: true) is { } p) parts.Add(p);
+            // brief-sdl-4 R-sdl4-2: a part being re-snapped is placed by the chain against its neighbours, as a new one is.
+            if (PartOf(inst, existing: !resnap.Contains(sid)) is { } p) parts.Add(p);
         }
         foreach (var (index, after) in replacedAt)   // a rename adopted this run: listed under its new name
             if (after.SchematicId is { Length: > 0 } sid && !existingBySchematicId.ContainsKey(sid)
@@ -80,7 +81,8 @@ public static partial class SchematicLayoutPlanner
             var anchor = ChainPlacer.ChooseAnchor(chain, part => LowestPort(part));
             // A new chain's anchor takes the facing its symbol gives it (the orientation link's, as a lone part would)
             // at the origin; the row packer then moves the chain as one. Its mirror is the schematic's either way (D2).
-            var anchorPose = anchor.Existing
+            // A re-snapped chain with nothing fixed in it is placed from where its anchor already is.
+            var anchorPose = anchor.Existing || resnap.Contains(anchor.SchematicId)
                 ? ChainPose.Of(anchor.Instance)
                 : new ChainPose(0, 0, anchor.Instance.RotationDegrees, MirrorOf(anchor));
             var result = ChainPlacer.Place(chain, anchor, anchorPose, MirrorOf);
@@ -99,7 +101,7 @@ public static partial class SchematicLayoutPlanner
             }
             if (!anchor.Existing) anchors.Add(anchor.Instance);
 
-            if (chain.Parts.Any(p => p.Existing))
+            if (chain.Parts.Any(p => p.Existing || resnap.Contains(p.SchematicId)))
                 foreach (var inst in members) fixedRegion = fixedRegion.Union(CellHierarchy.InstanceBbox(inst, targetLayoutBaseDir));
             else if (members.Count > 0)
                 groups.Add((members.Min(m => slotOf[m]), members.OrderBy(m => slotOf[m]).ToList()));
@@ -130,16 +132,27 @@ public static partial class SchematicLayoutPlanner
             }
 
             foreach (var gap in result.Gaps)
-                lines.Add(new ReportLine("", GapLine(gap, target), ReportSeverity.Warning)
+            {
+                var gapIds = Ids(new[] { gap.To.Part, gap.From.Part }.Concat(gap.Bridge is { } b ? new[] { b.Part } : Array.Empty<JointGraph.Part>()));
+                if (gap.From.Part.Existing && gap.To.Part.Existing && gap.Bridge is null)
                 {
-                    Kind = ReportKind.LoopGap,
-                    Ids = Ids(new[] { gap.To.Part, gap.From.Part }.Concat(gap.Bridge is { } b ? new[] { b.Part } : Array.Empty<JointGraph.Part>())),
-                });
+                    // brief-sdl-4: between two parts already placed, a joint whose pins coincide is made however the user
+                    // turned them (D2); one this run opened is reported by DeltaPropagation; any other the user opened,
+                    // and it stays open (D6) — said every run, as Info, because it is the user's choice.
+                    if (Math.Abs(gap.Dx) <= ChainPlacer.CloseDbu && Math.Abs(gap.Dy) <= ChainPlacer.CloseDbu) { joined++; continue; }
+                    if (gap.Joint is { } j
+                        && opened.Contains(DeltaPropagation.JointKey(j.A.Part.SchematicId, j.A.Terminal, j.B.Part.SchematicId, j.B.Terminal)))
+                        continue;
+                    lines.Add(new ReportLine("", OpenJointLine(gap, target), ReportSeverity.Info) { Kind = ReportKind.LoopGap, Ids = gapIds });
+                    continue;
+                }
+                lines.Add(new ReportLine("", GapLine(gap, target), ReportSeverity.Warning) { Kind = ReportKind.LoopGap, Ids = gapIds });
+            }
         }
 
         // D4: a third or later pad at one joint is not placed against it.
         foreach (var (net, end) in graph.Overflow)
-            if (!placed.Contains(end.Part.Instance) && !end.Part.Existing)
+            if (!placed.Contains(end.Part.Instance) && !end.Part.Existing && !resnap.Contains(end.Part.SchematicId))
                 lines.Add(new ReportLine(end.Part.SchematicId,
                     $"{end.Part.SchematicId} — pin {PinName(end)} is a third part at the joint on net {net}; at most two attach " +
                     "side-on at one joint, so it was placed in the row", ReportSeverity.Warning)
@@ -172,41 +185,11 @@ public static partial class SchematicLayoutPlanner
                         ReportSeverity.Info) { Kind = ReportKind.Unjoined, Ids = [sid] });
                 return null;
             }
-            if (CellLayoutResolver.Resolve(inst, targetLayoutBaseDir, technology) is not
-                    { State: CellLayoutState.Resolved, View: { } cell }) return null;
-            var pins = CellPins.Resolve(cell, technology);
-            if (pins.Count == 0) return null;
-            var symbol = comp.ExternalSymbolRef is { } symRef ? CellSymbolResolver.Resolve(symRef, schematicDir) : null;
-            int drawn = comp.ToRenderComponent(null, symbol).Ports.Count;
-            var terminals = Enumerable.Range(1, drawn).Select(k => SchematicLayoutOrientation.CellPinFor(k, pins)).ToList();
-
-            // brief-sdl-2 R-sdl2-2: a line joins at its own pin; anything with pads — a footprint, an imported part, a
-            // placed cell — joins at the middle of its pad's outer edge (D2), facing the pad's effective direction (D1;
-            // only a footprint's file can store it backwards).
-            var kind = ViaSubstrateInjection.IsViaKind(comp.Symbol) ? JointGraph.PartKind.Via
-                     : FootprintDefaults.IsOffered(comp.Symbol) ? JointGraph.PartKind.Pad
-                     : JointGraph.PartKind.Line;
-            if (kind == JointGraph.PartKind.Pad)
-            {
-                var set = PadJoint.Of(cell, technology, effectiveFacing: comp.Footprint is not null);
-                terminals = terminals.Select(t => t is null ? null : set.For(t)?.Joint ?? t).ToList();
-                var part = new JointGraph.Part(sid, inst, terminals, existing, kind);
-                padSets[part] = set;
-                return part;
-            }
-            if (kind == JointGraph.PartKind.Via)
-            {
-                // brief-sdl-3: both of a via's pins sit at the barrel's centre and its generator faces them alike, so
-                // the joint gives them opposite facings — A back the way the line came, B onward — and a line on
-                // either layer that meets the via ends at its centre with the line beyond carrying straight on. The
-                // via has no handedness, so its solved rotation is whatever turns A to face the incoming line.
-                terminals = terminals.Select((t, i) => t is null ? null : new LayoutPin
-                {
-                    Name = t.Name, X = t.X, Y = t.Y, Layer = t.Layer, WidthDbu = t.WidthDbu,
-                    OutwardDeg = i == 0 ? 180.0 : 0.0,
-                }).ToList();
-            }
-            return new JointGraph.Part(sid, inst, terminals, existing, kind);
+            if (PartTerminals(comp, inst, schematicDir, targetLayoutBaseDir, technology, out var kind, out var set) is not { } terminals)
+                return null;
+            var part = new JointGraph.Part(sid, inst, terminals, existing, kind);
+            if (set is not null) padSets[part] = set;
+            return part;
         }
 
         bool MirrorOf(JointGraph.Part part) =>
@@ -221,6 +204,53 @@ public static partial class SchematicLayoutPlanner
                 if (portNumbers.TryGetValue(net, out int n) && (best is null || n < best)) best = n;
             return best;
         }
+    }
+
+    /// <summary>
+    /// The pins a placed part joins by, one per schematic terminal (null where none lands): a line's own pins; for a
+    /// part with pads, each pad's <see cref="PadJoint"/> (SDL-2 D1/D2); for a via, its two pins faced apart
+    /// (brief-sdl-3). Null when the cell does not resolve or has no pins. Shared by the chain step and by
+    /// <see cref="DeltaPropagation"/>, which reads the same pins before and after a change.
+    /// </summary>
+    internal static IReadOnlyList<LayoutPin?>? PartTerminals(EditableComponent comp, LayoutInstance inst, string schematicDir,
+                                                            string layoutBaseDir, Technology? technology,
+                                                            out JointGraph.PartKind kind, out PadJoint.Set? padSet)
+    {
+        kind = JointGraph.PartKind.Line;
+        padSet = null;
+        if (CellLayoutResolver.Resolve(inst, layoutBaseDir, technology) is not
+                { State: CellLayoutState.Resolved, View: { } cell }) return null;
+        var pins = CellPins.Resolve(cell, technology);
+        if (pins.Count == 0) return null;
+        var symbol = comp.ExternalSymbolRef is { } symRef ? CellSymbolResolver.Resolve(symRef, schematicDir) : null;
+        int drawn = comp.ToRenderComponent(null, symbol).Ports.Count;
+        var terminals = Enumerable.Range(1, drawn).Select(k => SchematicLayoutOrientation.CellPinFor(k, pins)).ToList();
+
+        // brief-sdl-2 R-sdl2-2: a line joins at its own pin; anything with pads — a footprint, an imported part, a
+        // placed cell — joins at the middle of its pad's outer edge (D2), facing the pad's effective direction (D1;
+        // only a footprint's file can store it backwards).
+        kind = ViaSubstrateInjection.IsViaKind(comp.Symbol) ? JointGraph.PartKind.Via
+             : FootprintDefaults.IsOffered(comp.Symbol) ? JointGraph.PartKind.Pad
+             : JointGraph.PartKind.Line;
+        if (kind == JointGraph.PartKind.Pad)
+        {
+            var set = PadJoint.Of(cell, technology, effectiveFacing: comp.Footprint is not null);
+            padSet = set;
+            return terminals.Select(t => t is null ? null : set.For(t)?.Joint ?? t).ToList();
+        }
+        if (kind == JointGraph.PartKind.Via)
+        {
+            // brief-sdl-3: both of a via's pins sit at the barrel's centre and its generator faces them alike, so
+            // the joint gives them opposite facings — A back the way the line came, B onward — and a line on
+            // either layer that meets the via ends at its centre with the line beyond carrying straight on. The
+            // via has no handedness, so its solved rotation is whatever turns A to face the incoming line.
+            return terminals.Select((t, i) => t is null ? null : new LayoutPin
+            {
+                Name = t.Name, X = t.X, Y = t.Y, Layer = t.Layer, WidthDbu = t.WidthDbu,
+                OutwardDeg = i == 0 ? 180.0 : 0.0,
+            }).ToList();
+        }
+        return terminals;
     }
 
     /// <summary>Each net a schematic Port's signal terminal sits on, with the lowest port number on it.</summary>
@@ -349,6 +379,16 @@ public static partial class SchematicLayoutPlanner
         end.Pin.Name is { Length: > 0 } n ? n : end.Terminal.ToString(CultureInfo.InvariantCulture);
 
     private static string EndName(JointGraph.End end) => $"{end.Part.SchematicId} pin {PinName(end)}";
+
+    /// <summary>brief-sdl-4 D6: a joint the user opened in the layout, as the run leaves it.</summary>
+    private static string OpenJointLine(ChainPlacer.Gap gap, LayoutView target)
+    {
+        string u = LayoutUnits.Suffix(target.DisplayUnit);
+        string Len(double dbu) => LayoutUnits.Format((long)Math.Round(dbu), target.DisplayUnit, target.DbuPerMicron);
+        return $"{EndName(gap.To)} and {EndName(gap.From)} are {Len(Math.Sqrt(gap.Dx * gap.Dx + gap.Dy * gap.Dy))} {u} apart " +
+               $"(x {Len(gap.Dx)}, y {Len(gap.Dy)} {u}): the joint is open in the layout, so Update Layout leaves it open " +
+               "and moves nothing across it. Re-snap joins it again.";
+    }
 
     /// <summary>D4's report: "Loop MT1, ML1, … does not close: MT3 pin 3 is 50 µm from ML4 pin 2 (x 0, y −50 µm),
     /// angle 0°."</summary>

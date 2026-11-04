@@ -153,6 +153,15 @@
                 <CheckBox Grid.Column="4" IsChecked="{Binding InstanceMirrorXValue, Mode=TwoWay}"/>
             </Grid>
 
+            <!-- brief-sdl-4 R-sdl4-2: a locked part never moves during Update Layout from Schematic,
+                 and holds its side when the schematic changes the length of something between parts. -->
+            <Grid ColumnDefinitions="56,*" ColumnSpacing="4">
+                <TextBlock Grid.Column="0" Text="Position" VerticalAlignment="Center" FontSize="11"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                <CheckBox Grid.Column="1" Content="Locked" FontSize="11" IsChecked="{Binding InstanceLockedValue, Mode=TwoWay}"
+                          ToolTip.Tip="Update Layout from Schematic never moves a locked part. When the schematic changes the length of something between parts, the side holding a locked part stays and the other side moves."/>
+            </Grid>
+
             <!-- brief-footprint-4b: the reference designator this placement draws on
                  silkscreen. The text is DERIVED for a schematic-generated instance
                  (its SchematicId), so the field is read-only there and says why —

@@ -26829,3 +26829,19 @@ button.
 the maker chose a symbol), not a forced box. The button takes the window's `tool` class: `SelectionBtn` is styled only
 inside the editor views. Refusals are returned strings, not thrown, because the firewall's user-facing-text gate flags
 a thrown sentence below the UI.
+
+## SDL-4 — re-runs that respect hand edits (2026-11-03)
+
+- **Propagation lives in `Layout/SchematicSync/DeltaPropagation.cs`; parameter rules in `EditState.cs`.** A re-run
+  starts from the layout as left: each linked part whose pins moved (D1) carries what is joined beyond it by the rigid
+  motion `T_V = T_U · D_U · C_V`, walked breadth-first from the side that stays.
+- **A joint is "made" by pin POSITION alone (within 1 DBU), not facing** — a U-shape turned by hand out of straight
+  lines has joints whose facings are not opposite. `ConnectChains` therefore counts an existing-existing joint whose
+  pins coincide as joined, and reports any other open one as Info (D6), not the SDL-1 warning.
+- **Drawn-copper contacts cost zero steps in the walk.** That is what makes copper drawn between two parts hold them
+  together (E9), and why a conflict at equal distance prefers the route carrying a change (E5's gap lands opposite the
+  change, at ML2).
+- **Bookkeeping (snapshots, baselines) now rides first inside the run's command** whenever there is one, so one Undo
+  is byte-identical (E13). With no command it is still written directly.
+- **A deleted linked part keeps its placement record and is marked `Removed`**; it is not put back until Restore Removed
+  Parts. A test that deletes a part to see it re-added must remove the record too (`ChainPlacementTests.D5`).

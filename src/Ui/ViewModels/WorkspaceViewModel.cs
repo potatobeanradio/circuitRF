@@ -16952,6 +16952,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         UpdateLayoutFromSchematicCommand.NotifyCanExecuteChanged();
         ImportWirebondWiresCommand.NotifyCanExecuteChanged();
         UpdateSchematicFromLayoutCommand.NotifyCanExecuteChanged();
+        RestoreRemovedPartsCommand.NotifyCanExecuteChanged();
         CreateSchematicFromArtworkCommand.NotifyCanExecuteChanged();
         DrawGroundPourCommand.NotifyCanExecuteChanged();
         FlipLayoutSelectionCommand.NotifyCanExecuteChanged();
@@ -17283,6 +17284,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         UpdateLayoutFromSchematicCommand.NotifyCanExecuteChanged();
         ImportWirebondWiresCommand.NotifyCanExecuteChanged();
         UpdateSchematicFromLayoutCommand.NotifyCanExecuteChanged();
+        RestoreRemovedPartsCommand.NotifyCanExecuteChanged();
         CreateSchematicFromArtworkCommand.NotifyCanExecuteChanged();
         DrawGroundPourCommand.NotifyCanExecuteChanged();
         FlipLayoutSelectionCommand.NotifyCanExecuteChanged();

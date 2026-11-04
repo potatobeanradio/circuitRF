@@ -24,6 +24,14 @@ public abstract record SchematicLayoutEdit
 
     /// <summary>A shape appended — a ground via's tie to its pad.</summary>
     public sealed record AddShape(LayoutShape Shape) : SchematicLayoutEdit;
+
+    /// <summary>The shape at <paramref name="Index"/> replaced — copper drawn by hand, carried with the parts it joins
+    /// (brief-sdl-4 D7).</summary>
+    public sealed record ReplaceShape(int Index, LayoutShape Before, LayoutShape After) : SchematicLayoutEdit;
+
+    /// <summary>A placement record written with no placement of its own — a part the user deleted, marked
+    /// <see cref="GeneratedPlacement.Removed"/> (brief-sdl-4 §2).</summary>
+    public sealed record PlacementRecord(string SchematicId, GeneratedPlacement Placement) : SchematicLayoutEdit;
 }
 
 /// <summary>A write to <see cref="LayoutView.SchematicPCellSnapshots"/>: <paramref name="Parameters"/> null
@@ -108,6 +116,12 @@ public sealed class SchematicLayoutPlan
                     break;
                 case SchematicLayoutEdit.AddShape shape:
                     view.Shapes.Add(LayoutGeometry.Clone(shape.Shape));
+                    break;
+                case SchematicLayoutEdit.ReplaceShape moved:
+                    view.Shapes[moved.Index] = LayoutGeometry.Clone(moved.After);
+                    break;
+                case SchematicLayoutEdit.PlacementRecord record:
+                    RecordPlacement(view, record.SchematicId, record.Placement, null);
                     break;
             }
         }

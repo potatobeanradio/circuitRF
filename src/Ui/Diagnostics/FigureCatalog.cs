@@ -287,6 +287,12 @@ public static class FigureCatalog
         // ports on only one of its lines is a trap for a designer scrolling past a page titled "put
         // a port on every end" (owner). Deleted rather than left unreferenced: an Id in this catalog
         // IS the placeholder key a page cites, and a row nothing cites rots quietly.
+        // brief-sdl-4: Update Layout from Schematic on a layout arranged by hand (scenario E1).
+        new("update-layout-keeps-arrangement", DocLayoutFixtures.UpdateLayoutKeepsHandArrangement, 882, 422, null,
+            "Left: three lines placed by Update Layout, the second and third turned by hand into a U. Right: the same "
+          + "layout after the second line is made 1 mm longer in the schematic and Update Layout is run again - the U "
+          + "keeps its shape, and the third line moves 1 mm along the second line's axis so the copper stays joined."),
+
         new("an01-coupled-pair-4port", DocLayoutFixtures.CoupledPairFourPorts, 882, 192, null,
             "Two parallel microstrips with an edge port on each end of each line - 254 um wide, "
           + "3.83 mm long, 246 um apart. All four ports are present, so both lines are driven and "

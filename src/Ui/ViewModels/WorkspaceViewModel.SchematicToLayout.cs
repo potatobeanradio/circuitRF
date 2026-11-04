@@ -113,7 +113,10 @@ public partial class WorkspaceViewModel
         RunLayoutUpdate(doc, onlyWBond);
     }
 
-    private void RunLayoutUpdate(SchematicDocument doc, EditableComponent? onlyWBond)
+    /// <param name="resnap">brief-sdl-4 R-sdl4-2: linked parts to Re-snap, or null.</param>
+    /// <param name="restoreRemoved">brief-sdl-4 R-sdl4-2: Restore Removed Parts.</param>
+    private void RunLayoutUpdate(SchematicDocument doc, EditableComponent? onlyWBond,
+                                 IReadOnlySet<string>? resnap = null, bool restoreRemoved = false)
     {
         if (doc.IsScratch)
         {
@@ -233,7 +236,8 @@ public partial class WorkspaceViewModel
                 layoutVm.Technology, layoutVm.ResolvedTechPath, this, targetLayoutPath: targetPath,
                 linkOrientation: prefs.LinkSchematicLayoutOrientation ?? true,
                 pourMarginHeights: ReadGroundPourMarginHeights(Path.Combine(workspaceRoot, ".cws")),
-                connectParts: prefs.ConnectPartsOnUpdateLayout ?? true);
+                connectParts: prefs.ConnectPartsOnUpdateLayout ?? true,
+                resnap: resnap, restoreRemoved: restoreRemoved);
 
             if (result.Command is not null)
                 layoutVm.Execute(result.Command);

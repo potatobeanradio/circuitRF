@@ -53,6 +53,12 @@ public sealed class SchematicToLayoutOverwriteReportTests : IDisposable
         }
     }
 
+    /// <summary>
+    /// brief-sdl-4 R-sdl4-3 (D-conflict). This test used to assert R-L5-11 — a layout edit OVERWRITTEN by the
+    /// schematic's value, with a warning. SDL-4 replaced that rule: a parameter changed in the layout is the board's
+    /// decision and is kept. When the schematic changed the same parameter too, the layout's value is still kept and the
+    /// run says so as a warning naming both values; the method name is kept so the gate filter still finds it.
+    /// </summary>
     [Fact]
     public void LayoutEditOverwritten_ReportsFromLayoutValueToSchematicValue_AtWarning_Gate13()
     {
@@ -64,28 +70,33 @@ public sealed class SchematicToLayoutOverwriteReportTests : IDisposable
         var r1 = SchematicToLayoutGenerator.Run(model, target, schematicDir, _root, layoutDir, null, null, null);
         r1.Command!.Execute();
 
-        // Simulate a layout-side parameter edit: repoint the instance's CellRef at a cell generated
-        // for W = 20 mm (the exact mechanism EditInstancePCellParameters uses).
+        // A layout-side parameter edit: repoint the instance's CellRef at a cell generated for W = 20 mm (the exact
+        // mechanism EditInstancePCellParameters uses).
         var origin20 = CellLayoutResolver.Resolve(target.Instances[0].CellRef, layoutDir).View!.PCellOrigin!;
         var params20 = new Dictionary<string, PCellValue>(origin20.Parameters) { ["W"] = 20 * 1e-3 }; // 20 mm in SI metres
         string cell20 = CircuitRF.Design.Layout.PCells.GeneratedCellStore.GetOrCreate(
             _root, "MLIN", params20, null, null, CircuitRF.Design.Layout.PCells.PCellLayerSelection.Default);
         target.Instances[0].CellRef = Path.GetRelativePath(layoutDir, cell20);
 
-        // Re-run: schematic still says 10 mm (unchanged) — the layout's 20 mm edit is overwritten.
-        var r2 = SchematicToLayoutGenerator.Run(model, target, schematicDir, _root, layoutDir, null, null, null);
-        Assert.NotNull(r2.Command);
-        r2.Command!.Execute();
+        // …and the schematic changes the same parameter, 10 mm to 12 mm.
+        model.Components[0].Parameters.First(p => p.Name == "W").Expression = "12";
 
-        var wLine = r2.Lines.First(l => l.Text.Contains("W changed"));
+        var r2 = SchematicToLayoutGenerator.Run(model, target, schematicDir, _root, layoutDir, null, null, null);
+        r2.Command?.Execute();
+
+        var wLine = r2.Lines.Single(l => l.Text.Contains("W was changed in both"));
         Assert.Equal(SchematicLayoutPlanner.ReportSeverity.Warning, wLine.Severity);
-        Assert.Contains("20 mm", wLine.Text);
-        Assert.Contains("10 mm", wLine.Text);
-        // "from 20 mm ... to 10 mm" — the LAYOUT's current (about-to-be-discarded) value comes first.
-        Assert.True(wLine.Text.IndexOf("20 mm", StringComparison.Ordinal) < wLine.Text.IndexOf("to 10 mm", StringComparison.Ordinal));
+        Assert.Contains("20 mm is kept", wLine.Text);
+        Assert.Contains("from 10 mm to 12 mm", wLine.Text);
 
         var res = CellLayoutResolver.Resolve(target.Instances[0].CellRef, layoutDir);
-        Assert.Equal(10 * 1e-3, res.View!.PCellOrigin!.Parameters.Real("W"), 6);
+        Assert.Equal(20 * 1e-3, res.View!.PCellOrigin!.Parameters.Real("W"), 6);   // the layout's value, kept
+
+        // The next run reads the pair as "the layout changed it": Info, every run, the layout's value still kept.
+        var r3 = SchematicToLayoutGenerator.Run(model, target, schematicDir, _root, layoutDir, null, null, null);
+        var kept = r3.Lines.Single(l => l.Text.Contains("W is 20 mm in the layout"));
+        Assert.Equal(SchematicLayoutPlanner.ReportSeverity.Info, kept.Severity);
+        Assert.Contains("the schematic says 12 mm", kept.Text);
     }
 
     [Fact]

@@ -406,6 +406,37 @@ public static class DocLayoutFixtures
     /// the difference is only in whether the run's notes say "inferred" — so nothing about the
     /// picture depends on the choice.</para>
     /// </summary>
+    /// <summary>
+    /// <b>What Update Layout keeps</b> (brief-sdl-4, scenario E1): three 1.1 mm MLINs placed by Update Layout, the
+    /// second and third turned by hand into a U, then the second lengthened from 3 mm to 4 mm in the schematic. Left,
+    /// the layout as the designer left it; right, after the re-run: the U keeps its shape and the third line moves 1 mm
+    /// along the second line's turned axis. The geometry is the one <c>HandEditTests.E1</c> asserts the run produces.
+    /// </summary>
+    public static FigureScene UpdateLayoutKeepsHandArrangement()
+    {
+        var tech = StarterTechnologies.Pcb2Layer();
+        var top = Layer(tech, "Top Copper");
+        var view = new LayoutView { DbuPerMicron = Dbu, DisplayUnit = LayoutUnit.Mm, SnapDbu = tech.DefaultSnapDbu };
+        long w = Um(1100), half = w / 2, h = Um(700);
+
+        void U(long dx, long l2, string caption)
+        {
+            // TL1 runs right from the origin; TL2 is turned to run down from TL1's end; TL3 is turned to run back left.
+            view.Shapes.Add(new RectShape { Layer = top, X1 = dx, Y1 = -half, X2 = dx + Um(5000), Y2 = half });
+            view.Shapes.Add(new RectShape { Layer = top, X1 = dx + Um(5000) - half, Y1 = -l2, X2 = dx + Um(5000) + half, Y2 = 0 });
+            view.Shapes.Add(new RectShape { Layer = top, X1 = dx - Um(2000), Y1 = -l2 - half, X2 = dx + Um(5000), Y2 = -l2 + half });
+            view.Shapes.Add(new LabelShape { Layer = top, X = dx + Um(1500), Y = Um(900), Text = "TL1", Height = h });
+            view.Shapes.Add(new LabelShape { Layer = top, X = dx + Um(2600), Y = -l2 / 2 - Um(350), Text = "TL2", Height = h });
+            view.Shapes.Add(new LabelShape { Layer = top, X = dx - Um(1000), Y = -l2 - Um(1700), Text = "TL3", Height = h });
+            view.Shapes.Add(new LabelShape { Layer = top, X = dx - Um(2000), Y = Um(2200), Text = caption, Height = h });
+        }
+        U(0, Um(3000), "Before");
+        U(Um(12000), Um(4000), "After");
+
+        return Framed(new LayoutDocument("What Update Layout keeps", EditorVm(view)), 880, 420,
+                      marginX: 0.12, marginY: 0.12);
+    }
+
     internal static LabelShape PortLabel(LayerKey layer, string text, long x, long y,
                                         LayoutRotation direction, long heightDbu)
         => new()

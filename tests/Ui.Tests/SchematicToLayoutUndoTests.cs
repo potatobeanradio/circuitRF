@@ -44,6 +44,8 @@ public sealed class SchematicToLayoutUndoTests : IDisposable
         return comp;
     }
 
+    /// <summary>brief-sdl-4: a re-run keeps a layout edit, so the one run that still overwrites it is Re-snap — and one
+    /// Undo of that run restores the layout's value and takes the part the same run added back out.</summary>
     [Fact]
     public void OneUndo_RestoresOverwrittenValue_AndRemovesAddedInstance()
     {
@@ -56,7 +58,7 @@ public sealed class SchematicToLayoutUndoTests : IDisposable
         r1.Command!.Execute();
         string originalCellRef = target.Instances[0].CellRef;
 
-        // Layout-side edit that the next run will overwrite.
+        // Layout-side edit that Re-snap will overwrite.
         var origin = CellLayoutResolver.Resolve(target.Instances[0].CellRef, layoutDir).View!.PCellOrigin!;
         var edited = new Dictionary<string, PCellValue>(origin.Parameters) { ["W"] = 20 * 1e-3 };
         string editedCellDir = GeneratedCellStore.GetOrCreate(_root, "MLIN", edited, null, null, PCellLayerSelection.Default);
@@ -66,7 +68,8 @@ public sealed class SchematicToLayoutUndoTests : IDisposable
         // Also add a second schematic component, so this run both overwrites AND adds.
         model.Components.Add(MakeMlin("MLIN2", wMm: 5));
 
-        var r2 = SchematicToLayoutGenerator.Run(model, target, schematicDir, _root, layoutDir, null, null, null);
+        var r2 = SchematicToLayoutGenerator.Run(model, target, schematicDir, _root, layoutDir, null, null, null,
+                                                resnap: new HashSet<string> { "MLIN1" });
         Assert.NotNull(r2.Command);
         r2.Command!.Execute();
 

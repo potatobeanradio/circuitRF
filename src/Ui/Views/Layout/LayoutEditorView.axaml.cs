@@ -1378,6 +1378,11 @@ public partial class LayoutEditorView : UserControl
         if (BuildReReferenceItem() is { } reReference)
             items = [reReference, new Separator(), .. items];
 
+        // brief-sdl-4 R-sdl4-2: on a selection of placements — the lock Update Layout from Schematic respects, and
+        // Re-snap, which re-joins the selected linked parts to their neighbours by the schematic's chain rule.
+        if (Vm is { SelectedInstanceIndices.Count: > 0 } selVm)
+            items = [.. items, new Separator(), .. BuildHandEditItems(selVm)];
+
         // Trace Impedance — offered only where there is stackup-bound copper under the click; the
         // answer (or the reason there is none) goes to the Messages panel.
         if (BuildTraceImpedanceItem() is { } impedance)
@@ -1404,6 +1409,35 @@ public partial class LayoutEditorView : UserControl
                                "every run. The panel's Pick traces tool also takes every trace joined to one (Shift-click).");
             mi.Click += (_, _) => Vm?.AddImpedancePickAt((long)Math.Round(t.Wx), (long)Math.Round(t.Wy), TracePickExtent.Trace);
             return mi;
+        }
+
+        List<object> BuildHandEditItems(LayoutEditorViewModel vm)
+        {
+            var list = new List<object>();
+            if (vm.CanLockSelection)
+            {
+                var lockItem = new MenuItem { Header = "Lock Position" };
+                ToolTip.SetTip(lockItem, "Update Layout from Schematic never moves a locked part, and the side of a change " +
+                                         "that holds one stays where it is.");
+                lockItem.Click += (_, _) => { vm.SetSelectedInstancesLocked(true); LayoutCanvasCtrl.InvalidateVisual(); };
+                list.Add(lockItem);
+            }
+            if (vm.CanUnlockSelection)
+            {
+                var unlock = new MenuItem { Header = "Unlock Position" };
+                unlock.Click += (_, _) => { vm.SetSelectedInstancesLocked(false); LayoutCanvasCtrl.InvalidateVisual(); };
+                list.Add(unlock);
+            }
+            var ids = vm.SelectedSchematicIds;
+            bool can = ids.Count > 0 && DataContext is LayoutDocument { Hierarchy: not null, FilePath.Length: > 0 };
+            var resnap = new MenuItem { Header = "Re-snap", IsEnabled = can };
+            ToolTip.SetTip(resnap, can
+                ? "Give the selected parts the schematic's values again and join each to its neighbours, closing joints " +
+                  "that were pulled open. One undo step."
+                : "Select parts placed by Update Layout from Schematic, in a saved layout.");
+            if (can) resnap.Click += (_, _) => ((LayoutDocument)DataContext!).Hierarchy!.Resnap((LayoutDocument)DataContext!, ids);
+            list.Add(resnap);
+            return list;
         }
 
         MenuItem BuildPopOutItem()

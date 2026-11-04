@@ -269,6 +269,8 @@ public static class LayoutGeometry
         // And the orientation baseline, so a moved or re-pointed instance still knows which side of a
         // schematic/layout pair was rotated since the last sync. Immutable, so sharing it is safe.
         OrientationLink = inst.OrientationLink,
+        // brief-sdl-4: a lock is the placement's, and a properties edit or a move must not unlock it.
+        Locked = inst.Locked,
     };
 
     /// <summary>Translates an instance's origin by (dx, dy) — the instance analogue of the shape

@@ -1551,7 +1551,33 @@ public static partial class LayoutRenderer
             if (bbox.IsEmpty) continue;
             var rect = NormalizedRect(ps.X(bbox.MinX), ps.Y(bbox.MinY), ps.X(bbox.MaxX), ps.Y(bbox.MaxY));
             canvas.DrawRect(rect, paint);
+            if (inst.Locked) DrawLockMark(canvas, rect.Right, rect.Top, theme, scaleUm);
         }
+    }
+
+    /// <summary>
+    /// brief-sdl-4 R-sdl4-2: a small padlock at the top-right corner of a locked part's selection outline — on the
+    /// outline only, so a picture of the layout (which draws no selection) is unchanged. A fixed size on screen.
+    /// </summary>
+    private static void DrawLockMark(SKCanvas canvas, float cornerX, float cornerY, LayoutRenderTheme theme, double scaleUm)
+    {
+        float Px(double device) => (float)DevicePixelsToPathSpace(scaleUm, device);
+        float w = Px(9), h = Px(7), r = Px(3), gap = Px(3);
+        // Body just outside the corner, shackle above it.
+        float left = cornerX + gap, top = cornerY - gap - h;
+        using var fill = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill, Color = theme.Selection };
+        using var stroke = new SKPaint
+        {
+            IsAntialias = true, Style = SKPaintStyle.Stroke, Color = theme.Selection, StrokeWidth = Px(1.5),
+        };
+        canvas.DrawRoundRect(new SKRect(left, top, left + w, top + h), Px(1), Px(1), fill);
+        float cx = left + w / 2;
+        using var shackle = new SKPath();
+        shackle.MoveTo(cx - r, top);
+        shackle.LineTo(cx - r, top - r);
+        shackle.ArcTo(new SKRect(cx - r, top - 2 * r, cx + r, top), 180, 180, false);
+        shackle.LineTo(cx + r, top);
+        canvas.DrawPath(shackle, stroke);
     }
 
     /// <summary>The Instance-place tool's live ghost (§6), widened by brief-L3a-followups.md

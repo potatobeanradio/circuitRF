@@ -213,6 +213,7 @@
                         <NativeMenuItemSeparator/>
                         <NativeMenuItem Header="Update Layout from Schematic"   Command="{Binding UpdateLayoutFromSchematicCommand}" Gesture="Meta+U"/>
                         <NativeMenuItem Header="Update Schematic from Layout"   Command="{Binding UpdateSchematicFromLayoutCommand}" Gesture="Meta+Shift+U"/>
+                        <NativeMenuItem Header="Restore Removed Parts"          Command="{Binding RestoreRemovedPartsCommand}" ToolTip="Put back the parts Update Layout from Schematic placed and you deleted from this layout, joined to their neighbours — a re-run leaves them out until asked. One undo step. Requires an active layout document."/>
                         <NativeMenuItem Header="Create">
                             <NativeMenuItem.Menu>
                                 <NativeMenu>
@@ -1225,6 +1226,11 @@
                           InputGesture="Ctrl+Shift+U"
                           ToolTip.Tip="Requires an active layout document.">
                     <MenuItem.Icon><mi:MaterialIcon Kind="FilePlus" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Restore Removed _Parts"
+                          Command="{Binding RestoreRemovedPartsCommand}"
+                          ToolTip.Tip="Put back the parts Update Layout from Schematic placed and you deleted from this layout, joined to their neighbours — a re-run leaves them out until asked. One undo step. Requires an active layout document.">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="Restore" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
                 <!-- brief-artsch-8 R-as8-1 / brief-img-6 R-im6-1: Design > Create holds the three commands that make a new
                      document from something drawn elsewhere — artwork already in a layout, or a picture. No gestures. -->

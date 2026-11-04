@@ -1095,9 +1095,9 @@ schematic joins it. These rules hold for every brief in it.
   layout both changed one parameter since the last run, the layout's value is kept and the conflict is reported
   as a warning.
 
-**R-L5-11 is superseded by S3** (2026-11-03, SDL series). Under R-L5-11 the schematic's value overwrote a
-parameter edited in the layout, with a warning. S3 keeps the layout's value instead. The overwrite remains the
-behaviour until the brief that implements S3 (SDL-4) lands.
+**R-L5-11 is superseded by S3** (SDL-4). Under R-L5-11 the schematic's value overwrote a parameter edited in the
+layout, with a warning. S3 keeps the layout's value instead; the one command that still takes the schematic's value
+over a layout edit is Re-snap, because that is what it is asked to do.
 
 #### Joints and chains (SDL-1)
 
@@ -1119,8 +1119,9 @@ Update Layout from Schematic** setting is on (the default; off, every new part g
 - **D4 — A loop that does not close is reported, never forced.** A closing joint within 1 DBU in each axis and
   1e-6° of facing is joined. Anything more is a warning naming the loop's parts, the gap in x and y and the angle
   error, and the parts stay where the chain put them.
-- **D5 — Existing parts are anchors.** A part already in the layout is not moved; new parts chain onto it, and a
-  joint between two existing parts is a closing joint. Otherwise the anchor is the part joined to the
+- **D5 — Existing parts are anchors.** The chain step does not move a part already in the layout; new parts chain
+  onto it, and a joint between two existing parts is a closing joint. (A part already placed moves only to carry a
+  schematic change, SDL-4 below, which runs before the chain step.) Otherwise the anchor is the part joined to the
   lowest-numbered schematic Port, else the first in schematic-id order. A new chain's anchor takes the facing its
   symbol gives it at the origin, and the row packer then places the whole chain as one rigid group by its bounding
   box.
@@ -1222,6 +1223,61 @@ kind — loop gap, unjoined connection, overlap, footprint note — and the sche
 expandable line per kind, its heading the count; a double-click on an item selects its parts in the layout and, when
 it is open, in the schematic, through the selection LVS's cross-probe uses (`SelectLayoutDevices`,
 `SelectSchematicDevices`).
+
+#### Re-runs that respect hand edits (SDL-4)
+
+A re-run does not regenerate the layout and merge the user's edits back in. It starts from the layout exactly as it
+is — every part where the user dragged it, turned the way they turned it — and applies only what the schematic
+changed (`DeltaPropagation` and `EditState` in `src/Design/Layout/SchematicSync/`). R16 still holds: when the
+schematic changed nothing, nothing moves and nothing is added twice.
+
+- **D1 — Every change is a change of pin poses.** For each linked part whose cell changes (a parameter, a cell
+  reference) or that turns (a rotation or mirror carried from the schematic), each pin's position and facing before
+  and after are compared. An MLIN whose L grows by ΔL moves its second pin by ΔL along its axis; a bend whose angle
+  changes turns its second pin; an MLIN whose W changes moves no pin, changes in place and propagates nothing.
+- **D2 — The far side moves as one rigid body.** Only joints MADE in the layout as it is are followed: two pins the
+  schematic joins whose positions coincide within 1 DBU (whatever way the user turned them — a U drawn by hand out of
+  straight lines keeps its joints), a side-on pad still against its joint, and copper contact with drawn copper or a
+  part no schematic names. Each part is carried by the rigid motion that keeps every made joint made:
+  `T_V = T_U · D_U · C_V`, where `D_U` carries U's old pin onto its new one and `C_V` puts a changed V's own pin back
+  where it was. Inside a moving group nothing changes relative to anything else.
+- **D3 — Which side stays**, first match: a **Locked** part (`LayoutInstance.Locked`); a part with **no schematic
+  link** touching it; **copper drawn by hand** joining it to something outside it; the chain's recorded anchor
+  (`GeneratedPlacement.ChainAnchor`), else the part on the lowest-numbered port. Locked and unlinked parts never move.
+  When both sides are held, nothing moves and the gap is reported naming what holds each side: *"TL2 is 1000 µm
+  longer; both sides are held (TL1 is locked; TL3 is locked). Left a 1000 µm gap at TL2 pin 2."*
+- **D4 — Several changes in one run** apply nearest the stay side first, each through the layout as already moved:
+  the walk is breadth-first in joints from the side that stays. A contact with drawn copper costs no step, which is
+  what makes copper drawn between two parts hold them together.
+- **D5 — Loops.** Where the walk reaches a part two ways that disagree, the way carrying a change wins (only one arm
+  of a branch-line got longer), then the way whose first change is nearest the stay side; the other joint is left open
+  and reported as a loop gap. Two arms changed alike agree, and nothing is reported.
+- **D6 — Joints the user opened stay open.** An open joint is not followed, so a part pulled away is not moved; the
+  open joint is reported as Info on every run. A part the user deleted is not put back (its placement record is marked
+  `Removed`); its joints count as open.
+- **D7 — Drawn copper inside a moving group moves with it**, unchanged in shape, and the report counts it.
+- **D8 — Obstacles are reported, not avoided** (SDL-3's overlap check reads the layout as the run leaves it).
+- **D9 — Undo is one step** and restores parts, moved shapes, placement records, snapshots and orientation baselines
+  together: the bookkeeping rides first inside the run's command whenever there is one.
+
+Parameters, read against the baselines the last run wrote (`EditState.Classify`):
+
+| Situation | Re-run does | Report |
+|---|---|---|
+| Schematic changed a parameter, layout did not | Applies it; D1-D5 propagate the geometry change | Info: the change, and a line naming the parts moved and by how much |
+| Layout changed a parameter, schematic did not | **Layout value kept** | Info on every run, naming both values |
+| Both changed the same parameter | **Layout value kept** | Warning naming both values; the baseline takes the schematic's new value, so the next run reads it as the row above |
+| User deleted a linked part | Not re-added; its joints count as open | Info, naming Restore Removed Parts |
+| Linked part with no placement record (placed before SDL-0) | Moves only if a change propagates to it through made joints | One Info line listing such parts the first time they move |
+
+A hand move or rotation is not a state of its own: it is the layout as it is, which D1-D5 start from.
+
+**Three commands, each a planner argument.** Lock Position / Unlock Position (context menu, and the Properties
+panel's Locked box) set the flag; a locked part shows a small padlock on its selection outline only. **Re-snap**
+(context menu, on linked parts) gives the selection the schematic's values and re-joins each part to its neighbours by
+the chain rule, closing joints that were pulled open. **Design ▸ Restore Removed Parts** puts deleted linked parts back,
+joined. Re-snap and Restore Removed Parts are Update Layout from Schematic run on the layout's own schematic with
+`resnap` / `restoreRemoved`, so nothing in the view model decides a position, and each is one undo step.
 
 ---
 

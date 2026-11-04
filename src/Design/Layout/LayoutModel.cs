@@ -998,6 +998,15 @@ public sealed class LayoutInstance
     public OrientationLink? OrientationLink { get; set; }
 
     /// <summary>
+    /// brief-sdl-4 R-sdl4-2: the part never moves during Update Layout from Schematic, and holds its side of any
+    /// change the schematic makes (a connector at the board edge, a part fixed for mechanical reasons). Set from the
+    /// Properties panel and the Lock Position / Unlock Position context-menu commands. Omitted when false, on the
+    /// additive convention every field in this block follows.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Locked { get; set; }
+
+    /// <summary>
     /// Where the designator sits relative to this instance's own origin, <b>in the instance's placed
     /// frame and in the PARENT's DBU</b> (R-fp4b-2b) — so it moves and rotates with its part, which
     /// is what a user who dragged it there meant, and so a drag stores the delta in the frame the

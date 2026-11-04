@@ -467,8 +467,9 @@ point, facing each other. Lines, tees, bends, curves and crosses come out as one
 branch-line coupler drawn from MTEEs and MLINs is a closed ring with its four launches rather than a row of loose
 strips. The first part of each connected group keeps the way its symbol faces; every other part is turned to meet its
 neighbour, and a bend or tee turns the way its symbol does, so **mirror a symbol to make a bend turn the other way**.
-A group that touches nothing already in the layout is placed as one piece, beside the rest. A part that is already in
-the layout is never moved: new parts join onto it.
+A group that touches nothing already in the layout is placed as one piece, beside the rest. New parts join onto the
+parts already in the layout; those move only to follow a change the schematic made (see *What Update Layout keeps*
+below).
 
 A net that cannot be joined this way keeps its ratsnest line, and Messages says why, one line per net: three or more
 pins meet on it, it is the ground net, or its pins are on different layers or different sides of the board.
@@ -554,9 +555,64 @@ pin to the plane. If you had moved it, it is left and a warning says so.
 
 **Re-running updates, it does not duplicate.** Each generated instance remembers the schematic
 component's stable id, so a second run keeps and leaves in place what is already there, adds what is
-new, and *reports* — never auto-deletes — what no longer exists in the schematic. You will hand-place
-after the first generation and run it again after a schematic edit; a generator that stomped your
-placement would be one you used exactly once.
+new, and *reports* — never auto-deletes — what no longer exists in the schematic. When the schematic
+changed nothing, nothing moves.
+
+#### What Update Layout keeps
+
+You will arrange parts by hand after the first run and run it again after a schematic edit. A re-run
+starts from the layout **as you left it** and applies only what the schematic changed:
+
+- **Your arrangement stays.** Every part keeps where you put it and how you turned it.
+- **The copper stays joined.** When a part changes size — an MLIN made 1 mm longer — everything joined
+  beyond it moves by exactly that much, as one piece, along the line's own direction however you turned
+  it. A width change moves nothing.
+
+{{ui: update-layout-keeps-arrangement}}
+
+Messages says what moved: *TL2 — moved TL3 by 1000 µm so the copper stays joined.*
+
+**Which side moves.** A change has two sides; one stays and the other moves. The side that stays is the
+one holding, in this order:
+
+1. a **locked** part (right-click ▸ **Lock Position**, or **Locked** in the Properties panel) — a
+   connector at the board edge, a part fixed for mechanical reasons;
+2. a part with **no schematic link** touching it, such as a connector you placed by hand;
+3. **copper you drew** that joins it to something on the other side;
+4. otherwise, the side nearest port 1.
+
+If both sides are held, nothing moves and Messages warns with the gap left, for example *TL2 is 1000 µm
+longer; both sides are held (TL1 is locked; TL3 is locked). Left a 1000 µm gap at TL2 pin 2.* A locked part
+shows a small padlock on its selection outline; it is not drawn anywhere else.
+
+**Loops.** When only one arm of a loop changes, say one arm of a branch-line coupler, the change moves
+round the loop until it meets the side that did not change, and that one joint is reported as a gap. When
+both arms change alike, the far side moves cleanly and nothing is reported.
+
+**Copper you drew** touching only parts that move, a stub or a meander, moves with them, unchanged in shape.
+Copper you drew between a moving part and one that stays holds both where they are instead.
+
+**Joints you opened stay open.** A part you pulled away from its neighbour is not followed: it stays where
+you put it, and Messages notes the open joint each run, as information. A part you **deleted** is not put
+back; Messages says so each run.
+
+**Parameters you changed in the layout are kept.**
+
+| You changed | Update Layout | Messages |
+|---|---|---|
+| A value in the schematic only | Applies it, and moves what is joined beyond the part | What changed and what moved |
+| A value in the layout only | **Keeps the layout's value** | The layout's value and the schematic's, every run |
+| The same value in both | **Keeps the layout's value** | A warning naming both values |
+
+Three commands put things back when you want the schematic's way:
+
+- **Re-snap** (right-click a selection of placed parts) gives them the schematic's values again and joins
+  each to its neighbours, closing joints you had pulled open.
+- **Design ▸ Restore Removed Parts** puts back the parts you deleted, joined to their neighbours.
+- **Unlock Position** releases a locked part.
+
+Each is one undo step, and so is every run of Update Layout: one **Undo** puts back every part, every
+moved shape and every value it changed.
 
 **Bottom-side parts stay on the bottom.** A part you have flipped to the bottom keeps its side through
 every later run, including one that replaces its footprint. Flipping a part does not touch its symbol,

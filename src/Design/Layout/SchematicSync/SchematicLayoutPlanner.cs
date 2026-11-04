@@ -172,6 +172,11 @@ public static partial class SchematicLayoutPlanner
     /// palette's kit-part answer (<see cref="KitLayoutGeneratorLookup"/>). <paramref name="connectParts"/> is the
     /// Connect parts setting (brief-sdl-1 R-sdl1-4): on, parts the schematic joins are placed so their pins meet
     /// (<see cref="ConnectChains"/>); off, every new part goes into the rows exactly as before the setting existed.
+    ///
+    /// <para>brief-sdl-4 R-sdl4-2: <paramref name="resnap"/> names linked parts to take the schematic's parameter values
+    /// and be re-joined to their neighbours by the chain rule (Re-snap), closing joints the user opened;
+    /// <paramref name="restoreRemoved"/> puts back the linked parts the user deleted (Restore Removed Parts). Neither
+    /// is a placement decision of its own — both are this plan with a different starting point.</para>
     /// </summary>
     public static SchematicLayoutPlan Plan(
         SchematicEditModel model,
@@ -186,8 +191,11 @@ public static partial class SchematicLayoutPlanner
         bool linkOrientation = true,
         double pourMarginHeights = GroundPourPlanner.DefaultMarginHeights,
         KitLayoutGeneratorLookup? kitLayoutGenerator = null,
-        bool connectParts = true)
+        bool connectParts = true,
+        IReadOnlySet<string>? resnap = null,
+        bool restoreRemoved = false)
     {
+        resnap ??= new HashSet<string>(StringComparer.Ordinal);
         var extraction = NetExtractor.Extract(model, "tb", cellResolver);
         var ledger = new Ledger(target, kitLayoutGenerator);
 
@@ -310,6 +318,18 @@ public static partial class SchematicLayoutPlanner
                 ledger.RenameSchematicSnapshot(oldName, schematicId);
             }
 
+            // brief-sdl-4 §2: a part the last run placed and the user has since deleted is not put back; its joints
+            // count as open (D6). Restore Removed Parts asks for it back.
+            if (!hasExisting && !restoreRemoved && EditState.WasRemoved(target, schematicId))
+            {
+                lines.Add(new ReportLine(schematicId,
+                    $"{schematicId} — removed from the layout by hand, so not put back (Layout ▸ Restore Removed Parts " +
+                    "puts it back)", ReportSeverity.Info) { Ids = [schematicId] });
+                if (target.GeneratedPlacements[schematicId] is { Removed: false } record)
+                    steps.Add(Step.Record(schematicId, record with { Removed = true }));
+                continue;
+            }
+
             if (!hasExisting)
             {
                 // Placed at the origin and moved once the whole set is known — the pitch is a function
@@ -342,7 +362,9 @@ public static partial class SchematicLayoutPlanner
             var before = existing.Instance;
             bool cellRefChanged = !string.Equals(before.CellRef, resolvedCellRef, StringComparison.OrdinalIgnoreCase);
 
-            // R-L5-9/10/11: per-parameter overwrite classification — PCell instances only.
+            // brief-sdl-4 §2 (replacing R-L5-9/10/11's overwrite): each parameter classified against the baseline the
+            // last run wrote — the schematic's change applied, the layout's own edit KEPT (EditState). Re-snap is the one
+            // case that takes the schematic's value over a layout edit, because that is what it was asked to do.
             if (generatorId is not null && pcellParams is not null)
             {
                 var snapshot = ledger.SchematicSnapshot(schematicId);
@@ -351,32 +373,47 @@ public static partial class SchematicLayoutPlanner
                         { State: CellLayoutState.Resolved, View.PCellOrigin: { } curOrigin }
                         ? curOrigin.Parameters
                         : null;
+                bool resnapThis = resnap.Contains(schematicId);
+                var classified = EditState.Classify(pcellParams, currentLayoutParams, snapshot);
 
                 bool reportedThisInstance = false;
-                foreach (var (name, newVal) in pcellParams)
+                foreach (var p in classified)
                 {
-                    if (currentLayoutParams is null || !currentLayoutParams.TryGetValue(name, out var layoutVal))
-                        continue; // nothing on the existing cell to compare against (shouldn't happen once created, but never throw over it)
-
-                    if (SameParamValue(layoutVal, newVal))
-                        continue; // schematic and layout already agree — nothing changed for this parameter
-
-                    bool hadSnapshot    = snapshot is not null && snapshot.ContainsKey(name);
-                    PCellValue snap     = hadSnapshot ? snapshot![name] : layoutVal;
-                    bool schematicMoved = !hadSnapshot || !SameParamValue(snap, newVal);
-                    bool layoutMoved    = hadSnapshot && !SameParamValue(snap, layoutVal);
-
-                    bool isWarning = layoutMoved; // R-L5-11 table: layout-diverged (alone or together with schematic) => warning
-                    if (!schematicMoved && !layoutMoved) continue; // shouldn't happen given the NearlyEqual guard above, but stay honest
-
-                    string? unit = comp.Parameters.FirstOrDefault(p => p.Name == name)?.Unit;
+                    if (p.State == EditState.ParamState.Same) continue;
+                    string? unit = comp.Parameters.FirstOrDefault(q => q.Name == p.Name)?.Unit;
                     string unitSuffix = string.IsNullOrEmpty(unit) ? "" : $" {unit}";
-                    lines.Add(new ReportLine(schematicId,
-                        $"{schematicId} — {name} changed from {FormatParamValue(unit, layoutVal)}{unitSuffix} to {FormatParamValue(unit, newVal)}{unitSuffix}" +
-                        (isWarning ? " (a layout edit is being overwritten)" : " (from schematic)"),
-                        isWarning ? ReportSeverity.Warning : ReportSeverity.Info));
+                    string V(PCellValue v) => FormatParamValue(unit, v) + unitSuffix;
                     reportedThisInstance = true;
-                    if (isWarning) overwritten++;
+                    if (resnapThis || p.State == EditState.ParamState.Schematic)
+                        lines.Add(new ReportLine(schematicId,
+                            $"{schematicId} — {p.Name} changed from {V(p.Layout)} to {V(p.Schematic)} " +
+                            (resnapThis && p.State != EditState.ParamState.Schematic ? "(Re-snap)" : "(from schematic)"),
+                            ReportSeverity.Info) { Ids = [schematicId] });
+                    else if (p.State == EditState.ParamState.Layout)
+                        lines.Add(new ReportLine(schematicId,
+                            $"{schematicId} — {p.Name} is {V(p.Layout)} in the layout; the schematic says {V(p.Schematic)}. " +
+                            "The layout's value is kept", ReportSeverity.Info) { Ids = [schematicId] });
+                    else
+                    {
+                        lines.Add(new ReportLine(schematicId,
+                            $"{schematicId} — {p.Name} was changed in both: the layout's {V(p.Layout)} is kept; the schematic " +
+                            $"changed it from {V(p.Baseline!.Value)} to {V(p.Schematic)}", ReportSeverity.Warning) { Ids = [schematicId] });
+                        overwritten++;
+                    }
+                }
+
+                if (!resnapThis && EditState.Merge(pcellParams, classified) is { } merged)
+                {
+                    // Every difference the layout's own: its cell already IS the merged set, and stays.
+                    bool layoutOnly = currentLayoutParams is not null
+                                      && merged.All(kv => currentLayoutParams.TryGetValue(kv.Key, out var v) && SameParamValue(v, kv.Value));
+                    string? keptRef = layoutOnly ? before.CellRef
+                        : RegeneratePCell(comp, generatorId, merged, workspaceRootDir, targetLayoutBaseDir, ledger, technology, techIdentity);
+                    if (keptRef is not null)
+                    {
+                        resolvedCellRef = keptRef;
+                        cellRefChanged = !string.Equals(before.CellRef, resolvedCellRef, StringComparison.OrdinalIgnoreCase);
+                    }
                 }
 
                 ledger.SetSchematicSnapshot(schematicId, new Dictionary<string, PCellValue>(pcellParams));
@@ -399,7 +436,8 @@ public static partial class SchematicLayoutPlanner
                 if (cellRefChanged)
                     rot = Realign(rot, comp, before, schematicId, resolvedCellRef, schematicDir, targetLayoutBaseDir, technology);
 
-                if (!cellRefChanged && !rot.Changes && oldName is null)
+                // A part being re-snapped is replaced whatever else changed: the chain step writes its pose (R-sdl4-2).
+                if (!cellRefChanged && !rot.Changes && oldName is null && !resnap.Contains(schematicId))
                 {
                     // Nothing to replace, but the baseline may be new (first sync of this pair) or have
                     // advanced (both sides were already turned alike). Bookkeeping, like the snapshots.
@@ -463,6 +501,39 @@ public static partial class SchematicLayoutPlanner
         if (deleteIndices.Count > 0)
             steps.Add(Step.Delete(deleteIndices));
 
+        // brief-sdl-4 §1: the layout as left, plus the schematic's change — every part joined beyond a part whose pins
+        // moved is carried with it, so the copper stays joined. Before the chain step, so parts added or re-snapped this
+        // run join their neighbours where they now are. Off with Connect parts, which leaves the plan the pre-series one.
+        var opened = new HashSet<string>(StringComparer.Ordinal);
+        if (connectParts)
+        {
+            var propagation = PropagateChanges(target, physical, extraction, model, existingBySchematicId, replacedAt,
+                                               deleteIndices, resnap, schematicDir, targetLayoutBaseDir, technology);
+            foreach (var (index, moved) in propagation.Instances)
+            {
+                if (replacedAt.TryGetValue(index, out var after))
+                {
+                    (after.X, after.Y, after.RotationDegrees, after.OrientationLink) = (moved.X, moved.Y, moved.RotationDegrees, moved.OrientationLink);
+                    continue;
+                }
+                // A part the run did not otherwise change: a baseline recorded for it this run rides on the replacement.
+                var before = target.Instances[index];
+                if (ledger.OrientationLinkUpdates.LastOrDefault(e => e.Key == index) is { Value: { } link })
+                    moved.OrientationLink = link with
+                    {
+                        LayoutDeg = LayoutAngle.Normalize(link.LayoutDeg + SchematicLayoutOrientation.FromLayout(moved).Deg
+                                                          - SchematicLayoutOrientation.FromLayout(before).Deg),
+                    };
+                replacedAt[index] = moved;
+                steps.Add(Step.Replace(index, before, moved, renamedFrom: null));
+                updated++;
+            }
+            foreach (var (index, moved) in propagation.Shapes)
+                steps.Add(Step.ReplaceShape(index, target.Shapes[index], moved));
+            lines.AddRange(propagation.Lines);
+            opened.UnionWith(propagation.Opened);
+        }
+
         // A VIAGND added this run is placed beside the pad it grounds, tied to it, rather than in the row — it is the
         // via that pad's ground runs through, and a via a row-width away from its part grounds nothing.
         var beside = ViaGndPartners(newInstances, physical, extraction, target, existingBySchematicId, replacedAt,
@@ -470,7 +541,7 @@ public static partial class SchematicLayoutPlanner
         var chained = connectParts
             ? ConnectChains(extraction, model, physical, newInstances, beside, schematicFacing, target, existingBySchematicId,
                             replacedAt, new HashSet<int>(deleteIndices), schematicDir, targetLayoutBaseDir, technology, lines,
-                            noLayout)
+                            noLayout, resnap, opened)
             : ChainOutcome.None;
         var unplaced = newInstances.Where(n => !beside.ContainsKey(n.Instance) && !chained.Placed.Contains(n.Instance)).ToList();
         var atArtwork = overArtwork ? Bbox.Empty
@@ -514,7 +585,7 @@ public static partial class SchematicLayoutPlanner
 
         // R-sdl0-2c: the placement record, for every part this run adds and every part whose transform it changes
         // (or whose name it carries over a rename). Taken last, from where each part finally is.
-        var edits = steps.Select(s => s.ToEdit(chained.Anchors)).ToList();
+        var edits = steps.Select(s => s.ToEdit(chained.Anchors, target.GeneratedPlacements)).ToList();
 
         var plan = new SchematicLayoutPlan
         {
@@ -545,6 +616,39 @@ public static partial class SchematicLayoutPlanner
         return plan;
     }
 
+    /// <summary>brief-sdl-4: the run's existing linked parts — as it replaces them so far — handed to
+    /// <see cref="DeltaPropagation"/>. A part being re-snapped, or deleted this run, takes no part.</summary>
+    private static DeltaPropagation.Outcome PropagateChanges(
+        LayoutView target, List<EditableComponent> physical, NetExtractor.ExtractionResult extraction, SchematicEditModel model,
+        Dictionary<string, (int Index, LayoutInstance Instance)> existingBySchematicId, Dictionary<int, LayoutInstance> replacedAt,
+        List<int> deleteIndices, IReadOnlySet<string> resnap, string schematicDir, string targetLayoutBaseDir, Technology? technology)
+    {
+        var compById = new Dictionary<string, EditableComponent>(StringComparer.Ordinal);
+        foreach (var c in physical) if (c.InstanceName is { Length: > 0 } n) compById.TryAdd(n, c);
+        var skip = new HashSet<int>(deleteIndices);
+        var parts = new List<DeltaPropagation.LinkedPart>();
+        foreach (var (sid, e) in existingBySchematicId)
+        {
+            if (skip.Contains(e.Index)) continue;
+            var after = replacedAt.GetValueOrDefault(e.Index, e.Instance);
+            string id = after.SchematicId is { Length: > 0 } now ? now : sid;
+            if (!compById.TryGetValue(id, out var comp)) continue;   // an orphan: copper with no schematic link
+            if (resnap.Contains(id)) { skip.Add(e.Index); continue; }
+            parts.Add(new DeltaPropagation.LinkedPart(e.Index, id, comp, e.Instance, after));
+        }
+        if (parts.Count == 0) return DeltaPropagation.Outcome.None;
+
+        var ports = PortNumbersByNet(model, extraction);
+        var bindings = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
+        foreach (var inst in extraction.TestBench.Instances) bindings.TryAdd(inst.InstanceName, TerminalNets.Of(inst));
+        int? PortOf(string id) => bindings.TryGetValue(id, out var nets)
+            ? nets.Select(n => ports.TryGetValue(n, out int k) ? k : (int?)null).Where(k => k is not null).Min()
+            : null;
+
+        return DeltaPropagation.Run(new DeltaPropagation.Input(target, parts, skip, schematicDir, targetLayoutBaseDir,
+                                                               technology, extraction, PortOf));
+    }
+
     /// <summary>The indices in <paramref name="view"/>'s shapes of what <paramref name="plan"/> takes out — the
     /// one reading of <see cref="GroundArtworkPlan.Remove"/> (it holds the shapes themselves) every applier
     /// shares.</summary>
@@ -558,26 +662,38 @@ public static partial class SchematicLayoutPlanner
     /// <summary>One planned change, in application order, before its placement record is known.</summary>
     private sealed class Step
     {
-        private int _kind;   // 0 add, 1 replace, 2 delete, 3 shape
+        private int _kind;   // 0 add, 1 replace, 2 delete, 3 shape, 4 shape replaced, 5 placement record
         private LayoutInstance? _instance, _before;
         private int _index;
         private string? _renamedFrom;
         private IReadOnlyList<int>? _indices;
-        private LayoutShape? _shape;
+        private LayoutShape? _shape, _shapeBefore;
+        private GeneratedPlacement? _record;
 
         public static Step Add(LayoutInstance inst) => new() { _kind = 0, _instance = inst };
         public static Step Replace(int index, LayoutInstance before, LayoutInstance after, string? renamedFrom) =>
             new() { _kind = 1, _index = index, _before = before, _instance = after, _renamedFrom = renamedFrom };
         public static Step Delete(IReadOnlyList<int> indices) => new() { _kind = 2, _indices = [.. indices] };
         public static Step Shape(LayoutShape shape) => new() { _kind = 3, _shape = shape };
+        public static Step ReplaceShape(int index, LayoutShape before, LayoutShape after) =>
+            new() { _kind = 4, _index = index, _shapeBefore = before, _shape = after };
+        public static Step Record(string schematicId, GeneratedPlacement record) =>
+            new() { _kind = 5, _renamedFrom = schematicId, _record = record };
 
-        public SchematicLayoutEdit ToEdit(IReadOnlySet<LayoutInstance> chainAnchors) => _kind switch
+        /// <summary>The edit, with its placement record. A replaced part keeps the anchor mark its record had (brief-sdl-4:
+        /// a part moved to keep the copper joined still anchors its chain).</summary>
+        public SchematicLayoutEdit ToEdit(IReadOnlySet<LayoutInstance> chainAnchors,
+                                          IReadOnlyDictionary<string, GeneratedPlacement> records) => _kind switch
         {
             0 => new SchematicLayoutEdit.AddInstance(_instance!, GeneratedPlacement.Of(_instance!, chainAnchors.Contains(_instance!))),
             1 => new SchematicLayoutEdit.ReplaceInstance(_index, _before!, _instance!,
-                     TransformChanged(_before!, _instance!) || _renamedFrom is not null ? GeneratedPlacement.Of(_instance!) : null,
+                     TransformChanged(_before!, _instance!) || _renamedFrom is not null
+                         ? GeneratedPlacement.Of(_instance!, records.GetValueOrDefault(_renamedFrom ?? _before!.SchematicId ?? "")?.ChainAnchor == true)
+                         : null,
                      _renamedFrom),
             2 => new SchematicLayoutEdit.DeleteInstances(_indices!),
+            4 => new SchematicLayoutEdit.ReplaceShape(_index, _shapeBefore!, _shape!),
+            5 => new SchematicLayoutEdit.PlacementRecord(_renamedFrom!, _record!),
             _ => new SchematicLayoutEdit.AddShape(_shape!),
         };
 
@@ -1487,6 +1603,33 @@ public static partial class SchematicLayoutPlanner
         pcellParams = resolved;
         generatorId = reference;
         return ToRelative(targetLayoutBaseDir, cellDir);
+    }
+
+    /// <summary>
+    /// brief-sdl-4 §2: the cell for a parameter set that is neither side's alone — the schematic's change applied over a
+    /// value the layout kept. Generated exactly as <see cref="ResolveComponentLayout"/> generates the schematic's own
+    /// set, through <see cref="GeneratedCellStore"/>, so the same set is the same cell. Null when generation fails, and
+    /// the caller then keeps the schematic's cell.
+    /// </summary>
+    private static string? RegeneratePCell(EditableComponent comp, string generatorId, Dictionary<string, PCellValue> parameters,
+                                           string workspaceRootDir, string targetLayoutBaseDir, Ledger ledger,
+                                           Technology? technology, string? techIdentity)
+    {
+        var layerSelection = new PCellLayerSelection(
+            NonEmptyOrNull(comp.Parameters.FirstOrDefault(p => p.Name == "SignalLayer")?.Expression),
+            NonEmptyOrNull(comp.Parameters.FirstOrDefault(p => p.Name == "GroundReference")?.Expression));
+        try
+        {
+            string cellDir = GeneratedCellStore.GetOrCreate(workspaceRootDir, generatorId, parameters, technology, techIdentity,
+                                                            layerSelection, out _);
+            ledger.RecordPCellSnapshot(GeneratedCellStore.SnapshotFor(cellDir, generatorId, parameters, techIdentity,
+                                                                      layerSelection, workspaceRootDir));
+            return ToRelative(targetLayoutBaseDir, cellDir);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 
     /// <summary>

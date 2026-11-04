@@ -113,8 +113,10 @@ public sealed class ChainPlacementTests : IDisposable
 
     // ── D5: existing parts are anchors ───────────────────────────────────────────────────────────
 
-    /// <summary>C1 placed, then TL1 moved by hand and TL3 deleted: a re-run moves neither TL1 nor TL2, puts TL3 back
-    /// exactly on TL2's free end, and reports the TL1-TL2 joint the hand move opened.</summary>
+    /// <summary>C1 placed, then TL1 moved by hand and TL3 deleted along with its placement record (a part never placed —
+    /// one the user deleted keeps its record and is not put back, brief-sdl-4): a re-run moves neither TL1 nor TL2, puts
+    /// TL3 exactly on TL2's free end, and reports the TL1-TL2 joint the hand move opened — as Info, since SDL-4, because
+    /// opening it was the user's choice (D6).</summary>
     [Fact]
     public void D5_AnExistingPartDoesNotMove()
     {
@@ -123,6 +125,7 @@ public sealed class ChainPlacementTests : IDisposable
         var tl1 = layout.Instances.Single(i => i.SchematicId == "TL1");
         tl1.X += 5_000; tl1.Y += 7_000;
         layout.Instances.RemoveAll(i => i.SchematicId == "TL3");
+        layout.GeneratedPlacements.Remove("TL3");
         var before = LayoutPersistence.Serialize(layout);
 
         var rerun = (p with { Target = layout }).Plan();
@@ -134,9 +137,9 @@ public sealed class ChainPlacementTests : IDisposable
 
         var tl2 = layout.Instances.Single(i => i.SchematicId == "TL2");
         Assert.Equal(PinAt(tl2, "2", p), PinAt(add.Instance, "1", p));
-        Assert.Contains(rerun.Lines, l => l.Severity == SchematicLayoutPlanner.ReportSeverity.Warning
-                                          && l.Text.StartsWith("TL1 pin 2 and TL2 pin 1 are joined in the schematic but do not meet",
-                                                               StringComparison.Ordinal));
+        Assert.Contains(rerun.Lines, l => l.Severity == SchematicLayoutPlanner.ReportSeverity.Info
+                                          && l.Text.StartsWith("TL1 pin 2 and TL2 pin 1 are ", StringComparison.Ordinal)
+                                          && l.Text.Contains("the joint is open in the layout", StringComparison.Ordinal));
     }
 
     // ── C7: the same copper, drawn turned ────────────────────────────────────────────────────────

@@ -1276,6 +1276,9 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
 
     [ObservableProperty] private bool? _instanceMirrorXValue;
 
+    /// <summary>brief-sdl-4 R-sdl4-2: the selection's lock — null when a multi-selection is mixed.</summary>
+    [ObservableProperty] private bool? _instanceLockedValue;
+
     /// <summary>The face the selected placements are on (brief-bsp-2 R-bsp2-5): 0 Top, 1 Bottom, -1 when a
     /// multi-selection's sides differ (the combo then reads "mixed"). Changing it flips each placement not
     /// already there about its OWN origin — <see cref="LayoutEditorViewModel.SetSelectedInstancesSide"/>.</summary>
@@ -1539,6 +1542,14 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         RefreshFromVm();
     }
 
+    partial void OnInstanceLockedValueChanged(bool? oldValue, bool? newValue)
+    {
+        if (_isRefreshing || newValue is null || oldValue == newValue || _vm is null) return;
+        SelectPinned();
+        _vm.SetSelectedInstancesLocked(newValue.Value);
+        RefreshFromVm();
+    }
+
     partial void OnInstanceSideIndexChanged(int oldValue, int newValue)
     {
         if (_isRefreshing || newValue < 0 || oldValue == newValue || _vm is null) return;
@@ -1689,6 +1700,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             SetTextIfNotFocused("InstanceY", LayoutUnits.Format(inst.Y, _vm.DisplayUnit, _vm.Model.DbuPerMicron), () => InstanceYText, v => InstanceYText = v);
             SetTextIfNotFocused("InstanceRotation", FormatDegrees(inst.RotationDegrees), () => InstanceRotationText, v => InstanceRotationText = v);
             InstanceMirrorXValue = inst.MirrorX;
+            InstanceLockedValue = inst.Locked;
             // R-fp4b-6e: the header string already shows (cell - SchematicId) and keeps doing so.
             // This row is the same fact made EDITABLE where it can be, and the two must keep agreeing,
             // which they do because both read DisplayRefDes and neither holds a copy.
@@ -1727,6 +1739,8 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             ApplyExternalStatus(ExternalCellStatus.NotExternal);
             InstanceCellRefText = ""; InstanceXText = ""; InstanceYText = "";
             InstanceRotationText = ""; InstanceMirrorXValue = null;
+            var locks = indices.Select(i => _vm!.EffectiveInstanceAt(i).Locked).Distinct().ToList();
+            InstanceLockedValue = locks.Count == 1 ? locks[0] : null;
             InstanceRefDesText = ""; InstanceRefDesEditable = false; InstanceRefDesHint = "";
             InstanceShowRefDesValue = null; InstanceDesignatorIsManual = false;
             InstanceMagText = ""; InstanceRowsText = ""; InstanceColsText = "";
