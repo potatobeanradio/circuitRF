@@ -178,7 +178,13 @@
                         ToolTip.Tip="Model Validation Report…">
                     <mi:MaterialIcon Kind="FileChartOutline" Width="16" Height="16"/>
                 </Button>
-                <Border Classes="rule" IsVisible="{Binding IsActive}"/>
+                <!-- Export to Library… (brief vendorlib-17): the schematic editor's button, publishing the model this
+                     window holds. Greyed with the reason as its tooltip until the document is saved and exported. -->
+                <Button Name="ExportToLibraryButton" Classes="tool" Command="{Binding ExportToLibraryCommand}"
+                        ToolTip.Tip="{Binding ExportToLibraryTip}" ToolTip.ShowOnDisabled="True">
+                    <mi:MaterialIcon Kind="PackageVariantClosedPlus" Width="16" Height="16"/>
+                </Button>
+                <Border Classes="rule"/>
                 <Button Name="RunButton" Classes="tool" Command="{Binding RunCommand}" ToolTip.Tip="{Binding RunTip}">
                     <mi:MaterialIcon Kind="Play" Width="16" Height="16"/>
                 </Button>

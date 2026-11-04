@@ -26791,3 +26791,41 @@ reproduced, so its cause is not known.
 
 **`ReportLine` equality.** The line record gained `Kind` and `Ids`; a list property broke the record's generated
 equality, which the plan-equivalence gate relies on, so `Equals` compares the ids by sequence.
+
+## Export to Library from Model Composer (brief vendorlib-17, 2026-11-03)
+
+`ModelCellFromModel` (`VendorLibraries/ModelLibrary/`) writes the cell a model is published from; the export is
+`ModelLibraryExport.Plan`/`Export` on that cell, unchanged. Model Composer's toolbar button, File ▸ Export to Library on a
+schematic and `circuitrf export part <file.cmc|file.cmodel>` all go through it. Gate:
+`tests/Ui.Tests/VendorLibraries/ModelComposerExportTests.cs` (5).
+
+**A ComposedFET's `File=` was never rebased by `CnlReader`.** Any cell placing a ComposedFET exported to a model folder
+whose `.cnl` names `models/<x>.cmodel`, and Export's self-check then reads that `.cnl` with the model folder as its
+source directory and no elaborator base, so the model was "not found" and every such export was refused. This is
+VL-15's VerilogA finding again, for the other device whose file travels into `models/`. The fix is the same branch,
+widened to ComposedFET. A hand-written `.cnl` with a relative `.cmodel` now resolves it against the `.cnl`'s folder,
+as SnP, wBond and VerilogA already do, instead of the process's working directory. The schematic route is unchanged,
+because its source directory is the elaborator's own base.
+
+**`NetlistSchematic` cannot draw a three-net ComposedFET.** The built-in symbol has four pins, the fourth being the
+optional thermal pin, and the netlist drawing matches nets to pins one for one, so a plain FET line is refused with "binds 3
+net(s) and its symbol has 4 pin(s)". The brief asked for the cell to be drawn through it, as VL-16's wrapper is. It is
+drawn directly instead: one FET with a net label on each pin, and `AddPins` (now `internal`) for the Pins. The FET
+names its glyph outright (`FetCurtice`, or `ComposedFET` for the thermal one), because a blank `Symbol` takes the
+model's own `.csym`. That `.csym` is not copied into the model folder, so the pins would move under the labels after export.
+
+**`Temp` defaults to `temp`, not blank.** A blank cell-parameter default is the empty-value hazard `src/Core/CLAUDE.md`
+names (`Key=` swallows the next token). `temp` is the global the elaborator always binds, and scope lookup is
+ordinal, so `Temp`'s default does not see itself. A ComposedFET whose `Temp` equals the ambient adds nothing to the
+core, so the result is what a blank `Temp` would give.
+
+**A `.cmodel` is stale only when it is older than the `.cmc` AND its provenance `SettingsDigest` differs from the
+document's.** A bare modification-time test refused a model exported a second ago: `CmodelExport.Export` writes the
+`.cmc` after the `.cmodel` whenever the symbol choice changes. That write now sets the `.cmodel`'s time to the `.cmc`'s,
+and the digest (now `CmodelExport.SettingsDigest`) keeps a save that changed no model setting from greying the
+button.
+
+**Other deviations.** The passive symbol default is the plan's (`own`, which is the box the passive export drew unless
+the maker chose a symbol), not a forced box. The button takes the window's `tool` class: `SelectionBtn` is styled only
+inside the editor views. Refusals are returned strings, not thrown, because the firewall's user-facing-text gate flags
+a thrown sentence below the UI.

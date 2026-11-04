@@ -1900,7 +1900,10 @@ public sealed class CnlReader
         // A VerilogA's File is the same (brief vendorlib-15): a model library's .cnl names its compiled device
         // model-relative, and Export's self-check reads that .cnl with the model folder as its source directory. It is
         // rebased by FileReferences' own rule, which leaves a bare word alone — that may be a variable in scope.
-        bool isVerilogA = typeName.Equals("VerilogA", StringComparison.OrdinalIgnoreCase);
+        // A ComposedFET's .cmodel is the same (brief vendorlib-17): a model library part that places one names it
+        // model-relative, and the self-check could not find it.
+        bool isVerilogA = typeName.Equals("VerilogA", StringComparison.OrdinalIgnoreCase)
+                       || typeName.Equals(CircuitRF.Core.Devices.ComponentModelFactory.ComposedFetTypeName, StringComparison.OrdinalIgnoreCase);
 
         // Tolerate whitespace around '=' in param assignments: "C = 1 uF", "C =1", "C= 1" all become
         // the canonical "C=1" token (the trailing unit stays its own token). Safe here because the

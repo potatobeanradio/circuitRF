@@ -396,7 +396,7 @@ imported, it reloads that data, and **Import…** is on the ▾ and beside the d
 
 | Part | What it holds |
 |---|---|
-| Toolbar | Open, Save, Save As · Undo, Redo · the four panel lamps · Check Charge Conservation, Model Validation Report · Run ▾, Cancel · Help |
+| Toolbar | Open, Save, Save As · Undo, Redo · the four panel lamps · Check Charge Conservation, Model Validation Report · Export to Library… · Run ▾, Cancel · Help |
 | **Steps** (left) | The step rail, and under it the selected step's settings |
 | **Plots** (centre) | A tab strip; under it the bias cursor (Vgs, Vds, T, Q) or the model sweep, whichever the plot reads; and a Data Display plot |
 | **Network** (right, top) | The extrinsic network, drawn by the schematic canvas |
@@ -747,6 +747,26 @@ A placed model can have parts of itself switched off per instance, to see what e
 A passive document exports as a cell: its name, the library or workspace folder it goes in, and the fitted values as
 its parameters.
 
+### Publishing to a library {#publish}
+
+**Export to Library…** on the toolbar publishes the model as a part in a [model library](model-library-format.html#making),
+for others to place from the palette. It opens the schematic editor's Export to Library dialog on a cell circuitRF writes
+for the model, so there is no schematic to draw first, and the part is the same one a cell you drew yourself would give.
+
+For an active model the cell places the exported `.cmodel` as one `ComposedFET`. The part's pins are **g**, **d** and
+**s**, in that order, and **t** as pin 4 when the model self-heats. It has two parameters: **N**, the finger count,
+which starts at the model's N0, and **Temp**, the device's temperature in °C, which starts at `temp` and so follows the
+design's. The part number starts as the `.cmodel`'s name, the symbol as the FET glyph, and the frequency range as the
+measured data's; the dialog can change each of them. A passive document publishes the cell its Export step wrote, as
+it is.
+
+The button is greyed, and its tooltip says why, until the document is saved and its model is exported: an active
+model needs its `.cmodel` exported since the document last changed, and a passive one needs its cell. The cell circuitRF
+writes is deleted when the dialog closes, whether the export succeeds, is refused or is cancelled.
+
+**Compile netlist** in the dialog publishes an active model as its own compiled module, without the `.cmodel`:
+[Protected models](protected-models.html#compile-netlist).
+
 ## Switching parts of the model off {#switches}
 
 Ten instance switches turn one effect off on one `ComposedFET`, so you can see what it costs the circuit in gain,
@@ -936,7 +956,8 @@ Every edit — a value, a lock, a bound, a tie, an exclusion, a step setting, a 
 
 Every run of this window is a [`model`](cli.html#model) verb noun — `model import`, `model deembed`, `model fit`,
 `model check-charge`, `model validate`, `model export`, `model report` — calling the same function, so a document built in
-the window runs the same way from a script or an agent. An agent producing the data in another simulator reads
+the window runs the same way from a script or an agent. Export to Library is
+[`export part <file.cmc>`](cli.html#export-part). An agent producing the data in another simulator reads
 [Model Data](model-data.html) as `circuitrf reference model-data`, and checks each file with
 `model import --dry-run` before anything is written.
 

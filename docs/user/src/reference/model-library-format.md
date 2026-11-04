@@ -465,7 +465,8 @@ A folder holding model folders is checked to its full depth without `--recursive
 **Export to Library…** packages a cell as a model folder. It is on the **File** menu and on the schematic
 toolbar, and it is available when the active document is a saved cell's primary schematic with at least one
 **Pin**; otherwise it is greyed, and its tooltip says why (a test bench, unsaved changes, no Pin). An empty
-folder chosen as the library starts a new library.
+folder chosen as the library starts a new library. Model Composer has the same button, and publishes the model it
+holds with no schematic to draw: [Publishing to a library](model-composer.html#publish).
 
 The dialog asks for:
 
@@ -598,7 +599,8 @@ the `sparam` directive's own keys (`unit=` defaults to Hz, as it does there), re
 the dialog's. With no part to convert, `--sweep` is refused rather than ignored. `--compile-models` is the
 Compile Verilog-A models checkbox, off unless given, and each `--build <rid>=<path>` is one row of Builds for other
 platforms. The paths created are printed, and listed in
-`--json`. Over MCP it is `create what=libraryPart cell=<cell folder> library=<dir>`, with `sweep` a list of
+`--json`. Over MCP it is `create what=libraryPart cell=<cell folder> library=<dir>` (or `cell=<file.cmc>` to publish
+a [Model Composer model](model-composer.html#publish)), with `sweep` a list of
 segments (`["start=1 stop=20 npts=101 unit=GHz"]`), `compileModels` for `--compile-models`, and `builds` an object
 of platform to file (`{"win-x64": "builds/TSTFET100.osdi"}`), each file inside the server's root. What a converted part's model says about itself, such as a
 junction used outside its calibration, is reported once per part as a warning.

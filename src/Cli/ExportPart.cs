@@ -106,7 +106,11 @@ public static class ExportPart
 
         if (cell is null) { JsonRun.Report(CliDiagnostics.ExportCellRequired()); return Usage(); }
         JsonRun.InputPath = cell;
-        if (!Directory.Exists(cell)) return JsonRun.Fail(CliDiagnostics.ExportCellNotFound(cell));
+        // brief vendorlib-17 R-vl17-3: a model document is published through the cell ModelCellFromModel writes for it,
+        // as Model Composer's button does; everything after that is the cell's export, unchanged.
+        bool fromModel = cell.EndsWith(CircuitRF.Design.Modeling.CmcFile.Extension, StringComparison.OrdinalIgnoreCase)
+                      || cell.EndsWith(CircuitRF.Core.Devices.Composed.CmodelFile.Extension, StringComparison.OrdinalIgnoreCase);
+        if (!fromModel && !Directory.Exists(cell)) return JsonRun.Fail(CliDiagnostics.ExportCellNotFound(cell));
         if (library is null) { JsonRun.Report(CliDiagnostics.ExportLibraryRequired()); return Usage(); }
 
         string? kindWord = kind?.ToLowerInvariant() switch
@@ -124,6 +128,15 @@ public static class ExportPart
             return JsonRun.Fail(CliDiagnostics.ExportBadValue("--symbol", symbol,
                 string.Join(", ", ModelLibraryExport.SymbolChoices.Select(c => c.ToLowerInvariant()))));
 
+        ModelCellSource? source = null;
+        if (fromModel)
+        {
+            source = ModelCellFromModel.Open(cell, out string? refusal);
+            if (source is null) return JsonRun.Fail(CliDiagnostics.ExportRefused(refusal!));
+            part ??= source.PartNumber;
+            if (low.Length == 0 && high.Length == 0) { low = source.FrequencyLow; high = source.FrequencyHigh; }
+        }
+
         var options = new ExportOptions
         {
             LibraryDir = Path.GetFullPath(library), Category = category, PartNumber = part, Description = description,
@@ -136,6 +149,17 @@ public static class ExportPart
             CompileNetlist = compileNetlist, SourceOut = sourceOut, CheckBias = checkBias,
         };
 
+        if (source is null) return Export(cell, options, replace, includeVendor);
+        StagedModelCell staged;
+        try { staged = ModelCellFromModel.Stage(source); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CircuitRF.Core.Devices.Composed.CmodelFormatException)
+        { return JsonRun.Fail(CliDiagnostics.ExportRefused(ex.Message)); }
+        // R-vl17-4: the written cell goes whatever the export does — success, refusal or cancel.
+        using (staged) return Export(staged.CellDir, options, replace, includeVendor);
+    }
+
+    private static int Export(string cell, ExportOptions options, bool replace, bool includeVendor)
+    {
         // The plan first, so a refusal the dialog would have ASKED about can name the flag that answers it.
         var plan = ModelLibraryExport.Plan(cell, options);
         if (plan.Refusals.Count > 0)
@@ -232,7 +256,7 @@ public static class ExportPart
     private static int Usage()
     {
         Console.Error.WriteLine(
-            "Usage: circuitrf export part <cell folder> --library <dir> [--category a/b] [--part PN]\n" +
+            "Usage: circuitrf export part <cell folder|file.cmc|file.cmodel> --library <dir> [--category a/b] [--part PN]\n" +
             "         [--description …] [--kind active|passive] [--value …] [--freq-low … --freq-high …]\n" +
             "         [--conditions …] [--footprint …] [--doc <file>]… [--symbol own|fet|r|c|l|box]\n" +
             "         [--sweep start=… stop=… npts=…|step=… [unit=GHz] [log]]…   (technology parts; default 0-20 GHz, 1001 points)\n" +

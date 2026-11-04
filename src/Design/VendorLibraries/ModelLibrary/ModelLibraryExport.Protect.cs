@@ -306,7 +306,7 @@ public static partial class ModelLibraryExport
     }
 
     /// <summary>The cell's pins, in a column to the left of the drawing, each joined to its net by a label on its pin.</summary>
-    private static void AddPins(SchematicEditModel sch, IReadOnlyList<string> pins)
+    internal static void AddPins(SchematicEditModel sch, IReadOnlyList<string> pins)
     {
         double left = sch.Components.Count == 0 ? 0 : sch.Components.Min(c => c.X);
         double top = sch.Components.Count == 0 ? 0 : sch.Components.Min(c => c.Y);

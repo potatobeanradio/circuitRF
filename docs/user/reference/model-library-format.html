@@ -709,7 +709,8 @@ end TSTCAP0402
 <p><strong>Export to Library…</strong> packages a cell as a model folder. It is on the <strong>File</strong> menu and on the schematic
 toolbar, and it is available when the active document is a saved cell's primary schematic with at least one
 <strong>Pin</strong>; otherwise it is greyed, and its tooltip says why (a test bench, unsaved changes, no Pin). An empty
-folder chosen as the library starts a new library.</p>
+folder chosen as the library starts a new library. Model Composer has the same button, and publishes the model it
+holds with no schematic to draw: <a href="model-composer.html#publish">Publishing to a library</a>.</p>
 <p>The dialog asks for:</p>
 <ul>
 <li><p><strong>Library</strong> and <strong>Category</strong>. Pick a folder, or one of the libraries the workspace already references. A
@@ -856,7 +857,8 @@ the <code>sparam</code> directive's own keys (<code>unit=</code> defaults to Hz,
 the dialog's. With no part to convert, <code>--sweep</code> is refused rather than ignored. <code>--compile-models</code> is the
 Compile Verilog-A models checkbox, off unless given, and each <code>--build &lt;rid&gt;=&lt;path&gt;</code> is one row of Builds for other
 platforms. The paths created are printed, and listed in
-<code>--json</code>. Over MCP it is <code>create what=libraryPart cell=&lt;cell folder&gt; library=&lt;dir&gt;</code>, with <code>sweep</code> a list of
+<code>--json</code>. Over MCP it is <code>create what=libraryPart cell=&lt;cell folder&gt; library=&lt;dir&gt;</code> (or <code>cell=&lt;file.cmc&gt;</code> to publish
+a <a href="model-composer.html#publish">Model Composer model</a>), with <code>sweep</code> a list of
 segments (<code>[&quot;start=1 stop=20 npts=101 unit=GHz&quot;]</code>), <code>compileModels</code> for <code>--compile-models</code>, and <code>builds</code> an object
 of platform to file (<code>{&quot;win-x64&quot;: &quot;builds/TSTFET100.osdi&quot;}</code>), each file inside the server's root. What a converted part's model says about itself, such as a
 junction used outside its calibration, is reported once per part as a warning.</p>

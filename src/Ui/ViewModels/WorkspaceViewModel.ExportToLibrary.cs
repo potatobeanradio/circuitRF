@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using CircuitRF.Design.VendorLibraries;
+using CircuitRF.Design.VendorLibraries.ModelLibrary;
 using CircuitRF.Ui.Schematic;
 using CommunityToolkit.Mvvm.Input;
 
@@ -64,7 +65,49 @@ public partial class WorkspaceViewModel
         var window = ResolveOwner(owner);
         if (window is null || ExportToLibraryBlockedReason(doc) is not null || doc.FilePath is not { } path) return;
         string cellDir = Path.GetDirectoryName(Path.GetDirectoryName(Path.GetFullPath(path))!)!;
+        await ExportCellToLibraryAsync(cellDir, window, null);
+    }
 
+    /// <summary>
+    /// Model Composer's Export to Library… (brief vendorlib-17 R-vl17-2): the model's cell written by
+    /// <see cref="ModelCellFromModel"/>, then the same dialog and the same Messages lines as a schematic's export. The
+    /// written cell is deleted when the dialog closes, however it closed (R-vl17-4).
+    /// </summary>
+    public async Task ExportModelToLibraryAsync(string documentPath, string? cmodelPath, Window owner)
+    {
+        StagedModelCell? staged;
+        ModelCellSource? source;
+        string? refusal;
+        try
+        {
+            (source, staged, refusal) = await Task.Run(() =>
+            {
+                var s = ModelCellFromModel.Open(documentPath, out string? why, cmodelPath);
+                return (s, s is null ? null : ModelCellFromModel.Stage(s), why);
+            });
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CircuitRF.Core.Devices.Composed.CmodelFormatException)
+        {
+            (source, staged, refusal) = (null, null, ex.Message);
+        }
+        if (source is null || staged is null)
+        {
+            Messages.Warning($"Export to Library — {refusal}");
+            return;
+        }
+        using (staged)
+            await ExportCellToLibraryAsync(staged.CellDir, owner, vm =>
+            {
+                vm.PartNumber = source.PartNumber;
+                if (source.FrequencyLow.Length > 0) vm.FrequencyLow = source.FrequencyLow;
+                if (source.FrequencyHigh.Length > 0) vm.FrequencyHigh = source.FrequencyHigh;
+            });
+    }
+
+    /// <summary>The dialog on <paramref name="cellDir"/> and what follows a success — the one function both the schematic
+    /// editor's export and Model Composer's post their Messages lines through.</summary>
+    private async Task ExportCellToLibraryAsync(string cellDir, Window window, Action<ExportToLibraryViewModel>? defaults)
+    {
         var known = new List<ExportLibraryChoice>();
         string? wsRoot = CurrentWorkspacePath is { } cws ? Path.GetDirectoryName(cws) : null;
         if (wsRoot is not null)
@@ -73,6 +116,7 @@ public partial class WorkspaceViewModel
                     known.Add(new ExportLibraryChoice(r.Name, root));
 
         var vm = new ExportToLibraryViewModel(cellDir, known, null);
+        defaults?.Invoke(vm);
         var result = await Views.Dialogs.ExportToLibraryDialog.AskAsync(window, vm);
         if (result is not { Succeeded: true }) return;
 

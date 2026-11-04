@@ -182,14 +182,21 @@ public static class CmodelExport
             foreach (string src in set.Sources)
                 if (known.TryGetValue((set.Name, src), out var sha) && sources.All(x => x.Path != src))
                     sources.Add(new ModelSource(src, sha));
-        string settings = (doc.Network?.ToJsonString() ?? "") + "\n" + (doc.Steps?.ToJsonString() ?? "");
         return new ModelProvenance
         {
             Created = created ?? DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture),
             CircuitRfVersion = Version,
             Sources = sources,
-            SettingsDigest = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(settings)))[..16],
+            SettingsDigest = SettingsDigest(doc),
         };
+    }
+
+    /// <summary>The digest a <c>.cmodel</c>'s provenance records of the document it was exported from: its network and
+    /// steps, so a model whose document has changed since can be told from one that has not (brief vendorlib-17 D6).</summary>
+    public static string SettingsDigest(CmcDocument doc)
+    {
+        string settings = (doc.Network?.ToJsonString() ?? "") + "\n" + (doc.Steps?.ToJsonString() ?? "");
+        return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(settings)))[..16];
     }
 
     /// <summary>The version every assembly carries (the repo's one <c>VERSION</c> file), without a build suffix.</summary>
@@ -231,7 +238,12 @@ public static class CmodelExport
                 ? Path.GetRelativePath(Path.GetDirectoryName(Path.GetFullPath(cmcPath))!, sym).Replace('\\', '/') : sym
             : null;
         if (symbol is not null && stored != Settings(doc).Symbol)
+        {
             CmcFile.Write(cmcPath, WithSettings(doc, new ExportSettings(stored)));
+            // The model is as new as the document it was exported from: recording the symbol is part of this export, and
+            // a .cmodel left older than its .cmc reads as stale to Export to Library (brief vendorlib-17 D6).
+            File.SetLastWriteTimeUtc(outPath, File.GetLastWriteTimeUtc(cmcPath));
+        }
 
         var lines = new List<string>
         {

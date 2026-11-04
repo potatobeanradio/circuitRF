@@ -51,17 +51,19 @@ public partial class ModelComposerWindow : Window, ICrfDocumentWindow
     // ── opening ──────────────────────────────────────────────────────────────
 
     /// <summary>A new document — the Active / Passive chooser, then Save As on first save.</summary>
-    public static ModelComposerWindow ShowNew(Window? owner, Action<string>? openSchematic = null)
+    public static ModelComposerWindow ShowNew(Window? owner, Action<string>? openSchematic = null,
+                                             Func<string, string?, Window, Task>? publishToLibrary = null)
     {
         var window = new ModelComposerWindow { DataContext = new ModelComposerViewModel() };
-        if (window.Vm is { } vm) vm.OpenSchematic = openSchematic;
+        if (window.Vm is { } vm) { vm.OpenSchematic = openSchematic; window.SetPublisher(vm, publishToLibrary); }
         ShowUnowned(window, owner);
         return window;
     }
 
     /// <summary>Opens <paramref name="path"/>, or raises the window already holding it. A refusal throws
     /// <see cref="CmcFormatException"/> naming its field.</summary>
-    public static ModelComposerWindow ShowFile(string path, Window? owner, Action<string>? openSchematic = null)
+    public static ModelComposerWindow ShowFile(string path, Window? owner, Action<string>? openSchematic = null,
+                                              Func<string, string?, Window, Task>? publishToLibrary = null)
     {
         string key = Path.GetFullPath(path);
         if (Open.TryGetValue(key, out var existing))
@@ -72,6 +74,7 @@ public partial class ModelComposerWindow : Window, ICrfDocumentWindow
         var vm = ModelComposerViewModel.OpenFile(key);
         vm.OpenSchematic = openSchematic;
         var window = new ModelComposerWindow { DataContext = vm };
+        window.SetPublisher(vm, publishToLibrary);
         window.AdoptPath(key);
         ShowUnowned(window, owner);
         vm.BeginLoad();
@@ -102,6 +105,17 @@ public partial class ModelComposerWindow : Window, ICrfDocumentWindow
         NewWindowFront.Keep(window, owner);
     }
 
+    /// <summary>The workspace's Export to Library (brief vendorlib-17), owned by this window; kept so a document opened
+    /// from this window publishes through the same workspace.</summary>
+    private Func<string, string?, Window, Task>? _publishToLibrary;
+
+    private void SetPublisher(ModelComposerViewModel vm, Func<string, string?, Window, Task>? publish)
+    {
+        _publishToLibrary = publish;
+        vm.PublishToLibrary = publish is null ? null : (doc, cmodel) => publish(doc, cmodel, this);
+        vm.RefreshExportToLibrary();
+    }
+
     private void AdoptPath(string path)
     {
         string key = Path.GetFullPath(path);
@@ -123,7 +137,7 @@ public partial class ModelComposerWindow : Window, ICrfDocumentWindow
         try
         {
             bool disposable = Vm is { DocumentPath: null, IsDirty: false };
-            var opened = ShowFile(files[0].Path.LocalPath, disposable ? null : this, Vm?.OpenSchematic);
+            var opened = ShowFile(files[0].Path.LocalPath, disposable ? null : this, Vm?.OpenSchematic, _publishToLibrary);
             if (disposable && !ReferenceEquals(opened, this))
             {
                 opened.Position = Position;

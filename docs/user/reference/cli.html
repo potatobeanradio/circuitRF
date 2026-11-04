@@ -2759,7 +2759,7 @@ frequency range (<code>run.vendor-part.out-of-range</code>, once per part number
 warns about range.</p>
 <hr />
 <h2 id="export-part"><code>export part</code> — a cell as a model in a model library</h2>
-<pre><code class="cmd"><span class="prompt">$ </span>circuitrf export part &lt;cell folder&gt; --library &lt;dir&gt; [--category a/b] [--part PN] [--description …]
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf export part &lt;cell folder|file.cmc|file.cmodel&gt; --library &lt;dir&gt; [--category a/b] [--part PN] [--description …]
     [--kind active|passive] [--value …] [--freq-low … --freq-high …] [--conditions …] [--footprint …]
     [--doc &lt;file&gt;]… [--symbol own|fet|r|c|l|box] [--replace] [--include-vendor-parts]
     [--compile-models] [--build &lt;rid&gt;=&lt;path&gt;]…
@@ -2775,6 +2775,11 @@ new folder starts a new library, with <code>--library-name</code>, <code>--publi
 /home/you/libraries/devices/library.clib
 /home/you/libraries/devices/Amplifiers/TSTLNA100/.ccell
 …</span></code></pre>
+<p>A Model Composer document (<code>.cmc</code>) or a model (<code>.cmodel</code>) in place of the cell folder publishes the model as Model
+Composer's Export to Library does: the cell is written for it, beside the document, and deleted afterwards
+(<a href="model-composer.html#publish">Publishing to a library</a>). A <code>.cmc</code> publishes the <code>.cmodel</code> its Export step writes
+beside it, and is refused, with the button's sentence, when that has not been exported or the document changed since.
+The part number and frequency range default to the <code>.cmodel</code>'s name and the measured data's range.</p>
 <p>Every default is the dialog's. A refusal exits 1 and writes nothing: a kit part, a file that does not resolve,
 a part that takes its substrate from the technology, a cell with no Pin, or a self-check that does not match.
 A part number already in the library needs <code>--replace</code> (its <code>Revision</code> goes up by one), and a cell that places

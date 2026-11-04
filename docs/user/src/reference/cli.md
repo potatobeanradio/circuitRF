@@ -1953,7 +1953,7 @@ warns about range.
 
 ## `export part` — a cell as a model in a model library {#export-part}
 
-<pre><code class="cmd"><span class="prompt">$ </span>circuitrf export part &lt;cell folder&gt; --library &lt;dir&gt; [--category a/b] [--part PN] [--description …]
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf export part &lt;cell folder|file.cmc|file.cmodel&gt; --library &lt;dir&gt; [--category a/b] [--part PN] [--description …]
     [--kind active|passive] [--value …] [--freq-low … --freq-high …] [--conditions …] [--footprint …]
     [--doc &lt;file&gt;]… [--symbol own|fet|r|c|l|box] [--replace] [--include-vendor-parts]
     [--compile-models] [--build &lt;rid&gt;=&lt;path&gt;]…
@@ -1971,6 +1971,12 @@ new folder starts a new library, with `--library-name`, `--publisher`, `--licens
 /home/you/libraries/devices/library.clib
 /home/you/libraries/devices/Amplifiers/TSTLNA100/.ccell
 …</span></code></pre>
+
+A Model Composer document (`.cmc`) or a model (`.cmodel`) in place of the cell folder publishes the model as Model
+Composer's Export to Library does: the cell is written for it, beside the document, and deleted afterwards
+([Publishing to a library](model-composer.html#publish)). A `.cmc` publishes the `.cmodel` its Export step writes
+beside it, and is refused, with the button's sentence, when that has not been exported or the document changed since.
+The part number and frequency range default to the `.cmodel`'s name and the measured data's range.
 
 Every default is the dialog's. A refusal exits 1 and writes nothing: a kit part, a file that does not resolve,
 a part that takes its substrate from the technology, a cell with no Pin, or a self-check that does not match.

@@ -792,7 +792,7 @@ internal static class ToolCatalog
 
         new("create",
             "Create a correct initial document — a workspace, a cell folder with its view files, a 3D view of a cell's layout, "
-          + "or a model in a model library exported from a cell (Export to Library).",
+          + "or a model in a model library exported from a cell or a Model Composer model (Export to Library).",
             "what",
             "What to create.",
             [
@@ -823,16 +823,22 @@ internal static class ToolCatalog
                 // brief vendorlib-10 R-vl10-4 — Export to Library. A mode of `create` rather than an eighteenth tool: what
                 // it makes is a new document (a model folder), and the surface is a standing cost (R-aut5-4).
                 new("libraryPart", ["export", "part"],
-                    [new("cell", true, "The cell folder to export: a saved cell whose primary schematic has at least one Pin.")],
+                    // brief vendorlib-17 R-vl17-3 — a .cmc or .cmodel publishes the model through the cell Model Composer's
+                    // own button writes for it; the name stays `cell` so existing calls keep working.
+                    [new("cell", true, "What to export: a cell folder (a saved cell whose primary schematic has at least one Pin), or a "
+                                     + "Model Composer model — a .cmc, which publishes the .cmodel its Export step wrote beside it, or a "
+                                     + ".cmodel itself. A model is placed as one ComposedFET with pins g, d, s (and t when it self-heats) "
+                                     + "and parameters N and Temp; a passive .cmc publishes the cell its Export step wrote. Refused, "
+                                     + "naming the step to run, when the .cmc's model is not exported or the document changed since.")],
                     [
                         new("library",            "--library",              OptKind.Path,       "The model library folder. An empty or new folder starts a new library."),
                         new("category",           "--category",             OptKind.Str,        "Category folders under the library, a/b; created as needed."),
-                        new("part",               "--part",                 OptKind.Str,        "The part number. Default: the cell's name."),
+                        new("part",               "--part",                 OptKind.Str,        "The part number. Default: the cell's name, or the .cmodel's file name."),
                         new("description",        "--description",          OptKind.Str,        "The part's description."),
                         new("kind",               "--kind",                 OptKind.Str,        "active or passive. Default: active when any component is nonlinear."),
                         new("value",              "--value",                OptKind.Str,        "A passive's value (10 pF); makes it findable by value."),
-                        new("freqLow",            "--freq-low",             OptKind.Str,        "The low end of the range the model is valid over (0 Hz)."),
-                        new("freqHigh",           "--freq-high",            OptKind.Str,        "The high end of that range (20 GHz)."),
+                        new("freqLow",            "--freq-low",             OptKind.Str,        "The low end of the range the model is valid over (0 Hz). Default for a .cmc: its measured data's lowest frequency."),
+                        new("freqHigh",           "--freq-high",            OptKind.Str,        "The high end of that range (20 GHz). Default for a .cmc: its measured data's highest frequency."),
                         new("conditions",         "--conditions",           OptKind.Str,        "Free text: bias, temperature."),
                         new("footprint",          "--footprint",            OptKind.Str,        "The footprint's case pair."),
                         new("doc",                "--doc",                  OptKind.PathRepeat, "A document copied into the model's docs/."),

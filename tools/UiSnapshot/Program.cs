@@ -40,7 +40,7 @@ using CircuitRF.Design.Layout;
 // UiSnapshot --cem <file.cem> -o <out.png> [--size WxH] [steps]
 // UiSnapshot --review-panel checks|result|many|mmic -o <out.png> [--size WxH]
 // UiSnapshot --symbol <stem> [-o <dir>]
-// UiSnapshot --cmc <file.cmc|new:Passive|new:Active> -o <out.png> [--import <data>] [--step <name>] [--run <key>] [--marker]... [--size WxH] [steps]
+// UiSnapshot --cmc <file.cmc|new:Passive|new:Active> -o <out.png> [--import <data>] [--step <name>] [--run <key>] [--marker]... [--library-button] [--size WxH] [steps]
 //
 // Opens the display through DisplayWindowViewModel.LoadAllAsync — the GUI's own Open — and photographs one
 // real view: the plot canvas of the active tab, plot n's Plot Inspector (its trace cards), or the whole Data
@@ -158,6 +158,7 @@ var yieldExclude = new List<string>();
 string? ctech = null;
 bool optimize = false;
 string? cmc = null, cmcImport = null, cmcStep = null, cmcRun = null;
+bool cmcLibraryButton = false;
 // File ▸ Export Data… over a results folder (its .npy files are the datasources); --button picks a format.
 string? exportData = null;
 string? image = null, imageTech = null;
@@ -219,6 +220,9 @@ for (int i = 0; i < args.Length; i++)
         case "--cem" when i + 1 < args.Length: cem = Path.GetFullPath(args[++i]); break;
         case "--ctech" when i + 1 < args.Length: ctech = Path.GetFullPath(args[++i]); break;
         case "--cmc" when i + 1 < args.Length: cmc = args[++i]; break;
+        // brief vendorlib-17: connects Model Composer's Export to Library… to a stand-in for the workspace, so the button
+        // shows the state an open workspace gives it (without it, the button says it needs one).
+        case "--library-button": cmcLibraryButton = true; break;
         case "--image" when i + 1 < args.Length: image = Path.GetFullPath(args[++i]); break;
         case "--tech" when i + 1 < args.Length: imageTech = Path.GetFullPath(args[++i]); break;
         case "--digitise": digitise = true; break;
@@ -661,6 +665,12 @@ else if (cmc is not null)
     {
         host = new CircuitRF.Ui.Views.ModelComposer.ModelComposerWindow { DataContext = composer };
         if (sizeGiven) { host.Width = width; host.Height = height; }
+        if (cmcLibraryButton)
+        {
+            composer.PublishToLibrary = (_, _) => Task.CompletedTask;
+            composer.RefreshExportToLibrary();
+            Console.WriteLine($"export to library: {(composer.ExportToLibraryBlocked is null ? "live" : "greyed")} — {composer.ExportToLibraryTip}");
+        }
     }
     host.Show();
     Pump();

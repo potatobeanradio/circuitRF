@@ -866,6 +866,7 @@ public sealed partial class ModelComposerViewModel
 
     private void RefreshExport()
     {
+        RefreshExportToLibrary();
         var stale = StaleSteps;
         ExportBlocked = stale.Count == 0 ? "" : $"{string.Join(", ", stale)} {(stale.Count == 1 ? "is" : "are")} stale; run {(stale.Count == 1 ? "it" : "them")} first.";
         RunStaleCommand.NotifyCanExecuteChanged();
@@ -930,12 +931,14 @@ public sealed partial class ModelComposerViewModel
         {
             if (CellName.Trim().Length == 0 || CellLibrary.Trim().Length == 0) { Warn("Name the cell and the library it goes in."); return false; }
             string cell = CellName.Trim(), library = CellLibrary.Trim();
-            return await RunOnFile("Exporting", (path, _) =>
+            bool exported = await RunOnFile("Exporting", (path, _) =>
             {
                 string lib = Path.IsPathRooted(library) ? library : Path.GetFullPath(Path.Combine(Path.GetDirectoryName(path)!, library));
                 var r = ModelCommands.ExportCell(path, lib, cell);
                 return [.. r.Lines.Select(l => new ModelLine("export", cell, l))];
             });
+            RefreshExportToLibrary();
+            return exported;
         }
         if (ExportPath.Trim().Length == 0) { Warn("Say where the model goes."); return false; }
         string output = Path.GetFullPath(ExportPath.Trim());
@@ -947,6 +950,7 @@ public sealed partial class ModelComposerViewModel
             return [.. r.Lines.Select(l => new ModelLine("export", Path.GetFileName(r.Path), l))];
         });
         if (ok) ExportedModel = output;
+        RefreshExportToLibrary();
         return ok;
     }
 

@@ -10995,14 +10995,14 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// </summary>
     [RelayCommand]
     private void NewModelComposer() =>
-        Views.ModelComposer.ModelComposerWindow.ShowNew(Views.WorkspaceLocator.WindowFor(this), p => OpenDocumentByPath(p));
+        Views.ModelComposer.ModelComposerWindow.ShowNew(Views.WorkspaceLocator.WindowFor(this), p => OpenDocumentByPath(p), ExportModelToLibraryAsync);
 
     /// <summary>Opens a <c>.cmc</c> in its Model Composer window — the double-click route from the tree.</summary>
     public void OpenModelComposerPath(string path)
     {
         try
         {
-            Views.ModelComposer.ModelComposerWindow.ShowFile(path, Views.WorkspaceLocator.WindowFor(this), p => OpenDocumentByPath(p));
+            Views.ModelComposer.ModelComposerWindow.ShowFile(path, Views.WorkspaceLocator.WindowFor(this), p => OpenDocumentByPath(p), ExportModelToLibraryAsync);
         }
         catch (Exception ex)
         {
