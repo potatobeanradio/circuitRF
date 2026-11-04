@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:v3="using:CircuitRF.Ui.Viewer3D"
              xmlns:t3="using:CircuitRF.Ui.ThreeD"
+             xmlns:ctl="using:CircuitRF.Ui.Controls"
              xmlns:ddc="using:CircuitRF.Ui.DataDisplay.Controls"
              xmlns:vv3="using:CircuitRF.Ui.Views.Viewer3D"
              xmlns:s3="using:CircuitRF.Render.Scene3D"
@@ -702,9 +703,10 @@
                                 <mi:MaterialIcon Kind="{Binding IconKind}" Width="14" Height="14" VerticalAlignment="Center"
                                                  IsVisible="{Binding HasIcon}" Opacity="{Binding IconOpacity}"/>
                                 <!-- brief-em3d-93 R-em3d93-3 — a row that is not modelled is greyed, and its tooltip says why. -->
-                                <TextBlock Text="{Binding Label}" VerticalAlignment="Center" ToolTip.Tip="{Binding OrderTip}"
-                                           Opacity="{Binding NameOpacity}"/>
-                                <TextBlock Text="{Binding Detail}" Opacity="0.6" FontSize="11" VerticalAlignment="Center" ToolTip.Tip="{Binding DetailTip}"/>
+                                <ctl:TextBaselineRow Spacing="4" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding Label}" ToolTip.Tip="{Binding OrderTip}" Opacity="{Binding NameOpacity}"/>
+                                    <TextBlock Text="{Binding Detail}" Opacity="0.6" FontSize="11" ToolTip.Tip="{Binding DetailTip}"/>
+                                </ctl:TextBaselineRow>
                                 <!-- brief-em3d-50 R-em3d50-4 — a wire whose end is on no pad: flagged, with the refusal's words. -->
                                 <mi:MaterialIcon Kind="AlertOutline" Width="12" Height="12" VerticalAlignment="Center"
                                                  Foreground="{DynamicResource CrfWarningBrush}"

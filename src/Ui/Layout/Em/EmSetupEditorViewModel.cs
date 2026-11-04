@@ -1156,8 +1156,11 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     internal void ApplySnapshot(string json)
     {
         Working = EmSetupPersistence.Deserialize(json);
-        Frequency = NewFrequencyVm();
-        OnPropertyChanged(nameof(Frequency));
+        if (!_frequencyRowsAreTheEdit)
+        {
+            Frequency = NewFrequencyVm();
+            OnPropertyChanged(nameof(Frequency));
+        }
         RebuildAll();
         SetupChanged?.Invoke();
     }
@@ -1185,6 +1188,8 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
 
     // ── Field commits ──────────────────────────────────────────────────────────────────────────
 
+    private bool _frequencyRowsAreTheEdit;
+
     private void CommitFrequency()
     {
         if (_suppressCommit) return;
@@ -1193,7 +1198,11 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         var before = SnapshotJson();
         Working.Frequency = spec;
         Working.AdditionalFrequencies = more;
-        CommitEdit(before, "Change EM frequency sweep");
+        // A field commits on every keystroke and the undo stack applies the snapshot it is given, so rebuilding the rows
+        // here would destroy the text box being typed in. They already show this edit; an undo or a redo still rebuilds them.
+        _frequencyRowsAreTheEdit = true;
+        try { CommitEdit(before, "Change EM frequency sweep"); }
+        finally { _frequencyRowsAreTheEdit = false; }
 
         // The mesh-frequency field is edited in the SWEEP's own unit and stored in hertz, so a
         // change to the sweep's top-frequency unit has to re-render it. Without this, a stored

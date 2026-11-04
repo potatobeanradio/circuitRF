@@ -73,4 +73,26 @@ public sealed class EmFrequencyPlanTests : IDisposable
         Assert.False(circuit.IsSinglePoint);
         Assert.Equal("2", circuit.Build().StopExpr);
     }
+
+    /// <summary>GitHub discussion 42: a field commits on every keystroke, so a commit that rebuilt the rows destroyed the
+    /// text box being typed in and "11" took two clicks.</summary>
+    [Fact]
+    public void TypingInAFrequencyField_KeepsItsRow_AndUndoStillShowsTheEarlierValue()
+    {
+        string path = Path.Combine(_dir, "typed.cem");
+        var setup = new EmSetup { Name = "typed", LayoutRef = "a.clay", Frequency = new FrequencySpec("9", "8", 5, SweepKind.Linear, "GHz", "GHz") };
+        EmSetupPersistence.SaveToFile(path, setup);
+        var vm = new EmSetupEditorViewModel(path, setup);
+        var row = vm.FrequencySegments[0];
+
+        row.StopCoeff = "1";
+        row.StopCoeff = "11";
+
+        Assert.Same(row, vm.FrequencySegments[0]);
+        Assert.Equal("11", vm.Working.Frequency.StopExpr);
+
+        vm.UndoRedo.Undo();
+        Assert.Equal("1", vm.FrequencySegments[0].StopCoeff);
+        Assert.Equal("1", vm.Working.Frequency.StopExpr);
+    }
 }
