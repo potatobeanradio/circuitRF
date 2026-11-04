@@ -51,6 +51,10 @@ public sealed class MoveTool : C3dOperationTool
 
     public C3dMoveLock Lock { get; private set; }
 
+    /// <summary>brief-dfr34-1 R-dfr34-1-1 — the ports this Move carries instead of objects (its <see cref="C3dOperationTool.Targets"/>
+    /// are then empty): their rectangles are translated on the commit. Empty on every other Move.</summary>
+    public IReadOnlyList<C3dPort> Ports { get; init; } = [];
+
     /// <summary>Started by a press on a gizmo handle: the release commits it (R-em3d46-5).</summary>
     public bool FromGizmo { get; init; }
 

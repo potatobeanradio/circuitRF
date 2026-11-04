@@ -185,10 +185,8 @@ public sealed partial class EmSetupEditorViewModel
     /// row's selection again: a combo whose items were replaced has dropped it.</summary>
     private void BuildPort3DReturnChoices(Technology tech)
     {
-        var rows = new List<EmReturnPlaneChoice> { new("", AutomaticPortReturn) };
-        foreach (var l in tech.Stackup.Layers)
-            if (l.Kind == StackupKind.Conductor)
-                rows.Add(new EmReturnPlaneChoice(l.Name, l.IsGroundReference ? $"{l.Name}  — ground reference" : l.Name));
+        // brief-dfr34-1 — the same rows a 3D view's port Properties offers, the coplanar return last.
+        var rows = EmPortReturnChoices.Of(tech).Select(c => new EmReturnPlaneChoice(c.Name, c.Display)).ToList();
         if (rows.Select(r => r.Display).SequenceEqual(Port3DReturnChoices.Select(r => r.Display))) return;
         Port3DReturnChoices.Clear();
         foreach (var r in rows) Port3DReturnChoices.Add(r);

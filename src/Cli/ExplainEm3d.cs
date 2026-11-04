@@ -149,7 +149,8 @@ internal static class ExplainEm3d
             Kind = q.Kind == Em3dPortKind.Wave ? "wave" : null,
             // brief-dfr28-4 R-dfr28-4-5 — the layer it returns through, and whether that was walked or stated.
             Return = g.PortReturns.TryGetValue(q.Number, out var ret)
-                ? $"{ret.Layer}{(ret.Floor ? " (the air box's floor)" : "")}, {(ret.Above ? "above" : "below")}" : null,
+                ? ret.Coplanar ? $"{ret.Layer}, beside the line on its own layer"     // brief-dfr34-1 — Return = Same layer
+                  : $"{ret.Layer}{(ret.Floor ? " (the air box's floor)" : "")}, {(ret.Above ? "above" : "below")}" : null,
             ReturnDecidedBy = ret?.DecidedBy,
             ReferencePlane = q.Kind != Em3dPortKind.Wave ? null
                 : $"on the air box's {p.FaceOf(q.Min, q.Max)} face" + (q.ReferencePlane.ShiftM > 0

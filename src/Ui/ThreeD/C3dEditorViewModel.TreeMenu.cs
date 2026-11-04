@@ -55,6 +55,7 @@ public sealed partial class C3dEditorViewModel
         else if (item.Kind is "Port" or TerminalKind)
         {
             var port = PortOfRow(item);
+            if (port is not null) items.Add(PortMoveItem([port]));   // brief-dfr34-1 R-dfr34-1-1
             items.Add(new Viewer3DMenuItem("Duplicate", Enabled: false, Tip: "A port is drawn with the Port tool: each one joins its own pair of conductors."));
             if (port is not null && item.Kind == "Port") items.AddRange(PortValueItems(port));   // Z0, Number, Name
             items.Add(Viewer3DMenuItem.Separator);

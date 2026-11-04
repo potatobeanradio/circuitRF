@@ -205,10 +205,14 @@ public sealed class Viewer3DDrawOverlay
     /// <summary>brief-dfr31-3 R-dfr31-3-1 — a clip-plane field plot's plane: its four corners across the air box, and the label
     /// naming its axis and offset.</summary>
     public List<(CircuitRF.Engine.Em3d.Point3[] Corners, string Label)> FieldPlanes { get; } = [];
+    /// <summary>brief-dfr34-1 R-dfr34-1-2 — port sheets drawn over the geometry, not depth-tested, while ports are being worked
+    /// on: each one's four corners, and whether it is selected.</summary>
+    public List<(CircuitRF.Engine.Em3d.Point3[] Corners, bool Selected)> Ports { get; } = [];
 
     public void Clear()
     {
         TargetFaces.Clear();
+        Ports.Clear();
         FieldPlanes.Clear();
         Rubber.Clear(); Construction.Clear(); Selected.Clear(); Crossing.Clear(); Fixed.Clear(); Pivots.Clear(); Missing.Clear(); Labels.Clear();
         HeatSources.Clear(); Probes.Clear(); ProbeMarks.Clear(); MeshRegions.Clear(); SymmetryPlanes.Clear(); LumpedElements.Clear();
@@ -383,6 +387,7 @@ public sealed partial class Viewer3DViewModel
     public void Click(bool shift, KeyModifiers modifiers = KeyModifiers.None, int clickCount = 1)
     {
         if (clickCount == 1) SelectionBeforeClick = View.Selection;
+        bool cycling = HitCycle.Active;
         HitCycle.Reset();
         CycleText = "";
         // brief-em3d-45 — the drawing has the click first: an armed tool places a point, a plane gesture moves the plane.
@@ -390,6 +395,20 @@ public sealed partial class Viewer3DViewModel
         if (MeasureActive) { MeasureClick(); return; }
         if (EditHost?.DrawClick(modifiers | (shift ? KeyModifiers.Shift : KeyModifiers.None), clickCount) == true) return;
         var item = HoveredItem;
+        // brief-dfr34-1 R-dfr34-1-2 — a port ranks first, so a second press at the same point on the port already selected
+        // steps to what is underneath it (B's list along the line of sight), as the layout editor's repeated click does.
+        var at = (View.CursorX, View.CursorY);
+        bool again = clickCount == 1 && !shift && _lastPress is { } lp &&
+                     MathF.Abs(lp.X - at.CursorX) <= Scene3DHitCycle.ResetPixels && MathF.Abs(lp.Y - at.CursorY) <= Scene3DHitCycle.ResetPixels;
+        if (clickCount == 1) _lastPress = (at.CursorX, at.CursorY);
+        // A third press goes on stepping (the list from the last press is kept), wrapping back round to the port.
+        if (again && item is { } ip && Scene.Object(ip.Object)?.Kind == Scene3DKind.Port && View.Selection is [var only] &&
+            (only == ip || cycling))
+        {
+            if (cycling) HitCycle.Resume();
+            Cycle(+1);
+            return;
+        }
         if (item is not { } it)
         {
             if (!shift) ClearSelection();
@@ -408,6 +427,9 @@ public sealed partial class Viewer3DViewModel
         else SetSelection(picked);
         if (_items.TryGetValue(it.Object, out var treeItem)) RevealRequested?.Invoke(treeItem);
     }
+
+    /// <summary>brief-dfr34-1 — where the last single press was, for a second press at the same point.</summary>
+    private (float X, float Y)? _lastPress;
 
     /// <summary>3D editor groups — the selection as it was before the first click of the latest click or double-click: what a
     /// double-click's second click compares with, since its first has already changed the selection.</summary>
@@ -535,6 +557,11 @@ public sealed partial class Viewer3DViewModel
             if (SnapQuery.NearestEdge(Scene, edgePatch, radius, PickVisible, View.Clip, o => Scene.Object(o)?.Selectable == true) is { } eh)
                 item = Scene3DItem.OfEdge(eh.Object, eh.Edge);
         }
+        // brief-dfr34-1 R-dfr34-1-2 — Object mode: a port ranks first, as in the layout editor. Its sheet is thin and sits inside
+        // metal and dielectric, so the ID pass's front object is almost never it: a port within a few pixels of the cursor on
+        // screen is what a click selects, wherever it is in depth, and a second press at the same point steps behind it.
+        else if (SelectMode == Scene3DSelectMode.Object && PortNearCursor() is { } port)
+            item = Scene3DItem.OfObject(port);
         // 3D editor round 5 — Object mode: a bond wire within a few pixels of the cursor is what a click selects, unless
         // what IS under the cursor stands in front of it. Only the hover's item: the pick itself (the snap, a tool's pad)
         // stays the pixel's.
@@ -569,6 +596,16 @@ public sealed partial class Viewer3DViewModel
         // brief-em3d-46 — an operation's preview and a measurement's rubber band follow the cursor from here.
         MeasureFollow();
         CursorResolved?.Invoke();
+    }
+
+    /// <summary>brief-dfr34-1 R-dfr34-1-2 — the visible, selectable port sheet nearest the cursor on screen within the snap
+    /// radius (a sheet seen edge-on is a line, and is still found), or null. Depth is not asked: a port ranks first.</summary>
+    private uint? PortNearCursor()
+    {
+        if (View.CursorX < 0 || View.CursorY < 0 || !Scene.Objects.Any(o => o.Kind == Scene3DKind.Port)) return null;
+        return Scene3DPicking.NearestOnScreen(Scene, View.Camera, View.CursorX, View.CursorY, _viewW, _viewH, PickVisible,
+                                              Scene3DSnap.RadiusPixels, o => o.Kind == Scene3DKind.Port && o.Selectable, View.Clip)
+            is { } near ? near.Id : null;
     }
 
     /// <summary>

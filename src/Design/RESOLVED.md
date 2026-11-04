@@ -27337,3 +27337,39 @@ copper intact and opens the joint to its feed. The parent's signature is the onl
 - The independence test asserts on the count rather than running two optimisations: separate tunables, two
   geometries at different values and one at equal values.
 - No solve anywhere: the stand-in is not even needed.
+
+## A 3D port's return through an opening, through unmarked metal, and across the gap (DFR34-1, 2026-11-03)
+
+**An opening is not a plane pulled back.** The line-end walk stopped at the first ground-reference plane that had
+metal under the line short of its end and refused the port. On a pad over an anti-pad clearance that is wrong:
+Inner 1's metal surrounded the pad's edge, and the return is the solid plane beyond it. `Em3dGenerator.Opening` tests
+for it. There must be no metal at the end, and metal must resume in all four directions: along the line inward and
+outward, and across it on both sides. When that holds, the walk passes through to the next plane. A note names each
+opening's layer and size, and goes to `PortsMoved` so New 3D View from Layout posts it. A plane cut flush at a board
+edge has no metal outward of the end, so it is still the pulled-back case (moved within three widths for a `.c3d`,
+refused beyond).
+
+**Unmarked solid metal before any marked plane is the return.** A layer the technology does not mark as ground,
+covering the whole sheet (`ReturnCover.Whole`), used to block the sheet as metal in its way. It is now landed on, with
+a note saying it was taken unmarked. Metal across only part of the sheet still refuses, and so does a stated return
+that this metal sits in front of.
+
+**Coplanar return (`EmPort3D.SameLayerReturn`, "(same layer)") is one horizontal sheet to the nearer side** (owner
+decision D1). Two sheets in parallel would need a port made of several sheets in `Em3dPort`, the `.c3d` and every solver
+lowering. The sheet lies at the copper's mid-height and runs the line's width inward from the end, across a gap that
+must be straight over that length. Ground is same-layer metal on a ground-reference plane's net, or any other-net metal
+where no net says. `Em3dPortReturn.Coplanar` marks it, so `explain` does not say "below".
+
+**Measured on Palace** (the shipped two-layer 20 mil board, 1 mm line, 250 µm gaps, top grounds stitched to the bottom plane):
+- Coplanar |S21| agrees with vertical lumped ports to the bottom plane within 0.09 dB over 1–6 GHz.
+- A sheet as long as the gap, rather than the line's width, changed nothing.
+- **A wave-port reference could not be made.** With ground metal on the top layer at the face, Palace's wave port takes
+  the parallel-plate mode between that ground and the bottom plane, not the line's mode. Wide top grounds gave
+  10.5 Ω (S21 ≈ −40 dB); 1 mm stitched strips gave 23 Ω (S21 ≈ −22 dB). The brief's 0.1 dB wave-port gate is unmet for
+  that reason, not because of the port.
+
+**A `.c3d` port has no Return.** The brief asked for a Return picker in the 3D port's Properties. It was built and then
+removed at the owner's direction: a 3D port returns through whatever its (−) end touches, and the picker only rebuilt the
+rectangle and wrote `Negative`. In a `.c3d` the way to change a return is to move the port. The `.cem` port table's Return
+column keeps its rows (`EmPortReturnChoices`, now ending with the coplanar return), because there the port is generated
+and has no rectangle to move.

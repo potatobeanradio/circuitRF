@@ -418,6 +418,9 @@ public sealed class Viewer3DOverlay : Control
     private static readonly IBrush TargetBrush = new SolidColorBrush(Color.FromRgb(51, 230, 255));
     private static readonly IBrush TargetFill = new SolidColorBrush(Color.FromArgb(90, 51, 230, 255));
     /// <summary>brief-dfr31-3 — a field plot's plane: the selection's magenta, the fill faint enough to see the model through.</summary>
+    private static readonly IBrush PortBrush = new SolidColorBrush(Color.FromRgb(255, 92, 48));
+    private static readonly IBrush PortFill = new SolidColorBrush(Color.FromArgb(70, 255, 92, 48));
+    private static readonly IBrush PortSelectedFill = new SolidColorBrush(Color.FromArgb(120, 255, 92, 48));
     private static readonly IBrush PlaneBrush = new SolidColorBrush(Color.FromRgb(255, 90, 255));
     private static readonly IBrush PlaneFill = new SolidColorBrush(Color.FromArgb(46, 255, 90, 255));
 
@@ -460,6 +463,20 @@ public sealed class Viewer3DOverlay : Control
             planeLabels.Add((pts.MinBy(q => q.P.Y + q.P.X * 1e-3).P, label));
         }
         DrawingLabels(ctx, planeLabels, w, h, dark, springs, "plane");
+        // brief-dfr34-1 R-dfr34-1-2 — ports over everything else in the scene: a sheet inside a via or a pad is seen.
+        foreach (var (corners, selected) in d.Ports)
+        {
+            var pts = corners.Select(Screen).ToList();
+            if (pts.Any(q => !q.Ok)) continue;
+            var g = new StreamGeometry();
+            using (var c = g.Open())
+            {
+                c.BeginFigure(pts[0].P, true);
+                for (int i = 1; i < pts.Count; i++) c.LineTo(pts[i].P);
+                c.EndFigure(true);
+            }
+            ctx.DrawGeometry(selected ? PortSelectedFill : PortFill, new Pen(PortBrush, selected ? 2.2 : 1.4), g);
+        }
         var construction = new Pen(dark ? new SolidColorBrush(Color.FromArgb(200, 200, 205, 215)) : new SolidColorBrush(Color.FromArgb(200, 70, 75, 85)), 1.2)
         {
             DashStyle = new DashStyle([4, 3], 0),

@@ -100,22 +100,18 @@ public sealed class PortReturnWalkTests
 
     // ── gate 3 — unflagged metal on the way ─────────────────────────────────────────────────────
 
-    /// <summary>Only Bottom is a ground reference. Inner 2's metal away from the line leaves it the return; Inner 2's
-    /// metal under the line's end is in the sheet's way, and is refused by name.</summary>
+    /// <summary>Only Bottom is a ground reference. Inner 2's metal away from the line leaves Bottom the return; Inner 2's
+    /// metal under the whole of the line's end is reached first, and is the return (brief-dfr34-1 R-dfr34-1-5; metal under
+    /// part of it still refuses — PortReturnOpeningTests).</summary>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void AnUnflaggedPlane_IsPassedWhenItIsNotUnderThePort_AndRefusedWhenItIs(bool under)
+    public void AnUnflaggedPlane_IsPassedWhenItIsNotUnderThePort_AndIsTheReturnWhenItIs(bool under)
     {
         var g = Generate(Tech(Bottom), Line(L1, under ? Pour(L3) : Elsewhere(L3), Pour(L4)));
 
-        if (!under)
-        {
-            Assert.True(g.Ok, g.Refusal);
-            Assert.StartsWith(Bottom + "/", Returns(g, 1), StringComparison.Ordinal);
-        }
-        else
-            Assert.Contains($"would cross metal on '{In2}'", g.Refusal, StringComparison.Ordinal);
+        Assert.True(g.Ok, g.Refusal);
+        Assert.StartsWith((under ? In2 : Bottom) + "/", Returns(g, 1), StringComparison.Ordinal);
     }
 
     // ── R-dfr28-4-2 / gates 4 and 5 ─────────────────────────────────────────────────────────────
@@ -246,7 +242,8 @@ public sealed class PortReturnWalkTests
         Assert.DoesNotContain("Ports3D", bare, StringComparison.Ordinal);
     }
 
-    /// <summary>The table's Return column: Automatic first, then every conductor layer, a ground reference marked. A
+    /// <summary>The table's Return column: Automatic first, then every conductor layer, a ground reference marked, then the
+    /// coplanar return (brief-dfr34-1). A
     /// lumped row's choice is written; a wave row writes none, since its return is the air box's face.</summary>
     [Fact]
     public void ThePortTablesReturnColumn_WritesALumpedPortsChoice_AndNoneForAWavePort()
@@ -260,7 +257,7 @@ public sealed class PortReturnWalkTests
         };
         vm.Refresh();
 
-        Assert.Equal(["Automatic", Top, $"{In1}  — ground reference", In2, $"{Bottom}  — ground reference"],
+        Assert.Equal(["Automatic", Top, $"{In1}  — ground reference", In2, $"{Bottom}  — ground reference", EmPort3D.SameLayerDisplay],
                      vm.Port3DReturnChoices.Select(c => c.Display));
         Assert.Equal([1, 2], vm.Port3DRows.Select(r => int.Parse(r.Port)));
         Assert.All(vm.Port3DRows, r => Assert.Equal("Automatic", r.ReturnChoice!.Display));

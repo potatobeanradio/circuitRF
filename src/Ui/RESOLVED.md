@@ -41868,3 +41868,23 @@ treats `ICompositionGpuInterop.IsLost` as a fault. The repeated "COMException: O
 lines were each import's `ImportCompleted` task, which no backend observed. All three backends now pass those tasks,
 and the imported semaphores, through `ObservePresent`, and observe faulted `DisposeAsync` calls. Not exercisable
 headless; a manual Windows check is Win+Ctrl+Shift+B (graphics driver restart).
+
+## A 3D port is moved, picked first and drawn over the board (DFR34-1, 2026-11-03)
+
+**Move… on a port** (the view's menu, the Object Tree row's menu, G, 3D ▸ Modify ▸ Move) is the existing `MoveTool`.
+`MoveTool.Ports` holds the ports and leaves `Targets` empty. The preview moves the ports' sheets (`ShowPreview`'s
+`extra`), and the commit shifts each rectangle's offset and corner in one `ChangeRecords` entry (`MovePorts`). Ports
+are records, not objects, so `ApplyTransform` never sees them.
+
+**Ports rank first in the pick.** A port's sheet sits inside metal and dielectric, so the ID pass's front object is almost
+never it. `Viewer3DViewModel.PortNearCursor` uses `NearestOnScreen`, so a sheet seen edge-on is still found within the
+snap radius. A second press at the same point, on the port already selected, steps behind it through B's list.
+`Scene3DHitCycle.Resume` exists because `Click` resets the cycle before it knows the press is a repeat.
+
+**Ports are drawn in the 2D overlay** (`Viewer3DDrawOverlay.Ports`, never depth-tested) while the Port tool or a port Move
+runs, or a port is selected in the view or the tree. The GPU's `OnTop` pipeline only draws a selected face in Face mode,
+and a new pipeline would have meant shader work on three backends. **Match ports by number, not by reference:** the
+records view resolves copies of the document's records, so `HashSet<C3dPort>` matched nothing.
+
+UiSnapshot's `--c3d-pick` now handles a port no pixel shows: it hovers the projected centre and lets the viewer's ranking
+decide.

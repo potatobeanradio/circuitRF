@@ -56,8 +56,19 @@ public sealed class Scene3DHitCycle
     public void Reset()
     {
         if (_list is null) return;
+        _kept = _list;
         _list = null;
         Resets++;
+    }
+
+    private List<Scene3DHit>? _kept;
+
+    /// <summary>brief-dfr34-1 — takes back the list the last <see cref="Reset"/> discarded, at the same place in it: a click
+    /// resets the cycle before it knows whether it is a repeated press on a port, which steps on through the same list.</summary>
+    public void Resume()
+    {
+        if (_list is null && _kept is not null) { _list = _kept; Resets--; }
+        _kept = null;
     }
 
     /// <summary>

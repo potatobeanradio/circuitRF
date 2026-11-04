@@ -1031,6 +1031,25 @@ foreach (var (kind, arg) in steps)
                     v.Click(false);
                     hit = true;
                 }
+            // brief-dfr34-1 — a port inside the board is never the front pixel: hover its projected centre and let the viewer's
+            // own ranking (a port first) decide what the click takes.
+            if (!hit && obj.Kind == CircuitRF.Render.Scene3D.Scene3DKind.Port && v.Scene.FeaturesOf(obj.Id) is { Table: { } table } f)
+            {
+                var corners = Enumerable.Range(0, table.Vertices.Length).Select(f.Vertex).ToList();
+                var c = new CircuitRF.Engine.Em3d.Point3(corners.Average(p => p.X), corners.Average(p => p.Y), corners.Average(p => p.Z));
+                var (px, py, front) = v.View.Camera.Project(v.Scene.ToLocal(c.X, c.Y, c.Z), vw, vh);
+                if (front)
+                {
+                    v.Hover(px, py);
+                    var (id, face) = CircuitRF.Render.Scene3D.Scene3DPicking.PairAtPixel(v.Scene, v.View.Camera, px, py, vw, vh, v.View.Visible);
+                    typeof(CircuitRF.Ui.Viewer3D.Viewer3DViewModel).GetMethods(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+                        .Single(m => m.Name == "OnPicked" && m.GetParameters().Length == 5)
+                        .Invoke(v, [id, face, System.Numerics.Vector3.Zero, id != 0, null]);
+                    v.Click(false);
+                    hit = true;
+                    Console.WriteLine($"--c3d-pick: '{arg}' is behind other content; hovered its centre at ({px:F0}, {py:F0}): selection {string.Join(", ", v.Selection.Select(s => v.Scene.Object(s.Object)?.Name))}");
+                }
+            }
             if (!hit) throw new InvalidOperationException($"--c3d-pick: '{arg}' is not visible from the camera");
             break;
         }

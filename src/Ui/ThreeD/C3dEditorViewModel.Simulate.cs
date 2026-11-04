@@ -1394,6 +1394,17 @@ public sealed partial class C3dEditorViewModel
             "Port name:", p.Name, text => SetPortName(p, text)));
     }
 
+    /// <summary>brief-dfr34-1 R-dfr34-1-1 — Move… on ports: the view's Move (base point, then target, snapped; X/Y/Z locks) on
+    /// their rectangles. A port is a thin sheet inside metal, so this is how one is moved without dragging what is round it.</summary>
+    private Viewer3DMenuItem PortMoveItem(IReadOnlyList<C3dPort> ports)
+    {
+        bool any = ports.Any(p => p.Cylinder is null);
+        return new Viewer3DMenuItem(ports.Count == 1 ? $"Move {C3dPorts.Label(ports[0])}…" : "Move Ports…", () => StartPortMove(ports),
+            Enabled: any, Gesture: Viewer3DMenuItem.Plain(Avalonia.Input.Key.G),
+            Tip: any ? "Click a base point, then the target point: the port's sheet moves by the difference. X, Y or Z holds it to an axis; type a distance."
+                     : "A port on a cylinder is a patch of that cylinder: move or resize the cylinder instead.");
+    }
+
     private IEnumerable<Viewer3DMenuItem> SimulateMenuItems()
     {
         var sel = Viewer.Selection;
@@ -1402,10 +1413,12 @@ public sealed partial class C3dEditorViewModel
             // brief-em3d-114 R-em3d114-3d — a multi-terminal port: its reference, and each selected terminal's own Flip and Z0
             if (ports is [{ Terminals: { Count: > 0 } } multi])
             {
+                yield return PortMoveItem(ports);               // brief-dfr34-1 R-dfr34-1-1
                 foreach (var m in TerminalPortItems(multi)) yield return m;
                 yield return Viewer3DMenuItem.Separator;
                 yield break;
             }
+            yield return PortMoveItem(ports);                   // brief-dfr34-1 R-dfr34-1-1
             yield return new Viewer3DMenuItem(ports.Count == 1 ? $"Flip {C3dPorts.Label(ports[0])}" : "Flip Ports", () => FlipPorts(ports),
                                               Tip: "Swap the port's + and − ends: the arrow turns round.");
             yield return new Viewer3DMenuItem("Port Kind", Children:
@@ -1545,8 +1558,48 @@ public sealed partial class C3dEditorViewModel
         int dbu = Document.DbuPerMicron;
         // The realistic view's Look hides the ports (their sheets, in the frame plan): their numbers, refdes and refused outlines
         // go with them, as an unticked port's do. A port being drawn still shows what it would join.
-        if (!(Viewer.View.DrawsRealistic && !Viewer.View.Look.Shows(CircuitRF.Render.Scene3D.Look.Scene3DChrome.Ports))) FillPortLabels(overlay, dbu);
+        if (!(Viewer.View.DrawsRealistic && !Viewer.View.Look.Shows(CircuitRF.Render.Scene3D.Look.Scene3DChrome.Ports)))
+        {
+            if (PortsOnTop) FillPortsOnTop(overlay, dbu);
+            FillPortLabels(overlay, dbu);
+        }
         if (_tool is PortTool pt && pt.Preview(CursorInput()) is { } draft) FillPortPreview(overlay, draft, dbu);
+    }
+
+    /// <summary>brief-dfr34-1 R-dfr34-1-2 — whether the ports are drawn over the geometry: the Port tool or a port's Move is
+    /// running, or a port is selected in the view or the tree. A port is a thin sheet inside metal; while it is being worked on
+    /// it must be seen.</summary>
+    public bool PortsOnTop => _tool is PortTool || _tool is Operations.MoveTool { Ports.Count: > 0 } || SelectedPorts().Count > 0
+                              || _selectedTreeItems.Any(t => t.Kind is "Port" or TerminalKind);
+
+    /// <summary>Every shown port's sheet as four corners for the overlay; a port being moved where the cursor puts it.</summary>
+    private void FillPortsOnTop(Viewer3DDrawOverlay overlay, int dbu)
+    {
+        // By number: the records view resolves copies of the document's port records.
+        var selected = SelectedPorts().SelectMany(C3dPorts.Numbers).ToHashSet();
+        var moving = _tool is Operations.MoveTool { Ports.Count: > 0 } mt ? mt.Ports.SelectMany(C3dPorts.Numbers).ToHashSet() : [];
+        Point3 shift = default;
+        if (moving.Count > 0 && ((Operations.MoveTool)_tool!).Current(CursorInput(), out _) is { } t)
+        {
+            double per = C3dLowering.Metres(1, dbu);
+            shift = new Point3(t.Transform.Tx * per, t.Transform.Ty * per, t.Transform.Tz * per);
+        }
+        foreach (var r in PortResults)
+        {
+            if (r.Port.Cylinder is not null || !C3dPorts.Numbers(r.Port).Any(n => IsPortShown(C3dPorts.ProblemName(n)))) continue;
+            Point3[] corners = r.Resolved?.Quad is { } q ? [q.A, q.B, q.C, q.D] : RectCorners(r.Port, dbu);
+            var numbers = C3dPorts.Numbers(r.Port);
+            bool moved = numbers.Any(moving.Contains);
+            if (moved) corners = [.. corners.Select(c => new Point3(c.X + shift.X, c.Y + shift.Y, c.Z + shift.Z))];
+            overlay.Ports.Add((corners, moved || numbers.Any(selected.Contains)));
+        }
+    }
+
+    private static Point3[] RectCorners(C3dPort p, int dbu)
+    {
+        double M(long v) => C3dLowering.Metres(v, dbu);
+        long u0 = p.Rect.Min.U, v0 = p.Rect.Min.V, u1 = u0 + p.Rect.Size.U, v1 = v0 + p.Rect.Size.V;
+        return [.. new[] { (u0, v0), (u1, v0), (u1, v1), (u0, v1) }.Select(q => C3dLowering.OnPlane(p.Plane, M(q.Item1), M(q.Item2), M(p.Offset)))];
     }
 
     /// <summary>Each port's number (a terminal's at its arrow), each component port's refdes, and a refused port's outline.</summary>

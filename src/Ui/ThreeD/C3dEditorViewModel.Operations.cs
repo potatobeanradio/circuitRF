@@ -170,6 +170,12 @@ public sealed partial class C3dEditorViewModel
     /// <summary>R-em3d46-2 — Move, optionally locked to an axis (the menu's Move Along X / Y / Z).</summary>
     public void StartMove(C3dMoveLock lockTo = C3dMoveLock.None)
     {
+        // brief-dfr34-1 R-dfr34-1-1 — ports alone selected: the same Move, on their rectangles.
+        if (Viewer.SelectMode == Scene3DSelectMode.Object && Targets().Count == 0 && SelectedPorts() is { Count: > 0 } ports)
+        {
+            StartPortMove(ports, lockTo);
+            return;
+        }
         if (!HaveMovableTargets(out var targets)) return;
         var tool = new MoveTool(this, targets, PivotOf(targets), lockTo: lockTo);
         // With the cursor over the selection, the snapped point under it is the base, at once (R-em3d46-2a).
@@ -177,6 +183,68 @@ public sealed partial class C3dEditorViewModel
         if (over != 0 && targets.SelectMany(SceneObjectsOf).Any(o => o.Id == over) && FreePoint(CursorInput(), out _) is { } p)
             tool.SetBase(p, !Viewer.Snap.IsSnap || ToDocumentPoint(Viewer.Snap).Exact);
         BeginOperation(tool);
+    }
+
+    /// <summary>
+    /// brief-dfr34-1 R-dfr34-1-1 — Move… on ports: the existing Move (base point, then target, snapped; X/Y/Z locks an axis) on
+    /// their rectangles. Their sheets follow the cursor as an object's batches do, and the commit translates each rectangle —
+    /// its plane's offset and its corner — as ONE undo entry. A port on a cylinder is placed by its cylinder and is not moved.
+    /// </summary>
+    public void StartPortMove(IReadOnlyList<C3dPort> ports, C3dMoveLock lockTo = C3dMoveLock.None)
+    {
+        if (IsViewOnly) return;
+        var movable = ports.Where(p => p.Cylinder is null).Distinct().ToList();
+        if (movable.Count == 0)
+        {
+            StatusMessage = "A port on a cylinder is a patch of that cylinder: move or resize the cylinder instead.";
+            return;
+        }
+        var first = movable[0];
+        long cu = first.Rect.Min.U + first.Rect.Size.U / 2, cv = first.Rect.Min.V + first.Rect.Size.V / 2;
+        var pivot = first.Plane switch
+        {
+            C3dPlane.XZ => new C3dPoint3(cu, first.Offset, cv),
+            C3dPlane.YZ => new C3dPoint3(first.Offset, cu, cv),
+            _ => new C3dPoint3(cu, cv, first.Offset),
+        };
+        _portMoveTargets = [];
+        var tool = new MoveTool(this, _portMoveTargets, pivot, lockTo: lockTo) { Ports = movable };
+        var over = Viewer.LastPick.Object;
+        if (over != 0 && PortSceneObjects(movable).Any(o => o.Id == over) && FreePoint(CursorInput(), out _) is { } p)
+            tool.SetBase(p, !Viewer.Snap.IsSnap || ToDocumentPoint(Viewer.Snap).Exact);
+        BeginOperation(tool);
+    }
+
+    /// <summary>The empty target list a port Move previews under: one list per operation, so the preview's mask is built once.</summary>
+    private IReadOnlyList<C3dTarget> _portMoveTargets = [];
+
+    /// <summary>The scene sheets of <paramref name="ports"/>: each one's, or each of its terminals'.</summary>
+    private IEnumerable<Scene3DObject> PortSceneObjects(IEnumerable<C3dPort> ports)
+        => ports.SelectMany(C3dPorts.Numbers).Select(n => SceneObject(C3dPorts.ProblemName(n))).OfType<Scene3DObject>();
+
+    /// <summary>Translates <paramref name="ports"/>' rectangles by <paramref name="d"/> (world DBU): one undo entry.</summary>
+    public bool MovePorts(IReadOnlyList<C3dPort> ports, C3dPoint3 d, bool exact = true)
+    {
+        var set = ports.ToHashSet();
+        string what = ports.Count == 1 ? C3dPorts.Label(ports[0]) : $"{ports.Count} ports";
+        bool changed = ChangeRecords($"Move {what}", doc =>
+        {
+            foreach (var p in doc.Ports.Where(set.Contains))
+            {
+                var (du, dv, da) = p.Plane switch
+                {
+                    C3dPlane.XZ => (d.X, d.Z, d.Y),
+                    C3dPlane.YZ => (d.Y, d.Z, d.X),
+                    _ => (d.X, d.Y, d.Z),
+                };
+                p.Offset += da;
+                p.Rect = new C3dRect { Min = new C3dPoint2(p.Rect.Min.U + du, p.Rect.Min.V + dv), Size = p.Rect.Size };
+            }
+        });
+        StatusMessage = changed ? $"Move {what}." + (exact ? "" : " ≈ Not a whole number of database units: rounded to the nearest one.")
+                                : $"Move {what}: nothing moved.";
+        if (changed) OperationCommits++;
+        return changed;
     }
 
     /// <summary>R-em3d46-3 — Rotate about the drawing plane's normal (X, Y or Z changes it), through the pivot.</summary>
@@ -231,10 +299,13 @@ public sealed partial class C3dEditorViewModel
                 // From the moment the selection follows the cursor, it never attracts the snap (R-snpf-4); before a
                 // base point is chosen it must — that is how a pad's own corner becomes the base.
                 foreach (var o in op.Targets.SelectMany(SceneObjectsOf)) _snapExcludedObjects.Add(o.Name);
+                if (op is MoveTool { Ports.Count: > 0 } px) foreach (var o in PortSceneObjects(px.Ports)) _snapExcludedObjects.Add(o.Name);
                 ApplySnapExclusion();
                 _opExcluding = true;
             }
-            ShowPreview(op.Targets, [t.Transform], op.KeepsOriginal);
+            if (op is MoveTool { Ports.Count: > 0 } pm)
+                ShowPreview(_portMoveTargets, [t.Transform], false, movingOf: null, extra: PortSceneObjects(pm.Ports));
+            else ShowPreview(op.Targets, [t.Transform], op.KeepsOriginal);
         }
         OnPropertyChanged(nameof(ToolPrompt));
         Viewer.RequestFrame();
@@ -243,7 +314,7 @@ public sealed partial class C3dEditorViewModel
     /// <summary>The targets drawn under <paramref name="transforms"/> (world DBU), and also where they are when
     /// <paramref name="keepOriginal"/>. Allocates the moving mask once per operation; a move rewrites matrices.</summary>
     private void ShowPreview(IReadOnlyList<C3dTarget> targets, IReadOnlyList<C3dTransform> transforms, bool keepOriginal,
-                             Func<C3dTarget, IEnumerable<Scene3DObject>>? movingOf = null)
+                             Func<C3dTarget, IEnumerable<Scene3DObject>>? movingOf = null, IEnumerable<Scene3DObject>? extra = null)
     {
         var scene = Viewer.Scene;
         var current = Viewer.View.Preview;
@@ -257,7 +328,7 @@ public sealed partial class C3dEditorViewModel
         else
         {
             var moving = new bool[scene.Objects.Length];
-            foreach (var o in targets.SelectMany(movingOf ?? SceneObjectsOf)) moving[o.Id - 1] = true;
+            foreach (var o in targets.SelectMany(movingOf ?? SceneObjectsOf).Concat(extra ?? [])) moving[o.Id - 1] = true;
             FaceImagesFollow(scene, moving);
             preview = new Scene3DPreview(moving, new Matrix4x4[transforms.Count], keepOriginal);
             _previewTargets = targets;
@@ -354,6 +425,14 @@ public sealed partial class C3dEditorViewModel
     private void CommitOperation(C3dOperationTool op)
     {
         if (op.Committed is not { } t) return;
+        if (op is MoveTool { Ports.Count: > 0 } pm)
+        {
+            var d = new C3dPoint3((long)Math.Round(t.Transform.Tx, MidpointRounding.AwayFromZero), (long)Math.Round(t.Transform.Ty, MidpointRounding.AwayFromZero),
+                                  (long)Math.Round(t.Transform.Tz, MidpointRounding.AwayFromZero));
+            if (MovePorts(pm.Ports, d, t.Exact)) HoldPreviewForCommit();
+            SetTool(null);
+            return;
+        }
         var targets = op.Targets;
         bool changed = op.KeepsOriginal
             ? InsertCopies(targets, [t.Transform], $"Duplicate {Describe(targets)}", t.Exact)

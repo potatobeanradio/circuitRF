@@ -88,10 +88,20 @@ public enum EmUnassignedConductors
 /// null takes the rule's.</param>
 /// <param name="OffsetUm">A wave port's de-embedding distance, µm; null is 0.</param>
 /// <param name="Return">brief-dfr28-4 R-dfr28-4-5 — a lumped port's return, a conductor layer's stackup name.
-/// Null or empty is Automatic: the generator walks the artwork from the port to the plane it returns through.</param>
+/// Null or empty is Automatic: the generator walks the artwork from the port to the plane it returns through.
+/// <see cref="SameLayerReturn"/> is a coplanar return (brief-dfr34-1 R-dfr34-1-6).</param>
 public sealed record EmPort3D(int Port, Em3dPortKind Kind = Em3dPortKind.Lumped, double? WidthFactor = null,
                               double? HeightFactor = null, double? OffsetUm = null, string? Return = null)
 {
+    /// <summary>
+    /// brief-dfr34-1 R-dfr34-1-6 — the Return that names no plane: the port returns through ground metal on its own line's
+    /// layer, across the gap beside the line's end (a coplanar launch). Spelled so no stackup conductor can be named it.
+    /// </summary>
+    public const string SameLayerReturn = "(same layer)";
+
+    /// <summary>What a picker shows for <see cref="SameLayerReturn"/>.</summary>
+    public const string SameLayerDisplay = "Same layer (coplanar)";
+
     /// <summary>States nothing a lumped port with no overrides would not: written as nothing.</summary>
     public bool IsDefault => Kind == Em3dPortKind.Lumped && WidthFactor is null && HeightFactor is null && OffsetUm is null
                              && string.IsNullOrEmpty(Return);

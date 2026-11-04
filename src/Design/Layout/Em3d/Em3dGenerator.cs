@@ -35,7 +35,9 @@ namespace CircuitRF.Design.Layout.Em3d;
 /// <summary>brief-dfr28-4 — where one port returns: the conductor layer (or the air box's floor's plane), whether it
 /// is above the port's own layer, and how it was decided — <c>walked</c> from the artwork, stated by the port's own
 /// <c>Return</c>, or named by the setup's legacy return plane.</summary>
-public sealed record Em3dPortReturn(string Layer, bool Above, bool Floor, string DecidedBy);
+/// <param name="Coplanar">brief-dfr34-1 R-dfr34-1-6 — the return is ground beside the line on its own layer (Return = Same
+/// layer); <paramref name="Above"/> is then not read.</param>
+public sealed record Em3dPortReturn(string Layer, bool Above, bool Floor, string DecidedBy, bool Coplanar = false);
 
 /// <summary>A port left out of a problem generated with <c>portsEach</c>, and why.</summary>
 public sealed record Em3dPortLeftOut(int Port, string Why);
@@ -99,7 +101,8 @@ public sealed record Em3dGenerationResult(Em3dProblem? Problem, string? Refusal,
     public IReadOnlyList<Em3dPortLeftOut> PortsLeftOut { get; init; } = [];
 
     /// <summary>The ports <c>portsEach</c> moved in from their line's end to where a pulled-back return plane begins,
-    /// each said in a sentence (also among <see cref="Notes"/>). Empty otherwise.</summary>
+    /// each said in a sentence (also among <see cref="Notes"/>) — and brief-dfr34-1's, a return through an opening or
+    /// through a level the technology does not mark: where a port went that its user would not assume.</summary>
     public IReadOnlyList<string> PortsMoved { get; init; } = [];
 
     /// <summary>Why a solve would have refused the geometry, when it was generated with <c>padsOptional</c> and drawn
@@ -552,6 +555,12 @@ public static class Em3dGenerator
                 // width short of the end still counts, and the sheet moves in to where it begins.
                 if (ReturnStated(p.Number, out var stated) is { } unknown) return unknown;
                 bool wave = setup.PortKind3D(p.Number) == Em3dPortKind.Wave;
+                // brief-dfr34-1 R-dfr34-1-6 — Return = Same layer: across the gap beside the line's end, not down or up.
+                if (stated is { PerPort: true, Layer: EmPort3D.SameLayerReturn })
+                    return wave
+                        ? $"Port {p.Number} is a wave port, and its Return states the same layer. A wave port's return is the " +
+                          "air box's face; a coplanar return is a lumped port's. Make the port lumped, or choose Automatic."
+                        : CoplanarPort(p, bands, band, piece, edgeAt, lo, hi, pieces, ports);
                 bool sheetAlongX = p.Side is PlanarPortSide.MinY or PlanarPortSide.MaxY;
                 double inward = p.Side is PlanarPortSide.MinX or PlanarPortSide.MinY ? 1 : -1;
                 // brief-dfr32-2 R-dfr32-2-2 — the sheet's width along the edge (EdgePortSheet, the rule the layout editor
@@ -577,6 +586,7 @@ public static class Em3dGenerator
                 }
                 ReturnSide? landed;
                 Dictionary<int, (double At, double Gap)> moves;
+                var openings = new Dictionary<int, (double Along, double Across)>();
                 double tolerance;
                 for (int pass = 0; ; pass++)
                 {
@@ -584,18 +594,28 @@ public static class Em3dGenerator
                     double probe = edgeAt + inward * 1e-6 * (hi - lo);
                     tolerance = ReturnGapToleranceOfWidth * (hi - lo);
                     moves = new Dictionary<int, (double At, double Gap)>();
+                    openings.Clear();
                     ReturnCover EndCover(PlanarExtractor.StackBand b)
                     {
                         var on = pieces.TryGetValue(b.Index, out var ps) ? ps : [];
-                        bool touches = Across(on, probe, sheetAlongX, lo, hi).Touches;
+                        var (whole, touches) = Across(on, probe, sheetAlongX, lo, hi);
                         // Tested just inside the end and just past it, as before: a plane cut on a cropped board's
                         // edge ends exactly where the line does, and is found on the inside.
-                        if (PieceContaining(on, p.Side, edgeAt, mid) is { } rp) return new(rp, touches, "metal");
+                        if (PieceContaining(on, p.Side, edgeAt, mid) is { } rp) return new(rp, touches, "metal", Whole: whole is not null);
                         // A plane drawn by hand to the line's end often stops a hair short of it — a vertex a few µm
                         // off makes its edge lean — and nothing on screen shows the difference. Within a tenth of the
                         // line's width the sheet moves in to where the plane begins; beyond it the refusal says how
                         // far short the plane is, which is what the designer has to fix.
                         double? gap = on.Count == 0 ? null : ReturnGap(on, p.Side, edgeAt, lo, hi);
+                        // brief-dfr34-1 R-dfr34-1-4 — the plane's metal surrounds the line's end: before it along the line,
+                        // past it, and on both sides across it, with none under the end itself. That is an opening — an
+                        // anti-pad, a clearance under a pad — not a plane pulled back, so the walk passes through it to the
+                        // next plane. A plane that stops within a tenth of the width is still the hand-drawn near miss below.
+                        if (!touches && gap is { } og && og > tolerance && Opening(on, p.Side, edgeAt, lo, hi) is { } hole)
+                        {
+                            openings[b.Index] = hole;
+                            return new(null, false, $"an opening {Length(hole.Along)} × {Length(hole.Across)} round the line's end");
+                        }
                         double moved = edgeAt + inward * (gap ?? 0);
                         // Designer feedback round 34 — beyond the tenth, the sheet moves only along a line as wide as the
                         // sheet: a pad's flat edge over an opening in the plane slid 1.36 mm down onto a feed line an
@@ -718,7 +738,22 @@ public static class Em3dGenerator
                 _notes.Add($"Port {p.Number} at its line's end is {(wave ? "a wave port returning through" : $"a vertical lumped sheet {Length(hi - lo)} wide and {Length(zHi - zLo)} tall from '{band.Layer.Name}' {(above ? "up" : "down")} to")} " +
                            $"'{retBand.Layer.Name}'{(landed.Piece is null ? " (the air box's floor)" : "")}" +
                            (landed.Passed.Count > 0 ? $", passing through the opening in {string.Join(", ", landed.Passed.Select(q => $"'{q}'"))}" : "") +
-                           $"{(wave ? $", {(above ? "above" : "below")} the line" : "")}: {ReturnReason(stated)}.");
+                           $"{(wave ? $", {(above ? "above" : "below")} the line" : "")}: {(landed.Unmarked ? UnmarkedReason(retBand) : ReturnReason(stated))}.");
+                // R-dfr34-1-4 — each opening the sheet passed through on its way, by layer and size.
+                foreach (var ob in bands.Where(b => openings.ContainsKey(b.Index) &&
+                                                    (above ? b.BottomM >= band.TopM - 1e-12 && b.TopM <= retBand.BottomM + 1e-12
+                                                           : b.TopM <= band.BottomM + 1e-12 && b.BottomM >= retBand.TopM - 1e-12))
+                                      .OrderBy(b => above ? b.BottomM : -b.TopM))           // in the walk's order, nearest first
+                {
+                    var hole = openings[ob.Index];
+                    string through = $"Port {p.Number}'s return passes through an opening in '{ob.Layer.Name}' round its line's end, " +
+                                     $"{Length(hole.Along)} along the line by {Length(hole.Across)} across it: that plane's metal surrounds " +
+                                     $"the end, so it is a clearance rather than a plane pulled back, and the port returns through " +
+                                     $"'{retBand.Layer.Name}' beyond it.";
+                    _notes.Add(through);
+                    _portsMoved.Add(through);
+                }
+                if (landed.Unmarked) _portsMoved.Add($"Port {p.Number} returns through '{retBand.Layer.Name}': {UnmarkedReason(retBand)}.");
                 // brief-em3d-23 — a wave port starts as the lumped sheet (its centre line is the voltage path)
                 // and becomes a region of the box face once the box exists.
                 if (setup.PortKind3D(p.Number) == Em3dPortKind.Wave)
@@ -809,6 +844,10 @@ public static class Em3dGenerator
 
             if (ReturnStated(p.Number, out var stated) is { } unknown) return unknown;
             string? named = stated?.Layer;
+            if (named == EmPort3D.SameLayerReturn)
+                return $"Port {p.Number} at {at} is a pad-to-plane port, and its Return states the same layer. A coplanar return " +
+                       "is built at a line's end, across the gap to the ground beside it; a pad-to-plane port returns through a " +
+                       "plane above or below its pad. Choose a layer, or Automatic.";
             bool anyFlagged = AnyGroundReference(bands);
 
             string? firstBlocked = null;
@@ -818,7 +857,7 @@ public static class Em3dGenerator
                 double c = u0 + sign * s;
                 if (Chord(pad.Poly, c, lineAlongX, v0) is not var (lo, hi)) break;
 
-                var found = new List<(PlanarExtractor.StackBand Band, Piece? Piece, bool Above, List<string> Passed)>();
+                var found = new List<(PlanarExtractor.StackBand Band, Piece? Piece, bool Above, List<string> Passed, bool Unmarked)>();
                 var passedHere = new List<string>();
                 string? blockedHere = null;
                 foreach (bool above in new[] { true, false })
@@ -826,9 +865,9 @@ public static class Em3dGenerator
                     var walk = ReturnWalk(bands, band, above, named, floorPlane, b =>
                     {
                         var (cover, touches) = Across(pieces.TryGetValue(b.Index, out var ps) ? ps : [], c, lineAlongX, lo, hi);
-                        return new(cover, touches, "");
+                        return new(cover, touches, "", Whole: cover is not null);
                     });
-                    if (walk.Band is { } wb) found.Add((wb, walk.Piece, above, walk.Passed));
+                    if (walk.Band is { } wb) found.Add((wb, walk.Piece, above, walk.Passed, walk.Unmarked));
                     else
                     {
                         if (walk.Blocker is { } bb)
@@ -837,7 +876,7 @@ public static class Em3dGenerator
                                 $"{(named is null ? anyFlagged ? "a ground-reference plane" : "the nearest metal" : $"its named return plane '{named}'")}, would cross metal " +
                                 $"on '{bb.Layer.Name}'{(walk.BlockerPartial ? ", which covers only part of it" : "")}. " +
                                 "A lumped port's sheet runs through dielectric from the pad to the plane it returns through. " +
-                                "Move the label, clear that metal from under the pad, or state the port's return in the Return column of the .cem setup's 3D port table (a 3D view's port is moved in the 3D editor instead).";
+                                $"Move the label, clear that metal from under the pad, or {StateReturn}.";
                         passedHere.AddRange(walk.Passed);
                     }
                 }
@@ -848,7 +887,7 @@ public static class Em3dGenerator
                     continue;
                 }
 
-                var (retBand, retPiece, retAbove, passed) = found.MinBy(f => f.Above ? f.Band.BottomM - band.TopM : band.BottomM - f.Band.TopM);
+                var (retBand, retPiece, retAbove, passed, unmarked) = found.MinBy(f => f.Above ? f.Band.BottomM - band.TopM : band.BottomM - f.Band.TopM);
                 bool isFloor = retPiece is null;
                 double sigFace = pad.IsSheet ? pad.SheetZ : retAbove ? pad.ZTop : pad.ZBottom;
                 double retFace = isFloor ? floorZ : retPiece!.IsSheet ? retPiece.SheetZ : retAbove ? retPiece.ZBottom : retPiece.ZTop;
@@ -869,7 +908,7 @@ public static class Em3dGenerator
                            $"and {Length(zHi - zLo)} tall from '{band.Layer.Name}' {(retAbove ? "up" : "down")} to " +
                            $"'{retBand.Layer.Name}'{(isFloor ? " (the air box's floor)" : "")}" +
                            (passed.Count > 0 ? $", passing through the opening in {string.Join(", ", passed.Select(q => $"'{q}'"))}" : "") +
-                           (stated is not null ? $", {ReturnReason(stated)}" : "") +
+                           (stated is not null ? $", {ReturnReason(stated)}" : unmarked ? $", {UnmarkedReason(retBand)}" : "") +
                            ". Its width is the pad's own across the sheet." +
                            (barrel is { } nb
                                ? $" A via barrel stands at the label, so the sheet stands {Length(s)} from the barrel's axis on its " +
@@ -900,14 +939,17 @@ public static class Em3dGenerator
         /// <para><paramref name="Short"/>: the plane's metal is under the line but stops short of its end, beyond what
         /// moving the sheet closes — a plane meant to reach the end, so the walk stops there rather than passing through
         /// it to a farther one as if it were an opening.</para>
-        private readonly record struct ReturnCover(Piece? Cover, bool Touches, string Had, bool Short = false);
+        /// <para><paramref name="Whole"/>: <paramref name="Cover"/>'s metal lies across the sheet's whole width, not only
+        /// under its middle — what lets a level the technology does not mark be the return (R-dfr34-1-5).</para>
+        private readonly record struct ReturnCover(Piece? Cover, bool Touches, string Had, bool Short = false, bool Whole = false);
 
         /// <summary>One side of a port's walk: the level landed on (its piece, or null for the air box's floor), or
         /// the level whose metal blocks the way, the ground-reference levels passed through at an opening, and every
-        /// level looked at with what it had.</summary>
+        /// level looked at with what it had. <paramref name="Unmarked"/>: the level landed on is not marked as a ground
+        /// reference, and was taken because its metal covers the whole sheet before any marked one does.</summary>
         private sealed record ReturnSide(bool Above, PlanarExtractor.StackBand? Band, Piece? Piece, List<string> Passed,
                                          PlanarExtractor.StackBand? Blocker, bool BlockerPartial, List<string> Looked,
-                                         string? ShortOf = null);
+                                         string? ShortOf = null, bool Unmarked = false);
 
         /// <summary>A return the setup states rather than one the walk finds: the layer, and whether the port's own
         /// Return states it (R-dfr28-4-5) or the setup's legacy return plane names it (R-dfr28-4-3, D2).</summary>
@@ -928,7 +970,8 @@ public static class Em3dGenerator
                   : setup.GroundStackupLayerName is { Length: > 0 } named ? new StatedReturn(named, false, port)
                   : null;
             stated = s;
-            if (s is null || tech.Stackup.Layers.Any(l => l.Kind == StackupKind.Conductor && l.Name == s.Layer))
+            if (s is null || (s.PerPort && s.Layer == EmPort3D.SameLayerReturn) ||
+                tech.Stackup.Layers.Any(l => l.Kind == StackupKind.Conductor && l.Name == s.Layer))
                 return null;
             return s.PerPort
                 ? $"Port {port}'s Return states '{s.Layer}', but technology '{tech.Name}' has no conductor stackup " +
@@ -939,6 +982,19 @@ public static class Em3dGenerator
 
         private static string DecidedBy(StatedReturn? stated)
             => stated is null ? "walked" : stated.PerPort ? "port" : "setup";
+
+        /// <summary>brief-dfr34-1 R-dfr34-1-5 — why a port returns through a level the technology does not mark.</summary>
+        private static string UnmarkedReason(PlanarExtractor.StackBand b)
+            => $"'{b.Layer.Name}' is not marked as a ground reference, but its metal covers the whole sheet before any marked " +
+               "plane does, so the current returns through it — mark it in the technology's stackup, or state the port's return, " +
+               "to say so";
+
+        /// <summary>brief-dfr34-1 R-dfr34-1-3 — where the user states a port's return: a <c>.cem</c>'s port table; a layout's
+        /// ports being brought into a <c>.c3d</c> have no Return — a 3D port returns through what its (−) end touches, so it is
+        /// moved (Move… on the port) to change it.</summary>
+        private string StateReturn => portsEach
+            ? "move the port in the 3D editor (Move… on the port) to the metal it should return through"
+            : "state the port's return in the Return column of the .cem setup's 3D port table (a 3D view's port is moved in the 3D editor instead)";
 
         /// <summary>Why a port returns where it does, for its note.</summary>
         private string ReturnReason(StatedReturn? stated) => stated switch
@@ -976,6 +1032,11 @@ public static class Em3dGenerator
                 var cover = across(b);
                 if (target && cover.Cover is not null) return new(above, b, cover.Cover, passed, null, false, looked);
                 if (target && cover.Short) return new(above, null, null, passed, null, false, looked, $"'{b.Layer.Name}': {cover.Had}");
+                // brief-dfr34-1 R-dfr34-1-5 — a level the technology does not mark, whose metal covers the whole sheet before
+                // any marked plane is reached, is where the current returns: the sheet could not pass it anyway. Taken with a
+                // note rather than refused. A stated return still refuses it — the user asked for the plane beyond.
+                if (!target && stated is null && anyFlagged && cover.Cover is not null && cover.Whole)
+                    return new(above, b, cover.Cover, passed, null, false, looked, Unmarked: true);
                 if (cover.Touches) return new(above, null, null, passed, b, target, looked);
                 looked.Add($"'{b.Layer.Name}' ({cover.Had})");
                 if (b.Layer.IsGroundReference) passed.Add(b.Layer.Name);
@@ -1001,12 +1062,12 @@ public static class Em3dGenerator
                 return $"Port {port}'s sheet at its line's end, from '{band.Layer.Name}' {(blocked.Above ? "up" : "down")} toward " +
                        $"{toward}, would cross metal on '{b.Layer.Name}'{(blocked.BlockerPartial ? ", which covers only part of it" : "")}. " +
                        "A lumped port's sheet runs through dielectric from the line to the plane it returns through. " +
-                       "Clear that metal from under the line's end, or state the port's return in the Return column of the .cem setup's 3D port table (a 3D view's port is moved in the 3D editor instead)." + edge;
+                       $"Clear that metal from under the line's end, or {StateReturn}." + edge;
             if (walks.FirstOrDefault(w => w.ShortOf is not null) is { ShortOf: { } shortOf } stopped)
                 return $"Port {port} returns through {shortOf.Split(':')[0]}, {(stopped.Above ? "above" : "below")} '{band.Layer.Name}', " +
                        $"but {shortOf[(shortOf.IndexOf(':') + 2)..]}, so the port's sheet has nothing to end on. Extend the " +
                        "plane to the line's end" +
-                       (stated is null ? ", or state the port's return in the Return column of the .cem setup's 3D port table (a 3D view's port is moved in the 3D editor instead)." : ".") + edge;
+                       (stated is null ? $", or {StateReturn}." : ".") + edge;
             string Side(ReturnSide w) => $"{(w.Above ? "above" : "below")} it, " +
                                          (w.Looked.Count == 0 ? "no conductor" : string.Join(", ", w.Looked));
             if (stated is not null && stated.Layer == band.Layer.Name)
@@ -1015,7 +1076,7 @@ public static class Em3dGenerator
             return $"Port {port} on '{band.Layer.Name}' finds no {(stated is not null ? $"metal of {toward}" : toward)} under its " +
                    $"line's end to return through, and it is not the air box's floor — {string.Join("; ", walks.Select(Side))}. " +
                    "So the port's sheet has nothing to end on. Draw the plane under the port's end" +
-                   (stated is not null ? ", or state a different return in the Return column of the .cem setup's 3D port table (a 3D view's port is moved in the 3D editor instead)." : ".");
+                   (stated is not null ? $", or {StateReturn.Replace("the port's return", "a different return")}." : ".");
         }
 
         /// <summary>The interval of <paramref name="poly"/>'s metal on the line (the second coordinate = <paramref name="c"/>,
@@ -1183,6 +1244,114 @@ public static class Em3dGenerator
                 if (!double.IsPositiveInfinity(worst) && (best is null || worst < best)) best = worst;
             }
             return best;
+        }
+
+        /// <summary>
+        /// brief-dfr34-1 R-dfr34-1-4 — the opening round a line's end on one level, or null: the level has no metal at the
+        /// end (just inside it or just past it, across the middle of [<paramref name="lo"/>, <paramref name="hi"/>]), and
+        /// its metal resumes in all four directions — along the line inward and outward, and across it on both sides. Its
+        /// size is the hole's extent along the line through the end's middle, and across it just inside the end.
+        /// </summary>
+        private static (double Along, double Across)? Opening(List<Piece> pieces, PlanarPortSide side, double at, double lo, double hi)
+        {
+            if (pieces.Count == 0) return null;
+            bool normalX = side is PlanarPortSide.MinX or PlanarPortSide.MaxX;
+            double inward = side is PlanarPortSide.MinX or PlanarPortSide.MinY ? 1 : -1;
+            double mid = (lo + hi) / 2, eps = 1e-6 * (hi - lo);
+            bool Metal(double along, double across) => pieces.Any(q => MetalAt(q.Poly, side, along, across));
+            if (Metal(at + inward * eps, mid) || Metal(at - inward * eps, mid)) return null;
+
+            // Along the line through the end's middle: where the metal resumes, each way.
+            var along = pieces.SelectMany(q => Crossings(q.Poly, mid, normalX)).ToList();
+            double? Resume(double dir) => along.Select(c => (c - at) * dir).Where(s => s > 0).Order()
+                                               .Cast<double?>().FirstOrDefault(s => Metal(at + dir * (s!.Value + eps), mid));
+            if (Resume(inward) is not { } sIn || Resume(-inward) is not { } sOut) return null;
+
+            // Across the line just inside the end: where the metal resumes on each side.
+            double u = at + inward * eps;
+            var across = pieces.SelectMany(q => Crossings(q.Poly, u, !normalX)).ToList();
+            double? Side(double dir) => across.Select(c => (c - mid) * dir).Where(s => s > 0).Order()
+                                              .Cast<double?>().FirstOrDefault(s => Metal(u, mid + dir * (s!.Value + eps)));
+            if (Side(1) is not { } aHi || Side(-1) is not { } aLo) return null;
+            return (sIn + sOut, aHi + aLo);
+        }
+
+        /// <summary>
+        /// <b>brief-dfr34-1 R-dfr34-1-6 — a coplanar return (Return = Same layer): one horizontal lumped sheet across the
+        /// gap from the line's end to the nearer same-layer ground beside it</b> (owner decision D1: one sheet, to the
+        /// nearer side). Ground is metal on the line's own level whose net is a ground-reference plane's — or, where no
+        /// net says, any metal on another net than the line's. The sheet is the line's width long, from its end inward,
+        /// at the copper's mid-height, and the gap must be straight along it: a line edge and a ground edge parallel over
+        /// the sheet's length.
+        /// </summary>
+        private string? CoplanarPort(PlanarPort p, IReadOnlyList<PlanarExtractor.StackBand> bands, PlanarExtractor.StackBand band,
+                                     Piece piece, double edgeAt, double lo, double hi, Dictionary<int, List<Piece>> pieces,
+                                     List<Em3dPort> ports)
+        {
+            bool normalX = p.Side is PlanarPortSide.MinX or PlanarPortSide.MaxX;
+            double inward = p.Side is PlanarPortSide.MinX or PlanarPortSide.MinY ? 1 : -1;
+            double w = hi - lo, eps = 1e-6 * w, tol = 1e-3 * w;
+            var groundNets = bands.Where(b => b.Layer.IsGroundReference && pieces.ContainsKey(b.Index))
+                                  .SelectMany(b => pieces[b.Index]).Select(q => q.Net).OfType<string>().ToHashSet(StringComparer.Ordinal);
+            bool IsGround(Piece q) => !ReferenceEquals(q, piece) && (piece.Net is null || q.Net != piece.Net) &&
+                                      (groundNets.Count == 0 || q.Net is null || groundNets.Contains(q.Net));
+            var others = pieces[band.Index].Where(q => !ReferenceEquals(q, piece)).ToList();
+
+            // At three points along the sheet's length: the line's own edge on each side, and the nearest metal past it.
+            double[] samples = [edgeAt + inward * 0.02 * w, edgeAt + inward * 0.5 * w, edgeAt + inward * 0.98 * w];
+            (double LineEdge, double GroundEdge, Piece? Ground, string? Why)? Gap(double dir)
+            {
+                (double, double, Piece?, string?)? first = null;
+                foreach (double a in samples)
+                {
+                    if (Chord(piece.Poly, a, !normalX, (lo + hi) / 2) is not var (cLo, cHi))
+                        return (0, 0, null, $"the line is shorter than the sheet's {Length(w)} length from its end");
+                    double edge = dir > 0 ? cHi : cLo;
+                    (double At, Piece Q)? near = null;
+                    foreach (var q in others)
+                        foreach (double c in Crossings(q.Poly, a, !normalX))
+                            if ((c - edge) * dir > 0 && MetalAt(q.Poly, p.Side, a, c + dir * eps) &&
+                                (near is null || (c - edge) * dir < (near.Value.At - edge) * dir))
+                                near = (c, q);
+                    if (near is not { } n) return (edge, 0, null, "no metal on the line's layer beside it");
+                    if (!IsGround(n.Q)) return (edge, n.At, null, $"the nearest metal beside it is '{n.Q.Name}', which is not ground");
+                    if (first is { } f && (Math.Abs(f.Item1 - edge) > tol || Math.Abs(f.Item2 - n.At) > tol || !ReferenceEquals(f.Item3, n.Q)))
+                        return (edge, n.At, null, "the gap is not straight over the sheet's length from the line's end");
+                    first ??= (edge, n.At, n.Q, null);
+                }
+                return first;
+            }
+            var sides = new[] { 1.0, -1.0 }.Select(d => (Dir: d, G: Gap(d)!.Value)).ToList();
+            var usable = sides.Where(s => s.G.Ground is not null).ToList();
+            string SideName(double d) => (normalX ? (d > 0 ? "+y" : "−y") : (d > 0 ? "+x" : "−x"));
+            if (usable.Count == 0)
+                return $"Port {p.Number}'s Return states the same layer (a coplanar return), but on '{band.Layer.Name}' beside its " +
+                       $"line's end {string.Join("; ", sides.Select(s => $"on the {SideName(s.Dir)} side {s.G.Why}"))}. A coplanar " +
+                       "return runs from the line across a straight gap to ground metal on the same layer. Draw that ground, or " +
+                       "choose a plane above or below as the Return.";
+            var pick = usable.MinBy(s => Math.Abs(s.G.GroundEdge - s.G.LineEdge));
+            var (lineEdge, groundEdge, ground, _) = pick.G;
+
+            double z = piece.IsSheet ? piece.SheetZ : (piece.ZBottom + piece.ZTop) / 2;
+            double a0 = Math.Min(edgeAt, edgeAt + inward * w), a1 = Math.Max(edgeAt, edgeAt + inward * w);
+            double c0 = Math.Min(lineEdge, groundEdge), c1 = Math.Max(lineEdge, groundEdge);
+            var min = normalX ? new Point3(a0, c0, z) : new Point3(c0, a0, z);
+            var max = normalX ? new Point3(a1, c1, z) : new Point3(c1, a1, z);
+            // From the ground toward the line, so the port's voltage is the line's minus the ground's.
+            double toLine = -pick.Dir;
+            var direction = normalX ? new Point3(0, toLine, 0) : new Point3(toLine, 0, 0);
+            var normal = normalX ? new Point3(inward, 0, 0) : new Point3(0, inward, 0);
+            var centre = new Point3((min.X + max.X) / 2, (min.Y + max.Y) / 2, z);
+            ports.Add(new Em3dPort(p.Number, $"port/{p.Number}", piece.Name, ground!.Name, min, max, direction, p.Z0,
+                                   new Em3dReferencePlane(centre, normal, 0)));
+            _portReturns[p.Number] = new(band.Layer.Name, false, false, "port", Coplanar: true);
+            var other = sides.First(s => s.Dir != pick.Dir).G;
+            _notes.Add($"Port {p.Number} at its line's end is a horizontal lumped sheet {Length(w)} long across the " +
+                       $"{Length(c1 - c0)} gap from '{band.Layer.Name}' to the same-layer ground '{ground.Name}' on its " +
+                       $"{SideName(pick.Dir)} side" +
+                       (other.Ground is not null ? $", the nearer of the two (the {SideName(-pick.Dir)} side's gap is {Length(Math.Abs(other.GroundEdge - other.LineEdge))})" : "") +
+                       $": as port {p.Number}'s Return states (same layer).");
+            return null;
         }
 
         /// <summary>Whether <paramref name="poly"/> has metal at <paramref name="along"/> on a port's normal
