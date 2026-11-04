@@ -190,6 +190,21 @@ public sealed class PortEdgeWidthTests : IDisposable
         Assert.Contains("short of the port's end", Solve(shapes).Refusal, StringComparison.Ordinal);
     }
 
+    /// <summary>Designer feedback round 34 — port 1 on the 3 mm pad's far edge, the plane beginning 6.5 mm in, out on the
+    /// 300 µm line: within three of the sheet's widths, but the sheet would land across a line a tenth its width. It is
+    /// left out rather than slid onto the line, and port 2 still comes in.</summary>
+    [Fact]
+    public void NewFromLayout_APlaneBeginningOnANarrowerLine_DoesNotSlideThePortOntoIt()
+    {
+        var shapes = Pour();
+        shapes.Add(new RectShape { Layer = Bottom, X1 = Um(6500), Y1 = 0, X2 = Um(9000), Y2 = Um(3000) });
+        var (cell, c3d, cws) = Board(shapes);
+        var made = C3dHierarchy.NewFromLayout(cell, c3d, cws);
+        Assert.Empty(made.PortsMoved);
+        Assert.Contains(made.PortsLeftOut, l => l.Contains("port 1", StringComparison.Ordinal));
+        Assert.Equal([2], made.Document!.Ports.Select(p => p.Number));
+    }
+
     /// <summary>One port that cannot be built (its plane stops 3 mm, ten widths, short of the line's end) is left out with
     /// its reason, and the other port still comes in.</summary>
     [Fact]

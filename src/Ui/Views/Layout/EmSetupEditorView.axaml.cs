@@ -273,6 +273,13 @@ public partial class EmSetupEditorView : UserControl
         button.IsChecked = row.IsPicking;
     }
 
+    private void OnPickGroundClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not ToggleButton button || Vm is not { } vm) return;
+        vm.PickTerminalCommand.Execute(vm.GroundPickRow);
+        button.IsChecked = vm.GroundPickRow.IsPicking;
+    }
+
     private void OnFieldKeyDown(object? sender, KeyEventArgs e)
     {
         if (e.Key is Key.Enter or Key.Return)

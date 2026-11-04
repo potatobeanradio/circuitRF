@@ -3454,7 +3454,12 @@ namespace CircuitRF.Render.DataDisplay
                 // xRaw != 0 keeps broadside spelled "0" rather than "-0": the two halves meet
                 // there and negating the sample would make which one the marker landed on visible.
                 double xShown = onBackBranch && xRaw != 0 ? -xRaw : xRaw;
-                lines.Add(($"{xName}={xShown:G6}{xUnit}", false));
+                // Designer feedback round 34 — a labelled axis (a C matrix's terminals) reads by its label: the
+                // marker said "Terminal j=3" where the axis itself said "C209 to C210".
+                if (_cubeXLabels is not null && rawIdx < _cubeXLabels.Length && !string.IsNullOrWhiteSpace(_cubeXLabels[rawIdx]))
+                    lines.Add(($"{xName}={_cubeXLabels[rawIdx]}", false));
+                else
+                    lines.Add(($"{xName}={xShown:G6}{xUnit}", false));
             }
 
             // Pinned spectral line: when the harmonic/mixIndex axis is PINNED (X is the sweep), still

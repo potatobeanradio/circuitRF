@@ -142,6 +142,15 @@ public abstract class Viewer3DBackend : IDisposable
         return task;
     }
 
+    /// <summary>Designer feedback round 34 — releasing an imported object on a lost context faults too; that fault is
+    /// observed and dropped (the object is gone either way) rather than left to the crash trail as unobserved.</summary>
+    internal static void ObserveDisposal(ValueTask disposal)
+    {
+        if (disposal.IsCompletedSuccessfully) return;
+        disposal.AsTask().ContinueWith(static t => _ = t.Exception, CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+    }
+
     private void OnPresentFaulted(Exception e)
     {
         if (Interlocked.CompareExchange(ref _presentFault, e, null) is null) PresentFaulted?.Invoke(e);

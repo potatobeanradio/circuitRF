@@ -566,6 +566,7 @@ public sealed class LayoutCanvas : Control
                 : _viewModel?.Overlay,
             BaseDir = _viewModel?.InstanceBaseDir, ShowPCellPins = _viewModel?.ShowPCellPins ?? true,
             HidePorts = _viewModel?.PortsVisible == false,
+            PortsIgnoreLayerVisibility = true,
             ShowEmMesh = _viewModel?.ShowEmMesh ?? false, EmMesh = _viewModel?.EmMeshReport,
             ShowPlanarMesh = _viewModel?.ShowPlanarMesh ?? false, PlanarMesh = _viewModel?.PlanarMeshReport,
             PlanarCurrentDensity = _viewModel?.PlanarCurrentDensity,

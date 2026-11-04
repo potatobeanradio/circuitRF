@@ -980,6 +980,9 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
 
         _portGhost = null;
         Execute(new AddShapeCommand(Model, label));
+        // Designer feedback round 34 — a port placed while the Ports row is hidden vanished on the click that
+        // made it; placing one is asking to see it.
+        if (!PortsVisible) PortsVisible = true;
         RebuildOverlay();
     }
 
@@ -1491,7 +1494,9 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         for (int i = 0; i < Model.Shapes.Count; i++)
         {
             var def = ResolveLayerDef(Model.Shapes[i].Layer);
-            if (def.Visible && def.Selectable && PortRowAllowsPick(Model.Shapes[i])) yield return i;
+            // A port answers to the Ports row only (designer feedback round 34), as a click does.
+            bool layerAllows = Model.Shapes[i] is LabelShape { IsPort: true } || (def.Visible && def.Selectable);
+            if (layerAllows && PortRowAllowsPick(Model.Shapes[i])) yield return i;
         }
     }
 

@@ -211,11 +211,23 @@ public sealed partial class EmSetupEditorViewModel
             return false;
         }
         PickingRow = null;
+        if (ReferenceEquals(row, GroundPickRow))
+        {
+            // Designer feedback round 34 — the Ground box takes a pick as a terminal row does.
+            Ground3DText = body.Token;
+            CommitTerminals();
+            HighlightRequested?.Invoke(body.Members);
+            return true;
+        }
         row.Net = body.Token;
         CommitTerminals();
         HighlightRow(row);
         return true;
     }
+
+    /// <summary>Designer feedback round 34 — the row a Pick for the Ground box arms. It is not in
+    /// <see cref="TerminalRows"/>: <see cref="PickConductor"/> writes its pick to <see cref="Ground3DText"/>.</summary>
+    public Em3dTerminalRow GroundPickRow { get; } = new() { Name = "Ground" };
 
     partial void OnPickingRowChanged(Em3dTerminalRow? oldValue, Em3dTerminalRow? newValue)
     {

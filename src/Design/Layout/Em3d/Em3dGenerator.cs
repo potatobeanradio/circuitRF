@@ -597,9 +597,18 @@ public static class Em3dGenerator
                         // far short the plane is, which is what the designer has to fix.
                         double? gap = on.Count == 0 ? null : ReturnGap(on, p.Side, edgeAt, lo, hi);
                         double moved = edgeAt + inward * (gap ?? 0);
+                        // Designer feedback round 34 — beyond the tenth, the sheet moves only along a line as wide as the
+                        // sheet: a pad's flat edge over an opening in the plane slid 1.36 mm down onto a feed line an
+                        // eighth of the pad's width, an 847 µm sheet across a 109 µm trace. The opening is not a
+                        // pulled-back plane, so the port is refused there, as the solve refuses it.
+                        double inside = moved + inward * 1e-3 * (hi - lo);
+                        bool lineSpansSheet = gap is not { } g0 || g0 <= tolerance
+                            || (MetalAt(piece.Poly, p.Side, inside, lo + 0.01 * (hi - lo))
+                                && MetalAt(piece.Poly, p.Side, inside, hi - 0.01 * (hi - lo)));
                         if (gap is { } g && g <= (portsEach ? Math.Max(tolerance, TranslatedReturnGapOfWidth * (hi - lo)) : tolerance) && !wave &&
+                            lineSpansSheet &&
                             PieceContaining(on, p.Side, moved, mid) is { } near &&
-                            MetalAt(piece.Poly, p.Side, moved + inward * 1e-3 * (hi - lo), mid))
+                            MetalAt(piece.Poly, p.Side, inside, mid))
                         {
                             moves[b.Index] = (moved, g);
                             return new(near, touches, "metal");
@@ -828,7 +837,7 @@ public static class Em3dGenerator
                                 $"{(named is null ? anyFlagged ? "a ground-reference plane" : "the nearest metal" : $"its named return plane '{named}'")}, would cross metal " +
                                 $"on '{bb.Layer.Name}'{(walk.BlockerPartial ? ", which covers only part of it" : "")}. " +
                                 "A lumped port's sheet runs through dielectric from the pad to the plane it returns through. " +
-                                "Move the label, clear that metal from under the pad, or state the port's return in the 3D port table's Return column.";
+                                "Move the label, clear that metal from under the pad, or state the port's return in the Return column of the .cem setup's 3D port table (a 3D view's port is moved in the 3D editor instead).";
                         passedHere.AddRange(walk.Passed);
                     }
                 }
@@ -992,12 +1001,12 @@ public static class Em3dGenerator
                 return $"Port {port}'s sheet at its line's end, from '{band.Layer.Name}' {(blocked.Above ? "up" : "down")} toward " +
                        $"{toward}, would cross metal on '{b.Layer.Name}'{(blocked.BlockerPartial ? ", which covers only part of it" : "")}. " +
                        "A lumped port's sheet runs through dielectric from the line to the plane it returns through. " +
-                       "Clear that metal from under the line's end, or state the port's return in the 3D port table's Return column." + edge;
+                       "Clear that metal from under the line's end, or state the port's return in the Return column of the .cem setup's 3D port table (a 3D view's port is moved in the 3D editor instead)." + edge;
             if (walks.FirstOrDefault(w => w.ShortOf is not null) is { ShortOf: { } shortOf } stopped)
                 return $"Port {port} returns through {shortOf.Split(':')[0]}, {(stopped.Above ? "above" : "below")} '{band.Layer.Name}', " +
                        $"but {shortOf[(shortOf.IndexOf(':') + 2)..]}, so the port's sheet has nothing to end on. Extend the " +
                        "plane to the line's end" +
-                       (stated is null ? ", or state the port's return in the 3D port table's Return column." : ".") + edge;
+                       (stated is null ? ", or state the port's return in the Return column of the .cem setup's 3D port table (a 3D view's port is moved in the 3D editor instead)." : ".") + edge;
             string Side(ReturnSide w) => $"{(w.Above ? "above" : "below")} it, " +
                                          (w.Looked.Count == 0 ? "no conductor" : string.Join(", ", w.Looked));
             if (stated is not null && stated.Layer == band.Layer.Name)
@@ -1006,7 +1015,7 @@ public static class Em3dGenerator
             return $"Port {port} on '{band.Layer.Name}' finds no {(stated is not null ? $"metal of {toward}" : toward)} under its " +
                    $"line's end to return through, and it is not the air box's floor — {string.Join("; ", walks.Select(Side))}. " +
                    "So the port's sheet has nothing to end on. Draw the plane under the port's end" +
-                   (stated is not null ? ", or state a different return in the 3D port table's Return column." : ".");
+                   (stated is not null ? ", or state a different return in the Return column of the .cem setup's 3D port table (a 3D view's port is moved in the 3D editor instead)." : ".");
         }
 
         /// <summary>The interval of <paramref name="poly"/>'s metal on the line (the second coordinate = <paramref name="c"/>,
@@ -1348,9 +1357,12 @@ public static class Em3dGenerator
                     if (groundBodies.Contains(b))
                         return $"Terminal '{t.Name}' names '{token}', which is one piece of metal with the ground " +
                                $"('{bodies!.Bodies[b].Name}', {Count(bodies.Bodies[b].Members.Count)}); a conductor is at one potential." +
+                               // Designer feedback round 34 — asked as "how do I see RF out vs GND?": the ground needs no terminal.
+                               " The ground needs no terminal: the matrix is referred to it, and each terminal's capacitance to " +
+                               "ground is the diagonal of the result's C_mutual (the row sum of C)." +
                                (setup.Ground3D is { Length: > 0 } ? "" :
-                                   " With Ground3D empty the ground is every conductor on a ground-reference layer and the metal " +
-                                   "touching it: name the ground (Ground3D) as a plane's object or net instead.");
+                                   " With Ground blank the ground is every conductor on a ground-reference layer and the metal " +
+                                   "touching it; to choose it yourself, name a plane's object or net as Ground.");
                     if (taken.TryGetValue(b, out var other) && other.Terminal != t.Name)
                         return $"Terminals '{other.Terminal}' and '{t.Name}' are one piece of metal ('{bodies!.Bodies[b].Name}'): " +
                                $"'{other.By}' and '{token}' touch, so they are at one potential. Make them one terminal, or name another conductor.";

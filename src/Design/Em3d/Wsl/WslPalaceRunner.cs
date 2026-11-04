@@ -104,8 +104,11 @@ internal sealed class WslPalaceRunner(WslSession session, string linuxHome, stri
         if (run.StartFailure is { } why) return new(false, false, false, $"Palace could not be started in the Linux subsystem ({why}).");
         if (run.ExitCode != 0)
             return new(false, false, false,
-                $"Palace failed in the Linux subsystem distribution '{session.Distribution}' (exit code {run.ExitCode}). " +
-                $"Its own words: {Quote(run.Tail)} The full log is {Path.Combine(runDir, PalaceRun.PalaceLogFile)}.");
+                (PalaceRun.KilledSentence(run.ExitCode, run.Tail, session.MemoryBytes(), wsl: true) is { } killed
+                    ? $"In the Linux subsystem distribution '{session.Distribution}': {killed} "
+                    : $"Palace failed in the Linux subsystem distribution '{session.Distribution}' (exit code {run.ExitCode}). " +
+                      $"Its own words: {Quote(run.Tail)} ") +
+                $"The full log is {Path.Combine(runDir, PalaceRun.PalaceLogFile)}.");
 
         if (CopyBack(runDir, plan) is { } copyFailure) return new(false, false, false, copyFailure);
         return PalaceStep.Done();

@@ -1171,6 +1171,13 @@ public static class C3dHierarchy
     {
         // One port that cannot be built leaves out that port alone, and a plane pulled back from a line's end puts the
         // port where the plane begins (Em3dGenerator's portsEach): the .c3d's ports are rectangles the user can move.
+        // Designer feedback round 34 — a .c3d instance always takes the whole layout, so the setup's solve region is not
+        // this view's: applied here it refused the generation for a port outside it, and every port was left out.
+        if (setup.SolveRegion is not null)
+        {
+            setup = setup.Clone();
+            setup.SolveRegion = null;
+        }
         var g = Em3dGenerator.Generate(setup, source, tech, portsEach: true);
         if (g.Problem is not { } problem)
         {

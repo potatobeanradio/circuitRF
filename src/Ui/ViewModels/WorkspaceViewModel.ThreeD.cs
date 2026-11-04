@@ -391,6 +391,7 @@ public partial class WorkspaceViewModel
         if (CircuitRF.Design.Cells.NameValidator.Validate(name) is { } reason) { Messages.Error($"Invalid 3D view name: {reason}"); return; }
         var path = Path.Combine(CircuitRF.Design.Cells.CellFolder.SubFolderPath(cellDir, CircuitRF.Design.Cells.ViewType.ThreeD), name + C3dPersistence.Extension);
         if (File.Exists(path)) { Messages.Error($"A file named '{name}{C3dPersistence.Extension}' already exists."); return; }
+        if (!await SaveCellLayoutsBeforeThreeD(cellDir, window)) return;
         var made = C3dHierarchy.NewFromLayout(cellDir, path, CurrentWorkspacePath, _techCache);
         if (made.Document is not { } c3d) { Messages.Error($"New 3D View from Layout: {made.Refusal}"); return; }
         try { CircuitRF.Design.Cells.CellCreate.WriteThreeDView(cellDir, name, c3d); }
@@ -403,6 +404,40 @@ public partial class WorkspaceViewModel
         foreach (string moved in made.PortsMoved) Messages.Info(moved);
         if (made.PortsLeftOut.Count > 0) Messages.Warning($"Ports left out: {string.Join("; ", made.PortsLeftOut)}.");
         OpenOrActivateC3dEditor(path);
+    }
+
+    /// <summary>
+    /// Designer feedback round 34 — a 3D view is made from the cell's layout AS SAVED, so a via deleted in an open, unsaved
+    /// layout came back in the new view. An open layout of the cell with unsaved edits is offered Save / Use Saved / Cancel
+    /// first. False when the user cancelled (or a save was cancelled).
+    /// </summary>
+    private async Task<bool> SaveCellLayoutsBeforeThreeD(string cellDir, Avalonia.Controls.Window owner)
+    {
+        string layoutDir = Path.GetFullPath(CircuitRF.Design.Cells.CellFolder.SubFolderPath(cellDir, CircuitRF.Design.Cells.ViewType.Layout))
+                           + Path.DirectorySeparatorChar;
+        var dirty = _openDocsByPath.Values.OfType<Layout.LayoutDocument>()
+            .Where(d => d.IsDirty && d.FilePath is { } p && Path.GetFullPath(p).StartsWith(layoutDir, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        foreach (var tab in dirty)
+        {
+            var dlg = new Views.Dialogs.SaveChangesDialog(
+                $"'{Path.GetFileName(tab.FilePath)}' has unsaved changes, and a 3D view is made from the layout as saved. " +
+                "Save them first?",
+                dontSaveLabel: "Use Saved", title: "Unsaved Layout");
+            await dlg.ShowDialog(owner);
+            switch (dlg.Result)
+            {
+                case Views.Dialogs.SaveChangesResult.Save:
+                    await SaveSingleLayoutDocument(tab, owner);
+                    if (tab.IsDirty) return false;   // the save was cancelled
+                    break;
+                case Views.Dialogs.SaveChangesResult.DontSave:
+                    break;
+                default:
+                    return false;
+            }
+        }
+        return true;
     }
 
     /// <summary>

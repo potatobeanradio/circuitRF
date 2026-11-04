@@ -98,6 +98,33 @@ public sealed class PortsRowTests : IDisposable
         Assert.Equal(bare, Draw(TraceWithPort(), hidePorts: true));
     }
 
+    /// <summary>Designer feedback round 34 — with the port's copper layer hidden, the editor canvas still draws the port
+    /// (the Ports row alone decides), a click still picks it; an export (no flag) still hides it with its layer.</summary>
+    [Fact]
+    public void AHiddenCopperLayer_LeavesItsPortsDrawnAndPickable_OnTheEditorCanvasOnly()
+    {
+        var vp = LayoutViewport.ZoomToFit(new Bbox(-10_000, -5_000, 60_000, 5_000), 600, 200, 0.05);
+        var hidden = Tech();
+        hidden.Layers[0].Visible = false;
+
+        byte[] Draw(LayoutView view, bool editor)
+        {
+            using var surface = SKSurface.Create(new SKImageInfo((int)vp.Width, (int)vp.Height));
+            LayoutRenderer.Draw(surface.Canvas, view, hidden, vp,
+                                new LayoutRenderOptions { Theme = LayoutRenderTheme.Light, PortsIgnoreLayerVisibility = editor });
+            using var image = surface.Snapshot();
+            return image.PeekPixels().GetPixelSpan().ToArray();
+        }
+
+        var bare = Draw(TraceWithPort(withPort: false), editor: true);
+        Assert.NotEqual(bare, Draw(TraceWithPort(), editor: true));
+        Assert.Equal(bare, Draw(TraceWithPort(), editor: false));
+
+        var vm = new LayoutEditorViewModel(TraceWithPort()) { ActiveTool = LayoutEditorViewModel.Tool.Select };
+        vm.ApplyTechResolution(new TechResolution(hidden, "/ws/tech/t.ctech", TechResolutionSource.WorkspaceDefault, []));
+        Assert.Contains(vm.PickStackForTest(0, 0, 0), p => p.Kind == LayoutPickKind.Shape && IsPort(vm, p.Index));
+    }
+
     [Fact]
     public void TheRowRoundTripsThroughTheCwsuser_AndShowAllClearsIt()
     {

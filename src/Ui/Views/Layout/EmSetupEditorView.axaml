@@ -643,6 +643,10 @@
                                 <Button Grid.Column="1" Content="▾" Padding="5,0" Click="OnOpenPickerClick"
                                         ToolTip.Tip="List the pieces of metal in this problem."/>
                             </Grid>
+                            <ToggleButton Content="Pick" Padding="6,0" Click="OnPickGroundClick"
+                                          IsVisible="{Binding ViewModel.CanPickInView, FallbackValue=False}"
+                                          IsChecked="{Binding ViewModel.GroundPickRow.IsPicking, Mode=OneWay, FallbackValue=False}"
+                                          ToolTip.Tip="Click a conductor in the 3D view to make its piece of metal the ground."/>
                         </StackPanel>
                         <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding ViewModel.IsElectrostaticSetup}">
                             <TextBlock Classes="colhdr" Text="Other metal" VerticalAlignment="Center"/>

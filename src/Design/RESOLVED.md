@@ -27251,3 +27251,37 @@ nothing drawn on purpose is that narrow.
 
 Not added to `GroundPourPlanner.MicrostripGenerators`: the pour is sized from the placed lines, which already reach
 the gap from both sides.
+
+## Designer feedback round 34: ports into 3D, the solve region, non-plated drills, a killed Palace (2026-11-03)
+
+**A port slid onto its feed line.** New 3D View from Layout (`portsEach`) lets a return plane stop up to three line
+widths short of a port and moves the sheet in to where the plane begins (`TranslatedReturnGapOfWidth`). That rule is
+for a board-edge launch whose inner ground is pulled back. On a 10-layer board, a port on the flat edge of a round test
+pad sat over a ~900 µm-radius opening in Inner 1 and Inner 2. The plane began 1357.9 µm in, under the 2541 µm
+allowance, so the 847 µm sheet moved 1.36 mm onto a 109 µm feed trace. Beyond the tenth-of-a-width tolerance, the sheet
+now moves only where the line is as wide as the sheet (`lineSpansSheet`). Otherwise the port is left out with the
+refusal the solve gives. Gate: `PortEdgeWidthTests.NewFromLayout_APlaneBeginningOnANarrowerLine_DoesNotSlideThePortOntoIt`.
+
+**Every port was dropped by a solve region.** `C3dHierarchy.TranslateWith` generated with the `.cem`'s `SolveRegion`
+applied. A port outside the region refused the whole generation, which recorded a single "its ports (refusal)" line
+and brought no port into the `.c3d`. A `.c3d` instance always takes the whole layout, so translation now uses a clone
+with the region cleared.
+
+**The refusals named a "Return column" a 3D view does not have.** It exists only in the `.cem` Setup window's 3D port
+table, which is hidden for an embedded setup. The four refusals now say where it is, and that a 3D view's port is
+moved in the 3D editor instead. Adding a return choice to the `.c3d` port Properties is brief DFR34-1.
+
+**A ground-terminal refusal now says where the answer is.** Naming the ground as a terminal is refused, correctly. The
+user's question was RF out's capacitance to ground, which is already in the result as `C_mutual`'s diagonal (the row
+sum of `C`). The refusal now says so.
+
+**A ground via made on a non-plated drill.** `SubstrateResolver.ViaEntries` counted every `StackupKind.Via` entry. An
+imported board's spanless "Drill (non-plated)" came before the plated entry, and on the tie the first was kept, so
+schematic-to-layout's managed ground via was drawn on the non-plated layer and grounded nothing. Entries with
+`Plated == false` are skipped. Gate: `ViaComponentTests.ANonPlatedEntry_IsNeverTheViasDrill`.
+
+**Exit 137 read as Palace's own failure.** In the Linux subsystem, the kernel's out-of-memory killer stopped Palace
+partway through a 363k-unknown solve. The message quoted a GMRES residual line as "its own words". A kill signal (137,
+or the wrapper's "Killed" line) is now reported as the run having run out of memory, with the memory the machine or
+VM has and the remedy (`.wslconfig` in the subsystem). The memory pre-check passed this run, so the estimate for
+order-1 driven runs with an adaptive sweep may be low; not investigated.

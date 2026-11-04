@@ -169,6 +169,11 @@ public readonly struct LayoutRenderOptions
     /// choose their layers and leave ports as they are.</summary>
     public bool HidePorts { get; init; }
 
+    /// <summary>Designer feedback round 34 — the editor canvas draws a port whenever its Ports row is visible, even when
+    /// the port's conductor layer is hidden (a just-placed port used to vanish with its layer). False for every export
+    /// and every <c>render</c>, whose <c>--hide-layers</c> still hides a layer's ports with it.</summary>
+    public bool PortsIgnoreLayerVisibility { get; init; }
+
     /// <summary>Cross-frame memo of the conductor each port stands on (<see cref="LayoutConductorCache"/>), owned by
     /// the interactive canvas and cleared on every model change. Null (every export and one-shot render) builds
     /// the lookup afresh, as before.</summary>
@@ -892,7 +897,12 @@ public static partial class LayoutRenderer
 
                 foreach (var (def, shapes) in passResolved)
                 {
-                    if (!def.Visible) continue;
+                    if (!def.Visible)
+                    {
+                        if (opts.PortsIgnoreLayerVisibility && !opts.HidePorts && shapes.Count > 0)
+                            CollectHiddenLayerPorts(def, shapes, dragOverrides, scaleUm, ps, ports);
+                        continue;
+                    }
                     ctr.LayersVisited++;
                     if (shapes.Count == 0) continue;
                     if (drawnIndices is not null) foreach (var e in shapes) drawnIndices.Add(e.Index);
@@ -1638,17 +1648,7 @@ public static partial class LayoutRenderer
                 // floor for an in-progress label; this applies the SAME EffectiveVisibleLabelHeightDbu
                 // arithmetic to a COMMITTED one, for DISPLAY ONLY — the model's own Height is never
                 // touched, only the drawn clone, mirroring DrawGhostShape's Label branch exactly.
-                long effectiveHeight = EffectiveVisibleLabelHeightDbu(label.Height, devicePxPerDbu);
-                LabelShape effective = effectiveHeight == label.Height ? label : new LabelShape
-                {
-                    Layer = label.Layer, X = label.X, Y = label.Y, Text = label.Text,
-                    Height = effectiveHeight, RotationDegrees = label.RotationDegrees, IsPort = label.IsPort,
-                    PortDirection = label.PortDirection, PortLayer = label.PortLayer,
-                    PortReference = label.PortReference, PortReturn = label.PortReturn, PortKind = label.PortKind,
-                PortWidth = label.PortWidth, PortUseEdgeWidth = label.PortUseEdgeWidth, Style = label.Style,
-                    Font = label.Font, StrokeWidth = label.StrokeWidth,
-                    HAlign = label.HAlign, VAlign = label.VAlign,
-                };
+                LabelShape effective = DisplayLabel(label, devicePxPerDbu);
                 // ── THE TYPE RIDES ON THE SHAPE, SO A DRAG CANNOT LOSE IT ────────────────────
                 //
                 // Owner report, 2026-08-25: "the internal port rendering is messed up during a drag
@@ -3477,6 +3477,38 @@ public static partial class LayoutRenderer
     /// antialiases darker. The index is what lets the gather drop the duplicates exactly.</para>
     /// </summary>
     internal readonly record struct DeferredPort(int Index, LabelShape Label, SKColor LayerColor);
+
+    /// <summary>A committed label at the height it is DRAWN at: its own, or the visibility floor's when that is
+    /// larger (display only — the model's Height is never touched).</summary>
+    private static LabelShape DisplayLabel(LabelShape label, double devicePxPerDbu)
+    {
+        long effectiveHeight = EffectiveVisibleLabelHeightDbu(label.Height, devicePxPerDbu);
+        return effectiveHeight == label.Height ? label : new LabelShape
+        {
+            Layer = label.Layer, X = label.X, Y = label.Y, Text = label.Text,
+            Height = effectiveHeight, RotationDegrees = label.RotationDegrees, IsPort = label.IsPort,
+            PortDirection = label.PortDirection, PortLayer = label.PortLayer,
+            PortReference = label.PortReference, PortReturn = label.PortReturn, PortKind = label.PortKind,
+            PortWidth = label.PortWidth, PortUseEdgeWidth = label.PortUseEdgeWidth, Style = label.Style,
+            Font = label.Font, StrokeWidth = label.StrokeWidth,
+            HAlign = label.HAlign, VAlign = label.VAlign,
+        };
+    }
+
+    /// <summary>Designer feedback round 34 — a HIDDEN layer's ports, for the editor canvas
+    /// (<see cref="LayoutRenderOptions.PortsIgnoreLayerVisibility"/>): the layer draws nothing, but its ports
+    /// are still handed to the frame's top pass, so the Ports row alone decides whether a port is seen.</summary>
+    private static void CollectHiddenLayerPorts(LayerDef def, List<(int Index, LayoutShape Shape)> shapes,
+        IReadOnlyDictionary<int, LayoutShape> dragOverrides, double scaleUm, PathSpace ps,
+        List<DeferredPort> deferredPorts)
+    {
+        var color = new SKColor(def.Color.R, def.Color.G, def.Color.B);
+        double devicePxPerDbu = scaleUm * ps.DbuToUm;
+        foreach (var (index, original) in shapes)
+            if ((dragOverrides.TryGetValue(index, out var ov) ? ov : original) is LabelShape { IsPort: true } label
+                && !string.IsNullOrEmpty(label.Text))
+                deferredPorts.Add(new DeferredPort(index, DisplayLabel(label, devicePxPerDbu), color));
+    }
 
     /// <summary>
     /// Every port glyph in the frame, drawn above all of its geometry.

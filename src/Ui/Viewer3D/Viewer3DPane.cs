@@ -163,7 +163,7 @@ public sealed class Viewer3DPane : Control
         // LATEST attach may build a surface and start a render thread, or a second thread would share
         // _go, _plan and the images with the first, and no detach would ever join it.
         int gen = ++_attachGen;
-        _rebuiltAfterLoss = false;
+        _lossRebuilds = 0;
         _topLevel = TopLevel.GetTopLevel(this);
         if (_topLevel is not null)
         {
@@ -186,6 +186,9 @@ public sealed class Viewer3DPane : Control
             if (gen != _attachGen) return;
             _compositor = compositor;
             _interop = interop;
+            // Still the lost context (designer feedback round 34): wait for the compositor's next one rather than import
+            // against this one, which fails the same way.
+            if (_interop is { IsLost: true }) { Faulted(new InvalidOperationException("the GPU context is lost.")); return; }
             if (_interop is null) { SetFault("this window's compositor offers no GPU interop, so the 3D view cannot present."); return; }
             if (_vm is null) return;
             var backend = _vm.Session.EnsureBackend();
@@ -258,25 +261,41 @@ public sealed class Viewer3DPane : Control
     //
     // A machine moved between docking setups lost the compositor's GPU context: every present then faulted
     // ("OpenSharedResource failed", PlatformGraphicsContextLostException), unobserved, and the view stayed as it was
-    // until the app was restarted. Now the first failure rebuilds the surface, the images and the device ONCE; a
-    // failure after that is the pane's fault, said in its place and once in Messages. There is no software renderer
-    // to fall back to — every backend presents through the compositor's GPU interop — so the fault stands until the
-    // view is closed and reopened, which attaches afresh and is allowed one rebuild again.
+    // until the app was restarted. Now a failure rebuilds the surface, the images and the device; once the rebuilds
+    // below are spent, the failure is the pane's fault, said in its place and once in Messages. There is no software
+    // renderer to fall back to — every backend presents through the compositor's GPU interop — so the fault stands until
+    // the view is closed and reopened, which attaches afresh with its rebuilds again.
 
-    private bool _rebuiltAfterLoss;
+    // Designer feedback round 34 — one rebuild was not enough: docking a laptop changes the display several times in a
+    // row, and a rebuild made straight away imported against a context that was still lost, so the second fault was
+    // final. Now a loss is rebuilt up to MaxLossRebuilds times, each after a longer wait (0.5, 1, 2, 4, 8 s) for the
+    // compositor to bring its own context back; a fault more than LossBurst after the last rebuild starts a new count.
+
+    private const int MaxLossRebuilds = 5;
+    private static readonly TimeSpan LossBurst = TimeSpan.FromSeconds(30);
+    private int _lossRebuilds;
+    private DateTime _lastLossRebuild = DateTime.MinValue;
 
     private void OnPresentFaulted(Exception ex) => Avalonia.Threading.Dispatcher.UIThread.Post(() => Faulted(ex));
 
     private void Faulted(Exception ex)
     {
         if (_topLevel is null) return;                       // detached meanwhile: the next attach starts afresh
-        if (!_rebuiltAfterLoss)
+        var now = DateTime.UtcNow;
+        if (now - _lastLossRebuild > LossBurst) _lossRebuilds = 0;
+        if (_lossRebuilds < MaxLossRebuilds)
         {
-            _rebuiltAfterLoss = true;
+            var wait = TimeSpan.FromMilliseconds(500 * (1 << _lossRebuilds));
+            _lossRebuilds++;
+            _lastLossRebuild = now;
             Teardown();
             _vm?.Session.ResetBackend();
             _fault = null;
-            _ = Host(++_attachGen);
+            int gen = ++_attachGen;
+            Avalonia.Threading.DispatcherTimer.RunOnce(() =>
+            {
+                if (gen == _attachGen && _topLevel is not null) _ = Host(gen);
+            }, wait);
             return;
         }
         string why = ex.GetBaseException().Message;

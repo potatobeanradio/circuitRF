@@ -5811,3 +5811,9 @@ hover, context menu) and `LayoutRenderer.DrawSelectionOutlines` (the highlight),
 - `tools/UiSnapshot` gained `--wait ms` (real time with the dispatcher pumped) so a dwell can be shown headlessly.
 - Gates: `LayoutSnapTrackingTests` (end to end through the Rect tool, and the pure crossing/grid/point-wins rules),
   `SnapTrackingTests`.
+
+## A marker on a labelled axis reads the label (designer feedback round 34, 2026-11-03)
+
+A capacitance matrix plotted against Terminal j put "Terminal j=3" in the marker box, while the axis below it said
+"C209 to C210". The generic X row of `Trace.BuildCubeMarkerBoxLines` printed the numeric axis value and only the
+mixIndex branch used `_cubeXLabels`. A labelled axis now prints the label.

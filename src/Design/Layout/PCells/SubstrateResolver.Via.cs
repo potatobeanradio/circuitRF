@@ -192,13 +192,15 @@ public static partial class SubstrateResolver
     }
 
     /// <summary>Every via entry with the stackup indices of the two conductors it joins, top first. An
-    /// entry naming no span goes through every conductor, as everywhere else in the layout.</summary>
+    /// entry naming no span goes through every conductor, as everywhere else in the layout. A NON-PLATED entry is not
+    /// one: its holes join nothing (designer feedback round 34 — a schematic's ground via landed on an imported board's
+    /// "Drill (non-plated)" layer, the first of two spanless entries, and grounded nothing).</summary>
     private static IEnumerable<(StackupLayer Entry, int Top, int Bottom)> ViaEntries(Technology technology)
     {
         var layers = technology.Stackup.Layers;
         int firstConductor = layers.FindIndex(l => l.Kind == StackupKind.Conductor);
         int lastConductor = layers.FindLastIndex(l => l.Kind == StackupKind.Conductor);
-        foreach (var e in layers.Where(l => l.Kind == StackupKind.Via))
+        foreach (var e in layers.Where(l => l.Kind == StackupKind.Via && l.Plated != false))
         {
             if (e.SpanFromLayer is null && e.SpanToLayer is null)
             {

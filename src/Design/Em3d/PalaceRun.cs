@@ -344,7 +344,9 @@ public static class PalaceRun
         if (run.StartFailure is { } why) return new(false, false, false, $"Palace could not be started ({why}).");
         if (run.ExitCode != 0)
             return new(false, false, false,
-                $"Palace failed (exit code {run.ExitCode}). Its own words: {Quote(run.Tail, "rror")} " +
+                (KilledSentence(run.ExitCode, run.Tail, physicalBytes, wsl: false) is { } killed
+                    ? killed + " "
+                    : $"Palace failed (exit code {run.ExitCode}). Its own words: {Quote(run.Tail, "rror")} ") +
                 $"The full log is {Path.Combine(runDir, PalaceLogFile)}.");
         return PalaceStep.Done() with { PeakResidentBytes = run.PeakResident, PeakFootprintBytes = run.PeakFootprint, MemoryNote = run.MemoryNote };
     }
@@ -1395,6 +1397,26 @@ public static class PalaceRun
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
         return [];
+    }
+
+    /// <summary>
+    /// Designer feedback round 34 — a Palace stopped by a kill signal (exit 137 = 128 + SIGKILL; −9 where the
+    /// runtime reports the signal itself; or a wrapper's own "Killed" line) printed nothing about why, so the failure
+    /// read as Palace's. On Linux and in the Linux subsystem that signal is almost always the kernel's out-of-memory
+    /// killer. Null when the exit is not a kill. <paramref name="memoryBytes"/> is what the machine (or the
+    /// subsystem's VM) has, when known; <paramref name="wsl"/> names <c>.wslconfig</c> as the remedy.
+    /// </summary>
+    internal static string? KilledSentence(int exitCode, IReadOnlyList<string> tail, long? memoryBytes, bool wsl)
+    {
+        bool killed = exitCode is 137 or -9 or 9
+                      || tail.Any(l => l.Contains(" Killed ", StringComparison.Ordinal) || l.TrimEnd().EndsWith(" Killed", StringComparison.Ordinal));
+        if (!killed) return null;
+        string has = memoryBytes is > 0 ? $" ({MachineMemory.Format(memoryBytes.Value)} available to it)" : "";
+        return $"The operating system stopped Palace with a kill signal (exit code {exitCode}), which almost always means it " +
+               $"ran out of memory{has}. " +
+               (wsl ? "Give the Linux subsystem more memory (memory= in .wslconfig; its default is half this computer's), " +
+                      "or make the problem smaller: a coarser mesh, a smaller solve region or a narrower band."
+                    : "Close other programs, or make the problem smaller: a coarser mesh, a smaller solve region or a narrower band.");
     }
 
     internal static string Quote(IReadOnlyList<string> tail, string marker)

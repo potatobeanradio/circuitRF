@@ -1382,6 +1382,10 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
             im.Released = NewExportableSemaphore(api);
             im.ReadyImported = interop.ImportSemaphore(new PlatformHandle(SemaphoreFd(api, im.Ready), FdSemaphore));
             im.ReleasedImported = interop.ImportSemaphore(new PlatformHandle(SemaphoreFd(api, im.Released), FdSemaphore));
+            // designer feedback round 34: a lost context fails HERE first, and the faults were never observed.
+            ObservePresent(im.Imported.ImportCompleted);
+            ObservePresent(im.ReadyImported.ImportCompleted);
+            ObservePresent(im.ReleasedImported.ImportCompleted);
             _images[i] = im;
         }
     }
@@ -1448,7 +1452,7 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
 
     private static void Dispose(object? o)
     {
-        if (o is IAsyncDisposable ad) _ = ad.DisposeAsync();
+        if (o is IAsyncDisposable ad) Viewer3DBackend.ObserveDisposal(ad.DisposeAsync());
         else if (o is IDisposable d) d.Dispose();
     }
 

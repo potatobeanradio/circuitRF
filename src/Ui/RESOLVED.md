@@ -41844,3 +41844,27 @@ menu items in `SchematicView.axaml`. Every rule and every write is in `src/Desig
   `C3dElaboration.Instances`), its tooltip the reference and full path; an unresolved one keeps the reference and is
   flagged with the reason. Properties shows an instance's own page (Places / From, then its Transparency, Appearance and
   Model) when its row is selected — including when it draws nothing, which used to read "Nothing selected".
+
+## Designer feedback round 34: hidden-layer ports, Ground Pick, unsaved layouts into 3D, GPU loss (2026-11-03)
+
+**A port vanished with its copper layer.** A port label lives on its conductor layer, and the renderer skipped hidden
+layers whole, so with only the Ports row visible nothing showed. The editor canvas now sets
+`LayoutRenderOptions.PortsIgnoreLayerVisibility`. A hidden layer's ports still reach the frame's port pass, and a click
+or Select All picks them by the Ports row alone. Exports and `render --hide-layers` are unchanged. A port placed while
+the Ports row is off turns the row on. Gate: `PortsRowTests.AHiddenCopperLayer_LeavesItsPortsDrawnAndPickable_OnTheEditorCanvasOnly`.
+
+**The electrostatic Ground box had no Pick.** `EmSetupEditorViewModel.GroundPickRow` is a sentinel terminal row. Arming
+it uses the existing 3D-view pick path, and `PickConductor` writes the picked body to `Ground3DText`. Checked headlessly
+with UiSnapshot on the Capacitance Extraction example: Pick armed, a click on `line`, Ground then reads `line`.
+
+**New 3D View from Layout read the layout as saved.** A via deleted in an open, unsaved layout came back in the new 3D
+view. An open layout of the cell with unsaved edits is now offered Save / Use Saved / Cancel first
+(`SaveCellLayoutsBeforeThreeD`).
+
+**A lost GPU context got one rebuild.** Docking a laptop changes the display several times, and the immediate rebuild
+imported against a context that was still lost, so the second fault was final. `Viewer3DPane.Faulted` now rebuilds up
+to five times, after 0.5, 1, 2, 4 and 8 s. A fault more than 30 s after the last rebuild starts a new count, and `Host`
+treats `ICompositionGpuInterop.IsLost` as a fault. The repeated "COMException: OpenSharedResource failed" crash-trail
+lines were each import's `ImportCompleted` task, which no backend observed. All three backends now pass those tasks,
+and the imported semaphores, through `ObservePresent`, and observe faulted `DisposeAsync` calls. Not exercisable
+headless; a manual Windows check is Win+Ctrl+Shift+B (graphics driver restart).

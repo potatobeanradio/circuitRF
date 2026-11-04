@@ -658,6 +658,8 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
             if (_readyEvt == 0 || _releasedEvt == 0) throw new Viewer3DPresentFault("Metal returned no shared event for the compositor's semaphores.");
             _readySem = interop.ImportSemaphore(new PlatformHandle(_readyEvt, KnownPlatformGraphicsExternalSemaphoreHandleTypes.MetalSharedEvent));
             _releasedSem = interop.ImportSemaphore(new PlatformHandle(_releasedEvt, KnownPlatformGraphicsExternalSemaphoreHandleTypes.MetalSharedEvent));
+            ObservePresent(_readySem.ImportCompleted);
+            ObservePresent(_releasedSem.ImportCompleted);
         }
         _images = new Image[count];
         for (int i = 0; i < count; i++)
@@ -670,6 +672,7 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
             if (im.Texture == 0) throw new Viewer3DPresentFault("Metal could not make a texture over the shared IOSurface.");
             im.Imported = interop.ImportImage(new PlatformHandle(im.Surface, KnownPlatformGraphicsExternalImageHandleTypes.IOSurfaceRef),
                 new PlatformGraphicsExternalImageProperties { Width = width, Height = height, Format = PlatformGraphicsExternalImageFormat.B8G8R8A8UNorm, TopLeftOrigin = true });
+            ObservePresent(im.Imported.ImportCompleted);   // designer feedback round 34: a lost context fails HERE first
             _images[i] = im;
         }
     }
@@ -730,7 +733,7 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
 
     private static void Dispose(object? o)
     {
-        if (o is IAsyncDisposable ad) _ = ad.DisposeAsync();
+        if (o is IAsyncDisposable ad) Viewer3DBackend.ObserveDisposal(ad.DisposeAsync());
         else if (o is IDisposable d) d.Dispose();
     }
 

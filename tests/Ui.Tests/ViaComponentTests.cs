@@ -85,6 +85,21 @@ public sealed class ViaComponentTests(ITestOutputHelper output) : IDisposable
         Assert.Empty(gnd.Planes);
     }
 
+    /// <summary>Designer feedback round 34 — an imported board's spanless "Drill (non-plated)" entry, ahead of the plated
+    /// one in the stackup, is never the drill a via is made on: its holes join nothing.</summary>
+    [Fact]
+    public void ANonPlatedEntry_IsNeverTheViasDrill()
+    {
+        var tech = ShippedTechnologies.Load(FourLayer);
+        var layers = tech.Stackup.Layers;
+        int first = layers.FindIndex(l => l.Kind == StackupKind.Via);
+        layers.Insert(first, new StackupLayer { Name = "Drill (non-plated)", Kind = StackupKind.Via, Plated = false });
+
+        var (span, failure, _) = SubstrateResolver.ResolveViaSpan(tech, Top, Bottom, toGround: false);
+        Assert.Null(failure);
+        Assert.NotEqual("Drill (non-plated)", span!.ViaEntry!.Name);
+    }
+
     /// <summary>What a run consumes: the layer names gone, nothing empty written, the resolved barrel
     /// injected, the defaults the technology does not state named — and VIAGND's far end is ground.</summary>
     [Fact]

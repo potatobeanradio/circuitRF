@@ -102,7 +102,11 @@ public static class LayoutHitTest
             LayerDef def = layerMap is not null && layerMap.TryGetValue(shape.Layer, out var found)
                 ? found
                 : FallbackPalette.For(shape.Layer);
-            if (!ignoreLayerVisibility && (!def.Visible || !def.Selectable)) continue;
+            // Designer feedback round 34 — with a marker region (the editor's own pick) a port is governed by the
+            // Ports row alone, which the caller applies; it is drawn whatever its conductor layer's boxes say
+            // (LayoutRenderOptions.PortsIgnoreLayerVisibility), so it is picked the same way.
+            bool editorPort = shape is LabelShape { IsPort: true } && portMarkerRegion is not null;
+            if (!ignoreLayerVisibility && !editorPort && (!def.Visible || !def.Selectable)) continue;
 
             if (shape is LabelShape { IsPort: true } portLabel && portMarkerRegion is not null)
             {
