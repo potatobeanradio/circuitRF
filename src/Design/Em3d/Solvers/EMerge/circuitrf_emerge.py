@@ -144,7 +144,10 @@ def main(argv):
     meshed = time.time()
     # The mesh's size, before any solve: circuitRF checks the run's memory on it and stops the run when it is refused.
     report(stage="meshed", tets=counts["tets"], edges=counts["edges"], triangles=counts["triangles"])
+    keep_x64_solver_off()
     on_gpu = use_gpu(problem, counts, gpu_from, sim, em, warnings)
+    if not on_gpu:
+        keep_gpu_solver_off()
     # After the build: creating the Simulation reconfigures EMerge's logger, which would drop a handler added before it.
     # Not caught: the stall watch stops a GPU sweep by raising from the sink (GpuStalled).
     heard = Heard(on_gpu)
@@ -251,16 +254,62 @@ def use_gpu(problem, counts, gpu_from, sim, em, warnings):
     unknowns = 2 * (counts["edges"] + counts["triangles"]) if order == 2 else counts["edges"]
     if unknowns < gpu_from:
         return False
-    from emerge._emerge import solver as s
-    solvers = s.EMSolver
-    kind = getattr(solvers, "SPARTA", None)
-    gpu = sim.mw.solveroutine.solvers.get(kind) if kind is not None else None
-    if gpu is None or not getattr(s, "_SPARTA_AVAILABLE", None):
+    routine = sim.mw.solveroutine
+    kind, loaded = gpu_solver_class()
+    gpu = routine.solvers.get(kind) if kind is not None else None
+    if gpu is None or not loaded:
         warnings.append("EMerge's GPU sparse solver could not be loaded, so this run solved on the CPU.")
         return False
     gpu.settings["refinement_steps"] = -1
-    sim.mw.solveroutine.set_solver(kind)
+    # EMerge 3.0: the solver's mode follows the routine's device, so forcing the solver alone runs its CPU path.
+    if hasattr(routine, "set_device"):
+        routine.set_device("GPU")
+    routine.set_solver(kind)
     return True
+
+
+def gpu_solver_class():
+    """The GPU sparse solver as this EMerge's solve routine keys it, and whether it can run: (None, False) when there is none.
+    EMerge 3.0 made the solvers classes in a package; before it they were an enum's members, with one flag for each."""
+    try:
+        from emerge._emerge.solvers import SolverSparta
+        return SolverSparta, bool(SolverSparta.available and SolverSparta.gpu)
+    except ImportError:
+        from emerge._emerge import solver as s
+        members = s.EMSolver
+        return getattr(members, "SPARTA", None), bool(getattr(s, "_SPARTA_AVAILABLE", None))
+
+
+# What EMerge 3.0 can run on arm64, by its names in em.solvers. Everything else there needs an x64 library.
+ARM64_SOLVERS = ("SuperLU", "UMFPACK", "MUMPS", "AASDS", "CHOLMOD", "RSLab", "Sparta", "BiCGSTAB", "CG", "Corvid", "LAPACK", "ARPACK")
+
+
+def keep_x64_solver_off():
+    """EMerge 3.0 takes its x64 vendor library's solver as available when "arm" is not in platform.processor(), which on Linux arm64
+    says aarch64. It then picks that solver, finds no library and stops with an UnboundLocalError at the first solve, on every
+    Linux arm64 machine (src/Design/RESOLVED.md, "EMerge 3.0.0"). The library has no arm64 build anywhere, so it is taken out here."""
+    import platform
+    if platform.machine().lower() not in ("aarch64", "arm64"):
+        return
+    try:
+        from emerge._emerge.solvers import PUBLIC_SOLVERS
+    except ImportError:
+        return
+    for name, kind in PUBLIC_SOLVERS.items():
+        if name not in ARM64_SOLVERS:
+            kind.available = False
+
+
+def keep_gpu_solver_off():
+    """EMerge 3.0's own pick is the GPU solver's CPU path whenever it is installed, ahead of the macOS sparse solver, which is
+    faster on the same answer (src/Design/RESOLVED.md, "EMerge 3.0.0"), and a run's device is read from the solver's name, so it
+    would also say GPU. Its picker reads the class's flag and then goes on down its list; SolveRoutine.disable would instead land
+    on the single-threaded default. Before 3.0 EMerge never picked it."""
+    try:
+        from emerge._emerge.solvers import SolverSparta
+        SolverSparta.available = False
+    except ImportError:
+        pass
 
 
 # brief-emw-3 — an adaptive sweep on the GPU whose estimated error has not reached a new low in this many samples has
@@ -291,8 +340,12 @@ def leave_gpu(sim, heard):
     if heard.residual is not None:
         stalled["residual"] = heard.residual
     report(stage="gpu-stalled", **stalled)
-    sim.mw.solveroutine.forced_solver = []
-    sim.mw.solveroutine.reset()
+    routine = sim.mw.solveroutine
+    routine.forced_solver = []
+    if hasattr(routine, "set_device"):
+        routine.set_device("CPU")
+    keep_gpu_solver_off()
+    routine.reset()
     heard.on_gpu = False
     return stalled
 
@@ -325,7 +378,7 @@ def watched(sim, heard, freqs, folder, attempt):
 
 class Heard:
     """What EMerge's own log said that the run reports: the direct solver it called and the adaptive sweep's last
-    estimate. Read from the message text EMerge 3.0.0b2 logs; a line it no longer logs leaves the field unreported."""
+    estimate. Read from the message text EMerge logs (3.0.0b2 to 3.0.0); a line it no longer logs leaves the field unreported."""
 
     def __init__(self, on_gpu=False):
         self.solver = None
@@ -381,7 +434,10 @@ def guard_solves(sim, model, heard):
     there. A run whose EMerge has moved it is told so and runs, with the -I check circuitRF makes on its result."""
     import numpy as np
     try:
-        from emerge._emerge.solver import SolveRoutine
+        try:
+            from emerge._emerge.solveroutine import SolveRoutine   # EMerge 3.0
+        except ImportError:
+            from emerge._emerge.solver import SolveRoutine
         solve_ = SolveRoutine.solve
     except (ImportError, AttributeError):
         return "circuitRF could not install its check on EMerge's solves (this EMerge has no SolveRoutine.solve where " \
@@ -844,12 +900,15 @@ def build(problem, folder, em, gmsh, GeoVolume, GeoSurface):
         if "terminals" in w:
             waves.append((w, terminal_port(sim, w, region, numbers[w["number"]])))
             continue
-        bc = sim.mw.bc.WavePortIH(region, numbers[w["number"]])
+        # EMerge 3.0 has WavePort, with modetype="TEM" what its deprecated WavePortIH is; before it there is only WavePortIH.
+        conditions = sim.mw.bc
+        wave = getattr(conditions, "WavePort", None)
+        bc = wave(region, numbers[w["number"]], modetype="TEM") if wave is not None else conditions.WavePortIH(region, numbers[w["number"]])
         # R-emw2-2a — the one line that decides a wave port's polarity: EMerge turns the mode so its integral along this line
         # is positive, and circuitRF's path runs from the negative object to the positive one, the sense a lumped port's
         # direction has. Proved on a thru with a wave port at one end and a lumped port at the other (RESOLVED, EMW-2).
         bc.set_integration_line(tuple(w["path"]["from"]), tuple(w["path"]["to"]), 101)
-        # WavePortIH keeps mixed_materials True, and it must: its dense block and its excitation are built from the stored
+        # Either keeps mixed_materials True, and it must: its dense block and its excitation are built from the stored
         # mode's own fields and beta (get_modepf_kappa), never rescaled to k0, so the mode is solved at every frequency.
         # Overriding it on a face of one material gave S right only at the sweep's centre (src/Design/RESOLVED.md, EMW-2).
         waves.append((w, bc))

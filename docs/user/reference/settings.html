@@ -1816,22 +1816,26 @@ you installed yourself runs; one circuitRF has not tested is flagged, as Gmsh's 
 run name the versions that are tested.</p>
 <p><strong>Install EMerge …</strong> puts a Python of its own, the newest tested EMerge and every package EMerge needs
 into one folder of circuitRF's, each at a pinned version and checked against a recorded checksum; no Python of yours is read
-or changed. It takes about two minutes and 1 GB. EMerge and Gmsh are free software under the GNU GPL;
+or changed. It takes a few minutes and 1 to 2 GB. On Linux, if system libraries it needs are missing, it says
+which before downloading anything and gives you the command that installs them. EMerge and Gmsh are free software under the GNU GPL;
 on an x64 computer, EMerge's own dependencies also include a vendor's multi-threaded sparse-solver
 library under that vendor's licence. The install says so before anything is downloaded.</p>
 <p><strong>The install also uses the fastest sparse solver your computer can have</strong>, without asking again. On
-an arm64 macOS computer that is a solver it builds from source, which takes a few seconds and needs the
-command line tools. If they are not installed, the status line says so — <em>Install the command line tools
-(xcode-select --install) and circuitRF will add a faster one automatically</em> — and <strong>Install the command
-line tools…</strong> beside it starts their installer. When they are in place, circuitRF builds the faster
-solver by itself, the next time this tab is shown or an EMerge run starts. Until then EMerge still runs,
-and gives the same answers, with a multi-threaded solver that needs no compiler. What each solver is worth,
+macOS 15 or later that is EMerge's macOS sparse solver, which comes with it; on macOS 13 and 14, EMerge
+runs and gives the same answers with another multi-threaded solver. What each solver is worth,
 measured, and what each other kind of computer gets, is in
 <a href="em-solvers.html#emerge-speed">EM Solvers ▸ Getting the most speed from EMerge</a>.</p>
+<p><strong>When circuitRF has tested a newer EMerge than the one you installed</strong>, <strong>Update to EMerge …</strong> takes the
+place of the Install button. It works as an install does, and shows what it will download first. The new
+version goes in beside the one you have, so if it fails nothing changes; when it succeeds, new runs use it,
+and <strong>Remove older EMerge …</strong> removes the old one when you no longer want to compare against it. A Python
+you named yourself is left alone and is not offered this. On an arm64 macOS computer, GPU solving comes back
+by itself if a Rust toolchain is installed, and otherwise from <strong>Enable GPU solving…</strong>.</p>
 <p><strong>Uninstall …</strong> on the EMerge row removes the whole folder: its Python, EMerge, and every solver built
 into it. The install puts nothing of EMerge's anywhere else.</p>
 <p><strong>On an arm64 macOS computer it also builds EMerge's GPU sparse solver</strong>, when a Rust toolchain is
-installed as well as the command line tools. The status line then says <em>GPU sparse solver installed</em>.
+installed as well as the command line tools. If those tools are missing, <strong>Install the command line
+tools…</strong> beside the status line starts their installer. The status line then says <em>GPU sparse solver installed</em>.
 Without Rust it says <em>GPU solving is available after installing a Rust toolchain</em>, and <strong>Enable GPU
 solving…</strong> beside it fetches Rust's minimal toolchain into EMerge's own folder, builds the GPU solver with
 it, and deletes the toolchain. It shows what it will fetch first: about 100 MB and half a minute. Your

@@ -22823,6 +22823,91 @@ to |ΔS| 8.8e-8 over 801 points.
 **The tested list is inside problem.json** (`testedEmerge`), so adding a version changes the provenance geometry hash
 every EMerge result carries; the five lowering goldens and `emerge-run/driven/cavity.s2p` were rewritten for it.
 
+## EMerge 3.0.0 (2026-11-04)
+
+**Re-pinned every EMerge recipe to the 3.0.0 release; 3.0.0b2 and 3.0.0b3 stay on the tested list and the driver still runs them.**
+Unlike the b2-to-b3 re-pin this release restructures EMerge, so the driver and the probe had to be ported. The answers did not move.
+
+**Measured, b3 against 3.0.0, one machine (M4, 16 GB), same mesh, the CPU:**
+
+| Run | Mesh | Result | Time b3 / 3.0.0 |
+|---|---|---|---|
+| Cavity, driven, Draft, 801 points | 7,479 tets, 54,090 unknowns | max \|ΔS\| 1e-10 | 4.16 / 4.07 s |
+| Cavity, Modes, Draft | 15,197 tets, 109,924 unknowns | every printed digit equal: 9.956699 GHz, Q 566.6, Qu 2650.6; 11.806336 GHz, Q 2.0 | 3 min 44 s / 3 min 38 s |
+| 3D Wave Ports Launch, wave ports | 21,513 tets, 151,670 unknowns | max \|ΔS\| 2.6e-9 | 7.34 / 7.14 s |
+| 3D Connector Launch | 21,175 tets, 148,998 unknowns | no difference at the file's precision | 5.91 / 5.58 s |
+
+Sanity checks, not a validation against another solver: no Palace was run, and `EmergeValidationTests` were not. How far the other platforms
+got is under "The other platforms" below. macOS x64 and Windows arm64 have not run this version at all.
+
+**What moved in EMerge, and what each did to circuitRF:**
+
+- **`emerge/_emerge/solver.py` is gone**, split into the `solvers/` package and `solveroutine.py`, and the `EMSolver` enum raises on any
+  member. The driver's solve guard and GPU path and the probe's solver list all imported it. Because the probe asks inside a `try`, the
+  failure was silent: 3.0.0 would have read as "sparse solver not reported" with no GPU. Both now read both layouts.
+- **EMerge now picks the GPU solver itself**, unlike every version before: its automatic order is the x64 vendor library, SPARTA, macOS sparse solver, so an
+  installed SPARTA takes every CPU run on its CPU path. Measured on the Launch, 151k unknowns: 9.20 s and 3.77 GB against the macOS
+  solver's 7.15 s and 3.36 GB, \|ΔS\| 4e-13. It also makes run.json say `device: gpu`, because the device is read from the solver's name. The
+  driver takes it out of a CPU run.
+- **`SolveRoutine.disable` is the wrong way to do that.** `pick_solver` reads the class's `available` flag, then `_try_solver` finds it
+  disabled and falls back to the first legal solver, which is the single-threaded SuperLU: the run works and is several times slower, with
+  nothing to see but a log warning. The driver sets `SolverSparta.available = False` so the picker goes on down its list. The probe does
+  the same, so its tier is what a CPU run gets.
+- **A forced GPU solver alone now runs on the CPU.** `set_solver` no longer implies the GPU: SPARTA's mode follows the routine's device,
+  so `use_gpu` also calls `set_device("GPU")`, and leaving the GPU sets it back. GPU against CPU: \|ΔS\| 9.1e-8 on the Cavity, 1.0e-6 on the
+  Launch, in 6.51 s against 7.15 s there.
+- **`WavePortIH` is a deprecated subclass of a new `WavePort`** that fixes its modes at the top frequency and tracks them down. The driver
+  builds `WavePort(modetype="TEM")`, which is what the old name now constructs. It still carries `mixed_materials=True`, and the duplicate-mode
+  guard and the thin-conductor split still install and are harmless.
+- **The GPU solver's old pin fails against this EMerge**, whose constructor reads `sparta.Ordering.SCALPEL`, so SPARTA moved to commit
+  9c58684 (v0.3.2).
+
+**macOS: EMerge's sparse solver is a dependency of EMerge now, and its one wheel needs macOS 15, where circuitRF runs from 13.** Left as
+it was, the lock does not resolve at all ("no usable wheels"), and setting the deployment target to 15 would let every other package in
+the lock need macOS 15 too. So `make_locks.py` resolves a macOS lock without it and appends it with the marker `platform_release >= "24"`
+(Darwin 24 is macOS 15), and those recipes install `--no-deps`. uv honours a marker in `--require-hashes` mode. Below 15 EMerge runs on
+rslab 0.38.0, which the macOS arm64 lock keeps for that: forced in a scratch environment by making the marker false, it picks RSLAB, and
+the Cavity agrees to \|ΔS\| 1e-10 in 8.33 s against 4.07 s. macOS x64 is not affected in speed: its lock carries the vendor library, which EMerge picks first at any version. That path has been run only by faking the marker on macOS 27, never on a real macOS 13 or 14.
+
+**The source build of that solver is gone**, so a Mac on 15 or later no longer needs the command line tools to be fast. They stay a prerequisite
+of the GPU group, which left an optional prerequisite with no steps: the recipe validator now accepts one another prerequisite needs, and
+`EmergeAccelerator.InstallerFor` offers its installer, since `Pending` no longer lands on it.
+
+**Not done, worth its own brief:** SPARTA now publishes wheels for all five platforms, with Vulkan on Windows and Linux, so the Rust toolchain
+and its bootstrap could go, and GPU solving could reach machines it cannot today. `set_method("iterative")` (Corvid) and `set_threads` are
+also new. None of them was needed to support 3.0.0.
+
+**The other platforms, in containers on an M4 (2026-11-04).** The published CLI of each, running the real recipe:
+
+| Target | Install | Cavity solve |
+|---|---|---|
+| Linux arm64 (Ubuntu 24.04, native) | passes, 1.12 GB, 29 min of which most was `gmsh.info` at about 28 KB/s and compiling Gmsh | passes, 11 s on rslab, |ΔS| at most 0.024 from the Mac's at the notch, on Gmsh's own mesh for that build (7,416 tets) |
+| Linux x64 (Ubuntu 24.04, emulated) | passes, 203 s, 2.19 GB | passes, 32 s, |ΔS| at most 0.02 from the Mac's at the notch, on Gmsh's own mesh for that platform (7,438 tets against 7,479) |
+| Windows x64 (Wine 9.0, emulated) | every locked package installs with its hash checked; the full recipe stops at step 6, under Wine | not reached: `import emerge` stops under Wine |
+
+**On Linux arm64 EMerge 3.0.0 installs and then cannot solve anything, unless the driver steps in.** `AVAILABLE = "arm" not in platform.processor()` is true there, because that
+says `aarch64`, so EMerge takes its x64 vendor library's solver as available, picks it first and stops at the first solve with `UnboundLocalError: ... 'candidate'`, from a
+loop over library paths that found none. The import check and the probe both pass, so only running a solve shows it. The driver and the probe take that solver out on arm64. b3 has the same test, so an EMerge before 3.0 is not rescued and stays broken on Linux arm64.
+
+**Linux x64 asks for what it needs before downloading anything.** Gmsh's wheel links 11 system libraries it does not carry (`libGLU`, `libGL`, X11's, `libfontconfig`,
+`libgomp`). A bare Ubuntu passed every download and then failed at the import check with "This is not a failure circuitRF has seen". They are prerequisites of that
+recipe now: the same machine refuses in 1 s, downloads nothing and prints the one command that installs them. A desktop Linux likely has most of them.
+
+**Nothing Wine stopped at says anything about Windows**, but it does mean Windows has not run 3.0.0. Under the emulators, .NET crashes creating an `HttpClient` (the default
+emulator rejects a segment selector, QEMU an instruction): disable the first's binfmt entry for the run and set `DOTNET_EnableHWIntrinsic=0`, for this test only. `uv pip install`
+then cannot query the venv's `python.exe` from the CLI, though that interpreter runs and the same packages install into the base Python. `import emerge` then stops on
+`ucrtbase.dll.crealf`, a C runtime function Wine 9.0 does not implement. The first real Windows machine is still owed the update.
+
+**Updating from Settings.** A tested older version gives no warning and hid the Install button, so a user on b3 had no way to learn 3.0.0
+exists. `SolverInstaller.OffersUpdate` now puts **Update to EMerge 3.0.0…** in that button's place when discovery found circuitRF's own install
+of a version older on the tested list than the recipe. The rule reads no OS, and every platform's recipe is on the same version; the gate walks
+all six. **There is no update logic**: it is the ordinary install of that recipe, beside the older home. That is what makes it safe (a failed
+install publishes nothing, and discovery takes the newest published home) and it keeps R-em3d25-3, under which an older version is offered
+for removal and never removed. Only EMerge offers it for now: `SolverStatus.Of` names the tool, because on Palace it would offer a build that
+takes the better part of an hour, unasked. `solver list` prints an `update:` line and `--json` an `update` field.
+
+The tested list is inside problem.json, so the five lowering goldens and `emerge-run/driven/cavity.s2p` were rewritten for it: one line each.
+
 ## brief-emdc-1 — a 3D problem's DC row: the lowering, the mesh, and the budget it misses (2026-10-24)
 
 `Em3d/Em3dDcLowering.cs` (an `Em3dProblem` to a conductor-only Gmsh mesh and its contacts), `Em3d/Em3dDcSolve.cs` (the one
@@ -27796,3 +27881,22 @@ working, not a difference between versions. Gate: `EmergeRunTests.ALossySheet_So
 - **The MMIC film inherited its face by accident.** It stated no `At`, so it took Metal1's `SheetAt: Top`, which exists for the MIM plate gap. With solid metal that put it 3 µm above the GaAs with GaAs filled beneath it. The three shipped copies and the starter now state `Bottom`. Planar runs do not read the face, nor does `Conductors: Sheets`.
 - **`testdata/em-tfr/zigzag/tech` stays on Top on purpose.** Its PB and HC references were solved with the film on the top face and its README says so. `EveryCopyStatesTheOneFilm` checks level and R_s, not face. No 3D run was made at `Bottom`. Run HC against HA bounds what the raised film and the 3 µm of metal change together, at most 0.008 in |ΔS| at 40 GHz.
 - **Stating the face makes the label one piece longer**, `Resistor · 50 Ω/sq · bottom`. It wraps in the MIM figure's narrower layout, so that figure's catalog height goes from 280 to 288. The committed `stackup-mmic` and `stackup-mim` figures still draw the strip on top until figures are next regenerated.
+
+## TFR-V — a film on a level of its own (2026-11-04)
+
+**The thickness correction declined on Metal1 until the calibration stopped asking the 2-D kernel about the thin layer.** The
+brief expected it to run once the film left Metal1. It did not: `BoundaryMesher` misreads a layer much thinner than the strip
+directly under it. A 73 µm line reads 164 pF/m over 250 nm where 192 is the limit, and at every thickness measured up to 5 µm
+a 3 µm strip reads less than a sheet of its own width, so there is no width offset to find. ΔW is the sidewalls' fringe in the
+air above, which such a layer does not reach. So on a stack with a film level, a dielectric under 5 % of the strip's width takes
+the material below it for the calibration alone. It is scoped to those stacks because merging generally would move the hash of
+any existing run with a thin layer under a level. The kernel's own limit is not fixed.
+
+**A via-contacted film reads long at DC, by up to half a via cell at each end.** The current reaches a via at its cells' centres,
+where an overlap contact's line is a rooftop edge, which is why the overlap network is exact at any mesh (150.04 Ω at 4 to 32
+cells across). 180 µm of a 40 µm film at 50 Ω/sq is 225 Ω, and via contact reads 233.3, 231.9, 230.9 and 228.6 Ω at 4, 8, 16 and
+32 across. So the brief's 2.3 % holds at the refined mesh and not at the shipping one, where this short film is 3.7 % high.
+
+**A drawn film's level joins from every route but a named list.** `SignalStackupLayerName` names one level, and a stated
+`AnalysisLevelNames` is a choice, so leaving a drawn film out of that is the refusal. The join sits after the incidental-metal
+trim so the trim cannot discard a level the film needs.

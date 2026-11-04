@@ -18,11 +18,18 @@ import json, os, re, subprocess, sys, tempfile
 
 # Upstream publishes no Linux arm64 Gmsh wheel, so that recipe builds Gmsh's library from source and installs the rest
 # with --no-deps; its lock leaves gmsh out (an override whose marker never matches drops a dependency).
-DROPPED = {"linux-arm64": ["gmsh"]}
+#
+# EMerge's macOS sparse solver is a dependency of EMerge since 3.0.0b4, but its one wheel needs macOS 15, and circuitRF runs from
+# macOS 13. A macOS lock is therefore resolved without it (so nothing else in it needs macOS 15 either) and gets it back as a line
+# whose marker holds from Darwin 24, which is macOS 15: an older macOS installs the rest and runs on rslab, below. Those recipes
+# install with --no-deps, as the Linux arm64 one does.
+MARKED = {"emerge-aasds": ("0.4.0", 'platform_release >= "24"')}
+DROPPED = {"linux-arm64": ["gmsh"], "macos-arm64": list(MARKED), "macos-x64": list(MARKED)}
 
 # brief-emi-3 R-emi3-2c -- the wheel-only multi-threaded sparse solver, where it was measured to beat EMerge's
 # single-threaded default and nothing faster comes without a compiler. 0.38.0 is the last release whose API EMerge
-# 3.0.0b2 calls (1.0 renamed the factorisation settings, and EMerge's call then raises).
+# 3.0.0 calls (1.0 renamed the factorisation settings, and EMerge's call then raises). On macOS arm64 it is what a Mac older
+# than macOS 15 runs on; from macOS 15 EMerge picks its macOS sparse solver first.
 EXTRA = {"macos-arm64": ["rslab==0.38.0"], "linux-arm64": ["rslab==0.38.0"]}
 
 PLATFORMS = {
@@ -81,6 +88,12 @@ def main(uv, emerge, python, out):
                 keep = [h for h in hashes if h in files and wheel_ok(files[h], plat_re, minor)]
                 if not keep: sys.exit(f"{name}: no installable wheel of {pkg}=={ver}")
                 lines.append(f"{pkg}=={ver} " + " ".join(f"--hash=sha256:{h}" for h in keep))
+            for pkg in DROPPED.get(name, []):
+                if pkg in MARKED:
+                    ver, marker = MARKED[pkg]
+                    keep = [h for h, f in pypi_files(pkg, ver).items() if wheel_ok(f, plat_re, minor)]
+                    if not keep: sys.exit(f"{name}: no installable wheel of {pkg}=={ver}")
+                    lines.append(f"{pkg}=={ver} ; {marker} " + " ".join(f"--hash=sha256:{h}" for h in keep))
             open(os.path.join(out, name + ".txt"), "w").write("\n".join(lines) + "\n")
             print(f"{name}: {len(lines)} requirements, {sum(l.count('--hash') for l in lines)} hashes")
 

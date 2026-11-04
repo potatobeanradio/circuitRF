@@ -1080,10 +1080,11 @@ tested it, where it is and how it was found, and the command that would install 
 sparse solver it would use (<em>fast sparse solver</em>, or the single-threaded baseline with what to install) and
 whether its GPU sparse solver is installed. <code>--capability gpu</code> also asks Palace whether it solves on a GPU, which
 costs a one-element solve. Read-only: it installs and builds nothing.</li>
+<li><strong><code>list</code></strong> adds an <code>update:</code> line for an EMerge circuitRF installed when it has tested a newer one (<code>update</code> in
+<code>--json</code>). <code>solver install emerge --yes</code> installs it beside the older one, and new runs use it.</li>
 <li><strong><code>install &lt;tool&gt;</code></strong> prints what it would fetch, from where, where it would go and what it cost when measured,
 and exits <strong>1</strong> having fetched nothing. <strong><code>--yes</code></strong> agrees and installs. <code>circuitrf solver install emerge --yes</code>
-installs EMerge into a Python of its own and, on an arm64 Mac with the command line tools, builds its faster
-sparse solver in the same run; <strong><code>--gpu</code></strong> also fetches a temporary Rust toolchain into EMerge's folder to build
+installs EMerge into a Python of its own; <strong><code>--gpu</code></strong> also fetches a temporary Rust toolchain into EMerge's folder to build
 its GPU sparse solver, and deletes the toolchain after. See
 <a href="em-solvers.html#emerge-speed">Getting the most speed from EMerge</a>.</li>
 <li><strong><code>remove &lt;tool&gt;</code></strong> removes a copy circuitRF installed, after printing the space it frees; <code>--all</code> removes every

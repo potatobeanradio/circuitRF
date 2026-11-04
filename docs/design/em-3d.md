@@ -184,6 +184,7 @@ Surveyed at **3.0.0b2** (2026-10-21), a pre-release, by building the 3D Eigenmod
 by hand (`brief-emi-0-overview.md` §2). A finite-element solver for the time-harmonic Helmholtz problem,
 written in Python on NumPy/SciPy, compiled sparse solvers and Gmsh's Python module, GPL-2.0-or-later,
 published on PyPI with compiled wheels for macOS, Linux and Windows x64.
+circuitRF's recipes install the 3.0.0 release; what it changed from these betas is in `src/Design/RESOLVED.md`, "EMerge 3.0.0".
 
 **It has:**
 - **Driven** S-parameters with lumped ports and an **adaptive (rational-fit) frequency sweep**: the

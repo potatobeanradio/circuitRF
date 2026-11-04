@@ -170,7 +170,10 @@ public sealed class EmergeRunTests(ITestOutputHelper output) : IDisposable
             import numpy as np, scipy.sparse as sp
             sys.path.insert(0, sys.argv[1])
             import circuitrf_emerge as d
-            from emerge._emerge.solver import SolveRoutine
+            try:
+                from emerge._emerge.solveroutine import SolveRoutine
+            except ImportError:
+                from emerge._emerge.solver import SolveRoutine
             # One tetrahedron, flat (all four corners at z = 0), its 20 unknowns the matrix's.
             nodes = np.array([[0.1, 0.101, 0.1, 0.1005], [0.2, 0.2, 0.201, 0.2005], [0.0, 0.0, 0.0, 0.0]])
             mesh = types.SimpleNamespace(nodes=nodes, tets=np.arange(4).reshape(4, 1), n_tets=1, vtag_to_tet={7: [0]})

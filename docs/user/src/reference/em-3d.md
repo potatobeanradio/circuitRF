@@ -91,7 +91,7 @@ when an install fails.
 | Palace, Windows (in the Linux subsystem) | Not yet measured. Reported upstream as most of a day |
 | Gmsh, macOS | Under a minute, 0.13 GB |
 | openEMS, macOS | 8 min, 0.27 GB, built by openEMS's own script |
-| EMerge, macOS on Apple silicon | About 2 min, 1.0 GB, from ready-built packages, with a Python of its own; its faster sparse solver adds a few seconds when the command line tools are installed ([Getting the most speed from EMerge](em-solvers.html#emerge-speed)) |
+| EMerge, macOS on arm64 | About 2 min, 1.0 GB, from ready-built packages, with a Python of its own; from macOS 15 that includes its fast sparse solver ([Getting the most speed from EMerge](em-solvers.html#emerge-speed)) |
 
 Palace is always built from source, because no ready-built Palace exists for macOS or for the Linux
 subsystem. The build is long but runs in the background, with its progress in the Messages panel, and

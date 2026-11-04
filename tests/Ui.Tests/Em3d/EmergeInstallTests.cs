@@ -44,7 +44,8 @@ public sealed class EmergeInstallTests : IDisposable
         var recipes = SolverRecipes.All.Where(r => r.Tool == SolverTool.Emerge).ToList();
         Assert.Equal(["linux-arm64", "linux-x64", "macos-arm64", "macos-x64", "windows-arm64", "windows-x64"],
                      recipes.Select(r => $"{SolverRecipes.Describe(r.Platform).ToLowerInvariant()}-{SolverRecipes.Describe(r.Architecture)}").Order());
-        var line = new Regex(@"^[a-z0-9][a-z0-9._-]*==[0-9][0-9A-Za-z.+!-]*( --hash=sha256:[0-9a-f]{64})+$");
+        // One marker exists: EMerge's macOS sparse solver, whose only wheel needs macOS 15 (Darwin 24) where circuitRF runs from 13.
+        var line = new Regex(@"^[a-z0-9][a-z0-9._-]*==[0-9][0-9A-Za-z.+!-]*( ; platform_release >= ""24"")?( --hash=sha256:[0-9a-f]{64})+$");
         foreach (var r in recipes)
         {
             Assert.All(r.Sources.Where(s => s.FetchedBy == "circuitRF"), s => Assert.Matches("^[0-9a-f]{64}$", s.Sha256 ?? ""));
@@ -52,9 +53,34 @@ public sealed class EmergeInstallTests : IDisposable
             var lines = lockStep.Lines.Where(l => !l.StartsWith('#')).ToList();
             Assert.All(lines, l => Assert.Matches(line, l));
             Assert.Contains(lines, l => l.StartsWith($"emerge=={r.Version} ", StringComparison.Ordinal));
+            Assert.Equal(r.Platform == RecipePlatform.MacOS, lines.Any(l => l.Contains(" ; platform_release", StringComparison.Ordinal)));
             Assert.NotEmpty(r.ConsentNotes);
             Assert.Contains(r.Steps, s => s.Arguments.Contains("--require-hashes"));
         }
+    }
+
+    /// <summary>The update is offered wherever a recipe exists, not only on the machine running the test, and only to circuitRF's own
+    /// install of an older tested version.</summary>
+    [Fact]
+    public void AnOlderOwnInstall_IsOfferedTheUpdate_OnEveryPlatform_AndNothingElseIs()
+    {
+        var discovery = SolverDiscovery.Emerge;
+        string newest = discovery.ValidatedVersions[^1].Release, older = discovery.ValidatedVersions[^2].Release;
+        SolverInstallation Own(string v, SolverHowFound how = SolverHowFound.Installed)
+            => new(SolverTool.Emerge, "/x/bin/python", v, null, "EMerge " + v, how, "found", v);
+
+        foreach (var platform in Enum.GetValues<RecipePlatform>())
+            foreach (var architecture in Enum.GetValues<RecipeArchitecture>())
+            {
+                var recipe = SolverRecipes.For(SolverTool.Emerge, null, platform, architecture, SolverRecipes.All);
+                Assert.Equal(newest, recipe?.Version);
+                Assert.True(SolverInstaller.OffersUpdate(discovery, Own(older), recipe), $"{platform} {architecture}");
+                Assert.False(SolverInstaller.OffersUpdate(discovery, Own(newest), recipe));
+                Assert.False(SolverInstaller.OffersUpdate(discovery, Own(older, SolverHowFound.Settings), recipe));
+            }
+        var downgrade = SolverRecipes.For(SolverTool.Emerge, null, RecipePlatform.Linux, RecipeArchitecture.X64, SolverRecipes.All)! with { Version = older };
+        Assert.False(SolverInstaller.OffersUpdate(discovery, Own(newest), downgrade));
+        Assert.False(SolverInstaller.OffersUpdate(discovery, Own(older), null));
     }
 
     // ── 2. the probe ────────────────────────────────────────────────────────────────────────────

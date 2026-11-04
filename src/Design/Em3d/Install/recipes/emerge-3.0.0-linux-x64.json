@@ -1,0 +1,395 @@
+{
+  "$schema": "./recipe.schema.json",
+  "comment": "brief-emi-2 R-emi2-1. uv, a pinned Python and a hash-locked EMerge, all inside the home: no system Python is read or changed. The lock lines are tools/EmergeLock/make_locks.py's output. Gmsh's wheel links against these system libraries and does not carry them; a machine without them fails only at the import check, after the whole download (measured on a bare Ubuntu 24.04), so they are asked for first.",
+  "id": "emerge-3.0.0-linux-x64",
+  "tool": "emerge",
+  "version": "3.0.0",
+  "platform": "linux",
+  "architecture": "x64",
+  "layout": "in-place",
+  "layoutNote": "The environment's python is a link to the interpreter by absolute path, and its pyvenv.cfg names that interpreter's folder the same way (measured on macOS arm64), so the home cannot be renamed into place and is built where it stays.",
+  "sources": [
+    {
+      "id": "uv",
+      "url": "https://github.com/astral-sh/uv/releases/download/0.12.24/uv-x86_64-unknown-linux-gnu.tar.gz",
+      "fetchedBy": "circuitRF",
+      "file": "uv-x86_64-unknown-linux-gnu.tar.gz",
+      "sha256": "b4dfaef47d491a7296981f8374a4595f55dbf84e8937c8ecd2983574d8bb3da6"
+    },
+    {
+      "url": "https://github.com/astral-sh/python-build-standalone/releases",
+      "fetchedBy": "uv",
+      "sha256": null,
+      "checksumNote": "uv 0.12.24 checks the Python 3.13.16 archive it downloads against the SHA-256 it carries for that build"
+    },
+    {
+      "url": "https://pypi.org/simple/",
+      "fetchedBy": "uv",
+      "sha256": null,
+      "checksumNote": "every package is pinned to an exact version and checked against the SHA-256 hashes in requirements.lock, which this recipe writes; uv refuses a file whose hash is not listed"
+    }
+  ],
+  "prerequisites": [
+    {
+      "kind": "file",
+      "name": "libGLU.so.1",
+      "search": [
+        "/usr/lib/x86_64-linux-gnu",
+        "/lib/x86_64-linux-gnu",
+        "/usr/lib64",
+        "/lib64",
+        "/usr/lib",
+        "/lib"
+      ],
+      "remedy": {
+        "ubuntu": "sudo apt-get update && sudo apt-get install libglu1-mesa libgl1 libx11-6 libxext6 libxrender1 libxcursor1 libxfixes3 libxft2 libxinerama1 libfontconfig1 libgomp1",
+        "debian": "sudo apt-get update && sudo apt-get install libglu1-mesa libgl1 libx11-6 libxext6 libxrender1 libxcursor1 libxfixes3 libxft2 libxinerama1 libfontconfig1 libgomp1",
+        "fedora": "sudo dnf install mesa-libGLU mesa-libGL libX11 libXext libXrender libXcursor libXfixes libXft libXinerama fontconfig libgomp",
+        "default": "install your distribution's packages holding these libraries, which Gmsh's wheel links against"
+      }
+    },
+    {
+      "kind": "file",
+      "name": "libGL.so.1",
+      "search": [
+        "/usr/lib/x86_64-linux-gnu",
+        "/lib/x86_64-linux-gnu",
+        "/usr/lib64",
+        "/lib64",
+        "/usr/lib",
+        "/lib"
+      ],
+      "remedy": {
+        "ubuntu": "sudo apt-get update && sudo apt-get install libglu1-mesa libgl1 libx11-6 libxext6 libxrender1 libxcursor1 libxfixes3 libxft2 libxinerama1 libfontconfig1 libgomp1",
+        "debian": "sudo apt-get update && sudo apt-get install libglu1-mesa libgl1 libx11-6 libxext6 libxrender1 libxcursor1 libxfixes3 libxft2 libxinerama1 libfontconfig1 libgomp1",
+        "fedora": "sudo dnf install mesa-libGLU mesa-libGL libX11 libXext libXrender libXcursor libXfixes libXft libXinerama fontconfig libgomp",
+        "default": "install your distribution's packages holding these libraries, which Gmsh's wheel links against"
+      }
+    },
+    {
+      "kind": "file",
+      "name": "libX11.so.6",
+      "search": [
+        "/usr/lib/x86_64-linux-gnu",
+        "/lib/x86_64-linux-gnu",
+        "/usr/lib64",
+        "/lib64",
+        "/usr/lib",
+        "/lib"
+      ],
+      "remedy": {
+        "ubuntu": "sudo apt-get update && sudo apt-get install libglu1-mesa libgl1 libx11-6 libxext6 libxrender1 libxcursor1 libxfixes3 libxft2 libxinerama1 libfontconfig1 libgomp1",
+        "debian": "sudo apt-get update && sudo apt-get install libglu1-mesa libgl1 libx11-6 libxext6 libxrender1 libxcursor1 libxfixes3 libxft2 libxinerama1 libfontconfig1 libgomp1",
+        "fedora": "sudo dnf install mesa-libGLU mesa-libGL libX11 libXext libXrender libXcursor libXfixes libXft libXinerama fontconfig libgomp",
+        "default": "install your distribution's packages holding these libraries, which Gmsh's wheel links against"
+      }
+    },
+    {
+      "kind": "file",
+      "name": "libXext.so.6",
+      "search": [
+        "/usr/lib/x86_64-linux-gnu",
+        "/lib/x86_64-linux-gnu",
+        "/usr/lib64",
+        "/lib64",
+        "/usr/lib",
+        "/lib"
+      ],
+      "remedy": {
+        "ubuntu": "sudo apt-get update && sudo apt-get install libglu1-mesa libgl1 libx11-6 libxext6 libxrender1 libxcursor1 libxfixes3 libxft2 libxinerama1 libfontconfig1 libgomp1",
+        "debian": "sudo apt-get update && sudo apt-get install libglu1-mesa libgl1 libx11-6 libxext6 libxrender1 libxcursor1 libxfixes3 libxft2 libxinerama1 libfontconfig1 libgomp1",
+        "fedora": "sudo dnf install mesa-libGLU mesa-libGL libX11 libXext libXrender libXcursor libXfixes libXft libXinerama fontconfig libgomp",
+        "default": "install your distribution's packages holding these libraries, which Gmsh's wheel links against"
+      }
+    },
+    {
+      "kind": "file",
+      "name": "libXrender.so.1",
+      "search": [
+        "/usr/lib/x86_64-linux-gnu",
+        "/lib/x86_64-linux-gnu",
+        "/usr/lib64",
+        "/lib64",
+        "/usr/lib",
+        "/lib"
+      ],
+      "remedy": {
+        "ubuntu": "sudo apt-get update && sudo apt-get install libglu1-mesa libgl1 libx11-6 libxext6 libxrender1 libxcursor1 libxfixes3 libxft2 libxinerama1 libfontconfig1 libgomp1",
+        "debian": "sudo apt-get update && sudo apt-get install libglu1-mesa libgl1 libx11-6 libxext6 libxrender1 libxcursor1 libxfixes3 libxft2 libxinerama1 libfontconfig1 libgomp1",
+        "fedora": "sudo dnf install mesa-libGLU mesa-libGL libX11 libXext libXrender libXcursor libXfixes libXft libXinerama fontconfig libgomp",
+        "default": "install your distribution's packages holding these libraries, which Gmsh's wheel links against"
+      }
+    },
+    {
+      "kind": "file",
+      "name": "libXcursor.so.1",
+      "search": [
+        "/usr/lib/x86_64-linux-gnu",
+        "/lib/x86_64-linux-gnu",
+        "/usr/lib64",
+        "/lib64",
+        "/usr/lib",
+        "/lib"
+      ],
+      "remedy": {
+        "ubuntu": "sudo apt-get update && sudo apt-get install libglu1-mesa libgl1 libx11-6 libxext6 libxrender1 libxcursor1 libxfixes3 libxft2 libxinerama1 libfontconfig1 libgomp1",
+        "debian": "sudo apt-get update && sudo apt-get install libglu1-mesa libgl1 libx11-6 libxext6 libxrender1 libxcursor1 libxfixes3 libxft2 libxinerama1 libfontconfig1 libgomp1",
+        "fedora": "sudo dnf install mesa-libGLU mesa-libGL libX11 libXext libXrender libXcursor libXfixes libXft libXinerama fontconfig libgomp",
+        "default": "install your distribution's packages holding these libraries, which Gmsh's wheel links against"
+      }
+    },
+    {
+      "kind": "file",
+      "name": "libXfixes.so.3",
+      "search": [
+        "/usr/lib/x86_64-linux-gnu",
+        "/lib/x86_64-linux-gnu",
+        "/usr/lib64",
+        "/lib64",
+        "/usr/lib",
+        "/lib"
+      ],
+      "remedy": {
+        "ubuntu": "sudo apt-get update && sudo apt-get install libglu1-mesa libgl1 libx11-6 libxext6 libxrender1 libxcursor1 libxfixes3 libxft2 libxinerama1 libfontconfig1 libgomp1",
+        "debian": "sudo apt-get update && sudo apt-get install libglu1-mesa libgl1 libx11-6 libxext6 libxrender1 libxcursor1 libxfixes3 libxft2 libxinerama1 libfontconfig1 libgomp1",
+        "fedora": "sudo dnf install mesa-libGLU mesa-libGL libX11 libXext libXrender libXcursor libXfixes libXft libXinerama fontconfig libgomp",
+        "default": "install your distribution's packages holding these libraries, which Gmsh's wheel links against"
+      }
+    },
+    {
+      "kind": "file",
+      "name": "libXft.so.2",
+      "search": [
+        "/usr/lib/x86_64-linux-gnu",
+        "/lib/x86_64-linux-gnu",
+        "/usr/lib64",
+        "/lib64",
+        "/usr/lib",
+        "/lib"
+      ],
+      "remedy": {
+        "ubuntu": "sudo apt-get update && sudo apt-get install libglu1-mesa libgl1 libx11-6 libxext6 libxrender1 libxcursor1 libxfixes3 libxft2 libxinerama1 libfontconfig1 libgomp1",
+        "debian": "sudo apt-get update && sudo apt-get install libglu1-mesa libgl1 libx11-6 libxext6 libxrender1 libxcursor1 libxfixes3 libxft2 libxinerama1 libfontconfig1 libgomp1",
+        "fedora": "sudo dnf install mesa-libGLU mesa-libGL libX11 libXext libXrender libXcursor libXfixes libXft libXinerama fontconfig libgomp",
+        "default": "install your distribution's packages holding these libraries, which Gmsh's wheel links against"
+      }
+    },
+    {
+      "kind": "file",
+      "name": "libXinerama.so.1",
+      "search": [
+        "/usr/lib/x86_64-linux-gnu",
+        "/lib/x86_64-linux-gnu",
+        "/usr/lib64",
+        "/lib64",
+        "/usr/lib",
+        "/lib"
+      ],
+      "remedy": {
+        "ubuntu": "sudo apt-get update && sudo apt-get install libglu1-mesa libgl1 libx11-6 libxext6 libxrender1 libxcursor1 libxfixes3 libxft2 libxinerama1 libfontconfig1 libgomp1",
+        "debian": "sudo apt-get update && sudo apt-get install libglu1-mesa libgl1 libx11-6 libxext6 libxrender1 libxcursor1 libxfixes3 libxft2 libxinerama1 libfontconfig1 libgomp1",
+        "fedora": "sudo dnf install mesa-libGLU mesa-libGL libX11 libXext libXrender libXcursor libXfixes libXft libXinerama fontconfig libgomp",
+        "default": "install your distribution's packages holding these libraries, which Gmsh's wheel links against"
+      }
+    },
+    {
+      "kind": "file",
+      "name": "libfontconfig.so.1",
+      "search": [
+        "/usr/lib/x86_64-linux-gnu",
+        "/lib/x86_64-linux-gnu",
+        "/usr/lib64",
+        "/lib64",
+        "/usr/lib",
+        "/lib"
+      ],
+      "remedy": {
+        "ubuntu": "sudo apt-get update && sudo apt-get install libglu1-mesa libgl1 libx11-6 libxext6 libxrender1 libxcursor1 libxfixes3 libxft2 libxinerama1 libfontconfig1 libgomp1",
+        "debian": "sudo apt-get update && sudo apt-get install libglu1-mesa libgl1 libx11-6 libxext6 libxrender1 libxcursor1 libxfixes3 libxft2 libxinerama1 libfontconfig1 libgomp1",
+        "fedora": "sudo dnf install mesa-libGLU mesa-libGL libX11 libXext libXrender libXcursor libXfixes libXft libXinerama fontconfig libgomp",
+        "default": "install your distribution's packages holding these libraries, which Gmsh's wheel links against"
+      }
+    },
+    {
+      "kind": "file",
+      "name": "libgomp.so.1",
+      "search": [
+        "/usr/lib/x86_64-linux-gnu",
+        "/lib/x86_64-linux-gnu",
+        "/usr/lib64",
+        "/lib64",
+        "/usr/lib",
+        "/lib"
+      ],
+      "remedy": {
+        "ubuntu": "sudo apt-get update && sudo apt-get install libglu1-mesa libgl1 libx11-6 libxext6 libxrender1 libxcursor1 libxfixes3 libxft2 libxinerama1 libfontconfig1 libgomp1",
+        "debian": "sudo apt-get update && sudo apt-get install libglu1-mesa libgl1 libx11-6 libxext6 libxrender1 libxcursor1 libxfixes3 libxft2 libxinerama1 libfontconfig1 libgomp1",
+        "fedora": "sudo dnf install mesa-libGLU mesa-libGL libX11 libXext libXrender libXcursor libXfixes libXft libXinerama fontconfig libgomp",
+        "default": "install your distribution's packages holding these libraries, which Gmsh's wheel links against"
+      }
+    }
+  ],
+  "environment": {
+    "UV_PYTHON_INSTALL_DIR": "${home}/python",
+    "UV_CACHE_DIR": "${home}/uv-cache"
+  },
+  "clearEnvironment": [
+    "PYTHON*",
+    "VIRTUAL_ENV",
+    "CONDA_PREFIX",
+    "UV_*",
+    "PIP_*"
+  ],
+  "consentNotes": [
+    "EMerge is free software under the GNU General Public License, version 2 or later, and so is Gmsh, which it meshes with; circuitRF starts them as separate programs and distributes neither.",
+    "On this platform EMerge's own dependencies include a vendor's multi-threaded sparse-solver library, distributed under that vendor's proprietary licence; by installing EMerge you accept its terms."
+  ],
+  "steps": [
+    {
+      "name": "Download uv 0.12.24",
+      "kind": "download",
+      "source": "uv"
+    },
+    {
+      "name": "Unpack uv",
+      "kind": "extract",
+      "source": "uv",
+      "into": "${home}/uv"
+    },
+    {
+      "name": "Install Python 3.13.16",
+      "kind": "run",
+      "command": "${home}/uv/uv-x86_64-unknown-linux-gnu/uv",
+      "arguments": [
+        "python",
+        "install",
+        "cpython-3.13.16-linux-x86_64-gnu",
+        "--install-dir",
+        "${home}/python",
+        "--no-bin",
+        "--no-registry",
+        "--no-config"
+      ],
+      "comment": "--no-bin and --no-registry keep uv from adding a python command to ~/.local/bin or registering the interpreter with Windows: the interpreter lives in the home and nowhere else."
+    },
+    {
+      "name": "Create the Python environment",
+      "kind": "run",
+      "command": "${home}/uv/uv-x86_64-unknown-linux-gnu/uv",
+      "arguments": [
+        "venv",
+        "${home}/env",
+        "--python",
+        "${home}/python/cpython-3.13.16-linux-x86_64-gnu/bin/python3.13",
+        "--no-config"
+      ]
+    },
+    {
+      "name": "Write the locked requirements",
+      "kind": "write",
+      "path": "${home}/requirements.lock",
+      "lines": [
+        "# Written by circuitRF's install assistant from recipe ${recipeId}: EMerge and every package it needs, each at",
+        "# an exact version with the SHA-256 of every file this platform may install (uv pip compile --generate-hashes).",
+        "attrs==26.1.0 --hash=sha256:c647aa4a12dfbad9333ca4e71fe62ddc36f4e63b2d260a37a8b83d2f043ac309",
+        "certifi==2026.10.23 --hash=sha256:e9b54de76e530bb6cf0ccd036787103acb58fd42ba930ea8bf948ddbaa2f61d1",
+        "charset-normalizer==3.5.2 --hash=sha256:1c50fe28bbc2ced33386f298650d91218076c05420e6cbd790b913adc41659e7 --hash=sha256:7218e8f32b0956cfcd048fd42d9d5779809745ca1d86113ca56f66e7ae1549c4 --hash=sha256:b6b751274acb69d77b3323d6b7dbaa3c7fdfc1eb829b7eb61d262f32e1af9685",
+        "cloudpickle==3.1.2 --hash=sha256:9acb47f6afd73f60dc1df93bb801b472f05ff42fa6c84167d25cb206be1fbf4a",
+        "contourpy==1.4.0 --hash=sha256:f1219a8898523cba821085f2da8a1b962cc696325763f09d7f93538ba43b2d70",
+        "cycler==0.12.1 --hash=sha256:85cef7cff222d8644161529808465972e51340599459b8ac3ccbac5a854e0d30",
+        "cyclopts==5.3.3 --hash=sha256:b16ae3619f9447f6b7e42834586e2def254b940ce0b39f82eaf3cfee788a924f",
+        "docstring-parser==0.18.0 --hash=sha256:b3fcbed555c47d8479be0796ef7e19c2670d428d72e96da63f3a40122860374b",
+        "emerge==3.0.0 --hash=sha256:9127b637818e4dc736c9b36453b673cc40dad890ef56e6facad3dd6397e77872",
+        "emsutil==1.1.5 --hash=sha256:9f50833c1853a17a2f66209d10edc728edb415747b9d9d5ffb8129128dbfa161",
+        "fonttools==4.68.0 --hash=sha256:08851f7d2b983412f490b73a7c56f17cbda1d4d85d2ad3f857564bf15b5d9475 --hash=sha256:d76f8fdcb6936f5e1045a0c9dd721a4bf11112e60d1e243bfa1d39f06a8b3104",
+        "gmsh==4.15.2 --hash=sha256:4076a948ce22625330d1413d4982e22b5c69fc2f0f7951f5df64c778cf54108c",
+        "idna==3.20 --hash=sha256:ab7ae7122974553370f0bdb919e1a960b2cd1bc1ef0276416d896db81c14582c",
+        "intel-cmplr-lib-ur==2026.2.0 --hash=sha256:0d0a5099aa2e1e38375b509c2a8182e719ed74aa656b2a800ddf6cfbd3384b80",
+        "intel-openmp==2026.2.0 --hash=sha256:2308a1a3e74718a9cd8cccf218c34d8cd80b43d3b89dfbb01b38dee205c50980",
+        "joblib==1.6.0 --hash=sha256:3dbbf9f6e4b592a2357b854608e980fe6390d131d7a82f011a377ef2ebef7aba",
+        "kiwisolver==1.5.1 --hash=sha256:74ad5c3dad54a4641b4c28cd15ded70899d04459c6c7aeacafea716be97cce6d",
+        "loguru==0.7.3 --hash=sha256:31a33c10c8e1e10422bfd431aeb5d351c7cf7fa671e3c4df004162264b28220c",
+        "markdown-it-py==4.2.0 --hash=sha256:9f7ebbcd14fe59494226453aed97c1070d83f8d24b6fc3a3bcf9a38092641c4a",
+        "matplotlib==3.11.2 --hash=sha256:1944895967f87c84c9b4bad29a707b31f5b36df4a3a2339ea1f8ea3ce5105539",
+        "mdurl==0.1.2 --hash=sha256:84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8",
+        "mkl==2026.2.0 --hash=sha256:eaab1875ce9f47ab3c66d5632cef06baf768c05781f2f28847bdbc4343500ed7",
+        "msgpack==1.2.4 --hash=sha256:7fabd415c41e62006c6641fcdf5b3e866f581c4e11c58328c0d0f69584b9577d",
+        "msgpack-numpy==0.4.8 --hash=sha256:773c19d4dfbae1b3c7b791083e2caf66983bb19b40901646f61d8731554ae3da",
+        "numpy==2.2.6 --hash=sha256:1bc23a79bfabc5d056d106f9befb8d50c31ced2fbc70eedb8155aec74a45798f",
+        "packaging==26.3 --hash=sha256:d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c",
+        "pillow==13.0.0 --hash=sha256:5f56499c1a74d2b862beb0c33b8016f99d095858455df9d21583bbbc1c15b582",
+        "platformdirs==4.14.5 --hash=sha256:8e778c6fa421516f4d3369449f8df3b0e1b72c0e0005fe88e3ec772d0a14e750",
+        "pooch==1.9.0 --hash=sha256:f265597baa9f760d25ceb29d0beb8186c243d6607b0f60b83ecf14078dbc703b",
+        "psutil==7.2.2 --hash=sha256:076a2d2f923fd4821644f5ba89f059523da90dc9014e85f8e45a5774ca5bc6f9",
+        "pygments==2.21.0 --hash=sha256:2363c69b61c4a97c838da3b130dcd6468f4848992b21a82f2a63ec34377137d9",
+        "pyparsing==3.3.3 --hash=sha256:ece8c00a69cf01b45d0b1dedabb469c90d8caf996d4fda40f147627a122849a4",
+        "python-dateutil==4.0.0 --hash=sha256:a5e246f79eb80475e691bf93862cead98decd8a498cf53ba0516fcdc0f50dc1c",
+        "pyvista==0.49.2 --hash=sha256:63f78495b30e146c9d1debeca7fa44c7a3935cc9f9ded8638b809ef955fc167a",
+        "pyvista-validation==0.2.2 --hash=sha256:a45b633b89d843329db1608ba2bbed75d075ab63c5a7427c8dfa9ad9c23eadb4",
+        "requests==2.34.2 --hash=sha256:2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0",
+        "rich==15.0.0 --hash=sha256:33bd4ef74232fb73fe9279a257718407f169c09b78a87ad3d296f548e27de0bb",
+        "rich-rst==2.2.0 --hash=sha256:1ea1c43813dc4a8d86475fce27ffb74e0ada3d4656c9f8130ba2a59868055fe9",
+        "scipy==1.18.1 --hash=sha256:fdaf5ea890a6183d0565f51a61799d67081bd5b1cf03c5f4b3fd3732108625c9",
+        "scooby==0.12.1 --hash=sha256:4e3e474a3542fd1d19d775cea70d19ce58a005102c0206955dddbbd33f07eb4e",
+        "tbb==2023.2.0 --hash=sha256:7d80615b6e970f11671fa05b6eaa9483ac864fbfe525ac280271a78b37870b7c",
+        "tcmlib==1.6.0 --hash=sha256:46c2491988bfd18c4733eeb08aca6a386706a497b92cc51d155f37ddea003c14",
+        "typing-extensions==4.16.0 --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8",
+        "tzdata==2026.6 --hash=sha256:0a10eec6e13ef16b627fabed9a5f2ba61a62b1c67f327305f4e7e412a70b4aec",
+        "umf==1.2.0 --hash=sha256:238d186fdd9e9c0fe1489da95b19b0b79045fe26c4aa98bd0a022a2a3603c195",
+        "urllib3==2.8.0 --hash=sha256:0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3",
+        "vtk==9.7.2 --hash=sha256:706b3a457844f348d22333191711fb799023cf2e4d02748396f6218b0210bd1b"
+      ]
+    },
+    {
+      "name": "Install EMerge 3.0.0",
+      "kind": "run",
+      "command": "${home}/uv/uv-x86_64-unknown-linux-gnu/uv",
+      "arguments": [
+        "pip",
+        "install",
+        "--python",
+        "${home}/env/bin/python",
+        "--require-hashes",
+        "--no-build",
+        "--link-mode",
+        "copy",
+        "--compile-bytecode",
+        "--no-config",
+        "-r",
+        "${home}/requirements.lock"
+      ],
+      "comment": "--require-hashes refuses any file the lock does not name; --no-build refuses anything that would compile; --compile-bytecode spends the start-up a first run would otherwise pay."
+    },
+    {
+      "name": "Check that EMerge imports",
+      "kind": "run",
+      "command": "${home}/env/bin/python",
+      "arguments": [
+        "-I",
+        "-c",
+        "import emerge; print(emerge.__version__)"
+      ],
+      "captureAs": "emerge",
+      "expect": "3.0.0",
+      "comment": "-I: the user's PYTHONPATH and site-packages play no part. A broken environment fails here, not at the first run."
+    },
+    {
+      "name": "Clear uv's download cache",
+      "kind": "run",
+      "command": "${home}/uv/uv-x86_64-unknown-linux-gnu/uv",
+      "arguments": [
+        "cache",
+        "clean",
+        "--no-config"
+      ],
+      "comment": "The cache roughly doubles the home's size and nothing reads it again."
+    }
+  ],
+  "program": "${home}/env/bin/python",
+  "measured": {
+    "minutes": 3.4,
+    "diskGB": 2.19,
+    "source": "circuitRF's own install on Ubuntu 24.04 in a container, x64 emulated on an M4, 2026-11-04: 203 s and 2.19 GB after uv's cache was cleared; a native machine should be quicker. The size is the x64 sparse-solver library, which the other platforms' installs do not carry"
+  },
+  "knownFailures": []
+}

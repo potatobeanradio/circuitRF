@@ -140,9 +140,18 @@ public static class EmergeAccelerator
     /// tools…</i>), or null when nothing is pending, it has none, or it failed rather than went missing (installing
     /// it again would change nothing).
     /// </summary>
-    public static RecipePrerequisite? InstallerFor(SolverInstallation? found)
-        => Pending(RecordOf(found), RecipeOf(RecordOf(found))) is ({ Status: OptionalStepsStatus.Missing }, { Installer.Count: > 0 } when)
-            ? when : null;
+    public static RecipePrerequisite? InstallerFor(SolverInstallation? found, SolverInstaller? installer = null)
+    {
+        var recipe = RecipeOf(RecordOf(found));
+        if (Pending(RecordOf(found), recipe) is not ({ Status: OptionalStepsStatus.Missing }, { } when)) return null;
+        if (when.Installer.Count > 0) return when;
+        // What the pending group needs first, when that has an installer: the GPU group needs the command line tools, which no
+        // longer have steps of their own now that EMerge's macOS sparse solver comes as a wheel.
+        if (when.Needs.Count == 0) return null;
+        var check = (installer ?? new SolverInstaller()).CheckPrerequisites(recipe!).Optional;
+        return when.Needs.Select(n => recipe!.Prerequisites.First(p => p.Name == n))
+                   .FirstOrDefault(p => p.Installer.Count > 0 && !check[p.Name].Met);
+    }
 
     /// <summary>The record of the home <paramref name="found"/> lives in, when circuitRF installed it.</summary>
     public static InstallRecord? RecordOf(SolverInstallation? found)

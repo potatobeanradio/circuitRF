@@ -1,7 +1,7 @@
 {
   "format": "circuitRF EMerge problem",
   "version": 2,
-  "testedEmerge": ["3.0.0b2", "3.0.0b3"],
+  "testedEmerge": ["3.0.0b2", "3.0.0b3", "3.0.0"],
   "problem": "eigenmode",
   "eigenmode": {
     "count": 3,

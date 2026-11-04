@@ -389,6 +389,10 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         string? Install)
     {
+        /// <summary>The newer version circuitRF's own install could update to, when there is one: <c>solver install</c> installs it.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? Update { get; init; }
+
         /// <summary>brief-emi-2 R-emi2-5 — for EMerge, the speed tier its probe implies (<c>fast sparse solver</c>,
         /// <c>baseline sparse solver (one core)</c>); absent for every other tool and when nothing was found.</summary>
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

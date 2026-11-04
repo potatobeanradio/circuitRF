@@ -764,10 +764,11 @@ same removal. A build machine installs a solver this way.
   sparse solver it would use (*fast sparse solver*, or the single-threaded baseline with what to install) and
   whether its GPU sparse solver is installed. `--capability gpu` also asks Palace whether it solves on a GPU, which
   costs a one-element solve. Read-only: it installs and builds nothing.
+- **`list`** adds an `update:` line for an EMerge circuitRF installed when it has tested a newer one (`update` in
+  `--json`). `solver install emerge --yes` installs it beside the older one, and new runs use it.
 - **`install <tool>`** prints what it would fetch, from where, where it would go and what it cost when measured,
   and exits **1** having fetched nothing. **`--yes`** agrees and installs. `circuitrf solver install emerge --yes`
-  installs EMerge into a Python of its own and, on an arm64 Mac with the command line tools, builds its faster
-  sparse solver in the same run; **`--gpu`** also fetches a temporary Rust toolchain into EMerge's folder to build
+  installs EMerge into a Python of its own; **`--gpu`** also fetches a temporary Rust toolchain into EMerge's folder to build
   its GPU sparse solver, and deletes the toolchain after. See
   [Getting the most speed from EMerge](em-solvers.html#emerge-speed).
 - **`remove <tool>`** removes a copy circuitRF installed, after printing the space it frees; `--all` removes every

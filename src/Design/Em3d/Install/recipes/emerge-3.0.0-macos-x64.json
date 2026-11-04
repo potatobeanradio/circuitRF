@@ -1,9 +1,9 @@
 {
   "$schema": "./recipe.schema.json",
   "comment": "brief-emi-2 R-emi2-1. uv, a pinned Python and a hash-locked EMerge, all inside the home: no system Python is read or changed. The lock lines are tools/EmergeLock/make_locks.py's output.",
-  "id": "emerge-3.0.0b3-macos-x64",
+  "id": "emerge-3.0.0-macos-x64",
   "tool": "emerge",
-  "version": "3.0.0b3",
+  "version": "3.0.0",
   "platform": "macos",
   "architecture": "x64",
   "layout": "in-place",
@@ -43,7 +43,8 @@
   ],
   "consentNotes": [
     "EMerge is free software under the GNU General Public License, version 2 or later, and so is Gmsh, which it meshes with; circuitRF starts them as separate programs and distributes neither.",
-    "On this platform EMerge's own dependencies include a vendor's multi-threaded sparse-solver library, distributed under that vendor's proprietary licence; by installing EMerge you accept its terms."
+    "On this platform EMerge's own dependencies include a vendor's multi-threaded sparse-solver library, distributed under that vendor's proprietary licence; by installing EMerge you accept its terms.",
+    "EMerge's macOS sparse solver, which comes with it from macOS 15, is under the MIT licence; circuitRF distributes nothing."
   ],
   "steps": [
     {
@@ -93,16 +94,16 @@
         "# Written by circuitRF's install assistant from recipe ${recipeId}: EMerge and every package it needs, each at",
         "# an exact version with the SHA-256 of every file this platform may install (uv pip compile --generate-hashes).",
         "attrs==26.1.0 --hash=sha256:c647aa4a12dfbad9333ca4e71fe62ddc36f4e63b2d260a37a8b83d2f043ac309",
-        "certifi==2026.10.19 --hash=sha256:42d35340cc5b9ba78e818ddbff0c5b1c2b779de448a340fd1b989f5fa8670e1b",
+        "certifi==2026.10.23 --hash=sha256:e9b54de76e530bb6cf0ccd036787103acb58fd42ba930ea8bf948ddbaa2f61d1",
         "charset-normalizer==3.5.2 --hash=sha256:4275811936e2f06feff5e598fb42a1b7ae852da8e39605211892b56b81a34efd --hash=sha256:6045373d5a89a5ec71afde535db987ca28e76dfa276c2d4c818265b375d4b055 --hash=sha256:b6b751274acb69d77b3323d6b7dbaa3c7fdfc1eb829b7eb61d262f32e1af9685",
         "cloudpickle==3.1.2 --hash=sha256:9acb47f6afd73f60dc1df93bb801b472f05ff42fa6c84167d25cb206be1fbf4a",
         "contourpy==1.4.0 --hash=sha256:e21d1d4a9db5b3a793649c7ab0ddb4697f2818929eec871a7b9c45fce7b2a1ea",
         "cycler==0.12.1 --hash=sha256:85cef7cff222d8644161529808465972e51340599459b8ac3ccbac5a854e0d30",
-        "cyclopts==5.3.0 --hash=sha256:479f92942ea286b6c132f64262d82f12b4c71d003f3d3691f572cd6ad4528bb2",
+        "cyclopts==5.3.3 --hash=sha256:b16ae3619f9447f6b7e42834586e2def254b940ce0b39f82eaf3cfee788a924f",
         "docstring-parser==0.18.0 --hash=sha256:b3fcbed555c47d8479be0796ef7e19c2670d428d72e96da63f3a40122860374b",
-        "emerge==3.0.0b3 --hash=sha256:af0834591d50134ba5fd30e975e6003df91cb0ae456d2f93a0ec03f72ba7314e",
-        "emsutil==1.1.4 --hash=sha256:bca94cbe7171dafe7006ab8d48decf7068f46b4e4ddf66898dbb78245779d4df",
-        "fonttools==4.67.0 --hash=sha256:1be99c1f07fca59510d657ef3eae584b5273fa4e203aff2383b3520744e19536 --hash=sha256:4304f03ed7f4ba000a8dcc941ad854bfa52e2f3b6112b8f099b6f431cf98e701 --hash=sha256:8239e2ca24878715a19f061d065b5721e87da81d145e48b3418f771a469b5a24",
+        "emerge==3.0.0 --hash=sha256:8b436d4f13b4590511fae9b99cf05477d98c2872f3f844a2395a17bce9fde1e6",
+        "emsutil==1.1.5 --hash=sha256:9f50833c1853a17a2f66209d10edc728edb415747b9d9d5ffb8129128dbfa161",
+        "fonttools==4.68.0 --hash=sha256:86d319a1feedfc75c8ff582d947b21fa1854e2829cb8cf9428784d750a05f1d9 --hash=sha256:d76f8fdcb6936f5e1045a0c9dd721a4bf11112e60d1e243bfa1d39f06a8b3104 --hash=sha256:f15de48b82a816c72f358e772792801bd3788a156caa76e1806cb0aa8148cd61",
         "gmsh==4.15.2 --hash=sha256:9f5a97b6633e40be331cb777ab571cef96e6ff5979bb7b20aad2438724ca417b",
         "idna==3.20 --hash=sha256:ab7ae7122974553370f0bdb919e1a960b2cd1bc1ef0276416d896db81c14582c",
         "intel-openmp==2023.2.0 --hash=sha256:b937d37b3ce736be29c9740ff7396a88ce09438b484a81b4542ea066eb3021dd",
@@ -113,36 +114,36 @@
         "matplotlib==3.11.2 --hash=sha256:7d43ff8cebb50840648cb6429b2228621dbd709010f3117b3740abb20abf21c0",
         "mdurl==0.1.2 --hash=sha256:84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8",
         "mkl==2023.2.2 --hash=sha256:d13bbffd3315d135d1584cb33ddba76ed3130201963d1efcfb9fbe3a631fb956",
-        "msgpack==1.2.3 --hash=sha256:21bfa4d2aa0b04c1806ef778a1199e9e53ea2441bcbf284420a32083896320b8",
+        "msgpack==1.2.4 --hash=sha256:fb811ac3d463a75013b234d2aae56b9f0bdb0105caf4dd2ee65305b6a8a6078d",
         "msgpack-numpy==0.4.8 --hash=sha256:773c19d4dfbae1b3c7b791083e2caf66983bb19b40901646f61d8731554ae3da",
         "numpy==2.2.6 --hash=sha256:0811bb762109d9708cca4d0b13c4f67146e3c3b7cf8d34018c722adb2d957c84 --hash=sha256:55a4d33fa519660d69614a9fad433be87e5252f4b03850642f88993f7b2ca566",
         "packaging==26.3 --hash=sha256:d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c",
         "pillow==13.0.0 --hash=sha256:ef5fe6b7db3f501c56000ba8fe7c7e1a35ca1d45824fbeb95a67daa85cff4dbe",
-        "platformdirs==4.13.5 --hash=sha256:53d3ec4280b815c1e0b02edad7f9ee8fda1ba9c0865dd9c2e6e63849ce82fc1e",
+        "platformdirs==4.14.5 --hash=sha256:8e778c6fa421516f4d3369449f8df3b0e1b72c0e0005fe88e3ec772d0a14e750",
         "pooch==1.9.0 --hash=sha256:f265597baa9f760d25ceb29d0beb8186c243d6607b0f60b83ecf14078dbc703b",
         "psutil==7.2.2 --hash=sha256:ed0cace939114f62738d808fdcecd4c869222507e266e574799e9c0faa17d486",
         "pygments==2.21.0 --hash=sha256:2363c69b61c4a97c838da3b130dcd6468f4848992b21a82f2a63ec34377137d9",
-        "pyobjc-core==12.2.2 --hash=sha256:950bd2d9c74634398c4e3d24ef2f213d4e23d705083697464fa67afedc53c1ad",
-        "pyobjc-framework-cocoa==12.2.2 --hash=sha256:600b1723184ca094931330e79355274949965460e23de38628d601b5a967baf9",
+        "pyobjc-core==13.0 --hash=sha256:f29f7cdb3969268716017ada9516b94f6dd1c66c2e415274b5ac1169440da1a4",
+        "pyobjc-framework-cocoa==13.0 --hash=sha256:bb0bcba2e4e9d05af875306e0e055cfc2f152fd602d5f2f1a54490adebebcd34",
         "pyparsing==3.3.3 --hash=sha256:ece8c00a69cf01b45d0b1dedabb469c90d8caf996d4fda40f147627a122849a4",
-        "python-dateutil==3.0.0 --hash=sha256:3c79630202e4152c6add678446984236efe4f57e84d8e892aab0637bab82e9fd",
-        "pyvista==0.49.1 --hash=sha256:e4bd78c829051207e885281c45d03280dcde25445e1885c0824518ea7849b1c8",
+        "python-dateutil==4.0.0 --hash=sha256:a5e246f79eb80475e691bf93862cead98decd8a498cf53ba0516fcdc0f50dc1c",
+        "pyvista==0.49.2 --hash=sha256:63f78495b30e146c9d1debeca7fa44c7a3935cc9f9ded8638b809ef955fc167a",
         "pyvista-validation==0.2.2 --hash=sha256:4ae9af24e888e4ffc941fc01529cc3a4668bd0de7066f98e41aa1d02a5e23d58",
         "requests==2.34.2 --hash=sha256:2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0",
         "rich==15.0.0 --hash=sha256:33bd4ef74232fb73fe9279a257718407f169c09b78a87ad3d296f548e27de0bb",
         "rich-rst==2.2.0 --hash=sha256:1ea1c43813dc4a8d86475fce27ffb74e0ada3d4656c9f8130ba2a59868055fe9",
         "scipy==1.18.1 --hash=sha256:3ab3523da44749156e1f68b464dc56af11ae4cbc5c739a49d05f32b982eca9f3 --hash=sha256:75b00eb8fb802090aa903f4ea1c7f5a584779f967361e68b7e98e531cc2d7174",
-        "scooby==0.12.0 --hash=sha256:65dea5b32006ef554aea9e945032c0c448eaacada96078187681e24f0a2fe8fa",
-        "six==1.17.0 --hash=sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274",
+        "scooby==0.12.1 --hash=sha256:4e3e474a3542fd1d19d775cea70d19ce58a005102c0206955dddbbd33f07eb4e",
         "tbb==2021.10.0 --hash=sha256:5049f3be64664897f33ac1474a1bb1cfa45274cd8f4541e91fee4eda5c4165b5",
         "typing-extensions==4.16.0 --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8",
-        "tzdata==2026.5 --hash=sha256:b683bd1b6659ddcd810ff02ad09ba821d4bf1065072805063eb35c49617905ac",
+        "tzdata==2026.6 --hash=sha256:0a10eec6e13ef16b627fabed9a5f2ba61a62b1c67f327305f4e7e412a70b4aec",
         "urllib3==2.8.0 --hash=sha256:0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3",
-        "vtk==9.7.1 --hash=sha256:3b54251c92e9a78766f5aec3d423c53e94991f9c34307a97c560e9c94eccad81"
+        "vtk==9.7.2 --hash=sha256:7e63af5118db0875492681cd3b647ae3284cde45635b02375a3147774c0947db",
+        "emerge-aasds==0.4.0 ; platform_release >= \"24\" --hash=sha256:410b4f6a1bcc8e4499bd3945acbc2ca5ca535b6b7ec4a87d5a3836e022ab07b1"
       ]
     },
     {
-      "name": "Install EMerge 3.0.0b3",
+      "name": "Install EMerge 3.0.0",
       "kind": "run",
       "command": "${home}/uv/uv-x86_64-apple-darwin/uv",
       "arguments": [
@@ -156,10 +157,11 @@
         "copy",
         "--compile-bytecode",
         "--no-config",
+        "--no-deps",
         "-r",
         "${home}/requirements.lock"
       ],
-      "comment": "--require-hashes refuses any file the lock does not name; --no-build refuses anything that would compile; --compile-bytecode spends the start-up a first run would otherwise pay."
+      "comment": "--require-hashes refuses any file the lock does not name; --no-build refuses anything that would compile; --compile-bytecode spends the start-up a first run would otherwise pay. --no-deps: the lock names everything, and EMerge's macOS sparse solver only from macOS 15, whose wheel an older macOS cannot install (tools/EmergeLock/make_locks.py)."
     },
     {
       "name": "Check that EMerge imports",
@@ -171,7 +173,7 @@
         "import emerge; print(emerge.__version__)"
       ],
       "captureAs": "emerge",
-      "expect": "3.0.0b3",
+      "expect": "3.0.0",
       "comment": "-I: the user's PYTHONPATH and site-packages play no part. A broken environment fails here, not at the first run."
     },
     {

@@ -145,6 +145,7 @@ bool impedancePanel = false;
 string? reviewPanel = null;
 bool planarMemoryDialog = false;
 bool settingsGeneral = false;
+bool settingsSolvers = false;
 bool reviewRun = false;
 string? place = null;
 string? cdd = null, output = null, view = "canvas", results = null, fc = "2", iq = null, tuning = null, clay = null, cem = null;
@@ -253,6 +254,7 @@ for (int i = 0; i < args.Length; i++)
         case "--review-panel" when i + 1 < args.Length: reviewPanel = args[++i]; break;
         case "--planar-memory-dialog": planarMemoryDialog = true; break;
         case "--settings-general": settingsGeneral = true; break;
+        case "--settings-solvers": settingsSolvers = true; break;
         case "--analysis-dialog" when i + 1 < args.Length: analysisDialog = Path.GetFullPath(args[++i]); break;
         case "--em-solves-dialog" when i + 1 < args.Length: emSolvesDialog = Path.GetFullPath(args[++i]); break;
         case "--cell-own-values" when i + 1 < args.Length: cellOwnValues = Path.GetFullPath(args[++i]); break;
@@ -365,6 +367,14 @@ if ((analysisDialog ?? emSolvesDialog) is { } sdl6Csch && output is not null)
     AppBuilder.Configure<SnapshotApp>().UseSkia()
         .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
     return analysisDialog is not null ? ShowAnalysisDialog(sdl6Csch, select, output) : ShowEmSolvesDialog(sdl6Csch, output);
+}
+// --settings-solvers: the real Solvers tab, on whatever CRF_STATE_DIR holds (so a scratch install shows its own row).
+if (settingsSolvers && output is not null)
+{
+    AppBuilder.Configure<SnapshotApp>().UseSkia()
+        .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
+    if (dark && Application.Current is { } solverApp) solverApp.RequestedThemeVariant = Avalonia.Styling.ThemeVariant.Dark;
+    return ShowSettingsSolvers(output, sizeGiven ? width : 820, sizeGiven ? height : 1000);
 }
 if (settingsGeneral && output is not null)
 {
@@ -2186,6 +2196,26 @@ static int ShowEmSolvesDialog(string csch, string path)
 
 // --settings-general: Settings ▸ General on a throwaway per-user state directory, Create or update EM setup on
 // (brief-sdl-5), scrolled to the Update Layout from Schematic options.
+static int ShowSettingsSolvers(string path, double w, double h)
+{
+    // Redirecting app data would also hide CRF_STATE_DIR's installs, which are what this mode exists to show.
+    if (Environment.GetEnvironmentVariable("CRF_STATE_DIR") is not { Length: > 0 })
+        CircuitRF.Ui.AppDataRoot.RedirectTo(Path.Combine(Path.GetTempPath(), "crf-settings-" + Guid.NewGuid().ToString("N")[..8]));
+    var view = new CircuitRF.Ui.Views.Dialogs.Em3dSolverSettingsView();
+    var window = new Window { Width = w, Height = h, Content = view };
+    window.Show();
+    // The rows ask discovery off the UI thread, and EMerge's probe starts a Python: pump until its row has answered.
+    var install = view.FindControl<Button>("EmergeInstall")!;
+    var status = view.FindControl<SelectableTextBlock>("EmergeStatus")!;
+    for (int k = 0; k < 600 && (string.IsNullOrEmpty(status.Text) || status.Text == "Checking…"); k++) { Dispatcher.UIThread.RunJobs(); System.Threading.Thread.Sleep(100); }
+    for (int k = 0; k < 20; k++) { Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); window.UpdateLayout(); System.Threading.Thread.Sleep(50); }
+    status.BringIntoView();
+    for (int k = 0; k < 6; k++) { Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); window.UpdateLayout(); }
+    window.CaptureRenderedFrame()!.Save(path);
+    Console.WriteLine($"wrote {path}: install button '{install.Content}', visible {install.IsVisible}");
+    return 0;
+}
+
 static int ShowSettingsGeneral(string path, double w, double h)
 {
     CircuitRF.Ui.AppDataRoot.RedirectTo(Path.Combine(Path.GetTempPath(), "crf-settings-" + Guid.NewGuid().ToString("N")[..8]));

@@ -93,12 +93,16 @@ public static class EmergeSolver
     /// core count, the optional sparse solvers EMerge reports available, and the direct solver EMerge itself picks
     /// for a large driven system.
     ///
-    /// <para><b>EMerge's internals are read by pattern, not by name.</b> Its solver flags are module-level
-    /// <c>_&lt;NAME&gt;_AVAILABLE</c> booleans (EMerge 3.0.0b2's <c>emerge/_emerge/solver.py</c>), and its own choice
-    /// is <c>AutomaticRoutine().pick_solver</c>, which reads only the matrix's size and kind (here 20,000 unknowns,
-    /// complex symmetric: what a driven FEM system is). Both are internal and may move, so each is asked inside its
-    /// own <c>try</c>, and a missing one reads as "not reported" — never as a failed probe. Only <c>import emerge</c>
-    /// failing makes the answer a refusal.</para>
+    /// <para><b>EMerge's internals are asked in two layouts.</b> From 3.0 a solver is a class in
+    /// <c>emerge/_emerge/solvers</c> with an <c>available</c> flag, listed in <c>PUBLIC_SOLVERS</c>; before it the flags were
+    /// module-level <c>_&lt;NAME&gt;_AVAILABLE</c> booleans in <c>emerge/_emerge/solver.py</c>. An EMerge a user installed
+    /// themselves may be either, so both are read, and the optional-solver list keeps the older spelling: lower case, without
+    /// the solvers every EMerge has. Its own choice is <c>AutomaticRoutine().pick_solver</c>, which reads only the matrix's
+    /// size and kind (here 20,000 unknowns, complex symmetric: what a driven FEM system is), with the GPU solver out of it as
+    /// the driver has it on a run on the CPU, and the x64 library's solver out of it on arm64, where EMerge wrongly reports it on
+    /// Linux, so the answer is what such a run uses. Each is asked inside its own
+    /// <c>try</c>, and a missing one reads as "not reported" — never as a failed probe. Only <c>import emerge</c> failing
+    /// makes the answer a refusal.</para>
     /// </summary>
     public const string ProbeSource = """
         import json, os, platform, re, sys
@@ -115,13 +119,28 @@ public static class EmergeSolver
         except Exception:
             out["gmsh"] = None
         try:
-            from emerge._emerge import solver as s
-            out["sparseSolvers"] = sorted(m.group(1).lower() for n in dir(s) if (m := re.fullmatch(r"_([A-Z0-9]+)_AVAILABLE", n)) and getattr(s, n) is True)
+            from emerge._emerge import solvers as s
+            from emerge._emerge.solveroutine import AutomaticRoutine
+            if platform.machine().lower() in ("aarch64", "arm64"):
+                for n, c in s.PUBLIC_SOLVERS.items():
+                    if n not in ("SuperLU", "UMFPACK", "MUMPS", "AASDS", "CHOLMOD", "RSLab", "Sparta", "BiCGSTAB", "CG", "Corvid", "LAPACK", "ARPACK"):
+                        c.available = False
+            standard = {"SuperLU", "BiCGSTAB", "CG", "Corvid", "LAPACK", "ARPACK"}
+            out["sparseSolvers"] = sorted(n.lower() for n, c in s.PUBLIC_SOLVERS.items() if c.available and n not in standard)
+            kind = s.SolverSparta
         except Exception:
-            out["sparseSolvers"] = []
+            try:
+                from emerge._emerge import solver as s
+                AutomaticRoutine = s.AutomaticRoutine
+                out["sparseSolvers"] = sorted(m.group(1).lower() for n in dir(s) if (m := re.fullmatch(r"_([A-Z0-9]+)_AVAILABLE", n)) and getattr(s, n) is True)
+                kind = None
+            except Exception:
+                out["sparseSolvers"] = []
         try:
             import scipy.sparse as sp
-            out["directSolver"] = type(s.AutomaticRoutine().pick_solver(sp.csc_matrix((20000, 20000), dtype=complex), None, s.MatrixType.COMPLEX_SYMMETRIC)).__name__
+            if kind is not None:
+                kind.available = False
+            out["directSolver"] = type(AutomaticRoutine().pick_solver(sp.csc_matrix((20000, 20000), dtype=complex), None, s.MatrixType.COMPLEX_SYMMETRIC)).__name__
         except Exception:
             out["directSolver"] = None
         print(json.dumps(out))

@@ -406,7 +406,8 @@ public static class SolverRecipes
             steps.Add(step);
         }
         foreach (var p in prereqs.Where(p => p.Optional))
-            Need(steps.Any(s => s.When == p.Name), $"optional prerequisite '{p.Name}' is needed by no step");
+            Need(steps.Any(s => s.When == p.Name) || prereqs.Any(q => q.Needs.Contains(p.Name)),
+                 $"optional prerequisite '{p.Name}' is needed by no step and no other prerequisite");
         Need(steps.Count > 0, "a recipe has at least one step");
         foreach (string id in d.KnownFailures ?? [])
             Need(Install.KnownFailures.All.Any(k => k.Id == id), $"known failure '{id}' is not in KnownFailures");

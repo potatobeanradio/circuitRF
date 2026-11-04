@@ -135,6 +135,7 @@ Update Layout from Schematic ticked, scrolled to the Layout group's options:
 
 ```
 dotnet run --project tools/UiSnapshot --no-build -- --settings-general -o out.png [--dark] [--size WxH]
+CRF_STATE_DIR=<scratch> dotnet run --project tools/UiSnapshot --no-build -- --settings-solvers -o out.png [--dark] [--size WxH]
 ```
 
 **The technology editor** opens on a `.ctech` as the workspace opens one (the file's own content, its libraries

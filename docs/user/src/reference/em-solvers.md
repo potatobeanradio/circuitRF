@@ -303,7 +303,8 @@ on the same mesh, every solver below gave the same S-parameters to within 1e-10 
 
 | Computer | What the install gives | What makes it faster |
 |---|---|---|
-| macOS, arm64 | A multi-threaded sparse solver that needs no compiler | **The command line tools** (`xcode-select --install`). circuitRF then builds a faster solver itself, in a few seconds, the next time Settings ▸ Solvers is shown or an EMerge run starts. With a Rust toolchain as well, it builds the GPU solver too ([below](#emerge-gpu)) |
+| macOS 15 or later, arm64 | EMerge's macOS sparse solver, the fastest on the CPU | For the GPU: **the command line tools** (`xcode-select --install`) and a Rust toolchain. circuitRF then builds the GPU solver itself ([below](#emerge-gpu)) |
+| macOS 13 or 14, arm64 | A multi-threaded sparse solver | **macOS 15**: EMerge's macOS sparse solver comes only for macOS 15 or later. Reinstall EMerge after updating. The GPU solver is available as above |
 | macOS, x64; Linux, x64; Windows | A multi-threaded sparse solver that EMerge's own dependencies bring | Nothing to add. Not yet measured on these computers |
 | Linux, arm64 | The same no-compiler multi-threaded solver as an arm64 Mac | Nothing to add. Expected from the arm64 Mac's measurement; not yet measured on Linux |
 
@@ -313,16 +314,16 @@ sweep over 8–12 GHz, every core in use:
 | Sparse solver | 9,835 tetrahedra | 19,426 tetrahedra | Peak memory at 9,835 |
 |---|---|---|---|
 | EMerge's single-threaded default, used when nothing faster is installed | 48.6 s | 235.6 s | 2.87 GB |
-| The install's multi-threaded solver | 4.0 s | 11.2 s | 2.18 GB |
-| The solver built with the command line tools | **3.0 s** | **9.2 s** | 1.85 GB |
+| The multi-threaded solver of macOS 13 and 14 | 4.0 s | 11.2 s | 2.18 GB |
+| EMerge's macOS sparse solver | **3.0 s** | **9.2 s** | 1.85 GB |
 
 **Which one you have** is in **Settings ▸ Solvers**: the EMerge row says *Fast sparse solver*, or
 *Baseline sparse solver, one core* with what to install, and *GPU sparse solver installed* when there
 is one. `circuitrf solver list` prints the same. Each run's cost line names the solver it used.
 
 **Cores.** EMerge's sparse solver uses the setup's *Cores* setting as its thread count, and every
-physical core when that is *Automatic*. On one core the run above took 2.0× (the built solver) to 4.1×
-(the install's) as long as on ten. circuitRF does not split a sweep across several EMerge processes: on
+physical core when that is *Automatic*. On one core the run above took 2.0× (EMerge's macOS solver) to 4.1×
+(the other multi-threaded solver) as long as on ten. circuitRF does not split a sweep across several EMerge processes: on
 the cavity, two processes of five threads took 13.2 s against one of ten's 10.0 s, and each process
 holds its own copy of the matrices.
 

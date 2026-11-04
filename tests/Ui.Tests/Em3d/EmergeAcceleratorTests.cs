@@ -35,16 +35,15 @@ public sealed class EmergeAcceleratorTests
                                .Select(f => Path.GetFileName(f)).ToList();
         Assert.Equal(["EmergeAccelerator.cs"], wording);
 
-        // What it says for circuitRF's own install with the faster solver still to build: the tier, then the recipe's
+        // What it says for circuitRF's own install with the GPU solver still to build: the tier, then the recipe's
         // prerequisite and its command.
-        var recipe = SolverRecipes.All.Single(r => r.Id == "emerge-3.0.0b3-macos-arm64");
+        var recipe = SolverRecipes.All.Single(r => r.Id == "emerge-3.0.0-macos-arm64");
         var record = new InstallRecord
         {
             Recipe = recipe.Id, Optional = [new(recipe.OptionalGroups[0].When.Name, OptionalStepsStatus.Missing, "unmet")],
         };
-        Assert.Equal("Baseline sparse solver, one core. Install the command line tools (xcode-select --install) " +
-                     "and circuitRF will add the faster one automatically.",
-                     EmergeAccelerator.Sentence(Baseline, record, recipe, new SolverInstaller { Distribution = [] }));
+        Assert.StartsWith("Baseline sparse solver, one core. GPU solving is available after installing a Rust toolchain (",
+                          EmergeAccelerator.Sentence(Baseline, record, recipe, new SolverInstaller { Distribution = [] }));
 
         // A run on the baseline adds the sentence as a Note, once per session.
         var found = new SolverInstallation(SolverTool.Emerge, "/x/bin/python", "3.0.0b2", null, Baseline.Banner,

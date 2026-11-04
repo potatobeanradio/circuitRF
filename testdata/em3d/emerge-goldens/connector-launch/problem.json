@@ -1,7 +1,7 @@
 {
   "format": "circuitRF EMerge problem",
   "version": 2,
-  "testedEmerge": ["3.0.0b2", "3.0.0b3"],
+  "testedEmerge": ["3.0.0b2", "3.0.0b3", "3.0.0"],
   "problem": "driven",
   "frequenciesHz": [2000000000, 6000000000, 10000000000, 14000000000, 18000000000],
   "sizingHz": 18000000000,

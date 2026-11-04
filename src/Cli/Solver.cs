@@ -100,7 +100,7 @@ internal static class Solver
                 [.. s.Capabilities.Select(c => new SolverCapabilityJson(CapabilityId(c.Capability), Describe(c.Capability),
                                                                         c.Available, c.Detail) { Devices = c.Devices })],
                 s.OfferInstall ? $"circuitrf solver install {SolverHomes.ToolId(tool)}" : null)
-                { Tier = s.Found?.Emerge?.TierText, GpuSolving = EmergeGpu(s.Found) });
+                { Tier = s.Found?.Emerge?.TierText, GpuSolving = EmergeGpu(s.Found), Update = s.OfferUpdate ? s.Recipe?.Version : null });
             Console.WriteLine($"{s.Name}: {(s.Found is null ? "not found" : s.InstalledByCircuitRf ? "installed by circuitRF" : "found")}");
             Console.WriteLine($"  {s.Summary}");
             if (s.Found is { } found)
@@ -124,6 +124,8 @@ internal static class Solver
                 Console.WriteLine($"  installed by circuitRF: {home.Version} at {home.Home}" +
                                   (home.Distribution is { } d ? $" in the Linux subsystem distribution '{d}'" : "") + "; " +
                                   $"remove: circuitrf solver remove {SolverHomes.ToolId(tool)} --version {home.Version}");
+            if (s.OfferUpdate)
+                Console.WriteLine($"  update: circuitrf solver install {SolverHomes.ToolId(tool)}   ({s.Found?.Version} to {s.Recipe?.Version})");
             if (s.OfferInstall)
                 Console.WriteLine($"  install: circuitrf solver install {SolverHomes.ToolId(tool)}" +
                                   (s.Recipe is { } r ? $"   (recipe {r.Id})" : "   (inside the Linux subsystem)"));

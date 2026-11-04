@@ -15,6 +15,10 @@ public sealed record SolverStatus(
     SolverTool Tool, string Name, SolverInstallation? Found, IReadOnlyList<string> Rejected, string Summary,
     IReadOnlyList<SolverCapabilityVerdict> Capabilities, SolverRecipe? Recipe, bool OfferInstall)
 {
+    /// <summary>Whether <i>Update to …</i> is offered in place of <i>Install …</i>: <see cref="SolverInstaller.OffersUpdate"/>, for
+    /// EMerge, whose install takes minutes. <see cref="Recipe"/> is what it installs.</summary>
+    public bool OfferUpdate { get; init; }
+
     /// <summary>True when the program found is one circuitRF installed — the only kind brief 25 may remove.</summary>
     public bool InstalledByCircuitRf => Found?.HowFound == SolverHowFound.Installed;
 
@@ -45,6 +49,9 @@ public sealed record SolverStatus(
         string summary = d.DescribeForSettings(found, rejected);
         if (recipe is null && !SolverInstallPlan.HasRoute(tool) && found is not { Validated: true } && SolverRecipes.ByHand(tool) is { } byHand)
             summary += " " + byHand;
-        return new SolverStatus(tool, d.Name, found, rejected, summary, capabilities, recipe, offer);
+        return new SolverStatus(tool, d.Name, found, rejected, summary, capabilities, recipe, offer)
+        {
+            OfferUpdate = tool == SolverTool.Emerge && SolverInstaller.OffersUpdate(d, found, recipe),
+        };
     }
 }

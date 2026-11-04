@@ -163,6 +163,20 @@ public sealed class SolverInstaller
             && discovery.ReadEnvironment(discovery.EnvironmentVariable)?.Trim() is not { Length: > 0 };
     }
 
+    /// <summary>
+    /// Whether <i>Update to … </i> is offered: what discovery found is circuitRF's own install, on this machine, of a version older
+    /// on the tested list than the recipe it would install now. On every platform that has a recipe. The update is the ordinary
+    /// install of that recipe, beside the older home: discovery takes the newest, a failed install leaves the older one working,
+    /// and the older one stays until it is removed (R-em3d25-3). Named routes are the user's own choice and are not offered one.
+    /// </summary>
+    public static bool OffersUpdate(SolverDiscovery discovery, SolverInstallation? found, SolverRecipe? recipe)
+    {
+        if (found is not { HowFound: SolverHowFound.Installed, Distribution: null } || recipe is null || recipe.Version == found.Version) return false;
+        var tested = discovery.ValidatedVersions.Select(v => v.Release).ToList();
+        int newest = tested.IndexOf(recipe.Version);
+        return newest >= 0 && tested.IndexOf(found.Version ?? "") < newest;
+    }
+
     // ── R-em3d24-2a: consent ─────────────────────────────────────────────────────────────────────
 
     /// <summary>
@@ -192,6 +206,9 @@ public sealed class SolverInstaller
         sb.AppendLine($"It installs into {HomeFor(recipe)}, and changes nothing outside it.");
         if (ConsentNote is { } where) sb.AppendLine(where);
         sb.AppendLine(DescribeMeasured(recipe.Measured));
+        if (Target.Distribution is null)
+            foreach (var older in new SolverUninstaller([Root]) { Discovery = Discovery }.Installed(recipe.Tool).Where(r => r.Version != recipe.Version))
+                sb.AppendLine($"{name} {older.Version}, already installed, stays where it is. New runs use {recipe.Version}, and Settings ▸ Solvers offers to remove {older.Version}.");
         if (recipe.Tool == SolverTool.Palace) sb.AppendLine(ParmetisNote);
         foreach (string note in recipe.ConsentNotes) sb.AppendLine(note);
         // brief-emi-3 R-emi3-2 — the optional tail is part of what is agreed to here; nothing asks again later.

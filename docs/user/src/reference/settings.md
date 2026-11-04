@@ -549,25 +549,30 @@ run name the versions that are tested.
 
 **Install EMerge …** puts a Python of its own, the newest tested EMerge and every package EMerge needs
 into one folder of circuitRF's, each at a pinned version and checked against a recorded checksum; no Python of yours is read
-or changed. It takes about two minutes and 1 GB. EMerge and Gmsh are free software under the GNU GPL;
+or changed. It takes a few minutes and 1 to 2 GB. On Linux, if system libraries it needs are missing, it says
+which before downloading anything and gives you the command that installs them. EMerge and Gmsh are free software under the GNU GPL;
 on an x64 computer, EMerge's own dependencies also include a vendor's multi-threaded sparse-solver
 library under that vendor's licence. The install says so before anything is downloaded.
 
 **The install also uses the fastest sparse solver your computer can have**, without asking again. On
-an arm64 macOS computer that is a solver it builds from source, which takes a few seconds and needs the
-command line tools. If they are not installed, the status line says so — *Install the command line tools
-(xcode-select --install) and circuitRF will add a faster one automatically* — and **Install the command
-line tools…** beside it starts their installer. When they are in place, circuitRF builds the faster
-solver by itself, the next time this tab is shown or an EMerge run starts. Until then EMerge still runs,
-and gives the same answers, with a multi-threaded solver that needs no compiler. What each solver is worth,
+macOS 15 or later that is EMerge's macOS sparse solver, which comes with it; on macOS 13 and 14, EMerge
+runs and gives the same answers with another multi-threaded solver. What each solver is worth,
 measured, and what each other kind of computer gets, is in
 [EM Solvers ▸ Getting the most speed from EMerge](em-solvers.html#emerge-speed).
+
+**When circuitRF has tested a newer EMerge than the one you installed**, **Update to EMerge …** takes the
+place of the Install button. It works as an install does, and shows what it will download first. The new
+version goes in beside the one you have, so if it fails nothing changes; when it succeeds, new runs use it,
+and **Remove older EMerge …** removes the old one when you no longer want to compare against it. A Python
+you named yourself is left alone and is not offered this. On an arm64 macOS computer, GPU solving comes back
+by itself if a Rust toolchain is installed, and otherwise from **Enable GPU solving…**.
 
 **Uninstall …** on the EMerge row removes the whole folder: its Python, EMerge, and every solver built
 into it. The install puts nothing of EMerge's anywhere else.
 
 **On an arm64 macOS computer it also builds EMerge's GPU sparse solver**, when a Rust toolchain is
-installed as well as the command line tools. The status line then says *GPU sparse solver installed*.
+installed as well as the command line tools. If those tools are missing, **Install the command line
+tools…** beside the status line starts their installer. The status line then says *GPU sparse solver installed*.
 Without Rust it says *GPU solving is available after installing a Rust toolchain*, and **Enable GPU
 solving…** beside it fetches Rust's minimal toolchain into EMerge's own folder, builds the GPU solver with
 it, and deletes the toolchain. It shows what it will fetch first: about 100 MB and half a minute. Your

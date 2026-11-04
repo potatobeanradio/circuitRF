@@ -344,6 +344,7 @@ public partial class Em3dSolverSettingsView : UserControl
         {
             string text;
             bool offer = false;
+            string? updateTo = null;
             RecipePrerequisite? accelerate = null;
             (SolverRecipe, InstallRecord, RecipePrerequisite)? enableGpu = null;
             bool found = false;
@@ -358,6 +359,7 @@ public partial class Em3dSolverSettingsView : UserControl
                                           gpu: CircuitRF.Ui.Layout.Em.EmPalaceDevicePreference.Preferred == PalaceDevice.Gpu);
                 text  = row.GpuLine is { } gpuLine ? row.Summary + Environment.NewLine + gpuLine : row.Summary;
                 offer = row.OfferInstall;
+                updateTo = row.OfferUpdate ? row.Recipe?.Version : null;
                 found = row.Found is not null;
                 located = Locate(row.Found?.Path, row.Found?.Distribution, discovery.Tool);
                 if (emerge) accelerate = EmergeAccelerator.InstallerFor(row.Found);
@@ -380,9 +382,17 @@ public partial class Em3dSolverSettingsView : UserControl
                     ToolTip.SetTip(EmergeDeviceBox, found ? DeviceTip : NoEmergeDeviceTip);
                 }
                 bool running = CircuitRF.Ui.Views.Dialogs.SolverInstallRunner.IsRunning(discovery.Tool);
-                install.IsVisible = offer || running;
+                install.IsVisible = offer || updateTo is not null || running;
                 install.IsEnabled = !running;
-                install.Content   = running ? $"Installing {discovery.Name}… (see Messages)" : $"Install {discovery.Name}…";
+                install.Content   = running ? $"{(updateTo is null ? "Installing" : "Updating")} {discovery.Name}… (see Messages)"
+                                  : updateTo is not null ? $"Update to {discovery.Name} {updateTo}…"
+                                  : $"Install {discovery.Name}…";
+                if (emerge)
+                {
+                    _emergeInstallTip ??= ToolTip.GetTip(install);
+                    ToolTip.SetTip(install, updateTo is null ? _emergeInstallTip
+                        : $"Installs {discovery.Name} {updateTo} beside the version you have. Shows what it will download first. If it fails, the version you have keeps working; when it succeeds, new runs use {updateTo} and you can remove the older one here.");
+                }
             });
         });
     }
@@ -463,6 +473,8 @@ public partial class Em3dSolverSettingsView : UserControl
         if (prerequisite is not null)
             EmergeAccelerate.Content = _accelerateWatching ? $"Waiting for {prerequisite.Name}…" : $"Install {prerequisite.Name}…";
     }
+
+    private object? _emergeInstallTip;
 
     /// <summary>One watch per process: a second Settings window must not start the installer twice.</summary>
     private static bool _accelerateWatching;

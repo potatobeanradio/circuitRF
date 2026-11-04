@@ -284,12 +284,14 @@ public sealed partial class SolverDiscovery
             versionArguments: ["-I", "-c", EmergeSolver.ProbeSource],
             // TESTED versions, oldest first. An untested EMerge RUNS, with a warning naming these (the owner's call,
             // 2026-10-21, as Gmsh's brief-em3d-135): a user may install any version of their own. circuitRF's own recipe
-            // installs the newest one listed here. Overview O1: re-pin that recipe to 3.0.0 final before a release.
+            // installs the newest one listed here.
             // 3.0.0b3 changes no solver code against 3.0.0b2 (a thin-conductor fix after adaptive refinement, and a
             // refusal of adaptive refinement on a periodic model); src/Design/RESOLVED.md, "EMerge 3.0.0b3", has its check.
+            // 3.0.0 moves the solvers and the wave ports: src/Design/RESOLVED.md, "EMerge 3.0.0".
             validated: [
                 new SolverValidatedVersion("3.0.0b2", "3.0.0b2", null),
                 new SolverValidatedVersion("3.0.0b3", "3.0.0b3", null),
+                new SolverValidatedVersion("3.0.0", "3.0.0", null),
             ],
             extraDirectories: [], untestedRuns: true, installedOnly: true),
 
