@@ -222,18 +222,23 @@ full description.
   the face does to the field. It can be *Absorbing* (open space), *PEC* (a metal wall), *PMC* or
   *Symmetry*. A face's padding is a share of the geometry's extent along that face's own axis: 0 % touches
   the geometry, and 100 % on +Z puts one board-thickness of air above it.
-  By default, on a driven setup, the top is padded by 100 % of the geometry's height, and the other faces by multiples
-  of H, the dielectric height under the top metal: 20 H on the four sides and 10 H below, each rounded to the nearest
-  5 % of its axis. No default is more than an eighth of the longest wavelength or the structure's largest extent. On
+  By default, on a driven setup, the top is padded by 100 % of the geometry's height, the four sides by 20 H, where H is
+  the dielectric height under the top metal, and the floor by 10 H, where H is the dielectric height over the bottom
+  metal. Each is rounded to the nearest 5 % of its axis. No default is more than an eighth of the longest wavelength or the structure's largest extent. On
   a 1.6 mm board whose top dielectric is 0.2 mm that is about 4 mm of air on the sides and 1.6 mm on top; state a
   larger +Z padding when the field above the board needs more room. The floor sits on the lowest ground plane, as a
-  PEC face, when that plane is undrawn, or when it is drawn under all the other metal. A hole in that plane is allowed
+  PEC face, when that plane is undrawn, or when it is drawn under all the other metal. A drawn bottom conductor that
+  covers 95 % of the footprint is that floor even when the technology does not mark it as ground, and the notes say so. A hole in that plane is allowed
   when nothing of another net lies in or over it, so the drill holes of ground vias do not keep the floor off. A hole
   with a signal via or other metal of another net in it does, because a floor there would short that metal to
-  ground. When a hole keeps the floor off, the notes say where it is. A setup that asks for a radiation pattern keeps every face absorbing and a quarter of the longest wavelength
-  of air, and a static or eigenmode setup keeps the wavelength rule. A closed box of PEC faces is a shielded
+  ground. When a hole keeps the floor off, the notes say where it is. A setup that asks for a radiation pattern keeps every face absorbing, padded by a
+  quarter wavelength at its **pattern frequency** (`PatternFrequencyGHz`, the sweep's lowest frequency when none is
+  set). That is never more than the structure's largest extent, and never less than an eighth of a wavelength at the
+  sweep's lowest frequency. A static or eigenmode setup keeps the wavelength rule. A closed box of PEC faces is a shielded
   enclosure, and it is how the example models a package lid. Each padding box in a 3D view's Properties panel
-  gives the length it stands for, and the rule that set it, as its tooltip; `circuitrf explain` prints the same
+  shows the padding as a length, and each face row gives that length with the rule that set it (*30.6 mm — λ/4 at
+  2.45 GHz*, *0.69 mm — 10 × H*). Type a length, or a number ending in % for a share of the extent. The tooltip and
+  `circuitrf explain` give the rule in full
   (*default: 4.572 mm, 20 × H, H = 203.2 µm of dielectric under the top metal, to the nearest 5 %*).
 - **Robust meshing** (`RobustMeshing`): removes outline points that sit within a fraction of a micrometre of
   their neighbours' line, which imported artwork often has and which can stop the mesher. On unless the setup says

@@ -178,6 +178,10 @@ public static class Em3dLayoutSolids
         /// (a PEC face) when the setup states nothing for ZMin; null otherwise.</summary>
         public double? PlaneFloorZ { get; private set; }
 
+        /// <summary>brief-dfr34-2 R-dfr34-2-4 — the conductor the floor rule judged: the bottom-most drawn one, whether or not the
+        /// technology marks it ground-reference. <see cref="PlaneFloorZ"/> is its underside when it passed.</summary>
+        public PlanarExtractor.StackBand? PlaneFloorBand { get; private set; }
+
         /// <summary>brief-emb-2 R-emb2-5 — how many holes the floor plane has (none with metal over it), when it is the floor.</summary>
         public int PlaneFloorHoles { get; private set; }
 
@@ -461,10 +465,15 @@ public static class Em3dLayoutSolids
             // brief-emb-2 R-emb2-5 — a hole is allowed where no other metal lies over it (other than metal on the plane's own
             // net): closing such a hole with the floor shorts nothing. A hole with a via through it, or signal metal over it,
             // keeps the floor off, and the note says where.
-            if (!pecFloor && !FloorStatedAway && !options.Instance && ground is not null
-                && polysByBand.TryGetValue(ground.Index, out var plane) && plane.Count > 0
-                && bands.All(b => b.BottomM >= ground.BottomM - 1e-15)
-                && _viaSpans.All(v => v.Bottom.BottomM >= ground.BottomM - 1e-15)
+            // brief-dfr34-2 R-dfr34-2-4 — the floor is the bottom-most DRAWN conductor, marked ground-reference or not: the flags on
+            // an imported board describe the technology file it was read with, not the board, and a 91 % bottom pour left
+            // unmarked kept the floor off a 10-layer board. Coverage is what decides it.
+            var floorBand = bands.Where(b => b.Layer.Kind == StackupKind.Conductor && polysByBand.ContainsKey(b.Index))
+                                 .OrderBy(b => b.BottomM).FirstOrDefault();
+            if (!pecFloor && !FloorStatedAway && !options.Instance && floorBand is not null
+                && polysByBand.TryGetValue(floorBand.Index, out var plane) && plane.Count > 0
+                && bands.All(b => b.BottomM >= floorBand.BottomM - 1e-15)
+                && _viaSpans.All(v => v.Bottom.BottomM >= floorBand.BottomM - 1e-15)
                 && UnbrokenCover(plane.Select(p => p.Poly).ToList(), polysByBand.Values.SelectMany(l => l).Select(p => p.Poly),
                                  Em3dGenerator.PaddingHeight(polysByBand.Keys.Select(i => (_bandByIndex[i].BottomM, _bandByIndex[i].TopM)),
                                                              bands.Where(b => b.Layer.Kind == StackupKind.Dielectric).Select(b => (b.BottomM, b.TopM)),
@@ -497,7 +506,8 @@ public static class Em3dLayoutSolids
                     }
                     PlaneFloorHoles += p.Poly.HoleRings.Count;
                 }
-                if (PlaneFloorBlockedAt is null) PlaneFloorZ = ground.BottomM;
+                PlaneFloorBand = floorBand;
+                if (PlaneFloorBlockedAt is null) PlaneFloorZ = floorBand.BottomM;
                 else PlaneFloorHoles = 0;
             }
 

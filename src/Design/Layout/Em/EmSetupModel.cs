@@ -471,6 +471,31 @@ public sealed class EmSetup
     /// </summary>
     public static FrequencySpec NewSetupFrequency() => new("0.5", "8", "0.05", SweepKind.Linear, "GHz", "GHz", "GHz");
 
+    /// <summary>Whether <paramref name="f"/> is still exactly <see cref="NewSetupFrequency"/> — the sweep nobody has chosen.</summary>
+    public static bool IsNewSetupFrequency(FrequencySpec f)
+    {
+        var n = NewSetupFrequency();
+        return f.Mode == n.Mode && f.Kind == n.Kind && f.StartExpr == n.StartExpr && f.StopExpr == n.StopExpr &&
+               f.StepExpr == n.StepExpr && f.StartUnit == n.StartUnit && f.StopUnit == n.StopUnit && f.StepUnit == n.StepUnit;
+    }
+
+    /// <summary>
+    /// brief-dfr34-2 R-dfr34-2-2 — the sweep an antenna is offered round the frequency its pattern is read at: half to one and
+    /// a half times <paramref name="ghz"/>, in a round step of about a hundredth of it (1, 2 or 5 × a power of ten), with
+    /// <paramref name="ghz"/> itself on the grid. 2.45 GHz gives 1.23 to 3.67 GHz in 20 MHz steps. The 0.5-8 GHz new-setup
+    /// sweep starts a decade below a 2.4 GHz antenna, which is what made its default air box λ/4 at 0.5 GHz.
+    /// </summary>
+    public static FrequencySpec SweepAround(double ghz)
+    {
+        if (!(ghz > 0) || !double.IsFinite(ghz)) throw new ArgumentOutOfRangeException(nameof(ghz));
+        double raw = ghz / 100, decade = Math.Pow(10, Math.Floor(Math.Log10(raw)));
+        double m = raw / decade;
+        double step = (m >= 5 ? 5 : m >= 2 ? 2 : 1) * decade;
+        double k = Math.Round(ghz / 2 / step, MidpointRounding.AwayFromZero);
+        static string G(double v) => Math.Round(v, 9).ToString("G9", System.Globalization.CultureInfo.InvariantCulture);
+        return new FrequencySpec(G(ghz - k * step), G(ghz + k * step), G(step), SweepKind.Linear, "GHz", "GHz", "GHz");
+    }
+
     /// <summary>
     /// <b>LFE — what a planar EDGE port's source returns through.</b> <c>Ground</c> (the default) is
     /// the true edge port: the source sits between the ground plane and the strip's end, so the port
@@ -512,6 +537,16 @@ public sealed class EmSetup
     /// existed loads and re-serialises byte-identically.</para>
     /// </summary>
     public bool RadiationPattern { get; set; }
+
+    /// <summary>
+    /// <b>brief-dfr34-2 R-dfr34-2-1 — the frequency the radiation pattern is read at, GHz; null when none is stated.</b> A
+    /// driven 3D run that asks for a pattern pads its air box by a quarter wavelength HERE rather than at the sweep's lowest
+    /// frequency, which on a default 0.5 GHz start put 150 mm of air round a 1.5 mm board
+    /// (<c>Em3dGenerator.DefaultPadding</c>). Read only when <see cref="RadiationPattern"/> is on. It sizes the box only:
+    /// each solver still produces the pattern at the points it always has. Omitted from the <c>.cem</c> when null, so a file
+    /// written before it existed loads and re-serialises byte-identically.
+    /// </summary>
+    public double? PatternFrequencyGHz { get; set; }
 
     /// <summary>
     /// <b>brief-dfr28-3 — Robust meshing: a 3D run removes each layout outline point that lies within a fraction of a
@@ -829,6 +864,7 @@ public sealed class EmSetup
         LegacyRawSolveRequested = LegacyRawSolveRequested,
         DeembedOutsideCalibrationValidity = DeembedOutsideCalibrationValidity,
         RadiationPattern       = RadiationPattern,
+        PatternFrequencyGHz    = PatternFrequencyGHz,
         RobustMeshing          = RobustMeshing,
         ReferenceInputPowerDbm = ReferenceInputPowerDbm,
         SnpOutputPathOverride  = SnpOutputPathOverride,

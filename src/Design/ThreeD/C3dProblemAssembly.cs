@@ -220,7 +220,8 @@ public static class C3dProblemAssembly
         try { fMin = setup.ExpandFrequencies().Where(f => f > 0).DefaultIfEmpty(1e9).Min(); }
         catch (Exception) { fMin = 1e9; }
         return Em3dGenerator.PaddedAirBox(setup, (extent.X0, extent.Y0, extent.X1, extent.Y1, extent.Z0, extent.Z1),
-                                          fMin, PlaneFloor(setup, e), waves: [], [], out refusal, PaddingHeight(e));
+                                          fMin, PlaneFloor(setup, e), waves: [], [], out refusal, PaddingHeight(e),
+                                          PaddingHeightBelow(e));
     }
 
     /// <summary>
@@ -229,12 +230,23 @@ public static class C3dProblemAssembly
     /// ground-reference conductor, with no hole in it, flush with the bottom of everything, covering
     /// <see cref="Em3dGenerator.PlaneFloorCover"/> of the modelled footprint. Null otherwise — the floor is then padded like any face.
     /// </summary>
-    public static double? PlaneFloor(EmSetup setup, C3dElaboration e)
+    public static double? PlaneFloor(EmSetup setup, C3dElaboration e) => PlaneFloor(setup, e, out _);
+
+    /// <summary><see cref="PlaneFloor(EmSetup, C3dElaboration)"/>, and whether any of the floor's metal is on a conductor the
+    /// technology does not mark ground-reference (brief-dfr34-2 R-dfr34-2-4: coverage decides, the flag does not).</summary>
+    public static double? PlaneFloor(EmSetup setup, C3dElaboration e, out bool unmarked)
     {
+        unmarked = false;
         if (setup.AirBox?.ZMin is not null || !Em3dGenerator.ByHeightApplies(setup) || e.ModelledExtent() is not { } x) return null;
-        var ground = e.GroundBandObjects.ToHashSet(StringComparer.Ordinal);
-        var planeSolids = e.Solids.Where(s => ground.Contains(s.Name) && !e.NotModelled.Contains(s.Name) && s.Role == Em3dRole.Conductor
-                                              && s.Primitive is Em3dExtrudedPolygon ep && Math.Abs(ep.ZBottom - x.Z0) <= 1e-9).ToList();
+        // brief-dfr34-2 R-dfr34-2-4 — the bottom-most layout conductor flush with the bottom of everything is the candidate,
+        // marked ground-reference or not: the flags on an imported board describe the technology file, not the board.
+        var marked = e.GroundBandObjects.ToHashSet(StringComparer.Ordinal);
+        var ground = e.Solids.Where(s => s.Role == Em3dRole.Conductor && !e.NotModelled.Contains(s.Name)
+                                         && (marked.Contains(s.Name) || e.Origins.TryGetValue(s.Name, out var o)
+                                             && o.Kind == Em3dObjectKind.Conductor && o.StackupEntry is not null)
+                                         && s.Primitive is Em3dExtrudedPolygon ep && Math.Abs(ep.ZBottom - x.Z0) <= 1e-9)
+                             .Select(s => s.Name).ToHashSet(StringComparer.Ordinal);
+        var planeSolids = e.Solids.Where(s => ground.Contains(s.Name)).ToList();
         var plane = planeSolids.Select(s => (Em3dExtrudedPolygon)s.Primitive).ToList();
         if (plane.Count == 0) return null;
         // brief-emb-2 R-emb2-5 — a hole is allowed where no other conductor (outside the ground set) lies over it. Metal on the
@@ -243,7 +255,7 @@ public static class C3dProblemAssembly
         {
             var planeNets = planeSolids.SelectMany(s => e.ObjectNets.TryGetValue(s.Name, out var n) ? n : []).ToHashSet(StringComparer.Ordinal);
             bool OwnNet(string name) => e.ObjectNets.TryGetValue(name, out var n) && n.Count > 0 && n.All(planeNets.Contains);
-            var others = e.Solids.Where(s => s.Role == Em3dRole.Conductor && !ground.Contains(s.Name) && !e.NotModelled.Contains(s.Name)
+            var others = e.Solids.Where(s => s.Role == Em3dRole.Conductor && !ground.Contains(s.Name) && !marked.Contains(s.Name) && !e.NotModelled.Contains(s.Name)
                                              && !OwnNet(s.Name)).ToList();
             static bool Upright(Em3dPrimitive p) => p is Em3dCylinder c &&
                 Math.Abs(c.AxisStart.X - c.AxisEnd.X) < 1e-12 && Math.Abs(c.AxisStart.Y - c.AxisEnd.Y) < 1e-12;
@@ -253,8 +265,11 @@ public static class C3dProblemAssembly
                               .Select(s => s.Primitive is Em3dExtrudedPolygon ep ? ep.Outline : Rect(Em3dProblem.Bounds(s.Primitive)));
             if (Em3dGenerator.CoveredHole(plane.SelectMany(p => p.Holes), metal, drills) is not null) return null;
         }
-        return Em3dGenerator.PlaneCoversFootprint(plane.Select(p => (IReadOnlyList<(double X, double Y)>)[.. p.Outline.Select(q => (q.X, q.Y))]),
-                                                  x.X0, x.Y0, x.X1, x.Y1, PaddingHeight(e)) ? x.Z0 : null;
+        if (!Em3dGenerator.PlaneCoversFootprint(plane.Select(p => (IReadOnlyList<(double X, double Y)>)[.. p.Outline.Select(q => (q.X, q.Y))]),
+                                                x.X0, x.Y0, x.X1, x.Y1, PaddingHeight(e)))
+            return null;
+        unmarked = planeSolids.Any(s => !marked.Contains(s.Name));
+        return x.Z0;
 
         static IReadOnlyList<Point2> Rect((double X0, double Y0, double Z0, double X1, double Y1, double Z1) b)
             => [new(b.X0, b.Y0), new(b.X1, b.Y0), new(b.X1, b.Y1), new(b.X0, b.Y1)];
@@ -265,6 +280,11 @@ public static class C3dProblemAssembly
         => Em3dGenerator.PaddingHeight(e.Solids.Where(s => !e.NotModelled.Contains(s.Name)),
                                        e.Sheets.Where(s => !e.NotModelled.Contains(s.Name)), floorZ: null);
 
+    /// <summary>brief-dfr34-2 R-dfr34-2-3 — the floor's H, from the bottom metal upward, read off the content a run models.</summary>
+    private static double? PaddingHeightBelow(C3dElaboration e)
+        => Em3dGenerator.PaddingHeightBelow(e.Solids.Where(s => !e.NotModelled.Contains(s.Name)),
+                                            e.Sheets.Where(s => !e.NotModelled.Contains(s.Name)));
+
     /// <summary>Designer feedback round 11 — why a face the setup leaves unstated stands where it does ("λ/8 at 2 GHz, the
     /// sweep's lowest frequency"), on the same sweep and extent <see cref="AirBox"/> pads by. Null when there is no content.</summary>
     public static string? DefaultPaddingBasis(EmSetup setup, C3dElaboration e, string face)
@@ -274,7 +294,22 @@ public static class C3dProblemAssembly
         try { fMin = setup.ExpandFrequencies().Where(f => f > 0).DefaultIfEmpty(1e9).Min(); }
         catch (Exception) { fMin = 1e9; }
         return Em3dGenerator.DefaultFacePadding(setup, fMin, Math.Max(Math.Max(x.X1 - x.X0, x.Y1 - x.Y0), x.Z1 - x.Z0),
-                                                PaddingHeight(e)).Basis(face, face[0] switch
+                                                PaddingHeight(e), PaddingHeightBelow(e)).Basis(face, face[0] switch
+                                                {
+                                                    'x' => x.X1 - x.X0, 'y' => x.Y1 - x.Y0, _ => x.Z1 - x.Z0,
+                                                });
+    }
+
+    /// <summary>brief-dfr34-2 R-dfr34-2-5 — the same rule in a few words ("10 × H", "λ/4 at 2.45 GHz"), as the panel prints it
+    /// after the length. Null when there is no content.</summary>
+    public static string? DefaultPaddingShortBasis(EmSetup setup, C3dElaboration e, string face)
+    {
+        if (e.ModelledExtent() is not { } x) return null;
+        double fMin;
+        try { fMin = setup.ExpandFrequencies().Where(f => f > 0).DefaultIfEmpty(1e9).Min(); }
+        catch (Exception) { fMin = 1e9; }
+        return Em3dGenerator.DefaultFacePadding(setup, fMin, Math.Max(Math.Max(x.X1 - x.X0, x.Y1 - x.Y0), x.Z1 - x.Z0),
+                                                PaddingHeight(e), PaddingHeightBelow(e)).ShortBasis(face, face[0] switch
                                                 {
                                                     'x' => x.X1 - x.X0, 'y' => x.Y1 - x.Y0, _ => x.Z1 - x.Z0,
                                                 });
@@ -447,13 +482,17 @@ public static class C3dProblemAssembly
 
         // ── The air box, padded by the generator's own rule ─────────────────────────────────────
         double? paddingH = PaddingHeight(e);
-        double? planeFloor = PlaneFloor(setup, e);
+        double? paddingHBelow = PaddingHeightBelow(e);
+        double? planeFloor = PlaneFloor(setup, e, out bool unmarkedFloor);
         var box = Em3dGenerator.PaddedAirBox(setup, (extent.X0, extent.Y0, extent.X1, extent.Y1, extent.Z0, extent.Z1),
-                                             fMin, planeFloor, waves: [], notes, out string? boxRefusal, paddingH);
+                                             fMin, planeFloor, waves: [], notes, out string? boxRefusal, paddingH, paddingHBelow);
         if (boxRefusal is not null || box is null) return No(boxRefusal ?? "The air box could not be built.", e.Warnings);
         notes.Add(planeFloor is not null
             ? "The air box's floor is the underside of the ground plane at the bottom of the geometry, as a PEC face: the plane " +
-              "has no hole with other metal over it and lies under everything, so nothing below it carries field. State the AirBox's ZMin to pad below it instead."
+              "has no hole with other metal over it and lies under everything, so nothing below it carries field. State the AirBox's ZMin to pad below it instead." +
+              (unmarkedFloor ? " The bottom conductor is treated as a floor because its metal covers at least " +
+                               $"{(Em3dGenerator.PlaneFloorCover * 100).ToString("G3", System.Globalization.CultureInfo.InvariantCulture)} % of the footprint, " +
+                               "though the technology does not mark it ground-reference." : "")
             : "The air box's floor is below the geometry: a 3D view states no floor of its own, so every face is " +
               "the setup's (absorbing unless its AirBox says otherwise).");
 
@@ -561,6 +600,7 @@ public static class C3dProblemAssembly
         {
             Type = setup.Problem3D,
             PaddingHeightM = paddingH,
+            PaddingHeightBelowM = paddingHBelow,
             FaceBoundaries = faceBoundaries,
             MeshRegions = MeshRegions(document),
             Terminals = terminals,

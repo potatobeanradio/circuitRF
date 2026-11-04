@@ -208,8 +208,10 @@ and front-to-back is refused for the same reason.</li>
 itemises its loss; <code>PowerAccepted − PowerRadiated</code> is every loss together, and both are published.</li>
 <li><strong>FDTD 3D (openEMS)</strong> transforms the tangential fields on a box that sits <strong>3 cells inside the absorber and
 1 cell clear of every conductor</strong>, by circuitRF's own surface integral. A setup whose air box leaves no
-room for that is refused, naming the face and the padding to raise; with the pattern on, the default
-padding is a quarter of the longest wavelength rather than an eighth for this reason. If the substrate runs
+room for that is refused, naming the face and the padding to raise. With the pattern on, the default
+padding is a quarter wavelength at the pattern frequency rather than an eighth for this reason. Set the
+<strong>Pattern frequency</strong> in the setup's Radiation pattern group; when the sweep is still the 0.5-8 GHz default,
+setting it moves the sweep to half to one and a half times that frequency. If the substrate runs
 through that box, what it guides is counted as radiation — the run says so, and on an unbounded substrate
 the directivity reads lower than the planar kernel's by the planar kernel's own surface-wave share.</li>
 <li><strong>FEM 3D (Palace)</strong> uses Palace's own far-field integral, which needs <strong>every air-box face absorbing and

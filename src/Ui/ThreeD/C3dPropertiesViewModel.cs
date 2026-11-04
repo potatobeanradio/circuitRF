@@ -48,7 +48,11 @@ public sealed partial class C3dAirBoxFaceRow(string face, Em3dBoundaryKind kind,
     : ObservableObject
 {
     public string Face { get; } = face;
+    /// <summary>brief-dfr34-2 R-dfr34-2-5 — the padding as a length and the rule that set it, in a few words.</summary>
     public string Padding { get; } = padding;
+
+    /// <summary>The same, with the rule in full.</summary>
+    public string Tip { get; init; } = padding;
     [ObservableProperty] private Em3dBoundaryKind _kind = kind;
 
     partial void OnKindChanged(Em3dBoundaryKind value) => set(Face, value);
@@ -1359,10 +1363,11 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
             return;
         }
         Rows.Add(new C3dPropertyRow("Setup", active is null ? "None active: a setup added now starts with this box" : editor.ActiveSetupLabel));
-        // A face that states no percentage shows the padding in use as one, so a smaller number visibly shrinks the box.
+        // brief-dfr34-2 R-dfr34-2-5 — each box shows the padding in use as a LENGTH in the display unit (a percentage of a
+        // 1.5 mm z extent read 9986 %, which nobody can judge); a face that states a percentage shows it with its % sign, and
+        // typing "10 %" states one.
         string Pct(string face, EmAirBoxFace? s)
-            => s?.PaddingPercent is { } p ? p.ToString("G6", CultureInfo.InvariantCulture)
-             : editor.AirBoxPaddingPercent(face) is { } now ? now.ToString("G4", CultureInfo.InvariantCulture) : "";
+            => s?.PaddingPercent is { } p ? p.ToString("G6", CultureInfo.InvariantCulture) + " %" : editor.AirBoxPaddingShort(face);
         _padLoaded["xmin"] = PadXMinPercent = Pct("xmin", stated?.XMin);
         _padLoaded["xmax"] = PadXMaxPercent = Pct("xmax", stated?.XMax);
         _padLoaded["ymin"] = PadYMinPercent = Pct("ymin", stated?.YMin);
@@ -1371,33 +1376,49 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         _padLoaded["zmax"] = PadZMaxPercent = Pct("zmax", stated?.ZMax);
         var f = box.Faces;
         string DefaultBasis(string face) => editor.Elaboration is { } elab && C3dProblemAssembly.DefaultPaddingBasis(setup, elab, face) is { } basis
-            ? $" (default: {basis})" : " (default)";
+            ? $"default: {basis}" : "default";
+        string DefaultShort(string face) => editor.Elaboration is { } elab && C3dProblemAssembly.DefaultPaddingShortBasis(setup, elab, face) is { } brief
+            ? brief : "default";
         foreach (var (face, kind, s) in new[]
                  {
                      ("xmin", f.XMin, stated?.XMin), ("xmax", f.XMax, stated?.XMax), ("ymin", f.YMin, stated?.YMin),
                      ("ymax", f.YMax, stated?.YMax), ("zmin", f.ZMin, stated?.ZMin), ("zmax", f.ZMax, stated?.ZMax),
                  })
         {
-            // brief-dfr32-1 R-dfr32-1-4 — the length, in the unit it reads in, beside its share of the extent ("54 µm, 20 %"):
-            // a percentage of a sub-millimetre z extent says nothing on its own (a default read 6296 %).
-            double? share = s?.PaddingPercent ?? editor.AirBoxPaddingPercent(face);
-            string pad = (editor.AirBoxPaddingM(face) is { } m ? CircuitRF.Render.Em3dSectionScene.FormatLength(m) : "")
-                       + (share is { } p ? $", {p.ToString(s?.PaddingPercent is not null ? "G6" : "G4", CultureInfo.InvariantCulture)} %" : "")
-                       + (s?.PaddingPercent is not null ? "" : s?.PaddingUm is not null ? " (stated)" : DefaultBasis(face));
+            // brief-dfr34-2 R-dfr34-2-5 — the length first, then the rule that set it ("150 mm — λ/4 at 0.5 GHz", "0.69 mm — 10 × H");
+            // a stated percentage keeps its share as the reason. The tooltip carries the rule in full.
+            string len = editor.AirBoxPaddingM(face) is { } m ? CircuitRF.Render.Em3dSectionScene.FormatLength(m) : "";
+            string pad, tip;
+            if (s?.PaddingPercent is { } stPct)
+            {
+                pad = $"{len} — {stPct.ToString("G6", CultureInfo.InvariantCulture)} % of the extent, stated";
+                tip = pad;
+            }
+            else if (s?.PaddingUm is not null)
+                pad = tip = $"{len} — stated";
+            else
+            {
+                pad = $"{len} — {DefaultShort(face)}";
+                tip = $"{len} — {DefaultBasis(face)}";
+            }
             // Designer round 33 — a floor on an unbroken bottom ground plane has no padding rule to explain.
             if (face == "zmin" && s is null && kind == Em3dBoundaryKind.Pec)
-                pad = "0 — on the underside of the ground plane at the bottom, with nothing of another net in its holes: nothing below it carries " +
+            {
+                pad = "0 — floor on the bottom plane";
+                tip = "0 — on the underside of the ground plane at the bottom, with nothing of another net in its holes: nothing below it carries " +
                       "field. Type a padding to put air below it instead.";
+            }
             switch (face)
             {
-                case "xmin": PadXMinTip = pad; break;
-                case "xmax": PadXMaxTip = pad; break;
-                case "ymin": PadYMinTip = pad; break;
-                case "ymax": PadYMaxTip = pad; break;
-                case "zmin": PadZMinTip = pad; break;
-                default:     PadZMaxTip = pad; break;
+                case "xmin": PadXMinTip = tip; break;
+                case "xmax": PadXMaxTip = tip; break;
+                case "ymin": PadYMinTip = tip; break;
+                case "ymax": PadYMaxTip = tip; break;
+                case "zmin": PadZMinTip = tip; break;
+                default:     PadZMaxTip = tip; break;
             }
-            AirBoxFaces.Add(new C3dAirBoxFaceRow(face, kind, pad, (fc, k) => editor.Post(() => Error = editor.SetAirBoxBoundary(fc, k) ?? "")));
+            AirBoxFaces.Add(new C3dAirBoxFaceRow(face, kind, pad, (fc, k) => editor.Post(() => Error = editor.SetAirBoxBoundary(fc, k) ?? ""))
+                            { Tip = tip });
         }
         Rows.Add(new C3dPropertyRow("Size", $"{editor.Viewer.FormatLength(box.Max.X - box.Min.X)} × " +
                                             $"{editor.Viewer.FormatLength(box.Max.Y - box.Min.Y)} × {editor.Viewer.FormatLength(box.Max.Z - box.Min.Z)}"));
@@ -1431,15 +1452,15 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
     private List<(string Face, string Text)> PaddingTyped()
         => [.. BoxFaces.Where(f => _padLoaded.TryGetValue(f, out string? loaded) && PadText(f) != loaded).Select(f => (f, PadText(f)))];
 
-    /// <summary>A face's padding percentage — Enter or lost focus: that face pads by that share of the content's extent along
-    /// its axis; empty keeps the face as it is. One undo entry.</summary>
+    /// <summary>A face's padding — Enter or lost focus: a length in the display unit (a suffix may name another), or a share of
+    /// the content's extent along its axis when it ends in % ("10 %"); empty keeps the face as it is. One undo entry.</summary>
     public void CommitAirBoxPercent(string face)
     {
         if (!IsAirBox) return;
         string text = PadText(face);
         // Unchanged (focus passing through) states nothing: a default stays a default.
-        if (string.IsNullOrWhiteSpace(text) || text.Trim() == _padLoaded.GetValueOrDefault(face)) return;
-        Error = editor.SetAirBoxPaddingPercent(face, text) ?? "";
+        if (string.IsNullOrWhiteSpace(text) || text.Trim() == _padLoaded.GetValueOrDefault(face)?.Trim()) return;
+        Error = (text.TrimEnd().EndsWith('%') ? editor.SetAirBoxPaddingPercent(face, text) : editor.SetAirBoxPadding(face, text)) ?? "";
     }
 
     /// <summary>A dimension's Enter or lost focus: a number replaces the expression; an expression is bound (and kept even

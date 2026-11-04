@@ -1003,7 +1003,8 @@ public static partial class Em3dRunService
         {
             var (lo, hi) = Em3dGenerator.ContentBounds(problem);
             var defaults = Em3dGenerator.DefaultFacePadding(setup, problem.Frequency.StartHz,
-                               Math.Max(Math.Max(hi.X - lo.X, hi.Y - lo.Y), hi.Z - lo.Z), problem.PaddingHeightM);
+                               Math.Max(Math.Max(hi.X - lo.X, hi.Y - lo.Y), hi.Z - lo.Z), problem.PaddingHeightM,
+                               problem.PaddingHeightBelowM);
             EmAirBoxFace Half(EmAirBoxFace? f, string face) => f?.PaddingPercent is { } pct
                 ? new(null, f.Boundary, pct / 2)
                 : new((f?.PaddingUm ?? defaults.For(face, face[0] switch { 'x' => hi.X - lo.X, 'y' => hi.Y - lo.Y, _ => hi.Z - lo.Z }) * 1e6) / 2,

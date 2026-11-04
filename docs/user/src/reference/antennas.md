@@ -90,8 +90,10 @@ no port at a frequency. What is different:
   itemises its loss; `PowerAccepted − PowerRadiated` is every loss together, and both are published.
 - **FDTD 3D (openEMS)** transforms the tangential fields on a box that sits **3 cells inside the absorber and
   1 cell clear of every conductor**, by circuitRF's own surface integral. A setup whose air box leaves no
-  room for that is refused, naming the face and the padding to raise; with the pattern on, the default
-  padding is a quarter of the longest wavelength rather than an eighth for this reason. If the substrate runs
+  room for that is refused, naming the face and the padding to raise. With the pattern on, the default
+  padding is a quarter wavelength at the pattern frequency rather than an eighth for this reason. Set the
+  **Pattern frequency** in the setup's Radiation pattern group; when the sweep is still the 0.5-8 GHz default,
+  setting it moves the sweep to half to one and a half times that frequency. If the substrate runs
   through that box, what it guides is counted as radiation — the run says so, and on an unbounded substrate
   the directivity reads lower than the planar kernel's by the planar kernel's own surface-wave share.
 - **FEM 3D (Palace)** uses Palace's own far-field integral, which needs **every air-box face absorbing and

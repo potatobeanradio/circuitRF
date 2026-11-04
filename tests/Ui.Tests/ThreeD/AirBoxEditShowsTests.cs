@@ -1,7 +1,7 @@
 // ================================================================
 //  AirBoxEditShowsTests.cs — brief DFR32-3 R-dfr32-3-1: an air-box padding typed in a .c3d's Properties is the box the
 //  scene draws once it settles. A synthetic two-layer board (a substrate, a trace on top, a ground below) with one
-//  embedded Palace setup; the panel's own calls are driven (the percentage boxes, Enter/lost focus), and the drawn box —
+//  embedded Palace setup; the panel's own calls are driven (the padding boxes, typed as percentages, Enter/lost focus), and the drawn box —
 //  the scene's air-box edges — is compared with the box C3dProblemAssembly resolves from the document.
 // ================================================================
 
@@ -73,12 +73,12 @@ public sealed class AirBoxEditShowsTests : IDisposable
     {
         var vm = OpenOnAirBox();
         Commit(vm, "xmin", "20");                       // Enter: the rebuild starts
-        vm.Properties.PadXMaxPercent = "30";            // the next box, typed before that rebuild lands
+        vm.Properties.PadXMaxPercent = "30 %";          // the next box, typed before that rebuild lands
         Settle(vm);                                     // the scene is adopted: the panel reloads
         vm.Properties.CommitAirBoxPercent("xmax");      // Enter on the box just typed in
         Settle(vm);
         Assert.Equal(30, Stated(vm).XMax?.PaddingPercent);
-        Assert.Equal("30", vm.Properties.PadXMaxPercent);
+        Assert.Equal("30 %", vm.Properties.PadXMaxPercent);
         AssertDrawnIsResolved(vm);
     }
 
@@ -104,6 +104,7 @@ public sealed class AirBoxEditShowsTests : IDisposable
     private static void Commit(C3dEditorViewModel vm, string face, string pct)
     {
         var p = vm.Properties;
+        pct += " %";                                    // brief-dfr34-2 R-dfr34-2-5 — a bare number is a length now
         switch (face)
         {
             case "xmin": p.PadXMinPercent = pct; break;

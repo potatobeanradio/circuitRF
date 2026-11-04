@@ -399,8 +399,9 @@
 
             <!-- 3D editor round 1 — the air box: padding per axis as a share of the content's extent, and each face's boundary. -->
             <StackPanel Spacing="4" IsVisible="{Binding IsAirBox}">
-                <TextBlock Text="Padding, % of the content's extent along each axis" FontSize="11" Opacity="0.7"
-                           ToolTip.Tip="10 on +X pads a tenth of the design's x-extent beyond its +X side. Each box shows the padding in use now; a smaller number shrinks the box on that side."/>
+                <TextBlock FontSize="11" Opacity="0.7" Text="{Binding LengthUnit, StringFormat='Padding ({0}; or type 10 % for a share of the extent)'}"
+                           TextWrapping="Wrap"
+                           ToolTip.Tip="Each box shows how far that face stands from the geometry now, in the display unit; a smaller number shrinks the box on that side. A number ending in % is a share of the design's extent along that axis: 10 % on +X pads a tenth of its x-extent beyond its +X side."/>
                 <Grid ColumnDefinitions="Auto,*,6,Auto,*,6,Auto,*" RowDefinitions="Auto,4,Auto">
                     <TextBlock Grid.Row="0" Grid.Column="0" Text="−X" VerticalAlignment="Center" Margin="0,0,4,0"/>
                     <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding PadXMinPercent}" ToolTip.Tip="{Binding PadXMinTip}" Tag="xmin" PlaceholderText="—" KeyDown="OnPadKey" LostFocus="OnPadLostFocus"/>
@@ -419,10 +420,13 @@
                 <ItemsControl ItemsSource="{Binding AirBoxFaces}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="t3:C3dAirBoxFaceRow">
-                            <!-- Designer round 33 — the face's padding and its rule are the tooltip of that direction's padding
-                                 box above (and of this row), not text beside the picker. -->
-                            <Grid ColumnDefinitions="44,120" Margin="0,1" ToolTip.Tip="{Binding Padding}">
+                            <!-- Designer round 33 — the face's padding rule in full is the tooltip of that direction's padding
+                                 box above (and of this row); the row prints it in a few words. -->
+                            <Grid ColumnDefinitions="44,120,*" Margin="0,1" ToolTip.Tip="{Binding Tip}">
                                 <TextBlock Grid.Column="0" Text="{Binding Face}" VerticalAlignment="Center"/>
+                                <!-- brief-dfr34-2 R-dfr34-2-5 — the padding as a length and its rule ("30.6 mm — λ/4 at 2.45 GHz"). -->
+                                <TextBlock Grid.Column="2" Text="{Binding Padding}" FontSize="11" Opacity="0.8" Margin="6,0,0,0"
+                                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                                 <ComboBox Grid.Column="1" ItemsSource="{x:Static t3:C3dPropertiesViewModel.BoundaryKinds}"
                                           SelectedItem="{Binding Kind}" HorizontalAlignment="Stretch" FontSize="11">
                                     <ComboBox.ItemTemplate>

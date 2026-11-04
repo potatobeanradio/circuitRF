@@ -27450,3 +27450,41 @@ no hard hold, drawn copper touching a second, unrelated chain can let one anchor
 
 **A fixture SDL-4 broke.** `ArtworkRoundTripBoards` (Recognition) deleted VG1 and expected the next run to put it back —
 the pre-SDL-4 rule; SDL-4's gate did not run it. It now asks Restore Removed Parts, as a user would.
+
+## The air box a 3D view starts with: a radiator's pattern frequency, the floor's own H, an unmarked bottom pour (DFR34-2, 2026-11-04)
+
+Two field cases this round were wrong for reasons the three earlier air-box fixes never reached, because each of those
+tuned the floor rule and neither case got that far.
+
+**A radiator padded every face for the sweep's lowest frequency.** A 2.4 GHz antenna (44 × 95 × 1.5 mm) left on the
+0.5-8 GHz new-setup sweep took λ/4 at 0.5 GHz, 150 mm, on all six faces; the height rules are gated off for a radiator
+(`ByHeightApplies`). `EmSetup.PatternFrequencyGHz` (nullable, omitted at null) is now the frequency the pattern is read
+at, and `Em3dGenerator.DefaultPadding`'s radiating rule is: λ/4 there (the sweep's lowest when unset), never more than
+`PatternPaddingCapExtents` (1) × the structure's largest extent, never less than λ/8 at the sweep's lowest — the floor,
+because Palace and EMerge still produce a pattern at every sweep point and the absorbing faces see all of them. The run
+note names whichever of the three set it. On the field board: pattern unset → 95 mm (capped, said in the note); pattern
+2.45 GHz on the sweep R-2 offers → 30.6 mm. **The field sizes the box only**: no solver's far-field frequencies changed.
+Typing it in the setup editor moves a sweep that is still exactly `NewSetupFrequency()` to `EmSetup.SweepAround`
+(½f…1½f, a 1/2/5 step near f/100, f on the grid; 2.45 → 1.23-3.67 GHz by 20 MHz), in the same undo entry. A sweep anyone
+chose stays. It is staged text committed on Enter/lost focus, not a NumericUpDown: a per-keystroke commit of "2" would
+re-centre on 2 GHz and leave "2.45" nothing to re-centre.
+
+**The floor's 10 × H used H under the TOP metal.** `PaddingHeightBelow` measures from the top of the bottom metal up to
+the next metal (or the top of the dielectric); `Em3dDefaultPadding.HeightBelowM` feeds the zmin face, falling back to
+the top's H when the bottom metal has no dielectric over it (one metal level). Threaded through `PaddedAirBox`,
+`Em3dProblem.PaddingHeightBelowM` (so `explain` and Palace's half-padding remedy agree with the box), the `.cem`
+generator and `C3dProblemAssembly`.
+
+**The plane floor needed a technology-marked ground.** A 10-layer board imported with a shipped technology marking only
+Inner 1 and Inner 8 had an unmarked 91 % bottom pour. `Em3dLayoutSolids` now judges the bottom-most DRAWN conductor band
+and `C3dProblemAssembly.PlaneFloor` the bottom-flush layout conductors (marked or not); coverage (`PlaneFloorCover`,
+95 %) decides, and the note says the conductor was treated as a floor when the technology does not mark it. The
+undrawn-plane PEC floor still needs a marked ground: that rule is about a plane nobody drew. In the `.c3d` hole check,
+marked ground metal off the bottom still does not count as "other metal over a hole", as before.
+
+**The panel.** The padding boxes show a length in the display unit (4 significant figures; the DBU spelling read
+"18.737029") and take one, or a share of the extent when the text ends in `%`; a stated percentage shows with its `%`.
+Each face row prints `length — short rule` (`Em3dDefaultPadding.ShortBasis`: "10 × H", "λ/4 at 2.45 GHz", "the
+content's height", "largest extent"); the full rule stays in the tooltip. Two existing panel tests typed bare
+percentages and asserted the percentage display — the defect itself — and now type `10 %` and assert the length.
+Gate: `tests/Ui.Tests/Em3d/AirBoxDefaultsDfr34Tests.cs`.

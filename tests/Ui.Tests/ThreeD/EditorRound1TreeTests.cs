@@ -99,18 +99,18 @@ public sealed class EditorRound1TreeTests : IDisposable
         Assert.True(vm.Properties.IsAirBox);
         Assert.Equal(6, vm.Properties.AirBoxFaces.Count);
 
-        // Nothing stated: the box shows the default padding as a share of the 1000 µm x-extent, and focus passing through
-        // it unchanged states nothing.
+        // Nothing stated: the box shows the default padding as a length in the display unit (brief-dfr34-2 R-dfr34-2-5; it was
+        // a share of the 1000 µm x-extent), and focus passing through it unchanged states nothing.
         int entries = vm.UndoEntries;
         double defaultPad = -vm.ShownAirBox!.Min.X;
-        Assert.Equal((defaultPad / 1000e-6 * 100).ToString("G4", CultureInfo.InvariantCulture), vm.Properties.PadXMinPercent);
+        Assert.Equal(vm.AirBoxPaddingShort("xmin"), vm.Properties.PadXMinPercent);
         vm.Properties.CommitAirBoxPercent("xmin");
         Settle(vm);
         Assert.Equal(entries, vm.UndoEntries);
         Assert.Null(EmSetupPersistence.FromEmbedded(vm.Document.Setups[0]).AirBox?.XMin);
 
         // Each face is its own setting: the +X side alone.
-        vm.Properties.PadXMaxPercent = "10";
+        vm.Properties.PadXMaxPercent = "10 %";
         vm.Properties.CommitAirBoxPercent("xmax");
         Settle(vm);
         Assert.Equal(entries + 1, vm.UndoEntries);
@@ -121,7 +121,7 @@ public sealed class EditorRound1TreeTests : IDisposable
         Assert.Equal(1100e-6, vm.ShownAirBox!.Max.X, 12);
         Assert.Equal(-defaultPad, vm.ShownAirBox.Min.X, 12);
 
-        vm.Properties.PadXMinPercent = "10";
+        vm.Properties.PadXMinPercent = "10 %";
         vm.Properties.CommitAirBoxPercent("xmin");
         Settle(vm);
         Assert.Equal(new EmAirBoxFace(null, null, 10), EmSetupPersistence.FromEmbedded(vm.Document.Setups[0]).AirBox!.XMin);
@@ -142,7 +142,7 @@ public sealed class EditorRound1TreeTests : IDisposable
         Assert.Equal(6, vm.Properties.AirBoxFaces.Count);
 
         int entries = vm.UndoEntries;
-        vm.Properties.PadXMaxPercent = "10";
+        vm.Properties.PadXMaxPercent = "10 %";
         vm.Properties.CommitAirBoxPercent("xmax");
         Settle(vm);
         Assert.Equal("", vm.Properties.Error);
@@ -160,10 +160,11 @@ public sealed class EditorRound1TreeTests : IDisposable
         Assert.Equal(new EmAirBoxFace(null, null, 10), EmSetupPersistence.FromEmbedded(vm.Document.Setups[0]).AirBox!.XMax);
     }
 
-    /// <summary>brief-dfr32-1 R-dfr32-1-4 — each face row reads its padding as a length, in the unit it reads in, beside its
-    /// share of the extent: 20 % of this board's 100 µm z extent is "20 µm, 20 %", and a default face says both as well.</summary>
+    /// <summary>brief-dfr32-1 R-dfr32-1-4, brief-dfr34-2 R-dfr34-2-5 — each face row reads its padding as a length, in the unit
+    /// it reads in, then why: 20 % of this board's 100 µm z extent is "20 µm — 20 % of the extent, stated", and a default face
+    /// gives its rule rather than a percentage.</summary>
     [Fact]
-    public void AFacesPadding_ReadsAsALengthBesideItsPercentage()
+    public void AFacesPadding_ReadsAsALengthWithItsBasis()
     {
         var vm = Open(Doc(new EmSetup
         {
@@ -172,11 +173,12 @@ public sealed class EditorRound1TreeTests : IDisposable
         vm.TreeGrouping = C3dTreeGrouping.Primitive;
         vm.SelectedTreeItem = vm.Tree.Single(g => g.Header == "Boxes").Items[0];
 
-        Assert.Equal("20 µm, 20 %", vm.Properties.AirBoxFaces.Single(f => f.Face == "zmax").Padding);
+        Assert.Equal("20 µm — 20 % of the extent, stated", vm.Properties.AirBoxFaces.Single(f => f.Face == "zmax").Padding);
         double pad = -vm.ShownAirBox!.Min.X;
-        Assert.StartsWith($"{CircuitRF.Render.Em3dSectionScene.FormatLength(pad)}, " +
-                          $"{(pad / 1000e-6 * 100).ToString("G4", CultureInfo.InvariantCulture)} % (default: ",
-                          vm.Properties.AirBoxFaces.Single(f => f.Face == "xmin").Padding);
+        var xmin = vm.Properties.AirBoxFaces.Single(f => f.Face == "xmin");
+        Assert.StartsWith($"{CircuitRF.Render.Em3dSectionScene.FormatLength(pad)} — ", xmin.Padding);
+        Assert.DoesNotContain("%", xmin.Padding);
+        Assert.StartsWith($"{CircuitRF.Render.Em3dSectionScene.FormatLength(pad)} — default: ", xmin.Tip);
     }
 
     [Fact]

@@ -732,6 +732,10 @@ public sealed record Em3dProblem(
     /// <c>explain</c> and a run's remedies name the same default the box was built with. Nothing lowers it.</summary>
     public double? PaddingHeightM { get; init; }
 
+    /// <summary>brief-dfr34-2 R-dfr34-2-3 — the dielectric height over the BOTTOM metal that the default floor was padded by
+    /// (10 H below), when its builder found one; null when the floor took <see cref="PaddingHeightM"/>. Nothing lowers it.</summary>
+    public double? PaddingHeightBelowM { get; init; }
+
     /// <summary>A static problem's terminals, in index order (terminal k is index k + 1).</summary>
     public IReadOnlyList<Em3dTerminal> Terminals { get; init; } = [];
 

@@ -1444,6 +1444,10 @@ public sealed class CemFile
     /// </summary>
     public bool?   RadiationPattern      { get; set; }
 
+    /// <summary>brief-dfr34-2 — the frequency the pattern is read at, GHz (<see cref="EmSetup.PatternFrequencyGHz"/>);
+    /// omitted when null, so a file written before it existed loads and re-serialises byte-identically.</summary>
+    public double? PatternFrequencyGHz   { get; set; }
+
     /// <summary>
     /// <b>LEGACY, read-only. The switch this came from has been removed — see
     /// <see cref="EmSetup.LegacyRawSolveRequested"/> for the measurement that removed it.</b>
@@ -1659,6 +1663,7 @@ public static class EmSetupPersistence
         DeembedOutsideCalibrationValidity =
             s.DeembedOutsideCalibrationValidity ? true : null,
         RadiationPattern      = s.RadiationPattern ? true : null,
+        PatternFrequencyGHz   = s.PatternFrequencyGHz is > 0 ? s.PatternFrequencyGHz : null,
         ReferenceInputPowerDbm = s.ReferenceInputPowerDbm != 0.0 ? s.ReferenceInputPowerDbm : null,
         SnpOutputPathOverride = s.SnpOutputPathOverride is { Length: > 0 } p ? p : null,
         CreateSnpSchematic    = s.CreateSnpSchematic ? true : null,
@@ -1781,6 +1786,7 @@ public static class EmSetupPersistence
         LegacyRawSolveRequested = f.Deembed == false,
         DeembedOutsideCalibrationValidity = f.DeembedOutsideCalibrationValidity ?? false,
         RadiationPattern      = f.RadiationPattern ?? false,
+        PatternFrequencyGHz   = f.PatternFrequencyGHz is > 0 ? f.PatternFrequencyGHz : null,
         ReferenceInputPowerDbm = f.ReferenceInputPowerDbm ?? 0.0,
         SnpOutputPathOverride = f.SnpOutputPathOverride ?? "",
         CreateSnpSchematic    = f.CreateSnpSchematic ?? false,

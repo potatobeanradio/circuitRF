@@ -165,7 +165,8 @@ internal static class ExplainEm3d
         // a face that stated only its boundary used to read "setup", which hid that its padding was the default's.
         var (contentLo, contentHi) = Em3dGenerator.ContentBounds(p);
         var defaults = Em3dGenerator.DefaultFacePadding(setup, p.Frequency.StartHz,
-            Math.Max(Math.Max(contentHi.X - contentLo.X, contentHi.Y - contentLo.Y), contentHi.Z - contentLo.Z), p.PaddingHeightM);
+            Math.Max(Math.Max(contentHi.X - contentLo.X, contentHi.Y - contentLo.Y), contentHi.Z - contentLo.Z), p.PaddingHeightM,
+            p.PaddingHeightBelowM);
         double Span(string face) => face[0] switch
         {
             'x' => contentHi.X - contentLo.X, 'y' => contentHi.Y - contentLo.Y, _ => contentHi.Z - contentLo.Z,

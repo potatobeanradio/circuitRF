@@ -2070,6 +2070,21 @@
                      published as its own cube, so the Data Display's trace card re-references a
                      level exactly, with no re-run. Nobody should have to repeat an hours-long sweep
                      for a dB offset, and the tooltip says so rather than leaving it to be found. -->
+                <!-- brief-dfr34-2 R-dfr34-2-1/-2 — the frequency the pattern is read at: a 3D run's air box is λ/4 there, and an
+                     untouched 0.5-8 GHz default sweep moves round it. Staged text, committed on Enter or lost focus. -->
+                <Grid ColumnDefinitions="Auto,Auto,Auto" Margin="22,4,0,0"
+                      IsEnabled="{Binding ViewModel.ReferenceInputPowerEnabled}">
+                    <TextBlock Grid.Column="0" Classes="colhdr" VerticalAlignment="Center"
+                               Margin="0,0,6,0" Text="Pattern frequency"/>
+                    <TextBox Grid.Column="1" Width="110" FontSize="11" Padding="5,2" Tag="PatternFrequency"
+                             Text="{Binding ViewModel.PatternFrequencyText}" PlaceholderText="sweep's lowest"
+                             LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                             ToolTip.Tip="The frequency the radiation pattern is read at. A 3D run pads its air box by a quarter wavelength here, never more than the structure's largest extent and never less than an eighth of a wavelength at the sweep's lowest frequency. Blank uses the sweep's lowest frequency. When the sweep is still the 0.5-8 GHz default, it moves to half to one and a half times this frequency."/>
+                    <TextBlock Grid.Column="2" Classes="colhdr" VerticalAlignment="Center" Margin="6,0,0,0" Text="GHz"/>
+                </Grid>
+                <TextBlock FontSize="10" TextWrapping="Wrap" Margin="22,0,0,0" Foreground="{DynamicResource CrfWarningBrush}"
+                           Text="{Binding ViewModel.PatternFrequencyError}"
+                           IsVisible="{Binding ViewModel.PatternFrequencyError, Converter={x:Static ObjectConverters.IsNotNull}}"/>
                 <Grid ColumnDefinitions="Auto,Auto" Margin="22,4,0,0"
                       IsEnabled="{Binding ViewModel.ReferenceInputPowerEnabled}">
                     <TextBlock Grid.Column="0" Classes="colhdr" VerticalAlignment="Center"

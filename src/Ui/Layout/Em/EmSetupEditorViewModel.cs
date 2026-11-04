@@ -984,6 +984,13 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     /// by nothing else.</summary>
     [ObservableProperty] private double _referenceInputPowerDbm;
 
+    /// <summary>brief-dfr34-2 — <see cref="EmSetup.PatternFrequencyGHz"/> as typed, GHz; blank is none. Committed on Enter or
+    /// lost focus (<see cref="CommitPatternFrequency"/>), never per keystroke: a commit can re-centre the sweep.</summary>
+    [ObservableProperty] private string _patternFrequencyText = "";
+
+    /// <summary>Why the typed pattern frequency was not taken; null when it was.</summary>
+    [ObservableProperty] private string? _patternFrequencyError;
+
     /// <summary>Non-null when the dispersion opt-in must be disabled, with the reason. The panel
     /// ASKS <see cref="QuasiStaticKernel.TryMicrostripDispersion"/> rather than re-deriving the
     /// condition (R-em-11).</summary>
@@ -1679,6 +1686,48 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         // reference a dBm is a dBm ABOVE, and every other metric here is a ratio.
     }
 
+    /// <summary>
+    /// brief-dfr34-2 R-dfr34-2-1/-2 — the frequency the pattern is read at, which a 3D run sizes its air box for (λ/4 there).
+    /// Blank clears it. When the sweep is still the new-setup default (0.5-8 GHz), it moves to
+    /// <see cref="EmSetup.SweepAround"/> the typed frequency in the same undo entry: that default starts a decade below a
+    /// 2.4 GHz antenna, and its lowest frequency is what every face of the box would otherwise be padded for.
+    /// </summary>
+    public void CommitPatternFrequency()
+    {
+        if (_suppressCommit) return;
+        string t = (PatternFrequencyText ?? "").Trim();
+        double? ghz = null;
+        if (t.Length > 0)
+        {
+            if (!TryDouble(t, out double v) || !(v > 0) || !double.IsFinite(v))
+            {
+                PatternFrequencyError = "Enter a frequency in GHz greater than 0, or leave it blank.";
+                return;
+            }
+            ghz = v;
+        }
+        PatternFrequencyError = null;
+        if (ghz == Working.PatternFrequencyGHz) return;
+        var before = SnapshotJson();
+        Working.PatternFrequencyGHz = ghz;
+        bool recentre = ghz is { } g && EmSetup.IsNewSetupFrequency(Working.Frequency) && Working.AdditionalFrequencies.Count == 0;
+        if (recentre) Working.Frequency = EmSetup.SweepAround(ghz!.Value);
+        CommitEdit(before, recentre ? "Change pattern frequency and sweep" : "Change pattern frequency");
+        if (recentre)
+        {
+            _suppressCommit = true;
+            try { Frequency = NewFrequencyVm(); }
+            finally { _suppressCommit = false; }
+            OnPropertyChanged(nameof(Frequency));
+            RefreshMeshText();
+        }
+        PatternFrequencyText = FormatPatternFrequency(Working.PatternFrequencyGHz);
+        Refresh();
+    }
+
+    private static string FormatPatternFrequency(double? ghz)
+        => ghz is { } g ? g.ToString("G6", System.Globalization.CultureInfo.InvariantCulture) : "";
+
     /// <summary>Gates the reference-power box: nothing reads it with the pattern off.</summary>
     public bool ReferenceInputPowerEnabled
         => RadiationPattern && RadiationPatternDisabledReason is null;
@@ -2003,6 +2052,8 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         RadiationPattern     = Working.RadiationPattern;
         CreateSnpSchematic   = Working.CreateSnpSchematic;
         ReferenceInputPowerDbm = Working.ReferenceInputPowerDbm;
+        PatternFrequencyText = FormatPatternFrequency(Working.PatternFrequencyGHz);
+        PatternFrequencyError = null;
         AnalysisKind = Working.AnalysisKind;
         SyncSolver3DFields();
         _suppressCommit = true;

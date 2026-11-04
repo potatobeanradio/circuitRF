@@ -1276,6 +1276,15 @@ public sealed partial class C3dEditorViewModel
         return C3dDimension.Spell(dbu, Document.DisplayUnit, Document.DbuPerMicron);
     }
 
+    /// <summary>brief-dfr34-2 R-dfr34-2-5 — the padding a box face has now, in the display unit to four significant figures:
+    /// what the Properties panel's padding box shows (the full DBU spelling read "18.737029").</summary>
+    public string AirBoxPaddingShort(string face)
+    {
+        if (AirBoxPaddingM(face) is not { } m) return "";
+        long dbu = (long)Math.Round(m / C3dLowering.Metres(1, Document.DbuPerMicron));
+        return ((double)LayoutUnits.FromDbu(dbu, Document.DisplayUnit, Document.DbuPerMicron)).ToString("G4", CultureInfo.InvariantCulture);
+    }
+
     /// <summary>brief-dfr32-1 R-dfr32-1-4 — a box face's distance from the modelled content now, metres; null with no box.</summary>
     public double? AirBoxPaddingM(string face)
     {
