@@ -303,16 +303,26 @@ public sealed class PdkCompiledModelRoutingTests : IDisposable
     /// wrote it. Routing it to the kit's own provider under the card's name instead would fail at Run
     /// naming a device type that appears nowhere — which sends the reader looking for a missing
     /// provider when what is missing is a build step they have not run.
+    ///
+    /// <para>The build step is stated only where the kit ships the module's Verilog-A source (brief-gdf-6
+    /// R-gdf6-3); without one there is nothing to compile, and the sentence says nothing can simulate it.</para>
     /// </summary>
     [FixtureFact(WorkerRel, HowTo)]
     public void AModuleNobodyCompiled_IsNamedAndTheBuildStepIsStated()
     {
-        Install(BuildKit(Netlist.Replace("crf_rc  G0", "mdla_va  G0")));
+        var outcome = Install(BuildKit(Netlist.Replace("crf_rc  G0", "mdla_va  G0")));
 
         var (inst, conflicts) = ExtractDevice();
-
         Assert.NotEqual("ExtDevice", inst.Reference);
         Assert.Contains(conflicts, c => c.Contains("mdla_va", StringComparison.Ordinal)
+                                     && c.Contains("nothing can simulate it", StringComparison.Ordinal));
+
+        PdkKitRegistry.SetKit(null, outcome.KitName, outcome.Parts ?? [], outcome.OsdiModels,
+                              new Dictionary<string, string> { ["mdla_va"] = "models/mdla.va" });
+        (inst, conflicts) = ExtractDevice();
+        Assert.NotEqual("ExtDevice", inst.Reference);
+        Assert.Contains(conflicts, c => c.Contains("mdla_va", StringComparison.Ordinal)
+                                     && c.Contains("models/mdla.va", StringComparison.Ordinal)
                                      && c.Contains("Verilog-A", StringComparison.Ordinal));
     }
 

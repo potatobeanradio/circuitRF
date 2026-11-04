@@ -26988,3 +26988,53 @@ Gates: `tests/Core.Tests/Devices/External/VerilogALinkCommandTests.cs` (the six 
 `tests/Ui.Tests/VendorLibraries/CrossPlatformBuildTests.cs` (missing zig and the processor crash, against a stub compiler
 that runs the real launcher), `CompileNetlistTests.Export_WithZig_BuildsEveryReachablePlatform_AndProvesOnlyThisOne`
 (`[CompilerZigFact]`).
+
+## Model-library series review, second pass — walked as a user (2026-11-03)
+
+The flow driven end to end through the real view models and dialogs (headless): a cell exported through the dialog,
+the library added to a second workspace, the part placed from the palette, simulated, edited in place (Edit Vendor
+Model → save → refresh), copied to the workspace, cornered and yielded; a Model Composer part; a signed library; and a
+Verilog-A FET exported three ways — source shipped, Compile Verilog-A models, and Compile netlist with Compile Verilog-A
+models — each placed and simulated (all three identical to the source cell, Touchstone to the last digit). Gates in
+`VendorLibraryReviewFixTests` (8–10), `ProtectedModelTests.CompileNetlistWithCompileModels_ShipsTheOutsideModelsBuild`
+and a `check` claim in `ModelComposerExportTests` 1.
+
+- **A corner's `part:` that matched nothing ran as the nominal.** `part:X1=lo` (an instance name where a part NUMBER
+  goes) or a corner the part does not offer was skipped by `LibraryPartCorners.Apply` with a note nobody saw, so the
+  corner reported the nominal's margins under its own name ("every goal is met"). `StatisticsValidator` now checks
+  each `part:` against the parts placed (`yield.corner.unknown-part` / `.unknown-part-corner`, errors): the run refuses
+  and `check` reports it. It needs the design's `Library`, now an optional argument of `TuningValidator.Validate`.
+- **`check` elaborated a `.csch` against its own folder**, while every run uses `CircuitSource.ReferenceBaseOf` (the
+  owning root). A Model Composer part's schematic names `models/x.cmodel` relative to its model folder, so `check` over
+  a library reported it "not found" though every run found it. An SnP hid the same mistake: it is not opened during
+  elaboration.
+- **Compile netlist + Compile Verilog-A models deleted the outside model's build.** `WriteWrapper` kept a referenced file
+  only when it existed at the path written, and a compiled model is written by its platform-neutral path, which is never
+  a file (its builds are at `models/<rid>/`). Its build was swept up as unreferenced and the self-check refused the
+  export. Kept by `OsdiBuilds.BuildsBeside` now. And a platform the module alone was built for is reported not built,
+  naming the outside model that lacks a build there — the rows had said "built" for platforms `Builds` left out.
+- **Compile netlist on a cell that is one Verilog-A device** said only "would protect nothing". A Verilog-A device stays a
+  model of its own (brief 16 D2), so the sentence now names it and points at Compile Verilog-A models.
+- **Export's "Add this library to the workspace" could replace another library.** It added under the folder's name, and
+  `AddOrRepair` replaces a reference of that name — so a second folder named like one already referenced took over its
+  placed parts. `VendorLibraryRefs.UnusedName` picks `Name 2`, `Name 3` ….
+- **Manage Libraries' Remove counted SPICE parts only.** `PlacedVendorParts` collected no placed MODEL, and the dialog
+  counted with the SPICE parser, so removing a model library warned about nothing; Validate's model branch never ran from
+  the GUI either. Models are listed as `(vendormodel://…, "")`, the shape Validate already read; `CountPlaced` is shared.
+- **A model pin wired to nothing exported in silence.** `ModelFolderCheck` warns (`check.model.pin-unconnected`): a
+  warning because a package can have a real no-connect pin. Export reports it with its result.
+- **Dialog text:** the Compile Verilog-A models note read "ships the compiled build" with the box unticked; the Value box
+  showed a greyed "10 pF" hint on an active part; Model Composer's tables said "the next export keeps it" of a cell made
+  for one export and deleted after it (`ExportToLibraryViewModel.CellIsTemporary`).
+
+Two failures that predated the pass, fixed with it: `YieldReferenceTests` asserted that every MCP yield option is a yield
+flag, and `--result` (EMB-5) is `JsonRun`'s, read for every verb — the test now exempts it.
+`PdkCompiledModelRoutingTests.AModuleNobodyCompiled…` predated GDF-6, which states the build step only where the kit
+ships the module's source; the test covers both sentences now. The firewall text gate had twelve series lines
+(corner selector, link driver, fragment and proof exceptions, each quoted inside its caller's refusal): allow-listed.
+
+**Not changed:** `EditableComponent.GetPortWorldCoord` answers with the built-in symbol's pins, so for a Verilog-A part
+drawn as a FET (or anything with an `ExternalSymbolRef`) it is not where the leads are drawn. Extraction does not use it
+and its one editor caller (`WireGeometry.FindConnectedPorts`) has no callers; a headless caller wiring a part has to
+resolve the drawn symbol. The empty Value/Range rows on a placed model's panel stay, as hiding them per part would move
+the Corner and Footprint rows when the part changes.

@@ -60,6 +60,11 @@ public sealed class ModelComposerExportTests : IDisposable
 
         string hand = WriteHandDrawnCell(source.CmodelPath!);
         Assert.Null(ModelLibraryExport.SelfCheck(hand, result.ModelDir!, part));
+
+        // check elaborates the model's schematic against the model folder, as a run does: its .cmodel is models/x.cmodel
+        // there, and against the schematic's own folder it was reported not found.
+        var checkedPart = RunCliPublic("check", result.ModelDir!);
+        Assert.True(checkedPart.Exit == 0, checkedPart.StdErr);
     }
 
     // 2 — a self-heating model's cell has t as pin 4, one that does not three pins; and the cell is deterministic.

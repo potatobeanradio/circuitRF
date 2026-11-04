@@ -126,6 +126,7 @@ have seen).
 | `yield.statistics.lhs-autostop` | error | `sampling=lhs` with `autostop=1` |
 | `yield.statistics.autostop-target` | error | `autostop=1` with no `target` |
 | `yield.corner.unknown-key` | error | a binding that is neither a global variable nor a key the catalog offers |
+| `yield.corner.unknown-part` / `.unknown-part-corner` | error | a `part:` selection naming no part the design places, or a corner that part does not offer |
 | `yield.corner.temp` | error | `temp` not a number |
 | `yield.corner.trial-incomplete` | error | `trial=` without `seed`, `sampling` and `trials` |
 | `yield.dist.nonphysical` | warning | §1.1 |

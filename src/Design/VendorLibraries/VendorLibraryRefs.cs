@@ -224,6 +224,16 @@ public static class VendorLibraryRefs
         return n.Length == 0 ? "Vendor library" : n;
     }
 
+    /// <summary><paramref name="name"/>, or <c>name 2</c>, <c>name 3</c> … — the first no reference in
+    /// <paramref name="refs"/> uses (names compare as the <c>.cws</c> looks them up, ignoring case).</summary>
+    public static string UnusedName(IEnumerable<CwsVendorLibraryRef> refs, string name)
+    {
+        var taken = refs.Select(r => r.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (!taken.Contains(name)) return name;
+        for (int i = 2; ; i++)
+            if (!taken.Contains($"{name} {i}")) return $"{name} {i}";
+    }
+
     /// <summary>Why <paramref name="name"/> cannot name a library, or null. It is the host part of a
     /// <c>vendorlib://</c> reference, so it may not hold a separator.</summary>
     public static string? NameProblem(string name)
@@ -243,9 +253,14 @@ public static class VendorLibraryRefs
         ArgumentNullException.ThrowIfNull(refs);
         ArgumentNullException.ThrowIfNull(placedFiles);
         refs.RemoveAll(r => string.Equals(r.Name, name, StringComparison.OrdinalIgnoreCase));
-        return placedFiles.Count(f => (TryParse(f, out string n, out _) || ModelLibrary.VendorModelRefs.TryParse(f, out n, out _, out _))
-                                   && string.Equals(n, name, StringComparison.OrdinalIgnoreCase));
+        return CountPlaced(placedFiles, name);
     }
+
+    /// <summary>How many of <paramref name="placedFiles"/> — a SPICE part's <c>File</c> or a placed model's
+    /// <c>vendormodel://</c> reference — come from the library named <paramref name="name"/>.</summary>
+    public static int CountPlaced(IEnumerable<string> placedFiles, string name)
+        => placedFiles.Count(f => (TryParse(f, out string n, out _) || ModelLibrary.VendorModelRefs.TryParse(f, out n, out _, out _))
+                               && string.Equals(n, name, StringComparison.OrdinalIgnoreCase));
 
     // ── What a picked folder is ───────────────────────────────────────────────
 

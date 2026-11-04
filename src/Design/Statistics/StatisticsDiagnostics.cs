@@ -101,6 +101,16 @@ public static class StatisticsDiagnostics
         "yield.corner.unknown-key", DiagnosticSeverity.Error,
         "{who}: {key} is neither a variable of this design nor a tunable key it offers.", ("who", who), ("key", key));
 
+    public static Diagnostic CornerUnknownPart(string who, string part, string placed) => Diagnostic.Create(
+        "yield.corner.unknown-part", DiagnosticSeverity.Error,
+        "{who}: part:{part} names no part this design places; part: takes a library part number (placed: {placed}).",
+        ("who", who), ("part", part), ("placed", placed));
+
+    public static Diagnostic CornerUnknownPartCorner(string who, string part, string corner, string offered) => Diagnostic.Create(
+        "yield.corner.unknown-part-corner", DiagnosticSeverity.Error,
+        "{who}: part {part} has no corner '{corner}'; it offers {offered}.",
+        ("who", who), ("part", part), ("corner", corner), ("offered", offered));
+
     public static Diagnostic CornerTempNotANumber(string who, string temp) => Diagnostic.Create(
         "yield.corner.temp", DiagnosticSeverity.Error,
         "{who}: temp={temp} is not a number of degC.", ("who", who), ("temp", temp));

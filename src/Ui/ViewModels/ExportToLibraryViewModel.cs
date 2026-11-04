@@ -84,6 +84,10 @@ public sealed partial class ExportToLibraryViewModel : ObservableObject
     public string EffectiveKind => Kind ?? Plan?.DefaultKind ?? ModelPartManifest.KindPassive;
     public bool IsPassive => EffectiveKind == ModelPartManifest.KindPassive;
 
+    /// <summary>The Value box's hint: an example value for a passive, nothing for an active part, whose box is greyed —
+    /// a greyed "10 pF" on a FET reads as the part's value.</summary>
+    public string ValuePlaceholder => IsPassive ? "10 pF" : "";
+
     // ── Frequency (brief vendorlib-11 R-vl11-4) ────────────────────────────
 
     /// <summary>The plan the technology-bound parts are sampled over: the EM Setup's own segment rows, seeded with
@@ -152,7 +156,7 @@ public sealed partial class ExportToLibraryViewModel : ObservableObject
     partial void OnLibraryPathChanged(string value) => Replan();
     partial void OnCategoryChanged(string value) => Replan();
     partial void OnPartNumberChanged(string value) => Replan();
-    partial void OnKindChanged(string? value) { OnPropertyChanged(nameof(EffectiveKind)); OnPropertyChanged(nameof(IsPassive)); Replan(); }
+    partial void OnKindChanged(string? value) { OnPropertyChanged(nameof(EffectiveKind)); OnPropertyChanged(nameof(IsPassive)); OnPropertyChanged(nameof(ValuePlaceholder)); Replan(); }
     partial void OnValueChanged(string value) => Replan();
     partial void OnFrequencyLowChanged(string value) => Replan();
     partial void OnFrequencyHighChanged(string value) => Replan();
@@ -241,7 +245,7 @@ public sealed partial class ExportToLibraryViewModel : ObservableObject
         AddToWorkspaceEnabled = !referenced;
         if (referenced) AddToWorkspace = false;
         OnPropertyChanged(nameof(EffectiveKind));
-        OnPropertyChanged(nameof(IsPassive));
+        OnPropertyChanged(nameof(IsPassive)); OnPropertyChanged(nameof(ValuePlaceholder));
         OnPropertyChanged(nameof(CanExport));
     }
 

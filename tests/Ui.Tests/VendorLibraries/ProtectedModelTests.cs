@@ -224,6 +224,64 @@ public sealed class ProtectedModelTests : IDisposable
         Assert.DoesNotContain(ModelFolderCheck.Validate(model), d => d.Severity == DiagnosticSeverity.Error);
     }
 
+    // Compile netlist on a cell whose only device is a Verilog-A model: nothing folds into one module, and the refusal
+    // names the option that does protect it. With a resistor in series, Compile netlist and Compile Verilog-A models
+    // together ship the outside model's build (it was deleted as unreferenced: its neutral path is never a file), and the
+    // part lists only the platforms where the module AND that model have a build.
+    [CompilerFact]
+    public void CompileNetlistWithCompileModels_ShipsTheOutsideModelsBuild()
+    {
+        EnsureWorkerBeside(AppContext.BaseDirectory);
+        string ws = WorkspaceCreate.Create(_dir, "ws", null).WorkspaceDir;
+        string src = Path.Combine(_dir, "src");
+        Directory.CreateDirectory(src);
+        File.WriteAllText(Path.Combine(src, "tstres.va"), """
+            `include "disciplines.vams"
+            module tstres(a, b);
+              inout a, b;
+              electrical a, b;
+              parameter real r = 100.0;
+              analog I(a, b) <+ V(a, b) / r;
+            endmodule
+            """);
+        string Cell(string name, bool series)
+        {
+            var sch = new SchematicEditModel();
+            var p1 = Pin("P1", 1, "a", -2400, 0);
+            var va = new EditableComponent { InstanceName = "D1", Symbol = SymbolKind.VerilogA, X = 0, Y = 0 };
+            va.Parameters.Add(new EditableParameter { Name = "File", Expression = Path.Combine(src, "tstres.va") });
+            var p2 = Pin("P2", 2, "b", 400, 0);
+            foreach (var c in new[] { p1, va, p2 }) sch.Components.Add(c);
+            if (series)
+            {
+                var r1 = Part("R1", SymbolKind.Resistor, -1200, 2000, "R", "5", "Ohm");
+                sch.Components.Add(r1);
+                Wire(sch, p1, 0, r1, 0);
+                Wire(sch, r1, 1, va, 0);
+            }
+            else Wire(sch, p1, 0, va, 0);
+            Wire(sch, va, 1, p2, 0);
+            return WriteCell(ws, name, sch);
+        }
+
+        string lib = Path.Combine(_dir, "lib");
+        var alone = ModelLibraryExport.Plan(Cell("TSTVAONLY", series: false),
+            new ExportOptions { LibraryDir = lib, CompileNetlist = true, SourceOut = Path.Combine(_dir, "out", "a.va") });
+        Assert.Contains(alone.Refusals, r => r.Contains("D1 is a Verilog-A model", StringComparison.Ordinal)
+                                          && r.Contains("--compile-models", StringComparison.Ordinal));
+
+        var result = ModelLibraryExport.Export(Cell("TSTRSER", series: true), new ExportOptions
+        {
+            LibraryDir = lib, CompileNetlist = true, CompileModels = true, SourceOut = Path.Combine(_dir, "out", "b.va"),
+        });
+        Assert.True(result.Succeeded, result.Refusal);
+        string model = result.ModelDir!;
+        Assert.True(File.Exists(Path.Combine(model, "models", Here, "tstres.osdi")));
+        Assert.Empty(Directory.EnumerateFiles(model, "*.va", SearchOption.AllDirectories));
+        Assert.Equal([Here], ModelPartManifest.Read(Path.Combine(model, ModelFolder.PartFileName)).Manifest!.Builds);
+        Assert.All(result.Builds.Where(b => b.Rid != Here), b => Assert.Equal(ExportBuild.NotBuilt, b.State));
+    }
+
     // Over MCP: compileModels is the flag, and each builds entry is one --build with its file confined to the root.
     [Fact]
     public void OverMcp_CompileModelsAndBuildsBecomeTheFlags_AndABuildOutsideTheRootIsRefused()

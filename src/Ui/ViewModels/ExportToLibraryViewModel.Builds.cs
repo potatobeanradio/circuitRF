@@ -34,10 +34,12 @@ public sealed partial class ExportToLibraryViewModel
     /// ticked, so it can always be unticked.</summary>
     public bool IsCompileEnabled => CompileModels || Plan is { CompileUnavailable: null };
 
-    /// <summary>Why the checkbox is greyed, or what ticking it does.</summary>
+    /// <summary>Why the checkbox is greyed, or what the model ships either way — said as what WILL happen in the state the
+    /// box is in, so an unticked box never reads as "ships the build".</summary>
     public string CompileNote => Plan is null ? ""
         : !CompileModels && Plan.CompileUnavailable is { } why ? why
-        : $"The model ships the compiled build for {OsdiBuilds.CurrentRid}, and not its Verilog-A source.";
+        : CompileModels ? $"The model ships the compiled build for {OsdiBuilds.CurrentRid}, and not its Verilog-A source."
+        : $"The model ships its Verilog-A source as it is. Ticked, it ships the compiled build for {OsdiBuilds.CurrentRid} instead.";
 
     /// <summary>The platforms a build can be listed for: every one circuitRF runs on but this one, whose build is the
     /// one the export runs with.</summary>

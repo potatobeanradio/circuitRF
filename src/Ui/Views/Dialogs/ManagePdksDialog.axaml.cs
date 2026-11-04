@@ -465,8 +465,7 @@ public partial class ManagePdksDialog : Window
     {
         if (_ctx?.VendorRefs is null) return;
         var files  = (_ctx.PlacedVendorParts ?? []).Select(p => p.File).ToList();
-        int placed = files.Count(f => VendorLibraryRefs.TryParse(f, out string n, out _)
-                                   && string.Equals(n, row.Name, StringComparison.OrdinalIgnoreCase));
+        int placed = VendorLibraryRefs.CountPlaced(files, row.Name);
 
         string message = placed > 0
             ? $"Remove the reference to '{row.Name}'?\n\n" +

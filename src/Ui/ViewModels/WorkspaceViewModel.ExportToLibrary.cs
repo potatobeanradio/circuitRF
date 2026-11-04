@@ -65,7 +65,7 @@ public partial class WorkspaceViewModel
         var window = ResolveOwner(owner);
         if (window is null || ExportToLibraryBlockedReason(doc) is not null || doc.FilePath is not { } path) return;
         string cellDir = Path.GetDirectoryName(Path.GetDirectoryName(Path.GetFullPath(path))!)!;
-        await ExportCellToLibraryAsync(cellDir, window, null);
+        await ExportCellToLibraryAsync(cellDir, window, temporary: false, null);
     }
 
     /// <summary>
@@ -96,7 +96,7 @@ public partial class WorkspaceViewModel
             return;
         }
         using (staged)
-            await ExportCellToLibraryAsync(staged.CellDir, owner, vm =>
+            await ExportCellToLibraryAsync(staged.CellDir, owner, temporary: true, vm =>
             {
                 vm.PartNumber = source.PartNumber;
                 if (source.FrequencyLow.Length > 0) vm.FrequencyLow = source.FrequencyLow;
@@ -106,7 +106,7 @@ public partial class WorkspaceViewModel
 
     /// <summary>The dialog on <paramref name="cellDir"/> and what follows a success — the one function both the schematic
     /// editor's export and Model Composer's post their Messages lines through.</summary>
-    private async Task ExportCellToLibraryAsync(string cellDir, Window window, Action<ExportToLibraryViewModel>? defaults)
+    private async Task ExportCellToLibraryAsync(string cellDir, Window window, bool temporary, Action<ExportToLibraryViewModel>? defaults)
     {
         var known = new List<ExportLibraryChoice>();
         string? wsRoot = CurrentWorkspacePath is { } cws ? Path.GetDirectoryName(cws) : null;
@@ -115,7 +115,7 @@ public partial class WorkspaceViewModel
                 if (VendorLibraryRefs.ResolveLibraryRoot(wsRoot, r.Name, out _) is { } root)
                     known.Add(new ExportLibraryChoice(r.Name, root));
 
-        var vm = new ExportToLibraryViewModel(cellDir, known, null);
+        var vm = new ExportToLibraryViewModel(cellDir, known, null) { CellIsTemporary = temporary };
         defaults?.Invoke(vm);
         var result = await Views.Dialogs.ExportToLibraryDialog.AskAsync(window, vm);
         if (result is not { Succeeded: true }) return;
@@ -129,7 +129,10 @@ public partial class WorkspaceViewModel
         {
             var file = TryLoadCws(cwsPath);
             var refs = file.VendorLibraries ?? [];
-            string name = VendorLibraryRefs.DefaultName(libraryRoot);
+            // AddOrRepair replaces a reference of the same name, and the workspace may already reference ANOTHER
+            // folder of this folder's name — whose placed parts would then resolve against this library. Nobody is
+            // asked here (the checkbox was the question), so the new library takes a name no reference has.
+            string name = VendorLibraryRefs.UnusedName(refs, VendorLibraryRefs.DefaultName(libraryRoot));
             var added = await Task.Run(() => VendorLibraryRefs.AddOrRepair(wsRoot, refs, libraryRoot, name, out string? p) is { } b ? (b, (string?)null) : (null, p));
             if (added.Item1 is null)
                 Messages.Warning($"Export to Library — the library was not added to the workspace. {added.Item2}");

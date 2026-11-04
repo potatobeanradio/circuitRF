@@ -5,11 +5,15 @@ using System.Linq;
 using System.Text;
 using System.Text.Json.Nodes;
 using CircuitRF.Design.Cells;
+using CircuitRF.Design.Circuit;
+using CircuitRF.Design.Statistics;
+using CircuitRF.Design.VendorLibraries;
 using CircuitRF.Design.Modeling.VerilogA;
 using CircuitRF.Design.Schematic;
 using CircuitRF.Design.Symbol;
 using CircuitRF.Design.VendorLibraries.ModelLibrary;
 using CircuitRF.Design.Workspace;
+using CircuitRF.Ui.ViewModels;
 using Xunit;
 using static CircuitRF.Ui.Tests.VendorLibraries.ModelLibraryExportTests;
 
@@ -20,7 +24,11 @@ namespace CircuitRF.Ui.Tests.VendorLibraries;
 /// travels with an export; Copy to Workspace points a model's sub-cells at the copy; the signature covers
 /// <c>part.cpart</c> and survives a CR LF checkout of <c>library.sums</c>; a null in a manifest is a refusal; an unbound
 /// terminal's <c>$port_connected</c> is a constant; a Windows drive path leaves the folder; a corner value the reader
-/// cannot take is refused before it is stored. Every part and library here is synthetic.
+/// cannot take is refused before it is stored. The second pass, made by walking the flow as a user: a corner's part:
+/// selection that matches nothing refuses rather than running as the nominal; an export's added library never takes the
+/// name of another library the workspace references; a temporary cell's tables do not claim to outlive the export;
+/// removing a library counts its placed models, not only its SPICE parts; a model pin wired to nothing is said.
+/// Every part and library here is synthetic.
 /// </summary>
 [Collection(CellStatGlobalsCollection.Name)]
 public sealed class VendorLibraryReviewFixTests : IDisposable
@@ -177,5 +185,83 @@ public sealed class VendorLibraryReviewFixTests : IDisposable
         Assert.NotNull(ModelCellEdits.CornerProblem([bad], ["Cg", "Cnom"]));
         var good = new CcellCorner { Name = "min", Values = new() { ["Cg"] = "0.9 pF" } };
         Assert.Null(ModelCellEdits.CornerProblem([good], ["Cg", "Cnom"]));
+    }
+
+    // 8 — a corner whose part: names an instance (not a part number) or a corner the part lacks is refused; applying it
+    // skipped both with a note, so the corner ran as the nominal and reported the nominal's margins under its name.
+    [Theory]
+    [InlineData("corner lo part:U1=min", "yield.corner.unknown-part")]
+    [InlineData("corner lo part:TSTCAP=typ", "yield.corner.unknown-part-corner")]
+    public void APartCornerThatMatchesNothing_RefusesTheCornerRun(string corner, string code)
+    {
+        var c = PreparedCircuit.FromText($"""
+            define TSTCAP (a b)
+              part TSTCAP
+              parameters C0=10 pF
+              corner min C0=9 pF
+              C:C1 a b C=C0
+            end TSTCAP
+            Port:P1 in 0 Num=1 Z=50 Ohm
+            Port:P2 out 0 Num=2 Z=50 Ohm
+            TSTCAP:U1 in out
+            analysis SP1 type=sparam start=1 stop=2 npts=2 Unit=GHz
+            goal G = dB(SP1.S(2,1)) analysis=SP1 ge -1
+            {corner}
+            """, null, null);
+        var run = CornerRun.Create(c);
+        Assert.Equal(code, run.Refusal?.Id);
+    }
+
+    // 9 — Export's "Add this library to the workspace" names the library so it never replaces a reference to another
+    // folder of the same name (whose placed parts would then resolve against the new library).
+    [Fact]
+    public void AnAddedLibrary_TakesANameNoReferenceHas()
+    {
+        var refs = new List<CwsVendorLibraryRef> { new() { Name = "Parts", Path = "/a/Parts" }, new() { Name = "parts 2", Path = "/b/Parts" } };
+        Assert.Equal("Parts 3", VendorLibraryRefs.UnusedName(refs, "Parts"));
+        Assert.Equal("Other", VendorLibraryRefs.UnusedName(refs, "Other"));
+    }
+
+    // 9b — Manage Libraries' Remove warns with the placed parts it leaves unresolved: a placed MODEL is its vendormodel://
+    // reference, which the dialog's own count (SPICE references only) said nothing about.
+    [Fact]
+    public void RemovingALibrary_CountsItsPlacedModels()
+    {
+        string[] placed = [VendorModelRefs.RefFor("Parts", "Pads/PAD3"), VendorLibraryRefs.RefFor("Parts", "caps.lib"),
+                           VendorModelRefs.RefFor("Other", "X")];
+        Assert.Equal(2, VendorLibraryRefs.CountPlaced(placed, "parts"));
+    }
+
+    // 9c — a pin of the model's top define that no element touches (a Pin never wired in the cell) is a warning, which
+    // Export reports with its result and check over the library; it exported in silence before.
+    [Fact]
+    public void AModelPinWiredToNothing_IsAWarning()
+    {
+        string model = Path.Combine(_dir, "TSTOPEN");
+        Directory.CreateDirectory(model);
+        File.WriteAllText(Path.Combine(model, "TSTOPEN.cnl"), "define TSTOPEN (g d s)\n  R:R1  g  s  R=1 Ohm\nend TSTOPEN\n");
+        File.WriteAllText(Path.Combine(model, ModelFolder.PartFileName),
+            """{ "Format": "circuitrf-model", "FormatVersion": 1, "Part": "TSTOPEN", "Cell": "TSTOPEN", "Kind": "Passive", "Pins": ["g", "d", "s"] }""");
+        var open = Assert.Single(ModelFolderCheck.Validate(model), d => d.Id == "check.model.pin-unconnected");
+        Assert.Equal(CircuitRF.Diagnostics.DiagnosticSeverity.Warning, open.Severity);
+        Assert.Contains("pin d of define TSTOPEN", open.Render());
+    }
+
+    // 10 — Model Composer's export dialog runs on a cell made for that export and deleted after it: a tolerance typed in
+    // its table says it reaches this export only, not that the next export keeps it.
+    [Fact]
+    public void ATemporaryCellsTable_SaysItReachesThisExportOnly()
+    {
+        string ws = WorkspaceCreate.Create(_dir, "ws", null).WorkspaceDir;
+        string cell = WriteCellWithOwnData(ws, "TSTPAD");
+        string ccellPath = Path.Combine(cell, CellFolder.CcellFileName);
+        var ccell = CellPersistence.LoadFromFile(ccellPath);
+        ccell.Parameters.Add(new CcellParameter { Name = "R0", DefaultExpression = "50", Unit = "Ohm" });
+        CellPersistence.SaveToFile(ccellPath, ccell);
+
+        var dialog = new ExportToLibraryViewModel(cell, [], Path.Combine(_dir, "lib")) { CellIsTemporary = true };
+        dialog.ParameterRows.Single().DistributionIndex = 1;
+        Assert.StartsWith("Used by this export only", dialog.CellEditNote);
+        Assert.StartsWith("gauss(", CellPersistence.LoadFromFile(ccellPath).Parameters.Single().DefaultExpression);
     }
 }

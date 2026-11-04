@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Platform.Storage;
 using CircuitRF.Design.VendorLibraries;
+using CircuitRF.Design.VendorLibraries.ModelLibrary;
 using CircuitRF.Ui.Messages;
 using CircuitRF.Ui.Schematic;
 using CommunityToolkit.Mvvm.Input;
@@ -142,7 +143,8 @@ public partial class WorkspaceViewModel
         });
     }
 
-    /// <summary>The File/Name of every SpiceModel placed in a schematic that is currently OPEN —
+    /// <summary>The File/Name of every vendor part placed in a schematic that is currently OPEN — a SpiceModel's, and a
+    /// placed library model's <c>vendormodel://</c> reference with an empty Name (what Validate reads a model as) —
     /// what Remove warns with and Validate checks (the same open-documents scope the kit path uses).</summary>
     private IReadOnlyList<(string File, string Name)> PlacedVendorParts()
     {
@@ -150,11 +152,14 @@ public partial class WorkspaceViewModel
             .Concat(_scratchDocs)
             .Select(d => d.ViewModel.EditModel);
 
-        return [.. models.SelectMany(m => m.Components)
+        var components = models.SelectMany(m => m.Components).ToList();
+        return [.. components
                          .Where(c => c.Symbol == SymbolKind.SpiceModel)
                          .Select(c => (File: Param(c, SpiceModelSymbolProvider.FileParameter),
                                        Name: Param(c, SpiceModelSymbolProvider.NameParameter)))
                          .Where(p => VendorLibraryRefs.IsVendorRef(p.File))
+                         .Concat(components.Where(c => c.CellRef is { } r && VendorModelRefs.IsRef(r))
+                                           .Select(c => (File: c.CellRef!, Name: "")))
                          .Distinct()];
 
         static string Param(EditableComponent c, string name)

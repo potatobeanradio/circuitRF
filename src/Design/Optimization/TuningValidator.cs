@@ -16,8 +16,9 @@ public static class TuningValidator
 {
     /// <param name="netlist">The elaborated design, for the resolved globals a sweep's grid is
     /// computed with. Null when elaboration failed — the grid rule is then skipped, not guessed.</param>
+    /// <param name="lib">The design's cells, for the rules that ask what is placed (a corner's <c>part:</c>).</param>
     public static IReadOnlyList<Diagnostic> Validate(
-        TestBench tb, TunableCatalog catalog, ElaboratedNetlist? netlist = null)
+        TestBench tb, TunableCatalog catalog, ElaboratedNetlist? netlist = null, Library? lib = null)
     {
         var f = new List<Diagnostic>();
         if (tb.Tuning is not { } setup) return f;
@@ -136,7 +137,7 @@ public static class TuningValidator
         }
 
         // The statistical part — tolerances, correlations, statistics settings, corners (docs/design/yield.md).
-        f.AddRange(Statistics.StatisticsValidator.Validate(tb, catalog, netlist));
+        f.AddRange(Statistics.StatisticsValidator.Validate(tb, catalog, netlist, lib));
         return f;
     }
 

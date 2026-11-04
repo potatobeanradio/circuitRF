@@ -460,6 +460,7 @@ The part has no symbol, because `Glyph` draws a capacitor, and no schematic, bec
 | The top cell's pins or parameters different from `Pins` / `Parameters` | Error |
 | A file parameter naming a file outside the model folder | Error |
 | Two model folders with one part number | Error |
+| A pin of the top `define` that connects to nothing inside it | Warning |
 | The folder no longer matching `PublishedHash` — edited since exported | Warning |
 | A compiled model's builds not matching `Builds` ([above](#compiled)) | Error, Warning or Info |
 | A library's signature ([above](#sig-states)) | Info, Warning or Error |

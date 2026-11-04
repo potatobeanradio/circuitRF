@@ -185,8 +185,10 @@ public sealed class YieldReferenceTests
         foreach (var (noun, _) in CircuitRF.Cli.Yield.Nouns) Assert.Contains($"  {noun} ", page);
 
         var run = CircuitRF.Cli.Serve.ToolCatalog.Tools.Single(t => t.Name == "run");
+        // --result is JsonRun's, read for every verb before the verb's own parser sees the line, so the yield verb's
+        // table does not list it.
         foreach (var mode in run.Modes.Where(m => m.Verb[0] == "yield"))
-            foreach (var o in mode.Options)
+            foreach (var o in mode.Options.Where(o => o.Cli != "--result"))
                 Assert.Contains(CircuitRF.Cli.Yield.Flags, f => f.Flag == o.Cli);
     }
 }

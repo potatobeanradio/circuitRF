@@ -1559,3 +1559,19 @@ src/Engine/Mom/BlockLowerMatrix.cs|Only a square matrix has a lower triangle to 
 src/Engine/Mom/BlockLowerMatrix.cs|x has {x.Length} entries against a {n}×{n} matrix.
 src/Engine/Mom/SymmetricFactorization.cs|A residual needs two vectors of the matrix's size; got {n}×{n}, x[{x.Count}], 
 src/Engine/Mom/SymmetricFactorization.cs|A symmetric factorisation needs a square, non-empty matrix; this one is 0×0.
+
+# The model-library series (vendorlib-13, -15, -16, -18): exception text thrown by the corner selector, the Verilog-A
+# link driver and Compile netlist's fragment and proof steps, each caught by its caller and quoted inside that caller's
+# own refusal sentence.
+src/Core/Design/CellCorner.cs|'{instancePath}' selects the corner '{name}', which cell '{cell.Name}' does not declare; it offers 
+src/Core/Devices/External/VerilogACompiler.cs|The {rid} build's link folder could not be made: {ex.Message}
+src/Core/Devices/External/VerilogACompiler.cs|circuitRF's link driver is not available in this process, so the {rid} build cannot be linked.
+src/Core/Devices/External/VerilogALinkDriver.cs|'{program}' could not be started.
+src/Core/Devices/External/VerilogALinkDriver.cs|'{rid}' is not a platform circuitRF builds for.
+src/Core/Devices/External/VerilogALinkDriver.cs|The compiler has no target for {rid}.
+src/Core/Devices/External/VerilogALinkDriver.cs|The compiler's link line names no output.
+src/Design/Modeling/VerilogA/VaFragment.cs|the module text has no analog block.
+src/Design/Modeling/VerilogA/VaFragment.cs|the module text has no module … endmodule.
+src/Design/VendorLibraries/ModelLibrary/Protect/NetlistVerilogA.cs|the name '{name}', which nothing in the cell defines
+src/Design/VendorLibraries/ModelLibrary/Protect/ProtectCheck.cs|the DC solve at {bias} did not converge.
+src/Design/VendorLibraries/ModelLibrary/Protect/ProtectCheck.cs|the bench's S-parameters are singular.

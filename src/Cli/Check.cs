@@ -652,8 +652,11 @@ internal static class Check
         try
         {
             string name = Path.GetFileNameWithoutExtension(path);
+            // Against the base a run of this schematic resolves its files against (its owning root: the workspace, or the
+            // model folder a library part's schematic sits in), not its own folder — else a model's ComposedFET .cmodel
+            // was "not found" here while every run found it.
             (lib, tb) = SchematicCircuit.RoundTrip(SchematicCircuit.CnlTextOf(extracted, name), name,
-                                                   Path.GetDirectoryName(Path.GetFullPath(path)));
+                                                   CircuitSource.ReferenceBaseOf(path));
         }
         catch (Exception ex) { f.Add(CliDiagnostics.CheckUnreadable(path, ex.Message)); return; }
 
@@ -1677,7 +1680,7 @@ internal static class Check
     {
         if (tb.Tuning is not { IsEmpty: false } setup) return;
         catalog ??= TunableCatalog.FromNetlist(tb, lib);
-        var findings = TuningValidator.Validate(tb, catalog, nl);
+        var findings = TuningValidator.Validate(tb, catalog, nl, lib);
         foreach (var finding in findings)
             f.Add(CliDiagnostics.CheckTuningFinding(path, finding));
 

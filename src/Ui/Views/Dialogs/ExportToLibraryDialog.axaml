@@ -63,7 +63,8 @@
                                ToolTip.Tip="Active when any component is nonlinear (Verilog-A, ComposedFET, a FET, a diode, SDD, an external device); Passive otherwise."/>
                     <TextBlock Grid.Row="3" Text="Value" FontSize="12" VerticalAlignment="Center"/>
                     <TextBox   Grid.Row="3" Grid.Column="1" Text="{Binding Value}" FontSize="12" IsEnabled="{Binding IsPassive}"
-                               PlaceholderText="10 pF" ToolTip.Tip="A passive's value. Optional; it makes the part findable by value."/>
+                               PlaceholderText="{Binding ValuePlaceholder}" ToolTip.ShowOnDisabled="True"
+                               ToolTip.Tip="A passive's value. Optional; it makes the part findable by value. An active part has none."/>
                     <TextBlock Grid.Row="4" Text="Frequency" FontSize="12" VerticalAlignment="Center"/>
                     <TextBox   Grid.Row="4" Grid.Column="1" Text="{Binding FrequencyLow}" FontSize="12" PlaceholderText="0 Hz"/>
                     <TextBox   Grid.Row="4" Grid.Column="2" Text="{Binding FrequencyHigh}" FontSize="12" PlaceholderText="20 GHz"/>

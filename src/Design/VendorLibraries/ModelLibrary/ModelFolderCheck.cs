@@ -253,6 +253,15 @@ public static class ModelFolderCheck
                 ("path", cnlPath), ("cell", cell.Name),
                 ("netlist", string.Join(" ", cell.Ports)), ("manifest", string.Join(" ", part.Pins))));
 
+        // A pin no element of the top define touches leaves the placed part's terminal open inside it — usually a Pin that
+        // was never wired. A warning, not an error: a package can have a genuine no-connect pin.
+        var touched = cell.Instances.SelectMany(i => i.NetBindings).ToHashSet(StringComparer.Ordinal);
+        var open = cell.Ports.Where(p => !touched.Contains(p)).ToList();
+        if (open.Count > 0)
+            found.Add(Diagnostic.Create("check.model.pin-unconnected", DiagnosticSeverity.Warning,
+                "{path}: pin {pins} of define {cell} connects to nothing inside it, so a part placed from it leaves that pin open. Wire it in the cell's schematic, unless it is meant as a no-connect pin.",
+                ("path", cnlPath), ("pins", string.Join(", ", open)), ("cell", cell.Name)));
+
         // D7: the index's parameter list is the .cnl's, written from one source. The manifest's
         // defaults are read back through the SAME `parameters` reader, so two spellings the reader
         // takes as one value agree (`3 V` and `3  V`; a unit written glued or apart is the reader's call).

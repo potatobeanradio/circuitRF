@@ -80,7 +80,18 @@ public static partial class ModelLibraryExport
         string? srcBase = SchematicCircuit.ReferenceBaseOfDirectory(Path.GetDirectoryName(PrimaryPath(dir, ViewType.Schematic) ?? dir));
         var partition = ProtectPartition.Partition(text, Path.GetFileName(dir), srcBase);
         if (partition.Inside.Count == 0 && partition.Refusals.Count == 0)
-            refusals.Add("Nothing in the cell can be compiled, so Compile netlist would protect nothing.");
+        {
+            // A Verilog-A device is a model of its own and stays outside the generated module (brief vendorlib-16 D2), so
+            // a cell that is one such device has nothing to fold in — but Compile Verilog-A models ships it without its
+            // source, which is what the user is after. Say so, rather than leave them at a dead end.
+            var models = partition.Outside.Where(e => e.Type.Equals("VerilogA", StringComparison.OrdinalIgnoreCase))
+                                          .Select(e => e.Path).ToList();
+            refusals.Add(models.Count == 0
+                ? "Nothing in the cell can be compiled, so Compile netlist would protect nothing."
+                : $"Nothing in the cell can be compiled into one module: {string.Join(", ", models)} "
+                  + (models.Count == 1 ? "is a Verilog-A model, which stays a model of its own" : "are Verilog-A models, which stay models of their own")
+                  + ". To ship it without its source, export with Compile Verilog-A models (--compile-models) instead.");
+        }
 
         var bias = new List<ProtectBias>();
         foreach (string b in options.CheckBias)
@@ -205,6 +216,31 @@ public static partial class ModelLibraryExport
         if (!copy.Inside.Select(e => e.Path).SequenceEqual(protect.Partition.Inside.Select(e => e.Path), StringComparer.Ordinal))
             throw new ProtectRefusedException(["The copied cell does not partition as the cell did; nothing was written."]);
         WriteWrapper(copy, module, part, tmp, neutral);
+
+        // A model left outside the module and compiled by Compile Verilog-A models is built for THIS platform only, so
+        // the part runs only where that model has a build too (BuildsOfWrapper). A platform the module alone reached is
+        // said to be not built, naming the model it lacks — "built" there would promise a part that cannot run.
+        var runs = BuildsOfWrapper(tmp);
+        string modelsDir = Path.Combine(tmp, ModelFolder.ModelsFolder);
+        var outside = Directory.Exists(modelsDir)
+            ? Directory.EnumerateFiles(modelsDir, "*" + OsdiBuilds.Extension, SearchOption.AllDirectories)
+                       .Select(f => Path.Combine(modelsDir, Path.GetFileName(f)))
+                       .Where(n => !Path.GetFileNameWithoutExtension(n).Equals(part, StringComparison.Ordinal))
+                       .Distinct(DocumentFileRefs.PathComparer).ToList()
+            : [];
+        for (int k = 0; k < builds.Count; k++)
+        {
+            var b = builds[k];
+            if (b.State == ExportBuild.NotBuilt || runs.Contains(b.Rid)) continue;
+            var lacking = outside.Where(n => !File.Exists(OsdiBuilds.PlatformPath(n, b.Rid)))
+                                 .Select(n => Path.GetFileNameWithoutExtension(n)).ToList();
+            if (lacking.Count == 0) continue;
+            File.Delete(OsdiBuilds.PlatformPath(neutral, b.Rid));
+            TryDeleteEmpty(Path.GetDirectoryName(OsdiBuilds.PlatformPath(neutral, b.Rid))!);
+            builds[k] = new ExportBuild(b.Rid, ExportBuild.NotBuilt,
+                $"The netlist's module built, but {string.Join(", ", lacking)} (compiled outside it) has no build for this platform.",
+                "Export again on that platform to add its build.");
+        }
         return (builds, neutral);
     }
 
@@ -287,7 +323,11 @@ public static partial class ModelLibraryExport
             foreach (var ov in e.Instance.Overrides)
             {
                 string v = ov.Expression.Trim().Trim('"');
-                if (v.Length > 0 && !Path.IsPathRooted(v) && File.Exists(Path.Combine(tmp, v))) keep.Add(Path.GetFullPath(Path.Combine(tmp, v)));
+                if (v.Length == 0 || Path.IsPathRooted(v)) continue;
+                // A compiled model outside the module (Compile Verilog-A models) is named by its platform-neutral path,
+                // which is never a file: its builds are at models/<rid>/. Kept by that path, or they are deleted below.
+                string full = Path.GetFullPath(Path.Combine(tmp, v));
+                if (File.Exists(full) || (OsdiBuilds.IsCompiled(full) && OsdiBuilds.BuildsBeside(full).Count > 0)) keep.Add(full);
             }
         }
 

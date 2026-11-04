@@ -152,9 +152,15 @@ public sealed partial class ExportToLibraryViewModel
         if (why is null) Changed();
     }
 
+    /// <summary>True when <see cref="ExportToLibraryViewModel.CellDir"/> is a cell made for this export only (Model
+    /// Composer's, brief vendorlib-17) and deleted when the dialog closes: the tables then reach this export and no other.</summary>
+    public bool CellIsTemporary { get; init; }
+
     private void Changed()
     {
-        CellEditNote = $"Written to the cell {CellName}, so the next export keeps it.";
+        CellEditNote = CellIsTemporary
+            ? "Used by this export only: the cell is made from the model each time, so set these again on the next export."
+            : $"Written to the cell {CellName}, so the next export keeps it.";
         Replan();
     }
 

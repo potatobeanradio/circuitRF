@@ -369,7 +369,7 @@ public sealed class OptimizationRun
             bench.Analyses.AddRange(tb.Analyses);
         }
         var catalog = TunableCatalog.FromNetlist(bench, lib, parts: circuit.PartTunables);
-        foreach (var d in TuningValidator.Validate(bench, catalog))
+        foreach (var d in TuningValidator.Validate(bench, catalog, lib: lib))
         {
             if (d.Severity == DiagnosticSeverity.Error) { Refusal = d; return; }
             _notes.Add(d);

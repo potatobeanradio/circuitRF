@@ -22,14 +22,16 @@ public static class StatisticsValidator
 
     /// <param name="netlist">The design elaborated, when the caller has it: its distribution calls are what
     /// varies besides the tolerances. Without it the testbench's own text is read for one.</param>
+    /// <param name="lib">The design's cells, when the caller has them: a corner's <c>part:</c> selection is checked
+    /// against the parts placed in it. Without it that rule is skipped, not guessed.</param>
     public static IReadOnlyList<Diagnostic> Validate(TestBench tb, TunableCatalog catalog,
-                                                     ElaboratedNetlist? netlist = null)
+                                                     ElaboratedNetlist? netlist = null, Library? lib = null)
     {
         var f = new List<Diagnostic>();
         if (tb.Tuning is not { } setup) return f;
 
         f.AddRange(ValidateSetup(setup, catalog));
-        Corners(setup, tb, catalog, f);
+        Corners(setup, tb, catalog, lib, f);
 
         if (!setup.Variables.Any(e => e.IsStatistical) && !HoldsDistribution(tb, netlist))
             foreach (var g in setup.Goals.Where(g => g.Enabled && g.Use == GoalUse.Yield))
@@ -304,7 +306,7 @@ public static class StatisticsValidator
 
     // ── Corners (D10) ────────────────────────────────────────────────────────
 
-    private static void Corners(TuningSetup setup, TestBench tb, TunableCatalog catalog, List<Diagnostic> f)
+    private static void Corners(TuningSetup setup, TestBench tb, TunableCatalog catalog, Library? lib, List<Diagnostic> f)
     {
         var globals = tb.GlobalVariables.Select(v => v.Name).ToHashSet(StringComparer.Ordinal);
         foreach (var c in setup.Corners)
@@ -328,6 +330,24 @@ public static class StatisticsValidator
                     ? globals.Contains(key) || catalog.FindValue(key) is not null
                     : catalog.FindValue(key) is not null;
                 if (!known) f.Add(StatisticsDiagnostics.CornerUnknownKey(who, key));
+            }
+
+            // A library part's corner (brief vendorlib-13 R-vl13-2e) names a part NUMBER the design places and one of
+            // that part's corners. Applying it skips anything else with only a note, so the corner would run as the
+            // nominal and report the nominal's margins under its own name.
+            if (lib is null) continue;
+            foreach (var (part, corner) in c.PartCorners ?? [])
+            {
+                var cell = lib.Cells.FirstOrDefault(x => string.Equals(x.Part, part, StringComparison.Ordinal));
+                if (cell is null)
+                {
+                    var placed = lib.Cells.Select(x => x.Part).OfType<string>().Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList();
+                    f.Add(StatisticsDiagnostics.CornerUnknownPart(who, part, placed.Count == 0 ? "none" : string.Join(", ", placed)));
+                }
+                else if (!corner.Trim().Equals(CellCorner.Nominal, StringComparison.OrdinalIgnoreCase)
+                         && !cell.Corners.Any(x => x.Name.Equals(corner.Trim(), StringComparison.OrdinalIgnoreCase)))
+                    f.Add(StatisticsDiagnostics.CornerUnknownPartCorner(who, part, corner.Trim(),
+                        string.Join(", ", new[] { CellCorner.Nominal }.Concat(cell.Corners.Select(x => x.Name)))));
             }
         }
     }
