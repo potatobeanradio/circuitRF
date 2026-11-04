@@ -164,7 +164,8 @@ public sealed partial class StackupCanvas : Control
     /// </summary>
     private void OnViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(TechEditorViewModel.SelectedStackupLayerName))
+        if (e.PropertyName is nameof(TechEditorViewModel.SelectedStackupLayerName)
+                           or nameof(TechEditorViewModel.SelectedFilmLayerKey))
             InvalidateVisual();
     }
 
@@ -233,6 +234,7 @@ public sealed partial class StackupCanvas : Control
     {
         HoverLayer    = HoverHighlighting ? _hoverLayer : null,
         SelectedLayer = _viewModel?.SelectedStackupLayerName,
+        SelectedFilm  = _viewModel?.SelectedFilmLayerKey,
     });
 
     /// <summary>
@@ -302,12 +304,13 @@ public sealed partial class StackupCanvas : Control
     internal bool PressAt(Point p)
     {
         if (_viewModel is null) return false;
-        _viewModel.SelectedStackupLayerName = HitAt(p)?.LayerName;
+        var hit = HitAt(p);
+        _viewModel.SelectFromDrawing(hit?.LayerName, hit?.FilmLayer);
 
         // R-stk5-3. ARMED, not started: below the movement threshold this whole gesture is the
         // selection above and nothing else, which is why the selection is written here on the press
         // rather than waiting to find out whether a drag happened.
-        _drag.Arm(SceneNow(), (float)p.X, (float)p.Y);
+        _drag.Arm(SceneNow(), (float)p.X, (float)p.Y, _viewModel.Working);
         return true;
     }
 
@@ -328,7 +331,12 @@ public sealed partial class StackupCanvas : Control
         // A live drag FREEZES the hover mark. Hover says "this is what a click would take", and while
         // the pointer is dragging one thing across others that sentence is false — a hover outline
         // chasing the pointer across bands the drag is passing over reads as a second selection.
-        if (_drag.Update(SceneNow(), (float)p.X, (float)p.Y, freeLane)) { InvalidateVisual(); return; }
+        if (_drag.Update(SceneNow(), (float)p.X, (float)p.Y, freeLane))
+        {
+            ShowDragRefusal();
+            InvalidateVisual();
+            return;
+        }
         if (_drag.IsDragging) return;
 
         // With the switch off, a pointer crossing the drawing does nothing at all — not even the
@@ -372,6 +380,7 @@ public sealed partial class StackupCanvas : Control
 
         if (inside && _viewModel is not null && _drag.IsDragging) wrote = _drag.Release(_viewModel);
         else _drag.Cancel();
+        ShowDragRefusal();
 
         // A committed drag repaints through StackupChanged; a cancelled one has to drop its own
         // chrome, and there is nothing else to raise it.
@@ -385,8 +394,18 @@ public sealed partial class StackupCanvas : Control
     internal bool CancelDrag()
     {
         if (!_drag.Cancel()) return false;
+        ShowDragRefusal();
         InvalidateVisual();
         return true;
+    }
+
+    /// <summary>A refused drop's tooltip, whose words are the binding's own and never a second wording.</summary>
+    private void ShowDragRefusal()
+    {
+        string? why = _drag.RefusalReason is { Length: > 0 } reason ? reason : null;
+        if (VisualRoot is null) return;
+        ToolTip.SetTip(this, why);
+        ToolTip.SetIsOpen(this, why is not null);
     }
 
     protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)

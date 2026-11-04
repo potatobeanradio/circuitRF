@@ -538,7 +538,7 @@ public static class CrossSectionExtractor
             if (s is LabelShape or BitmapShape) { ignoredAnnotation++; continue; }
 
             // EM-TFR — a resistive film is a sheet the planar solve meshes. It is not a conductor of a
-            // uniform line's cross-section, and its binding must not make it gold here.
+            // uniform line's cross-section.
             if (ResistiveFilms.IsFilm(tech, s.Layer)) { ignoredFilm++; continue; }
 
             if (binding.TryGetValue(s.Layer, out var bands))

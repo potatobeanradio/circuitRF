@@ -546,7 +546,7 @@ public sealed class ReferenceCliVerbTests(ITestOutputHelper output)
         Assert.Equal(CircuitRF.Design.Layout.ShippedTechnologies.DefaultId,
                      all.Single(t => t.GetProperty("isDefault").GetBoolean()).GetProperty("id").GetString());
 
-        string mmic = shipped.Single(id => id.StartsWith("mmic-", StringComparison.Ordinal));
+        string mmic = shipped.First(id => id.StartsWith("mmic-", StringComparison.Ordinal));
         var one = Payload(RunCli("reference", "technologies", mmic, "--json").StdOut)
             .GetProperty("reference").GetProperty("technologies").EnumerateArray().Single();
         var tech = CircuitRF.Design.Layout.ShippedTechnologies.Load(mmic);

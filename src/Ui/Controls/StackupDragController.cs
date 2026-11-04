@@ -22,6 +22,8 @@ internal enum StackupDragKind
     ViaGripTop,
     /// <summary>The other end.</summary>
     ViaGripBottom,
+    /// <summary>A resistive film: to the other face of its band, or onto another conductor (R-stk9-7).</summary>
+    Film,
 }
 
 /// <summary>
@@ -103,6 +105,22 @@ internal sealed class StackupDragController
     private string? _spanTo;
     private double? _lane;
 
+    // A film drag: which film, the technology CanPlaceOn is asked about, and what a release would do.
+    private LayerKey? _film;
+    private Technology? _tech;
+    private ConductorSheetSurface? _filmFace;
+    private string? _filmTarget;
+    private string? _refusal;
+
+    /// <summary>Why the film under the pointer would not land here, in the binding's own words, or null.</summary>
+    public string? RefusalReason => _started && _kind == StackupDragKind.Film ? _refusal : null;
+
+    /// <summary>The face a film drag would set, or null.</summary>
+    public ConductorSheetSurface? PreviewFilmFace => _started && _kind == StackupDragKind.Film ? _filmFace : null;
+
+    /// <summary>The conductor a film drag would move to, or null.</summary>
+    public string? PreviewFilmTarget => _started && _kind == StackupDragKind.Film ? _filmTarget : null;
+
     /// <summary>True once the pointer has passed <see cref="Threshold"/> — i.e. once this is a drag
     /// and not a click.</summary>
     public bool IsDragging => _started;
@@ -142,6 +160,7 @@ internal sealed class StackupDragController
             DragVia = _dragVia,
             DragViaSource = _dragViaSource,
             DragInsertY = _insertY,
+            DragRefused = _refusal is not null,
         };
     }
 
@@ -156,10 +175,11 @@ internal sealed class StackupDragController
     /// position is not z), a label arms nothing — it is there to be clicked and double-clicked — and
     /// neither does the background.</para>
     /// </summary>
-    public void Arm(StackupScene scene, float x, float y)
+    public void Arm(StackupScene scene, float x, float y, Technology? tech = null)
     {
         ArgumentNullException.ThrowIfNull(scene);
         Reset();
+        _tech = tech;
 
         if (scene.HitTest(x, y) is not { } hit) return;
 
@@ -167,6 +187,11 @@ internal sealed class StackupDragController
         {
             case StackupHitKind.Band:
                 _armed = StackupDragKind.Reorder;
+                break;
+
+            case StackupHitKind.Film:
+                _armed = StackupDragKind.Film;
+                _film = hit.FilmLayer;
                 break;
 
             case StackupHitKind.ViaBarrel:
@@ -227,6 +252,7 @@ internal sealed class StackupDragController
             StackupDragKind.ViaLane                                   => UpdateLane(scene, dx, freeLane),
             StackupDragKind.ViaSpan                                   => UpdateSpan(scene, dy),
             StackupDragKind.ViaGripTop or StackupDragKind.ViaGripBottom => UpdateGrip(scene, y),
+            StackupDragKind.Film                                      => UpdateFilm(scene, x, y, dy),
             _                                                         => false,
         };
     }
@@ -251,7 +277,15 @@ internal sealed class StackupDragController
         int target = _targetBandIndex;
         var (from, to) = (_spanFrom, _spanTo);
         double? lane = _lane;
+        var (film, face, filmTarget, refused) = (_film, _filmFace, _filmTarget, _refusal);
         Reset();
+
+        if (kind == StackupDragKind.Film)
+        {
+            if (film is not { } key || refused is not null) return false;
+            if (filmTarget is not null) return vm.MoveFilm(key, filmTarget);
+            return face is { } f && vm.SetFilmFace(key, f);
+        }
 
         if (row is null) return false;
 
@@ -305,6 +339,11 @@ internal sealed class StackupDragController
         _dragVia = _dragViaSource = null;
         _spanFrom = _spanTo = null;
         _lane = null;
+        _film = null;
+        _tech = null;
+        _filmFace = null;
+        _filmTarget = null;
+        _refusal = null;
     }
 
     // ── The four gestures ─────────────────────────────────────────────────────────────────────────
@@ -418,6 +457,59 @@ internal sealed class StackupDragController
         PreviewBarrel(barrel, rect, barrel.SpanFromLayer, barrel.SpanToLayer);
         _insertY = null;
         return changed;
+    }
+
+    /// <summary>
+    /// R-stk9-7. Over its own band a film snaps to the nearer face; over another conductor it would move
+    /// there, if <see cref="ResistorFilmBinding.CanPlaceOn"/> says so; over anything else it is refused, and
+    /// the reason is the binding's own sentence. Nothing is written until the release, and a refused release
+    /// writes nothing.
+    /// </summary>
+    private bool UpdateFilm(StackupScene scene, float x, float y, float dy)
+    {
+        if (_film is not { } key || scene.FilmRectOf(key) is not { } source) return false;
+        var strip = scene.Films.First(f => f.Layer == key);
+
+        var (face, target, refusal) = ((ConductorSheetSurface?)null, (string?)null, (string?)null);
+        SKRect? ghost = null;
+
+        var via = scene.Barrels.FirstOrDefault(b => b.Rect.Contains(x, y));
+        var band = scene.Bands.FirstOrDefault(b => y >= b.Rect.Top && y <= b.Rect.Bottom
+                                                   && x >= b.Rect.Left && x <= b.Rect.Right);
+        if (band is { } over && string.Equals(over.Name, strip.ConductorName, StringComparison.Ordinal))
+        {
+            face = y < over.Rect.MidY ? ConductorSheetSurface.Top : ConductorSheetSurface.Bottom;
+            ghost = PlaceOn(over.Rect, source, face.Value);
+        }
+        else if (via is not null) refusal = _tech is null ? "" : ReasonFor(key, via.Name);
+        else if (band is { } other)
+        {
+            if (_tech is { } tech && ResistorFilmBinding.CanPlaceOn(tech, key, other.Name, out string reason))
+            {
+                target = other.Name;
+                ghost = PlaceOn(other.Rect, source, ResistorFilmBinding.LandingFace(tech, key, other.Name));
+            }
+            else refusal = _tech is null ? "" : ReasonFor(key, other.Name);
+        }
+        else refusal = "";
+
+        ghost ??= new SKRect(source.Left, source.Top + dy, source.Right, source.Bottom + dy);
+
+        bool changed = face != _filmFace || target != _filmTarget || refusal != _refusal || ghost != _ghost;
+        (_filmFace, _filmTarget, _refusal, _ghost) = (face, target, refusal, ghost);
+        _insertY = null;
+        _dragVia = _dragViaSource = null;
+        return changed;
+
+        string ReasonFor(LayerKey film, string name)
+        {
+            ResistorFilmBinding.CanPlaceOn(_tech!, film, name, out string why);
+            return why;
+        }
+
+        static SKRect PlaceOn(SKRect bandRect, SKRect from, ConductorSheetSurface surface) => surface == ConductorSheetSurface.Top
+            ? new SKRect(from.Left, bandRect.Top, from.Right, bandRect.Top + from.Height)
+            : new SKRect(from.Left, bandRect.Bottom - from.Height, from.Right, bandRect.Bottom);
     }
 
     // ── Shared span arithmetic ────────────────────────────────────────────────────────────────────

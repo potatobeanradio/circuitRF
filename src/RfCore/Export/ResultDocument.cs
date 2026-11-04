@@ -3866,7 +3866,9 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         string?               SpanFrom = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        string?               SpanTo = null);
+        string?               SpanTo = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<string>? Films = null);
 
     /// <summary>One material record from a library that ships with circuitRF. Null means the record
     /// does not state it, exactly as in the <c>.cmat</c>.</summary>

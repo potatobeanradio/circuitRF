@@ -83,7 +83,7 @@ public static class LayerRegions
         // which is the case that message was written for.
         var claimed = tech.Stackup.Layers
             .Where(l => l.Kind is StackupKind.Conductor or StackupKind.Via)
-            .SelectMany(l => ResistiveFilms.MetalLayers(tech, l))      // EM-TFR — a film on a level is not its copper
+            .SelectMany(l => l.DrawingLayers)
             .ToHashSet();
         var declared = tech.Layers.ToDictionary(l => l.Key, l => l.Name);
 

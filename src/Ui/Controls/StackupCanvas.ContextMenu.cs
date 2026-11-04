@@ -86,7 +86,8 @@ public sealed partial class StackupCanvas
         if (_viewModel is null) { ContextMenuTarget = null; return false; }
 
         CancelDrag();
-        _viewModel.SelectedStackupLayerName = HitAt(p)?.LayerName;
+        var hit = HitAt(p);
+        _viewModel.SelectFromDrawing(hit?.LayerName, hit?.FilmLayer);
         ContextMenuTarget = p;
         return true;
     }
@@ -105,6 +106,15 @@ public sealed partial class StackupCanvas
         var items = new List<object>();
         var vm = _viewModel;
         var row = vm is null ? null : RowAt(p);
+
+        // A film has its own menu, and no Delete Conductor: it is not the band under it.
+        if (vm is not null && HitAt(p)?.FilmLayer is { } film)
+        {
+            AddFilmItems(items, vm, film);
+            items.Add(new Separator());
+            items.Add(CopyItem());
+            return items;
+        }
 
         if (vm is not null && row is not null)
         {
@@ -210,6 +220,102 @@ public sealed partial class StackupCanvas
         items.Add(sheet);
 
         items.Add(DrawingLayersItem(row));
+
+        if (_viewModel is { } vm && row.CanAddFilm) AddConductorFilmItems(items, vm, row);
+    }
+
+    // ── Resistive films (R-stk9-8) ────────────────────────────────────────────────────────────────
+
+    /// <summary>What asks for a film's name and R_s. Settable so the gate can answer without a window.
+    /// The name is null when only the value was asked for.</summary>
+    internal System.Func<string, bool, Task<(string? Name, double OhmPerSq)?>>? FilmPrompt { get; set; }
+
+    private Task<(string? Name, double OhmPerSq)?> AskForFilm(string title, bool askName)
+    {
+        if (FilmPrompt is { } prompt) return prompt(title, askName);
+        return TopLevel.GetTopLevel(this) is Window owner
+            ? Views.Dialogs.ResistorFilmPromptDialog.AskAsync(owner, title, askName)
+            : Task.FromResult<(string?, double)?>(null);
+    }
+
+    private void AddFilmItems(List<object> items, TechEditorViewModel vm, LayerKey film)
+    {
+        var filmRow = vm.StackupLayers.SelectMany(r => r.FilmRows).FirstOrDefault(r => r.Key == film);
+        var face = new MenuItem { Header = "Face" };
+        var faces = new List<object>();
+        foreach (var surface in StackupFilmRowViewModel.FaceChoices)
+        {
+            var choice = surface;
+            var mi = new MenuItem
+            {
+                Header     = choice == ConductorSheetSurface.Top ? "Top" : "Bottom",
+                ToggleType = MenuItemToggleType.Radio,
+                IsChecked  = filmRow?.SelectedFace == choice,
+            };
+            mi.Click += (_, _) => vm.SetFilmFace(film, choice);
+            faces.Add(mi);
+        }
+        face.ItemsSource = faces;
+        items.Add(face);
+
+        var targets = vm.FilmMoveTargets(film);
+        var move = new MenuItem { Header = "Move to", IsEnabled = targets.Count > 0 };
+        var moves = new List<object>();
+        foreach (string name in targets)
+        {
+            string target = name;
+            var mi = new MenuItem { Header = target };
+            mi.Click += (_, _) => vm.MoveFilm(film, target);
+            moves.Add(mi);
+        }
+        move.ItemsSource = moves;
+        items.Add(move);
+
+        var remove = new MenuItem { Header = "Remove Film" };
+        remove.Click += (_, _) => vm.RemoveFilm(film);
+        items.Add(remove);
+    }
+
+    private void AddConductorFilmItems(List<object> items, TechEditorViewModel vm, StackupLayerRowViewModel row)
+    {
+        string conductor = row.Layer.Name;
+        var choices = vm.FilmLayerChoices();
+        if (choices.Count > 0)
+        {
+            var add = new MenuItem { Header = "Add Resistor Film" };
+            var adds = new List<object>();
+            var shown = Bounded(choices, _ => false);
+            foreach (var (key, name) in shown)
+            {
+                var (k, n) = (key, name);
+                var mi = new MenuItem { Header = n };
+                mi.Click += async (_, _) =>
+                {
+                    if (await AskForFilm($"Resistor film on {conductor}: {n}", askName: false) is { } answer)
+                        vm.AddFilmOnLayer(conductor, k, answer.OhmPerSq);
+                };
+                adds.Add(mi);
+            }
+            AddMoreItem(adds, row, choices.Count - shown.Count);
+            add.ItemsSource = adds;
+            items.Add(add);
+        }
+
+        var create = new MenuItem { Header = "New Resistor Film…" };
+        create.Click += async (_, _) =>
+        {
+            if (await AskForFilm($"New resistor film on {conductor}", askName: true) is { Name: { } name } answer)
+                vm.AddResistorFilm(conductor, name, answer.OhmPerSq);
+        };
+        items.Add(create);
+    }
+
+    /// <summary>The Add button on a conductor card: what the menu's own film items offer, in a flyout.</summary>
+    internal List<object> FilmAddItems(StackupLayerRowViewModel row)
+    {
+        var items = new List<object>();
+        if (_viewModel is { } vm && row.CanAddFilm) AddConductorFilmItems(items, vm, row);
+        return items;
     }
 
     // ── Dielectric ────────────────────────────────────────────────────────────────────────────────
@@ -336,6 +442,7 @@ public sealed partial class StackupCanvas
                     Header     = o.Name,
                     ToggleType = MenuItemToggleType.CheckBox,
                     IsChecked  = wasChecked,
+                    IsEnabled  = o.IsEnabled,
                 };
                 mi.Click += (_, _) => row.SetDrawingLayerChecked(o.Key, !wasChecked);
                 items.Add(mi);

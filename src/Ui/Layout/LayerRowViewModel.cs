@@ -131,7 +131,9 @@ public sealed partial class LayerRowViewModel : ObservableObject
         if (!int.TryParse(StagedLayerNumber, out var v) || v < 0) { RefreshFromModel(); return; }
         if (v == Layer.Key.Layer) return;
         var before = _owner.SnapshotJson();
+        var was = Layer.Key;
         Layer.Key = Layer.Key with { Layer = v };
+        ResistorFilmBinding.RenameLayer(_owner.Working, was, Layer.Key);
         _owner.CommitEdit(before, $"Set layer number of {Layer.Name}");
     }
 
@@ -140,7 +142,9 @@ public sealed partial class LayerRowViewModel : ObservableObject
         if (!int.TryParse(StagedDatatype, out var v) || v < 0) { RefreshFromModel(); return; }
         if (v == Layer.Key.Datatype) return;
         var before = _owner.SnapshotJson();
+        var was = Layer.Key;
         Layer.Key = Layer.Key with { Datatype = v };
+        ResistorFilmBinding.RenameLayer(_owner.Working, was, Layer.Key);
         _owner.CommitEdit(before, $"Set datatype of {Layer.Name}");
     }
 

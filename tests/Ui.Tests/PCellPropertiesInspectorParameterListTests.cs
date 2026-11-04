@@ -292,7 +292,7 @@ public sealed class PCellPropertiesInspectorParameterListTests : IDisposable
         RowNamed(props, follows).Commit("80");
         Assert.NotEqual(before, RowNamed(props, readout).ValueText);
         if (kind == SymbolKind.Tfr)   // no technology: the standalone 50 Ω/sq film
-            Assert.Equal("≈ 400 Ω (8 sq × 50 Ω/sq)", RowNamed(props, readout).ValueText);
+            Assert.Equal("≈ 1.412 kΩ (28.236 sq × 50 Ω/sq)", RowNamed(props, readout).ValueText);
         if (readout == "L")
             Assert.EndsWith(" nH (estimated)", RowNamed(props, readout).ValueText);
     }

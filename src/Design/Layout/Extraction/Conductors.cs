@@ -41,9 +41,7 @@ public static class Conductors
         var found = new List<Conductor>();
         foreach (var sl in tech.Stackup.Layers)
             if (sl.Kind == StackupKind.Conductor && sl.Name.Length > 0)
-                // EM-TFR — a resistive film bound to a level is on that level and is not its copper:
-                // read as copper it would short the resistor it patterns.
-                found.Add(new Conductor(sl.Name, ResistiveFilms.MetalLayers(tech, sl)));
+                found.Add(new Conductor(sl.Name, sl.DrawingLayers));
         return found;
     }
 }

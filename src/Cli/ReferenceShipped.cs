@@ -118,7 +118,10 @@ internal static partial class Reference
             [.. l.DrawingLayers.Select(LayerName)],
             l.Kind == StackupKind.Conductor && l.IsGroundReference,
             l.Kind == StackupKind.Via ? l.SpanFromLayer : null,
-            l.Kind == StackupKind.Via ? l.SpanToLayer : null)).ToList();
+            l.Kind == StackupKind.Via ? l.SpanToLayer : null,
+            l.Films is { Count: > 0 } films
+                ? [.. films.Select(f => $"{LayerName(f.Layer)} {f.SheetResistanceOhmPerSq.ToString("G6", System.Globalization.CultureInfo.InvariantCulture)} Ohm/sq")]
+                : null)).ToList();
 
         // A layer no Conductor or Via entry draws on is drawn-only: it joins nothing, which is what a
         // resistive film, a dielectric window and a recognition marker all are.
@@ -188,6 +191,7 @@ internal static partial class Reference
                 if (l.TanD is { } d) row.Append($"  tand {Num(d)}");
                 if (l.SigmaSPerM is { } s) row.Append($"  sigma {Num(s)} S/m");
                 if (l.DrawingLayers.Count > 0) row.Append($"  drawn on: {string.Join(", ", l.DrawingLayers)}");
+                if (l.Films is { Count: > 0 } films) row.Append($"  resistor films: {string.Join(", ", films)}");
                 if (l.GroundReference) row.Append("  [ground reference]");
                 sb.AppendLine(row.ToString().TrimEnd());
             }

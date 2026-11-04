@@ -5817,3 +5817,10 @@ hover, context menu) and `LayoutRenderer.DrawSelectionOutlines` (the highlight),
 A capacitance matrix plotted against Terminal j put "Terminal j=3" in the marker box, while the axis below it said
 "C209 to C210". The generic X row of `Trace.BuildCubeMarkerBoxLines` printed the numeric axis value and only the
 mixIndex branch used `_cubeXLabels`. A labelled axis now prints the label.
+
+## A resistive film in the cross-section (brief stackup-render 9, 2026-11-04)
+
+A film is a strip on its band and not a band: `StackupScene.Films`, tested before the band and after it in `Hits`. A band's on-band
+name keeps to the height the strips leave, because the rule for whether a name fits is stated over the room it actually has. The drag's
+refused ghost is `theme.Refusal` at reduced alpha, since brief 5 had no refusing target and so no refused colour. A film's thickness
+prints in the technology's display unit, as a band's does, so `0.05 µm` where the brief's example spelled it `50 nm`.

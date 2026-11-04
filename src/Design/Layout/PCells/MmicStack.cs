@@ -25,7 +25,9 @@ namespace CircuitRF.Design.Layout.PCells;
 /// <param name="TopPlate">The conductor directly above <paramref name="CapDielectric"/>.</param>
 /// <param name="CapMask">The drawing layer whose shapes put <paramref name="CapDielectric"/> in place.</param>
 /// <param name="TopPlateVia">The via entry that carries the top plate up to the bridge metal.</param>
-/// <param name="ResistorLayer">The first drawing layer that states a sheet resistance.</param>
+/// <param name="ResistorLayer">The drawing layer patterning the first resistive film in stackup order.</param>
+/// <param name="ResistorFilm">That film's entry.</param>
+/// <param name="ResistorLevel">The conductor it is on, which is the metal a <c>TFR</c>'s contacts are drawn on.</param>
 /// <param name="Substrate">The substrate under <paramref name="BaseMetal"/>, to its ground.</param>
 public sealed record ResolvedMmicStack(
     StackupLayer? BaseMetal,
@@ -38,6 +40,8 @@ public sealed record ResolvedMmicStack(
     LayerDef? CapMask,
     StackupLayer? TopPlateVia,
     LayerDef? ResistorLayer,
+    StackupFilm? ResistorFilm,
+    StackupLayer? ResistorLevel,
     ResolvedSubstrate? Substrate,
     string? SubstrateFailure)
 {
@@ -70,7 +74,7 @@ public static class MmicStackResolver
     public static ResolvedMmicStack Resolve(Technology? technology)
     {
         if (technology is null)
-            return new(null, null, null, 0, 1, null, null, null, null, null, null, "no technology resolved for this document");
+            return new(null, null, null, 0, 1, null, null, null, null, null, null, null, null, "no technology resolved for this document");
 
         var layers = technology.Stackup.Layers;
         bool IsConductor(int i) => i >= 0 && i < layers.Count && layers[i].Kind == StackupKind.Conductor;
@@ -144,10 +148,12 @@ public static class MmicStackResolver
         }
         else substrateFailure = $"technology '{technology.Name}' stackup has no conductor layer";
 
-        var resistor = technology.Layers.FirstOrDefault(d => d.SheetResistanceOhmPerSq is > 0);
+        var (resistorLevel, resistorFilm) = ResistiveFilms.All(technology)
+            .FirstOrDefault(f => f.Film.SheetResistanceOhmPerSq > 0 && technology.Layers.Any(d => d.Key == f.Film.Layer));
+        var resistor = resistorFilm is null ? null : technology.Layers.First(d => d.Key == resistorFilm.Layer);
 
         return new ResolvedMmicStack(baseMetal, bridgeMetal, bridgeVia, hb, erb, capDielectric, topPlate, capMask,
-                                     topPlateVia, resistor, substrate, substrateFailure);
+                                     topPlateVia, resistor, resistorFilm, resistorLevel, substrate, substrateFailure);
     }
 
     /// <summary>The clear gap between two stackup entries (upper index < lower index) and its
@@ -175,8 +181,8 @@ public static class MmicStackResolver
         var list = new List<(string, string, string?)>();
         var stack = Resolve(tech);
 
-        if (stack.ResistorLayer?.SheetResistanceOhmPerSq is { } rs and > 0)
-            list.Add(("TfrSheetResistance", rs.ToString("R", CultureInfo.InvariantCulture), "Ohm"));
+        if (stack.ResistorFilm is { } film0)
+            list.Add(("TfrSheetResistance", film0.SheetResistanceOhmPerSq.ToString("R", CultureInfo.InvariantCulture), "Ohm"));
 
         if (stack.CapDielectric is { ThicknessDbu: > 0, Epsr: > 0 } film)
         {
@@ -203,7 +209,7 @@ public static class MmicStackResolver
                 $"technology '{technologyName}' has no capacitor dielectric — a dielectric directly between two " +
                 "conductors and tied to a mask by PresentWithLayer",
             MmicPart.Tfr when stack.ResistorLayer is null =>
-                $"technology '{technologyName}' has no resistor film — no drawing layer states a SheetResistanceOhmPerSq",
+                $"technology '{technologyName}' has no resistor film — no conductor in its stackup states one",
             MmicPart.Spiral or MmicPart.Airbridge when stack.BridgeMetal is null =>
                 $"technology '{technologyName}' has no bridge metal — no via joins '{stack.BaseMetal?.Name}' to a " +
                 "second, non-ground conductor above it",

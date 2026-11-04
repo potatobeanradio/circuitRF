@@ -1,0 +1,5 @@
+refusal This EM setup is pointed at geometry with nothing on a layer bound to a conductor entry in technology 'MMIC GaAs (2 Layer Metal + MIM, 100um)', so there is no metal to put in a 3D problem. Draw the artwork on a conductor layer, or bind the layer it is on to a conductor entry in the technology editor's Stackup tab.
+note The sweep's 0 Hz point is answered by circuitRF's conduction solve of the conductors, not by the 3D solver.
+note 1 placed instance(s) could not be resolved and contributed no geometry to the EM problem. A cell that does not resolve is invisible to the solver even though its placeholder is drawn in the layout — check the cell reference, or flatten the instance.
+no-alpha 
+unknown-temperature 

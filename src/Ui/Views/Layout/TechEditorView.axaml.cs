@@ -229,7 +229,8 @@ public partial class TechEditorView : UserControl
 
     private void OnViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(TechEditorViewModel.SelectedStackupLayerName))
+        if (e.PropertyName is nameof(TechEditorViewModel.SelectedStackupLayerName)
+                           or nameof(TechEditorViewModel.SelectedFilmLayerKey))
             ScrollStackupSelectionIntoView();
         else if (e.PropertyName is nameof(TechEditorViewModel.StackupDrawingExpanded)
                                or nameof(TechEditorViewModel.StackupCardsExpanded))
@@ -401,14 +402,14 @@ public partial class TechEditorView : UserControl
     /// </summary>
     private void ScrollStackupSelectionIntoView()
     {
-        var row = _subscribedVm?.SelectedStackupLayerRow;
+        var row = _subscribedVm?.StackupScrollTargetRow;
         if (row is null) return;
 
         Dispatcher.UIThread.Post(() =>
         {
             // Re-read rather than closing over `row`: at Background priority an edit, an undo or a
             // second click may have landed in between, and every one of those replaces the row VMs.
-            if (_subscribedVm?.SelectedStackupLayerRow is not { } current) return;
+            if (_subscribedVm?.StackupScrollTargetRow is not { } current) return;
             if (StackupList is null) return;
 
             var scroll = StackupScroller();
@@ -543,7 +544,7 @@ public partial class TechEditorView : UserControl
         if (StackupDrawing?.CancelDrag() == true) { e.Handled = true; return; }
 
         if (DataContext is not TechDocument doc) return;
-        if (doc.ViewModel.SelectedStackupLayerName is null) return;
+        if (doc.ViewModel.SelectedStackupLayerName is null && doc.ViewModel.SelectedFilmLayerKey is null) return;
 
         doc.ViewModel.ClearStackupSelection();
         e.Handled = true;
@@ -698,6 +699,24 @@ public partial class TechEditorView : UserControl
     /// other way, or a target was already consumed), so the opening is CANCELLED rather than shown
     /// with whatever the previous one built.</para>
     /// </summary>
+    /// <summary>A conductor card's Add button: the same items the drawing's menu offers for that conductor.</summary>
+    private void OnAddFilmClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Control { DataContext: StackupLayerRowViewModel row } button) return;
+        var flyout = new MenuFlyout { ItemsSource = StackupDrawing.FilmAddItems(row) };
+        flyout.ShowAt(button);
+    }
+
+    private void OnFilmRsLostFocus(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Control { DataContext: StackupFilmRowViewModel row }) row.CommitSheetResistance();
+    }
+
+    private void OnFilmThicknessLostFocus(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Control { DataContext: StackupFilmRowViewModel row }) row.CommitThickness();
+    }
+
     private void OnStackupContextMenuOpening(object? sender, System.ComponentModel.CancelEventArgs e)
     {
         if (StackupDrawing?.ConsumeContextMenuTarget() is not { } p) { e.Cancel = true; return; }

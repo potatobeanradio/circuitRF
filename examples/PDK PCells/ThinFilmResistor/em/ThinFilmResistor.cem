@@ -1,0 +1,57 @@
+{
+  "FormatVersion": 1,
+  "Name": "ThinFilmResistor",
+  "LayoutRef": "ThinFilmResistor/layout/ThinFilmResistor.clay",
+  "Frequency": {
+    "StartExpr": "0",
+    "StopExpr": "20",
+    "StepExpr": "",
+    "NumPoints": 5,
+    "Mode": "PointCount",
+    "Kind": "Linear",
+    "StartUnit": "GHz",
+    "StopUnit": "GHz",
+    "StepUnit": "Hz"
+  },
+  "Port1Z0Real": 50,
+  "Port1Z0Imag": 0,
+  "Port2Z0Real": 50,
+  "Port2Z0Imag": 0,
+  "PortZ0s": [
+    50,
+    0,
+    50,
+    0
+  ],
+  "SchematicPortZ0s": [
+    {
+      "Port": 1,
+      "Real": 50,
+      "Imag": 0
+    },
+    {
+      "Port": 2,
+      "Real": 50,
+      "Imag": 0
+    }
+  ],
+  "Mesh": {
+    "MinCellsAcrossWidth": 6,
+    "EdgeCells": 3,
+    "EdgeFractionOfWidth": 0.03,
+    "EdgeGrowthRatio": 1.7,
+    "TruncationHeights": 20,
+    "TruncationTailCells": 12
+  },
+  "DispersionCorrection": true,
+  "ConductorThicknessCorrection": false,
+  "AnalysisKind": "Planar",
+  "PlanarMesh": {
+    "Auto": false,
+    "CellsPerWavelength": 20,
+    "EdgeMesh": false,
+    "EdgeCells": 3,
+    "MinCellsAcrossConductor": 3,
+    "CurrentModel": "None"
+  }
+}

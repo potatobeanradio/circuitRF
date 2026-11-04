@@ -116,9 +116,14 @@ public static class MimCapPCell
 }
 
 /// <summary>
-/// TFR artwork: the resistor film, W wide, with a base-metal contact over each end. The metal edges
-/// are exactly L apart, so the film between them is the L×W the model's L/W squares count; each
-/// contact overlaps the film by half a minimum feature.
+/// TFR artwork: the resistor film, W wide, with a contact over each end on the metal of the level the
+/// film is on. N = 1 is a straight film whose contacts' edges are exactly L apart, so what lies between
+/// them is the L×W the model counts; each contact overlaps the film by half a minimum feature.
+///
+/// <para>N &gt; 1 is the classic serpentine: N parallel runs of length L between bend centres, stepped in
+/// +Y and joined by square-cornered links whose clear length between the runs' edges is Lc, as one polygon
+/// (overlapping rectangles would leave seams a width check measures and an extraction meshes). An odd N
+/// leaves pin 2 on the side opposite pin 1, and an even N on the same side, above it.</para>
 /// </summary>
 public static class TfrPCell
 {
@@ -128,28 +133,60 @@ public static class TfrPCell
                                        PCellLayerSelection layerSelection)
     {
         var stack = MmicStackResolver.Resolve(technology);
-        var baseLayer = ResolvedMmicStack.Key(stack.BaseMetal, MmicStackResolver.FallbackLayers.Base);
+        var baseLayer = ResolvedMmicStack.Key(stack.ResistorLevel ?? stack.BaseMetal, MmicStackResolver.FallbackLayers.Base);
         var film = stack.ResistorLayer?.Key ?? MmicStackResolver.FallbackLayers.Resistor;
 
         long f = MmicArt.MinFeature(technology, baseLayer);
         long w = Math.Max(MmicArt.Dbu(parameters.Real("W", 10e-6)), 1);
         long l = Math.Max(MmicArt.Dbu(parameters.Real("L", 20e-6)), 1);
+        int n = Math.Max((int)Math.Round(parameters.Real("N", 1.0)), 1);
+        long link = Math.Max(MmicArt.Dbu(parameters.Real("Lc", 10e-6)), 1);
         long ov = Math.Max(f / 2, 1), c = 2 * f;
         long wc = w + f, half = w / 2, cHalf = wc / 2;
         long xEnd = 2 * c + l;
 
-        var shapes = new List<LayoutShape>
+        // A serpentine's run is at least as long as it is wide: shorter, its two bends would overlap.
+        if (n > 1) l = Math.Max(l, w);
+        xEnd = 2 * c + l;
+
+        var notes = MmicArt.Notes(technology, stack, MmicPart.Tfr);
+        var shapes = new List<LayoutShape>();
+        long pitch = w + link;
+        long yLast = (n - 1) * pitch;
+        bool sameSide = n % 2 == 0;
+
+        if (n == 1) shapes.Add(MmicArt.Rect(film, c - ov, -half, c + l + ov, w - half));
+        else
         {
-            MmicArt.Rect(film,      c - ov, -half, c + l + ov, w - half),
-            MmicArt.Rect(baseLayer, 0,      -cHalf, c,        wc - cHalf),
-            MmicArt.Rect(baseLayer, c + l,  -cHalf, xEnd,     wc - cHalf),
-        };
+            // The centreline. ThickPath carries each free end half a width past its point, so each end's
+            // point is pulled in by that half, and the film still ends one overlap under its contact.
+            long h = w / 2;
+            var pts = new List<(long X, long Y)> { (c - ov + h, 0) };
+            bool atFar = false;
+            for (int i = 0; i < n - 1; i++)
+            {
+                long x = atFar ? c : c + l;
+                pts.Add((x, i * pitch));
+                pts.Add((x, (i + 1) * pitch));
+                atFar = !atFar;
+            }
+            pts.Add(sameSide ? (c - ov + h, yLast) : (c + l + ov - h, yLast));
+            shapes.Add(SpiralPCell.ThickPath(film, pts, w));
+            if (link < f)
+                notes.Add($"Lc = {link / (double)LayoutUnits.DefaultDbuPerMicron:G4} µm is under the metal's minimum feature, so a contact sits against the film's next run.");
+        }
+
+        long x2 = sameSide ? 0 : c + l;
+        shapes.Add(MmicArt.Rect(baseLayer, 0, -cHalf, c, wc - cHalf));
+        if (sameSide) shapes.Add(MmicArt.Rect(baseLayer, 0, yLast - cHalf, c, yLast + wc - cHalf));
+        else shapes.Add(MmicArt.Rect(baseLayer, x2, yLast - cHalf, xEnd, yLast + wc - cHalf));
+
         var pins = new[]
         {
-            new PCellPin("1", 0,    0, baseLayer, wc, 180.0),
-            new PCellPin("2", xEnd, 0, baseLayer, wc,   0.0),
+            new PCellPin("1", 0, 0, baseLayer, wc, 180.0),
+            sameSide ? new PCellPin("2", 0, yLast, baseLayer, wc, 180.0)
+                     : new PCellPin("2", xEnd, yLast, baseLayer, wc, 0.0),
         };
-        var notes = MmicArt.Notes(technology, stack, MmicPart.Tfr);
         return new PCellResult(shapes, pins, Diagnostics: notes.Count > 0 ? notes : null);
     }
 }

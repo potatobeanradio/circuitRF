@@ -243,6 +243,7 @@ public static class EmCellCache
         var set = new HashSet<LayerKey>();
         foreach (var l in layers)
             foreach (var k in l.DrawingLayers) set.Add(k);
+        foreach (var (_, film) in ResistiveFilms.All(tech)) set.Add(film.Layer);
         foreach (var k in PatternedDielectric.MaskLayers(tech).Keys) set.Add(k);
         return set.Count == 0 ? null : set;
     }

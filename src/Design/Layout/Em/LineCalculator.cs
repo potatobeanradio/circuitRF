@@ -151,7 +151,7 @@ public static class LineCalculator
     /// conductor — by name: what <see cref="ResolveLayer"/> accepts, and what a refusal lists.</summary>
     public static IReadOnlyList<string> CopperLayerNames(Technology tech)
     {
-        var bound = tech.Stackup.Layers.Where(l => l.Kind == StackupKind.Conductor).SelectMany(l => ResistiveFilms.MetalLayers(tech, l)).ToHashSet();
+        var bound = tech.Stackup.Layers.Where(l => l.Kind == StackupKind.Conductor).SelectMany(l => l.DrawingLayers).ToHashSet();
         return [.. tech.Layers.Where(l => bound.Contains(l.Key)).Select(l => l.Name)];
     }
 

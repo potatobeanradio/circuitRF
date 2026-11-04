@@ -105,13 +105,6 @@ public static class TechValidation
             if (!knownLayers.Add(layer.Key))
                 problems.Add(new(TechProblemArea.Layers,
                     $"Duplicate layer ({layer.Key.Layer},{layer.Key.Datatype}) \"{layer.Name}\"."));
-            // A resistor film's sheet resistance is what a TFR on it is worth per square; zero or
-            // negative would make every resistor drawn on it a short or a negative resistance.
-            if (layer.SheetResistanceOhmPerSq is { } rs && !(rs > 0))
-                problems.Add(new(TechProblemArea.Layers,
-                    $"Layer \"{layer.Name}\" states a sheet resistance of {rs:G4} Ω/sq; it must be positive, or " +
-                    "left out for a layer that is not a resistor film.",
-                    Id: Ids.SheetResistanceInvalid, Severity: DiagnosticSeverity.Error));
         }
 
         var conductorNames = new HashSet<string>(
@@ -241,28 +234,9 @@ public static class TechValidation
                 "unreachable and nothing reports it. Give each entry its own name."));
         }
 
-        // EM-TFR — where a resistive film may be bound. It sits on exactly one conductor level, as a sheet
-        // of that level: a via has no sheet to be, and a return plane is a termination with no cells.
-        foreach (var film in tech.Layers.Where(l => l.SheetResistanceOhmPerSq is > 0))
-        {
-            var boundTo = tech.Stackup.Layers.Where(l => l.DrawingLayers.Contains(film.Key)).ToList();
-            var filmLevels = boundTo.Where(l => l.Kind == StackupKind.Conductor).ToList();
-            if (filmLevels.Count > 1)
-                problems.Add(new(TechProblemArea.Stackup,
-                    $"Resistor film \"{film.Name}\" is bound to both \"{filmLevels[0].Name}\" and \"{filmLevels[1].Name}\". " +
-                    "A film is deposited on one level: unbind it from all but that one.",
-                    Id: "tech.film.two-levels", Severity: DiagnosticSeverity.Error));
-            foreach (var via in boundTo.Where(l => l.Kind == StackupKind.Via))
-                problems.Add(new(TechProblemArea.Stackup,
-                    $"Resistor film \"{film.Name}\" is bound to the via \"{via.Name}\". A film is a sheet on a conductor level, " +
-                    "and a via has none: bind it to the conductor it is deposited on.",
-                    Id: "tech.film.on-via", Severity: DiagnosticSeverity.Error));
-            foreach (var ground in filmLevels.Where(l => l.IsGroundReference))
-                problems.Add(new(TechProblemArea.Stackup,
-                    $"Resistor film \"{film.Name}\" is bound to \"{ground.Name}\", the return plane. The plane is a termination " +
-                    "with no cells for a film to sit on: bind it to a signal level.",
-                    Id: "tech.film.on-ground", Severity: DiagnosticSeverity.Error));
-        }
+        // Where a resistive film may sit, and its value: the rules the stackup canvas asks too.
+        foreach (var (id, message) in ResistorFilmBinding.Problems(tech))
+            problems.Add(new(TechProblemArea.Stackup, message, Id: id, Severity: DiagnosticSeverity.Error));
 
         foreach (var sl in tech.Stackup.Layers)
         {
@@ -460,7 +434,6 @@ public static class TechValidation
         public const string BodyNameClash           = "tech.body.name-clash";
         public const string BodyOutlineLayerUnknown = "tech.body.outline-layer-unknown";
         /// <summary>AA-1 — a layer's sheet resistance stated as zero or negative.</summary>
-        public const string SheetResistanceInvalid  = "tech.layer.sheet-resistance-invalid";
     }
 
     private static TechProblem Material(string id, DiagnosticSeverity severity, string message)

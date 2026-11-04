@@ -11,6 +11,9 @@ public enum StackupHitKind
 {
     /// <summary>A conductor or dielectric band of the sandwich.</summary>
     Band,
+    /// <summary>A resistive film's strip on its conductor's band. <see cref="StackupHit.FilmLayer"/> says
+    /// which film; <see cref="StackupHit.LayerName"/> is the conductor it is on.</summary>
+    Film,
     /// <summary>A via's barrel, drawn across the bands it spans.</summary>
     ViaBarrel,
     /// <summary>The grab target at the TOP end of a via barrel (brief 5 drags it).</summary>
@@ -76,7 +79,21 @@ public sealed record StackupHit(
     StackupHitKind Kind,
     string         LayerName,   // StackupLayer.Name — the key everything else resolves by
     StackupField   Field,       // which value a Label hit would edit; None otherwise
-    SKRect         Rect);
+    SKRect         Rect,
+    LayerKey?      FilmLayer = null);   // the film a Film hit, or a film's Label hit, is about
+
+/// <summary>A resistive film, drawn on its conductor's band against its face. It is a patterned feature of
+/// the band and takes no height of its own in the sandwich.</summary>
+/// <param name="Rect">Several films on one face share the strip in equal lateral segments.</param>
+/// <param name="Fill">The film layer's own colour, the way a band takes its conductor's.</param>
+/// <param name="Pattern">The film layer's stipple, or null for a solid fill.</param>
+public sealed record StackupFilmStrip(
+    LayerKey              Layer,
+    string                ConductorName,
+    SKRect                Rect,
+    Rgba                  Fill,
+    FillPattern?          Pattern,
+    ConductorSheetSurface Face);
 
 /// <summary>A conductor or dielectric band, placed.</summary>
 /// <param name="Fill">The TECHNOLOGY's colour, not the theme's: a conductor takes the colour of the
@@ -127,7 +144,8 @@ public sealed record StackupLabel(
     StackupLabelStyle Style,
     SKRect            Rect,
     float             TextX,
-    float             Baseline);
+    float             Baseline,
+    LayerKey?         FilmLayer = null);
 
 // There is no leader-line type, deliberately.
 //
@@ -254,6 +272,10 @@ public sealed class StackupScene
     public const float GripHitSlop = 4f;
     /// <summary>Clearance kept between the leftmost barrel and a band's on-band name.</summary>
     public const float NameZoneGap = 8f;
+
+    /// <summary>How tall a resistive film's strip is drawn: small next to its band and never proportional,
+    /// because 50 nm against 3 µm would be a hairline nobody could click.</summary>
+    public const float FilmStripPx = 6f;
 
     // ── Text (R-stk1-9) ───────────────────────────────────────────────────────────────────────────
 
@@ -430,6 +452,7 @@ public sealed class StackupScene
     /// <summary>Topmost LAST; <see cref="HitTest"/> walks it backwards.</summary>
     public IReadOnlyList<StackupHit>    Hits    { get; private init; } = [];
     public IReadOnlyList<StackupBand>   Bands   { get; private init; } = [];
+    public IReadOnlyList<StackupFilmStrip> Films { get; private init; } = [];
     public IReadOnlyList<StackupBarrel> Barrels { get; private init; } = [];
     public IReadOnlyList<StackupLabel>  Labels  { get; private init; } = [];
 
@@ -527,6 +550,14 @@ public sealed class StackupScene
     public SKRect? RectOf(string layerName)
         => layerName is not null && _rectByName.TryGetValue(layerName, out var r) ? r : null;
 
+    /// <summary>The strip of the film <paramref name="key"/> patterns, or null when this scene drew none.</summary>
+    public SKRect? FilmRectOf(LayerKey key)
+    {
+        foreach (var film in Films)
+            if (film.Layer == key) return film.Rect;
+        return null;
+    }
+
     // ── Build ─────────────────────────────────────────────────────────────────────────────────────
 
     /// <summary>Lays the whole cross-section out. Deterministic: called twice on the same technology
@@ -618,6 +649,8 @@ public sealed class StackupScene
         }
         float stackBottom = y;
 
+        var films = BuildFilmStrips(tech, bandLayers, bands);
+
         // ── Barrels, and the lane spread they occupy ─────────────────────────────────────────────
         var barrels     = new List<StackupBarrel>();
         var barrelVias  = new List<StackupLayer>();   // parallel to barrels — two vias may share a name
@@ -696,14 +729,17 @@ public sealed class StackupScene
             // column" is the band column's own right-hand part.
             float nameW = nameFont.MeasureText(layer.Name) + 2 * LabelPadX;
             float nameH = FaceHeight(nameFont) + 2 * OnBandPadY;
+            // A film's strip takes part of the band the name would sit in. The name keeps to what is left,
+            // so it never prints across the strip; with no film what is left is the whole band.
+            var (nameTop, nameBottom) = RoomBesideFilms(band, films);
             bool  onBand = !dropLabels && layer.Name.Length > 0
-                        && nameH <= band.Rect.Height && nameW <= nameZoneWidth;
+                        && nameH <= nameBottom - nameTop && nameW <= nameZoneWidth;
 
             if (onBand)
             {
                 var run = new PieceRun(bandLeft + InnerPad, padY: OnBandPadY);
                 run.Add(layer.Name, StackupField.Name, StackupLabelStyle.BandName, nameFont, 0f);
-                run.Place(band.Rect.MidY - run.Height * 0.5f, layer.Name, labels, hits);
+                run.Place((nameTop + nameBottom) * 0.5f - run.Height * 0.5f, layer.Name, labels, hits);
             }
             else if (layer.Name.Length > 0)
             {
@@ -712,6 +748,20 @@ public sealed class StackupScene
 
             AddSpecPieces(group, layer, tech, specFont);
             if (group.PieceCount > 0) groups.Add(group);
+
+            // A group per film, anchored on its strip, so it lands beside the thing it describes.
+            foreach (var strip in films.Where(f => string.Equals(f.ConductorName, layer.Name, StringComparison.Ordinal)))
+            {
+                var filmGroup = new LabelGroup(labelLeft, labelWidth)
+                {
+                    LayerName = layer.Name,
+                    Index     = groups.Count,
+                    AnchorY   = strip.Rect.MidY,
+                    FilmLayer = strip.Layer,
+                };
+                AddFilmPieces(filmGroup, strip, layer, tech, specFont);
+                if (filmGroup.PieceCount > 0) groups.Add(filmGroup);
+            }
         }
 
         for (int i = 0; i < barrels.Count; i++)
@@ -797,6 +847,8 @@ public sealed class StackupScene
         var ordered = new List<StackupHit>(hits.Count + bands.Count + barrels.Count * 3);
         foreach (var band in bands)
             ordered.Add(new StackupHit(StackupHitKind.Band, band.Name, StackupField.None, band.Rect));
+        foreach (var film in films)
+            ordered.Add(new StackupHit(StackupHitKind.Film, film.ConductorName, StackupField.None, film.Rect, film.Layer));
         foreach (var barrel in barrels)
             ordered.Add(new StackupHit(StackupHitKind.ViaBarrel, barrel.Name, StackupField.None, barrel.Rect));
         ordered.AddRange(hits);
@@ -815,6 +867,7 @@ public sealed class StackupScene
             Width                 = width,
             Height                = bottom + FooterPad,
             Bands                 = bands,
+            Films                 = films,
             Barrels               = barrels,
             Labels                = labels,
             Hits                  = ordered,
@@ -893,6 +946,79 @@ public sealed class StackupScene
         if (layer.PresentWithLayer is { Length: > 0 } plate)
             g.Add($"patterned: {plate}", StackupField.None, StackupLabelStyle.Accent, font, QuantityGap);
     }
+
+    /// <summary>
+    /// The films' strips: each inside its conductor's band, flush with the face it sits on, and those on
+    /// one face sharing the column in equal segments in the entry's own order. There is no stored lateral
+    /// position, and a technology with no film yields an empty list and a scene identical to one without.
+    /// </summary>
+    private static List<StackupFilmStrip> BuildFilmStrips(Technology tech, List<StackupLayer> bandLayers, List<StackupBand> bands)
+    {
+        var strips = new List<StackupFilmStrip>();
+        for (int i = 0; i < bandLayers.Count; i++)
+        {
+            if (bandLayers[i] is not { Kind: StackupKind.Conductor, Films: { Count: > 0 } onLevel } conductor) continue;
+            var band = bands[i].Rect;
+            float height = Math.Min(FilmStripPx, band.Height);
+            foreach (var face in new[] { ConductorSheetSurface.Top, ConductorSheetSurface.Bottom })
+            {
+                var here = onLevel.Where(f => ResistiveFilms.FaceOf(f, conductor) == face).ToList();
+                float y0 = face == ConductorSheetSurface.Top ? band.Top : band.Bottom - height;
+                for (int k = 0; k < here.Count; k++)
+                {
+                    float x0 = band.Left + band.Width * k / here.Count;
+                    float x1 = band.Left + band.Width * (k + 1) / here.Count;
+                    var def = tech.Layers.FirstOrDefault(l => l.Key == here[k].Layer);
+                    strips.Add(new StackupFilmStrip(here[k].Layer, conductor.Name, new SKRect(x0, y0, x1, y0 + height),
+                        def?.Color ?? MetalFallback, tech.FindFillPattern(def?.FillPattern), face));
+                }
+            }
+        }
+        return strips;
+    }
+
+    /// <summary>The part of a band its name may use: the whole band, less the height of a strip on each face that has one.</summary>
+    private static (float Top, float Bottom) RoomBesideFilms(StackupBand band, List<StackupFilmStrip> films)
+    {
+        float top = band.Rect.Top, bottom = band.Rect.Bottom;
+        foreach (var film in films)
+        {
+            if (!string.Equals(film.ConductorName, band.Name, StringComparison.Ordinal)) continue;
+            if (film.Face == ConductorSheetSurface.Top) top = Math.Max(top, film.Rect.Bottom);
+            else bottom = Math.Min(bottom, film.Rect.Top);
+        }
+        return (top, bottom);
+    }
+
+    /// <summary>
+    /// <c>Resistor · 50 Ω/sq · 0.05 µm · top</c>: the layer, then R_s, then the thickness and the face when
+    /// they are stated, so a film with neither reads <c>Resistor · 50 Ω/sq</c>. R_s and the thickness are
+    /// their own pieces carrying their fields, so a double-click edits the number and not the sentence.
+    /// </summary>
+    private static void AddFilmPieces(LabelGroup g, StackupFilmStrip strip, StackupLayer conductor, Technology tech, SKFont font)
+    {
+        var film = ResistiveFilms.Of(tech, strip.Layer);
+        if (film is null) return;
+        g.Add(tech.Layers.FirstOrDefault(l => l.Key == strip.Layer)?.Name ?? $"{strip.Layer.Layer}/{strip.Layer.Datatype}",
+              StackupField.None, StackupLabelStyle.Spec, font, 0f);
+        g.Add("·", StackupField.None, StackupLabelStyle.Spec, font, PieceGap);
+        g.Add(FilmSheetResistanceText(film.SheetResistanceOhmPerSq), StackupField.FilmSheetResistance, StackupLabelStyle.Spec, font, PieceGap);
+        g.Add("Ω/sq", StackupField.None, StackupLabelStyle.Spec, font, PieceGap);
+        if (film.ThicknessDbu is { } t)
+        {
+            g.Add("·", StackupField.None, StackupLabelStyle.Spec, font, PieceGap);
+            g.Add(ThicknessText(t, tech), StackupField.FilmThickness, StackupLabelStyle.Spec, font, PieceGap);
+            g.Add(UnitText(tech), StackupField.None, StackupLabelStyle.Spec, font, PieceGap);
+        }
+        if (film.At is { } at)
+        {
+            g.Add("·", StackupField.None, StackupLabelStyle.Spec, font, PieceGap);
+            g.Add(at == ConductorSheetSurface.Top ? "top" : "bottom", StackupField.None, StackupLabelStyle.Spec, font, PieceGap);
+        }
+    }
+
+    /// <summary>A sheet resistance as the drawing and the card both spell it.</summary>
+    public static string FilmSheetResistanceText(double ohmPerSq) => ohmPerSq.ToString("0.####", Inv);
 
     private static void AddViaSpecPieces(
         LabelGroup g, StackupLayer via, StackupBarrel barrel, Technology tech, SKFont font)
@@ -1168,6 +1294,13 @@ public sealed class StackupScene
             if (layer.WallThicknessDbu is { } w) Token(ThicknessText(w, tech), specFont);
             if (layer.PresentWithLayer is { Length: > 0 } plate)
                 Token($"patterned: {plate}", specFont);
+            if (layer.Films is { } films)
+                foreach (var film in films)
+                {
+                    Token(tech.Layers.FirstOrDefault(l => l.Key == film.Layer)?.Name, specFont);
+                    Token(FilmSheetResistanceText(film.SheetResistanceOhmPerSq), specFont);
+                    if (film.ThicknessDbu is { } t) Token(ThicknessText(t, tech), specFont);
+                }
         }
         return widest;
 
@@ -1345,7 +1478,7 @@ public sealed class StackupScene
         /// <summary>Emits every piece at <paramref name="top"/>. A piece's rect is its measured width
         /// inflated by the padding, and consecutive pieces are separated by <see cref="PieceGap"/> on
         /// top of that, so no two of them intersect.</summary>
-        public void Place(float top, string layerName, List<StackupLabel> labels, List<StackupHit> hits)
+        public void Place(float top, string layerName, List<StackupLabel> labels, List<StackupHit> hits, LayerKey? film = null)
         {
             float lineH = LineHeight;
             for (int line = 0; line < _lineStart.Count; line++)
@@ -1362,8 +1495,8 @@ public sealed class StackupScene
                     var p = _pieces[i];
                     if (i > from) cursor += p.GapBefore;
                     var rect = new SKRect(cursor, lineTop, cursor + p.Width + 2 * LabelPadX, lineTop + lineH);
-                    labels.Add(new StackupLabel(p.Text, layerName, p.Field, p.Style, rect, cursor + LabelPadX, baseline));
-                    hits.Add(new StackupHit(StackupHitKind.Label, layerName, p.Field, rect));
+                    labels.Add(new StackupLabel(p.Text, layerName, p.Field, p.Style, rect, cursor + LabelPadX, baseline, film));
+                    hits.Add(new StackupHit(StackupHitKind.Label, layerName, p.Field, rect, film));
                     cursor = rect.Right + PieceGap;
                 }
             }
@@ -1380,8 +1513,9 @@ public sealed class StackupScene
         public int    Index     { get; init; }
         public float  AnchorY   { get; init; }
         public float  Top       { get; set; }
+        public LayerKey? FilmLayer { get; init; }
 
-        public void Emit(List<StackupLabel> labels, List<StackupHit> hits) => Place(Top, LayerName, labels, hits);
+        public void Emit(List<StackupLabel> labels, List<StackupHit> hits) => Place(Top, LayerName, labels, hits, FilmLayer);
     }
 
     /// <summary>

@@ -85,7 +85,7 @@ public static class MmicPassiveInjection
                 Add("Erb",   stack.BridgeEpsR);
                 break;
             case SymbolKind.Tfr:
-                Add("Rs",    stack.ResistorLayer!.SheetResistanceOhmPerSq!.Value);
+                Add("Rs",    stack.ResistorFilm!.SheetResistanceOhmPerSq);
                 Add("H",     sub.HeightMeters);
                 Add("ErSub", sub.RelativePermittivity);
                 break;
@@ -117,7 +117,7 @@ public static class MmicPassiveInjection
     };
 
     /// <summary>The geometry parameter a layout lists the readout row after.</summary>
-    public static string ReadoutFollows(SymbolKind kind) => kind is SymbolKind.Tfr or SymbolKind.MimCap ? "L" : "Din";
+    public static string ReadoutFollows(SymbolKind kind) => kind is SymbolKind.Tfr ? "Lc" : kind is SymbolKind.MimCap ? "L" : "Din";
 
     /// <summary>
     /// What a TFR's resistance, a MIMCAP's capacitance or a spiral's inductance comes out to, as the
@@ -136,7 +136,7 @@ public static class MmicPassiveInjection
         note = null;
         if (!HasReadout(kind)) return null;
         foreach (var (name, v) in geometry)
-            if (name is "W" or "L" or "Din" or "N" && !(v > 0)) { note = $"{name} must be positive."; return null; }
+            if (name is "W" or "L" or "Din" or "N" or "Lc" && !(v > 0)) { note = $"{name} must be positive."; return null; }
 
         var (overrides, _) = Build(technology, kind);
         var values = new Dictionary<string, CircuitRF.Core.Expressions.Value>(StringComparer.Ordinal);
@@ -151,7 +151,7 @@ public static class MmicPassiveInjection
         return model switch
         {
             ThinFilmResistorModel r => string.Format(ci, "≈ {0} ({1:0.###} sq × {2:0.###} Ω/sq)",
-                                           FormatOhms(r.Resistance), r.L / r.W, r.SheetResistance),
+                                           FormatOhms(r.Resistance), r.Squares, r.SheetResistance),
             MimCapModel c           => "≈ " + FormatFarads(c.Capacitance),
             SpiralInductorModel l   => "≈ " + (l.Inductance * 1e9).ToString("0.##", ci) + " nH (estimated)",
             _                       => null,

@@ -231,7 +231,7 @@ internal static class DocumentSchema
         layer expression whose connected components are candidate devices, its Terminals are the
         layers a terminal may be on, and its Parameters are formulas over Length, Width, Area and
         Perimeter — all SI — plus the Constants this file declares, plus two the process supplies:
-        TfrSheetResistance (the sheet resistance a drawing layer states, SheetResistanceOhmPerSq)
+        TfrSheetResistance (the first resistive film in the stackup, Films on a Conductor entry)
         and MimCapDensity (ε0·εr/t of the stackup's capacitor dielectric). A Constants entry of
         the same name overrides either. A technology stating no DeviceRules
         recognises nothing, which is the ordinary case and is not an error. `check` validates the

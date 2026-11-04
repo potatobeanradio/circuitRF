@@ -75,7 +75,7 @@ public sealed class MmicRecognitionDeckTests(ITestOutputHelper output) : IDispos
 
         Assert.DoesNotContain(tech.Constants, c => c.Name is "MimCapDensity" or "TfrSheetResistance");
         Assert.Equal(fromStack, eval.Eval("MimCapDensity", scope).AsReal(), fromStack * 1e-9);
-        Assert.Equal(tech.Layers.Single(l => l.Name == "Resistor").SheetResistanceOhmPerSq!.Value,
+        Assert.Equal(ResistiveFilms.Of(tech, tech.Layers.Single(l => l.Name == "Resistor").Key)!.SheetResistanceOhmPerSq,
             eval.Eval("TfrSheetResistance", scope).AsReal());
     }
 

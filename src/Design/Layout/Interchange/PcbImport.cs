@@ -791,7 +791,6 @@ public static class PcbImport
     {
         Key = d.Key, Name = name, Color = d.Color, FillOpacity = d.FillOpacity, ZOrder = d.ZOrder, Visible = d.Visible,
         Selectable = d.Selectable, Purpose = d.Purpose, FillPattern = d.FillPattern, Interchange = d.Interchange,
-        SheetResistanceOhmPerSq = d.SheetResistanceOhmPerSq,
     };
 
     private static void WriteCell(string cellDir, LayoutView view, string techPath)

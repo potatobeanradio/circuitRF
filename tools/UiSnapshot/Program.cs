@@ -273,7 +273,7 @@ for (int i = 0; i < args.Length; i++)
         case "--csym" when i + 1 < args.Length: csym = Path.GetFullPath(args[++i]); break;
         case "--pick" when i + 1 < args.Length: csymPick = args[++i]; break;
         case "--dark": dark = true; break;
-        case "--messages": break;
+        case "--messages" or "--film-prompt": break;
         case "--category" when i + 1 < args.Length: paletteCategory = args[++i]; break;
         case "--search" when i + 1 < args.Length: paletteSearch = args[++i]; break;
         case "--schematic" when i + 1 < args.Length: schematic = Path.GetFullPath(args[++i]); break;
@@ -322,13 +322,24 @@ for (int i = 0; i < args.Length; i++)
             width = double.Parse(wh[0]); height = double.Parse(wh[1]);
             sizeGiven = true;
             break;
-        case "--click" or "--drag" or "--key" or "--shot" or "--rclick" or "--menu" or "--type" or "--button" or "--hover" or "--wait"
+        case "--click" or "--drag" or "--drag-hold" or "--key" or "--shot" or "--rclick" or "--menu" or "--type" or "--button" or "--hover" or "--wait"
             or "--unit" or "--rename-stackup" or "--rename-tech" or "--kit-row" or "--c3d-pick"
             when i + 1 < args.Length:
             steps.Add((args[i], args[++i]));
             break;
         default: cdd = args[i]; break;
     }
+}
+if (args.Contains("--film-prompt") && output is not null)
+{
+    AppBuilder.Configure<SnapshotApp>().UseSkia()
+        .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
+    var prompt = new CircuitRF.Ui.Views.Dialogs.ResistorFilmPromptDialog();
+    prompt.Show();
+    Dispatcher.UIThread.RunJobs();
+    prompt.CaptureRenderedFrame()!.Save(output);
+    Console.WriteLine($"wrote {output}");
+    return 0;
 }
 if (args.Contains("--messages") && output is not null)
 {
@@ -992,6 +1003,19 @@ foreach (var (kind, arg) in steps)
                 Pump();
             }
             host.MouseUp(b, MouseButton.Left, RawInputModifiers.None);
+            break;
+        }
+        case "--drag-hold":
+        {
+            // The same gesture, not released, so a capture shows its live chrome.
+            var ends = arg.Split(':');
+            Point a = PointOf(ends[0]), b = PointOf(ends[1]);
+            host.MouseDown(a, MouseButton.Left, RawInputModifiers.None);
+            for (int k = 1; k <= 10; k++)
+            {
+                host.MouseMove(a + (b - a) * (k / 10.0), RawInputModifiers.LeftMouseButton);
+                Pump();
+            }
             break;
         }
         case "--key":

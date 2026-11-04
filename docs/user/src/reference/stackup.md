@@ -617,9 +617,32 @@ and no such bound.
 
 ## A resistive film on a level {#film}
 
-A thin-film resistor's film belongs to a metal level without being that level's metal. A drawing layer whose `.ctech` entry states
-`SheetResistanceOhmPerSq` is a resistor film. Tick it among the drawing layers of the conductor it is deposited on,
-and the conductor's card lists it as `Resistor · 50 Ω/sq`.
+A thin-film resistor's film belongs to a metal level without being that level's metal. It is defined on the conductor it is
+deposited on: open that conductor's card, and under **Resistive films** press **Add**, or right-click the conductor in the
+drawing. **Add Resistor Film** makes an existing drawing layer a film and asks for its sheet resistance. **New Resistor Film…**
+asks for a name as well and creates the drawing layer with it. On the Layers tab a film's layer is an ordinary row: name,
+colour, pattern and order.
+
+Each film states:
+
+| | |
+|---|---|
+| **Sheet resistance** | Ω/sq, positive. What a `TFR` on it is worth per square. |
+| **Thickness** | Read by a 3D solve only, whose sheet takes σ = 1/(R_s·t). Left empty, the generator picks one well under a skin depth and says which. |
+| **Face** | Which face of the conductor the film sits on when the metal is a solid in a 3D solve. Unstated, it follows the level's own sheet. |
+
+The drawing shows a film as a strip on its conductor, against its face, in its layer's colour.
+
+| Gesture | Means |
+|---|---|
+| Click a film | Select it. Its conductor's card scrolls into view with the film's row shaded. |
+| Double-click its sheet resistance or thickness | Edit in place. |
+| Drag it to the other face of its conductor | Set its face. |
+| Drag it onto another conductor | Move it. |
+| Right-click it | **Face**, **Move to**, **Remove Film**. Removing a film leaves its drawing layer. |
+
+A film may sit on one conductor. A via, a dielectric and a ground-reference conductor refuse a drop and say why, and a layer
+that is a level's metal cannot also pattern a film.
 
 **Where a film and metal overlap, the cell is metal.** The current in an overlap runs in the metal, so a resistor's
 length is the distance between its contacts' edges rather than the length of the film you drew.
@@ -627,15 +650,19 @@ length is the distance between its contacts' edges rather than the length of the
 **The film and the metal share one sheet, at one height.** A planar solve meshes a conductor as a zero-thickness sheet
 at one z, and the film is a surface impedance of `R_s` on the part of that sheet it covers. A film's height above its
 metal's bottom is not a quantity this model has, so a 50 nm film sharing the top surface of a 1 µm metal solves the
-same as one at any other height in the band. A 3D setup can see the difference: with `Conductors: Solids` the metal
-keeps its thickness and the film sits on the face its layer names.
+same as one at any other height. A 3D setup can see the difference: with `Conductors: Solids` the metal keeps its
+thickness and the film sits on the face it states.
 
-**A film bound to no level is an open.** It is still a mask the circuit model and LVS read, and a run that meets one
-says so by name: a resistor drawn on it reaches the solver as two contacts with nothing between them. Bind the layer
-to run it.
+**The conductor-thickness correction does not run on a level carrying a film.** It grows a level's metal to stand in for its
+thickness, and that metal along a film's edges would short the resistor. The run says so, and that level's metal lines read
+their Z0 as a sheet of the drawn width does.
 
-A film may be bound to one conductor. Binding it to two, to a via, or to a ground-reference conductor is an error. A
-bound film stays out of connectivity, so LVS and DRC read the resistor as a device rather than a short.
+**A resistor drawn on a layer that is not a film is an open.** It reaches the solver as two contacts with nothing between
+them, and a run that meets one names the layer. A film stays out of connectivity, so LVS and DRC read the resistor as a device
+rather than a short.
+
+The technology **MMIC GaAs (2 Layer Metal + MIM, 100um)** states a film: `Resistor` on Metal1, 50 Ω/sq, with width and spacing rules
+on its layer. The **PDK PCells** example draws a resistor on it.
 
 ## What the EM engine does not read {#ignored}
 

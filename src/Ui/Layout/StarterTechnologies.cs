@@ -169,9 +169,7 @@ public static class StarterTechnologies
                 new LayerDef { Key = metal1,       Name = "Metal1",        Color = new Rgba(0xE0, 0xB0, 0x40), ZOrder = 8, Purpose = "drawing" },
                 new LayerDef { Key = metal2,       Name = "Metal2",        Color = new Rgba(0xC0, 0x80, 0x20), ZOrder = 9, Purpose = "drawing" },
                 new LayerDef { Key = via,          Name = "Via",           Color = new Rgba(0x90, 0x90, 0x90), ZOrder = 7, Purpose = "drawing" },
-                // A 50 Ω/sq thin film — the value the TFR component reads (brief-agent-authoring-overview AA-1).
-                new LayerDef { Key = resistor,     Name = "Resistor",      Color = new Rgba(0x60, 0x40, 0xA0), ZOrder = 6, Purpose = "drawing",
-                               SheetResistanceOhmPerSq = 50 },
+                new LayerDef { Key = resistor,     Name = "Resistor",      Color = new Rgba(0x60, 0x40, 0xA0), ZOrder = 6, Purpose = "drawing" },
                 new LayerDef { Key = capDielectric, Name = "Cap Dielectric", Color = new Rgba(0x30, 0x90, 0xB0), ZOrder = 5, Purpose = "drawing" },
                 new LayerDef { Key = nitride,      Name = "Nitride",       Color = new Rgba(0x40, 0x70, 0x40), ZOrder = 4, Purpose = "drawing" },
                 new LayerDef { Key = substrate,    Name = "Substrate",     Color = new Rgba(0x50, 0x50, 0x50), ZOrder = 1, Purpose = "drawing" },
@@ -257,9 +255,10 @@ public static class StarterTechnologies
                     {
                         Kind = StackupKind.Conductor, Name = "Metal1",
                         ThicknessDbu = Um(3), SigmaSm = ConductorMaterials.Gold.SigmaSm,
-                        // EM-TFR — the resistor film is deposited on Metal1's level, so a TFR drawn in a layout
-                        // reaches a planar solve as a sheet between its contacts rather than an open.
-                        DrawingLayers = [metal1, resistor],
+                        DrawingLayers = [metal1],
+                        // A 50 Ω/sq thin film deposited on Metal1's level: the value the TFR component reads, and
+                        // what a TFR drawn in a layout reaches a planar solve as, a sheet between its contacts.
+                        Films = [new StackupFilm { Layer = resistor, SheetResistanceOhmPerSq = 50 }],
                         // MIM-6 — the sheet on the TOP of the band, so a capacitor run's plate gap
                         // is the MIM Dielectric alone rather than that dielectric plus Metal1's own
                         // 3 µm of metal (16x). It applies only where the film does: MIM-7's rule
@@ -328,6 +327,8 @@ public static class StarterTechnologies
                 new DrcRule { Name = "Metal1 Min Spacing", Kind = DrcRuleKind.MinSpacing, Layer = metal1, ValueDbu = Um(4) },
                 new DrcRule { Name = "Metal2 Min Width",   Kind = DrcRuleKind.MinWidth,   Layer = metal2, ValueDbu = Um(4) },
                 new DrcRule { Name = "Metal2 Min Spacing", Kind = DrcRuleKind.MinSpacing, Layer = metal2, ValueDbu = Um(4) },
+                new DrcRule { Name = "Resistor Min Width",   Kind = DrcRuleKind.MinWidth,   Layer = resistor, ValueDbu = Um(2) },
+                new DrcRule { Name = "Resistor Min Spacing", Kind = DrcRuleKind.MinSpacing, Layer = resistor, ValueDbu = Um(2) },
             ],
         };
 

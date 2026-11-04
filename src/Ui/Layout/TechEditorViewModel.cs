@@ -746,16 +746,25 @@ public sealed partial class TechEditorViewModel : ObservableObject
     private void AddLayer()
     {
         var before = SnapshotJson();
-        var key    = NextFreeLayerKey();
-        Working.Layers.Add(new LayerDef
+        AppendLayer(null);
+        CommitEdit(before, "Add layer");
+    }
+
+    /// <summary>A new row at the end of the layer table: its key, colour and z-order are decided here and
+    /// nowhere else. <see cref="AddResistorFilm"/> creates its layer through this too.</summary>
+    private LayerDef AppendLayer(string? name)
+    {
+        var key = NextFreeLayerKey();
+        var def = new LayerDef
         {
             Key         = key,
-            Name        = $"Layer {key.Layer}",
+            Name        = name ?? $"Layer {key.Layer}",
             Color       = FallbackPalette.For(key).Color,
             ZOrder      = Working.Layers.Count > 0 ? Working.Layers[^1].ZOrder + 1 : 0,
             Purpose     = "drawing",
-        });
-        CommitEdit(before, "Add layer");
+        };
+        Working.Layers.Add(def);
+        return def;
     }
 
     internal void DuplicateLayer(LayerRowViewModel row)
@@ -782,6 +791,7 @@ public sealed partial class TechEditorViewModel : ObservableObject
     {
         var before = SnapshotJson();
         Working.Layers.Remove(row.Layer);
+        ResistorFilmBinding.Remove(Working, row.Layer.Key);   // a film follows its layer, in the same undo entry
         CommitEdit(before, $"Remove layer {row.Layer.Name}");
     }
 
@@ -859,6 +869,8 @@ public sealed partial class TechEditorViewModel : ObservableObject
 
     partial void OnSelectedStackupLayerNameChanged(string? value)
     {
+        if (value is not null) SelectedFilmLayerKey = null;
+
         // R-stk3-5 — A SELECTION THE FILTER WOULD HIDE CLEARS THE FILTER.
         //
         // ApplyStackupFilter builds FilteredStackupLayers from StackupFilter, so a click on a band
@@ -905,12 +917,18 @@ public sealed partial class TechEditorViewModel : ObservableObject
                 SetProperty(ref _selectedStackupLayerRow, match, nameof(SelectedStackupLayerRow));
         }
         finally { _suppressSelectionSync = prior; }
+
+        SyncFilmSelection();
     }
 
     /// <summary>R-stk3-9. <c>Esc</c> clears the outline, the card shading and the <c>ListBox</c>
     /// selection together — and deliberately does NOT put back a filter this selection cleared.
     /// Undoing that on <c>Esc</c> would make <c>Esc</c> a second undo, which it is not.</summary>
-    public void ClearStackupSelection() => SelectedStackupLayerName = null;
+    public void ClearStackupSelection()
+    {
+        SelectedStackupLayerName = null;
+        SelectedFilmLayerKey = null;
+    }
 
     // ── Stackup ────────────────────────────────────────────────────────────────
 
@@ -1293,6 +1311,8 @@ public sealed partial class TechEditorViewModel : ObservableObject
     /// </summary>
     internal bool DeleteSelectedStackupLayer()
     {
+        if (SelectedFilmLayerKey is { } film) { RemoveFilm(film); return true; }
+
         if (SelectedStackupLayerName is not { Length: > 0 } name) return false;
 
         var row = StackupLayers.FirstOrDefault(

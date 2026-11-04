@@ -126,34 +126,6 @@ public sealed class LayerDef
     /// <summary>Null = no interchange overrides declared (GDSII import/export falls back to
     /// <see cref="Key"/> directly). Additive, no <c>.ctech</c> <c>FormatVersion</c> bump.</summary>
     public InterchangeMapping? Interchange { get; set; }
-
-    /// <summary>
-    /// The sheet resistance of the resistive film this mask patterns, Ω/sq — what a thin-film
-    /// resistor (<c>TFR</c>) drawn on this layer is worth per square (brief-agent-authoring-overview.md
-    /// AA-1). Null for every layer that is not a resistor film, which is every layer of every
-    /// <c>.ctech</c> written before this existed: additive, omitted on write when null, no
-    /// <c>FormatVersion</c> bump.
-    ///
-    /// <para><b>On the drawing layer and not the stackup</b>, because a resistor film is not a
-    /// conductor level an EM solve meshes: it is a mask, patterned into small rectangles, whose one
-    /// electrical fact is this number. A stackup conductor entry would put a whole new level into
-    /// every planar run on the technology.</para>
-    /// </summary>
-    public double? SheetResistanceOhmPerSq { get; set; }
-
-    /// <summary>
-    /// EM-TFR — the film's deposited thickness, DBU, used by a 3D solve only: a sheet's σ is derived as
-    /// 1/(R_s·t), and for a sheet only that product is physical. Null lets the generator pick one well
-    /// under a skin depth and say which. The planar solve reads nothing here, because its sheet sits at
-    /// one z and carries R_s directly. Omitted on write when null.
-    /// </summary>
-    public long? FilmThicknessDbu { get; set; }
-
-    /// <summary>
-    /// EM-TFR — which face of its level's band a film sits on when the metal there is a solid, in a 3D
-    /// solve. Null is the level's own <see cref="StackupLayer.SheetAt"/>. Omitted on write when null.
-    /// </summary>
-    public ConductorSheetSurface? FilmAt { get; set; }
 }
 
 public enum StackupKind { Dielectric, Conductor, Via }
@@ -183,6 +155,31 @@ public enum ConductorSheetSurface { Bottom, Top }
 /// cross-section, and thermal via arrays are sized on exactly that difference. Carried for thermal even
 /// though RF can ignore it; do not "simplify away" as unused.</summary>
 public enum ViaFillKind { Plated, Solid }
+
+/// <summary>
+/// A resistive film deposited on one conductor level (brief stackup-render 9): a sheet resistance is a
+/// material fact about a level, so it lives on the level's stackup entry and not on a drawing layer.
+/// The film is patterned by <see cref="Layer"/>, an ordinary row of the Layers tab that knows nothing
+/// about any of this. Additive, with no <c>.ctech</c> <c>FormatVersion</c> bump.
+/// </summary>
+public sealed class StackupFilm
+{
+    /// <summary>The drawing layer that patterns this film.</summary>
+    public LayerKey Layer { get; set; }
+
+    /// <summary>What the film is worth per square, Ω/sq. Positive.</summary>
+    public double SheetResistanceOhmPerSq { get; set; }
+
+    /// <summary>The deposited thickness, DBU, read by a 3D solve only: a sheet's σ is 1/(R_s·t) and only
+    /// that product is physical. Null lets the generator pick one well under a skin depth and say which.
+    /// The planar solve reads nothing here, because its sheet carries R_s directly.</summary>
+    public long? ThicknessDbu { get; set; }
+
+    /// <summary>Which face of its level's band the film sits on when the metal there is a solid, in a 3D
+    /// solve, and where the stackup drawing puts it. Null is the level's own
+    /// <see cref="StackupLayer.SheetAt"/>.</summary>
+    public ConductorSheetSurface? At { get; set; }
+}
 
 public sealed class StackupLayer
 {
@@ -228,8 +225,16 @@ public sealed class StackupLayer
     /// </summary>
     public double? RoughnessRmsM { get; set; }
 
-    /// <summary>Which drawing layers map onto this stackup layer.</summary>
+    /// <summary>Which drawing layers map onto this stackup layer. On a conductor these are its METAL:
+    /// a resistive film's layer is in <see cref="Films"/> and never here, so no reader of this list can
+    /// take a film for copper.</summary>
     public List<LayerKey> DrawingLayers { get; set; } = [];
+
+    /// <summary>The resistive films deposited on this level, in the order the stackup drawing shows them.
+    /// Null or absent on every entry that has none; omitted on write when empty, no <c>.ctech</c>
+    /// <c>FormatVersion</c> bump. Read through <see cref="ResistiveFilms"/>. Meaningful on a Conductor
+    /// entry only; <c>TechValidation</c> refuses one anywhere else.</summary>
+    public List<StackupFilm>? Films { get; set; }
 
     /// <summary>docs/sonnet-briefs/brief-L5a-pcell-contract-and-microstrip.md R-pc-9: marks a
     /// <see cref="StackupKind.Conductor"/> entry as a ground-reference plane, so a microstrip
@@ -661,6 +666,11 @@ public sealed class Technology
     public long DefaultViaDrillDbu { get; set; }
 
     public List<LayerDef> Layers { get; set; } = [];
+
+    /// <summary>Names of the layers an older <c>.ctech</c> stated a sheet resistance on and which had no
+    /// conductor to go to (<see cref="TechPersistence"/>), so <c>TechValidation</c> can say the value
+    /// was lost. Never written.</summary>
+    public List<string> UnplacedFilmLayers { get; set; } = [];
 
     /// <summary>The stipples <see cref="LayerDef.FillPattern"/> names, by <see cref="FillPattern.Name"/>.
     /// Empty — every technology authored before stipples existed — means every layer fills solid.</summary>

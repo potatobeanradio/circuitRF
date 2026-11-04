@@ -271,6 +271,11 @@
             <Setter Property="Background" Value="{DynamicResource CrfStackupSelectedCardBrush}"/>
         </Style>
 
+        <!-- The film row of the film selected in the drawing, shaded as a selected card is. -->
+        <Style Selector="Border.selectedfilm">
+            <Setter Property="Background" Value="{DynamicResource CrfStackupSelectedCardBrush}"/>
+        </Style>
+
         <!-- ── The conductor card's drawing-layer picker (R-stk2-8) ─────────────
              Three across, four down: twelve layers visible at once where four were, in less
              vertical space than the four took.
@@ -1258,21 +1263,62 @@
                                                     <ListBox.ItemTemplate>
                                                         <DataTemplate x:DataType="lay:DrawingLayerCheckRow">
                                                             <UniformGrid Columns="{x:Static lay:TechEditorMetrics.DrawingLayerPickerColumns}">
-                                                                <CheckBox Content="{Binding A.Name}" IsChecked="{Binding A.IsChecked}"
+                                                                <CheckBox Content="{Binding A.Name}" IsChecked="{Binding A.IsChecked}" IsEnabled="{Binding A.IsEnabled}"
                                                                           FontSize="11" Margin="0,0,8,0"
-                                                                          ToolTip.Tip="{Binding A.Name}"/>
-                                                                <CheckBox Content="{Binding B.Name}" IsChecked="{Binding B.IsChecked}"
+                                                                          ToolTip.Tip="{Binding A.Tip}"/>
+                                                                <CheckBox Content="{Binding B.Name}" IsChecked="{Binding B.IsChecked}" IsEnabled="{Binding B.IsEnabled}"
                                                                           IsVisible="{Binding HasB}"
                                                                           FontSize="11" Margin="0,0,8,0"
-                                                                          ToolTip.Tip="{Binding B.Name}"/>
-                                                                <CheckBox Content="{Binding C.Name}" IsChecked="{Binding C.IsChecked}"
+                                                                          ToolTip.Tip="{Binding B.Tip}"/>
+                                                                <CheckBox Content="{Binding C.Name}" IsChecked="{Binding C.IsChecked}" IsEnabled="{Binding C.IsEnabled}"
                                                                           IsVisible="{Binding HasC}"
                                                                           FontSize="11" Margin="0,0,8,0"
-                                                                          ToolTip.Tip="{Binding C.Name}"/>
+                                                                          ToolTip.Tip="{Binding C.Tip}"/>
                                                             </UniformGrid>
                                                         </DataTemplate>
                                                     </ListBox.ItemTemplate>
                                                 </ListBox>
+                                            </StackPanel>
+
+                                            <!-- RESISTIVE FILMS. Below the picker, and a fixed part of a conductor's card
+                                                 whether or not it has rows, so nothing above it moves when a film is
+                                                 added. Every edit here is the one write path the drawing uses. -->
+                                            <StackPanel Spacing="3" IsVisible="{Binding ShowsFilmSection}">
+                                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                                    <TextBlock Text="Resistive films:" FontSize="11" VerticalAlignment="Center"/>
+                                                    <Button Content="＋ Add" FontSize="11" Padding="6,1" Click="OnAddFilmClick"
+                                                            IsEnabled="{Binding CanAddFilm}"
+                                                            ToolTip.Tip="Make a drawing layer a resistive film on this level, or create one."/>
+                                                </StackPanel>
+                                                <ItemsControl ItemsSource="{Binding FilmRows}" Margin="70,0,0,0">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate x:DataType="lay:StackupFilmRowViewModel">
+                                                            <Border Classes.selectedfilm="{Binding IsSelected}" Padding="4,2" CornerRadius="2">
+                                                                <StackPanel Spacing="2">
+                                                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                                                        <TextBlock Text="{Binding LayerName}" Width="90" FontSize="11"
+                                                                                   VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                                                        <TextBox Classes="cell" Width="60" Text="{Binding StagedSheetResistance, Mode=TwoWay}"
+                                                                                 LostFocus="OnFilmRsLostFocus"
+                                                                                 ToolTip.Tip="What the film is worth per square."/>
+                                                                        <TextBlock Text="Ω/sq" FontSize="11" VerticalAlignment="Center"/>
+                                                                        <TextBox Classes="cell" Width="60" Text="{Binding StagedThickness, Mode=TwoWay}"
+                                                                                 PlaceholderText="auto" LostFocus="OnFilmThicknessLostFocus"
+                                                                                 ToolTip.Tip="The deposited thickness, read by a 3D solve. Empty lets the generator pick one well under a skin depth."/>
+                                                                        <TextBlock Text="{Binding ThicknessUnitSuffix}" FontSize="11" VerticalAlignment="Center"/>
+                                                                        <ComboBox Classes="cell" Width="86" ItemsSource="{x:Static lay:StackupFilmRowViewModel.FaceChoices}"
+                                                                                  SelectedItem="{Binding SelectedFace, Mode=TwoWay}"
+                                                                                  ToolTip.Tip="Which face of this level's band the film sits on."/>
+                                                                        <Button Content="✕" FontSize="10" Padding="4,1" Command="{Binding RemoveCommand}"
+                                                                                ToolTip.Tip="Remove the film. The drawing layer stays."/>
+                                                                    </StackPanel>
+                                                                    <TextBlock Text="{Binding Error}" IsVisible="{Binding HasError}" FontSize="11"
+                                                                               Foreground="{DynamicResource CrfWarningBrush}"/>
+                                                                </StackPanel>
+                                                            </Border>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
                                             </StackPanel>
                                         </StackPanel>
                                     </Border>

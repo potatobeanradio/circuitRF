@@ -70,8 +70,7 @@
       },
       "FillOpacity": 0.35,
       "ZOrder": 6,
-      "Purpose": "drawing",
-      "SheetResistanceOhmPerSq": 50
+      "Purpose": "drawing"
     },
     {
       "Key": {
@@ -276,10 +275,15 @@
           {
             "Layer": 1,
             "Datatype": 0
-          },
+          }
+        ],
+        "Films": [
           {
-            "Layer": 4,
-            "Datatype": 0
+            "Layer": {
+              "Layer": 4,
+              "Datatype": 0
+            },
+            "SheetResistanceOhmPerSq": 50
           }
         ],
         "IsGroundReference": false,
@@ -415,6 +419,26 @@
         "Datatype": 0
       },
       "ValueDbu": 4000,
+      "Severity": "Error"
+    },
+    {
+      "Name": "Resistor Min Width",
+      "Kind": "MinWidth",
+      "Layer": {
+        "Layer": 4,
+        "Datatype": 0
+      },
+      "ValueDbu": 2000,
+      "Severity": "Error"
+    },
+    {
+      "Name": "Resistor Min Spacing",
+      "Kind": "MinSpacing",
+      "Layer": {
+        "Layer": 4,
+        "Datatype": 0
+      },
+      "ValueDbu": 2000,
       "Severity": "Error"
     }
   ],

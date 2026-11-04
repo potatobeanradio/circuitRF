@@ -19,7 +19,8 @@ internal readonly record struct StackupEditTarget(
     string       Seed,
     float        TextX,
     float        Baseline,
-    float        FontSize);
+    float        FontSize,
+    LayerKey?    Film = null);
 
 /// <summary>
 /// <b>Editing a value ON the drawing, with the editor the schematic already has</b> —
@@ -64,6 +65,7 @@ internal sealed class StackupInlineEditor
     /// is not.</summary>
     private string?             _layerName;
     private StackupField        _field;
+    private LayerKey?           _film;
     private TechEditorViewModel? _vm;
 
     public StackupInlineEditor(SchematicInlineEditBox box) => _box = box;
@@ -135,11 +137,11 @@ internal sealed class StackupInlineEditor
 
         var row = RowFor(vm, hit.LayerName);
         if (row is null) return null;
-        if (SeedFor(row, hit.Field) is not { } seed) return null;
+        if (SeedFor(row, hit.Field, hit.FilmLayer) is not { } seed) return null;
 
         return new StackupEditTarget(
             hit.LayerName, hit.Field, seed,
-            label.TextX, label.Baseline, StackupScene.FontSizeFor(label.Style));
+            label.TextX, label.Baseline, StackupScene.FontSizeFor(label.Style), hit.FilmLayer);
     }
 
     /// <summary>Opens the box over one label. Returns false when there is nothing editable there.</summary>
@@ -150,6 +152,7 @@ internal sealed class StackupInlineEditor
         _vm        = vm;
         _layerName = t.LayerName;
         _field     = t.Field;
+        _film      = t.Film;
 
         _box.Open(t.Seed, t.TextX, t.Baseline, t.FontSize);
 
@@ -180,6 +183,7 @@ internal sealed class StackupInlineEditor
         var    field = _field;
         var    name  = _layerName;
         var    vm    = _vm;
+        var    film  = _film;
 
         // Before the two statements below, and before anything they raise. Close() clears IsOpen
         // first of all, which is also what makes this re-entrant safely: hiding a focused box raises
@@ -190,7 +194,7 @@ internal sealed class StackupInlineEditor
         if (name is null) return;
         if (RowFor(vm, name) is not { } row) return;
 
-        Apply(row, field, text);
+        Apply(row, field, text, film);
     }
 
     /// <summary>Escape. Closes the box and writes nothing — not even the staged string, so the card
@@ -207,6 +211,7 @@ internal sealed class StackupInlineEditor
         _box.IsVisible = false;
         _layerName     = null;
         _field         = StackupField.None;
+        _film          = null;
         _vm            = null;
 
         // LAST, with this editor's own state already reset: the host's handler takes focus, and a
@@ -219,8 +224,10 @@ internal sealed class StackupInlineEditor
 
     /// <summary>The staged string the card shows for this field, or null for a field this editor
     /// does not type.</summary>
-    private static string? SeedFor(StackupLayerRowViewModel row, StackupField field) => field switch
+    private static string? SeedFor(StackupLayerRowViewModel row, StackupField field, LayerKey? film) => field switch
     {
+        StackupField.FilmSheetResistance => FilmRow(row, film)?.StagedSheetResistance,
+        StackupField.FilmThickness       => FilmRow(row, film)?.StagedThickness,
         StackupField.Name          => row.StagedName,
         StackupField.Thickness     => row.StagedThicknessText,
         StackupField.Sigma         => row.StagedSigmaSm,
@@ -236,10 +243,18 @@ internal sealed class StackupInlineEditor
     /// method the card's own LostFocus handler calls. <b>Two statements, and nothing else</b> — no
     /// write to <c>Working.Stackup</c>, no <c>CommitEdit</c>, no <c>UndoRedo.Execute</c>.
     /// </summary>
-    internal static void Apply(StackupLayerRowViewModel row, StackupField field, string text)
+    internal static void Apply(StackupLayerRowViewModel row, StackupField field, string text, LayerKey? film = null)
     {
         switch (field)
         {
+            case StackupField.FilmSheetResistance when FilmRow(row, film) is { } rs:
+                rs.StagedSheetResistance = text;
+                rs.CommitSheetResistance();
+                break;
+            case StackupField.FilmThickness when FilmRow(row, film) is { } thickness:
+                thickness.StagedThickness = text;
+                thickness.CommitThickness();
+                break;
             case StackupField.Name:
                 row.StagedName = text;
                 row.CommitName();
@@ -270,6 +285,9 @@ internal sealed class StackupInlineEditor
                 break;
         }
     }
+
+    private static StackupFilmRowViewModel? FilmRow(StackupLayerRowViewModel row, LayerKey? film)
+        => film is { } key ? row.FilmRows.FirstOrDefault(f => f.Key == key) : null;
 
     private static StackupLayerRowViewModel? RowFor(TechEditorViewModel? vm, string layerName) =>
         vm?.StackupLayers.FirstOrDefault(r =>

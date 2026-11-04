@@ -27675,3 +27675,25 @@ strip, where 300 Ω is exact, then on the zig-zag. Palace reads 299.96 Ω as wri
   film where 300 Ω is right, with |S21 − S12| of 0.38 and 1.01. The metal-only thru flagged too, so this is not about films. The
   adaptive path already moves to the CPU at the first flag. `docs/briefs/brief-emerge-gpu-unusable-factorisation.md`.
 
+
+## A resistor film moves to its conductor; TFR draws a serpentine (brief stackup-render 9, 2026-11-04)
+
+- **`StackupLayer.Films`, and `DrawingLayers` is metal only.** `ResistiveFilms` answers every question about a film and
+  `ResistorFilmBinding` holds the rules, called by both `TechValidation` and the canvas. `MetalLayers` is gone and its readers read
+  `DrawingLayers` again, which is what removes the trap: EM-TFR had to teach each reader of that list not to take a film for copper.
+- **The legacy reader is a pre-pass over the JSON, not a field on `LayerDef`.** `TechPersistence.MoveLegacyFilms` reads the old
+  keys off the raw `Layers` array after deserializing. The array and the deserialized list correspond by position.
+- **The conductor-thickness correction shorted a film (found by running the new example).** It grows `polysByLevel`, and the film's
+  region is not grown with it, so the grown ring is metal along both edges of the film. A 1224 Ω serpentine read 0.9 Ω, as a clean
+  solve with no warning. New EM setups turn the correction on, so the first run of any drawn resistor hit it. It now declines on a
+  level carrying a film, with a warning. Growing the metal alone and leaving the film as drawn is the better fix if a design mixes a
+  resistor with lines whose Z0 matters: the metal has to be subtracted from the film's cells, or a contact's growth shortens `L`.
+- **`TFR` keeps one part and gains `N` and `Lc`.** A cell or netlist stating neither reads as N = 1, the same straight film, so nothing
+  drawn before moves; only a newly placed part opens as a serpentine, which is what moved the fingerprint and the version. The squares
+  are the straight film between the bends plus 0.559 per corner, the figure `testdata/em-tfr/zigzag` already uses. On the example the
+  planar DC row reads 1252 Ω against that formula's 1224 Ω, high by 2.3 % at the example's mesh and high in the direction that README
+  records for the planar DC network.
+- **Update Layout turns a tall serpentine by 270°.** The planner aligns the pin-to-pin vector's dominant axis with the schematic's, and
+  N = 5 with these sizes is taller than it is wide. That is the planner's ordinary behaviour and the example keeps what it drew.
+- **The MMIC technology's `Resistor` width and spacing rules are placeholders.** 2 µm each, chosen so a drawn film is checked at all and not
+  taken from a process. DRC reads the drawn shapes only; a film's thickness reaches nothing but a 3D solve.

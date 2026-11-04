@@ -310,7 +310,11 @@ public static class Em3dLayoutSolids
 
             var conductorShapes = new List<(LayoutShape Shape, int Level)>();
             var filmShapes      = new List<(LayoutShape Shape, int Level)>();
-            var unboundFilm     = new HashSet<LayerKey>();
+            var filmBinding     = new Dictionary<LayerKey, int>();
+            foreach (var b in bands)
+                if (b.Layer is { Kind: StackupKind.Conductor, IsGroundReference: false, Films: { } onLevel })
+                    foreach (var f in onLevel)
+                        if (f.SheetResistanceOhmPerSq > 0) filmBinding.TryAdd(f.Layer, b.Index);
             var viaShapes       = new List<(LayoutShape Shape, StackupLayer Entry)>();
             var holeShapes      = new List<(LayoutShape Shape, StackupLayer Entry)>();
             var outlineShapes   = new List<LayoutShape>();
@@ -343,21 +347,13 @@ public static class Em3dLayoutSolids
                 }
                 if (conductorBinding.TryGetValue(s.Layer, out var band))
                 {
-                    // EM-TFR — a film on a level is a sheet of its own, never that level's metal.
-                    if (ResistiveFilms.IsFilm(tech, s.Layer) && !band.Layer.IsGroundReference) filmShapes.Add((s, band.Index));
-                    else conductorShapes.Add((s, band.Index));
+                    conductorShapes.Add((s, band.Index));
                     continue;
                 }
                 if (viaBinding.TryGetValue(s.Layer, out var regionEntry)) viaShapes.Add((s, regionEntry));
                 else if (holeBinding.TryGetValue(s.Layer, out var regionHole)) holeShapes.Add((s, regionHole));
-                else if (ResistiveFilms.IsFilm(tech, s.Layer)) unboundFilm.Add(s.Layer);
-            }
-            foreach (var key in unboundFilm)
-            {
-                var def = tech.Layers.First(l => l.Key == key);
-                Notes.Add($"The shapes on '{def.Name}' ({def.SheetResistanceOhmPerSq:G4} Ω/sq) are not in this 3D problem: the layer is a " +
-                          "resistor film but is not bound to a conductor level, so a resistor drawn on it is an OPEN between its " +
-                          "contacts. Bind it to the level it is deposited on (Technology ▸ Stackup) to simulate it.");
+                // EM-TFR — a film on a level is a sheet of its own, never that level's metal.
+                else if (filmBinding.TryGetValue(s.Layer, out int filmLevel)) filmShapes.Add((s, filmLevel));
             }
 
             if (nonPlated > 0)
@@ -1197,17 +1193,18 @@ public static class Em3dLayoutSolids
             {
                 var band = bands.First(b => b.Index == group.Key.Level);
                 var def = tech.Layers.First(l => l.Key == group.Key.Layer);
-                double rs = def.SheetResistanceOhmPerSq!.Value;
-                bool stated = def.FilmThicknessDbu is > 0;
+                var entry = ResistiveFilms.Of(tech, group.Key.Layer)!;
+                double rs = entry.SheetResistanceOhmPerSq;
+                bool stated = entry.ThicknessDbu is > 0;
                 // t < δ exactly when t < 2·R_s/(ωμ₀): σ = 1/(R_s·t) puts t on both sides of the skin depth.
                 double thinLimit = options.FMaxHz is { } f && f > 0 ? 2.0 * rs / (2.0 * Math.PI * f * Mu0) : double.PositiveInfinity;
-                double t = stated ? def.FilmThicknessDbu!.Value * StackPerDbu : Math.Min(DefaultFilmThicknessM, 0.5 * thinLimit);
+                double t = stated ? entry.ThicknessDbu!.Value * StackPerDbu : Math.Min(DefaultFilmThicknessM, 0.5 * thinLimit);
                 double sigma = 1.0 / (rs * t);
                 string material = Add(new Em3dMaterial($"Film {def.Name}", 1, null, 0, 1, sigma), TechnologySource());
 
                 bool solidMetal = volume || (Pieces.TryGetValue(band.Index, out var metal) && metal.Any(p => !p.IsSheet));
                 double z = solidMetal
-                    ? (def.FilmAt ?? band.Layer.SheetAt ?? ConductorSheetSurface.Bottom) == ConductorSheetSurface.Top ? band.TopM : band.BottomM
+                    ? ResistiveFilms.FaceOf(entry, band.Layer) == ConductorSheetSurface.Top ? band.TopM : band.BottomM
                     : SheetZOf(band);
 
                 Notes.Add($"Resistive film '{def.Name}' on '{band.Layer.Name}' is a sheet at σ = {sigma:G4} S/m × t = {t * 1e9:G4} nm" +

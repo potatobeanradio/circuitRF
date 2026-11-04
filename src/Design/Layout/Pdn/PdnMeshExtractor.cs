@@ -438,7 +438,7 @@ public static class PdnMeshExtractor
         foreach (var sl in tech.Stackup.Layers)
         {
             if (sl.Kind != StackupKind.Conductor) continue;
-            foreach (var key in ResistiveFilms.MetalLayers(tech, sl))
+            foreach (var key in sl.DrawingLayers)
             {
                 if (byLayer.ContainsKey(key)) continue;
                 double t = sl.ThicknessDbu / (double)request.DbuPerMicron * 1e-6;

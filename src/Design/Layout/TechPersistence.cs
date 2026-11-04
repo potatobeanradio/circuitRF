@@ -157,6 +157,7 @@ public static class TechPersistence
     public static Technology Clone(Technology tech)
     {
         var clone = DeserializeUnresolved(Serialize(tech));
+        clone.UnplacedFilmLayers = [.. tech.UnplacedFilmLayers];
         for (int i = 0; i < tech.Layers.Count && i < clone.Layers.Count; i++)
         {
             clone.Layers[i].Visible    = tech.Layers[i].Visible;
@@ -186,7 +187,56 @@ public static class TechPersistence
                 $".ctech format_version {file.FormatVersion} is newer than " +
                 $"expected {CurrentFormatVersion}. Update the application.");
 
-        return FromFileModel(file);
+        var tech = FromFileModel(file);
+        MoveLegacyFilms(json, tech);
+        return tech;
+    }
+
+    /// <summary>
+    /// A sheet resistance used to be stated on a drawing layer (<c>SheetResistanceOhmPerSq</c>, with
+    /// <c>FilmThicknessDbu</c> and <c>FilmAt</c>), and such files exist. This reads them and moves each to
+    /// its level; nothing writes that form back. A layer bound into a conductor leaves that conductor's
+    /// <c>DrawingLayers</c> for its <c>Films</c>. A layer bound to nothing goes to the level the
+    /// <c>TFR</c> part draws its contacts on. With no conductor at all the value cannot be kept, and
+    /// <see cref="Technology.UnplacedFilmLayers"/> lets <c>TechValidation</c> say so.
+    /// </summary>
+    private static void MoveLegacyFilms(string json, Technology tech)
+    {
+        if (!json.Contains("SheetResistanceOhmPerSq", StringComparison.OrdinalIgnoreCase)) return;
+
+        using var doc = JsonDocument.Parse(json);
+        if (!TryGet(doc.RootElement, "Layers", out var layers) || layers.ValueKind != JsonValueKind.Array) return;
+
+        int index = -1;
+        foreach (var layer in layers.EnumerateArray())
+        {
+            index++;
+            if (!TryGet(layer, "SheetResistanceOhmPerSq", out var rs) || rs.ValueKind != JsonValueKind.Number) continue;
+            if (index >= tech.Layers.Count) break;
+            var def = tech.Layers[index];
+
+            var film = new StackupFilm { Layer = def.Key, SheetResistanceOhmPerSq = rs.GetDouble() };
+            if (TryGet(layer, "FilmThicknessDbu", out var t) && t.ValueKind == JsonValueKind.Number) film.ThicknessDbu = t.GetInt64();
+            if (TryGet(layer, "FilmAt", out var at))
+                film.At = at.ValueKind == JsonValueKind.String && Enum.TryParse<ConductorSheetSurface>(at.GetString(), true, out var face) ? face
+                        : at.ValueKind == JsonValueKind.Number ? (ConductorSheetSurface)at.GetInt32() : null;
+
+            var bound = tech.Stackup.Layers.Where(l => l.Kind == StackupKind.Conductor && l.DrawingLayers.Contains(def.Key)).ToList();
+            foreach (var entry in bound) entry.DrawingLayers.Remove(def.Key);
+
+            var level = bound.FirstOrDefault() ?? PCells.MmicStackResolver.Resolve(tech).BaseMetal;
+            if (level is null) tech.UnplacedFilmLayers.Add(def.Name);
+            else (level.Films ??= []).Add(film);
+        }
+
+        static bool TryGet(JsonElement element, string name, out JsonElement value)
+        {
+            value = default;
+            if (element.ValueKind != JsonValueKind.Object) return false;
+            foreach (var property in element.EnumerateObject())
+                if (string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase)) { value = property.Value; return true; }
+            return false;
+        }
     }
 
     /// <summary>
@@ -241,7 +291,16 @@ public static class TechPersistence
 
     // ── Convert Technology <-> CtechFile ──────────────────────────────────────
 
-    private static CtechFile ToFileModel(Technology tech) => new()
+    private static CtechFile ToFileModel(Technology tech)
+    {
+        // An empty film list is omitted on write, like every additive list here: a level that lost its
+        // last film reads back exactly as a level that never had one.
+        foreach (var entry in tech.Stackup.Layers)
+            if (entry.Films is { Count: 0 }) entry.Films = null;
+        return ToFileModelCore(tech);
+    }
+
+    private static CtechFile ToFileModelCore(Technology tech) => new()
     {
         FormatVersion        = CurrentFormatVersion,
         Name                 = tech.Name,

@@ -56,6 +56,18 @@ says so rather than inventing an answer; the built-in MLIN in `MicrostripLine` i
 half of a microstrip line looks like. `KIT_MIMCAP` reports a capacitance and that is still not a
 model — it is a number the artwork implies, shown where a stale one would otherwise sit.
 
+## A thin-film resistor
+
+`ThinFilmResistor` is the built-in `TFR`, so it needs no kit: a five-segment serpentine, 10 µm wide with 40 µm segments and 10 µm
+links. Open `tech/mmic-GaAs_2LM_100um.ctech`: Metal1's card on the Stackup tab shows `Resistor` under **Resistive films**, at 50 Ω/sq.
+To define a film in your own technology, do what that card shows.
+
+- The schematic's Parameters panel and the layout's Inspector both read **≈ 1.224 kΩ (24.472 sq × 50 Ω/sq)**, and follow every edit.
+- **Simulate** the schematic: `R_ohm` reads the same number, from S21.
+- **Run** `em/ThinFilmResistor.cem`, about a minute: the film is meshed as a sheet between its contacts, and its 0 Hz row reads 1252 Ω at
+  this coarse mesh.
+- **Check LVS** on the cell: the schematic and the layout match.
+
 circuitRF will ask once whether to run this kit's scripts. Scripts in a workspace are somebody
 else's code and are never started without being allowed.
 

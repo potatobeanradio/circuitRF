@@ -220,9 +220,17 @@ public static class PlanarExtractor
         var conductorShapes = new List<(LayoutShape Shape, Band Band)>();
         int ignoredAnnotation = 0, ignoredOther = 0;
 
-        // EM-TFR — a resistive film bound to a conductor level (carried on that level, metal wins), and
-        // a film bound to nothing, which is an open between its contacts and is said by name.
+        // EM-TFR — a resistive film, carried on the level its entry is on, where metal wins. A film on
+        // the return plane is a validation error and has no band here, so it falls to the ignored count.
         var filmShapes = new List<(LayoutShape Shape, Band Band)>();
+        var filmBinding = new Dictionary<LayerKey, Band>();
+        foreach (var b in stack)
+            if (b.Layer is { Kind: StackupKind.Conductor, IsGroundReference: false, Films: { } onLevel })
+                foreach (var f in onLevel)
+                    if (f.SheetResistanceOhmPerSq > 0) filmBinding.TryAdd(f.Layer, b);
+        // The layers the ignored count is made of, so the note can name them: a film drawn on a layer with no
+        // film entry is an open between its contacts, and must not pass in silence.
+        var ignoredLayers = new Dictionary<LayerKey, bool>();
         var unboundFilm = new Dictionary<LayerKey, int>();
 
         // ANT-11 §2 — artwork on a ground-designated conductor, kept with every ground band its layer
@@ -312,8 +320,7 @@ public static class PlanarExtractor
                     b.Layer.Kind == StackupKind.Conductor && !b.Layer.IsGroundReference);
                 if (signalBand is not null)
                 {
-                    if (ResistiveFilms.IsFilm(tech, s.Layer)) filmShapes.Add((s, signalBand));
-                    else conductorShapes.Add((s, signalBand));
+                    conductorShapes.Add((s, signalBand));
                     continue;
                 }
 
@@ -336,26 +343,14 @@ public static class PlanarExtractor
             if (viaBinding.TryGetValue(s.Layer, out var regionEntry))
             { regionViaShapes.Add((s, regionEntry)); continue; }
 
+            if (filmBinding.TryGetValue(s.Layer, out var filmBand)) { filmShapes.Add((s, filmBand)); continue; }
+
             // MIM-11 — read, not ignored. It bound to no conductor and no via because a mask is
             // neither; it still decided whether a layer of the medium is present.
             if (onAMask) continue;
 
-            if (ResistiveFilms.IsFilm(tech, s.Layer) && !binding.ContainsKey(s.Layer))
-            {
-                unboundFilm[s.Layer] = unboundFilm.GetValueOrDefault(s.Layer) + 1;
-                continue;
-            }
-
             ignoredOther++;
-        }
-
-        foreach (var (key, count) in unboundFilm)
-        {
-            var def = tech.Layers.First(l => l.Key == key);
-            notes.Add(EmFinding.Warn(
-                $"{count} shape(s) on '{def.Name}' ({def.SheetResistanceOhmPerSq:G4} Ω/sq) are not in this run: the layer is a " +
-                "resistor film but is not bound to a conductor level, so a resistor drawn on it is an OPEN between " +
-                "its contacts. Bind it to the level it is deposited on (Technology ▸ Stackup) to simulate it."));
+            ignoredLayers[s.Layer] = ignoredLayers.GetValueOrDefault(s.Layer) || s is not PathShape { Width: <= 0 };
         }
 
         // EM-TFR — clipped where metal covers it, and joined to its level's outline: every question the
@@ -1114,7 +1109,7 @@ public static class PlanarExtractor
                     polys.Add(new PlanarPolygon(ToPoints(rings[0], perDbu), holes.Count == 0 ? null : holes));
                 }
             if (polys.Count > 0)
-                (filmsByLevel[li] ??= []).Add(new PlanarFilmRegion(def.Name, polys, def.SheetResistanceOhmPerSq!.Value));
+                (filmsByLevel[li] ??= []).Add(new PlanarFilmRegion(def.Name, polys, ResistiveFilms.SheetResistanceOf(tech, group.Key.Layer)!.Value));
         }
 
         int flattenedCurves = 0;
@@ -1340,6 +1335,11 @@ public static class PlanarExtractor
                       "with no area to mesh, and anything not bound to a stackup conductor or via " +
                       "entry is not metal as far as this technology is concerned. (A Path that " +
                       "carries a width is outlined and meshed.)");
+        foreach (var (key, hasArea) in ignoredLayers)
+            if (hasArea && tech.Layers.FirstOrDefault(l => l.Key == key) is { } ignoredDef)
+                notes.Add(EmFinding.Warn($"The shapes on '{ignoredDef.Name}' are not in this run: the layer is bound to no conductor or " +
+                                         "via and is not a resistor film. If they are a resistor, define the film on its conductor " +
+                                         "(Technology ▸ Stackup); as drawn, it is an open between its contacts."));
         // MIM-1 — the two things still ignorable on a via-bound layer, each named rather than
         // folded into the sentence above, which would send the user to re-bind a layer that is
         // already bound.
@@ -1454,7 +1454,7 @@ public static class PlanarExtractor
         // After the vias, because a via that spans a level appends that level's metal above, and that
         // copper is as thick as the rest of the level. See PlanarThicknessCorrection.
         if (settings.ConductorThicknessCorrection)
-            ApplyThicknessCorrection(shapes, stack, levels, polysByLevel, groundTopM, perDbu, notes);
+            ApplyThicknessCorrection(shapes, stack, levels, polysByLevel, filmsByLevel, groundTopM, perDbu, notes);
 
         // The conductor levels are built AFTER the vias, because a via that spans a level builds
         // that level's metal: see BuildVias' chain-through block, which appends the barrel's own
@@ -1751,7 +1751,7 @@ public static class PlanarExtractor
     /// </summary>
     private static void ApplyThicknessCorrection(
         IReadOnlyList<LayoutShape> shapes, List<Band> stack, List<Band> levels,
-        List<PlanarPolygon>[] polysByLevel, double groundTopM, double perDbu, List<EmFinding> notes)
+        List<PlanarPolygon>[] polysByLevel, List<PlanarFilmRegion>?[] filmsByLevel, double groundTopM, double perDbu, List<EmFinding> notes)
     {
         // Edge ports only: an internal (delta-gap) port names a point mid-conductor, not an edge.
         var portPoints = shapes.OfType<LabelShape>()
@@ -1771,6 +1771,17 @@ public static class PlanarExtractor
             double t = band.TopM - band.BottomM;
             if (!(t > 0) || polysByLevel[i].Count == 0) continue;
             string name = band.Layer.Name;
+
+            // A film has no thickness to correct for, and its region is not grown with the outline. The growth
+            // would be metal running along both its edges, and that metal shorts the resistor.
+            if (filmsByLevel[i] is { Count: > 0 })
+            {
+                notes.Add(EmFinding.Warn(
+                    $"The conductor-thickness correction was NOT applied on '{name}': it carries a resistive film, and " +
+                    "metal grown along the film's edges would short it. That level is solved as a zero-thickness sheet " +
+                    "of the drawn width, which reads a metal line's Z0 high."));
+                continue;
+            }
 
             double w = PlanarThicknessCorrection.ReferenceWidth(polysByLevel[i], portPoints, out bool fromPorts);
             if (!(w > 0)) continue;

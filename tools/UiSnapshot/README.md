@@ -239,6 +239,7 @@ capture. Coordinates are window DIPs — take them from a first capture.
 |---|---|
 | `--click x,y` | Left press and release. |
 | `--drag x0,y0:x1,y1` | Left press, ten moves (so it crosses a click threshold), release. |
+| `--drag-hold x0,y0:x1,y1` | The same, not released, so a capture shows the gesture's live chrome. |
 | `--key K` | Press and release a key: `Back`, `Delete`, `Escape`, or with modifiers, `Meta+Z`, `Ctrl+Shift+A`. |
 | `--shot out.png` | Capture an intermediate frame. |
 | `--wait ms` | Let that much real time pass with the dispatcher running, so a view's own timer fires (snap tracking's dwell after a `--hover`). |

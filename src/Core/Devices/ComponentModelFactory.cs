@@ -2666,7 +2666,8 @@ public static class ComponentModelFactory
 
     private static ThinFilmResistorModel CreateThinFilmResistorModel(IReadOnlyDictionary<string, Value> p)
         => new(GetReal(p, "W", 10e-6), GetReal(p, "L", 20e-6), GetReal(p, "Rs", DefaultSheetResistance),
-               GetReal(p, "H", DefaultMmicSubstrateH), GetReal(p, "ErSub", DefaultMmicSubstrateEpsR));
+               GetReal(p, "H", DefaultMmicSubstrateH), GetReal(p, "ErSub", DefaultMmicSubstrateEpsR),
+               (int)Math.Round(GetReal(p, "N", 1.0)), GetReal(p, "Lc", 10e-6));
 
     private static AirbridgeModel CreateAirbridgeModel(IReadOnlyDictionary<string, Value> p)
         => new(GetReal(p, "L", 30e-6), GetReal(p, "W", 10e-6), GetReal(p, "Wu", 10e-6),

@@ -69,10 +69,10 @@ public static class ComponentEmExtraction
 
         // A layer the stackup does not carry is invisible to the solve. A capacitor mask is the one
         // exception — it is how a patterned film enters a run (PresentWithLayer) — so it is not one.
-        // Anything else would extract the part WITHOUT that piece: a thin-film resistor's film, which
-        // is a mask with a sheet resistance and no stackup level, would leave two unconnected
-        // contacts and a converged, meaningless answer.
+        // Anything else would extract the part WITHOUT that piece. A resistive film is carried: it is an
+        // entry on its level, which the extractor meshes as a sheet between the contacts.
         var bound = new HashSet<LayerKey>(technology.Stackup.Layers.SelectMany(l => l.DrawingLayers));
+        foreach (var (_, film) in ResistiveFilms.All(technology)) bound.Add(film.Layer);
         var masks = new HashSet<string>(technology.Stackup.Layers.Select(l => l.PresentWithLayer).OfType<string>(),
                                         StringComparer.OrdinalIgnoreCase);
         var unseen = art.Shapes.Select(s => s.Layer).Distinct()
@@ -86,7 +86,7 @@ public static class ComponentEmExtraction
             refusal = $"the {token} artwork draws on {string.Join(", ", unseen.Select(n => $"'{n}'"))}, which the " +
                       "technology's stackup does not carry, so a planar EM solve would not see that part of it. " +
                       (token.Equals("TFR", StringComparison.OrdinalIgnoreCase)
-                          ? "A thin-film resistor's film is a sheet resistance, not a conductor level; its model is exact for what it states."
+                          ? "Define the resistor film on the conductor it is deposited on (Technology ▸ Stackup) first."
                           : "Bind the layer to a stackup entry first.");
             return null;
         }

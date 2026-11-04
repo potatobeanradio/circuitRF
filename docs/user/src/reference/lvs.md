@@ -357,7 +357,7 @@ its layers &mdash; or a flattened GDSII of one &mdash; can be compared against i
 | Spiral inductor | the metal under an **Inductor Marker** (21/0) | the metal it meets outside the marker | none |
 
 The formulas use two names the technology supplies without a `Constants` entry: `TfrSheetResistance` is
-the sheet resistance stated on the Resistor layer (50 &Omega;/square), and `MimCapDensity` is computed
+the sheet resistance of the resistive film on Metal1 (50 &Omega;/square), and `MimCapDensity` is computed
 from the stackup's MIM dielectric (&epsilon;<sub>r</sub> 6.8, 0.2 &micro;m: about 300 pF/mm&sup2;)
 &mdash; the same numbers the MIMCAP and TFR components read, so the deck and the circuit models cannot
 disagree. Both are typical published values for GaAs pHEMT processes, not a particular foundry's; change

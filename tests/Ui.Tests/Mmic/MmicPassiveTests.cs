@@ -73,6 +73,29 @@ public sealed class MmicPassiveTests(ITestOutputHelper output) : IDisposable
         Assert.Equal(50.0 * 25 / 10, 1 / y11.Real, 1e-9);     // the shipped film is 50 Ω/sq
     }
 
+    /// <summary>A serpentine: straight film plus 0.559 of a square per corner, one polygon, and pin 2 on the side N says.
+    /// An instance stating no N is the straight film it always was.</summary>
+    [Fact]
+    public void Tfr_Serpentine_IsWhatItsPartsCount_AndNDecidesTheSideOfPin2()
+    {
+        var tech = ShippedTechnologies.Load(GaAs);
+        var m = Model<ThinFilmResistorModel>(SymbolKind.Tfr, ("W", 10e-6), ("L", 40e-6), ("N", 5.0), ("Lc", 10e-6));
+        Assert.Equal(50.0 * (20 + 8 * 0.559), m.Resistance, 1e-9);     // 20 straight squares, 8 corners
+        Assert.Equal(125.0, Model<ThinFilmResistorModel>(SymbolKind.Tfr, ("W", 10e-6), ("L", 25e-6)).Resistance, 1e-9);
+
+        static long Um(double um) => (long)Math.Round(um * 1000);
+        Dictionary<string, PCellValue> P(double n) => new()
+        {
+            ["W"] = PCellValue.Real(10e-6), ["L"] = PCellValue.Real(40e-6), ["N"] = PCellValue.Real(n), ["Lc"] = PCellValue.Real(10e-6),
+        };
+        var odd = TfrPCell.Generate(P(5), tech, PCellLayerSelection.Default);
+        Assert.Single(odd.Shapes.OfType<PolygonShape>(), s => s.Layer == new LayerKey(4, 0));
+        Assert.Equal(Um(80), odd.Pins[1].Y);
+        Assert.True(odd.Pins[1].X > 0);
+        var even = TfrPCell.Generate(P(4), tech, PCellLayerSelection.Default);
+        Assert.Equal((0L, Um(60)), (even.Pins[1].X, even.Pins[1].Y));
+    }
+
     /// <summary>The properties panels' readout is the model's own value, from the instance's µm rows on
     /// the technology: a TFR's R as squares × sheet resistance, a MIMCAP's C as the model computes it.</summary>
     [Fact]
@@ -84,6 +107,9 @@ public sealed class MmicPassiveTests(ITestOutputHelper output) : IDisposable
         Assert.Equal("≈ 125 Ω (2.5 sq × 50 Ω/sq)",
             MmicPassiveInjection.Readout(tech, SymbolKind.Tfr, [Um("W", "10"), Um("L", "25")], out var tfrNote));
         Assert.Null(tfrNote);
+        Assert.Equal("≈ 1.224 kΩ (24.472 sq × 50 Ω/sq)",
+            MmicPassiveInjection.Readout(tech, SymbolKind.Tfr,
+                [new EditableParameter { Name = "N", Expression = "5" }, Um("W", "10"), Um("L", "40"), Um("Lc", "10")], out _));
 
         var c = Model<MimCapModel>(SymbolKind.MimCap, ("W", 60e-6), ("L", 40e-6)).Capacitance;
         Assert.Equal("≈ " + (c * 1e12).ToString("0.###", CultureInfo.InvariantCulture) + " pF",
@@ -277,14 +303,14 @@ public sealed class MmicPassiveTests(ITestOutputHelper output) : IDisposable
 
     // ── the EM extraction ──────────────────────────────────────────────────────────────────────
 
-    /// <summary>A film that is not bound to a conductor level is a mask a planar solve cannot see, so it would
+    /// <summary>A layer with no film entry on any conductor is a mask a planar solve cannot see, so it would
     /// meet two unconnected contacts: the extraction refuses it by name rather than returning a converged answer
     /// about a different part.</summary>
     [Fact]
     public void ExtractingATfrWhoseFilmIsUnbound_IsRefused_NamingTheFilm()
     {
         var tech = ShippedTechnologies.Load(GaAs);
-        tech.Stackup.Layers.First(l => l.Name == "Metal1").DrawingLayers.Remove(new LayerKey(4, 0));
+        ResistorFilmBinding.Remove(tech, new LayerKey(4, 0));
         var prepared = ComponentEmExtraction.Prepare("TFR", new Dictionary<string, PCellValue>(), tech,
             new FrequencySpec("1e9", "2e9", "1e9"), Path.Combine(_root, "r.clay"), out string? refusal);
         Assert.Null(prepared);

@@ -245,6 +245,15 @@
             "Datatype": 0
           }
         ],
+        "Films": [
+          {
+            "Layer": {
+              "Layer": 4,
+              "Datatype": 0
+            },
+            "SheetResistanceOhmPerSq": 50
+          }
+        ],
         "IsGroundReference": false,
         "SheetAt": "Top"
       },
@@ -378,6 +387,26 @@
         "Datatype": 0
       },
       "ValueDbu": 4000,
+      "Severity": "Error"
+    },
+    {
+      "Name": "Resistor Min Width",
+      "Kind": "MinWidth",
+      "Layer": {
+        "Layer": 4,
+        "Datatype": 0
+      },
+      "ValueDbu": 2000,
+      "Severity": "Error"
+    },
+    {
+      "Name": "Resistor Min Spacing",
+      "Kind": "MinSpacing",
+      "Layer": {
+        "Layer": 4,
+        "Datatype": 0
+      },
+      "ValueDbu": 2000,
       "Severity": "Error"
     }
   ],

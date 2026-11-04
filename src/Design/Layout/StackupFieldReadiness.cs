@@ -37,7 +37,7 @@ namespace CircuitRF.Design.Layout;
 /// <c>TechValidation</c>'s own resolution pass, and neither is a question an EM run's numeric
 /// readiness can answer.</para>
 /// </summary>
-public enum StackupField { None, Name, Thickness, Sigma, Epsr, TanD, Mur, WallThickness, Span }
+public enum StackupField { None, Name, Thickness, Sigma, Epsr, TanD, Mur, WallThickness, Span, FilmSheetResistance, FilmThickness }
 
 /// <summary>
 /// Per-field readiness for the EM path. Every predicate mirrors a check <see cref="TechValidation"/>

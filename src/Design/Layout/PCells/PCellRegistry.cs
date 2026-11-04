@@ -284,6 +284,9 @@ public static class PCellRegistry
             // but a different outline, and a cell on disk carries the single arc.
             // v3: pin 2's end cap is built round the rounded pin, so an oblique curve's pin is on its own copper.
             { "MCURVE", 3 },
+            // v2: N and Lc added, and a placed part opens as a three-segment serpentine. A cell drawn before
+            // them states neither and reads as N = 1, the same straight film.
+            { "TFR", 2 },
         };
 
     public static int GeneratorVersion(string generatorId)

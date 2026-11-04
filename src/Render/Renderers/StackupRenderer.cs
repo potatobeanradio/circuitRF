@@ -19,6 +19,13 @@ public sealed record StackupOverlay
     /// <summary>The selected layer, or null (brief 3).</summary>
     public string? SelectedLayer { get; init; }
 
+    /// <summary>The selected resistive film, by the drawing layer that patterns it, or null. Exclusive of
+    /// <see cref="SelectedLayer"/>: the view model holds one or the other.</summary>
+    public LayerKey? SelectedFilm { get; init; }
+
+    /// <summary>True while <see cref="DragGhost"/> is a film over a target that refuses it.</summary>
+    public bool DragRefused { get; init; }
+
     /// <summary>Where a BAND reorder would land, in scene coordinates, or null (brief 5). A via drag
     /// uses <see cref="DragVia"/> instead — see there.</summary>
     public (float Left, float Top, float Right, float Bottom)? DragGhost { get; init; }
@@ -96,6 +103,9 @@ public static class StackupRenderer
 
     /// <summary>How much of <see cref="StackupRenderTheme.Selection"/> the hover outline keeps.</summary>
     public const byte HoverAlpha = 90;
+
+    /// <summary>How much of <see cref="StackupRenderTheme.Refusal"/> a refused drag's ghost keeps.</summary>
+    public const byte RefusedGhostAlpha = 130;
 
     /// <summary>
     /// How far OUTSIDE a band's own edge the selection outline sits (R-stk3-3).
@@ -228,6 +238,17 @@ public static class StackupRenderer
             stroke.StrokeWidth = band.IsGroundReference ? GroundEdgeWidth : BandEdgeWidth;
             canvas.DrawRect(band.Rect, stroke);
         }
+
+        // A film is a feature of its band, so it is under the same bore clip and under the barrels.
+        foreach (var film in scene.Films)
+        {
+            var def = new LayerDef { FillOpacity = 1.0, FillPattern = film.Pattern?.Name };
+            using var filmFill = LayerFillPaint.Create(def, film.Pattern, new SKColor(film.Fill.R, film.Fill.G, film.Fill.B, film.Fill.A), 1.0);
+            canvas.DrawRect(film.Rect, filmFill);
+            stroke.Color       = theme.BandEdge;
+            stroke.StrokeWidth = BandEdgeWidth;
+            canvas.DrawRect(film.Rect, stroke);
+        }
         canvas.RestoreToCount(bandsClip);
 
         // ── Barrels ──────────────────────────────────────────────────────────────────────────────
@@ -258,9 +279,16 @@ public static class StackupRenderer
             canvas.DrawRect(OutlineRectFor(rect), stroke);
         }
 
+        if (overlay.SelectedFilm is { } selectedFilm && scene.FilmRectOf(selectedFilm) is { } filmRect)
+        {
+            stroke.Color       = theme.Selection;
+            stroke.StrokeWidth = SelectionWidth;
+            canvas.DrawRect(OutlineRectFor(filmRect), stroke);
+        }
+
         if (overlay.DragGhost is { } ghost)
         {
-            fill.Color = theme.DragGhost;
+            fill.Color = overlay.DragRefused ? theme.Refusal.WithAlpha(RefusedGhostAlpha) : theme.DragGhost;
             canvas.DrawRect(new SKRect(ghost.Left, ghost.Top, ghost.Right, ghost.Bottom), fill);
         }
 

@@ -329,6 +329,7 @@ internal static class PatternedDielectric
         Kind = l.Kind, Name = l.Name, ThicknessDbu = l.ThicknessDbu,
         Epsr = l.Epsr, TanD = l.TanD, Mur = l.Mur, SigmaSm = l.SigmaSm,
         DrawingLayers = [.. l.DrawingLayers],
+        Films = l.Films,
         IsGroundReference = l.IsGroundReference, SheetAt = l.SheetAt,
         PresentWithLayer = l.PresentWithLayer,
         Fill = l.Fill, WallThicknessDbu = l.WallThicknessDbu,

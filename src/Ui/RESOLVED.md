@@ -41912,3 +41912,11 @@ decide.
   `Viewer3DFirstSceneTests` failed on that every time, on the commit before this change too. The flag is set first now. In
   the app the post goes through the dispatcher, so the race could not happen there.
 - Gate: `tests/Ui.Tests/ThreeD/BuildRetryTests.cs`.
+
+## Films on the Stackup tab (brief stackup-render 9, 2026-11-04)
+
+`TechEditorViewModel.Films.cs` is the only code that writes a `StackupFilm`; the card's `StackupFilmRowViewModel` and the inline editor
+stage text and call it, so a typed edit and a drawn one are the same undo entry. `SetFilmFace` compares the RESOLVED face, so a drop back
+on a face a film only inherits from its level states nothing. `SelectedFilmLayerKey` and `SelectedStackupLayerName` clear each other, and
+the card list scrolls through `StackupScrollTargetRow` because a selected film leaves `SelectedStackupLayerRow` null.
+`StackupDragController` asks `ResistorFilmBinding.LandingFace` rather than reading the stackup, which `R-stk6-7`'s scan would refuse.

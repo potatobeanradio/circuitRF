@@ -449,9 +449,9 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
             ? "none"
             : string.Join(", ", Layer.DrawingLayers.Select(NameOf));
 
-    /// <summary>EM-TFR — a drawing layer as a conductor card names it: a film says what it is.</summary>
-    private static string ChipName(LayerDef l)
-        => l.SheetResistanceOhmPerSq is > 0 and var r
+    /// <summary>A drawing layer as a conductor card names it: a film says what it is.</summary>
+    private string ChipName(LayerDef l)
+        => ResistiveFilms.SheetResistanceOf(_owner.Working, l.Key) is { } r
             ? $"{l.Name} · {r.ToString("G4", System.Globalization.CultureInfo.InvariantCulture)} Ω/sq"
             : l.Name;
 
@@ -760,7 +760,8 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
         {
             DrawingLayerOptions.Clear();
             foreach (var l in _owner.Working.Layers)
-                DrawingLayerOptions.Add(new DrawingLayerCheckItem(l.Key, ChipName(l), Layer.DrawingLayers.Contains(l.Key), this));
+                DrawingLayerOptions.Add(new DrawingLayerCheckItem(l.Key, ChipName(l), Layer.DrawingLayers.Contains(l.Key), this,
+                    ResistiveFilms.ConductorOf(_owner.Working, l.Key)?.Name));
 
             DrawingLayerChoices.Clear();
             DrawingLayerChoices.Add(DrawingLayerChoice.None);
@@ -794,11 +795,40 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
             OnPropertyChanged(nameof(IsPlatedVia));
         }
 
+        RefreshFilmRows();
+
         _isRefreshing = false;
 
         if (layersChanged) ApplyDrawingLayerFilter();
         OnPropertyChanged(nameof(DrawingLayerSummary));
         RaiseReadiness();
+    }
+
+    // ── Resistive films, on a conductor's card ────────────────────────────────────────────────────
+
+    /// <summary>One row per film on this level, in the entry's own order.</summary>
+    public ObservableCollection<StackupFilmRowViewModel> FilmRows { get; } = [];
+
+    /// <summary>The section is a fixed part of a conductor's card whether or not it has rows, so nothing
+    /// above it moves when a film is added.</summary>
+    public bool ShowsFilmSection => IsConductor;
+
+    /// <summary>A return plane is a termination with no cells for a film to sit on, so it offers no add.</summary>
+    public bool CanAddFilm => IsConductor && !Layer.IsGroundReference;
+
+    public bool HasFilmRows => FilmRows.Count > 0;
+
+    private void RefreshFilmRows()
+    {
+        var keys = Layer.Films?.Select(f => f.Layer).ToList() ?? [];
+        if (!FilmRows.Select(r => r.Key).SequenceEqual(keys))
+        {
+            FilmRows.Clear();
+            foreach (var key in keys) FilmRows.Add(new StackupFilmRowViewModel(key, _owner));
+        }
+        else foreach (var row in FilmRows) row.Refresh();
+        OnPropertyChanged(nameof(HasFilmRows));
+        OnPropertyChanged(nameof(CanAddFilm));
     }
 
     private void ApplyDrawingLayerFilter()
@@ -1022,6 +1052,8 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
     internal void SetDrawingLayerChecked(LayerKey key, bool isChecked)
     {
         if (_isRefreshing) return;
+        // A film's layer is offered disabled, and this is the same refusal for a caller that is not the control.
+        if (isChecked && ResistiveFilms.Of(_owner.Working, key) is not null) return;
         bool already = Layer.DrawingLayers.Contains(key);
         if (isChecked == already) return;
         var before = _owner.SnapshotJson();
@@ -1072,12 +1104,21 @@ public sealed partial class DrawingLayerCheckItem : ObservableObject
 
     [ObservableProperty] private bool _isChecked;
 
-    public DrawingLayerCheckItem(LayerKey key, string name, bool isChecked, StackupLayerRowViewModel owner)
+    /// <summary>False for a layer that patterns a resistive film: ticking it as metal is what validation
+    /// would refuse, so the control does not offer it.</summary>
+    public bool IsEnabled { get; }
+
+    /// <summary>What the row's tooltip says: its name, or for a film, the conductor it is on.</summary>
+    public string Tip { get; }
+
+    public DrawingLayerCheckItem(LayerKey key, string name, bool isChecked, StackupLayerRowViewModel owner, string? filmOn = null)
     {
         Key = key;
         Name = name;
         _owner = owner;
         _isChecked = isChecked;
+        IsEnabled = filmOn is null;
+        Tip = filmOn is null ? name : $"{name}: a resistive film on {filmOn}. Its row under Resistive films on that card is where it is defined.";
     }
 
     partial void OnIsCheckedChanged(bool value) => _owner.SetDrawingLayerChecked(Key, value);

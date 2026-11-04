@@ -276,7 +276,7 @@ public sealed class TraceImpedanceReview
     /// <summary>The names of <paramref name="tech"/>'s copper layers: the drawing layers bound to a stackup conductor.</summary>
     public static List<string> CopperLayerNames(Technology tech)
     {
-        var bound = tech.Stackup.Layers.Where(l => l.Kind == StackupKind.Conductor).SelectMany(l => ResistiveFilms.MetalLayers(tech, l)).ToHashSet();
+        var bound = tech.Stackup.Layers.Where(l => l.Kind == StackupKind.Conductor).SelectMany(l => l.DrawingLayers).ToHashSet();
         return [.. tech.Layers.Where(l => bound.Contains(l.Key)).Select(l => l.Name)];
     }
 

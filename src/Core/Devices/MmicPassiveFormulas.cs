@@ -44,6 +44,31 @@ public static class MmicPassiveFormulas
         return sigma > 0 && te > 0 ? 1.0 / (sigma * te) : 0.0;
     }
 
+    // ── Thin-film resistor ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>What a sharp 90° bend of a film of uniform width is worth, in squares of its corner cell.
+    /// Less than one, because the current cuts the inside of the corner.</summary>
+    public const double FilmCornerSquares = 0.559;
+
+    /// <summary>
+    /// The centreline of a serpentine film: <paramref name="segments"/> runs, each <paramref name="l"/>
+    /// between bend centres, joined by links with a clear length <paramref name="link"/> between the runs'
+    /// edges, so each link's centreline is <c>w + link</c>. One segment is the straight film, <paramref name="l"/>.
+    /// </summary>
+    public static double SerpentineLength(double w, double l, int segments, double link)
+        => segments * l + (segments - 1) * (w + link);
+
+    /// <summary>
+    /// The squares in that serpentine: the straight film, which is the centreline less the two
+    /// half-widths into each of its <c>2(segments − 1)</c> corners, plus each corner at
+    /// <see cref="FilmCornerSquares"/>. One segment is exactly <c>l/w</c>.
+    /// </summary>
+    public static double SerpentineSquares(double w, double l, int segments, double link)
+    {
+        int corners = 2 * (segments - 1);
+        return (SerpentineLength(w, l, segments, link) - corners * w) / w + corners * FilmCornerSquares;
+    }
+
     // ── MIM capacitor ──────────────────────────────────────────────────────────────────────────
 
     /// <summary>The parallel-plate capacitance <c>ε₀εr·W·L/t</c>, F — no fringing.</summary>

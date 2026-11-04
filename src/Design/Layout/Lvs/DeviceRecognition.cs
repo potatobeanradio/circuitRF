@@ -552,8 +552,8 @@ internal static class DeviceRecognition
 
     /// <summary>
     /// The names a deck formula may use: the technology's own <see cref="Technology.Constants"/>,
-    /// over two the process already states elsewhere — <c>TfrSheetResistance</c>, the resistor
-    /// layer's <see cref="LayerDef.SheetResistanceOhmPerSq"/>, and <c>MimCapDensity</c>, ε0·εr/t of
+    /// over two the process already states elsewhere — <c>TfrSheetResistance</c>, the first resistive
+    /// film's <see cref="StackupFilm.SheetResistanceOhmPerSq"/>, and <c>MimCapDensity</c>, ε0·εr/t of
     /// the stackup's capacitor dielectric — both found by the same <see cref="MmicStackResolver"/>
     /// the MIMCAP and TFR models read.
     /// </summary>

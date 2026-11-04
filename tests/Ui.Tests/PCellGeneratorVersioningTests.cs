@@ -132,7 +132,7 @@ public sealed class PCellGeneratorVersioningTests : IDisposable
             { "SLIN",      (1, "82cdd4aabdc648b1") },
             { "SPIRAL",    (1, "895490af0315aa14") },
             { "TESTPAD",   (1, "7a5c394f45e40af2") },
-            { "TFR",       (1, "f99f3ddad4627f0e") },
+            { "TFR",       (2, "448f628bff46d3ff") },
             { "VIA",       (1, "8a6588e560a37ddd") },
             { "VIAGND",    (1, "e60d55d66db4a1f5") },
         };

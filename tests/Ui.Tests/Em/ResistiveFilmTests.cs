@@ -60,6 +60,7 @@ public sealed class ResistiveFilmTests
     [InlineData("two-levels")]
     [InlineData("on-via")]
     [InlineData("on-ground")]
+    [InlineData("also-metal")]
     public void AWrongBindingIsAnError(string rule)
     {
         var tech = ShippedTechnologies.Load(GaAs);
@@ -67,9 +68,10 @@ public sealed class ResistiveFilmTests
         var entry = (string name) => tech.Stackup.Layers.First(l => l.Name == name);
         switch (rule)
         {
-            case "two-levels": entry("Metal2").DrawingLayers.Add(Resistor); break;
-            case "on-via":     entry("Backside Via").DrawingLayers.Add(Resistor); break;
-            case "on-ground":  entry("Metal1").DrawingLayers.Remove(Resistor); entry("Backside Metal").DrawingLayers.Add(Resistor); break;
+            case "two-levels": entry("Metal2").Films = [new StackupFilm { Layer = Resistor, SheetResistanceOhmPerSq = 50 }]; break;
+            case "on-via":     ResistorFilmBinding.Remove(tech, Resistor); entry("Backside Via").Films = [new StackupFilm { Layer = Resistor, SheetResistanceOhmPerSq = 50 }]; break;
+            case "on-ground":  ResistorFilmBinding.Remove(tech, Resistor); entry("Backside Metal").Films = [new StackupFilm { Layer = Resistor, SheetResistanceOhmPerSq = 50 }]; break;
+            case "also-metal": entry("Metal1").DrawingLayers.Add(Resistor); break;
         }
         var problem = TechValidation.Analyze(tech).Single(p => p.Id == "tech.film." + rule);
         Assert.Equal(CircuitRF.Diagnostics.DiagnosticSeverity.Error, problem.Severity);
@@ -81,23 +83,24 @@ public sealed class ResistiveFilmTests
     public void ABoundFilmIsNotCopper()
     {
         var tech = ShippedTechnologies.Load(GaAs);
-        Assert.Contains(Resistor, tech.Stackup.Layers.First(l => l.Name == "Metal1").DrawingLayers);
+        Assert.Equal("Metal1", ResistiveFilms.ConductorOf(tech, Resistor)!.Name);
+        Assert.DoesNotContain(Resistor, tech.Stackup.Layers.First(l => l.Name == "Metal1").DrawingLayers);
         Assert.DoesNotContain(Resistor, Conductors.Of(tech).First(c => c.StackupName == "Metal1").DrawingLayers);
     }
 
     // ── §2 The extractor ────────────────────────────────────────────────────────────────────────
 
-    /// <summary>Gate 8 — an unbound film drawn in a run says it is an open, rather than being counted with stray shapes.</summary>
+    /// <summary>R-stk9-0c — a resistor drawn on a layer with no film entry says it is an open, rather than being counted with stray shapes.</summary>
     [Fact]
-    public void AnUnboundFilmIsNamedAsAnOpen()
+    public void ALayerWithNoFilmEntryIsNamedAsAnOpen()
     {
         var tech = ShippedTechnologies.Load(GaAs);
-        tech.Stackup.Layers.First(l => l.Name == "Metal1").DrawingLayers.Remove(Resistor);
+        ResistorFilmBinding.Remove(tech, Resistor);
         var result = PlanarExtractor.Extract(
             [Rect(Metal1, 0, -20, 100, 20), Rect(Resistor, 100, -20, 220, 20), Rect(Metal1, 220, -20, 320, 20)], tech, Dbu, 10e9, Settings);
         Assert.True(result.Problem is not null, result.Refusal);
         Assert.Empty(result.Problem!.Layers[0].Films);
-        Assert.Contains(result.Notes, n => n.Contains("'Resistor' (50 Ω/sq)") && n.Contains("OPEN between its contacts"));
+        Assert.Contains(result.Notes, n => n.Contains("'Resistor'") && n.Contains("an open between its contacts"));
     }
 
     /// <summary>Gate 4 — metal wins: a film wholly under metal leaves the run the metal's alone, to the bit.</summary>
@@ -123,9 +126,22 @@ public sealed class ResistiveFilmTests
         Assert.Equal(100e-6, x0, 12);
         Assert.Equal(220e-6, x1, 12);
 
-        tech.Layers.First(l => l.Key == Resistor).SheetResistanceOhmPerSq = 25;
+        ResistiveFilms.Of(tech, Resistor)!.SheetResistanceOhmPerSq = 25;
         var other = PlanarExtractor.Extract([.. contacts, Rect(Resistor, 95, -20, 225, 20)], tech, Dbu, 10e9, Settings).Problem!;
         Assert.NotEqual(EmSnpProvenance.GeometryHash(film), EmSnpProvenance.GeometryHash(other));
+    }
+
+    /// <summary>The thickness correction grows a level's outline and not its film's region, and the growth is metal along
+    /// the film's edges: a shorted resistor, 0.9 Ω where 1224 Ω is right on the PDK example's serpentine. It declines instead.</summary>
+    [Fact]
+    public void TheThicknessCorrectionDeclinesOnALevelCarryingAFilm()
+    {
+        var tech = ShippedTechnologies.Load(GaAs);
+        LayoutShape[] art = [Rect(Metal1, 0, -20, 100, 20), Rect(Resistor, 95, -20, 225, 20), Rect(Metal1, 220, -20, 320, 20)];
+        var plain = PlanarExtractor.Extract(art, tech, Dbu, 10e9, Settings).Problem!;
+        var result = PlanarExtractor.Extract(art, tech, Dbu, 10e9, Settings with { ConductorThicknessCorrection = true });
+        Assert.Equal(EmSnpProvenance.GeometryHash(plain), EmSnpProvenance.GeometryHash(result.Problem!));
+        Assert.Contains(result.Notes, n => n.Contains("NOT applied on 'Metal1'") && n.Contains("resistive film"));
     }
 
     /// <summary>Gate 6's hash half — a run with no film keeps the geometry hash HEAD gave it, so every existing .snp stays
@@ -182,13 +198,13 @@ public sealed class ResistiveFilmTests
     {
         var (setup, source) = LoadCem("zigzag", "sheets");
         setup.Conductors = Em3dConductorMode.Solids;
-        var def = source.Technology!.Layers.First(l => l.Key == Resistor);
-        long? thickness = def.FilmThicknessDbu;
-        var face = def.FilmAt;
+        var def = ResistiveFilms.Of(source.Technology!, Resistor)!;
+        long? thickness = def.ThicknessDbu;
+        var face = def.At;
         try
         {
-            def.FilmThicknessDbu = 100;
-            def.FilmAt = ConductorSheetSurface.Bottom;
+            def.ThicknessDbu = 100;
+            def.At = ConductorSheetSurface.Bottom;
             var p = Em3dGenerator.Generate(setup, source, source.Technology).Problem!;
             var film = Assert.Single(p.Sheets);
             Assert.Equal(100e-9, film.ThicknessM, 15);
@@ -196,11 +212,11 @@ public sealed class ResistiveFilmTests
             // The bottom of Metal1's band: 3 µm of backside metal and 100 µm of GaAs up.
             Assert.Equal(103e-6, film.Z, 12);
 
-            var copy = TechPersistence.Clone(source.Technology).Layers.First(l => l.Key == Resistor);
-            Assert.Equal(100, copy.FilmThicknessDbu);
-            Assert.Equal(ConductorSheetSurface.Bottom, copy.FilmAt);
+            var copy = ResistiveFilms.Of(TechPersistence.Clone(source.Technology), Resistor)!;
+            Assert.Equal(100, copy.ThicknessDbu);
+            Assert.Equal(ConductorSheetSurface.Bottom, copy.At);
         }
-        finally { def.FilmThicknessDbu = thickness; def.FilmAt = face; }
+        finally { def.ThicknessDbu = thickness; def.At = face; }
     }
 
     /// <summary>Gate 9 — with no film and no statement, a 3D problem has nothing new in it: goldens hold the bytes.</summary>

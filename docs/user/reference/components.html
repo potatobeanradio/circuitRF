@@ -2269,9 +2269,12 @@ Extract the drawn coil for a value to rely on:
 			TFR
 	</text></svg></span>
 </span><figcaption>TFR</figcaption></figure>
-<p>The technology's resistor film, <code>W</code> wide with its contacts <code>L</code> apart: its resistance is the film's
-sheet resistance times L/W squares. The contacts and their overlap of the film are not included. A
-technology states its film by giving a drawing layer a sheet resistance.</p>
+<p>The technology's resistor film as a serpentine: <code>N</code> parallel segments of width <code>W</code> and length <code>L</code>, joined by orthogonal links
+whose clear length between the segments is <code>Lc</code>. An <code>N</code> of 1 is a straight film with its contacts <code>L</code> apart. An odd <code>N</code> leaves the
+two ends on opposite sides, and an even <code>N</code> on the same side.</p>
+<p>Its resistance is the film's sheet resistance times its squares: the straight film between the bends, plus 0.559 of a square for
+each corner. The contacts and their overlap of the film are not included. A technology <a href="stackup.md#film">states its film on a
+conductor</a>.</p>
 <table class="param-table">
 <thead><tr><th>Net</th><th>Terminal</th></tr></thead><tbody>
 <tr><td>1</td><td>1</td></tr>
@@ -2281,8 +2284,10 @@ technology states its film by giving a drawing layer a sheet resistance.</p>
 <table class="param-table">
 <thead><tr><th>Name</th><th>Default</th><th>Unit</th><th>On schematic</th><th>Meaning</th></tr></thead>
 <tbody>
-<tr><td>W</td><td><code>10</code></td><td>&#181;m</td><td>shown</td><td>Film width. R is the film&#39;s sheet resistance times L/W squares; the contacts and the metal overlap at each end are not included.</td></tr>
-<tr><td>L</td><td><code>20</code></td><td>&#181;m</td><td>shown</td><td>Film length between the contacts.</td></tr>
+<tr><td>N</td><td><code>3</code></td><td>&mdash;</td><td>shown</td><td>Segments: the parallel runs of the serpentine. 1 is a straight film. An odd N leaves the two ends on opposite sides, an even N on the same side.</td></tr>
+<tr><td>W</td><td><code>10</code></td><td>&#181;m</td><td>shown</td><td>Film width. R is the film&#39;s sheet resistance times its squares; the contacts and the metal overlap at each end are not included.</td></tr>
+<tr><td>L</td><td><code>40</code></td><td>&#181;m</td><td>shown</td><td>Length of one segment, between bend centres, or between the contacts&#39; edges for one segment.</td></tr>
+<tr><td>Lc</td><td><code>10</code></td><td>&#181;m</td><td>&mdash;</td><td>Length of the orthogonal link joining two segments: the clear gap between their edges. Not used when N is 1.</td></tr>
 </tbody></table>
 <h3 id="airbridge">Air Bridge (AIRBRIDGE)</h3>
 <figure class="symbol"><span class="frame">

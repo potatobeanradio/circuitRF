@@ -86,8 +86,8 @@ public sealed class MimCapModel : ComponentModel, IReportsWarnings
 }
 
 /// <summary>
-/// <c>TFR</c> — a thin-film resistor, sheet resistance times squares. Terminals 1 and 2 are the two
-/// ends and are interchangeable.
+/// <c>TFR</c> — a thin-film resistor, sheet resistance times squares, drawn straight or as a serpentine
+/// of <see cref="Segments"/> runs. Terminals 1 and 2 are the two ends and are interchangeable.
 ///
 /// <para><b>Topology.</b> A π: the resistance between the terminals, and half the film's capacitance
 /// through the substrate to node 0 at each end.</para>
@@ -99,17 +99,25 @@ public sealed class ThinFilmResistorModel : ComponentModel, IReportsWarnings
 
     public double W { get; }
     public double L { get; }
+    public int Segments { get; }
+    public double Link { get; }
+    public double Squares { get; }
     public double SheetResistance { get; }
     public double Resistance { get; }
     public double ShuntCapacitance { get; }
     private readonly LumpedValidityWarning _warning;
 
-    public ThinFilmResistorModel(double w, double l, double sheetResistance, double substrateH, double substrateEpsR)
+    public ThinFilmResistorModel(double w, double l, double sheetResistance, double substrateH, double substrateEpsR,
+                                 int segments = 1, double link = 0)
     {
         W = w; L = l; SheetResistance = sheetResistance;
-        Resistance = Math.Max(MmicPassiveFormulas.ThinFilmResistance(sheetResistance, w, l), 1e-9);
-        ShuntCapacitance = MmicPassiveFormulas.ParallelPlateCapacitance(substrateEpsR, w, l, substrateH);
-        _warning = new LumpedValidityWarning("TFR", "film", l, (substrateEpsR + 1) / 2);
+        Segments = Math.Max(segments, 1);
+        Link = link;
+        double length = MmicPassiveFormulas.SerpentineLength(w, l, Segments, link);
+        Squares = MmicPassiveFormulas.SerpentineSquares(w, l, Segments, link);
+        Resistance = Math.Max(sheetResistance * Squares, 1e-9);
+        ShuntCapacitance = MmicPassiveFormulas.ParallelPlateCapacitance(substrateEpsR, w, length, substrateH);
+        _warning = new LumpedValidityWarning("TFR", "film", length, (substrateEpsR + 1) / 2);
     }
 
     public IReadOnlyList<(string Key, string Message)> DrainWarnings() => _warning.Drain();

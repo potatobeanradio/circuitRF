@@ -1563,7 +1563,8 @@ public static class ComponentTypeRegistry
           + "trace-to-ground and crossing capacitance as parallel plates. For a value to rely on, EM-extract "
           + "the drawn coil: circuitrf em --component.",
         SymbolKind.Tfr =>
-            "R = sheet resistance × L/W from the technology's resistor film; contacts and end overlap not "
+            "R = sheet resistance × squares from the technology's resistor film: L/W for one segment; a serpentine "
+          + "adds its links and counts each square corner as 0.559 of a square. Contacts and end overlap not "
           + "included; the film's capacitance to ground split between the ends.",
         SymbolKind.Airbridge =>
             "Series L of a straight ribbon (Grover) and R with skin effect, from landing to landing; the "
@@ -1591,9 +1592,13 @@ public static class ComponentTypeRegistry
         (SymbolKind.OctSpiral, "W") => "Trace width.",
         (SymbolKind.OctSpiral, "S") => "Spacing between turns.",
         (SymbolKind.OctSpiral, "Din") => "Inner clear opening across the innermost pair of parallel flats.",
-        (SymbolKind.Tfr, "W") => "Film width. R is the film's sheet resistance times L/W squares; the contacts "
+        (SymbolKind.Tfr, "N") => "Segments: the parallel runs of the serpentine. 1 is a straight film. An odd N leaves "
+                               + "the two ends on opposite sides, an even N on the same side.",
+        (SymbolKind.Tfr, "W") => "Film width. R is the film's sheet resistance times its squares; the contacts "
                                + "and the metal overlap at each end are not included.",
-        (SymbolKind.Tfr, "L") => "Film length between the contacts.",
+        (SymbolKind.Tfr, "L") => "Length of one segment, between bend centres, or between the contacts' edges for one segment.",
+        (SymbolKind.Tfr, "Lc") => "Length of the orthogonal link joining two segments: the clear gap between their edges. "
+                                + "Not used when N is 1.",
         (SymbolKind.Airbridge, "L") => "Span: the bridge's length between its two landings.",
         (SymbolKind.Airbridge, "W") => "Bridge width.",
         (SymbolKind.Airbridge, "Wu") => "Width of the line crossed. The crossing capacitance is the overlap W·Wu over "
@@ -3366,8 +3371,10 @@ public static class ComponentTypeRegistry
                         new("S",   "10",  "µm", false, UnitDimension.Length),
                         new("Din", "100", "µm", false, UnitDimension.Length)];
             case SymbolKind.Tfr:
-                return [new("W", "10", "µm", true, UnitDimension.Length),
-                        new("L", "20", "µm", true, UnitDimension.Length)];
+                return [new("N",  "3",  "",   true,  UnitDimension.None),
+                        new("W",  "10", "µm", true,  UnitDimension.Length),
+                        new("L",  "40", "µm", true,  UnitDimension.Length),
+                        new("Lc", "10", "µm", false, UnitDimension.Length)];
             case SymbolKind.Airbridge:
                 return [new("L",  "30", "µm", true,  UnitDimension.Length),
                         new("W",  "10", "µm", false, UnitDimension.Length),
