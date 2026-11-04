@@ -157,6 +157,18 @@ public static partial class ModelLibraryExport
                     string line = $"{conv.Describe(plan.CellDir)}: {w}";
                     if (!result.Warnings.Contains(line)) result.Warnings.Add(line);
                 }
+                // The part is sampled ONCE, at the cell's default parameters, and the model still publishes them: a value
+                // written in terms of one would silently stop following it once placed. Said, not refused — a default that
+                // is the only value anyone places is a legitimate model.
+                var cellParams = cell.Parameters.Select(p => p.Name).ToHashSet(StringComparer.Ordinal);
+                foreach (var o in inst.Overrides)
+                    foreach (string used in System.Text.RegularExpressions.Regex.Matches(o.Expression ?? "", @"[A-Za-z_][A-Za-z0-9_]*")
+                                                  .Select(m => m.Value).Where(cellParams.Contains).Distinct())
+                    {
+                        string line = $"{conv.Describe(plan.CellDir)}: its {o.Name} uses the cell parameter {used}. It was converted at "
+                                    + $"{used}'s default, and placing the model with another {used} does not change this part.";
+                        if (!result.Warnings.Contains(line)) result.Warnings.Add(line);
+                    }
                 string rel = WriteSnp(files, conv, plan, freqs, s, planText);
                 result.Files[(Path.TrimEndingDirectorySeparator(Path.GetFullPath(conv.CellDir)), conv.Instance)] = rel;
                 result.Records.Add(new ModelPartConversion

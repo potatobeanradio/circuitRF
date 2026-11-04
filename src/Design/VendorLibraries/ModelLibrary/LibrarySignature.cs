@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using CircuitRF.Design.Cells;
+using CircuitRF.Design.Workspace;
 using CircuitRF.Diagnostics;
 
 namespace CircuitRF.Design.VendorLibraries.ModelLibrary;
@@ -119,12 +120,21 @@ public static class LibrarySignature
     {
         string root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(libraryDir));
         var lines = new List<(string Path, string Hash)>();
-        foreach (string dir in ModelFolder.Under(root))
-            lines.Add((Rel(root, dir), ModelPartHash.Compute(dir)));
+        var models = ModelFolder.Under(root);
+        foreach (string dir in models)
+        {
+            string rel = Rel(root, dir);
+            lines.Add((rel, ModelPartHash.Compute(dir)));
+            // part.cpart is outside its folder's PublishedHash (it holds it), and it is what a placement reads its
+            // defaults, pins and builds from: signed on a line of its own.
+            string cpart = Path.Combine(dir, ModelFolder.PartFileName);
+            if (File.Exists(cpart)) lines.Add((rel == "." ? ModelFolder.PartFileName : rel + "/" + ModelFolder.PartFileName, FileHash(cpart)));
+        }
         string clib = Path.Combine(root, ModelFolder.LibraryFileName);
-        if (File.Exists(clib))
-            lines.Add((ModelFolder.LibraryFileName,
-                       ModelPartHash.Prefix + Convert.ToHexStringLower(SHA256.HashData(ModelPartHash.NormaliseLineEndings(File.ReadAllBytes(clib))))));
+        if (File.Exists(clib)) lines.Add((ModelFolder.LibraryFileName, FileHash(clib)));
+        // Every other file the library holds — a SPICE part the index lists, a document — so nothing a user places from
+        // a signed library is outside what was signed.
+        foreach (string f in LooseFiles(root, models)) lines.Add((Rel(root, f), FileHash(f)));
         var sb = new StringBuilder();
         foreach (var (path, hash) in lines.OrderBy(l => l.Path, StringComparer.Ordinal))
             sb.Append(hash).Append("  ").Append(path).Append('\n');
@@ -132,6 +142,43 @@ public static class LibrarySignature
     }
 
     private static string Rel(string root, string dir) => Path.GetRelativePath(root, dir).Replace('\\', '/');
+
+    /// <summary><c>sha256:</c> and the hex SHA-256 of one file, CR LF → LF for a text file (<see cref="ModelPartHash.IsText"/>,
+    /// and <c>library.clib</c> and <c>part.cpart</c>, which are JSON text).</summary>
+    private static string FileHash(string path)
+    {
+        byte[] bytes = File.ReadAllBytes(path);
+        string name = Path.GetFileName(path);
+        if (ModelPartHash.IsText(path) || name == ModelFolder.LibraryFileName || name == ModelFolder.PartFileName)
+            bytes = ModelPartHash.NormaliseLineEndings(bytes);
+        return ModelPartHash.Prefix + Convert.ToHexStringLower(SHA256.HashData(bytes));
+    }
+
+    /// <summary>The files under the library that are in no model folder: not <c>library.clib</c>, <c>library.sums</c> or
+    /// <c>library.sig</c> at the root, nothing whose name starts with <c>.</c> or under such a folder, and no
+    /// operating-system litter.</summary>
+    private static List<string> LooseFiles(string root, IReadOnlyList<string> models)
+    {
+        var inModels = new HashSet<string>(models, DocumentFileRefs.PathComparer);
+        var found = new List<string>();
+        var stack = new Stack<string>();
+        stack.Push(root);
+        while (stack.Count > 0)
+        {
+            string dir = stack.Pop();
+            if (inModels.Contains(dir)) continue;
+            foreach (string f in Directory.EnumerateFiles(dir))
+            {
+                string name = Path.GetFileName(f);
+                if (name.StartsWith('.') || ModelPartHash.IsLitter(name)) continue;
+                if (dir == root && name is ModelFolder.LibraryFileName or SumsFileName or SigFileName) continue;
+                found.Add(f);
+            }
+            foreach (string d in Directory.EnumerateDirectories(dir))
+                if (!Path.GetFileName(d).StartsWith('.') && (File.GetAttributes(d) & FileAttributes.ReparsePoint) == 0) stack.Push(d);
+        }
+        return found;
+    }
 
     /// <summary><c>library.sums</c> read back as path → hash. Null when a line is not of the stated form.</summary>
     public static Dictionary<string, string>? ParseSums(string text)
@@ -272,6 +319,17 @@ public static class LibrarySignature
     /// </summary>
     public static LibrarySignatureInspection Inspect(string libraryDir)
     {
+        // Never throws (the library index calls this for every library): an unreadable file is a signature that cannot
+        // be verified, said as one.
+        try { return InspectCore(libraryDir); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            return new(LibrarySignatureCheck.DoesNotVerify, "", "", [], $"The library could not be read to verify its signature ({ex.Message}).");
+        }
+    }
+
+    private static LibrarySignatureInspection InspectCore(string libraryDir)
+    {
         string root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(libraryDir));
         string sigPath = Path.Combine(root, SigFileName), sumsPath = Path.Combine(root, SumsFileName);
         if (!File.Exists(sigPath)) return LibrarySignatureInspection.None;
@@ -284,6 +342,8 @@ public static class LibrarySignature
         catch (Exception ex) when (ex is JsonException or IOException) { return Fails($"{SigFileName} cannot be read ({ex.Message})."); }
         if (sig is null || sig.Format != LibrarySignatureFile.FormatName)
             return Fails($"{SigFileName} is not a {LibrarySignatureFile.FormatName} file.");
+        if (sig.PublicKey is null || sig.Signature is null || sig.Publisher is null)
+            return Fails($"{SigFileName} has no {(sig.PublicKey is null ? "PublicKey" : sig.Signature is null ? "Signature" : "Publisher")}.");
 
         byte[] spki, signature;
         try { (spki, signature) = (Convert.FromBase64String(sig.PublicKey), Convert.FromBase64String(sig.Signature)); }
@@ -298,8 +358,11 @@ public static class LibrarySignature
         {
             using var key = ECDsa.Create();
             key.ImportSubjectPublicKeyInfo(spki, out _);
+            // The signed bytes are LF; a checkout that wrote library.sums with CR LF has not changed what was signed.
             ok = key.KeySize == 256
-                 && key.VerifyData(sums, signature, HashAlgorithmName.SHA256, DSASignatureFormat.IeeeP1363FixedFieldConcatenation);
+                 && (key.VerifyData(sums, signature, HashAlgorithmName.SHA256, DSASignatureFormat.IeeeP1363FixedFieldConcatenation)
+                     || key.VerifyData(ModelPartHash.NormaliseLineEndings(sums), signature, HashAlgorithmName.SHA256,
+                                       DSASignatureFormat.IeeeP1363FixedFieldConcatenation));
         }
         catch (CryptographicException) { ok = false; }
         if (!ok) return Fails($"The signature in {SigFileName} does not verify over {SumsFileName}.", sig.Publisher, fp);
@@ -308,7 +371,7 @@ public static class LibrarySignature
         if (clib is null || !string.Equals(clib.Publisher, sig.Publisher, StringComparison.Ordinal))
             return Fails($"{SigFileName} names the publisher '{sig.Publisher}' and {ModelFolder.LibraryFileName} names '{clib?.Publisher}'.", sig.Publisher, fp);
 
-        var signedMap = ParseSums(Encoding.UTF8.GetString(sums));
+        var signedMap = ParseSums(Encoding.UTF8.GetString(ModelPartHash.NormaliseLineEndings(sums)));
         var nowMap = ParseSums(Sums(root));
         if (signedMap is null || nowMap is null) return Fails($"{SumsFileName} is not one line per signed item.", sig.Publisher, fp);
         // library.clib is the publisher's own statement: a change there is not a part changed, it is the signature
@@ -318,8 +381,10 @@ public static class LibrarySignature
 
         var changed = signedMap.Keys.Union(nowMap.Keys)
             .Where(p => p != ModelFolder.LibraryFileName && signedMap.GetValueOrDefault(p) != nowMap.GetValueOrDefault(p))
+            .Select(p => p == ModelFolder.PartFileName ? "."
+                       : p.EndsWith("/" + ModelFolder.PartFileName, StringComparison.Ordinal) ? p[..^(ModelFolder.PartFileName.Length + 1)] : p)
             .Select(p => p.Contains('/') ? p[(p.LastIndexOf('/') + 1)..] : p)
-            .Order(StringComparer.Ordinal).ToList();
+            .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList();
         return new LibrarySignatureInspection(changed.Count == 0 ? LibrarySignatureCheck.Intact : LibrarySignatureCheck.Changed,
                                               sig.Publisher, fp, changed, null);
     }

@@ -40,7 +40,9 @@ public static class OwningRoot
     // Memoised for the reason WorkspaceRootFinder.WorkspaceDirOf is: a schematic asks per SnP per render.
     // Dropped by WorkspaceRootFinder.InvalidateCache, which is called wherever a .cws appearing or
     // disappearing could change the answer; a part.cpart appearing is the same kind of event.
-    private static readonly Dictionary<string, OwningRootResult?> _memo = new(StringComparer.OrdinalIgnoreCase);
+    // Keyed on the normalised full path, compared as the file system compares it: on Linux /x/Lib and /x/lib are two
+    // folders with two answers, and "dir" and "dir/" are one.
+    private static readonly Dictionary<string, OwningRootResult?> _memo = new(DocumentFileRefs.PathComparer);
     private static readonly Lock _gate = new();
 
     /// <summary>Forgets the memoised walks (<see cref="WorkspaceRootFinder.InvalidateCache"/>).</summary>
@@ -54,10 +56,13 @@ public static class OwningRoot
     public static OwningRootResult? Find(string? documentDir)
     {
         if (string.IsNullOrWhiteSpace(documentDir)) return null;
+        string key;
+        try { key = Path.TrimEndingDirectorySeparator(Path.GetFullPath(documentDir)); }
+        catch { return null; }
         lock (_gate)
-            if (_memo.TryGetValue(documentDir, out var memo)) return memo;
-        var found = Walk(documentDir);
-        lock (_gate) _memo[documentDir] = found;
+            if (_memo.TryGetValue(key, out var memo)) return memo;
+        var found = Walk(key);
+        lock (_gate) _memo[key] = found;
         return found;
     }
 
@@ -72,7 +77,7 @@ public static class OwningRoot
         string? workspace = WorkspaceRootFinder.WorkspaceDirOf(full);
         for (string? dir = full; dir is not null; dir = Path.GetDirectoryName(dir))
         {
-            if (workspace is not null && string.Equals(dir, workspace, StringComparison.OrdinalIgnoreCase)) break;
+            if (workspace is not null && DocumentFileRefs.PathComparer.Equals(dir, Path.TrimEndingDirectorySeparator(workspace))) break;
             if (ModelFolder.Is(dir)) return new OwningRootResult(dir, OwningRootKind.ModelFolder);
         }
         return workspace is null ? null : new OwningRootResult(workspace, OwningRootKind.Workspace);

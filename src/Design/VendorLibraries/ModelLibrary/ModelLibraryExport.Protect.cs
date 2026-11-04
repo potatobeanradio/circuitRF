@@ -220,8 +220,11 @@ public static partial class ModelLibraryExport
     internal static string FixFor(string rid, bool crashed)
     {
         if (rid == "win-x86") return "The compiler has no 32-bit Windows target, so no machine can build this platform with it.";
-        if (crashed && rid.EndsWith("-x64", StringComparison.Ordinal))
-            return "This compiler build has no x86-64 code generator. Use a compiler build that has one, or export again on an x86-64 machine.";
+        // The compiler sets up only the code generator for the processor it runs on, so it can build for another
+        // operating system but never for another processor (measured: src/Design/RESOLVED.md, the VL review).
+        string arch = rid[(rid.IndexOf('-') + 1)..], here = OsdiBuilds.CurrentRid[(OsdiBuilds.CurrentRid.IndexOf('-') + 1)..];
+        if (crashed && arch != here)
+            return $"The compiler builds only for the processor it runs on ({here} here). Export again on an {(arch == "x64" ? "x86-64" : arch)} machine.";
         if (rid.StartsWith("linux", StringComparison.Ordinal) && !OperatingSystem.IsLinux())
             return "Install a Linux cross-linker, or export again on a Linux machine.";
         if (rid.StartsWith("win", StringComparison.Ordinal) && !OperatingSystem.IsWindows())
@@ -262,6 +265,9 @@ public static partial class ModelLibraryExport
         }
 
         var tb = new TestBench(part);
+        // An outside element at the top may name the cell's own variables (TLIN L=len). The wrapper's schematic is drawn
+        // from this bench, whose variables become its VAR block — the cell's again once it is extracted.
+        if (copy.Outside.Any(e => e.Level.IsTop)) tb.GlobalVariables.AddRange(copy.Top.Cell.Variables);
         var overrides = new List<ParameterAssignment>
         {
             new("File", "\"" + Path.GetRelativePath(tmp, neutral).Replace('\\', '/') + "\""),

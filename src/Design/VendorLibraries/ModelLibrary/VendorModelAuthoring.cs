@@ -191,7 +191,7 @@ public static class VendorModelAuthoring
             name = $"{part}_{n}";
         string library = libraryName ?? LibraryNameOf(src);
 
-        string dest;
+        string dest = Path.Combine(parent, name);
         try
         {
             var plan = CrossWorkspaceCellCopy.Plan(src, parent, destRoot, SubCellMode.Copy, topName: name, cache: new Layout.TechnologyCache());
@@ -206,7 +206,8 @@ public static class VendorModelAuthoring
                                             .Order(StringComparer.Ordinal).ToList())
             {
                 string? text = DocumentFileRefs.Rewrite(doc, OwningRoot.Of(Path.GetDirectoryName(doc)),
-                    (abs, refBase) => refBase == RefBase.Document ? null : SnpPathPolicy.ToStored(abs, destRoot));
+                    (abs, refBase) => refBase == RefBase.Document ? null
+                        : SnpPathPolicy.ToStored(CircuitRF.Core.Devices.External.OsdiBuilds.NeutralPath(abs), destRoot));
                 if (text is not null) AtomicFile.WriteAllText(doc, text);
             }
 
@@ -222,8 +223,12 @@ public static class VendorModelAuthoring
             };
             CellPersistence.SaveToFile(ccellPath, ccell);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException
+                                       or System.Text.Json.JsonException)
         {
+            // The name was free when chosen, so whatever is there now is this copy's, half made — still a model folder
+            // with its references half rewritten. Leave nothing behind.
+            try { if (Directory.Exists(dest)) Directory.Delete(dest, recursive: true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
             InvalidateResolution();
             return Refuse($"the copy could not be written ({ex.Message}).");
         }

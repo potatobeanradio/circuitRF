@@ -127,8 +127,9 @@ public static class CnlWriter
         sb.Append("define ").Append(cell.Name)
           .Append(" (").Append(string.Join(' ', cell.Ports)).Append(')').AppendLine();
 
+        // Quoted when it holds a space: a model folder, and so its part number, may be named "BFP 740".
         if (cell.Part is { } part)
-            sb.Append("  part ").AppendLine(part);
+            sb.Append("  part ").AppendLine(part.Any(char.IsWhiteSpace) ? $"\"{part}\"" : part);
 
         if (cell.Parameters.Count > 0)
             sb.Append("  parameters ")

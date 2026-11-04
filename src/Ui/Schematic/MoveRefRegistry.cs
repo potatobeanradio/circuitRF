@@ -140,6 +140,9 @@ public static class MoveRefRegistry
     private static string? WorkspaceRootOf(string file) =>
         WorkspaceRootFinder.WorkspaceDirOf(Path.GetDirectoryName(Path.GetFullPath(file)));
 
+    private static string? OwningRootOf(string file) =>
+        OwningRoot.Of(Path.GetDirectoryName(Path.GetFullPath(file)));
+
     // ── Generic path resolve/store, used by most rows ─────────────────────────
 
     /// <summary>A plain relative-or-rooted path against a base. Null for anything the OS will not
@@ -249,9 +252,11 @@ public static class MoveRefRegistry
 
         // SnP, SpiceModel and VerilogA all resolve their `File` through SnpPathPolicy — the same
         // rule Elaborator.ResolveSnpFilePath applies at Run — so they are one row, not three.
+        // Based on the document's OWNING root (brief vendorlib-8): the workspace root, or the model folder for a
+        // schematic inside a library model — where Run resolves the same reference.
         new("csch/ModelFile", Ext(".csch"),
             n => FileParamSlots(n, wBond: false),
-            WorkspaceRootOf,
+            OwningRootOf,
             (s, b) => HasToken(s) ? null : SnpPathPolicy.Resolve(s, b, null),
             (abs, b, was) => Path.IsPathRooted(was) ? abs : SnpPathPolicy.ToStored(abs, b)),
 

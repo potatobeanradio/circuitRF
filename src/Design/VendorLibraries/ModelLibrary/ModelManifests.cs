@@ -140,6 +140,9 @@ public sealed record ModelPartManifest
         var (m, refusal) = ModelManifestIo.Read<ModelPartManifest>(path, FormatName, Required);
         if (m is null) return (null, refusal);
 
+        if (m.Pins.Any(p => p is null)) return (null, $"{ModelFolder.PartFileName}: \"Pins\" holds a null.");
+        if (m.Parameters.Any(p => p is null)) return (null, $"{ModelFolder.PartFileName}: \"Parameters\" holds a null.");
+        if (m.Converted.Any(c => c is null)) return (null, $"{ModelFolder.PartFileName}: \"Converted\" holds a null.");
         if (m.Part.Trim().Length == 0) return (null, $"{ModelFolder.PartFileName}: \"Part\" is empty.");
         if (m.Cell.Trim().Length == 0) return (null, $"{ModelFolder.PartFileName}: \"Cell\" is empty.");
         if (m.Kind is not (KindActive or KindPassive))
@@ -215,6 +218,9 @@ internal static class ModelManifestIo
     {
         ReadCommentHandling = JsonCommentHandling.Skip,
         AllowTrailingCommas = true,
+        // A hand-written `"Description": null` is a refusal of this one manifest, not a null string that throws
+        // later in whatever reads it — the library index, check, the placed part's symbol — and takes them all down.
+        RespectNullableAnnotations = true,
     };
 
     public static void Write<T>(string path, T record)

@@ -320,6 +320,14 @@ public static class VendorLibraryRefs
     /// model's <c>.csch</c>, <c>.cnl</c>, <c>.va</c> and <c>.s2p</c> are its own files, not kit structure: judging
     /// them would send every model library to the kit import. A <c>library.clib</c> is the library's own manifest.
     /// </summary>
+    /// <summary>A model library's own files beside its parts — its manifest, its signature (brief vendorlib-15) and the
+    /// extension-less notices a publisher ships — none of which is kit structure.</summary>
+    private static readonly HashSet<string> LibraryOwnFiles = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ModelLibrary.ModelFolder.LibraryFileName, ModelLibrary.LibrarySignature.SumsFileName, ModelLibrary.LibrarySignature.SigFileName,
+        "LICENSE", "LICENCE", "README", "NOTICE", "COPYING", "AUTHORS", "CHANGELOG",
+    };
+
     private static IEnumerable<string> FilesOutsideModelFolders(string folder)
     {
         var stack = new Stack<string>();
@@ -329,7 +337,7 @@ public static class VendorLibraryRefs
             string dir = stack.Pop();
             if (ModelLibrary.ModelFolder.Is(dir)) continue;
             foreach (string f in Directory.EnumerateFiles(dir))
-                if (!Path.GetFileName(f).Equals(ModelLibrary.ModelFolder.LibraryFileName, StringComparison.OrdinalIgnoreCase))
+                if (!LibraryOwnFiles.Contains(Path.GetFileName(f)))
                     yield return f;
             foreach (string d in Directory.EnumerateDirectories(dir)) stack.Push(d);
         }

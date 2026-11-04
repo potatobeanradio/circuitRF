@@ -1866,8 +1866,9 @@ public static class NetExtractor
                 continue;
             }
             if (string.IsNullOrWhiteSpace(p.Name) || string.IsNullOrWhiteSpace(p.Expression)) continue;
-            string? name = declared.FirstOrDefault(d => d == p.Name)
-                        ?? declared.SingleOrDefault(d => d.Equals(p.Name, StringComparison.OrdinalIgnoreCase));
+            // Exact spelling first; a case-blind match only when it is the one candidate (Vg beside VG is no match for vg).
+            var loose = declared.Where(d => d.Equals(p.Name, StringComparison.OrdinalIgnoreCase)).Take(2).ToList();
+            string? name = declared.FirstOrDefault(d => d == p.Name) ?? (loose.Count == 1 ? loose[0] : null);
             if (name is null) continue;
             var unit = UnitNormalizer.ToEngineUnit(p.Unit);
             // A row that repeats the model's own default is not an override (brief vendorlib-13): written as one it

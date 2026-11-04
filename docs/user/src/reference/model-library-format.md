@@ -276,9 +276,9 @@ linux-x64.* Placing it is refused with the same sentence.
 `PublishedHash` lets circuitRF say a model was edited after it was exported. It is `sha256:` followed by the
 lower-case hex SHA-256 of a list of lines, one per file:
 
-1. Take every file under the model folder except `part.cpart` itself, `.DS_Store`, `Thumbs.db`, `desktop.ini`
-   and anything inside a `.git` folder.
-2. For a text file (`.cnl .csch .csym .ccell .va .vams .sNp .lib .cir .sub .txt .md`, where `.sNp` is any N)
+1. Take every file under the model folder except `part.cpart` itself, `library.sums` and `library.sig` at its
+   top, `.DS_Store`, `Thumbs.db`, `desktop.ini` and anything inside a `.git` folder.
+2. For a text file (`.cnl .csch .csym .ccell .va .vams .sNp .lib .cir .sub .txt .md .cmodel`, where `.sNp` is any N)
    replace every CR LF with LF in its content. A changed line ending is then not an edit.
 3. Write one line per file, `<lower-case hex SHA-256 of the content>  <path>` with two spaces and a LF, where
    `<path>` is relative to the model folder with `/` separators. Order the lines by path, comparing bytes.
@@ -309,8 +309,14 @@ with two spaces between the hash and the path.
 - Each **model folder** has one line. The hash is the folder's [PublishedHash](#hash), computed by the rule
   above whatever `part.cpart` says. The path is the folder's, relative to the library with `/` separators.
   Because that hash covers every file in the folder, every platform's `.osdi` is covered.
-- **`library.clib`** has one line, path `library.clib`. Its hash is the SHA-256 of the file's content after every
-  CR LF is replaced with LF.
+- Each model folder's **`part.cpart`** has a line of its own, path `<folder>/part.cpart`. The PublishedHash leaves it
+  out because it holds that hash, and a placed part takes its defaults and pins from it.
+- **`library.clib`** has one line, path `library.clib`.
+- **Every other file** in the library has one line, path relative to the library: a SPICE part outside any model
+  folder, a document. Files and folders whose names start with `.` are skipped, along with `.DS_Store`, `Thumbs.db`,
+  `desktop.ini` and `library.sums` and `library.sig` themselves.
+- A file's hash, on every line but a model folder's, is `sha256:` followed by the SHA-256 of its content. For a
+  text file (the PublishedHash list, plus `library.clib` and `part.cpart`) every CR LF is replaced with LF first.
 - The lines are sorted by path, comparing bytes, and each ends with LF, the last one included.
 
 `library.sig` is JSON:
@@ -332,7 +338,7 @@ with two spaces between the hash and the path.
 | `Signature` | ECDSA P-256 with SHA-256 over the exact bytes of `library.sums`, in the IEEE P1363 form (r then s, 32 bytes each, 64 in all), base64. |
 
 To verify a library with no circuitRF code: decode `PublicKey` and `Signature`, verify the signature over the bytes
-of `library.sums` as they are on disk, check that `Publisher` equals `library.clib`'s, then compute every line of
+of `library.sums` with every CR LF replaced by LF, check that `Publisher` equals `library.clib`'s, then compute every line of
 `library.sums` again from the library and compare.
 
 The key's **fingerprint** is the SHA-256 of the SubjectPublicKeyInfo bytes, its first 16 bytes written as

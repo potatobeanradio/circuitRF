@@ -18001,6 +18001,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 ExecuteSavePlan(confirmedPlan);
             }
 
+            // brief vendorlib-12: a schematic inside a library model is asked about once per model before anything is
+            // written, and the model refreshed afterwards — the same rule as SaveSingleDocument's, so Save All is not a
+            // route around it.
+            var orphanedSchematics = _registry.GetOrphanedDirtyPaths(IsSessionReferenced).ToList();
+            var schematicPaths = dirtyMaterialized.Select(d => d.FilePath).OfType<string>().Concat(orphanedSchematics).ToList();
+            if (!await ConfirmModelEditsAsync(schematicPaths, window)) return;
+
             // Already-materialized dirty schematic docs — write directly.
             foreach (var doc in dirtyMaterialized)
             {
@@ -18019,7 +18026,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             }
 
             // Dirty sessions with no open tab (orphaned by a prior "Don't Save" close or hier2+ pop-out).
-            foreach (var sessionPath in _registry.GetOrphanedDirtyPaths(IsSessionReferenced))
+            foreach (var sessionPath in orphanedSchematics)
             {
                 if (!_registry.TryGet(sessionPath, out var sessionVm)) continue;
                 try
@@ -18034,6 +18041,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                     Messages.Error($"Failed to save session '{sessionPath}': {ex.Message}");
                 }
             }
+            await RefreshSavedModelsAsync(schematicPaths);
 
             // Scratch symbol docs — per-doc offer dialog.
             foreach (var symDoc in dirtyScratchSymbols)
@@ -18377,6 +18385,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                     ReportReadOnlySaveAsRoute(doc);
                     await SaveSchematicAs(doc, owner);
                 }
+                // brief vendorlib-12: the quit prompt's Save asks about a library model as every other save does.
+                var quitSchematicPaths = dirtyMat.Where(d => !IsDocumentReadOnly(d)).Select(d => d.FilePath).OfType<string>()
+                                                 .Concat(dirtyOrphanedSessions).ToList();
+                if (!await ConfirmModelEditsAsync(quitSchematicPaths, owner)) return false;
                 foreach (var doc in dirtyMat.Where(d => !IsDocumentReadOnly(d)))
                 {
                     if (doc.FilePath is null) continue;
@@ -18408,6 +18420,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                         Messages.Error($"Failed to save session '{sessionPath}': {ex.Message}");
                     }
                 }
+                await RefreshSavedModelsAsync(quitSchematicPaths);
                 // Scratch symbols → per-doc offer dialog (same as AllDocs scope).
                 foreach (var symDoc in dirtyScratchSymbols)
                     await SaveScratchSymbol(symDoc, owner);

@@ -81,8 +81,45 @@ public static class ModelCellEdits
             if (!seen.Add(n)) return $"Two corners are named '{n}'.";
             foreach (var k in c.Values.Keys)
                 if (!declared.Contains(k)) return $"Corner '{n}' sets {k}, which is not a parameter of the cell.";
+            if (UnreadableValue(n, c, declared) is { } why) return why;
         }
         return null;
+    }
+
+    /// <summary>
+    /// Why a corner's values would not read back, or null: the corner written into a <c>define</c> exactly as every
+    /// extraction writes it (<see cref="CellCorners.Split"/>, <see cref="CnlWriter"/>) and read again. A value the
+    /// reader cannot take (<c>Cnom * 0.9</c>, a unit it does not know) would otherwise be stored and then fail the
+    /// extraction of every design that places the part.
+    /// </summary>
+    private static string? UnreadableValue(string name, CcellCorner corner, IReadOnlySet<string> declared)
+    {
+        var cell = new Cell("__corner_check");
+        foreach (string p in declared) cell.Parameters.Add(new ParameterDeclaration(p, "0"));
+        var cc = new CellCorner(name);
+        foreach (var (key, text) in corner.Values)
+        {
+            if (string.IsNullOrWhiteSpace(text)) continue;
+            var (expr, unit) = CellCorners.Split(text, null);
+            cc.Bindings.Add(new ParameterAssignment(key, expr, unit));
+        }
+        if (cc.Bindings.Count == 0) return null;
+        cell.Corners.Add(cc);
+        var lib = new Library("check");
+        lib.Cells.Add(cell);
+        try
+        {
+            var (read, _) = new CircuitRF.Core.Netlist.CnlReader().Read(
+                CircuitRF.Core.Netlist.CnlWriter.Write(new TestBench("check"), lib, null), "check", sourceDirectory: null);
+            var back = read.Find(cell.Name)?.Corners.FirstOrDefault();
+            if (back is null || back.Bindings.Count != cc.Bindings.Count)
+                return $"Corner '{name}' does not read back as written; write each value as a number or one expression with no spaces.";
+            return null;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return $"Corner '{name}': {ex.Message} Write each value as a number, with its unit, or one expression with no spaces.";
+        }
     }
 
     /// <summary>Stores <paramref name="corners"/> in the cell's <c>.ccell</c>, blank values dropped (a blank is nominal).

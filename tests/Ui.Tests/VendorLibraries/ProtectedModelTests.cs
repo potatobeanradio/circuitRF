@@ -319,7 +319,8 @@ public sealed class ProtectedModelTests : IDisposable
         foreach (string rule in new[] { "IEEE P1363", "SubjectPublicKeyInfo", "sorted", "two spaces", "first 16 bytes" })
             Assert.Contains(rule, page);
 
-        // library.sums, from scratch: one line per model folder (its PublishedHash rule) and one for library.clib.
+        // library.sums, from scratch: one line per model folder (its PublishedHash rule), one per part.cpart, and one for
+        // library.clib.
         var lines = new List<(string Path, string Hash)>();
         foreach (string partFile in Directory.EnumerateFiles(lib, "part.cpart", SearchOption.AllDirectories))
         {
@@ -335,7 +336,11 @@ public sealed class ProtectedModelTests : IDisposable
                     b = Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(b).Replace("\r\n", "\n"));
                 list.Append(Hex(SHA256.HashData(b))).Append("  ").Append(rel).Append('\n');
             }
-            lines.Add((Path.GetRelativePath(lib, dir).Replace('\\', '/'), "sha256:" + Hex(SHA256.HashData(Encoding.UTF8.GetBytes(list.ToString())))));
+            string folder = Path.GetRelativePath(lib, dir).Replace('\\', '/');
+            lines.Add((folder, "sha256:" + Hex(SHA256.HashData(Encoding.UTF8.GetBytes(list.ToString())))));
+            // part.cpart on a line of its own, CR LF → LF.
+            lines.Add((folder + "/part.cpart", "sha256:" + Hex(SHA256.HashData(
+                Encoding.UTF8.GetBytes(File.ReadAllText(partFile).Replace("\r\n", "\n"))))));
         }
         lines.Add(("library.clib", "sha256:" + Hex(SHA256.HashData(File.ReadAllBytes(Path.Combine(lib, "library.clib"))))));
         string sums = string.Concat(lines.OrderBy(l => l.Path, StringComparer.Ordinal).Select(l => $"{l.Hash}  {l.Path}\n"));

@@ -52,4 +52,33 @@ public sealed class CellCornerGrammarTests
         Assert.Contains(says, ex.Message);
         Assert.Contains(line, ex.Message);
     }
+
+    // A cell that declares its own Corner parameter owns that name: the override is its value, not a corner selection.
+    [Fact]
+    public void ACellsOwnCornerParameter_IsAValue_NotASelector()
+    {
+        const string text = """
+            define TSTSEL (a b)
+              parameters Corner=0
+              R:R1 a b R=if(Corner==1,10,20) Ohm
+            end TSTSEL
+            R:RL out 0 R=1e9 Ohm
+            TSTSEL:X1 out 0 Corner=1
+            """;
+        var (lib, tb) = new CnlReader().Read(text, "bench");
+        using var nl = new CircuitRF.Core.Elaboration.Elaborator(lib).Elaborate(tb);
+        Assert.Contains(nl.Components, c => c.InstancePath == "X1.R1"
+                                            && c.Parameters.TryGetValue("R", out var r) && r.AsReal() == 10);
+    }
+
+    // A part number with a space round-trips: the writer quotes it, and the reader takes it quoted.
+    [Fact]
+    public void APartNumberWithASpace_RoundTrips()
+    {
+        var (lib, tb) = new CnlReader().Read("define TSTP (a b)\n  part \"TST 740\"\n  R:R1 a b R=1 Ohm\nend TSTP\n", "model");
+        Assert.Equal("TST 740", lib.Find("TSTP")!.Part);
+        string written = CnlWriter.Write(tb, lib, null);
+        Assert.Contains("  part \"TST 740\"", written);
+        Assert.Equal("TST 740", new CnlReader().Read(written, "model").Item1.Find("TSTP")!.Part);
+    }
 }

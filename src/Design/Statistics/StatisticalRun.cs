@@ -94,9 +94,13 @@ public sealed class StatisticalRun
         _bindings = options.Bindings ?? _bindings;
         // Library parts whose own draws stay at nominal (brief vendorlib-13): those the statistics line holds
         // (R-vl13-1c), and those a corner sets the corner of — the corner is that part's limit (R-vl13-2g).
-        var heldParts = _settings.NominalPartList.Concat(_bindings.Keys
-            .Where(k => k.StartsWith(CellCorner.PartPrefix, StringComparison.OrdinalIgnoreCase))
-            .Select(k => k[CellCorner.PartPrefix.Length..]));
+        // Only a corner the part has and that is not its nominal: at nominal (a Generate tick box) the part is at no
+        // limit, and a corner it lacks was skipped (LibraryPartCorners says so) — neither holds its spread.
+        var heldParts = _settings.NominalPartList.Concat(_bindings
+            .Where(kv => kv.Key.StartsWith(CellCorner.PartPrefix, StringComparison.OrdinalIgnoreCase))
+            .Where(kv => lib.Cells.FirstOrDefault(c => string.Equals(c.Part, kv.Key[CellCorner.PartPrefix.Length..], StringComparison.Ordinal)) is { } partCell
+                         && partCell.Corners.Any(x => x.Name.Equals(kv.Value.Trim(), StringComparison.OrdinalIgnoreCase)))
+            .Select(kv => kv.Key[CellCorner.PartPrefix.Length..]));
         _heldPaths = LibraryParts.HeldPaths(tb, lib, heldParts);
         _catalog  = TunableCatalog.FromNetlist(bench, lib, parts: circuit.PartTunables);
         _nominals = SampleValues.Nominals(_catalog, _bindings);

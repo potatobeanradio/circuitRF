@@ -382,7 +382,7 @@ internal static class Check
     /// </summary>
     private static void CheckFolder(string path, Findings f, TechnologyCache cache, bool recursive)
     {
-        bool library = ModelFolder.Under(path).Count > 0;
+        bool library = ModelFolder.AnyUnder(path);
         WalkFolder(path, f, cache, recursive || library);
         if (!library) return;
         // Brief vendorlib-15 §5c: the signature, judged against this user's own trust store, read-only.

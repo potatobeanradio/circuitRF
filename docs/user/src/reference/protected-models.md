@@ -203,7 +203,7 @@ What was measured from a Mac on Apple silicon, with a Verilog-A compiler built f
 | Platform | From this Mac |
 |---|---|
 | `osx-arm64` | Built and checked. |
-| `osx-x64`, `linux-x64`, `win-x64` | Not built: that compiler build has no x86-64 code generator. |
+| `osx-x64`, `linux-x64`, `win-x64` | Not built: the compiler builds only for the processor it runs on. |
 | `win-x86` | Not built: the compiler has no 32-bit Windows target, from any machine. |
 | `linux-arm64` | Not built as installed: the link needs a Linux linker. With one standing in, a build links, and was not run. |
 | `win-arm64` | Not built as installed: the link needs a Windows linker and the Windows import libraries. With both standing in, a build links, and was not run. |

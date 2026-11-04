@@ -26845,3 +26845,68 @@ a thrown sentence below the UI.
   is byte-identical (E13). With no command it is still written directly.
 - **A deleted linked part keeps its placement record and is marked `Removed`**; it is not put back until Restore Removed
   Parts. A test that deletes a part to see it re-added must remove the record too (`ChainPlacementTests.D5`).
+
+## Model-library series review (VL-6…17, 2026-11-03)
+
+A read of the series' code after it landed. Fixed, with a gate in `tests/Ui.Tests/VendorLibraries/VendorLibraryReviewFixTests.cs`
+(one test per claim) and two in `tests/Core.Tests/Netlist/CellCornerGrammarTests.cs`:
+
+- **Export dropped a data file kept inside a cell's own folder.** `MappedIntoCell` re-pointed every file under a copied
+  cell to "its place in the copy", but `CopyCell` writes only a cell's views and `.ccell`, so the reference named a file
+  nothing wrote (a placed model's `models/x.s2p`, a cell's `data/meas.s2p`). Only the primary views map now; every other
+  file goes through `FileCopier` into `models/`.
+- **Copy to Workspace pointed a model's sub-cells back into the library.** `CrossWorkspaceCellCopy.Plan` walked the
+  hierarchy only inside a source WORKSPACE, and a library has none; the walk is now bounded by the cell folder itself. A
+  failed copy deletes the half-made cell, and a compiled-only model's reference is stored platform-neutral
+  (`OsdiBuilds.NeutralPath`), not as this machine's `models/<rid>/` build.
+- **Save All and the quit prompt bypassed R-vl12-2c/2d.** Only `SaveSingleDocument` asked and refreshed.
+- **Refresh wrote before it could still refuse.** A refusal after the first write now takes every write back (SnPs, cells
+  copied in, schematics restored to the bytes the user's save left); Convert's I/O is inside the guard.
+- **The signature left out `part.cpart` and every file outside a model folder** — the file a placement reads its
+  defaults, pins and builds from. Each gets a line of its own in `library.sums` (format page updated). The signature is
+  verified over the LF form too, so a CR LF checkout of `library.sums` is not a broken signature; `Inspect` never throws;
+  a root that is itself a model folder no longer hashes its own `library.sums`/`library.sig`; `.cmodel` is CR LF-normalised.
+- **`CellCorner.Apply` took a cell's OWN `Corner` parameter as a corner selector** (a regression on every workspace cell
+  with that parameter). A cell that declares it keeps it.
+- **An unbound FET thermal pin under Compile netlist** left `$port_connected(<internal node>)` in the module; the
+  compiler refuses a non-port ("expected a port reference", reproduced). An unbound terminal's test is the constant 0.
+- **A null in a hand-written manifest** threw later in whatever read it and took the whole library index down; manifests
+  read with `RespectNullableAnnotations`, so it is that manifest's refusal.
+- Smaller: a signed library classified as a kit (`library.sums`/`.sig`, extension-less notices); `check <folder>`
+  followed directory links; move/rename repair of a model folder's SnP used the workspace root, not the owning root;
+  the model-folder check saw only `File=` (now every `FileReferences.KindOf` parameter and a carrier's `File=` field) and
+  missed a Windows drive path on macOS/Linux; ExtDevice dropped a kit device's own `Symbol`/`Terminals`; a part number
+  with a space failed every run (`part "…"` is quoted now); a corner value the reader cannot take is refused before it is
+  stored; a tunable on a cornered instance starts from the corner; a part at a `nominal` or skipped part corner keeps its
+  spread; a stale `Corner` selection stays on the picker; the overrides-corner note compares the unit as the extractor
+  does; ↑/↓ steps over greyed palette rows; concurrent Model Composer exports no longer delete each other's stage (a
+  held `.stage-lock`); the protected wrapper keeps the top cell's variables; `--sweep` stops at the first non-`key=value`
+  word; a refused export removes the folders it created; a converted technology part whose value uses a cell parameter is
+  said to be sampled at the default; `OwningRoot`'s memo is keyed on the normalised path with the file system's case rule.
+
+**Not fixed, and why:**
+- Refresh still refuses a NEW technology part in a model whose cell used the workspace's default technology — a library
+  has no `.cws`, and `Converted` records the technology by name only. A fix records the technology itself.
+- `--build <rid>=fet.osdi` after a stem collision (`fet`, `fet_2`) matches the first; a root that is itself a model folder
+  indexes as `vendormodel://lib/` and does not place; a design-level tolerance typed on an unticked part's instance row
+  is held with it; the Corners grid shows no bindings for a generated part corner.
+- **A protected module publishes its internal values as parameters.** The compiler exposes every `localparam` through the
+  model interface (`describe` lists `crf_k1`, `crf_u1_Rth`, …), so whoever loads the `.osdi` directly can read and set
+  the cell's element values. circuitRF's own UI does not (a placed part's parameters come from `part.cpart`). A fix moves
+  them into the analog block as variables, and needs every proof re-run.
+
+### Cross-platform builds, measured again
+
+The compiler calls `LLVM_InitializeNativeTarget` only, so it can build for another OPERATING SYSTEM but never another
+PROCESSOR — not a missing code generator: the LLVM it links has X86. With every target initialised (a four-line change
+to a local build of it) and `zig` as the linker, every platform but `win-x86` builds on a Mac on Apple silicon:
+
+| Target | Link as `zig` does it | Checked |
+|---|---|---|
+| linux-arm64 | `zig cc -target aarch64-linux-gnu -shared … -lc -lm` (the `.oN` objects symlinked to `.o`; `--no-add-needed`, `--hash-style=gnu`, `-m <emulation>` dropped) | loads and describes in a Linux arm64 container under `osdi-worker` |
+| linux-x64 | the same, `x86_64-linux-gnu` | loads and describes in a Linux x86-64 container (emulated) |
+| win-arm64 / win-x64 | `zig cc -target <arch>-windows-gnu -shared`, `msvcrt.lib` dropped, a one-line `int _fltused = 0;` object for x64 | PE32+ DLL exporting the `OSDI_*` symbols, importing only the UCRT API sets and KERNEL32; not run |
+| osx-x64 | the system `cc` with `-arch x86_64` added — the compiler's Mach-O link names no architecture, and without one the host linker wrote an **arm64** dylib, which `OsdiBuilds.PlatformsOf` already refuses | Mach-O x86_64; not run (nothing here runs x86-64 code) |
+
+So the stand-in linker is a solved problem and the cross-processor limit is the compiler's, one call away. `FixFor` now
+says the compiler builds only for the processor it runs on, rather than blaming its build.

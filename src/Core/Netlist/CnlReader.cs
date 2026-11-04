@@ -174,7 +174,9 @@ public sealed class CnlReader
         if (_currentCell is not null && FirstWordIs(line, "part"))
         {
             string number = StripInlineComment(line["part".Length..]).Trim();
-            if (number.Length == 0 || number.Any(char.IsWhiteSpace))
+            bool quoted = number.Length >= 2 && number[0] == '"' && number[^1] == '"';
+            if (quoted) number = number[1..^1].Trim();
+            if (number.Length == 0 || !quoted && number.Any(char.IsWhiteSpace) || number.Contains('"'))
                 throw new CnlReadException(_lineNumber, line, "'part' names one part number — part TSTFET100.");
             if (_currentCell.Part is { } first)
                 throw new CnlReadException(_lineNumber, line, $"a second 'part' line; this define already names part {first}.");
@@ -1903,7 +1905,8 @@ public sealed class CnlReader
         // A ComposedFET's .cmodel is the same (brief vendorlib-17): a model library part that places one names it
         // model-relative, and the self-check could not find it.
         bool isVerilogA = typeName.Equals("VerilogA", StringComparison.OrdinalIgnoreCase)
-                       || typeName.Equals(CircuitRF.Core.Devices.ComponentModelFactory.ComposedFetTypeName, StringComparison.OrdinalIgnoreCase);
+                       || typeName.Equals(CircuitRF.Core.Devices.ComponentModelFactory.ComposedFetTypeName, StringComparison.OrdinalIgnoreCase)
+                       || typeName.Equals(CircuitRF.Core.Devices.ComponentModelFactory.ComposedCoreTypeName, StringComparison.OrdinalIgnoreCase);
 
         // Tolerate whitespace around '=' in param assignments: "C = 1 uF", "C =1", "C= 1" all become
         // the canonical "C=1" token (the trailing unit stays its own token). Safe here because the

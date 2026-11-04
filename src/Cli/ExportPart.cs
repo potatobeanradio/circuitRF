@@ -69,10 +69,16 @@ public static class ExportPart
                 case "--library-version" when more: libraryVersion = args[++i]; break;
                 case "--sweep" when more:
                 {
-                    // One segment per --sweep, in the sparam directive's own keys: everything up to the next option.
+                    // One segment per --sweep, in the sparam directive's own keys: every key=value word (and log) up to the
+                    // first that is neither, so a cell folder written after it is still the cell.
                     var words = new List<string>();
-                    while (i + 1 < args.Length && !args[i + 1].StartsWith("--", StringComparison.Ordinal))
-                        words.AddRange(args[++i].Split(' ', StringSplitOptions.RemoveEmptyEntries));
+                    while (i + 1 < args.Length && !args[i + 1].StartsWith("--", StringComparison.Ordinal)
+                           && args[i + 1].Split(' ', StringSplitOptions.RemoveEmptyEntries) is { Length: > 0 } next
+                           && next.All(w => w.Contains('=') || w.Equals("log", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        words.AddRange(next);
+                        i++;
+                    }
                     if (ParseSweep(words) is not { } segment)
                         return JsonRun.Fail(CliDiagnostics.ExportBadValue("--sweep", string.Join(' ', words),
                             "start=… stop=… and npts=… or step=…, with unit=… and log optional"));

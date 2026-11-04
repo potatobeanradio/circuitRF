@@ -1,5 +1,6 @@
 using CircuitRF.Core.Design;
 using CircuitRF.Core.Devices.External;
+using CircuitRF.Core.Elaboration;
 using CircuitRF.Design.Cells;
 using CircuitRF.Core.Netlist;
 using CircuitRF.Diagnostics;
@@ -105,11 +106,8 @@ public static class ModelFolderCheck
         foreach (var cell in lib.Cells)
             foreach (var inst in cell.Instances)
                 foreach (var ov in inst.Overrides)
+                foreach (string value in FileValues(inst.Reference, ov))
                 {
-                    if (!ov.Name.Equals("File", StringComparison.OrdinalIgnoreCase)) continue;
-                    string value = ov.Expression.Trim();
-                    if (value.Length >= 2 && value[0] == '"' && value[^1] == '"') value = value[1..^1];
-                    if (value.Length == 0) continue;
                     if (LeavesFolder(dir, value))
                         found.Add(Diagnostic.Create("check.model.reference-leaves-folder", DiagnosticSeverity.Error,
                             "{path}: {instance} in {cell} names \"{file}\", which is not inside the model folder; every file a model uses travels with it.",
@@ -290,10 +288,31 @@ public static class ModelFolderCheck
     /// Whether a file-valued parameter reaches outside <paramref name="modelDir"/>: an absolute path, a
     /// reference into another library or kit (anything with a scheme), or a relative path that climbs out.
     /// </summary>
+    /// <summary>
+    /// Each file an override names: a <c>File</c> on any part, and every parameter <see cref="FileReferences.KindOf"/>
+    /// says the elaborator resolves as a file (a wBond's <c>MaterialLibrary</c>, a modulated source carrier's
+    /// <c>File=</c> field) — the same list the run rebases against the model folder, so nothing it reads escapes this check.
+    /// </summary>
+    private static IEnumerable<string> FileValues(string reference, CircuitRF.Core.Design.ParameterAssignment ov)
+    {
+        var kind = FileReferences.KindOf(reference, ov.Name);
+        if (kind == FileValueKind.None && !ov.Name.Equals("File", StringComparison.OrdinalIgnoreCase)) yield break;
+        string value = (ov.Expression ?? "").Trim();
+        if (value.Length >= 2 && value[0] == '"' && value[^1] == '"') value = value[1..^1].Trim();
+        if (value.Length == 0) yield break;
+        if (kind != FileValueKind.CarrierSpec) { yield return value; yield break; }
+        var named = new List<string>();
+        global::RfCore.Signals.SignalSpec.MapFilePath(value, f => { if (f.Trim().Length > 0) named.Add(f.Trim()); return f; });
+        foreach (string f in named) yield return f;
+    }
+
     public static bool LeavesFolder(string modelDir, string value)
     {
         if (value.Contains("://", StringComparison.Ordinal)) return true;
         if (Path.IsPathRooted(value)) return true;
+        // A drive or UNC path written on Windows is not rooted to macOS or Linux, which would combine it under the folder.
+        if (value.Length >= 2 && char.IsAsciiLetter(value[0]) && value[1] == ':') return true;
+        if (value.StartsWith(@"\\", StringComparison.Ordinal)) return true;
         string root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(modelDir));
         string full = Path.GetFullPath(Path.Combine(root, value.Replace('\\', '/')));
         return !full.StartsWith(root + Path.DirectorySeparatorChar, OperatingSystem.IsLinux()

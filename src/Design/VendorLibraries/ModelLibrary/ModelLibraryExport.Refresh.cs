@@ -86,15 +86,28 @@ public static partial class ModelLibraryExport
         };
         var options = new ExportOptions { LibraryDir = Path.GetDirectoryName(dir)!, Sweep = sweep };
         var files = new FileCopier(dir);
-        Converted converted;
-        try { converted = Convert(plan0, options, files, control); }
-        catch (ConversionRefused refused) { return Refused(refused.Message); }
-        catch (OperationCanceledException) { return Refused("the refresh was cancelled."); }
+        var newMap = new Dictionary<string, string>(DocumentFileRefs.PathComparer);
+        var restore = new List<(string Path, string Text)>();
+
+        // R-vl12-2e: a refusal reached after the first write takes every write back — the SnPs Convert wrote, the cells
+        // copied in, the schematics rewritten (to the bytes the user's save left) — so the folder is as the save left it.
+        RefreshResult Undo(string why)
+        {
+            foreach (string f in files.Written) try { if (File.Exists(f)) File.Delete(f); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+            foreach (string d in newMap.Values) try { if (Directory.Exists(d)) Directory.Delete(d, recursive: true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+            foreach (var (path, text) in restore) try { AtomicFile.WriteAllText(path, text); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+            InvalidateResolution();
+            return Refused(why);
+        }
 
         try
         {
+            Converted converted;
+            try { converted = Convert(plan0, options, files, control); }
+            catch (ConversionRefused refused) { return Undo(refused.Message); }
+            catch (OperationCanceledException) { return Undo("the refresh was cancelled."); }
+
             // A cell newly placed from outside the model comes into cells/, under its leaf name made unique.
-            var newMap = new Dictionary<string, string>(DocumentFileRefs.PathComparer);
             foreach (var c in newSubCells)
             {
                 string leaf = Path.GetFileName(c.Source), name = leaf;
@@ -132,6 +145,7 @@ public static partial class ModelLibraryExport
                 }
                 if (!string.Equals(text, before, StringComparison.Ordinal))
                 {
+                    restore.Add((sch, before));
                     AtomicFile.WriteAllText(sch, text);
                     rewritten.Add(sch);
                 }
@@ -144,13 +158,13 @@ public static partial class ModelLibraryExport
             // The netlist, from the folder as it now stands.
             InvalidateResolution();
             string? cnl = ModelNetlist.FromCell(dir, out string? why);
-            if (cnl is null) return Refused(why ?? "the edited schematic could not be extracted.") with { Rewritten = rewritten, Written = Sorted(written) };
+            if (cnl is null) return Undo(why ?? "the edited schematic could not be extracted.");
             if (ModelFolderCheck.TopLevelStatements(cnl).FirstOrDefault() is { Statement: { } stray })
-                return Refused($"the extracted netlist holds '{stray}' outside every define block.") with { Rewritten = rewritten, Written = Sorted(written) };
+                return Undo($"the extracted netlist holds '{stray}' outside every define block.");
             var (lib, _) = new CnlReader().Read(cnl, "model", sourceDirectory: null);
             var top = lib.Find(manifest.Cell) ?? lib.Find(part);
             if (top is null)
-                return Refused($"the extracted netlist has no define named {manifest.Cell}.") with { Rewritten = rewritten, Written = Sorted(written) };
+                return Undo($"the extracted netlist has no define named {manifest.Cell}.");
 
             string cnlPath = ModelNetlist.PathOf(dir);
             string? oldCnl = File.Exists(cnlPath) ? File.ReadAllText(cnlPath) : null;
@@ -184,7 +198,7 @@ public static partial class ModelLibraryExport
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            return Refused($"the model folder could not be written ({ex.Message}).") with { Rewritten = rewritten, Written = Sorted(written) };
+            return Undo($"the model folder could not be written ({ex.Message}).");
         }
     }
 

@@ -386,8 +386,12 @@ public sealed class TunableCatalog
                 if (lib.Find(inst.Reference) is { } def)
                 {
                     // A sub-circuit instance: its cell's DECLARED parameters, per instance, whether
-                    // this instance overrides them or inherits the default (overview D2).
-                    foreach (var decl in def.Parameters)
+                    // this instance overrides them or inherits the default (overview D2). A selected corner's values
+                    // are this instance's defaults (brief vendorlib-13), so the nominal a tune starts from is the corner's.
+                    Cell cornered = def;
+                    try { cornered = CircuitRF.Core.Design.CellCorner.Apply(def, inst.Overrides, inst.InstanceName).Cell; }
+                    catch (InvalidOperationException) { }   // a corner the cell lacks: the run refuses it and names it
+                    foreach (var decl in cornered.Parameters)
                     {
                         var ov = inst.Overrides.FirstOrDefault(o => o.Name == decl.Name);
                         var (expr, unit) = ov is null ? (decl.DefaultExpression, decl.Unit) : (ov.Expression, ov.Unit);

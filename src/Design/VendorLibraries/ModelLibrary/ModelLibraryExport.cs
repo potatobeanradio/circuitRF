@@ -425,12 +425,17 @@ public static partial class ModelLibraryExport
 
         string modelDir   = plan.ModelDir;
         string parent     = Path.GetDirectoryName(modelDir)!;
-        string libraryDir = Path.GetFullPath(options.LibraryDir);
+        string libraryDir = Path.GetFullPath(options.LibraryDir.Trim().Length == 0 ? "." : options.LibraryDir);
         string id         = Guid.NewGuid().ToString("N")[..8];
         string wrapper    = Path.Combine(parent, $".{plan.PartNumber}.tmp-{id}");
         string tmp        = Path.Combine(wrapper, plan.PartNumber);
         string? backup    = null;
         bool libraryNew   = plan.LibraryIsNew;
+        // The highest folder this export creates (a new library, a new category chain): a refusal takes it away again
+        // when nothing else came to be in it, so "nothing is left on disk" holds for the folders too.
+        string? madeFrom  = null;
+        for (string? d = parent; d is not null && !Directory.Exists(d); d = Path.GetDirectoryName(d)) madeFrom = d;
+        string? clibWarning = null;
 
         try
         {
@@ -438,9 +443,9 @@ public static partial class ModelLibraryExport
             control?.BeginStage("Copying the cell");
             Built built;
             try { built = Build(plan, options, tmp, control); }
-            catch (ConversionRefused refused) { return Refuse(wrapper, refused.Message); }
-            catch (CircuitRF.Core.Devices.External.ExternalDeviceException compile) { return Refuse(wrapper, compile.Message); }
-            if (Cancelled(control)) return Cancel(wrapper);
+            catch (ConversionRefused refused) { return Refuse(wrapper, madeFrom, refused.Message); }
+            catch (CircuitRF.Core.Devices.External.ExternalDeviceException compile) { return Refuse(wrapper, madeFrom, compile.Message); }
+            if (Cancelled(control)) return Cancel(wrapper, madeFrom);
 
             control?.BeginStage("Writing the netlist");
             // A provisional manifest first: OwningRoot finds the folder as a model folder only once part.cpart is
@@ -450,26 +455,26 @@ public static partial class ModelLibraryExport
             InvalidateResolution();
 
             string? cnl = ModelNetlist.FromCell(tmp, out string? why);
-            if (cnl is null) return Refuse(wrapper, why ?? "The copied cell could not be extracted.");
+            if (cnl is null) return Refuse(wrapper, madeFrom, why ?? "The copied cell could not be extracted.");
 
             // Brief vendorlib-16: the copy becomes the wrapper of its compiled module, and the netlist is extracted again.
             IReadOnlyList<ExportBuild> protectedBuilds = [];
             if (plan.Protect is { } protect)
             {
                 try { protectedBuilds = BuildProtected(protect, plan.PartNumber, tmp, cnl, control).Builds; }
-                catch (ProtectRefusedException ex) { return Refuse(wrapper, ex.Message); }
-                catch (CircuitRF.Core.Devices.External.ExternalDeviceException ex) { return Refuse(wrapper, ex.Message); }
+                catch (ProtectRefusedException ex) { return Refuse(wrapper, madeFrom, ex.Message); }
+                catch (CircuitRF.Core.Devices.External.ExternalDeviceException ex) { return Refuse(wrapper, madeFrom, ex.Message); }
                 InvalidateResolution();
                 cnl = ModelNetlist.FromCell(tmp, out why);
-                if (cnl is null) return Refuse(wrapper, why ?? "The wrapper could not be extracted.");
+                if (cnl is null) return Refuse(wrapper, madeFrom, why ?? "The wrapper could not be extracted.");
             }
             if (ModelFolderCheck.TopLevelStatements(cnl).FirstOrDefault() is { Statement: { } stray })
-                return Refuse(wrapper, $"The extracted netlist holds '{stray}' outside every define block.");
+                return Refuse(wrapper, madeFrom, $"The extracted netlist holds '{stray}' outside every define block.");
             File.WriteAllText(ModelNetlist.PathOf(tmp), cnl);
 
             var (lib, _) = new CnlReader().Read(cnl, "model", sourceDirectory: null);
             var top = lib.Find(plan.PartNumber);
-            if (top is null) return Refuse(wrapper, $"The extracted netlist has no define named {plan.PartNumber}.");
+            if (top is null) return Refuse(wrapper, madeFrom, $"The extracted netlist has no define named {plan.PartNumber}.");
 
             string kind = options.Kind ?? plan.DefaultKind;
             string symbol = options.Symbol ?? DefaultSymbolFor(plan.HasOwnSymbol, plan.Pins, kind,
@@ -505,14 +510,14 @@ public static partial class ModelLibraryExport
             // PublishedHash last: over every file but part.cpart, so writing it does not change it.
             manifest = manifest with { PublishedHash = ModelPartHash.Compute(tmp) };
             ModelPartManifest.Write(partPath, manifest);
-            if (Cancelled(control)) return Cancel(wrapper);
+            if (Cancelled(control)) return Cancel(wrapper, madeFrom);
 
             control?.BeginStage("Checking the model");
             InvalidateResolution();
             var findings = ModelFolderCheck.Validate(tmp);
             var errors = findings.Where(f => f.Severity == DiagnosticSeverity.Error).ToList();
             if (errors.Count > 0)
-                return Refuse(wrapper, "The exported model does not check clean: " + string.Join(" ", errors.Select(e => e.Render())));
+                return Refuse(wrapper, madeFrom, "The exported model does not check clean: " + string.Join(" ", errors.Select(e => e.Render())));
 
             double? betweenDb = null;
             ProtectCheckResult? proof = null;
@@ -521,15 +526,15 @@ public static partial class ModelLibraryExport
                 // D5: the compiled part proved against the cell, or nothing is written. The source stays with the maker.
                 control?.BeginStage("Proving the compiled part");
                 proof = Prove(plan, options, proving, tmp, manifest);
-                if (!proof.Passed) return Refuse(wrapper, proof.Refusal + $" The generated source is kept at {proving.SourcePath}.");
+                if (!proof.Passed) return Refuse(wrapper, madeFrom, proof.Refusal + $" The generated source is kept at {proving.SourcePath}.");
             }
             else
             {
                 control?.BeginStage("Self-check", 2, "run(s)");
                 if (SelfCheck(plan.CellDir, tmp, manifest, out betweenDb, plan.Conversions.Count > 0 ? plan.Frequencies : null, control) is { } mismatch)
-                    return Refuse(wrapper, mismatch);
+                    return Refuse(wrapper, madeFrom, mismatch);
             }
-            if (Cancelled(control)) return Cancel(wrapper);
+            if (Cancelled(control)) return Cancel(wrapper, madeFrom);
 
             // The rename. A replaced model is moved aside first and deleted only once the new one is in place.
             if (Directory.Exists(modelDir))
@@ -540,12 +545,22 @@ public static partial class ModelLibraryExport
             Directory.Move(tmp, modelDir);
             TryDelete(wrapper);
             if (backup is not null) TryDelete(backup);
+            // The model is in place by now; a library manifest that cannot be written is said, not a refusal that would
+            // report "nothing was written" over a model that was.
             if (clib is not null)
-                ModelLibraryManifest.Write(clib, new ModelLibraryManifest
+                try
                 {
-                    Name = options.LibraryName.Trim().Length > 0 ? options.LibraryName.Trim() : Path.GetFileName(Path.TrimEndingDirectorySeparator(libraryDir)),
-                    Publisher = options.Publisher, LibraryVersion = options.LibraryVersion, License = options.License,
-                });
+                    ModelLibraryManifest.Write(clib, new ModelLibraryManifest
+                    {
+                        Name = options.LibraryName.Trim().Length > 0 ? options.LibraryName.Trim() : Path.GetFileName(Path.TrimEndingDirectorySeparator(libraryDir)),
+                        Publisher = options.Publisher, LibraryVersion = options.LibraryVersion, License = options.License,
+                    });
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    clibWarning = $"The library's {ModelFolder.LibraryFileName} could not be written ({ex.Message}); the model was.";
+                    clib = null;
+                }
             InvalidateResolution();
 
             var created = Directory.EnumerateFiles(modelDir, "*", SearchOption.AllDirectories)
@@ -560,16 +575,17 @@ public static partial class ModelLibraryExport
                                + (betweenDb is { } db ? $"; between samples, within {db.ToString("G2", CultureInfo.InvariantCulture)} dB." : "."))
                           + (proof is null ? BuildsNote(built.Builds) : " " + proof.Summary + " " + SourceKeptLineFor(plan.Protect?.SourcePath)),
                 Warnings = [.. findings.Where(f => f.Severity != DiagnosticSeverity.Error).Select(f => f.Render()).Concat(built.Warnings)
-                              .Concat(UnavailableLine(protectedBuilds) is { Length: > 0 } gap ? [gap] : [])],
+                              .Concat(UnavailableLine(protectedBuilds) is { Length: > 0 } gap ? [gap] : [])
+                              .Concat(clibWarning is null ? [] : [clibWarning])],
                 Builds = protectedBuilds, SourcePath = plan.Protect?.SourcePath, CompiledFrom = plan.Protect?.Hash, Proof = proof?.Summary,
             };
         }
-        catch (OperationCanceledException) { return Cancel(wrapper); }
+        catch (OperationCanceledException) { return Cancel(wrapper, madeFrom); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             if (backup is not null && !Directory.Exists(modelDir) && Directory.Exists(backup))
                 try { Directory.Move(backup, modelDir); } catch { }
-            return Refuse(wrapper, $"The export could not be written: {ex.Message}");
+            return Refuse(wrapper, madeFrom, $"The export could not be written: {ex.Message}");
         }
     }
 
@@ -585,6 +601,33 @@ public static partial class ModelLibraryExport
 
     private static bool Cancelled(RunControl? c)
         => c is not null && (c.StopRequested || c.Token.IsCancellationRequested);
+
+    private static ExportResult Refuse(string wrapper, string? madeFrom, string why)
+    {
+        var result = Refuse(wrapper, why);
+        RemoveEmptyUpTo(Path.GetDirectoryName(wrapper), madeFrom);
+        return result;
+    }
+
+    private static ExportResult Cancel(string wrapper, string? madeFrom)
+    {
+        var result = Cancel(wrapper);
+        RemoveEmptyUpTo(Path.GetDirectoryName(wrapper), madeFrom);
+        return result;
+    }
+
+    /// <summary>Each EMPTY folder from <paramref name="dir"/> up to and including <paramref name="top"/> removed — the
+    /// chain an export created; a folder anything else is in is kept.</summary>
+    private static void RemoveEmptyUpTo(string? dir, string? top)
+    {
+        if (top is null) return;
+        for (string? d = dir; d is not null && IsSameOrUnder(d, top); d = Path.GetDirectoryName(d))
+        {
+            try { if (!Directory.Exists(d) || Directory.EnumerateFileSystemEntries(d).Any()) return; Directory.Delete(d); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return; }
+            if (DocumentFileRefs.PathComparer.Equals(Path.TrimEndingDirectorySeparator(d), Path.TrimEndingDirectorySeparator(top))) return;
+        }
+    }
 
     private static ExportResult Refuse(string wrapper, string why)
     {
@@ -950,19 +993,21 @@ public static partial class ModelLibraryExport
         return rewritten ?? DocumentFileRefs.ReadText(srcDoc);
     }
 
+    /// <summary>
+    /// Where a copied cell's PRIMARY view lands — renamed after the cell — or null for every other file. A data file
+    /// that lives inside a cell's folder (a model's <c>models/line.s2p</c>, a cell's <c>data/meas.s2p</c>) is copied
+    /// like any other referenced file: <see cref="CopyCell"/> writes only a cell's views and <c>.ccell</c>, so mapping
+    /// such a file to "its place in the copy" pointed the reference at a file nothing ever wrote.
+    /// </summary>
     private static string? MappedIntoCell(string abs, Dictionary<string, string> cellMap)
     {
         foreach (var (src, dst) in cellMap)
             if (IsUnder(abs, src))
             {
-                string rel = Path.GetRelativePath(src, abs);
-                // The primary views are renamed after the cell; anything else keeps its place.
-                string dir = Path.GetDirectoryName(rel) ?? "";
                 string? folderName = Path.GetFileName(dst);
                 foreach (var t in (ReadOnlySpan<ViewType>)[ViewType.Schematic, ViewType.Symbol])
                     if (DocumentFileRefs.PathComparer.Equals(Path.GetFullPath(abs), PrimaryPath(src, t) ?? ""))
                         return Path.Combine(dst, CellFolder.SubFolderName(t), folderName + CellFolder.ViewExtension(t));
-                return Path.Combine(dst, dir, Path.GetFileName(rel));
             }
         return null;
     }

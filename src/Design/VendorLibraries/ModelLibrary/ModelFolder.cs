@@ -61,12 +61,31 @@ public static partial class ModelFolder
         static void Walk(string dir, List<string> found)
         {
             if (Is(dir)) { found.Add(dir); return; }
-            string[] subs;
-            try { subs = Directory.GetDirectories(dir); }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return; }
-            foreach (string sub in subs)
-                if (!Path.GetFileName(sub).StartsWith('.')) Walk(sub, found);
+            foreach (string sub in Subfolders(dir)) Walk(sub, found);
         }
+    }
+
+    /// <summary>Whether any model folder is under <paramref name="root"/> (or is it) — <see cref="Under"/>'s walk,
+    /// stopping at the first.</summary>
+    public static bool AnyUnder(string root)
+    {
+        return Walk(Path.GetFullPath(root));
+        static bool Walk(string dir) => Is(dir) || Subfolders(dir).Any(Walk);
+    }
+
+    /// <summary>The folders a walk goes into: not one whose name starts with <c>.</c>, and never a link — a symbolic
+    /// link back to an ancestor would otherwise be walked until the path is too long.</summary>
+    private static IEnumerable<string> Subfolders(string dir)
+    {
+        string[] subs;
+        try { subs = Directory.GetDirectories(dir); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return []; }
+        return subs.Where(sub =>
+        {
+            if (Path.GetFileName(sub).StartsWith('.')) return false;
+            try { return (File.GetAttributes(sub) & FileAttributes.ReparsePoint) == 0; }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return false; }
+        });
     }
 }
 
@@ -94,7 +113,10 @@ public static partial class ModelPartHash
 
     /// <summary>Extensions whose content is CR LF-normalised before hashing; <c>.sNp</c> matches any N.</summary>
     public static readonly IReadOnlyList<string> TextExtensions =
-        [".cnl", ".csch", ".csym", ".ccell", ".va", ".vams", ".lib", ".cir", ".sub", ".txt", ".md"];
+        [".cnl", ".csch", ".csym", ".ccell", ".va", ".vams", ".lib", ".cir", ".sub", ".txt", ".md", ".cmodel"];
+
+    /// <summary>Operating-system litter, never hashed: <c>.DS_Store</c>, <c>Thumbs.db</c>, <c>desktop.ini</c>.</summary>
+    public static bool IsLitter(string fileName) => Litter.Contains(fileName);
 
     private static readonly HashSet<string> Litter = new(StringComparer.OrdinalIgnoreCase)
         { ".DS_Store", "Thumbs.db", "desktop.ini" };
@@ -118,6 +140,8 @@ public static partial class ModelPartHash
         {
             string rel = Path.GetRelativePath(root, f).Replace('\\', '/');
             if (rel == ModelFolder.PartFileName) continue;
+            // A library whose root is itself a model folder holds its signature there; signing must not change the hash.
+            if (rel is LibrarySignature.SumsFileName or LibrarySignature.SigFileName) continue;
             if (Litter.Contains(Path.GetFileName(rel))) continue;
             if (rel.Split('/').SkipLast(1).Any(seg => seg.Equals(".git", StringComparison.OrdinalIgnoreCase))) continue;
             files.Add(rel);

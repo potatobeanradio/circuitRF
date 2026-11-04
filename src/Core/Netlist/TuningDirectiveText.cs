@@ -165,7 +165,8 @@ public static class TuningDirectiveText
                 {
                     var parts = value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
                     if (value.Equals("none", StringComparison.OrdinalIgnoreCase)) { s.NominalParts = null; break; }
-                    if (parts.Length == 0 || parts.Any(p => p.Any(char.IsWhiteSpace)))
+                    // A part number may hold a space (a model folder may be named so); the writer quotes the value then.
+                    if (parts.Length == 0)
                         throw Refuse(TuningDirectiveDiagnostics.StatisticsValueInvalid(key, value, "none or part numbers separated by commas"));
                     s.NominalParts = string.Join(',', parts);
                     break;

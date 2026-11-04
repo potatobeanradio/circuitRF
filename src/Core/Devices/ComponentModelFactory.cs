@@ -387,12 +387,11 @@ public static class ComponentModelFactory
         // name it never declared — which a permissive provider ignores, and a strict one rejects,
         // failing every device it serves. The strict behaviour is the correct one: it is what turns
         // a user's misspelled parameter into an error instead of a silently defaulted device.
+        // No artwork filter here: Symbol and Terminals are a VERILOGA instance's (brief-vendorlib-7), taken out by
+        // IsVerilogAHostParameter on that path. A kit's ExtDevice may declare a parameter of either name.
         var forwarded = new Dictionary<string, string>(StringComparer.Ordinal);
-        var artwork   = VerilogAArtworkKeys(parameters.Keys);
         foreach (var (key, val) in parameters)
         {
-            // How the instance is DRAWN — never a model parameter (brief-vendorlib-7 R-vl7-1a).
-            if (artwork.Contains(key)) continue;
             if (key.StartsWith("__", StringComparison.Ordinal)) continue;
             if (string.Equals(key, providerKey, StringComparison.Ordinal) ||
                 string.Equals(key, typeKey,     StringComparison.Ordinal)) continue;

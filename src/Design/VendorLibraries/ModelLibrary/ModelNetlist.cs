@@ -31,7 +31,7 @@ public static class ModelNetlist
         return CnlWriter.Write(new TestBench("model"), extracted.Library, Header);
     }
 
-    private static readonly Dictionary<string, long> _reads = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly Dictionary<string, long> _reads = new(CircuitRF.Design.Workspace.DocumentFileRefs.PathComparer);
     private static readonly Lock _gate = new();
 
     /// <summary>How many times this process has read the <c>.cnl</c> of the model folder at

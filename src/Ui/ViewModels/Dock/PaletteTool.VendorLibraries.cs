@@ -323,7 +323,12 @@ public sealed partial class PaletteTool
         if (rows.Count == 0 || direction == 0) return -1;
         int at = -1;
         for (int i = 0; i < rows.Count; i++) if (rows[i].IsArmed) { at = i; break; }
-        int next = at < 0 ? (direction > 0 ? 0 : rows.Count - 1) : Math.Clamp(at + Math.Sign(direction), 0, rows.Count - 1);
+        // A greyed row (no build for this platform) cannot be armed, so the walk steps over it — stopping on one would
+        // leave nothing armed and every later key starting again from the same place.
+        int step = Math.Sign(direction);
+        int next = at < 0 ? (step > 0 ? 0 : rows.Count - 1) : at + step;
+        while (next >= 0 && next < rows.Count && !rows[next].IsPlaceable) next += step;
+        if (next < 0 || next >= rows.Count) return at;
         if (next != at) ArmRow(rows[next]);
         return next;
     }

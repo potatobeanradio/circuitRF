@@ -51,6 +51,19 @@ public static class OsdiBuilds
         => Path.Combine(Path.GetDirectoryName(path) ?? "", rid, Path.GetFileName(path));
 
     /// <summary>
+    /// The platform-neutral reference for <paramref name="path"/>: <c>&lt;dir&gt;/X.osdi</c> when it is a build in
+    /// <c>&lt;dir&gt;/&lt;rid&gt;/X.osdi</c>, else <paramref name="path"/> unchanged. A walk that resolved a reference to
+    /// this machine's build stores THIS, or the stored reference names one platform and fails on every other.
+    /// </summary>
+    public static string NeutralPath(string path)
+    {
+        if (!IsCompiled(path)) return path;
+        string? dir = Path.GetDirectoryName(path);
+        if (dir is null || !IsKnownRid(Path.GetFileName(dir)) || Path.GetDirectoryName(dir) is not { } parent) return path;
+        return Path.Combine(parent, Path.GetFileName(path));
+    }
+
+    /// <summary>
     /// The file a compiled-model reference loads on this machine: this platform's build when it exists, else the
     /// path as written. Anything that is not a <c>.osdi</c> comes back unchanged.
     /// </summary>

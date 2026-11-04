@@ -32,7 +32,7 @@ public sealed record ModelCellSource(
 
 /// <summary>A cell made to be exported: deleted on <see cref="Dispose"/> when it was written for the export (an active
 /// model's), and left alone when it is the maker's own (a passive model's).</summary>
-public sealed class StagedModelCell(string cellDir, string? temporaryRoot) : IDisposable
+public sealed class StagedModelCell(string cellDir, string? temporaryRoot, FileStream? stageLock = null) : IDisposable
 {
     /// <summary>The cell folder the export runs on.</summary>
     public string CellDir { get; } = cellDir;
@@ -42,6 +42,7 @@ public sealed class StagedModelCell(string cellDir, string? temporaryRoot) : IDi
 
     public void Dispose()
     {
+        stageLock?.Dispose();
         if (TemporaryRoot is { } t) ModelCellFromModel.TryDelete(t);
     }
 }
@@ -247,29 +248,48 @@ public static class ModelCellFromModel
         if (source.PassiveCellDir is { } passive) return new StagedModelCell(passive, null);
         string docDir = Path.GetDirectoryName(source.DocumentPath)!;
         DeleteLeftovers(docDir);
+        // A stage another window or process still holds keeps its folder; this one takes the next free name.
         string root = Path.Combine(docDir, TemporaryPrefix + source.PartNumber);
+        for (int n = 2; Directory.Exists(root); n++) root = Path.Combine(docDir, $"{TemporaryPrefix}{source.PartNumber}-{n}");
         string cell = Path.Combine(root, source.PartNumber);
+        FileStream? held = null;
         try
         {
             Directory.CreateDirectory(root);
+            held = new FileStream(Path.Combine(root, StageLockName), FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None);
             Write(source.CmodelPath!, cell);
-            return new StagedModelCell(cell, root);
+            return new StagedModelCell(cell, root, held);
         }
         catch
         {
+            held?.Dispose();
             TryDelete(root);
             throw;
         }
     }
 
-    /// <summary>Deletes every <c>.export-*</c> folder in <paramref name="folder"/>.</summary>
+    /// <summary>Held open, unshared, for a stage's lifetime, beside the staged cell: what tells a crash's leftover from a
+    /// stage a second window or a concurrent <c>export part</c> is still exporting from.</summary>
+    private const string StageLockName = ".stage-lock";
+
+    /// <summary>Deletes every <c>.export-*</c> folder in <paramref name="folder"/> that no live stage holds.</summary>
     public static void DeleteLeftovers(string folder)
     {
         try
         {
-            foreach (string d in Directory.EnumerateDirectories(folder, TemporaryPrefix + "*")) TryDelete(d);
+            foreach (string d in Directory.EnumerateDirectories(folder, TemporaryPrefix + "*"))
+                if (!IsHeld(d)) TryDelete(d);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+    }
+
+    private static bool IsHeld(string dir)
+    {
+        string lockPath = Path.Combine(dir, StageLockName);
+        if (!File.Exists(lockPath)) return false;
+        try { using var probe = new FileStream(lockPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None); return false; }
+        catch (IOException) { return true; }
+        catch (UnauthorizedAccessException) { return true; }
     }
 
     internal static void TryDelete(string dir)

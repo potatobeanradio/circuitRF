@@ -471,9 +471,9 @@ linux-x64.</em> Placing it is refused with the same sentence.</p>
 <p><code>PublishedHash</code> lets circuitRF say a model was edited after it was exported. It is <code>sha256:</code> followed by the
 lower-case hex SHA-256 of a list of lines, one per file:</p>
 <ol>
-<li>Take every file under the model folder except <code>part.cpart</code> itself, <code>.DS_Store</code>, <code>Thumbs.db</code>, <code>desktop.ini</code>
-and anything inside a <code>.git</code> folder.</li>
-<li>For a text file (<code>.cnl .csch .csym .ccell .va .vams .sNp .lib .cir .sub .txt .md</code>, where <code>.sNp</code> is any N)
+<li>Take every file under the model folder except <code>part.cpart</code> itself, <code>library.sums</code> and <code>library.sig</code> at its
+top, <code>.DS_Store</code>, <code>Thumbs.db</code>, <code>desktop.ini</code> and anything inside a <code>.git</code> folder.</li>
+<li>For a text file (<code>.cnl .csch .csym .ccell .va .vams .sNp .lib .cir .sub .txt .md .cmodel</code>, where <code>.sNp</code> is any N)
 replace every CR LF with LF in its content. A changed line ending is then not an edit.</li>
 <li>Write one line per file, <code>&lt;lower-case hex SHA-256 of the content&gt;  &lt;path&gt;</code> with two spaces and a LF, where
 <code>&lt;path&gt;</code> is relative to the model folder with <code>/</code> separators. Order the lines by path, comparing bytes.</li>
@@ -496,8 +496,14 @@ that runs on your machine.</p>
 <li>Each <strong>model folder</strong> has one line. The hash is the folder's <a href="#hash">PublishedHash</a>, computed by the rule
 above whatever <code>part.cpart</code> says. The path is the folder's, relative to the library with <code>/</code> separators.
 Because that hash covers every file in the folder, every platform's <code>.osdi</code> is covered.</li>
-<li><strong><code>library.clib</code></strong> has one line, path <code>library.clib</code>. Its hash is the SHA-256 of the file's content after every
-CR LF is replaced with LF.</li>
+<li>Each model folder's <strong><code>part.cpart</code></strong> has a line of its own, path <code>&lt;folder&gt;/part.cpart</code>. The PublishedHash leaves it
+out because it holds that hash, and a placed part takes its defaults and pins from it.</li>
+<li><strong><code>library.clib</code></strong> has one line, path <code>library.clib</code>.</li>
+<li><strong>Every other file</strong> in the library has one line, path relative to the library: a SPICE part outside any model
+folder, a document. Files and folders whose names start with <code>.</code> are skipped, along with <code>.DS_Store</code>, <code>Thumbs.db</code>,
+<code>desktop.ini</code> and <code>library.sums</code> and <code>library.sig</code> themselves.</li>
+<li>A file's hash, on every line but a model folder's, is <code>sha256:</code> followed by the SHA-256 of its content. For a
+text file (the PublishedHash list, plus <code>library.clib</code> and <code>part.cpart</code>) every CR LF is replaced with LF first.</li>
 <li>The lines are sorted by path, comparing bytes, and each ends with LF, the last one included.</li>
 </ul>
 <p><code>library.sig</code> is JSON:</p>
@@ -535,7 +541,7 @@ CR LF is replaced with LF.</li>
 </tbody>
 </table>
 <p>To verify a library with no circuitRF code: decode <code>PublicKey</code> and <code>Signature</code>, verify the signature over the bytes
-of <code>library.sums</code> as they are on disk, check that <code>Publisher</code> equals <code>library.clib</code>'s, then compute every line of
+of <code>library.sums</code> with every CR LF replaced by LF, check that <code>Publisher</code> equals <code>library.clib</code>'s, then compute every line of
 <code>library.sums</code> again from the library and compare.</p>
 <p>The key's <strong>fingerprint</strong> is the SHA-256 of the SubjectPublicKeyInfo bytes, its first 16 bytes written as
 lower-case hex pairs joined by colons (<code>3f:a0:…:9c</code>). That is what a user is shown to decide whether to trust it.</p>

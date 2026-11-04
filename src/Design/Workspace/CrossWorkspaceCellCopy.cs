@@ -116,8 +116,10 @@ public static class CrossWorkspaceCellCopy
                                             topName ?? Path.GetFileName(source));
 
         var reached = new List<string> { source };
-        if (mode == SubCellMode.Copy && sourceRoot is not null)
-            CollectHierarchy(source, sourceRoot, new HashSet<string>(StringComparer.OrdinalIgnoreCase), reached);
+        // A source in no workspace (a model folder in a library) is bounded by its own folder: its nested cells/
+        // travel with it, and unless they are in the map every reference to them is re-pointed back at the source.
+        if (mode == SubCellMode.Copy)
+            CollectHierarchy(source, sourceRoot ?? source, new HashSet<string>(StringComparer.OrdinalIgnoreCase), reached);
 
         // Where each reached cell lands. A sub-cell nested INSIDE the top cell folder follows it (so a
         // renamed top does not leave its own children behind at the old name); everything else keeps

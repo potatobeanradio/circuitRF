@@ -47,6 +47,9 @@ public sealed class CellCorner(string name)
         Cell cell, IReadOnlyList<ParameterAssignment> overrides, string instancePath)
     {
         if (!overrides.Any(o => o.Name == SelectorParameter)) return (cell, overrides);
+        // A cell that declares a parameter of this name owns it (only Export refuses one): the override is that
+        // parameter's value, as it was before corners existed, never a corner selection.
+        if (cell.Parameters.Any(p => p.Name == SelectorParameter)) return (cell, overrides);
         var rest = overrides.Where(o => o.Name != SelectorParameter).ToList();
         if (SelectedBy(overrides) is not { } name) return (cell, rest);
 

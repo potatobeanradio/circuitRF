@@ -128,7 +128,13 @@ internal sealed partial class VaFragment
         int close = Array.FindLastIndex(lines, end - 1, end - analog, l => l.Trim() == "end");
         for (int i = analog + 1; i < close; i++) body.Append(R(lines[i])).Append('\n');
 
-        return new VaFragment(terminals, thermal, declarations, parameters, functions.ToString(), body.ToString());
+        // A terminal left unbound becomes one of the fragment's internal nodes, and $port_connected takes only a port —
+        // the compiler refuses it on any other net. Unbound is exactly "not connected", so the test is a constant 0.
+        string text = body.ToString();
+        foreach (string term in terminals.Where(t => !bind.ContainsKey(t)))
+            text = Regex.Replace(text, @"\$port_connected\s*\(\s*" + Regex.Escape(Map(term)) + @"\s*\)", "0");
+
+        return new VaFragment(terminals, thermal, declarations, parameters, functions.ToString(), text);
     }
 
     /// <summary>The index of a range's <c>from</c>/<c>exclude</c> keyword in a parameter's default, or -1.</summary>

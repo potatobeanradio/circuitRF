@@ -2,6 +2,7 @@ using System;
 using System.Collections.ObjectModel;
 using System.Linq;
 using CircuitRF.Core.Design;
+using CircuitRF.Core.Expressions;
 using CircuitRF.Design.VendorLibraries.ModelLibrary;
 using CommunityToolkit.Mvvm.ComponentModel;
 
@@ -51,6 +52,14 @@ public sealed partial class ParameterEditorViewModel
             }
         }
         string chosen = _target is null ? "" : CellCorner.SelectedBy(_target.Parameters.Select(p => new ParameterAssignment(p.Name, p.Expression))) ?? CellCorner.Nominal;
+        // A selection the model no longer has (re-exported with the corner renamed or removed) stays on the list, so the
+        // picker shows what the run will refuse and choosing nominal writes a change, rather than showing nominal already.
+        if (!chosen.Equals(CellCorner.Nominal, StringComparison.OrdinalIgnoreCase) && chosen.Length > 0
+            && !VendorPartCorners.Any(c => c.Equals(chosen, StringComparison.OrdinalIgnoreCase)))
+        {
+            if (VendorPartCorners.Count == 0) VendorPartCorners.Add(CellCorner.Nominal);
+            VendorPartCorners.Add(chosen);
+        }
         VendorPartCorner = VendorPartCorners.FirstOrDefault(c => c.Equals(chosen, StringComparison.OrdinalIgnoreCase))
                         ?? VendorPartCorners.FirstOrDefault();
         _isRefreshing = was;
@@ -78,9 +87,18 @@ public sealed partial class ParameterEditorViewModel
             if (corner is not null && corner.Bindings.Any(b => b.Name == row.Name)
                 && _vendorModelTop!.Parameters.FirstOrDefault(p => p.Name == row.Name) is { } decl
                 && _target?.Parameters.FirstOrDefault(p => p.Name == row.Name) is { } set
-                && !string.IsNullOrWhiteSpace(set.Expression) && set.Expression.Trim() != decl.DefaultExpression.Trim())
+                && !string.IsNullOrWhiteSpace(set.Expression) && !RepeatsDefault(set, decl))
                 note = $"overrides corner {corner.Name}";
             row.CornerNote = note;
         }
+    }
+
+    /// <summary>The extractor's own test (NetExtractor's vendor-model emission): a row is not an override when it repeats
+    /// the model's default in both expression and unit — 10 nF against a 10 pF default IS one, and beats the corner.</summary>
+    private static bool RepeatsDefault(EditableParameter set, ParameterDeclaration decl)
+    {
+        string unit = UnitNormalizer.ToEngineUnit(set.Unit);
+        return set.Expression.Trim() == decl.DefaultExpression.Trim()
+               && (unit.Length > 0 ? unit : null) == (string.IsNullOrEmpty(decl.Unit) ? null : UnitNormalizer.ToEngineUnit(decl.Unit));
     }
 }
