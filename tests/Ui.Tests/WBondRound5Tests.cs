@@ -540,7 +540,8 @@ public class WBondRound5Tests
     {
         var code = Read("src", "Design", "Layout", "SchematicSync", "SchematicLayoutPlanner.cs");
 
-        int at = code.IndexOf("private static bool IsPhysical", StringComparison.Ordinal);
+        // Its access widened from private to internal when the layout planner's other callers needed it; the rule is the body.
+        int at = code.IndexOf("static bool IsPhysical(EditableComponent", StringComparison.Ordinal);
         Assert.True(at >= 0);
         // A window rather than the whole file, so a stray mention elsewhere cannot satisfy it.
         // Widened from 900 when VProbe joined the sentinel list ahead of WBond — the rule under
@@ -1872,10 +1873,14 @@ public class WBondRound5Tests
         Assert.Contains("AddHandler(InputElement.KeyDownEvent, OnWindowKeyDownTunnel, RoutingStrategies.Tunnel)",
                         window, StringComparison.Ordinal);
 
-        // The layout view no longer claims them at all — neither on canvas focus nor on its own TopLevel.
+        // The layout view does not claim them — not on canvas focus, not on its own TopLevel. Its one bare-P handler
+        // (P arms the Port tool) runs in the view's tunnel, AFTER the window's, and yields to a key already handled, so on
+        // a wirebond cell the window's panel toggle wins.
         var view = Read("src", "Ui", "Views", "Layout", "LayoutEditorView.axaml.cs");
         // A word boundary, because the Layers list's own Key.PageUp/Key.PageDown are not this key.
-        Assert.DoesNotMatch(@"\bKey\.P\b", view);
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(view, @"\bKey\.P\b"));
+        Assert.Contains("if (e.Key != Key.P || e.KeyModifiers != KeyModifiers.None || e.Handled) return false;", view,
+                        StringComparison.Ordinal);
         Assert.DoesNotContain("OnTopLevelKeyDown", view, StringComparison.Ordinal);
 
         // …and the toggle no longer fights for focus, so it is left where the user wants it.

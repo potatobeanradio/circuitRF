@@ -223,6 +223,16 @@ public class LayoutPerfHarnessGateTests : System.IDisposable
 
         Assert.NotEmpty(fields);
         foreach (var f in fields)
+        {
+            // R-dfr33-1-2's one exception: the ports whose name a frame shortened or left out. It stays null — nothing is
+            // allocated — on every frame that draws every port name in full, and is not a counter that is incremented.
+            if (f.Name == nameof(LayoutFrameCounters.PortNamesNotInFull))
+            {
+                Assert.Equal(typeof(List<int>), f.FieldType);
+                Assert.Null(f.GetValue(new LayoutFrameCounters()));
+                continue;
+            }
             Assert.Equal(typeof(int), f.FieldType);
+        }
     }
 }

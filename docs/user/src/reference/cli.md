@@ -2605,7 +2605,8 @@ What each finding means, and the limits of the causality measurement, are on the
                             [--analysis [&lt;name&gt;]] [--ref &lt;relative-ref&gt;]
                             [--cells [--all]] [--layers] [--extents] [--view &lt;name&gt;]
                             [--footprints] [--setup &lt;name&gt;] [--object &lt;name&gt;] [--look]
-                            [--tunables]</code></pre>
+                            [--tunables [--snp-entries &lt;SNP3,...|all&gt;]] [--component-ports ["C1,C2"|"*"]]
+<span class="prompt">$ </span>circuitrf explain --pdk &lt;kit&gt; [&lt;workspace&gt;] [--python &lt;interp&gt;]</code></pre>
 
 `check` answers "is something wrong". `explain` answers the question that is **not** a failure: which
 technology did this layout get, which analysis would actually run, what does this expression evaluate
@@ -2926,6 +2927,25 @@ The range is the one the schematic's tuning setup gives the value, or the range 
 first tune it. A value Push cannot write — in a library cell, or another workspace — says why; it can
 still be tuned and optimized. Keys the setup names that match nothing in the design are listed last,
 and ignored.
+
+An S-parameter block offers two keys per entry — its offsets `SNP3.SdB_i_j` and `SNP3.Sdeg_i_j`, 2·N² of
+them — and they are folded into the block's one summary line, so a 15-port board does not list 450 rows
+ahead of the parts you asked about. `--snp-entries SNP3,SNP4` lists the named blocks' entries, and
+`--snp-entries all` lists every block's.
+
+<h3 id="explain-component-ports"><code>--component-ports</code> — which ports would a 3D run build?</h3>
+
+On a `.c3d`, `--component-ports` lists each [component port](em-3d.html) as a run would build it — its pads,
+conductors, gap, width, landings and verdict — without meshing. With no list it reports the setup's own;
+`--component-ports "C1,C2"` (or `"*"`) reports that list instead, as `em --component-ports` would run it.
+
+<h3 id="explain-pdk"><code>--pdk</code> — which interpreter does a gdsfactory kit use?</h3>
+
+`explain --pdk <kit> [<workspace>]` says which Python interpreter a [gdsfactory kit](gdsfactory-kits.html)
+resolves to, and whether the answer came from `--python <interp>` or from your recorded preference, then
+the Python and gdsfactory versions that interpreter reports. `<kit>` is the module name or the kit's folder
+name; with a workspace, the kit's declaration, location and recorded and installed versions are listed
+first. It runs no kit code: the only process it starts is the interpreter answering its own version.
 
 <h3 id="explain-extents"><code>--extents</code> — how big is it?</h3>
 

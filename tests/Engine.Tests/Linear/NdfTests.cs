@@ -934,6 +934,9 @@ public sealed class NdfTests(ITestOutputHelper output)
         ["MicrostripMiterBendModel"] = Activity.Passive,
         ["MicrostripTeeModel"]    = Activity.Passive,
         ["MicrostripCrossModel"]  = Activity.Passive,
+        // MGAP is a series gap capacitance with a shunt capacitance at each line end — "the microstrips" row of
+        // stability-wsprobe.md §11.3.
+        ["MicrostripGapModel"]    = Activity.Passive,
         ["MicrostripTaperModel"]  = Activity.Passive,
         ["MicrostripKlopfModel"]  = Activity.Passive,
         ["ViaModel"]              = Activity.Passive,

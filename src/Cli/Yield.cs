@@ -79,6 +79,7 @@ internal static partial class Yield
         ("--mismatch",     "0|1",                Draws,                                       "Kit mismatch draws on or off."),
         ("--sigma-scale",  "k",                  Draws,                                       "Scales every kit sigma."),
         ("--parallel",     "n",                  [NMc, NEst, NCorners, NCornersMc, NCenter, NDoe, NSens], "Trials evaluated at once (center, doe, sens: simulations)."),
+        ("--em",           "on|off",             [NMc, NEst, NTrial, NSens],                  "off runs by circuit models what an analysis would run by EM; on, the default, runs each as its model= says."),
         ("--analyses",     "goals|all",          Draws,                                       "Only the analyses the goals name, or every runnable one."),
         ("--set",          "var=expr",           Runs,                                        "Override a global before elaboration, as every run verb does."),
         ("--vars",         "k,k",                [.. Draws, NSens],                           "Draw only these of the statistical entries; the rest stay at nominal. sens: step only these of its factors."),

@@ -44,9 +44,13 @@ public sealed class InstalledCliTests
         Assert.True(dispatch >= 0, "Program.Main no longer dispatches to CliEntry.IsVerb");
         Assert.Contains("Environment.Exit(CircuitRF.Cli.CliEntry.Run(args))", body[dispatch..]);
 
-        // The FIRST statement, not merely an early one.
-        string firstStatement = body[1..].TrimStart();
-        Assert.StartsWith("if (args.Length > 0 && CircuitRF.Cli.CliEntry.IsVerb(args[0]))", firstStatement);
+        // The FIRST statement, not merely an early one — after only the Verilog-A link launcher (vendorlib-18 R-vl18-1),
+        // a process started as clang/ld/link.exe that links and exits before anything of the application or the CLI runs.
+        const string dispatchIf = "if (args.Length > 0 && CircuitRF.Cli.CliEntry.IsVerb(args[0]))";
+        int dispatchAt = body.IndexOf(dispatchIf, StringComparison.Ordinal);
+        Assert.True(dispatchAt > 0, "the CLI dispatch is not an if on args[0]");
+        var prelude = body[1..dispatchAt].Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0).ToList();
+        Assert.All(prelude, l => Assert.Contains("VerilogALinkDriver", l, StringComparison.Ordinal));
 
         foreach (string later in new[]
                  {

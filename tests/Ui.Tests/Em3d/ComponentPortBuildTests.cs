@@ -136,7 +136,7 @@ public sealed class ComponentPortBuildTests(Xunit.Abstractions.ITestOutputHelper
         var (g, _) = Assemble(["U1"]);
         Assert.True(g.Ok, g.Refusal);
         Assert.Equal(["Port[1] = U1.IN", "Port[2] = U1.OUT"], CircuitRF.Design.Em3d.Em3dPortMap.NameLines(g.Problem!.Ports));
-        Assert.Equal(["U1.IN", "U1.OUT"],
+        Assert.Equal(new string?[] { "U1.IN", "U1.OUT" },
                      RfCore.TouchstonePortNames.Parse(CircuitRF.Design.Em3d.Em3dPortMap.NameLines(g.Problem.Ports), 2)!);
     }
 

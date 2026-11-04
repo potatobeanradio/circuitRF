@@ -137,7 +137,9 @@ public sealed class WorkspaceSessionPersistedOnLeaveTests : IDisposable
 
         var kinds   = SwitchArms(src, "DocumentPathAndKind(IDockable dockable) => dockable switch");
         var restore = MethodBody(src, "RestoreOpenDocumentsAsync");
-        var reload  = MethodBody(revision, "ReloadChangedDocuments");
+        // ReloadChangedDocuments maps the restored paths to absolute ones and hands them to ReloadDocumentsAt, which
+        // holds the switch (vendorlib-12: a library model outside the workspace is named only by an absolute path).
+        var reload  = MethodBody(revision, "ReloadDocumentsAt");
 
         Assert.Equal(
             new[] { "c3d", "cell", "datadisplay", "emsetup", "layout", "markdown", "materials", "partlibrary", "schematic", "symbol", "tech" },

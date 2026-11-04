@@ -795,11 +795,11 @@
                         <WrapPanel Orientation="Horizontal" Margin="6,6,4,1">
                             <TextBlock Text="Ranking" Classes="section" Margin="0,0,8,0"/>
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,8,0">
-                                <RadioButton Classes="mode" GroupName="sensBy" Content="Entry" IsChecked="{Binding IsByEntry}"
+                                <RadioButton Classes="mode" Content="Entry" IsChecked="{Binding IsByEntry}"
                                              ToolTip.Tip="One row per value — an S-parameter's dB and phase together"/>
-                                <RadioButton Classes="mode" GroupName="sensBy" Content="Port" IsChecked="{Binding IsByPort}"
+                                <RadioButton Classes="mode" Content="Port" IsChecked="{Binding IsByPort}"
                                              ToolTip.Tip="An S-parameter block by port: every entry in that port's row or column (shares overlap)"/>
-                                <RadioButton Classes="mode" GroupName="sensBy" Content="Instance" IsChecked="{Binding IsByInstance}"
+                                <RadioButton Classes="mode" Content="Instance" IsChecked="{Binding IsByInstance}"
                                              ToolTip.Tip="One row per part, block or variable — expand to its entries"/>
                             </StackPanel>
                             <Button Content="Run Yield on these" FontSize="11" Padding="6,1" MinHeight="0"

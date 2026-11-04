@@ -257,7 +257,9 @@ public sealed class RailRfFieldReport6Tests(ITestOutputHelper output)
     {
         string src = File.ReadAllText(Path.Combine(
             RepoRoot(), "src", "Ui", "ViewModels", "WorkspaceViewModel.SchematicToLayout.cs"));
-        Assert.Equal(2, Regex.Matches(src, @"CellFolder\.SiblingView\(").Count);
+        // The two commands, and SDL-7's check after an EM Push (UpdateLayoutAfterEmPush), which finds the layout it just
+        // updated by the same rule.
+        Assert.Equal(3, Regex.Matches(src, @"CellFolder\.SiblingView\(").Count);
         Assert.DoesNotMatch(@"cellDir\s*=\s*Path\.GetDirectoryName\((schematicDir|layoutDir)\)", src);
 
         string ws = Path.Combine(Path.GetTempPath(), "crf-fr6-ws-" + Guid.NewGuid().ToString("N")[..8]);

@@ -677,7 +677,9 @@ public static class NetlistSchematic
         {
             var t = template.FirstOrDefault(d => d.Name == o.Name);
             string expr = o.Expression;
-            if (kind == SymbolKind.Snp && o.Name.Equals("File", StringComparison.OrdinalIgnoreCase))
+            // Every part's File, not only an SnP block's: the reader hands a ComposedFET's .cmodel back absolute too, and
+            // the extraction resolves each one against the same base.
+            if (o.Name.Equals("File", StringComparison.OrdinalIgnoreCase))
                 expr = RelativeFile(expr, FileBase(schematicDirectory));
             // A layer NAME is stored bare in a schematic — the extraction reads it raw and quotes it as it writes the
             // .cnl — so the .cnl's quotes are its line syntax, not part of the name ("Top Copper (1 oz)").

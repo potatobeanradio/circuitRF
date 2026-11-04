@@ -43,7 +43,7 @@ public static class EmMeshHold
     {
         var s = setup.Clone();
         var held = new List<string>();
-        if (s.Solver3D.Runs(Em3dSolverId.Palace))
+        if (s.Solver3D.Runs(PalaceSolver.Id))
         {
             var palace = PalaceSettings.Resolve(s.Palace);
             s.Palace = (s.Palace?.Clone() ?? new CemPalace());
@@ -55,7 +55,7 @@ public static class EmMeshHold
             }
             else held.Add("Palace solves every point on its initial mesh (no refinement passes)");
         }
-        if (s.Solver3D.Runs(Em3dSolverId.Emerge))
+        if (s.Solver3D.Runs(EmergeSolver.Id))
         {
             var emerge = EmergeSettings.Resolve(s.Emerge);
             s.Emerge = s.Emerge?.Clone() ?? new CemEmerge();
@@ -66,7 +66,7 @@ public static class EmMeshHold
             }
             else held.Add("EMerge solves every point on its initial mesh (no refinement passes)");
         }
-        if (s.Solver3D.Runs(Em3dSolverId.OpenEms))
+        if (s.Solver3D.Runs(OpenEmsSolver.Id))
         {
             if (s.OpenEms?.MinCellUm is null && savedMinCellM is { } m && m > 0)
             {
@@ -123,13 +123,13 @@ public static class EmMeshHold
                                  .Append(GmshGeoWriter.MaxElementSizeM(background, f, ps));
                 return ps.EdgeRefinement * all.Min();
             }
-            if (!problem.IsStatic && setup.Solver3D.Runs(Em3dSolverId.Palace)) sizes.Add(EdgeOf(PalaceSettings.Resolve(setup.Palace)));
-            if (!problem.IsStatic && setup.Solver3D.Runs(Em3dSolverId.Emerge))
+            if (!problem.IsStatic && setup.Solver3D.Runs(PalaceSolver.Id)) sizes.Add(EdgeOf(PalaceSettings.Resolve(setup.Palace)));
+            if (!problem.IsStatic && setup.Solver3D.Runs(EmergeSolver.Id))
             {
                 var em = EmergeSettings.Resolve(setup.Emerge);
                 sizes.Add(EdgeOf(PalaceSettings.Default with { MaxElementWavelengths = em.MaxElementWavelengths, EdgeRefinement = em.EdgeRefinement }));
             }
-            if (setup.Solver3D.Runs(Em3dSolverId.OpenEms) && setup.OpenEms?.MinCellUm is { } um) sizes.Add(um * 1e-6);
+            if (setup.Solver3D.Runs(OpenEmsSolver.Id) && setup.OpenEms?.MinCellUm is { } um) sizes.Add(um * 1e-6);
             sizes.AddRange(problem.MeshRegions.Select(r => r.SizeM));
         }
         catch (Exception e) when (e is not OperationCanceledException) { }

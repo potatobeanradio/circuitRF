@@ -63,7 +63,15 @@ public sealed class DeletedPCellRecreationTests : IDisposable
         target.Instances.RemoveAt(0);
         Assert.Empty(target.Instances);
 
-        var r2 = SchematicToLayoutGenerator.Run(model, target, schematicDir, _root, layoutDir, null, null, null);
+        // brief-sdl-4 §2: an ordinary re-run leaves a part deleted by hand deleted, and says so; Restore Removed Parts is
+        // the run that puts it back, as a fresh placement.
+        var kept = SchematicToLayoutGenerator.Run(model, target, schematicDir, _root, layoutDir, null, null, null);
+        kept.Command?.Execute();
+        Assert.Empty(target.Instances);
+        Assert.Contains(kept.Lines, l => l.Text.Contains("removed from the layout by hand", StringComparison.Ordinal));
+
+        var r2 = SchematicToLayoutGenerator.Run(model, target, schematicDir, _root, layoutDir, null, null, null,
+                                                restoreRemoved: true);
         Assert.NotNull(r2.Command);
         r2.Command!.Execute();
 

@@ -323,6 +323,16 @@ is indexed.</p>
 <td>No</td>
 <td>The parts Export replaced by S-parameter files (<a href="#converted">below</a>): each one's instance, the cell that placed it, its type, its file, its parameters as written, the technology's name, the frequency plan and the circuitRF version. Provenance; nothing reads it to run.</td>
 </tr>
+<tr>
+<td><code>Protection</code></td>
+<td>No</td>
+<td><code>encapsulated</code> for a model Export published as one S-parameter block with its devices (<a href="protected-models.html#encapsulated">Encapsulated netlist</a>). Absent otherwise.</td>
+</tr>
+<tr>
+<td><code>Plan</code></td>
+<td>No</td>
+<td>For an encapsulated model, the frequency plan its block was sampled over, spelt as <code>Converted</code>'s <code>Frequency</code> is. A refresh samples on it.</td>
+</tr>
 </tbody>
 </table>
 <p><strong>Nothing in <code>part.cpart</code> changes a result.</strong> What runs is the <code>.cnl</code>. <code>Pins</code> and <code>Parameters</code> repeat what the

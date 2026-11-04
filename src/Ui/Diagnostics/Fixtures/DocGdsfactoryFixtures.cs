@@ -18,8 +18,8 @@ public static class DocGdsfactoryFixtures
 {
     private const string Module = "acmerf_gf";
     private const string Version = "0.4.1";
-    private const string Installed = "/home/designer/.venvs/rf/lib/python3.12/site-packages/acmerf_gf";
-    private const string Python = "/home/designer/.venvs/rf/bin/python";
+    private const string Installed = "/home/you/.venvs/rf/lib/python3.12/site-packages/acmerf_gf";
+    private const string Python = "/home/you/.venvs/rf/bin/python";
 
     /// <summary>The consent prompt, before anything of the kit has run.</summary>
     public static FigureScene TrustPrompt()

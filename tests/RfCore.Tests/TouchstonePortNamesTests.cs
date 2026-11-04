@@ -24,11 +24,11 @@ public sealed class TouchstonePortNamesTests
             // Data lines after the option line are never read: a "Port[3]" there would otherwise name port 3.
             File.WriteAllLines(path, [.. lines.Select(l => "! " + l), "! other comment", "# GHz S RI R 50",
                                       "1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0", "! Port[3] = late"]);
-            Assert.Equal(["P1", "C1", null], TouchstonePortNames.FromFile(path, 3)!);
+            Assert.Equal(new string?[] { "P1", "C1", null }, TouchstonePortNames.FromFile(path, 3)!);
 
             File.WriteAllLines(path, ["! Port[3] = U1.OUT", "# GHz S RI R 50"]);
             File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddSeconds(5));
-            Assert.Equal([null, null, "U1.OUT"], TouchstonePortNames.FromFile(path, 3)!);
+            Assert.Equal(new string?[] { null, null, "U1.OUT" }, TouchstonePortNames.FromFile(path, 3)!);
 
             File.WriteAllLines(path, ["! no names", "# GHz S RI R 50"]);
             File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddSeconds(10));

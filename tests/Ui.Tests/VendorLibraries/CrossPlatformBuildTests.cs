@@ -32,7 +32,7 @@ public sealed class CrossPlatformBuildTests : IDisposable
     {
         string stub = Path.Combine(_dir, "stub-compiler");
         File.WriteAllText(stub, "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo stub 1.0; exit 0; fi\n" + body);
-        File.SetUnixFileMode(stub, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(stub, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         VerilogACompilerDiscovery.PreferredCommand = () => stub;
         return stub;
     }

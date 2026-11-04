@@ -27601,3 +27601,28 @@ CLI's generated-cell rebuild; the GUI's solve-count pass takes no Stop.
   the run log posts each sentence as it is added.
 - An electrostatic result always carries `C_mutual` (derived from C when Palace's file was not read) and `C_ground`, the
   row sums of C on one `Terminal i` axis.
+
+## Suite sweep — three source defects the routine gate found (2026-11-04)
+
+- **A netlist drawn as a schematic stored a ComposedFET's `File` absolute.** `NetlistSchematic` made only an SnP block's
+  `File` relative to the reference base; the reader hands every `File` back absolute, so a `.cmodel` reference kept the
+  drawing machine's temp path. Every part's `File` now goes through `RelativeFile`, against the one base the extraction
+  resolves all of them by.
+- **`PlacementOverlaps` threw on a placed cell that carries a label.** The drawn-copper pass skipped `LabelShape` and
+  `BitmapShape`; the per-instance pass flattened them too and `LayoutFlattener.Flatten` refuses both. Both passes skip them.
+- **The parametric EM cache key read only the technology's OWN materials.** A material a library supplies was not in
+  the key, so editing the library after a solve handed back the old result. `EmCellCache` keys on `ResolvedMaterials`.
+
+## brief-dfr34-5 §2 — new parts under existing artwork, ground vias follow a moved part (2026-11-04)
+
+- **Rows go under the layout's own artwork** (`SchematicLayoutPlanner.DrawnArtworkExtent`): every shape that is not a
+  label, a picture or generated copper, and every placement with no `SchematicId`, joined to `PlaceAtArtwork`'s region
+  and passed as `below:`. What earlier runs placed (parts with a `SchematicId`, tagged ground artwork) does not count, so
+  a re-run into a layout this command built keeps its slot rows, and an empty layout is unchanged.
+- **That would have silenced the drawn-copy warning** (`ReportPlacementOntoDrawnArtwork`, the Klopfenstein report): a
+  hand-drawn copy sits at the part's slot, and the part now lands below it. The warning also tests the footprint at its
+  slot (the row shift `PlaceNewInstances` reports), and says the part was placed below the artwork.
+- **A ground via follows its part in the editor** (`GroundArtwork.Followers`, used by the drag commit, which the wBond
+  companion move shares, the arrow nudge and the live preview). Only a via still at its tagged `@x,y` follows. Its tag is re-recorded at the new place in the
+  same undo entry; otherwise the next Update Layout would read the via as moved by hand and stop re-placing it. Rotate and
+  flip do not carry the via; the next Update Layout or Draw Ground Pour re-places it.

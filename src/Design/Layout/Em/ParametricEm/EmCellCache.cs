@@ -264,7 +264,9 @@ public static class EmCellCache
         if (tech is null) return "none";
         try
         {
-            var only = new Technology { Stackup = tech.Stackup, Materials = tech.Materials };
+            // Every material the stackup can name, a library's included: a library edited after a solve is a different
+            // dielectric, and keying on the technology's own list alone would hand the old result back.
+            var only = new Technology { Stackup = tech.Stackup, Materials = [.. tech.ResolvedMaterials] };
             return TechPersistence.Serialize(only);
         }
         catch (Exception) { return TechPersistence.Serialize(tech); }

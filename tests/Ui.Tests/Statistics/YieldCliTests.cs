@@ -189,7 +189,8 @@ public sealed class YieldReferenceTests
         // table does not list it.
         foreach (var mode in run.Modes.Where(m => m.Verb[0] == "yield"))
             foreach (var o in mode.Options.Where(o => o.Cli != "--result"))
-                Assert.Contains(CircuitRF.Cli.Yield.Flags, f => f.Flag == o.Cli);
+                Assert.True(CircuitRF.Cli.Yield.Flags.Any(f => f.Flag == o.Cli),
+                            $"the run tool's yield mode '{string.Join(" ", mode.Verb)}' offers {o.Cli}, which the yield verb's flag table does not list");
     }
 }
 

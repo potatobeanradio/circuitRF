@@ -150,10 +150,11 @@ public class RevisionControlSettingsTests
 
         foreach (var (method, header) in expected)
         {
-            var m = Regex.Match(source, $@"FigureScene {method}\(\)\s*=>\s*Tab\((\d+)\)");
+            // An expression body, or a block that sets up sample rows and then returns its tab (Security's kit list).
+            var m = Regex.Match(source, $@"FigureScene {method}\(\)\s*(?:=>\s*Tab\((?<i>\d+)\)|\{{(?:(?!FigureScene)[\s\S])*?\breturn Tab\((?<i>\d+)\))");
             Assert.True(m.Success, $"DocSettingsFixtures no longer has a {method}() => Tab(n) fixture.");
 
-            int index = int.Parse(m.Groups[1].Value);
+            int index = int.Parse(m.Groups["i"].Value);
             Assert.True(index < headers.Count,
                 $"{method}() selects tab {index}, but SettingsView declares only {headers.Count} tabs.");
             Assert.Equal(header, headers[index]);

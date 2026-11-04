@@ -50,7 +50,7 @@ public static class DocSettingsFixtures
         PCellTrustSettingsView.RowsForCapture =
         [
             ("/opt/envs/rf/lib/python3.12/site-packages/synthkit", true, "/opt/envs/rf/bin/python3"),
-            ("/home/designer/kits/mmic-pcells", false, null),
+            ("/home/you/kits/mmic-pcells", false, null),
         ];
         try { return Tab(2); }
         finally { PCellTrustSettingsView.RowsForCapture = null; }

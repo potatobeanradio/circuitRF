@@ -130,6 +130,8 @@ public sealed class MaterialLibraryTests(ITestOutputHelper output) : IDisposable
             "CircuitRF.Design.ThreeD.Appearance.AppearanceResolver", // a previewed look's technology keeps own and library apart, so
                                                               // the provenance still names the library (brief-em3d-108)
             "CircuitRF.Ui.Layout.TechEditorViewModel",        // the Materials tab's own rows
+            "CircuitRF.Ui.Layout.StackupLayerRowViewModel",   // a WRITE: a layer given a built-in the technology does not resolve
+                                                              // (FindMaterial, libraries included) adopts it into the own list
             "CircuitRF.Ui.ThreeD.C3dEditorViewModel",         // a WRITE: Flatten's plan, re-run on a CLONE whose own list is given
                                                               // the materials the instance lacks (WithMissingMaterials)
             "CircuitRF.Ui.ViewModels.WorkspaceViewModel",     // own-vs-library in a rename that spans files

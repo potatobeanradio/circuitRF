@@ -79,7 +79,7 @@ public static partial class EmEvaluation
         C3dResolver.Resolve(savedDoc, cell, savedOverrides);
         var heldRegions = EmMeshHold.HoldRegions(doc, savedDoc);
         var holdNotes = new List<string>();
-        double? savedMinCell = target.Setup.Solver3D.Runs(Em3dSolverId.OpenEms) && target.Setup.OpenEms?.MinCellUm is null
+        double? savedMinCell = target.Setup.Solver3D.Runs(OpenEmsSolver.Id) && target.Setup.OpenEms?.MinCellUm is null
             ? SavedMinCell(target, savedDoc, cell, savedOverrides) : null;
         var held = EmMeshHold.Hold(target.Setup, savedMinCell, holdNotes);
         if (heldRegions.Count > 0)
@@ -291,9 +291,9 @@ public static partial class EmEvaluation
         try { points = setup.ExpandFrequencies().Length; } catch (Exception) { }
         try
         {
-            if (setup.Solver3D.Runs(Em3dSolverId.Palace) && Em3dRunService.EstimatePalace(p, PalaceSettings.Resolve(setup.Palace)) is { } est)
+            if (setup.Solver3D.Runs(PalaceSolver.Id) && Em3dRunService.EstimatePalace(p, PalaceSettings.Resolve(setup.Palace)) is { } est)
                 return new EmSolveEstimate((int)Math.Min(int.MaxValue, est.Unknowns), est.MemoryBytes ?? 0, null, points, "Palace");
-            if (setup.Solver3D.Runs(Em3dSolverId.OpenEms))
+            if (setup.Solver3D.Runs(OpenEmsSolver.Id))
             {
                 var g = FdtdGrid.Build(p, CemOpenEms.ResolveGrid(setup.OpenEms));
                 if (g.Refusal is null)

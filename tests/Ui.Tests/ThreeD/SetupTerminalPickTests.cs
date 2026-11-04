@@ -29,11 +29,11 @@ public sealed class SetupTerminalPickTests : IDisposable
     }
 
     [Fact]
-    public void APanelBuiltBeforeTheFirstElaboration_ListsTheConductors_AndAPickFillsTheRow_OrSaysWhyNot()
+    public async Task APanelBuiltBeforeTheFirstElaboration_ListsTheConductors_AndAPickFillsTheRow_OrSaysWhyNot()
     {
         var vm = Open();
         var setup = vm.SetupEditor!.ViewModel;
-        setup.ListBodiesAsync().GetAwaiter().GetResult();          // what the setup window's open does
+        await setup.ListBodiesAsync();                              // what the setup window's open does
         Assert.Equal("2 piece(s) of metal.", setup.BodiesStatus);
 
         var row = setup.TerminalRows[0];

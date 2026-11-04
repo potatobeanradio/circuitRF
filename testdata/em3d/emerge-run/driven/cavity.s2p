@@ -6,6 +6,8 @@
 ! circuitRF-EM mesh: ae32805cddc33b92
 ! circuitRF-EM ports: 4e16644427387a47
 ! circuitRF-EM model: EMerge 3.0.0b2
+! Port[1] = P1
+! Port[2] = P2
 ! circuitRF-EM port 1: 'port/1' from 'floor' to 'line', lumped, 50 Ohm
 ! circuitRF-EM port 2: 'port/2' from 'floor' to 'line', lumped, 50 Ohm
 ! circuitRF-EM 3D mesh: 15124 tetrahedra, element order 2

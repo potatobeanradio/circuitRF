@@ -2092,9 +2092,9 @@
                              ToolTip.Tip="The frequency the radiation pattern is read at. A 3D run pads its air box by a quarter wavelength here, never more than the structure's largest extent and never less than an eighth of a wavelength at the sweep's lowest frequency. Blank uses the sweep's lowest frequency. When the sweep is still the 0.5-8 GHz default, it moves to half to one and a half times this frequency."/>
                     <TextBlock Grid.Column="2" Classes="colhdr" VerticalAlignment="Center" Margin="6,0,0,0" Text="GHz"/>
                 </Grid>
-                <TextBlock FontSize="10" TextWrapping="Wrap" Margin="22,0,0,0" Foreground="{DynamicResource CrfWarningBrush}"
-                           Text="{Binding ViewModel.PatternFrequencyError}"
-                           IsVisible="{Binding ViewModel.PatternFrequencyError, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+                <SelectableTextBlock FontSize="10" TextWrapping="Wrap" Margin="22,0,0,0" Foreground="{DynamicResource CrfWarningBrush}"
+                                     Text="{Binding ViewModel.PatternFrequencyError}"
+                                     IsVisible="{Binding ViewModel.PatternFrequencyError, Converter={x:Static ObjectConverters.IsNotNull}}"/>
                 <Grid ColumnDefinitions="Auto,Auto" Margin="22,4,0,0"
                       IsEnabled="{Binding ViewModel.ReferenceInputPowerEnabled}">
                     <TextBlock Grid.Column="0" Classes="colhdr" VerticalAlignment="Center"

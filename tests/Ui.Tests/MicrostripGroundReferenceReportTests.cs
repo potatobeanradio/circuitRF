@@ -289,7 +289,10 @@ public sealed class MicrostripGroundReferenceReportTests(ITestOutputHelper outpu
         target.Instances.RemoveAll(i => i.SchematicId == "L1");
         target.Shapes.RemoveAll(s => GroundArtwork.KeyOfShape(s) is "L1:2" or "C1:2");
 
-        var again = SchematicToLayoutGenerator.Run(model, target, schematicDir, _root, layoutDir, tech, null, null);
+        // L1 comes back only through Restore Removed Parts (brief-sdl-4 §2): an ordinary re-run leaves a part deleted by
+        // hand deleted. Placed afresh, it takes a fresh ground via; C1, still there, keeps its via deleted.
+        var again = SchematicToLayoutGenerator.Run(model, target, schematicDir, _root, layoutDir, tech, null, null,
+                                                   restoreRemoved: true);
         Assert.Equal((1, 1), (again.GroundArtwork.ViasPlaced, again.GroundArtwork.ViasLeftDeleted));
         again.Command!.Execute();
         Assert.Equal(["L1:2"], target.Shapes.OfType<ViaShape>().Where(GroundArtwork.IsGroundVia)

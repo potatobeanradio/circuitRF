@@ -30,6 +30,11 @@ public class VersionSingleSourceTests
 
     private static string ReadRepoFile(params string[] parts) => File.ReadAllText(RepoFile(parts));
 
+    /// <summary>A shell script with its comments removed. Only a <c>#</c> that begins a word starts a comment in shell: a case pattern such as
+    /// <c>*/*)</c> or a URL is code, and reading <c>/*</c> or <c>//</c> as a comment there swallows hundreds of real lines.</summary>
+    private static string WithoutShellComments(string text)
+        => string.Join("\n", text.Split('\n').Select(line => Regex.Replace(line, @"(^|\s)#.*$", "")));
+
     /// <summary>A file with its comments removed — a note ABOUT a rule must not satisfy the rule.</summary>
     private static string WithoutComments(string text)
     {
@@ -177,7 +182,7 @@ public class VersionSingleSourceTests
     [InlineData("bundleForWBondMacOS.sh")]
     public void EveryBundleScriptStampsTheSharedVersionIntoItsPlist(string script)
     {
-        string text = WithoutComments(ReadRepoFile("src", "Ui", script));
+        string text = WithoutShellComments(ReadRepoFile("src", "Ui", script));
 
         Assert.Contains("packaging/version.sh", text);
         Assert.Contains("Set :CFBundleShortVersionString ${CRF_VERSION}", text);
@@ -195,7 +200,7 @@ public class VersionSingleSourceTests
     [Fact]
     public void ThePackagingScriptsTakeTheirVersionFromTheSharedHelper()
     {
-        string deb = WithoutComments(ReadRepoFile("packaging", "linux", "build-linux.sh"));
+        string deb = WithoutShellComments(ReadRepoFile("packaging", "linux", "build-linux.sh"));
         Assert.Contains("packaging/version.sh", deb);
         Assert.Contains("$CRF_DEB_VERSION", deb);        // dpkg's ~ spelling, not the raw string
         Assert.DoesNotMatch(@"VERSION=""?\d", deb);
@@ -205,7 +210,7 @@ public class VersionSingleSourceTests
         Assert.Contains("$CrfMsiVersion", msi);
         Assert.DoesNotMatch(@"\$Version\s*=\s*'\d", msi);
 
-        string dmg = WithoutComments(ReadRepoFile("packaging", "macos", "build-macos.sh"));
+        string dmg = WithoutShellComments(ReadRepoFile("packaging", "macos", "build-macos.sh"));
         Assert.Contains("packaging/version.sh", dmg);
         Assert.Contains("$CRF_VERSION", dmg);
     }

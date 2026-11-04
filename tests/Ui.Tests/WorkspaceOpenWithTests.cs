@@ -29,7 +29,7 @@ public sealed class WorkspaceOpenWithTests
         string plist = File.ReadAllText(RepoFile("src", "Ui", "Assets", "macOS", "Info.plist"));
         var m = Regex.Match(plist, @"<key>CFBundleIdentifier</key>\s*<string>([^<]*)</string>");
         Assert.True(m.Success);
-        Assert.Equal(m.Groups[1].Value, WorkspaceOpenWith.BundleIdentifier);
+        Assert.Equal(WorkspaceOpenWith.BundleIdentifier, m.Groups[1].Value);
     }
 
     /// <summary>A saved workspace's two files both carry the mark, and macOS's own reader parses it to that identifier.</summary>

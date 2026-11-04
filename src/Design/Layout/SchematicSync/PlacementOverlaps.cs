@@ -163,7 +163,7 @@ public static class PlacementOverlaps
             if (CellLayoutResolver.Resolve(inst, layoutBaseDir, technology) is not
                     { State: CellLayoutState.Resolved, View: { } cell }) return;
             var shapes = LayoutFlatten.FlattenAllLevels(inst, layoutBaseDir, technology).Shapes
-                                      .Where(s => conductors.Contains(s.Layer)).ToList();
+                                      .Where(s => s is not (LabelShape or BitmapShape) && conductors.Contains(s.Layer)).ToList();
             if (shapes.Count == 0) return;
 
             // The part's pins, where they land, with the net each is bound to — none for a part no schematic names.
