@@ -71,34 +71,22 @@ public static class ParametricSweepEngine
         => Run(sweep, lib, tb, settings, baseDirectory, new OutputWriteState(), control, wspCache,
                diagnosticsInto);
 
-    private static DataSet Run(
-        ParametricSweepAnalysis sweep,
-        Library lib,
-        TestBench tb,
-        AnalysisSettings? settings,
-        string? baseDirectory,
-        OutputWriteState writeState,
-        RunControl? control = null,
-        HarmonicBalance.HbSmallSignalCache? wspCache = null,
-        ElaboratedNetlist? diagnosticsInto = null)
+    /// <summary>
+    /// The values a sweep injects at each of its points, in base SI, with the unit the injection marks them with — the
+    /// one computation <see cref="Run"/> uses, public so a caller can walk a sweep's points WITHOUT running them
+    /// (brief-sdl-6 D5's solve count). <paramref name="effUnit"/> is the sweep's own unit else the swept variable's;
+    /// <paramref name="baseUnit"/> is its scale-1 base, empty when neither states one.
+    /// </summary>
+    public static double[] PointValues(ParametricSweepAnalysis sweep, TestBench tb, out string effUnit, out string baseUnit)
     {
-        // Locate the inner analysis, skipping disabled sweeps (collapse): a disabled inner sweep is
-        // transparent — its dimension is dropped and ITS inner runs here instead.
-        var inner = AnalysisChain.ResolveEffectiveInner(sweep.InnerAnalysisName, tb)
-            ?? throw new InvalidOperationException(
-                $"Parametric sweep '{sweep.Name}': inner analysis " +
-                $"'{sweep.InnerAnalysisName}' not found (or its chain is disabled).");
-
-        // Find the variable in GlobalVariables so we can restore it.
-        int varIdx   = tb.GlobalVariables.FindIndex(v => v.Name == sweep.SweepVarName);
-        var origVar  = varIdx >= 0 ? tb.GlobalVariables[varIdx] : null;
+        var origVar = tb.GlobalVariables.FirstOrDefault(v => v.Name == sweep.SweepVarName);
 
         // Effective unit = the sweep's own Spec.Unit, else the swept VAR's declared unit.
         // BaseUnit reduces it to scale-1 (e.g. "GHz"→"Hz") so injecting it leaves the value
         // unchanged while marking the variable as unit-bearing (var-unit-wins, Part A).
         bool   specHasUnit = !string.IsNullOrEmpty(sweep.Spec?.Unit);
-        string effUnit     = specHasUnit ? sweep.Spec!.Unit : (origVar?.Unit ?? "");
-        string baseUnit    = Units.BaseUnit(effUnit);
+        effUnit            = specHasUnit ? sweep.Spec!.Unit : (origVar?.Unit ?? "");
+        baseUnit           = Units.BaseUnit(effUnit);
 
         // A SPEC that carries no unit of its own INHERITS the swept VAR's declared unit, and the
         // inherited unit has to reach the VALUES — not only the re-attach below. This is the same
@@ -124,9 +112,39 @@ public static class ParametricSweepEngine
         // Scaling the materialized points is exactly equivalent to Part A's scaling of Start/Stop
         // (and Step) before expansion, for Linear and Log alike: both are affine/geometric in the
         // endpoints, so multiplying every point by m gives the same array with the same length.
-        double[] sweepValues = inherited == 1.0
+        return inherited == 1.0
             ? sweep.SweepValues
             : [.. sweep.SweepValues.Select(v => v * inherited)];
+    }
+
+    /// <summary>The variable a sweep point injects: <paramref name="value"/> in base SI, marked with the base unit so the
+    /// use site's own unit is not applied a second time (var-unit-wins).</summary>
+    public static Variable PointVariable(ParametricSweepAnalysis sweep, double value, string baseUnit) =>
+        new(sweep.SweepVarName, value.ToString("G17", CultureInfo.InvariantCulture),
+            string.IsNullOrEmpty(baseUnit) ? null : baseUnit);
+
+    private static DataSet Run(
+        ParametricSweepAnalysis sweep,
+        Library lib,
+        TestBench tb,
+        AnalysisSettings? settings,
+        string? baseDirectory,
+        OutputWriteState writeState,
+        RunControl? control = null,
+        HarmonicBalance.HbSmallSignalCache? wspCache = null,
+        ElaboratedNetlist? diagnosticsInto = null)
+    {
+        // Locate the inner analysis, skipping disabled sweeps (collapse): a disabled inner sweep is
+        // transparent — its dimension is dropped and ITS inner runs here instead.
+        var inner = AnalysisChain.ResolveEffectiveInner(sweep.InnerAnalysisName, tb)
+            ?? throw new InvalidOperationException(
+                $"Parametric sweep '{sweep.Name}': inner analysis " +
+                $"'{sweep.InnerAnalysisName}' not found (or its chain is disabled).");
+
+        // Find the variable in GlobalVariables so we can restore it.
+        int varIdx   = tb.GlobalVariables.FindIndex(v => v.Name == sweep.SweepVarName);
+        var origVar  = varIdx >= 0 ? tb.GlobalVariables[varIdx] : null;
+        double[] sweepValues = PointValues(sweep, tb, out string effUnit, out string baseUnit);
 
         var datasets = new List<DataSet>(sweepValues.Length);
 

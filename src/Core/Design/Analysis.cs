@@ -10,11 +10,37 @@ namespace CircuitRF.Core.Design;
 // it fills RawDirective records instead. Types defined here so the design-layer
 // shape is correct when the directive grammar is settled.
 
+/// <summary>What an analysis's circuit is built from (brief-sdl-6 R-sdl6-1).</summary>
+public enum AnalysisModel { Circuit, Em }
+
 public abstract class Analysis(string name)
 {
     public string Name    { get; } = name;
     /// <summary>When false, the analysis stays configured but is skipped at run time.</summary>
     public bool   Enabled { get; set; } = true;
+
+    // ── What simulates it (brief-sdl-6 R-sdl6-1) ─────────────────────────────
+
+    /// <summary>
+    /// <c>model=</c>: what the circuit this analysis runs on is built from. <see cref="AnalysisModel.Circuit"/> (the
+    /// default, and every analysis written before the key existed) is the circuit models; <see cref="AnalysisModel.Em"/>
+    /// is the EM result of the schematic's own layout, at whatever values its variables have (SDL-6 Path A), and switches
+    /// every EM-capable cell instance below it to EM too. The run host does the switching — the elaborator only ever sees
+    /// the instances it produces.
+    /// </summary>
+    public AnalysisModel Model { get; set; } = AnalysisModel.Circuit;
+
+    /// <summary><c>emSetup=</c>: the <c>.cem</c> that solves it when the layout has several, or null for the one there is.
+    /// A path relative to the netlist's base, or a setup name. Meaningless with <see cref="AnalysisModel.Circuit"/>.</summary>
+    public string? EmSetup { get; set; }
+
+    /// <summary>The <c>model=</c> spelling of <paramref name="model"/>.</summary>
+    public static string ModelToken(AnalysisModel model) => model == AnalysisModel.Em ? "em" : "circuit";
+
+    /// <summary>Reads a <c>model=</c> value: <c>em</c> is EM, anything else the circuit models — a mistyped switch must not
+    /// start EM solves nobody asked for.</summary>
+    public static AnalysisModel ParseModel(string? token) =>
+        token?.Trim().Trim('"').Equals("em", StringComparison.OrdinalIgnoreCase) == true ? AnalysisModel.Em : AnalysisModel.Circuit;
 
     // ── The WSProbe stability-margin threshold (WSP-9 R-wsp9-3) ──────────────
 

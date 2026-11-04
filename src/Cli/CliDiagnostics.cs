@@ -1394,6 +1394,43 @@ internal static class CliDiagnostics
         "em.dry-run.estimate", DiagnosticSeverity.Info,
         "estimate: {estimate}", ("estimate", estimate));
 
+    /// <summary>brief-sdl-6 R-sdl6-7 — <c>check</c>: an analysis or instance asked to run by EM that cannot be.</summary>
+    public static Diagnostic CheckEmRefused(string path, string analysis, string reason) => Diagnostic.Create(
+        "check.em.model-refused", DiagnosticSeverity.Error,
+        "{path}: '{analysis}' cannot run by EM: {reason}", ("path", path), ("analysis", analysis), ("reason", reason));
+
+    /// <summary>brief-sdl-6 D4 — <c>check</c>: a variable that does not reach the copper it drives.</summary>
+    public static Diagnostic CheckEmUnreached(string path, string sentence) => Diagnostic.Create(
+        "check.em.unreached", DiagnosticSeverity.Warning, "{path}: {message}", ("path", path), ("message", sentence));
+
+    /// <summary>brief-sdl-6 D5 — <c>check</c>: the EM evaluations a chain makes, counted.</summary>
+    public static Diagnostic CheckEmCount(string path, string analysis, string sentence) => Diagnostic.Create(
+        "check.em.count", DiagnosticSeverity.Info,
+        "{path}: '{analysis}' by EM: {count}", ("path", path), ("analysis", analysis), ("count", sentence));
+
+    /// <summary>brief-sdl-6 R-sdl6-1/2 — an analysis asked to run by EM that cannot be: the cell is not EM-capable, or a
+    /// part cannot be connected to the EM result. EM never falls back to circuit models silently.</summary>
+    public static Diagnostic EmModelRefused(string analysis, string reason) => Diagnostic.Create(
+        "cli.em.model-refused", DiagnosticSeverity.Error,
+        "'{analysis}' cannot run by EM: {reason}", ("analysis", analysis), ("reason", reason));
+
+    /// <summary>brief-sdl-6 D5 — the count, before anything is solved.</summary>
+    public static Diagnostic EmSolveCount(string sentence) => Diagnostic.Create(
+        "em.solve-count", DiagnosticSeverity.Info, "{count}", ("count", sentence));
+
+    /// <summary>brief-sdl-6 D5 — more uncached solves than <c>--em-max-solves</c> allows; nothing was solved.</summary>
+    public static Diagnostic EmTooManySolves(string sentence) => Diagnostic.Create(
+        "cli.em.too-many-solves", DiagnosticSeverity.Error, "{message}", ("message", sentence));
+
+    /// <summary>brief-sdl-6 D4 — a variable that does not reach the copper it drives in the schematic.</summary>
+    public static Diagnostic EmUnreached(string sentence) => Diagnostic.Create(
+        "em.variable-unreached", DiagnosticSeverity.Warning, "{message}", ("message", sentence));
+
+    /// <summary><c>--em</c> takes <c>on</c> or <c>off</c>.</summary>
+    public static Diagnostic EmSwitchMalformed(string verb, string value) => Diagnostic.Create(
+        "cli.args.em-malformed", DiagnosticSeverity.Error,
+        "{verb}: --em takes on or off, not '{value}'.", ("verb", verb), ("value", value));
+
     /// <summary>EMB-5 R-emb5-2 — <c>--dry-run</c> estimates one setup file; an extracted part or a band sweep is not one.</summary>
     public static Diagnostic EmDryRunNeedsSetup(string flag) => Diagnostic.Create(
         "cli.em.dry-run-needs-setup", DiagnosticSeverity.Error,

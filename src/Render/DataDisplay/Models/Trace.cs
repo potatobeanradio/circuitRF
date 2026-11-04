@@ -695,6 +695,10 @@ namespace CircuitRF.Render.DataDisplay
             set { _cubeName = value; if (value is not null) DropDerivedForCubeBinding(); }
         }
 
+        /// <summary>brief-sdl-6 R-sdl6-3 — the analysis this trace reads ran by EM of the schematic's layout (its group
+        /// carries the <c>__EmModel</c> record). Set on every resolve; the label says "(EM)".</summary>
+        public bool ByEm { get; set; }
+
         public AxisSlice[]?  Slice          { get; set; }
         public CubeTransform Transform      { get; set; } = CubeTransform.None;
         public string?       InvalidSpecText { get; set; }
@@ -1768,6 +1772,7 @@ namespace CircuitRF.Render.DataDisplay
             if (IsCubeBound)
             {
                 var lbl = $"{prefix}{Expression ?? CubeName ?? ""}";
+                if (ByEm) lbl += " (EM)";
                 if (ScalarOnNonTableInvalid) lbl += " <invalid>";
                 return lbl;
             }

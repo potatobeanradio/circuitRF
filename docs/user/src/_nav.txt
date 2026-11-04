@@ -76,6 +76,7 @@ reference/stackup.html         | The layers your board is made of - and which co
 reference/materials.html       | Where materials are kept - a technology's own list or a .cmat library it names - and entering one, thermal and anisotropic values included.
 reference/mom-engine.html      | The planar method-of-moments solver: what it does, what it will not do, and how.
 reference/em-setup.html        | The EM Setup panel, control by control, and where the results land.
+reference/em-cells.html        | Simulating a schematic by EM of its own layout, at whatever values its variables have — and reusing it as a part.
 reference/em-solvers.html      | MoM, FEM and FDTD: what each solver is, what it costs, and which to use for which problem.
 reference/em-3d.html           | 3D EM with Palace and openEMS: when to use it, getting the solvers, the 3D view, and a worked example.
 reference/palace-windows.html  | Installing Palace on Windows, step by step: what each step changes, what you will see, and how to undo it.

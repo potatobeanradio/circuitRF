@@ -1,3 +1,4 @@
+using CircuitRF.Design.Layout.Em.ParametricEm;
 using CircuitRF.Core.Devices;
 using CircuitRF.Core.Devices.Composed;
 using CircuitRF.Core.Design;
@@ -673,6 +674,29 @@ internal static class Check
         }
 
         Elaborate(path, tb, lib, f, catalog);
+    }
+
+    /// <summary>
+    /// brief-sdl-6 R-sdl6-7 — every chain that runs by EM (model=em, or an instance set to EM): whether it can, through
+    /// the switch the run builds its bench with, and what it will make, through the run's own count — so a refusal
+    /// here is the run's refusal word for word, and D4's unreached variables are reported before anyone optimises them.
+    /// Nothing is solved; the count may generate a PCell the evaluated geometry needs into the generated-cell store.
+    /// </summary>
+    private static void CheckEm(string path, TestBench tb, Library lib, Findings f)
+    {
+        string? refBase = CircuitSource.ReferenceBaseOf(path);
+        foreach (var top in AnalysisChain.RunnableTops(tb))
+        {
+            bool whole = EmModelSwitch.IsEm(top, tb);
+            if (!whole && !EmModelSwitch.HasInstancesSetToEm(tb, lib)) continue;
+            var switched = EmModelSwitch.Apply(tb, lib, Path.GetFullPath(path), EmModelSwitch.SetupOf(top, tb), refBase,
+                                               out var refusal, whole);
+            if (switched is null) { f.Add(CliDiagnostics.CheckEmRefused(path, top.Name, refusal ?? "")); continue; }
+            var count = EmSolveCount.Count(switched.Tb, switched.Lib, top, refBase);
+            foreach (var r in count.Refusals) f.Add(CliDiagnostics.CheckEmRefused(path, top.Name, r));
+            foreach (var u in count.Unreached) f.Add(CliDiagnostics.CheckEmUnreached(path, u));
+            if (count.Any && count.Refusals.Count == 0) f.Add(CliDiagnostics.CheckEmCount(path, top.Name, count.Sentence));
+        }
     }
 
     private static void CheckLayout(string path, Findings f, TechnologyCache cache)
@@ -1606,8 +1630,11 @@ internal static class Check
     /// </summary>
     private static void Elaborate(string path, TestBench tb, Library lib, Findings f, TunableCatalog? catalog = null)
     {
+        CheckEm(path, tb, lib, f);
+
         ElaboratedNetlist nl;
-        try { nl = new Elaborator(lib).Elaborate(tb); }
+        // Counting mode (brief-sdl-6 D5): an instance set to EM is recorded, never solved — check solves nothing.
+        try { using (EmEvaluationScope.Begin(countOnly: true)) nl = new Elaborator(lib).Elaborate(tb); }
         catch (Exception ex)
         {
             f.Add(CliDiagnostics.CheckElaborationFailed(path, ex.Message));

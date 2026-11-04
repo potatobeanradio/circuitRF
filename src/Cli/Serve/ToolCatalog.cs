@@ -191,6 +191,17 @@ internal static class ToolCatalog
     private static readonly ToolOption Set = new("set", "--set", OptKind.StrRepeat,
         "Override a global variable, as name=expr. Applied before elaboration.");
 
+    /// <summary>brief-sdl-6 R-sdl6-1 / D5 — the run-wide model switch and the solve limit, on every circuit run.</summary>
+    private static readonly ToolOption[] EmOptions =
+    [
+        new("em", "--em", OptKind.Str,
+            "on runs every analysis by EM of the schematic's own layout (and every EM-capable cell instance by EM); off runs "
+          + "everything by circuit models. Absent: as each analysis's model= and each instance's Model= say."),
+        new("emMaxSolves", "--em-max-solves", OptKind.Str,
+            "The most uncached EM solves the run may start (default 20). The solves are counted before any starts; a run "
+          + "needing more is refused with the count and solves nothing."),
+    ];
+
     private static readonly ToolOption Analysis = new("name", "-a", OptKind.Str,
         "Which declared analysis to run. An inner analysis is promoted to the sweep that wraps it.");
 
@@ -463,18 +474,18 @@ internal static class ToolCatalog
                 // records that gap. `--set` it reads, through hb's own override path.
                 new("sparam", ["sparam"],
                     [new("path", true, "The .cnl to run.")],
-                    [Set, Output, .. Narrowing,
+                    [Set, Output, .. Narrowing, .. EmOptions,
                      new("freq", "--freq", OptKind.Str, "Frequency sweep as start:stop:step (1GHz, 100MHz, 1e9).")],
                     "S-parameters. -o writes a Touchstone (.s1p … .s99p) or the cubes (.npy, .mat, .txt); "
                   + "an extension naming neither is refused."),
                 // DcSettingsFrom's own three knobs rather than HB's, and the same `--set`.
                 new("dc", ["dc"],
                     [new("path", true, "The .cnl to run.")],
-                    [Set, .. Narrowing, .. DcOptions],
+                    [Set, .. Narrowing, .. DcOptions, .. EmOptions],
                     "DC operating point."),
                 new("hb", ["hb"],
                     [new("path", true, "The .cnl to run.")],
-                    [Analysis, Set, Output, All, .. Narrowing, .. SolverOptions],
+                    [Analysis, Set, Output, All, .. Narrowing, .. SolverOptions, .. EmOptions],
                     "Harmonic balance. Runs the parametric sweep when one wraps it."),
                 // The `env` verb: a MOD_Source's modulated signal through the circuit. Its waveforms and spectrum stay
                 // out of the default document (JsonRun.InlineCubeLimit); all, only or group bring them in.
@@ -496,12 +507,12 @@ internal static class ToolCatalog
                   + "Minutes, not seconds: 200 us of an NR 20 MHz signal is about a minute on 10 cores."),
                 new("lp", ["lp"],
                     [new("path", true, "The .cnl to run.")],
-                    [Analysis, Set, Output, All, .. Narrowing, .. LoadpullSolverOptions, .. LoadpullOptions],
+                    [Analysis, Set, Output, All, .. Narrowing, .. LoadpullSolverOptions, .. LoadpullOptions, .. EmOptions],
                     "Loadpull over the directive's Gamma grid. The default result is one row per grid point "
                   + "plus the shape; ask for the cubes with all, only or group."),
                 new("lpp", ["lpp"],
                     [new("path", true, "The .cnl to run.")],
-                    [Analysis, Set, Output, All, .. Narrowing, .. LoadpullSolverOptions, .. LoadpullOptions],
+                    [Analysis, Set, Output, All, .. Narrowing, .. LoadpullSolverOptions, .. LoadpullOptions, .. EmOptions],
                     "Loadpull pursuit: searches for the MXP and MXE terminations. Returns the optima and the "
                   + "result's shape; ask for the cubes with all, only or group."),
                 // brief-sar-9: the `fields` verb — an EM block's per-port fields recombined by the circuit, no EM run.

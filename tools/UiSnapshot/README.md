@@ -370,6 +370,23 @@ category filter's flyout, and `--filter-all-off` turns its All switch off first.
   leaves it nowhere, so a following `--key Meta+Z` does nothing here; in the application the shell's Edit menu
   serves that key. Click the toolbar's undo button instead.
 
+**The Edit Analysis dialog** (brief SDL-6) on one of a schematic's analyses, as the Analyses panel opens it — its Simulate
+by row and EM setup picker; `--select` names the analysis (default: the first that is not a sweep):
+
+```
+dotnet run --project tools/UiSnapshot --no-build -- --analysis-dialog <file.csch> [--select SP1] -o out.png
+```
+
+**The EM solves question** (brief SDL-6 D5) Simulate asks when a run needs more than one uncached EM solve, with the count
+`CircuitEvaluation.CountEmSolves` takes of the schematic:
+
+```
+dotnet run --project tools/UiSnapshot --no-build -- --em-solves-dialog <file.csch> -o out.png
+```
+
+A placed EM-capable cell's Model row and Variables group show in the ordinary parameter dialog:
+`--schematic <parent.csch> --select X1 --dialog`.
+
 ## Adding a view
 
 Build the view model the way the application does (its own load or factory, never a hand-assembled copy),

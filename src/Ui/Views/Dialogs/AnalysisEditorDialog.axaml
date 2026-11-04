@@ -116,6 +116,15 @@
                            Margin="0,2,0,0"/>
             </Grid>
 
+            <!-- brief-sdl-6 R-sdl6-1: what the analysis's circuit is built from. The setup picker is always there, so the
+                 row does not move when EM is chosen; it is enabled only when the layout has several setups. -->
+            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto">
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="Simulate by:" FontSize="12" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                <ComboBox  Grid.Row="0" Grid.Column="1" x:Name="SimulateByCombo" FontSize="12" HorizontalAlignment="Stretch"/>
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="EM setup:" FontSize="12" VerticalAlignment="Center" Margin="0,6,8,0"/>
+                <ComboBox  Grid.Row="1" Grid.Column="1" x:Name="EmSetupCombo" FontSize="12" HorizontalAlignment="Stretch" Margin="0,6,0,0"/>
+            </Grid>
+
             <!-- ── DC body ──────────────────────────────────────────────────────── -->
             <Border x:Name="DcBodyPanel"
                     Background="{DynamicResource SystemRegionColor}"

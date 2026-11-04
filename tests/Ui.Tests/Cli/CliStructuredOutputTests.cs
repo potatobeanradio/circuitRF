@@ -444,10 +444,13 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "check.elaboration.failed",
         "check.elaboration.note",
         "check.elaboration.warning",
+        "check.em.count",   // brief-sdl-6
         "check.em.mesh-auto-kept",
         "check.em.mesh-auto-override",
+        "check.em.model-refused",   // brief-sdl-6
         "check.em.note",
         "check.em.refused",
+        "check.em.unreached",   // brief-sdl-6
         "check.em.unresolved",
         "check.em.warning",
         "check.em.would-run",
@@ -520,6 +523,7 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "check.workspace.vendor-library.part-missing",
         "check.workspace.vendor-library.unreadable",
         "cli.analysis.not-selected",
+        "cli.args.em-malformed",          // brief-sdl-6
         "cli.args.grid-not-for-pursuit",
         "cli.args.input-required",
         "cli.args.multiple-inputs",
@@ -532,8 +536,10 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "cli.em.dry-run-needs-setup",   // EMB-5 R-emb5-1/R-emb5-2
         "cli.em.freq-without-component",
         "cli.em.memory-limit",
+        "cli.em.model-refused",           // brief-sdl-6 R-sdl6-1/2
         "cli.em.setup-unreadable",
         "cli.em.solver-on-planar",
+        "cli.em.too-many-solves",         // brief-sdl-6 D5
         "cli.em.unknown-device",
         "cli.em.unknown-solver",
         "cli.explain.memory-limit",
@@ -672,6 +678,8 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "em.run.warning",
         "em.setup.on-cem",
         "em.setup.warning",
+        "em.solve-count",         // brief-sdl-6 D5
+        "em.variable-unreached",  // brief-sdl-6 D4
         "explain.analysis.none",
         "explain.analysis.not-found",
         // RND-3's three questions are OPTIONS on this verb, not verbs of their own (R-rnd3-1), so

@@ -304,6 +304,15 @@ Scope is **structural**, not string-keyed. This replaces the prototype's `(name,
 - `C`'s own variables are evaluated in `C`'s instance scope.
 - `C`'s component values and the overrides it passes to *its* sub-instances are then evaluated in `C`'s instance scope.
 
+**A cell's own variables can be set from the instance (brief-sdl-6 D7).** For each of `C`'s variables that `X`
+overrides, the override expression is evaluated in `P`'s scope and replaces that variable's expression in `X`'s scope
+only — exactly as a parameter override does. `C`'s other variables that depend on it (`L = L90 - w50/2`) follow through
+ordinary evaluation, per instance. This applies to every hierarchical instance. Two refusals hold it honest: an
+override naming something `C` neither declares (parameter or variable) nor reads is an **error**, never ignored; and a
+name that is **both** a parameter and a variable of `C` cannot be overridden — the error names both. Without an
+override, such a name is the VARIABLE's value: the elaborator binds parameter defaults, then the cell's variables, then
+the overrides, each replacing the last.
+
 **Resolution order for a name inside a cell:** local cell variables/parameters first, then global. A cell does **not** see its parent's local variables (only what was passed in as parameters) or any sibling's — this is the encapsulation that keeps a cell's meaning independent of where it is instanced.
 
 ### 9.1 Design-time value preview (the `=` / `≈` editor hint)

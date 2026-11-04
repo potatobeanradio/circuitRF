@@ -398,6 +398,16 @@ public sealed class TunableCatalog
                         Consider($"{prefix}{inst.InstanceName}.{decl.Name}", inst.InstanceName, decl.Name,
                                  TunableKind.CellParameter, expr, unit, ov is null);
                     }
+                    // brief-sdl-6 D7: a cell VARIABLE this instance overrides is a value of the instance, keyed exactly as a
+                    // parameter is (X1.w50). Not X1:w50 — `Cell:name` already means the cell's own variable, shared by
+                    // every instance, which is the row Push writes into the cell's drawing.
+                    foreach (var v in cornered.Variables)
+                    {
+                        if (cornered.Parameters.Any(p => p.Name == v.Name)) continue;
+                        if (inst.Overrides.FirstOrDefault(o => o.Name == v.Name) is not { } ov) continue;
+                        Consider($"{prefix}{inst.InstanceName}.{v.Name}", inst.InstanceName, v.Name,
+                                 TunableKind.CellParameter, ov.Expression, ov.Unit, isDefault: false);
+                    }
                     continue;
                 }
 

@@ -101,7 +101,8 @@ public sealed class PreparedCircuit
         {
             var (lib, tb) = CnlTechnologyBinding.ReadFile(netlistPath, out var parts);
             // A .cnl's own SpiceModel lines place vendor parts too (EMB-5 R-emb5-13), and a run offers them as C1.Part.
-            return new PreparedCircuit(lib, tb, null, baseDirectory, [Path.GetFullPath(netlistPath)]) { PartTunables = parts };
+            return new PreparedCircuit(lib, tb, null, baseDirectory, [Path.GetFullPath(netlistPath)])
+                { PartTunables = parts, SourcePath = Path.GetFullPath(netlistPath) };
         }
         catch (Exception ex)
         {
@@ -167,6 +168,7 @@ public sealed class PreparedCircuit
                 : FromText(text, SchematicCircuit.ReferenceBaseOf(cschPath, hostWorkspaceRoot), wsRoot,
                            Path.GetFileNameWithoutExtension(cschPath), files);
             prepared.HostCellChoices = choices;
+            prepared.SourcePath = Path.GetFullPath(cschPath);
             prepared.PartRangeWarnings = extracted.PartRangeWarnings;
             prepared.PartRefusals      = extracted.PartRefusals;
             prepared.PartTunables      = extracted.PartTunables;
@@ -193,6 +195,10 @@ public sealed class PreparedCircuit
             return new PreparedCircuit(null, null, $"Netlist read failed: {ex.Message}", baseDirectory, filesRead);
         }
     }
+
+    /// <summary>brief-sdl-6 — the document this circuit was read from (a <c>.csch</c>, or the <c>.cnl</c> itself): what a
+    /// <c>model=em</c> analysis resolves its own cell from. Null when unknown.</summary>
+    public string? SourcePath { get; set; }
 
     internal void CountElaboration() => Interlocked.Increment(ref _elaborations);
 

@@ -26989,6 +26989,51 @@ Gates: `tests/Core.Tests/Devices/External/VerilogALinkCommandTests.cs` (the six 
 that runs the real launcher), `CompileNetlistTests.Export_WithZig_BuildsEveryReachablePlatform_AndProvesOnlyThisOne`
 (`[CompilerZigFact]`).
 
+## SDL-6 — a schematic simulated by EM of its own layout (2026-11-03)
+
+`src/Design/Layout/Em/ParametricEm/`; the seam is Core's `IParametricModelProvider`. What was found building it:
+
+- **A value written into a VAR row must be written IN THE ROW'S UNIT.** The first `EmEvaluation.Apply` wrote base SI
+  with the unit cleared: `L90 = 4.6604 mm` became a bare `0.0046604`. var-unit-wins spares only a variable that HAS a
+  unit, so a Length-dimension use site with no unit of its own applied one, and every line L90 set was three orders of
+  magnitude short — a 0.1 pm change of L90 moved C2's lower branch 4.6 mm. It showed as two values that round to the
+  same DBU getting different cache keys. The literal is now `x / Scale(rowUnit)` with the unit kept.
+- **Path A with a part that is not copper — stopped and reported, as the brief directs.** `EmCoSimNetlist` puts a part's
+  model across COMPONENT ports at its pads, and only a 3D view's setup builds those (`C3dComponentPortBuild`); a planar
+  `.cem` makes none (`EmSetupEditorViewModel.ShowComponentPorts` is 3D-only). Making a layout's planar setup grow
+  internal gap ports at a footprint's pads is new port placement, not wiring, so F1 with `model=em` is a refusal naming
+  C1 as a part. An ideal R with no layout is a separate refusal by name.
+- **D7 already held in the elaborator; what it lacked was its two refusals.** `BuildCellScope` binds parameter defaults,
+  then the cell's variables, then the overrides — so an instance override of a VAR always replaced it, and
+  `NetExtractor.EmitCellInstance` already passed every instance parameter. Added: a name that is both a parameter and a
+  variable is refused naming both (it was silently reached through the variable), and an override the cell neither
+  declares nor reads is an ERROR (it was a warning). `SameNameVarAndParameterTests` and `UnreadOverrideWarningTests`
+  pinned the old behaviour and were changed with it. Every Hero `.cnl` elaborates as before but `hero1b.cnl`, which
+  fails to READ (`opt{-2343 to 2343}` on a variable line) — a reader matter, before elaboration, unrelated to this.
+- **The tunable key of an overridden cell VAR is `X1.w50`, not `X1:w50`.** `Cell:name` already means the cell's own
+  variable, shared by every instance — exactly what an instance override is not — so the colon form would read as a
+  cell named X1. The dot form is the one a declared cell parameter already takes, and Push writes the instance row.
+- **`CellInterfaceHash` takes the VAR names only when there are any**, so the hash of every cell without VARs (every
+  hash recorded before D7) is unchanged; a cell that has VARs reports its interface changed once.
+- **An EM-capable cell drawn with Ports and no Pins takes its Ports as its pins** (`NetExtractor.PortsAsPins`, by `Num`)
+  and leaves the Ports out of the cell — placed in a parent, the parent drives it. Without it the cell placed as a part
+  was skipped ("symbol has 4 pins but the cell places 0 Pins"). Scoped to EM-capable cells, so no other cell changes.
+- **A blank VAR row on an instance is the cell's own value**: the Parameter dialog tops an instance up with one per
+  cell VAR (no undo entry, as `AdoptCellDeclaredParameters`), and the extraction drops a blank one — an override with an
+  empty expression is the dangerous `Key=` case `src/Core/CLAUDE.md` names.
+- **The planning elaboration runs in COUNTING mode.** `CircuitEvaluation.Plan` elaborates once to describe the run; an
+  instance set to `Model=EM` there would have solved before the count was taken. `EmEvaluationScope` (an AsyncLocal)
+  carries counting, cancellation and the record of every evaluation through every per-point elaboration a sweep makes
+  inside the engine, which knows nothing of it.
+- **Counting is not free of writes**: a geometry not yet generated writes its PCell into the generated-cell store
+  (content-addressed, as on any Update Layout). `check`'s "writes nothing" holds for every document a user authored.
+- **The solve count walks the sweep with the engine's own point values** — `ParametricSweepEngine.PointValues` /
+  `PointVariable` were extracted from `Run` for it, so a swept unit is scaled exactly as the run scales it.
+
+Gates: `tests/Ui.Tests/SchematicSync/ParametricEmStubTests.cs` (sweep and cache, refusals, D4, Path B against Path A,
+D7's keys and hash — no solver), `ParametricEmCellTests.cs` (Path A against `em` on C1, one coarse solve, 14 s, Benchmark),
+`tests/Core.Tests/Elaboration/ParametricModelSeamTests.cs`.
+
 ## Model-library series review, second pass — walked as a user (2026-11-03)
 
 The flow driven end to end through the real view models and dialogs (headless): a cell exported through the dialog,

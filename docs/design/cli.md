@@ -4807,3 +4807,26 @@ table goes to stderr one row per platform, after the "unavailable on" warning, a
 (`source`, `compiledFrom`, `proof`, `builds[]` of `rid`/`state`/`reason`/`fix`); a missing platform leaves the exit
 code 0, so a CI job that requires every platform tests the JSON. Over MCP the three are `create what=libraryPart`'s
 `compileNetlist`, `sourceOut` and `checkBias`. Gate: `tests/Ui.Tests/VendorLibraries/CompileNetlistTests.cs`.
+
+## 36. Simulating by EM of a schematic's own layout: `model=`, `--em`, `--em-max-solves` (brief-sdl-6)
+
+Every `analysis` directive takes `model=circuit|em` (default `circuit`) and, when the layout has several setups,
+`emSetup=` (a `.cem` path or a setup name). The writer emits them only when not the default, so every netlist
+written before them is unchanged. A `.csch` names its own cell; a `.cnl` names one only through `emSetup=`.
+
+The run verbs `sparam`, `dc`, `hb`, `lp` and `lpp` take `--em on` (every chain and every EM-capable instance by EM),
+`--em off` (everything by circuit models) and `--em-max-solves N` (default 20) — all through `EmModelRun`, which owns no
+decision: the bench is `EmModelSwitch.Apply`'s and the count is `EmSolveCount`'s. **Solves are counted before any
+starts**, every point of a sweep included, and printed (`em.solve-count`); a run needing more uncached solves than the
+limit stops there with `cli.em.too-many-solves`, solving nothing. A chain that cannot run by EM is
+`cli.em.model-refused`; a variable that does not reach the copper is `em.variable-unreached` (a warning). The CLI asks
+nobody; the GUI asks once when more than one solve is needed. MCP `run` passes `em` and `emMaxSolves`.
+
+`check` reports every chain run by EM through the same two functions: `check.em.model-refused` (error),
+`check.em.unreached` (warning), `check.em.count` (info). `explain --analysis` adds an `em` object per root chain —
+the model, cell and setup, the counts, every evaluation in run order with its cache key and whether the cache holds it,
+and the unreached variables. Neither solves. Counting a geometry not yet generated may write its PCell into the
+workspace's generated-cell store, as Update Layout would; nothing a user authored is written.
+
+Gates: `tests/Ui.Tests/SchematicSync/ParametricEmStubTests.cs` (no solver) and `ParametricEmCellTests.cs` (one coarse
+real solve, Benchmark tier), `tests/Core.Tests/Elaboration/ParametricModelSeamTests.cs`.

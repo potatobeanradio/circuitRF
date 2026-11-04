@@ -888,6 +888,12 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
 
     public bool ShowModelSwitches => SwitchRows.Count > 0;
 
+    /// <summary>brief-sdl-6 D7 — a cell instance's Variables group: one row per VAR of the cell. A blank row is the cell's
+    /// own value (shown as the placeholder); a value typed there overrides that variable for this instance only.</summary>
+    public ObservableCollection<ParameterRowViewModel> VariableRows { get; } = [];
+
+    public bool ShowVariables => VariableRows.Count > 0;
+
     /// <summary>Whether the Model switches group is open. Collapsed by default: the switches are a debugging view, and an
     /// instance with one off says so on the schematic either way.</summary>
     [ObservableProperty] private bool _modelSwitchesExpanded;
@@ -985,9 +991,11 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         // (See AdoptCellDeclaredParameters below for why a cell-ref component is topped up first.)
         Rows.Clear();
         SwitchRows.Clear();
+        VariableRows.Clear();
         if (_schematicVm is not null && comp.Symbol != SymbolKind.Snp)
         {
             AdoptCellDeclaredParameters(comp);
+            var (cellVars, emSetups) = AdoptCellVariablesAndModel(comp);
             if (comp.Symbol == SymbolKind.SpiceModel) AdoptSpiceModelDeclaredParameters(comp);
             if (comp.Symbol == SymbolKind.ComposedFET) AdoptComposedFetSwitches(comp);
 
@@ -1050,6 +1058,16 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
                     SwitchRows.Add(row);
                     continue;
                 }
+                if (cellVars.FirstOrDefault(v => v.Name == param.Name) is { } cellVar)
+                {
+                    row.ExpressionPlaceholder = $"cell: {cellVar.Expression} {cellVar.Unit}".TrimEnd();
+                    VariableRows.Add(row);
+                    continue;
+                }
+                if (emSetups is not null && param.Name == ParametricModelRegistry.ModelParameter)
+                    row.SetRuntimeChoices([ParametricModelRegistry.CircuitValue, ParametricModelRegistry.EmValue]);
+                if (emSetups is { Count: > 1 } setups && param.Name == ParametricModelRegistry.SetupParameter)
+                    row.SetRuntimeChoices([.. setups], "(choose a setup)");
                 built.Add(row);
             }
 
@@ -1086,6 +1104,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         _isRefreshing = false;
 
         OnPropertyChanged(nameof(ShowModelSwitches));
+        OnPropertyChanged(nameof(ShowVariables));
         OnPropertyChanged(nameof(IsSnp));
         OnPropertyChanged(nameof(IsSpiceModel));
         if (comp.Symbol != SymbolKind.SpiceModel && !IsVendorModelComponent(comp)) IsVendorPart = false;
@@ -1189,6 +1208,47 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
     /// anyway. Opening a dialog is not an edit, so it must not land on the undo stack; and an
     /// existing value is never touched, because it may well have been set deliberately.</para>
     /// </summary>
+    /// <summary>
+    /// brief-sdl-6 — tops a cell instance up, as <see cref="AdoptCellDeclaredParameters"/> does (no undo entry: opening a
+    /// dialog is not an edit), with a BLANK row per cell VAR it does not override — blank is the cell's own value, and the
+    /// extraction drops it — and, for an EM-capable cell, with <c>Model = Circuit</c> and, when the layout has several EM
+    /// setups, an <c>EmSetup</c> row to pick one. Returns the cell's VARs and the setup names (null when not EM-capable).
+    /// </summary>
+    private (IReadOnlyList<CellVariable> Vars, IReadOnlyList<string>? Setups) AdoptCellVariablesAndModel(EditableComponent comp)
+    {
+        if (comp.CellRef is not { Length: > 0 } cellRef || _schematicVm is null || PdkKitRegistry.IsKitRef(cellRef)
+            || VendorModelRefs.IsRef(cellRef))
+            return ([], null);
+        string dir = _schematicVm.EditModel.SchematicDirectory ?? "";
+        if (dir.Length == 0) return ([], null);
+        string? cellDir;
+        try { cellDir = ExternalCellRef.ResolveCellDir(cellRef, dir, _schematicVm.KitWorkspaceRoot, out _, out _); }
+        catch (Exception) { return ([], null); }
+        if (cellDir is null) return ([], null);
+
+        var ccellParams = CellSymbolResolver.ResolveCcell(cellRef, dir, _schematicVm.KitWorkspaceRoot)?.Parameters ?? [];
+        var vars = CellVariables.Of(cellDir).Where(v => !ccellParams.Any(p => p.Name == v.Name)).ToList();
+        foreach (var v in vars)
+            if (!comp.Parameters.Any(p => p.Name == v.Name))
+                comp.Parameters.Add(new EditableParameter { Name = v.Name, Expression = "", Unit = "", ShowOnSchematic = false });
+
+        if (!CircuitRF.Design.Layout.Em.ParametricEm.EmCapability.IsCapable(cellDir)) return (vars, null);
+        var setups = CircuitRF.Design.Layout.Em.ParametricEm.EmCapability.SetupsFor(cellDir)
+                         .Select(Path.GetFileNameWithoutExtension).Cast<string>().ToList();
+        if (!comp.Parameters.Any(p => p.Name == ParametricModelRegistry.ModelParameter))
+            comp.Parameters.Insert(0, new EditableParameter
+            {
+                Name = ParametricModelRegistry.ModelParameter, Expression = ParametricModelRegistry.CircuitValue, Unit = "",
+                ShowOnSchematic = false,
+            });
+        if (setups.Count > 1 && !comp.Parameters.Any(p => p.Name == ParametricModelRegistry.SetupParameter))
+            comp.Parameters.Insert(1, new EditableParameter
+            {
+                Name = ParametricModelRegistry.SetupParameter, Expression = "", Unit = "", ShowOnSchematic = false,
+            });
+        return (vars, setups);
+    }
+
     private void AdoptCellDeclaredParameters(EditableComponent comp)
     {
         if (comp.CellRef is not { Length: > 0 } cellRef) return;
@@ -2042,7 +2102,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         // untouched params), so a same-count rename would silently leave a row's label AND value
         // bound to an object no longer in the model at all.
         var visible = VisibleParams(_target);
-        var rows    = Rows.Concat(SwitchRows).ToList();   // a composed FET's switches are rows too, in their own group
+        var rows    = Rows.Concat(SwitchRows).Concat(VariableRows).ToList();   // switches and cell variables are rows too, in their own groups
         if (rows.Count != visible.Count ||
             !rows.Select(r => r.Name).SequenceEqual(visible.Select(p => p.Name)))
         {
@@ -2108,7 +2168,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         ShowInstanceName   = _target.ShowInstanceName;
         ModelsExistingArtwork = _target.FromArtwork;
         OnPropertyChanged(nameof(ShowModelsExistingArtwork));
-        foreach (var row in Rows.Concat(SwitchRows))
+        foreach (var row in Rows.Concat(SwitchRows).Concat(VariableRows))
             row.RefreshFromModel();
         ConfigureTestPadRows();
         _isRefreshing = false;

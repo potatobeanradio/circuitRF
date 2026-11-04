@@ -70,6 +70,7 @@ public static class TraceResolve
         // failure one line later was not. Resolving a trace is a read either way.
         DataSet? ds = t.SourcePath is { } p ? sources.DataFor(p) : null;
 
+
         // "Plot versus" may take its X from a DIFFERENT loaded file (measured Pout against simulated
         // Gain). Null XSourcePath — the ordinary case — means "same source as Y".
         bool crossSource = t.XSourcePath is { } xp
@@ -110,6 +111,10 @@ public static class TraceResolve
                                         DataSet? xDs = null)
     {
         var probe = new ResolveProbe();
+        // brief-sdl-6 R-sdl6-3: a trace of an analysis that ran by EM says so in its label.
+        t.ByEm = ds is not null && t.CubeName is { } cn && cn.IndexOf('.') is > 0 and var dot
+                 && ds.Groups.Contains(cn[..dot])
+                 && ds.CubesIn(cn[..dot]).ContainsKey(CircuitRF.Design.Layout.Em.ParametricEm.EmResultStamp.CubeName);
         t.BarWidth  = null;
         t.NormalFit = null;
         t.SampleAxis = null;

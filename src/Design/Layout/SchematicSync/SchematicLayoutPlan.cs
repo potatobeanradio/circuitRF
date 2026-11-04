@@ -75,6 +75,11 @@ public sealed class SchematicLayoutPlan
     public bool OrientationLinksRecorded { get; init; }
 
     /// <summary>True when there is nothing undoable to apply — the GUI then has no command to run.</summary>
+    /// <summary>brief-sdl-6 D4 — the parameters of linked parts whose value was set in the LAYOUT and is kept over the
+    /// schematic's (<see cref="EditState"/>): a variable that drives one of them in the schematic does not reach that
+    /// part's copper.</summary>
+    public IReadOnlyList<(string SchematicId, string Parameter)> LayoutKept { get; init; } = [];
+
     public bool ChangesNothing => Edits.Count == 0 && Ground.IsEmpty;
 
     /// <summary>Writes the bookkeeping into <paramref name="view"/> — the target, or a copy of it.</summary>

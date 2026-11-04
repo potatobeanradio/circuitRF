@@ -168,6 +168,7 @@ string? imageScalePoints = null;
 int cmcMarkers = 0;
 string? palette = null, paletteCategory = null, paletteSearch = null, schematic = null, select = null;
 bool parameterDialog = false;
+string? analysisDialog = null, emSolvesDialog = null;   // brief-sdl-6
 string? archive = null, manageLibraries = null, addVendorLibrary = null, exportToLibrary = null, exportLibrary = null, importSchematic = null;
 var exportBuilds = new List<(string Rid, string Path)>();
 string? exportProtect = null;
@@ -245,6 +246,8 @@ for (int i = 0; i < args.Length; i++)
         case "--review-panel" when i + 1 < args.Length: reviewPanel = args[++i]; break;
         case "--planar-memory-dialog": planarMemoryDialog = true; break;
         case "--settings-general": settingsGeneral = true; break;
+        case "--analysis-dialog" when i + 1 < args.Length: analysisDialog = Path.GetFullPath(args[++i]); break;
+        case "--em-solves-dialog" when i + 1 < args.Length: emSolvesDialog = Path.GetFullPath(args[++i]); break;
         case "--review": reviewRun = true; break;
         case "--place" when i + 1 < args.Length: place = args[++i]; break;
         case "--lock" when i + 1 < args.Length: layerToggles.Add((args[++i], false)); break;
@@ -323,6 +326,12 @@ if (planarMemoryDialog && output is not null)
     AppBuilder.Configure<SnapshotApp>().UseSkia()
         .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
     return ShowPlanarMemoryDialog(output);
+}
+if ((analysisDialog ?? emSolvesDialog) is { } sdl6Csch && output is not null)
+{
+    AppBuilder.Configure<SnapshotApp>().UseSkia()
+        .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
+    return analysisDialog is not null ? ShowAnalysisDialog(sdl6Csch, select, output) : ShowEmSolvesDialog(sdl6Csch, output);
 }
 if (settingsGeneral && output is not null)
 {
@@ -2043,6 +2052,42 @@ static int ShowPlanarMemoryDialog(string path)
     var dialog = new CircuitRF.Ui.Views.Dialogs.SaveChangesDialog(
         verdict.Text ?? "", saveLabel: "Simulate Anyway", dontSaveLabel: null, cancelLabel: "Don't Simulate",
         title: "This Run May Not Fit in Memory");
+    dialog.Show();
+    for (int k = 0; k < 6; k++) { Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); dialog.UpdateLayout(); }
+    dialog.CaptureRenderedFrame()!.Save(path);
+    Console.WriteLine($"wrote {path}");
+    return 0;
+}
+
+// --analysis-dialog <csch> [--select <analysis>]: brief-sdl-6 — the Edit Analysis dialog on one of the schematic's
+// analyses, as the Analyses panel opens it, with its Simulate by and EM setup row.
+static int ShowAnalysisDialog(string csch, string? name, string path)
+{
+    var (model, _, _) = SchematicPersistence.LoadFromFile(csch);
+    model.SchematicDirectory = Path.GetDirectoryName(csch);
+    var existing = name is null ? model.Analyses.First(a => a is not CircuitRF.Core.Design.ParametricSweepAnalysis)
+                                : model.Analyses.First(a => a.Name == name);
+    var vm = new AnalysisEditorViewModel(model, existing);
+    var dialog = new CircuitRF.Ui.Views.Dialogs.AnalysisEditorDialog(vm, isEdit: true);
+    dialog.Show();
+    for (int k = 0; k < 6; k++) { Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); dialog.UpdateLayout(); }
+    Console.WriteLine($"Simulate by: {vm.SimulateByOptions[vm.SimulateByIndex]}; EM setup: {vm.EmSetupOptions[vm.EmSetupIndex]} " +
+                      $"(choosable: {vm.EmSetupChoosable})");
+    dialog.CaptureRenderedFrame()!.Save(path);
+    Console.WriteLine($"wrote {path}");
+    return 0;
+}
+
+// --em-solves-dialog <csch>: brief-sdl-6 D5 — the question Simulate asks when a run needs more than one uncached EM solve,
+// with the count the run's own function takes of the schematic, in the dialog WorkspaceWindow opens for it.
+static int ShowEmSolvesDialog(string csch, string path)
+{
+    var plan = CircuitRF.Design.Circuit.CircuitEvaluation.Plan(CircuitRF.Design.Circuit.PreparedCircuit.FromSchematic(csch),
+                                                                new CircuitRF.Design.Circuit.CircuitEvaluationRequest());
+    var count = CircuitRF.Design.Circuit.CircuitEvaluation.CountEmSolves(plan);
+    Console.WriteLine(count.Sentence);
+    var dialog = new CircuitRF.Ui.Views.Dialogs.SaveChangesDialog(
+        count.Sentence + " Run them?", saveLabel: "Run", dontSaveLabel: null, cancelLabel: "Cancel", title: "EM Solves");
     dialog.Show();
     for (int k = 0; k < 6; k++) { Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); dialog.UpdateLayout(); }
     dialog.CaptureRenderedFrame()!.Save(path);

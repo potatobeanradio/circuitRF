@@ -159,6 +159,7 @@ public sealed class Elaborator
 
         var globalScope = BuildGlobalScope(tb);
         GlobalScope     = globalScope;
+        _globalNames    = [.. tb.GlobalVariables.Select(v => v.Name).Distinct(StringComparer.Ordinal)];
 
         // Ambient must be known BEFORE flattening: models are constructed during the walk, and a
         // temperature-aware one bakes its temperature in at construction.
@@ -902,6 +903,19 @@ public sealed class Elaborator
                     : $"{instancePathPrefix}.{localNet}";
             }
 
+            // brief-sdl-6 D9: an instance that names an EM cell (EmCell=) is either simulated by EM at this point's
+            // values — the provider's Touchstone, placed as an SnP — or, with Model=Circuit, an ordinary cell instance
+            // with the reserved keys taken off so they reach no scope.
+            if (!ComponentModelFactory.IsPrimitive(inst.Reference) && ParametricSwitch(inst, out bool byEm, out var plain))
+            {
+                if (byEm)
+                {
+                    ElaborateParametric(inst, plain, childPath, instancePathPrefix, parentNetMap, currentScope, globalScope, netlist);
+                    continue;
+                }
+                inst = plain;
+            }
+
             // Pin is a connectivity marker only — the extractor already named the net after the
             // port and the parentNetMap handles the binding. Nothing to stamp or recurse into.
             if (inst.Reference.Equals("Pin", StringComparison.OrdinalIgnoreCase))
@@ -1269,6 +1283,7 @@ public sealed class Elaborator
                 // A corner selection (brief vendorlib-13 R-vl13-2d): the corner's values become the cell's defaults
                 // for this instance, so an explicit override still wins; the selector itself binds nothing.
                 var (cornered, cornerOverrides) = CellCorner.Apply(subCell, inst.Overrides, childPath);
+                ValidateCellOverrides(inst, cornered, childPath);
                 var subScope = BuildCellScope(
                     cornered,
                     parentScope: currentScope,
@@ -1279,6 +1294,112 @@ public sealed class Elaborator
 
                 FlattenCell(cornered, childPath, subPortMap, subScope, globalScope, netlist);
             }
+        }
+    }
+
+    // ── Parametric (EM) instances — brief-sdl-6 ───────────────────────────────
+
+    /// <summary>The testbench's global variable names, for the values a Path A instance is simulated at.</summary>
+    private IReadOnlyList<string> _globalNames = [];
+
+    private static readonly HashSet<string> _parametricKeys = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ParametricModelRegistry.ModelParameter, ParametricModelRegistry.CellParameter, ParametricModelRegistry.SetupParameter,
+    };
+
+    /// <summary>
+    /// Whether <paramref name="inst"/> names an EM cell — it carries <c>EmCell=</c>, which only the extraction of an
+    /// EM-capable cell and a run's EM switch write — and whether it asks for EM (<c>Model=EM</c>). <paramref name="plain"/>
+    /// is the instance without the reserved keys. A cell that merely declares a parameter called <c>Model</c> carries no
+    /// <c>EmCell</c> and is never read here.
+    /// </summary>
+    private static bool ParametricSwitch(Instance inst, out bool byEm, out Instance plain)
+    {
+        byEm = false;
+        plain = inst;
+        if (!inst.Overrides.Any(o => o.Name.Equals(ParametricModelRegistry.CellParameter, StringComparison.OrdinalIgnoreCase)))
+            return false;
+        byEm = inst.Overrides.Any(o => o.Name.Equals(ParametricModelRegistry.ModelParameter, StringComparison.OrdinalIgnoreCase)
+                                       && Unquote(o.Expression).Trim().Equals(ParametricModelRegistry.EmValue, StringComparison.OrdinalIgnoreCase));
+        plain = new Instance(inst.InstanceName, inst.Reference, inst.NetBindings,
+                             inst.Overrides.Where(o => !_parametricKeys.Contains(o.Name)).ToList())
+        { RefNetBinding = inst.RefNetBinding };
+        return true;
+    }
+
+    private static string? Reserved(Instance inst, string name) =>
+        inst.Overrides.FirstOrDefault(o => o.Name.Equals(name, StringComparison.OrdinalIgnoreCase)) is { } o
+            ? Unquote(o.Expression).Trim() : null;
+
+    /// <summary>
+    /// D9: the instance is simulated by the provider's model at this point's values. For a placed cell (Path B) the values
+    /// are its own scope — its parameters and variables, the instance's overrides applied exactly as for a circuit-model
+    /// instance (D7); for the schematic simulated by EM of its own layout (Path A, a reference to no library cell) they
+    /// are the global variables. The answer is placed as an SnP across the instance's nets, port k on net k.
+    /// </summary>
+    private void ElaborateParametric(Instance inst, Instance plain, string childPath, string instancePathPrefix,
+                                     IReadOnlyDictionary<string, string>? parentNetMap, Scope currentScope, Scope globalScope,
+                                     ElaboratedNetlist netlist)
+    {
+        var values = new Dictionary<string, Value>(StringComparer.Ordinal);
+        void Take(string name, Scope scope)
+        {
+            try { values[name] = _evaluator.Eval(name, scope); }
+            catch (Exception) { /* a value that does not resolve to a number is not one the geometry can take */ }
+        }
+
+        if (FindCell(inst.Reference) is { } cell)
+        {
+            var (cornered, cornerOverrides) = CellCorner.Apply(cell, plain.Overrides, childPath);
+            ValidateCellOverrides(plain, cornered, childPath);
+            var scope = BuildCellScope(cornered, currentScope, cornerOverrides, childPath, inst.InstanceName);
+            foreach (var p in cornered.Parameters) Take(p.Name, scope);
+            foreach (var v in cornered.Variables) Take(v.Name, scope);
+        }
+        else
+            foreach (var name in _globalNames) Take(name, globalScope);
+
+        var request = new ParametricModelRequest(
+            Reserved(inst, ParametricModelRegistry.CellParameter) ?? "",
+            Reserved(inst, ParametricModelRegistry.SetupParameter) is { Length: > 0 } setup ? setup : null,
+            values, childPath, inst.NetBindings.Count, BaseDirectory);
+        var answer = ParametricModelRegistry.Resolve(request);
+        if (answer.Note is { Length: > 0 } note) netlist.AddNoteOnce($"em-model:{childPath}:{note}", note);
+        if (answer.Deferred) return;
+        if (answer.Failure is { } failure || answer.SnpPath is not { Length: > 0 } snp)
+            throw new InvalidOperationException($"'{childPath}' cannot be simulated by EM: {answer.Failure ?? "no model was produced"}");
+
+        // Placed through the ordinary primitive path, so an EM result is stamped, renormalised and extrapolated exactly
+        // as any SnP the user placed.
+        var asSnp = new Instance(inst.InstanceName, "SnP", inst.NetBindings,
+            [new ParameterAssignment("NumPorts", inst.NetBindings.Count.ToString(CultureInfo.InvariantCulture)),
+             new ParameterAssignment("File", "\"" + snp + "\"")]);
+        FlattenInstances([asSnp], instancePathPrefix, parentNetMap, currentScope, globalScope, netlist);
+    }
+
+    /// <summary>
+    /// D7: an instance override of a cell is checked against what the cell declares before it is bound. A name that is
+    /// both a parameter and a variable of the cell is ambiguous to override and is refused naming both; a name that is
+    /// neither, and that nothing in the cell reads, would change nothing and is refused (<see cref="WarnUnreadOverrides"/>
+    /// still warns about a name the cell reads without declaring).
+    /// </summary>
+    private void ValidateCellOverrides(Instance inst, Cell cell, string childPath)
+    {
+        HashSet<string>? read = null;
+        foreach (var ov in inst.Overrides)
+        {
+            if (ov.Name.StartsWith("__", StringComparison.Ordinal) || ov.Name == CellCorner.SelectorParameter) continue;
+            bool isParam = cell.Parameters.Any(p => p.Name == ov.Name);
+            bool isVar   = cell.Variables.Any(v => v.Name == ov.Name);
+            if (isParam && isVar)
+                throw new InvalidOperationException(
+                    $"'{childPath}' sets {ov.Name}, which cell '{cell.Name}' declares both as a parameter and as a variable; " +
+                    $"rename one of them so the override says which it sets.");
+            if (isParam || isVar) continue;
+            read ??= NamesReadIn(cell, []);
+            if (read is not null && !read.Contains(ov.Name))
+                throw new InvalidOperationException(
+                    $"'{childPath}' sets {ov.Name}, which cell '{cell.Name}' neither declares as a parameter or variable nor reads.");
         }
     }
 

@@ -81,6 +81,13 @@ public static class CnlWriter
             if (!analysis.Enabled)
                 // Append to every \n-separated sub-line (S-param emits one line per segment).
                 text = string.Join("\n", text.Split('\n').Select(l => l + " enabled=false"));
+            // brief-sdl-6 R-sdl6-1: only when not the default, so every netlist written before the key existed is unchanged.
+            if (analysis.Model == AnalysisModel.Em || analysis.EmSetup is { Length: > 0 })
+            {
+                string suffix = (analysis.Model == AnalysisModel.Em ? " model=em" : "") +
+                                (analysis.EmSetup is { Length: > 0 } es ? " emSetup=" + (es.Contains(' ') ? $"\"{es}\"" : es) : "");
+                text = string.Join("\n", text.Split('\n').Select(l => l + suffix));
+            }
             sb.AppendLine(text);
         }
 

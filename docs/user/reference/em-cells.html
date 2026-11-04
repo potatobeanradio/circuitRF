@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — EM Cells</title>
+<link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: docs/user/src/reference/em-cells.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../index.html"><img class="logo" src="../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="index.html">Reference Guide</a>
+  <div class="doc-search" data-crf-search data-root="../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › EM cells</p>
+    <nav class="page-nav-top" aria-label="Previous and next page">
+      <a class="prev" href="em-setup.html" title="Previous: EM Setup"><span class="arrow">‹</span><span class="name">EM Setup</span></a>
+      <a class="next" href="em-solvers.html" title="Next: EM Solvers: MoM, FEM and FDTD"><span class="name">EM Solvers: MoM, FEM and FDTD</span><span class="arrow">›</span></a>
+    </nav>
+  </div>
+
+  <h1>EM Cells</h1>
+  <p class="lede">Simulating a schematic by EM of its own layout, at whatever values its variables have — and reusing it as a part.</p>
+
+<nav class="toc">
+<h2>On this page</h2>
+<ol>
+<li><a href="#own-layout">Simulating a schematic by EM of its own layout</a></li>
+<li><a href="#capable">What a schematic needs</a></li>
+<li><a href="#what-runs">What the analysis runs on</a></li>
+<li><a href="#as-a-part">Reusing it as a part</a></li>
+<li><a href="#variables">Setting a cell's variables from the instance</a></li>
+<li><a href="#cache">The EM cache</a></li>
+<li><a href="#count">The solve count</a></li>
+<li><a href="#unreached">A variable that does not reach the copper</a></li>
+<li><a href="#headless">From the command line</a></li>
+</ol>
+</nav>
+<p>A schematic of microstrip lines, tees and bends describes its own copper: <strong>Update Layout from Schematic</strong>
+places it, joined, and its Ports become the EM setup's ports. This page is the next step: the same
+schematic, with its analyses, goals and VAR block, simulated by EM of that layout instead of by its circuit
+models — at whatever values its variables have when it runs.</p>
+<h2 id="own-layout">Simulating a schematic by EM of its own layout</h2>
+<p>The choice lives on the analysis. Open it (double-click its card in the Analyses panel) and set <strong>Simulate
+by</strong> to <strong>EM of this schematic's layout</strong>. Nothing else in the schematic changes: the analysis keeps its
+name, so its measures, goals and Data Display traces work as before, and a trace from an EM run says
+<strong>(EM)</strong> after its name.</p>
+<p>At each run, and at each point of a sweep, circuitRF:</p>
+<ol>
+<li>reads the <strong>saved</strong> schematic and puts the variables' current values into it — your VAR rows, a <code>--set</code>,
+a swept value or a tuned one;</li>
+<li>re-plans the <strong>saved</strong> layout from it in memory, by the same rules <strong>Update Layout from Schematic</strong>
+follows, so every edit you made in the layout is kept and copper that grows pushes what is joined beyond
+it along;</li>
+<li>solves that layout through its EM setup — or reads the result from the <a href="#cache">EM cache</a> when the
+copper has been solved before.</li>
+</ol>
+<p><strong>Your files are never written.</strong> The <code>.csch</code>, the <code>.clay</code> and the <code>.cem</code> are read and left as they were;
+an EM run of a schematic changes nothing you would see in the layout editor. To change the layout, run
+Update Layout from Schematic. Values only reach the evaluation through the variables, so an unsaved change
+to a VAR row counts; an unsaved change to the drawing itself (a part added, a wire moved) does not — save
+first.</p>
+<p>Several setups can analyse one layout. When there are several, pick one in the <strong>EM setup</strong> box beside
+<strong>Simulate by</strong>; with one, the box shows it and stays greyed.</p>
+<h2 id="capable">What a schematic needs</h2>
+<ul>
+<li><strong>A layout made from it.</strong> Run Update Layout from Schematic once; the layout keeps the record of which
+part is which, and that record is what lets a change of value reach the copper.</li>
+<li><strong>An EM setup analysing that layout.</strong> File ▸ New ▸ EM Setup, the layout editor's EM button, or Update
+Layout from Schematic with <strong>Create or update EM setup</strong> on.</li>
+<li><strong>Ports numbered 1 to N.</strong> The EM result's port <em>k</em> is the schematic's Port with <code>Num = k</code>.</li>
+</ul>
+<p>Anything missing stops the run with a sentence naming it. EM never falls back to the circuit models
+without saying so — <code>circuitrf check</code> reports the same sentence before you run.</p>
+<h2 id="what-runs">What the analysis runs on</h2>
+<p>When every part of the schematic is copper — lines, tees, bends, crosses, coupled lines — the analysis runs
+on the EM N-port between your Ports. An S-parameter analysis then reports exactly the EM S-parameters,
+renormalised to the Ports' <code>Z</code> as any SnP is.</p>
+<p>Two kinds of part stop the run, by name:</p>
+<ul>
+<li><strong>A part with no layout at all</strong>, such as an ideal resistor between two line ends. Nothing in the layout
+stands for it, so it cannot be connected to the EM result. Give it a footprint, or replace it with a line
+model.</li>
+<li><strong>A part that is not copper</strong>, such as a footprinted capacitor or a transistor. Its pads are copper, but
+the part between them is not, and joining its own model to the EM result needs ports at its pads. A
+layout's planar EM setup makes none — only a 3D view's setup does. Run that analysis by circuit models
+for now.</li>
+</ul>
+<h2 id="as-a-part">Reusing it as a part</h2>
+<p>The same schematic can be placed as one part in a larger schematic, with terminations or other circuitry
+around it. Place its cell as you place any cell. It needs no symbol of its own: one is made for it, with one
+pin per Port, numbered by the Ports' <code>Num</code>, so the EM ports, the symbol's pins and the larger schematic's
+wires agree with no step from you.</p>
+<p>In the placed part's properties, <strong>Model</strong> chooses <strong>Circuit</strong> (the default) or <strong>EM</strong>. With EM, the part
+is the EM result of its own layout at the values the instance gives it. An analysis set to <strong>EM of this
+schematic's layout</strong> in the larger schematic also switches every such part to EM.</p>
+<h2 id="variables">Setting a cell's variables from the instance</h2>
+<p>A placed cell's properties list its VARs in a <strong>Variables</strong> group under its parameters. A blank row is the
+cell's own value, shown greyed; a value typed there sets that variable for this instance only, evaluated in
+the larger schematic's scope as a parameter is. Variables that depend on it follow: with <code>L = L90 - w50/2</code>
+in the cell, setting <code>w50</code> on the instance moves <code>L</code> too.</p>
+<p>This works for every placed cell, not only EM ones. Three things follow:</p>
+<ul>
+<li>A variable set on an instance is a tunable and an optimisation variable, named <code>X1.w50</code> — the same form
+as a parameter of a placed cell. (<code>Cell:w50</code> is the cell's own variable, shared by every instance.)</li>
+<li>Renaming a cell's variable is a change to its interface: every instance placed against the old name says
+so, as a renamed parameter does.</li>
+<li>A name that is both a parameter and a variable of one cell cannot be set from an instance — it would be
+unclear which is meant — and a name the cell neither declares nor reads is refused rather than ignored.</li>
+</ul>
+<h2 id="cache">The EM cache</h2>
+<p>Every EM result is kept under the workspace's <code>results/em-cache/&lt;cell&gt;/</code>, named by the <strong>geometry</strong> it was
+solved at — the copper on every layer the stackup solves, the port labels, the setup's settings, the
+stackup and the solver. Two values that round to the same copper share one result; anything that changes
+the copper — a value, a hand edit, a generator change — makes a new one. Beside each result,
+<code>&lt;key&gt;.provenance.txt</code> lists the values that first produced it.</p>
+<p>The cache is never trimmed on its own. <strong>Layout ▸ Clear EM Cache</strong> removes it; the next run solves what it
+needs again.</p>
+<h2 id="count">The solve count</h2>
+<p>Before anything is solved, the run works out every EM evaluation it will make at every point and says so:</p>
+<blockquote>
+<p>2 EM solves needed for 3 evaluations (2 distinct geometries, 0 already in the EM cache), about 24 s of
+factoring, up to 1.7 GB a frequency point.</p>
+</blockquote>
+<p>The time and memory are the figures <code>em --dry-run</code> gives for the same setup; the fill is extra. When more
+than one solve is needed, Simulate asks once before it starts. The command line and the MCP server do not
+ask: they stop at a limit (20 by default) with the same sentence, before solving anything.</p>
+<h2 id="unreached">A variable that does not reach the copper</h2>
+<p>A value you set in the layout is kept over the schematic's (see
+<a href="layout-editor.html">the layout editor</a>). A variable that would have driven it then has no effect on that
+part, and the run says so:</p>
+<blockquote>
+<p>w50 does not reach ML3.W, which is set in the layout.</p>
+</blockquote>
+<p><code>circuitrf check</code> says it too. Sweeping or optimising such a variable moves nothing on that part.</p>
+<h2 id="headless">From the command line</h2>
+<p>The analysis's choice is the <code>.cnl</code> key <code>model=em</code> (and <code>emSetup=</code> when the layout has several setups); a
+schematic run headless honours it. Every run verb also takes:</p>
+<ul>
+<li><code>--em on</code> — run every analysis by EM, and every EM-capable part by EM;</li>
+<li><code>--em off</code> — run everything by circuit models;</li>
+<li><code>--em-max-solves N</code> — the most uncached solves the run may start (default 20).</li>
+</ul>
+<p><code>circuitrf explain &lt;file&gt; --analysis</code> lists, for each analysis run by EM, every evaluation in run order and
+whether the cache holds it. The details are in <a href="cli.html">the command line reference</a>.</p>
+
+<nav class="page-nav">
+  <a class="prev" href="em-setup.html"><span class="dir">Previous</span><span class="name">EM Setup</span></a>
+  <a class="next" href="em-solvers.html"><span class="dir">Next</span><span class="name">EM Solvers: MoM, FEM and FDTD</span></a>
+</nav>
+</main>
+
+<footer class="doc-footer">
+  <img src="../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../index.html">Documentation home</a>
+</footer>
+
+<script src="../assets/js/search-index.js" defer></script>
+<script src="../assets/js/docs-search.js" defer></script>
+</body>
+</html>

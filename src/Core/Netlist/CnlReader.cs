@@ -141,6 +141,8 @@ public sealed class CnlReader
                             ? spAnalysis.PassiveParamsExpr : existing.PassiveParamsExpr,
                     };
                     merged.Enabled = existing.Enabled;
+                    merged.Model   = existing.Model;
+                    merged.EmSetup = existing.EmSetup;
                     tb.Analyses[idx] = merged;
                 }
                 else
@@ -148,6 +150,7 @@ public sealed class CnlReader
             }
             else
                 tb.RawDirectives.Add(new RawDirective("analysis", rawLine));
+            ApplyModelTokens(tb, rawLine);
             return true;
         }
 
@@ -1114,6 +1117,30 @@ public sealed class CnlReader
                 return !t[(eq + 1)..].Trim('"').Equals("false", StringComparison.OrdinalIgnoreCase);
         }
         return true;
+    }
+
+    /// <summary>
+    /// brief-sdl-6 R-sdl6-1: <c>model=</c> and <c>emSetup=</c> are legal on every directive, so they are read once here,
+    /// onto the analysis the line just added or extended, rather than by each typed parser. Only a key the line states
+    /// is applied, so the second segment of a multi-segment S-parameter analysis does not reset the first's.
+    /// </summary>
+    private static void ApplyModelTokens(TestBench tb, string rawLine)
+    {
+        var tokens = TokeniseLine(rawLine);
+        if (tokens.Count < 2) return;
+        string? model = null, emSetup = null;
+        foreach (var t in tokens)
+        {
+            int eq = t.IndexOf('=');
+            if (eq <= 0) continue;
+            string key = t[..eq];
+            if (key.Equals("model", StringComparison.OrdinalIgnoreCase)) model = t[(eq + 1)..];
+            else if (key.Equals("emSetup", StringComparison.OrdinalIgnoreCase)) emSetup = Unquote(t[(eq + 1)..]);
+        }
+        if (model is null && emSetup is null) return;
+        if (tb.Analyses.LastOrDefault(a => a.Name == tokens[0]) is not { } analysis) return;
+        if (model is not null) analysis.Model = Analysis.ParseModel(model);
+        if (emSetup is { Length: > 0 }) analysis.EmSetup = emSetup;
     }
 
     // ── Loadpull analysis directive parser ────────────────────────────────────

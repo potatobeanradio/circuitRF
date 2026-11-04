@@ -454,6 +454,21 @@ public partial class WorkspaceViewModel
     /// beyond what it covers, in substrate heights, and records it in the <c>.cws</c> straight away — the next run
     /// reads it, and re-running updates only the pour it drew last time.
     /// </summary>
+    /// <summary>
+    /// brief-sdl-6 D3 — Layout ▸ Clear EM Cache: removes every EM result the workspace keeps for schematics simulated by EM
+    /// of their own layout (<c>results/em-cache/</c>). Nothing else is touched; the next run solves what it needs again.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(HasWorkspaceOpen))]
+    private void ClearEmCache()
+    {
+        if (CurrentWorkspacePath is not { } cwsPath || Path.GetDirectoryName(cwsPath) is not { } ws) return;
+        int held = CircuitRF.Design.Layout.Em.ParametricEm.EmCellCache.Count(ws);
+        int removed = CircuitRF.Design.Layout.Em.ParametricEm.EmCellCache.Clear(ws);
+        Messages.Info(removed == 0
+            ? "The EM cache is empty."
+            : $"Cleared the EM cache: {held} EM result{(held == 1 ? "" : "s")} removed. The next run by EM solves what it needs again.");
+    }
+
     [RelayCommand(CanExecute = nameof(HasWorkspaceOpen))]
     private async Task SetGroundPourMargin(Avalonia.Controls.Window? owner)
     {

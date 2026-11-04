@@ -64,6 +64,47 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
 
     [ObservableProperty] private bool _enabled = true;
 
+    // ── Simulate by (brief-sdl-6 R-sdl6-1) ──────────────────────────────────────
+
+    /// <summary>The two answers to "what is this analysis's circuit built from", in <see cref="AnalysisModel"/> order.</summary>
+    public IReadOnlyList<string> SimulateByOptions { get; } = ["Circuit models", "EM of this schematic's layout"];
+
+    /// <summary>0 = circuit models, 1 = EM of the schematic's own layout.</summary>
+    [ObservableProperty] private int _simulateByIndex;
+
+    /// <summary>The EM setups that analyse this schematic's layout, by name; the first entry is "(the only setup)" or
+    /// "(choose a setup)" so a picker always has a row to show.</summary>
+    public IReadOnlyList<string> EmSetupOptions { get; private set; } = [];
+
+    /// <summary>The setup chosen, as its index in <see cref="EmSetupOptions"/>; 0 names none.</summary>
+    [ObservableProperty] private int _emSetupIndex;
+
+    /// <summary>Whether a setup has to be chosen: EM is asked for and the layout has several.</summary>
+    public bool EmSetupChoosable => _emSetupPaths.Count > 1;
+
+    private IReadOnlyList<string> _emSetupPaths = [];
+
+    private void LoadEmSetups(string? existingSetup)
+    {
+        string? cellDir = _model.SchematicDirectory is { Length: > 0 } d ? Path.GetDirectoryName(Path.GetFullPath(d)) : null;
+        _emSetupPaths = cellDir is null ? [] : CircuitRF.Design.Layout.Em.ParametricEm.EmCapability.SetupsFor(cellDir);
+        EmSetupOptions = [_emSetupPaths.Count switch { 0 => "(no EM setup for this layout)", 1 => "(its one EM setup)", _ => "(choose a setup)" },
+                          .. _emSetupPaths.Select(Path.GetFileNameWithoutExtension).Cast<string>()];
+        int at = existingSetup is { Length: > 0 }
+            ? _emSetupPaths.ToList().FindIndex(p => string.Equals(Path.GetFileNameWithoutExtension(p),
+                                                                 Path.GetFileNameWithoutExtension(existingSetup), StringComparison.OrdinalIgnoreCase))
+            : -1;
+        EmSetupIndex = at + 1;
+    }
+
+    /// <summary>The base analysis takes the choice: what it is simulated by, and the setup when several could be.</summary>
+    private void ApplyModel(Analysis inner)
+    {
+        inner.Model = SimulateByIndex == 1 ? AnalysisModel.Em : AnalysisModel.Circuit;
+        inner.EmSetup = inner.Model == AnalysisModel.Em && EmSetupIndex > 0 && EmSetupIndex <= _emSetupPaths.Count
+            ? Path.GetFileNameWithoutExtension(_emSetupPaths[EmSetupIndex - 1]) : null;
+    }
+
     /// <summary>Non-null when the current Name is invalid or conflicts with an existing analysis.</summary>
     public string? NameError { get; private set; }
 
@@ -134,6 +175,7 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
         LpBody         = SeededLp(model, workspaceRoot);
         LppBody        = SeededLpp(model, workspaceRoot);
         EnvBody        = new EnvBodyViewModel(model);
+        LoadEmSetups(null);
         ValidateName();
     }
 
@@ -153,6 +195,8 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
         _name        = inner.Name;
         // Enabled now lives on the base analysis (each sweep axis has its own row Enabled).
         _enabled = inner.Enabled;
+        SimulateByIndex = inner.Model == AnalysisModel.Em ? 1 : 0;
+        LoadEmSetups(inner.EmSetup);
 
         // Track all chain member names so the edit command can remove the old chain.
         _editingChainNames.Add(inner.Name);
@@ -402,6 +446,7 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
             _                => null,
         };
         if (inner is null) return null;
+        ApplyModel(inner);
 
         if (!hasSweeps)
             return [inner];

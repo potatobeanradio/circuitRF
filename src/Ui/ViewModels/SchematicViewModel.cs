@@ -4630,11 +4630,15 @@ public sealed partial class SchematicViewModel : ObservableObject
             // Check whether PrimaryMissing because no symbol exists (NoView) or because symbols
             // exist but no primary is selected / named-primary is absent.
             var primary = CellFolder.ResolvePrimary(cellAbsDir, ViewType.Symbol);
-            if (primary.State == PrimaryState.NoView && AutoGenSymbolCallback is not null)
+            // brief-sdl-6 D8: an EM-capable cell gets its symbol with no question — its pins are its Ports, by Num, so
+            // there is nothing for the user to decide.
+            bool emCell = primary.State == PrimaryState.NoView
+                          && CircuitRF.Design.Layout.Em.ParametricEm.EmCapability.IsCapable(cellAbsDir);
+            if (primary.State == PrimaryState.NoView && (AutoGenSymbolCallback is not null || emCell))
             {
                 // Prompt: "A symbol for {cell} has not been created. Do you want one to be auto-generated?"
                 string cellName = Path.GetFileName(cellAbsDir);
-                bool doGen = await AutoGenSymbolCallback(cellName);
+                bool doGen = emCell || await AutoGenSymbolCallback!(cellName);
                 if (!doGen) return;   // user declined — cancel placement
 
                 // How many ports the CELL has — its own declaration when it makes one, and otherwise

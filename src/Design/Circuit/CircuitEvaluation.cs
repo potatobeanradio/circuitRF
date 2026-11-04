@@ -3,6 +3,7 @@ using CircuitRF.Core.Design;
 using CircuitRF.Core.Elaboration;
 using CircuitRF.Core.Expressions;
 using CircuitRF.Core.Stability;
+using CircuitRF.Design.Layout.Em.ParametricEm;
 using CircuitRF.Design.Optimization;
 using CircuitRF.Engine;
 using CircuitRF.Engine.HarmonicBalance;
@@ -57,6 +58,14 @@ public sealed record CircuitEvaluationRequest
     /// <summary>brief-sar-10 R-sar10-5 — a written recombination's results go to <c>&lt;analysis&gt; (&lt;label&gt;)</c> beside
     /// the analysis's own, so a re-run yield trial does not overwrite the nominal's. Null: the analysis's own folder.</summary>
     public string? FieldsLabel { get; init; }
+
+    /// <summary>brief-sdl-6 R-sdl6-1 — the run-wide model switch: true runs every chain by EM (<c>--em on</c>), false every
+    /// chain and instance by circuit models (<c>--em off</c>), null as each analysis and instance says.</summary>
+    public bool? Em { get; init; }
+
+    /// <summary>brief-sdl-6 D5 — the most uncached EM solves the run may start; more is a refusal before anything is
+    /// solved, stating the count. Null: no limit (the GUI asks the user instead).</summary>
+    public int? EmMaxSolves { get; init; }
 }
 
 /// <summary>
@@ -81,6 +90,15 @@ public static class CircuitEvaluation
     {
         request ??= new CircuitEvaluationRequest();
         var plan   = Plan(circuit, request);
+        if (request.EmMaxSolves is { } max && plan.HasEm)
+        {
+            var count = CountEmSolves(plan, request.Control);
+            if (EmLimitRefusal(count, max) is { } over)
+            {
+                plan.Nl?.Dispose();
+                return new RunResult(RunStatus.EngineError, over);
+            }
+        }
         var result = Execute(plan, request.Control, request.Measurements, request.Expressions ?? [],
                              request.Breadcrumb, request.Fields, request.FieldsLabel);
         // Simulate prints the plan's notes before the run and the result's after it; a caller of this
@@ -93,10 +111,16 @@ public static class CircuitEvaluation
     /// Reads and elaborates the netlist and describes every analysis that will be dispatched, WITHOUT
     /// running any of them — Simulate's first half. See <see cref="Plan"/>.
     /// </summary>
+    /// <param name="sourcePath">The document the netlist was written from — the schematic Simulate extracted — so a
+    /// <c>model=em</c> analysis can find the cell whose layout it is (brief-sdl-6). Null: the netlist itself.</param>
     public static RunPlan Prepare(string netlistPath, string? baseDirectory = null,
-                                  string? onlyAnalysisName = null)
-        => Plan(PreparedCircuit.FromFile(netlistPath, baseDirectory),
-                new CircuitEvaluationRequest { Analyses = onlyAnalysisName is null ? null : [onlyAnalysisName] });
+                                  string? onlyAnalysisName = null, string? sourcePath = null)
+    {
+        var circuit = PreparedCircuit.FromFile(netlistPath, baseDirectory);
+        if (sourcePath is not null) circuit.SourcePath = sourcePath;
+        return Plan(circuit,
+                    new CircuitEvaluationRequest { Analyses = onlyAnalysisName is null ? null : [onlyAnalysisName] });
+    }
 
     /// <summary>
     /// Elaborates a copy of the circuit with the request's overrides and describes every analysis that
@@ -115,6 +139,9 @@ public static class CircuitEvaluation
     /// </summary>
     public static RunPlan Plan(PreparedCircuit circuit, CircuitEvaluationRequest request)
     {
+        // brief-sdl-6 D9: the EM model provider is this layer's, so every caller of the one run function has it.
+        ParametricEmProvider.Register();
+
         // ── 1. Read (done once, by PreparedCircuit) ────────────────────────────
         if (circuit.ReadError is { } readError || circuit.Lib is not { } srcLib || circuit.Tb is not { } srcTb)
             return new RunPlan(RunStatus.EngineError, circuit.ReadError ?? "Netlist read failed.");
@@ -145,12 +172,18 @@ public static class CircuitEvaluation
             HbCircuitRun.ApplySet(tb, name, expr);
         tb.StatisticalDraws = request.Statistics;
 
+        // brief-sdl-6: --em off puts every instance back on its circuit model before anything elaborates.
+        if (request.Em == false) (tb, lib) = EmModelSwitch.CircuitOnly(tb, lib);
+
         // ── 3. Elaborate ───────────────────────────────────────────────────────
         ElaboratedNetlist nl;
         try
         {
             circuit.CountElaboration();
-            nl = new Elaborator(lib) { BaseDirectory = circuit.BaseDirectory }.Elaborate(tb);
+            // In COUNTING mode (brief-sdl-6 D5): an instance already set to EM is recorded, not solved, here — the
+            // planning elaboration describes the run, and a solve must not start before the run's count has been taken.
+            using (EmEvaluationScope.Begin(countOnly: true))
+                nl = new Elaborator(lib) { BaseDirectory = circuit.BaseDirectory }.Elaborate(tb);
         }
         catch (Exception ex)
         {
@@ -256,7 +289,18 @@ public static class CircuitEvaluation
                 units = 1; selfTicks = false;
             }
 
-            planned.Add(new PlannedAnalysis(top, null, resultName, units, selfTicks));
+            // brief-sdl-6 R-sdl6-1/2: what the chain runs on when it runs by EM — its own bench, built once here.
+            EmSwitched? em = null;
+            string? emRefusal = null;
+            bool wholeByEm = request.Em != false && EmModelSwitch.IsEm(top, tb, request.Em);
+            if (wholeByEm || (request.Em != false && EmModelSwitch.HasInstancesSetToEm(tb, lib)))
+            {
+                em = EmModelSwitch.Apply(tb, lib, circuit.SourcePath ?? circuit.FilesRead.FirstOrDefault(),
+                                         EmModelSwitch.SetupOf(top, tb), circuit.BaseDirectory, out emRefusal, wholeByEm);
+                if (em is not null && wholeByEm) desc += " — by EM";
+            }
+
+            planned.Add(new PlannedAnalysis(top, null, resultName, units, selfTicks) { Em = em, EmRefusal = emRefusal });
             lines.Add(desc);
             if (top is ParametricSweepAnalysis) sweepPoints += units;
         }
@@ -380,7 +424,10 @@ public static class CircuitEvaluation
                 var inner = pa.SelfTicks ? control : control?.Child();
 
                 bool? converged = true;
-                var ds = pa.Typed is not null
+                if (pa.EmRefusal is { } emRefusal) throw new InvalidOperationException(emRefusal);
+                var ds = pa.Em is { } em && pa.Typed is not null
+                    ? RunByEm(pa, em, nl, notes, plan.BaseDirectory, inner, out converged, fieldsRun)
+                    : pa.Typed is not null
                     ? RunTypedAnalysis(pa.Typed, nl, tb, lib, notes, plan.BaseDirectory, inner, out converged, fieldsRun, pa.ResultName)
                     : RunRawSparam(pa.RawLine!, nl, inner);
 
@@ -461,6 +508,51 @@ public static class CircuitEvaluation
             : $"{results.Count} analysis run(s) complete";
         return new RunResult(RunStatus.Success, summary, results, nlWarnings, grouped, nlNotes,
                              convergence, outcomes, fields);
+    }
+
+    /// <summary>
+    /// brief-sdl-6 — one chain run on the bench <see cref="EmModelSwitch"/> built: elaborated there, with every EM
+    /// evaluation it makes (each sweep point's included) recorded by the scope, and the result stamped with what produced
+    /// it (R-sdl6-3). The run's own netlist receives the diagnostics, so the Messages panel sees them as for any analysis.
+    /// </summary>
+    private static DataSet? RunByEm(PlannedAnalysis pa, EmSwitched em, ElaboratedNetlist nl, List<string> notes,
+                                    string? baseDirectory, RunControl? control, out bool? converged, FieldsRun fieldsRun)
+    {
+        ParametricEmProvider.Register();
+        using var scope = EmEvaluationScope.Begin(control: control);
+        using var emNl = new Elaborator(em.Lib) { BaseDirectory = baseDirectory }.Elaborate(em.Tb);
+        var ds = RunTypedAnalysis(pa.Typed!, emNl, em.Tb, em.Lib, notes, baseDirectory, control, out converged, fieldsRun, pa.ResultName);
+        nl.MergeDiagnosticsFrom(emNl);
+        if (em.PathA is not null) notes.Add(em.Describe(pa.ResultName));
+        foreach (var line in scope.Records.SelectMany(r => r.Unreached).Distinct()) nl.AddWarningOnce("em-unreached:" + line, line);
+        return ds is null ? null : EmResultStamp.Stamp(ds, em, scope.Records);
+    }
+
+    /// <summary>
+    /// brief-sdl-6 D5 — the EM evaluations a plan will make, at every point, solving nothing: one count over every
+    /// chain the plan runs by EM. <see cref="EmSolveCountResult.None"/> when it runs nothing by EM.
+    /// </summary>
+    public static EmSolveCountResult CountEmSolves(RunPlan plan, RunControl? control = null)
+    {
+        var records = new List<EmEvaluationRecord>();
+        foreach (var pa in plan.Analyses)
+        {
+            if (pa.EmRefusal is { } refusal)
+                records.Add(new EmEvaluationRecord(pa.ResultName, "", null, false, refusal, null, []));
+            else if (pa.Em is { } em && pa.Typed is not null)
+                records.AddRange(EmSolveCount.CountRecords(em.Tb, em.Lib, pa.Typed, plan.BaseDirectory, control));
+        }
+        return EmSolveCount.Summarise(records);
+    }
+
+    /// <summary>The refusal a run that needs more uncached solves than <paramref name="max"/> gets — before any is solved;
+    /// null when within it. A refusal any evaluation would meet is said first, since no limit makes it runnable.</summary>
+    public static string? EmLimitRefusal(EmSolveCountResult count, int max)
+    {
+        if (count.Refusals.Count > 0) return string.Join(" ", count.Refusals);
+        if (count.ToSolve <= max) return null;
+        return $"{count.Sentence} That is more than the limit of {max}; raise it with --em-max-solves (MCP: emMaxSolves), " +
+               "or narrow the sweep. Nothing was solved.";
     }
 
     private static IReadOnlyList<string> DrainWarnings(ElaboratedNetlist nl)

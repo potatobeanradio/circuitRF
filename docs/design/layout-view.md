@@ -1320,6 +1320,33 @@ layout's undo.
 
 ---
 
+#### A schematic simulated by EM of its own layout (SDL-6)
+
+`src/Design/Layout/Em/ParametricEm/`. An analysis with `model=em` (or a placed cell set to `Model=EM`) runs on the EM
+result of the schematic's own layout at the values its variables have at that point.
+
+- **D2 — evaluation never writes the user's files.** `EmEvaluation.Geometry` reads the SAVED `.csch`, writes each value
+  that differs from the schematic's own into its VAR row (in the row's own unit — a bare base-SI literal reads
+  differently wherever a use site applies its unit to a unit-less variable), re-plans the SAVED `.clay` in memory
+  through `SchematicLayoutPlanner.Plan` with Connect parts on (so SDL-4's rules hold: hand edits kept, a change
+  propagated rigidly), and builds the `EmLayoutSource` from that copy. `EmEvaluation.Evaluate` solves it through
+  `EmRunService.Run` with the setup's own name (so the `.sNp` is `em`'s byte for byte but the write time), its output
+  redirected into the cache and its `_sim` cell switched off. The only writes are the cache entry and any PCell the
+  evaluated geometry needs, which goes to the content-addressed generated-cell store as on any Update Layout.
+- **D3 — the cache is keyed on geometry.** `EmCellCache.KeyOf`: SHA-256 of the flattened shapes on every layer a
+  stackup conductor or via is drawn on, every port label (top-level and component-declared), the setup with its name,
+  layout reference and output path blanked, the stackup and its materials, the database unit, and the solver kind and
+  engine version. `results/em-cache/<cell>/<key>.sNp`, the run's other output in `<key>/`, and
+  `<key>.provenance.txt` naming the values that first produced it. Layout ▸ Clear EM Cache removes the folder; nothing
+  is evicted automatically.
+- **D4 — `SchematicLayoutPlan.LayoutKept`** lists the (part, parameter) pairs whose layout value is kept over the
+  schematic's (`EditState` Layout or Conflict). `EmEvaluation.Unreached` follows each such parameter's expression
+  through the VAR rows and says, per variable, `w50 does not reach ML3.W, which is set in the layout.`
+- **What the analysis runs on** — `EmModelSwitch`: Path A replaces the bench's parts by one `__EMCELL__` instance
+  carrying `Model=EM EmCell= EmSetup=` between the Ports (numbered by `Num`); a part with no layout, and a part that is
+  not copper (a footprint or a kit part), are refusals by name — the second because only a 3D view's setup makes the
+  component ports its model would stand across.
+
 ## 9A. Design rule checking (DRC)
 
 **Decided: DRC is in scope.** Start with minimum width and minimum spacing — not because those two

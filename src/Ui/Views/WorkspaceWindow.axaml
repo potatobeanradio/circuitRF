@@ -225,6 +225,7 @@
                         </NativeMenuItem>
                         <NativeMenuItem Header="Draw Ground Pour"               Command="{Binding DrawGroundPourCommand}" ToolTip="Redraws the ground artwork Update Layout from Schematic draws, from where the parts are now: the ground pour under the microstrip lines and ground vias, with a clearance round every via passing through it, and the ground vias following their pads. Copper you drew or edited yourself is left alone. Requires an active layout document."/>
                         <NativeMenuItem Header="Ground Pour Margin…"            Command="{Binding SetGroundPourMarginCommand}" CommandParameter="{Binding $parent[Window]}" ToolTip="How far the ground pour reaches beyond the lines and vias it covers, in substrate heights — recorded in the workspace. Requires an open workspace."/>
+                        <NativeMenuItem Header="Clear EM Cache"                 Command="{Binding ClearEmCacheCommand}" ToolTip="Remove the EM results kept for schematics simulated by EM of their own layout (results/em-cache). The next run by EM solves them again. Requires an open workspace."/>
                         <NativeMenuItemSeparator/>
                         <NativeMenuItem Header="Check Design Rules"             Command="{Binding CheckDesignRulesCommand}" Gesture="Meta+Shift+K"/>
                         <NativeMenuItem Header="Review Layout…"                 Command="{Binding ReviewLayoutCommand}" ToolTip="Open the Review panel on the active layout: built-in checks that mark the places a reviewer would want to look at — vias in pads, ground vias, stacked traces, copper near the board edge, edge stitching, impedance. A reviewer's aid beside DRC, not a rule check. Requires an active layout document."/>
@@ -1262,6 +1263,11 @@
                           CommandParameter="{Binding $parent[Window]}"
                           ToolTip.Tip="How far the ground pour reaches beyond the lines and vias it covers, in substrate heights — recorded in the workspace. Requires an open workspace.">
                     <MenuItem.Icon><mi:MaterialIcon Kind="ArrowExpandAll" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Clear _EM Cache"
+                          Command="{Binding ClearEmCacheCommand}"
+                          ToolTip.Tip="Remove the EM results kept for schematics simulated by EM of their own layout (results/em-cache). The next run by EM solves them again. Requires an open workspace.">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="DeleteSweepOutline" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
                 <Separator/>
                 <MenuItem Header="_Check Design Rules"

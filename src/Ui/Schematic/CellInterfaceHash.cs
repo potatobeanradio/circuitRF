@@ -51,7 +51,10 @@ public static class CellInterfaceHash
     /// round-trip format and every string is length-prefixed, so no field can be confused for the
     /// next one.
     /// </summary>
-    public static string Of(Symbol? symbol, CcellFile? ccell)
+    /// <param name="variables">brief-sdl-6 D7 — the cell's own VAR names, which an instance may now override: renaming one
+    /// breaks an instance that sets it, so they are interface. Written only when there are any, so the hash of every cell
+    /// without VARs — every cell before D7 — is unchanged.</param>
+    public static string Of(Symbol? symbol, CcellFile? ccell, IReadOnlyList<string>? variables = null)
     {
         var sb = new StringBuilder(SchemeVersion).Append('\n');
 
@@ -83,6 +86,13 @@ public static class CellInterfaceHash
         foreach (var p in ccell?.Parameters ?? [])
             Str(sb, p.Name).Append('\n');
 
+        if (variables is { Count: > 0 })
+        {
+            sb.Append("vars\n");
+            foreach (var v in variables.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal))
+                Str(sb, v).Append('\n');
+        }
+
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString())))[..Length];
     }
 
@@ -105,7 +115,24 @@ public static class CellInterfaceHash
         var res = CellSymbolResolver.Resolve(cellRef, baseDir, workspaceRoot);
         if (res is not { State: CellSymbolState.Resolved, Symbol: { } symbol }) return null;
 
-        return Of(symbol, CellSymbolResolver.ResolveCcell(cellRef, baseDir ?? "", workspaceRoot));
+        return Of(symbol, CellSymbolResolver.ResolveCcell(cellRef, baseDir ?? "", workspaceRoot),
+                  VariablesOf(cellRef, baseDir ?? "", workspaceRoot));
+    }
+
+    /// <summary>The VAR names of the cell's primary schematic, in the order its rows state them; empty for a cell that is
+    /// not a folder on disk (a kit part, a built-in) or whose schematic does not read.</summary>
+    public static IReadOnlyList<string> VariablesOf(string cellRef, string baseDir, string? workspaceRoot)
+    {
+        if (PdkKitRegistry.IsKitRef(cellRef)) return [];
+        try
+        {
+            if (ExternalCellRef.ResolveCellDir(cellRef, baseDir, workspaceRoot, out _, out _) is not { } cellDir) return [];
+            return CellVariables.Of(cellDir).Select(v => v.Name).ToList();
+        }
+        catch
+        {
+            return [];
+        }
     }
 
     // ── Canonical field writers ───────────────────────────────────────────────

@@ -249,6 +249,7 @@ public static partial class SchematicLayoutPlanner
         var newInstances = new List<(int Slot, LayoutInstance Instance)>();
         var deleteIndices = new List<int>();
         var lines = new List<ReportLine>();
+        var layoutKept = new List<(string SchematicId, string Parameter)>();   // brief-sdl-6 D4
         var noLayoutWarnings = new List<string>();
         var noLayout = new List<EditableComponent>();   // brief-sdl-3: parts joined only through one of these are placed apart
         var replacedAt = new Dictionary<int, LayoutInstance>();
@@ -391,6 +392,8 @@ public static partial class SchematicLayoutPlanner
                     string unitSuffix = string.IsNullOrEmpty(unit) ? "" : $" {unit}";
                     string V(PCellValue v) => FormatParamValue(unit, v) + unitSuffix;
                     reportedThisInstance = true;
+                    if (!resnapThis && p.State is EditState.ParamState.Layout or EditState.ParamState.Conflict)
+                        layoutKept.Add((schematicId, p.Name));
                     if (resnapThis || p.State == EditState.ParamState.Schematic)
                         lines.Add(new ReportLine(schematicId,
                             $"{schematicId} — {p.Name} changed from {V(p.Layout)} to {V(p.Schematic)} " +
@@ -618,6 +621,7 @@ public static partial class SchematicLayoutPlanner
             AddedRegion = addedRegion,
             DeletedCount = deleteIndices.Count,
             OrientationLinksRecorded = linksRecorded,
+            LayoutKept = layoutKept,
         };
 
         // brief-sdl-3 R-sdl3-1: copper of different nets that overlaps or touches once the plan is applied — read off
@@ -1889,7 +1893,7 @@ public static partial class SchematicLayoutPlanner
         count == 1 ? "1 component models existing artwork — not generated"
                    : $"{count} components model existing artwork — not generated";
 
-    private static bool IsPhysical(EditableComponent comp) =>
+    internal static bool IsPhysical(EditableComponent comp) =>
         comp.Disable is not (DisableState.Open or DisableState.Short)
         && comp.Symbol is not (SymbolKind.Ground or SymbolKind.Pin or SymbolKind.Var or SymbolKind.Meas
                             or SymbolKind.VProbe   // a name, not a part: no artwork to place

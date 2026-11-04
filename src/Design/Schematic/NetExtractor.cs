@@ -10,6 +10,8 @@ using CircuitRF.WBond;
 using CircuitRF.Design.Cells;
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.Workspace;
+using CircuitRF.Design.Layout.Em.ParametricEm;
+
 namespace CircuitRF.Design.Schematic;
 
 /// <summary>
@@ -2418,6 +2420,8 @@ public static class NetExtractor
         }
 
         var overrides = comp.Parameters
+            // brief-sdl-6 D7: a cell VAR row left blank in the instance's Variables group is the cell's own value.
+            .Where(p => !(string.IsNullOrWhiteSpace(p.Expression) && cellDef.Variables.Any(v => v.Name == p.Name)))
             .Select(p =>
             {
                 var unit = UnitNormalizer.ToEngineUnit(p.Unit);
@@ -2425,7 +2429,62 @@ public static class NetExtractor
             })
             .ToList();
 
+        // brief-sdl-6 R-sdl6-4: an instance of an EM-capable cell names the cell's folder (EmCell=), which is what lets a
+        // run simulate it by EM — chosen on the instance (Model=EM) or by an analysis's model=em. An instance set to EM
+        // whose cell is not capable is said, and runs on its circuit model rather than failing on a key the cell lacks.
+        if (EmCellOf(res) is { } emCell)
+            overrides.Add(new ParameterAssignment(ParametricModelRegistry.CellParameter,
+                                                  "\"" + RelativeToRunBase(emCell, scope.RunBase) + "\""));
+        else if (overrides.RemoveAll(IsEmKey) > 0
+                 && comp.Parameters.Any(p => p.Name == ParametricModelRegistry.ModelParameter
+                                             && p.Expression.Trim().Equals(ParametricModelRegistry.EmValue, StringComparison.OrdinalIgnoreCase)))
+            conflicts.Add($"'{comp.InstanceName}' is set to Model = EM, but cell '{cellName}' cannot be simulated by EM: " +
+                          $"{EmCapabilityRefusal(res)} It runs on its circuit model.");
+
         return new Instance(comp.InstanceName, cellName, nets, overrides);
+    }
+
+    private static bool IsEmKey(ParameterAssignment p) =>
+        p.Name == ParametricModelRegistry.ModelParameter || p.Name == ParametricModelRegistry.SetupParameter;
+
+    /// <summary>The folder of <paramref name="res"/>'s cell when it is EM-capable (brief-sdl-6 §1), else null.</summary>
+    private static string? EmCellOf(CellResolution res) =>
+        res.CellKey is { } dir && Directory.Exists(dir) && EmCapability.IsCapable(dir) ? dir : null;
+
+    private static string EmCapabilityRefusal(CellResolution res)
+    {
+        if (res.CellKey is not { } dir || !Directory.Exists(dir)) return "it is not a cell folder on disk.";
+        EmCapability.Resolve(dir, null, null, out var why);
+        return why ?? "";
+    }
+
+    /// <summary>A cell folder as a netlist states it: relative to the run's base when inside it (so the netlist moves with
+    /// the workspace), else absolute — the rule every other file reference in the netlist follows.</summary>
+    private static string RelativeToRunBase(string dir, string? runBase)
+    {
+        if (runBase is not { Length: > 0 }) return dir.Replace('\\', '/');
+        string rel = Path.GetRelativePath(runBase, dir);
+        return (rel.StartsWith("..", StringComparison.Ordinal) || Path.IsPathRooted(rel) ? dir : rel).Replace('\\', '/');
+    }
+
+    /// <summary>
+    /// brief-sdl-6 D8: an EM-capable cell drawn with Ports and no Pins — the schematic a designer simulates by EM of its
+    /// own layout — takes its Ports as its interface, in Num order, so EM ports, symbol pins and the parent's connections
+    /// agree by number with no step from the user. The Ports themselves leave the cell: placed in a parent, it is the
+    /// parent that drives it.
+    /// </summary>
+    private static (List<Instance> Instances, List<string> Ports) PortsAsPins(List<Instance> instances)
+    {
+        var ports = instances
+            .Where(i => (i.Reference.Equals("Term", StringComparison.OrdinalIgnoreCase) || i.Reference.Equals("Port", StringComparison.OrdinalIgnoreCase))
+                        && i.NetBindings.Count > 0)
+            .Select(i => (Inst: i, Num: int.TryParse(i.Overrides.FirstOrDefault(o => o.Name == "Num")?.Expression?.Trim(),
+                                                     System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture,
+                                                     out int n) ? n : int.MaxValue))
+            .OrderBy(t => t.Num)
+            .ToList();
+        var kept = instances.Where(i => !ports.Any(t => ReferenceEquals(t.Inst, i))).ToList();
+        return (kept, ports.Select(t => t.Inst.NetBindings[0]).ToList());
     }
 
     /// <summary>The one build of a cell's definition from its schematic — what an instance of it descends into, and
@@ -2435,6 +2494,8 @@ public static class NetExtractor
     {
         scope.InProgress.Add(cellKey);
         var (subInstances, subPorts, subVars, subMeas) = ExtractModel(res.Schematic, cells, lib, imports, scope, conflicts);
+        if (subPorts.Count == 0 && EmCellOf(res) is not null)
+            (subInstances, subPorts) = PortsAsPins(subInstances);
         if (subMeas.Count > 0)
             conflicts.Add($"Cell '{cellName}': MEAS components are ignored inside a cell; measurements attach to the top testbench only.");
         var cell = new Cell(cellName);

@@ -267,7 +267,7 @@ public partial class WorkspaceWindow : Window
             _vm.DockersCollapsedChanged -= UpdateNativeDockersHeader;
             _vm.ThreeDMenuVisibilityChanged -= RepaintMenuBarForThreeDMenu;
         }
-        if (_vm is not null) _vm.AutoGenSymbolPrompt = null;
+        if (_vm is not null) { _vm.AutoGenSymbolPrompt = null; _vm.ConfirmEmSolvesPrompt = null; }
         _vm = DataContext as WorkspaceViewModel;
         if (_vm is not null)
         {
@@ -275,6 +275,7 @@ public partial class WorkspaceWindow : Window
             // generate one needs a Window, which the view model has none of. Same prompt the schematic
             // canvas already shows for a palette drop of the same symbol-less cell.
             _vm.AutoGenSymbolPrompt = ShowAutoGenSymbolPromptAsync;
+            _vm.ConfirmEmSolvesPrompt = ShowEmSolvesPromptAsync;
             // Edit ▸ Paste Image as … reads this window's clipboard (brief-img-6 R-im6-2).
             _vm.PictureClipboard = () => new CircuitRF.Ui.Clipboard.TopLevelPictureClipboard(this);
             _vm.RecentWorkspacesChanged += RebuildNativeRecentMenu;
@@ -348,6 +349,18 @@ public partial class WorkspaceWindow : Window
     /// or several. Transcribes <c>SchematicView.ShowAutoGenPromptAsync</c> — same dialog, same Yes/No
     /// shape — because a user must not be asked the same question two different ways depending on which
     /// route brought the symbol-less cell onto the schematic.</summary>
+    /// <summary>brief-sdl-6 D5 — the one question a run with several uncached EM solves asks.</summary>
+    private async Task<bool> ShowEmSolvesPromptAsync(string message)
+    {
+        var dialog = new Dialogs.SaveChangesDialog(
+            message,
+            saveLabel:     "Run",
+            dontSaveLabel: null,
+            cancelLabel:   "Cancel",
+            title:         "EM Solves");
+        return await dialog.ShowDialog<Dialogs.SaveChangesResult>(this) == Dialogs.SaveChangesResult.Save;
+    }
+
     private async Task<bool> ShowAutoGenSymbolPromptAsync(string message)
     {
         var dialog = new Dialogs.SaveChangesDialog(

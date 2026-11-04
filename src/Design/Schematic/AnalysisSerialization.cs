@@ -59,6 +59,11 @@ public sealed class CschAnalysis
     public string Name    { get; set; } = "";
     /// <summary>False = skip at run time (VendorC "enabled" pattern). Defaults true; absent on old files → true.</summary>
     public bool   Enabled { get; set; } = true;
+    /// <summary>brief-sdl-6 R-sdl6-1 — <c>"em"</c> when the analysis runs on the EM result of the schematic's own layout;
+    /// absent (the circuit models) on every file written before it existed.</summary>
+    public string? Model   { get; set; }
+    /// <summary>The <c>.cem</c> a <c>model=em</c> analysis names when the layout has several; absent otherwise.</summary>
+    public string? EmSetup { get; set; }
 
     // ── SP ────────────────────────────────────────────────────────────────────
     public List<CschFrequencySpec>? Sweeps { get; set; }
@@ -312,7 +317,16 @@ public static class AnalysisSerialization
     /// writes nothing and reads back identical.</summary>
     private static string? NullIfBlank(string? s) => string.IsNullOrWhiteSpace(s) ? null : s;
 
-    public static CschAnalysis ToDto(Analysis a) => a switch
+    /// <summary>The analysis as the <c>.csch</c> stores it, its <c>model=</c> choice included (brief-sdl-6 R-sdl6-1).</summary>
+    public static CschAnalysis ToDto(Analysis a)
+    {
+        var dto = ToDtoCore(a);
+        dto.Model   = a.Model == AnalysisModel.Em ? "em" : null;
+        dto.EmSetup = NullIfBlank(a.EmSetup);
+        return dto;
+    }
+
+    private static CschAnalysis ToDtoCore(Analysis a) => a switch
     {
         DcAnalysis => new CschAnalysis { Type = "dc", Name = a.Name, Enabled = a.Enabled },
         FieldsAnalysis f => new CschAnalysis
@@ -486,7 +500,16 @@ public static class AnalysisSerialization
     // ── DTO → Domain ─────────────────────────────────────────────────────────
 
     /// <summary>Returns null for unknown type tags (silently skipped by caller).</summary>
-    public static Analysis? FromDto(CschAnalysis dto) => dto.Type switch
+    public static Analysis? FromDto(CschAnalysis dto)
+    {
+        var a = FromDtoCore(dto);
+        if (a is null) return null;
+        a.Model   = Analysis.ParseModel(dto.Model);
+        a.EmSetup = NullIfBlank(dto.EmSetup);
+        return a;
+    }
+
+    private static Analysis? FromDtoCore(CschAnalysis dto) => dto.Type switch
     {
         "dc" => new DcAnalysis(dto.Name) { Enabled = dto.Enabled },
         "fields" => new FieldsAnalysis(dto.Name)

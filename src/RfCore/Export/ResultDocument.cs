@@ -2362,7 +2362,29 @@ namespace RfCore.Export
         /// <summary>What an envelope run will record (brief ENV-MEAS-3): the nets whose voltages it keeps and the
         /// IProbes it measures power at. Null for any other kind, or when the design does not elaborate.</summary>
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        ExplainEnvelopeRecordsJson? Records = null);
+        ExplainEnvelopeRecordsJson? Records = null,
+        /// <summary>brief-sdl-6 R-sdl6-7 — what a chain run by EM makes: the model, the setup and cell, every EM
+        /// evaluation at every point it runs (cached or to solve), and the variables that do not reach the copper. Null for
+        /// a chain run by circuit models.</summary>
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        ExplainEmJson? Em = null);
+
+    /// <summary>brief-sdl-6 — <c>explain --analysis</c>'s EM answer for one chain.</summary>
+    public sealed record ExplainEmJson(
+        string Model,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Cell,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Setup,
+        int Evaluations, int Geometries, int Cached, int ToSolve,
+        IReadOnlyList<ExplainEmPointJson> Points,
+        IReadOnlyList<string> Unreached,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Refusal);
+
+    /// <summary>One EM evaluation, in the order the run makes them: the instance, its geometry's cache key, and whether
+    /// the cache holds it.</summary>
+    public sealed record ExplainEmPointJson(
+        string Instance,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Key,
+        bool Cached);
 
     /// <summary><c>explain --analysis</c>'s answer for an envelope run: every labeled net (with an old file's retired
     /// <c>Probes</c> nodes) in the order the node axis carries them, and every IProbe in the order of the branch

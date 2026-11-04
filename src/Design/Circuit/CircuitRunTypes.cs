@@ -122,7 +122,14 @@ internal sealed record PlannedAnalysis(
     string?   RawLine,
     string    ResultName,
     long      WorkUnits,
-    bool      SelfTicks);
+    bool      SelfTicks)
+{
+    /// <summary>brief-sdl-6 — the bench the chain runs on when it runs by EM; null when by circuit models.</summary>
+    public CircuitRF.Design.Layout.Em.ParametricEm.EmSwitched? Em { get; init; }
+
+    /// <summary>Why a chain asked to run by EM cannot be — reported as that analysis's error when it runs.</summary>
+    public string? EmRefusal { get; init; }
+}
 
 /// <summary>
 /// What a run WILL do, worked out before any of it runs: the netlist read, elaborated once, and every
@@ -166,6 +173,10 @@ public sealed class RunPlan
     internal ElaboratedNetlist? Nl           { get; init; }
     internal string?           BaseDirectory { get; init; }
     internal IReadOnlyList<PlannedAnalysis> Analyses { get; init; } = [];
+
+    /// <summary>brief-sdl-6 — whether any analysis this plan dispatches runs by EM (or was asked to and cannot): such a
+    /// run is counted before it starts (D5).</summary>
+    public bool HasEm => Analyses.Any(a => a.Em is not null || a.EmRefusal is not null);
 
     internal RunPlan(RunStatus status, string message,
                      IReadOnlyList<string>? lines = null, long totalWorkUnits = 0,

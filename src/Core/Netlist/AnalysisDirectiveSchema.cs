@@ -86,6 +86,8 @@ public static partial class AnalysisDirectiveSchema
     [
         new("type",    Required: true,  Summary: "The analysis kind. One of the tokens this page lists."),
         new("enabled", Default: "true", Summary: "false skips the analysis at run time without deleting it."),
+        new("model",   Default: "circuit", Summary: "circuit runs on the circuit models; em runs on the EM result of the schematic's own layout at the variables' values, and switches every EM-capable cell instance to EM."),
+        new("emSetup", Summary: "The .cem that solves a model=em analysis when the layout has several: a path relative to the netlist, or a setup name."),
     ];
 
     private static readonly AnalysisDirectiveSpec[] _specs =

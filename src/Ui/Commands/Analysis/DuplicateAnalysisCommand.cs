@@ -52,7 +52,17 @@ internal sealed class DuplicateAnalysisCommand : IUiCommand
     }
 
     internal static Core.Design.Analysis CloneAnalysis(
-        Core.Design.Analysis a, string newName, string? newInnerName = null) => a switch
+        Core.Design.Analysis a, string newName, string? newInnerName = null)
+    {
+        // brief-sdl-6: what the analysis is simulated by travels with the copy.
+        var copy = CloneAnalysisCore(a, newName, newInnerName);
+        copy.Model   = a.Model;
+        copy.EmSetup = a.EmSetup;
+        return copy;
+    }
+
+    private static Core.Design.Analysis CloneAnalysisCore(
+        Core.Design.Analysis a, string newName, string? newInnerName) => a switch
     {
         DcAnalysis =>
             new DcAnalysis(newName) { Enabled = a.Enabled },

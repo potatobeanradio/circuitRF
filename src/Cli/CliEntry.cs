@@ -91,6 +91,10 @@ if (args.Length > 0 && args[0] == VersionFlag)
     return 0;
 }
 
+// brief-sdl-6 D9: an instance simulated by EM of its own layout resolves through this provider in every verb that
+// elaborates — a run, `check`, `explain` — so it is registered once, before any of them.
+CircuitRF.Design.Layout.Em.ParametricEm.ParametricEmProvider.Register();
+
 // The glyph outlines a label is flattened with — the ONE thing that has to be installed before any
 // verb runs (brief-render-1-render-layer-below-the-firewall.md).
 //
@@ -337,6 +341,7 @@ static int RunSparam(string[] args)
     bool    freqExplicit = false;
     double  start  = 1e9, stop = 10e9, step = 1e8;
     var     sets   = new List<(string Name, string Expr)>();
+    var     em     = new EmModelRun();
 
     for (int i = 0; i < args.Length; i++)
     {
@@ -359,6 +364,7 @@ static int RunSparam(string[] args)
                 if (!TryTakeSet("sparam", args[++i], sets, out int setRefusal)) return setRefusal;
                 break;
             default:
+                if (em.TryTake("sparam", args, ref i, out int? emRefusal)) { if (emRefusal is { } r) return r; break; }
                 // An unrecognised flag is REFUSED, not dropped. See CliDiagnostics.RunUnknownOption:
                 // dropping it also fed its VALUE to the line below as the input path.
                 if (args[i].StartsWith('-'))
@@ -387,6 +393,9 @@ static int RunSparam(string[] args)
         var (lib, tb) = source;
         ApplySets(tb, sets);
         string? refBase = CircuitSource.ReferenceBaseOf(input);
+        // brief-sdl-6: the chain this verb dispatches, switched to its EM bench when it runs by EM, counted first.
+        using var emScope = em.Prepare(input, refBase, ref lib, ref tb, a => a is SParameterAnalysis, out int emExit);
+        if (emScope is null) return emExit;
         var nl = new Elaborator(lib) { BaseDirectory = refBase }.Elaborate(tb);
         var shown = PrintWarnings(nl);
 
@@ -563,6 +572,7 @@ static int RunDc(string[] args)
     // Vg=1` ran without the override and said nothing. Scanned here, where the whole argument list
     // is still in one piece.
     var sets = new List<(string Name, string Expr)>();
+    var em = new EmModelRun();
     string? output = null;
     for (int i = 1; i < args.Length; i++)
     {
@@ -579,6 +589,7 @@ static int RunDc(string[] args)
                 return JsonRun.Fail(CliDiagnostics.DcUnsupportedExportFormat(output, Path.GetExtension(output)));
             continue;
         }
+        if (em.TryTake("dc", args, ref i, out int? emRefusal)) { if (emRefusal is { } r) return r; continue; }
         if (args[i] is not ("--max-iter" or "--maxiter" or "--dc-steps" or "--gmin"))
             return JsonRun.Fail(CliDiagnostics.RunUnknownOption("dc", args[i]));
         i++;   // its value
@@ -596,6 +607,9 @@ static int RunDc(string[] args)
         var (lib, tb) = source;
         ApplySets(tb, sets);
         string? refBase = CircuitSource.ReferenceBaseOf(input);
+        // brief-sdl-6: the chain this verb dispatches, switched to its EM bench when it runs by EM, counted first.
+        using var emScope = em.Prepare(input, refBase, ref lib, ref tb, a => a is DcAnalysis, out int emExit);
+        if (emScope is null) return emExit;
         var nl = new Elaborator(lib) { BaseDirectory = refBase }.Elaborate(tb);
         var shown = PrintWarnings(nl);
 
@@ -767,6 +781,7 @@ static int RunHb(string[] args)
 {
     string? input = null, exportPath = null, analysisName = null;
     var     sets      = new List<(string Name, string Expr)>();
+    var     em        = new EmModelRun();
     int?    maxHarm   = null, maxIter = null, maxMixOrder = null;
     double? tol       = null;
     bool    diag      = false, allPoints = false;
@@ -813,6 +828,7 @@ static int RunHb(string[] args)
                 diag = true;
                 break;
             default:
+                if (em.TryTake("hb", args, ref i, out int? emRefusal)) { if (emRefusal is { } r) return r; break; }
                 if (args[i].StartsWith('-'))
                     return JsonRun.Fail(CliDiagnostics.RunUnknownOption("hb", args[i]));
                 input = args[i];
@@ -848,6 +864,9 @@ static int RunHb(string[] args)
         }
 
         string? refBase = CircuitSource.ReferenceBaseOf(input);
+        // brief-sdl-6: the chain this verb dispatches, switched to its EM bench when it runs by EM, counted first.
+        using var emScope = em.Prepare(input, refBase, ref lib, ref tb, a => a is HarmonicBalanceAnalysis && (analysisName is null || a.Name == analysisName), out int emExit);
+        if (emScope is null) return emExit;
         var nl    = new Elaborator(lib) { BaseDirectory = refBase }.Elaborate(tb);
         var shown = PrintWarnings(nl);
 
@@ -948,6 +967,7 @@ static int RunLoadpull(string[] args, bool pursuit)
 
     string? input = null, exportPath = null, analysisName = null, gridPath = null, outGridPath = null;
     var     sets      = new List<(string Name, string Expr)>();
+    var     em        = new EmModelRun();
     int?    maxHarm   = null, maxIter = null;
     double? tol       = null, compression = null;
     double? pinStart  = null, pinStep = null, pinMax = null;
@@ -1015,6 +1035,7 @@ static int RunLoadpull(string[] args, bool pursuit)
                 diag = true;
                 break;
             default:
+                if (em.TryTake(verb, args, ref i, out int? emRefusal)) { if (emRefusal is { } r) return r; break; }
                 if (args[i].StartsWith('-'))
                     return JsonRun.Fail(CliDiagnostics.RunUnknownOption(verb, args[i]));
                 input = args[i];
@@ -1062,6 +1083,9 @@ static int RunLoadpull(string[] args, bool pursuit)
         }
 
         string? refBase = CircuitSource.ReferenceBaseOf(input);
+        // brief-sdl-6: the chain this verb dispatches, switched to its EM bench when it runs by EM, counted first.
+        using var emScope = em.Prepare(input, refBase, ref lib, ref tb, a => (pursuit ? a is LoadpullPursuitAnalysis : a is LoadpullAnalysis) && (analysisName is null || a.Name == analysisName), out int emExit);
+        if (emScope is null) return emExit;
         var nl    = new Elaborator(lib) { BaseDirectory = refBase }.Elaborate(tb);
         var shown = PrintWarnings(nl);
 

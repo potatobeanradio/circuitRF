@@ -1,3 +1,4 @@
+using CircuitRF.Design.Layout.Em.ParametricEm;
 using CircuitRF.Core.Devices;
 using CircuitRF.Core.Devices.Composed;
 using CircuitRF.Core.Design;
@@ -376,7 +377,7 @@ internal static class Explain
 
                 if (wantAnalyses)
                 {
-                    var (rows, analysisExit) = ExplainAnalyses(lib, tb, analysisName, CircuitSource.ReferenceBaseOf(path));
+                    var (rows, analysisExit) = ExplainAnalyses(lib, tb, analysisName, CircuitSource.ReferenceBaseOf(path), path);
                     analyses = rows;
                     exit    |= analysisExit;
                     statistics    = ExplainStatistics.Collect(lib, tb, path, parts);
@@ -1384,7 +1385,7 @@ internal static class Explain
     // ── --analysis ───────────────────────────────────────────────────────────
 
     private static (IReadOnlyList<ExplainAnalysisJson>, int) ExplainAnalyses(
-        Library lib, TestBench tb, string? requested, string? refBase = null)
+        Library lib, TestBench tb, string? requested, string? refBase = null, string? sourcePath = null)
     {
         int exit = 0;
 
@@ -1548,10 +1549,35 @@ internal static class Explain
                 Ndf: isSparam && ndfByAnalysis.TryGetValue(a.Name, out var ndfRow) ? ndfRow : null,
                 Optimize: OptimizeScopes(a.Name),
                 OptimizeAt: OptimizeScopes(a.Name) is { Count: > 1 } ? optimizeAt : null,
-                Records: envRecords.GetValueOrDefault(a.Name)));
+                Records: envRecords.GetValueOrDefault(a.Name),
+                Em: !inner.Contains(a.Name) && top is not null ? EmOf(top, tb, lib, refBase, sourcePath) : null));
         }
 
         return (rows, exit);
+    }
+
+    /// <summary>
+    /// brief-sdl-6 R-sdl6-7 — what a chain run by EM will make, through the run's own functions: the bench
+    /// <see cref="EmModelSwitch"/> builds and the count <see cref="EmSolveCount"/> takes, every point the run walks. Null
+    /// for a chain run by circuit models with no instance set to EM. Nothing is solved.
+    /// </summary>
+    private static ExplainEmJson? EmOf(Analysis top, TestBench tb, Library lib, string? refBase, string? sourcePath)
+    {
+        bool whole = EmModelSwitch.IsEm(top, tb);
+        if (!whole && !EmModelSwitch.HasInstancesSetToEm(tb, lib)) return null;
+        var switched = EmModelSwitch.Apply(tb, lib, sourcePath is null ? null : Path.GetFullPath(sourcePath),
+                                           EmModelSwitch.SetupOf(top, tb), refBase, out var refusal, whole);
+        string model = whole ? "em" : "circuit, with instances set to EM";
+        if (switched is null)
+            return new ExplainEmJson(model, null, null, 0, 0, 0, 0, [], [], refusal);
+        var count = EmSolveCount.Count(switched.Tb, switched.Lib, top, refBase);
+        return new ExplainEmJson(model,
+            switched.PathA?.CellName,
+            switched.PathA is { } a ? Path.GetFileNameWithoutExtension(a.CemPath) : count.Records.FirstOrDefault(r => r.Setup is not null)?.Setup,
+            count.Evaluations, count.Geometries, count.Cached, count.ToSolve,
+            [.. count.Records.Where(r => r.Key is not null).Select(r => new ExplainEmPointJson(r.InstancePath, r.Key, r.Cached))],
+            count.Unreached,
+            count.Refusals.Count > 0 ? string.Join(" ", count.Refusals) : null);
     }
 
     /// <summary>
@@ -2029,6 +2055,20 @@ internal static class Explain
                         : $"      S-parameters: none (no ports); WSProbe outputs: {probes.Count} probe(s)");
                     foreach (var w in probes)
                         Console.WriteLine($"      WSProbe {w.Label} idx={w.Idx}  G={w.G}  L={w.L}");
+                }
+
+                // brief-sdl-6 R-sdl6-7: what a chain run by EM makes — the evaluations, cached or to solve, at every point.
+                if (a.Em is { } em)
+                {
+                    Console.WriteLine(em.Refusal is { } emWhy
+                        ? $"      by EM: refused — {emWhy}"
+                        : $"      by EM ({em.Model}): {em.Cell ?? "placed EM cells"}" + (em.Setup is { } st2 ? $", setup {st2}" : "") +
+                          $"; {em.Evaluations} evaluation(s), {em.Geometries} geometr{(em.Geometries == 1 ? "y" : "ies")}, " +
+                          $"{em.Cached} cached, {em.ToSolve} to solve");
+                    int k = 0;
+                    foreach (var pt in em.Points)
+                        Console.WriteLine($"        point {++k,-4} {pt.Instance,-16} {pt.Key}  {(pt.Cached ? "cached" : "to solve")}");
+                    foreach (var u in em.Unreached) Console.WriteLine($"      warning: {u}");
                 }
 
                 // brief ENV-MEAS-3: what an envelope run records, voltages and powers.

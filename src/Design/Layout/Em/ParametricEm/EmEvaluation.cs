@@ -1,0 +1,283 @@
+// Framework-free. No Avalonia, no SkiaSharp.
+//
+// brief-sdl-6 D2 — one EM evaluation of an EM-capable cell at values p. The SAVED schematic is read and p applied to its
+// variables and parameters; the planner (the one Update Layout from Schematic runs, SDL-0 S4) re-plans the SAVED layout in
+// memory, so every hand edit the user made is in the evaluated geometry (SDL-4); the result is solved through
+// EmRunService.Run on that in-memory layout, or read from the cache when the copper has been solved before (D3).
+//
+// THE USER'S FILES ARE NEVER WRITTEN. The .csch, .clay and .cem are read and nothing else; what is written is the cache
+// entry, and the planner's generated PCell cells, which go to the workspace's content-addressed generated-cell store as
+// they do on any Update Layout. Writing values back is SDL-7's Apply.
+
+using System.Globalization;
+using CircuitRF.Core.Expressions;
+using CircuitRF.Design.Layout.SchematicSync;
+using CircuitRF.Design.Schematic;
+using CircuitRF.Engine;
+using CircuitRF.Engine.Mom;
+
+namespace CircuitRF.Design.Layout.Em.ParametricEm;
+
+/// <summary>The geometry an evaluation produced, before any solve.</summary>
+/// <param name="Source">The evaluated layout, in memory, as the EM run reads it.</param>
+/// <param name="Key">Its cache key (<see cref="EmCellCache.KeyOf"/>).</param>
+/// <param name="CachedSnp">The cached result for that key, or null when it has not been solved.</param>
+/// <param name="Unreached">D4: one sentence per variable that does not reach a part it drives in the schematic, because
+/// that part's value was set in the layout.</param>
+/// <param name="Notes">What the plan reported that a reader of an EM result should know (gaps it could not close).</param>
+/// <param name="Applied">The values that differed from the schematic's own and were applied.</param>
+public sealed record EmCellGeometry(
+    EmCellTarget Target, EmLayoutSource Source, string Key, string? CachedSnp,
+    IReadOnlyList<string> Unreached, IReadOnlyList<string> Notes, IReadOnlyDictionary<string, Value> Applied);
+
+/// <summary>What one evaluation came to.</summary>
+/// <param name="SnpPath">The Touchstone at this geometry; null when refused or only counted.</param>
+/// <param name="Cached">True when it came from the cache.</param>
+/// <param name="Refusal">The sentence saying why there is no result.</param>
+/// <param name="Estimate">For a geometry not yet solved, what solving it would cost (the planar dry-run figures).</param>
+public sealed record EmEvaluationResult(
+    EmCellGeometry? Geometry, string? SnpPath, bool Cached, string? Refusal, EmSolveEstimate? Estimate = null)
+{
+    public string? Key => Geometry?.Key;
+}
+
+/// <summary>What solving one geometry would cost: its unknowns, its memory, and its factor time over the sweep — the
+/// numbers <c>em --dry-run</c> gives for the same setup.</summary>
+public sealed record EmSolveEstimate(int Unknowns, long MemoryBytes, double? Seconds, int Points, string Kernel);
+
+public static class EmEvaluation
+{
+    /// <summary>The name of the VAR row an evaluation adds to carry values the schematic has no VAR row for (a cell's
+    /// declared parameters). Never saved: it lives in the in-memory copy the planner reads.</summary>
+    public const string ValuesRow = "__EMVALUES";
+
+    private static readonly Lock _keysGate = new();
+    private static readonly Dictionary<string, object> _keyLocks = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The geometry <paramref name="target"/> takes at <paramref name="values"/>, built in memory, with its cache key. Null
+    /// with <paramref name="refusal"/> when the schematic, layout or technology cannot be read.
+    /// </summary>
+    public static EmCellGeometry? Geometry(EmCellTarget target, IReadOnlyDictionary<string, Value> values, out string? refusal)
+    {
+        refusal = null;
+        SchematicEditModel model;
+        try
+        {
+            model = SchematicPersistence.LoadFromFile(target.SchematicPath).model;
+            model.SchematicDirectory = Path.GetDirectoryName(target.SchematicPath);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException
+                                       or InvalidDataException or ArgumentException or InvalidOperationException)
+        {
+            refusal = $"{target.CellName}'s schematic could not be read ({e.Message}).";
+            return null;
+        }
+
+        var applied = Apply(model, values);
+
+        LayoutView layout;
+        try { layout = LayoutPersistence.LoadFromFile(target.ClayPath); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException
+                                       or InvalidDataException or ArgumentException or InvalidOperationException)
+        {
+            refusal = $"{target.CellName}'s layout could not be read ({e.Message}).";
+            return null;
+        }
+
+        var (tech, _) = TechnologyResolver.ResolveForDocument(layout.TechRef, target.ClayPath, target.CwsPath, new TechnologyCache());
+        if (tech.Tech is null)
+        {
+            refusal = $"{target.CellName}'s layout resolves no technology, so it has no stackup to solve: " +
+                      string.Join(" ", tech.Diagnostics);
+            return null;
+        }
+
+        string layoutDir = Path.GetDirectoryName(target.ClayPath)!;
+        SchematicLayoutPlan plan;
+        try
+        {
+            // Connect parts ON whatever the GUI preference says: EM solves copper, and copper the planner did not join is
+            // not the circuit the schematic draws.
+            plan = SchematicLayoutPlanner.Plan(model, layout, model.SchematicDirectory!, target.WorkspaceDir, layoutDir,
+                                               tech.Tech, tech.ResolvedPath, DiskCellResolver.Instance,
+                                               targetLayoutPath: target.ClayPath, connectParts: true);
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            refusal = $"{target.CellName}'s layout could not be planned at these values: {e.Message}";
+            return null;
+        }
+        plan.ApplyTo(layout);
+
+        var source = new EmLayoutSource(target.ClayPath, layout, tech.Tech, layout.DbuPerMicron);
+        string key = EmCellCache.KeyOf(source, target.Setup);
+        var notes = plan.Lines.Where(l => l.Severity == SchematicLayoutPlanner.ReportSeverity.Warning)
+                              .Select(l => l.Text).Concat(plan.NoLayoutWarnings).ToList();
+        return new EmCellGeometry(target, source, key, EmCellCache.Find(target.WorkspaceDir, target.CellName, key),
+                              Unreached(model, plan), notes, applied);
+    }
+
+    /// <summary>
+    /// The EM result of <paramref name="target"/> at <paramref name="values"/>: from the cache when this geometry has been
+    /// solved, else solved now and cached. <paramref name="countOnly"/> stops before solving and returns the estimate.
+    /// Never throws for a refusal; a cancelled solve throws <see cref="OperationCanceledException"/>.
+    /// </summary>
+    public static EmEvaluationResult Evaluate(EmCellTarget target, IReadOnlyDictionary<string, Value> values,
+                                              bool countOnly = false, RunControl? control = null, int? maxCores = null)
+    {
+        if (Geometry(target, values, out var refusal) is not { } g)
+            return new EmEvaluationResult(null, null, false, refusal);
+        if (g.CachedSnp is { } hit) return new EmEvaluationResult(g, hit, true, null);
+        if (countOnly) return new EmEvaluationResult(g, null, false, null, Estimate(g));
+
+        lock (KeyLock(g.Key))
+        {
+            // Another evaluation of the same copper may have finished while this one waited.
+            if (EmCellCache.Find(target.WorkspaceDir, target.CellName, g.Key) is { } now)
+                return new EmEvaluationResult(g with { CachedSnp = now }, now, true, null);
+
+            string dir = EmCellCache.CellFolder(target.WorkspaceDir, target.CellName);
+            Directory.CreateDirectory(dir);
+            // The setup keeps its own name, so the Touchstone is the one `em` writes for it byte for byte but the write
+            // time. Only where it goes changes: <key>.sNp in the cache, and the run's other output (the .npy with the
+            // diagnostics group) in a <key>/ folder beside it.
+            var setup = target.Setup.Clone();
+            setup.SnpOutputPathOverride = Path.Combine(dir, g.Key);
+            setup.CreateSnpSchematic = false;      // a cache entry makes no _sim cell in the user's workspace
+            var run = EmRunService.Run(setup, g.Source, Path.Combine(dir, g.Key), control?.Token ?? default, control, maxCores);
+            if (run.Status == EmRunStatus.Cancelled) throw new OperationCanceledException(run.Error);
+            if (run.Status != EmRunStatus.Ok || run.SnpPath is not { } snp)
+                return new EmEvaluationResult(g, null, false,
+                    $"the EM solve of '{target.CellName}' failed: {run.Error ?? "it wrote no Touchstone"}");
+            EmCellCache.WriteProvenance(snp, target, values);
+            return new EmEvaluationResult(g, snp, false, null);
+        }
+    }
+
+    /// <summary>What solving <paramref name="g"/> would cost, from the run's own preflight; null when the preflight refuses
+    /// (the run would then refuse with the same sentence).</summary>
+    public static EmSolveEstimate? Estimate(EmCellGeometry g)
+    {
+        try
+        {
+            var pre = EmRunService.Preflight(g.Target.Setup, g.Source);
+            if (!pre.Ok || pre.PlanarMesh is not { } mesh) return null;
+            int points = 0;
+            try { points = g.Target.Setup.ExpandFrequencies().Length; } catch (Exception) { }
+            long memory = pre.NearField is { } nf ? nf.ResidentBytes : mesh.RunResidentBytes;
+            double? perPoint = pre.NearField is { } near ? near.FactorSeconds
+                             : g.Target.Setup.AcceleratedSolve ? null
+                             : SurfaceMesher.EstimatedFactorSeconds(mesh.UnknownCount);
+            return new EmSolveEstimate(mesh.UnknownCount, memory, perPoint * Math.Max(points, 1), points, pre.KernelName);
+        }
+        catch (Exception e) when (e is not OperationCanceledException) { return null; }
+    }
+
+    /// <summary>
+    /// <paramref name="values"/> applied to the in-memory schematic: each value that differs from the schematic's own
+    /// replaces its VAR row's expression (a base-SI literal, no unit); a value with no VAR row — a cell's declared
+    /// parameter, whose default extraction binds as a global — goes on one added row, which extraction prefers to the
+    /// default. A value equal to the schematic's own is left alone, so the evaluation at the schematic's values is exactly
+    /// the layout Update Layout would make. Only real values reach geometry.
+    /// </summary>
+    private static Dictionary<string, Value> Apply(SchematicEditModel model, IReadOnlyDictionary<string, Value> values)
+    {
+        var applied = new Dictionary<string, Value>(StringComparer.Ordinal);
+        if (values.Count == 0) return applied;
+
+        var extraction = NetExtractor.Extract(model, "tb", DiskCellResolver.Instance);
+        var scope = new Scope("global");
+        foreach (var v in extraction.TestBench.GlobalVariables) scope.Bind(v.Name, v.Expression, v.Unit);
+        var evaluator = new Evaluator();
+        var globals = extraction.TestBench.GlobalVariables.Select(v => v.Name).ToHashSet(StringComparer.Ordinal);
+        var units = new Dictionary<string, string?>(StringComparer.Ordinal);
+        foreach (var v in extraction.TestBench.GlobalVariables) units.TryAdd(v.Name, v.Unit);
+        foreach (var p in model.Components.Where(c => c.Symbol == SymbolKind.Var).SelectMany(c => c.Parameters))
+            units[p.Name.Trim()] = p.Unit;   // the row's own spelling, as its editor wrote it
+
+        var rows = model.Components.Where(c => c.Symbol == SymbolKind.Var).SelectMany(c => c.Parameters)
+                        .GroupBy(p => p.Name.Trim(), StringComparer.Ordinal)
+                        .ToDictionary(gr => gr.Key, gr => gr.ToList(), StringComparer.Ordinal);
+        EditableComponent? extra = null;
+
+        foreach (var (name, value) in values.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+        {
+            if (value.Kind != ValueKind.Real || !globals.Contains(name)) continue;
+            double x = value.AsReal();
+            try
+            {
+                var own = evaluator.Eval(name, scope);
+                if (own.Kind == ValueKind.Real && Same(own.AsReal(), x)) continue;
+            }
+            catch (Exception) { /* not evaluable on its own: apply */ }
+
+            // Written IN THE ROW'S OWN UNIT, the unit kept: a bare base-SI literal reads differently wherever a use site
+            // applies its own unit to a unit-less variable (var-unit-wins only spares a variable that HAS a unit), and
+            // 4.6604 mm written as a bare 0.0046604 made every line it set three orders of magnitude short.
+            string? unit = units.GetValueOrDefault(name);
+            double scale = unit is { Length: > 0 } u && Units.Scale(UnitNormalizer.ToEngineUnit(u)) is { } sc && sc != 0 ? sc : 1.0;
+            string literal = (x / scale).ToString("R", CultureInfo.InvariantCulture);
+            if (rows.TryGetValue(name, out var ps))
+                foreach (var p in ps) p.Expression = literal;
+            else
+            {
+                extra ??= new EditableComponent { InstanceName = ValuesRow, Symbol = SymbolKind.Var };
+                extra.Parameters.Add(new EditableParameter { Name = name, Expression = literal, Unit = unit ?? "" });
+            }
+            applied[name] = value;
+        }
+        if (extra is not null) model.Components.Add(extra);
+        return applied;
+    }
+
+    private static bool Same(double a, double b) => a == b || Math.Abs(a - b) <= 1e-12 * Math.Max(Math.Abs(a), Math.Abs(b));
+
+    /// <summary>
+    /// D4 — for every part whose parameter is set in the layout and kept over the schematic's (SDL-4), the variables that
+    /// would have driven it: the names its schematic expression reads, followed through the VAR rows they are defined by.
+    /// </summary>
+    internal static IReadOnlyList<string> Unreached(SchematicEditModel model, SchematicLayoutPlan plan)
+    {
+        if (plan.LayoutKept.Count == 0) return [];
+        var vars = model.Components.Where(c => c.Symbol == SymbolKind.Var && c.InstanceName != ValuesRow)
+                        .SelectMany(c => c.Parameters).Where(p => p.Name.Trim().Length > 0)
+                        .GroupBy(p => p.Name.Trim(), StringComparer.Ordinal)
+                        .ToDictionary(g => g.Key, g => g.First().Expression, StringComparer.Ordinal);
+        var lines = new List<string>();
+        foreach (var (id, param) in plan.LayoutKept)
+        {
+            var comp = model.Components.FirstOrDefault(c => c.InstanceName == id);
+            if (comp?.Parameters.FirstOrDefault(p => p.Name == param) is not { } p) continue;
+            var reached = new SortedSet<string>(StringComparer.Ordinal);
+            var pending = new Queue<string>(Names(p.Expression));
+            while (pending.TryDequeue(out var n))
+            {
+                if (!vars.TryGetValue(n, out var expr) || !reached.Add(n)) continue;
+                foreach (var m in Names(expr)) pending.Enqueue(m);
+            }
+            foreach (var n in reached)
+                lines.Add($"{n} does not reach {id}.{param}, which is set in the layout.");
+        }
+        return lines.Distinct(StringComparer.Ordinal).ToList();
+    }
+
+    private static IEnumerable<string> Names(string? expression)
+    {
+        if (string.IsNullOrWhiteSpace(expression)) return [];
+        try
+        {
+            return new Tokenizer(expression).Tokenize().Where(t => t.Kind == TokenKind.Identifier).Select(t => t.Text).ToList();
+        }
+        catch (Exception) { return []; }
+    }
+
+    private static object KeyLock(string key)
+    {
+        lock (_keysGate)
+        {
+            if (!_keyLocks.TryGetValue(key, out var o)) _keyLocks[key] = o = new object();
+            return o;
+        }
+    }
+}

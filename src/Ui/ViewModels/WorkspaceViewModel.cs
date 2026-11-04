@@ -3973,6 +3973,37 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         StopAnalysisCommand.NotifyCanExecuteChanged();
     }
 
+    /// <summary>
+    /// brief-sdl-6 D5 — asked once per run that needs more than one uncached EM solve, with the count, what the cache
+    /// already holds, and the estimated time and memory. Null (headless, tests) runs without asking.
+    /// </summary>
+    public Func<string, Task<bool>>? ConfirmEmSolvesPrompt { get; set; }
+
+    /// <summary>The count, said; a refusal any evaluation meets stops the run here, before anything is solved. False when
+    /// the run must not go ahead.</summary>
+    private async Task<bool> ConfirmEmSolvesAsync(RunPlan plan, string runLabel)
+    {
+        CircuitRF.Design.Layout.Em.ParametricEm.EmSolveCountResult count;
+        try { count = await Task.Run(() => CircuitEvaluation.CountEmSolves(plan)); }
+        catch (Exception ex)
+        {
+            Messages.Error($"Run: the EM solves could not be counted ({ex.Message}).");
+            return false;
+        }
+        if (count.Refusals.Count > 0)
+        {
+            foreach (var r in count.Refusals) Messages.Error(r);
+            Diagnostics.CrashReporter.Note($"run: '{runLabel}' refused - an EM evaluation cannot be made");
+            return false;
+        }
+        if (count.Any) Messages.Info(count.Sentence);
+        foreach (var line in count.Unreached) Messages.Warning(line);
+        if (count.ToSolve <= 1 || ConfirmEmSolvesPrompt is not { } ask) return true;
+        if (await ask(count.Sentence + " Run them?")) return true;
+        Messages.Info($"Run of '{runLabel}' not started: no EM solve was run.");
+        return false;
+    }
+
     private async Task RunSchematicDocAsync(SchematicDocument activeDoc,
                                             Core.Design.Analysis? onlyAnalysis = null)
     {
@@ -4033,7 +4064,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         RunPlan plan;
         try
         {
-            plan = await Task.Run(() => SchematicRunService.Prepare(netlistPath, workspaceRoot, onlyAnalysisName));
+            // The schematic's own path rides along so an analysis run by EM of its layout can find its cell (brief-sdl-6).
+            string? sourcePath = activeDoc.FilePath;
+            plan = await Task.Run(() => SchematicRunService.Prepare(netlistPath, workspaceRoot, onlyAnalysisName, sourcePath));
         }
         catch (Exception ex)
         {
@@ -4065,6 +4098,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             Messages.Info(note);
         foreach (var line in plan.Lines)
             Messages.Info(line);
+
+        // brief-sdl-6 D5: EM solves are counted before any starts — every evaluation at every point the run will make —
+        // and the user is asked once when more than one is not already in the EM cache.
+        if (plan.HasEm && !await ConfirmEmSolvesAsync(plan, runLabel)) return;
 
         Diagnostics.CrashReporter.Note(
             $"run: '{runLabel}' planned — {plan.Analyses.Count} analysis, {plan.TotalWorkUnits} work unit(s)");

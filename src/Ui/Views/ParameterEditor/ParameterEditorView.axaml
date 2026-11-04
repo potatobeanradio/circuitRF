@@ -771,6 +771,46 @@
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
 
+                <!-- brief-sdl-6 D7: a cell instance's Variables group — the cell's VARs, each blank (the cell's own value,
+                     shown as the placeholder) or overridden for this instance. -->
+                <StackPanel IsVisible="{Binding ShowVariables}" Margin="4,6,4,0">
+                    <TextBlock Text="Variables" FontSize="11" FontWeight="SemiBold" Margin="2,0,0,2"/>
+                    <ItemsControl ItemsSource="{Binding VariableRows}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:ParameterRowViewModel">
+                                <Grid Margin="0,2">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition SharedSizeGroup="ParamName" Width="Auto" MinWidth="40"/>
+                                        <ColumnDefinition Width="*" MinWidth="50"/>
+                                        <ColumnDefinition SharedSizeGroup="ParamUnit" Width="Auto" MinWidth="60"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0"
+                                               Text="{Binding StagedName}"
+                                               FontSize="11"
+                                               Margin="2,0,8,0"
+                                               VerticalAlignment="Center"/>
+                                    <TextBox Grid.Column="1"
+                                             Text="{Binding StagedExpression}"
+                                             PlaceholderText="{Binding ExpressionPlaceholder}"
+                                             FontSize="11"
+                                             Padding="4,3"
+                                             VerticalAlignment="Center"
+                                             LostFocus="OnParamExprLostFocus"
+                                             KeyDown="OnParamExprKeyDown"/>
+                                    <TextBox Grid.Column="2"
+                                             Text="{Binding StagedUnit}"
+                                             FontSize="11"
+                                             Padding="4,3"
+                                             Margin="4,0,0,0"
+                                             VerticalAlignment="Center"
+                                             LostFocus="OnParamExprLostFocus"
+                                             KeyDown="OnParamExprKeyDown"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+
                 <!-- A composed FET's instance switches (brief-modelcomposer-21): collapsed under File/N/Symbol, since they
                      are a debugging view and a switched instance already says so on the schematic. Each is a true/false
                      picker; a switch bound to an expression keeps a text box, which a picker could not show. -->

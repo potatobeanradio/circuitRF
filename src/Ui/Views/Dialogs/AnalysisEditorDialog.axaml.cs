@@ -50,6 +50,19 @@ public partial class AnalysisEditorDialog : Window
         NameBox.Text           = vm.Name;
         EnabledCheck.IsChecked = vm.Enabled;
 
+        // brief-sdl-6: items first, then the selection, in the same code path (src/Ui/CLAUDE.md's ComboBox rule).
+        SimulateByCombo.ItemsSource   = vm.SimulateByOptions;
+        SimulateByCombo.SelectedIndex = vm.SimulateByIndex;
+        EmSetupCombo.ItemsSource      = vm.EmSetupOptions;
+        EmSetupCombo.SelectedIndex    = vm.EmSetupIndex;
+        EmSetupCombo.IsEnabled        = vm.EmSetupChoosable && vm.SimulateByIndex == 1;
+        SimulateByCombo.SelectionChanged += (_, _) =>
+        {
+            vm.SimulateByIndex     = Math.Max(0, SimulateByCombo.SelectedIndex);
+            EmSetupCombo.IsEnabled = vm.EmSetupChoosable && vm.SimulateByIndex == 1;
+        };
+        EmSetupCombo.SelectionChanged += (_, _) => vm.EmSetupIndex = Math.Max(0, EmSetupCombo.SelectedIndex);
+
         // Propagate VM state changes back to controls.
         vm.PropertyChanged += (_, e) =>
         {

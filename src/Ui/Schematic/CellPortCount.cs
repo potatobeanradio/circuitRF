@@ -79,6 +79,18 @@ public static class CellPortCount
                     highest = n;
             }
 
+            // brief-sdl-6 D8: a cell drawn with Ports and no Pins — one simulated by EM of its own layout — has its Ports
+            // as its interface (NetExtractor.PortsAsPins), so its symbol takes one pin per Port, numbered by Num.
+            if (pins == 0 && CircuitRF.Design.Layout.Em.ParametricEm.EmCapability.IsCapable(cellDir))
+                foreach (var comp in model.Components)
+                {
+                    if (comp.Symbol != SymbolKind.Term || comp.Disable is DisableState.Open or DisableState.Short) continue;
+                    pins++;
+                    if (int.TryParse(comp.Parameters.FirstOrDefault(p => p.Name == "Num")?.Expression?.Trim(), NumberStyles.None,
+                                     CultureInfo.InvariantCulture, out int n) && n > highest)
+                        highest = n;
+                }
+
             int ports = Math.Max(pins, highest);
             return ports > 0 ? ports : null;
         }

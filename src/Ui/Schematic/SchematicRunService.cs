@@ -16,8 +16,8 @@ public static class SchematicRunService
 {
     /// <inheritdoc cref="CircuitEvaluation.Prepare"/>
     public static RunPlan Prepare(string netlistPath, string? baseDirectory = null,
-                                  string? onlyAnalysisName = null)
-        => CircuitEvaluation.Prepare(netlistPath, baseDirectory, onlyAnalysisName);
+                                  string? onlyAnalysisName = null, string? sourcePath = null)
+        => CircuitEvaluation.Prepare(netlistPath, baseDirectory, onlyAnalysisName, sourcePath);
 
     /// <inheritdoc cref="CircuitEvaluation.Execute(RunPlan, RunControl?, Action{string}?)"/>
     public static RunResult Execute(RunPlan plan, RunControl? control = null)
