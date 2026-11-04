@@ -23,6 +23,8 @@ public static class PCellRegistry
             { "MBEND",  MBendPCell.Generate  },
             { MCurvePCell.GeneratorId, MCurvePCell.Generate },
             { MMiterPCell.GeneratorId, MMiterPCell.Generate },
+            // The end-to-end gap (brief-sdl-9): two pins and no copper.
+            { MGapPCell.GeneratorId,   MGapPCell.Generate   },
             { "MTEE",   MTeePCell.Generate   },
             { "MCROSS", MCrossPCell.Generate },
             { "MTAPER", MTaperPCell.Generate },

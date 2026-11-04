@@ -645,6 +645,10 @@ public enum SymbolKind
     /// <c>W</c> × <c>L</c> leaving the signal pad. Pin 1 the probe tip (the signal pad's middle), pin 2 the line's
     /// end. Appended so no existing kind's ordinal moves.</summary>
     GsgPad,
+    /// <summary>End-to-end microstrip gap (engine "MGAP", brief-sdl-9): the break between two lines of width
+    /// <c>W</c>, <c>S</c> apart. Pin 1 the end of the line on one side, pin 2 the other. Its layout is the two
+    /// pins alone — the lines either side are the copper. Appended so no existing kind's ordinal moves.</summary>
+    MGap,
 }
 
 public enum PortConnectionState { Unconnected, Connected }

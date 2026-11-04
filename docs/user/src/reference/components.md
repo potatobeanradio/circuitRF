@@ -941,6 +941,33 @@ refused. Conductor thickness enters through the line part only.
 
 {{table: components/MMiter}}
 
+### Microstrip Gap (MGAP) {#mgap}
+
+{{symbol: mgap}}
+
+The end-to-end gap between two microstrip lines of the same width: `W` is the width of the line on each
+side and `S` the gap, edge to edge, from one line's end to the other's. Use it wherever a gap is part of
+the design — the coupling between the resonators of a gap-coupled filter, an end-coupled feed, or a DC
+break in a line — so that the gap is a value you can see, sweep and optimise rather than a distance two
+lines happen to be apart. The two terminals are interchangeable.
+
+Electrically the gap is a series capacitance across it and a shunt capacitance from each line end to
+ground, from closed-form fits that are stated over 0.5 ≤ W/h ≤ 2, 0.1 ≤ S/W ≤ 1 and 2.5 ≤ εr ≤ 15.
+Outside that range the result is still computed and the run says it is an extrapolation. The
+capacitances do not change with frequency and carry no loss. Checked against circuitRF's own
+electrostatic EM solve on a 0.508 mm, εr 3.66 substrate: up to W/h = 1 the gap's |S21| is within
+0.5 dB and its phase within 0.5°; at W/h = 2 the closed form reads the series capacitance 8–14 % low
+(|S21| up to 1.3 dB low), and at W/h = 2 with S = W — both ratios at the edge of the range — it reads
+it 43 % low, 4.9 dB in |S21|. Where the gap is the design, check it by EM there. `S` must be greater
+than zero: a gap of zero is two lines touching, and the simulation refuses it.
+
+In the layout, MGAP draws **no copper**. Its layout is its two pins, `S` apart and each `W` wide, and
+the lines placed on either side are the metal — so when the layout is updated from the schematic, the
+two line ends land exactly `S` apart. Its two pins are on different nets, so LVS reads the gap as a
+designed break, not an open.
+
+{{table: components/MGap}}
+
 ### Microstrip T-Junction (MTEE) {#mtee}
 
 {{symbol: mtee}}

@@ -1095,6 +1095,13 @@ schematic joins it. These rules hold for every brief in it.
   layout both changed one parameter since the last run, the layout's value is kept and the conflict is reported
   as a warning.
 
+**A gap is a part, and its layout is its two pins** (SDL-9 D2). MGAP's generator draws no copper: pin 1 at the origin
+facing −X and pin 2 at `(S, 0)` facing +X, each `W` wide on the line's layer. Placement puts each neighbouring line's
+end on a pin, so the gap between the two ends is exactly `S` with nothing in the placer that knows a gap exists, and
+the pins are on different nets, so LVS and the connectivity signature read a designed gap rather than a broken joint.
+LVS reads a cell of pins and no copper as a BODY (`LayoutReadBodies.DrawsOnlyPins`): the lines it sits between are
+bodies whose copper has left the partition, so read as interconnect both of its pins would land on no copper.
+
 **R-L5-11 is superseded by S3** (SDL-4). Under R-L5-11 the schematic's value overwrote a parameter edited in the
 layout, with a warning. S3 keeps the layout's value instead; the one command that still takes the schematic's value
 over a layout edit is Re-snap, because that is what it is asked to do.

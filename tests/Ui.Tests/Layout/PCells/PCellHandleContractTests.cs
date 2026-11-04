@@ -340,6 +340,7 @@ public sealed class PCellHandleContractTests : IDisposable
     [InlineData("MBEND")]
     [InlineData("MCURVE")]
     [InlineData("MMITER")]
+    [InlineData("MGAP")]
     [InlineData("MTEE")]
     [InlineData("MCROSS")]
     [InlineData("MTAPER")]
@@ -362,7 +363,7 @@ public sealed class PCellHandleContractTests : IDisposable
     {
         // R2's one list. A handle naming something outside it is a defect in the cell; catching it
         // here means no shipping built-in can develop one unnoticed.
-        foreach (string id in (string[])["MLIN", "MBEND", "MCURVE", "MMITER", "MTEE", "MCROSS", "MTAPER", "MKLOPF",
+        foreach (string id in (string[])["MLIN", "MBEND", "MCURVE", "MMITER", "MGAP", "MTEE", "MCROSS", "MTAPER", "MKLOPF",
                                          "MCLIN", "BCLIN", "MBCLIN"])
         {
             Assert.True(PCellRegistry.TryGet(id, out var generate));
@@ -421,6 +422,7 @@ public sealed class PCellHandleContractTests : IDisposable
             "MBEND"  => new() { ["W"] = 300e-6, ["Angle"] = 90, ["Miter"] = 2 },
             "MCURVE" => new() { ["W"] = 300e-6, ["Angle"] = 90, ["Radius"] = 900e-6 },
             "MMITER" => new() { ["W"] = 300e-6, ["Angle"] = 90, ["M"] = 0.55 },
+            "MGAP"   => new() { ["W"] = 300e-6, ["S"] = 100e-6 },
             "MTEE"   => new() { ["W1"] = 300e-6, ["W2"] = 300e-6, ["W3"] = 500e-6 },
             "MCROSS" => new() { ["W1"] = 300e-6, ["W2"] = 300e-6, ["W3"] = 300e-6, ["W4"] = 300e-6 },
             "MTAPER" => new() { ["W1"] = 300e-6, ["W2"] = 1e-3, ["L"] = 2e-3 },

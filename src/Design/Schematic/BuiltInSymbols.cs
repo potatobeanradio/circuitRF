@@ -102,6 +102,7 @@ public static class BuiltInSymbols
     private static readonly Symbol _mbend         = BuildMBend();
     private static readonly Symbol _mcurve        = BuildMCurve();
     private static readonly Symbol _mmiter        = BuildMMiter();
+    private static readonly Symbol _mgap          = BuildMGap();
     private static readonly Symbol _mtee          = BuildMTee();
     private static readonly Symbol _mcross        = BuildMCross();
     private static readonly Symbol _mtaper        = BuildMtaper();
@@ -237,6 +238,7 @@ public static class BuiltInSymbols
             case SymbolKind.MBend:      return _mbend;
             case SymbolKind.MCurve:     return _mcurve;
             case SymbolKind.MMiter:     return _mmiter;
+            case SymbolKind.MGap:       return _mgap;
             case SymbolKind.MTee:       return _mtee;
             case SymbolKind.MCross:     return _mcross;
             case SymbolKind.Mtaper:     return _mtaper;
@@ -2191,6 +2193,15 @@ public static class BuiltInSymbols
         Poly(false, -180,-25,  -35,-25,  25,35,  25,180,  -25,180,  -25,25,  -180,25),   // chamfered L outline
         L(   0, 180,    0, 200),
     ], SymbolKind.MMiter);
+
+    // MGap — MLIN's trace body cut in two: two stubs on MLIN's pins with an open break between their
+    // facing ends, so the glyph reads as "a line with a gap in it" rather than as a capacitor.
+    private static Symbol BuildMGap() => Sym([
+        L(-200,   0, -150,   0),
+        RRect(-90, 0, 120, 60, 12),   // stub ending at the gap's left edge (x = -30)
+        RRect( 90, 0, 120, 60, 12),   // stub starting at the gap's right edge (x = +30)
+        L( 150,   0,  200,   0),
+    ], SymbolKind.MGap);
 
     // Through line (pins 1/2, left/right) + branch (pin 3, DOWN — +Y is down in this codebase) —
     // R-pc-3's own "pin 1 origin, through +X to pin 2, branch +Y to pin 3" convention. The body is

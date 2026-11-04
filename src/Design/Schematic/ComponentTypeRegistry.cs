@@ -766,6 +766,12 @@ public static class ComponentTypeRegistry
             SearchTerms: ["MMITER", "mitred bend", "mitered bend", "chamfered bend", "chamfer", "miter", "mitre",
                           "bend", "corner", "45 degree bend"],
             ExtraCategories: [ComponentCategory.TransmissionLine]),
+        // MGAP — the end-to-end gap between two lines (brief-sdl-9): a gap-coupled filter's coupling, a DC break.
+        [SymbolKind.MGap]          = new("MGAP", "MG",
+            Category: ComponentCategory.Microstrip,
+            SearchTerms: ["MGAP", "microstrip gap", "gap", "series gap", "end gap", "end coupled", "end-coupled",
+                          "gap coupled", "gap-coupled", "DC break", "DC block", "series capacitance"],
+            ExtraCategories: [ComponentCategory.TransmissionLine]),
         [SymbolKind.MTee]         = new("MTEE",  "MT",
             Category: ComponentCategory.Microstrip,
             SearchTerms: ["MTEE", "microstrip tee", "T-junction", "tee", "stub", "power divider"],
@@ -985,6 +991,10 @@ public static class ComponentTypeRegistry
             "The two terminals are interchangeable. One width, one radius and one angle describe the "
           + "whole curve, so the pins differ only in which way it turns on the canvas.",
 
+        SymbolKind.MGap =>
+            "The two terminals are interchangeable: the gap is symmetric about its centre, so neither "
+          + "side is the input.",
+
         SymbolKind.MMiter =>
             "The two terminals are interchangeable. The chamfer is symmetric about the corner's bisector, "
           + "so the pins differ only in which way it turns on the canvas.",
@@ -1176,6 +1186,7 @@ public static class ComponentTypeRegistry
         SymbolKind.MBend         => "MBEND",
         SymbolKind.MCurve        => "MCURVE",
         SymbolKind.MMiter        => "MMITER",
+        SymbolKind.MGap          => "MGAP",
         SymbolKind.MTee          => "MTEE",
         SymbolKind.MCross        => "MCROSS",
         SymbolKind.Mtaper        => "MTAPER",
@@ -1460,6 +1471,12 @@ public static class ComponentTypeRegistry
         (SymbolKind.GsgPad, "SignalLayer") => "The conductor the pads and the line are on. Empty: the technology's top conductor.",
         (SymbolKind.GsgPad, "GroundReference") => "The plane under the line, which the ground vias land on. Empty: the nearest "
                                                 + "ground-designated conductor below the signal layer.",
+        (SymbolKind.MGap, "W") => "Width of the line on each side of the gap. Both lines are this width.",
+        (SymbolKind.MGap, "S") => "The gap: edge to edge, from one line's end to the other's. Must be greater than zero. "
+                                + "Smaller is more coupling across it; the closed form covers S/W from 0.1 to 1.",
+        (SymbolKind.MGap, "SignalLayer") => "The conductor the two lines are on. Empty: the technology's top conductor.",
+        (SymbolKind.MGap, "GroundReference") => "The plane under the lines. Empty: the nearest ground-designated conductor "
+                                              + "below the signal layer.",
         (SymbolKind.Slin, "W") => "Strip width.",
         (SymbolKind.Slin, "L") => "Line length.",
         (SymbolKind.Slin, "SignalLayer") => "The conductor the strip is on. Its planes are the nearest ground-designated conductors "
@@ -1496,6 +1513,11 @@ public static class ComponentTypeRegistry
     /// </summary>
     public static string ModelValidity(SymbolKind kind) => kind switch
     {
+        SymbolKind.MGap =>
+            "Quasi-static: a series capacitance across the gap and a shunt capacitance at each end, from power-law "
+          + "fits of the even- and odd-mode end capacitances, stated over 0.5 <= W/h <= 2, 0.1 <= S/W <= 1 and "
+          + "2.5 <= er <= 15. Lossless and frequency-independent. The layout draws no copper: the lines either side "
+          + "are the metal, and the gap between their ends is exactly S.",
         SymbolKind.GsgPad =>
             "MLIN, twice: half the signal pad (PadW wide, PadL/2 long, from the tip to its edge), then the line, "
           + "cascaded, with MLIN's validity. The ground pads are ideal ground at the probe's reference plane; their "
@@ -3219,6 +3241,14 @@ public static class ComponentTypeRegistry
                         new("M",     "0.5", "",    true, UnitDimension.None),
                         .. SignalGroundLayerParams];
 
+            // MGap: end-to-end gap — W (both lines), S (the gap). 2.9 mm is the FR-4 baseline's 50-ohm line and
+            // 1.5 mm about half of it, the middle of the closed form's S/W range; MicrostripSubstrateInjection
+            // rewrites W to the technology's 50-ohm width and S to half of it at placement.
+            case SymbolKind.MGap:
+                return [new("W", "2.9", "mm", true, UnitDimension.Length),
+                        new("S", "1.5", "mm", true, UnitDimension.Length),
+                        .. SignalGroundLayerParams];
+
             // MTee: microstrip T-junction — W1/W2 (through arms, may differ), W3 (branch), and each
             // arm's own drawn length L1/L2/L3. MicrostripTeeModel simulates them as MLIN sections from
             // each pin to the junction's reference planes at the crossing arm's edge (brief DFR26-5), so
@@ -3485,6 +3515,8 @@ public static class ComponentTypeRegistry
             case "MCV":      kind = SymbolKind.MCurve;       return true;
             case "MMITER":
             case "MMT":      kind = SymbolKind.MMiter;       return true;
+            case "MGAP":
+            case "MG":       kind = SymbolKind.MGap;         return true;
             case "MTEE":
             case "MT":       kind = SymbolKind.MTee;         return true;
             case "MCROSS":

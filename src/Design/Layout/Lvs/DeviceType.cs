@@ -148,6 +148,7 @@ public static class DeviceTypes
             ["MBEND"]  = SymbolKind.MBend,
             ["MCURVE"] = SymbolKind.MCurve,
             ["MMITER"] = SymbolKind.MMiter,
+            ["MGAP"]   = SymbolKind.MGap,
             ["MTEE"]   = SymbolKind.MTee,
             ["MCROSS"] = SymbolKind.MCross,
             ["MTAPER"] = SymbolKind.Mtaper,
@@ -271,7 +272,7 @@ public static class DeviceTypes
         // one kind, because the artwork does not distinguish them either — what tells a tee from a
         // cross is its terminal COUNT, which the comparison already has, and a line drawn on a layer
         // is the same line whichever model the schematic chose for it (AS-11 swaps between them).
-        SymbolKind.Mlin or SymbolKind.MBend or SymbolKind.MCurve or SymbolKind.MMiter or SymbolKind.MTee
+        SymbolKind.Mlin or SymbolKind.MBend or SymbolKind.MCurve or SymbolKind.MMiter or SymbolKind.MGap or SymbolKind.MTee
             or SymbolKind.MCross or SymbolKind.Mtaper or SymbolKind.Mklopf or SymbolKind.GsgPad
             or SymbolKind.Tline or SymbolKind.Cpwg or SymbolKind.Slin
             or SymbolKind.CLine or SymbolKind.MCLine or SymbolKind.BCLine or SymbolKind.MBCLine

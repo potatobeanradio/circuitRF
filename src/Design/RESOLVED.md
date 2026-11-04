@@ -27234,3 +27234,20 @@ two points never share a child-cache entry) and the point's values bound to the 
   `cells/` and every unreferenced file in `models/`); `TouchstoneText` is brief 11's SnP writer, shared with the block.
 - **Testing trap:** altering a block entry to prove the proof fails must alter one the network actually uses. S21 of the
   gate fixture (in → out) is ~0 because the FET separates them, so a 1 % change moved nothing; S11 does.
+
+## MGAP's layout is two pins, and LVS had to learn to read a cell with no copper (brief-sdl-9, 2026-11-03)
+
+`MGapPCell` draws nothing: pin 1 at the origin facing −X, pin 2 at `(S, 0)` facing +X, each `W` wide. The SDL chain
+places the lines either side on the pins, so the ends are exactly `S` apart with no gap-specific code in the placer
+(`GapCoupledFilterTests` measures it on C8).
+
+**LVS read both of its terminals as opens on no copper.** `LayoutReadBodies.Find` takes a device out of the copper
+partition only when its own copper joins two of its terminals; a gap has no copper, so it stayed interconnect, and
+its pins looked for copper under them in a partition the neighbouring LINES had already left (lines are bodies).
+Four `lvs.net.open` and four `lvs.pin.no-copper` on C8, measured by switching the fix off. A cell of pins and no
+copper is now a body too (`DrawsOnlyPins`): nothing leaves the partition, and each pin joins the line end it sits on
+the way abutting line ends already join. A gap of S below the body-joint tolerance (2 DBU) would read as joined;
+nothing drawn on purpose is that narrow.
+
+Not added to `GroundPourPlanner.MicrostripGenerators`: the pour is sized from the placed lines, which already reach
+the gap from both sides.

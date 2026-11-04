@@ -23,6 +23,10 @@
 // one net with the junction's own; the partition never joins them, because the line between them
 // left it.
 //
+// A cell that draws pins and no copper at all (MGAP, the gap between two line ends) is a body too: it
+// has nothing to take out of the partition, and its pins must be read the way the line ends they sit on
+// are, or both of its terminals land on no copper.
+//
 // Decided per CELL, from the cell's own shapes and pins, so a line placed forty times is asked once.
 // A cell that places other cells, or that has a schematic of its own, is never a body — it is a
 // design, and its insides are the hierarchy's business (or, under --flat, one graph with the rest).
@@ -109,7 +113,7 @@ internal sealed class LayoutReadBodies
             if (LvsHierarchy.IsComparableCell(dir)) continue;
 
             if (!byCell.TryGetValue(dir, out bool body))
-                byCell[dir] = body = IsGroundVia(sub) || OwnCopperJoinsTerminals(dir, sub, tech);
+                byCell[dir] = body = IsGroundVia(sub) || OwnCopperJoinsTerminals(dir, sub, tech) || DrawsOnlyPins(sub, tech);
             if (!body) continue;
 
             instances.Add(i);
@@ -128,6 +132,18 @@ internal sealed class LayoutReadBodies
     /// </summary>
     internal static bool IsGroundVia(LayoutView? cell)
         => string.Equals(cell?.PCellOrigin?.GeneratorId, PCells.ViaPCell.GroundGeneratorId, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// A cell of pins and no copper — MGAP (brief-sdl-9), whose layout is the two line ends either side of the
+    /// gap. Read as interconnect, each pin looks for copper under it in the partition and finds none, because
+    /// the lines it sits between are bodies and their copper has left it: both terminals came out as opens on
+    /// no copper. Read as a body it has no copper to remove, and each pin joins the line end it sits on, which
+    /// is the reading the gap needs and the one a pin-only cell can only ever mean.
+    /// </summary>
+    private static bool DrawsOnlyPins(LayoutView cell, Technology tech)
+        => cell.Instances.Count == 0
+        && CellPins.Resolve(cell, tech).Count >= 2
+        && !CopperPieces.Build(cell.Shapes, tech).Any;
 
     /// <summary>
     /// Whether the cell's own copper puts two different terminals on one net — read in the cell's

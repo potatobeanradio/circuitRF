@@ -4267,3 +4267,26 @@ against the current directory, so a `.cnl` with a model-relative device ran from
 anywhere else. Found by Export to Library's self-check on a model with a compiled device. The reader now rebases a
 VerilogA `File` through `FileReferences.Rebase`, which leaves an unquoted bare word alone, since that may be a
 variable the elaborator binds in scope. Gate: `ProtectedModelTests.Export_ShipsThisBuildAndTheOthers_AndCompileStartsOff`.
+
+## MGAP: the end-to-end gap, and where its closed form departs from EM (brief-sdl-9, 2026-11-03)
+
+`MicrostripGapModel` is the symmetric pi of a gap between two lines of one width: `Cg` across it, `Cp` from each end to
+ground, from the usual even/odd-mode power-law fits (`MicrostripGap`). Quasi-static and lossless; an open at DC. `S ≤ 0`
+is refused at elaboration through `MicrostripGap.Refusal` (a `Diagnostic`, which `UserFacingTextGateTests` requires of a
+new message below the firewall), and the range checks (W/h, S/W, εr) warn through the instance's reporter.
+
+**The reference is the planar engine's electrostatic solve, not its full-wave one, and the full-wave one was tried
+first.** A de-embedded full-wave run of feed-gap-feed against a thru of the same feeds, with the feeds removed by
+splitting the thru's ABCD, gave a `Cp` that wandered from +13 to −20 fF across 2-10 GHz and an S21 phase of 126° at
+2 GHz where a capacitive pi is near 90°. The gap's |S21| is 0.01-0.1 and the de-embedding's own error floor there was
+reported at 0.022 in |S| — the instrument cannot see the quantity. The gap is quasi-static, so
+`PlanarDeembed.StaticCapacitanceMatrix` on meshed strips answers it directly; how `Cg` and `Cp` are separated from the
+strips' own line and open-end capacitance is in `testdata/microstrip-gap/README.md`, with the convergence (about 1.6 %)
+and a cross-check of the open end against the length-extension estimate (about 3 %).
+
+**What it found, left as fitted:** within the stated W/h ≤ 1 the closed form is good (|S21| within 0.5 dB, 0.5°). At
+W/h = 2 it reads `Cg` 8-14 % low and `Cp` 1.5-3.2 fF low; at W/h = 2 with S/W = 1 — both ratios at their limit, S/h = 2
+— `Cg` is 43 % low, 4.9 dB in |S21|, because there `Cg = Co/2 − Ce/4` is a small difference of two fitted numbers. The
+even-mode fit's two branches also step at S/W = 0.3 (about 30 % in `Ce` at W/h = 1), and nothing smooths that either.
+The 50 Ω line on the schematic-to-layout substrate is W/h = 2.17, so a gap placed there warns by default. Gate:
+`tests/Core.Tests/Devices/Microstrip/MicrostripGapTests.cs`, region by region at the README's own bounds.

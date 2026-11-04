@@ -85,7 +85,7 @@ public static class ComponentModelFactory
             // The JFET pair. Two types over one law, like the BJT's polarities: a channel type is a
             // sign, and a sign the symbol has to show.
             "JFET_N", "JFET_P",
-            "TLIN", "CLIN", "MLIN", "MCLIN", "BCLIN", "MBCLIN", "MBEND", "MCURVE", "MMITER", "MTEE", "MCROSS", "MTAPER", "MKLOPF", "Chain",
+            "TLIN", "CLIN", "MLIN", "MCLIN", "BCLIN", "MBCLIN", "MBEND", "MCURVE", "MMITER", "MGAP", "MTEE", "MCROSS", "MTAPER", "MKLOPF", "Chain",
             // Grounded coplanar waveguide and stripline (brief-artsch-1), bound to the stackup as MLIN is.
             "CPWG", "SLIN",
             // The two vias (brief-via-component.md): a signal via changing layers, and a via to ground.
@@ -221,6 +221,8 @@ public static class ComponentModelFactory
             return CreateMicrostripCurveModel(parameters);
         if (typeName.Equals("MMITER", StringComparison.OrdinalIgnoreCase))
             return CreateMicrostripMiterBendModel(parameters);
+        if (typeName.Equals("MGAP", StringComparison.OrdinalIgnoreCase))
+            return CreateMicrostripGapModel(parameters);
         if (typeName.Equals("MTEE", StringComparison.OrdinalIgnoreCase))
             return CreateMicrostripTeeModel(parameters);
         if (typeName.Equals("MCROSS", StringComparison.OrdinalIgnoreCase))
@@ -2734,6 +2736,13 @@ public static class ComponentModelFactory
 
         return new MicrostripMiterBendModel(w, angleDeg, miter, h, t, er, sigma, tanD, name, roughness);
     }
+
+    // MGAP (brief-sdl-9): W and S in SI metres; the substrate as MLIN takes it. S has no default — an
+    // absent S reads as 0, which the model refuses by name rather than simulating two lines touching.
+    private static MicrostripGapModel CreateMicrostripGapModel(IReadOnlyDictionary<string, Value> parameters)
+        => new(GetReal(parameters, "W", 0.0), GetReal(parameters, "S", 0.0),
+               GetReal(parameters, "H", DefaultSubstrateHMeters), GetReal(parameters, "Er", DefaultSubstrateEpsR),
+               MicrostripInstanceName(parameters, "MGAP"));
 
     private static MicrostripTeeModel CreateMicrostripTeeModel(IReadOnlyDictionary<string, Value> parameters)
     {
