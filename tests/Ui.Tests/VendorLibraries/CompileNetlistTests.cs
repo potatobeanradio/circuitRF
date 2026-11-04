@@ -69,7 +69,11 @@ public sealed class CompileNetlistTests : IDisposable
         // out touches nothing inside, so it is no terminal; ground is the last, tied to node 0 by the wrapper.
         Assert.Equal(["in", join, "0"], module.Nets);
         Assert.Contains("parameter real Lp = 1e-09;", module.Text);
-        Assert.Contains("localparam real crf_k1 = (2.0 * Lp);", module.Text);
+        // Inline, never a localparam: the compiler lists every localparam among the compiled model's parameters, which
+        // would publish each element value of the protected cell.
+        Assert.DoesNotContain("localparam", module.Text);
+        Assert.Contains("//   crf_k1 = (2.0 * Lp)", module.Text);
+        Assert.Contains("V(crf_b1) <+ ((2.0 * Lp))*ddt(I(crf_b1));", module.Text);
         Assert.Contains("crf_u1_", module.Text);
     }
 
@@ -126,6 +130,10 @@ public sealed class CompileNetlistTests : IDisposable
         Assert.DoesNotContain(files, f => f.EndsWith(".va", StringComparison.Ordinal) || f.EndsWith(".cmodel", StringComparison.Ordinal));
         Assert.False(Directory.Exists(Path.Combine(model, ModelFolder.CellsFolder)));
         Assert.Contains($"models/{OsdiBuilds.CurrentRid}/TSTPA200.osdi", files);
+        // The compiled part's own parameter list is the cell's parameters and nothing else: no value from inside it.
+        string ownBuild = Path.Combine(model, "models", OsdiBuilds.CurrentRid, "TSTPA200.osdi");
+        var described = Assert.Single(ExternalDeviceRegistry.Require(VerilogAFileResolver.ProviderNameFor(ownBuild)).Describe());
+        Assert.Equal(["Lp"], described.Parameters.Select(p => p.Name).Where(n => !n.StartsWith('$')));
         Assert.DoesNotContain(ModelFolderCheck.Validate(model), d => d.Severity == DiagnosticSeverity.Error);
         string source = Path.Combine(Path.GetDirectoryName(cell)!, ModelLibraryExport.ProtectedSourceFolder, "TSTPA200", "TSTPA200.va");
         Assert.Equal(source, result.SourcePath);

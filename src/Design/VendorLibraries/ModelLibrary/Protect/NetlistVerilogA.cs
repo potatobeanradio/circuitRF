@@ -23,8 +23,15 @@ public sealed class ProtectRefusedException(IReadOnlyList<string> refusals) : Ex
 /// <summary>
 /// One flat Verilog-A module from a <see cref="ProtectPlan"/> (brief vendorlib-16 D1, D3, R-vl16-1). The cell's own
 /// parameters are the module's parameters, with their defaults in base SI; every value below the top — a sub-cell's
-/// parameters and variables, an element's value, a composed FET's instance values — is a <c>localparam</c> expression of
-/// them, so a placed part takes overrides, sweeps, corners and tuning exactly as the unprotected part does.
+/// parameters and variables, an element's value, a composed FET's instance values — is an expression of them, written
+/// inline where it is used, so a placed part takes overrides, sweeps, corners and tuning exactly as the unprotected part
+/// does.
+///
+/// <para><b>Inline, never a <c>localparam</c>.</b> The compiler publishes every <c>localparam</c> in the compiled model's
+/// own parameter list, so a recipient loading the <c>.osdi</c> could read — and set — each element value of the cell it
+/// protects. A module variable would not be listed, but an analog function cannot read one, and the composed FET's
+/// functions read its instance values. An expression of the cell's parameters can be read anywhere, functions included.
+/// The source written for the maker lists each value in a comment, under the name it had.</para>
 ///
 /// <para><b>Names inside are opaque</b> (<c>crf_n3</c>, <c>crf_k7</c>, <c>crf_u1_…</c>): the compiled file carries
 /// identifiers, and the hierarchy's names are part of the topology being protected. The source written for the maker says
@@ -192,8 +199,15 @@ public static class NetlistVerilogA
 
             sb.Append("\n  // The cell's parameters (base SI)\n");
             foreach (string p in parameters) sb.Append(p).Append('\n');
-            if (ordered.Count > 0) sb.Append("\n  // Every value below the cell's own, as an expression of its parameters\n");
-            foreach (var lp in ordered) sb.Append($"  localparam {lp.Type} {lp.Name} = {lp.Text};   // {Ascii(lp.What)}\n");
+            if (ordered.Count > 0)
+                sb.Append("\n  // Every value below the cell's own, as an expression of its parameters, written inline where it is used\n");
+            foreach (var lp in ordered) sb.Append($"  //   {lp.Name} = {lp.Text}   ({Ascii(lp.What)})\n");
+
+            // Everything from here on names those values; each becomes its expression (expanded in dependency order).
+            var inline = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var lp in ordered) inline[lp.Name] = "(" + Inline(lp.Text, inline) + ")";
+            var head = sb;
+            sb = new StringBuilder();
 
             foreach (var (fet, f) in fragments)
             {
@@ -210,6 +224,8 @@ public static class NetlistVerilogA
                 sb.Append(f.Body);
             }
             sb.Append("  end\nendmodule\n");
+            head.Append(Inline(sb.ToString(), inline));
+            sb = head;
 
             var overrides = top.Cell.Parameters.Where(p => !p.Hidden).Select(p => new ParameterAssignment(p.Name, p.Name)).ToList();
             return new ProtectModule(moduleName, sb.ToString(), terminals, overrides);
@@ -314,6 +330,28 @@ public static class NetlistVerilogA
             string k = Key(level, name);
             if (_localparams.Any(l => l.Name == k)) return;
             if (text() is { } t) _localparams.Add((k, "real", t, Uses(t), level.IsTop ? name : $"{level.Path}.{name}"));
+        }
+
+        /// <summary><paramref name="text"/> with each name <paramref name="values"/> holds replaced by its expression — on
+        /// identifier boundaries, and never inside a string literal (a <c>$fatal</c> message).</summary>
+        private static string Inline(string text, IReadOnlyDictionary<string, string> values)
+        {
+            if (values.Count == 0) return text;
+            var outText = new StringBuilder(text.Length);
+            int i = 0;
+            while (i < text.Length)
+            {
+                int q = text.IndexOf('"', i);
+                string code = q < 0 ? text[i..] : text[i..q];
+                outText.Append(System.Text.RegularExpressions.Regex.Replace(code, @"\bcrf_[ku][A-Za-z0-9_]*\b",
+                    m => values.TryGetValue(m.Value, out string? v) ? v : m.Value));
+                if (q < 0) break;
+                int close = q + 1;
+                while (close < text.Length && (text[close] != '"' || text[close - 1] == '\\')) close++;
+                outText.Append(text, q, Math.Min(close + 1, text.Length) - q);
+                i = close + 1;
+            }
+            return outText.ToString();
         }
 
         private static HashSet<string> Uses(string text)

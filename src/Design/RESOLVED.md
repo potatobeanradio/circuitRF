@@ -26890,10 +26890,14 @@ A read of the series' code after it landed. Fixed, with a gate in `tests/Ui.Test
 - `--build <rid>=fet.osdi` after a stem collision (`fet`, `fet_2`) matches the first; a root that is itself a model folder
   indexes as `vendormodel://lib/` and does not place; a design-level tolerance typed on an unticked part's instance row
   is held with it; the Corners grid shows no bindings for a generated part corner.
-- **A protected module publishes its internal values as parameters.** The compiler exposes every `localparam` through the
-  model interface (`describe` lists `crf_k1`, `crf_u1_Rth`, …), so whoever loads the `.osdi` directly can read and set
-  the cell's element values. circuitRF's own UI does not (a placed part's parameters come from `part.cpart`). A fix moves
-  them into the analog block as variables, and needs every proof re-run.
+- ~~A protected module publishes its internal values as parameters~~ — **fixed the same day.** The compiler parses
+  `localparam` and then treats it exactly as `parameter` (its `is_local` flag is read nowhere), so every value below the
+  cell's own was in the compiled model's parameter list (`describe` listed `crf_k1`, `crf_u1_Rth`, …): whoever loaded
+  the `.osdi` directly could read and set each element value. A module variable is not listed, but an analog function
+  cannot read one and the composed FET's functions read its instance values (`Gx_Id`, `Gx_IgGs`, `Gx_IgGd`), so
+  `NetlistVerilogA` now writes each value INLINE as its expression of the cell's parameters (dependency order, identifier
+  boundaries, never inside a string). The maker's source lists each one in a comment. Gate: `CompileNetlistTests`'
+  compiler test asserts the compiled part describes `Lp` and nothing else, and its proof still passes.
 
 ### Cross-platform builds, measured again
 
