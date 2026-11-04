@@ -1,4 +1,6 @@
 // brief-em3d-28 R-em3d28-4d — one clip plane, on an axis or perpendicular to the view.
+// brief-dfr34-3 R-dfr34-3-3 — or on any plane: a SECTION's normal is stated, as the view-facing one's is captured, so the
+// geometry is cut where a two-point field plot's plane is.
 //
 // The plane keeps the half-space n·p + d ≤ 0 and discards the rest in the fragment shader (no geometry
 // is cut). A solid the plane cuts shows its own inside: its BACK faces, which are drawn flat in the
@@ -10,8 +12,9 @@ using System.Numerics;
 
 namespace CircuitRF.Render.Scene3D;
 
-/// <summary>Which way the clip plane faces.</summary>
-public enum ClipAxis3D { X, Y, Z, View }
+/// <summary>Which way the clip plane faces. <see cref="Section"/> (brief-dfr34-3) is a stated normal, appended so no stored
+/// or compared value moves.</summary>
+public enum ClipAxis3D { X, Y, Z, View, Section }
 
 /// <summary>The clip plane's state: off, or an axis and a position along it.</summary>
 public struct ClipPlane3D
@@ -21,25 +24,31 @@ public struct ClipPlane3D
     /// <summary>Where the plane is along its normal, scene-local metres.</summary>
     public float Offset;
     /// <summary>For <see cref="ClipAxis3D.View"/>: the normal, captured when the axis was chosen, so
-    /// orbiting afterwards does not swing the cut.</summary>
+    /// orbiting afterwards does not swing the cut. For <see cref="ClipAxis3D.Section"/>: the normal stated.</summary>
     public Vector3 ViewNormal;
     /// <summary>Keep the other side.</summary>
     public bool Flip;
+
+    /// <summary>On a world axis (x, y or z), not a captured or stated normal.</summary>
+    public readonly bool IsAxis => Axis is ClipAxis3D.X or ClipAxis3D.Y or ClipAxis3D.Z;
 
     public readonly Vector3 Normal
     {
         get
         {
-            var n = Axis switch
-            {
-                ClipAxis3D.X => Vector3.UnitX,
-                ClipAxis3D.Y => Vector3.UnitY,
-                ClipAxis3D.Z => Vector3.UnitZ,
-                _            => ViewNormal == Vector3.Zero ? Vector3.UnitZ : Vector3.Normalize(ViewNormal),
-            };
+            var n = Unflipped;
             return Flip ? -n : n;
         }
     }
+
+    /// <summary>The normal <see cref="Offset"/> is measured along: the axis, or the captured or stated normal.</summary>
+    public readonly Vector3 Unflipped => Axis switch
+    {
+        ClipAxis3D.X => Vector3.UnitX,
+        ClipAxis3D.Y => Vector3.UnitY,
+        ClipAxis3D.Z => Vector3.UnitZ,
+        _            => ViewNormal == Vector3.Zero ? Vector3.UnitZ : Vector3.Normalize(ViewNormal),
+    };
 
     /// <summary>(nx, ny, nz, d) with the kept side n·p + d ≤ 0 — the shader's <c>clip</c> vector.</summary>
     public readonly Vector4 Equation
@@ -64,11 +73,7 @@ public struct ClipPlane3D
     public readonly (float Lo, float Hi) Range(Vector3 min, Vector3 max)
     {
         // Along the UNFLIPPED normal, the direction Offset is measured in (Equation negates both).
-        var n = Axis switch
-        {
-            ClipAxis3D.X => Vector3.UnitX, ClipAxis3D.Y => Vector3.UnitY, ClipAxis3D.Z => Vector3.UnitZ,
-            _ => ViewNormal == Vector3.Zero ? Vector3.UnitZ : Vector3.Normalize(ViewNormal),
-        };
+        var n = Unflipped;
         float lo = float.MaxValue, hi = float.MinValue;
         for (int k = 0; k < 8; k++)
         {

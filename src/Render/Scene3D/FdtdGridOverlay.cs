@@ -41,7 +41,7 @@ public static partial class FdtdGridOverlay
         var outv = new List<Scene3DVertex>();
 
         // ── on the clip plane ────────────────────────────────────────────────────────────────
-        if (clip.Enabled && clip.Axis != ClipAxis3D.View)
+        if (clip.Enabled && clip.IsAxis)
         {
             var a = clip.Axis switch { ClipAxis3D.X => FdtdAxis.X, ClipAxis3D.Y => FdtdAxis.Y, _ => FdtdAxis.Z };
             double at = clip.Offset + Coord(scene.Origin, a);

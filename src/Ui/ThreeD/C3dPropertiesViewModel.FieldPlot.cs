@@ -14,6 +14,7 @@ using CircuitRF.Design.ThreeD;
 using CircuitRF.Render.Scene3D.Fields;
 using CircuitRF.Ui.Viewer3D;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 
 namespace CircuitRF.Ui.ThreeD;
 
@@ -83,6 +84,16 @@ public sealed partial class C3dPropertiesViewModel
     public ObservableCollection<string> PlotTargets { get; } = [];
     [ObservableProperty] private string? _plotTarget;
     [ObservableProperty] private bool _plotIsClip;
+
+    /// <summary>brief-dfr34-3 — a ClipPlane plot on the vertical plane through two points (Section Through…): its axis and offset
+    /// are not read, so the Inspector shows the two points instead.</summary>
+    [ObservableProperty] private bool _plotIsSection;
+
+    /// <summary>A ClipPlane plot on an axis plane: the Across row and Through… are shown.</summary>
+    [ObservableProperty] private bool _plotIsAxisClip;
+
+    /// <summary>A section's two points, as the Inspector shows them.</summary>
+    [ObservableProperty] private string _plotSectionText = "";
     [ObservableProperty] private C3dAxis _plotAxis = C3dAxis.Z;
     [ObservableProperty] private string _plotOffsetText = "";
     /// <summary>The offset slider, DBU: across the model's extent on the plot's axis. It previews while dragged and commits on
@@ -195,6 +206,9 @@ public sealed partial class C3dPropertiesViewModel
         KeepOrReplace(PlotTargets, [OnClip, OnSurfaces, OnFaces]);
         PlotTarget = p.On switch { C3dFieldPlotOn.ClipPlane => OnClip, C3dFieldPlotOn.Surfaces => OnSurfaces, _ => OnFaces };
         PlotIsClip = p.On == C3dFieldPlotOn.ClipPlane;
+        PlotIsSection = PlotIsClip && p.Through is not null;
+        PlotIsAxisClip = PlotIsClip && p.Through is null;
+        PlotSectionText = p.Through is { } through ? $"{Point(through.From)} → {Point(through.To)}" : "";
         PlotIsFaces = p.On == C3dFieldPlotOn.Faces;
         PlotAxis = p.Axis ?? C3dAxis.Z;
         PlotShowPlane = p.ShowPlane;
@@ -231,6 +245,19 @@ public sealed partial class C3dPropertiesViewModel
         => a.Label == b.Label && a.IsOther == b.IsOther && a.IsEnabled == b.IsEnabled && (a.Solution is null ? b.Solution is null : a.Solution.SameAs(b.Solution));
 
     private string FormatOffset(long dbu) => LayoutUnits.Format(dbu, Editor.Document.DisplayUnit, Editor.Document.DbuPerMicron);
+
+    /// <summary>A plan point as the Inspector shows it: <c>(x, y) unit</c>.</summary>
+    private string Point(C3dPoint2 p) => $"({FormatOffset(p.U)}, {FormatOffset(p.V)}) {LayoutUnits.Suffix(Editor.Document.DisplayUnit)}";
+
+    /// <summary>brief-dfr34-3 — "Use an Axis": the section's two points are dropped and the plot cuts on its axis again, at its
+    /// offset (or where the view's clip plane cuts, when it never had one). One undo entry.</summary>
+    [RelayCommand]
+    private void PlotUseAxis()
+    {
+        if (!IsFieldPlot) return;
+        var (axis, offset) = Editor.PlotClipDefault();
+        CommitPlot($"Cut {_plotName} on an axis", p => { p.Through = null; if (p.Offset is null) (p.Axis, p.Offset) = (axis, offset); });
+    }
 
     /// <summary>The slider's range, the model's extent on the plot's axis (widened to hold an offset outside it), and its
     /// thumb — at the dragged offset when a drag is under way across this reload, so the thumb does not jump back.</summary>

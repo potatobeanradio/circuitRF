@@ -204,6 +204,7 @@ dotnet run --project tools/UiSnapshot --no-build -- --c3d <file.c3d> -o out.png 
 | `--list` | Every object's name, kind and scene-local bounds (mm). Alone, it writes no picture. |
 | `--hover` | The first object whose name contains this is drawn hovered, as the pointer over it draws it. |
 | `--live` | Plan the picture as the live view is planned rather than as Export Picture: the realistic view then draws the hover and the selection too. |
+| `--section x,y,z:x,y,z` | Section Through… as a person runs it: each point (world mm) hovered (the viewer's own snap, printed) and clicked. The pick before the second click is written to `<out>.pick.png`; the picture is the view the command leaves. `--undo` then undoes once and writes `<out>.undo.png`. |
 | `--select` | Select the Object Tree row of this name (a field plot, an object) first, and lay the 2D overlay over the picture as Copy and Export Picture do: the selection's chrome and a selected clip-plane plot's plane. Only this option starts the headless Avalonia platform. A plot that draws nothing prints why. |
 
 A field plot draws from the workspace's `results/` folder beside its `.cws`, as the application reads it.

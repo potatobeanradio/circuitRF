@@ -491,6 +491,12 @@ setup's refusals and notes, the mesh, the field) are always shown.
     via) in the 3D view, and the plane moves to the object's centre on the plot's axis. Esc cancels. The
     plane is the plot's own. The toolbar's section plane neither moves with it nor hides it, so cut the
     geometry wherever helps you see.
+    **Section Through…** (the Field Plots menu, or the 3D view's menu once a run has fields) makes a plot on a
+    plane no axis gives: click two points (an object's centre, a vertex and an edge snap, so a pad's centre
+    and a via's axis are one click each) and the plot is cut on the vertical plane through both, across the
+    whole height. The toolbar's clip plane is set to the same plane (its axis reads **Section**), keeping the
+    side away from you, and the view turns to face it square on. One undo takes all three back. In
+    Properties the plot shows its two points; **Use an Axis** returns it to an axis plane.
   - **dB** and a **range** percentile, which keep one singular edge from washing out the picture. A field
     strength in dB reads in **dBµV/m** (H and surface current in **dBµA/m**), the EMC convention; any other
     quantity reads in dB re 1 of its unit. A power or energy density (the Poynting vector, the energy

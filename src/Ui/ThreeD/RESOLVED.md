@@ -510,3 +510,19 @@ for each instance that is still not drawn: "invalid wBond geometry" when the lay
 - **Trap:** `Camera3D.Ray` adds half a pixel. A test that projects a point and casts the ray back must pass
   `x − 0.5, y − 0.5` as `CursorRay` does, or the point lands a grid step off.
 - Gates: `OutlinePointRowsTests`, `SnapTrackingTests`.
+
+## Section Through… — a field plot through two points (brief-dfr34-3)
+
+- **Model:** `C3dFieldPlot.Through` (two plan points, DBU) states a ClipPlane plot's plane as the vertical plane through
+  them; set, `Axis`/`Offset` are not read. Null is omitted on write, so every earlier plot reads and writes back byte for
+  byte. `FieldSectionLine` (`src/Render/Scene3D/Fields`) is the one place the line becomes a plane: `ScenePlane` for the
+  view and the CLI's slice, `Along` for the picture's horizontal (`Em3dSectionField`, `Em3dSectionScene.LineSection`).
+- **`ClipAxis3D.Section`** carries a stated normal in `ViewNormal`, as `View` carries a captured one. Code that read
+  `Axis != ClipAxis3D.View` as "on a world axis" (the slice index, the FDTD grid overlay, `ClipOfView`) now reads
+  `ClipPlane3D.IsAxis`; a new such test must too, or a Section plane's `(int)Axis` of 4 is taken for z.
+- **One undo:** the plot is a `C3dRecordsEdit`; the clip plane and camera are a `SectionViewEdit` beside it, both inside one
+  `BeginGroup`/`EndGroup`. **Trap:** `SetTool` calls `EndGroup`, so the finished pick disarms the tool BEFORE the group
+  opens; disarming after would close the group around the plot alone.
+- **Direction:** the ends are ordered so the camera sits on the line's right; distance along the line then grows left to
+  right in the view and in `render --field`'s picture alike.
+- Gates: `FieldRenderCliTests.Gate13`–`Gate15`. UiSnapshot `--c3d … --section x,y,z:x,y,z [--undo]` drives the pick.

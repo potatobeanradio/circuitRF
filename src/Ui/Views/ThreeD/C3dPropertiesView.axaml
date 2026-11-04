@@ -549,7 +549,7 @@
                           ToolTip.Tip="Where it is drawn: a cut on the plot's own plane; surfaces (the selected solid's faces, or the conductors for J_s; every exposed face for a temperature); or the faces it lists."/>
                 <!-- The offset box is narrow so the slider shares its row: the slider sweeps the plane across the model, drawn
                      live, and writes on release. -->
-                <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*" ColumnSpacing="4" IsVisible="{Binding PlotIsClip}">
+                <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*" ColumnSpacing="4" IsVisible="{Binding PlotIsAxisClip}">
                     <TextBlock Text="Across" FontSize="11" Opacity="0.7" VerticalAlignment="Center"/>
                     <ComboBox Grid.Column="1" ItemsSource="{x:Static t3:C3dPropertiesViewModel.PlotAxes}" SelectedItem="{Binding PlotAxis}"
                               VerticalAlignment="Center"
@@ -566,8 +566,16 @@
                 </Grid>
                 <!-- brief-dfr31-3 R-dfr31-3-1/2 — the plane is drawn in the view while this plot is selected; Through… puts it
                      through an object with one click. -->
+                <!-- brief-dfr34-3 — a section through two points (Section Through…): the points, and the way back to an axis. -->
+                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="4" IsVisible="{Binding PlotIsSection}">
+                    <TextBlock Text="Section" FontSize="11" Opacity="0.7" VerticalAlignment="Center"/>
+                    <SelectableTextBlock Grid.Column="1" Text="{Binding PlotSectionText}" FontSize="11" TextWrapping="Wrap" VerticalAlignment="Center"
+                                         ToolTip.Tip="The vertical plane through these two points, spanning the whole height. The plot's own axes are the distance along the line and z."/>
+                    <Button Grid.Column="2" Content="Use an Axis" Command="{Binding PlotUseAxisCommand}" Padding="6,2"
+                            ToolTip.Tip="Cut on an axis plane again instead of through the two points."/>
+                </Grid>
                 <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding PlotIsClip}">
-                    <ToggleButton Content="Through…" IsChecked="{Binding PlotThroughArmed}"
+                    <ToggleButton Content="Through…" IsChecked="{Binding PlotThroughArmed}" IsVisible="{Binding PlotIsAxisClip}"
                                   ToolTip.Tip="Then click an object in the 3D view: the plane moves through its centre on this axis. Esc cancels."/>
                     <CheckBox IsChecked="{Binding PlotShowPlane}" Content="Always show the plane" VerticalAlignment="Center"
                               ToolTip.Tip="Draw the plane in the 3D view while this plot is not selected too. It is always drawn while the plot is selected."/>

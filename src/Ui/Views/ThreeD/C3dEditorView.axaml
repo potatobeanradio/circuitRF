@@ -434,7 +434,7 @@
                 </ToggleButton>
                 <ComboBox ItemsSource="{Binding ViewModel.Viewer.ClipAxes}" SelectedItem="{Binding ViewModel.Viewer.ClipAxis}"
                           IsEnabled="{Binding ViewModel.Viewer.ClipEnabled}" MinWidth="70" VerticalAlignment="Center"
-                          ToolTip.Tip="The plane's normal: an axis, or the current view direction"/>
+                          ToolTip.Tip="The plane's normal: an axis, the current view direction, or Section (the plane Section Through… set)"/>
                 <Slider Classes="compact" Width="120" Minimum="0" Maximum="1" Value="{Binding ViewModel.Viewer.ClipPosition}"
                         IsEnabled="{Binding ViewModel.Viewer.ClipEnabled}" VerticalAlignment="Center"
                         ToolTip.Tip="Drag the clip plane through the model"/>

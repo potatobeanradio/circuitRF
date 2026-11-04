@@ -2295,6 +2295,10 @@ scan holds it to that.
 
 - **The view follows the plot.** A ClipPlane plot IS a section at its axis and DBU offset; a `--section`
   that disagrees, `--iso` or `--view-dir` is a refusal naming both — never a silent re-cut.
+  A plot with `Through` (two plan points, `brief-dfr34-3`) is the vertical plane through them: drawn as
+  `Em3dViewKind.SectionLine`, its horizontal the distance along the line from `From`, its vertical z. Any
+  `--section` is a refusal for it; a temperature on it draws without the wire crossings and boundary marks an
+  axis section finds, and a SAR peak marker is not drawn on it.
 - **Missing data is a refusal carrying R-em3d83-5's sentence verbatim** — never the nearest frequency, never
   an outline presented as the field. **A stale run still draws**, with a `note:`.
 - **The plot's drive is the record's, with no flag** (`brief-em3d-100`). `DrivePowerW` and `DriveReferredTo`

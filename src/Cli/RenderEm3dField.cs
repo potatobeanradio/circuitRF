@@ -117,6 +117,7 @@ internal static class RenderEm3dField
                     "a maximum-intensity projection is drawn on its own plane, through the middle of the tissue along its axis."));
             plot.On = C3dFieldPlotOn.ClipPlane;          // this process's copy of the document; nothing is saved
             plot.Axis = (C3dAxis)mipAxis;
+            plot.Through = null;                         // a projection is along its axis, never a two-point plane
             plot.Mip = true;
         }
         var asked = req.Sections.Select(s => $"--section {s}").ToList();
@@ -141,7 +142,8 @@ internal static class RenderEm3dField
         if (!surface)
         {
             own = OwnView(plot, doc);
-            string plane = $"{own.Axis} = {Em3dSectionScene.FormatLength(own.At)}";
+            string plane = own.Line is { } through ? $"the vertical plane through {Em3dSectionScene.LineText(through)}"
+                                                   : $"{own.Axis} = {Em3dSectionScene.FormatLength(own.At)}";
             if (asked.Count == 1 && req.Sections.Count == 0) return JsonRun.Fail(CliDiagnostics.RenderFieldViewDisagrees(plot.Name, plane, asked[0]));
             if (req.Sections.Count == 1)
             {
@@ -238,7 +240,7 @@ internal static class RenderEm3dField
                                 realistic, realisticDirection);
         var clip = FieldPlotResolver.ScenePlane(plot, doc.DbuPerMicron, origin);
         FieldSectionCut? cut;
-        try { cut = FieldSection.Cut(q, volume!, origin, clip, request.Db, request.Percentile, RunHost.Cancellation, drive); }
+        try { cut = FieldSection.Cut(q, volume!, origin, clip, request.Db, request.Percentile, RunHost.Cancellation, drive, own.Line); }
         catch (Exception e) when (e is FieldReadException or IOException or UnauthorizedAccessException)
         { return JsonRun.Fail(CliDiagnostics.RenderFieldUnreadable(plot.Name, e.Message)); }
         if (cut is null) return JsonRun.Fail(CliDiagnostics.RenderFieldMissingData(plot.Name, gone ?? $"The run no longer offers {FieldNames.Friendly(q.Array.Name)}."));
@@ -248,7 +250,9 @@ internal static class RenderEm3dField
         List<Em3dWireCrossing> crossings = [];
         List<Em3dBoundaryMark> marks = [];
         string hotSpot = "";
-        if (q.IsTemperature)
+        // brief-dfr34-3 — the wires' crossings and the thermal boundaries are found on an axis plane; a two-point section shows the
+        // temperature alone
+        if (q.IsTemperature && own.Line is null)
         {
             int point = item.Solution.Index;
             var chains = found.Table is { } table && loaded.Elaboration is { } el ? ThermalWireChains.At(el, table, point) : [];
@@ -263,7 +267,7 @@ internal static class RenderEm3dField
         var legend = req.NoLegend ? [] : FieldPlotResolver.LegendLines(plot.Name, q, cut.Scale, item.Label, phaseDeg, loopSeconds: null,
                                                                         stepLabel: item.Label, hotSpot: hotSpot, drive: drive);
         if (mip is int shown && legend.Count > 0) legend.Add($"Maximum along {"xyz"[shown]} (projection)");
-        var markers = peak is null ? [] : Em3dSectionField.PeakMarkers(peak, cut.Axis, own.At, projection: mip is not null);
+        var markers = peak is null || own.Line is not null ? [] : Em3dSectionField.PeakMarkers(peak, cut.Axis, own.At, projection: mip is not null);
         int? thin = req.NoThin ? null : ThinLimit();
 
         Em3dFieldLayer Layer(Em3dScene scene) => Em3dSectionField.Build(cut, phaseDeg * Math.PI / 180, raster: req.Format == "png", thin, legend,
@@ -553,11 +557,14 @@ internal static class RenderEm3dField
 
     /// <summary>A ClipPlane plot's own section: its axis at its offset, world metres.</summary>
     private static Em3dView OwnView(C3dFieldPlot plot, C3dDocument doc)
-        => new(plot.Axis switch { C3dAxis.X => Em3dViewKind.SectionX, C3dAxis.Y => Em3dViewKind.SectionY, _ => Em3dViewKind.SectionZ },
-               FieldPlotResolver.PlaneMetres(plot, doc.DbuPerMicron));
+        => FieldSectionLine.Of(plot, doc.DbuPerMicron) is { } line
+            ? new Em3dView(Em3dViewKind.SectionLine, 0) { Line = line }      // brief-dfr34-3 — the vertical plane through two points
+            : new(plot.Axis switch { C3dAxis.X => Em3dViewKind.SectionX, C3dAxis.Y => Em3dViewKind.SectionY, _ => Em3dViewKind.SectionZ },
+                  FieldPlotResolver.PlaneMetres(plot, doc.DbuPerMicron));
 
     private static string Target(C3dFieldPlot plot, C3dDocument doc) => plot.On switch
     {
+        C3dFieldPlotOn.ClipPlane when FieldSectionLine.Of(plot, doc.DbuPerMicron) is { } line => $"section through {Em3dSectionScene.LineText(line)}",
         C3dFieldPlotOn.ClipPlane => $"clip {(plot.Axis ?? C3dAxis.Z).ToString().ToLowerInvariant()} = " +
                                     Em3dSectionScene.FormatLength(FieldPlotResolver.PlaneMetres(plot, doc.DbuPerMicron)),
         C3dFieldPlotOn.Surfaces => plot.IsTemperature ? "all faces" : "surfaces",

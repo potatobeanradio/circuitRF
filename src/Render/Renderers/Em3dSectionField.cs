@@ -157,7 +157,9 @@ public static class Em3dSectionField
         for (int i = 0; i < n; i++)
         {
             double x = s.Xyz[3 * i] + cut.Origin.X, y = s.Xyz[3 * i + 1] + cut.Origin.Y, z = s.Xyz[3 * i + 2] + cut.Origin.Z;
-            uv[i] = cut.Axis switch { 0 => new Uv(y, z), 1 => new Uv(x, z), _ => new Uv(x, y) };
+            // brief-dfr34-3 — a section through two points: the distance along its line, and z
+            uv[i] = cut.Line is { } line ? new Uv(line.Along(x, y), z)
+                  : cut.Axis switch { 0 => new Uv(y, z), 1 => new Uv(x, z), _ => new Uv(x, y) };
         }
         SKColor Colour(double t) { var (r, g, b) = cut.Map.Sample((float)t); return new SKColor(r, g, b); }
 

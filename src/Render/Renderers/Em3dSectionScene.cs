@@ -38,6 +38,9 @@ public enum Em3dViewKind
     /// <summary>An orthographic outline along any direction (Em3dSectionScene.Outline) — a drawing's Top, Front …
     /// or the 3D view's own camera. Never handed to <see cref="Em3dSectionScene.Build"/>.</summary>
     Projection,
+    /// <summary>brief-dfr34-3 R-dfr34-3-1 — a vertical section through two points in plan (<see cref="Em3dView.Line"/>): the
+    /// picture's horizontal is the distance along the line from its first point, its vertical z. Appended so no value moves.</summary>
+    SectionLine,
 }
 
 /// <summary>A view: its kind and, for a section, where the plane is along its normal, metres.</summary>
@@ -48,6 +51,9 @@ public readonly record struct Em3dView(Em3dViewKind Kind, double At)
     /// <summary>For <see cref="Em3dViewKind.Projection"/>, the direction it looks along; null otherwise.</summary>
     public Em3dProjection? Projection { get; init; }
 
+    /// <summary>For <see cref="Em3dViewKind.SectionLine"/>, the line the vertical plane holds, world metres; null otherwise.</summary>
+    public CircuitRF.Render.Scene3D.Fields.FieldSectionLine? Line { get; init; }
+
     /// <summary>The plane's normal axis, lower-case, or null for the isometric view.</summary>
     public string? Axis => Kind switch
     {
@@ -57,7 +63,8 @@ public readonly record struct Em3dView(Em3dViewKind Kind, double At)
     /// <summary>The two axes the picture's horizontal and vertical are, e.g. "xz".</summary>
     public string Plane => Kind switch
     {
-        Em3dViewKind.SectionZ => "xy", Em3dViewKind.SectionY => "xz", Em3dViewKind.SectionX => "yz", _ => "iso",
+        Em3dViewKind.SectionZ => "xy", Em3dViewKind.SectionY => "xz", Em3dViewKind.SectionX => "yz", Em3dViewKind.SectionLine => "sz",
+        _ => "iso",
     };
 }
 
@@ -150,9 +157,9 @@ public static partial class Em3dSectionScene
         var dielectrics = problem.Solids.Where(s => s.Role == Em3dRole.Dielectric)
                                  .Select(s => s.Material).Distinct(StringComparer.Ordinal).ToList();
 
-        return view.Kind == Em3dViewKind.Iso
-            ? Iso(problem, fMin, fMax, tol, dielectrics)
-            : Section(problem, view, fMin, fMax, tol, dielectrics);
+        return view.Kind == Em3dViewKind.Iso ? Iso(problem, fMin, fMax, tol, dielectrics)
+             : view.Kind == Em3dViewKind.SectionLine ? LineSection(problem, view, fMin, fMax, tol, dielectrics)
+             : Section(problem, view, fMin, fMax, tol, dielectrics);
     }
 
     // ── the frame ────────────────────────────────────────────────────────────────────────────
@@ -429,13 +436,18 @@ public static partial class Em3dSectionScene
     /// the same way), and unwelded no loop ever closed, so every kernel solid was silently missing from a section.</para>
     /// </summary>
     public static List<List<Point3>> MeshCut(Em3dTriangleMesh mesh, int axis, double at)
+        => MeshCut(mesh, q => axis == 0 ? q.X : axis == 1 ? q.Y : q.Z, at);
+
+    /// <summary>brief-dfr34-3 — the same loops on the plane <paramref name="coordinate"/>(q) = <paramref name="at"/>: an axis's
+    /// coordinate above, a vertical section's distance off its plane (Em3dSectionScene.LineSection).</summary>
+    public static List<List<Point3>> MeshCut(Em3dTriangleMesh mesh, Func<Point3, double> coordinate, double at)
     {
         var first = new Dictionary<Point3, int>();
         var weld = new int[mesh.Vertices.Count];
         for (int i = 0; i < weld.Length; i++)
             weld[i] = first.TryGetValue(mesh.Vertices[i], out int w) ? w : first[mesh.Vertices[i]] = i;
         mesh = new Em3dTriangleMesh(mesh.Vertices, [.. mesh.Triangles.Select(t => t with { A = weld[t.A], B = weld[t.B], C = weld[t.C] })]);
-        double C(Point3 q) => axis == 0 ? q.X : axis == 1 ? q.Y : q.Z;
+        var C = coordinate;
         var point = new Dictionary<(int, int), Point3>();
         var links = new Dictionary<(int, int), List<(int, int)>>();
 

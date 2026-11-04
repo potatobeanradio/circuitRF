@@ -133,10 +133,12 @@ public static class FieldPlotResolver
     /// <summary>What an empty 3D view displays: a millimetre cube round the origin.</summary>
     public static readonly (double X0, double Y0, double Z0, double X1, double Y1, double Z1) EmptyExtent = (-5e-4, -5e-4, -5e-4, 5e-4, 5e-4, 5e-4);
 
-    /// <summary>A ClipPlane plot's plane in scene-local metres: its axis, its DBU offset less the scene's origin — kept on the
-    /// side <paramref name="flip"/> keeps.</summary>
+    /// <summary>A ClipPlane plot's plane in scene-local metres: its axis, its DBU offset less the scene's origin — or the vertical
+    /// plane through its two points — kept on the side <paramref name="flip"/> keeps.</summary>
     public static ClipPlane3D ScenePlane(C3dFieldPlot p, int dbuPerMicron, (double X, double Y, double Z) origin, bool flip = false)
     {
+        // brief-dfr34-3 R-dfr34-3-1 — a section through two points: the vertical plane holding both
+        if (FieldSectionLine.Of(p, dbuPerMicron) is { } line) return line.ScenePlane(origin, flip);
         int a = (int)(p.Axis ?? C3dAxis.Z);
         double world = PlaneMetres(p, dbuPerMicron);
         double o = a == 0 ? origin.X : a == 1 ? origin.Y : origin.Z;

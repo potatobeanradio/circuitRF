@@ -108,6 +108,27 @@ public sealed class C3dFieldPlotFace
     }
 }
 
+/// <summary>brief-dfr34-3 R-dfr34-3-1 — a section's two points in plan, DBU, <c>[x, y]</c> each: the plot's vertical plane runs
+/// through both, its own horizontal axis is the distance from <see cref="From"/> toward <see cref="To"/>, and its vertical is z.
+/// </summary>
+public sealed class C3dFieldPlotThrough
+{
+    [JsonConverter(typeof(C3dPoint2JsonConverter))]
+    public C3dPoint2 From { get; set; }
+
+    [JsonConverter(typeof(C3dPoint2JsonConverter))]
+    public C3dPoint2 To { get; set; }
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Unread { get; set; }
+
+    /// <summary>The two points are one: no plane runs through them alone.</summary>
+    [JsonIgnore]
+    public bool IsDegenerate => From == To;
+
+    public C3dFieldPlotThrough Clone() => new() { From = From, To = To };
+}
+
 /// <summary>
 /// Which saved solution a plot shows, by value. Exactly one of <see cref="GHz"/>, <see cref="Mode"/>, <see cref="Terminal"/>
 /// or <see cref="Point"/> is set; <see cref="Port"/> names the excited port of a driven run that excited several.
@@ -190,6 +211,11 @@ public sealed class C3dFieldPlot
 
     /// <summary>… and its coordinate along that axis, DBU. The plot owns its plane, so two plots cut in two places.</summary>
     public long? Offset { get; set; }
+
+    /// <summary>brief-dfr34-3 R-dfr34-3-1 — a <see cref="C3dFieldPlotOn.ClipPlane"/> plot's plane stated instead by two points in
+    /// plan: the vertical plane through both, spanning the whole height. Set, it is the plane and <see cref="Axis"/> and
+    /// <see cref="Offset"/> are not read; null (every plot written before it) is the axis plane.</summary>
+    public C3dFieldPlotThrough? Through { get; set; }
 
     /// <summary>A <see cref="C3dFieldPlotOn.Faces"/> plot's faces, in the order they were added.</summary>
     public List<C3dFieldPlotFace> Faces { get; set; } = [];

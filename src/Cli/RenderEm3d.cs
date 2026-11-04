@@ -327,7 +327,9 @@ internal static class RenderEm3d
             case Em3dViewKind.SectionY: return (new Uv(box.Min.X, box.Min.Z), new Uv(box.Max.X, box.Max.Z));
             case Em3dViewKind.SectionX: return (new Uv(box.Min.Y, box.Min.Z), new Uv(box.Max.Y, box.Max.Z));
         }
-        Func<Point3, Uv> project = view.Projection is { } pr ? pr.Project : Em3dSectionScene.Project;
+        // brief-dfr34-3 — a two-point section's plane: the distance along its line, and z
+        Func<Point3, Uv> project = view.Line is { } line ? q => new Uv(line.Along(q.X, q.Y), q.Z)
+                                 : view.Projection is { } pr ? pr.Project : Em3dSectionScene.Project;
         double u0 = double.PositiveInfinity, v0 = u0, u1 = double.NegativeInfinity, v1 = u1;
         for (int k = 0; k < 8; k++)
         {

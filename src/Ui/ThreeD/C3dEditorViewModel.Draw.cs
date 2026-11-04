@@ -323,6 +323,7 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
             C3dToolKind.MeshRegion => new MeshRegionTool(this),
             C3dToolKind.EffectiveBlock => new MeshRegionTool(this, block: true),
             C3dToolKind.TemperatureAlong => new TemperatureAlongTool(this),
+            C3dToolKind.SectionThrough => new SectionThroughTool(this),
             _ => new CylinderTool(this),
         });
     }
@@ -497,6 +498,15 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
         if (step.Finished && _tool is IC3dRecordTool recordTool)
         {
             CommitRecordTool(recordTool);
+            OnPropertyChanged(nameof(ToolPrompt));
+            Viewer.RequestFrame();
+            return;
+        }
+        // brief-dfr34-3 — Section Through…: the plot, the clip plane and the camera, one entry; the pick is put away
+        if (step.Finished && _tool is SectionThroughTool section && section.Take() is { } picked)
+        {
+            SetTool(null);
+            if (CommitSectionThrough(picked.From, picked.To) is { } sectionWhy) StatusMessage = sectionWhy;
             OnPropertyChanged(nameof(ToolPrompt));
             Viewer.RequestFrame();
             return;
@@ -792,6 +802,7 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
         foreach (var item in HierarchyMenuItems()) yield return item;
         foreach (var item in SimulateMenuItems()) yield return item;
         foreach (var item in FieldMenuItems()) yield return item;         // brief-em3d-82 — beside Plot Temperature
+        foreach (var item in SectionMenuItems()) yield return item;       // brief-dfr34-3 — Section Through…, with a field present
         foreach (var item in ThermalMenuItems()) yield return item;
         foreach (var item in WireMenuItems()) yield return item;
         if (Viewer.SelectMode == Scene3DSelectMode.Face && Viewer.Selection is [{ Face: >= 0 } f])

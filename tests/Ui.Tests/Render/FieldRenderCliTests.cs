@@ -15,6 +15,10 @@
 //   11  brief-em3d-89 — a Surfaces plot of |E| on the cavity's region, seen from the front, draws that region's boundary with
 //       the view's range, and a pixel on the front wall reads the field there
 //   12  brief-em3d-100 — a plot's drive is printed with no flag, as the line the 3D view's legend prints for it
+//   13  brief-dfr34-3 — a section through two points cuts the field on that oblique plane, and the CLI draws the triangles and
+//       range the 3D view builds for it
+//   14  brief-dfr34-3 — an axis plot written before reads and writes back byte for byte, and its plane is the axis plane
+//   15  brief-dfr34-3 — Section Through… makes the plot, sets the clip plane to its plane and faces it; one undo takes all three
 
 using System.Diagnostics;
 using System.Reflection;
@@ -389,6 +393,97 @@ public sealed class FieldRenderCliTests(ITestOutputHelper output) : IDisposable
         string line = Assert.Single(vm.Viewer.FieldLegendLines(), l => l.StartsWith("Drive: ", StringComparison.Ordinal));
         Assert.Equal("Drive: 10 W incident (available), peak", line);
         Assert.Contains(line, File.ReadAllText(svg));
+    }
+
+    // ── 13–15. brief-dfr34-3 — a section through any two points ─────────────────────────────
+
+    /// <summary>A section across the cavity's plan diagonal-ish: from a corner region to the far side, at no axis angle.</summary>
+    private static C3dFieldPlot Diagonal(string name) => new()
+    {
+        Name = name, Solution = new C3dFieldSolution { Mode = 1 }, Quantity = "E", Mode = nameof(FieldMode.Peak), On = C3dFieldPlotOn.ClipPlane,
+        Through = new C3dFieldPlotThrough { From = new C3dPoint2(2000 * Um, 1000 * Um), To = new C3dPoint2(20000 * Um, 9000 * Um) },
+    };
+
+    [Fact]
+    public void Gate13_ASectionThroughTwoPoints_CutsOnThatPlane_AndTheCliDrawsWhatTheViewBuilds()
+    {
+        string c3d = Workspace(Eigenmode(), [Diagonal("Cut")]);
+        Run(c3d);
+        string png = Path.Combine(_root, "cut.png");
+        var field = Field(RenderJson(c3d, png, "--field", "Cut"));
+        Assert.Equal("ClipPlane", field.GetProperty("on").GetString());
+
+        var vm = Open(c3d);
+        Until(() => vm.Viewer.Plot?.Name == "Cut" && vm.Viewer.FieldScale is not null && vm.Viewer.FieldGeometry.Vertices.Length > 0,
+              "the 3D view never drew Cut");
+        Thread.Sleep(150);
+        while (_posted.TryDequeue(out var a)) a();
+        // every vertex the view drew is on the plane through the two points, which is at neither axis angle
+        var line = FieldSectionLine.Of(vm.Document.FieldPlots[0], vm.Document.DbuPerMicron)!.Value;
+        var (nx, ny) = line.Normal;
+        Assert.True(Math.Abs(nx) > 0.3 && Math.Abs(ny) > 0.3, $"the normal ({nx}, {ny}) is on an axis");
+        var origin = vm.Viewer.Scene.Origin;
+        double worst = vm.Viewer.FieldGeometry.Vertices.Max(v => Math.Abs(line.Across(v.X + origin.X, v.Y + origin.Y)));
+        output.WriteLine($"CLI {field.GetProperty("triangles").GetInt32()} triangles; view {vm.Viewer.FieldGeometry.Vertices.Length / 3}; " +
+                         $"farthest vertex off the plane {worst:G3} m");
+        Assert.True(worst < 1e-6, $"a vertex is {worst} m off the plane");
+        Assert.Equal(vm.Viewer.FieldGeometry.Vertices.Length / 3, field.GetProperty("triangles").GetInt32());
+        Assert.Equal(vm.Viewer.FieldScale!.Lo, field.GetProperty("range").GetProperty("lo").GetDouble());
+        Assert.Equal(vm.Viewer.FieldScale!.Hi, field.GetProperty("range").GetProperty("hi").GetDouble());
+        Assert.True(new FileInfo(png).Length > 0);
+    }
+
+    [Fact]
+    public void Gate14_AnAxisPlotWrittenBefore_ReadsAndWritesBackByteForByte_OnItsAxisPlane()
+    {
+        string before = C3dPersistence.SerializeFieldPlots([MidZ("Field1")]);
+        Assert.DoesNotContain("Through", before);
+        var read = C3dPersistence.DeserializeFieldPlots(before);
+        Assert.Null(read[0].Through);
+        Assert.Equal(before, C3dPersistence.SerializeFieldPlots(read));
+        var plane = FieldPlotResolver.ScenePlane(read[0], (int)Um, (1e-3, 2e-3, 3e-3));
+        Assert.Equal(ClipAxis3D.Z, plane.Axis);
+        Assert.Equal((float)(12.5e-3 - 3e-3), plane.Offset);
+        // and a section's two points survive the same round trip
+        string section = C3dPersistence.SerializeFieldPlots([Diagonal("Cut")]);
+        var back = C3dPersistence.DeserializeFieldPlots(section)[0].Through!;
+        Assert.Equal((new C3dPoint2(2000 * Um, 1000 * Um), new C3dPoint2(20000 * Um, 9000 * Um)), (back.From, back.To));
+    }
+
+    [Fact]
+    public void Gate15_SectionThrough_MakesThePlot_ClipsOnItsPlane_FacesIt_AndOneUndoTakesAllThreeBack()
+    {
+        string c3d = Workspace(Eigenmode(), [MidZ("Field1")]);
+        var vm = Open(c3d);
+        var clipBefore = vm.Viewer.CurrentClip;
+        var cameraBefore = vm.Viewer.CurrentCamera;
+        int plots = vm.Document.FieldPlots.Count;
+
+        Assert.Null(vm.CommitSectionThrough(new C3dPoint3(2000 * Um, 1000 * Um, 0), new C3dPoint3(20000 * Um, 9000 * Um, 10000 * Um)));
+        var made = vm.Document.FieldPlots[^1];
+        Assert.Equal(plots + 1, vm.Document.FieldPlots.Count);
+        Assert.NotNull(made.Through);
+        var clip = vm.Viewer.View.Clip;
+        Assert.True(clip.Enabled);
+        Assert.Equal(ClipAxis3D.Section, clip.Axis);
+        // the clip plane is the plot's plane, and the side it keeps is the one away from the camera
+        var line = FieldSectionLine.Of(made, vm.Document.DbuPerMicron)!.Value;
+        var plotPlane = line.ScenePlane(vm.Viewer.Scene.Origin);
+        Assert.True(System.Numerics.Vector3.Distance(clip.Unflipped, plotPlane.Unflipped) < 1e-5f);
+        Assert.Equal(plotPlane.Offset, clip.Offset, 1e-6f);
+        var cam = vm.Viewer.View.Camera;
+        Assert.Equal(0, cam.Pitch, 1e-6f);
+        Assert.True(System.Numerics.Vector3.Dot(cam.Back, clip.Unflipped) < -0.999f, "the camera does not face the plane");
+        Assert.False(clip.Keeps(cam.Eye), "the side toward the camera was kept");
+
+        vm.UndoRedo.Undo();
+        while (_posted.TryDequeue(out var a)) a();
+        Assert.Equal(plots, vm.Document.FieldPlots.Count);
+        Assert.Equal(clipBefore, vm.Viewer.CurrentClip);
+        Assert.Equal(cameraBefore.Yaw, vm.Viewer.View.Camera.Yaw);
+        Assert.Equal(cameraBefore.Pitch, vm.Viewer.View.Camera.Pitch);
+        Assert.Equal(cameraBefore.Distance, vm.Viewer.View.Camera.Distance);
+        Assert.Equal(cameraBefore.Target, vm.Viewer.View.Camera.Target);
     }
 
     private static C3dFieldPlot MidZ(string name, C3dFieldSolution? solution = null) => new()

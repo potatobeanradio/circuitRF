@@ -793,7 +793,12 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
     [ObservableProperty] private double _clipPosition = 0.5;
     [ObservableProperty] private bool _clipFlip;
 
-    public IReadOnlyList<ClipAxis3D> ClipAxes { get; } = [ClipAxis3D.X, ClipAxis3D.Y, ClipAxis3D.Z, ClipAxis3D.View];
+    public IReadOnlyList<ClipAxis3D> ClipAxes { get; } = [ClipAxis3D.X, ClipAxis3D.Y, ClipAxis3D.Z, ClipAxis3D.View, ClipAxis3D.Section];
+
+    /// <summary>brief-dfr34-3 R-dfr34-3-3 — the normal a <see cref="ClipAxis3D.Section"/> plane was given (Section Through…), kept
+    /// while another axis is chosen so choosing Section again cuts there again. Zero until one is given: Section then cuts on the
+    /// vertical plane facing the view.</summary>
+    private Vector3 _sectionNormal;
 
     partial void OnClipEnabledChanged(bool value) => ApplyClip();
     partial void OnClipAxisChanged(ClipAxis3D value) => ApplyClip();
@@ -806,6 +811,15 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
         c.Enabled = ClipEnabled;
         if (ClipAxis == ClipAxis3D.View && (c.Axis != ClipAxis3D.View || c.ViewNormal == Vector3.Zero))
             c.ViewNormal = View.Camera.Forward;
+        if (ClipAxis == ClipAxis3D.Section)
+        {
+            if (_sectionNormal == Vector3.Zero)
+            {
+                var f = View.Camera.Forward;
+                _sectionNormal = Math.Abs(f.X) + Math.Abs(f.Y) > 1e-6f ? Vector3.Normalize(new Vector3(f.X, f.Y, 0)) : Vector3.UnitX;
+            }
+            c.ViewNormal = _sectionNormal;
+        }
         c.Axis = ClipAxis;
         c.Flip = ClipFlip;
         var (lo, hi) = c.Range(Scene.BoundsMin, Scene.BoundsMax);
@@ -816,6 +830,59 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
         ScheduleClipOverlays();
         // brief-em3d-96 — a ClipPlane plot cuts on its own plane: the view's section never rebuilds it.
         ScheduleFieldGeometry(l => !l.IsClipPlanePlot);
+    }
+
+    /// <summary>brief-dfr34-3 — the toolbar's clip plane as it stands: what Section Through… changes and its undo puts back.</summary>
+    public readonly record struct ClipState(bool Enabled, ClipAxis3D Axis, double Position, bool Flip, Vector3 SectionNormal);
+
+    public ClipState CurrentClip => new(ClipEnabled, ClipAxis, ClipPosition, ClipFlip, _sectionNormal);
+
+    /// <summary>Puts the clip plane back as <paramref name="state"/> held it.</summary>
+    public void RestoreClip(ClipState state)
+    {
+        _sectionNormal = state.SectionNormal;
+        // each setter re-applies; the last leaves the plane exactly as stated
+        ClipAxis = state.Axis;
+        ClipFlip = state.Flip;
+        ClipPosition = state.Position;
+        ClipEnabled = state.Enabled;
+        ApplyClip();
+    }
+
+    /// <summary>
+    /// brief-dfr34-3 R-dfr34-3-3 — the clip plane on the plane <paramref name="normal"/>·p = <paramref name="offset"/> (scene-local
+    /// metres, the normal's own length one), keeping the side the normal points away from when <paramref name="flip"/>: Section
+    /// Through… keeps the side away from the camera. The toolbar's axis reads Section.
+    /// </summary>
+    public void SetSectionClip(Vector3 normal, float offset, bool flip)
+    {
+        _sectionNormal = Vector3.Normalize(normal);
+        var probe = new ClipPlane3D { Axis = ClipAxis3D.Section, ViewNormal = _sectionNormal };
+        var (lo, hi) = probe.Range(Scene.BoundsMin, Scene.BoundsMax);
+        double position = hi > lo ? Math.Clamp((offset - lo) / (hi - lo), 0, 1) : 0.5;
+        RestoreClip(new ClipState(true, ClipAxis3D.Section, position, flip, _sectionNormal));
+    }
+
+    /// <summary>brief-dfr34-3 — the camera as it stands, and put back: Section Through… turns it, and its undo turns it back.</summary>
+    public Camera3D CurrentCamera => View.Camera;
+
+    public void RestoreCamera(Camera3D camera)
+    {
+        View.Camera = camera;
+        IsPerspective = camera.Projection == Projection3D.Perspective;
+        FrameRequested?.Invoke();
+    }
+
+    /// <summary>
+    /// brief-dfr34-3 R-dfr34-3-2 — the camera turned to look straight at a vertical plane from the side <paramref name="toward"/>
+    /// (a horizontal unit vector, scene-local) points to: level, orthographic, framed on what is shown.
+    /// </summary>
+    public void LookAlong(Vector3 toward)
+    {
+        View.Camera.Yaw = MathF.Atan2(toward.Y, toward.X);
+        View.Camera.Pitch = 0;
+        IsPerspective = false;
+        Fit();
     }
 
     // Overlays (R-em3d28-3).

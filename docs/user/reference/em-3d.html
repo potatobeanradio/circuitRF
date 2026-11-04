@@ -694,7 +694,13 @@ it can be placed before anything is solved; <em>Always show the plane</em> keeps
 selected. <strong>Through…</strong> puts the plane through an object: press it, then click the object (a pad, a
 via) in the 3D view, and the plane moves to the object's centre on the plot's axis. Esc cancels. The
 plane is the plot's own. The toolbar's section plane neither moves with it nor hides it, so cut the
-geometry wherever helps you see.</li>
+geometry wherever helps you see.
+<strong>Section Through…</strong> (the Field Plots menu, or the 3D view's menu once a run has fields) makes a plot on a
+plane no axis gives: click two points (an object's centre, a vertex and an edge snap, so a pad's centre
+and a via's axis are one click each) and the plot is cut on the vertical plane through both, across the
+whole height. The toolbar's clip plane is set to the same plane (its axis reads <strong>Section</strong>), keeping the
+side away from you, and the view turns to face it square on. One undo takes all three back. In
+Properties the plot shows its two points; <strong>Use an Axis</strong> returns it to an axis plane.</li>
 <li><strong>dB</strong> and a <strong>range</strong> percentile, which keep one singular edge from washing out the picture. A field
 strength in dB reads in <strong>dBµV/m</strong> (H and surface current in <strong>dBµA/m</strong>), the EMC convention; any other
 quantity reads in dB re 1 of its unit. A power or energy density (the Poynting vector, the energy

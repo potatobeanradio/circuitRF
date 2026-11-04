@@ -193,6 +193,9 @@ public static partial class Em3dSectionRenderer
         Em3dViewKind.SectionX => new Em3dProjection(new(1, 0, 0), new(0, 1, 0), new(0, 0, 1), "section x"),
         Em3dViewKind.Iso => new Em3dProjection(new(1 / Math.Sqrt(3), 1 / Math.Sqrt(3), 1 / Math.Sqrt(3)),
                                                new(Math.Cos(Math.PI / 6), -Math.Cos(Math.PI / 6), 0), new(-0.5, -0.5, 1), "iso"),
+        // brief-dfr34-3 — seen from the line's right: its direction to the right, z up, toward the viewer their cross product
+        Em3dViewKind.SectionLine when view.Line is { } l => new Em3dProjection(new(l.Direction.Y, -l.Direction.X, 0),
+                                               new(l.Direction.X, l.Direction.Y, 0), new(0, 0, 1), "section"),
         _ => view.Projection,
     };
 
@@ -627,6 +630,8 @@ public static partial class Em3dSectionRenderer
         ? "Isometric outline, viewed from +x +y +z"
         : scene.View.Kind == Em3dViewKind.Projection
         ? $"{scene.View.Projection?.Name ?? "Outline"} outline, orthographic"
+        : scene.View.Kind == Em3dViewKind.SectionLine && scene.View.Line is { } line
+        ? $"Vertical section through {Em3dSectionScene.LineText(line)}"
         : $"{scene.View.Plane.ToUpperInvariant()} section at {scene.View.Axis} = {Em3dSectionScene.FormatLength(scene.At)}";
 
     /// <summary>The caption's second line: the rule the picture was drawn by — for an outline, that it
@@ -635,6 +640,8 @@ public static partial class Em3dSectionRenderer
         ? "Silhouettes and sharp edges, orthographic. NO hidden-line removal: edges behind a surface are drawn too."
         : scene.View.Kind == Em3dViewKind.Projection
         ? "Silhouettes and sharp edges, orthographic."
+        : scene.View.Kind == Em3dViewKind.SectionLine
+        ? "Across: the distance along the line from its first point; up: z. Ports are drawn projected onto the plane."
         : $"A solid is drawn where its bottom ≤ {scene.View.Axis} < its top; a sheet within " +
           $"{Em3dSectionScene.FormatLength(scene.SnapTolerance)} of its plane. Ports are drawn projected onto the plane.";
 

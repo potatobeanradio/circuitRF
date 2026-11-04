@@ -241,7 +241,7 @@ public sealed partial class C3dEditorViewModel
         var scene = Viewer.Scene;
         double perDbu = C3dLowering.Metres(1, Document.DbuPerMicron);
         var clip = Viewer.View.Clip;
-        if (clip.Enabled && clip.Axis != ClipAxis3D.View)
+        if (clip.Enabled && clip.IsAxis)
         {
             int a = (int)clip.Axis;
             double world = (a == 0 ? scene.Origin.X : a == 1 ? scene.Origin.Y : scene.Origin.Z) + clip.Offset;
@@ -403,6 +403,7 @@ public sealed partial class C3dEditorViewModel
     /// the scene's bounds when there is no problem to have one — and its label, <c>Y = 120 µm</c>.</summary>
     internal (CircuitRF.Engine.Em3d.Point3[] Corners, string Label) PlotPlane(C3dFieldPlot p, long offset)
     {
+        if (FieldSectionLine.Of(p, Document.DbuPerMicron) is { } line) return SectionPlane(p, line);     // brief-dfr34-3
         var scene = Viewer.Scene;
         var (lo, hi) = scene.Problem?.Boundary is { } box
             ? ((box.Min.X, box.Min.Y, box.Min.Z), (box.Max.X, box.Max.Y, box.Max.Z))
@@ -442,6 +443,7 @@ public sealed partial class C3dEditorViewModel
     {
         if (_plotThrough == name) { CancelPlotThrough(); return; }
         if (FieldPlot(name) is not { On: C3dFieldPlotOn.ClipPlane } p) return;
+        if (p.Through is not null) { StatusMessage = $"{name} is a section through two points: Use an Axis first, or make another with Section Through…."; return; }
         _plotThrough = name;
         StatusMessage = $"Click an object: {name}'s plane moves through its centre on {p.Axis ?? C3dAxis.Z}. Esc cancels.";
         OnPropertyChanged(nameof(PlotThroughArmed));
@@ -607,6 +609,7 @@ public sealed partial class C3dEditorViewModel
             new("Delete", () => DeleteFieldPlot(name)),
             Viewer3DMenuItem.Separator,
             new("New Field Plot…", NewFieldPlot),
+            SectionThroughItem(),
             new("Properties", () => ShowProperties(rename: false)),
         ];
     }
@@ -614,7 +617,7 @@ public sealed partial class C3dEditorViewModel
     /// <summary>A group header's menu: the Field Plots group adds a plot; a material's header (by material) edits the material
     /// (brief-em3d-94).</summary>
     public IReadOnlyList<Viewer3DMenuItem> TreeGroupMenuItems(C3dTreeGroup group)
-        => group.Role == C3dTreeGroupRole.FieldPlots ? [new Viewer3DMenuItem("New Field Plot…", NewFieldPlot)]
+        => group.Role == C3dTreeGroupRole.FieldPlots ? [new Viewer3DMenuItem("New Field Plot…", NewFieldPlot), SectionThroughItem()]
          : !IsViewOnly && EditMaterialItem(group) is { } edit ? [edit] : [];
 
     /// <summary>

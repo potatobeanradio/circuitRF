@@ -26,11 +26,18 @@ using CircuitRF.Ui.Viewer3D;
 // selection's chrome, a selected clip-plane plot's plane (brief-dfr31-3) — laid over the GPU's pixels exactly as Copy and
 // Export Picture lay it (Viewer3DOverlay.PictureLayer). That overlay is drawn by Avalonia, so only this option starts the
 // headless platform.
+//
+// --section x,y,z:x,y,z (brief-dfr34-3) runs Section Through… as a person does: each point (world millimetres) is projected to
+// the view, hovered — the viewer's own CPU snap resolves there, and what it snapped to is printed — and clicked through the
+// editor's DrawClick. Before the second click the pick is written to <out>.pick.png (the rubber band from the first point to the
+// second, over the GPU's pixels); the final picture is the view the command leaves: the plot, the clip plane and the camera.
+// --undo then undoes once more and writes <out>.undo.png. Like --select it starts the headless platform for the overlay.
 internal static class Snapshot3D
 {
     public static int Run(string[] args)
     {
-        string? path = null, output = null, only = null, hide = null, hover = null, select = null;
+        string? path = null, output = null, only = null, hide = null, hover = null, select = null, section = null;
+        bool undo = false;
         bool live = false;
         int w = 1200, h = 800;
         bool realistic = false, fit = false, list = false;
@@ -65,6 +72,8 @@ internal static class Snapshot3D
                 case "--hover" when i + 1 < args.Length: hover = args[++i]; break;
                 case "--live": live = true; break;
                 case "--select" when i + 1 < args.Length: select = args[++i]; break;
+                case "--section" when i + 1 < args.Length: section = args[++i]; break;
+                case "--undo": undo = true; break;
                 default: Console.Error.WriteLine($"unknown option {args[i]}"); return 2;
             }
         }
@@ -75,7 +84,7 @@ internal static class Snapshot3D
             return 2;
         }
 
-        if (select is not null)
+        if (select is not null || section is not null)
             AppBuilder.Configure<SnapshotApp>().UseSkia()
                 .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
 
@@ -156,10 +165,59 @@ internal static class Snapshot3D
                 if (vm.FieldPlot(row.Name) is { } plot && vm.FieldPlotProblem(plot) is { } why) Console.WriteLine($"  draws nothing: {why}");
             }
 
-            var shot = vm.Viewer.CapturePicture(w, h, 1, out string? error, supersample: 1, live: live);
-            if (shot is null) { Console.Error.WriteLine($"no picture: {error}"); return 1; }
-            if (select is not null) shot = shot with { Layer = Viewer3DOverlay.PictureLayer(vm.Viewer, w, shot.Width, shot.Height) };
-            File.WriteAllBytes(output!, shot.Png());
+            bool overlay = select is not null || section is not null;
+            bool Capture(string to)
+            {
+                var picture = vm.Viewer.CapturePicture(w, h, 1, out string? why, supersample: 1, live: live || section is not null);
+                if (picture is null) { Console.Error.WriteLine($"no picture: {why}"); return false; }
+                if (overlay) picture = picture with { Layer = Viewer3DOverlay.PictureLayer(vm.Viewer, w, picture.Width, picture.Height) };
+                File.WriteAllBytes(to, picture.Png());
+                return true;
+            }
+
+            if (section is not null)
+            {
+                var ends = section.Split(':').Select(e => e.Split(',').Select(v => double.Parse(v, CultureInfo.InvariantCulture) * 1e-3).ToArray()).ToArray();
+                if (ends.Length != 2 || ends.Any(e => e.Length != 3)) { Console.Error.WriteLine("--section x,y,z:x,y,z (world mm)"); return 2; }
+                var onPicked = typeof(Viewer3DViewModel).GetMethods(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+                    .Single(m => m.Name == "OnPicked" && m.GetParameters().Length == 5);
+                void HoverAt(double[] world)
+                {
+                    var (px, py, front) = view.Camera.Project(scene.ToLocal(world[0], world[1], world[2]), w, h);
+                    if (!front) throw new InvalidOperationException("a --section point is behind the camera");
+                    vm.Viewer.Hover(px, py);
+                    var (id, face) = Scene3DPicking.PairAtPixel(scene, view.Camera, px, py, w, h, view.Visible);
+                    onPicked.Invoke(vm.Viewer, [id, face, Vector3.Zero, id != 0, null]);
+                    Console.WriteLine($"  hovered ({px:F0}, {py:F0}) over {(id == 0 ? "nothing" : scene.Object(id)?.Name)}: {vm.Viewer.SnapText}");
+                }
+                vm.SectionThrough();
+                Console.WriteLine($"Armed: {vm.ToolPrompt}");
+                HoverAt(ends[0]);
+                vm.DrawClick(Avalonia.Input.KeyModifiers.None, 1);
+                Console.WriteLine($"  first click: {vm.ToolPrompt} {vm.StatusMessage}");
+                HoverAt(ends[1]);
+                string pick = Path.ChangeExtension(output!, ".pick.png");
+                if (!Capture(pick)) return 1;
+                Console.WriteLine($"Wrote {pick}");
+                vm.DrawClick(Avalonia.Input.KeyModifiers.None, 1);
+                vm.Viewer.Leave();
+                Console.WriteLine($"  second click: {vm.StatusMessage}");
+                Pump(() => vm.Viewer.FieldLayers.All(l => !l.Building && (l.Builds > 0 || l.Problem is not null)), "finished drawing the plots");
+                var made = vm.Document.FieldPlots[^1];
+                Console.WriteLine($"  plot {made.Name}: {System.Text.Json.JsonSerializer.Serialize(new[] { made.Through?.From, made.Through?.To })}; " +
+                                  $"clip {vm.Viewer.ClipAxis} enabled={vm.Viewer.ClipEnabled} flip={vm.Viewer.ClipFlip}; undo: {vm.UndoRedo.UndoDescription}");
+                if (vm.FieldPlotProblem(made) is { } none) Console.WriteLine($"  draws nothing: {none}");
+            }
+
+            if (!Capture(output!)) return 1;
+            if (section is not null && undo)
+            {
+                vm.UndoRedo.Undo();
+                Pump(() => vm.Viewer.FieldLayers.All(l => !l.Building), "settled after the undo");
+                string after = Path.ChangeExtension(output!, ".undo.png");
+                if (!Capture(after)) return 1;
+                Console.WriteLine($"Wrote {after}: {vm.Document.FieldPlots.Count} plot(s), clip {vm.Viewer.ClipAxis} enabled={vm.Viewer.ClipEnabled}");
+            }
             var c = view.Camera;
             Console.WriteLine(string.Create(CultureInfo.InvariantCulture,
                 $"Wrote {output} ({w}x{h}, {(realistic ? "realistic" : "plain")}, {c.Projection}) — yaw {c.Yaw * 180 / MathF.PI:F1}°, " +
