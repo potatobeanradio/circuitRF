@@ -266,6 +266,10 @@
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
       <_Parameter1>CircuitRF.Ui.Tests</_Parameter1>
     </AssemblyAttribute>
+    <!-- tools/UpdateLayoutHarness: drives the workspace's own Update Layout command headlessly (its Messages sink). -->
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>UpdateLayoutHarness</_Parameter1>
+    </AssemblyAttribute>
   </ItemGroup>
 
   <ItemGroup>

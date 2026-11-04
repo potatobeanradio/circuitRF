@@ -165,9 +165,10 @@ internal static class ArtworkRoundTripBoards
         model.SchematicDirectory = schematicDir;
 
         var view = LayoutPersistence.LoadFromFile(made.LayoutPath!);
-        void UpdateLayout()
+        void UpdateLayout(bool restoreRemoved = false)
         {
-            var r = SchematicToLayoutGenerator.Run(model, view, schematicDir, root, layoutDir, tech, techPath, DiskCellResolver.Instance);
+            var r = SchematicToLayoutGenerator.Run(model, view, schematicDir, root, layoutDir, tech, techPath, DiskCellResolver.Instance,
+                                                   restoreRemoved: restoreRemoved);
             Assert.All(r.NoLayoutWarnings, w => Assert.StartsWith("P", w));   // the two ports have no artwork; everything else does
             r.Command?.Execute();
         }
@@ -175,13 +176,13 @@ internal static class ArtworkRoundTripBoards
 
         Arrange(view, layoutDir, tech);
         // The designer's own plane under the board, its edges where the two lines leave it (the generated pour reaches
-        // past them), and VG1 deleted with the copper tying it to L1 where L1 first landed — the next update places it
-        // beside L1 again.
+        // past them), and VG1 deleted with the copper tying it to L1 where L1 first landed — the next update, asked to
+        // restore removed parts (a part deleted by hand otherwise stays deleted, brief-sdl-4), places it beside L1 again.
         view.Shapes.RemoveAll(s => s.Generated == GroundArtwork.PourTag);
         view.Shapes.RemoveAll(s => s is PathShape && s.Layer == Top);
         view.Instances.Remove(Inst(view, "VG1"));
         view.Shapes.Add(new RectShape { Layer = Bottom, X1 = 0, Y1 = 0, X2 = Um(14_000), Y2 = PinAt(view, layoutDir, tech, "TL7", "2").Y });
-        UpdateLayout();
+        UpdateLayout(restoreRemoved: true);
         Assert.Contains(view.Instances, i => i.SchematicId == "VG1");
         LayoutPersistence.SaveToFile(made.LayoutPath!, view);
         return (cellDir, made.SchematicPath!, made.LayoutPath!, tech);

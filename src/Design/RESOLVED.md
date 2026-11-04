@@ -27373,3 +27373,80 @@ removed at the owner's direction: a 3D port returns through whatever its (−) e
 rectangle and wrote `Negative`. In a `.c3d` the way to change a return is to move the port. The `.cem` port table's Return
 column keeps its rows (`EmPortReturnChoices`, now ending with the coplanar return), because there the port is generated
 and has no rectangle to move.
+
+## Review of SDL-0…5 and SDL-9: re-runs, records, holds and ports (2026-11-04)
+
+A review of the series' first six briefs and the gap part, exercised as a user would through the workspace's own
+Update Layout command (`tools/UpdateLayoutHarness`, new, which drives `WorkspaceViewModel.RunLayoutUpdate` headlessly
+over scripted schematic and layout edits). Each fix below has a test in `tests/Ui.Tests/SchematicSync/ReRunReviewTests.cs`,
+`PortPlacementTests.cs` or `GapCoupledFilterTests.cs`, or in `MicrostripGapTests`.
+
+**A re-run's walk could start from a part with no joint.** `ChainPlacer.ChooseAnchor` took the first existing part in id
+order, and on F3 that is R1, a side-on shunt: its pads are an attachment and ground, so the walk reached nothing and the
+re-run read "Joined 1 of 5" for a layout the first run had joined 4 of. A new part added beyond such a chain was never
+posed (`KeyNotFoundException` in the chain step). The anchor is now the first existing part that has a joint; an existing
+part the walk has not reached is walked from once the queue drains; an existing side-on pad is queued once checked; and
+an existing pad's side-on check accepts either direction of travel, because the walk that placed it may have started
+from the other end. A bridging part recentred by D6 no longer counts its tree joint as made.
+
+**Placement records outlived their parts.** A footprint set to None deleted the instance and kept its record, so setting
+the footprint back read as "removed from the layout by hand" and never placed the part. A part removed from the schematic
+and the layout both kept its record too, and `NextAvailableName` reuses the lowest free number, so the next part of that
+name was silently never placed. `SchematicLayoutEdit.PlacementRecord` with a null placement now drops a record; the run
+drops it with the footprint, and for any id no component, instance or port label carries.
+
+**Both sides held depended on id order and on where the two waves met.** Every locked part seeded the walk, so in a chain
+`L(locked)–A–B(changed)–C–D–R(locked)` the change's route won at the first meeting and parts between moved; with the
+locks the other way round the gap landed elsewhere and read as a "Loop … does not close". A pre-pass now splits each
+changed part's group at its changed pins: held on two sides (its own and one beyond, or two beyond), it keeps its pose,
+its joints there are opened, and the gap is reported at its own pin naming each hold. A held line that got LONGER does
+not leave a gap — it runs into the next part — and the line now says "TL2 pin 2 now overlaps TL3 by 1000 µm".
+
+**A locked part was turned, and re-snapped.** `Locked` was read only by `DeltaPropagation`: a rotation carried from the
+schematic turned a locked part about its origin (moving its pins), and Re-snap re-placed it. Both are now refused with a
+line; the orientation link keeps its old baseline so the turn is carried once the part is unlocked. Both lines are
+RUN-level (no instance name): a run that changes nothing says nothing (R-L5-14), and these answer something the user
+just asked for.
+
+**Overlaps were keyed by owner, and every drawn piece is owner −1.** A part touching two drawn pieces (a via's pads on
+two pours) came out as one line, and two drawn pieces on different nets made a line naming no part. Drawn pieces are now
+keyed by piece; drawn-against-drawn is not this report's. H3 gains its fourth line: the bottom pour, a plain rectangle,
+runs under V1's bottom pad as the top one runs under its top pad.
+
+**SDL-5's setup update overwrote the EM Setup editor's port impedances.** The editor's two port fields write
+`Port1Z0`/`Port2Z0`, and `PortZ0s` stays empty beside them, so every port read as "new" and was written at the
+schematic's Z — over the user's 25 Ω. A port is now compared with what the setup RESOLVES it to; it is written only when
+the setup still holds what this command last wrote, or when it is a port the setup has never been told about at the
+untouched 50 Ω; a setup listing its ports one by one gains an entry for a new one, and one holding them as the two fields
+is given no list that would override them. A setup open in an editor is not rewritten (the GUI passes `isOpen`).
+
+**Port labels.** TermG (the grounded one-pin Port) is a port here as everywhere else. Whether a label follows its pin is
+now decided by the placement record (is it still where this command put it?), not by the pin's old place: a label whose
+pin became another part's, or whose part the user moved by hand, follows; before, the second case reported the label
+"moved by hand" when it was the part that moved. A port that can no longer be placed says its earlier label is left in
+place. Both sides renumbered alike is the new baseline.
+
+**A board export shorted the gap.** The MGAP cell is two pins and their labels, so `PcbExport` wrote it as a footprint
+and `PcbWriter` invented a round pad of diameter W at each pin — overlapping across every gap with S < W. A cell of two or
+more pins and nothing but labels is now flattened like a pinless one, which writes nothing.
+
+**MGAP past S/W = 1.** The even-mode fit keeps rising as g^me, so each end's capacitance to ground grew without bound
+(about 22 fF at S/W = 5 on the test substrate, against an open end's ~13 fF). Ce is held at its S/W = 1 value beyond the
+range, so Cp levels off and an optimiser widening S buys no capacitance no geometry has. Inside the range nothing
+changed.
+
+**Smaller.** A conflict where the layout's value is kept no longer counts as "layout edits overwritten". A length written
+as an expression of unit-carrying variables (`L = L90-w50/2`, no unit of its own) reported its change in bare metres
+("0.00452 to 0.00552"); it is now said in the layout's display unit. `DeltaPropagation.Contacts` compared every drawn
+shape with every other; it now uses the layout spatial index, as the overlap check does.
+
+**Left open, for the owner.** (1) D5 places a side-on pad against the LINE's width; where the series pad is wider across
+the line than the line (an 0603 on a 280 µm line), half the shunt pad would sit over the series pad — same net, so no
+check sees it; the test designs' lines are wider than their pads. (2) The ground via beside a pad applies the
+away-from-centroid facing to any cell read from a file, while the chain applies it only to a stated footprint, so for a
+hand-drawn placed cell whose pins do not face away from its centre the two can disagree. (3) `PadFacing`'s nearest-frame
+rule can move a correct stored axis on a two-row package (SOT-23 pad 1: stored −90°, chosen 180°). (4) In a group with
+no hard hold, drawn copper touching a second, unrelated chain can let one anchor's walk carry that chain.
+
+**A fixture SDL-4 broke.** `ArtworkRoundTripBoards` (Recognition) deleted VG1 and expected the next run to put it back —
+the pre-SDL-4 rule; SDL-4's gate did not run it. It now asks Restore Removed Parts, as a user would.

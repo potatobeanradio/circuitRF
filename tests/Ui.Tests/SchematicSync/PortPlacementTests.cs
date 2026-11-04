@@ -184,6 +184,43 @@ public sealed class PortPlacementTests : IDisposable
         Assert.Equal(setup.Frequency.StartExpr, now.Frequency.StartExpr);
     }
 
+    /// <summary>A setup made by hand holds its impedances as the EM Setup editor writes them — the odd/even port fields,
+    /// no per-port list. The user's 25 Ω on port 1 is kept, not read as a port the setup has never heard of, and the
+    /// port that already agrees is given no list entry that would override those fields.</summary>
+    [Fact]
+    public void ASetupMadeByHand_KeepsItsPortFieldImpedance()
+    {
+        var (p, layout) = Placed("C1-through-line");
+        LayoutPersistence.SaveToFile(p.ClayPath, layout);
+        string cem = EmSetupCreate.Create(p.Workspace, "ByHand", EmSetupCreate.LayoutRefOf(p.Workspace, p.ClayPath)).Path!;
+        var setup = EmSetupPersistence.LoadFromFile(cem);
+        setup.Port1Z0 = new Complex(25, 0);
+        EmSetupPersistence.SaveToFile(cem, setup);
+
+        var em = EmSetupFromSchematic.Run(p.Model, Cws(p), p.ClayPath, "C1-through-line");
+        var now = EmSetupPersistence.LoadFromFile(cem);
+        Assert.Equal(new Complex(25, 0), now.ResolvePortZ0(0));
+        Assert.Empty(now.PortZ0s);
+        Assert.Contains(em.Lines, l => l.Text.EndsWith("port 1 is 25 Ω in the setup; the schematic says 50 Ω. The setup's value is kept",
+                                                       StringComparison.Ordinal));
+    }
+
+    /// <summary>A setup open in the EM Setup editor is not rewritten under it: the editor's copy would save over it.</summary>
+    [Fact]
+    public void ASetupOpenInTheEditor_IsNotRewritten()
+    {
+        var (p, layout) = Placed("C1-through-line");
+        LayoutPersistence.SaveToFile(p.ClayPath, layout);
+        string cem = Assert.Single(EmSetupFromSchematic.Run(p.Model, Cws(p), p.ClayPath, "C1-through-line").Written);
+        string was = File.ReadAllText(cem);
+
+        Set(p, "P1", "Z", "25");
+        var em = EmSetupFromSchematic.Run(p.Model, Cws(p), p.ClayPath, "C1-through-line", isOpen: path => path == Path.GetFullPath(cem));
+        Assert.Empty(em.Written);
+        Assert.Equal(was, File.ReadAllText(cem));
+        Assert.Contains(em.Lines, l => l.Text.Contains("is open in the EM Setup editor", StringComparison.Ordinal));
+    }
+
     /// <summary>R-sdl5-2a: what <see cref="EmSetupCreate"/> writes is the setup File ▸ New ▸ EM Setup… has always written,
     /// byte for byte, and the view model keeps no second copy of the creation.</summary>
     [Fact]

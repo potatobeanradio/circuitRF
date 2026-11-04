@@ -307,7 +307,8 @@ public partial class WorkspaceViewModel
                 try
                 {
                     var em = EmSetupFromSchematic.Run(doc.ViewModel.EditModel, cws, targetPath,
-                                                      cellDir is not null ? Path.GetFileName(cellDir) : schematicName);
+                                                      cellDir is not null ? Path.GetFileName(cellDir) : schematicName,
+                                                      isOpen: path => _openDocsByPath.ContainsKey(path));
                     foreach (var line in em.Lines)
                         Messages.Post(line.Severity == SchematicLayoutPlanner.ReportSeverity.Warning
                                           ? MessageLevel.Warning : MessageLevel.Info, line.Text, em.Written.FirstOrDefault());

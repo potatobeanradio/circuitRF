@@ -131,7 +131,11 @@ public sealed class ChainPlacementTests : IDisposable
         var rerun = (p with { Target = layout }).Plan();
 
         Assert.DoesNotContain(rerun.Edits, e => e is SchematicLayoutEdit.ReplaceInstance);
-        var add = Assert.IsType<SchematicLayoutEdit.AddInstance>(Assert.Single(rerun.Edits));
+        var add = Assert.Single(rerun.Edits.OfType<SchematicLayoutEdit.AddInstance>());
+        // Port 1's label, still where the last run put it, follows TL1's end to where the user moved it.
+        var label = Assert.Single(rerun.Edits.OfType<SchematicLayoutEdit.ReplaceShape>());
+        Assert.Equal(("P1", tl1.X, tl1.Y), (((LabelShape)label.After).SchematicId, ((LabelShape)label.After).X, ((LabelShape)label.After).Y));
+        Assert.Equal(3, rerun.Edits.Count);   // the add, the label, and the label's record
         Assert.Equal("TL3", add.Instance.SchematicId);
         Assert.Equal(before, LayoutPersistence.Serialize(layout));   // the plan mutated nothing it was handed
 

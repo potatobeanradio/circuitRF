@@ -91,8 +91,8 @@ public static partial class SchematicLayoutPlanner
             var members = new List<LayoutInstance>();
             foreach (var part in chain.Parts)
             {
-                if (part.Existing) continue;
-                result.Poses[part].WriteTo(part.Instance);
+                if (part.Existing || !result.Poses.TryGetValue(part, out var pose)) continue;
+                pose.WriteTo(part.Instance);
                 var comp = compById[part.SchematicId];
                 part.Instance.OrientationLink = SchematicLayoutOrientation.Link(
                     (int)comp.Rotation, comp.MirrorX, SchematicLayoutOrientation.FromLayout(part.Instance));
@@ -261,7 +261,7 @@ public static partial class SchematicLayoutPlanner
         var result = new Dictionary<string, int>(StringComparer.Ordinal);
         foreach (var comp in model.Components)
         {
-            if (comp.Symbol is not (SymbolKind.Term or SymbolKind.ZPort)) continue;
+            if (!PortPlacement.IsPort(comp)) continue;
             if (!int.TryParse(comp.Parameters.FirstOrDefault(p => p.Name == "Num")?.Expression?.Trim(),
                               NumberStyles.Integer, CultureInfo.InvariantCulture, out int num)) continue;
             if (!bindings.TryGetValue(comp.InstanceName, out var nets) || nets.Count == 0 || nets[0] is not { Length: > 0 } net

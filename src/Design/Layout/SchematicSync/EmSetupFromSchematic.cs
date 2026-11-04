@@ -39,9 +39,12 @@ public static class EmSetupFromSchematic
     /// <summary>
     /// Brings the setups of the layout at <paramref name="clayPath"/> up to date with <paramref name="model"/>'s Ports,
     /// or creates one when the workspace at <paramref name="workspaceCwsPath"/> has none for it.
-    /// <paramref name="cellName"/> names a created setup.
+    /// <paramref name="cellName"/> names a created setup. <paramref name="isOpen"/> answers whether a setup (absolute path)
+    /// is open in an editor: one that is is not rewritten under it — the editor's copy would save over the update, or
+    /// show ports that are no longer on disk — and the report says so.
     /// </summary>
-    public static Outcome Run(SchematicEditModel model, string workspaceCwsPath, string clayPath, string cellName)
+    public static Outcome Run(SchematicEditModel model, string workspaceCwsPath, string clayPath, string cellName,
+                              Func<string, bool>? isOpen = null)
     {
         var lines = new List<ReportLine>();
         var extraction = NetExtractor.Extract(model, "tb", null);
@@ -81,6 +84,12 @@ public static class EmSetupFromSchematic
         foreach (string path in existing)
         {
             string rel = EmSetupCreate.LayoutRefOf(workspaceDir, path);
+            if (isOpen?.Invoke(Path.GetFullPath(path)) == true)
+            {
+                lines.Add(new ReportLine("", $"{rel} was not updated: it is open in the EM Setup editor. Close it and run " +
+                                             "Update Layout again to bring its ports up to date", ReportSeverity.Warning));
+                continue;
+            }
             EmSetup setup;
             try { setup = EmSetupPersistence.LoadFromFile(path); }
             catch (Exception ex)
@@ -104,21 +113,29 @@ public static class EmSetupFromSchematic
         foreach (var port in ports)
         {
             int slot = port.Number - 1;
-            if (slot >= setup.PortZ0s.Count)
+            // What the setup holds for this port, however it holds it: its own entry, or the odd/even default the
+            // EM Setup editor's two port fields write (Port1Z0/Port2Z0), which PortZ0s is empty beside.
+            var held = setup.ResolvePortZ0(slot);
+            bool wroteIt = setup.SchematicPortZ0s.TryGetValue(port.Number, out var wrote);
+            // A setup that lists its ports one by one (as this command writes them) gains an entry for a new one, so the
+            // list stays whole; one that holds them as the editor's odd/even defaults is not given a list that would
+            // then override those fields.
+            bool newInList = !wroteIt && setup.PortZ0s.Count > 0 && slot >= setup.PortZ0s.Count;
+            if (held == port.Z0 && !newInList)
             {
-                // A port the setup has no impedance for: added, the slots before it filled with what they resolve to
-                // already, so no other port's impedance changes.
-                Write(setup, port);
-                lines.Add(Info(port.Id, $"{name}: port {port.Number} added at {Ohms(port.Z0)}"));
-                changed = true;
+                // Already agrees: only the provenance is new, so a later schematic change can be carried.
+                if (!wroteIt || wrote != held) { setup.SchematicPortZ0s[port.Number] = held; changed = true; }
                 continue;
             }
-            var held = setup.PortZ0s[slot];
-            if (held == port.Z0) continue;
-            if (setup.SchematicPortZ0s.TryGetValue(port.Number, out var wrote) && wrote == held)
+            bool untouched = wroteIt ? wrote == held
+                           : slot >= setup.PortZ0s.Count && held == DefaultZ0;   // a port the setup has never been told about
+            if (untouched)
             {
+                // The slots before it are filled with what they resolve to already, so no other port's impedance changes.
+                bool added = !wroteIt;
                 Write(setup, port);
-                lines.Add(Info(port.Id, $"{name}: port {port.Number} {Ohms(held)} → {Ohms(port.Z0)}"));
+                lines.Add(Info(port.Id, added ? $"{name}: port {port.Number} added at {Ohms(port.Z0)}"
+                                              : $"{name}: port {port.Number} {Ohms(held)} → {Ohms(port.Z0)}"));
                 changed = true;
             }
             else
@@ -202,6 +219,9 @@ public static class EmSetupFromSchematic
     }
 
     private static ReportLine Info(string id, string text) => new(id, text, ReportSeverity.Info);
+
+    /// <summary>The impedance a port resolves to in a setup nobody has set one in.</summary>
+    private static readonly Complex DefaultZ0 = new(50, 0);
 
     private static string Ohms(Complex z) =>
         (z.Imaginary == 0 ? z.Real.ToString("0.###", CultureInfo.InvariantCulture)

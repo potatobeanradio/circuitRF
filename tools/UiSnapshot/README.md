@@ -9,6 +9,9 @@ the picture an export makes. This tool draws the **Avalonia** views: the trace c
 controls, the label strips, the inspector's own layout. Use `render` for what a plot draws and this for what a
 window shows.
 
+To get a layout to look at from **Update Layout from Schematic** — including re-runs after scripted schematic and
+layout edits — run `tools/UpdateLayoutHarness` first and point `--clay` at the layout it saves.
+
 ## Use
 
 ```

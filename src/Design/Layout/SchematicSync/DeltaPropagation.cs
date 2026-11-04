@@ -221,6 +221,34 @@ public static class DeltaPropagation
         // Locked parts with no schematic link hold whether or not they touch anything; untouched ones are irrelevant.
         var bodies = linked.Concat(others.Where(o => o.Edges.Count > 0)).ToList();
 
+        // D3, both sides held: a change whose pins split its group into a side holding a locked part (or a part with no
+        // schematic link) and a far side holding another cannot be absorbed. Nothing on either side moves, whatever
+        // the schematic-id order or wherever the walk's two waves would have met: the part keeps its origin, the joints
+        // at its changed pins are opened, and the gap is reported at its own pin, naming what holds each side.
+        var heldJoints = new List<(Body Part, Edge Across, string HoldHome, string HoldFar)>();
+        foreach (var c in linked.Where(b => b.Changed && !b.Locked).ToList())
+        {
+            var cut = c.Edges.Where(e => !e.Contact && !Delta(c, e.FromPin).IsIdentity).ToList();
+            if (cut.Count == 0) continue;
+            var home = Side(c, c, cut);
+            string? holdHome = NearestHold(c, home);
+            var held = new List<(Edge Edge, string Hold)>();
+            foreach (var e in cut)
+            {
+                if (home.Contains(e.To)) continue;   // a loop back to its own side: D4/D5's business
+                if (NearestHold(e.To, Side(e.To, c, cut)) is { } holdFar) held.Add((e, holdFar));
+            }
+            // Held from its own side and beyond one changed pin, or (a part changed about its middle) beyond two.
+            if (holdHome is null ? held.Count < 2 : held.Count == 0) continue;
+            c.Changed = false;
+            foreach (var (e, holdFar) in held)
+            {
+                c.Edges.Remove(e);
+                e.To.Edges.RemoveAll(x => ReferenceEquals(x.To, c) && x.FromPin == e.ToPin && x.ToPin == e.FromPin);
+                heldJoints.Add((c, e, holdHome ?? held.First(h => !ReferenceEquals(h.Edge, e)).Hold, holdFar));
+            }
+        }
+
         // D3: where each connected group's walk starts.
         var seeds = new List<Body>();
         var seen = new HashSet<Body>();
@@ -350,6 +378,15 @@ public static class DeltaPropagation
                                          "change and are recorded from now on", ReportSeverity.Info) { Ids = unrecorded });
 
         var opened = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var (p, e, holdHome, holdFar) in heldJoints)
+        {
+            opened.Add(e.Key);
+            var w = NewWorld(p, e.FromPin);
+            var (fx, fy) = e.To.T is { } ft ? FinalPin(e.To, e.ToPin) : (NewWorld(e.To, e.ToPin).Tx, NewWorld(e.To, e.ToPin).Ty);
+            lines.Add(new ReportLine(p.Id!, $"{DescribeChange(p, Len, u)}; both sides are held ({holdHome}; {holdFar}). " +
+                                            Opening(p, e.FromPin, w.Tx, w.Ty, w.Deg, e.To, fx, fy),
+                                     ReportSeverity.Warning) { Kind = ReportKind.LoopGap, Ids = [p.Id!] });
+        }
         foreach (var (winner, loser) in conflicts)
         {
             var via = loser.Via!;
@@ -375,8 +412,11 @@ public static class DeltaPropagation
             string? holdA = Holder(winner.Via?.From ?? winner.Node, winner), holdB = Holder(via.From, via.From.By!);
             if (changed is var (p, pin) && holdA != holdB)
             {
+                var pw = NewWorld(p, pin);
+                var (px, py) = FinalPin(p, pin);
+                var (other, ox, oy) = ReferenceEquals(p, node) ? (via.From, sx, sy) : (node, nx, ny);
                 lines.Add(new ReportLine(p.Id!, $"{DescribeChange(p, Len, u)}; both sides are held ({holdA}; {holdB}). " +
-                                                $"Left a {Len(gap)} {u} gap at {p.Id} pin {PinName(p, pin)}.",
+                                                Opening(p, pin, px, py, LayoutAngle.Normalize(pw.Deg + p.T!.Value.Deg), other, ox, oy),
                                          ReportSeverity.Warning) { Kind = ReportKind.LoopGap, Ids = [p.Id!] });
                 continue;
             }
@@ -389,6 +429,54 @@ public static class DeltaPropagation
         }
 
         return new Outcome(movedInstances, movedShapes, lines, opened);
+
+        // What a held change leaves at the changed pin: a gap when the joint's other pin is beyond the pin's face, and an
+        // overlap when the changed part now runs into the other — a longer line between two held places.
+        string Opening(Body p, int pin, double px, double py, double facingDeg, Body other, double ox, double oy)
+        {
+            double dist = Math.Sqrt((ox - px) * (ox - px) + (oy - py) * (oy - py));
+            var (fx, fy) = LayoutAngle.CosSin(facingDeg);
+            return (ox - px) * fx + (oy - py) * fy < -0.5
+                ? $"{p.Id} pin {PinName(p, pin)} now overlaps {other.Id ?? other.Name} by {Len(dist)} {u}."
+                : $"Left a {Len(dist)} {u} gap at {p.Id} pin {PinName(p, pin)}.";
+        }
+
+        // The bodies reachable from start without crossing the cut edges of the changed part c.
+        static HashSet<Body> Side(Body start, Body c, List<Edge> cut)
+        {
+            var side = new HashSet<Body> { start };
+            var todo = new Queue<Body>([start]);
+            while (todo.TryDequeue(out var b))
+                foreach (var e in b.Edges)
+                {
+                    if (ReferenceEquals(b, c) && cut.Contains(e)) continue;
+                    if (ReferenceEquals(e.To, c) && cut.Any(x => ReferenceEquals(x.To, b) && x.FromPin == e.ToPin && x.ToPin == e.FromPin)) continue;
+                    if (side.Add(e.To)) todo.Enqueue(e.To);
+                }
+            return side;
+        }
+
+        // What holds a side, said as Holder says it: the nearest locked part or part with no schematic link, breadth-first
+        // from start in joints, schematic-id order breaking ties.
+        static string? NearestHold(Body start, HashSet<Body> side)
+        {
+            var lastLinked = new Dictionary<Body, Body?> { [start] = start.Kind == BodyKind.Linked ? start : null };
+            var todo = new Queue<Body>([start]);
+            while (todo.TryDequeue(out var b))
+            {
+                if (b.Kind == BodyKind.Linked && b.Locked) return $"{b.Id} is locked";
+                if (b.Kind == BodyKind.Unlinked)
+                    return lastLinked[b] is { } ll ? $"{ll.Id} is joined to {b.Name}, which has no schematic link"
+                         : b.Locked ? $"{b.Name} is locked" : $"{b.Name} has no schematic link";
+                foreach (var e in b.Edges.OrderBy(e => e.To.Order))
+                    if (side.Contains(e.To) && !lastLinked.ContainsKey(e.To))
+                    {
+                        lastLinked[e.To] = e.To.Kind == BodyKind.Linked ? e.To : lastLinked[b];
+                        todo.Enqueue(e.To);
+                    }
+            }
+            return null;
+        }
 
         void Link(Body a, int pa, Body b, int pb)
         {
@@ -595,10 +683,23 @@ public static class DeltaPropagation
             b.Contacts++;
         }
 
+        // Broad phase through the layout's spatial index, as SDL-3's overlap check reads it: an imported board's tens of
+        // thousands of drawn shapes compared pairwise would be billions of box tests on every re-run that changes anything.
+        // Candidates come back in ascending index, so the contacts are joined in the order the pairwise loop made them.
+        var all = others.Concat(linked).ToList();
+        var rects = all.Select(b => (LayoutShape)(boxes[b].IsEmpty
+            ? new RectShape()
+            : new RectShape { X1 = boxes[b].MinX, Y1 = boxes[b].MinY, X2 = boxes[b].MaxX, Y2 = boxes[b].MaxY })).ToList();
+        var index = new LayoutSpatialIndex();
         for (int i = 0; i < others.Count; i++)
         {
-            foreach (var l in linked) if (Touch(others[i], l)) Join(others[i], l);
-            for (int j = i + 1; j < others.Count; j++)
+            var box = boxes[others[i]];
+            if (box.IsEmpty) continue;
+            var near = new Bbox(box.MinX - reach, box.MinY - reach, box.MaxX + reach, box.MaxY + reach);
+            var hits = index.QueryIntersecting(rects, near);
+            foreach (int k in hits.Where(k => k >= others.Count))
+                if (Touch(others[i], all[k])) Join(others[i], all[k]);
+            foreach (int j in hits.Where(j => j > i && j < others.Count))
                 if ((others[i].Kind == BodyKind.Drawn || others[j].Kind == BodyKind.Drawn) && Touch(others[i], others[j]))
                     Join(others[i], others[j]);
         }

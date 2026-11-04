@@ -199,6 +199,10 @@ public static partial class SchematicLayoutPlanner
         bool restoreRemoved = false)
     {
         resnap ??= new HashSet<string>(StringComparer.Ordinal);
+        // Re-snap never moves a locked part: it stays where it is, and the parts re-snapped beside it join it there.
+        var lockedResnap = target.Instances.Where(i => i.Locked && i.SchematicId is { } id && resnap.Contains(id))
+                                           .Select(i => i.SchematicId!).Order(StringComparer.Ordinal).ToList();
+        if (lockedResnap.Count > 0) resnap = resnap.Except(lockedResnap, StringComparer.Ordinal).ToHashSet(StringComparer.Ordinal);
         var extraction = NetExtractor.Extract(model, "tb", cellResolver);
         var ledger = new Ledger(target, kitLayoutGenerator);
 
@@ -249,6 +253,9 @@ public static partial class SchematicLayoutPlanner
         var newInstances = new List<(int Slot, LayoutInstance Instance)>();
         var deleteIndices = new List<int>();
         var lines = new List<ReportLine>();
+        foreach (string id in lockedResnap)
+            // Run-level (no instance name), so it is said even when the run changes nothing: it answers the user's own Re-snap.
+            lines.Add(new ReportLine("", $"{id} — locked, so Re-snap left it as it is (unlock it to re-snap it)", ReportSeverity.Info) { Ids = [id] });
         var layoutKept = new List<(string SchematicId, string Parameter)>();   // brief-sdl-6 D4
         var noLayoutWarnings = new List<string>();
         var noLayout = new List<EditableComponent>();   // brief-sdl-3: parts joined only through one of these are placed apart
@@ -298,6 +305,10 @@ public static partial class SchematicLayoutPlanner
                     && existingBySchematicId.TryGetValue(schematicId, out var orphaned))
                 {
                     deleteIndices.Add(orphaned.Index);
+                    // The run removed it, not the user: its record goes too, or a footprint set back would read as a
+                    // part "removed by hand" and never be put back.
+                    if (target.GeneratedPlacements.ContainsKey(schematicId))
+                        steps.Add(Step.Record(schematicId, null));
                     lines.Add(new ReportLine(schematicId,
                         $"{schematicId} — footprint set to None; its artwork was removed",
                         ReportSeverity.Warning));
@@ -388,7 +399,12 @@ public static partial class SchematicLayoutPlanner
                 foreach (var p in classified)
                 {
                     if (p.State == EditState.ParamState.Same) continue;
-                    string? unit = comp.Parameters.FirstOrDefault(q => q.Name == p.Name)?.Unit;
+                    var param = comp.Parameters.FirstOrDefault(q => q.Name == p.Name);
+                    string? unit = param?.Unit;
+                    // A length written as an expression of unit-carrying variables (L = L90-w50/2) has no unit of its own;
+                    // its value is metres, said in the layout's display unit rather than as a bare SI number.
+                    if (string.IsNullOrEmpty(unit) && param?.Dimension == UnitDimension.Length)
+                        unit = LayoutUnits.Suffix(target.DisplayUnit);
                     string unitSuffix = string.IsNullOrEmpty(unit) ? "" : $" {unit}";
                     string V(PCellValue v) => FormatParamValue(unit, v) + unitSuffix;
                     reportedThisInstance = true;
@@ -408,7 +424,7 @@ public static partial class SchematicLayoutPlanner
                         lines.Add(new ReportLine(schematicId,
                             $"{schematicId} — {p.Name} was changed in both: the layout's {V(p.Layout)} is kept; the schematic " +
                             $"changed it from {V(p.Baseline!.Value)} to {V(p.Schematic)}", ReportSeverity.Warning) { Ids = [schematicId] });
-                        overwritten++;
+                        // Not counted as overwritten: the layout's value is the one kept (S7 D-conflict).
                     }
                 }
 
@@ -445,6 +461,17 @@ public static partial class SchematicLayoutPlanner
                 if (rot.Unlinked) unlinkedDiffering++;
                 if (cellRefChanged)
                     rot = Realign(rot, comp, before, schematicId, resolvedCellRef, schematicDir, targetLayoutBaseDir, technology);
+                // brief-sdl-4: a locked part never moves, and a turn about its origin moves its pins. The link keeps its
+                // old baseline, so the turn is carried once the part is unlocked.
+                if (before.Locked && rot.Changes)
+                {
+                    // Run-level, so it is said even when nothing else changed (a run that changes nothing says nothing).
+                    lines.Add(new ReportLine("",
+                        $"{schematicId} — locked, so the schematic's turn was not carried (unlock it and run again to turn it)",
+                        ReportSeverity.Info) { Ids = [schematicId] });
+                    rot = new RotationCarry(false, SchematicLayoutOrientation.FromLayout(before),
+                                            before.OrientationLink ?? rot.Link, null, false, rot.Unlinked);
+                }
 
                 // A part being re-snapped is replaced whatever else changed: the chain step writes its pose (R-sdl4-2).
                 if (!cellRefChanged && !rot.Changes && oldName is null && !resnap.Contains(schematicId))
@@ -503,6 +530,16 @@ public static partial class SchematicLayoutPlanner
                 $"{sid} — no longer in the schematic (left in place; remove it by hand if intended)",
                 ReportSeverity.Warning));
         }
+
+        // A record whose part is gone from the schematic AND the layout says nothing any more. Left, it would make the
+        // next part given that name (NextAvailableName reuses the lowest free number) a part "removed by hand", never
+        // placed. Its port label counts as carrying it, as an instance does.
+        var schematicNames = new HashSet<string>(model.Components.Select(c => c.InstanceName), StringComparer.Ordinal);
+        foreach (string sid in target.GeneratedPlacements.Keys.Order(StringComparer.Ordinal).ToList())
+            if (!schematicNames.Contains(sid) && !renamedFrom.ContainsValue(sid)
+                && !target.Instances.Any(i => i.SchematicId == sid)
+                && !target.Shapes.Any(sh => sh is LabelShape { SchematicId: { } l } && l == sid))
+                steps.Add(Step.Record(sid, null));
 
         // AFTER every add and replacement, deliberately. Every add APPENDS and every replacement edits in
         // place, so the indices captured above are still correct at this point; a delete applied earlier
@@ -740,7 +777,7 @@ public static partial class SchematicLayoutPlanner
         public static Step Shape(LayoutShape shape) => new() { _kind = 3, _shape = shape };
         public static Step ReplaceShape(int index, LayoutShape before, LayoutShape after) =>
             new() { _kind = 4, _index = index, _shapeBefore = before, _shape = after };
-        public static Step Record(string schematicId, GeneratedPlacement record) =>
+        public static Step Record(string schematicId, GeneratedPlacement? record) =>
             new() { _kind = 5, _renamedFrom = schematicId, _record = record };
 
         /// <summary>The edit, with its placement record. A replaced part keeps the anchor mark its record had (brief-sdl-4:
@@ -756,7 +793,7 @@ public static partial class SchematicLayoutPlanner
                      _renamedFrom),
             2 => new SchematicLayoutEdit.DeleteInstances(_indices!),
             4 => new SchematicLayoutEdit.ReplaceShape(_index, _shapeBefore!, _shape!),
-            5 => new SchematicLayoutEdit.PlacementRecord(_renamedFrom!, _record!),
+            5 => new SchematicLayoutEdit.PlacementRecord(_renamedFrom!, _record),
             _ => new SchematicLayoutEdit.AddShape(_shape!),
         };
 

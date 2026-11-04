@@ -95,9 +95,12 @@ public static class ChainPlacer
     /// </summary>
     public static JointGraph.Part ChooseAnchor(JointGraph.Chain chain, Func<JointGraph.Part, int?> portNumberOf)
     {
-        if (chain.Parts.FirstOrDefault(p => p.Existing) is { } existing) return existing;
         var jointed = chain.Parts.Where(p => chain.Joints.Any(j => ReferenceEquals(j.A.Part, p) || ReferenceEquals(j.B.Part, p)))
                                  .ToList();
+        // An existing part with a joint first: a side-on part (a shunt pad) has none, so a walk started from it would
+        // reach nothing.
+        if ((jointed.FirstOrDefault(p => p.Existing) ?? chain.Parts.FirstOrDefault(p => p.Existing)) is { } existing)
+            return existing;
         if (jointed.Count == 0) jointed = [.. chain.Parts];
         JointGraph.Part? best = null;
         int bestNumber = int.MaxValue;
@@ -170,11 +173,24 @@ public static class ChainPlacer
             // The next attachment whose joint is placed, in schematic-id order: place its pad's part, or — when that part
             // is already placed — check it.
             int next = pending.FindIndex(a => poses.ContainsKey(a.Base.Part) && poses.ContainsKey(a.Across.Part));
-            if (next < 0) break;
+            if (next < 0)
+            {
+                // An existing part the walk has not reached — held to the rest only through a side-on part it already
+                // placed, say: walk on from it, so the parts beyond it are placed and its joints checked.
+                if (chain.Parts.FirstOrDefault(p => p.Existing && !queued.Contains(p)) is not { } unreached) break;
+                queued.Add(unreached);
+                queue.Enqueue(unreached);
+                continue;
+            }
             var attach = pending[next];
             pending.RemoveAt(next);
             var pad = attach.Pad.Part;
-            if (poses.ContainsKey(pad)) { attachClosing.Add(attach); continue; }
+            if (poses.ContainsKey(pad))
+            {
+                attachClosing.Add(attach);
+                if (queued.Add(pad)) queue.Enqueue(pad);
+                continue;
+            }
             poses[pad] = ShuntAttach.Place(attach, poses, Depth, mirrorOf(pad));
             parent[pad] = attach.Base.Part;
             depth[pad] = Math.Max(Depth(attach.Base.Part), Depth(attach.Across.Part)) + 1;
@@ -200,6 +216,7 @@ public static class ChainPlacer
                 double sign = ReferenceEquals(part, from.Part) ? -0.5 : 0.5;
                 var pose = poses[part];
                 poses[part] = pose with { X = pose.X + sign * dx, Y = pose.Y + sign * dy };
+                joined--;   // the joint it was placed from is now out by half the misfit too: neither of its joints is made
                 var (ax, ay, _) = poses[first.Part].Apply(first.Pin);
                 var (cx, cy, _) = poses[second.Part].Apply(second.Pin);
                 var pins = edgesOf[part].Select(j => j.EndOf(part).Pin).ToList();
@@ -216,12 +233,22 @@ public static class ChainPlacer
         foreach (var attach in attachClosing.Concat(pending.Where(a => poses.ContainsKey(a.Pad.Part))))
         {
             if (!poses.ContainsKey(attach.Base.Part) || !poses.ContainsKey(attach.Across.Part)) continue;
-            var (tx, ty, tf) = ShuntAttach.Target(attach, poses, Depth);
             var (px, py, pf) = poses[attach.Pad.Part].Apply(attach.Pad.Pin);
-            double dx = px - tx, dy = py - ty;
-            double angle = LayoutAngle.Normalize(pf - tf);
-            if (angle > 180.0) angle -= 360.0;
+            (double Dx, double Dy, double Angle) MissFrom((double X, double Y, double F) t)
+            {
+                double a = LayoutAngle.Normalize(pf - t.F);
+                return (px - t.X, py - t.Y, a > 180.0 ? a - 360.0 : a);
+            }
+            var (dx, dy, angle) = MissFrom(ShuntAttach.Target(attach, poses, Depth));
             if (Closes(dx, dy, angle)) { joined++; continue; }
+            // A pad an earlier run placed was placed with ITS walk's direction of travel, which a walk started from another
+            // part (a re-run's anchor is an existing part) can read the other way: it sits against its joint either way.
+            if (attach.Pad.Part.Existing)
+            {
+                bool baseFirst = Depth(attach.Base.Part) <= Depth(attach.Across.Part);
+                var other = MissFrom(ShuntAttach.Target(attach, poses, part => ReferenceEquals(part, attach.Base.Part) == baseFirst ? 1 : 0));
+                if (Closes(other.Dx, other.Dy, other.Angle)) { joined++; continue; }
+            }
             gaps.Add(new Gap(null, attach.Pad, attach.Base, dx, dy, angle, Loop(attach.Pad.Part, attach.Base.Part, parent))
             {
                 Attachment = attach,

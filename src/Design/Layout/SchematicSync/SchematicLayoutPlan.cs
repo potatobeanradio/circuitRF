@@ -30,8 +30,10 @@ public abstract record SchematicLayoutEdit
     public sealed record ReplaceShape(int Index, LayoutShape Before, LayoutShape After) : SchematicLayoutEdit;
 
     /// <summary>A placement record written with no placement of its own — a part the user deleted, marked
-    /// <see cref="GeneratedPlacement.Removed"/> (brief-sdl-4 §2).</summary>
-    public sealed record PlacementRecord(string SchematicId, GeneratedPlacement Placement) : SchematicLayoutEdit;
+    /// <see cref="GeneratedPlacement.Removed"/> (brief-sdl-4 §2). A null <paramref name="Placement"/> drops the record:
+    /// the run deleted the part itself (a footprint set to None), or the part is gone from the schematic and the
+    /// layout both, so a later part of the same name is a new part rather than one "removed by hand".</summary>
+    public sealed record PlacementRecord(string SchematicId, GeneratedPlacement? Placement) : SchematicLayoutEdit;
 }
 
 /// <summary>A write to <see cref="LayoutView.SchematicPCellSnapshots"/>: <paramref name="Parameters"/> null
@@ -139,9 +141,11 @@ public sealed class SchematicLayoutPlan
     }
 
     /// <summary>The one way a placement record is written — shared with the GUI's undoable command.</summary>
-    public static void RecordPlacement(LayoutView view, string? schematicId, GeneratedPlacement placement, string? renamedFrom)
+    public static void RecordPlacement(LayoutView view, string? schematicId, GeneratedPlacement? placement, string? renamedFrom)
     {
         if (renamedFrom is not null) view.GeneratedPlacements.Remove(renamedFrom);
-        if (schematicId is { Length: > 0 }) view.GeneratedPlacements[schematicId] = placement;
+        if (schematicId is not { Length: > 0 }) return;
+        if (placement is null) view.GeneratedPlacements.Remove(schematicId);
+        else view.GeneratedPlacements[schematicId] = placement;
     }
 }

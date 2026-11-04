@@ -86,6 +86,19 @@ public class MicrostripGapTests
         Assert.Empty(new MicrostripGapModel(508e-6, 100e-6, H, Er, "MGAP:G2").DrainWarnings());
     }
 
+    /// <summary>Past S/W = 1 each end's capacitance to ground levels off, as an open end's does, rather than rising with
+    /// the even-mode fit — so a gap widened by an optimiser buys no capacitance no geometry has — and the series
+    /// capacitance only falls.</summary>
+    [Fact]
+    public void BeyondTheStatedRange_TheShuntCapacitanceLevelsOff()
+    {
+        double w = H;   // W/h = 1
+        var (cg1, cp1) = MicrostripGap.Capacitances(w, w, H, Er);
+        var (cg5, cp5) = MicrostripGap.Capacitances(w, 5 * w, H, Er);
+        Assert.Equal(cp1, cp5, 12);
+        Assert.True(cg5 <= cg1);
+    }
+
     [Theory]
     [InlineData("0")]
     [InlineData("-0.1")]

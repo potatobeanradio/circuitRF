@@ -69,7 +69,12 @@ public static class PcbExport
             try { cellView = InterchangeHierarchy.LoadPrimary(targetDir, LoadPrimaryLayout); }
             catch { unresolved++; continue; }
 
-            if (cellView.Pins.Count == 0)
+            // A cell that draws nothing but two or more pins and their labels (a series gap, MGAP) is drawn by its neighbours: the pins
+            // mark where the lines around it end. Written as a footprint, each pin would become a pad of its own
+            // invention, and two pads S apart overlap whenever S is less than the line width — copper across the gap.
+            // It is flattened like a pinless cell instead, which writes nothing.
+            if (cellView.Pins.Count == 0 || (cellView.Pins.Count >= 2 && cellView.Instances.Count == 0
+                                              && cellView.Shapes.All(sh => sh is LabelShape)))
             {
                 // No pins means no pads. Flatten the artwork onto the board rather than writing a
                 // component with nothing to connect to — every board tool would show it as an

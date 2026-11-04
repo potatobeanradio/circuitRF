@@ -30,7 +30,9 @@ namespace CircuitRF.Core.Devices.Microstrip;
 /// how far each side sits from an EM solve is recorded with the reference data
 /// (<c>testdata/microstrip-gap</c>) rather than smoothed over here.</para>
 ///
-/// <para><b>One clamp, and it is physical.</b> At a gap wide against the line the series capacitance
+/// <para><b>Two clamps, and both are physical.</b> Beyond S/W = 1 the even-mode capacitance is held at its
+/// S/W = 1 value, so each end's capacitance to ground levels off as an open end's does rather than rising with the
+/// fit. And at a gap wide against the line the series capacitance
 /// becomes a small difference of two fitted numbers and can come out negative, which no geometry has.
 /// <c>Cg</c> is held at zero there — the ends no longer see each other — and the range warning is what
 /// says the fit has been left. The capacitances are quasi-static and lossless: they do not move with
@@ -82,6 +84,12 @@ public static class MicrostripGap
         const double PicoPerMetre = 1e-12;
         double co = wMeters * PicoPerMetre * Math.Pow(g, mo) * Math.Exp(ko) * Math.Pow(epsR / 9.6, 0.8);
         double ce = wMeters * PicoPerMetre * 12.0 * Math.Pow(g, me) * Math.Exp(ke) * Math.Pow(epsR / 9.6, 0.9);
+
+        // Past the stated range's wide end the even-mode law keeps rising as g^me, while each end's capacitance to
+        // ground should level off at an open end's: Ce is held at its S/W = 1 value there, so Cp stays bounded and an
+        // optimiser walking S outward does not buy capacitance that no geometry has.
+        if (g > GapOverWidth.Max)
+            ce = wMeters * PicoPerMetre * 12.0 * Math.Exp(ke) * Math.Pow(epsR / 9.6, 0.9);
 
         double cp = ce / 2.0;
         double cg = Math.Max(0.0, co / 2.0 - ce / 4.0);

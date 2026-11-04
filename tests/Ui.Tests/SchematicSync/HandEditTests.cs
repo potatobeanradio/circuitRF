@@ -146,7 +146,7 @@ public sealed class HandEditTests : IDisposable
         foreach (string id in new[] { "TL1", "TL2", "TL3" }) Assert.Equal(0, Shift(layout, after, id));
         var line = Assert.Single(plan.Lines, l => l.Kind == Kind.LoopGap);
         Assert.Equal(Severity.Warning, line.Severity);
-        Assert.Equal("TL2 is 1000 µm longer; both sides are held (TL1 is locked; TL3 is locked). Left a 1000 µm gap at TL2 pin 2.",
+        Assert.Equal("TL2 is 1000 µm longer; both sides are held (TL1 is locked; TL3 is locked). TL2 pin 2 now overlaps TL3 by 1000 µm.",
                      line.Text);
         Assert.Empty(SdlChecker.Verify(p, after, openAllowed: [NetOf(p, "TL3", 1)], lvsAllowed: ["lvs.net.open"]));
     }
@@ -203,7 +203,7 @@ public sealed class HandEditTests : IDisposable
         var held = Assert.Single(plan.Lines, l => l.Kind == Kind.LoopGap);
         Assert.StartsWith("ML2 is 100 µm longer; both sides are held (TL1 anchors the chain; MT2 is joined to copper drawn on ",
                           held.Text);
-        Assert.EndsWith("gap at ML2 pin 2.", held.Text);
+        Assert.EndsWith("ML2 pin 2 now overlaps MT4 by 100 µm.", held.Text);
         // What the edit itself makes LVS say: ML1 is gone, and drawn copper joins the two nets it separated.
         Assert.Empty(SdlChecker.Verify(p, after, openAllowed: [NetOf(p, "ML2", 2)],
                                        lvsAllowed: ["lvs.net.open", "lvs.device.unmatched-schematic", "lvs.net.short"]));

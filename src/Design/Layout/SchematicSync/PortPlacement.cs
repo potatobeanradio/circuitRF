@@ -44,8 +44,9 @@ internal static class PortPlacement
         IReadOnlyList<(string Id, GeneratedPlacement Record)> Records,
         IReadOnlyList<ReportLine> Lines);
 
-    /// <summary>Whether a schematic component is a port: what the circuit is driven through, not a part to place.</summary>
-    public static bool IsPort(EditableComponent comp) => comp.Symbol is SymbolKind.Term or SymbolKind.ZPort;
+    /// <summary>Whether a schematic component is a port: what the circuit is driven through, not a part to place.
+    /// TermG, the one-pin grounded Port, is one as everywhere else a port is counted (its nets read <c>[signal, 0]</c>).</summary>
+    public static bool IsPort(EditableComponent comp) => comp.Symbol is SymbolKind.Term or SymbolKind.TermG or SymbolKind.ZPort;
 
     /// <summary>A port's number as the schematic states it — the text of its <c>Num</c>, trimmed.</summary>
     public static string NumberText(EditableComponent comp) =>
@@ -98,7 +99,14 @@ internal static class PortPlacement
         {
             string id = port.InstanceName;
             string num = NumberText(port);
-            void ByHand(string why) => lines.Add(new ReportLine(id, $"{id} — {why}; place port {Shown(num)} by hand with the Port tool",
+            // A label an earlier run placed is left where it is, and said so: placing another by hand would number the
+            // port twice.
+            void ByHand(string why) => lines.Add(new ReportLine(id, $"{id} — {why}; " +
+                (labelOf.TryGetValue(id, out int had) && target.Shapes[had] is LabelShape l
+                    ? $"its earlier port label at {LayoutUnits.Format(l.X, target.DisplayUnit, target.DbuPerMicron)}, " +
+                      $"{LayoutUnits.Format(l.Y, target.DisplayUnit, target.DbuPerMicron)} {LayoutUnits.Suffix(target.DisplayUnit)} " +
+                      "is left in place — move it, or delete it and place port " + Shown(num) + " by hand with the Port tool"
+                    : $"place port {Shown(num)} by hand with the Port tool"),
                 ReportSeverity.Warning) { Kind = ReportKind.PortByHand, Ids = [id] });
 
             if (!bindings.TryGetValue(id, out var nets) || nets.Count == 0 || nets[0] is not { Length: > 0 } signal)
@@ -171,15 +179,22 @@ internal static class PortPlacement
 
             // Position (D3): a label still on its pin's old place follows the pin; Re-snap puts it back on it; one the
             // user pulled off it stays where it was put.
+            // Where this command last put it is the record's to say: the label's pin may now be another part's (a line
+            // inserted beside the port, the port rewired), and a label left at the old place would sit inside the metal.
+            // With no record (a label placed before the record kept ports), its pin's old place answers instead.
             var old = end.Before is { } b && end.Part.Before is { } beforeInst ? ChainPose.Of(beforeInst).Apply(b) : ((double, double, double)?)null;
-            bool onPin = old is { } o && Math.Abs(existing.X - o.Item1) <= 1 && Math.Abs(existing.Y - o.Item2) <= 1;
+            bool onPin = record is not null
+                ? existing.X == record.X && existing.Y == record.Y
+                : old is { } o && Math.Abs(existing.X - o.Item1) <= 1 && Math.Abs(existing.Y - o.Item2) <= 1;
+            bool arrowAsPlaced = record is not null
+                ? existing.PortDirection is { } pd && LayoutAngle.OfCardinal(pd) == record.RotationDeg
+                : old is { } od && existing.PortDirection == LayoutPortDirection.FromPinOutward(od.Item3);
             bool resnap = input.Resnap.Contains(id);
             if (onPin || resnap)
             {
                 (next.X, next.Y) = (px, py);
                 // The arrow turns with the pin unless the user turned it by hand; Re-snap restores it.
-                if (resnap || existing.PortDirection is null
-                    || old is { } od && existing.PortDirection == LayoutPortDirection.FromPinOutward(od.Item3))
+                if (resnap || existing.PortDirection is null || arrowAsPlaced)
                     next.PortDirection = direction;
                 next.Layer = end.After.Layer;
                 next.PortLayer = end.After.Layer;
@@ -203,7 +218,9 @@ internal static class PortPlacement
             else if (layoutChanged && !schematicChanged)
                 lines.Add(new ReportLine(id, $"{id} — port label reads {Shown(existing.Text)} in the layout; the schematic says " +
                     $"{Shown(num)}. The layout's value is kept", ReportSeverity.Info) { Ids = [id] });
-            else if (layoutChanged && schematicChanged && existing.Text != num)
+            else if (layoutChanged && schematicChanged && existing.Text == num)
+                recordText = num;   // both sides renumbered alike: that is the new baseline
+            else if (layoutChanged && schematicChanged)
                 lines.Add(new ReportLine(id, $"{id} — port number changed on both sides: the layout's label reads {Shown(existing.Text)}, " +
                     $"the schematic changed it from {Shown(baseline!)} to {Shown(num)}. The layout's value is kept",
                     ReportSeverity.Warning) { Ids = [id] });

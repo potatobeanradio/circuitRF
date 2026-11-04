@@ -187,7 +187,7 @@ public static class SchematicToLayoutGenerator
 
     /// <summary>brief-sdl-0 R-sdl0-2d: a placement record written inside the same command as the placement it
     /// describes, so an Undo of the run restores the table as it was — including the record a rename moved.</summary>
-    private sealed class PlacementRecordCommand(LayoutView view, string? schematicId, GeneratedPlacement placement,
+    private sealed class PlacementRecordCommand(LayoutView view, string? schematicId, GeneratedPlacement? placement,
                                                 string? renamedFrom) : IUiCommand
     {
         private GeneratedPlacement? _was, _wasRenamed;

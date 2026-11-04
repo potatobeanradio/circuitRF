@@ -116,7 +116,13 @@ public static class PlacementOverlaps
                 if (pKnown && qKnown)
                 {
                     if (!crosses && JoinedBetween(p, q)) continue;
-                    var key = p.Owner < q.Owner ? (p.Owner, q.Owner) : (q.Owner, p.Owner);
+                    // Two pieces of drawn copper: neither is a part this run placed, so it is not this report's to make
+                    // (and it would have no part to name).
+                    if (p.Owner < 0 && q.Owner < 0) continue;
+                    // A drawn piece is keyed by itself, not by the shared "drawn" owner: a part touching two different
+                    // drawn pieces is two overlaps.
+                    int pk = p.Owner >= 0 ? p.Owner : -1 - i, qk = q.Owner >= 0 ? q.Owner : -1 - j;
+                    var key = pk < qk ? (pk, qk) : (qk, pk);
                     pairs[key] = pairs.TryGetValue(key, out var had) ? had with { Crosses = had.Crosses || crosses } : (p, q, crosses);
                 }
                 else
