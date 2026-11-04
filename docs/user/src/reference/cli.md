@@ -1986,13 +1986,13 @@ cancelled export exits 130. `--json` lists every path created.
 
 A compiled `.osdi` the cell places ships as this platform's build in `models/<rid>/`
 ([Compiled-only models](model-library-format.html#compiled)). `--compile-models` compiles each Verilog-A source the
-cell places and ships the build instead of the source; it is off unless given, as the dialog's checkbox is. Each
+cell places, and each ComposedFET converted to Verilog-A, and ships the build instead of the source; it is off unless given, as the dialog's checkbox is. Each
 `--build <rid>=<path>` adds a build made on another platform, such as `--build win-x64=builds/TSTFET100.osdi`. The
 self-check runs this platform's build only, and the last line says so.
 
 `--compile-netlist` publishes the whole cell as one compiled Verilog-A module instead of its schematic
 ([Compile netlist](protected-models.html#compile-netlist)); it is off unless given. The generated source goes to
-`protected-source/<Part>/<Part>.va` beside the workspace, or to `--source-out`, never into the library. Each
+`protected-source/<Part>/<Part>.va` in the workspace folder, or to `--source-out`, never into the library. Each
 `--check-bias` is one bias point of the proof (pins not named are at 0 V); without any, the proof runs every pin at
 0 V and each pair of pins at ±1 V. Every platform the compiler can reach is tried. Standard error lists them, led
 by *"This part will be unavailable on: …"* when any is missing, and `--json` carries the same rows as `exportPart`'s

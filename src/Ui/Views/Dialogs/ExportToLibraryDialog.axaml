@@ -70,7 +70,8 @@
                     <TextBox   Grid.Row="4" Grid.Column="2" Text="{Binding FrequencyHigh}" FontSize="12" PlaceholderText="20 GHz"/>
                     <TextBlock Grid.Row="5" Text="Conditions" FontSize="12" VerticalAlignment="Center"/>
                     <TextBox   Grid.Row="5" Grid.Column="1" Grid.ColumnSpan="2" Text="{Binding Conditions}" FontSize="12"
-                               PlaceholderText="Vds = 3 V, 25 °C"/>
+                               PlaceholderText="Vds = 3 V, 25 °C"
+                               ToolTip.Tip="Optional. The bias, temperature or other conditions the model was made at and holds for, as text for whoever places the part. It is recorded with the part; the simulation does not use it."/>
                     <TextBlock Grid.Row="6" Text="Footprint" FontSize="12" VerticalAlignment="Center"/>
                     <TextBox   Grid.Row="6" Grid.Column="1" Grid.ColumnSpan="2" Text="{Binding Footprint}" FontSize="12"
                                PlaceholderText="1005M(0402)"/>
@@ -181,7 +182,7 @@
                      apply, so nothing below them moves as the plan changes. The checkbox starts unticked. -->
                 <TextBlock Text="Compiled models" FontWeight="SemiBold" FontSize="12"/>
                 <CheckBox x:Name="CompileModelsBox" IsChecked="{Binding CompileModels}" IsEnabled="{Binding IsCompileEnabled}"
-                          ToolTip.Tip="Compile each Verilog-A source the cell places, and ship the compiled build in its place, without the source.">
+                          ToolTip.Tip="Compile each Verilog-A source and ComposedFET the cell places, and ship the compiled build in its place, without the source. A ComposedFET is written as Verilog-A first, as Model Composer's Verilog-A export writes it.">
                     <TextBlock Text="Compile Verilog-A models (ship the build, not the source)" FontSize="12"/>
                 </CheckBox>
                 <TextBlock Text="{Binding CompileNote}" FontSize="11" TextWrapping="Wrap" Opacity="0.8"/>
@@ -222,7 +223,7 @@
                     <TextBlock Text="Compile netlist (protected model)" FontSize="12"/>
                 </CheckBox>
                 <TextBlock Text="{Binding CompileNetlistNote}" FontSize="11" TextWrapping="Wrap" Opacity="0.8"/>
-                <StackPanel Spacing="4" IsVisible="{Binding CompileNetlist}">
+                <StackPanel Spacing="4" IsVisible="{Binding ShowsProofBias}">
                     <Grid ColumnDefinitions="90,*">
                         <TextBlock Grid.Column="0" Text="Proof bias" FontSize="12" VerticalAlignment="Top" Margin="0,4,0,0"/>
                         <TextBox Grid.Column="1" Text="{Binding CheckBiasText}" FontSize="12" AcceptsReturn="True" MinHeight="44"
@@ -233,8 +234,25 @@
                 <!-- The Builds table (R-vl16-6a), once a protected export has run. -->
                 <StackPanel Spacing="2" IsVisible="{Binding HasBuilds}">
                     <TextBlock Text="Builds" FontWeight="SemiBold" FontSize="12"/>
-                    <TextBlock Text="{Binding UnavailableLine}" FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource CrfWarningBrush}"
-                               IsVisible="{Binding UnavailableLine, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                    <SelectableTextBlock Text="{Binding UnavailableLine}" FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource CrfWarningBrush}"
+                                         IsVisible="{Binding UnavailableLine, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                    <!-- Where the export wrote: each a link that reveals the folder in the file manager. -->
+                    <Grid ColumnDefinitions="56,*" RowDefinitions="Auto,Auto" Margin="0,2,0,4">
+                        <TextBlock Grid.Row="0" Text="Model" FontSize="11" Opacity="0.7" VerticalAlignment="Top"
+                                   IsVisible="{Binding FinishedModelFolder, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                        <SelectableTextBlock Grid.Row="0" Grid.Column="1" x:Name="ModelFolderLink" Text="{Binding FinishedModelFolder}"
+                                             FontSize="11" TextWrapping="Wrap" Cursor="Hand" TextDecorations="Underline"
+                                             Foreground="{DynamicResource SystemAccentColor}" Tapped="OnRevealModelFolder"
+                                             ToolTip.Tip="Show this folder in the file manager"
+                                             IsVisible="{Binding FinishedModelFolder, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                        <TextBlock Grid.Row="1" Text="Source" FontSize="11" Opacity="0.7" VerticalAlignment="Top"
+                                   IsVisible="{Binding FinishedSourceFolder, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                        <SelectableTextBlock Grid.Row="1" Grid.Column="1" x:Name="SourceFolderLink" Text="{Binding FinishedSourceFolder}"
+                                             FontSize="11" TextWrapping="Wrap" Cursor="Hand" TextDecorations="Underline"
+                                             Foreground="{DynamicResource SystemAccentColor}" Tapped="OnRevealSourceFolder"
+                                             ToolTip.Tip="Show this folder in the file manager"
+                                             IsVisible="{Binding FinishedSourceFolder, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                    </Grid>
                     <ItemsControl x:Name="BuildsResult" ItemsSource="{Binding BuildLines}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="x:String">
@@ -298,7 +316,7 @@
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
-            <TextBlock Grid.Row="4" Text="{Binding ReplaceNote}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"
+            <SelectableTextBlock Grid.Row="4" Text="{Binding ReplaceNote}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"
                        IsVisible="{Binding ReplaceNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
             <CheckBox Grid.Row="5" IsChecked="{Binding AddToWorkspace}" IsEnabled="{Binding AddToWorkspaceEnabled}" Margin="0,8,0,0"
                       ToolTip.Tip="Reference this library from the workspace, so the part is in the palette as soon as the export finishes.">
@@ -307,7 +325,7 @@
         </Grid>
 
         <Grid Grid.Row="1" Grid.ColumnSpan="3" ColumnDefinitions="*,Auto" Margin="0,12,0,0">
-            <TextBlock Grid.Column="0" Text="{Binding Status}" FontSize="12" TextWrapping="Wrap" VerticalAlignment="Center" Opacity="0.8"/>
+            <SelectableTextBlock Grid.Column="0" Text="{Binding Status}" FontSize="12" TextWrapping="Wrap" VerticalAlignment="Center" Opacity="0.8"/>
             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
                 <Button Content="{Binding CancelLabel}" Width="80" HorizontalContentAlignment="Center" IsCancel="True" Click="OnCancel"/>
                 <Button Content="Export" Width="80" HorizontalContentAlignment="Center" IsDefault="True"

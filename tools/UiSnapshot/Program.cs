@@ -110,6 +110,7 @@ using CircuitRF.Design.Layout;
 //   --manage-libraries <workspace>                            File ▸ Manage Libraries… (written to <out>.dialog.png)
 //   --add-vendor-library <folder>                             Add Vendor Library's confirm step (<out>.dialog.png)
 //   --export-to-library <cell> [--export-library <dir>]       Export to Library's dialog on a cell (<out>.dialog.png)
+//     [--export-protect [run]] [--export-compile-models]        Compile netlist / Compile Verilog-A models ticked
 //       [--export-build <rid>=<path>]…                        with rows of Builds for other platforms
 //       [--export-protect [run]]                              Compile netlist ticked; run also exports and shows Builds
 //   --yield <csch> --generate-corners                         the Yield panel's Generate Corners dialog (<out>.dialog.png)
@@ -172,6 +173,7 @@ string? analysisDialog = null, emSolvesDialog = null;   // brief-sdl-6
 string? archive = null, manageLibraries = null, addVendorLibrary = null, exportToLibrary = null, exportLibrary = null, importSchematic = null;
 var exportBuilds = new List<(string Rid, string Path)>();
 string? exportProtect = null;
+bool exportCompileModels = false;
 string? repointQuestion = null;
 // --project-tree <workspace> [--reveal <file>] [--filter-open] [--filter-all-off]: the Workspace Tree panel; --reveal runs
 // a document tab's Reveal in Workspace Tree on that file, --filter-open opens the category filter's flyout.
@@ -292,6 +294,8 @@ for (int i = 0; i < args.Length; i++)
         case "--export-protect":
             exportProtect = i + 1 < args.Length && args[i + 1] == "run" ? args[++i] : "tick";
             break;
+        // Compile Verilog-A models ticked.
+        case "--export-compile-models": exportCompileModels = true; break;
         case "--import-schematic" when i + 1 < args.Length: importSchematic = Path.GetFullPath(args[++i]); break;
         case "--repoint-question" when i + 1 < args.Length: repointQuestion = args[++i]; break;
         // brief-gdf-2: the gdsfactory views — trust | pick | interpreter | report | prompt | permissions — with the
@@ -1824,6 +1828,7 @@ void OpenExportToLibrary(string cell, string? library)
         vm.BuildRows[^1].Path = path;
     }
     if (exportProtect is not null) vm.CompileNetlist = true;
+    if (exportCompileModels) vm.CompileModels = true;
     _ = CircuitRF.Ui.Views.Dialogs.ExportToLibraryDialog.AskAsync(host, vm);
     Pump();
     // The plan's continuation runs on this dispatcher, so it is pumped for, never waited on.
@@ -1840,7 +1845,7 @@ void OpenExportToLibrary(string cell, string? library)
     }
     foreach (var l in vm.ProtectLines) Console.WriteLine($"  protect: {l}");
     // The Compile netlist rows sit low in the left column: bring them into view for the capture.
-    if (exportProtect is not null && TopDialog() is { } shown
+    if ((exportProtect is not null || exportCompileModels) && TopDialog() is { } shown
         && shown.GetVisualDescendants().OfType<Avalonia.Controls.CheckBox>().FirstOrDefault(c => c.Name == "CompileNetlistBox") is { } box)
     {
         box.BringIntoView();

@@ -267,7 +267,7 @@ public static class ExportPart
             "         [--conditions …] [--footprint …] [--doc <file>]… [--symbol own|fet|r|c|l|box]\n" +
             "         [--sweep start=… stop=… npts=…|step=… [unit=GHz] [log]]…   (technology parts; default 0-20 GHz, 1001 points)\n" +
             "         [--replace] [--include-vendor-parts]\n" +
-            "         [--compile-models]   (ship each Verilog-A source compiled, without the source)\n" +
+            "         [--compile-models]   (ship each Verilog-A source and ComposedFET compiled, without the source)\n" +
             "         [--build <rid>=<path>]…   (a compiled model's builds made on other platforms)\n" +
             "         [--compile-netlist [--source-out <file.va>] [--check-bias \"pin=V pin=V\"]…]\n" +
             "              (publish the cell as one compiled, protected module; the source stays with you)\n" +

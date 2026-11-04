@@ -46,9 +46,9 @@ public static partial class ModelLibraryExport
     /// <summary>The dialog's last line (R-vl16-2c).</summary>
     public const string SourceKeptLine = "The model's source is in protected-source/. It is not in the library. Keep it: every platform's build is made from it.";
 
-    /// <summary><see cref="SourceKeptLine"/>, naming the folder when <c>--source-out</c> put the source elsewhere.</summary>
+    /// <summary>Always names the folder: "protected-source/" alone does not say which workspace's.</summary>
     public static string SourceKeptLineFor(string? sourcePath)
-        => sourcePath is null || Path.GetFileName(Path.GetDirectoryName(Path.GetDirectoryName(sourcePath))) == ProtectedSourceFolder
+        => sourcePath is null
             ? SourceKeptLine
             : $"The model's source is in {Path.GetDirectoryName(sourcePath)}. It is not in the library. Keep it: every platform's build is made from it.";
 
@@ -73,8 +73,14 @@ public static partial class ModelLibraryExport
 
         string? text = ModelNetlist.FromCell(dir, out string? why);
         string sourcePath = SourcePathFor(dir, part, options);
+        // The default source folder is the workspace's own, so a library that IS the workspace, or a folder above it, holds
+        // it — and the source must never ship. Say which field to change, not only what is wrong.
         if (IsSameOrUnder(sourcePath, libraryDir))
-            refusals.Add($"The generated source '{sourcePath}' would be inside the library; it must stay outside it, with the maker.");
+            refusals.Add(options.SourceOut is { Length: > 0 }
+                ? $"The source folder '{Path.GetDirectoryName(sourcePath)}' is inside the library '{libraryDir}'; the generated source must stay outside it, with you. Choose a source folder outside the library."
+                : $"The target library '{libraryDir}' contains this workspace, where the generated source is written "
+                  + $"('{Path.GetDirectoryName(sourcePath)}'), and the source must never ship in the library. "
+                  + "Change the target library to a folder outside the workspace.");
         if (text is null) { refusals.Add(why ?? "The cell could not be extracted."); return null; }
 
         string? srcBase = SchematicCircuit.ReferenceBaseOfDirectory(Path.GetDirectoryName(PrimaryPath(dir, ViewType.Schematic) ?? dir));

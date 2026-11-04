@@ -2787,12 +2787,12 @@ vendor parts needs <code>--include-vendor-parts</code>, because their libraries'
 cancelled export exits 130. <code>--json</code> lists every path created.</p>
 <p>A compiled <code>.osdi</code> the cell places ships as this platform's build in <code>models/&lt;rid&gt;/</code>
 (<a href="model-library-format.html#compiled">Compiled-only models</a>). <code>--compile-models</code> compiles each Verilog-A source the
-cell places and ships the build instead of the source; it is off unless given, as the dialog's checkbox is. Each
+cell places, and each ComposedFET converted to Verilog-A, and ships the build instead of the source; it is off unless given, as the dialog's checkbox is. Each
 <code>--build &lt;rid&gt;=&lt;path&gt;</code> adds a build made on another platform, such as <code>--build win-x64=builds/TSTFET100.osdi</code>. The
 self-check runs this platform's build only, and the last line says so.</p>
 <p><code>--compile-netlist</code> publishes the whole cell as one compiled Verilog-A module instead of its schematic
 (<a href="protected-models.html#compile-netlist">Compile netlist</a>); it is off unless given. The generated source goes to
-<code>protected-source/&lt;Part&gt;/&lt;Part&gt;.va</code> beside the workspace, or to <code>--source-out</code>, never into the library. Each
+<code>protected-source/&lt;Part&gt;/&lt;Part&gt;.va</code> in the workspace folder, or to <code>--source-out</code>, never into the library. Each
 <code>--check-bias</code> is one bias point of the proof (pins not named are at 0 V); without any, the proof runs every pin at
 0 V and each pair of pins at ±1 V. Every platform the compiler can reach is tried. Standard error lists them, led
 by <em>&quot;This part will be unavailable on: …&quot;</em> when any is missing, and <code>--json</code> carries the same rows as <code>exportPart</code>'s

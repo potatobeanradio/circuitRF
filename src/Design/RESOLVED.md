@@ -27144,3 +27144,22 @@ whose two values do not line up is not corrected and is said (`opt.em.offset`).
   and Apply are SDL-10's. Apply here writes VAR rows only and says so for any other key.
 - **No real end-to-end solve was added.** Every SDL-7 test uses the stub (`EmEvaluation.SolverStandIn`, flow-local so it
   never reaches a concurrent real-solve test); SDL-6's `ParametricEmCellTests` already holds the real solve path.
+
+## Compile Verilog-A models converts a ComposedFET (2026-11-03)
+
+The checkbox compiled only `.va` files a cell placed, so on a ComposedFET cell it was greyed — while Model Composer
+already writes a ComposedFET as Verilog-A. Now each placed ComposedFET is written by `CmodelVerilogA` (the same text
+Model Composer's Verilog-A export writes), compiled, and shipped as `models/<rid>/<cmodel name>.osdi`; the copied
+schematic places a `VerilogA` of that build with the FET's values, and the `.cmodel` does not ship
+(`ModelLibraryExport.CompileFets.cs`). Under Compile netlist the FET is folded into the module instead, as before.
+
+- **The export is PROVED, not self-checked.** The self-check's 1e-9 suits a copied build; a translation differs at
+  ~1e-9 on its own. `ProtectCheck.Run` compares any two netlists, so the source cell and the exported model run at the
+  bias points (Proof bias / `--check-bias`) and two ambients, exactly as Compile netlist's proof does.
+- **Trap: a schematic connects by geometry.** Swapping `ComposedFET` for `VerilogA` drew the box, whose pins sit
+  elsewhere, so every wire ended on nothing and the compiled FET simulated unconnected — the proof caught it (Y off by
+  100 %). The VerilogA is given the module's `Terminals` (`g d s t:thermal`), which makes its default symbol the same
+  FET glyph a ComposedFET draws, pin for pin.
+- **Trap: a part's stored port count is not the model's.** A ComposedFET placed in memory reports 4 ports whatever the
+  model; a model that does not self-heat has a 3-terminal module, and `Pins=4` is refused by the worker. Pins follow the
+  model: 4 only when it self-heats.

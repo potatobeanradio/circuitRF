@@ -30,7 +30,7 @@ public static class DocExportFixtures
         {
             CellDir = cell, PartNumber = "TSTPA200", ModelDir = "/libraries/devices/Amplifiers/TSTPA200", Pins = pins,
             DefaultKind = ModelPartManifest.KindActive, DefaultSymbol = ModelLibraryExport.SymbolBox,
-            CompileUnavailable = "The cell places no Verilog-A source to compile.", ShipsCompiled = true,
+            CompileUnavailable = "The cell places no Verilog-A file or ComposedFET to compile.", ShipsCompiled = true,
             ProtectLines =
             [
                 "Compiled into one module: R1 (R), Q1 (ComposedFET), C1 (C), X1.L1 (L).",

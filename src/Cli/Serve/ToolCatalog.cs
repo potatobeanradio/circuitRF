@@ -881,8 +881,9 @@ internal static class ToolCatalog
                           + "Refused when no part uses the technology."),
                         // brief vendorlib-15 R-vl15-1d — compiled models.
                         new("compileModels",      "--compile-models",       OptKind.Flag,
-                            "Compile each Verilog-A source the cell places and ship the build in models/<platform>/ instead of the "
-                          + "source: a protected model. Off unless true. Refused when the cell places no source or no Verilog-A "
+                            "Compile each Verilog-A source the cell places, and each ComposedFET (converted to Verilog-A first, then "
+                          + "proved against the cell at checkBias points), and ship the build in models/<platform>/ instead of the "
+                          + "source: a protected model. Off unless true. Refused when the cell places neither or no Verilog-A "
                           + "compiler is found. A placed .osdi with no source ships as this platform's build either way."),
                         new("builds",             "--build",                OptKind.PathMap,
                             "Builds of the compiled model made on OTHER platforms, runtime identifier to file: "
@@ -901,7 +902,7 @@ internal static class ToolCatalog
                             "With compileNetlist: where the generated .va goes. Default protected-source/<Part>/<Part>.va beside the "
                           + "workspace. Refused inside the library."),
                         new("checkBias",          "--check-bias",           OptKind.StrRepeat,
-                            "With compileNetlist: one bias point of the proof per item, 'g=-0.5 d=5' (pins not named are at 0 V). "
+                            "With compileNetlist, or compileModels converting a ComposedFET: one bias point of the proof per item, 'g=-0.5 d=5' (pins not named are at 0 V). "
                           + "Default: every pin at 0 V, then each pair of pins at +1 V and -1 V across them."),
                         // brief vendorlib-12 R-vl12-4 — after a model's .csch was edited by writing it.
                         new("refresh",            "--refresh",              OptKind.Flag,

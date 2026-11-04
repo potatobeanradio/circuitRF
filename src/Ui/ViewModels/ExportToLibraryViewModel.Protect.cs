@@ -5,6 +5,7 @@
 // rows the dialog shows once an export has run.
 
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Linq;
 using CircuitRF.Design.VendorLibraries.ModelLibrary;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -87,12 +88,20 @@ public sealed partial class ExportToLibraryViewModel
         Apply(plan, null);
     }
 
+    /// <summary>The finished export's model folder, shown as a link that reveals it; null before one finishes.</summary>
+    [ObservableProperty] private string? _finishedModelFolder;
+    /// <summary>The folder the generated source was written to, shown as a link that reveals it.</summary>
+    [ObservableProperty] private string? _finishedSourceFolder;
+
     /// <summary>R-vl16-6a: the Builds table of a finished export.</summary>
     public void ShowBuilds(ExportResult result)
     {
         BuildLines.Clear();
         foreach (var b in result.Builds) BuildLines.Add(b.Describe());
-        BuildLines.Add(ModelLibraryExport.SourceKeptLineFor(result.SourcePath));
+        FinishedModelFolder = result.ModelDir;
+        FinishedSourceFolder = result.SourcePath is { } source ? Path.GetDirectoryName(source) : null;
+        if (FinishedSourceFolder is not null)
+            BuildLines.Add("The source above is not in the library. Keep it: every platform's build is made from it.");
         UnavailableLine = ModelLibraryExport.UnavailableLine(result.Builds);
         OnPropertyChanged(nameof(HasBuilds));
         Finished = result;

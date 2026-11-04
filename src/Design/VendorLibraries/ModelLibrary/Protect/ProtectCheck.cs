@@ -54,7 +54,7 @@ public sealed record ProtectCheckResult(double WorstError, string Worst, int Poi
 
     /// <summary>One line for the dialog and the CLI.</summary>
     public string Summary => Refusal ?? $"The compiled part matches the cell at {Points} point{(Points == 1 ? "" : "s")}: worst {Worst}, " +
-                                         $"relative difference {WorstError.ToString("G3", CultureInfo.InvariantCulture)}.";
+                                         $"difference {WorstError.ToString("G3", CultureInfo.InvariantCulture)}.";
 }
 
 /// <summary>
@@ -63,12 +63,22 @@ public sealed record ProtectCheckResult(double WorstError, string Worst, int Poi
 /// engine. At each bias point the DC terminal currents and the Y-parameters at three frequencies across the part's range
 /// are compared — for a cell with a thermal pin, at two ambient temperatures as well. The limit is
 /// <see cref="Tolerance"/> relative with absolute floors of 1e-12 A and 1e-12 S: the same equations in the same double
-/// precision, so a real difference is a translation error, not rounding.
+/// precision, so a real difference is a translation error, not rounding. A floor is an absolute ALLOWANCE (a quantity
+/// passes when |Δ| ≤ max(Tolerance·|x|, floor)), not the smallest denominator of a relative error: used as a denominator
+/// it demanded 1e-18 A of agreement on a picoamp gate current, a million times finer than the DC solve converges
+/// (<see cref="SolveAbsTol"/>), so a FET's leakage failed the proof on solver noise alone.
 /// </summary>
 public static class ProtectCheck
 {
     public const double Tolerance = 1e-6;
     private const double CurrentFloor = 1e-12, AdmittanceFloor = 1e-12;
+    /// <summary>The DC solve's absolute current tolerance; <see cref="CurrentFloor"/> may not be finer than it.</summary>
+    private const double SolveAbsTol = 1e-12;
+
+    /// <summary>|Δ| as a multiple of what is allowed, scaled so it passes at ≤ <see cref="Tolerance"/>: relative above
+    /// floor/Tolerance, absolute below it.</summary>
+    private static double Error(double delta, double a, double b, double floor)
+        => delta / Math.Max(Math.Max(a, b), floor / Tolerance);
     private const double Z0 = 50;
 
     /// <summary>Two ambients, °C, for a cell with a thermal pin.</summary>
@@ -93,7 +103,7 @@ public static class ProtectCheck
                     string at = $"at {b}" + (ambient is { } t ? $", {t.ToString(CultureInfo.InvariantCulture)} degC ambient" : "");
                     for (int k = 0; k < pins.Count; k++)
                     {
-                        double e = Math.Abs(a.I[k] - w.I[k]) / Math.Max(Math.Max(Math.Abs(a.I[k]), Math.Abs(w.I[k])), CurrentFloor);
+                        double e = Error(Math.Abs(a.I[k] - w.I[k]), Math.Abs(a.I[k]), Math.Abs(w.I[k]), CurrentFloor);
                         if (e > worst.Error) worst = (e, $"the DC current into {pins[k]} {at} (cell {G(a.I[k])} A, compiled {G(w.I[k])} A)");
                     }
                     for (int f = 0; f < freqs.Length; f++)
@@ -101,7 +111,7 @@ public static class ProtectCheck
                             for (int j = 0; j < pins.Count; j++)
                             {
                                 Complex ya = a.Y[f][i, j], yw = w.Y[f][i, j];
-                                double e = (ya - yw).Magnitude / Math.Max(Math.Max(ya.Magnitude, yw.Magnitude), AdmittanceFloor);
+                                double e = Error((ya - yw).Magnitude, ya.Magnitude, yw.Magnitude, AdmittanceFloor);
                                 if (e > worst.Error) worst = (e, $"Y({i + 1},{j + 1}) at {FormatHz(freqs[f])} {at} (cell {G(ya)} S, compiled {G(yw)} S)");
                             }
                     points++;
@@ -113,8 +123,8 @@ public static class ProtectCheck
         }
         if (worst.Error > Tolerance)
             return new ProtectCheckResult(worst.Error, worst.Where, points,
-                $"The compiled part does not match the cell: worst {worst.Where}, relative difference " +
-                $"{worst.Error.ToString("G3", CultureInfo.InvariantCulture)} (allowed {Tolerance:G1}). Nothing was written to the library.");
+                $"The compiled part does not match the cell: worst {worst.Where}, difference " +
+                $"{worst.Error.ToString("G3", CultureInfo.InvariantCulture)} (allowed {Tolerance:G1} relative, with floors of {CurrentFloor:G1} A and {AdmittanceFloor:G1} S). Nothing was written to the library.");
         return new ProtectCheckResult(worst.Error, worst.Where, points, null);
     }
 
@@ -151,7 +161,7 @@ public static class ProtectCheck
 
         var (lib, tb) = new CnlReader().Read(sb.ToString(), "protect-check", baseDir);
         using var nl = new Elaborator(lib) { BaseDirectory = baseDir }.Elaborate(tb);
-        var settings = new AnalysisSettings { NonlinearAbsTol = 1e-12 };
+        var settings = new AnalysisSettings { NonlinearAbsTol = SolveAbsTol };
         var dc = NonlinearDcEngine.Run(nl, settings);
         if (!dc.Converged) throw new InvalidOperationException($"the DC solve at {bias} did not converge.");
         var current = new double[n];

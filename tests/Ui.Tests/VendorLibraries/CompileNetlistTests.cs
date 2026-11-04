@@ -111,6 +111,19 @@ public sealed class CompileNetlistTests : IDisposable
         Assert.Equal(a.Hash, b.Hash);
     }
 
+    // 4b — a target library that IS the workspace holds the default source folder: the refusal says to change the target
+    // library, the field the dialog offers, rather than only that the source would be inside it.
+    [Fact]
+    public void ALibraryHoldingTheWorkspace_IsRefused_NamingTheTargetLibraryToChange()
+    {
+        string cmodel = ComposedTestModels.WriteTemp(VaTestModels.AnnModel(AnnActivation.Tanh), "tstfet.cmodel");
+        string cell = WriteFetOnlyCell(cmodel);
+        string ws = WorkspaceRootFinder.WorkspaceDirOf(cell)!;
+        var plan = ModelLibraryExport.Plan(cell, new ExportOptions { LibraryDir = ws, CompileNetlist = true });
+        Assert.Contains(plan.Refusals, r => r.Contains("contains this workspace", StringComparison.Ordinal)
+                                            && r.EndsWith("Change the target library to a folder outside the workspace.", StringComparison.Ordinal));
+    }
+
     // 5, 6 — with a compiler: the export proves the part and writes a library folder holding no topology, which checks
     // clean; and a build compiled from a source with one coefficient changed fails the proof.
     [CompilerFact]
@@ -158,6 +171,34 @@ public sealed class CompileNetlistTests : IDisposable
                                      part.Pins, ProtectBias.Defaults(part.Pins).Take(1).ToList(), ProtectCheck.Frequencies(null), thermal: false);
         Assert.False(proof.Passed);
         Assert.Contains("does not match the cell", proof.Refusal);
+    }
+
+    // Compile Verilog-A models on a cell placing a ComposedFET among other parts: the FET is written as Verilog-A, compiled
+    // and placed as a VerilogA of the build — drawing the FET's glyph, so its wires still land — the rest of the cell
+    // ships as it is, the .cmodel does not ship, and the export is proved against the cell rather than self-checked.
+    [CompilerFact]
+    public void CompileModels_ConvertsAComposedFet_ShipsItsBuildNotItsCmodel_AndIsProved()
+    {
+        ProtectedModelTests.EnsureWorkerBeside(AppContext.BaseDirectory);
+        string cmodel = ComposedTestModels.WriteTemp(VaTestModels.AnnModel(AnnActivation.Tanh), "tstfet.cmodel");
+        string cell = WriteAmplifier(cmodel);
+
+        var options = new ExportOptions { LibraryDir = Path.Combine(_dir, "lib"), CompileModels = true };
+        var plan = ModelLibraryExport.Plan(cell, options);
+        Assert.Null(plan.CompileUnavailable);
+        Assert.Contains(plan.Copies, c => c.Kind == ExportCopyKind.CompiledComposedFet);
+
+        var result = ModelLibraryExport.Export(cell, options);
+        Assert.True(result.Succeeded, result.Refusal);
+        string model = result.ModelDir!;
+        var files = Directory.EnumerateFiles(model, "*", SearchOption.AllDirectories).Select(f => Path.GetRelativePath(model, f).Replace('\\', '/')).ToList();
+        Assert.DoesNotContain(files, f => f.EndsWith(".va", StringComparison.Ordinal) || f.EndsWith(".cmodel", StringComparison.Ordinal));
+        Assert.Contains($"models/{OsdiBuilds.CurrentRid}/tstfet.osdi", files);
+        Assert.Contains(files, f => f.EndsWith(".s2p", StringComparison.Ordinal));   // the rest of the cell ships as it is
+        string cnl = File.ReadAllText(ModelNetlist.PathOf(model));
+        Assert.Contains("VerilogA:Q1", cnl);
+        Assert.DoesNotContain("ComposedFET", cnl);
+        Assert.Contains("matches the cell", result.Message);
     }
 
     // Brief vendorlib-18 §5.4: with zig, every platform the compiler can reach is built, each one's header reads as that

@@ -141,7 +141,7 @@ public static partial class ModelLibraryExport
                 if (converts || newMap.Count > 0)
                 {
                     string name = DocumentFileRefs.PathComparer.Equals(key, dir) ? part : Path.GetFileName(cellDir);
-                    text = RewriteSchematic(text, sch, sch, name, files, newMap, options, cellDir, converted);
+                    text = RewriteSchematic(text, sch, sch, name, files, newMap, options, cellDir, converted, NoFets);
                 }
                 if (!string.Equals(text, before, StringComparison.Ordinal))
                 {

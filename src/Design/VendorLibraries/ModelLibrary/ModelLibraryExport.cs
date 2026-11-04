@@ -90,6 +90,8 @@ public enum ExportCopyKind
     VendorSpicePart,
     /// <summary>A vendor library's model, as a sub-cell.</summary>
     VendorModel,
+    /// <summary>A ComposedFET's <c>.cmodel</c>, converted to Verilog-A and compiled: its build ships, the file does not.</summary>
+    CompiledComposedFet,
 }
 
 /// <param name="Source">The absolute file or folder copied.</param>
@@ -104,6 +106,7 @@ public sealed record ExportCopy(ExportCopyKind Kind, string Source, string? Libr
         ExportCopyKind.SubCell         => $"sub-cell  {System.IO.Path.GetFileName(Source)}  ({Source})",
         ExportCopyKind.VendorSpicePart => $"vendor part  {Part}  from library '{Library}'",
         ExportCopyKind.VendorModel     => $"vendor model  {Part}  from library '{Library}'",
+        ExportCopyKind.CompiledComposedFet => $"compiled  {Source}  (to Verilog-A, then built; the .cmodel is not copied)",
         _ => Source,
     };
 }
@@ -142,6 +145,14 @@ public sealed record ExportPlan
     public IReadOnlyList<string> CompiledModels { get; init; } = [];
     /// <summary>The Verilog-A sources the cell places, absolute: what Compile Verilog-A models would compile.</summary>
     public IReadOnlyList<string> CompilableSources { get; init; } = [];
+    /// <summary>The ComposedFETs the cell places, by instance: what Compile Verilog-A models converts to Verilog-A and
+    /// compiles.</summary>
+    public IReadOnlyList<string> CompilableFets { get; init; } = [];
+    /// <summary>The ComposedFETs this export converts and compiles; empty unless Compile Verilog-A models is on.</summary>
+    internal IReadOnlyDictionary<(string Cell, string Instance), ModelLibraryExport.ComposedFetSite> FetSites { get; init; }
+        = new Dictionary<(string, string), ModelLibraryExport.ComposedFetSite>();
+    /// <summary>The bias points converted ComposedFETs are proved at.</summary>
+    internal IReadOnlyList<ProtectBias> FetBias { get; init; } = [];
     /// <summary>Why the compile option cannot be used here, or null when it can: no source to compile, or no
     /// compiler on this machine.</summary>
     public string? CompileUnavailable { get; init; }
@@ -325,12 +336,16 @@ public static partial class ModelLibraryExport
                 refusals.Add($"{v.Part} comes from the vendor library '{v.Library}', and exporting copies it into this model, so that library's terms travel with it. Include vendor parts to accept that.");
 
         // Brief vendorlib-15: compiled models, and the compile option.
-        string? compileUnavailable = walk.Sources.Count == 0
-            ? "The cell places no Verilog-A source to compile."
+        string? compileUnavailable = walk.Sources.Count == 0 && walk.Fets.Count == 0
+            ? "The cell places no Verilog-A file or ComposedFET to compile."
             : CompilerMissing();
         if (options.CompileModels && compileUnavailable is not null)
             refusals.Add($"Compile Verilog-A models is on, and it cannot be used: {compileUnavailable}");
-        bool shipsCompiled = walk.Compiled.Count > 0 || (options.CompileModels && walk.Sources.Count > 0) || options.CompileNetlist;
+        // A ComposedFET is converted with Model Composer's Verilog-A writer and compiled. Under Compile netlist it is
+        // folded into the one module instead, so it is not converted on its own as well.
+        bool convertsFets = options.CompileModels && !options.CompileNetlist && walk.Fets.Count > 0;
+        var fetBias = convertsFets ? PlanFetConversion(walk, options, pins, refusals) : [];
+        bool shipsCompiled = walk.Compiled.Count > 0 || (options.CompileModels && (walk.Sources.Count > 0 || walk.Fets.Count > 0)) || options.CompileNetlist;
         if (!options.CompileNetlist) PlanBuilds(options, walk, shipsCompiled, refusals);
         else if (options.Builds.Count > 0)
             refusals.Add("Compile netlist builds every platform the compiler can reach, and adds another platform's build when it is run " +
@@ -377,13 +392,20 @@ public static partial class ModelLibraryExport
             DefaultKind = defaultKind, DefaultSymbol = defaultSymbol, HasOwnSymbol = hasOwn,
             ExistingRevision = revision,
             LibraryIsNew = !File.Exists(Path.Combine(libraryDir, ModelFolder.LibraryFileName)),
-            Copies = walk.Copies, Conversions = walk.Conversions, Frequencies = freqs,
+            Copies = convertsFets
+                ? [.. walk.Copies.Select(c => c.Kind == ExportCopyKind.File && walk.Fets.Values.Any(f => DocumentFileRefs.PathComparer.Equals(f.Cmodel, c.Source))
+                                              ? c with { Kind = ExportCopyKind.CompiledComposedFet } : c)]
+                : walk.Copies,
+            Conversions = walk.Conversions, Frequencies = freqs,
             CompiledModels = walk.Compiled, CompilableSources = walk.Sources,
+            CompilableFets = [.. walk.Fets.Values.Select(f => f.Name)],
+            FetSites = convertsFets ? walk.Fets : new Dictionary<(string, string), ComposedFetSite>(),
+            FetBias = fetBias,
             CompileUnavailable = compileUnavailable, ShipsCompiled = shipsCompiled,
             Refusals = refusals.Distinct(StringComparer.Ordinal).ToList(),
             ProtectLines = protect is null ? [] : [.. protect.Partition.Describe()],
             CompileNetlistUnavailable = CompilerMissingCached(), SourcePath = protect?.SourcePath,
-            CheckBias = protect is null ? [] : [.. protect.Bias.Select(b => b.ToString())],
+            CheckBias = protect is not null ? [.. protect.Bias.Select(b => b.ToString())] : [.. fetBias.Select(b => b.ToString())],
             AddsPlatform = addsPlatform, Protect = protect,
         };
     }
@@ -496,7 +518,7 @@ public static partial class ModelLibraryExport
                 Converted = [.. built.Converted],
                 Builds = plan.Protect is not null ? BuildsOfWrapper(tmp) : built.Builds.Count == 0 ? null : [.. built.Builds],
                 CompiledFrom = plan.Protect?.Hash,
-                Proved = plan.Protect is not null ? [CircuitRF.Core.Devices.External.OsdiBuilds.CurrentRid] : null,
+                Proved = plan.Protect is not null || plan.FetSites.Count > 0 ? [CircuitRF.Core.Devices.External.OsdiBuilds.CurrentRid] : null,
             };
             ModelPartManifest.Write(partPath, manifest);
 
@@ -527,6 +549,13 @@ public static partial class ModelLibraryExport
                 control?.BeginStage("Proving the compiled part");
                 proof = Prove(plan, options, proving, tmp, manifest);
                 if (!proof.Passed) return Refuse(wrapper, madeFrom, proof.Refusal + $" The generated source is kept at {proving.SourcePath}.");
+            }
+            else if (plan.FetSites.Count > 0)
+            {
+                // A ComposedFET compiled from its Verilog-A translation: proved at bias points, not copied, so not self-checked.
+                control?.BeginStage("Proving the compiled FETs");
+                proof = ProveFets(plan, options, tmp, manifest);
+                if (!proof.Passed) return Refuse(wrapper, madeFrom, proof.Refusal!);
             }
             else
             {
@@ -573,7 +602,9 @@ public static partial class ModelLibraryExport
                           + (plan.Conversions.Count == 0 ? ""
                              : $" {plan.Conversions.Count} part{(plan.Conversions.Count == 1 ? "" : "s")} converted to S-parameters, {plan.Frequencies.Length} points"
                                + (betweenDb is { } db ? $"; between samples, within {db.ToString("G2", CultureInfo.InvariantCulture)} dB." : "."))
-                          + (proof is null ? BuildsNote(built.Builds) : " " + proof.Summary + " " + SourceKeptLineFor(plan.Protect?.SourcePath)),
+                          + (proof is null ? BuildsNote(built.Builds)
+                             : plan.Protect is null ? " " + proof.Summary + BuildsNote(built.Builds)
+                             : " " + proof.Summary + " " + SourceKeptLineFor(plan.Protect.SourcePath)),
                 Warnings = [.. findings.Where(f => f.Severity != DiagnosticSeverity.Error).Select(f => f.Render()).Concat(built.Warnings)
                               .Concat(UnavailableLine(protectedBuilds) is { Length: > 0 } gap ? [gap] : [])
                               .Concat(clibWarning is null ? [] : [clibWarning])],
@@ -668,6 +699,9 @@ public static partial class ModelLibraryExport
         public readonly List<ExportConversion> Conversions = [];
         /// <summary>Placed compiled models (<c>.osdi</c>) and Verilog-A sources, absolute, each once.</summary>
         public readonly List<string> Compiled = [], Sources = [];
+        /// <summary>Every placed ComposedFET whose .cmodel resolves, by (cell folder, instance): what Compile Verilog-A
+        /// models turns into Verilog-A and compiles.</summary>
+        public readonly Dictionary<(string Cell, string Instance), ComposedFetSite> Fets = [];
         public int TopPinCount;
         public bool Nonlinear;
         private readonly HashSet<string> _visited = new(DocumentFileRefs.PathComparer);
@@ -718,6 +752,9 @@ public static partial class ModelLibraryExport
                     else refusals.Add($"{name}: {refusal}");
                 }
                 else CheckFileParameters(comp, schDir, name, refusals);
+                if (comp.Symbol == SymbolKind.ComposedFET && ComposedFetFile(comp, schDir) is { } cmodel)
+                    Fets[(Path.TrimEndingDirectorySeparator(Path.GetFullPath(cellDir)), comp.InstanceName)]
+                        = new ComposedFetSite(cmodel, comp.EffectivePortCount, name);
                 if (comp.Symbol == SymbolKind.VerilogA && VerilogAFile(comp, schDir) is { } va)
                 {
                     var list = CircuitRF.Core.Devices.External.OsdiBuilds.IsCompiled(va) ? Compiled
@@ -838,6 +875,7 @@ public static partial class ModelLibraryExport
     /// <summary>The file stems the shipped compiled models will have, in walk order.</summary>
     private static List<string> ShippedNames(ExportOptions options, Walk walk)
         => [.. walk.Compiled.Concat(options.CompileModels ? walk.Sources : [])
+                .Concat(options.CompileModels && !options.CompileNetlist ? walk.Fets.Values.Select(f => f.Cmodel) : [])
                 .Select(Path.GetFileNameWithoutExtension).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase)];
 
     private static bool IsKitPart(EditableComponent comp)
@@ -868,6 +906,7 @@ public static partial class ModelLibraryExport
     {
         var warnings = new List<string>();
         var files = new FileCopier(modelDir, options.CompileModels);
+        foreach (var site in plan.FetSites.Values) files.FetSources.Add(site.Cmodel);
         var converted = Convert(plan, options, files, control);
 
         // Sub-cell folders, named by their leaf; a second cell of the same name takes a numeric suffix.
@@ -926,7 +965,7 @@ public static partial class ModelLibraryExport
             string dstSch = Path.Combine(CellFolder.SubFolderPath(dst, ViewType.Schematic), name + CellFolder.ViewExtension(ViewType.Schematic));
             Directory.CreateDirectory(Path.GetDirectoryName(dstSch)!);
             string text = RewriteFiles(srcSch, dstSch, files, cellMap);
-            text = RewriteSchematic(text, srcSch, dstSch, name, files, cellMap, options, src, converted);
+            text = RewriteSchematic(text, srcSch, dstSch, name, files, cellMap, options, src, converted, plan.FetSites);
             AtomicFile.WriteAllText(dstSch, text);
         }
 
@@ -1020,7 +1059,8 @@ public static partial class ModelLibraryExport
     /// </summary>
     private static string RewriteSchematic(string text, string srcSch, string dstSch, string name, FileCopier files,
                                            Dictionary<string, string> cellMap, ExportOptions options,
-                                           string srcCell, Converted converted)
+                                           string srcCell, Converted converted,
+                                           IReadOnlyDictionary<(string Cell, string Instance), ComposedFetSite> fets)
     {
         // A document that is not a JSON object has no components to re-point; the extraction says what is wrong with it.
         if (JsonNode.Parse(text) is not JsonObject root) return text;
@@ -1046,6 +1086,11 @@ public static partial class ModelLibraryExport
                 continue;
             }
             var parameters = node["Parameters"] as JsonArray;
+            if (node["InstanceName"]?.GetValue<string>() is { } fetInst && fets.TryGetValue((cellKey, fetInst), out var fet))
+            {
+                AsCompiledFet(node, fet);
+                continue;
+            }
             if (node["CellRef"]?.GetValue<string>() is { Length: > 0 } cellRef)
             {
                 string? src = null;
@@ -1105,6 +1150,8 @@ public static partial class ModelLibraryExport
         public List<string> Compiled { get; } = [];
         /// <summary>Notes the compiler left, one per source compiled.</summary>
         public List<string> CompileNotes { get; } = [];
+        /// <summary>The <c>.cmodel</c> files converted to Verilog-A and compiled rather than copied, absolute.</summary>
+        public HashSet<string> FetSources { get; } = new(DocumentFileRefs.PathComparer);
 
         public string Copy(string abs)
         {
@@ -1118,6 +1165,8 @@ public static partial class ModelLibraryExport
             if (CircuitRF.Core.Devices.External.OsdiBuilds.IsCompiled(full)
                 || compileSources && CircuitRF.Core.Devices.External.VerilogASourceCompiler.IsSourceFile(full))
                 return _copied[full] = CopyBuild(full, models);
+            if (compileSources && FetSources.Contains(full))
+                return _copied[full] = CopyFetBuild(full, models);
 
             var includes = IsVerilogA(full) ? Includes(full) : [];
             if (includes.Count == 0)
@@ -1151,8 +1200,13 @@ public static partial class ModelLibraryExport
                 build = CircuitRF.Core.Devices.External.VerilogASourceCompiler.Compile(full, out string note);
                 CompileNotes.Add(note);
             }
+            return CopyBuild(Path.GetFileNameWithoutExtension(full), build, models);
+        }
+
+        private string CopyBuild(string stem, string build, string models)
+        {
             string rid = CircuitRF.Core.Devices.External.OsdiBuilds.CurrentRid;
-            string stem = Path.GetFileNameWithoutExtension(full), name = stem;
+            string name = stem;
             for (int n = 2; Taken(name); n++) name = $"{stem}_{n}";
             string neutral = Path.Combine(models, name + CircuitRF.Core.Devices.External.OsdiBuilds.Extension);
             string dst = CircuitRF.Core.Devices.External.OsdiBuilds.PlatformPath(neutral, rid);

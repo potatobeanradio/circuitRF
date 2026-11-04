@@ -316,12 +316,14 @@ dotnet run --project tools/UiSnapshot --no-build -- --archive <workspace> -o out
 dotnet run --project tools/UiSnapshot --no-build -- --manage-libraries <workspace> -o out.png
 dotnet run --project tools/UiSnapshot --no-build -- --add-vendor-library <folder> -o out.png
 dotnet run --project tools/UiSnapshot --no-build -- --export-to-library <cell folder> [--export-library <dir>]
-    [--export-build <rid>=<path>]... -o out.png
+    [--export-build <rid>=<path>]... [--export-protect [run]] [--export-compile-models] -o out.png
 ```
 
 `--export-to-library` opens Export to Library's dialog on a cell, its Library set to `--export-library`
 (`<out>.dialog.png`), waits for the plan, and prints its refusals, copy lines, default symbol and whether Export
-is enabled. Each `--export-build` adds a row to Builds for other platforms. `--import-schematic <file>` opens File ▸ Import ▸ Schematic…'s dialog on a design file, its target a
+is enabled. Each `--export-build` adds a row to Builds for other platforms. `--export-protect` ticks Compile netlist
+(`run` also exports, so the Builds table and its folder links are drawn); `--export-compile-models` ticks Compile
+Verilog-A models. `--import-schematic <file>` opens File ▸ Import ▸ Schematic…'s dialog on a design file, its target a
 throwaway folder, and waits for the read and the preview; nothing is imported.
 
 Each first indexes the workspace's referenced vendor libraries, as a workspace open starts them, so captions, counts

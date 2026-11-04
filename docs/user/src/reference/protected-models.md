@@ -73,7 +73,7 @@ netlist; what changes with it ticked is noted.
 | **Parameters** | The cell's parameters, each with a **Tolerance**: a spread here still draws per placed part in a yield run, because the wrapper evaluates it. |
 | **Corners** | Named sets of parameter values a placed part can select. |
 | **Frequency** (sweep) | The plan technology parts are sampled over when they become S-parameter files; greyed when the cell has none. |
-| **Compile Verilog-A models** | Ships each Verilog-A device the cell places as its compiled build instead of its source. With Compile netlist, this applies to the Verilog-A devices left outside. |
+| **Compile Verilog-A models** | Ships each Verilog-A device and ComposedFET the cell places as its compiled build instead of its source (a ComposedFET is written as Verilog-A first). The cell's topology still ships. With Compile netlist, this applies to the Verilog-A devices left outside. |
 | **Builds for other platforms…** | Adds builds of a compiled device made elsewhere. Greyed with Compile netlist, which builds every platform the compiler can reach itself. |
 | **Compile netlist (protected model)** | Publishes the cell as one compiled module, without its schematic. Off until you tick it, and greyed with the reason when no Verilog-A compiler is found. The line under it says where the generated source will be written. |
 | **Proof bias** | The bias points the proof runs at, one per line (`g=-0.5 d=5`; pins not named are at 0 V). Left empty, the line under it lists the default set. |
@@ -109,8 +109,10 @@ as Verilog-A. Refit that constituent as an ANN or an equation, or keep the FET o
 device.
 
 **Where the source goes, and why to keep it.** The generated `.va` is written to
-`protected-source/<Part>/<Part>.va` beside your workspace (`--source-out` chooses another place; a place inside the
-library is refused). It is never in the library. Keep it: every platform's build is made from it. The same cell
+`protected-source/<Part>/<Part>.va` in your workspace folder (`--source-out` chooses another place; a place inside the
+library is refused). It is never in the library, so the target library must be a folder outside your workspace: a
+library that is the workspace folder, or a folder above it, is refused with *"Change the target library to a folder
+outside the workspace."* Keep it: every platform's build is made from it. The same cell
 always generates the same bytes, and `part.cpart` records their hash as `CompiledFrom`.
 
 **The proof.** Before anything reaches the library, Export runs the original cell and the wrapper with its freshly

@@ -482,7 +482,7 @@ netlist; what changes with it ticked is noted.</p>
 </tr>
 <tr>
 <td><strong>Compile Verilog-A models</strong></td>
-<td>Ships each Verilog-A device the cell places as its compiled build instead of its source. With Compile netlist, this applies to the Verilog-A devices left outside.</td>
+<td>Ships each Verilog-A device and ComposedFET the cell places as its compiled build instead of its source (a ComposedFET is written as Verilog-A first). The cell's topology still ships. With Compile netlist, this applies to the Verilog-A devices left outside.</td>
 </tr>
 <tr>
 <td><strong>Builds for other platforms…</strong></td>
@@ -562,8 +562,10 @@ compiled, it could never draw — with <em>&quot;Make … a cell parameter to ke
 as Verilog-A. Refit that constituent as an ANN or an equation, or keep the FET outside as a separate protected
 device.</p>
 <p><strong>Where the source goes, and why to keep it.</strong> The generated <code>.va</code> is written to
-<code>protected-source/&lt;Part&gt;/&lt;Part&gt;.va</code> beside your workspace (<code>--source-out</code> chooses another place; a place inside the
-library is refused). It is never in the library. Keep it: every platform's build is made from it. The same cell
+<code>protected-source/&lt;Part&gt;/&lt;Part&gt;.va</code> in your workspace folder (<code>--source-out</code> chooses another place; a place inside the
+library is refused). It is never in the library, so the target library must be a folder outside your workspace: a
+library that is the workspace folder, or a folder above it, is refused with <em>&quot;Change the target library to a folder
+outside the workspace.&quot;</em> Keep it: every platform's build is made from it. The same cell
 always generates the same bytes, and <code>part.cpart</code> records their hash as <code>CompiledFrom</code>.</p>
 <p><strong>The proof.</strong> Before anything reaches the library, Export runs the original cell and the wrapper with its freshly
 compiled module through the same engine and compares the DC current into every pin, and the Y-parameters at three

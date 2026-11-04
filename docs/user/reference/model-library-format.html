@@ -777,8 +777,13 @@ and the row's × add and remove one.</p>
 </li>
 <li><p><strong>Compiled models.</strong> <strong>Compile Verilog-A models (ship the build, not the source)</strong> compiles each Verilog-A
 source the cell places with the Verilog-A compiler on this machine and ships the build in <code>models/&lt;rid&gt;/</code>
-instead of the source. It is <strong>off</strong> until you tick it, and greyed, saying why, when the cell places no
-Verilog-A source or no compiler is found. A cell that places a compiled <code>.osdi</code> with no source ships that
+instead of the source. A <strong>ComposedFET</strong> is written as Verilog-A first, exactly as Model Composer's Verilog-A
+export writes it, then compiled; the model places the build as a Verilog-A device with the FET's values, and
+its <code>.cmodel</code> is not shipped. A ComposedFET with a table constituent is refused, since a table cannot be written
+as Verilog-A. Because a translation is not a copy, an export that converts a ComposedFET is proved against the
+cell at bias points, as <a href="protected-models.html#compile-netlist">Compile netlist</a> is (<strong>Proof bias</strong> chooses
+them), instead of self-checked. It is <strong>off</strong> until you tick it, and greyed, saying why, when the cell places no
+Verilog-A source or ComposedFET, or no compiler is found. A cell that places a compiled <code>.osdi</code> with no source ships that
 build in <code>models/&lt;rid&gt;/</code> either way. <strong>Builds for other platforms…</strong> lists builds of the compiled model made on
 other platforms, each a platform chosen from the list and a file; <strong>Add build</strong> adds a row. It is greyed when
 the export ships no compiled model. With more than one compiled model, each build is matched to one by its file
@@ -865,7 +870,8 @@ answers it: <code>--replace</code> for a part already exported, and <code>--incl
 parts, whose libraries' terms then travel with the model. <code>--sweep</code> is one segment of the frequency plan, in
 the <code>sparam</code> directive's own keys (<code>unit=</code> defaults to Hz, as it does there), repeated for more; the default is
 the dialog's. With no part to convert, <code>--sweep</code> is refused rather than ignored. <code>--compile-models</code> is the
-Compile Verilog-A models checkbox, off unless given, and each <code>--build &lt;rid&gt;=&lt;path&gt;</code> is one row of Builds for other
+Compile Verilog-A models checkbox, off unless given (a ComposedFET is converted to Verilog-A and compiled, and
+<code>--check-bias</code> chooses the proof's bias points), and each <code>--build &lt;rid&gt;=&lt;path&gt;</code> is one row of Builds for other
 platforms. The paths created are printed, and listed in
 <code>--json</code>. Over MCP it is <code>create what=libraryPart cell=&lt;cell folder&gt; library=&lt;dir&gt;</code> (or <code>cell=&lt;file.cmc&gt;</code> to publish
 a <a href="model-composer.html#publish">Model Composer model</a>), with <code>sweep</code> a list of

@@ -145,6 +145,10 @@ public partial class ExportToLibraryDialog : Window
         if (result.Succeeded) Close(result);
     }
 
+    // The finished export's folders: a click reveals one in the file manager. A drag still selects the text to copy.
+    private void OnRevealModelFolder(object? sender, Avalonia.Input.TappedEventArgs e) => FileReveal.Reveal(_vm?.FinishedModelFolder);
+    private void OnRevealSourceFolder(object? sender, Avalonia.Input.TappedEventArgs e) => FileReveal.Reveal(_vm?.FinishedSourceFolder);
+
     private void OnCancel(object? sender, RoutedEventArgs e)
     {
         if (_vm is { IsExporting: true }) { _vm.Cancel(); return; }

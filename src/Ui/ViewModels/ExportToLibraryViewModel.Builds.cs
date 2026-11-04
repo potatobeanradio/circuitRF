@@ -38,8 +38,20 @@ public sealed partial class ExportToLibraryViewModel
     /// box is in, so an unticked box never reads as "ships the build".</summary>
     public string CompileNote => Plan is null ? ""
         : !CompileModels && Plan.CompileUnavailable is { } why ? why
-        : CompileModels ? $"The model ships the compiled build for {OsdiBuilds.CurrentRid}, and not its Verilog-A source."
-        : $"The model ships its Verilog-A source as it is. Ticked, it ships the compiled build for {OsdiBuilds.CurrentRid} instead.";
+        : CompileModels ? $"The model ships the compiled build for {OsdiBuilds.CurrentRid}, and not its {CompiledWhat}."
+                          + (Plan.CompilableFets.Count > 0 ? " A ComposedFET is written as Verilog-A first, then compiled." : "")
+        : $"The model ships its {CompiledWhat} as it is. Ticked, it ships the compiled build for {OsdiBuilds.CurrentRid} instead.";
+
+    /// <summary>What Compile Verilog-A models replaces with a build: Verilog-A source, a ComposedFET's .cmodel, or both.</summary>
+    private string CompiledWhat => Plan is null ? "" : (Plan.CompilableSources.Count > 0, Plan.CompilableFets.Count > 0) switch
+    {
+        (true, true) => "Verilog-A source and ComposedFET .cmodel",
+        (false, true) => "ComposedFET .cmodel",
+        _ => "Verilog-A source",
+    };
+
+    /// <summary>The proof's bias points apply to Compile netlist, and to Compile Verilog-A models converting a ComposedFET.</summary>
+    public bool ShowsProofBias => CompileNetlist || CompileModels && Plan is { CompilableFets.Count: > 0 };
 
     /// <summary>The platforms a build can be listed for: every one circuitRF runs on but this one, whose build is the
     /// one the export runs with.</summary>
@@ -86,6 +98,7 @@ public sealed partial class ExportToLibraryViewModel
         RaiseProtectState();
         OnPropertyChanged(nameof(IsCompileEnabled));
         OnPropertyChanged(nameof(CompileNote));
+        OnPropertyChanged(nameof(ShowsProofBias));
         OnPropertyChanged(nameof(IsBuildsEnabled));
         OnPropertyChanged(nameof(BuildsNote));
     }
