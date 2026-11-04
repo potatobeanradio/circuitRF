@@ -2470,6 +2470,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         _moveAnchorX = px; _moveAnchorY = py;
         _moveLiveDx = 0; _moveLiveDy = 0;
         _moveHasMoved = false;
+        _groundViaFollowers = null;
         _bodySnapSource = null;   // R-dfr22-3-1: re-read for this drag's own selection
     }
 
@@ -2514,6 +2515,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         _moveAnchorX = 0; _moveAnchorY = 0;
         _moveLiveDx = 0; _moveLiveDy = 0;
         _moveHasMoved = false;
+        _groundViaFollowers = null;
         _companionMove = true;
     }
 
@@ -3270,6 +3272,9 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             if (combined is not null
                 && ReseatMovedPortDirections(shapeIndices, _moveLiveDx, _moveLiveDy) is { } reseat)
                 combined = new CompositeCommand(combined, reseat);
+            // R-dfr34-5-4: a moved part's ground vias go with it, in the same undo entry.
+            if (combined is not null && GroundViasFollowing(shapeIndices, _moveLiveDx, _moveLiveDy) is { } vias)
+                combined = new CompositeCommand(combined, vias);
             if (combined is not null)
             {
                 // A port's TYPE used to be an anchor-keyed mark published by the .cem, so a move had
@@ -3408,6 +3413,8 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         // A keyboard nudge is a move like any other: a port nudged across a face re-seats too.
         if (combined is not null && ReseatMovedPortDirections(shapeIndices, dx, dy) is { } reseat)
             combined = new CompositeCommand(combined, reseat);
+        if (combined is not null && GroundViasFollowing(shapeIndices, dx, dy) is { } vias)
+            combined = new CompositeCommand(combined, vias);
         if (combined is not null) Execute(combined);
     }
 
@@ -4603,6 +4610,13 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
                     portClone.PortKind      = seat.Kind;
                 }
 
+                dict[idx] = clone;
+            }
+            // R-dfr34-5-4: the ground vias the commit will carry, drawn where they will land.
+            foreach (var idx in GroundViaFollowersOfDrag())
+            {
+                var clone = LayoutGeometry.Clone(Model.Shapes[idx]);
+                LayoutGeometry.TranslateBy(clone, _moveLiveDx, _moveLiveDy);
                 dict[idx] = clone;
             }
             dragOverrides = dict;

@@ -530,6 +530,9 @@ so it lands the same way round as the same part generated from a case size.
 **Connect parts on Update Layout from Schematic** in Settings turns this off; off, every new part is placed in rows
 and the ratsnest shows what joins what.
 
+The rows start at the origin in an empty layout. In a layout that already holds artwork, such as a cell cropped from
+an imported board, they go just below that artwork instead, so the new parts are on screen beside the board.
+
 **The ground is drawn too.** A pad whose schematic pin sits on a ground symbol gets a **ground via**
 beside it, on the side away from the part, tied to the pad with a short trace and drilled to the
 ground plane its layer returns through. On a two-layer board that is Bottom Copper. The ground plane
@@ -541,8 +544,9 @@ to it. One Update Layout on a two-layer board with an MLIN and two shunt parts l
 ground pads drilled to a poured Bottom Copper, and LVS reads them on the ground net.
 
 The vias and the pour are **generated copper**, and each run redraws them from where the parts are
-then: move a part and run it again, or use **Design ▸ Draw Ground Pour**, and its ground via follows
-and the pour is redrawn. Copper you have taken over is left alone:
+then. A ground via moves with its part when you move the part; run Update Layout again, or use
+**Design ▸ Draw Ground Pour**, and the via is set beside its pad again and the pour is redrawn. Copper
+you have taken over is left alone:
 
 - a ground via **you moved** stays where you put it, and no longer follows its part;
 - a ground via **you deleted** is not put back;

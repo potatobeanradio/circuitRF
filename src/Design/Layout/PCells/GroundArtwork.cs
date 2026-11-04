@@ -71,6 +71,41 @@ public static class GroundArtwork
         return at < 0 ? rest : rest[..at];
     }
 
+    /// <summary>
+    /// The generated ground vias that FOLLOW the parts <paramref name="schematicIds"/> when the designer moves those
+    /// parts (R-dfr34-5-4): the shape indices of each such via and its tie, and the via's tag re-recorded at where it
+    /// will be after a move of (<paramref name="dx"/>, <paramref name="dy"/>). Only a via still where Update Layout put
+    /// it follows — one the designer moved is theirs, as <see cref="Plan"/> already treats it. The new tag keeps it
+    /// unmoved-by-hand, so the next Update Layout still re-places it beside its pad.
+    /// </summary>
+    public static (IReadOnlyList<int> Shapes, IReadOnlyList<(int Index, string Tag)> Retag) Followers(
+        LayoutView view, IReadOnlySet<string> schematicIds, long dx, long dy)
+    {
+        if (schematicIds.Count == 0) return ([], []);
+        var byKey = new Dictionary<string, List<int>>(StringComparer.Ordinal);
+        for (int i = 0; i < view.Shapes.Count; i++)
+        {
+            if (KeyOfShape(view.Shapes[i]) is not { } key) continue;
+            int colon = key.LastIndexOf(':');
+            if (colon <= 0 || !schematicIds.Contains(key[..colon])) continue;
+            (byKey.TryGetValue(key, out var list) ? list : byKey[key] = []).Add(i);
+        }
+
+        var shapes = new List<int>();
+        var retag = new List<(int, string)>();
+        foreach (var (key, indices) in byKey)
+        {
+            int viaIndex = indices.FirstOrDefault(i => view.Shapes[i] is ViaShape, -1);
+            if (viaIndex < 0 || view.Shapes[viaIndex] is not ViaShape via
+                || PlacedAt(via) is not { } at || at != (via.X, via.Y)) continue;
+            shapes.AddRange(indices);
+            retag.Add((viaIndex, ViaTagPrefix + key
+                                 + string.Create(CultureInfo.InvariantCulture, $" @{via.X + dx},{via.Y + dy}")));
+        }
+        shapes.Sort();
+        return (shapes, retag);
+    }
+
     /// <summary>Where a generated ground via was placed, as its tag records it.</summary>
     private static (long X, long Y)? PlacedAt(ViaShape via)
     {

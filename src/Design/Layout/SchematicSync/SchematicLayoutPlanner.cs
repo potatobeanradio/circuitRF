@@ -600,7 +600,13 @@ public static partial class SchematicLayoutPlanner
         // the place its first part would have taken (R-sdl1-3); parts in no chain are packed exactly as before.
         var rowItems = unplaced.Select(n => (n.Slot, Members: (IReadOnlyList<LayoutInstance>)[n.Instance]))
                                .Concat(chained.Groups).OrderBy(g => g.Slot).ToList();
-        var addedRegion = PlaceNewInstances(rowItems, targetLayoutBaseDir, below: atArtwork).Union(atArtwork)
+        // R-dfr34-5-3: a layout already holding artwork — a cell cropped from a board keeps the board's coordinates,
+        // 160 mm from the origin — takes its new parts in rows under that artwork, not at the origin. An empty layout,
+        // or one holding only what earlier runs placed, keeps the slot rows.
+        var addedRegion = PlaceNewInstances(rowItems, targetLayoutBaseDir,
+                                            below: atArtwork.Union(DrawnArtworkExtent(target, targetLayoutBaseDir)),
+                                            out var belowShift)
+                              .Union(atArtwork)
                               .Union(chained.FixedRegion);
         foreach (var (via, partner) in beside)
         {
@@ -616,7 +622,9 @@ public static partial class SchematicLayoutPlanner
                 $"{via.SchematicId} — placed beside {partner.Instance.SchematicId} pin {partner.Pin.Name} and tied to its pad",
                 ReportSeverity.Info));
         }
-        ReportPlacementOntoDrawnArtwork(target, newInstances, targetLayoutBaseDir, lines);
+        ReportPlacementOntoDrawnArtwork(target, newInstances, targetLayoutBaseDir, lines,
+                                        new HashSet<LayoutInstance>(rowItems.SelectMany(g => g.Members), ReferenceEqualityComparer.Instance),
+                                        belowShift);
 
         // brief-sdl-5 R-sdl5-1: the schematic's Ports become EM port labels at the pins they connect to — after every
         // part is where the run leaves it, so a port lands on its pin's final place and follows a pin that moved.
@@ -1116,10 +1124,15 @@ public static partial class SchematicLayoutPlanner
     /// shape. "Overlaps at all" would fire on every part placed over a ground pour or inside a board
     /// outline, which is ordinary board work and would make this line noise within a day. Two
     /// drawings of one component cover each other almost exactly.</para>
+    ///
+    /// <para><b>A row moved under the artwork is checked where its slot was too</b> (R-dfr34-5-3). Rows now go below a
+    /// layout's drawn artwork, so a hand-drawn copy of a part sitting at the part's slot is no longer covered by it —
+    /// but it is still the same part twice, so the slot is where that check looks.</para>
     /// </summary>
     private static void ReportPlacementOntoDrawnArtwork(
         LayoutView target, List<(int Slot, LayoutInstance Instance)> placed,
-        string targetLayoutBaseDir, List<ReportLine> lines)
+        string targetLayoutBaseDir, List<ReportLine> lines,
+        IReadOnlySet<LayoutInstance>? inRows = null, (long Dx, long Dy) rowShift = default)
     {
         if (placed.Count == 0 || target.Shapes.Count == 0) return;
 
@@ -1132,24 +1145,39 @@ public static partial class SchematicLayoutPlanner
             // not the same part twice, and saying it is would be wrong rather than merely noisy.
             var layers = CellLayers(inst, targetLayoutBaseDir);
 
-            int overlapping = 0;
-            foreach (var shape in target.Shapes)
+            int Overlapping(Bbox at)
             {
-                if (shape is LabelShape) continue;               // annotation, not metal
-                if (layers is not null && !layers.Contains(shape.Layer)) continue;
-
-                var bb = LayoutGeometry.BboxOf(shape);
-                if (CoverEachOther(bb, footprint)) overlapping++;
+                int n = 0;
+                foreach (var shape in target.Shapes)
+                {
+                    if (shape is LabelShape) continue;               // annotation, not metal
+                    if (layers is not null && !layers.Contains(shape.Layer)) continue;
+                    if (CoverEachOther(LayoutGeometry.BboxOf(shape), at)) n++;
+                }
+                return n;
             }
 
+            const string tail = " This command tracks the instances it places, not artwork drawn by hand, so a " +
+                                "component that was already drawn is now in the layout twice. Undo, or delete whichever " +
+                                "copy you do not want.";
+            int overlapping = Overlapping(footprint);
+            if (overlapping > 0)
+            {
+                string what = overlapping == 1 ? "a shape" : $"{overlapping} shapes";
+                lines.Add(new ReportLine(inst.SchematicId ?? "",
+                    $"{inst.SchematicId} — placed on top of {what} already drawn in this layout." + tail,
+                    ReportSeverity.Warning));
+                continue;
+            }
+            if (rowShift == default || inRows is null || !inRows.Contains(inst)) continue;
+            var slot = new Bbox(footprint.MinX - rowShift.Dx, footprint.MinY - rowShift.Dy,
+                                footprint.MaxX - rowShift.Dx, footprint.MaxY - rowShift.Dy);
+            overlapping = Overlapping(slot);
             if (overlapping == 0) continue;
-
-            string what = overlapping == 1 ? "a shape" : $"{overlapping} shapes";
+            string covers = overlapping == 1 ? "a shape" : $"{overlapping} shapes";
             lines.Add(new ReportLine(inst.SchematicId ?? "",
-                $"{inst.SchematicId} — placed on top of {what} already drawn in this layout. This " +
-                "command tracks the instances it places, not artwork drawn by hand, so a component " +
-                "that was already drawn is now in the layout twice. Undo, or delete whichever copy " +
-                "you do not want.",
+                $"{inst.SchematicId} — {covers} already drawn in this layout cover the place this command gives it, " +
+                "so it was placed below that artwork instead." + tail,
                 ReportSeverity.Warning));
         }
     }
@@ -1210,7 +1238,14 @@ public static partial class SchematicLayoutPlanner
     /// </summary>
     private static Bbox PlaceNewInstances(
         List<(int Slot, IReadOnlyList<LayoutInstance> Members)> placed, string targetLayoutBaseDir, Bbox? below = null)
+        => PlaceNewInstances(placed, targetLayoutBaseDir, below, out _);
+
+    /// <param name="shifted">How far the rows were moved to sit under <paramref name="below"/>; zero when they were not.</param>
+    private static Bbox PlaceNewInstances(
+        List<(int Slot, IReadOnlyList<LayoutInstance> Members)> placed, string targetLayoutBaseDir, Bbox? below,
+        out (long Dx, long Dy) shifted)
     {
+        shifted = (0, 0);
         if (placed.Count == 0) return Bbox.Empty;
         static void Shift((int Slot, IReadOnlyList<LayoutInstance> Members) item, long dx, long dy)
         {
@@ -1224,6 +1259,7 @@ public static partial class SchematicLayoutPlanner
             long clear = Math.Max(1, (board.MaxY - board.MinY) / 10);
             long dx = board.MinX - rows.MinX, dy = board.MinY - clear - rows.MaxY;
             foreach (var item in placed) Shift(item, dx, dy);
+            shifted = (dx, dy);
             return new Bbox(rows.MinX + dx, rows.MinY + dy, rows.MaxX + dx, rows.MaxY + dy);
         }
 
@@ -1334,6 +1370,23 @@ public static partial class SchematicLayoutPlanner
             if (!box.IsEmpty) region = region.Union(box);
         }
         return region;
+    }
+
+    /// <summary>
+    /// What a layout holds that this command did not put there (R-dfr34-5-3): every shape but labels, pictures and
+    /// generated artwork, and every placement with no <see cref="LayoutInstance.SchematicId"/>. Parts and ground artwork
+    /// an earlier run placed are not counted, so a re-run into a layout this command built keeps its slot rows.
+    /// </summary>
+    private static Bbox DrawnArtworkExtent(LayoutView target, string targetLayoutBaseDir)
+    {
+        var box = Bbox.Empty;
+        foreach (var shape in target.Shapes)
+            if (shape is not (LabelShape or BitmapShape) && shape.Generated is null)
+                box = box.Union(LayoutGeometry.BboxOf(shape));
+        foreach (var inst in target.Instances)
+            if (inst.SchematicId is not { Length: > 0 })
+                box = box.Union(CellHierarchy.InstanceBbox(inst, targetLayoutBaseDir));
+        return box;
     }
 
     /// <summary>The direction from a cell's pin 1 to its pin 2 as the cell is drawn, degrees; null without both.</summary>
