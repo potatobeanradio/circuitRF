@@ -668,6 +668,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         {
             CursorXText = "—";
             CursorYText = "—";
+            ViaNetHoverText = "";
             return;
         }
 
@@ -681,6 +682,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
 
         CursorXText = LayoutUnits.Format(x, DisplayUnit, Model.DbuPerMicron) + " " + UnitSuffix(DisplayUnit);
         CursorYText = LayoutUnits.Format(y, DisplayUnit, Model.DbuPerMicron) + " " + UnitSuffix(DisplayUnit);
+        RefreshViaNetHover((long)Math.Round(rawX), (long)Math.Round(rawY));
     }
 
     /// <summary>Test/diagnostic-only — true when the readout is currently reporting a snapped feature

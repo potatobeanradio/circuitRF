@@ -307,7 +307,7 @@ the other solver's:
 | Problem | Result |
 |---|---|
 | Driven | `results/<setup>.palace.sNp` and `<setup>.palace_em.npy`, opened in the Data Display like any S-parameters |
-| Electrostatic | `results/<setup>.palace_es.npy`: `C` (Maxwell) and `C_mutual` (the capacitors you would draw). Printed by `circuitrf em` |
+| Electrostatic | `results/<setup>.palace_es.npy`: `C` (Maxwell), `C_mutual` (the capacitors you would draw) and `C_ground` (each terminal to ground). Printed by `circuitrf em` |
 | Magnetostatic | `results/<setup>.palace_ms.npy`: `L` and `L_mutual`. Printed by `circuitrf em` |
 | Eigenmode | `results/<setup>.palace_eig.npy`: each mode's `f`, `Q`, and where its energy is. Printed by `circuitrf em` and shown on the panel |
 | openEMS | `results/<setup>.openems.sNp` and `<setup>.openems_em.npy` |

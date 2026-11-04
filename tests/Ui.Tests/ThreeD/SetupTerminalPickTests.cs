@@ -40,7 +40,7 @@ public sealed class SetupTerminalPickTests : IDisposable
         setup.PickTerminalCommand.Execute(row);
         Select(vm, "sub");                                          // a dielectric: refused, said, still armed
         Assert.Same(row, setup.PickingRow);
-        Assert.StartsWith("\"sub\" is not a conductor.", setup.StaticStatus);
+        Assert.StartsWith("\"sub\" is not a conductor, and no conductor is behind it.", setup.StaticStatus);
 
         Select(vm, "line");
         Assert.Null(setup.PickingRow);

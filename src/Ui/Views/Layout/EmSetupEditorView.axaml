@@ -593,10 +593,15 @@
                                                              ValueMemberBinding="{Binding Token, DataType=em:Em3dBodyPick}"
                                                              LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown" GotFocus="OnTerminalRowFocus"
                                                              SelectionChanged="OnBodyPicked"
+                                                             DropDownOpened="OnPickerOpened" DropDownClosed="OnPickerClosed"
                                                              ToolTip.Tip="A piece of metal: a net, an object's path, or the end of a path. Naming any part of a piece of metal takes all of it.">
                                                 <AutoCompleteBox.ItemTemplate>
                                                     <DataTemplate x:DataType="em:Em3dBodyPick">
-                                                        <TextBlock Text="{Binding Label}"/>
+                                                        <StackPanel Margin="0,1">
+                                                            <TextBlock Text="{Binding Label}" TextWrapping="Wrap"/>
+                                                            <TextBlock Text="{Binding Detail}" IsVisible="{Binding HasDetail}" TextWrapping="Wrap"
+                                                                       FontSize="11" Opacity="0.7"/>
+                                                        </StackPanel>
                                                     </DataTemplate>
                                                 </AutoCompleteBox.ItemTemplate>
                                             </AutoCompleteBox>
@@ -623,7 +628,7 @@
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <Button Content="Add terminal" Command="{Binding ViewModel.AddTerminalCommand}"/>
                             <TextBlock Classes="colhdr" Text="Ground" VerticalAlignment="Center"/>
-                            <Grid ColumnDefinitions="180,Auto">
+                            <Grid ColumnDefinitions="260,Auto">
                                 <AutoCompleteBox Name="GroundPickerBox" Grid.Column="0" Classes="cell" Tag="Terminals3D"
                                                  Text="{Binding ViewModel.Ground3DText}"
                                                  ItemsSource="{Binding ViewModel.GroundPicks}"
@@ -633,10 +638,15 @@
                                                  PlaceholderText="{Binding ViewModel.GroundPlaceholder}"
                                                  LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
                                                  SelectionChanged="OnGroundPicked"
-                                                 ToolTip.Tip="The matrix's reference: a net, an object or a piece of metal. Blank: the technology's ground-reference conductors, and the floor when it is a ground plane.">
+                                                 DropDownOpened="OnPickerOpened" DropDownClosed="OnPickerClosed"
+                                                 ToolTip.Tip="The matrix's reference: nets, objects or pieces of metal, comma-separated; '+ default ground' keeps the technology's ground-reference conductors in it. Blank: those alone, and the floor when it is a ground plane. A choice from the list, or a Pick, is added.">
                                     <AutoCompleteBox.ItemTemplate>
                                         <DataTemplate x:DataType="em:Em3dBodyPick">
-                                            <TextBlock Text="{Binding Label}"/>
+                                            <StackPanel Margin="0,1">
+                                                <TextBlock Text="{Binding Label}" TextWrapping="Wrap"/>
+                                                <TextBlock Text="{Binding Detail}" IsVisible="{Binding HasDetail}" TextWrapping="Wrap"
+                                                           FontSize="11" Opacity="0.7"/>
+                                            </StackPanel>
                                         </DataTemplate>
                                     </AutoCompleteBox.ItemTemplate>
                                 </AutoCompleteBox>

@@ -433,7 +433,9 @@ public sealed partial class C3dEditorViewModel
     private void PickForSetup()
     {
         if (_highlightingSetupBodies || SetupEditor?.ViewModel is not { PickingRow: not null } setup) return;
-        if (Viewer.SelectedObjects() is [var picked, ..]) setup.PickConductor(picked.Name);
+        // brief-dfr34-4 R-dfr34-4-3 — the object clicked, then everything behind it along the line of sight: the pick takes the
+        // first conductor, so a click on a board's top dielectric reaches the copper under it.
+        if (Viewer.SelectedObjects() is [var picked, ..]) setup.PickConductor([picked.Name, .. Viewer.ObjectsUnderCursor()]);
     }
 
     private static EmSetup? TryRead(JsonElement e)

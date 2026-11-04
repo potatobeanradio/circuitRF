@@ -95,3 +95,53 @@ public sealed class Em3dConductorNames
         return prev[b.Length];
     }
 }
+
+/// <summary>
+/// brief-dfr34-4 R-dfr34-4-1 — a setup's ground (Ground3D) as a list: comma-separated names, as a terminal's conductors are,
+/// with <see cref="DefaultEntry"/> as an entry meaning the default ground (the ground-reference layers and the metal touching
+/// them). Blank is the default ground alone; a list without the entry is exactly the names, which is what one name always
+/// meant, so a file written before the list reads as it did.
+/// </summary>
+public static class Em3dGroundList
+{
+    /// <summary>The entry that stands for the default ground.</summary>
+    public const string DefaultEntry = "+ default ground";
+
+    /// <summary>Every entry of <paramref name="ground3D"/>, trimmed, blanks dropped, in order.</summary>
+    public static IReadOnlyList<string> Entries(string? ground3D)
+        => [.. (ground3D ?? "").Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)];
+
+    private static bool IsDefault(string entry)
+        => string.Equals(entry.TrimStart('+').Trim(), DefaultEntry[2..], StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>True when the default ground is part of the ground: the box is blank, or lists <see cref="DefaultEntry"/>.</summary>
+    public static bool IncludesDefault(string? ground3D)
+    {
+        var entries = Entries(ground3D);
+        return entries.Count == 0 || entries.Any(IsDefault);
+    }
+
+    /// <summary>The named entries: every entry but <see cref="DefaultEntry"/>.</summary>
+    public static IReadOnlyList<string> Names(string? ground3D) => [.. Entries(ground3D).Where(e => !IsDefault(e))];
+
+    /// <summary>The ground with <paramref name="name"/> added to it: a blank ground keeps the default ground as its first entry,
+    /// and a name already listed is not listed twice.</summary>
+    public static string Add(string? ground3D, string name)
+    {
+        name = name.Trim();
+        var entries = Entries(ground3D).ToList();
+        if (entries.Count == 0) entries.Add(DefaultEntry);
+        if (name.Length > 0 && !entries.Contains(name, StringComparer.Ordinal)) entries.Add(name);
+        return string.Join(", ", entries);
+    }
+
+    /// <summary>How a sentence names the ground: "the ground-reference conductors", the names, or both.</summary>
+    public static string Describe(string? ground3D)
+    {
+        var names = Names(ground3D);
+        var parts = new List<string>();
+        if (IncludesDefault(ground3D)) parts.Add("the ground-reference conductors");
+        parts.AddRange(names.Select(n => $"'{n}'"));
+        return string.Join(" and ", parts);
+    }
+}

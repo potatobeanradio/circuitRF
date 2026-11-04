@@ -111,6 +111,13 @@ public sealed record EmRunResult(
     /// </summary>
     IReadOnlyDictionary<string, string>? MessageInstalls = null,
     /// <summary>
+    /// brief-dfr34-4 — what a sentence in <see cref="Notes"/> offers beside it, keyed by that sentence: an
+    /// <see cref="CircuitRF.Design.Layout.Em3d.Em3dViaNetFix"/> (a via a static solve gave its copper's net, which the Messages
+    /// panel offers to write into the layout, R-dfr34-4-4) or an <see cref="EmDocLink"/> (the page that explains the sentence,
+    /// R-dfr34-4-5). Null when no sentence offers anything.
+    /// </summary>
+    IReadOnlyDictionary<string, object>? MessageOffers = null,
+    /// <summary>
     /// brief-dfr31-4 R-dfr31-4-4 — what the setup's <see cref="EmSetup.CreateSnpSchematic"/> did once the run had written its
     /// Touchstone: the cell made, found current, re-pointed or left alone. Null when the setup does not ask.
     /// </summary>
@@ -120,6 +127,10 @@ public sealed record EmRunResult(
     /// <c>_sim</c> cell: the board's N-port with each part across its own port. Null when the setup names no component ports.
     /// </summary>
     EmCoSimResult? CoSim = null);
+
+/// <summary>brief-dfr34-4 R-dfr34-4-5 — a page of the user documentation a run's sentence links to: the page under the docs
+/// root, the section's anchor, and what the link says.</summary>
+public sealed record EmDocLink(string Page, string? Anchor, string Label);
 
 /// <summary>One file a run wrote: what it is (<c>touchstone</c>, <c>npy</c>) and where.</summary>
 public sealed record EmRunOutput(string Kind, string Path);

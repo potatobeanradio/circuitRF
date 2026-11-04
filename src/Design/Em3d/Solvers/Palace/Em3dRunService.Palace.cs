@@ -505,7 +505,11 @@ public static partial class Em3dRunService
         var matrix = PalaceRun.ReadTerminalMatrix(Path.Combine(post, file), symbol, unit, indices, out string? error);
         if (matrix is null) return Leg.Failed(Me, EmRunStatus.EngineError, EmDiagnostics.SolveFailed(error!));
         var mutual = PalaceRun.ReadTerminalMatrix(Path.Combine(post, mutualFile), mutualSymbol, unit, indices, out string? mutualError);
-        if (mutual is null) log.Notes.Add($"The {(es ? "mutual capacitance" : "current-difference inductance")} form was not read: {mutualError}");
+        if (mutual is null)
+            log.Notes.Add($"The {(es ? "mutual capacitance" : "current-difference inductance")} form was not read: {mutualError}" +
+                          // brief-dfr34-4 R-dfr34-4-5 — C_mutual is exact arithmetic on C, so a missing file costs nothing.
+                          (es ? " C_mutual is derived from C instead (the same conversion: −C[i][j] between, the row sum to ground)." : ""));
+        if (es && mutual is null) mutual = Em3dStaticResult.MutualFromMaxwell(matrix);
         // brief-dfr31-1 R-dfr31-1-6 — floating bodies were solved as terminals; eliminated here, exactly. The full matrix is
         // kept in the diagnostics group, and the mutual form is the reduced matrix's (Palace's is the full one's).
         double[,]? full = null;
@@ -524,7 +528,11 @@ public static partial class Em3dRunService
             notes.Add("C is the Maxwell capacitance matrix: C[i][i] is terminal i's capacitance to every other conductor " +
                       "(the charge on i with i at 1 V and all others grounded), and C[i][j] <= 0 off the diagonal. " +
                       "C_mutual is the lumped-circuit form: C_mutual[i][i] is i's capacitance to ground alone and " +
-                      "C_mutual[i][j] = -C[i][j] is the capacitor between i and j. " + groundText);
+                      "C_mutual[i][j] = -C[i][j] is the capacitor between i and j. C_ground is each terminal's capacitance to " +
+                      "ground alone, the row sum of C. " + groundText);
+            // brief-dfr34-4 R-dfr34-4-5 — the row links to the app note's section on the two matrices.
+            log.Offers[notes[^1]] = new EmDocLink(Em3dStaticResult.MaxwellDocPage, Em3dStaticResult.MaxwellDocAnchor,
+                                                  "Why C's off-diagonals are negative");
             if (problem.Boundary.Faces is var f && new[] { f.XMin, f.XMax, f.YMin, f.YMax, f.ZMin, f.ZMax }.Contains(Em3dBoundaryKind.Absorbing))
                 notes.Add("An open (Absorbing) face of the air box is a zero-charge face in an electrostatic solve: no field " +
                           "line ends on it, so every line ends on a conductor of the problem. Set a face to Pec to make it part " +
@@ -699,7 +707,7 @@ public static partial class Em3dRunService
         bool pecFace = new[] { problem.Boundary.Faces.XMin, problem.Boundary.Faces.XMax, problem.Boundary.Faces.YMin,
                                problem.Boundary.Faces.YMax, problem.Boundary.Faces.ZMin, problem.Boundary.Faces.ZMax }
                        .Contains(Em3dBoundaryKind.Pec);
-        string who = setup.Ground3D is { Length: > 0 } g ? $"'{g}'" : "the ground-reference conductors";
+        string who = Em3dGroundList.Describe(setup.Ground3D);
         var parts = new List<string>();
         if (problem.GroundObjects.Count > 0) parts.Add($"{who} ({problem.GroundObjects.Count} conductor(s))");
         if (pecFace) parts.Add("the air box's PEC face(s)");

@@ -31,6 +31,13 @@ public static class Em3dStaticResult
     /// <summary>The mutual (lumped-circuit) capacitance matrix, farads.</summary>
     public const string MutualCapacitanceCube = "C_mutual";
 
+    /// <summary>brief-dfr34-4 R-dfr34-4-5 — each terminal's capacitance to ground alone, farads: the row sums of C, the diagonal
+    /// of C_mutual. One axis, <see cref="AxisI"/>.</summary>
+    public const string GroundCapacitanceCube = "C_ground";
+
+    /// <summary>The app note page and section that explain the two matrices (a run's note links there).</summary>
+    public const string MaxwellDocPage = "app-notes/an03-extracting-capacitance.html", MaxwellDocAnchor = "maxwell";
+
     /// <summary>The inductance matrix, henries.</summary>
     public const string InductanceCube = "L";
 
@@ -62,8 +69,9 @@ public static class Em3dStaticResult
         return new DataCube([new Axis(AxisI, index, "", labels), new Axis(AxisJ, index, "", labels)], data) { Unit = unit };
     }
 
-    /// <summary>The DataSet of a static solve: the matrix, its other form when there is one, and the
-    /// notes carried as labels in <see cref="NotesGroup"/>.</summary>
+    /// <summary>The DataSet of a static solve: the matrix, its other form, and the notes carried as labels in
+    /// <see cref="NotesGroup"/>. brief-dfr34-4 R-dfr34-4-5 — an electrostatic result always carries C_mutual (derived from C
+    /// when <paramref name="mutual"/> is null) and <see cref="GroundCapacitanceCube"/>, each terminal's capacitance to ground.</summary>
     public static DataSet Build(Em3dProblemType type, IReadOnlyList<string> names, double[,] matrix, double[,]? mutual,
                                 IReadOnlyList<string> notes)
     {
@@ -72,7 +80,9 @@ public static class Em3dStaticResult
         var ds = new DataSet();
         string unit = es ? "F" : "H";
         ds.Add(es ? CapacitanceCube : InductanceCube, Matrix(matrix, names, unit));
+        if (es) mutual ??= MutualFromMaxwell(matrix);
         if (mutual is not null) ds.Add(es ? MutualCapacitanceCube : MutualInductanceCube, Matrix(mutual, names, unit));
+        if (es) ds.Add(GroundCapacitanceCube, ToGround(matrix, names));
         if (notes.Count > 0)
             ds.AddToGroup(NotesGroup, NotesCube, new DataCube(
                 [new Axis("note", [.. Enumerable.Range(0, notes.Count).Select(k => (double)k)], "", [.. notes])],
@@ -127,6 +137,17 @@ public static class Em3dStaticResult
                 red[i, j] -= s;
             }
         return red;
+    }
+
+    /// <summary>brief-dfr34-4 R-dfr34-4-5 — each terminal's capacitance to ground alone: row i is Σⱼ C[i][j].</summary>
+    public static DataCube ToGround(double[,] c, IReadOnlyList<string> names)
+    {
+        int n = names.Count;
+        if (c.GetLength(0) != n || c.GetLength(1) != n) throw new ArgumentOutOfRangeException(nameof(names));
+        var data = new double[n];
+        for (int i = 0; i < n; i++)
+            for (int j = 0; j < n; j++) data[i] += c[i, j];
+        return new DataCube([new Axis(AxisI, [.. Enumerable.Range(1, n).Select(k => (double)k)], "", [.. names])], data) { Unit = "F" };
     }
 
     /// <summary>brief-dfr31-1 — the mutual (lumped-circuit) form of a Maxwell matrix: Cm[i][i] = Σⱼ C[i][j] (i to ground

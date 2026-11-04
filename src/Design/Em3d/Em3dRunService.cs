@@ -274,6 +274,7 @@ public static partial class Em3dRunService
         control?.BeginStage("building the 3D problem");
         Interlocked.Increment(ref _problemsGenerated);
         var generated = build(setup);
+        foreach (var (sentence, fix) in generated.ViaNetFixes) log.Offers[sentence] = fix;
         log.Notes.AddRange(generated.Notes);
         log.Warnings.AddRange(generated.Warnings);
         if (!generated.Ok) return log.Result(EmRunStatus.Refused, EmDiagnostics.Forwarded("em3d-problem", generated.Refusal));
@@ -485,7 +486,7 @@ public static partial class Em3dRunService
                 ? log.Result(bad[0].Status, EmDiagnostics.SomeSolversFailed(Failures(bad), Names(ok), string.Join("; ", ok.Select(Where)), ""), outputs)
                 : new EmRunResult(EmRunStatus.Ok, against!.Data, null, null, null, null, null, log.Warnings,
                                   KernelName: string.Join(" and ", ok.Select(l => l.KernelName)), Notes: log.Notes, Errors: log.Errors,
-                                  Outputs: outputs, MessageFiles: log.FilesOrNull, MessageInstalls: log.InstallsOrNull);
+                                  Outputs: outputs, MessageFiles: log.FilesOrNull, MessageInstalls: log.InstallsOrNull, MessageOffers: log.OffersOrNull);
         }
 
         var compared = Em3dComparison.Compare(ComparisonLeg(against!), [.. others.Select(ComparisonLeg)], problem);
@@ -517,7 +518,7 @@ public static partial class Em3dRunService
                                 : $"{Names(ok)} were compared: {written}."), outputs);
         return new EmRunResult(EmRunStatus.Ok, data, null, null, written, null, null, log.Warnings,
                                KernelName: string.Join(" and ", ok.Select(l => l.KernelName)), Notes: log.Notes, Errors: log.Errors,
-                               Outputs: outputs, MessageFiles: log.FilesOrNull, MessageInstalls: log.InstallsOrNull);
+                               Outputs: outputs, MessageFiles: log.FilesOrNull, MessageInstalls: log.InstallsOrNull, MessageOffers: log.OffersOrNull);
 
         static string Failures(IEnumerable<Leg> failed) => string.Join("; ", failed.Select(l => $"{Name(l.Solver)} failed: {l.Stop!.Render()}"));
     }
@@ -579,7 +580,7 @@ public static partial class Em3dRunService
         => leg.Ok
             ? new EmRunResult(EmRunStatus.Ok, leg.Data, null, null, leg.NpyPath, leg.SnpPath, null, log.Warnings,
                               Notes: log.Notes, Errors: log.Errors, KernelName: leg.KernelName, MessageFiles: log.FilesOrNull,
-                              MessageInstalls: log.InstallsOrNull)
+                              MessageInstalls: log.InstallsOrNull, MessageOffers: log.OffersOrNull)
             : log.Result(leg.Status, leg.Stop!);
 
     /// <summary>Why a phase did not go on, and which status says so.</summary>
@@ -679,7 +680,7 @@ public static partial class Em3dRunService
         public List<string> Errors { get; } = [];
 
         private RunNote Posted(bool warning, string text)
-            => new(warning, text, Files.GetValueOrDefault(text), Installs.GetValueOrDefault(text));
+            => new(warning, text, Files.GetValueOrDefault(text), Installs.GetValueOrDefault(text), Offers.GetValueOrDefault(text));
 
         /// <summary>One of the log's lists: what a <see cref="List{T}"/> was, posting each sentence as it is added.</summary>
         internal sealed class RunLines(Action<string>? post) : IReadOnlyList<string>, ICollection<string>
@@ -728,10 +729,16 @@ public static partial class Em3dRunService
 
         public IReadOnlyDictionary<string, string>? InstallsOrNull => Installs.Count > 0 ? Installs : null;
 
+        /// <summary>brief-dfr34-4 — what a sentence offers beside it, keyed by the sentence (see
+        /// <see cref="EmRunResult.MessageOffers"/>).</summary>
+        public Dictionary<string, object> Offers { get; } = [];
+
+        public IReadOnlyDictionary<string, object>? OffersOrNull => Offers.Count > 0 ? Offers : null;
+
         public EmRunResult Result(EmRunStatus status, Diagnostic d, IReadOnlyList<EmRunOutput>? outputs = null)
             => new(status, null, null, null, null, null, d.Render(), Warnings,
                    Notes: Notes, Errors: Errors, Diagnostic: d, Outputs: outputs is { Count: > 0 } ? outputs : null,
-                   MessageFiles: FilesOrNull, MessageInstalls: InstallsOrNull);
+                   MessageFiles: FilesOrNull, MessageInstalls: InstallsOrNull, MessageOffers: OffersOrNull);
     }
 
     /// <summary>A run's sentences, added to whichever list a writer was handed — a <see cref="RunLog"/>'s, which posts each

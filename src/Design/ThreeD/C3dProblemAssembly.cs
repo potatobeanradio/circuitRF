@@ -147,14 +147,18 @@ public static class C3dSetups
 public static class C3dProblemAssembly
 {
     /// <summary>
-    /// R-em3d49-2b — the setup's ground set: the conductors on its Ground3D net (a drawn conductor's net is its own name)
+    /// R-em3d49-2b — the setup's ground set: the conductors on each of its Ground3D nets (a drawn conductor's net is its own name)
     /// and a layout instance's ground-reference conductors. A PEC air-box face joins it in <see cref="C3dPortContext"/>.
     /// </summary>
     public static IReadOnlyList<string> GroundSet(EmSetup? setup, C3dElaboration e)
     {
         var set = new List<string>(e.GroundBandObjects);
-        if (setup?.Ground3D is { Length: > 0 } net)
+        // brief-dfr34-4 R-dfr34-4-1 — Ground3D is a list; each name is a net or an object.
+        foreach (string net in Em3dGroundList.Names(setup?.Ground3D))
+        {
             set.AddRange(e.ObjectNets.Where(kv => kv.Value.Contains(net)).Select(kv => kv.Key));
+            if (e.ObjectNets.ContainsKey(net)) set.Add(net);
+        }
         return [.. set.Distinct(StringComparer.Ordinal)];
     }
 
@@ -590,6 +594,11 @@ public static class C3dProblemAssembly
         List<string> ground = [];
         if (setup.IsStatic3D && Em3dGenerator.ViaNetRefusal(setup, e.ViaNetConflicts) is { } viaNetRefusal)
             return No(viaNetRefusal, e.Warnings);
+        // brief-dfr34-4 D1 — a via given its copper's net is said, with the layout edit that makes it so.
+        var viaNetFixes = new Dictionary<string, Em3dViaNetFix>(StringComparer.Ordinal);
+        if (setup.IsStatic3D)
+            foreach (var a in e.ViaNetAdoptions.Values)
+                if (viaNetFixes.TryAdd(a.Sentence, a.Fix)) notes.Add(a.Sentence);
         if (setup.IsStatic3D &&
             Em3dGenerator.Terminals(setup, solids, sheets, ports, pecFloor: false, e.ObjectNets.ToDictionary(kv => kv.Key, kv => kv.Value),
                                     [.. e.GroundBandObjects], out terminals, out ground, notes, e.CylinderSheets) is { } terminalRefusal)
@@ -614,6 +623,7 @@ public static class C3dProblemAssembly
         };
         return new Em3dGenerationResult(problem, null, notes)
         {
+            ViaNetFixes = viaNetFixes,
             WantsDc = wantsDc,
             ComponentPorts = components,
             Warnings = components is { Warnings.Count: > 0 } ? [.. e.Warnings, .. components.Warnings] : e.Warnings,

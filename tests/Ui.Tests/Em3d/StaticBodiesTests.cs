@@ -302,12 +302,12 @@ public sealed class StaticBodyPickerTests
         vm.EmbeddedCommit = (_, after, _) => committed = after;
         vm.SetBodies(bodies);
 
-        Assert.Equal(bodies.Select(b => b.Label), vm.BodyPicks.Select(p => p.Label));
+        Assert.Equal(bodies.Select(b => b.Token), vm.BodyPicks.Select(p => p.Token));
         Assert.Equal(CircuitRF.Ui.Layout.Em.EmSetupEditorViewModel.EveryBodyLabel, vm.GroundPicks[0].Label);
         Assert.Null(vm.GroundPicks[0].Body);
         var signal = vm.BodyPicks.Single(p => p.Body!.Members.Contains("via/1"));
-        Assert.Contains("4 objects", signal.Label);
-        Assert.Contains("Top Copper (1 oz)", signal.Label);
+        Assert.Contains("4 objects", signal.Detail);
+        Assert.Contains("Top Copper (1 oz)", signal.Detail);
 
         // Choosing a row writes its token, and the run resolves that token to the same body.
         vm.TerminalRows[0].Net = signal.Token;

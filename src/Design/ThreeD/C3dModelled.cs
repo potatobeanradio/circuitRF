@@ -98,6 +98,7 @@ public static class C3dModelled
             DrawnWires = e.DrawnWires.Where(kv => Keep(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal),
             ObjectNets = e.ObjectNets.Where(kv => Keep(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal),
             ViaNetConflicts = e.ViaNetConflicts.Where(kv => Keep(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal),
+            ViaNetAdoptions = e.ViaNetAdoptions.Where(kv => Keep(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal),
             GroundBandObjects = [.. e.GroundBandObjects.Where(Keep)],
             Origins = e.Origins.Where(kv => Keep(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal),
             SolidMaterials = e.SolidMaterials.Where(kv => Keep(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal),

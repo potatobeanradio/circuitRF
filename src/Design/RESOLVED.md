@@ -27582,3 +27582,22 @@ folder the cell was found and SOLVED. `Check.ElaborateReadOnly` sets the base an
 solver-version memo is per process; D6's 3D body signature names layout pieces, so a parameter that changes a PCell's
 piece count reads as a contact change; a variant missing on a fresh clone returns on the next Update Layout, not on the
 CLI's generated-cell rebuild; the GUI's solve-count pass takes no Stop.
+
+## brief-dfr34-4 — electrostatic setup: ground list, conductor list, via nets, C_ground (2026-11-04)
+
+- **Ground3D is a list** (`Em3dGroundList`): comma-separated, `+ default ground` keeps the ground-reference conductors.
+  Blank is the default alone and a list without the entry is exactly its names, so every file written before reads as
+  it did. The generator, `C3dProblemAssembly.GroundSet`, `C3dComponentPorts`, the Palace ground sentence and the CLI's
+  matrix header all read it through that one class. A Pick or a list choice ADDS, built from the committed value
+  (`Working.Ground3D`), because the AutoCompleteBox has already replaced its text with the chosen token by then.
+- **Decision D1 (owner):** a via whose stated net is on none of the copper it passes, all of which is one other net, takes
+  that net in the net map (`Em3dLayoutSolids`, every problem kind: it is what is built). A static run says so with the
+  drill shape's layer and 1-based place on it, and offers the edit (`Em3dViaNetFix`). A via whose copper is on two nets is
+  still refused, and the refusal names the drill shape. The fix finds the shape again by layer, place, stated net and
+  centre, since the place is among the FLATTENED layout's shapes and only equals the document's own for artwork drawn
+  at the top level.
+- A run sentence's offer (the via edit, or an `EmDocLink`) rides `EmRunResult.MessageOffers` and `RunNote.Offer`, typed
+  `object` because `RunNote` is in `src/Engine`, which must not know a layout. Set the offer BEFORE adding the sentence:
+  the run log posts each sentence as it is added.
+- An electrostatic result always carries `C_mutual` (derived from C when Palace's file was not read) and `C_ground`, the
+  row sums of C on one `Terminal i` axis.

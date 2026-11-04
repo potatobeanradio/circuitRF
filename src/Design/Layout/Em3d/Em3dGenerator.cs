@@ -65,6 +65,10 @@ public sealed record Em3dGenerationResult(Em3dProblem? Problem, string? Refusal,
     /// decided it. Kept BESIDE the problem, as <see cref="Origins"/> is: <c>explain</c> reads it.</summary>
     public IReadOnlyDictionary<int, Em3dPortReturn> PortReturns { get; init; } = new Dictionary<int, Em3dPortReturn>();
 
+    /// <summary>brief-dfr34-4 R-dfr34-4-4 — the layout edit a note offers, keyed by that note: a via a static solve gave its
+    /// copper's net, and <i>Give the via its copper's net</i> writes it into the layout.</summary>
+    public IReadOnlyDictionary<string, Em3dViaNetFix> ViaNetFixes { get; init; } = new Dictionary<string, Em3dViaNetFix>();
+
     /// <summary>Findings a user should act on that do not stop the problem being built — a foot that
     /// overhangs its pad, a metal the technology and the <c>.wBond</c> define differently.</summary>
     public IReadOnlyList<string> Warnings { get; init; } = [];
@@ -318,6 +322,7 @@ public static class Em3dGenerator
         private readonly Dictionary<int, Em3dPortReturn> _portReturns = [];
         private readonly List<Em3dPortLeftOut> _portsLeftOut = [];
         private readonly List<string> _portsMoved = [];
+        private readonly Dictionary<string, Em3dViaNetFix> _viaNetFixes = new(StringComparer.Ordinal);
 
         public Em3dGenerationResult Go()
         {
@@ -424,6 +429,11 @@ public static class Em3dGenerator
             if (setup.IsStatic3D)
             {
                 if (ViaNetRefusal(setup, _g.ViaNetConflictMap) is { } viaNetRefusal) return No(viaNetRefusal);
+                foreach (var a in _g.ViaNetAdoptionMap.Values)
+                {
+                    _notes.Add(a.Sentence);
+                    _viaNetFixes[a.Sentence] = a.Fix;
+                }
                 if (Terminals(setup, solids, sheets, ports, pecFloor, _g.ObjectNetMap, _g.GroundBandObjectList,
                               out terminals, out groundObjects, _notes) is { } terminalRefusal)
                     return No(terminalRefusal);
@@ -474,6 +484,7 @@ public static class Em3dGenerator
             };
             return new Em3dGenerationResult(problem, null, _notes)
             {
+                ViaNetFixes = _viaNetFixes,
                 Warnings = _g.WarningList,
                 Wires = _g.WireBuild?.Reports ?? [],
                 Origins = _g.OriginMap,
@@ -1497,22 +1508,25 @@ public static class Em3dGenerator
                                            n => _objectNets.TryGetValue(n, out var set) ? set : []) : null;
         IEnumerable<int> BodiesOf(IEnumerable<string> objects) => objects.Select(o => bodies!.BodyOf(o)).Where(b => b >= 0).Distinct();
 
-        if (setup.Ground3D is { Length: > 0 } groundName)
+        // brief-dfr34-4 R-dfr34-4-1 — the ground is a list: the default ground when the box is blank or lists it, and each
+        // name's conductors beside it.
+        if (Em3dGroundList.IncludesDefault(setup.Ground3D))
+        {
+            var groundNets = _groundBandObjects.SelectMany(o => _objectNets.GetValueOrDefault(o) ?? []).ToHashSet(StringComparer.Ordinal);
+            ground = [.. conductors.Where(c => _groundBandObjects.Contains(c) ||
+                                               (_objectNets.TryGetValue(c, out var nets) && nets.Overlaps(groundNets)))];
+        }
+        foreach (string groundName in Em3dGroundList.Names(setup.Ground3D))
         {
             var r = names.Resolve(groundName);
             if (r.Ambiguous.Count > 0)
                 return $"This setup's ground (Ground3D) is {Em3dConductorNames.AmbiguousText(groundName, r.Ambiguous)}";
             if (!r.Ok && !pecFloor)
-                return $"This setup's ground is '{groundName}' (Ground3D), and no conductor in the 3D problem is on it or named so. " +
+                return $"This setup's ground names '{groundName}' (Ground3D), and no conductor in the 3D problem is on it or named so. " +
                        "Name a net, an object or the end of an object's path, or leave Ground3D empty for the ground-reference conductors." +
                        Em3dConductorNames.NearText(r.Near);
-            ground = [.. r.Objects];
-        }
-        else
-        {
-            var groundNets = _groundBandObjects.SelectMany(o => _objectNets.GetValueOrDefault(o) ?? []).ToHashSet(StringComparer.Ordinal);
-            ground = [.. conductors.Where(c => _groundBandObjects.Contains(c) ||
-                                               (_objectNets.TryGetValue(c, out var nets) && nets.Overlaps(groundNets)))];
+            var have = ground.ToHashSet(StringComparer.Ordinal);
+            ground.AddRange(r.Objects.Where(have.Add));
         }
         var groundBodies = es ? BodiesOf(ground).ToHashSet() : [];
 
@@ -1553,10 +1567,10 @@ public static class Em3dGenerator
                                $"('{bodies!.Bodies[b].Name}', {Count(bodies.Bodies[b].Members.Count)}); a conductor is at one potential." +
                                // Designer feedback round 34 — asked as "how do I see RF out vs GND?": the ground needs no terminal.
                                " The ground needs no terminal: the matrix is referred to it, and each terminal's capacitance to " +
-                               "ground is the diagonal of the result's C_mutual (the row sum of C)." +
-                               (setup.Ground3D is { Length: > 0 } ? "" :
+                               "ground is the result's C_ground (the row sum of C, and the diagonal of C_mutual)." +
+                               (Em3dGroundList.Names(setup.Ground3D).Count > 0 ? "" :
                                    " With Ground blank the ground is every conductor on a ground-reference layer and the metal " +
-                                   "touching it; to choose it yourself, name a plane's object or net as Ground.");
+                                   "touching it; to add a plane to it, list the plane's object or net after '+ default ground'.");
                     if (taken.TryGetValue(b, out var other) && other.Terminal != t.Name)
                         return $"Terminals '{other.Terminal}' and '{t.Name}' are one piece of metal ('{bodies!.Bodies[b].Name}'): " +
                                $"'{other.By}' and '{token}' touch, so they are at one potential. Make them one terminal, or name another conductor.";

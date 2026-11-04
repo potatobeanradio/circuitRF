@@ -166,7 +166,7 @@ public static class C3dComponentPorts
         }
 
         var groundNets = new HashSet<string>(GroundNames, StringComparer.OrdinalIgnoreCase);
-        if (setup.Ground3D is { Length: > 0 } g3) groundNets.Add(g3);
+        groundNets.UnionWith(Em3dGroundList.Names(setup.Ground3D));
         foreach (string o in drawn.GroundBandObjects)
             if (drawn.ObjectNets.TryGetValue(o, out var ns)) groundNets.UnionWith(ns);
 

@@ -177,6 +177,9 @@ public sealed record C3dElaboration(
     /// object name: what a static solve refuses (<see cref="Em3dGenerator.ViaNetRefusal"/>).</summary>
     public IReadOnlyDictionary<string, string> ViaNetConflicts { get; init; } = new Dictionary<string, string>();
 
+    /// <summary>brief-dfr34-4 D1 — each layout instance's via given its copper's net, by object name (Em3dLayoutSolids).</summary>
+    public IReadOnlyDictionary<string, Em3dViaNetAdoption> ViaNetAdoptions { get; init; } = new Dictionary<string, Em3dViaNetAdoption>();
+
     /// <summary>The conductors on a layout instance's ground-reference stackup entries.</summary>
     public IReadOnlyList<string> GroundBandObjects { get; init; } = [];
 
@@ -776,6 +779,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
         private readonly HashSet<string> _unheld = new(StringComparer.Ordinal);
         private readonly Dictionary<string, HashSet<string>> _nets = new(StringComparer.Ordinal);
         private readonly Dictionary<string, string> _viaNetConflicts = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, Em3dViaNetAdoption> _viaNetAdoptions = new(StringComparer.Ordinal);
         private readonly List<string> _groundBand = [];
         private double _outlineMove;
         private readonly Dictionary<string, Em3dObjectOrigin> _origins = new(StringComparer.Ordinal);
@@ -908,6 +912,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                 Instances = _instances,
                 ObjectNets = _nets,
                 ViaNetConflicts = _viaNetConflicts,
+                ViaNetAdoptions = _viaNetAdoptions,
                 GroundBandObjects = _groundBand,
                 OutlineMoveM = _outlineMove,
                 MaterialSources = sources,
@@ -1685,6 +1690,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
             foreach (var (obj, nets) in solids.ObjectNets)
                 foreach (string n in nets) Net(prefix + obj, n);
             foreach (var (obj, conflict) in solids.ViaNetConflicts) _viaNetConflicts[prefix + obj] = conflict;
+            foreach (var (obj, adoption) in solids.ViaNetAdoptions) _viaNetAdoptions[prefix + obj] = adoption;
             _groundBand.AddRange(solids.GroundBandObjects.Select(o => prefix + o));
             _outlineMove = Math.Max(_outlineMove, solids.OutlineMoveM);
             foreach (var (obj, origin) in solids.Origins) _origins[prefix + obj] = origin;

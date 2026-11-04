@@ -414,7 +414,8 @@ public sealed class TestPadRound26Tests : IDisposable
     }
 
     /// <summary><see cref="Fixture"/>'s generation, refusal and all; <paramref name="viaNet"/> is the via's own net.</summary>
-    private (EmSetup Setup, CircuitRF.Design.Layout.Em3d.Em3dGenerationResult Result) Generated(string cem, string viaNet = "SIG")
+    private (EmSetup Setup, CircuitRF.Design.Layout.Em3d.Em3dGenerationResult Result) Generated(string cem, string viaNet = "SIG",
+                                                                                                Action<LayoutView>? edit = null)
     {
         const long c = 2_000_000;
         long[] hole = [.. Enumerable.Range(0, 64).SelectMany(k => new[]
@@ -433,6 +434,7 @@ public sealed class TestPadRound26Tests : IDisposable
         view.Shapes.Add(new ViaShape { Layer = ThroughDrill, X = c, Y = c, PadSize = 600_000, DrillSize = 300_000, LandingLayer = TopKey, Net = viaNet });
         view.Shapes.Add(new LabelShape { Layer = TopKey, X = 0, Y = c, Text = "P1", Height = 100_000, IsPort = true,
                                          PortDirection = LayoutRotation.R0, PortLayer = TopKey, PortKind = PlanarPortKind.Edge });
+        edit?.Invoke(view);
         Directory.CreateDirectory(_root);
         string path = Path.Combine(_root, Guid.NewGuid().ToString("N")[..8] + ".cem");
         File.WriteAllText(path, cem);
@@ -491,19 +493,24 @@ public sealed class TestPadRound26Tests : IDisposable
 
     // ── brief-dfr28-5: a via on one net passing another's copper ─────────────────────────────────
 
-    /// <summary>R-dfr28-5 — the TP149 study's fault: the via drawn on GND inside the terminal's lands and pads. A static solve
-    /// would hold one piece of metal at two potentials (on the board it read the unused pads 10× high), so it is refused,
-    /// naming the via and the copper it passes; a driven solve reads no nets and builds.</summary>
+    /// <summary>R-dfr28-5 — the TP149 study's fault: the via drawn on GND inside the terminal's lands and pads.
+    /// brief-dfr34-4 D1 (owner, 2026-11-04) — every piece of copper it passes is SIG, so the via is built as SIG: a static solve
+    /// gives it that net and says so, naming the drill shape, with the layout edit that makes it so; a driven solve builds too.</summary>
     [Fact]
-    public void AViaOnGround_InsideTheTerminalsCopper_IsRefusedByAStaticSolve_NotByADrivenOne()
+    public void AViaOnGround_InsideTheTerminalsCopper_TakesTheCoppersNetInAStaticSolve_AndOffersTheLayoutEdit()
     {
+        LayoutView? view = null;
         var (_, es) = Generated("""
             { "FormatVersion": 1, "Name": "es", "LayoutRef": "fixture.clay", "Solver3D": "Palace", "Problem3D": "Electrostatic",
               "Terminals3D": [ { "Name": "SIG", "Net": "SIG" } ], "Ground3D": "GND" }
-            """, viaNet: "GND");
-        Assert.False(es.Ok);
-        Assert.Contains("'via/1': the via at (2, 2) mm is on net 'GND' and passes through copper of net 'SIG'", es.Refusal);
-        Assert.Contains("'Inner 8'", es.Refusal);
+            """, viaNet: "GND", edit: v => view = v);
+        Assert.True(es.Ok, es.Refusal);
+        string note = Assert.Single(es.Notes, n => n.Contains("is on net 'GND', and every piece of copper it passes is on net 'SIG'", StringComparison.Ordinal));
+        Assert.Contains("The via at (2, 2) mm (drill shape 1 on layer", note);
+        Assert.Contains(es.Problem!.Terminals.Single().Objects, o => o == "via/1");
+        var fix = es.ViaNetFixes[note];
+        Assert.Equal(("GND", "SIG"), (fix.FromNet, fix.ToNet));
+        Assert.Same(view!.Shapes.OfType<ViaShape>().Single(), fix.Find(view.Shapes));
 
         var (_, driven) = Generated("""
             { "FormatVersion": 1, "Name": "drv", "LayoutRef": "fixture.clay", "Solver3D": "Palace",
@@ -511,5 +518,20 @@ public sealed class TestPadRound26Tests : IDisposable
                              "StartUnit": "GHz", "StopUnit": "GHz", "StepUnit": "Hz" } }
             """, viaNet: "GND");
         Assert.True(driven.Ok, driven.Refusal);
+    }
+
+    /// <summary>brief-dfr34-4 R-dfr34-4-4 — a via whose copper is on two nets joins them, so a static solve still refuses it, and
+    /// names the drill shape by its layer and place as well as the copper of each net.</summary>
+    [Fact]
+    public void AViaPassingCopperOfTwoNets_IsRefused_NamingTheDrillShape()
+    {
+        var (_, es) = Generated("""
+            { "FormatVersion": 1, "Name": "es", "LayoutRef": "fixture.clay", "Solver3D": "Palace", "Problem3D": "Electrostatic",
+              "Terminals3D": [ { "Name": "SIG", "Net": "SIG" } ], "Ground3D": "GND" }
+            """, viaNet: "GND", edit: v => v.Shapes.OfType<CircleShape>().First(c => InnerKeys.Contains(c.Layer)).Net = "OTHER");
+        Assert.False(es.Ok);
+        Assert.Contains("'via/1': the via at (2, 2) mm (drill shape 1 on layer", es.Refusal);
+        Assert.Contains("net 'SIG'", es.Refusal);
+        Assert.Contains("net 'OTHER'", es.Refusal);
     }
 }

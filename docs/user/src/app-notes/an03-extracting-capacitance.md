@@ -71,17 +71,24 @@ electrostatic terminal is named by **picking the metal**, not by typing a net.
 
 In the 3D view's **Simulate ▸ Setup Analyses…**, choose **Electrostatic** and **Palace**, then in the
 **Terminals** table press **Add terminal** and the row's **Pick** button, and click the metal in the view. While
-a Pick waits, the line under the table names the terminal it will fill, and says so when a click lands on
-something that is not a conductor, such as the substrate. Pressing **Pick** again, or closing the setup window,
-cancels it. The row takes the **whole piece of metal** the click touched. In Test Pad Capacitance one click on the bottom test pad takes
+a Pick waits, the line under the table names the terminal it will fill. A click on the substrate or the air
+passes through it to the first conductor behind it along the line of sight, and the line says so when there
+is none. Pressing **Pick** again, or closing the setup window, cancels it. The row takes the **whole piece of
+metal** the click touched. In Test Pad Capacitance one click on the bottom test pad takes
 the pad, the via barrel, the four unused inner pads, the top via pad and the line, because they all touch: they
 are one conductor, and they are at one potential. The **Conductor** box's ▾ lists every piece of metal, by its
-net or, with none, by `body:` and its largest object, with its layers and object count. The
+net or, with none, by `body:` and its largest object. Under each name is the layers it spans, its vias and
+its size. Pieces carrying a net come first, by net, and the largest first within each. A piece that is
+already ground is not offered to a terminal, and a piece already in a terminal carries that terminal's name.
+A choice is taken on Enter or a click; moving through the list with the arrow keys changes nothing. The
 [setup reference](../reference/em-setup.html#package-rlc) has the rules for typing a name instead.
 
-The **Ground** list offers the same pieces, and one more entry: **Every body not in a terminal**. On a board
-with no nets that is usually the right ground. It takes every plane, pour and stitching via that is not in a
-terminal.
+The **Ground** list offers the same pieces, marked **(ground)** where they already are, and two more entries:
+**Every body not in a terminal**, and **Default ground**, the ground-reference layers. On a board with no nets
+**Every body not in a terminal** is usually the right ground. It takes every plane, pour and stitching via that
+is not in a terminal. The Ground box takes several names, comma-separated, and a choice from the list or a
+**Pick** is added to what it holds: `+ default ground, body:…/Inner 5/2` keeps the ground-reference layers and
+adds a plane on a layer the technology does not mark as ground.
 
 ## Ground or floating {#ground}
 
@@ -121,8 +128,10 @@ A schematic wants **capacitors**: one from each terminal to ground, and one betw
 - the capacitor from i to ground is the row sum of C: here 532 − 31 = 501 fF for the pad, and 2,460 − 31 =
   **2,429 fF** for the line.
 
-That is `C_mutual`, which circuitRF also writes, so nothing needs to be converted by hand. Use C[i][i], the
-Maxwell diagonal, only when everything else really is grounded. Use `C_mutual` when you draw the circuit.
+That is `C_mutual`, which circuitRF also writes, so nothing needs to be converted by hand. Its diagonal is
+also written on its own as `C_ground`, each terminal's capacitance to ground. A new plot of the result opens
+on `C_mutual`. Use C[i][i], the Maxwell diagonal, only when everything else really is grounded. Use
+`C_mutual` when you draw the circuit.
 
 ## Checking the answer by hand {#checks}
 

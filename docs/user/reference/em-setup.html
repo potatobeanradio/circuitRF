@@ -32,7 +32,7 @@
     <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › EM setup</p>
     <nav class="page-nav-top" aria-label="Previous and next page">
       <a class="prev" href="mom-engine.html" title="Previous: The MoM Engine"><span class="arrow">‹</span><span class="name">The MoM Engine</span></a>
-      <a class="next" href="em-solvers.html" title="Next: EM Solvers: MoM, FEM and FDTD"><span class="name">EM Solvers: MoM, FEM and FDTD</span><span class="arrow">›</span></a>
+      <a class="next" href="em-cells.html" title="Next: EM Cells"><span class="name">EM Cells</span><span class="arrow">›</span></a>
     </nav>
   </div>
 
@@ -1922,7 +1922,10 @@ an <strong>object's path</strong> as the 3D problem names it, or by the <strong>
 <code>U1/Bottom Copper (1 oz)/TESTPT</code>), tried in that order. An end that several paths share is refused with
 them listed, and a name that matches nothing is refused with the nearest names. <strong>Ground</strong>
 (<code>Ground3D</code>) is the reference, named the same way; left blank it is the technology's ground-reference
-conductors, and the floor of the air box when that floor is a ground plane.</p>
+conductors, and the floor of the air box when that floor is a ground plane. It takes several names,
+comma-separated, and <code>+ default ground</code> as an entry keeps the ground-reference conductors in it:
+<code>+ default ground, body:…/Inner 5/2</code> grounds a plane on a layer the technology does not mark as ground
+without losing the others. A list without that entry is exactly the names. Pick adds to the list.</p>
 <p>An electrostatic terminal is <strong>whole pieces of metal</strong>. Objects that share a face or overlap — a pad,
 the via barrel through it, an inner landing pad and the pad on the far side, or copper pieces on one
 layer that touch — are one piece, and naming any of them takes all of it; copper on two layers joins
@@ -1963,8 +1966,15 @@ terminal that is not the ground:</p>
 <li><strong>Electrostatic</strong> gives <code>C</code>, the <em>Maxwell</em> matrix: <code>C[i][i]</code> is terminal i's capacitance to every
 other conductor, and each off-diagonal entry is negative. It also gives <code>C_mutual</code>, the
 lumped-circuit form: <code>C_mutual[i][i]</code> is i's capacitance to ground alone and <code>C_mutual[i][j]</code> is the
-capacitor you would draw between i and j. With floating metal, both are the matrix of the named
-terminals after the floating pieces are removed; the matrix before is kept as <code>palace.C_full</code>.</li>
+capacitor you would draw between i and j. <code>C_ground</code> lists each terminal's capacitance to ground
+alone, the row sums of <code>C</code>. A new plot of the result opens on <code>C_mutual</code>. With floating metal, all
+three are of the named terminals after the floating pieces are removed; the matrix before is kept as
+<code>palace.C_full</code>.</li>
+<li>A <strong>via</strong> whose own net is on none of the copper it passes, all of which is one other net, takes that
+copper's net in a static solve, and the run says so with the drill shape's layer and place. That row
+offers <strong>Give the via its copper's net</strong>, which sets it in the layout as one undoable edit. A via
+whose copper is on two nets still refuses the run, naming the drill shape. In the layout editor, the
+status bar names both nets while the cursor is over such a drill.</li>
 <li><strong>Magnetostatic</strong> gives <code>L</code>. Each terminal also names a <strong>source port</strong> (<code>Source</code>, the port's number):
 the port's sheet is where its current enters and returns, so the path is port → the terminal's
 metal → back through ground. A terminal without one is refused. Conductors are surfaces, so this is
@@ -2688,7 +2698,7 @@ geometry looks like it still matches, which is worse than showing nothing.</p>
 
 <nav class="page-nav">
   <a class="prev" href="mom-engine.html"><span class="dir">Previous</span><span class="name">The MoM Engine</span></a>
-  <a class="next" href="em-solvers.html"><span class="dir">Next</span><span class="name">EM Solvers: MoM, FEM and FDTD</span></a>
+  <a class="next" href="em-cells.html"><span class="dir">Next</span><span class="name">EM Cells</span></a>
 </nav>
 </main>
 

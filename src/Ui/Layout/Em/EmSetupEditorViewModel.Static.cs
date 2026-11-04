@@ -19,10 +19,15 @@ public sealed record Em3dProblemChoice(Em3dProblemType Value, string Label)
     public override string ToString() => Label;
 }
 
-/// <summary>brief-dfr31-1 R-dfr31-1-4 — one row of a terminal or ground picker: what it shows, and what it writes.</summary>
-/// <param name="Body">The body it stands for; null for the ground's "every body not in a terminal" row.</param>
-public sealed record Em3dBodyPick(string Label, string Token, Em3dBodyChoice? Body)
+/// <summary>brief-dfr31-1 R-dfr31-1-4 — one row of a terminal or ground picker: what it shows, and what it writes.
+/// brief-dfr34-4 R-dfr34-4-2 — two lines: <paramref name="Label"/> (the name, marked "(ground)" or with the terminal it is
+/// in) and <paramref name="Detail"/> (the layers it spans, its vias, its size).</summary>
+/// <param name="Body">The body it stands for; null for the ground's "every body not in a terminal" and default-ground rows.</param>
+public sealed record Em3dBodyPick(string Label, string Token, Em3dBodyChoice? Body, string Detail = "")
 {
+    /// <summary>True when the row has a second line.</summary>
+    public bool HasDetail => Detail.Length > 0;
+
     public override string ToString() => Token;
 }
 
@@ -69,6 +74,9 @@ public sealed partial class EmSetupEditorViewModel
 
     /// <summary>What the ground picker's first row says: every body in no terminal is ground (UnassignedConductors3D: Ground).</summary>
     public const string EveryBodyLabel = "Every body not in a terminal";
+
+    /// <summary>brief-dfr34-4 R-dfr34-4-1 — the ground picker's second row: the ground-reference layers, added to the list.</summary>
+    public const string DefaultGroundLabel = "Default ground";
 
     /// <summary>Lists the problem's bodies — the elaboration a run would build. Set by the host; slow on a board, so it is run
     /// off the UI thread by <see cref="ListBodiesAsync"/>. Null: no picker rows, the boxes take typing only.</summary>
@@ -123,11 +131,15 @@ public sealed partial class EmSetupEditorViewModel
     /// <summary>True when the host can arm a pick in its 3D view (a .c3d's setup): the rows' Pick button.</summary>
     public bool CanPickInView { get; set; }
 
-    /// <summary>Type-to-filter for both pickers: a row whose label holds the typed text, ignoring case.</summary>
+    /// <summary>Type-to-filter for both pickers: a row whose label, detail or name holds the typed text, ignoring case. A
+    /// list's last entry is what is being typed (brief-dfr34-4: the ground and a terminal take several, comma-separated).</summary>
     public static bool PickMatches(string? typed, object? item)
-        => item is Em3dBodyPick p && (string.IsNullOrWhiteSpace(typed) ||
-                                      p.Label.Contains(typed.Trim(), StringComparison.OrdinalIgnoreCase) ||
-                                      p.Token.Contains(typed.Trim(), StringComparison.OrdinalIgnoreCase));
+    {
+        if (item is not Em3dBodyPick p) return false;
+        string t = (typed ?? "")[((typed ?? "").LastIndexOf(',') + 1)..].Trim();
+        return t.Length == 0 || p.Label.Contains(t, StringComparison.OrdinalIgnoreCase) ||
+               p.Detail.Contains(t, StringComparison.OrdinalIgnoreCase) || p.Token.Contains(t, StringComparison.OrdinalIgnoreCase);
+    }
 
     private IReadOnlyList<Em3dBodyChoice> _bodies = [];
 
@@ -176,16 +188,53 @@ public sealed partial class EmSetupEditorViewModel
     public void SetBodies(IReadOnlyList<Em3dBodyChoice> bodies)
     {
         _bodies = bodies;
-        BodyPicks.Clear();
-        GroundPicks.Clear();
-        GroundPicks.Add(new Em3dBodyPick(EveryBodyLabel, "", null));
-        foreach (var b in bodies)
-        {
-            var pick = new Em3dBodyPick(b.Label, b.Token, b);
-            BodyPicks.Add(pick);
-            GroundPicks.Add(pick);
-        }
+        RefreshPicks();
         BodiesStatus = bodies.Count == 0 ? "No conductor in this problem." : $"{bodies.Count} piece(s) of metal.";
+    }
+
+    /// <summary>brief-dfr34-4 R-dfr34-4-2 — the bodies the ground box names now: the default ground when it is included, and
+    /// each named entry's.</summary>
+    public IReadOnlySet<Em3dBodyChoice> GroundBodies()
+    {
+        bool withDefault = Em3dGroundList.IncludesDefault(Ground3DText);
+        var names = Em3dGroundList.Names(Ground3DText);
+        return _bodies.Where(b => (withDefault && b.IsDefaultGround) || names.Any(b.IsNamedBy)).ToHashSet();
+    }
+
+    /// <summary>
+    /// brief-dfr34-4 R-dfr34-4-2 — the picker rows as the table and the ground now read: a ground body is marked "(ground)" and
+    /// not offered to a terminal (naming it only leads to a refusal), and a body a terminal row names carries that row's name.
+    /// Rebuilt only when a row would read differently, so an unchanged list is left alone.
+    /// </summary>
+    private void RefreshPicks()
+    {
+        var ground = GroundBodies();
+        var inTerminal = new Dictionary<Em3dBodyChoice, string>();
+        foreach (var row in TerminalRows)
+            foreach (string t in row.Net.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+                foreach (var b in _bodies.Where(b => b.IsNamedBy(t)))
+                    inTerminal.TryAdd(b, row.Name.Trim());
+        Em3dBodyPick Row(Em3dBodyChoice b)
+        {
+            string mark = ground.Contains(b) ? " (ground)" : inTerminal.TryGetValue(b, out var t) ? $" (in {t})" : "";
+            return new Em3dBodyPick(b.Name + mark, b.Token, b, b.Detail);
+        }
+        List<Em3dBodyPick> body = [.. _bodies.Where(b => !ground.Contains(b)).Select(Row)];
+        List<Em3dBodyPick> groundRows =
+        [
+            new(EveryBodyLabel, "", null),
+            new(DefaultGroundLabel, Em3dGroundList.DefaultEntry, null, "the ground-reference layers and the metal touching them"),
+            .. _bodies.Select(Row),
+        ];
+        Refill(BodyPicks, body);
+        Refill(GroundPicks, groundRows);
+    }
+
+    private static void Refill(ObservableCollection<Em3dBodyPick> into, List<Em3dBodyPick> rows)
+    {
+        if (into.SequenceEqual(rows)) return;
+        into.Clear();
+        foreach (var r in rows) into.Add(r);
     }
 
     /// <summary>The member objects of every body <paramref name="text"/> names (a row's text, comma-separated).</summary>
@@ -201,20 +250,30 @@ public sealed partial class EmSetupEditorViewModel
 
     /// <summary>A pick in the 3D view while a row is armed: fills that row with the picked object's body, writes the table, and
     /// disarms. False when nothing is armed or the object is in no body.</summary>
-    public bool PickConductor(string objectName)
+    public bool PickConductor(string objectName) => PickConductor([objectName]);
+
+    /// <summary>brief-dfr34-4 R-dfr34-4-3 — a pick along the line of sight: <paramref name="alongRay"/> is every object the
+    /// click's ray crosses, nearest first, and the first conductor among them is taken — through the dielectric and air a
+    /// click on a many-layer board lands on. False when nothing is armed or no object on the ray is in a body.</summary>
+    public bool PickConductor(IReadOnlyList<string> alongRay)
     {
         if (PickingRow is not { } row) return false;
-        if (_bodies.FirstOrDefault(b => b.Members.Contains(objectName, StringComparer.Ordinal)) is not { } body)
+        var body = alongRay.Select(o => _bodies.FirstOrDefault(b => b.Members.Contains(o, StringComparer.Ordinal)))
+                           .FirstOrDefault(b => b is not null);
+        if (body is null)
         {
-            // Said, not swallowed: a dielectric, or metal the problem leaves out, is what a click most often lands on.
-            PickRefusal = _bodies.Count == 0 ? "The conductors are not listed yet." : $"\"{objectName}\" is not a conductor.";
+            // Said, not swallowed: metal the problem leaves out, or a click beside the board.
+            PickRefusal = _bodies.Count == 0 ? "The conductors are not listed yet."
+                : alongRay.Count == 0 ? "Nothing is under the cursor."
+                : $"\"{alongRay[0]}\" is not a conductor, and no conductor is behind it.";
             return false;
         }
         PickingRow = null;
         if (ReferenceEquals(row, GroundPickRow))
         {
-            // Designer feedback round 34 — the Ground box takes a pick as a terminal row does.
-            Ground3DText = body.Token;
+            // Designer feedback round 34 — the Ground box takes a pick as a terminal row does. brief-dfr34-4 R-dfr34-4-1 — and
+            // adds it to the ground, which keeps what it already held.
+            Ground3DText = Em3dGroundList.Add(Working.Ground3D, body.Token);
             CommitTerminals();
             HighlightRequested?.Invoke(body.Members);
             return true;
@@ -248,18 +307,19 @@ public sealed partial class EmSetupEditorViewModel
         CommitEdit(before, "Change other metal");
     }
 
-    /// <summary>The ground picker's row was chosen: "every body not in a terminal" clears the box and grounds the rest.</summary>
+    /// <summary>The ground picker's row was chosen: "every body not in a terminal" clears the box and grounds the rest; any
+    /// other row is added to the ground (brief-dfr34-4 R-dfr34-4-1), to what the setup held before the list was opened.</summary>
     public void PickGround(Em3dBodyPick? pick)
     {
         if (pick is null) return;
-        if (pick.Body is null)
+        if (pick.Body is null && pick.Token.Length == 0)
         {
             Ground3DText = "";
             CommitTerminals();
             UnassignedChoice = UnassignedChoices.First(c => c.Value == EmUnassignedConductors.Ground);
             return;
         }
-        Ground3DText = pick.Token;
+        Ground3DText = Em3dGroundList.Add(Working.Ground3D, pick.Token);
         CommitTerminals();
     }
 
@@ -348,6 +408,7 @@ public sealed partial class EmSetupEditorViewModel
             foreach (var r in rows) TerminalRows.Add(r);
         }
         Ground3DText = Working.Ground3D;
+        RefreshPicks();
         UnassignedChoice = UnassignedChoices.FirstOrDefault(c => c.Value == Working.UnassignedConductors3D) ?? UnassignedChoices[0];
         SyncEigenFields();
         RaiseStaticVisibility();
@@ -365,6 +426,7 @@ public sealed partial class EmSetupEditorViewModel
                                    [.. r.Net.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)])
                 : new EmTerminal3D(r.Name.Trim(), r.Net.Trim(), r.Source.Trim() is { Length: > 0 } s ? s : null))];
         Working.Ground3D = Ground3DText.Trim();
+        RefreshPicks();
         if (SnapshotJson() == before) return;
         CommitEdit(before, "Change 3D terminals");
     }

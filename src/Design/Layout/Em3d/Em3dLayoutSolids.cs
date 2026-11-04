@@ -97,6 +97,10 @@ public sealed record Em3dLayoutSolidsResult(
     /// <summary>brief-dfr28-5 — each via on a net of its own that passes copper of another net, by object name.</summary>
     public IReadOnlyDictionary<string, string> ViaNetConflicts { get; init; } = new Dictionary<string, string>();
 
+    /// <summary>brief-dfr34-4 D1 — each via whose stated net is on none of the copper it passes, all of which is one other
+    /// net, by object name: the net map gives it that copper's net, which is what is built.</summary>
+    public IReadOnlyDictionary<string, Em3dViaNetAdoption> ViaNetAdoptions { get; init; } = new Dictionary<string, Em3dViaNetAdoption>();
+
     /// <summary>The conductors on ground-reference stackup entries.</summary>
     public IReadOnlyList<string> GroundBandObjects { get; init; } = [];
 
@@ -157,6 +161,9 @@ public static class Em3dLayoutSolids
         // brief-dfr28-5 — each via whose own net is not the net of copper it passes, by object name: what it is on and what
         // it joins. A static solve refuses these (Em3dGenerator.ViaNetRefusal); its own net still wins in the net map.
         public readonly Dictionary<string, string> ViaNetConflictMap = new(StringComparer.Ordinal);
+        // brief-dfr34-4 D1 — each via whose stated net is on none of its copper, and that copper one net: it takes that net.
+        public readonly Dictionary<string, Em3dViaNetAdoption> ViaNetAdoptionMap = new(StringComparer.Ordinal);
+        private readonly Dictionary<LayerKey, List<LayoutShape>> _byLayer = [];
 
         /// <summary>One merged conductor piece: its polygon, its name and what it became.</summary>
         internal sealed record Piece(PlanarPolygon Poly, string Name, string Material, bool IsSheet,
@@ -295,7 +302,7 @@ public static class Em3dLayoutSolids
             foreach (var l in tech.Stackup.Layers.Where(l => l.Kind == StackupKind.Via && l.Plated == false))
                 foreach (var key in l.DrawingLayers) holeBinding.TryAdd(key, l);
             var outlineLayers = Em3dGenerator.BoardOutlineLayers(tech);
-            var byLayer       = new Dictionary<LayerKey, List<LayoutShape>>();
+            var byLayer       = _byLayer;
 
             var conductorShapes = new List<(LayoutShape Shape, int Level)>();
             var viaShapes       = new List<(LayoutShape Shape, StackupLayer Entry)>();
@@ -874,8 +881,25 @@ public static class Em3dLayoutSolids
                 // A via is on its own net when it names one, else on the nets of the metal it lands on.
                 var viaNets = shape.Net is { Length: > 0 } vn ? [vn] : ViaLandingNets(shape, top, bottom);
                 if (shape.Net is { Length: > 0 } own && ViaPassedNets(shape, top, bottom, own) is { Count: > 0 } other)
-                    ViaNetConflictMap[name] = $"the via at ({Fmt(other[0].X * 1e3)}, {Fmt(other[0].Y * 1e3)}) mm is on net '{own}' " +
-                        $"and passes through copper of {string.Join(" and ", other.Select(o => $"net '{o.Net}' on {o.Layers}"))}";
+                {
+                    // brief-dfr34-4 R-dfr34-4-4 — the drill shape is named by its layer and its place on it, because a click in
+                    // 2D at the via usually selects the pad over it, whose net is the copper's.
+                    var fix = ViaFix(shape, own, other[0].Net);
+                    string at = $"the via at ({Fmt(other[0].X * 1e3)}, {Fmt(other[0].Y * 1e3)}) mm ({fix.ShapeText(tech)})";
+                    if (other.Count == 1 && !ViaPassesNet(shape, top, bottom, own))
+                    {
+                        // D1 (owner, 2026-11-04) — none of its copper is on its stated net, and all of it is on one other: the via
+                        // is one piece of metal with that copper, so the stated net cannot be what is built. It takes the copper's.
+                        viaNets = [other[0].Net];
+                        ViaNetAdoptionMap[name] = new Em3dViaNetAdoption(other[0].Net,
+                            $"{char.ToUpperInvariant(at[0])}{at[1..]} is on net '{own}', and every piece of copper it passes is on net " +
+                            $"'{other[0].Net}' ({other[0].Layers}), so this solve puts it on '{other[0].Net}': it is one piece of metal " +
+                            "with that copper.", fix);
+                    }
+                    else
+                        ViaNetConflictMap[name] = $"{at} is on net '{own}' " +
+                            $"and passes through copper of {string.Join(" and ", other.Select(o => $"net '{o.Net}' on {o.Layers}"))}";
+                }
                 if (Drill(shape) is var (x, y, r) && OnBoard(x, y, r))
                 {
                     var a = new Point3(x, y, z0);
@@ -1055,6 +1079,7 @@ public static class Em3dLayoutSolids
             MaterialSources = _materialSource,
             ObjectNets = ObjectNetMap.ToDictionary(kv => kv.Key, kv => (IReadOnlySet<string>)kv.Value, StringComparer.Ordinal),
             ViaNetConflicts = ViaNetConflictMap,
+            ViaNetAdoptions = ViaNetAdoptionMap,
             GroundBandObjects = GroundBandObjectList,
             OutlineMoveM = _robust.MaxMoveM,
             Wires = WireBuild?.Reports ?? [],
@@ -1159,6 +1184,27 @@ public static class Em3dLayoutSolids
                     foreach (var p in list)
                         if (p.Net is { } n && p.Poly.Contains(cx, cy) && !nets.Contains(n)) nets.Add(n);
             return nets;
+        }
+
+        /// <summary>brief-dfr34-4 — true when a piece of net <paramref name="net"/> holds the via's footprint centre on a
+        /// conductor it spans.</summary>
+        private bool ViaPassesNet(LayoutShape shape, PlanarExtractor.StackBand top, PlanarExtractor.StackBand bottom, string net)
+        {
+            var fp = ViaFootprint(shape).ToList();
+            if (fp.Count == 0) return false;
+            var (x0, y0, x1, y1) = fp[0].Bounds();
+            double cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+            return Bands.Where(b => b.BottomM >= bottom.BottomM - 1e-15 && b.TopM <= top.TopM + 1e-15)
+                        .Any(b => Pieces.TryGetValue(b.Index, out var list) && list.Any(p => p.Net == net && p.Poly.Contains(cx, cy)));
+        }
+
+        /// <summary>brief-dfr34-4 R-dfr34-4-4 — the edit that gives a drill shape <paramref name="to"/>: the shape by its layer,
+        /// its place among the layout's shapes on that layer, and its centre.</summary>
+        private Em3dViaNetFix ViaFix(LayoutShape shape, string from, string to)
+        {
+            int index = _byLayer.TryGetValue(shape.Layer, out var onLayer) ? onLayer.IndexOf(shape) + 1 : 0;
+            var (x, y) = Em3dViaNetFix.Centre(shape);
+            return new Em3dViaNetFix(source.AbsolutePath, shape.Layer, index, x, y, from, to);
         }
 
         /// <summary>brief-dfr28-5 — the nets other than <paramref name="own"/> of the pieces a via's footprint centre lies
@@ -1476,3 +1522,38 @@ public static class Em3dLayoutSolids
         private static string Fmt(double v) => v.ToString("G6", CultureInfo.InvariantCulture);
     }
 }
+
+/// <summary>
+/// brief-dfr34-4 R-dfr34-4-4 — giving one drill shape the net of its copper: the layout it is in, the shape by its layer, its
+/// 1-based place among that layer's shapes (the flattened layout's, which is the document's own for artwork drawn in it) and
+/// its centre in DBU, the net it states and the net it is given. <see cref="Find"/> finds it again in the document.
+/// </summary>
+public sealed record Em3dViaNetFix(string LayoutPath, LayerKey Layer, int Index, long X, long Y, string FromNet, string ToNet)
+{
+    /// <summary>"drill shape 12 on layer 'Drill' (20/0)".</summary>
+    public string ShapeText(Technology? tech)
+        => $"drill shape {Index} on layer " +
+           (tech?.Layers.FirstOrDefault(l => l.Key == Layer)?.Name is { } n ? $"'{n}' ({Layer.Layer}/{Layer.Datatype})" : $"{Layer.Layer}/{Layer.Datatype}");
+
+    /// <summary>A drill shape's centre, DBU: a via's point, or its outline's bounds' centre.</summary>
+    public static (long X, long Y) Centre(LayoutShape shape)
+    {
+        if (shape is ViaShape v) return (v.X, v.Y);
+        var b = LayoutGeometry.BboxOf(shape);
+        return ((b.MinX + b.MaxX) / 2, (b.MinY + b.MaxY) / 2);
+    }
+
+    /// <summary>The shape this edit is for among <paramref name="shapes"/> (a layout document's own): on the layer, on the
+    /// stated net, at the centre — or null when the layout no longer holds it.</summary>
+    public LayoutShape? Find(IEnumerable<LayoutShape> shapes)
+    {
+        var onLayer = shapes.Where(s => s.Layer == Layer && s is not LabelShape and not BitmapShape).ToList();
+        bool Is(LayoutShape s) => s.Net == FromNet && Centre(s) == (X, Y);
+        if (Index >= 1 && Index <= onLayer.Count && Is(onLayer[Index - 1])) return onLayer[Index - 1];
+        return onLayer.FirstOrDefault(Is);
+    }
+}
+
+/// <summary>brief-dfr34-4 D1 — a via given its copper's net: the net, the sentence a static run says, and the edit that makes
+/// the layout say so too.</summary>
+public sealed record Em3dViaNetAdoption(string Net, string Sentence, Em3dViaNetFix Fix);

@@ -202,4 +202,42 @@ public sealed partial class LayoutEditorViewModel
 
         if (combined is not null) Execute(combined);
     }
+
+    // ── brief-dfr34-4 R-dfr34-4-4 — a drill whose net is not the copper's ────────────────────────────────────────────────
+
+    /// <summary>
+    /// The status bar's word on the drill under the cursor when its net is not the net of the copper there: a click at a via
+    /// selects the pad over it, whose net is the copper's, so the drill's own net — the one a static 3D solve reads — was
+    /// invisible. Empty everywhere else.
+    /// </summary>
+    [CommunityToolkit.Mvvm.ComponentModel.ObservableProperty] private string _viaNetHoverText = "";
+
+    /// <summary>Recomputes <see cref="ViaNetHoverText"/> for the cursor at (<paramref name="x"/>, <paramref name="y"/>) DBU,
+    /// through the spatial index (the hit stack), so a hover costs what a click's hit test does.</summary>
+    private void RefreshViaNetHover(long x, long y)
+    {
+        ViaNetHoverText = ViaNetMismatchAt(x, y) ?? "";
+    }
+
+    /// <summary>The sentence for a drill at (<paramref name="x"/>, <paramref name="y"/>) on one net over copper of another, or
+    /// null. A drill is a via, or a shape on a layer a via stackup entry is drawn on; copper is anything else with a net.</summary>
+    internal string? ViaNetMismatchAt(long x, long y)
+    {
+        if (Model.Shapes.Count == 0) return null;
+        var hits = LayoutHitTest.HitStack(Model, Technology, x, y, 0);
+        if (hits.Count < 2) return null;
+        var drillLayers = Technology?.Stackup.Layers.Where(l => l.Kind == StackupKind.Via)
+                                    .SelectMany(l => l.DrawingLayers).ToHashSet() ?? [];
+        LayoutShape? drill = null;
+        string? copper = null;
+        foreach (int i in hits)
+        {
+            var s = Model.Shapes[i];
+            bool isDrill = s is ViaShape || drillLayers.Contains(s.Layer);
+            if (isDrill) drill ??= s.Net is { Length: > 0 } ? s : drill;
+            else if (s.Net is { Length: > 0 } n) copper ??= n;
+        }
+        if (drill?.Net is not { } drillNet || copper is null || copper == drillNet) return null;
+        return $"Drill on net '{drillNet}', under copper of net '{copper}'";
+    }
 }

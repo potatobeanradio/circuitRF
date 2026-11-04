@@ -9090,17 +9090,23 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// row keeps the link AND offers <i>Give the subsystem more memory…</i>, which <paramref name="raiseMemory"/> opens.
     /// </summary>
     internal static void PostEmSentence(IMessageSink sink, MessageLevel level, EmRunResult result, string sentence,
-                                        Func<Task> raiseMemory)
+                                        Func<Task> raiseMemory, Func<CircuitRF.Design.Layout.Em3d.Em3dViaNetFix, Task>? giveViaNet = null)
         => PostEmSentence(sink, level, sentence, EmMessageFile(result, sentence), result.MessageInstalls?.GetValueOrDefault(sentence),
-                          raiseMemory);
+                          raiseMemory, result.MessageOffers?.GetValueOrDefault(sentence), giveViaNet);
 
     /// <summary>brief-dfr27-5 R-dfr27-5-3 — one sentence a run posted while it was still going, with the file and install it
     /// carried then.</summary>
-    internal static void PostEmSentence(IMessageSink sink, RunNote note, Func<Task> raiseMemory)
-        => PostEmSentence(sink, note.Warning ? MessageLevel.Warning : MessageLevel.Info, note.Text, note.File, note.Install, raiseMemory);
+    internal static void PostEmSentence(IMessageSink sink, RunNote note, Func<Task> raiseMemory,
+                                        Func<CircuitRF.Design.Layout.Em3d.Em3dViaNetFix, Task>? giveViaNet = null)
+        => PostEmSentence(sink, note.Warning ? MessageLevel.Warning : MessageLevel.Info, note.Text, note.File, note.Install, raiseMemory,
+                          note.Offer, giveViaNet);
+
+    /// <summary>brief-dfr34-4 R-dfr34-4-4 — what the row of a via given its copper's net offers.</summary>
+    public const string GiveViaNetAction = "Give the via its copper's net";
 
     private static void PostEmSentence(IMessageSink sink, MessageLevel level, string sentence, string? file, string? install,
-                                       Func<Task> raiseMemory)
+                                       Func<Task> raiseMemory, object? offer = null,
+                                       Func<CircuitRF.Design.Layout.Em3d.Em3dViaNetFix, Task>? giveViaNet = null)
     {
         // brief-emdc-2 R-emdc2-2 — a DC row refused for want of Gmsh offers Install … on its own row, as a solver's refusal does.
         if (install is { } installId
@@ -9109,8 +9115,41 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                             () => CircuitRF.Ui.Views.Dialogs.SolverInstallRunner.InstallAsync(installTool, owner: null, sink));
         else if (CircuitRF.Design.Em3d.Wsl.WslMemory.IsWslConfig(file))
             sink.PostAction(level, sentence, CircuitRF.Ui.Layout.Em.WslMemoryDialogModel.RowAction, raiseMemory, file);
+        else if (offer is CircuitRF.Design.Layout.Em3d.Em3dViaNetFix viaFix && giveViaNet is not null)
+            sink.PostAction(level, sentence, GiveViaNetAction, () => giveViaNet(viaFix), viaFix.LayoutPath);
+        else if (offer is EmDocLink doc)
+            // brief-dfr34-4 R-dfr34-4-5 — the page that explains the sentence, at its section.
+            sink.PostAction(level, sentence, doc.Label, () => { DocLauncher.Open(doc.Page, doc.Anchor); return Task.CompletedTask; }, file);
         else
             sink.Post(level, sentence, file);
+    }
+
+    /// <summary>
+    /// brief-dfr34-4 R-dfr34-4-4 — <i>Give the via its copper's net</i>: opens the layout the via is in (or brings its tab
+    /// forward) and sets the drill shape's net through the editor, so it is one undoable edit the designer saves. Said, not
+    /// guessed, when the layout no longer holds that shape on that net.
+    /// </summary>
+    internal async Task GiveViaItsCopperNetAsync(CircuitRF.Design.Layout.Em3d.Em3dViaNetFix fix)
+    {
+        await OpenOrActivateLayoutAsync(fix.LayoutPath);
+        string full = Path.GetFullPath(fix.LayoutPath);
+        var doc = _openDocsByPath.Values.OfType<LayoutDocument>()
+                                 .FirstOrDefault(d => d.FilePath is { } fp && string.Equals(Path.GetFullPath(fp), full, StringComparison.Ordinal));
+        if (doc is null)
+        {
+            Messages.Warning($"The layout '{Path.GetFileName(fix.LayoutPath)}' could not be opened, so the via's net was not changed.");
+            return;
+        }
+        var vm = doc.ViewModel;
+        if (fix.Find(vm.Model.Shapes) is not { } shape)
+        {
+            Messages.Warning($"'{Path.GetFileName(fix.LayoutPath)}' no longer has the via on net '{fix.FromNet}' at the place the run " +
+                             "found it (it was moved, deleted or given another net since), so nothing was changed.");
+            return;
+        }
+        vm.SetNetOnShapes([shape], fix.ToNet);
+        Messages.Info($"The via ({fix.ShapeText(vm.Technology)}) in '{Path.GetFileName(fix.LayoutPath)}' is on net '{fix.ToNet}' now. " +
+                      "Save the layout for the next run to read it.", fix.LayoutPath);
     }
 
     /// <summary>The memory dialog, opened from a row or the confirmation, reporting to this window's Messages.</summary>
@@ -9211,7 +9250,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                     streamed.Add(note);
                     Dispatcher.UIThread.Post(() =>
                     {
-                        if (!cancelPressed) PostEmSentence(Messages, note, RaiseSubsystemMemoryAsync);
+                        if (!cancelPressed) PostEmSentence(Messages, note, RaiseSubsystemMemoryAsync, GiveViaItsCopperNetAsync);
                     });
                 },
             };
@@ -9328,8 +9367,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             sweepLive.Complete(MessageLevel.Info, $"EM '{setup.Name}' — see the error below");
 
             foreach (var w in streamed.Unposted(result.Warnings, warning: true))
-                PostEmSentence(Messages, MessageLevel.Warning, result, w, RaiseSubsystemMemoryAsync);
-            foreach (var e in result.Errors ?? []) PostEmSentence(Messages, MessageLevel.Error, result, e, RaiseSubsystemMemoryAsync);
+                PostEmSentence(Messages, MessageLevel.Warning, result, w, RaiseSubsystemMemoryAsync, GiveViaItsCopperNetAsync);
+            foreach (var e in result.Errors ?? []) PostEmSentence(Messages, MessageLevel.Error, result, e, RaiseSubsystemMemoryAsync, GiveViaItsCopperNetAsync);
 
             // Through the render point, not as a bare sentence: the diagnostic's ID is what a future
             // dedup ("this sweep refused at 400 points") or filter ("every technology-resolution
@@ -9384,11 +9423,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // posts none: everything it said before Cancel is already there, and Cancel's own line is the last but the stopped one.
         if (result.Status != EmRunStatus.Cancelled)
         {
-            foreach (var e in result.Errors ?? [])   PostEmSentence(Messages, MessageLevel.Error, result, e, RaiseSubsystemMemoryAsync);
+            foreach (var e in result.Errors ?? [])   PostEmSentence(Messages, MessageLevel.Error, result, e, RaiseSubsystemMemoryAsync, GiveViaItsCopperNetAsync);
             foreach (var w in streamed.Unposted(result.Warnings, warning: true))
-                PostEmSentence(Messages, MessageLevel.Warning, result, w, RaiseSubsystemMemoryAsync);
+                PostEmSentence(Messages, MessageLevel.Warning, result, w, RaiseSubsystemMemoryAsync, GiveViaItsCopperNetAsync);
             foreach (var n in streamed.Unposted(result.Notes ?? [], warning: false))
-                PostEmSentence(Messages, MessageLevel.Info, result, n, RaiseSubsystemMemoryAsync);
+                PostEmSentence(Messages, MessageLevel.Info, result, n, RaiseSubsystemMemoryAsync, GiveViaItsCopperNetAsync);
         }
 
         if (result.Status == EmRunStatus.Cancelled)

@@ -2126,7 +2126,8 @@ static void PrintStaticMatrix(RfCore.Data.DataSet data, EmSetup setup)
     double scale = Math.Pow(1000, -e);
     string unit = prefixes[e + 5] + (es ? "F" : "H");
     // brief-dfr31-2 — with Other metal at Ground and the ground box blank, the ground is every piece not in a terminal.
-    string ground = setup.Ground3D is { Length: > 0 } g ? g
+    string ground = CircuitRF.Design.Layout.Em3d.Em3dGroundList.Names(setup.Ground3D).Count > 0
+        ? CircuitRF.Design.Layout.Em3d.Em3dGroundList.Describe(setup.Ground3D)
         : es && setup.UnassignedConductors3D == CircuitRF.Design.Layout.Em.EmUnassignedConductors.Ground
             ? "every body not in a terminal"
             : "the ground-reference conductors";

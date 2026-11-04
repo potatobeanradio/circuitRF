@@ -242,23 +242,50 @@ public partial class EmSetupEditorView : UserControl
         box.ItemFilter = filter;
     }
 
-    // A commit rebuilds the terminal rows (the snapshot is re-applied), so it runs after the box's own selection event has
-    // finished: committing inside it tore the box's list down mid-event.
-    private void OnBodyPicked(object? sender, SelectionChangedEventArgs e)
+    // brief-dfr34-4 R-dfr34-4-2 — a picker commits on Enter or a click in its list, never on a selection change: the box's
+    // selection follows the arrow keys through the list, and each of those had written the setup. A selection is held until
+    // the list closes; it closed on a choice when the box still has the focus and reads the chosen row's name (Escape puts
+    // back what was typed, and a click elsewhere takes the focus first). Any other close puts back the text the list opened
+    // on, so arrowing through the list and clicking away changes nothing.
+    private readonly Dictionary<AutoCompleteBox, (string? Before, Em3dBodyPick? Pending)> _pickers = [];
+
+    private void OnPickerOpened(object? sender, EventArgs e)
     {
-        if (sender is not AutoCompleteBox { SelectedItem: Em3dBodyPick pick, DataContext: Em3dTerminalRow row } || Vm is not { } vm) return;
-        row.Net = pick.Token;
-        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
-        {
-            vm.CommitTerminals();
-            vm.HighlightRow(vm.TerminalRows.FirstOrDefault(r => r.Name == row.Name) ?? row);
-        });
+        if (sender is AutoCompleteBox box) _pickers[box] = (box.Text, null);
     }
 
-    private void OnGroundPicked(object? sender, SelectionChangedEventArgs e)
+    private void OnBodyPicked(object? sender, SelectionChangedEventArgs e) => HoldPick(sender);
+
+    private void OnGroundPicked(object? sender, SelectionChangedEventArgs e) => HoldPick(sender);
+
+    private void HoldPick(object? sender)
     {
-        if (sender is AutoCompleteBox { SelectedItem: Em3dBodyPick pick } && Vm is { } vm)
-            Avalonia.Threading.Dispatcher.UIThread.Post(() => vm.PickGround(pick));
+        if (sender is not AutoCompleteBox { SelectedItem: Em3dBodyPick pick } box) return;
+        _pickers[box] = (_pickers.TryGetValue(box, out var held) ? held.Before : box.Text, pick);
+    }
+
+    private void OnPickerClosed(object? sender, EventArgs e)
+    {
+        if (sender is not AutoCompleteBox box || !_pickers.Remove(box, out var held) || Vm is not { } vm) return;
+        bool chosen = held.Pending is { } p && box.IsKeyboardFocusWithin && box.Text == p.Token;
+        if (!chosen)
+        {
+            if (held.Pending is { } navigated && box.Text == navigated.Token && held.Before is { } before) box.Text = before;
+            return;
+        }
+        var pick = held.Pending!;
+        // A commit rebuilds the terminal rows (the snapshot is re-applied), so it runs after the box's own events have
+        // finished: committing inside them tore the box's list down mid-event.
+        if (box.DataContext is Em3dTerminalRow row)
+        {
+            row.Net = pick.Token;
+            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                vm.CommitTerminals();
+                vm.HighlightRow(vm.TerminalRows.FirstOrDefault(r => r.Name == row.Name) ?? row);
+            });
+        }
+        else Avalonia.Threading.Dispatcher.UIThread.Post(() => vm.PickGround(pick));
     }
 
     private void OnTerminalRowFocus(object? sender, FocusChangedEventArgs e)

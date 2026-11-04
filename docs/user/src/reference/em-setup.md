@@ -1034,7 +1034,10 @@ an **object's path** as the 3D problem names it, or by the **end of a path** (`T
 `U1/Bottom Copper (1 oz)/TESTPT`), tried in that order. An end that several paths share is refused with
 them listed, and a name that matches nothing is refused with the nearest names. **Ground**
 (`Ground3D`) is the reference, named the same way; left blank it is the technology's ground-reference
-conductors, and the floor of the air box when that floor is a ground plane.
+conductors, and the floor of the air box when that floor is a ground plane. It takes several names,
+comma-separated, and `+ default ground` as an entry keeps the ground-reference conductors in it:
+`+ default ground, body:…/Inner 5/2` grounds a plane on a layer the technology does not mark as ground
+without losing the others. A list without that entry is exactly the names. Pick adds to the list.
 
 An electrostatic terminal is **whole pieces of metal**. Objects that share a face or overlap — a pad,
 the via barrel through it, an inner landing pad and the pad on the far side, or copper pieces on one
@@ -1063,8 +1066,15 @@ terminal that is not the ground:
 - **Electrostatic** gives `C`, the *Maxwell* matrix: `C[i][i]` is terminal i's capacitance to every
   other conductor, and each off-diagonal entry is negative. It also gives `C_mutual`, the
   lumped-circuit form: `C_mutual[i][i]` is i's capacitance to ground alone and `C_mutual[i][j]` is the
-  capacitor you would draw between i and j. With floating metal, both are the matrix of the named
-  terminals after the floating pieces are removed; the matrix before is kept as `palace.C_full`.
+  capacitor you would draw between i and j. `C_ground` lists each terminal's capacitance to ground
+  alone, the row sums of `C`. A new plot of the result opens on `C_mutual`. With floating metal, all
+  three are of the named terminals after the floating pieces are removed; the matrix before is kept as
+  `palace.C_full`.
+- A **via** whose own net is on none of the copper it passes, all of which is one other net, takes that
+  copper's net in a static solve, and the run says so with the drill shape's layer and place. That row
+  offers **Give the via its copper's net**, which sets it in the layout as one undoable edit. A via
+  whose copper is on two nets still refuses the run, naming the drill shape. In the layout editor, the
+  status bar names both nets while the cursor is over such a drill.
 - **Magnetostatic** gives `L`. Each terminal also names a **source port** (`Source`, the port's number):
   the port's sheet is where its current enters and returns, so the path is port → the terminal's
   metal → back through ground. A terminal without one is refused. Conductors are surfaces, so this is

@@ -797,6 +797,12 @@ public partial class PlotInspectorViewModel : ViewModelBase
     {
         if (e.Data is not { } ds) return null;
 
+        // brief-dfr34-4 R-dfr34-4-5 — a capacitance result opens on C_mutual: the capacitors a schematic draws, whose entries
+        // are all positive. The Maxwell C, first in the file, reads as negative capacitance to anyone not expecting it.
+        if (ds.Contains(CircuitRF.Engine.Em3d.Em3dStaticResult.CapacitanceCube) &&
+            ds.Contains(CircuitRF.Engine.Em3d.Em3dStaticResult.MutualCapacitanceCube))
+            return CircuitRF.Engine.Em3d.Em3dStaticResult.MutualCapacitanceCube;
+
         string? firstAny          = null;   // today's answer, kept as the fallback
         string? firstMeasurement  = null;   // a complex measurement — better than raw, worse than a real one
         string? firstProbeCurrent = null;   // an IProbe the designer PLACED — see ProbeNames

@@ -382,6 +382,18 @@ public sealed partial class Viewer3DViewModel
     public IReadOnlyList<Scene3DObject> SelectedObjects()
         => [.. View.Selection.Select(i => Scene.Object(i.Object)).OfType<Scene3DObject>().Distinct()];
 
+    /// <summary>brief-dfr34-4 R-dfr34-4-3 — every object the line of sight through the cursor crosses, nearest first, each
+    /// once, hidden and clipped-away objects left out: what an armed terminal Pick walks to reach the first conductor
+    /// behind the dielectric a click on a board lands on.</summary>
+    public IReadOnlyList<string> ObjectsUnderCursor()
+    {
+        if (View.CursorX < 0 || View.CursorY < 0 || Scene.Objects.Length == 0) return [];
+        var q = new Scene3DRayQuery(View.Camera, View.CursorX, View.CursorY, _viewW, _viewH);
+        var scene = Scene;
+        return [.. RayHits.Collect(scene, q, Scene3DSelectMode.Object, View.Visible, View.Clip)
+                          .Select(h => scene.Object(h.Item.Object)?.Name).OfType<string>().Distinct(StringComparer.Ordinal)];
+    }
+
     /// <summary>A click: select what is under the cursor (Shift adds or removes it). A click on nothing
     /// clears, unless Shift is held.</summary>
     public void Click(bool shift, KeyModifiers modifiers = KeyModifiers.None, int clickCount = 1)

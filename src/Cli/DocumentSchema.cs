@@ -919,7 +919,7 @@ internal static class DocumentSchema
             Conductor, every sheet, a PEC face of the setup's air box — to within one DBU. Exactly
             one pair of OPPOSITE edges must each touch exactly one conductor, the two different;
             that pair's axis is the port's direction. The NEGATIVE end is the one in the setup's
-            ground set (its Ground3D net — a drawn conductor's net is its own name — a layout
+            ground set (its Ground3D nets — a drawn conductor's net is its own name — a layout
             instance's ground-reference conductors, or a PEC air-box face); failing that, the one
             with the larger surface. Flip swaps them. Positive and Negative (elaborated names,
             U1/pad allowed, or airbox/zmin) state both ends and override inference entirely; one

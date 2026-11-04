@@ -38,8 +38,10 @@ public sealed record RunProgress(
 /// brief-dfr27-5 R-dfr27-5-3 — one sentence a run has to say, the moment it is known: a note (the run explaining itself) or a
 /// warning (something to act on), with the file it names and the tool it offers to install, where it has them. The run's
 /// result still carries every sentence; this is what lets a caller show them while the run is still going.
+/// brief-dfr34-4 — <paramref name="Offer"/> is what the sentence's row offers beside it (a design-layer record the caller knows:
+/// an edit, such as giving a via its copper's net, or a page of the documentation to read); null for none.
 /// </summary>
-public sealed record RunNote(bool Warning, string Text, string? File = null, string? Install = null);
+public sealed record RunNote(bool Warning, string Text, string? File = null, string? Install = null, object? Offer = null);
 
 /// <summary>
 /// Cancellation and progress for an engine run — the ONE object every engine takes, so a caller

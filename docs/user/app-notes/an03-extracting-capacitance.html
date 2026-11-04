@@ -94,16 +94,23 @@ run takes under a minute.</li>
 electrostatic terminal is named by <strong>picking the metal</strong>, not by typing a net.</p>
 <p>In the 3D view's <strong>Simulate ▸ Setup Analyses…</strong>, choose <strong>Electrostatic</strong> and <strong>Palace</strong>, then in the
 <strong>Terminals</strong> table press <strong>Add terminal</strong> and the row's <strong>Pick</strong> button, and click the metal in the view. While
-a Pick waits, the line under the table names the terminal it will fill, and says so when a click lands on
-something that is not a conductor, such as the substrate. Pressing <strong>Pick</strong> again, or closing the setup window,
-cancels it. The row takes the <strong>whole piece of metal</strong> the click touched. In Test Pad Capacitance one click on the bottom test pad takes
+a Pick waits, the line under the table names the terminal it will fill. A click on the substrate or the air
+passes through it to the first conductor behind it along the line of sight, and the line says so when there
+is none. Pressing <strong>Pick</strong> again, or closing the setup window, cancels it. The row takes the <strong>whole piece of
+metal</strong> the click touched. In Test Pad Capacitance one click on the bottom test pad takes
 the pad, the via barrel, the four unused inner pads, the top via pad and the line, because they all touch: they
 are one conductor, and they are at one potential. The <strong>Conductor</strong> box's ▾ lists every piece of metal, by its
-net or, with none, by <code>body:</code> and its largest object, with its layers and object count. The
+net or, with none, by <code>body:</code> and its largest object. Under each name is the layers it spans, its vias and
+its size. Pieces carrying a net come first, by net, and the largest first within each. A piece that is
+already ground is not offered to a terminal, and a piece already in a terminal carries that terminal's name.
+A choice is taken on Enter or a click; moving through the list with the arrow keys changes nothing. The
 <a href="../reference/em-setup.html#package-rlc">setup reference</a> has the rules for typing a name instead.</p>
-<p>The <strong>Ground</strong> list offers the same pieces, and one more entry: <strong>Every body not in a terminal</strong>. On a board
-with no nets that is usually the right ground. It takes every plane, pour and stitching via that is not in a
-terminal.</p>
+<p>The <strong>Ground</strong> list offers the same pieces, marked <strong>(ground)</strong> where they already are, and two more entries:
+<strong>Every body not in a terminal</strong>, and <strong>Default ground</strong>, the ground-reference layers. On a board with no nets
+<strong>Every body not in a terminal</strong> is usually the right ground. It takes every plane, pour and stitching via that
+is not in a terminal. The Ground box takes several names, comma-separated, and a choice from the list or a
+<strong>Pick</strong> is added to what it holds: <code>+ default ground, body:…/Inner 5/2</code> keeps the ground-reference layers and
+adds a plane on a layer the technology does not mark as ground.</p>
 <h2 id="ground">Ground or floating</h2>
 <p>Metal that is in no terminal and is not the ground is decided by <strong>Other metal</strong>:</p>
 <ul>
@@ -158,8 +165,10 @@ negative: raising the line induces opposite charge on the pad.</p>
 <li>the capacitor from i to ground is the row sum of C: here 532 − 31 = 501 fF for the pad, and 2,460 − 31 =
 <strong>2,429 fF</strong> for the line.</li>
 </ul>
-<p>That is <code>C_mutual</code>, which circuitRF also writes, so nothing needs to be converted by hand. Use C[i][i], the
-Maxwell diagonal, only when everything else really is grounded. Use <code>C_mutual</code> when you draw the circuit.</p>
+<p>That is <code>C_mutual</code>, which circuitRF also writes, so nothing needs to be converted by hand. Its diagonal is
+also written on its own as <code>C_ground</code>, each terminal's capacitance to ground. A new plot of the result opens
+on <code>C_mutual</code>. Use C[i][i], the Maxwell diagonal, only when everything else really is grounded. Use
+<code>C_mutual</code> when you draw the circuit.</p>
 <h2 id="checks">Checking the answer by hand</h2>
 <p>Two checks in Capacitance Extraction need no solver at all.</p>
 <p><strong>The pad against εA/d.</strong> A parallel-plate capacitor with the pad's 2 × 2 mm area over 0.508 mm of εr 4.4

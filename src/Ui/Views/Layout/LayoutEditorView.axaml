@@ -867,6 +867,10 @@
                      bar, so its appearing moves nothing else. -->
                 <TextBlock Classes="value" x:Name="PortsRowStatus" Text="{Binding ActiveViewModel.PortsRowStatusText}"
                            IsVisible="{Binding ActiveViewModel.PortsRowStatusText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                <!-- brief-dfr34-4 R-dfr34-4-4: a drill on one net under copper of another, which a click (it selects the pad)
+                     does not show. After the Ports reminder, and empty elsewhere, so it moves nothing. -->
+                <TextBlock Classes="value" x:Name="ViaNetHover" Text="{Binding ActiveViewModel.ViaNetHoverText}"
+                           IsVisible="{Binding ActiveViewModel.ViaNetHoverText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
             </StackPanel>
         </Border>
 
