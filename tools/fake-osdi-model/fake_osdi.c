@@ -422,6 +422,7 @@ typedef struct {
     double  *jac_resist[9];
     double  *jac_react[9];
     bool     collapsed[1];      /* no collapsible pairs; kept so the offset is real */
+    uint32_t state_idx[1];      /* written by the HOST: where vgs's $limit state lives */
 
     double   resid_resist[3];
     double   resid_react[3];
@@ -496,6 +497,17 @@ static void fet_setup_instance(void *handle, void *inst, void *model, double tem
     res->flags = 0; res->num_errors = 0; res->errors = NULL;
 }
 
+/* $limit, the way a Verilog-A compiler emits `vgs = $limit(V(g,s), "pnjlim", vt, vcrit)` — the shape of every
+ * junction in a compiled bipolar model. The library exports a table of the limiting functions it calls
+ * with func_ptr left for the HOST to fill; eval calls through it unconditionally, and reads the last
+ * limited value from prev_state and stores the new one in next_state through the instance's state
+ * index. A host that leaves the pointer NULL or either state vector NULL crashes here, which is what
+ * VBIC did in the worker before it filled both. The worker's limiting is an identity, so the closed
+ * form above is unchanged. */
+OsdiLimFunction OSDI_LIM_TABLE[] = { { (char *)"pnjlim", 2, NULL } };
+uint32_t OSDI_LIM_TABLE_LEN = 1;
+typedef double (*LimFn2)(bool init, bool *check, double vnew, double vold, double a1, double a2);
+
 static uint32_t fet_eval(void *handle, void *inst, const void *model, const OsdiSimInfo *info) {
     (void)handle;
     const FetModel *m = (const FetModel *)model;
@@ -507,6 +519,11 @@ static uint32_t fet_eval(void *handle, void *inst, const void *model, const Osdi
 
     double vgs = v0 - v2, vds = v1 - v2, vgd = v0 - v1;
     double mu  = i->mult;
+
+    bool moved = false;
+    vgs = ((LimFn2)OSDI_LIM_TABLE[0].func_ptr)((info->flags & INIT_LIM) != 0, &moved, vgs,
+                                               info->prev_state[i->state_idx[0]], 0.025, 0.6);
+    info->next_state[i->state_idx[0]] = vgs;
 
     double u    = vgs - m->vth;
     double root = sqrt(u * u + m->delta * m->delta);
@@ -1112,8 +1129,8 @@ OsdiDescriptor OSDI_DESCRIPTORS[] = {
         .node_mapping_offset        = (uint32_t)offsetof(FetInst, node_mapping),
         .jacobian_ptr_resist_offset = (uint32_t)offsetof(FetInst, jac_resist),
 
-        .num_states    = 0,
-        .state_idx_off = 0,
+        .num_states    = 1,     /* vgs's $limit state, see fet_eval */
+        .state_idx_off = (uint32_t)offsetof(FetInst, state_idx),
 
         .bound_step_offset = 0,
 

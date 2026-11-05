@@ -314,6 +314,11 @@ typedef struct {
     void                 *model;
     void                 *inst;
     uint32_t              n;
+    /* num_states doubles each. A model that uses $limit writes its bookkeeping through
+     * OsdiSimInfo's next_state EVEN WHEN limiting is not enabled, so these must exist and be
+     * distinct; NULL is a store to address zero. See cmd_eval. */
+    double               *state_prev;
+    double               *state_next;
 } Instance;
 
 static Library  g_lib;
@@ -365,6 +370,85 @@ static void crf_osdi_log(void *handle, char *msg, uint32_t lvl) {
     if (!(lvl & LOG_FMT_ERR)) free(msg);
 }
 
+/* ── $limit, and why the functions installed here are identities ─────────────
+ *
+ * A model that uses $limit exports OSDI_LIM_TABLE: one entry per limiting function it calls, each
+ * carrying a func_ptr THE HOST FILLS IN. The compiled code makes an unconditional indirect call through that
+ * pointer, so a table left exactly as the library ships it — every func_ptr NULL — is a call to
+ * address zero the instant the model evaluates. VBIC and HICUM/L2 both export one; PSP103, r3_cmc
+ * and mosvar export none, which is why only the bipolar models ever crashed.
+ *
+ * The functions are IDENTITIES, deliberately, and that is the whole of the design decision.
+ * Real SPICE limiting returns a DIFFERENT voltage from the one it was handed, and a host that
+ * limits must then add the model's own load_limit_rhs_resist/react correction to the right-hand
+ * side to stay consistent. This worker loads neither — limiting is circuitRF's own continuation's
+ * problem, as the note above sim_paras already states. An identity is what keeps both halves of
+ * that contract together: the model evaluates at exactly the bias the host asked for, the limit
+ * RHS is identically zero, and the two never disagree about which bias was solved. Installing
+ * genuine pnjlim here WITHOUT loading that correction would not be more accurate, it would be
+ * quietly wrong.
+ *
+ * `check` is the model's "I moved it" flag, and stays false for the same reason. `init` asks for a
+ * starting value; it is only ever true under INIT_LIM, which this worker never sets.
+ *
+ * The ABI is double f(bool init, bool *check, double vnew, double vold, <num_args doubles>), as the
+ * OSDI 0.3 specification has it. One function per arity: calling through
+ * a prototype that disagrees is undefined behaviour, and on Windows x64, where argument registers go
+ * by position, dropping `init` hands back the wrong register instead of vnew. */
+static double crf_lim0(bool init, bool *check, double vnew, double vold) {
+    (void)init; (void)vold; if (check) *check = false; return vnew;
+}
+static double crf_lim1(bool init, bool *check, double vnew, double vold, double a1) {
+    (void)init; (void)vold; (void)a1; if (check) *check = false; return vnew;
+}
+static double crf_lim2(bool init, bool *check, double vnew, double vold, double a1, double a2) {
+    (void)init; (void)vold; (void)a1; (void)a2; if (check) *check = false; return vnew;
+}
+static double crf_lim3(bool init, bool *check, double vnew, double vold,
+                       double a1, double a2, double a3) {
+    (void)init; (void)vold; (void)a1; (void)a2; (void)a3; if (check) *check = false; return vnew;
+}
+static double crf_lim4(bool init, bool *check, double vnew, double vold,
+                       double a1, double a2, double a3, double a4) {
+    (void)init; (void)vold; (void)a1; (void)a2; (void)a3; (void)a4; if (check) *check = false; return vnew;
+}
+
+/* Fills every entry of the model's limiting table. Absent table = the model uses no $limit, which
+ * is the ordinary case and not a condition worth reporting. */
+static void install_lim_table(const char *path) {
+    uint32_t *len = (uint32_t *)dl_sym(g_lib.handle, "OSDI_LIM_TABLE_LEN");
+    OsdiLimFunction *tbl = (OsdiLimFunction *)dl_sym(g_lib.handle, "OSDI_LIM_TABLE");
+    if (getenv("CRF_OSDI_DEBUG"))
+        fprintf(stderr, "osdi-worker: lim table %s (len=%p tbl=%p)\n",
+                (len && tbl) ? "present" : "absent", (void*)len, (void*)tbl);
+    if (!len || !tbl) return;
+
+    for (uint32_t i = 0; i < *len; i++) {
+        void *fn;
+        switch (tbl[i].num_args) {
+            case 0:  fn = (void *)crf_lim0; break;
+            case 1:  fn = (void *)crf_lim1; break;
+            case 2:  fn = (void *)crf_lim2; break;
+            case 3:  fn = (void *)crf_lim3; break;
+            case 4:  fn = (void *)crf_lim4; break;
+            default: fn = NULL;            break;
+        }
+        if (fn) {
+            tbl[i].func_ptr = fn;
+            if (getenv("CRF_OSDI_DEBUG"))
+                fprintf(stderr, "osdi-worker: installed '%s' (num_args=%u) -> %p\n",
+                        tbl[i].name ? tbl[i].name : "?", tbl[i].num_args, fn);
+        } else {
+            /* Left NULL it would crash on first use, so say which model and which function rather
+             * than let the segfault be the diagnostic. */
+            fprintf(stderr, "osdi-worker: '%s' asks for limiting function '%s' with %u arguments, "
+                            "which this worker does not provide; it stays unset and evaluating "
+                            "this model will fail.\n",
+                    path, tbl[i].name ? tbl[i].name : "(unnamed)", tbl[i].num_args);
+        }
+    }
+}
+
 static int load_library(const char *path) {
     g_lib.handle = dl_open(path);
     if (!g_lib.handle) { fprintf(stderr, "osdi-worker: dlopen failed: %s\n", dl_error()); return -1; }
@@ -407,6 +491,8 @@ static int load_library(const char *path) {
                 (unsigned)OSDI_VERSION_MAJOR_CURR);
         return -1;
     }
+
+    install_lim_table(path);
     return 0;
 }
 
@@ -572,8 +658,8 @@ static double g_sim_vals[] = {
  *  - `$mfactor`. Multiplicity is not passed. A user scales by placing instances, or through the
  *    model's own width/finger parameters, which is the same answer for every model that has them.
  *
- *  - `$limit` and the limiting functions. See the eval loop below: no limiting is installed, and
- *    convergence is circuitRF's own continuation's problem. Recorded because a model that expects
+ *  - `$limit` and the limiting functions. See the eval loop below: the functions installed are
+ *    identities, so nothing is limited, and convergence is circuitRF's own continuation's problem. Recorded because a model that expects
  *    host limiting converges DIFFERENTLY, not wrongly. */
 static char *g_sim_str_names[] = { NULL };
 static char *g_sim_str_vals[]  = { NULL };
@@ -829,6 +915,19 @@ static int cmd_create(const char *js, const char *js_end) {
     d->setup_instance(NULL, inst, model, temperature, connected, &sim, &info);
     if (info.num_errors) { free(model); free(inst); report_error("create: instance setup reported errors"); return 0; }
 
+    /* calloc of zero is implementation-defined, so a stateless model keeps NULL rather than a
+     * one-element allocation that only looks meaningful. */
+    if (d->num_states) {
+        g_inst[slot].state_prev = (double *)calloc(d->num_states, sizeof(double));
+        g_inst[slot].state_next = (double *)calloc(d->num_states, sizeof(double));
+        if (!g_inst[slot].state_prev || !g_inst[slot].state_next) {
+            free(g_inst[slot].state_prev); free(g_inst[slot].state_next);
+            g_inst[slot].state_prev = g_inst[slot].state_next = NULL;
+            free(model); free(inst);
+            report_error("create: out of memory for the model's state vectors");
+            return 0;
+        }
+    }
     g_inst[slot].live  = true;
     g_inst[slot].d     = d;
     g_inst[slot].model = model;
@@ -839,6 +938,11 @@ static int cmd_create(const char *js, const char *js_end) {
      * solution vector, so node k of the device is row k of that vector. */
     uint32_t *map = (uint32_t *)((char *)inst + d->node_mapping_offset);
     for (uint32_t i = 0; i < d->num_nodes; i++) map[i] = i;
+
+    /* The state index table is the host's to fill, like the node mapping; left at calloc's zero,
+     * every state would alias slot 0 of the vectors above. The same identity, for the same reason. */
+    uint32_t *sidx = (uint32_t *)((char *)inst + d->state_idx_off);
+    for (uint32_t k = 0; k < d->num_states; k++) sidx[k] = k;
 
     Sb s = {0};
     sb_puts(&s, "{\"handle\":"); sb_int(&s, slot);
@@ -1028,9 +1132,9 @@ static int cmd_eval(const char *js, const char *js_end, const double *in, size_t
         info.paras      = sim;
         info.abstime    = 0.0;
         info.prev_solve = sol;
-        info.prev_state = NULL;
-        info.next_state = NULL;
-        /* Limiting is deliberately NOT enabled — no `$limit`, and none of the limiting functions.
+        info.prev_state = ins->state_prev;
+        info.next_state = ins->state_next;
+        /* Limiting is deliberately NOT enabled — no ENABLE_LIM, and the limiting functions are identities.
          * It is a Newton-damping device whose meaning is tied to a previous iterate, and it does not
          * carry over to a frequency-domain solve; convergence here is circuitRF's own continuation's
          * problem. Recorded because a model written expecting host limiting converges DIFFERENTLY,
@@ -1044,6 +1148,10 @@ static int cmd_eval(const char *js, const char *js_end, const double *in, size_t
         memset(jx, 0, d->num_jacobian_entries * sizeof(double));
 
         uint32_t rc = d->eval(NULL, ins->inst, ins->model, &info);
+
+        /* What this point wrote becomes what the next one reads. The buffers are swapped rather
+         * than copied because the ABI only ever needs the two most recent. */
+        { double *t = ins->state_prev; ins->state_prev = ins->state_next; ins->state_next = t; }
 
         double *point = out + count + k * per_point;
         double *I = point;
@@ -1167,6 +1275,7 @@ int main(int argc, char **argv) {
             int h = (int)hv;
             if (h >= 0 && h < MAX_INSTANCES && g_inst[h].live) {
                 free(g_inst[h].model); free(g_inst[h].inst);
+                free(g_inst[h].state_prev); free(g_inst[h].state_next);
                 memset(&g_inst[h], 0, sizeof g_inst[h]);
             }
             write_frame("{}", NULL, 0);
