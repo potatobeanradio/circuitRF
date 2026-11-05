@@ -86,8 +86,8 @@ public sealed class SimulateGateTests(ITestOutputHelper output) : IDisposable
         // Nothing on one edge: a port that stops short of the trace.
         var doc = Microstrip();
         doc.Ports.Add(EndPort(0, 50));
-        Assert.Equal("P1 touches 'gnd' on its bottom edge and nothing on its top. A lumped port lies between two conductors, " +
-                     "one on each of two opposite edges.", Resolve(doc).Result.Refusal);
+        Assert.Equal("P1 touches 'gnd' on its bottom edge and nothing on its top. Its top edge misses 'trace' by 50 µm. A lumped port lies " +
+                     "between two conductors, one on each of two opposite edges.", Resolve(doc).Result.Refusal);
 
         // Two conductors on one edge.
         doc = Microstrip();

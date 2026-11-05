@@ -1,5 +1,23 @@
 # `src/Ui/ThreeD` — resolved findings
 
+## Expand Edges and Contract Edges, and the lumped-port contact refusal (2026-11-05)
+
+- **The refusal blamed the wrong edges.** A sheet reaching 18 µm too high ran its side edges through the top copper, so it read as
+  touching one conductor on both sides, and the bottom edge that actually missed was never mentioned. `ContactRefusal` now says how far an
+  edge that touches nothing misses the nearest conductor, leaving out what the opposite edge already touches.
+- **Not the generator's `ReturnWalk`.** That walk finds a layout port's return: z only, over a layout's stackup bands, metal only.
+  Edge moves run along any axis of any plane and stop at drawn solids and sheets as well, so `C3dEdgeMoves` cuts the elaboration through
+  the rectangle's plane instead. One rule is shared: **a boundary between two dielectrics stops nothing**. Without that an edge in a
+  multilayer stackup halts at the first core/prepreg boundary, then reads as already touching the next dielectric, and is stuck for good.
+- **Cutting a mesh leaves false stops.** A wall's two triangles cut into two collinear pieces whose join lies at an arbitrary height, and
+  an edge stopped there at nothing. Collinear pieces are merged, and an edge two coplanar triangles share is not boundary.
+- **A status line must not report a move the drag rule refused.** `ChangeObjects` returns nothing, and `Push` passes a bound
+  dimension through `ThroughNames`, which puts a dropped expression back, so unbinding in the mutate does nothing: the edit was refused and
+  the status said it had moved. Sheets follow the rule now and read `ExpressionRefusals` to tell. An expression of numbers alone has no
+  name to solve for and would always be refused, so it is unbound first through `EditNames`, in one group. A port has no drag rule.
+- **A refused port has no scene object**, so it has no menu in the view, and it is the very port these commands exist to fix. The commands
+  are on its Object Tree row as well.
+
 ## Review of brief-em3d-101 (2026-10-03)
 
 - **Save As rewrites the image paths the UNDO HISTORY holds**, not only the document's (`C3dEditorViewModel.RebaseHistoryImages`,

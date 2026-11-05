@@ -505,7 +505,7 @@ public static class C3dPorts
                 if (touching[2 * k].Count == 1 && touching[2 * k + 1].Count == 1 && touching[2 * k][0] != touching[2 * k + 1][0])
                     valid.Add(k);
             if (valid.Count != 1)
-                return Refuse(port, ContactRefusal(label, touching, valid.Count), contacts);
+                return Refuse(port, ContactRefusal(label, touching, valid.Count, edges, ctx), contacts);
             pair = valid[0];
             string low = touching[2 * pair][0], high = touching[2 * pair + 1][0];
             var lc = ctx.Conductors.First(c => c.Name == low);
@@ -750,7 +750,7 @@ public static class C3dPorts
     }
 
     /// <summary>R-em3d49-2b — the refusal, naming what each edge touches.</summary>
-    private static string ContactRefusal(string label, List<string>[] touching, int validPairs)
+    private static string ContactRefusal(string label, List<string>[] touching, int validPairs, (Point3 A, Point3 B)[] edges, C3dPortContext ctx)
     {
         string Names(List<string> n) => n.Count == 0 ? "nothing" : string.Join(" and ", n.Select(x => $"'{x}'"));
         const string Rule = "A lumped port lies between two conductors, one on each of two opposite edges.";
@@ -762,17 +762,54 @@ public static class C3dPorts
             if (touching[e].Count > 1)
                 return $"{label}'s {EdgeNames[e]} edge touches both {Names(touching[e])}; an end of a port is one conductor. " +
                        $"{Rule} Shrink the port, or state Positive and Negative.";
+
+        // The edge that touches nothing is usually what is wrong, and how far it misses is what to fix: a conductor the edge opposite
+        // it already touches cannot be this end too, so the nearest OTHER one is named. Nothing nearby is left unsaid.
+        string? Misses(int e)
+        {
+            var other = touching[e ^ 1];
+            return Nearest(edges[e], other, ctx) is { } near ? $"its {EdgeNames[e]} edge misses '{near.Name}' by {Fmt(near.D)} µm" : null;
+        }
+        string Sentence(IEnumerable<string?> clauses)
+        {
+            var said = clauses.OfType<string>().ToList();
+            return said.Count == 0 ? "" : char.ToUpperInvariant(said[0][0]) + said[0][1..] + string.Concat(said.Skip(1).Select(c => ", " + c)) + ". ";
+        }
+
         for (int k = 0; k < 2; k++)
             if (touching[2 * k].Count == 1 && touching[2 * k + 1].Count == 1)
                 return $"{label} touches {Names(touching[2 * k])} on both its {EdgeNames[2 * k]} and {EdgeNames[2 * k + 1]} edges, so " +
-                       $"both of its ends are one conductor. {Rule}";
+                       $"both of its ends are one conductor. " +
+                       Sentence(new[] { 2 - 2 * k, 3 - 2 * k }.Where(e => touching[e].Count == 0).Select(Misses)) + Rule;
         // The pair with the most contact says the most about what is missing.
         int best = touching[0].Count + touching[1].Count >= touching[2].Count + touching[3].Count ? 0 : 1;
         var (a, b) = (touching[2 * best], touching[2 * best + 1]);
         if (a.Count + b.Count == 0)
-            return $"{label} touches no conductor on any edge. {Rule} Draw it so two opposite edges lie on the metal.";
+            return $"{label} touches no conductor on any edge. {Sentence(Enumerable.Range(0, 4).Select(Misses))}{Rule} Draw it so two opposite edges lie on the metal.";
         var (lo, hi) = a.Count >= b.Count ? (2 * best, 2 * best + 1) : (2 * best + 1, 2 * best);
-        return $"{label} touches {Names(touching[lo])} on its {EdgeNames[lo]} edge and nothing on its {EdgeNames[hi]}. {Rule}";
+        return $"{label} touches {Names(touching[lo])} on its {EdgeNames[lo]} edge and nothing on its {EdgeNames[hi]}. {Sentence([Misses(hi)])}{Rule}";
+    }
+
+    /// <summary>The conductor nearest an edge, leaving out <paramref name="except"/>; null when none is left. Measured nearest box first and
+    /// stopped once no box can beat the best, because the port tool asks on every mouse move and a board's pours are thousands of triangles.</summary>
+    private static (string Name, double D)? Nearest((Point3 A, Point3 B) edge, List<string> except, C3dPortContext ctx)
+    {
+        var (p, q) = edge;
+        double BoxGap((double X0, double Y0, double Z0, double X1, double Y1, double Z1) b)
+        {
+            double gx = Math.Max(0, Math.Max(b.X0 - Math.Max(p.X, q.X), Math.Min(p.X, q.X) - b.X1));
+            double gy = Math.Max(0, Math.Max(b.Y0 - Math.Max(p.Y, q.Y), Math.Min(p.Y, q.Y) - b.Y1));
+            double gz = Math.Max(0, Math.Max(b.Z0 - Math.Max(p.Z, q.Z), Math.Min(p.Z, q.Z) - b.Z1));
+            return Math.Sqrt(gx * gx + gy * gy + gz * gz);
+        }
+        (string Name, double D)? best = null;
+        foreach (var (c, gap) in ctx.Conductors.Where(c => !except.Contains(c.Name)).Select(c => (c, BoxGap(c.Box))).OrderBy(x => x.Item2))
+        {
+            if (best is { } b && gap >= b.D) break;
+            double d = ctx.Distance(c, p, q, bounded: false);
+            if (!double.IsInfinity(d) && (best is null || d < best.Value.D)) best = (c.Name, d);
+        }
+        return best;
     }
 
     /// <summary>R-em3d49-2b — which of two ends is negative, and why.</summary>

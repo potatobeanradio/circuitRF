@@ -192,7 +192,9 @@ it, **Shift**-click adds or removes, **Esc** clears.
   click on it selects (its row, and its fields in Properties); **B** from it steps to the solid, or in Face mode the
   face, under it.
 - **Right-click** opens the menu for what is selected: *Hide*, *Isolate*, *Show All*, *Select Owning
-  Object*, and the commands this page describes. **Hide** the lid and the walls to work inside the package;
+  Object*, and the commands this page describes. A right-click anywhere over the selection keeps it, even where something stands
+  in front of it, since a selected face shows through what covers it; anywhere else it selects what is under the cursor first. To
+  act on the thing in front, left-click it first. **Hide** the lid and the walls to work inside the package;
   **Show All** brings them back. Hiding changes only the picture — the solver still sees everything.
 - **H** hides the selection, and shows it again: press it in the view or in the object tree (where a selection of
   several rows is usually made), or use *3D ▸ Hide / Show Selection*, the same item on either right-click menu, or the
@@ -1298,6 +1300,22 @@ arrow and all. While it is drawn, the arrow (or the reason there cannot be one) 
 two ports are 5 × 5 mil rectangles on the YZ plane at each lead's outer end, from the floor up to the lead:
 each runs **from `floor` (−) up to its lead (+)**. *Flip* on its menu turns it round; a wrong arrow turns
 every transmission term by 180°, so look before a run.
+
+<a id="expand-edges"></a>**Expand Edges and Contract Edges.** A sheet or lumped port need not be drawn exactly. Right-click a drawn
+rectangular sheet or a lumped port, in the view or on its Object Tree row, and choose *Expand Edges* or *Contract Edges*: *All*, one
+edge (*-X Only*, *+X Only*) or both edges of an axis (*X*), for the two axes of its plane. A refused port has no sheet in the view, so
+reach it from its row.
+
+*Expand Edges* grows an edge until it meets the next solid or sheet, and an edge already touching one stays. *Contract Edges* shrinks an edge
+back to the next boundary inside the rectangle, and never reaches the opposite edge, so the rectangle cannot collapse; when both
+edges of an axis would stop at one boundary, the nearer takes it. Each item's tip says what it will do and what it will stop at, and an item
+that would move nothing is greyed out. A PEC face of the air box stops an edge too, and a boundary between two dielectrics
+does not, so an edge inside a multilayer stackup goes on to its copper. An object with Model off is ignored.
+
+A sheet reaching through a plate at one end and short of a plate at the other takes two steps: *Contract Edges ▸ +Z Only*, then *Expand
+Edges ▸ -Z Only*, and *Make Port ▸ Lumped* is then available. A dimension holding a variable writes that variable, as a drag
+does, or is refused with **Replace with Number** on offer; a dimension holding only numbers (`100+20`) becomes the number. A sheet with an
+outline rather than a rectangle, a rotated sheet, a locked image sheet and a port turned to an angle do not take these commands.
 
 <a id="turned-port"></a>**A port at an angle.** Between pads that are not square to the axes, such as a part placed at 45°,
 a lumped port lying flat in the XY plane can be turned. Draw a sheet across the gap with its two ends along the two pads'

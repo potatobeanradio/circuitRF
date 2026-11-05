@@ -1456,6 +1456,9 @@ public sealed partial class C3dEditorViewModel
                 yield break;
             }
             yield return PortMoveItem(ports);                   // brief-dfr34-1 R-dfr34-1-1
+            // A lumped port that misses its copper is refused until it reaches it, and this is the quick way there.
+            if (ports is [{ Kind: Em3dPortKind.Lumped, Cylinder: null } lumpedPort])
+                foreach (var m in EdgeMenuItems(PortEdgeTarget(lumpedPort, out string? portWhy), portWhy)) yield return m;
             yield return new Viewer3DMenuItem(ports.Count == 1 ? $"Flip {C3dPorts.Label(ports[0])}" : "Flip Ports", () => FlipPorts(ports),
                                               Tip: "Swap the port's + and − ends: the arrow turns round.");
             yield return new Viewer3DMenuItem("Port Kind", Children:
@@ -1476,6 +1479,8 @@ public sealed partial class C3dEditorViewModel
         {
             var surface = sel[0] with { Face = 0 };
             yield return new Viewer3DMenuItem("Make Port", Children: [MakePortItem(surface, Em3dPortKind.Lumped), MakePortItem(surface, Em3dPortKind.Wave)]);
+            var drawn = (C3dSheet)Document.Objects[SheetReplacedBy(sheetObj)];
+            foreach (var m in EdgeMenuItems(SheetEdgeTarget(drawn, out string? sheetWhy), sheetWhy)) yield return m;
             yield return Viewer3DMenuItem.Separator;
             yield break;
         }
@@ -1523,6 +1528,8 @@ public sealed partial class C3dEditorViewModel
             ]);
         }
         yield return new Viewer3DMenuItem("Make Port", Children: [MakePortItem(item, Em3dPortKind.Lumped), MakePortItem(item, Em3dPortKind.Wave)]);
+        if (SheetReplacedBy(o) is var drawnIndex and >= 0)
+            foreach (var m in EdgeMenuItems(SheetEdgeTarget((C3dSheet)Document.Objects[drawnIndex], out string? faceWhy), faceWhy)) yield return m;
         yield return Viewer3DMenuItem.Separator;
     }
 

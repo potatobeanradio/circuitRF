@@ -6,6 +6,7 @@
 
 using Avalonia.Input;
 using CircuitRF.Design.ThreeD;
+using CircuitRF.Engine.Em3d;
 using CircuitRF.Render.Scene3D;
 using CircuitRF.Ui.Viewer3D;
 
@@ -56,6 +57,9 @@ public sealed partial class C3dEditorViewModel
         {
             var port = PortOfRow(item);
             if (port is not null) items.Add(PortMoveItem([port]));   // brief-dfr34-1 R-dfr34-1-1
+            // A refused port has no sheet to click in the view, so this row is the only way to it, and it is the port that needs fixing.
+            if (item.Kind == "Port" && port is { Kind: Em3dPortKind.Lumped, Cylinder: null })
+                items.AddRange(EdgeMenuItems(PortEdgeTarget(port, out string? portWhy), portWhy));
             items.Add(new Viewer3DMenuItem("Duplicate", Enabled: false, Tip: "A port is drawn with the Port tool: each one joins its own pair of conductors."));
             if (port is not null && item.Kind == "Port") items.AddRange(PortValueItems(port));   // Z0, Number, Name
             items.Add(Viewer3DMenuItem.Separator);
@@ -133,6 +137,8 @@ public sealed partial class C3dEditorViewModel
                            : "Not drawn (elaboration refused it — see Properties): there is nothing to place yet."));
             // 3D editor groups — disabled for this row alone (a group holds two things or more), with the reason.
             items.Add(GroupObjectsItem());
+            if (item.ObjectIndex >= 0 && item.ObjectIndex < Document.Objects.Count && Document.Objects[item.ObjectIndex] is C3dSheet drawnSheet)
+                items.AddRange(EdgeMenuItems(SheetEdgeTarget(drawnSheet, out string? sheetWhy), sheetWhy));
             items.Add(Viewer3DMenuItem.Separator);
             if (item.ObjectIndex >= 0)
                 items.Add(new Viewer3DMenuItem("Delete", () => DeleteObjects([item.ObjectIndex])));

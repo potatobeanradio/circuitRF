@@ -483,17 +483,7 @@ public sealed partial class Viewer3DViewModel
         var visible = View.Visible;
         var clip = View.Clip;
         var hit = HitCycle.Step(direction, View.CursorX, View.CursorY, mode, scene.Generation, current,
-                                () =>
-                                {
-                                    var hits = RayHits.Collect(scene, q, mode, visible, clip);
-                                    // brief-em3d-67 — B steps through what a click could select.
-                                    if (mode == Scene3DSelectMode.Edge) hits.RemoveAll(x => scene.Object(x.Item.Object)?.Selectable != true);
-                                    // brief-em3d-49 — the air-box faces after every solid face: lowest priority.
-                                    if (mode == Scene3DSelectMode.Face)
-                                        foreach (var (id, depth, point) in Scene3DPicking.PickLastHits(scene, q.Camera, q.Px, q.Py, q.Width, q.Height, visible))
-                                            hits.Add(new Scene3DHit(Scene3DItem.OfFace(id, 0), depth, point));
-                                    return hits;
-                                });
+                                () => HitsAlongRay(scene, q, mode, visible, clip));
         if (hit is not { } h)
         {
             CycleText = "Nothing under the cursor to step through.";
@@ -503,6 +493,19 @@ public sealed partial class Viewer3DViewModel
         // R-em3d43-4c: without a readout, cycling feels like a glitch.
         CycleText = $"{Name(h.Item)} · {HitCycle.Index + 1} of {HitCycle.Count}";
         return true;
+    }
+
+    /// <summary>Everything a click could select along a ray, nearest first, what is hidden behind the front included.</summary>
+    private static List<Scene3DHit> HitsAlongRay(Scene3DModel scene, in Scene3DRayQuery q, Scene3DSelectMode mode, ReadOnlySpan<bool> visible, in ClipPlane3D clip)
+    {
+        var hits = RayHits.Collect(scene, q, mode, visible, clip);
+        // brief-em3d-67 — B steps through what a click could select.
+        if (mode == Scene3DSelectMode.Edge) hits.RemoveAll(x => scene.Object(x.Item.Object)?.Selectable != true);
+        // brief-em3d-49 — the air-box faces after every solid face: lowest priority.
+        if (mode == Scene3DSelectMode.Face)
+            foreach (var (id, depth, point) in Scene3DPicking.PickLastHits(scene, q.Camera, q.Px, q.Py, q.Width, q.Height, visible))
+                hits.Add(new Scene3DHit(Scene3DItem.OfFace(id, 0), depth, point));
+        return hits;
     }
 
     private readonly Dictionary<string, string> _renames = new(StringComparer.Ordinal);
@@ -829,13 +832,27 @@ public sealed partial class Viewer3DViewModel
 
     /// <summary>
     /// A right-click: selects what is under the cursor first when it is not selected — unless the selection
-    /// came from B at this cursor, which the menu then acts on even though the cursor is over the front face.
-    /// Returns the menu for the selection.
+    /// came from B at this cursor, which the menu then acts on even though the cursor is over the front face, or the
+    /// cursor is on the selection at all, however far back. Returns the menu for the selection.
     /// </summary>
     public IReadOnlyList<Viewer3DMenuItem> OpenContextMenu()
     {
-        if (!HitCycle.Active && HoveredItem is { } h && !View.Selection.Contains(h)) SetSelection(EditHost?.PickGroup(h) ?? [h]);
+        if (!HitCycle.Active && HoveredItem is { } h && !View.Selection.Contains(h) && !SelectionUnderCursor())
+            SetSelection(EditHost?.PickGroup(h) ?? [h]);
         return ContextMenuItems();
+    }
+
+    /// <summary>
+    /// Whether anything selected lies along the cursor's ray. The hovered item alone cannot say: the ID pass keeps the front
+    /// fragment, while a selected face is drawn over everything (<see cref="Scene3DPipeline.OnTop"/>) and a selected object's
+    /// outline likewise, so what looks selected under the cursor can stand behind what is hovered there.
+    /// </summary>
+    private bool SelectionUnderCursor()
+    {
+        if (View.Selection.Length == 0 || View.CursorX < 0) return false;
+        var q = new Scene3DRayQuery(View.Camera, View.CursorX, View.CursorY, _viewW, _viewH);
+        var selected = View.Selection;
+        return HitsAlongRay(Scene, q, SelectMode, View.Visible, View.Clip).Any(x => selected.Contains(x.Item));
     }
 
     /// <summary>The menu for the current selection, per mode. Brief 43 builds the frame and the operations

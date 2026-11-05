@@ -187,6 +187,44 @@ public sealed class C3dEditorGateTests : IDisposable
         Assert.Equal("Face zmin · Box \"b3\"", v.Name(v.Selection.Single()));
     }
 
+    /// <summary>A selected face is drawn over everything, so a right-click on its highlight may hover a face in front of it. It stays
+    /// selected and the menu acts on it. A selected face off the cursor's ray gives way to what is hovered, as ever.</summary>
+    [Fact]
+    public void ARightClickOnASelectedFace_KeepsIt_ThoughAFaceStandsInFrontOfIt()
+    {
+        var vm = Open(Stack());
+        var v = vm.Viewer;
+        LookDownOnTheStack(v);
+        v.SelectMode = Scene3DSelectMode.Face;
+        Hover(v, W / 2, H / 2);
+        var b3 = v.Scene.Objects.Single(o => o.Name == "b3");
+        Scene3DItem Face(string name) => Scene3DItem.OfFace(b3.Id, Enumerable.Range(0, b3.FaceNames.Count).Single(i => b3.FaceNames[i] == name));
+
+        v.SetSelection([Face("zmin")]);
+        Assert.Equal("Face zmin · Box \"b3\"", v.OpenContextMenu()[0].Header);
+        Assert.Equal(Face("zmin"), v.Selection.Single());
+
+        v.SetSelection([Face("xmax")]);
+        Assert.Equal("Face zmax · Box \"b1\"", v.OpenContextMenu()[0].Header);
+    }
+
+    /// <summary>The same for a solid, whose outline is drawn through what stands in front of it.</summary>
+    [Fact]
+    public void ARightClickOnASelectedSolid_KeepsIt_ThoughASolidStandsInFrontOfIt()
+    {
+        var vm = Open(Stack());
+        var v = vm.Viewer;
+        LookDownOnTheStack(v);
+        v.SelectMode = Scene3DSelectMode.Object;
+        Hover(v, W / 2, H / 2);
+        var b3 = Scene3DItem.OfObject(v.Scene.Objects.Single(o => o.Name == "b3").Id);
+        Assert.NotEqual(b3, v.HoveredItem);
+
+        v.SetSelection([b3]);
+        v.OpenContextMenu();
+        Assert.Equal(b3, v.Selection.Single());
+    }
+
     // ── 4. the list resets ──────────────────────────────────────────────────────────────────
 
     [Fact]

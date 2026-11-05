@@ -3,6 +3,15 @@
 Findings from work on the 3D viewer's view model. The field model itself (readers, surfaces, samplers) is recorded in
 `src/Render/RESOLVED.md`.
 
+## A right-click on the selection selected what stood in front of it (2026-11-05)
+
+A selected face is drawn again with the depth test off (`Scene3DPipeline.OnTop`) and a selected object's outline likewise, so the
+selection can be seen through what covers it. The ID pass keeps only the front fragment, so `HoveredItem` under that highlight was the
+covering face, and `OpenContextMenu`'s test of the hovered item against the selection failed and selected it. It happened only where something
+overlapped the selection on screen. `SelectionUnderCursor` now asks the CPU ray `B` uses (`HitsAlongRay`, shared with `Cycle`, air-box faces
+included) whether anything selected lies along the cursor's line of sight at any depth. The rule is deliberately the same in Object mode,
+so a large selected solid keeps the menu over anything in front of it until a left-click selects something else. Left-click is unchanged.
+
 ## brief-em3d-82 — Plot Field on a face (2026-09-28)
 
 - **The EM path now counts its builds.** `FieldGeometryBuilds` was temperature's alone; the EM branch of
