@@ -14,8 +14,8 @@ it, and `circuitrf lvs` reads one resistor between two nets. On a level with met
 **The film chooses the contact.** Change `Film` to `Resistor Hi`, 500 Ω/sq, and the readout follows. It is the same level, so the artwork
 keeps its shape. A film on a level with metal would draw overlap contacts instead.
 
-**The substrate is a constant loss tangent.** `High-resistivity silicon` is tanδ 0.0015, its value at 10 GHz for 10 kΩ·cm. Real conduction
-loss falls with frequency and a constant tanδ does not, so read its substrate loss as correct near 10 GHz only.
+**The substrate states a conductivity.** `Silicon, 10 kΩ·cm` is σ 0.01 S/m with no loss tangent, so its loss falls as 1/f, as conduction
+loss does. **Stackup ▸ A conducting substrate**, in **Help ▸ circuitRF Documentation**, says when to state σ rather than tanδ.
 
 ## Running it
 

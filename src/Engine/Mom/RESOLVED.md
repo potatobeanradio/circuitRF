@@ -13368,3 +13368,48 @@ and when uniformity breaks in the scan's last step those two are equal up to rou
 100.2 µm and below it at 100.25 µm. It was not the cause of the 0.18, and it is real: one line on plain GaAs differs by up to 0.011 at
 40 GHz, 0.0003 at 1 GHz, according to which way it fell. Fixing it moves existing results, so the owner left it as it is, and
 left the provenance hashes unmoved too.
+
+## SI-SIG — a conducting dielectric on the planar kernel (2026-11)
+
+`docs/briefs/brief-si-dielectric-conductivity.md`, R-sisig-0 and 2. A 1 mm, 50 Ω line (W 90 µm) over 2 µm of oxide on 100 µm of silicon, 1 to 40 GHz,
+against `testdata/em-si-sigma`: Palace's γ with Z_c = γ/(jωC*), where C* comes from an independent 2D solve in complex permittivity. Its README says which γ is modal and which is two lumped lines, and why.
+
+### 1. How σ gets in
+
+`EmMaterial.SigmaSm` and `AtFrequency`, which writes ε* = εᵣ(1 − j·tanδ) − j·σ/(ωε₀) as an equivalent tanδ. Every constructor handed a frequency
+resolves its medium first, so everything downstream reads an ordinary lossy dielectric. `AtFrequency` returns the same instance when σ is 0, which is
+what makes the path bit-identical by construction. `EpsComplex` throws on an unresolved conducting material rather than dropping σ.
+
+### 2. What failed, in order
+
+| Silicon | C at 5 GHz, pF/m | Z_c before | Z_c after | Palace | |ΔS| at 5 GHz before → after |
+|---|---|---|---|---|---|
+| 10 Ω·cm | 303 − j400 | 44.1 − j22.1 | 26.8 + j13.2 | 27.0 + j13.2 | 0.43 → 0.006 |
+
+- **Z_c took the real part of C.** `CharacteristicImpedance` is γ/(jωC′), which is only right while C″ is small. At 10 Ω·cm it gives the wrong sign of phase. Conducting
+  stacks take γ/(jωC*); everything else keeps the old expression, so no other number moves. **A large constant tanδ has the same defect and still does**: gate 1 forbids moving it.
+- **C was one number for a sweep.** It runs from 1178 − j659 pF/m at 1 GHz to 180 − j55 at 40 GHz at 10 Ω·cm. The calibrator now solves it per frequency, with the air-filled half kept.
+- **The series path's power-wave `Renormalise` reads Im(Z_c) as a reflection.** It left 0.15 at 0.01 Ω·cm with γ and Z_c both right. Conducting stacks take the pseudo-wave spelling the grounded path already had.
+- **A quasi-static β in the skin regime seeded the measured path onto a wrong branch.** α = −1063 at 40 GHz in a sweep, where the point alone reads 1063 + j4174. It no longer seeds there.
+
+Quasi-static γ itself holds at 10 Ω·cm, within 3 % of Palace, because each frequency's C* carries the conduction and L is still the air-filled geometry's.
+
+### 3. What was deferred, by the owner's decision
+
+**0.01 Ω·cm below the crossover is a warning naming the range, not a fix.** Quasi-static γ has no current in the silicon.
+
+| f, GHz | Quasi-static γ | Measured γ | Palace |
+|---|---|---|---|
+| 5 | 4 + j840 | 145 + j733 (marked unusable) | 144 + j739 |
+| 10 | 9 + j1680 | 304 + j1299 (marked unusable) | 306 + j1309 |
+| 20 | 26 + j3359 | 568 + j2305 | 584 + j2332 |
+
+The measured route is the replacement this needs. What stands in its way: its usability interval marks these points unusable because β is far above what the separation was sized for, and it reads a negative α at 1 GHz, at 10 Ω·cm as well (−73 + j99). The warning starts where the skin depth is under twice the thickness (a measured line was 5× low in α at 1.6 thicknesses and 0.08 in |ΔS| at 0.7), and stops at the crossover. Above the crossover the same line reads 0.011.
+
+### 4. Measured beside it, and not a conductivity problem
+
+**Gate 3's 0.02 is missed by 0.002 at one point.** 20 GHz reads 0.022 at 1 kΩ·cm and 0.020 at 10 Ω·cm, with every other point from 5 to 40 GHz at or under 0.019. That point is just below the crossover, where quasi-static γ has no dispersion at any σ: modal β is 1130 rad/m and quasi-static is 1116, and an independent quasi-static 2D solve reads 1118. The tests hold 0.025.
+
+**1 GHz on this stack is wrong at σ = 0:** |ΔS| 0.23 and σ_max 1.28, with a peel amplification of 8e5, about 80× what §PEEL's stacks show at that frequency. It is flagged by the existing floor or dropped, at every σ. At 1 kΩ·cm the run names it (floor 0.24) and the point is published, which the floor's own rule permits. Not investigated here.
+
+A calibration group takes one capacitance, at the top of the sweep, and warns across the sweep. `PlanarModalMedium` would need per-frequency C and Z_c,m's imaginary part to do better.

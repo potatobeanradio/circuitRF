@@ -53,6 +53,10 @@ public sealed record GroundedSlab(double HeightM, EmMaterial Material)
     /// <summary>ε* = εᵣ(1 − j·tanδ), the R-mom-6 convention, unchanged from kernel A.</summary>
     public Complex EpsComplex => Material.EpsComplex;
 
+    /// <summary>SI-SIG — this slab as one frequency sees it; the same instance when it has no σ.</summary>
+    public GroundedSlab AtFrequency(double fHz) =>
+        Material.SigmaSm == 0 ? this : this with { Material = Material.AtFrequency(fHz) };
+
     /// <summary>
     /// The whole point of D2, stated as an assertion the caller can read: the metal plane is the
     /// slab's own top surface, so every source and every observer sits at this height.
@@ -232,7 +236,7 @@ public sealed record Termination
     public bool Dissipates => Kind switch
     {
         TerminationKind.SurfaceImpedance => !PlanarSurfaceImpedance.IsPerfect(ConductivitySm, ThicknessM),
-        TerminationKind.HalfSpace        => Material.TanD > 0,
+        TerminationKind.HalfSpace        => Material.TanD > 0 || Material.SigmaSm > 0,
         _                                => false,
     };
 
@@ -428,7 +432,26 @@ public sealed class LayerStack
     /// that same test admits freely, and it was still called lossless. §CL5.</para>
     /// </summary>
     public bool Dissipates =>
-        Layers.Any(l => l.Material.TanD > 0) || Bottom.Dissipates || Top.Dissipates;
+        Layers.Any(l => l.Material.TanD > 0 || l.Material.SigmaSm > 0) || Bottom.Dissipates || Top.Dissipates;
+
+    /// <summary>SI-SIG — whether any material here states a conductivity, so that its permittivity
+    /// depends on frequency. False on everything that states none.</summary>
+    public bool Conducts =>
+        Layers.Any(l => l.Material.SigmaSm > 0) || Bottom.Material.SigmaSm > 0 || Top.Material.SigmaSm > 0;
+
+    /// <summary>
+    /// <b>SI-SIG — this stack as one frequency sees it.</b> The same instance when nothing conducts,
+    /// which is what makes the path bit-identical by construction rather than by tolerance.
+    /// </summary>
+    public LayerStack AtFrequency(double fHz)
+    {
+        if (!Conducts) return this;
+        static Termination End(Termination t, double f) =>
+            t.Kind == TerminationKind.HalfSpace ? Termination.OpenTo(t.Material.AtFrequency(f)) : t;
+        return new LayerStack(End(Bottom, fHz),
+                              [.. Layers.Select(l => l with { Material = l.Material.AtFrequency(fHz) })],
+                              End(Top, fHz));
+    }
 
     /// <summary>True when the given end is a solid wall (PEC/PMC) rather than a half-space.</summary>
     public bool IsWall(int region) =>

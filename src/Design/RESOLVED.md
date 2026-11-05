@@ -28048,6 +28048,40 @@ top moved 97,553 elements to 80,587, because barrels and short edges set the mes
 frequency, 21 s against 14 s and 3.0 GB against 1.4 GB. |ΔS21| between the two is 0.10 at 2.5 GHz and 0.05 at 12.5 GHz, so the coarser mesh moved the answer at the frequency it
 was sized for as well: Draft's 0.1 λ is coarse there. The setting moves the budget and does not make the fundamental converged; the preset's element size still decides that.
 
+
+## SI-SIG — a dielectric's conductivity, in the file and every reader (2026-11)
+
+`docs/briefs/brief-si-dielectric-conductivity.md`. `StackupLayer.SigmaSm` on a dielectric was carried and read by nothing, so a
+body in a `.c3d` and the same material in a stackup gave different answers. It now reaches the planar medium, the 3D problem and the
+provenance. The kernel's half is in `src/Engine/Mom/RESOLVED.md` §SI-SIG.
+
+- **`ResolveMaterials` copies `Sigma20` onto a dielectric only when the material also states `Epsr`.** σ with no εr stays a conductor,
+  which is what `BodyMaterial` already decided.
+- **Choosing a material clears a dielectric's σ first.** `ResolveMaterials` leaves a number the material does not state alone, which is
+  right on load and wrong in the picker: going from `Silicon, 10 Ω·cm` to `High-resistivity silicon` would have kept the 10 S/m and added
+  the tanδ on top, with nothing showing where it came from.
+- **The conductor picker excludes a material with an εr.** Filtering on `Sigma20` alone would have offered silicon as a metal.
+- **The slab of a stratified sub-feed region carries σ only when every band states the same one.** Equal bands merge into one layer, which
+  leaves only the slab; bands that differ always keep the stack.
+- **`PlanarThicknessCorrection`'s regions stay without σ.** It is a static geometric correction and takes no frequency.
+- **The 2D quasi-static kernel refuses a dielectric with σ.** It has one solve per sweep. A refusal is a verdict to `Choose`, so
+  Automatic goes on to the planar kernel. Trace impedance uses the same regions without going through `Extract`, so it reports instead.
+- **The closed-form bound is 1e-3 S/m (100 kΩ·cm)**, where conduction tanδ at 1 GHz is about a good laminate's. Every resistivity in the
+  brief is above it, and below it the model still leaves σ out, silently, by that margin.
+- **The silicon demo moved to `Silicon, 10 kΩ·cm`,** a material the brief did not list. `High-resistivity silicon` keeps its 0.0015, and
+  stating σ beside it would count the same loss twice.
+- **Palace wave ports are not a reference on conducting silicon.** At 10 Ω·cm and 1 GHz the first mode is an air mode under a PEC lid
+  (k ≈ k₀, Z_PV 7e-4 Ω) or, under a PMC lid, an evanescent one (k = 3 − j4708); the strip mode has Re(k²) near zero, so it is not first. At 5 GHz the
+  modal γ is right (436 − j224, against 437 − j224 from two lumped lines) while a uniform line's driven S11 is −0.76 dB, and Z_PV is real by
+  definition, so the renormalisation to Z0 cannot be right where Z_c is complex. Two lengths with lumped ports are the reference. This is
+  not worked around in the product: the docs say to use lumped ports there.
+- **Two short lumped lines bias γ.** 0.25 and 0.5 mm, 2.5 and 5 substrate heights, read β 1.6 % above the modal value on a finer mesh, and 1 and 2 mm read 0.6 % above it. Modal γ is the reference where a wave port takes the strip mode. A one-frequency run sizes its mesh at that frequency, and at 5 GHz that read Z_PV 45 Ω where the 40 GHz mesh reads 49.5, so a low point needs the top of the band in its sweep.
+- **A narrow box biases a microstrip reference.** PMC walls at ±400 µm and a lid at 500 µm raised β by 2.2 % against the open limit, by an
+  independent 2D solve, which is half of what first looked like a kernel error.
+- **Palace's starting mesh ignores skin depth.** At 0.01 Ω·cm a 15 µm region over the top 50 µm of silicon took a 1 mm line from 39,039 to
+  84,914 elements and about 5.5 minutes, and moved α by about 10 %. A 2 mm line at that mesh passed 8 GB.
+- **EMerge at exactly 1e4 S/m** is not refused, since its rule is strictly above, and solves as a dielectric: 0.0084 at 1 GHz rising to 0.053 at 40 GHz against Palace on the same lumped 0.5 mm line, Standard preset, 39 s. The limit is unchanged. **openEMS** already wrote σ through `Kappa`; its run now says so beside the tanδ note.
+
 ## Metal thin against the skin depth reads too little loss on Palace and EMerge (2026-11-04)
 
 Neither solver meshes a conductor's interior: its faces carry (1+j)/(σδ), the impedance of thick metal. Below about three skin depths

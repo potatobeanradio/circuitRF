@@ -391,6 +391,8 @@ public static class EmSnpProvenance
           .Append(R(p.Slab.Material.EpsR)).Append(':')
           .Append(R(p.Slab.Material.TanD)).Append(':')
           .Append(R(p.Slab.Material.MuR));
+        // SI-SIG — only when stated, so no existing .snp goes stale.
+        if (p.Slab.Material.SigmaSm != 0) sb.Append(":s").Append(R(p.Slab.Material.SigmaSm));
 
         // CL7 — the ONE-SLAB floor's own metal. CL4 closed this on the MediumStack spelling below;
         // a one-slab problem has MediumStack == null and contributed only the four numbers above, so
@@ -436,7 +438,8 @@ public static class EmSnpProvenance
                 }
             foreach (var ml in ms.Layers)
                 sb.Append(R(ml.ThicknessM)).Append(',').Append(R(ml.Material.EpsR)).Append(',')
-                  .Append(R(ml.Material.TanD)).Append(',').Append(R(ml.Material.MuR)).Append(';');
+                  .Append(R(ml.Material.TanD)).Append(',').Append(R(ml.Material.MuR))
+                  .Append(ml.Material.SigmaSm != 0 ? ",s" + R(ml.Material.SigmaSm) : "").Append(';');
             sb.Append('|');
         }
 

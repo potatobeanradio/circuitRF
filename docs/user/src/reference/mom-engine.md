@@ -887,6 +887,20 @@ standard did not resemble the taper's own flanks. That is what the automatic fee
 prevent, and what the passivity check exists to catch if anything like it ever happens again.</p>
 </div>
 
+### On a conducting substrate {#deembedding-conducting}
+
+A dielectric that [states a conductivity](stackup.html#conducting-substrate) has a different permittivity at every frequency, so the
+electrostatic solve behind C<sub>pul</sub> runs once per frequency rather than once per sweep, and Z<sub>c</sub> = γ/(jωC) keeps C's imaginary part.
+That imaginary part is as large as the real part at 10 Ω·cm, and leaving it out gives Z<sub>c</sub> the wrong sign of phase. The air-filled
+half is still solved once.
+
+Below the crossover, γ = jω√(LC) takes L from the same geometry with the dielectric removed, which has no current in the silicon. That holds until
+the skin depth reaches the silicon's thickness. From where the skin depth is under twice its thickness, up to the crossover, the run warns and names the range:
+on a 1 mm line over 0.01 Ω·cm silicon this γ reads α 22 times low and β 44 % high at 20 GHz. The measured two-line γ follows the
+structure there, but cannot yet be relied on below the crossover: it marks itself unusable below 20 GHz on that line and reads a negative α at 1 GHz.
+
+A coupled-port calibration group takes one capacitance, at the top of the sweep, so it warns across the whole sweep on a conducting substrate.
+
 ## Adaptive frequency sampling {#adaptive}
 
 ### The problem it solves

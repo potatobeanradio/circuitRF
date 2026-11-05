@@ -933,6 +933,13 @@ public sealed class StackupScene
         g.Add(layer.Epsr.ToString("0.####", Inv), StackupField.Epsr, StackupLabelStyle.Spec, font, PieceGap);
         g.Add("tanδ =", StackupField.None, StackupLabelStyle.Spec, font, QuantityGap);
         g.Add(layer.TanD.ToString("0.######", Inv), StackupField.TanD, StackupLabelStyle.Spec, font, PieceGap);
+        // SI-SIG — only where stated, as µr below, so every other technology's picture is unchanged.
+        if (layer.SigmaSm > 0)
+        {
+            g.Add("σ =", StackupField.None, StackupLabelStyle.Spec, font, QuantityGap);
+            g.Add(layer.SigmaSm.ToString("G4", Inv), StackupField.Sigma, StackupLabelStyle.Spec, font, PieceGap);
+            g.Add("S/m", StackupField.None, StackupLabelStyle.Spec, font, PieceGap);
+        }
         // µr is printed only when it is NOT 1, which is the engineering convention and saves a whole
         // quantity on very nearly every dielectric anyone draws. The consequence is real and is the
         // trade: a non-magnetic dielectric has no µr label, so it cannot be edited FROM THE DRAWING

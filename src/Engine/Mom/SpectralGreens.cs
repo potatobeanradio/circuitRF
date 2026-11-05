@@ -185,6 +185,7 @@ public sealed class SpectralGreens
 
     public SpectralGreens(GroundedSlab slab, double frequencyHz)
     {
+        slab = slab.AtFrequency(frequencyHz);
         var ok = CanSolveAt(slab, frequencyHz);
         if (!ok.Ok) throw new ArgumentException(ok.Reason);
 
@@ -812,6 +813,7 @@ public sealed class LayeredSpectralGreens
 
     public LayeredSpectralGreens(LayerStack stack, double frequencyHz)
     {
+        stack = stack.AtFrequency(frequencyHz);
         var ok = CanSolveAt(stack, frequencyHz);
         if (!ok.Ok) throw new ArgumentException(ok.Reason);
 

@@ -1092,6 +1092,15 @@ public static class PlanarDeembed
         gamma / (Complex.ImaginaryOne * 2.0 * Math.PI * fHz * cPerMetre);
 
     /// <summary>
+    /// <b>SI-SIG — Z_c = γ/(jωC*) with the shunt loss KEPT, for a conducting substrate.</b> The real C′
+    /// above is only right while C″ is small. On 10 Ω·cm silicon at 5 GHz, C = 303 − j400 pF/m, and the
+    /// real reading returns 44 − j22 Ω where the line has 27 + j13 Ω: the wrong sign of the phase, and
+    /// an error of 0.43 in |S|. Used only where a material states σ, so no other result moves.
+    /// </summary>
+    public static Complex CharacteristicImpedance(Complex gamma, Complex cPerMetre, double fHz) =>
+        gamma / (Complex.ImaginaryOne * 2.0 * Math.PI * fHz * cPerMetre);
+
+    /// <summary>
     /// The published answer: de-embedded S renormalised from each port's own Z_c to its declared
     /// reference impedance. <b>R-prt-9 — this is <c>RFNetwork.SToS</c> and nothing else.</b>
     /// </summary>

@@ -253,6 +253,12 @@ public static class TechValidation
                 problems.Add(new(TechProblemArea.Stackup,
                     $"Stackup layer \"{sl.Name}\" is a conductor with non-positive conductivity ({sl.SigmaSm} S/m)."));
 
+            // SI-SIG — a dielectric's conductivity. Beside a tanδ is legal: they are different mechanisms.
+            if (sl.Kind == StackupKind.Dielectric && !(sl.SigmaSm >= 0 && double.IsFinite(sl.SigmaSm)))
+                problems.Add(new(TechProblemArea.Stackup,
+                    $"Stackup layer \"{sl.Name}\" is a dielectric with a conductivity of {sl.SigmaSm} S/m; " +
+                    "conductivity is a non-negative number (0 for none)."));
+
             // Roughness is a non-negative length; null and 0 both mean a smooth conductor.
             if (sl.RoughnessRmsM is { } rough && !(rough >= 0 && double.IsFinite(rough)))
                 problems.Add(new(TechProblemArea.Stackup,
@@ -591,6 +597,8 @@ public static class TechValidation
                 if (m.Epsr is { } e && !Same(layer.Epsr, e)) differ.Add($"εr {Num(layer.Epsr)} vs {Num(e)}");
                 if (m.TanD is { } t && !Same(layer.TanD, t)) differ.Add($"tanδ {Num(layer.TanD)} vs {Num(t)}");
                 if (m.Mur  is { } u && !Same(layer.Mur,  u)) differ.Add($"µr {Num(layer.Mur)} vs {Num(u)}");
+                if (m.Epsr is not null && m.Sigma20 is { } c && !Same(layer.SigmaSm, c))
+                    differ.Add($"σ {Num(layer.SigmaSm)} vs {Num(c)}");
             }
             else if (m.Sigma20 is { } sg && !Same(layer.SigmaSm, sg))
             {

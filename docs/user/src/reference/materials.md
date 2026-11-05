@@ -107,6 +107,11 @@ metal, type its **conductivity σ₂₀** at 20 °C on the Conductor card instea
 
 {{ui: materials-new}}
 
+A material can state both εr and σ₂₀: that is a **conducting dielectric**, such as silicon, and a stackup entry naming it takes both. One with
+σ₂₀ and no εr is a conductor. The library holds `Silicon, 10 kΩ·cm`, `Silicon, 800 Ω·cm`, `Silicon, 10 Ω·cm` and `Silicon, 0.01 Ω·cm`, each with tan δ 0 because the
+conductivity is the whole of its loss. `High-resistivity silicon` is the constant tan δ of 0.0015 instead. See
+[A conducting substrate](stackup.html#conducting-substrate).
+
 **3. Say where the values come from.** Every solver takes εr and tan δ as constants, so the **Notes** card at the foot
 of the form is where to record the frequency they were stated at — and the datasheet or paper they came from. The
 note is for people: the solvers read the values themselves, never the note.

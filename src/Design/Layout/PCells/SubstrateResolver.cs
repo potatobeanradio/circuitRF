@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace CircuitRF.Design.Layout.PCells;
 
 /// <summary>
@@ -30,7 +32,8 @@ public sealed record ResolvedSubstrate(
     double ConductivitySPerM,
     double LossTangent,
     bool IsStripline,
-    double RoughnessRmsMeters = 0.0);
+    double RoughnessRmsMeters = 0.0,
+    double DielectricSigmaSPerM = 0.0);
 
 /// <summary>Why <see cref="SubstrateResolver.ResolveElectrical"/> could not produce a
 /// <see cref="ResolvedSubstrate"/> — always a human-readable sentence naming what is missing, per
@@ -181,6 +184,10 @@ public static partial class SubstrateResolver
         double tanD = weightedTanD / hDbu;
         double t = DbuToMeters(signal.ThicknessDbu, FallbackDbuPerMicron);
 
+        var between = layers.Skip(spanFrom + 1).Take(spanTo - spanFrom - 1).Where(l => l.Kind == StackupKind.Dielectric);
+        double dielectricSigma = between.Select(l => l.SigmaSm).DefaultIfEmpty(0).Max();
+        if (ClosedFormConductionWarning(dielectricSigma, between) is { } conduction) warn.Add(conduction);
+
         var substrate = new ResolvedSubstrate(
             SignalLayer: signal.DrawingLayers.Count > 0 ? signal.DrawingLayers[0] : new LayerKey(1, 0),
             SignalConductorName: signal.Name,
@@ -191,9 +198,27 @@ public static partial class SubstrateResolver
             ConductivitySPerM: signal.SigmaSm,
             LossTangent: tanD,
             IsStripline: groundOnOtherSide,
-            RoughnessRmsMeters: signal.RoughnessRmsM ?? 0.0);
+            RoughnessRmsMeters: signal.RoughnessRmsM ?? 0.0,
+            DielectricSigmaSPerM: dielectricSigma);
 
         return (substrate, null, warn);
+    }
+
+    /// <summary>
+    /// <b>SI-SIG — the conductivity above which a line's closed form does not apply</b>, S/m. These
+    /// models take a low-loss substrate and read tanδ alone. At 1e-3 S/m (100 kΩ·cm) silicon's conduction
+    /// tanδ is 0.0015 at 1 GHz, as small as a good laminate's; every resistivity anyone uses is above it.
+    /// </summary>
+    public const double ClosedFormConductivityLimitSm = 1e-3;
+
+    /// <summary>The sentence a line model says about a conducting substrate, or null when it has none.</summary>
+    internal static string? ClosedFormConductionWarning(double sigmaSm, IEnumerable<StackupLayer> between)
+    {
+        if (!(sigmaSm > ClosedFormConductivityLimitSm)) return null;
+        string name = between.First(l => l.SigmaSm == sigmaSm).Name;
+        return $"'{name}' conducts, σ {sigmaSm.ToString("G3", CultureInfo.InvariantCulture)} S/m. The line's closed form " +
+               "assumes a low-loss substrate and does not apply here: its loss and its phase velocity leave the " +
+               "conductivity out. Use an EM run on this line.";
     }
 
     private static StackupLayer? FindSignalConductor(Technology? technology, string? nameOverride, List<string> warn)

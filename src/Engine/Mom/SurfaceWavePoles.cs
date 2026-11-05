@@ -88,6 +88,7 @@ public static class SurfaceWavePoles
     public static Complex DispersionFunction(LayerStack stack, double frequencyHz,
                                              SurfaceWavePolarization pol, Complex kRho)
     {
+        stack = stack.AtFrequency(frequencyHz);
         double omega = 2.0 * Math.PI * frequencyHz;
         double k0    = omega / EmConstants.C0;
         Complex w    = kRho * kRho;
@@ -230,6 +231,7 @@ public static class SurfaceWavePoles
     public static SurfaceWaveSearchReport Find(LayerStack stack, double frequencyHz,
                                                int samples = DefaultSamples)
     {
+        stack = stack.AtFrequency(frequencyHz);
         double k0 = 2.0 * Math.PI * frequencyHz / EmConstants.C0;
         var lossless = Lossless(stack);
 

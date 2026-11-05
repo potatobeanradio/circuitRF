@@ -575,6 +575,11 @@ public static partial class CsxcadWriter
                       $"at the band centre, {G(fitHz / 1e9)} GHz: FDTD reproduces a loss tangent at one frequency only, " +
                       "so the loss is exact there and grows as 1/f away from it, where Palace holds tanδ constant. This " +
                       "is the largest expected difference between the two solvers on a lossy substrate.");
+        var conducting = problem.Solids.Where(s => s.Role != Em3dRole.Conductor && materials[s.Material].SigmaSm > 0)
+                                       .Select(s => s.Material).Distinct(StringComparer.Ordinal).ToList();
+        if (conducting.Count > 0)
+            notes.Add($"{string.Join(", ", conducting.Select(q => $"'{q}'"))} states a conductivity, written as it is: " +
+                      "a constant conductivity is what FDTD reproduces exactly, at every frequency.");
         if (pec.Count > 0)
             notes.Add($"{Names(pec)} {(pec.Count == 1 ? "is" : "are")} written as {(pec.Count == 1 ? "a perfect conductor" : "perfect conductors")}: " +
                       "an FDTD grid does not resolve a metal's skin depth, so openEMS's answer has no conductor loss in " +

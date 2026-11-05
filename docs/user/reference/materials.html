@@ -744,6 +744,10 @@ metal, type its <strong>conductivity σ₂₀</strong> at 20 °C on the Conducto
 										Anisotropic k — xx / yy / zz along the 3D view's axes, at 25 °C
 								</text></g></g><clipPath id="materials-new-dark_cl_106"><rect x="303" y="559" width="656" height="48" /></clipPath><g clip-path="url(#materials-new-dark_cl_106)"><use xlink:href="#materials-new-dark_d11" fill="#010101" fill-opacity="0.8" transform="translate(303 559)" /><use xlink:href="#materials-new-dark_d11" fill="none" stroke="white" stroke-width="1" stroke-miterlimit="10" stroke-opacity="0.2" transform="translate(303 559)" /></g></g><clipPath id="materials-new-dark_cl_107"><rect x="988" width="12" height="560" /></clipPath><g clip-path="url(#materials-new-dark_cl_107)"><clipPath id="materials-new-dark_cl_108"><rect x="996.5" y="12" width="1.5" height="245" /></clipPath><g clip-path="url(#materials-new-dark_cl_108)"><rect fill="#858585" transform="matrix(0.125 0 0 1 996.5 12)" width="12" height="245" /></g></g></g></svg></span>
 </span><figcaption>A new material, My laminate, in a .cmat library: added with + New, named, and given its relative permittivity and loss tangent on the Dielectric card. The list on the left shows every material in the file.</figcaption></figure>
+<p>A material can state both εr and σ₂₀: that is a <strong>conducting dielectric</strong>, such as silicon, and a stackup entry naming it takes both. One with
+σ₂₀ and no εr is a conductor. The library holds <code>Silicon, 10 kΩ·cm</code>, <code>Silicon, 800 Ω·cm</code>, <code>Silicon, 10 Ω·cm</code> and <code>Silicon, 0.01 Ω·cm</code>, each with tan δ 0 because the
+conductivity is the whole of its loss. <code>High-resistivity silicon</code> is the constant tan δ of 0.0015 instead. See
+<a href="stackup.html#conducting-substrate">A conducting substrate</a>.</p>
 <p><strong>3. Say where the values come from.</strong> Every solver takes εr and tan δ as constants, so the <strong>Notes</strong> card at the foot
 of the form is where to record the frequency they were stated at — and the datasheet or paper they came from. The
 note is for people: the solvers read the values themselves, never the note.</p>

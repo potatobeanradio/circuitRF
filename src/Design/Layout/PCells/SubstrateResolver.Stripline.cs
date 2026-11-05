@@ -17,7 +17,8 @@ public sealed record ResolvedStripline(
     double RelativePermittivity,
     double ThicknessMeters,
     double ConductivitySPerM,
-    double LossTangent);
+    double LossTangent,
+    double DielectricSigmaSPerM = 0.0);
 
 public static partial class SubstrateResolver
 {
@@ -111,10 +112,13 @@ public static partial class SubstrateResolver
                      $"homogeneous, so it uses the thickness-weighted er {er:0.###}, a spread of {(erMax - erMin) / er * 100:0} %");
         }
 
+        double dielectricSigma = dielectrics.Select(l => l.SigmaSm).DefaultIfEmpty(0).Max();
+        if (ClosedFormConductionWarning(dielectricSigma, dielectrics) is { } conduction) warn.Add(conduction);
+
         return (new ResolvedStripline(
             signal.Name, above.Name, below.Name,
             DbuToMeters(h1Dbu, FallbackDbuPerMicron), DbuToMeters(h2Dbu, FallbackDbuPerMicron),
-            er, DbuToMeters(signal.ThicknessDbu, FallbackDbuPerMicron), signal.SigmaSm, tanD), null, warn);
+            er, DbuToMeters(signal.ThicknessDbu, FallbackDbuPerMicron), signal.SigmaSm, tanD, dielectricSigma), null, warn);
     }
 
     private static StackupLayer? PlaneAbove(IReadOnlyList<StackupLayer> layers, int index)

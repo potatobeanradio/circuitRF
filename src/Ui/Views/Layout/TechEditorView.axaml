@@ -1136,6 +1136,16 @@
                                                              ToolTip.Tip="{Binding MurTip}"
                                                              LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
                                                 </StackPanel>
+                                                <StackPanel Orientation="Horizontal" Spacing="3">
+                                                    <TextBlock Text="σ:" FontSize="11" VerticalAlignment="Center"/>
+                                                    <TextBox Classes="cell compact" Width="60" Tag="DielectricSigma"
+                                                             Text="{Binding DielectricSigmaInUnit}"
+                                                             ToolTip.Tip="A bulk conductivity, beside tanδ: the loss of a semiconductor substrate, which falls as 1/f where tanδ holds. — means none."
+                                                             LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+                                                    <ComboBox Classes="cell" MinWidth="64" ItemsSource="{Binding DielectricSigmaUnitChoices}"
+                                                              SelectedItem="{Binding SelectedDielectricSigmaUnit, Mode=TwoWay}"
+                                                              ToolTip.Tip="The unit this field reads in. The file always states S/m."/>
+                                                </StackPanel>
                                             </StackPanel>
 
                                             <!-- MIM-7. A thin-film capacitor's dielectric is not a

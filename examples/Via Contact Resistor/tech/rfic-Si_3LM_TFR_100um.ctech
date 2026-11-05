@@ -294,11 +294,11 @@
     "Kind": "Dielectric",
     "Name": "Silicon",
     "ThicknessDbu": 100000,
-    "Material": "High-resistivity silicon",
+    "Material": "Silicon, 10 kΩ·cm",
     "Epsr": 11.9,
-    "TanD": 0.0015,
+    "TanD": 0,
     "Mur": 1,
-    "SigmaSm": 0,
+    "SigmaSm": 0.01,
     "DrawingLayers": [],
     "IsGroundReference": false
    },
@@ -839,19 +839,20 @@
    }
   },
   {
-   "Name": "High-resistivity silicon",
+   "Name": "Silicon, 10 kΩ·cm",
    "Epsr": 11.9,
-   "TanD": 0.0015,
+   "TanD": 0,
    "Mur": 1,
    "ThermalK": 148,
    "DensityKgM3": 2329,
    "SpecificHeat": 712,
-   "Source": "Relative permittivity 11.9: Sze and Ng, Physics of Semiconductor Devices, properties of Si at 300 K. Loss tangent at 10 GHz derived for 10 kohm-cm resistivity from tan d = sigma / (omega eps0 epsr); lower-resistivity silicon is lossier in proportion. Thermal conductivity 148 W/(m K) at 300 K, density 2329 kg/m3 and specific heat 712 J/(kg K) at 25 C: CRC Handbook of Chemistry and Physics. Silicon's conductivity falls with temperature (roughly as T^-1.3); no table is stated here.",
+   "Source": "Relative permittivity 11.9: Sze and Ng, Physics of Semiconductor Devices, properties of Si at 300 K. Conductivity 0.01 S/m is the reciprocal of a resistivity of 10 kohm-cm, a high-resistivity substrate. The loss tangent is 0 because the conductivity is the whole of the loss. Permittivity and conductivity are treated as constant from 1 GHz to 40 GHz. Thermal conductivity 148 W/(m K) at 300 K, density 2329 kg/m3 and specific heat 712 J/(kg K) at 25 C: CRC Handbook of Chemistry and Physics, for pure silicon.",
    "Appearance": {
     "BaseColor": "#3A3D42",
     "Metallic": 0,
     "Roughness": 0.15
-   }
+   },
+   "Sigma20": 0.01
   }
  ]
 }

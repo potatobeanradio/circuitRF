@@ -76,7 +76,7 @@ conditions for what is above and below the whole sandwich. Seen in cross-section
 | Entry kind | What it is | What it carries |
 |---|---|---|
 | **Conductor** | A metal layer | Thickness, conductivity σ, the **drawing layers** that map onto it, and whether it is the **ground reference** |
-| **Dielectric** | The material between two conductors | Thickness, ε<sub>r</sub>, tanδ, µ<sub>r</sub> |
+| **Dielectric** | The material between two conductors | Thickness, ε<sub>r</sub>, tanδ, µ<sub>r</sub>, σ |
 | **Via** | A connection *between* two conductors — not a layer of the sandwich | The drawing layer via shapes are drawn on, the two conductors it **spans by name**, and its fill (plated or solid) with a wall thickness |
 
 ### That picture is in the application, and you edit it there {#cross-section}
@@ -222,6 +222,7 @@ which removes the entry.
 | **ε<sub>r</sub>** | Relative permittivity. |
 | **tanδ** | Loss tangent. |
 | **µ<sub>r</sub>** | Relative permeability — 1 for everything that is not a magnetic material. |
+| **σ** | Bulk conductivity, for a [conducting substrate](#conducting-substrate). Read in `S/m` or `Ω·cm`; the file states S/m. `—` means none. |
 | **Patterned with** | `(none)` for an ordinary, laterally continuous dielectric, which is what all three on this board are. Naming a conductor here says *this film exists only where that metal's artwork is* — the thin-film capacitor case, described in [The capacitor dielectric rides along only when its plate is analysed](#mim-tied). |
 
 **A dielectric has no drawing layer, and there is no picker for one.** It is not drawn: it is a sheet
@@ -666,9 +667,8 @@ A 4.5-square test film at the shipped mesh is 3.7 % high, falling to 1.6 % at 32
 {{ui: stackup-si-tfr}}
 
 The shipped `rfic-Si_3LM_TFR_100um` technology is an example of this style, with generic round numbers taken from no process. It holds
-two films on one level, 50 and 500 Ω/sq, between Metal1 and Metal2. Its silicon is the library's `High-resistivity silicon`, a constant
-tanδ of 0.0015, which is the value at 10 GHz for 10 kΩ·cm. Real conduction loss falls with frequency and a constant tanδ does not, so
-read its substrate loss as correct near 10 GHz only.
+two films on one level, 50 and 500 Ω/sq, between Metal1 and Metal2. Its silicon is the library's `Silicon, 10 kΩ·cm`, which states a
+conductivity, so its loss falls with frequency. See [A conducting substrate](#conducting-substrate).
 
 Each film states:
 
@@ -710,6 +710,52 @@ rather than a short.
 
 The technology **MMIC GaAs (2 Layer Metal + MIM, 100um)** states a film: `Resistor` on the bottom face of Metal1, 50 Ω/sq, with width and spacing rules
 on its layer. The **PDK PCells** example draws a resistor on it.
+
+## A conducting substrate {#conducting-substrate}
+
+Silicon's loss is conduction: tanδ = σ/(ωε₀ε<sub>r</sub>), which falls as 1/f. Over a 1 to 40 GHz sweep, any single
+tanδ is wrong by up to a factor of 40 at one end. State **σ** on the dielectric, or choose a material that states it, and each
+frequency is solved with its own value. A tanδ beside it is a separate mechanism and adds to it.
+
+| Resistivity | σ | tanδ at 1 GHz | 5 GHz | 40 GHz | Field decay depth at 5 GHz |
+|---|---|---|---|---|---|
+| 10 kΩ·cm | 0.01 S/m | 0.015 | 0.0030 | 0.00038 | 1.8 m |
+| 1 kΩ·cm | 0.1 S/m | 0.15 | 0.030 | 0.0038 | 18 cm |
+| 10 Ω·cm | 10 S/m | 15 | 3.0 | 0.38 | 2.7 mm |
+| 0.01 Ω·cm | 10⁴ S/m | 15,000 | 3,000 | 380 | 71 µm |
+
+**When to state σ rather than tanδ.** State σ for any semiconductor substrate swept over more than a narrow band. A constant tanδ
+is right for a laminate or an oxide, whose loss really is close to constant.
+
+The substrate falls into one of three regimes, and the run's notes say which:
+
+- **High resistivity: a lossy dielectric.** The wave travels in the silicon. Above about 150 MHz at 1 kΩ·cm, conduction current is smaller
+  than displacement current.
+- **Moderate, about 10 Ω·cm: the silicon conducts and the oxide does not.** Below about 15 GHz at 10 Ω·cm, most of the voltage
+  appears across the oxide, so a line over oxide has a high capacitance and slows down. Its Z<sub>c</sub> is well below its value at the top
+  of the band, and is not close to real: 27 + j13 Ω at 5 GHz on a line that is 50 Ω on high-resistivity silicon.
+- **Low, about 0.01 Ω·cm: a lossy ground plane.** The skin depth reaches the substrate's thickness, so return current moves from the backside
+  metal into the silicon as frequency rises.
+
+### What each solver does with it {#conducting-substrate-solvers}
+
+- **The full-wave planar kernel** solves the first two regimes. Against a Palace reference, a 1 mm line over 2 µm of oxide on 100 µm of
+  silicon reads within 0.025 in |S| from 5 to 40 GHz at 10 kΩ·cm, 1 kΩ·cm and 10 Ω·cm. In the third regime **it warns and names the range**: where the skin
+  depth is under twice the layer's thickness, up to the frequency where the de-embedding's γ stops being quasi-static, loss reads far too low and phase
+  too high, and the S-parameters there are not reliable. At 0.01 Ω·cm on that line, the range is 633 MHz to 27 GHz. Above it the
+  same line reads within 0.011.
+- **Palace** takes σ directly. Its wave ports are not reliable on conducting silicon at the low end of a sweep: at 10 Ω·cm a wave port took a wrong
+  mode at 1 GHz, and a uniform line read S11 of −0.8 dB at 5 GHz. Use lumped ports there. Mesh the skin depth yourself with a mesh region, because
+  the automatic sizing follows the wavelength and not the skin depth; at 0.01 Ω·cm a 15 µm region moved α by about 10 %.
+- **EMerge** takes σ up to 10⁴ S/m and refuses a dielectric above that, because it would treat it as a conductor. At exactly 10⁴ S/m, on lumped ports at Standard, it read within 0.053 of Palace on a 0.5 mm line.
+- **openEMS** writes σ as it is, and a constant conductivity is what FDTD reproduces exactly at every frequency.
+- **The 2D quasi-static kernel** has one solve for the whole sweep, so it refuses a dielectric with σ. **Automatic** chooses the full-wave planar kernel instead.
+
+**Line models and the impedance tools.** `MLIN` and the other closed forms assume a low-loss substrate. Above 0.001 S/m the part, the line
+calculator and the impedance reports say the closed form does not apply, and point at an EM run.
+
+**Not modelled.** σ is one fixed bulk number: no junction, depletion or carrier model, and no temperature dependence. A via that passes through the
+silicon makes no contact with it. A doped layer with a profile can be approximated by a stack of uniform layers.
 
 ## What the EM engine does not read {#ignored}
 

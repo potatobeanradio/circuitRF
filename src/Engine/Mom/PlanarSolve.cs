@@ -423,6 +423,15 @@ public sealed class PlanarPortCalibrator
     private readonly PlanarCalibration.PlanarSeparationPlan _plan;
     private PlanarQuasiStaticLine? _qsLine;
 
+    // ── SI-SIG — a conducting substrate's capacitance depends on frequency, so what is built once
+    //    above is built per frequency here. `_conducts` false takes none of it. ─────────────────
+    private readonly bool   _conducts;
+    private readonly double _conductsTopHz;
+    private readonly double _skinOnsetHz = double.PositiveInfinity;
+    private readonly Dictionary<double, PlanarQuasiStaticLine> _qsLineAt = [];
+    private readonly Dictionary<double, Complex>               _cAt      = [];
+    private double _c0PerMetre = double.NaN;
+
     public IReadOnlyList<PlanarStandard> Standards { get; }
 
     /// <summary>How many meshes this calibrator owns — R-prt-11's counter counts these.</summary>
@@ -505,6 +514,7 @@ public sealed class PlanarPortCalibrator
         var m = layer.Material;
         return Math.Abs(m.EpsR - slab.Material.EpsR) <= 1e-12 * Math.Max(1.0, slab.Material.EpsR)
             && Math.Abs(m.TanD - slab.Material.TanD) <= 1e-12
+            && m.SigmaSm == slab.Material.SigmaSm
             && Math.Abs(m.MuR  - slab.Material.MuR)  <= 1e-12
             && Math.Abs(stack.Top.Material.EpsR - 1.0) <= 1e-12;
     }
@@ -561,9 +571,17 @@ public sealed class PlanarPortCalibrator
         // routes.
         _interiorStack = mediumStack is not null && !DescribedByTheSlab(mediumStack, slab, standardLevelZ)
                        ? mediumStack : null;
+        _conducts      = slab.Material.SigmaSm > 0 || mediumStack is { Conducts: true };
+        _conductsTopHz = Math.Max(Math.Max(fLoHz, fHiHz), 1.0);
+        if (_conducts)
+            foreach (var l in (mediumStack ?? LayerStack.FromGroundedSlab(slab)).Layers.Where(l => l.Material.SigmaSm > 0))
+                _skinOnsetHz = Math.Min(_skinOnsetHz, PlanarConductingMedium.SkinOnsetHz(l.Material, l.ThicknessM));
         if (_interiorStack is not null)
         {
-            _interiorModel = InteriorStaticImages.FitScalar(_interiorStack, standardLevelZ, standardLevelZ);
+            // SI-SIG — the top of the band is where a conducting layer is closest to a dielectric, so
+            // that is the fit the setup's quality refusal reads. Each frequency fits its own below.
+            _interiorModel = InteriorStaticImages.FitScalar(_interiorStack.AtFrequency(_conductsTopHz),
+                                                            standardLevelZ, standardLevelZ);
             InteriorFitResidual = _interiorModel.Residual;
         }
 
@@ -633,7 +651,7 @@ public sealed class PlanarPortCalibrator
     /// when no frequency selected it.
     /// </summary>
     private PlanarModalMedium Medium() =>
-        _medium ??= PlanarModalMedium.Extract(Standards[0], Standards[^1], _slab,
+        _medium ??= PlanarModalMedium.Extract(Standards[0], Standards[^1], _slab.AtFrequency(_conductsTopHz),
                                               _standards[0].Settings,
                                               _standards[0].Cores, _standards[^1].Cores);
 
@@ -826,15 +844,22 @@ public sealed class PlanarPortCalibrator
         // these two meshes and no others — asking GammaBest to re-select would mean handing it an
         // array that is null everywhere except at `pick`. Same rule, same arithmetic, asked once.
         var g = quasi
-            ? QuasiStaticLine().ResultAt(fHz, _deltas[pick])
+            ? QuasiStaticLineAt(fHz).ResultAt(fHz, _deltas[pick])
             : PlanarCalibration.Gamma(sShort, sLong, _deltas[pick], expect * _deltas[pick]);
 
         // The branch continuation is stepped on BOTH paths. It is what the first measured point
         // above the crossover predicts from, and the quasi-static β is a better prediction than
         // EstimateBeta's own 15-20 %-low estimate would be — so a sweep that crosses the crossover
         // hands the measured path a seed it could not otherwise have.
-        _prevBeta = g.Beta;
-        _prevF    = fHz;
+        //
+        // SI-SIG — except where a conducting substrate's skin depth has made the quasi-static β wrong by
+        // tens of percent. Seeding from it put the first measured point on the wrong 2π branch (α = −1063
+        // at 40 GHz, on 0.01 Ω·cm silicon), where the pre-solve estimate finds the right one.
+        if (!quasi || fHz < _skinOnsetHz)
+        {
+            _prevBeta = g.Beta;
+            _prevF    = fHz;
+        }
 
 
         // ── P2/M3 — the two standards' cores are already built; do not build them a second time ──
@@ -850,9 +875,9 @@ public sealed class PlanarPortCalibrator
         // by QuasiStaticLine() above, and its real part IS this number bit for bit
         // (CapacitancePerMetre is CapacitancePerMetreComplex(...).Real). Reading it back rather than
         // re-solving is what keeps the quasi-static route's extra cost to the AIR-FILLED half.
-        if (double.IsNaN(_cPerMetre) && quasi) _cPerMetre = QuasiStaticLine().CPerMetre;
+        if (!_conducts && double.IsNaN(_cPerMetre) && quasi) _cPerMetre = QuasiStaticLine().CPerMetre;
 
-        if (double.IsNaN(_cPerMetre))
+        if (!_conducts && double.IsNaN(_cPerMetre))
             _cPerMetre = _interiorStack is { } medium
                 ? PlanarDeembed.CapacitancePerMetre(Standards[0], Standards[^1], medium,
                                                     _standardLevelZ,
@@ -866,6 +891,20 @@ public sealed class PlanarPortCalibrator
                                                     _standards[0].Cores,
                                                     _standards[^1].Cores);
 
+        // SI-SIG — on a conducting substrate C is this frequency's and complex, and Z_c keeps both parts.
+        double  cPerMetre = _cPerMetre;
+        Complex zc;
+        if (_conducts)
+        {
+            Complex cStar = ComplexCapacitanceAt(fHz, quasi);
+            cPerMetre = cStar.Real;
+            zc = PlanarDeembed.CharacteristicImpedance(g.Gamma, cStar, fHz);
+        }
+        else
+        {
+            zc = PlanarDeembed.CharacteristicImpedance(g.Gamma, _cPerMetre, fHz);
+        }
+
         // LFE — a GROUNDED edge port's box is nearly transparent, so on the quasi-static path's short
         // standards the general solve's a₂₂ is noise; it is solved as the lumped section it is
         // (PlanarDeembed.SolveLumpedErrorBox says why). C_pul is therefore needed FIRST, which is why
@@ -875,9 +914,7 @@ public sealed class PlanarPortCalibrator
         if (quasi && _standards[0].Settings.EdgePortGroundedAt(fHz) && PlanarGroundedEdgePort.Applies(stdPort))
         {
             box = PlanarDeembed.SolveLumpedErrorBox(sShort, sLong, _shortLength, _shortLength + _deltas[pick],
-                                                    g.Gamma,
-                                                    PlanarDeembed.CharacteristicImpedance(g.Gamma, _cPerMetre, fHz),
-                                                    stdPort.Z0);
+                                                    g.Gamma, zc, stdPort.Z0);
         }
         else
         {
@@ -889,8 +926,7 @@ public sealed class PlanarPortCalibrator
         }
 
         return new PlanarPortCalibration(
-            portNumber, g, box,
-            PlanarDeembed.CharacteristicImpedance(g.Gamma, _cPerMetre, fHz), _cPerMetre,
+            portNumber, g, box, zc, cPerMetre,
             NeighbourResonanceDegrees(g.Beta, pick),
             quasi ? PlanarCalibrationSource.QuasiStatic : PlanarCalibrationSource.Measured);
     }
@@ -1036,6 +1072,67 @@ public sealed class PlanarPortCalibrator
             : PlanarQuasiStaticLine.Extract(Standards[0], Standards[^1], _slab,
                                             _standards[0].Settings,
                                             _standards[0].Cores, _standards[^1].Cores);
+
+    /// <summary>
+    /// <b>SI-SIG — the same description at one frequency.</b> The static solve takes the medium as that
+    /// frequency sees it, so C′ − jC″ carries the conduction: oxide over conducting silicon reads the
+    /// oxide's capacitance at low frequency and the series combination at high. L is the air-filled
+    /// half, which is solved once. With no σ this is the cached line above.
+    /// </summary>
+    private PlanarQuasiStaticLine QuasiStaticLineAt(double fHz)
+    {
+        if (!_conducts) return QuasiStaticLine();
+        if (_qsLineAt.TryGetValue(fHz, out var line)) return line;
+
+        if (_interiorStack is { } stack)
+        {
+            var medium = stack.AtFrequency(fHz);
+            var model  = InteriorStaticImages.FitScalar(medium, _standardLevelZ, _standardLevelZ);
+            WorstInteriorFitResidual = Math.Max(WorstInteriorFitResidual, model.Residual);
+            line = PlanarQuasiStaticLine.Extract(Standards[0], Standards[^1], medium, _standardLevelZ,
+                                                 _standardLevelZ - medium.InterfaceZ[0],
+                                                 _standards[0].Settings,
+                                                 _standards[0].Cores, _standards[^1].Cores,
+                                                 model, _c0PerMetre);
+        }
+        else
+        {
+            line = PlanarQuasiStaticLine.Extract(Standards[0], Standards[^1], _slab.AtFrequency(fHz),
+                                                 _standards[0].Settings,
+                                                 _standards[0].Cores, _standards[^1].Cores,
+                                                 _c0PerMetre);
+        }
+        _c0PerMetre = line.C0PerMetre;
+        return _qsLineAt[fHz] = line;
+    }
+
+    /// <summary>SI-SIG — C* at one frequency, on whichever path that frequency's γ took.</summary>
+    private Complex ComplexCapacitanceAt(double fHz, bool quasi)
+    {
+        if (quasi) return QuasiStaticLineAt(fHz).CComplexPerMetre;
+        if (_cAt.TryGetValue(fHz, out var c)) return c;
+        if (_interiorStack is { } stack)
+        {
+            var medium = stack.AtFrequency(fHz);
+            var model  = InteriorStaticImages.FitScalar(medium, _standardLevelZ, _standardLevelZ);
+            WorstInteriorFitResidual = Math.Max(WorstInteriorFitResidual, model.Residual);
+            c = PlanarDeembed.CapacitancePerMetreComplex(Standards[0], Standards[^1], medium, _standardLevelZ,
+                                                         _standardLevelZ - medium.InterfaceZ[0],
+                                                         _standards[0].Settings, _standards[0].Cores,
+                                                         _standards[^1].Cores, model);
+        }
+        else
+        {
+            c = PlanarDeembed.CapacitancePerMetreComplex(Standards[0], Standards[^1], _slab.AtFrequency(fHz),
+                                                         _standards[0].Settings, _standards[0].Cores,
+                                                         _standards[^1].Cores);
+        }
+        return _cAt[fHz] = c;
+    }
+
+    /// <summary>SI-SIG — the poorest per-frequency interior fit a conducting substrate has seen; zero
+    /// on every other run. The setup's refusal cannot read it, since these fits happen during the sweep.</summary>
+    public double WorstInteriorFitResidual { get; private set; }
 
     /// <summary><b>QSC — the crossover this calibrator's plan was drawn at</b>, so a caller can
     /// report which path each point took without recomputing it.</summary>
@@ -2910,6 +3007,14 @@ public static class PlanarSolve
             // exactly as it did before this existed.
             if (QuasiStaticCalibrationNote(calibrators, freqs) is { } qsNote) notes.Add(qsNote);
 
+            // SI-SIG — a substrate that conducts says what it was solved as, and which part of the band
+            // the calibration cannot serve.
+            if (problem.EffectiveStack.Conducts && freqs.Any(q => q > 0))
+                notes.AddRange(PlanarConductingMedium.Findings(
+                    problem.EffectiveStack, freqs.First(q => q > 0), freqs[^1],
+                    calibrators.Count > 0 ? calibrators.Max(c => c.QuasiStaticCrossoverHz) : 0.0,
+                    calibrators.Any(c => c.IsGroup)));
+
             // M2 — the user set a core count in the panel and it is a machine setting, not part of the
             // design, so the run says what it actually did with it rather than leaving the user to
             // infer it from a stopwatch. It names the SOLVES because that is the number the cap acts
@@ -3349,7 +3454,11 @@ public static class PlanarSolve
                 // line reads [[0, x], [x, 0]]), so the grounded path renormalises in that convention.
                 // The series path keeps its pre-LFE arithmetic bit for bit; PlanarDeembed's own note
                 // on RenormalisePseudoWave records what that costs on a lossy line.
+                // SI-SIG — so does a conducting substrate: Z_c is far from real there, and the power-wave
+                // spelling reads its imaginary part as a reflection (|ΔS| 0.15 on 0.01 Ω·cm silicon
+                // with γ and Z_c both right). No material states σ on any run that takes the old path.
                 s = fillSt.EdgePortReturn == PlanarEdgePortReturn.Ground
+                    || problem.EffectiveStack.Conducts
                     ? PlanarDeembed.RenormalisePseudoWave(atZc, zc, z0)
                     : PlanarDeembed.Renormalise(atZc, zc, z0);
             }

@@ -424,7 +424,7 @@ conditions for what is above and below the whole sandwich. Seen in cross-section
 <tr>
 <td><strong>Dielectric</strong></td>
 <td>The material between two conductors</td>
-<td>Thickness, ε<sub>r</sub>, tanδ, µ<sub>r</sub></td>
+<td>Thickness, ε<sub>r</sub>, tanδ, µ<sub>r</sub>, σ</td>
 </tr>
 <tr>
 <td><strong>Via</strong></td>
@@ -1815,6 +1815,10 @@ which removes the entry.</p>
 <td>Relative permeability — 1 for everything that is not a magnetic material.</td>
 </tr>
 <tr>
+<td><strong>σ</strong></td>
+<td>Bulk conductivity, for a <a href="#conducting-substrate">conducting substrate</a>. Read in <code>S/m</code> or <code>Ω·cm</code>; the file states S/m. <code>—</code> means none.</td>
+</tr>
+<tr>
 <td><strong>Patterned with</strong></td>
 <td><code>(none)</code> for an ordinary, laterally continuous dielectric, which is what all three on this board are. Naming a conductor here says <em>this film exists only where that metal's artwork is</em> — the thin-film capacitor case, described in <a href="#mim-tied">The capacitor dielectric rides along only when its plate is analysed</a>.</td>
 </tr>
@@ -2590,8 +2594,14 @@ and refuses, naming both metals, when metal lies on both sides closer than that.
 					11.9
 			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="703.6, 707.63, 713.77, 720.3, 726.75, 729.46" y="332.12">
 					tanδ =
-			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="741.36, 748.26, 751.39, 758.29, 765.19, 772.09" y="332.12">
-					0.0015
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="741.36" y="332.12">
+					0
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="757.26, 763.96, 766.68" y="332.12">
+					σ =
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="778.58, 785.48, 788.61, 795.51" y="332.12">
+					0.01
+			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="807.41, 814.09, 818.49" y="332.12">
+					S/m
 			</text><text fill="#3C3C42" font-size="13" font-weight="600" font-family="IBM Plex Sans" x="545.1, 553.72, 560.99, 567.65, 574.96, 581.45, 585.02, 592.82, 600.08, 603.14, 613.77, 621.02, 625.88, 633.15" y="392.91">
 					Backside Metal
 			</text><text fill="#3C3C42" font-size="11.5" font-family="IBM Plex Sans" x="645.97" y="392.91">
@@ -2783,8 +2793,14 @@ and refuses, naming both metals, when metal lies on both sides closer than that.
 					11.9
 			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="703.6, 707.63, 713.77, 720.3, 726.75, 729.46" y="332.12">
 					tanδ =
-			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="741.36, 748.26, 751.39, 758.29, 765.19, 772.09" y="332.12">
-					0.0015
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="741.36" y="332.12">
+					0
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="757.26, 763.96, 766.68" y="332.12">
+					σ =
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="778.58, 785.48, 788.61, 795.51" y="332.12">
+					0.01
+			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="807.41, 814.09, 818.49" y="332.12">
+					S/m
 			</text><text fill="#D4D4D8" font-size="13" font-weight="600" font-family="IBM Plex Sans" x="545.1, 553.72, 560.99, 567.65, 574.96, 581.45, 585.02, 592.82, 600.08, 603.14, 613.77, 621.02, 625.88, 633.15" y="392.91">
 					Backside Metal
 			</text><text fill="#D4D4D8" font-size="11.5" font-family="IBM Plex Sans" x="645.97" y="392.91">
@@ -2852,9 +2868,8 @@ and refuses, naming both metals, when metal lies on both sides closer than that.
 			</text></svg></span>
 </span><figcaption>A silicon back-end in cross-section: three aluminium metals in oxide over a silicon substrate, and a film level between Metal1 and Metal2 holding two resistive films. The film fills its band, which has no metal. The contact via lands on it from Metal2, and Via12 passes its height without touching it.</figcaption></figure>
 <p>The shipped <code>rfic-Si_3LM_TFR_100um</code> technology is an example of this style, with generic round numbers taken from no process. It holds
-two films on one level, 50 and 500 Ω/sq, between Metal1 and Metal2. Its silicon is the library's <code>High-resistivity silicon</code>, a constant
-tanδ of 0.0015, which is the value at 10 GHz for 10 kΩ·cm. Real conduction loss falls with frequency and a constant tanδ does not, so
-read its substrate loss as correct near 10 GHz only.</p>
+two films on one level, 50 and 500 Ω/sq, between Metal1 and Metal2. Its silicon is the library's <code>Silicon, 10 kΩ·cm</code>, which states a
+conductivity, so its loss falls with frequency. See <a href="#conducting-substrate">A conducting substrate</a>.</p>
 <p>Each film states:</p>
 <table>
 <thead>
@@ -2926,6 +2941,86 @@ them, and a run that meets one names the layer. A film stays out of connectivity
 rather than a short.</p>
 <p>The technology <strong>MMIC GaAs (2 Layer Metal + MIM, 100um)</strong> states a film: <code>Resistor</code> on the bottom face of Metal1, 50 Ω/sq, with width and spacing rules
 on its layer. The <strong>PDK PCells</strong> example draws a resistor on it.</p>
+<h2 id="conducting-substrate">A conducting substrate</h2>
+<p>Silicon's loss is conduction: tanδ = σ/(ωε₀ε<sub>r</sub>), which falls as 1/f. Over a 1 to 40 GHz sweep, any single
+tanδ is wrong by up to a factor of 40 at one end. State <strong>σ</strong> on the dielectric, or choose a material that states it, and each
+frequency is solved with its own value. A tanδ beside it is a separate mechanism and adds to it.</p>
+<table>
+<thead>
+<tr>
+<th>Resistivity</th>
+<th>σ</th>
+<th>tanδ at 1 GHz</th>
+<th>5 GHz</th>
+<th>40 GHz</th>
+<th>Field decay depth at 5 GHz</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>10 kΩ·cm</td>
+<td>0.01 S/m</td>
+<td>0.015</td>
+<td>0.0030</td>
+<td>0.00038</td>
+<td>1.8 m</td>
+</tr>
+<tr>
+<td>1 kΩ·cm</td>
+<td>0.1 S/m</td>
+<td>0.15</td>
+<td>0.030</td>
+<td>0.0038</td>
+<td>18 cm</td>
+</tr>
+<tr>
+<td>10 Ω·cm</td>
+<td>10 S/m</td>
+<td>15</td>
+<td>3.0</td>
+<td>0.38</td>
+<td>2.7 mm</td>
+</tr>
+<tr>
+<td>0.01 Ω·cm</td>
+<td>10⁴ S/m</td>
+<td>15,000</td>
+<td>3,000</td>
+<td>380</td>
+<td>71 µm</td>
+</tr>
+</tbody>
+</table>
+<p><strong>When to state σ rather than tanδ.</strong> State σ for any semiconductor substrate swept over more than a narrow band. A constant tanδ
+is right for a laminate or an oxide, whose loss really is close to constant.</p>
+<p>The substrate falls into one of three regimes, and the run's notes say which:</p>
+<ul>
+<li><strong>High resistivity: a lossy dielectric.</strong> The wave travels in the silicon. Above about 150 MHz at 1 kΩ·cm, conduction current is smaller
+than displacement current.</li>
+<li><strong>Moderate, about 10 Ω·cm: the silicon conducts and the oxide does not.</strong> Below about 15 GHz at 10 Ω·cm, most of the voltage
+appears across the oxide, so a line over oxide has a high capacitance and slows down. Its Z<sub>c</sub> is well below its value at the top
+of the band, and is not close to real: 27 + j13 Ω at 5 GHz on a line that is 50 Ω on high-resistivity silicon.</li>
+<li><strong>Low, about 0.01 Ω·cm: a lossy ground plane.</strong> The skin depth reaches the substrate's thickness, so return current moves from the backside
+metal into the silicon as frequency rises.</li>
+</ul>
+<h3 id="conducting-substrate-solvers">What each solver does with it</h3>
+<ul>
+<li><strong>The full-wave planar kernel</strong> solves the first two regimes. Against a Palace reference, a 1 mm line over 2 µm of oxide on 100 µm of
+silicon reads within 0.025 in |S| from 5 to 40 GHz at 10 kΩ·cm, 1 kΩ·cm and 10 Ω·cm. In the third regime <strong>it warns and names the range</strong>: where the skin
+depth is under twice the layer's thickness, up to the frequency where the de-embedding's γ stops being quasi-static, loss reads far too low and phase
+too high, and the S-parameters there are not reliable. At 0.01 Ω·cm on that line, the range is 633 MHz to 27 GHz. Above it the
+same line reads within 0.011.</li>
+<li><strong>Palace</strong> takes σ directly. Its wave ports are not reliable on conducting silicon at the low end of a sweep: at 10 Ω·cm a wave port took a wrong
+mode at 1 GHz, and a uniform line read S11 of −0.8 dB at 5 GHz. Use lumped ports there. Mesh the skin depth yourself with a mesh region, because
+the automatic sizing follows the wavelength and not the skin depth; at 0.01 Ω·cm a 15 µm region moved α by about 10 %.</li>
+<li><strong>EMerge</strong> takes σ up to 10⁴ S/m and refuses a dielectric above that, because it would treat it as a conductor. At exactly 10⁴ S/m, on lumped ports at Standard, it read within 0.053 of Palace on a 0.5 mm line.</li>
+<li><strong>openEMS</strong> writes σ as it is, and a constant conductivity is what FDTD reproduces exactly at every frequency.</li>
+<li><strong>The 2D quasi-static kernel</strong> has one solve for the whole sweep, so it refuses a dielectric with σ. <strong>Automatic</strong> chooses the full-wave planar kernel instead.</li>
+</ul>
+<p><strong>Line models and the impedance tools.</strong> <code>MLIN</code> and the other closed forms assume a low-loss substrate. Above 0.001 S/m the part, the line
+calculator and the impedance reports say the closed form does not apply, and point at an EM run.</p>
+<p><strong>Not modelled.</strong> σ is one fixed bulk number: no junction, depletion or carrier model, and no temperature dependence. A via that passes through the
+silicon makes no contact with it. A doped layer with a profile can be approximated by a stack of uniform layers.</p>
 <h2 id="ignored">What the EM engine does not read</h2>
 <p>Stated plainly, because a field that is carried but unused is worse than one that is absent:</p>
 <ul>

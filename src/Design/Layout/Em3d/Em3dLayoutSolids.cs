@@ -1142,7 +1142,7 @@ public static class Em3dLayoutSolids
             var m = tech.FindMaterial(entry.Material);
             return Add(new Em3dMaterial(m?.Name ?? entry.Name, entry.Epsr,
                                         m?.EpsrTensor is { Length: 3 } t ? [.. t] : null,
-                                        entry.TanD, entry.Mur, 0),
+                                        entry.TanD, entry.Mur, entry.SigmaSm),
                        m is null ? EntrySource(entry) : TechnologySource(m.Name));
         }
 

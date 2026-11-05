@@ -276,7 +276,7 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
     /// none for a via (its metal is the plating's, set on its own row).</summary>
     private IEnumerable<TechMaterial> BuiltInsForRole() =>
         IsDielectric ? BuiltInMaterials.Value.Where(m => m.Epsr is not null && m.Name is { Length: > 0 })
-      : IsConductor  ? BuiltInMaterials.Value.Where(m => m.Sigma20 is not null && m.Name is { Length: > 0 })
+      : IsConductor  ? BuiltInMaterials.Value.Where(m => m.Sigma20 is not null && m.Epsr is null && m.Name is { Length: > 0 })
       : [];
 
     /// <summary>Whether there is a named material to offer or to show — the picker is hidden
@@ -303,6 +303,9 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
                 name = builtIn.Name;
             }
             Layer.Material = name;
+            // SI-SIG — choosing a material fills the conductivity, and one that states none means none:
+            // a value left from the previous choice would be a conduction nobody can see the source of.
+            if (IsDielectric && name is not null) Layer.SigmaSm = 0;
             TechPersistence.ResolveMaterials(_owner.Working);
             _owner.CommitEdit(before, name is null
                 ? $"Clear the material of {Layer.Name}"
@@ -325,7 +328,7 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
             StackupField.Epsr  => IsDielectric && m.Epsr is not null,
             StackupField.TanD  => IsDielectric && m.TanD is not null,
             StackupField.Mur   => IsDielectric && m.Mur  is not null,
-            StackupField.Sigma => !IsDielectric && m.Sigma20 is not null,
+            StackupField.Sigma => m.Sigma20 is not null && (!IsDielectric || m.Epsr is not null),
             _                  => false,
         };
     }
@@ -737,6 +740,8 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
         StagedTanD           = Layer.TanD.ToString("0.######", Inv);
         StagedMur            = Layer.Mur.ToString("0.####", Inv);
         StagedSigmaSm        = Layer.SigmaSm.ToString("0.###e+0", Inv);
+        _stagedDielectricSigma = null;
+        OnPropertyChanged(nameof(DielectricSigmaInUnit));
         StagedRoughnessUm    = Layer.RoughnessRmsM is { } rough ? (rough * 1e6).ToString("0.###", Inv) : "";
         SelectedConductorMaterial = ConductorMaterials.Match(Layer.SigmaSm)?.Name ?? ConductorMaterials.Custom;
         // An unknown name shows as itself rather than as "(none)": the row must not claim a state
@@ -1066,6 +1071,63 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
         Layer.SigmaSm = v;
         _owner.CommitEdit(before, $"Set σ of {Layer.Name}{inMaterial}");
         RaiseReadiness();
+    }
+
+    // ── SI-SIG — a dielectric's conductivity ─────────────────────────────────────────────────────
+
+    /// <summary>What the box shows for a dielectric with no conductivity.</summary>
+    public const string NoConductivity = "—";
+
+    /// <summary>The units a dielectric's conductivity reads in. A display choice: the file is S/m.</summary>
+    public static IReadOnlyList<string> DielectricSigmaUnitChoices { get; } = ["S/m", "Ω·cm"];
+
+    private string _selectedDielectricSigmaUnit = "S/m";
+    public string SelectedDielectricSigmaUnit
+    {
+        get => _selectedDielectricSigmaUnit;
+        set
+        {
+            if (SetProperty(ref _selectedDielectricSigmaUnit, value ?? "S/m"))
+                OnPropertyChanged(nameof(DielectricSigmaInUnit));
+        }
+    }
+
+    private bool DielectricSigmaIsResistivity => _selectedDielectricSigmaUnit == "Ω·cm";
+
+    private string DielectricSigmaText => !(Layer.SigmaSm > 0)
+        ? NoConductivity
+        : (DielectricSigmaIsResistivity ? 100.0 / Layer.SigmaSm : Layer.SigmaSm).ToString("G4", Inv);
+
+    /// <summary>The box, in <see cref="SelectedDielectricSigmaUnit"/>. It is the staged text; the model is
+    /// written by <see cref="CommitDielectricSigma"/>, on focus-out like every other field here.</summary>
+    public string DielectricSigmaInUnit
+    {
+        get => _stagedDielectricSigma ?? DielectricSigmaText;
+        set => SetProperty(ref _stagedDielectricSigma, value);
+    }
+    private string? _stagedDielectricSigma;
+
+    /// <summary>Empty or the dash means none. Text unchanged from what the box showed writes nothing, so
+    /// tabbing through the card cannot move a stored number by the display's rounding. An unreadable or
+    /// negative value, or a resistivity of 0, reverts.</summary>
+    public void CommitDielectricSigma()
+    {
+        string text = (_stagedDielectricSigma ?? "").Trim();
+        bool untouched = _stagedDielectricSigma is null || text == DielectricSigmaText;
+        _stagedDielectricSigma = null;
+        double v = 0;
+        bool ok = untouched || text.Length == 0 || text == NoConductivity
+               || (NumericText.TryParseDouble(text, out v) && v >= 0 && double.IsFinite(v)
+                   && !(DielectricSigmaIsResistivity && v == 0));
+        if (untouched || !ok) { OnPropertyChanged(nameof(DielectricSigmaInUnit)); return; }
+
+        double sigma = v > 0 && DielectricSigmaIsResistivity ? 100.0 / v : v;
+        if (sigma == Layer.SigmaSm) { OnPropertyChanged(nameof(DielectricSigmaInUnit)); return; }
+        var before = _owner.SnapshotJson();
+        string? inMaterial = WriteToMaterial(StackupField.Sigma, sigma);
+        Layer.SigmaSm = sigma;
+        _owner.CommitEdit(before, $"Set σ of {Layer.Name}{inMaterial}");
+        OnPropertyChanged(nameof(DielectricSigmaInUnit));
     }
 
     /// <summary>Empty or 0 clears the roughness (a smooth conductor, written as no key at all); a

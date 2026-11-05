@@ -285,7 +285,8 @@ public sealed record PlanarQuasiStaticLine(Complex CComplexPerMetre, double C0Pe
     public static PlanarQuasiStaticLine Extract(
         PlanarStandard shortStd, PlanarStandard longStd, GroundedSlab slab,
         PlanarFillSettings? settings = null,
-        PlanarFillCores? shortCores = null, PlanarFillCores? longCores = null)
+        PlanarFillCores? shortCores = null, PlanarFillCores? longCores = null,
+        double knownC0PerMetre = double.NaN)
     {
         var terms = PlanarKernelTerms.StaticScalar(slab);
         var q1 = PlanarDeembed.StaticChargeComplex(shortStd.Mesh, terms, settings, shortCores,
@@ -295,7 +296,9 @@ public sealed record PlanarQuasiStaticLine(Complex CComplexPerMetre, double C0Pe
                                                    slab.HeightM, longStd.ModePotential,
                                                    longStd.FloatingPotential);
 
-        Complex c0 = PlanarDeembed.CapacitancePerMetreComplex(
+        // SI-SIG — a conducting substrate re-extracts this line at every frequency, and the air-filled
+        // half has no material in it, so it is solved once and handed back.
+        Complex c0 = !double.IsNaN(knownC0PerMetre) ? knownC0PerMetre : PlanarDeembed.CapacitancePerMetreComplex(
             shortStd, longStd, slab, settings, shortCores, longCores, airFilled: true);
 
         // CL7 — the PLANE's own RETURN CURRENT, off this same solve and this same mesh. The slab
@@ -312,7 +315,7 @@ public sealed record PlanarQuasiStaticLine(Complex CComplexPerMetre, double C0Pe
         LayerStack stack, double levelZ, double referenceHeightM,
         PlanarFillSettings? settings = null,
         PlanarFillCores? shortCores = null, PlanarFillCores? longCores = null,
-        InteriorStaticModel? model = null)
+        InteriorStaticModel? model = null, double knownC0PerMetre = double.NaN)
     {
         var terms = PlanarKernelTerms.StaticScalarAt(
             model ?? InteriorStaticImages.FitScalar(stack, levelZ, levelZ));
@@ -323,7 +326,7 @@ public sealed record PlanarQuasiStaticLine(Complex CComplexPerMetre, double C0Pe
                                                    referenceHeightM, longStd.ModePotential,
                                                    longStd.FloatingPotential);
 
-        Complex c0 = PlanarDeembed.CapacitancePerMetreComplex(
+        Complex c0 = !double.IsNaN(knownC0PerMetre) ? knownC0PerMetre : PlanarDeembed.CapacitancePerMetreComplex(
             shortStd, longStd, stack, levelZ, referenceHeightM, settings, shortCores, longCores,
             model, airFilled: true);
 

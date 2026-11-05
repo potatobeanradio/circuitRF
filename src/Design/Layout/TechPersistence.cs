@@ -264,6 +264,9 @@ public static class TechPersistence
                 if (m.Epsr is { } epsr) layer.Epsr = epsr;
                 if (m.TanD is { } tand) layer.TanD = tand;
                 if (m.Mur  is { } mur)  layer.Mur  = mur;
+                // SI-SIG — a material with both is a conducting dielectric. One with σ and no εr stays a
+                // conductor, which is what a body decides too, and puts nothing on this entry.
+                if (m.Epsr is not null && m.Sigma20 is { } conducting) layer.SigmaSm = conducting;
             }
             else if (m.Sigma20 is { } sigma)
             {

@@ -84,6 +84,13 @@ public static class CrossSectionExtractor
                 "thick the metal is, what is under it, or where the ground plane sits. Add a " +
                 "stackup in the technology editor.");
 
+        // SI-SIG — this kernel has one solve for the whole sweep, and a conducting dielectric's permittivity
+        // depends on frequency, so it is refused rather than solved with the conductivity left out.
+        if (stack.FirstOrDefault(b => b.Layer.Kind == StackupKind.Dielectric && b.Layer.SigmaSm > 0) is { } conducting)
+            return EmExtractionResult.No(
+                $"Dielectric '{conducting.Layer.Name}' states a conductivity, and the 2D quasi-static solve cannot " +
+                "take one. Choose the full-wave planar kernel or a 3D solver.");
+
         // ── Classify every drawn shape against the stackup's DrawingLayers bindings ────────────
         var binding = BuildLayerBinding(stack);
         var classified = Classify(shapes, tech, binding, notes);

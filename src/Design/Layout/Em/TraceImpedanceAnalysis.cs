@@ -32,6 +32,8 @@
 //    is a WARNING or a FAIL (brief-impedance-1): a review needs "look at this" apart from "this is
 //    wrong", and the table at Assemble is the product's position on which is which.
 
+using CircuitRF.Design.Layout.PCells;
+using System.Globalization;
 using System.Diagnostics;
 using Clipper2Lib;
 using CircuitRF.Design.Layout.Drc;
@@ -1450,6 +1452,12 @@ public static partial class TraceImpedanceAnalysis
                                                      .Select(b => b.Layer.DrawingLayers.First(dl => bandOf[dl] == b))];
         var analysed = new List<(LayerKey Key, CrossSectionExtractor.Band Band)>();
         var notes = new List<string>(stackNotes);
+        // SI-SIG — this solve is static and lossless. A conducting substrate's Z0 depends on frequency.
+        foreach (var conducting in tech.Stackup.Layers.Where(l => l.Kind == StackupKind.Dielectric
+                     && l.SigmaSm > SubstrateResolver.ClosedFormConductivityLimitSm))
+            notes.Add($"'{conducting.Name}' conducts, σ {conducting.SigmaSm.ToString("G3", CultureInfo.InvariantCulture)} S/m. " +
+                      "These impedances are a static, lossless cross-section solve that leaves it out, so they do not " +
+                      "apply here. Use an EM run on this line.");
         foreach (var key in requested)
         {
             if (!bandOf.TryGetValue(key, out var band))

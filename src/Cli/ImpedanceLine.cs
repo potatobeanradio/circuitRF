@@ -132,6 +132,10 @@ internal static partial class Impedance
 
     private const double DbPerNp = 8.685889638065035;   // 20 / ln 10
 
+    /// <summary>SI-SIG — the substrate's own conductivity, printed only where one is stated.</summary>
+    private static string DielectricSigma(double sigmaSm) => sigmaSm > 0
+        ? string.Create(CultureInfo.InvariantCulture, $", substrate σ {sigmaSm:G3} S/m") : "";
+
     private static string RowName(LineCalcRow row, LayoutUnit unit) => row.TargetZ0 is { } z
         ? $"Z0 {z.ToString("0.###", CultureInfo.InvariantCulture)} Ω"
         : $"W {Len(row.CrossSection?.WidthM ?? row.Model?.WidthM ?? 0, unit)}";
@@ -147,11 +151,11 @@ internal static partial class Impedance
             sb.AppendLine(string.Create(CultureInfo.InvariantCulture,
                 $"Model substrate: {st.SignalConductorName} between {st.PlaneAboveName} and {st.PlaneBelowName}, " +
                 $"H1 {Len(st.H1Meters, unit)}, H2 {Len(st.H2Meters, unit)}, T {Len(st.ThicknessMeters, unit)}, " +
-                $"εr {st.RelativePermittivity:0.###}, tanδ {st.LossTangent:0.#####}, σ {st.ConductivitySPerM:0.###e0} S/m"));
+                $"εr {st.RelativePermittivity:0.###}, tanδ {st.LossTangent:0.#####}, σ {st.ConductivitySPerM:0.###e0} S/m{DielectricSigma(st.DielectricSigmaSPerM)}"));
         else if (r.Substrate is { } s)
             sb.AppendLine(string.Create(CultureInfo.InvariantCulture,
                 $"Model substrate: {s.SignalConductorName} over {s.GroundConductorName}, H {Len(s.HeightMeters, unit)}, " +
-                $"T {Len(s.ThicknessMeters, unit)}, εr {s.RelativePermittivity:0.###}, tanδ {s.LossTangent:0.#####}, σ {s.ConductivitySPerM:0.###e0} S/m"));
+                $"T {Len(s.ThicknessMeters, unit)}, εr {s.RelativePermittivity:0.###}, tanδ {s.LossTangent:0.#####}, σ {s.ConductivitySPerM:0.###e0} S/m{DielectricSigma(s.DielectricSigmaSPerM)}"));
         else if (r.SubstrateRefusal is { } why)
             sb.AppendLine($"Model substrate: none — {why}");
         if (r.FreqHz is null) sb.AppendLine("No --freq: static values only; loss and λg need a frequency.");

@@ -246,6 +246,54 @@
       "Appearance": { "BaseColor": "#3A3D42", "Metallic": 0, "Roughness": 0.15 }
     },
     {
+      "Name": "Silicon, 10 kΩ·cm",
+      "Epsr": 11.9,
+      "TanD": 0,
+      "Mur": 1,
+      "Sigma20": 0.01,
+      "ThermalK": 148,
+      "DensityKgM3": 2329,
+      "SpecificHeat": 712,
+      "Source": "Relative permittivity 11.9: Sze and Ng, Physics of Semiconductor Devices, properties of Si at 300 K. Conductivity 0.01 S/m is the reciprocal of a resistivity of 10 kohm-cm, a high-resistivity substrate. The loss tangent is 0 because the conductivity is the whole of the loss. Permittivity and conductivity are treated as constant from 1 GHz to 40 GHz. Thermal conductivity 148 W/(m K) at 300 K, density 2329 kg/m3 and specific heat 712 J/(kg K) at 25 C: CRC Handbook of Chemistry and Physics, for pure silicon.",
+      "Appearance": { "BaseColor": "#3A3D42", "Metallic": 0, "Roughness": 0.15 }
+    },
+    {
+      "Name": "Silicon, 800 Ω·cm",
+      "Epsr": 11.9,
+      "TanD": 0,
+      "Mur": 1,
+      "Sigma20": 0.125,
+      "ThermalK": 148,
+      "DensityKgM3": 2329,
+      "SpecificHeat": 712,
+      "Source": "Relative permittivity 11.9: Sze and Ng, Physics of Semiconductor Devices, properties of Si at 300 K. Conductivity 0.125 S/m is the reciprocal of a resistivity of 800 ohm-cm. The loss tangent is 0 because the conductivity is the whole of the loss. Permittivity and conductivity are treated as constant from 1 GHz to 40 GHz. Thermal conductivity 148 W/(m K) at 300 K, density 2329 kg/m3 and specific heat 712 J/(kg K) at 25 C: CRC Handbook of Chemistry and Physics, for pure silicon.",
+      "Appearance": { "BaseColor": "#3A3D42", "Metallic": 0, "Roughness": 0.15 }
+    },
+    {
+      "Name": "Silicon, 10 Ω·cm",
+      "Epsr": 11.9,
+      "TanD": 0,
+      "Mur": 1,
+      "Sigma20": 10,
+      "ThermalK": 148,
+      "DensityKgM3": 2329,
+      "SpecificHeat": 712,
+      "Source": "Relative permittivity 11.9: Sze and Ng, Physics of Semiconductor Devices, properties of Si at 300 K. Conductivity 10 S/m is the reciprocal of a resistivity of 10 ohm-cm, a typical moderately doped substrate. The loss tangent is 0 because the conductivity is the whole of the loss. Permittivity and conductivity are treated as constant from 1 GHz to 40 GHz. Thermal conductivity 148 W/(m K) at 300 K, density 2329 kg/m3 and specific heat 712 J/(kg K) at 25 C: CRC Handbook of Chemistry and Physics, for pure silicon.",
+      "Appearance": { "BaseColor": "#3A3D42", "Metallic": 0, "Roughness": 0.15 }
+    },
+    {
+      "Name": "Silicon, 0.01 Ω·cm",
+      "Epsr": 11.9,
+      "TanD": 0,
+      "Mur": 1,
+      "Sigma20": 10000,
+      "ThermalK": 148,
+      "DensityKgM3": 2329,
+      "SpecificHeat": 712,
+      "Source": "Relative permittivity 11.9: Sze and Ng, Physics of Semiconductor Devices, properties of Si at 300 K. Conductivity 1e4 S/m is the reciprocal of a resistivity of 0.01 ohm-cm, a heavily doped substrate. The loss tangent is 0 because the conductivity is the whole of the loss. Permittivity and conductivity are treated as constant from 1 GHz to 40 GHz. Thermal conductivity 148 W/(m K) at 300 K, density 2329 kg/m3 and specific heat 712 J/(kg K) at 25 C: CRC Handbook of Chemistry and Physics, for pure silicon.",
+      "Appearance": { "BaseColor": "#3A3D42", "Metallic": 0, "Roughness": 0.15 }
+    },
+    {
       "Name": "GaAs",
       "Epsr": 12.9,
       "TanD": 0.0006,

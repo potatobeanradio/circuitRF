@@ -1031,7 +1031,8 @@ public static class PlanarExtractor
         if (slabBands.Count == 1)
         {
             slabMaterial = new EmMaterial(slabLayer.Layer.Epsr, slabLayer.Layer.TanD,
-                                          slabLayer.Layer.Mur <= 0 ? 1.0 : slabLayer.Layer.Mur);
+                                          slabLayer.Layer.Mur <= 0 ? 1.0 : slabLayer.Layer.Mur)
+            { SigmaSm = slabLayer.Layer.SigmaSm };
         }
         else
         {
@@ -1048,7 +1049,12 @@ public static class PlanarExtractor
             double epsEff = thickness > 0 && invEps > 0 ? thickness / invEps : slabLayer.Layer.Epsr;
             slabMaterial = new EmMaterial(epsEff,
                                           thickness > 0 ? tanWeighted / thickness : slabLayer.Layer.TanD,
-                                          thickness > 0 ? muWeighted / thickness : 1.0);
+                                          thickness > 0 ? muWeighted / thickness : 1.0)
+            {
+                // SI-SIG — equal layers of one material merge into one below and leave only the slab, so
+                // the slab must carry their σ. Layers that differ always keep the stack, which carries it.
+                SigmaSm = slabBands.All(b => b.Layer.SigmaSm == slabLayer.Layer.SigmaSm) ? slabLayer.Layer.SigmaSm : 0,
+            };
 
             var names = string.Join(", ", slabBands.Select(b => $"'{b.Layer.Name}'"));
             notes.Add(
@@ -1964,7 +1970,8 @@ public static class PlanarExtractor
                 continue;
             }
             built.Add((lo, hi, new EmMaterial(host.Layer.Epsr, host.Layer.TanD,
-                                              host.Layer.Mur <= 0 ? 1.0 : host.Layer.Mur)));
+                                              host.Layer.Mur <= 0 ? 1.0 : host.Layer.Mur)
+            { SigmaSm = host.Layer.SigmaSm }));
         }
 
         // Merge adjacent same-material slabs — the same rule the cross-section extractor uses, and

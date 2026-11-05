@@ -52,7 +52,37 @@ public sealed record EmMaterial(double EpsR, double TanD = 0, double MuR = 1)
 {
     public static readonly EmMaterial Air = new(1.0);
 
-    public Complex EpsComplex => new(EpsR, -EpsR * TanD);
+    /// <summary>
+    /// <b>SI-SIG — a bulk conductivity, S/m, and a mechanism of its own beside tanδ.</b> Zero on every
+    /// material that states none, and then nothing below reads it, which is what keeps every existing
+    /// result identical to the bit. An init-only property so the three-argument construction every
+    /// caller uses is unchanged.
+    /// </summary>
+    public double SigmaSm { get; init; }
+
+    /// <summary>
+    /// ε*, which has no meaning for a conducting material until a frequency is named, so asking one
+    /// without first going through <see cref="AtFrequency"/> is refused rather than answered: quietly
+    /// dropping σ here is the exact defect SI-SIG removed.
+    /// </summary>
+    public Complex EpsComplex => SigmaSm == 0
+        ? new(EpsR, -EpsR * TanD)
+        : throw new InvalidOperationException(
+            $"A material with a conductivity of {SigmaSm:G4} S/m has no complex permittivity until a " +
+            "frequency is named; resolve it with AtFrequency first.");
+
+    /// <summary>The tanδ the conductivity alone amounts to at one frequency: σ/(ωε₀εᵣ).</summary>
+    public double ConductionTanD(double fHz) =>
+        SigmaSm / (2.0 * Math.PI * fHz * EmConstants.Eps0 * EpsR);
+
+    /// <summary>
+    /// <b>This material as one frequency sees it:</b> ε* = εᵣ(1 − j·tanδ) − j·σ/(ωε₀), written as an
+    /// equivalent tanδ so everything past this point reads an ordinary lossy dielectric. σ = 0 returns
+    /// this same instance.
+    /// </summary>
+    public EmMaterial AtFrequency(double fHz) => SigmaSm == 0
+        ? this
+        : new EmMaterial(EpsR, TanD + ConductionTanD(fHz), MuR);
 }
 
 /// <summary>

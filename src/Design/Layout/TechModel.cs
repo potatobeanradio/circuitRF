@@ -210,7 +210,11 @@ public sealed class StackupLayer
     public double TanD { get; set; }
     public double Mur { get; set; } = 1.0;
 
-    // Conductor
+    /// <summary>
+    /// S/m. On a conductor or via, its metal. <b>SI-SIG — on a dielectric, a bulk conductivity beside
+    /// <see cref="TanD"/></b>, the mechanism of a silicon substrate, whose loss falls as 1/f where tanδ
+    /// holds. Zero means none, and every technology that states none is identical to the bit.
+    /// </summary>
     public double SigmaSm { get; set; }
 
     /// <summary>
