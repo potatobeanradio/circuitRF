@@ -1363,6 +1363,8 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
 
     public override void CreateImages(ICompositionGpuInterop interop, int width, int height, int count)
     {
+        // Software present (no usable GPU interop): images no compositor imports; the pane reads each frame back.
+        if (interop is null) { CreateOffscreenImages(width, height, count); return; }
         ReleaseImages();
         var api = Api;
         _images = new Image[count];
@@ -1474,6 +1476,10 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
     // ── the frame ───────────────────────────────────────────────────────────────────────────
 
     public override void Render(int image, Scene3DFramePlan plan, ulong frame) => RenderTo(_images[image], plan, image);
+
+    public override bool CanPresentInSoftware => true;
+
+    public override byte[]? ReadFramePixels(int image) => ReadRgba(image);
 
     /// <summary>brief-em3d-29 R-em3d29-5 — the plan drawn into an image of its own (no semaphores, never
     /// imported) and read back: the same pipelines and buffers as the view, the swapchain untouched.</summary>

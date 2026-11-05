@@ -414,6 +414,13 @@ public sealed class AppPreferences
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? View3DRealisticOnOpen { get; set; }
 
+    // Whether a 3D view the compositor offers no usable GPU interop to (a remote X session, a VM) reads each frame back
+    // and draws it in software instead of refusing to draw (Settings ▸ General). Per USER, a property of the machine.
+    // Null means the shipped default (on). Read by Viewer3DPane.Host when a view opens.
+    [JsonPropertyName("view3d_software_present")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? View3DSoftwarePresent { get; set; }
+
     [JsonPropertyName("snap3d_kinds")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? Snap3DKinds { get; set; }

@@ -190,6 +190,7 @@ public partial class SettingsView : Window
             SyncThemeButtons(prefs.Appearance ?? AppearanceMode.System);
 
             RealisticOnOpenCheck.IsChecked = Realistic3DPreference.OnOpen;
+            SoftwarePresentCheck.IsChecked = prefs.View3DSoftwarePresent ?? true;
 
             CopyColorCombo.ItemsSource   = new[] { "Follow System", "Force Light", "Force Dark" };
             CopyColorCombo.SelectedIndex = (int)(prefs.CopyColorMode ?? CopyColorMode.FollowSystem);
@@ -267,6 +268,13 @@ public partial class SettingsView : Window
     {
         if (_updatingGeneral) return;
         Realistic3DPreference.OnOpen = RealisticOnOpenCheck.IsChecked == true;
+    }
+
+    // Takes effect when a 3D view next opens; one already drawing keeps the way it presents.
+    private void OnSoftwarePresentChanged(object? sender, RoutedEventArgs e)
+    {
+        if (_updatingGeneral) return;
+        AppPreferencesIo.Update(p => p.View3DSoftwarePresent = SoftwarePresentCheck.IsChecked == true);
     }
 
     // ── Theme (light / dark / system) ────────────────────────────────────────

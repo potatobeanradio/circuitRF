@@ -109,6 +109,14 @@ public abstract class Viewer3DBackend : IDisposable
     /// <summary>Creates <paramref name="count"/> shareable images of the size and imports each.</summary>
     public abstract void CreateImages(ICompositionGpuInterop interop, int width, int height, int count);
 
+    /// <summary>True when the backend can present without GPU interop: <see cref="CreateImages"/> then takes a null
+    /// interop and makes images no compositor imports, and <see cref="ReadFramePixels"/> reads each frame back.</summary>
+    public virtual bool CanPresentInSoftware => false;
+
+    /// <summary>Software present (no GPU interop): the pixels of image <paramref name="image"/> after its
+    /// frame, RGBA8 premultiplied, rows top to bottom; null where the backend has no such path.</summary>
+    public virtual byte[]? ReadFramePixels(int image) => null;
+
     /// <summary>Releases the imported images and their semaphores; keeps the device and buffers.</summary>
     public abstract void ReleaseImages();
 
