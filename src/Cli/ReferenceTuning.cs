@@ -557,7 +557,7 @@ internal static partial class Reference
             {
                 GoalTemplateGroup.SParameters  => "S-parameters",
                 GoalTemplateGroup.WsProbe      => "WSProbe (stability-wsprobe metrics of one probe)",
-                GoalTemplateGroup.Fields       => "Fields (SAR and B1 of a type=fields analysis, per watt as it normalises)",
+                GoalTemplateGroup.Fields       => "Fields (the pattern, SAR and B1 of a type=fields analysis, by what its record holds)",
                 GoalTemplateGroup.Measurements => "Measurements (any measure line, by name)",
                 _                              => "Custom",
             };
@@ -579,7 +579,10 @@ internal static partial class Reference
             "(accepted by default): B1 in T per sqrt(W), SAR in W/kg per W, Pabs in W per W, SarEff in T per sqrt(W/kg). B1 and " +
             "SARwb read only their region's cells; psSAR is always the full average of the whole field, once per evaluation that " +
             "scores it, so a goal on psSAR is the expensive one; Pabs is free. A goal on them names the fields analysis " +
-            "(analysis=F1) and runs no EM.", 96))
+            "(analysis=F1) and runs no EM. The pattern functions read its far field at its one frequency, each the cube of its name: " +
+            "RealizedGainDbi(F), GainDbi(F) and DirectivityDbi(F) at the peak, or (F, theta, phi) in that direction of the pattern's grid, in degrees; " +
+            "RadiationEfficiency(F) in percent, TrpDbm(F) and PeakEirpDbm(F). Gain is per watt accepted and realized gain includes mismatch, whatever " +
+            "norm= says. A freq=all analysis refuses them: read them from an analysis at one frequency.", 96))
             sb.AppendLine("  " + line);
         sb.AppendLine();
         // brief ENV-MEAS-2 R-envm2-4: the power through an IProbe, the everyday spelling of Pout, Pdc and PAE.

@@ -60,7 +60,7 @@ public sealed partial class GoalEditorViewModel : ObservableObject
     private bool _filling;
     private CancellationTokenSource? _previewCts;
 
-    /// <param name="templates">The catalog for the bench (<see cref="GoalTemplates.For(TestBench)"/>).</param>
+    /// <param name="templates">The catalog for the bench (<see cref="GoalTemplates.For(PreparedCircuit)"/>).</param>
     /// <param name="analyses">The bench's declared analyses.</param>
     /// <param name="measurements">Its <c>measure</c> rows — an expression naming one reads that row's analysis.</param>
     /// <param name="goal">The goal to edit; null for a new one.</param>

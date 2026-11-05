@@ -496,7 +496,8 @@ that goal's cost most. A part of a complex value is its own coordinate, so ∂co
 
 *(brief-sar-10: the field measurements over a `type=fields` analysis — `B1pMean`, `psSAR`, `SarEff` and four more — are goal
 functions too, with a template group of their own, and an optimizer evaluation computes each only when a goal scores it;
-`sar.md` §12.)*
+`sar.md` §12. brief-cosim-pattern-4: so are `RealizedGainDbi`, `GainDbi`, `DirectivityDbi`, `RadiationEfficiency`, `TrpDbm` and `PeakEirpDbm` over the
+same analysis's far field. The goal editor lists a pattern's functions and SAR's by what the block's record holds; `sar.md` §11.11.)*
 
 **Network metrics are expression built-ins** (`src/Core/Expressions/Evaluator.Network.cs`): `mu`,
 `mu_prime`, `K`, `delta_mag`, `max_gain` (dB), `max_gain_lin`, `passivity`, `group_delay`, `vswr` — the

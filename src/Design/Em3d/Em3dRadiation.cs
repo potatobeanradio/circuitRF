@@ -54,6 +54,10 @@ internal static class Em3dRadiation
             "the whole of what the structure dissipated — metal and dielectric together — and both are published."),
         EfficiencyTolerance);
 
+    /// <summary>What one point's metrics are read from, so a metric asked for alone (brief-cosim-pattern-4) is the cube's number.</summary>
+    public static PlanarMetricContext Context(string solver, Em3dPatternPoint point, double referenceInputPowerDbm)
+        => new(point.Pattern, Terms(solver, point.AcceptedW), point.Reflection, PlanarMetricSettings.Default with { ReferenceInputPowerDbm = referenceInputPowerDbm });
+
     /// <summary>
     /// Assembles the points — row-major <c>[freq, port]</c>, frequencies ascending, ports as
     /// <paramref name="portNumbers"/> — through the stage, publishes the group into <paramref name="data"/>
@@ -65,7 +69,6 @@ internal static class Em3dRadiation
                                        IReadOnlyList<double> freqs, IReadOnlyList<Em3dPatternPoint> points,
                                        double referenceInputPowerDbm, bool hemisphere, string? frequencies = null, string? origin = null)
     {
-        var settings = PlanarMetricSettings.Default with { ReferenceInputPowerDbm = referenceInputPowerDbm };
         var slices = new List<FarFieldSlice>(freqs.Count);
         int n = portNumbers.Count;
         for (int i = 0; i < freqs.Count; i++)
@@ -77,8 +80,7 @@ internal static class Em3dRadiation
             {
                 var pt = points[i * n + k];
                 pats[k] = pt.Pattern;
-                var ctx = new PlanarMetricContext(pt.Pattern, Terms(solver, pt.AcceptedW), pt.Reflection, settings);
-                (mets[k], pols[k]) = FarFieldStage.Evaluate(ctx);
+                (mets[k], pols[k]) = FarFieldStage.Evaluate(Context(solver, pt, referenceInputPowerDbm));
             }
             slices.Add(new FarFieldSlice(freqs[i], pats, mets, pols));
         }

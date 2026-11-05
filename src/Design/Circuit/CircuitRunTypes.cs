@@ -35,16 +35,17 @@ public sealed record FieldsArtifact(string Analysis, string? C3dPath, string Set
 public enum FieldsOutput
 {
     /// <summary>Simulate's: the whole recombination, averaged SAR when the analysis asks, every volume and record written
-    /// beside the field set for the 3D view.</summary>
+    /// beside the field set for the 3D view; a far field's full cubes and metrics, which write nothing.</summary>
     Written,
 
     /// <summary>A tuning knob moving (R-sar10-3): local SAR and B1 written for the 3D view, no average — the averaged
-    /// readouts wait for the knob's release, which is a <see cref="Written"/> evaluation.</summary>
+    /// readouts wait for the knob's release, which is a <see cref="Written"/> evaluation. A far field's full cubes and metrics.</summary>
     Local,
 
     /// <summary>An optimizer, yield or DOE evaluation: nothing recombined and nothing written; the circuit's waves, the
     /// absorbed power from the tissue matrix, and every field measurement computed when an expression asks for it —
-    /// B1 and SARwb over their region's cells only, psSAR always as the full average.</summary>
+    /// B1 and SARwb over their region's cells only, psSAR always as the full average. A far field forms no cube: a pattern
+    /// function sums it when it reads it, and an open plot keeps the file's cubes, dimmed, until the final point (brief-cosim-pattern-4).</summary>
     OnDemand,
 }
 

@@ -28344,3 +28344,41 @@ for its colon, and stays as it was for `h5read`.
 **`freq=all` in `VendorPartRange`** adds no frequency: the frequencies are in a record the directive does not read, and the warning is about analyses that name one.
 
 Gates: `tests/Ui.Tests/Sar/FarFieldCosimTests.cs`. Physical numbers above are not in the suite. The scratch harness is not kept.
+
+## brief-cosim-pattern-4 — Tuning sliders, optimizer and yield on the pattern
+
+**R-cp4-3, the drag, measured once.** A scratch harness, not kept: three ports, one frequency, the 1° grid (65,160 directions), an 11 MB `.npy`, **Debug**, the build the owner runs; the mean of 10
+evaluations after 2 discarded. First read of the `.npy` is 11-13 ms, then none.
+
+| Step | ms |
+|---|---|
+| Circuit solve (`BlockWaves`) | 0.03 |
+| Sum over 3 ports | 3.3 |
+| Metrics and polarization (`FarFieldStage.Evaluate`) | 10.3 |
+| Forming the cubes (`Em3dRadiation.Publish`, less the line above) | 7.7 |
+| **Whole `Local` evaluation, circuit's S included** | **22** |
+| Publish to the library, polar cut re-resolved | 0.4 |
+| Redraw, polar cut at 800×600 | 0.4 |
+| Publish, 3D surface re-resolved | 5.3 |
+| Redraw, 3D surface at 800×600 | 44 |
+| `OnDemand`, nothing read | 0.22 |
+| `OnDemand`, `RealizedGainDbi` read | 4.5 |
+
+**Metrics and cubes are about 80 % of an evaluation, and it does not matter**: a drag is 23 ms with a polar cut and 71 ms with a 3D surface, against the 2 s where `TuneSession` suggests run on release. So a
+moving slider computes everything, which R-cp4-3 allowed it not to, and the code stays one path. This is one frequency: a `freq=all` analysis costs this per frequency, and that is what run on release is for.
+`OnDemand` reading a metric is 5 times cheaper than a `Local` evaluation; with no read it is 100 times.
+
+**An expression cannot read `F1.farfield.U`.** The parser takes one dot, so `F1.farfield` parses and the second dot does not, which is why `OnDemand` can drop the cubes without scanning goal text: no goal can
+have named one. It is also why `goal … over=freq` is not the answer to a `freq=all` refusal, as R-cp4-4 allowed for: over= reads a cube, and these have no spelling in an expression.
+
+**Dropping the cubes would have emptied an open pattern plot** on each of the optimizer's best points, because the analysis's group is present in that DataSet, so the partial merge kept nothing of it. The merge
+now keeps the group's missing `farfield.` cubes and marks `F1.farfield` stale, which `ReadsGroup` matches as a whole word against `F1.farfield.U`, so those traces dim like an analysis outside the scope. A best-point
+publish is partial whatever the scope now, since a run over every analysis lacks them too.
+
+**A refusal spelled `PsSar`.** The far-field refusal wrote the enum, and two enum names are not the function's: it read `'PsSar'` for `psSAR`. `FieldMetricFunctions.NameOf` says the function.
+
+**A snapshot's `.cdd` needs its result in a workspace.** A document from `plot --write-cdd` beside its `.npy`, given to UiSnapshot with `--results`, opened with the source loaded and the trace gone, on any cube,
+`F1.S` included. Inside a workspace, with the result in `results/`, it draws. This was seen and not traced, since the application's own displays are in a workspace.
+
+Gates: `tests/Ui.Tests/Sar/FarFieldCosimTests.cs`. Inspected: a polar cut from a `Local` evaluation with a shunt C at 0.5 pF and 8 pF on a synthetic coupled two-port, through UiSnapshot: the lobes drop about 5 dB, read off the rings, and the
+floor, rings and reference stay.

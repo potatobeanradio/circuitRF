@@ -1,16 +1,21 @@
 // ================================================================
 //  FarFieldCosimTests.cs — brief-cosim-pattern-3's routine gates, on a small far field built here with no solver: the pattern of a whole
-//  circuit from a result's per-port patterns, the circuit's S beside it, and what it refuses.
+//  circuit from a result's per-port patterns, the circuit's S beside it, and what it refuses. And brief-cosim-pattern-4's: the same pattern
+//  under a slider, a goal and the optimizer.
 // ================================================================
 
+using System.Collections.Concurrent;
 using System.Numerics;
 using CircuitRF.Core.Devices;
 using CircuitRF.Design.Circuit;
 using CircuitRF.Design.Em3d;
 using CircuitRF.Design.Layout.Em;
+using CircuitRF.Design.Optimization;
 using CircuitRF.Engine.Mom;
 using CircuitRF.Render.DataDisplay;
 using CircuitRF.Ui.DataDisplay.ViewModels;
+using CircuitRF.Ui.DataDisplay;
+using CircuitRF.Ui.Tuning;
 using RfCore;
 using RfCore.Data;
 using RfCore.Export;
@@ -470,5 +475,255 @@ public sealed class FarFieldCosimTests : IDisposable
         WriteResult(2);
         var run = Run("Port:P1 a 0 Num=1 Z=50 Ohm\nR:R2 b 0 R=50\n" + Block("a", "b") + "analysis F1 type=fields block=EM1 freq=1 freqUnit=GHz drive=1\n");
         Assert.Contains(run.Warnings, w => w.Contains("of the power delivered into the block", StringComparison.Ordinal));
+    }
+
+    // ── brief-cosim-pattern-4 ───────────────────────────────────────────────────────────────────────
+
+    private const string Around = "Port:P1 a 0 Num=1 Z=50 Ohm\nC:C1 b 0 C=1p\nR:R3 c 0 R=75\n";
+    private const string AtF0 = "analysis F1 type=fields block=EM1 freq=1 freqUnit=GHz drive=1\n";
+    private static readonly string[] PatternFunctions = ["RealizedGainDbi", "GainDbi", "DirectivityDbi", "RadiationEfficiency", "TrpDbm", "PeakEirpDbm"];
+
+    private PreparedCircuit Circuit(string analysis = AtF0)
+        => PreparedCircuit.FromText(Around + Block("a", "b", "c") + analysis, _dir, _dir);
+
+    private static RunResult Evaluate(PreparedCircuit circuit, FieldsOutput output, Dictionary<string, string>? values = null, params string[] expressions)
+    {
+        var run = CircuitEvaluation.Evaluate(circuit, new CircuitEvaluationRequest { Fields = output, Tunables = values, Expressions = expressions });
+        Assert.True(run.Status == RunStatus.Success, run.StatusMessage);
+        return run;
+    }
+
+    private sealed class Sink : ITuneResultSink
+    {
+        public DataSet? Last;
+        public void Publish(DataSet data) => Last = data;
+        public void Commit(DataSet data, IReadOnlyDictionary<string, string> values) { }
+        public void Drop() { }
+        public void Snapshot() { }
+        public void ClearSnapshot() { }
+    }
+
+    private static DataSet TunedBy(PreparedCircuit circuit, Dictionary<string, string> values, bool final)
+    {
+        var sink = new Sink();
+        var ui = new ConcurrentQueue<Action>();
+        using var session = TuneSession.ForCircuit(circuit, sink, ui.Enqueue);
+        session.Request(values, final);
+        while (session.IsEvaluating || !ui.IsEmpty)
+        {
+            Thread.Yield();
+            while (ui.TryDequeue(out var a)) a();
+        }
+        return sink.Last ?? throw new InvalidOperationException("the session published nothing");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ASlidersEvaluation_IsSimulate_CubeForCube(bool released)
+    {
+        WriteResult();
+        var values = new Dictionary<string, string> { ["C1.C"] = "2.5 pF" };
+        var circuit = Circuit();
+        var tuned = TunedBy(circuit, values, released);
+        var simulated = Evaluate(circuit, FieldsOutput.Written, values).GroupedResults!;
+
+        var names = simulated.CubesIn("F1").Keys.ToArray();
+        Assert.Contains("farfield.U", names);
+        Assert.Equal(names.Order(), tuned.CubesIn("F1").Keys.Order());
+        foreach (string name in names)
+        {
+            var (want, got) = (simulated.CubesIn("F1")[name], tuned.CubesIn("F1")[name]);
+            if (want.DataKind == DataKind.Complex) Assert.Equal(want.ComplexValues, got.ComplexValues);
+            else Assert.Equal(want.RealValues, got.RealValues);
+        }
+        Assert.NotEqual(Evaluate(circuit, FieldsOutput.Written).GroupedResults!["F1.farfield.U"].RealValues, tuned["F1.farfield.U"].RealValues);
+    }
+
+    [Fact]
+    public void OnDemand_FormsNoCube_SumsOnlyWhenRead_AndEachFunctionIsItsCube()
+    {
+        WriteResult();
+        var circuit = Circuit();
+        var written = Evaluate(circuit, FieldsOutput.Written).GroupedResults!;
+
+        long sums = CosimPatternMetrics.Sums;
+        var idle = Evaluate(circuit, FieldsOutput.OnDemand).GroupedResults!;
+        Assert.Equal(sums, CosimPatternMetrics.Sums);
+        Assert.DoesNotContain(idle.CubesIn("F1").Keys, k => k.StartsWith("farfield.", StringComparison.Ordinal));
+        Assert.True(idle.Contains("F1." + FieldCosimulation.IncidentCube));
+        Assert.Equal(written["F1.S"].ComplexValues, idle["F1.S"].ComplexValues);
+
+        var read = Evaluate(circuit, FieldsOutput.OnDemand, null, [.. PatternFunctions.Select(f => $"{f}(F1)")]);
+        Assert.Equal(sums + 1, CosimPatternMetrics.Sums);
+        for (int i = 0; i < PatternFunctions.Length; i++)
+        {
+            Assert.Null(read.Expressions[i].Error);
+            Assert.Equal(written[$"F1.farfield.{PatternFunctions[i]}"].RealValues[0], read.Expressions[i].Value!.Value.AsReal());
+        }
+
+        // Simulate's measurements read the same numbers from the sum it already made.
+        var simulated = Evaluate(circuit, FieldsOutput.Written, null, "RealizedGainDbi(F1)");
+        Assert.Equal(written["F1.farfield.RealizedGainDbi"].RealValues[0], simulated.Expressions[0].Value!.Value.AsReal());
+        Assert.Equal(sums + 1, CosimPatternMetrics.Sums);
+    }
+
+    [Theory]
+    [InlineData("RealizedGainDbi")]
+    [InlineData("GainDbi")]
+    [InlineData("DirectivityDbi")]
+    public void ADirection_IsThePeakLessTheDropToIt(string function)
+    {
+        WriteResult();
+        var circuit = Circuit();
+        var u = Evaluate(circuit, FieldsOutput.Written).GroupedResults!["F1.farfield.U"].RealValues;
+        var run = Evaluate(circuit, FieldsOutput.OnDemand, null, $"{function}(F1)", $"{function}(F1, 30, 45)", $"{function}(F1, 30, 405)", $"{function}(F1, 30, -315)");
+        double peak = run.Expressions[0].Value!.Value.AsReal(), at = run.Expressions[1].Value!.Value.AsReal();
+        Assert.Equal(peak + 10 * Math.Log10(u[Grid.IndexOf(1, 1)] / u.Max()), at, 9);
+        Assert.Equal(at, run.Expressions[2].Value!.Value.AsReal());
+        Assert.Equal(at, run.Expressions[3].Value!.Value.AsReal());
+    }
+
+    [Fact]
+    public void ThePatternFunctions_RefuseWhatTheyCannotAnswer_ByName()
+    {
+        WriteResult();
+        string ErrorOf(string analysis, string expression)
+            => Evaluate(Circuit(analysis), FieldsOutput.OnDemand, null, expression).Expressions[0].Error ?? "";
+
+        Assert.Contains("is not on its pattern's grid, which is theta 0 to 180 in steps of 30", ErrorOf(AtF0, "GainDbi(F1, 31, 45)"), StringComparison.Ordinal);
+        string every = ErrorOf("analysis F1 type=fields block=EM1 freq=all drive=1\n", "RealizedGainDbi(F1)");
+        Assert.Contains("RealizedGainDbi(F1) is one number", every, StringComparison.Ordinal);
+        Assert.Contains("at one of those frequencies", every, StringComparison.Ordinal);
+        Assert.Contains("psSAR", ErrorOf(AtF0, "psSAR(F1, 10)"), StringComparison.Ordinal);
+
+        Directory.Delete(_dir, true);
+        new MemoryFieldSet().WriteBeside(_dir, 300e6, "stamp-1");
+        var run = Evaluate(PreparedCircuit.FromText("Port:P1 in 0 Num=1 Z=50 Ohm\nC:C1 p2 0 C=2e-12\n" + Block("in", "p2") +
+                                                    "analysis F1 type=fields block=EM1 freq=300 freqUnit=MHz drive=1 average=no\n", _dir, _dir),
+                           FieldsOutput.OnDemand, null, "TrpDbm(F1)");
+        Assert.Contains("reads a far field", run.Expressions[0].Error ?? "", StringComparison.Ordinal);
+    }
+
+    /// <summary>A one-port block behind a series L: with the block's own R left, the reflection is least where L cancels its reactance, so the best
+    /// realized gain is at a value known by hand.</summary>
+    [Fact]
+    public void TheOptimizer_MovesAPartToTheKnownBest_OnTheGain_StartingNoEmRun()
+    {
+        WriteResult(n: 1);
+        Complex gamma = S(0, 1)[0, 0];
+        Complex z = Z0 * (1 + gamma) / (1 - gamma);
+        double bestNh = -z.Imaginary / (2 * Math.PI * F0) * 1e9;
+
+        var circuit = PreparedCircuit.FromText("Port:P1 a 0 Num=1 Z=50 Ohm\nL:L1 a b L=2 nH\n" + Block("b") + AtF0 +
+                                               "tune L1.L min=0.5 nH max=15 nH opt=1\ngoal G = RealizedGainDbi(F1) analysis=F1 ge 100\noptimize algorithm=auto seed=1\n", _dir, _dir);
+        _ = PortFarFieldSet.Open(Record);
+        long launches = OpenEmsRun.Invocations, reads = PortFarFieldSet.Reads, runs = FieldCosimulation.Runs;
+        var result = OptimizationRun.Create(circuit, new OptimizationOptions()).Run();
+
+        Assert.Equal(OptimizationOutcome.GoalsUnmet, result.Outcome);
+        Assert.True(TunableValue.TryParse(result.BestValues["L1.L"], out _, out _, out double henries));
+        Assert.Equal(bestNh, henries * 1e9, bestNh * 0.01);
+        Assert.Equal(launches, OpenEmsRun.Invocations);
+        Assert.Equal(reads, PortFarFieldSet.Reads);
+        Assert.True(FieldCosimulation.Runs - runs >= result.Evaluations / 2, "the evaluations ran through the recombination");
+    }
+
+    [Fact]
+    public void TheGoalEditor_ListsWhatTheRecordHolds()
+    {
+        string[] Ids(PreparedCircuit c) => [.. GoalTemplates.For(c).Where(t => t.Group == GoalTemplateGroup.Fields).Select(t => t.Id)];
+
+        WriteResult();
+        var far = Ids(Circuit());
+        Assert.Contains("F1.realizedgain", far);
+        Assert.DoesNotContain("F1.pssar", far);
+        Assert.Empty(Ids(Circuit("analysis F1 type=fields block=EM1 freq=all drive=1\n")));
+        var template = GoalTemplates.For(Circuit()).Single(t => t.Id == "F1.realizedgaindir").Make();
+        Assert.Equal("RealizedGainDbi(F1, 0, 0)", template.Expression);
+        Assert.Equal("F1", GoalTemplates.AnalysisReferencedBy(template.Expression, Circuit().Tb!));
+
+        Directory.Delete(_dir, true);
+        new MemoryFieldSet().WriteBeside(_dir, 300e6, "stamp-1");
+        var set = Ids(Circuit());
+        Assert.Contains("F1.pssar", set);
+        Assert.DoesNotContain("F1.realizedgain", set);
+
+        // Nothing to read says nothing, so both are offered and the run says what is wrong.
+        File.Delete(Record);
+        var unread = Ids(Circuit());
+        Assert.Contains("F1.pssar", unread);
+        Assert.Contains("F1.realizedgain", unread);
+    }
+
+    // R-cp4-2 — the three plots a pattern is read on, each resolved as the window resolves it.
+    [Theory]
+    [InlineData(PlotType.Polar, "dB10(F1.farfield.U[0, :, 0, 1])")]
+    [InlineData(PlotType.Rect, "dB10(F1.farfield.U[0, :, 0, 1])")]
+    [InlineData(PlotType.Surface3D, "dB10(F1.farfield.U[0, :, :, 1])")]
+    public async Task AnOpenPatternPlot_FollowsTheSlider_AndKeepsItsSettings(PlotType type, string spec)
+    {
+        WriteResult();
+        var circuit = Circuit();
+        var first = Evaluate(circuit, FieldsOutput.Written).GroupedResults!;
+        string path = Path.Combine(_dir, "run.npy");
+        DataSetExporter.Export(first, path, ExportFormat.Npy);
+
+        var vm = new DataDisplayDocumentViewModel();
+        var lib = vm.Window.DataSourceLibrary;
+        lib.ResultsRootProvider = () => _dir;
+        await lib.LoadFileAsync(path);
+        var loaded = lib.Entries.Single().Data!;
+        var plot = vm.Window.DataDisplay!.Plots[0].PlotVM.Plot;
+        plot.SetPlotType(type);
+        plot.PolarRadial = PolarRadialMode.Db;
+        Assert.True(CubeTraceSpecParser.TryParse(spec, loaded, out string cube, out var slice, out var transform, out string error), error);
+        var trace = new Trace(new SNP([F0], 2), MatrixType.S, 0, 0, DependentVarFormat.Db) { SourcePath = path, CubeName = cube, Slice = slice, Transform = transform };
+        plot.Traces.Add(trace);
+        PlotInspectorViewModel.TrySetCubeData(trace, lib, type, FreqUnit.GHz);
+        plot.PolarDbFloor = -33;
+        plot.AutoscaleX = false;
+        plot.AutoscaleY = false;
+        var camera = plot.SurfaceCamera;
+        var pinned = trace.Slice.ToArray();
+        object? Shape() => type == PlotType.Surface3D ? trace.SurfaceGrid : trace.Points.ToArray();
+        var before = Shape();
+
+        Assert.True(lib.Publish(path, TunedBy(circuit, new() { ["C1.C"] = "2.5 pF" }, final: false)));
+
+        var after = Shape();
+        Assert.False(ReferenceEquals(before, after));
+        if (type == PlotType.Surface3D) Assert.NotEqual(((PatternSurfaceGrid)before!).Db, ((PatternSurfaceGrid)after!).Db);
+        else Assert.NotEqual((System.Collections.IEnumerable)before!, (System.Collections.IEnumerable)after!);
+        Assert.Equal(-33, plot.PolarDbFloor);
+        Assert.False(plot.AutoscaleX);
+        Assert.False(plot.AutoscaleY);
+        Assert.Equal(camera, plot.SurfaceCamera);
+        Assert.Equal(pinned, trace.Slice);
+    }
+
+    // R-cp4-1 — an optimizer's best point holds no pattern cubes, and a pattern plot must not empty for it: it keeps the file's, dimmed, until the final point.
+    [Fact]
+    public async Task AnOptimizersBestPoint_LeavesAnOpenPatternDimmed_AndTheFinalPointRestoresIt()
+    {
+        WriteResult();
+        var circuit = Circuit();
+        var file = Evaluate(circuit, FieldsOutput.Written).GroupedResults!;
+        string path = Path.Combine(_dir, "run.npy");
+        DataSetExporter.Export(file, path, ExportFormat.Npy);
+        var lib = new DataSourceLibraryViewModel();
+        await lib.LoadFileAsync(path);
+
+        var values = new Dictionary<string, string> { ["C1.C"] = "2.5 pF" };
+        lib.Publish(path, Evaluate(circuit, FieldsOutput.OnDemand, values).GroupedResults!, DataSourceLibraryViewModel.OptimizingChip, partial: true);
+        var shown = lib.Entries.Single().Data!;
+        Assert.Equal(file["F1.farfield.U"].RealValues, shown["F1.farfield.U"].RealValues);
+        Assert.Equal(["F1.farfield"], lib.StaleGroupsFor(path));
+        Assert.NotEqual(file["F1.a"].ComplexValues, shown["F1.a"].ComplexValues);
+
+        var final = Evaluate(circuit, FieldsOutput.Written, values).GroupedResults!;
+        lib.Publish(path, final, DataSourceLibraryViewModel.OptimizingChip, partial: false);
+        Assert.Empty(lib.StaleGroupsFor(path));
+        Assert.Equal(final["F1.farfield.U"].RealValues, lib.Entries.Single().Data!["F1.farfield.U"].RealValues);
     }
 }

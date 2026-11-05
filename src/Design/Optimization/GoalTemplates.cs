@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.Text;
 using CircuitRF.Core.Design;
+using CircuitRF.Core.Devices;
+using CircuitRF.Core.Elaboration;
 using CircuitRF.Core.Expressions;
 using CircuitRF.Design.Circuit;
 
@@ -72,10 +74,11 @@ public static class GoalTemplates
 {
     /// <summary>The templates for the analyses of a prepared circuit; empty when it could not be read.</summary>
     public static IReadOnlyList<GoalTemplate> For(PreparedCircuit circuit)
-        => circuit.Tb is { } tb ? For(tb) : [Custom()];
+        => circuit.Tb is { } tb ? For(tb, circuit.BaseDirectory) : [Custom()];
 
-    /// <summary>The templates for <paramref name="tb"/>'s analyses, grouped in the editor's order.</summary>
-    public static IReadOnlyList<GoalTemplate> For(TestBench tb)
+    /// <summary>The templates for <paramref name="tb"/>'s analyses, grouped in the editor's order. <paramref name="baseDirectory"/> is what a block's
+    /// record resolves against, as the elaborator resolves it.</summary>
+    public static IReadOnlyList<GoalTemplate> For(TestBench tb, string? baseDirectory = null)
     {
         var list  = new List<GoalTemplate>();
         var ports = PortNumbers(tb);
@@ -87,7 +90,7 @@ public static class GoalTemplates
             foreach (var sp in tb.Analyses.OfType<SParameterAnalysis>())
                 list.AddRange(WsProbeTemplates(sp, probes));
         foreach (var fa in tb.Analyses.OfType<FieldsAnalysis>())
-            list.AddRange(FieldsTemplates(fa));
+            list.AddRange(FieldsTemplates(fa, tb, baseDirectory));
         foreach (var m in tb.Measurements)
         {
             string name = m.Name, analysis = AnalysisReferencedBy(m.Expression, tb) ?? "";
@@ -253,15 +256,41 @@ public static class GoalTemplates
 
     // ── fields (brief-sar-10 R-sar10-1) ──────────────────────────────────────
 
-    /// <summary>The field measurements over one fields analysis, each over the setup's own region (B1's, or SAR's); the
-    /// region and mass are text the user edits in the goal (sar.md §12).</summary>
-    private static IEnumerable<GoalTemplate> FieldsTemplates(FieldsAnalysis fa)
+    /// <summary>
+    /// brief-cosim-pattern-4 R-cp4-5 — what the record behind <paramref name="fa"/>'s block holds. A block that cannot be read here (a record not written yet, a
+    /// path through a variable, a block inside a sub-cell) says nothing, so both halves are offered and the run says what is wrong.
+    /// </summary>
+    private static (bool Pattern, bool FieldSet) RecordHolds(FieldsAnalysis fa, TestBench tb, string? baseDirectory)
     {
+        var block = tb.Instances.FirstOrDefault(i => i.InstanceName == fa.Block && i.Reference == EmFieldDataRecord.TypeName);
+        string? file = block?.Overrides.FirstOrDefault(o => o.Name.Equals("File", StringComparison.OrdinalIgnoreCase))?.Expression.Trim();
+        if (string.IsNullOrEmpty(file)) return (true, true);
+        var (record, _) = EmFieldDataRecord.Open(Elaborator.ResolveFileReference(file.Trim('"'), baseDirectory));
+        return record is null ? (true, true) : (record.FarFieldPoints > 0, record.FieldsFolder is not null);
+    }
+
+    /// <summary>The field measurements over one fields analysis, each over the setup's own region (B1's, or SAR's); the
+    /// region and mass are text the user edits in the goal (sar.md §12). The far field's are a number at one frequency, so a
+    /// <c>freq=all</c> analysis, which refuses them, does not offer them.</summary>
+    private static IEnumerable<GoalTemplate> FieldsTemplates(FieldsAnalysis fa, TestBench tb, string? baseDirectory)
+    {
+        var (pattern, fieldSet) = RecordHolds(fa, tb, baseDirectory);
         string a = fa.Name;
         var mass = new GoalTemplateField("mass", "Averaging mass (g)", ["10", "1"], "10");
         GoalTemplate One(string id, string label, string name, string expr, GoalType type, GoalTemplateField[]? fields = null)
             => new($"{a}.{id}", label, GoalTemplateGroup.Fields, a, fields ?? [],
                    v => new OptimizationGoal { Name = name, Expression = expr.Replace("<mass>", fields is null ? "" : v("mass")), Analysis = a, Type = type });
+        if (pattern && !fa.AtEveryFrequency)
+        {
+            yield return One("realizedgain", "Peak realized gain, with mismatch (dBi)", "RealizedGain", $"RealizedGainDbi({a})", GoalType.Ge);
+            yield return One("realizedgaindir", "Realized gain in one direction (dBi): theta, phi in degrees", "RealizedGainDir", $"RealizedGainDbi({a}, 0, 0)", GoalType.Ge);
+            yield return One("gain", "Peak gain, without mismatch (dBi)", "Gain", $"GainDbi({a})", GoalType.Ge);
+            yield return One("directivity", "Peak directivity (dBi)", "Directivity", $"DirectivityDbi({a})", GoalType.Ge);
+            yield return One("radeff", "Radiation efficiency (%)", "RadEff", $"RadiationEfficiency({a})", GoalType.Ge);
+            yield return One("trp", "Total radiated power (dBm)", "TRP", $"TrpDbm({a})", GoalType.Ge);
+            yield return One("eirp", "Peak EIRP (dBm)", "EIRP", $"PeakEirpDbm({a})", GoalType.Ge);
+        }
+        if (!fieldSet) yield break;
         yield return One("b1mean", "Mean |B1+| over a region (T/√W)", "B1mean", $"B1pMean({a})", GoalType.Ge);
         yield return One("b1min", "Smallest |B1+| over a region (T/√W)", "B1min", $"B1pMin({a})", GoalType.Ge);
         yield return One("b1cov", "|B1+| non-uniformity, std/mean", "B1cov", $"B1pCoV({a})", GoalType.Le);

@@ -36,7 +36,7 @@ namespace CircuitRF.Ui.Optimization;
 public interface IOptimizerDisplay
 {
     /// <summary>Shows the best point's DataSet in place of the results file (UI thread).
-    /// <paramref name="partial"/>: it holds only the goals' analyses, and the rest are stale.</summary>
+    /// <paramref name="partial"/>: what it does not hold stays from the file, stale: the analyses outside the goals' scope, and the far-field cubes an evaluation does not form.</summary>
     void Publish(DataSet data, bool partial);
 
     /// <summary>Writes the finished run's full DataSet to the results file, stating the values.</summary>
@@ -102,7 +102,6 @@ public sealed partial class OptimizerPanelViewModel
     private IOptimizerDisplay?      _display;
     private CancellationTokenSource? _cts;
     private Task?                   _task;
-    private bool                    _partial;
     private bool                    _snapAfterStop;
     private double                  _publishedCost = double.PositiveInfinity;
 
@@ -216,7 +215,6 @@ public sealed partial class OptimizerPanelViewModel
         _cts     = cts;
         _circuit = circuit;
         _display = DisplayFor?.Invoke(_tuned);
-        _partial = setup.Optimizer?.Scope != OptimizerScope.All;
         _snapAfterStop = false;
         StatusText = "";
         State = OptimizerRunState.Running;
@@ -279,7 +277,8 @@ public sealed partial class OptimizerPanelViewModel
         {
             _publishedCost = p.BestCost;
             BestPublishes++;
-            display.Publish(data, _partial);
+            // Partial whatever the scope: an analysis in the goals' scope still leaves out its far-field cubes (brief-cosim-pattern-4 R-cp4-1), which the merge keeps, dimmed.
+            display.Publish(data, partial: true);
         }
     }
 

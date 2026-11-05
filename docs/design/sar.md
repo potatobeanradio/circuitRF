@@ -1636,6 +1636,35 @@ EMerge's S across a change of load closes only as the port's edge mesh does: `|�
 **One mesh.** The gates compare a recombination with a run on the same mesh, so they prove the method and not the mesh: a result that is not converged
 recombines faithfully into the same unconverged answer. The balance check is what looks at the solve itself.
 
+### 11.11 The pattern under a slider, a goal and the optimizer (CP-4)
+
+**What each caller gets.**
+
+| `FieldsOutput` | Who asks | Far field does |
+|---|---|---|
+| `Written` | Simulate, a slider's release, the optimizer's final point | Full cubes and metrics |
+| `Local` | A slider moving | Full cubes and metrics, nothing on disk |
+| `OnDemand` | Optimizer, yield, centering, DOE | The waves and the circuit's S; a metric sums the pattern when it reads it, once per evaluation |
+
+**The functions**, each the cube of its name at the analysis's one frequency, so one word means one thing (`CosimPatternMetrics`, over `PlanarMetrics.EvaluateOne`):
+
+| Function | Value |
+|---|---|
+| `RealizedGainDbi(F)`, `GainDbi(F)`, `DirectivityDbi(F)` | The peak |
+| `RealizedGainDbi(F, theta, phi)`, and the same for the other two | That direction in degrees, with U there in place of U_peak in the registry's definition |
+| `RadiationEfficiency(F)` | Percent, as the cube is |
+| `TrpDbm(F)`, `PeakEirpDbm(F)` | Against the result's reference input power, as the cubes are |
+
+A direction off the pattern's grid is refused naming the grid, since a value between grid points would be an interpolation; φ wraps. A metric the cube would not publish is refused with
+the registry's own sentence. A `freq=all` analysis refuses a scalar function by name and points at an analysis at one frequency. `goal … over=freq` is not offered as the way round, because
+it reads a cube and an expression cannot name one of these: the parser takes one dot (`F1.S`), so `F1.farfield.U` is a plot's name and not an expression's.
+
+**An open plot during an optimizer run.** A best point's DataSet has no far-field cubes, so the publish keeps the file's and marks them stale as the group `F1.farfield`, and `RebuildDimmed`
+draws those traces dimmed as it does an analysis outside the goals' scope. The final point is a `Written` evaluation and restores them. So a best-point publish is partial whatever the scope.
+
+**The goal editor** lists a pattern's functions when the block's record has a far field and SAR's when it has a field set (`GoalTemplates.RecordHolds`). A block it cannot read (no record yet, a
+path through a variable, a block inside a sub-cell) says nothing, so both are offered and the run says what is wrong. A `freq=all` analysis offers no pattern function, since it would refuse them.
+
 ---
 
 ## 12. B1 and SAR as goals: tuning, the optimizer, yield and multi-channel drive (SAR-10)

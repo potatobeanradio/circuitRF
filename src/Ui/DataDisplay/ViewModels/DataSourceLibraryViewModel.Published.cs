@@ -67,6 +67,8 @@ public partial class DataSourceLibraryViewModel
     /// <summary>True when <paramref name="absPath"/> currently shows a published DataSet.</summary>
     public bool IsPublished(string absPath) => FindEntry(absPath)?.IsPublished ?? false;
 
+    private const string FarFieldCubePrefix = CircuitRF.Engine.Mom.PlanarFarField.Group + ".";
+
     /// <summary>
     /// Shows <paramref name="data"/> in place of the file at <paramref name="absPath"/> — a newer
     /// version of that source. Only a source this library already holds, loaded from a <c>.npy</c>
@@ -81,7 +83,8 @@ public partial class DataSourceLibraryViewModel
     /// analyses (the Optimizer's "goal analyses only", brief-tuneopt-10 R-to10-7) when
     /// <paramref name="partial"/>: every group the file holds and <paramref name="data"/> does not is
     /// carried over from the file, and is STALE — the traces bound to it keep their old data and draw
-    /// dimmed (<see cref="StaleGroupsFor"/>).
+    /// dimmed (<see cref="StaleGroupsFor"/>). So are the far-field cubes of an analysis the DataSet does hold: an optimizer's evaluation
+    /// reads a pattern without forming its cubes (brief-cosim-pattern-4 R-cp4-1), and an open pattern plot must not empty for it.
     /// </summary>
     public bool Publish(string absPath, DataSet data, string chip, bool partial)
     {
@@ -95,7 +98,17 @@ public partial class DataSourceLibraryViewModel
             var merged = ShallowCopy(data);
             foreach (var group in file.Groups)
             {
-                if (data.Groups.Contains(group)) continue;
+                if (data.Groups.Contains(group))
+                {
+                    var held = data.CubesIn(group);
+                    foreach (var (name, cube) in file.CubesIn(group))
+                    {
+                        if (!name.StartsWith(FarFieldCubePrefix, StringComparison.Ordinal) || held.ContainsKey(name)) continue;
+                        stale.Add($"{group}.{CircuitRF.Engine.Mom.PlanarFarField.Group}");
+                        merged.AddToGroup(group, name, cube);
+                    }
+                    continue;
+                }
                 stale.Add(group);
                 foreach (var (name, cube) in file.CubesIn(group)) merged.AddToGroup(group, name, cube);
             }

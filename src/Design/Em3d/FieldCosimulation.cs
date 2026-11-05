@@ -198,11 +198,12 @@ public static partial class FieldCosimulation
                 }
             }
             double[] frequencies = [hz];
+            CosimPatternMetrics? pattern = null;
             if (plan.FarField.Count > 0)
             {
                 if (far!.PortCount != snp.PortCount)
                     throw new InvalidOperationException($"{who}: '{fa.Block}' has {snp.PortCount} ports and its far field {far.PortCount}.");
-                PublishFarField(fa, nl, far, plan.FarField, drives, data, lines, warnings, control);
+                pattern = PublishFarField(fa, nl, far, plan.FarField, drives, data, lines, warnings, control, output);
                 frequencies = [.. plan.FarField.Select(i => far.FrequenciesHz[i])];
                 // R-cp3-2 — gain per watt accepted is what a pattern means, whatever a field set's numbers are per
                 if (fa.PerAvailable)
@@ -218,7 +219,7 @@ public static partial class FieldCosimulation
             if (lines.Count > 0) notes.Add(lines[0]);
             if (metrics is not null)
             {
-                metrics(provider is null ? new NoFieldSetMetrics(fa.Name, Path.GetFileName(recordPath)) : provider);
+                metrics(new FieldsRunMetrics(fa, Path.GetFileName(recordPath), provider, pattern));
                 handedOver = provider is not null;
             }
             return data;

@@ -893,6 +893,34 @@ public static class PlanarMetrics
     }
 
     /// <summary>
+    /// brief-cosim-pattern-4 R-cp4-1 — one metric and nothing else, with the verdict <see cref="Evaluate(PlanarMetricContext)"/> would give it: what a goal
+    /// reads while nothing asks for the beamwidth cuts or the rest of the report.
+    /// </summary>
+    public static PlanarMetricOutcome EvaluateOne(PlanarMetricContext context, PlanarMetric metric)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        var d = Registry.First(x => x.Metric == metric);
+        var verdict = d.Availability(context);
+        return new PlanarMetricOutcome(d, verdict, verdict.Ok ? d.Evaluate(context) : []);
+    }
+
+    /// <summary>
+    /// brief-cosim-pattern-4 R-cp4-4 — a directivity or gain in one direction of the grid: the registry's definition with U there in place of U_peak.
+    /// </summary>
+    public static double InDirection(PlanarMetricContext context, PlanarMetric metric, int direction)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        double fourPiU = 4.0 * Math.PI * context.Pattern.U[direction];
+        return metric switch
+        {
+            PlanarMetric.DirectivityDbi  => PlanarMetricContext.Db(fourPiU / context.Budget.RadiatedW),
+            PlanarMetric.GainDbi         => PlanarMetricContext.Db(fourPiU / context.Budget.AcceptedW),
+            PlanarMetric.RealizedGainDbi => PlanarMetricContext.Db(fourPiU / context.Budget.AcceptedW * context.MismatchFactor),
+            _ => throw new ArgumentOutOfRangeException(nameof(metric), metric, "This metric has no value per direction."),
+        };
+    }
+
+    /// <summary>
     /// <b>Written now although it cannot run now</b>, so that activating front-to-back is the one
     /// predicate in the registry entry above and not a second piece of work. The antipode of
     /// (θ, φ) is (180° − θ, φ + 180°), taken at the nearest grid direction.

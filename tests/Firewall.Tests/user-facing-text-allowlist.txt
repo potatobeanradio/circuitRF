@@ -1259,8 +1259,7 @@ src/Design/Em3d/FieldCosimulation.cs|{who}: weight '{weights[i]}' of port {port}
 src/Design/Em3d/FieldCosimulation.cs|{who}: weight '{weights[i]}' of port {port} is not finite.
 src/Design/Em3d/FieldCosimulation.cs|{who}: '{fa.Block}' is a {block.ComponentType}, not an {EmFieldDataRecord.DisplayName} block.
 src/Design/Em3d/FieldCosimulation.cs|{who}: block= names no {EmFieldDataRecord.DisplayName} block.
-src/Design/Em3d/FieldCosimulation.FarField.cs|'{metric}' reads a field set, and fields analysis '{analysis}' has none at its frequency: '{record}' is a far field there. 
-src/Design/Em3d/FieldCosimulation.FarField.cs|{who}: circuit port {drive.DrivenPort}'s voltage is zero at {MaterialDispersion.Hz(hz)}, so the pattern 
+src/Design/Em3d/FieldCosimulation.FarField.cs|'{FieldMetricFunctions.NameOf(metric)}' reads a field set, and fields analysis '{fa.Name}' has none at its frequency: '{record}' is a far field there. 
 src/Design/Em3d/FieldCosimulation.cs|{who}: '{fa.Block}' has {snp.PortCount} ports and its far field {far.PortCount}.
 src/Design/Em3d/FieldCosimulation.cs|{who}: '{name}' holds a pattern at {HzList(far.FrequenciesHz)} only
 src/Design/Em3d/FieldCosimulation.cs|{who}: freq=all takes every frequency of a far field, and '{name}' holds a field set, whose SAR and B1 are 
@@ -1589,3 +1588,9 @@ src/Core/Elaboration/Elaborator.cs|{who} is wired to {nets} net(s) and '{name}' 
 src/Engine/Mom/PlanarGram.cs|Rooftops {bi} and {bj} share cells of three different sheet classes. A 
 
 src/Engine/Mom/EmProblem.cs|A material with a conductivity of {SigmaSm:G4} S/m has no complex permittivity until a 
+src/Core/Expressions/Evaluator.Fields.cs|{cl.Name}(): a direction is two numbers of degrees, as {cl.Name}(F1, 30, 90) for theta 30, phi 90.
+src/Design/Em3d/CosimPatternMetrics.cs|'{metric}' is not a far-field measurement.
+src/Design/Em3d/CosimPatternMetrics.cs|Fields '{fa.Name}': theta {G(thetaDeg)}, phi {G(phiDeg)} is not on its pattern's grid, which is theta {Span(grid.ThetaDeg)} and 
+src/Design/Em3d/FieldCosimulation.FarField.cs|'{metric}' reads a far field, and fields analysis '{fa.Name}' has none at its frequency: '{record}' holds a field set there. 
+src/Design/Em3d/FieldCosimulation.FarField.cs|Fields '{fa.Name}': circuit port {w.Drive.DrivenPort}'s voltage is zero at {MaterialDispersion.Hz(hz)}, so the pattern 
+src/Design/Em3d/FieldCosimulation.FarField.cs|{metric}({fa.Name}) is one number, and fields analysis '{fa.Name}' has freq=all, which is every frequency '{record}' holds. 

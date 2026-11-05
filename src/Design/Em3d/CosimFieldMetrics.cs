@@ -25,7 +25,7 @@ using CircuitRF.Engine.Em3d.Sar;
 
 namespace CircuitRF.Design.Em3d;
 
-public sealed class CosimFieldMetrics : IFieldMetrics, IDisposable
+public sealed class CosimFieldMetrics : IDisposable
 {
     private readonly FieldsAnalysis _fa;
     private readonly PortFieldSet _set;

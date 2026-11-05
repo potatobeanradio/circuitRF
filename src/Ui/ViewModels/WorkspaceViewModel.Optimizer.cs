@@ -93,8 +93,8 @@ public partial class WorkspaceViewModel
     /// <summary>The goal editor's catalog, analyses and measurements — the bench as it netlists.</summary>
     private (IReadOnlyList<GoalTemplate>, IReadOnlyList<Analysis>, IReadOnlyList<Measurement>) GoalContextFor(SchematicViewModel tuned)
     {
-        if (PrepareTunedCircuit(tuned) is { Circuit.Tb: { } tb })
-            return (GoalTemplates.For(tb), [.. tb.Analyses], [.. tb.Measurements]);
+        if (PrepareTunedCircuit(tuned) is { Circuit: { Tb: { } tb } circuit })
+            return (GoalTemplates.For(circuit), [.. tb.Analyses], [.. tb.Measurements]);
         return ([], [.. tuned.EditModel.Analyses], [.. tuned.EditModel.Measurements]);
     }
 

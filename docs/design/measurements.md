@@ -201,7 +201,8 @@ than one because a cube is single-kind and the two answers of each pair differ i
 
 `B1pMean(F1, "brain")`, `psSAR(F1, 10)` and five more read a `type=fields` analysis's recombined field by the analysis's name,
 each one Real, per watt as the analysis normalises; the recombined field is held open for the measurements and goals of the
-evaluation that produced it and computed only where one asks (`sar.md` §12, `expressions.md` §7).
+evaluation that produced it and computed only where one asks (`sar.md` §12, `expressions.md` §7). `RealizedGainDbi(F1)` and five more read its far field the
+same way, each the cube of its name (`sar.md` §11.11).
 
 ### 4. Reductions over an axis, and the statistics of a sample
 
