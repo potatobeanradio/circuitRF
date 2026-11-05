@@ -7,8 +7,9 @@ namespace CircuitRF.Cli;
 
 /// <summary>
 /// <c>circuitrf fields &lt;path.cnl|path.csch&gt;</c> — a schematic's <c>fields</c> analyses, headless (brief-sar-9; <c>cli.md</c> §26):
-/// an EM Field Data block's per-port fields, named by its <c>.cemr</c> and kept by a 3D run with <c>Sar.PerPortFields</c>, recombined with the waves
-/// the circuit delivers to its ports, into SAR and B1 at one frequency — with no EM run.
+/// an EM Field Data block's saved per-port results, named by its <c>.cemr</c>, recombined with the waves the circuit delivers to its ports, with
+/// no EM run: a far field (a 3D run with Radiation pattern) into the pattern and metrics of the whole circuit, a field set (<c>Sar.PerPortFields</c>)
+/// into SAR and B1 at one frequency, and either into the circuit's S.
 ///
 /// <para><b>It owns no recombination.</b> The run is <see cref="CircuitEvaluation.Evaluate"/>, which dispatches
 /// <c>FieldCosimulation</c> exactly as Simulate does, so a capacitor changed with <c>--set</c> is the run the GUI makes. What is
@@ -78,6 +79,9 @@ internal static class Fields
                 return JsonRun.Fail(CliDiagnostics.NoAnalysis(Verb, $"'{n}' is not an enabled fields analysis of this design" +
                                                                    (fields.Count > 0 ? $" (it has {string.Join(", ", fields)})." : ".")));
         foreach (var (name, expr) in sets) Console.Error.WriteLine($"[circuitRF] set {name} = {expr}");
+
+        // Under --json a pattern stays in -o's file, as an envelope's waveforms do: one frequency at 1° is 65,160 directions a cube.
+        JsonRun.InlineCubeLimit = 10_000;
 
         var result = CircuitEvaluation.Evaluate(circuit, new CircuitEvaluationRequest
         {

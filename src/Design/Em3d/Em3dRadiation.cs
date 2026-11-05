@@ -2,9 +2,10 @@
 // uses (src/Engine/Mom/FarFieldStage.cs), so the "farfield" group a 3D .npy carries is the planar one cube for
 // cube and the Data Display, the metrics and the CLI need nothing new.
 //
-// EACH PORT'S PATTERN IS THAT PORT'S OWN EXCITATION. openEMS runs once per port (R-em3d9-3a) and Palace
-// excites every port in turn, so port k's pattern comes from the run that drove port k, with every other port
-// terminated in its own Z0. It is normalised to a 1 V voltage across the driven port — the planar kernel's
+// EACH PORT'S PATTERN IS THAT PORT'S OWN EXCITATION. Palace and EMerge excite every port in turn, so port k's pattern
+// comes from the solve that drove port k, with every other port terminated in its own Z0. openEMS runs once per port
+// (R-em3d9-3a), and its other ports reflect a little as its probes see them, so its port k adds up every run
+// (brief-cosim-pattern-3). It is normalised to a 1 V voltage across the driven port — the planar kernel's
 // "port driven at 1 V" — and the accepted power is ½·Re(V·I*) at that port under the same excitation, which
 // is R-ant-5's denominator; the mismatch factor is 1 − |S_kk|² of the published S (R-ant-6). So the powers
 // are this run's own S-parameters' rule, not a re-derivation (R-em3d31-1).
@@ -30,6 +31,12 @@ internal static class Em3dRadiation
     /// </summary>
     public const double EfficiencyTolerance = 0.03;
 
+    /// <summary>
+    /// brief-cosim-pattern-3 — metadata in the far-field group: this result's patterns are the field its S describes, referred to the voltage its S states.
+    /// Palace's always were. An older openEMS or EMerge result lacks it, and a fields analysis asks for that run again rather than recombining it.
+    /// </summary>
+    public const string PortsTerminatedCube = "__PortsTerminated";
+
     public static FarFieldExternalTerms Terms(string solver, double acceptedW) => new(
         solver, acceptedW,
         "Front-to-back cannot be computed: the pattern's θ axis stops at 90° because the air box's floor is a " +
@@ -51,11 +58,12 @@ internal static class Em3dRadiation
     /// Assembles the points — row-major <c>[freq, port]</c>, frequencies ascending, ports as
     /// <paramref name="portNumbers"/> — through the stage, publishes the group into <paramref name="data"/>
     /// and returns the sentences the run carries. <paramref name="frequencies"/> says which frequencies the pattern is at, when
-    /// they are not every frequency of the sweep (brief-emi-7: EMerge's are its field frequencies).
+    /// they are not every frequency of the sweep (brief-emi-7: EMerge's are its field frequencies). <paramref name="origin"/> says how a
+    /// port's pattern was formed, when it is not simply the run that excited it.
     /// </summary>
     public static List<string> Publish(DataSet data, string solver, PlanarFarFieldGrid grid, IReadOnlyList<int> portNumbers,
                                        IReadOnlyList<double> freqs, IReadOnlyList<Em3dPatternPoint> points,
-                                       double referenceInputPowerDbm, bool hemisphere, string? frequencies = null)
+                                       double referenceInputPowerDbm, bool hemisphere, string? frequencies = null, string? origin = null)
     {
         var settings = PlanarMetricSettings.Default with { ReferenceInputPowerDbm = referenceInputPowerDbm };
         var slices = new List<FarFieldSlice>(freqs.Count);
@@ -86,7 +94,7 @@ internal static class Em3dRadiation
                   $"{Eng(first.Pattern.PeakIntensityWPerSr)}W/sr and integrates to " +
                   $"{Eng(first.Pattern.RadiatedPowerW)}W over the {(hemisphere ? "upper hemisphere" : "whole sphere")} " +
                   $"against {Eng(first.AcceptedW)}W accepted at the port (radiation efficiency " +
-                  $"{m0.Budget.RadiationEfficiency:P2}). Each port's pattern is the run that excited that port. " +
+                  $"{m0.Budget.RadiationEfficiency:P2}). {origin ?? "Each port's pattern is the run that excited that port."} " +
                   $"{frequencies ?? $"A pattern at each of the sweep's {freqs.Count} frequencies"}, on a 1° grid.");
         foreach (string r in sets.Metrics.Refusals) notes.Add(r);
         var pol = sets.Polarization.At(0, 0);

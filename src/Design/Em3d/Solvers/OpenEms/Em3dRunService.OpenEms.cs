@@ -265,7 +265,7 @@ public static partial class Em3dRunService
         var efficiencies = new List<(double Hz, int Port, double Efficiency)>();
         if (lowering.FarField is { } surface)
         {
-            if (OpenEmsPattern(surface, result, lowering, runDir, setup, maxCores, control, ct, log.Notes, data, efficiencies) is { } patternError)
+            if (OpenEmsPattern(surface, result, lowering, runDir, setup, maxCores, control, ct, log.Notes, data, efficiencies, [.. ports.Select(p => p.Z0)]) is { } patternError)
             {
                 if (ct.IsCancellationRequested) return Leg.Failed(Me, EmRunStatus.Cancelled, EmDiagnostics.Cancelled());
                 return Failed(patternError);
@@ -395,13 +395,14 @@ public static partial class Em3dRunService
     /// </summary>
     internal static string? OpenEmsPattern(Nf2ffSurface surface, FdtdPortResult result, CsxcadLowering lowering, string runDir,
                                           EmSetup setup, int? maxCores, RunControl? control, CancellationToken ct, ICollection<string> notes, DataSet data,
-                                          List<(double Hz, int Port, double Efficiency)>? efficiencies = null)
+                                          List<(double Hz, int Port, double Efficiency)>? efficiencies = null,
+                                          IReadOnlyList<Complex>? z0 = null)
     {
         var grid = surface.Hemisphere ? PlanarFarFieldGrid.Hemisphere() : FarFieldStage.Sphere();
         var freqs = result.FrequenciesHz;
         int n = lowering.Ports.Count;
         control?.BeginStage("far field (openEMS surface transform)", freqs.Length * n, "patterns");
-        var points = new Em3dPatternPoint[freqs.Length * n];
+        var runs = new PlanarFarFieldPattern[freqs.Length * n];
         long freed = 0;
         var watch = System.Diagnostics.Stopwatch.StartNew();
         for (int k = 0; k < n; k++)
@@ -410,28 +411,74 @@ public static partial class Em3dRunService
             for (int i = 0; i < freqs.Length; i++)
             {
                 ct.ThrowIfCancellationRequested();
-                Complex u = result.U[i][k, k], c = result.I[i][k, k];
+                Complex u = result.U[i][k, k];
                 if (!(u.Magnitude > 0))
                     return $"Port {lowering.Ports[k]}'s own voltage is zero at {Fmt(freqs[i] / 1e9)} GHz in the run that excited it, so " +
                            "its radiation pattern has nothing to be referred to.";
                 var samples = OpenEmsFarField.ReadSamples(dir, surface, freqs[i], 0.5 / u, out string? readError);
                 if (samples is null) return readError;
-                var pattern = NearToFarField.Transform(samples, freqs[i], grid, lowering.Ports[k], surface.Floor, surface.FloorZ,
-                                                       maxCores, ct);
-                double accepted = 0.5 * (c / u).Real;       // ½·Re(V·I*) at |V| = 1 V
-                points[i * n + k] = new Em3dPatternPoint(pattern, accepted, result.S[i][k, k]);
-                // brief-sar-6 R-sar6-6 — the power budget's radiated share, at each sweep point
-                efficiencies?.Add((freqs[i], lowering.Ports[k], accepted > 0 ? pattern.RadiatedPowerW / accepted : double.NaN));
+                runs[i * n + k] = NearToFarField.Transform(samples, freqs[i], grid, lowering.Ports[k], surface.Floor, surface.FloorZ,
+                                                           maxCores, ct);
                 control?.TickStage();
             }
             freed += OpenEmsFarField.DeletePhaseSnapshots(dir);
         }
+
+        // brief-cosim-pattern-3 — each port's excitation, with the waves the other ports' terminations sent back taken out as S takes them out, so a pattern is
+        // the field S describes. One port has no other ports, so its run is its pattern.
+        var points = new Em3dPatternPoint[runs.Length];
+        for (int i = 0; i < freqs.Length; i++)
+        {
+            FdtdPortExcitations? each = null;
+            if (n > 1)
+            {
+                each = FdtdPortExcitations.From(result.U[i], result.I[i], z0!, out int weak);
+                if (each is null)
+                    return $"Port {lowering.Ports[weak]} has no voltage of its own to be referred to at {Fmt(freqs[i] / 1e9)} GHz, so its radiation pattern cannot be formed.";
+            }
+            for (int k = 0; k < n; k++)
+            {
+                Complex u = result.U[i][k, k], c = result.I[i][k, k];
+                var pattern = runs[i * n + k];
+                if (each is not null)
+                {
+                    pattern = Excited(grid, runs, i, n, k, lowering.Ports[k], freqs[i], result.U[i], each);
+                    (u, c) = (Complex.One, each.Current[k]);
+                }
+                double accepted = 0.5 * (c / u).Real;       // ½·Re(V·I*) at |V| = 1 V
+                points[i * n + k] = new Em3dPatternPoint(pattern, accepted, result.S[i][k, k]);
+                // brief-sar-6 R-sar6-6 — the power budget's radiated share, at each sweep point
+                efficiencies?.Add((freqs[i], lowering.Ports[k], accepted > 0 ? pattern.RadiatedPowerW / accepted : double.NaN));
+            }
+        }
+        if (n > 1) data.AddToGroup(PlanarFarField.Group, Em3dRadiation.PortsTerminatedCube, DataCube.Scalar(1.0));
         notes.AddRange(Em3dRadiation.Publish(data, "openEMS (FDTD)", grid, lowering.Ports, freqs, points,
-                                             setup.ReferenceInputPowerDbm, surface.Hemisphere));
+                                             setup.ReferenceInputPowerDbm, surface.Hemisphere,
+                                             origin: n > 1 ? "Each port's pattern adds up every port's run, so the waves the other ports sent back are out of it, as they are out of S." : null));
         notes.Add($"The radiation pattern's surface transform took {watch.Elapsed.TotalSeconds:F1} s for {points.Length} pattern(s). " +
                       $"openEMS's 21 fixed-phase snapshots of each surface dump were removed afterwards ({freed / 1e6:F1} MB); the " +
                       "magnitude and phase files that carry the field exactly are kept in each port's run directory.");
         return null;
+    }
+
+    /// <summary>Port <paramref name="k"/>'s pattern at frequency <paramref name="i"/>: each stored run is its field over its own port's voltage, so it goes back to
+    /// its field before its weight applies.</summary>
+    private static PlanarFarFieldPattern Excited(PlanarFarFieldGrid grid, PlanarFarFieldPattern[] runs, int i, int n, int k, int port, double hz,
+                                                 Complex[,] u, FdtdPortExcitations each)
+    {
+        var eTheta = new Complex[grid.DirectionCount];
+        var ePhi = new Complex[grid.DirectionCount];
+        for (int run = 0; run < n; run++)
+        {
+            Complex w = each.Weights[run, k] * u[run, run];
+            var r = runs[i * n + run];
+            for (int d = 0; d < eTheta.Length; d++)
+            {
+                eTheta[d] += w * r.ETheta[d];
+                ePhi[d] += w * r.EPhi[d];
+            }
+        }
+        return FarFieldStage.Pattern(grid, eTheta, ePhi, port, hz);
     }
 
     private static DataSet BuildOpenEmsDataSet(FdtdPortResult r, IReadOnlyList<Em3dPort> ports, FdtdGridResult grid,

@@ -76,7 +76,8 @@ written as plain float64. The consumer never guesses the kind — it is encoded 
 **Cube naming**: cube names are used verbatim as HDF5 dataset names. The colon in
 `I:X1.M1:d` is a valid HDF5 name character; no escaping needed for HDF5. MATLAB `h5read`
 also accepts colons in dataset names. If a cube name contains `/`, it must be escaped as
-`__slash__` to avoid creating a sub-group; document this in the format spec.
+`__slash__` to avoid creating a sub-group; document this in the format spec. A name a dot alone keeps from being a legal
+`.mat` struct field takes an underscore there instead (`F1/farfield_U`); `.npy` keeps the dotted name, in its metadata.
 
 **Axis metadata**: stored as a JSON blob per cube under `__axes__/<cube>/axes.json`.
 Example for the `V` cube:

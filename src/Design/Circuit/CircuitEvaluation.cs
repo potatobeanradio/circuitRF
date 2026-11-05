@@ -656,7 +656,7 @@ public static class CircuitEvaluation
                 return ($"DC '{analysis.Name}': operating point", 1, false);
 
             case FieldsAnalysis fa:
-                return ($"Fields '{fa.Name}': '{fa.Block}' recombined at {fa.FreqExpr} {fa.FreqUnit}, driven from " +
+                return ($"Fields '{fa.Name}': '{fa.Block}' recombined at {fa.FrequencyText}, driven from " +
                         $"{(fa.DriveExpr.Contains(',') ? "ports" : "port")} {fa.DriveExpr}", 1, false);
 
             default:

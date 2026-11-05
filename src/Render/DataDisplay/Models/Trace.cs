@@ -2022,6 +2022,33 @@ namespace CircuitRF.Render.DataDisplay
             }
         }
 
+        /// <summary>What a far-field cube has to be transformed by to read as a pattern: the rule the trace card and the
+        /// <c>plot</c> verb share. Already decibels takes none, a field is 20·log₁₀, a power is 10·log₁₀, any other stated unit
+        /// takes none, and only a cube stating no unit is decided by its kind (TraceRowViewModel.DefaultPatternTransform says why).</summary>
+        public static CubeTransform DefaultPatternTransform(string? cubeUnit, bool isComplex, string? cubeName)
+        {
+            string unit = cubeUnit ?? "";
+            string bare = cubeName is null ? "" : cubeName[(cubeName.LastIndexOf('.') + 1)..];
+
+            // Already decibels — by unit, or by this repository's own cube-naming convention, which is
+            // what carries the answer for a file written before the units were published.
+            if (unit is "dB" or "dBi" or "dBm" or "dBc"
+                || bare.EndsWith("Db",  StringComparison.Ordinal)
+                || bare.EndsWith("Dbi", StringComparison.Ordinal)
+                || bare.EndsWith("Dbm", StringComparison.Ordinal))
+                return CubeTransform.None;
+
+            if (unit is "V" or "A")    return CubeTransform.dB20;   // a field
+            if (unit is "W" or "W/sr") return CubeTransform.dB10;   // a power
+
+            // A stated unit that is neither a field nor a power is not a decibel quantity. The
+            // kind guess below exists for a cube with NO unit and must not reach one that has said
+            // what it is.
+            if (unit.Length != 0)      return CubeTransform.None;
+
+            return isComplex ? CubeTransform.dB20 : CubeTransform.dB10;
+        }
+
         /// <summary>
         /// The "first-add nicety" default Rect transform for a COMPLEX cube: dB20 for an S-parameter
         /// cube, Mag otherwise. Single source of truth — <c>TraceRowViewModel.DefaultTransformFor</c>

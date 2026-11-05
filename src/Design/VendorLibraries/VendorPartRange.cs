@@ -70,6 +70,10 @@ public static class VendorPartRange
                     case LoadpullPursuitAnalysis lpp:
                         AddTone(lpp.ToneExpr, lpp.ToneUnit, lpp.MaxHarmonicExpr);
                         break;
+                    // freq=all: the frequencies are the run's, in a record this directive does not read; its sweep is the band
+                    // the block was solved over, and a part's range is judged by the analyses that name a frequency.
+                    case FieldsAnalysis { AtEveryFrequency: true }:
+                        break;
                     case FieldsAnalysis fa when fa.FreqExpr.Trim().Length > 0:
                         Add(FreqUnit.ResolveHz(fa.FreqExpr, fa.FreqUnit, globals, withUnit));
                         break;

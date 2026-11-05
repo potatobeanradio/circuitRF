@@ -180,6 +180,13 @@ public sealed class EmFieldDataRecord
 
     public required string RecordPath { get; init; }
     public required string SnpPath { get; init; }
+
+    /// <summary>The result's <c>.npy</c>, absolute: where its far field is, when it holds one.</summary>
+    public required string NpyPath { get; init; }
+
+    /// <summary>The solver that made the result, as the record names it; empty when an adopted result did not say.</summary>
+    public string Solver { get; init; } = "";
+
     public required IReadOnlyList<string> PortNames { get; init; }
     public required int FarFieldPoints { get; init; }
     public required int FieldSetPoints { get; init; }
@@ -198,9 +205,15 @@ public sealed class EmFieldDataRecord
         public int FormatVersion { get; set; }
         public string Stamp { get; set; } = "";
         public bool Adopted { get; set; }
+        public SolverDto? Solver { get; set; }
         public FilesDto? Files { get; set; }
         public List<PortDto>? Ports { get; set; }
         public FrequenciesDto? Frequencies { get; set; }
+    }
+
+    private sealed class SolverDto
+    {
+        public string Name { get; set; } = "";
     }
 
     private sealed class FilesDto
@@ -286,6 +299,7 @@ public sealed class EmFieldDataRecord
         return (new EmFieldDataRecord
         {
             RecordPath = path, SnpPath = snp, PortNames = ports, FarFieldPoints = farField, FieldSetPoints = fieldSet,
+            NpyPath = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(path)!, files.Npy)), Solver = dto.Solver?.Name ?? "",
             FieldsFolder = files.Fields is { Length: > 0 } f ? Path.GetFullPath(Path.Combine(Path.GetDirectoryName(path)!, f)) : null,
         }, null, watched);
     }

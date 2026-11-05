@@ -1259,6 +1259,11 @@ src/Design/Em3d/FieldCosimulation.cs|{who}: weight '{weights[i]}' of port {port}
 src/Design/Em3d/FieldCosimulation.cs|{who}: weight '{weights[i]}' of port {port} is not finite.
 src/Design/Em3d/FieldCosimulation.cs|{who}: '{fa.Block}' is a {block.ComponentType}, not an {EmFieldDataRecord.DisplayName} block.
 src/Design/Em3d/FieldCosimulation.cs|{who}: block= names no {EmFieldDataRecord.DisplayName} block.
+src/Design/Em3d/FieldCosimulation.FarField.cs|'{metric}' reads a field set, and fields analysis '{analysis}' has none at its frequency: '{record}' is a far field there. 
+src/Design/Em3d/FieldCosimulation.FarField.cs|{who}: circuit port {drive.DrivenPort}'s voltage is zero at {MaterialDispersion.Hz(hz)}, so the pattern 
+src/Design/Em3d/FieldCosimulation.cs|{who}: '{fa.Block}' has {snp.PortCount} ports and its far field {far.PortCount}.
+src/Design/Em3d/FieldCosimulation.cs|{who}: '{name}' holds a pattern at {HzList(far.FrequenciesHz)} only
+src/Design/Em3d/FieldCosimulation.cs|{who}: freq=all takes every frequency of a far field, and '{name}' holds a field set, whose SAR and B1 are 
 src/Design/Em3d/PortFieldSet.cs|'{path}' holds {(fs.Length - start) / size:N0} values where {elements:N0} were expected.
 src/Design/Em3d/PortFieldSet.cs|'{path}' is not a C-order {descr} array.
 src/Design/Em3d/PortFieldSet.cs|'{path}' is not a NumPy array.

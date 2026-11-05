@@ -21,6 +21,9 @@
 //  Cube names with '/' are escaped as '__slash__' (valid HDF5 name
 //  character; colons ':' are legal in HDF5 and MATLAB h5read).
 //
+//  A name a dot alone keeps from being a legal struct field (farfield.U, a fields analysis's cube) takes an underscore there
+//  instead (farfield_U): the writer's name is what the field of a .mat struct reads.
+//
 //  See docs/design/data-export.md §2.
 // ================================================================
 
@@ -341,7 +344,13 @@ internal static class MatWriter
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
-    private static string EscapeName(string name) => name.Replace("/", "__slash__");
+    private static string EscapeName(string name)
+    {
+        string escaped = name.Replace("/", "__slash__");
+        string dotted = escaped.Replace('.', '_');
+        bool legal = dotted.Length is > 0 and <= 63 && char.IsAsciiLetter(dotted[0]) && dotted.All(c => char.IsAsciiLetterOrDigit(c) || c == '_');
+        return legal ? dotted : escaped;
+    }
 
     private static void AppendJsonString(StringBuilder sb, string s)
     {

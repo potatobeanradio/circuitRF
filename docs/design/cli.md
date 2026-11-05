@@ -43,7 +43,7 @@ framework, not the GUI referencing the CLI — and `CircuitRF.Cli.Verbs` has its
 | `lp` | `.cnl` or `.csch` | `LoadpullEngine` + `LoadpullPostProcessor` | stdout grid table; `-o .mat/.npy/.txt/.spl/.lpcwave` (`WireTemp [grid, pin, wire array]` with a wBond) |
 | `lpp` | `.cnl` or `.csch` | `LoadpullPursuitEngine` | stdout optima + follow-on grid; `-o` as `hb` (the follow-on carries `WireTemp`); `--out-grid` writes the `.gam` |
 | `em` | `.cem` | `EmSetupResolver` + `EmRunService` (kernel chosen by `EmKernelRegistry`) | Touchstone `.sNp` + grouped `.npy` at the path Simulate writes; `-o` moves the Touchstone |
-| `fields` | `.cnl` or `.csch` | its `fields` analyses through `CircuitEvaluation` — an EM Field Data block's per-port fields recombined by the circuit's waves (`FieldCosimulation`); no EM run | stdout notes and scalars; SAR and B1 volumes and records beside the field set; `-o .mat/.npy/.txt` for the scalars — §28 |
+| `fields` | `.cnl` or `.csch` | its `fields` analyses through `CircuitEvaluation` — an EM Field Data block's saved per-port results recombined by the circuit's waves (`FieldCosimulation`); no EM run | stdout notes and scalars; SAR and B1 volumes and records beside a field set; `-o .mat/.npy/.txt` for the cubes, a far field's `F1.farfield.*` and the circuit's `F1.S` among them (under `--json` a pattern stays in that file) — §28 |
 | `rail` | `.crail` (or a `.clay` / `.csch` / cell folder with one beside it) | `RailOrder` + `RailDcRun` — the extractor, the solve and the via check `src/Design/RailRf` already holds | stdout tables; `-o .csv/.npy/.mat/.txt` for the numbers and `.svg/.pdf` for the report page — §17 |
 | `smith` | `.csmith` | `SmithCascade` + `SmithReadings` + `SmithBand` — the evaluator the Smith Chart window's status strip reads on every edit | stdout reading + the per-node walk; `-o .s1p` for the load Γ and `.svg/.pdf/.png` for the chart — §18 |
 | `snp` | a Touchstone `.sNp` | `TouchstoneSource` + `SParameterViewerPreset` — the reading and the plots the S-Parameter Viewer shows | stdout file pane; `-o .svg/.pdf/.png` the four plots, `-o .cdd` the Data Display — §33 |
@@ -4301,7 +4301,7 @@ byte against `ImageTrace.Run` in process but the provenance time; to `.gds`, byt
 the in-process cell but the GDSII timestamps; no scale refused with the D6 sentence; `--scale auto` on two land
 patterns refused listing the candidates; a bare-number `--region` refused.
 
-## 28. `fields` — an EM block's SAR and B1 from the circuit around it, with no EM run
+## 28. `fields` — an EM block's pattern, SAR and B1 from the circuit around it, with no EM run
 
 **brief-sar-9.** `circuitrf fields <file.cnl|.csch> [-a name]... [--set var=expr]... [-o out.{mat,npy,txt}]` runs a
 design's `fields` analyses: the per-port fields an EM Field Data block's result record names (kept by a 3D run with
@@ -4322,8 +4322,9 @@ Every **enabled** `fields` analysis, unless `-a` names some; naming a disabled o
 listing the design's fields analyses. Running the bench's S-parameter or HB analyses as well is not what the verb is
 for, so it never does. The volumes, the SAR record and `cosim.json` are written **beside the field set**
 (`<stem>.fields/cosim/<analysis>/`) by the run itself, which is what the `.c3d`'s 3D view reads them from; the run's
-notes name the folder. `-o` exports the scalars (the DataSet grouped by analysis) and nothing else. `--json` carries the
-same DataSet. Over the protocol it is `run analysis=fields`.
+notes name the folder. A far field writes nothing beside the result: its cubes, `F1.farfield.U` and the rest, are the DataSet's, on any block whose record holds one
+(`sar.md` §11.10). `-o` exports the DataSet grouped by analysis, and `--json` carries the same DataSet but for a cube of over 10,000 values, which is a
+pattern, and stays in that file. Over the protocol it is `run analysis=fields`.
 
 ### 28.3 Exit codes
 

@@ -287,8 +287,10 @@ public static class EmergeFields
         {
             return $"EMerge's far field could not be read: {x.Message}";
         }
-        var points = PatternPoints(e, shape, theta, phi, freqs, facts, ports, out var grid, out string? error);
+        var stated = StatedReflections(data, freqs, ports);
+        var points = PatternPoints(e, shape, theta, phi, freqs, facts, ports, out var grid, out string? error, stated);
         if (points is null) return error;
+        if (stated is not null) data.AddToGroup(PlanarFarField.Group, Em3dRadiation.PortsTerminatedCube, DataCube.Scalar(1.0));
         foreach (string n in Em3dRadiation.Publish(data, "EMerge (FEM)", grid, [.. ports.Select(p => p.Number)], freqs, points,
                                              setup.ReferenceInputPowerDbm, hemisphere: false,
                                              frequencies: $"A pattern at each of the {freqs.Length} frequencies the fields were saved at " +
@@ -300,11 +302,35 @@ public static class EmergeFields
         return null;
     }
 
+    /// <summary>
+    /// brief-cosim-pattern-3 — each port's S_kk at each pattern frequency, [freq][port]; null when a wave port's voltage line is its own quantity, or the run's S
+    /// has no such frequency. The driver reads a lumped port's voltage with a field interpolation that can miss a point on the port's edge, where EMerge's own
+    /// S does not (up to 2 % of |S| on a 2 mm gap), so V = V_inc·(1 + S_kk) is the voltage of this solve as its S states it.
+    /// </summary>
+    private static Complex[][]? StatedReflections(DataSet data, double[] freqs, IReadOnlyList<Em3dPort> ports)
+    {
+        if (ports.Any(p => p.Kind != Em3dPortKind.Lumped)) return null;
+        if (data.Groups.FirstOrDefault(g => data.CubesIn(g).ContainsKey("S")) is not { } group) return null;
+        var cube = data.CubesIn(group)["S"];
+        int n = ports.Count;
+        if (cube.Rank != 3 || cube.Axes[1].Values.Length != n) return null;
+        var values = cube.ComplexValues;
+        var sweep = cube.Axes[0].Values;
+        var stated = new Complex[freqs.Length][];
+        for (int i = 0; i < freqs.Length; i++)
+        {
+            int row = Array.FindIndex(sweep, f => Math.Abs(f - freqs[i]) <= 1e-9 * freqs[i]);
+            if (row < 0) return null;
+            stated[i] = [.. Enumerable.Range(0, n).Select(k => values[(row * n + k) * n + k])];
+        }
+        return stated;
+    }
+
     /// <summary>The pattern points, row-major [freq, port], from the driver's arrays; null with a sentence when they do not
     /// fit the 1° sphere or a step is missing.</summary>
     internal static List<Em3dPatternPoint>? PatternPoints(Complex[] e, int[] shape, double[] theta, double[] phi, double[] freqs,
                                                           EmergeFieldFacts facts, IReadOnlyList<Em3dPort> ports,
-                                                          out PlanarFarFieldGrid grid, out string? error)
+                                                          out PlanarFarFieldGrid grid, out string? error, Complex[][]? stated = null)
     {
         var sphere = FarFieldStage.Sphere(FarFieldStepDeg, FarFieldStepDeg);
         grid = sphere;
@@ -329,6 +355,7 @@ public static class EmergeFields
                             "so its pattern cannot be referred to the port.";
                     return null;
                 }
+                if (stated is not null) v = vi * (1 + stated[i][k]);
                 double r = ports[k].Z0.Real;
                 var eth = new Complex[nt * nph];
                 var eph = new Complex[nt * nph];

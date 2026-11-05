@@ -451,7 +451,7 @@ internal static class ToolCatalog
           // whole result inline while `lpp` returned a written path and nothing else, with nothing
           // in this schema to say which a caller would get.
           + "Every run returns result.shape — the groups, cubes, units and axis extents it produced. "
-          + "sparam, dc, hb, em and fields return the values inline as well; env returns all but its waveforms and spectrum; lp and lpp return their "
+          + "sparam, dc, hb and em return the values inline as well; fields and env return all but their large cubes (a pattern; waveforms and a spectrum); lp and lpp return their "
           + "one-row-per-grid-point summary instead, and hand over the cubes when asked with all, "
           + "only or group. Narrow a large result with at, range or result=summary rather than "
           + "receiving it whole. A 3D em setup's Problem3D decides what comes back: Driven an S-matrix, "
@@ -525,10 +525,12 @@ internal static class ToolCatalog
                 new("fields", ["fields"],
                     [new("path", true, "The .cnl or .csch whose fields analyses to run.")],
                     [Analysis, Set, Output],
-                    "An EM Field Data block's per-port fields (its .cemr names them; a 3D run with Sar.PerPortFields keeps them) recombined with "
-                  + "the waves this circuit delivers to its ports: SAR, B1± and their scalars at one frequency, per watt at the "
-                  + "drive port. Starts no EM run, so a capacitor changed with set re-runs in seconds. Every enabled fields analysis "
-                  + "unless analysis names one."),
+                    "An EM Field Data block's saved per-port results (its .cemr names them) recombined with the waves this circuit delivers to "
+                  + "its ports. A far field (a 3D run with Radiation pattern) gives F1.farfield.U, Etheta, Ephi and every antenna metric, at one "
+                  + "frequency or freq=all. A field set (Sar.PerPortFields) gives SAR, B1± and their scalars at one frequency, per watt at the "
+                  + "drive port. Either gives the circuit's F1.S and F1.Z0. Starts no EM run, so a part value changed with set re-runs in seconds. "
+                  + "A pattern stays out of the document for its size: write it with output and read or plot that file. Every enabled fields "
+                  + "analysis unless analysis names one."),
                 // brief-tuneopt-11 R-to11-5: the `opt` verb, so the document is the verb's `--json`
                 // object and nothing here reshapes it. The final result by default; showIterations
                 // asks for each iteration too.

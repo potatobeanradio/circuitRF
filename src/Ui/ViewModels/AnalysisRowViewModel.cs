@@ -135,7 +135,7 @@ public sealed partial class AnalysisRowViewModel : ObservableObject
         LoadpullPursuitAnalysis lpp => FormatLppSummary(lpp),
         LoadpullAnalysis lp        => FormatLpSummary(lp),
         ParametricSweepAnalysis ps => FormatSweepSummary(ps),
-        FieldsAnalysis fa          => $"{fa.Block} at {fa.FreqExpr} {fa.FreqUnit}, port {fa.DriveExpr} driven" + (fa.Average ? "" : ", local only"),
+        FieldsAnalysis fa          => $"{fa.Block} at {fa.FrequencyText}, port {fa.DriveExpr} driven" + (fa.Average ? "" : ", local only"),
         _                          => "",
     };
 

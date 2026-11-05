@@ -220,6 +220,36 @@ public sealed class EmergeFieldsTests(ITestOutputHelper output) : IDisposable
         Assert.Equal(accepted, data.CubesIn(PlanarFarField.Group)["PowerAccepted"].RealValues[0], 12);
     }
 
+    /// <summary>brief-cosim-pattern-3 — with its S in the result, a lumped port's pattern is referred to the voltage S states, not the driver's reading of it.</summary>
+    [Fact]
+    public void ALumpedPortsPattern_IsReferredToTheVoltageItsSStates_AndTheResultIsMarked()
+    {
+        Directory.CreateDirectory(_root);
+        const double f = 3e9;
+        var grid = FarFieldStage.Sphere(EmergeFields.FarFieldStepDeg, EmergeFields.FarFieldStepDeg);
+        int nt = grid.ThetaDeg.Count, np = grid.PhiDeg.Count;
+        var e = new Complex[nt * np * 2];
+        for (int it = 0; it < nt; it++)
+            for (int ip = 0; ip < np; ip++) e[it * np + ip] = Math.Sin(grid.ThetaDeg[it] * Math.PI / 180);
+        WriteNpy(Path.Combine(_root, EmergeFields.FarFieldFile), e, [1, 1, 2, nt, np]);
+        WriteNpy(Path.Combine(_root, EmergeFields.ThetaFile), [.. grid.ThetaDeg], [nt]);
+        WriteNpy(Path.Combine(_root, EmergeFields.PhiFile), [.. grid.PhiDeg], [np]);
+        WriteNpy(Path.Combine(_root, EmergeFields.FrequencyFile), [f], [1]);
+        Complex misread = new(2, 0), vi = new(4, 0), s11 = new(0.25, 0.5);
+        var facts = new EmergeFieldFacts([new EmergeFieldStep(1, f, null, null, misread, vi, null, null)], 0, [], [], []);
+        var ports = OpenEmsRadiationTests.Dipole(0.01, 1e-3, 1e-3, 0.025, 2.5e9, 3.5e9, 3).Ports;
+        double r = ports[0].Z0.Real;
+
+        var data = new DataSet();
+        data.Add("S", new DataCube([new Axis("freq", [f], "Hz"), new Axis("i", [1.0], ""), new Axis("j", [1.0], "")], [s11]));
+        Assert.Null(EmergeFields.PublishPattern(_root, facts, ports, new EmSetup(), data, []));
+
+        var far = data.CubesIn(PlanarFarField.Group);
+        double want = (1 - s11.Magnitude * s11.Magnitude) / (2 * r * (1 + s11).Magnitude * (1 + s11).Magnitude);
+        Assert.Equal(want, far["PowerAccepted"].RealValues[0], 12);
+        Assert.True(far.ContainsKey(Em3dRadiation.PortsTerminatedCube));
+    }
+
     // ── 5. brief-emi-11: J_s on the conductors and sheets ─────────────────────────────────────
 
     /// <summary>A driver-shaped boundary step (two triangles of one conductor, a known J_s) beside its volume step, driven and

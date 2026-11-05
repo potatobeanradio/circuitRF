@@ -14,6 +14,8 @@
 // PalaceDrive.IncidentPowerW, the incident power every driven field in the 3D view is loaded at, so the view draws a
 // recombined field with no scale of its own (its drive is the circuit's port and reflection).
 //
+// A FAR FIELD IS THE OTHER HALF, in FieldCosimulation.FarField.cs: same waves, and no SAR wording.
+//
 // AS SOLVED, THEN PER WATT. The volumes and the record's values are at P available; the record's AcceptedPowerW is the power
 // the circuit's drive port accepts, P·(1 − |Γ|²), and its per-watt values divide by that (norm=accepted) or by P itself
 // (norm=available, ReferencePowerW).
@@ -88,7 +90,7 @@ public sealed class PlainSnpFieldsBlockException(string who, string block, strin
     public string SnpPath { get; } = snpPath;
 }
 
-public static class FieldCosimulation
+public static partial class FieldCosimulation
 {
     /// <summary>The folder inside a field set the recombined results are written to, one subfolder per analysis.</summary>
     public const string CosimFolder = "cosim";
@@ -127,19 +129,25 @@ public static class FieldCosimulation
     /// <para>brief-sar-10 — <paramref name="output"/> says how much of that a caller wants (<see cref="FieldsOutput"/>);
     /// <paramref name="metrics"/>, when given, receives the recombined field for the field measurements, and owns the open
     /// field set from then on (the caller disposes it once the measurements are evaluated).</para>
+    /// <para>brief-cosim-pattern-3 R-cp3-2 — the record decides what runs: a field set gives SAR and B1, a far field the pattern's cubes, both give both,
+    /// and every run publishes the circuit's S and Z0. Nothing is written beside a result that has only a far field.</para>
     /// </summary>
     public static DataSet Run(FieldsAnalysis fa, ElaboratedNetlist nl, List<string> notes, RunControl? control = null,
                               List<CircuitRF.Design.Circuit.FieldsArtifact>? artifacts = null,
                               CircuitRF.Design.Circuit.FieldsOutput output = CircuitRF.Design.Circuit.FieldsOutput.Written,
-                              string? label = null, Action<CosimFieldMetrics>? metrics = null)
+                              string? label = null, Action<IFieldMetrics>? metrics = null)
     {
         ArgumentNullException.ThrowIfNull(fa);
         ArgumentNullException.ThrowIfNull(nl);
         string who = $"Fields '{fa.Name}'";
         if (string.IsNullOrWhiteSpace(fa.Block)) throw new InvalidOperationException($"{who}: block= names no {EmFieldDataRecord.DisplayName} block.");
-        double hz;
-        try { hz = FreqUnit.ResolveHz(fa.FreqExpr, fa.FreqUnit, nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit); }
-        catch (Exception e) { throw new InvalidOperationException($"{who}: freq='{fa.FreqExpr}' could not be resolved ({e.Message})."); }
+        bool every = fa.AtEveryFrequency;
+        double hz = double.NaN;
+        if (!every)
+        {
+            try { hz = FreqUnit.ResolveHz(fa.FreqExpr, fa.FreqUnit, nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit); }
+            catch (Exception e) { throw new InvalidOperationException($"{who}: freq='{fa.FreqExpr}' could not be resolved ({e.Message})."); }
+        }
         var drives = Drives(fa, nl, who);
 
         var block = nl.Components.FirstOrDefault(c => string.Equals(c.InstancePath, fa.Block, StringComparison.Ordinal))
@@ -154,53 +162,122 @@ public static class FieldCosimulation
         if (snp.OffsetsNotAppliedBy(block.InstancePath, "the field co-simulation, whose port fields are the file's own") is { } offsets)
             throw new InvalidOperationException($"{who}: {offsets}.");
 
-        var (set, refusal) = PortFieldSet.Open(recordPath, hz);
-        if (set is null) throw new InvalidOperationException($"{who}: {refusal}");
+        var plan = PlanOf(fa, recordPath, hz, who, out var far);
+        var lines = new List<string>();
+        var warnings = new List<string>();
+        var data = new DataSet();
+        CosimFieldMetrics? provider = null;
+        PortFieldSet? set = null;
         bool handedOver = false;
         try
         {
-            if (set.PortCount != snp.PortCount)
-                throw new InvalidOperationException($"{who}: '{fa.Block}' has {snp.PortCount} ports and its field set {set.PortCount}.");
-            control?.ThrowIfCancellationRequested();
+            if (plan.FieldSet)
+            {
+                var (opened, refusal) = PortFieldSet.Open(recordPath, hz);
+                set = opened ?? throw new InvalidOperationException($"{who}: {refusal}");
+                if (set.PortCount != snp.PortCount)
+                    throw new InvalidOperationException($"{who}: '{fa.Block}' has {snp.PortCount} ports and its field set {set.PortCount}.");
+                control?.ThrowIfCancellationRequested();
+                var waves = SParameterEngine.BlockWaves(nl, hz, fa.Block, drives);
+                if (output == CircuitRF.Design.Circuit.FieldsOutput.OnDemand)
+                {
+                    // R-sar10-2 — an optimizer's, yield's or DOE's evaluation: the waves and the tissue matrix's absorbed power, nothing
+                    // recombined; each field measurement reads only what it needs when an expression asks for it
+                    var w = Weigh(fa, set, waves);
+                    provider = new CosimFieldMetrics(fa, set, snp.FilePath, w, output, null, null);
+                    data = DataSetOf(hz, w, set.Manifest, provider.AbsorbedAllW);
+                    lines.Add($"Fields '{fa.Name}' at {MaterialDispersion.Hz(hz)}: the circuit's waves at '{fa.Block}', recombined only where a measurement reads them.");
+                }
+                else
+                {
+                    bool average = output == CircuitRF.Design.Circuit.FieldsOutput.Written && fa.Average;
+                    string folder = label is null ? fa.Name : $"{fa.Name} ({label})";
+                    (data, provider) = RecombineCore(fa, set, snp.FilePath, waves, lines, warnings, control, average, folder, output);
+                    artifacts?.Add(new CircuitRF.Design.Circuit.FieldsArtifact(folder, C3dOf(set.Folder), set.Manifest.Setup, hz,
+                                                                               OutputFolder(set.Folder, folder), set.HasH && set.Manifest.B1));
+                }
+            }
+            double[] frequencies = [hz];
+            if (plan.FarField.Count > 0)
+            {
+                if (far!.PortCount != snp.PortCount)
+                    throw new InvalidOperationException($"{who}: '{fa.Block}' has {snp.PortCount} ports and its far field {far.PortCount}.");
+                PublishFarField(fa, nl, far, plan.FarField, drives, data, lines, warnings, control);
+                frequencies = [.. plan.FarField.Select(i => far.FrequenciesHz[i])];
+                // R-cp3-2 — gain per watt accepted is what a pattern means, whatever a field set's numbers are per
+                if (fa.PerAvailable)
+                    lines[0] += " norm=available does not apply to the pattern: its gain stays per watt accepted, and its realized gain includes the mismatch.";
+            }
+            lines.AddRange(plan.Notes);
             Interlocked.Increment(ref _runs);
-            var lines = new List<string>();
-            var warnings = new List<string>();
-            var waves = SParameterEngine.BlockWaves(nl, hz, fa.Block, drives);
-            DataSet data;
-            CosimFieldMetrics provider;
-            if (output == CircuitRF.Design.Circuit.FieldsOutput.OnDemand)
-            {
-                // R-sar10-2 — an optimizer's, yield's or DOE's evaluation: the waves and the tissue matrix's absorbed power, nothing
-                // recombined; each field measurement reads only what it needs when an expression asks for it
-                var w = Weigh(fa, set, waves);
-                provider = new CosimFieldMetrics(fa, set, snp.FilePath, w, output, null, null);
-                data = DataSetOf(hz, w, set.Manifest, provider.AbsorbedAllW);
-                lines.Add($"Fields '{fa.Name}' at {MaterialDispersion.Hz(hz)}: the circuit's waves at '{fa.Block}', recombined only where a measurement reads them.");
-            }
-            else
-            {
-                bool average = output == CircuitRF.Design.Circuit.FieldsOutput.Written && fa.Average;
-                string folder = label is null ? fa.Name : $"{fa.Name} ({label})";
-                (data, provider) = RecombineCore(fa, set, snp.FilePath, waves, lines, warnings, control, average, folder, output);
-                artifacts?.Add(new CircuitRF.Design.Circuit.FieldsArtifact(folder, C3dOf(set.Folder), set.Manifest.Setup, hz,
-                                                                           OutputFolder(set.Folder, folder), set.HasH && set.Manifest.B1));
-            }
+            AddCircuitS(data, nl, frequencies);
+
             // the detail as the run's notes (the Messages pane's Info), the first line as the analysis's summary
             for (int i = 0; i < lines.Count; i++) nl.AddNoteOnce($"fields:{fa.Name}:{i}", lines[i]);
             foreach (string warning in warnings) nl.AddWarning(warning);
             if (lines.Count > 0) notes.Add(lines[0]);
             if (metrics is not null)
             {
-                metrics(provider);
-                handedOver = true;
+                metrics(provider is null ? new NoFieldSetMetrics(fa.Name, Path.GetFileName(recordPath)) : provider);
+                handedOver = provider is not null;
             }
             return data;
         }
         finally
         {
-            if (!handedOver) set.Dispose();
+            if (!handedOver) set?.Dispose();
         }
     }
+
+    /// <summary>What one fields analysis does: run the field set, and at which of the far field's frequencies; and what it says about the half it cannot do.</summary>
+    private sealed record FieldsPlan(bool FieldSet, IReadOnlyList<int> FarField, IReadOnlyList<string> Notes);
+
+    /// <summary>
+    /// R-cp3-2 / R-cp3-4 — which half of a result runs. A field set is at one frequency, a far field at every frequency the run solved, and
+    /// a frequency between those is refused rather than interpolated: far-field phase across a coarse sweep is not safe to interpolate.
+    /// </summary>
+    private static FieldsPlan PlanOf(FieldsAnalysis fa, string recordPath, double hz, string who, out PortFarFieldSet? far)
+    {
+        var (record, refused) = EmFieldDataRecord.Open(recordPath);
+        if (record is null) throw new InvalidOperationException($"{who}: {refused}");
+        string name = Path.GetFileName(recordPath);
+        bool hasSet = record.FieldsFolder is not null;
+        far = null;
+        var notes = new List<string>();
+        if (record.FarFieldPoints > 0)
+        {
+            (far, string? farRefused) = PortFarFieldSet.Open(recordPath);
+            // A field set does not depend on the far field beside it, so a run that can still do that half does it and says what it lost.
+            if (far is null && !hasSet) throw new InvalidOperationException($"{who}: {farRefused}");
+            if (far is null) notes.Add($"Fields '{fa.Name}': no pattern. {farRefused}");
+        }
+        double[] setHz = hasSet ? [.. (PortFieldSet.ReadManifest(record.FieldsFolder!)?.Frequencies ?? []).Select(f => f.Hz)] : [];
+
+        if (fa.AtEveryFrequency)
+        {
+            if (far is null)
+                throw new InvalidOperationException($"{who}: freq=all takes every frequency of a far field, and '{name}' holds a field set, whose SAR and B1 are " +
+                                                    $"worked out at one frequency. Name one of {HzList(setHz)}.");
+            if (hasSet) notes.Add($"Fields '{fa.Name}': freq=all recombines the far field only, since SAR and B1 are worked out at one frequency.");
+            return new FieldsPlan(false, [.. Enumerable.Range(0, far.FrequenciesHz.Count)], notes);
+        }
+
+        // With no far field, PortFieldSet.Open's own refusal says what a frequency it does not hold means for a field set.
+        if (far is null) return new FieldsPlan(true, [], notes);
+
+        int at = far.IndexOf(hz);
+        bool setHere = setHz.Any(f => Math.Abs(f - hz) <= 1e-9 * Math.Max(f, hz));
+        if (at < 0 && !setHere)
+            throw new InvalidOperationException($"{who}: '{name}' holds a pattern at {HzList(far.FrequenciesHz)} only" +
+                                                (hasSet ? $" and a field set at {HzList(setHz)}" : "") +
+                                                $", not at {MaterialDispersion.Hz(hz)}: a pattern exists only at frequencies the run solved, because its phase is not safe to " +
+                                                "interpolate between them. Name one of these, or freq=all.");
+        if (hasSet && !setHere) notes.Add($"Fields '{fa.Name}': no SAR or B1, since '{name}' holds a field set at {HzList(setHz)} only.");
+        if (setHere && at < 0) notes.Add($"Fields '{fa.Name}': no pattern, since '{name}' holds one at {HzList(far.FrequenciesHz)} only.");
+        return new FieldsPlan(setHere, at >= 0 ? [at] : [], notes);
+    }
+
+    private static string HzList(IReadOnlyList<double> hz) => string.Join(", ", hz.Select(MaterialDispersion.Hz));
 
     /// <summary>The recombination proper, once the circuit's waves at the block are known: what <see cref="Run"/> does after its
     /// circuit solve, and a test's entry with waves of its own.</summary>
@@ -219,9 +296,12 @@ public static class FieldCosimulation
     }
 
     internal static CosimWaves Weigh(FieldsAnalysis fa, PortFieldSet set, SParameterEngine.BlockPortDrive drive)
+        => Weigh(fa, [.. set.Manifest.Ports.Select(p => p.Z0)], drive);
+
+    /// <summary>The one statement of the waves, in the Z0 each of the block's ports was solved in.</summary>
+    internal static CosimWaves Weigh(FieldsAnalysis fa, IReadOnlyList<Complex> z0s, SParameterEngine.BlockPortDrive drive)
     {
-        var m = set.Manifest;
-        int n = set.PortCount;
+        int n = z0s.Count;
         double pAvail = PalaceDrive.IncidentPowerW;
         double incident = drive.Drives.Sum(d => d.Incident.Magnitude * d.Incident.Magnitude);
         double reflected = drive.Drives.Sum(d => d.Reflected.Magnitude * d.Reflected.Magnitude);
@@ -232,7 +312,7 @@ public static class FieldCosimulation
         var b = new Complex[n];
         for (int k = 0; k < n; k++)
         {
-            Complex z0 = m.Ports[k].Z0;
+            Complex z0 = z0s[k];
             Complex sq = RfCore.RFNetwork.ComplexSqrt(z0);
             a[k] = (drive.Voltage[k] + z0 * drive.Current[k]) / (2 * sq) * root;
             b[k] = (drive.Voltage[k] - z0 * drive.Current[k]) / (2 * sq) * root;

@@ -106,7 +106,8 @@ public sealed class FieldsAnalysis(string name) : Analysis(name)
     /// <summary>The EM Field Data block's instance path (<c>EM1</c>, or <c>X1.EM1</c> inside a cell).</summary>
     public string Block { get; init; } = "";
 
-    /// <summary>The frequency the fields are taken at: one the 3D run kept (its Sar.FrequenciesGHz).</summary>
+    /// <summary>The frequency the fields are taken at: one the 3D run kept (its Sar.FrequenciesGHz, or a frequency of its far field), or
+    /// <see cref="EveryFrequency"/> for every frequency of the far field.</summary>
     public string FreqExpr { get; init; } = "";
 
     /// <summary>The unit of <see cref="FreqExpr"/>.</summary>
@@ -128,6 +129,16 @@ public sealed class FieldsAnalysis(string name) : Analysis(name)
     public string AverageExpr { get; init; } = "yes";
 
     public const string NormAccepted = "accepted", NormAvailable = "available";
+
+    /// <summary>brief-cosim-pattern-3 R-cp3-4 — <c>freq=all</c>: every frequency the run's far field holds. Not an expression, so every
+    /// reader of <see cref="FreqExpr"/> asks <see cref="AtEveryFrequency"/> before evaluating it.</summary>
+    public const string EveryFrequency = "all";
+
+    /// <summary>Whether <see cref="FreqExpr"/> is <see cref="EveryFrequency"/>.</summary>
+    public bool AtEveryFrequency => FreqExpr.Trim().Equals(EveryFrequency, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The frequency in words, for a summary line.</summary>
+    public string FrequencyText => AtEveryFrequency ? "every frequency of its far field" : $"{FreqExpr} {FreqUnit}";
 
     /// <summary>Whether <see cref="Norm"/> asks for the available power; anything but <c>available</c> is accepted.</summary>
     public bool PerAvailable => Norm.Trim().Equals(NormAvailable, StringComparison.OrdinalIgnoreCase);

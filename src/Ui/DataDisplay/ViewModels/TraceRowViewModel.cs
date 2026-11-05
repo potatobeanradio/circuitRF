@@ -3812,10 +3812,13 @@ public partial class TraceRowViewModel : ViewModelBase
     /// group also carries ANT-5's per-point metrics and ANT-6's polarization, which include
     /// percentages, angles and a signed ratio. What the group decides is that
     /// <see cref="DefaultPatternTransform"/> gets to answer; that method decides which cubes are dB.
+    /// <para>brief-cosim-pattern-3 R-cp3-5 — a fields analysis publishes the same cubes under its own group, spelled
+    /// <c>F1.farfield.U</c>: an analysis group holds only its default group's cubes, so the prefix travels in the cube's name.</para>
     /// </summary>
     internal static bool IsFarFieldCube(string? cubeName) =>
         cubeName is not null
-        && cubeName.StartsWith(CircuitRF.Engine.Mom.PlanarFarField.Group + ".", StringComparison.Ordinal);
+        && (cubeName.StartsWith(CircuitRF.Engine.Mom.PlanarFarField.Group + ".", StringComparison.Ordinal)
+            || cubeName.Contains("." + CircuitRF.Engine.Mom.PlanarFarField.Group + ".", StringComparison.Ordinal));
 
     /// <summary>
     /// <b>What a cube has to be transformed by to be a pattern RADIUS.</b> Seeded when a trace is
@@ -3841,30 +3844,7 @@ public partial class TraceRowViewModel : ViewModelBase
     /// was introduced, so no metric reaches that last case.</para>
     /// </summary>
     internal static CubeTransform DefaultPatternTransform(RfCore.Data.DataCube cube, string? cubeName)
-    {
-        string unit = cube.Unit ?? "";
-        string bare = cubeName is null ? "" : cubeName[(cubeName.LastIndexOf('.') + 1)..];
-
-        // Already decibels — by unit, or by this repository's own cube-naming convention, which is
-        // what carries the answer for a file written before the units were published.
-        if (unit is "dB" or "dBi" or "dBm" or "dBc"
-            || bare.EndsWith("Db",  StringComparison.Ordinal)
-            || bare.EndsWith("Dbi", StringComparison.Ordinal)
-            || bare.EndsWith("Dbm", StringComparison.Ordinal))
-            return CubeTransform.None;
-
-        if (unit is "V" or "A")        return CubeTransform.dB20;   // a field
-        if (unit is "W" or "W/sr")     return CubeTransform.dB10;   // a power
-
-        // A stated unit that is neither a field nor a power is not a decibel quantity. The
-        // DataKind guess below exists for a cube with NO unit and must not reach one that has said
-        // what it is.
-        if (unit.Length != 0)          return CubeTransform.None;
-
-        return cube.DataKind == RfCore.Data.DataKind.Complex
-            ? CubeTransform.dB20
-            : CubeTransform.dB10;
-    }
+        => Trace.DefaultPatternTransform(cube.Unit, cube.DataKind == RfCore.Data.DataKind.Complex, cubeName);
 
     private AxisSlice[] BuildCarriedSlice(TraceDataItem value, AxisSlice[]? oldSlice)
     {

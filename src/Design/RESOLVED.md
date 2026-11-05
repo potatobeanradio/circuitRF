@@ -28276,3 +28276,71 @@ port defs), `NetExtractor`, `NetlistSchematic`, `FileReferences`, `CnlReader`, `
 `ModelLibraryExport`'s conversion and `Encapsulate` (they write Touchstone files), `SmithComponentMap` and `SmithPasteRecognizer`, every recognition emitter
 (`RecognitionEmit`, `RecognitionSessionViewModel`, `SchematicImageEmit`, `SchematicPasteOutcome`), `VendorAReader` and `KitNetlistReader` (other dialects), the
 `"SnP"` labels in `NonlinearDcEngine` and `HbEngine` (they name the model in a sentence), `SnpModel.Describe`, and `LibraryCatalog`'s S1P…S8P rows.
+
+## brief-cosim-pattern-3 — Fields gives a far field and the circuit's S
+
+**Measured with a scratch harness, once.** A strip dipole in free space at 3 GHz, 50 mm long, with a feed and two 1 mm gap ports that all carry current and
+port 3 reversed against the other two, one frequency, air box 30 mm out on every side, every absorbing. Both runs of a comparison share one mesh. Limits apply within 20 dB of
+the peak: peak gain 0.05 dB, pattern 0.2 dB, |ΔS11| 1e-3. Palace is Standard with no refinement passes (27,828 elements, 180,854 unknowns, 42 s).
+
+| Gate | Solver and mesh | Peak gain | Pattern | \|ΔS11\| | Radiated over delivered |
+|---|---|---|---|---|---|
+| G4, 200 Ω and 100 Ω on the gaps | Palace | 0.0001 dB | 0.0003 dB | 3.9e-5 | 108.9 % |
+| G5, 5 nH and 1 pF, against a config with `L` and `C` on those `LumpedPort`s | Palace | 0.0023 dB | 0.0013 dB | 1.2e-4 | 109.2 % |
+| G6, 6.5 nH and 0.05 pF, reported | Palace Standard | 0.0038 dB | 0.0086 dB | 1.6e-3 | 108.3 % |
+| G6, the same | Palace Draft | 0.0034 dB | 0.0092 dB | 4.0e-4 | 117.2 % |
+| G7, G4's loads | openEMS, 69,502 cells | 0.0004 dB | 0.0005 dB | 1.9e-5 | 99.9 % |
+| G7, G4's loads | EMerge Standard, 3,011 tets | 0.043 dB | 0.079 dB | **3.8e-3** | 111.0 % |
+| G7, G4's loads | EMerge Accurate, no mesh passes, 7,982 tets | 0.022 dB | 0.041 dB | **2.3e-3** | 104.2 % |
+| G7, G4's loads | EMerge, `EdgeRefinement` 0.04, 14,418 tets | 0.011 dB | 0.022 dB | **1.3e-3** | 103.3 % |
+| G7, G4's loads | EMerge, `EdgeRefinement` 0.02, 30,328 tets, 6 s | 0.0061 dB | 0.0125 dB | 7.5e-4 | 101.3 % |
+
+Pattern is the worst gain per direction, except G5 and G6, which read U at 1 V because their reference is Palace's raw CSV. Over U, G7 reads 0.0004 dB on openEMS and 0.13 dB, 0.068 dB,
+0.037 dB and 0.021 dB on the four EMerge meshes. Two openEMS runs of one setup differ a little: the pair before this one read 0.0024 dB and 0.0025 dB. EMerge Accurate's own mesh passes depend on the excitation, so the comparison turns them off.
+
+The first G4 pass was no test of polarity, for two separate reasons. `Flip` on a port whose inferred direction was already reversed made all three `+X`, so
+the reversed port is the one left unflipped; the config's `Direction` shows which. And a gap loaded in its own Z0 has a zero incident wave, so it adds nothing
+to the sum: with 50 Ω on the reversed port the numbers looked as good and proved nothing about it. The table's runs have both gaps away from Z0.
+
+**G6 agrees with its own mesh, and that is all it says.** Draft and Standard differ from each other by far more than either differs from its reference: S11 on
+resonance is 0.62+0.19j at Draft and 0.30+0.00j at Standard. These gates compare one mesh with itself, so they say the method is right, never that the mesh is.
+The resonance is the one a scan of this S-matrix finds, with incident waves of 1.5 and 1.8 at the gaps against 1 at the feed: a radiating dipole is not a
+high-Q structure, so this is a mild case and a sharper resonance is still unmeasured.
+
+**openEMS's stored pattern held the other ports' reflections, and now does not.** Its S comes from inverting the incident-wave matrix, S = B·A⁻¹, and its field set from the same
+inversion, but `OpenEmsPattern` stored each run's raw field over its own voltage. A run's other ports are not exactly terminated as their probes see them: 1.8 % of the drive's wave
+came back on this board, the stored accepted power was 4.0-4.7 % from what S implies, and G7 read 0.41 dB and 0.78 dB. `FdtdPortExcitations.From` adds a port's runs up with that
+same inverse, normalised to 1 V, and the accepted power is ½·Re(I/V) of the same sum, now 0.000 % from S. **This changes every multi-port openEMS pattern, by a run's reflections, and no
+one-port pattern**: with one port there is nothing to take out, and that path is byte-for-byte what it was. The radiated share in the SAR power budget reads from the corrected pattern.
+
+**EMerge's stored pattern was referred to a voltage its S did not state.** `port_voltage` in the driver reads a lumped port's voltage through `field.interpolate(usenan=False)`, and EMerge's S
+through its solve's own field function, on the same lines. A point on the port's edge can read as outside the mesh, and then as zero: on this board S22 matched V/V_inc − 1 to six digits, while S11
+and S33 differed by a real 0.017 and 0.020, against a stored accepted power 0-13 % from what S implies. That reading is inferred from the pattern of the difference and not traced point by point. A pattern
+is now referred to V_inc·(1 + S_kk), with its accepted power and reflection from the same S, 0.000 % from S. **This changes an EMerge run's reported gain, by that accepted power, on any
+port count**, and not its realized gain, which divides by the available power. A wave port keeps its line's voltage, which is its own quantity. So does a pattern at a frequency outside the sweep,
+since the run has no S there; EMerge's default of the sweep's centre lands there on an even point count, and a fields analysis refuses that pattern.
+
+**EMerge's own S across a change of load closes with the port's edge mesh.** This is the block, not the pattern, so it applies to an SnP as well. |ΔS11| halves as `EdgeRefinement` halves and hardly moves with the mesh elsewhere:
+53,827 tetrahedra at `MaxElementWavelengths` 0.05 and `EdgeRefinement` 0.1 gave 1.33e-3, the same as 14,418 at 0.15 and 0.04. Standard misses the 1e-3 limit by a factor of 4 and is not refused: the pattern
+limits hold on every mesh, and the miss is about how the block's S moves with a load.
+
+**An older result cannot be corrected, so it is asked for again.** U and I are not in an openEMS `.npy`, and an EMerge one holds no port voltage. Each corrected run writes `__PortsTerminated` in the far-field group; a
+multi-port openEMS result or any EMerge result without it is refused saying to run it again. A one-port openEMS result was already right.
+
+**The balance check fires on a box close to the radiator, and rightly.** Radiated over delivered is in the table: at 0.3 λ of padding Palace reads 109 %, and at 0.75 λ 100.2 %, while openEMS's PML reads 99.9 % at 0.3 λ. It also falls
+on EMerge as the mesh refines. A run with no parts around it cannot see this: a port alone reports 55 % efficiency, because its accepted power includes what the other ports' terminations absorb. So the
+warning names the box and the mesh, not the recombination.
+
+**A dotted name survives.** `NpyWriter`'s field name is an opaque key and the (group, cube) pair is in its metadata, `DataSet.Resolve` splits at the FIRST dot, and the readers
+that split at the last one (`LevelReference`, `ResultUnits`, `IsNetworkParamCubeSpec`) still reach the right cube: `F1.farfield.PeakEirpDbm` finds its reference through
+`F1.farfield.ReferenceInputPowerDbm`. `MatWriter` writes such a name with an underscore, `F1/farfield_U`, so it is a legal `.mat` struct field. Only a name a dot alone kept from being legal changes: `I:X1.R1` was not legal
+for its colon, and stays as it was for `h5read`.
+
+**A cut with no `y=` now reads in decibels**, on the plain `farfield.U` too. It drew `U` in W/sr against a dB radial axis, which is a flat circle at 0 dB. The rule moved from
+`TraceRowViewModel` to `Trace.DefaultPatternTransform` so the card and the verb share it.
+
+**A pattern stays out of `fields --json`**, as an envelope's waveforms do (`InlineCubeLimit`): one frequency at 1° is 65,160 directions a cube. `-o` holds it.
+
+**`freq=all` in `VendorPartRange`** adds no frequency: the frequencies are in a record the directive does not read, and the warning is about analyses that name one.
+
+Gates: `tests/Ui.Tests/Sar/FarFieldCosimTests.cs`. Physical numbers above are not in the suite. The scratch harness is not kept.

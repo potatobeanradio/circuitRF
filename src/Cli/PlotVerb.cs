@@ -374,7 +374,7 @@ internal static class PlotVerb
             "                     [--db-ref peak|<dB>] [--db-unit dBi]\n" +
             "  a trace spec is comma-separated key=value: cube=S i=2 j=1 y=db20 axis=left|right\n" +
             "                      label=\"As built\" names the trace in the legend, axis and marker box\n" +
-            "  an antenna pattern: cube=farfield.U cut=<phi deg>|all [port=<n>] [freq=2.45G] y=db10\n" +
+            "  an antenna pattern: cube=farfield.U (F1.farfield.U from a fields analysis) cut=<phi deg>|all [port=<n>] [freq=2.45G]; decibels unless y= says\n" +
             "                      cut=<deg> is the PLANE at that phi — theta swept, and the phi+180\n" +
             "                      branch drawn at -theta, on a --radial db polar plot\n" +
             "                      cut=all keeps every phi as a family\n" +
@@ -1074,6 +1074,9 @@ internal static class PlotVerb
         //
         //    cut=<deg>  pin freq and phi, sweep theta   — the E-plane / H-plane plot
         //    cut=all    pin freq,         sweep theta, iterate phi as a family — the whole pattern
+        //
+        //  A cut with no y= reads in decibels, by the trace card's own rule: U in W/sr on a dB radial axis is a flat circle at 0 dB.
+        string? patternY = null;
         if (spec.Cut is not null)
         {
             if (text.Contains('['))
@@ -1114,6 +1117,12 @@ internal static class PlotVerb
             if (spec.Port is { } wantPort && !HasAxis(pcube, "port"))
                 return (null, JsonRun.Fail(CliDiagnostics.PlotNoPortAxis(text, "port", AxisNames(pcube))));
 
+            patternY = Trace.DefaultPatternTransform(pcube.Unit, pcube.DataKind == DataKind.Complex, text) switch
+            {
+                CubeTransform.dB20 => "db20",
+                CubeTransform.dB10 => "db10",
+                _ => null,
+            };
             text = $"{text}[{string.Join(", ", ptok)}]";
         }
         // `port=`/`freq=` alone are the same convenience without a cut — they pin one named axis on
@@ -1179,7 +1188,7 @@ internal static class PlotVerb
 
         // `y=` becomes the transform PREFIX on the spec, in the function-call form the trace card's
         // own picker emits — so there is one table of transform names and it is the parser's.
-        if (spec.YText is { } y)
+        if ((spec.YText ?? patternY) is { } y)
         {
             string t = y.Equals("imaginary", StringComparison.OrdinalIgnoreCase) ? "imag" : y.ToLowerInvariant();
             text = $"{t}({text})";

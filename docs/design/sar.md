@@ -1607,6 +1607,35 @@ the 3 % tolerance.
 - **Per-port Z0 in the Touchstone** (§11.3): the field set records each port's Z0 and the writer does not.
 - **Goals, tuning, the optimizer and yield on recombined SAR and B1** — SAR-10, which the fast path is for (§12).
 
+### 11.10 The far field through the same analysis (CP-3)
+
+A `fields` analysis also recombines the far field a driven 3D run stores per port. The record decides what runs (`FieldCosimulation.PlanOf`): a field
+set gives SAR and B1, a far field gives the pattern's cubes, both give both, and neither is refused when the block is read. Nothing is written beside
+a result that holds only a far field.
+
+**The sum.** A stored pattern `E^V_k` is the field with 1 V across port k and every other port terminated in its Z0, so with the circuit's waves at the
+block, in `Weigh`'s one statement of them,
+
+```
+E = Σ_k a_k · √Z0_k · (1 + S_kk) · E^V_k
+```
+
+and E over the circuit's first drive voltage is the circuit's pattern at 1 V there, which is what the cubes of a 3D run mean. `Em3dRadiation.Publish` forms
+every metric from it, so gain is per watt accepted and realized gain includes mismatch whatever `norm` says, and the waves' power scale cancels.
+
+**The names.** `CircuitEvaluation` groups only a result's default group, so the cubes are published there as `farfield.U` and so on, which reads
+`F1.farfield.U`. `S` and `Z0` are the S-parameter run's own cubes at the analysis's frequencies. `freq=all` is every frequency the far field holds; a
+frequency between them is refused, because far-field phase across a coarse sweep is not safe to interpolate.
+
+**Every solver's pattern is the field its S describes.** The sum holds only where a stored pattern is the field of port k's incident wave alone, referred to the
+voltage S states. Palace's always were. openEMS's other ports reflect a little as its probes see them, so `OpenEmsPattern` adds a port's runs up with the inverse S itself
+uses (`FdtdPortExcitations.From`). EMerge's are referred to `V_inc·(1 + S_kk)`, since the driver's own reading of a port's voltage can miss a point on its edge. Both
+mark the result (`Em3dRadiation.PortsTerminatedCube`), and `PortFarFieldSet` asks for an unmarked one to be run again, since its `.npy` cannot be corrected.
+EMerge's S across a change of load closes only as the port's edge mesh does: `|ΔS11|` halves as `EdgeRefinement` does and meets 1e-3 at 0.02, and the pattern meets its limits on any mesh.
+
+**One mesh.** The gates compare a recombination with a run on the same mesh, so they prove the method and not the mesh: a result that is not converged
+recombines faithfully into the same unconverged answer. The balance check is what looks at the solve itself.
+
 ---
 
 ## 12. B1 and SAR as goals: tuning, the optimizer, yield and multi-channel drive (SAR-10)
